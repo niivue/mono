@@ -251,23 +251,6 @@ export function extractChunkBytes(
 }
 
 /**
- * Extract a `texDims`-sized chunk while reorienting a non-RAS-aligned source
- * into RAS row-major order. For each RAS voxel in the chunk the native CPU
- * index is `sum(img2RASstart) + x*stepX + y*stepY + z*stepZ` — the same signed
- * permutation `reorientRGBA`/`getVoxel` use. The result is byte-identical to
- * what `extractChunkBytes` would produce from an already-RAS source, so the
- * downstream orient pass runs with the identity matrix.
- *
- * Exported for unit testing. Pure CPU function; no GPU dependencies.
- *
- * @param srcBytes      Source buffer (one 3D frame) viewed as bytes.
- * @param bytesPerVoxel Source format byte stride per voxel.
- * @param texOrigin     Chunk's first RAS voxel in volume coords.
- * @param texDims       Chunk extent in RAS voxels.
- * @param img2RASstart  Per-axis native start offsets (NVImage.img2RASstart).
- * @param img2RASstep   Per-axis native strides, signed (NVImage.img2RASstep).
- */
-/**
  * Compose a per-chunk overlay orient matrix.
  *
  * The orient shader (both backends) maps an output normalized coord into the
@@ -352,6 +335,26 @@ export function chunkModulationForDesc(
   )
 }
 
+// ponytail: 16x16 measured on M4 Pro (Chromium, Bun) only; retune per engine if needed.
+const REORIENT_TILE = 16
+
+/**
+ * Extract a `texDims`-sized chunk while reorienting a non-RAS-aligned source
+ * into RAS row-major order. For each RAS voxel in the chunk the native CPU
+ * index is `sum(img2RASstart) + x*stepX + y*stepY + z*stepZ` — the same signed
+ * permutation `reorientRGBA`/`getVoxel` use. The result is byte-identical to
+ * what `extractChunkBytes` would produce from an already-RAS source, so the
+ * downstream orient pass runs with the identity matrix.
+ *
+ * Exported for unit testing. Pure CPU function; no GPU dependencies.
+ *
+ * @param srcBytes      Source buffer (one 3D frame) viewed as bytes.
+ * @param bytesPerVoxel Source format byte stride per voxel.
+ * @param texOrigin     Chunk's first RAS voxel in volume coords.
+ * @param texDims       Chunk extent in RAS voxels.
+ * @param img2RASstart  Per-axis native start offsets (NVImage.img2RASstart).
+ * @param img2RASstep   Per-axis native strides, signed (NVImage.img2RASstep).
+ */
 export function extractChunkBytesReoriented(
   srcBytes: Uint8Array,
   bytesPerVoxel: number,
@@ -365,6 +368,22 @@ export function extractChunkBytesReoriented(
   const out = new Uint8Array(sx * sy * sz * bytesPerVoxel)
   const startSum = img2RASstart[0] + img2RASstart[1] + img2RASstart[2]
   const [stepX, stepY, stepZ] = img2RASstep
+  // Aligned 4-byte voxels copy as Uint32 (bit-exact, NaN payloads kept).
+  // ponytail: 4-byte only; 1/2-byte need their own loop copies (JSC polymorphism).
+  if (bytesPerVoxel === 4 && srcBytes.byteOffset % 4 === 0) {
+    const base = startSum + ox * stepX + oy * stepY + oz * stepZ
+    return copyWordsReoriented(
+      srcBytes,
+      out,
+      base,
+      sx,
+      sy,
+      sz,
+      stepX,
+      stepY,
+      stepZ,
+    )
+  }
   let dst = 0
   for (let z = 0; z < sz; z++) {
     const baseZ = startSum + (oz + z) * stepZ
@@ -374,6 +393,57 @@ export function extractChunkBytesReoriented(
         const srcOff = (baseZY + (ox + x) * stepX) * bytesPerVoxel
         for (let b = 0; b < bytesPerVoxel; b++) {
           out[dst++] = srcBytes[srcOff + b]
+        }
+      }
+    }
+  }
+  return out
+}
+
+// Separate function: inlining these loops into the byte path slowed the
+// generic 1/2-byte copy 10-30% in JSC. Views are built here, not passed in.
+function copyWordsReoriented(
+  srcBytes: Uint8Array,
+  out: Uint8Array,
+  base: number,
+  sx: number,
+  sy: number,
+  sz: number,
+  stepX: number,
+  stepY: number,
+  stepZ: number,
+): Uint8Array {
+  const src = new Uint32Array(
+    srcBytes.buffer,
+    srcBytes.byteOffset,
+    Math.floor(srcBytes.byteLength / 4),
+  )
+  const dst = new Uint32Array(out.buffer)
+  if (Math.abs(stepZ) !== 1) {
+    let d = 0
+    for (let z = 0; z < sz; z++) {
+      const baseZ = base + z * stepZ
+      for (let y = 0; y < sy; y++) {
+        let s = baseZ + y * stepY
+        for (let x = 0; x < sx; x++, s += stepX) dst[d++] = src[s]
+      }
+    }
+    return out
+  }
+  // RAS z is the source's unit-stride axis (an x/z transpose): each x step
+  // jumps a whole slice to a new cache line, so tile x against z to reuse
+  // each line across a tile's rows. Tiling x/y transposes measured slower.
+  const sliceOut = sx * sy
+  for (let y = 0; y < sy; y++) {
+    const baseY = base + y * stepY
+    for (let z0 = 0; z0 < sz; z0 += REORIENT_TILE) {
+      const z1 = Math.min(sz, z0 + REORIENT_TILE)
+      for (let x0 = 0; x0 < sx; x0 += REORIENT_TILE) {
+        const x1 = Math.min(sx, x0 + REORIENT_TILE)
+        for (let z = z0; z < z1; z++) {
+          let s = baseY + z * stepZ + x0 * stepX
+          let d = z * sliceOut + y * sx + x0
+          for (let x = x0; x < x1; x++, s += stepX) dst[d++] = src[s]
         }
       }
     }

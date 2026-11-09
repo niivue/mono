@@ -12,6 +12,7 @@
 
 import type { NIFTI1, NIFTI2, TypedVoxelArray } from '@/NVTypes'
 import { NVWorker } from '@/workers/NVWorker'
+import { PageWorker } from '@/workers/pageWorker'
 import TransformWorker from '@/workers/transform.worker?worker&inline'
 import { transformModules } from './_registry'
 
@@ -128,15 +129,7 @@ export function getTransformInfos(): TransformInfo[] {
 // Worker bridge (lazy, with direct-call fallback)
 // ---------------------------------------------------------------------------
 
-let bridge: NVWorker | null = null
-
-function getBridge(): NVWorker | null {
-  if (!NVWorker.isSupported()) return null
-  if (!bridge) {
-    bridge = new NVWorker(() => new TransformWorker())
-  }
-  return bridge
-}
+const transformWorker = new PageWorker(() => new TransformWorker())
 
 /**
  * Apply a named transform to volume data.
@@ -157,12 +150,14 @@ export async function applyTransform(
   if (!builtinNames.has(name)) {
     return transform.apply(hdr, img, options)
   }
-  const b = getBridge()
-  if (b) {
+  if (NVWorker.isSupported()) {
     // NIFTI class instances have non-cloneable function properties;
     // JSON round-trip produces a plain data-only object safe for postMessage.
     const plainHdr = JSON.parse(JSON.stringify(hdr))
-    return b.execute<{ hdr: NIFTI1 | NIFTI2; img: TypedVoxelArray }>({
+    return transformWorker.execute<{
+      hdr: NIFTI1 | NIFTI2
+      img: TypedVoxelArray
+    }>({
       name,
       hdr: plainHdr,
       img,
@@ -182,14 +177,4 @@ export function registerTransform(transform: VolumeTransform): void {
     throw new Error(`Transform "${transform.name}" already registered`)
   }
   transformsByName.set(transform.name, transform)
-}
-
-/**
- * Terminate the transform worker. Safe to call if no worker was created.
- */
-export function terminate(): void {
-  if (bridge) {
-    bridge.terminate()
-    bridge = null
-  }
 }

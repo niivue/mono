@@ -12,8 +12,8 @@
  * See `docs/ome-zarr-format.md`.
  */
 
-import type { TypedVoxelArray } from '@/NVTypes'
-import { omeLengthToMicrons } from './omeTiff'
+import type { TypedVoxelArray } from '@niivue/niivue'
+import { omeLengthToMicrons } from '@niivue/niivue'
 
 /**
  * A zero-filled typed array of `source`'s concrete type. Shared by the

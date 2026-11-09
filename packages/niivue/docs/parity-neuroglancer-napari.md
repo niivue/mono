@@ -55,7 +55,7 @@ choice rather than oversight.
 
 | Item | Status | Evidence / notes |
 |---|---|---|
-| OME-Zarr (v2/v3, multiscales, codecs) | present | PR#42: server adapter via `zarrita` (v2/v3 detection, OME multiscales 0.4+0.5, scale transforms, UCUM units, dtype allowlist). poc: **client-side** `zarrita` decode in `examples/range.js` (`zarr.open.v3`). Gaps: `translation` transforms ignored, `dimension_names` unused. |
+| OME-Zarr (v2/v3, multiscales, codecs) | present | PR#42: server adapter via `zarrita` (v2/v3 detection, OME multiscales 0.4+0.5, scale transforms, UCUM units, dtype allowlist). poc: **client-side** `zarrita` decode in `apps/demo-ext-tile/src/range.js` (`zarr.open.v3`). Gaps: `translation` transforms ignored, `dimension_names` unused. |
 | Zarr v3 sharding + codecs (bytes/zstd/blosc/gzip/transpose) | present | Inherited from `zarrita` codec registry incl. `sharding_indexed`. Caveat: in-repo fixtures only exercise bytes+zstd. |
 | DICOM-WSI | present | poc: `NVSlide` streams a `dicom-wsi-range-v1` manifest via HTTP range (CPTAC-BRCA fixture). PR#42: server-decoded. Documented in `docs/dicom-wsi.md`. |
 | NIfTI / NRRD / mesh formats | present | Core readers (`volume/readers/`, `mesh/`). |

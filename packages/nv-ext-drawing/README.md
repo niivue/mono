@@ -46,6 +46,7 @@ dr.update(filled)
 ```bash
 bunx nx build nv-ext-drawing    # Build
 bunx nx typecheck nv-ext-drawing # Type-check
+bunx nx test nv-ext-drawing      # Test
 ```
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

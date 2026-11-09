@@ -171,6 +171,8 @@ first such interaction warns). Turn one off before turning the other on.
     is_drag_drop_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_dragging = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_equal_size = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_flipped_2d_horizontal = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_flipped_2d_vertical = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_graph_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_toggle_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -209,6 +211,7 @@ off-window crosshair is brought back."""
     primary_drag_mode = traitlets.Float(None, allow_none=True).tag(sync=True)
     render_pan = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=2, maxlen=2, allow_none=True).tag(sync=True)
     render_pivot_mm = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=3, maxlen=3, allow_none=True).tag(sync=True)
+    rotation_2d = traitlets.Float(None, allow_none=True).tag(sync=True)
     ruler_width = traitlets.Float(None, allow_none=True).tag(sync=True)
     scale_multiplier = traitlets.Float(None, allow_none=True).tag(sync=True)
     secondary_drag_mode = traitlets.Float(None, allow_none=True).tag(sync=True)
@@ -810,6 +813,15 @@ and its volumes alive."""
         [number, number, number]
         """
         return await self._request("explodedMM", _make_args(mm))
+
+    def flip_2d(self, axis: Any) -> None:
+        """Toggle the on-screen mirror of 2D slice tiles: 'horizontal' swaps left and right, 'vertical' top and bottom.
+
+        Parameters
+        ----------
+        axis : \"horizontal\" | \"vertical\"
+        """
+        self.send({"cmd": "flip2D", "args": _make_args(axis)})
 
     async def get_annotations_json(self) -> Any:
         return await self._request("getAnnotationsJSON", [])
@@ -1438,6 +1450,18 @@ and its volumes alive."""
 
     def resize(self) -> None:
         self.send({"cmd": "resize", "args": []})
+
+    def rotate_2d(self, quarter_turns: Any) -> None:
+        """Turn 2D slice tiles by quarter turns on screen (positive = clockwise), whatever the flips.
+
+        With exactly one flip set, the stored `rotation2D`
+        runs the other way, since the turn applies before the flips.
+
+        Parameters
+        ----------
+        quarter_turns : number
+        """
+        self.send({"cmd": "rotate2D", "args": _make_args(quarter_turns)})
 
     async def save_bitmap(self, filename: Any = _UNSET, quality: Any = _UNSET) -> Any:
         return await self._request("saveBitmap", _make_args(filename, quality))

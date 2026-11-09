@@ -203,6 +203,15 @@ export default class NVModel {
       ...(options.isSagittalNoseLeft !== undefined && {
         isSagittalNoseLeft: options.isSagittalNoseLeft,
       }),
+      ...(options.rotation2D !== undefined && {
+        rotation2D: NVConstants.normalizeRotation2D(options.rotation2D),
+      }),
+      ...(options.isFlipped2DHorizontal !== undefined && {
+        isFlipped2DHorizontal: options.isFlipped2DHorizontal,
+      }),
+      ...(options.isFlipped2DVertical !== undefined && {
+        isFlipped2DVertical: options.isFlipped2DVertical,
+      }),
       ...(options.isSingleViewFillCanvas !== undefined && {
         isSingleViewFillCanvas: options.isSingleViewFillCanvas,
       }),

@@ -145,7 +145,7 @@ export class DicomWebWsiSource implements SlideTileSource {
     private readonly options: DicomWebWsiOptions,
   ) {
     this.maps = slide.levels.map(tileMap)
-    this.series = new URL(options.seriesUrl, globalThis.location?.href)
+    this.series = seriesOf(options.seriesUrl)
     const icc = slide.iccProfile
     this.manifest = manifestOf(
       { ...slide, iccProfile: icc && { colorSpace: icc.colorSpace } },
@@ -169,7 +169,7 @@ export class DicomWebWsiSource implements SlideTileSource {
     signal?: AbortSignal,
   ): Promise<DicomWebWsiSource> {
     const instances = slide.instances.map((i) => ({ ...i }))
-    const series = new URL(options.seriesUrl, globalThis.location?.href)
+    const series = seriesOf(options.seriesUrl)
     for (const level of slide.levels) {
       const i = level.frames.instance[0]
       const frame = level.frames.frame[0]
@@ -275,5 +275,12 @@ function frameUrl(
   sop: string,
   frame: number,
 ): string {
-  return `${origin}${pathname}/instances/${sop}/frames/${frame}${search}`
+  return `${origin}${pathname}/instances/${encodeURIComponent(sop)}/frames/${frame}${search}`
+}
+
+/** seriesUrl resolved against the page, without trailing slashes, as paths are appended to it. */
+function seriesOf(seriesUrl: string): URL {
+  const url = new URL(seriesUrl, globalThis.location?.href)
+  url.pathname = url.pathname.replace(/\/+$/, '')
+  return url
 }

@@ -111,6 +111,25 @@ describe('DicomWebWsiSource', () => {
     expect(calls[0]?.url).toEndWith(`/frames/${tile.frame}?access_token=t`)
   })
 
+  test('drops trailing slashes on the series URL and encodes the instance UID', async () => {
+    serve(() => part(JPEG))
+    const slide = await slideOf('bot', (o) => {
+      const paths = (o['00480105'] as { Value: Json[] }).Value
+      ;(paths[0] as Json)['00282000'] = { vr: 'OB', BulkDataURI: 'bulk/icc' }
+    })
+    ;(slide.instances[0] as { id: string }).id = '../../x?y=1#'
+    const s = await DicomWebWsiSource.open(slide, {
+      seriesUrl: `${SERIES}//?t=1`,
+    })
+    const { level, tile } = firstTile(s)
+    await s.fetchTileBytes(level, tile, '')
+    await s.fetchIccProfile()
+    expect(calls.map((c) => c.url)).toEqual([
+      `${SERIES}/instances/..%2F..%2Fx%3Fy%3D1%23/frames/${tile.frame}?t=1`,
+      `${SERIES}/bulk/icc?t=1`,
+    ])
+  })
+
   test('probes one frame per level when the metadata states no transfer syntax', async () => {
     serve(() => part(JLS))
     const slide = await slideOf('bot', (o) => {
@@ -307,6 +326,21 @@ describe('parseMultipartRelated', () => {
     expect(
       parseMultipartRelated(multipart(a, 'XY'), 'multipart/related'),
     ).toEqual([a])
+  })
+
+  test('reads a boundary only after CRLF, as a delimiter line', () => {
+    const a = enc.encode('abc--boundXYZ\r\n--boundary-ish')
+    expect(
+      parseMultipartRelated(multipart(a, 'bound'), 'multipart/related'),
+    ).toEqual([a])
+    // A preamble before the first delimiter, two parts, transport padding.
+    const b = enc.encode('two')
+    const body = enc.encode(
+      'preamble\r\n--bound\r\n\r\nabc--bound\r\n--bound \r\nX: y\r\n\r\ntwo\r\n--bound--',
+    )
+    expect(
+      parseMultipartRelated(body, 'multipart/related; boundary=bound'),
+    ).toEqual([enc.encode('abc--bound'), b])
   })
 
   test('returns a single-part body whole, and nothing for an empty one', () => {

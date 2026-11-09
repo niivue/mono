@@ -1,3 +1,7 @@
+## 1.0.0-rc.122 (2026-11-09)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
 ## 1.0.0-rc.121 (2026-11-09)
 
 ### Features

@@ -1,3 +1,13 @@
+## 1.0.0-rc.140 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** answer OHIF rotate/flip commands on NiiVue viewports ([6bebf88a](https://github.com/niivue/mono/commit/6bebf88a))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.139 (2026-11-09)
 
 ### Fixes

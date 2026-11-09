@@ -1,3 +1,26 @@
+## 1.0.0-rc.121 (2026-11-09)
+
+### Features
+
+- ⚠️  **niivue:** OME-Zarr exports move to @niivue/nv-ext-tile/zarr ([62b29fdb](https://github.com/niivue/mono/commit/62b29fdb))
+- **niivue,nv-ext-tile:** move OME-Zarr from core to @niivue/nv-ext-tile/zarr ([9b428e29](https://github.com/niivue/mono/commit/9b428e29))
+
+### Breaking Changes
+
+- **niivue:** OME-Zarr exports move to @niivue/nv-ext-tile/zarr  ([62b29fdb](https://github.com/niivue/mono/commit/62b29fdb))
+  the OME-Zarr names (loadOmeZarrVolumes, fetchOmeZarr,
+  fetchOmeZarrChunkedSource, openOmeZarr, omeZarrChunkedSource, ByteLruCache,
+  withChunkTiming, the persistent byte cache, ...) are no longer exported from
+  '@niivue/niivue'. Import them from '@niivue/nv-ext-tile/zarr' instead; names
+  and behaviour are unchanged.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.120 (2026-11-09)
 
 ### Fixes

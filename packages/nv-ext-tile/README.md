@@ -2,7 +2,7 @@
 
 Tiled and chunked image formats for NiiVue (slides and streamed volumes), one subpath per format, so a page loads only the format it uses:
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
-- `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders and hosted manifests ([Local DICOM-WSI folders](#local-dicom-wsi-folders)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
+- `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders, hosted manifests and DICOMweb ([Local DICOM-WSI folders](#local-dicom-wsi-folders), [DICOMweb](#dicomweb)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
 - `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick ([OME-Zarr](#ome-zarr)).
 
 Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`, and core's OME-Zarr exports; the APIs are unchanged, only the import paths differ.
@@ -99,7 +99,7 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   many slides indexes in memory proportional to its headers. Each level reports
   `duplicates` and `holes`; its grid-sized tile map is built only when
   a slide is opened (`DicomWsiSource`) or a manifest is written.
-- **ICC colour management.** `DicomWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; `source.dispose()` cancels the read.
+- **ICC colour management.** `DicomWsiSource`, `DicomWebWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; `source.dispose()` cancels the read.
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
@@ -138,6 +138,24 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - No DimensionOrganizationType and no per-frame positions (or per-frame groups left as bulk data) means implicit TILED_FULL order, as for local files.
 - One call indexes at most 2 x 2^22 frames; instances past that are skipped.
 - `skipped[].file` holds the instance's name: its SOPInstanceUID, else `instances[k]`.
+
+## DICOMweb
+
+```ts
+const index = indexDicomWsiMetadata(seriesMetadata) // WADO-RS .../series/{uid}/metadata
+const source = await DicomWebWsiSource.open(index.slides[0], {
+  seriesUrl: 'https://host/dicomweb/studies/1.2/series/3.4',
+  headers: () => ({ Authorization: getToken() }), // read per request
+})
+const slide = NVSlide.fromSource(source)
+```
+
+- Tiles are fetched by WADO-RS `{seriesUrl}/instances/{sop}/frames/{n}`, with the slide's abort signal. A query on `seriesUrl` (an access token) is kept on each frame URL.
+- A level whose metadata states no transfer syntax costs one frame request in `open`, which reads the syntax from the bytes.
+- JPEG 2000 and JPEG-LS tiles are requested untranscoded (`transfer-syntax=*`); a tile the server transcoded anyway is refused.
+- Responses are capped at 64 MB, also when streamed without Content-Length.
+- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source), else fetched. `headers`, and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin. A relative `seriesUrl` resolves against the page.
+- One slide per optical path and focal plane, as for local files; a viewer that shows one picks `slides[0]`, the first path and lowest plane, and should say others exist.
 
 ## OME-Zarr
 

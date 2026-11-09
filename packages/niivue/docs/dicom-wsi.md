@@ -78,7 +78,7 @@ and per-tile `fileUrl` (nv-ext-tile's peer floor). Their index places TILED_FULL
 in implicit order unless per-frame positions are given.
 
 **Orientation: DICOM row 0 is the top.** DICOM-WSI manifests use `displayYAxis: 'down'`, as TIFF/SVS and DZI do, so a slide displays as OpenSlide and other viewers show it. Manifests made before 2026-11-05 said `'up'` and displayed vertically flipped.
-**ICC colour management.** Manifests record the optical path's ICC profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0 file (`fetch-dicom-wsi.ts`, the IIIF server route, nv-ext-tile/dicom), or a DICOMweb bulk-data URL (nv-ohif), plus `colorSpace` when stated.
+**ICC colour management.** Manifests record the optical path's ICC profile (`OpticalPathSequence` > `ICCProfile`) as `iccProfile`: a byte range in the level-0 file (`fetch-dicom-wsi.ts`, the IIIF server route, nv-ext-tile/dicom), or a DICOMweb bulk-data URL (nv-ohif, nv-ext-tile `DicomWebWsiSource`), plus `colorSpace` when stated.
 - NVSlide asks its source for the profile bytes (`SlideTileSource.fetchIccProfile`). The default source reads the manifest's byte range or URL; nv-ohif's source serves none yet, so OHIF slides are not colour-managed.
 - The registered transform (`NVSlide.registerIccTransform`, before slides are opened) bakes the profile into an n^3 RGBA8 sRGB table of any size. nv-ext-tile/dicom registers @niivue/dcm2niix's LittleCMS (perceptual intent, 33^3); the core ships no colour engine.
 - The slide and slide-plane shaders apply the table once per pixel, after decoding and windowing, for every codec.

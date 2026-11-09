@@ -1,3 +1,13 @@
+## 1.0.0-rc.130 (2026-11-09)
+
+### Features
+
+- **niivue:** rotate2D and flip2D turn and mirror slice views on screen ([6165dcb8](https://github.com/niivue/mono/commit/6165dcb8))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.129 (2026-11-09)
 
 ### Fixes

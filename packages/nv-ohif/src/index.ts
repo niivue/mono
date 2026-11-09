@@ -10,6 +10,11 @@ import {
   NIIVUE_VIEWPORT_NAME,
 } from './getNiivueViewportModule'
 import { NiivueViewport } from './NiivueViewport'
+import {
+  NIIVUE_SUPPORTED_TOOLS,
+  NIIVUE_UNSUPPORTED_EVALUATOR,
+  withNiivueSupport,
+} from './niivueSupport'
 import type {
   OhifDisplaySet,
   OhifExtension,
@@ -22,6 +27,7 @@ import {
   getNiivueSopClassHandlerModule,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
 } from './sopClassHandler'
+import { NIIVUE_STANDARD_COMMANDS } from './standardCommands'
 import {
   getNiivueToolbarModule,
   NIIVUE_CLIP_SECTION,
@@ -48,7 +54,7 @@ const niivueOhifExtension: OhifExtension = {
   getViewportModule: (params) => getNiivueViewportModule(params),
   getSopClassHandlerModule: () => getNiivueSopClassHandlerModule(),
   getCommandsModule: (params) => getNiivueCommandsModule(params),
-  getToolbarModule: () => getNiivueToolbarModule(),
+  getToolbarModule: (params) => getNiivueToolbarModule(params),
   // Auto-registered at default scope; modes pull the packs in by reference
   // ('niivue.toolbarButtons' / 'niivue.toolbarSections').
   getCustomizationModule: () => [
@@ -83,11 +89,15 @@ export {
   NIIVUE_RESET_BUTTON,
   NIIVUE_SLICE_TYPES,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
+  NIIVUE_STANDARD_COMMANDS,
+  NIIVUE_SUPPORTED_TOOLS,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
+  NIIVUE_UNSUPPORTED_EVALUATOR,
   NIIVUE_VIEWPORT_NAME,
   NIIVUE_VIEWS_SECTION,
   NIIVUE_WL_SECTION,
   NiivueViewport,
   niivueToolbarCustomization,
+  withNiivueSupport,
 }

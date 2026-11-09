@@ -1,10 +1,8 @@
 import { baseModality, NIIVUE_COLORMAPS, NIIVUE_SLICE_TYPES } from './commands'
-import {
-  getNiivueEntryForViewport,
-  getNiivueForViewport,
-  type NiivueViewportEntry,
-} from './niivueRegistry'
+import { getNiivueEntry, type NiivueViewportEntry } from './niivueRegistry'
+import { niivueSupportEvaluator } from './niivueSupport'
 import type {
+  OhifExtensionParams,
   OhifToolbarButton,
   OhifToolbarEvaluation,
   OhifToolbarModuleEntry,
@@ -395,7 +393,7 @@ function volumeEvaluator(
   ) => OhifToolbarEvaluation,
 ): ToolbarEvaluate {
   return ({ viewportId, button }) => {
-    const entry = getNiivueEntryForViewport(viewportId)
+    const entry = getNiivueEntry(viewportId)
     if (!entry) return DISABLED
     const { volumes } = entry.nv
     if (!Array.isArray(volumes) || volumes.length === 0) return VOLUME_DISABLED
@@ -407,12 +405,15 @@ function volumeEvaluator(
  * getToolbarModule: evaluators the buttons above reference. OHIF calls these
  * against the active viewport to derive enabled/active state.
  */
-export function getNiivueToolbarModule(): OhifToolbarModuleEntry[] {
+export function getNiivueToolbarModule({
+  servicesManager,
+}: OhifExtensionParams = {}): OhifToolbarModuleEntry[] {
   return [
+    niivueSupportEvaluator(servicesManager),
     {
       name: NIIVUE_EVALUATOR,
       evaluate: ({ viewportId }) =>
-        getNiivueForViewport(viewportId) ? { disabled: false } : DISABLED,
+        getNiivueEntry(viewportId) ? { disabled: false } : DISABLED,
     },
     {
       name: SLICE_TYPE_EVALUATOR,

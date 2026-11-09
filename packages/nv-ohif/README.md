@@ -56,10 +56,10 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   canvas: **JPEG, JPEG 2000 and JPEG-LS, TILED_FULL** slides (colour or monochrome) are
   supported; **TILED_SPARSE** and slides with several optical paths or focal planes are
   declined with an explanatory note (see [Whole-slide imaging](#whole-slide-imaging)).
-- Mirrors OHIF's active primary tool (Window/Level, Pan) onto NiiVue's left-drag,
-  and reflects a NiiVue window/level change (drag or `setVolume`) onto any sibling OHIF
-  viewport showing the same series (`setViewportWindowLevel`). Auto window/level
-  (`recalculateCalMinMax`) does not emit `volumeUpdated`, so it is not reflected.
+- Mirrors the viewport's tool group's active primary tool (`viewportOptions.toolGroupId`,
+  default `'default'`) onto NiiVue's left-drag. Windows are per viewport, as in OHIF;
+  the initial window comes from the hanging protocol's `displaySetOptions[0].options.voi`
+  when set, else NiiVue's robust 2-98% range.
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
   posterior / left / right / superior / inferior), a **window/level** dropdown
@@ -85,8 +85,9 @@ The extension registers the commands (`niivueSetSliceType`, `niivueResetView`,
 `niivueSetClipPlane`, `niivueToggleOverlay`, `niivueSetWindowLevel`,
 `niivueSetWindowLevelPreset`, `niivueAutoWindowLevel`, `niivueSetColormap`,
 `niivueToggleColorbar`, `niivueToggleInterpolation`, `niivueToggleCrosshair`), the toolbar evaluators, and a customization pack with the
-button definitions. A mode pulls them in by reference and places them in its
-primary bar:
+button definitions. `niivue*` commands act only when the active viewport is NiiVue.
+
+A mode pulls them in by reference and places them in its primary bar:
 
 ```js
 // in a mode
@@ -108,6 +109,22 @@ toolbarSections: [
               'NiivueCrosshair'] },
 ],
 ```
+
+It also answers OHIF's standard `resetViewport`, `setViewportOrientation`
+(axial / sagittal / coronal / acquisition), `scaleUpViewport`, `scaleDownViewport`,
+`fitViewportToWindow` and `setWindowLevelPreset` on a NiiVue viewport (`viewportId`,
+else the active one) and hands any other viewport to the `CORNERSTONE` context, so
+standard hotkeys work in mixed layouts. This relies on the extension registering
+after cornerstone (newer command contexts win). The `NIIVUE` context is registered
+app-wide, so these names route through nv-ohif in every mode (delegating to
+`CORNERSTONE` when the viewport is not NiiVue), and a third-party extension that
+registers the same names in a context newer than `CORNERSTONE` is bypassed.
+
+`withNiivueSupport(button)` adds the `evaluate.niivue.unsupported` evaluator to a
+button: on a NiiVue viewport it disables buttons whose commands or tools are not in
+`NIIVUE_STANDARD_COMMANDS` / `NIIVUE_SUPPORTED_TOOLS` (or `niivue*`), and OHIF hides
+them when the button sets `hideWhenDisabled`; other viewports are left to the
+button's own evaluators.
 
 ## Measurement tools
 
@@ -223,7 +240,7 @@ The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path f
 ## Roadmap
 
 See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane /
-overlay / window-level (both directions) / colormap, the full **Measurement** tool
+overlay / window-level / colormap, the full **Measurement** tool
 group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
 rendering** for JPEG, JPEG 2000 and JPEG-LS TILED_FULL slides (see [Whole-slide imaging](#whole-slide-imaging)).
 Next: segmentation overlays, mesh/surface overlay, TILED_SPARSE slide

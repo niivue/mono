@@ -323,9 +323,9 @@ the differentiators:
 - **Overlays** (load the study's next series as a colormapped overlay). **DONE**
   (segmentation-specific overlays + colormap/opacity UI still to come.)
 - **Mesh / surface** overlay on the volume.
-- Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`, and
-  the reverse (NiiVue contrast drag -> same-series siblings via
-  `setViewportWindowLevel`). **DONE**
+- Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`;
+  windows are per viewport, seeded from the hanging protocol's
+  `displaySetOptions` voi. **DONE**
 - Colormap: a base-volume colormap dropdown (gray / hot / bone / cool / warm /
   viridis / plasma / inferno / turbo / jet), a colorbar (legend) toggle, and a
   smoothing toggle (nearest-neighbor vs linear interpolation). **DONE**
@@ -363,26 +363,19 @@ The extension now exposes the full OHIF module set for toolbar integration:
   and `niivueAutoWindowLevel` (recalculateCalMinMax(0), robust 2-98%). Toolbar
   `NiivueWindowLevel` dropdown: Auto + 5 CT presets + 3 PT presets, each preset
   modality-gated.
-- **Reverse W/L bridge**: NiiVue emits no intensity event (parity doc confirms), so
-  the viewport reads the base volume's calMin/calMax on canvas `pointerup`
-  (`syncNiivueWindowLevelToOhif`); a change vs the entry's last window/level (seeded
-  from the initial load, updated by the forward commands) is recorded on the entry,
-  shown as a transient "W: .. L: .." readout, and reflected onto any OTHER OHIF
-  viewport showing the same series (a cornerstone sibling in a multi-viewport
-  layout). Each sibling is targeted by id via
-  `commandsManager.runCommand('setViewportWindowLevel', { viewportId, windowWidth,
-  windowCenter })`, which no-ops on a viewport cornerstone does not own. NOTE: do
-  NOT use the `setWindowLevel` command for this — it targets the *active* viewport
-  (ours) and throws on our non-cornerstone element (an earlier version did, and
-  logged a caught warning on every drag). Unchanged releases (crosshair navigation)
-  are silent.
+- **W/L readout**: NiiVue emits no intensity event (parity doc confirms), so the
+  viewport reads the base volume's calMin/calMax on canvas `pointerup`
+  (`trackNiivueWindowLevel`); a change vs the entry's last window/level is shown
+  as a transient "W: .. L: .." readout. Windows stay independent per viewport (no
+  copy to same-series siblings); the initial window comes from
+  `displaySetOptions[0].options.voi`. Unchanged releases are silent.
 - `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
   displaySets + overlayUIDs + clip preset + windowLevel + a status sink). The
   viewport registers on attach and keeps displaySets/status current;
-  commands/evaluators resolve the active viewport's entry through it (fallback: the
-  sole registered entry). Overlay progress surfaces through the viewport's status
-  overlay. `ohifCommandsManager()` reads the commandsManager from the prop or
-  `window.commandsManager`.
+  commands/evaluators resolve the active viewport's entry through it by exact id
+  (the sole registered entry only when there is no active viewport id). Overlay
+  progress surfaces through the viewport's status overlay. `ohifCommandsManager()`
+  reads the commandsManager from the prop or `window.commandsManager`.
 
 Verified live: clip presets slice the 3D render (purple clip face); overlay toggle
 loads the 900-instance PERFUSION series as a warm overlay across all planes and

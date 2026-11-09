@@ -1,3 +1,21 @@
+## 1.0.0-rc.133 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** route OHIF's standard commands; independent windows; NiiVue toolbar evaluator ([39a1e8cc](https://github.com/niivue/mono/commit/39a1e8cc))
+
+### Fixes
+
+- **nv-ohif:** explicit context wins over tool commands too ([b5d1733e](https://github.com/niivue/mono/commit/b5d1733e))
+- **nv-ohif:** check every toolbar command; explicit context wins ([c28d55a2](https://github.com/niivue/mono/commit/c28d55a2))
+- **nv-ohif:** refresh the toolbar with the active viewport id ([706a50d4](https://github.com/niivue/mono/commit/706a50d4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.132 (2026-11-09)
 
 ### Features

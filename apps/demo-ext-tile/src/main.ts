@@ -48,8 +48,8 @@ let lastFiles: File[] = []
 function reloadWith(name: string, value: string): void {
   const url = new URL(location.href)
   url.searchParams.set(name, value)
-  // Keep the open slide; local files cannot survive a reload.
-  url.searchParams.set('url', current === 'local' ? '' : current)
+  // Keep the slide on screen (not a pending pick); local files cannot survive a reload.
+  url.searchParams.set('url', shown.value === 'local' ? '' : shown.value)
   location.href = url.href
 }
 backendSelect.onchange = () => reloadWith('backend', backendSelect.value)

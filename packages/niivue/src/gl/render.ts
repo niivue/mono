@@ -46,8 +46,6 @@ import {
 import {
   bytesPerSourceVoxel,
   chunkIndicesForAllBudgets,
-  estimateChunkedBytes,
-  formatBytes,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
@@ -62,6 +60,7 @@ import {
   type Vec3i,
   warnIfCubicUnsafe,
 } from '@/volume/chunking'
+import { chunkPlanMessage } from '@/volume/chunkPlanMessage'
 import { ChunkTravelPredictor } from '@/volume/chunkPrediction'
 import {
   DecodedChunkCache,
@@ -377,6 +376,10 @@ function withClipPlanes(gl: WebGL2RenderingContext, shader: Shader): Shader {
   )
   return shader
 }
+
+// Chunk plans already explained in the log (see chunkPlanMessage): the same
+// plan is re-bound on every update.
+const loggedChunkPlans = new WeakSet<ChunkPlan>()
 
 export class VolumeRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null
@@ -934,16 +937,18 @@ export class VolumeRenderer extends NVRenderer {
       basePlan ?? vol.chunkPlan ?? chunkVolume(rasDims, limit, [3, 3, 3])
     if (!basePlan) vol.chunkPlan = plan
     const bpv = bytesPerSourceVoxel(vol.hdr.datatypeCode) || 4
-    const budget = estimateChunkedBytes(plan, bpv)
-    log.warn(
-      `Volume ${vol.name} (${rasDims.join('x')}) exceeds ` +
-        `max3D=${limit}. Chunk plan: ` +
-        `${plan.gridDims.join('x')} = ${budget.chunkCount} chunks, ` +
-        `~${formatBytes(budget.totalBytes)} GPU memory ` +
-        `(${formatBytes(budget.scalarBytes)} scalar + ` +
-        `${formatBytes(budget.rgbaBytes)} RGBA + ` +
-        `${formatBytes(budget.gradientBytes)} gradient).`,
-    )
+    if (!loggedChunkPlans.has(plan)) {
+      loggedChunkPlans.add(plan)
+      const message = chunkPlanMessage({
+        name: vol.name,
+        datatypeCode: vol.hdr.datatypeCode,
+        rasDims,
+        limit,
+        limitName: 'MAX_3D_TEXTURE_SIZE',
+        plan,
+      })
+      log[message.level](message.text)
+    }
     if (plan.chunks.length > MAX_CHUNKS_PER_TILE) {
       throw new Error(
         `Volume ${vol.name} tiles into ${plan.chunks.length} chunks, ` +

@@ -6,25 +6,53 @@
     <title>NiiVue - whole-slide demo</title>
     <link rel="icon" href="data:," />
     <style>
+      :root { color-scheme: dark; }
       body { margin: 0; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; background: #1c1c1f; color: #e8e8ea; }
-      header { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 1rem; flex-wrap: wrap; }
-      header input[type="url"] { flex: 1; min-width: 16rem; }
-      canvas { flex: 1; width: 100%; min-height: 0; touch-action: none; }
+      header { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 1rem; flex-wrap: wrap; font-size: 0.85rem; }
+      header select { max-width: 22rem; }
+      header .backend { margin-left: auto; }
+      main { flex: 1; min-height: 0; position: relative; }
+      canvas { display: block; width: 100%; height: 100%; touch-action: none; }
       #status { font-size: 0.85rem; opacity: 0.8; }
+      #hud { position: absolute; top: 0.75rem; left: 0.75rem; padding: 0.5rem 0.75rem; background: rgba(5, 8, 8, 0.79); border: 1px solid rgba(116, 212, 207, 0.28); border-radius: 6px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34); font: 0.72rem/1.5 ui-monospace, monospace; white-space: pre; pointer-events: none; }
+      #hud:empty { display: none; }
+      dialog { background: #2a2a2e; color: inherit; border: 1px solid #555; border-radius: 6px; width: min(48rem, 90vw); }
+      dialog input { width: 100%; box-sizing: border-box; margin: 0.5rem 0; }
+      dialog p { margin: 0; text-align: end; }
     </style>
   </head>
   <body>
     <header>
       <strong>nv-ext-tile</strong>
-      <input id="file" type="file" accept=".tif,.tiff,.svs,.btf" />
-      <label>DICOM-WSI folder <input id="folder" type="file" webkitdirectory multiple /></label>
-      <select id="slides" hidden></select>
-      <input id="url" type="url" placeholder="https://... tiled TIFF / SVS (server must support Range + CORS)" />
-      <button id="open" type="button">Open URL</button>
-      <label title="Apply the slide's ICC profile (sRGB display)"><input id="icc" type="checkbox" checked /> Colour management</label>
-      <span id="status">Pick a local tiled TIFF/SVS or a DICOM-WSI folder, or enter a URL.</span>
+      <label>Slide <select id="source"></select></label>
+      <input id="files" type="file" multiple hidden />
+      <label id="series" hidden>Series <select id="slides"></select></label>
+      <label>Level <select id="level"><option value="auto">auto LOD</option></select></label>
+      <label title="Linear blends neighbouring pixels; nearest shows each source pixel as a square">Filter <select id="filter" autocomplete="off"><option value="linear">linear</option><option value="nearest">nearest</option></select></label>
+      <label title="Apply the slide's ICC profile (sRGB display)"><input id="icc" type="checkbox" checked autocomplete="off" /> Colour management</label>
+      <label title="Show or hide the info panel (I)"><input id="hudToggle" type="checkbox" checked autocomplete="off" /> HUD</label>
+      <span id="status">Pick a slide.</span>
+      <span class="backend">
+        <label>Backend <select id="backend"><option value="webgpu">WebGPU</option><option value="webgl2">WebGL2</option></select></label>
+        <label title="Multisample anti-aliasing, WebGL2 only (reloads the page)"><input id="aa" type="checkbox" /> AA</label>
+        <label title="Draw at the display's pixel ratio (off: one canvas pixel per CSS pixel)"><input id="hidpi" type="checkbox" checked autocomplete="off" /> HiDPI</label>
+      </span>
     </header>
-    <canvas id="canvas"></canvas>
+    <main>
+      <canvas id="canvas"></canvas>
+      <div id="hud"></div>
+    </main>
+    <dialog id="customDialog">
+      <form method="dialog">
+        <label>Tiled TIFF / SVS, or DICOM-WSI manifest (.json) URL. The server must support Range + CORS.
+          <input id="customUrl" type="url" required />
+        </label>
+        <p>
+          <button type="button" id="customCancel">Cancel</button>
+          <button type="submit" value="open">Open</button>
+        </p>
+      </form>
+    </dialog>
     <script type="module" src="src/main.ts"></script>
   </body>
 </html>

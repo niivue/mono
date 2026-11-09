@@ -297,11 +297,12 @@ function resizeCanvas(screen) {
 async function createView() {
   if (backendFromUrl() === 'webgpu' && 'gpu' in navigator) {
     // create() resolves null without an adapter but rejects if the device request fails.
-    const renderer = await SlideRendererGPU.create(els.canvas).catch(() => null)
+    const renderer = await SlideRendererGPU.create(els.canvas, {
+      antialias: isAntiAlias,
+    }).catch(() => null)
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable; falling back to WebGL2')
   }
-  // SlideRendererGPU has no MSAA (sampleCount 1), so AA reaches WebGL2 only.
   const gl = els.canvas.getContext('webgl2', {
     alpha: false,
     antialias: isAntiAlias,
@@ -987,7 +988,6 @@ async function main() {
   makeDraggable(els.hud)
   view = await createView()
   els.backendSelect.value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
-  els.aaSelect.disabled = view.kind === 'gpu' // SlideRendererGPU has no MSAA
   const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
     requestRender()

@@ -1,3 +1,22 @@
+## 1.0.0-rc.41 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile:** ZarrSlideSource for 2D OME-Zarr slides ([0bcded27](https://github.com/niivue/mono/commit/0bcded27))
+
+### Fixes
+
+- **nv-ext-tile:** refuse a timepoint a coarser level lacks ([224bd34b](https://github.com/niivue/mono/commit/224bd34b))
+- **nv-ext-tile:** a flat centre sample reads the whole level for the range ([c32e56d0](https://github.com/niivue/mono/commit/c32e56d0))
+- **nv-ext-tile:** sample the centre of the coarsest level for the data range ([6dc01d9c](https://github.com/niivue/mono/commit/6dc01d9c))
+- **nv-ext-tile:** skip non-finite samples in the zarr slide data range ([333af33b](https://github.com/niivue/mono/commit/333af33b))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.40 (2026-11-10)
 
 ### Fixes

@@ -4,7 +4,10 @@ import type {
   VolumeUpdatedDetail,
 } from '@niivue/niivue'
 import NiiVue, { NVSlide, SLICE_TYPE } from '@niivue/niivue'
-import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
+import {
+  DicomWebWsiSource,
+  registerDcm2niixDecoders,
+} from '@niivue/nv-ext-tile/dicom'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
@@ -35,8 +38,8 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
+import { wsiSeriesSlide } from './wsiSeries'
 import { mountWsiSlideView } from './wsiSlideView'
-import { buildWsiManifest, DicomWsiTileSource } from './wsiTileSource'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
@@ -72,8 +75,7 @@ interface ToolGroupServiceLike {
  * display set to the right NiiVue load path (see {@link classifyDisplaySet}):
  *   - a NIfTI/volume URL loads directly,
  *   - a volumetric DICOM series is fetched + converted with dcm2niix, then loaded,
- *   - whole-slide (SM) series render with NVSlide (JPEG / TILED_FULL; JPEG 2000 and
- *     TILED_SPARSE are declined with a note),
+ *   - whole-slide (SM) series render with NVSlide (JPEG, JPEG 2000, JPEG-LS),
  *   - anything else shows an explanatory note.
  *
  * NiiVue's core is framework-agnostic, so this owns a plain <canvas> + a `NiiVue`
@@ -399,105 +401,99 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Whole-slide imaging renders with NVSlide (tiled deep-zoom) on its own
       // WebGL2 canvas, independent of NiiVue's volume renderer. The NiiVue canvas
       // stays blank underneath; the slide canvas is overlaid and torn down here.
-      const built = buildWsiManifest(ds)
-      if (!built) {
-        setStatus({
-          kind: 'note',
-          message: withExtra(
-            'This slide has no tiled (VOLUME) pyramid levels to display.',
-          ),
-        })
+      const picked = wsiSeriesSlide(ds)
+      if ('note' in picked) {
+        setStatus({ kind: 'note', message: withExtra(picked.note) })
         return
       }
-      if (built.unsupported) {
-        setStatus({
-          kind: 'note',
-          message: withExtra(
-            `This slide's transfer syntax (${built.unsupported}) cannot be decoded yet (JPEG, JPEG 2000 and JPEG-LS slides are supported).`,
-          ),
-        })
-        return
-      }
+      const { slide: slideIndex, seriesUrl } = picked
       registerDcm2niixDecoders() // lazy: loads nothing until a JPEG 2000 or JPEG-LS tile
-      if (!built.tiledFull) {
-        // The tile grid assumes TILED_FULL row-major frame order; a TILED_SPARSE
-        // slide would render scrambled, so decline rather than mislead.
-        setStatus({
-          kind: 'note',
-          message: withExtra(
-            'This slide uses TILED_SPARSE frame organization, which the viewer cannot render yet (TILED_FULL slides are supported).',
-          ),
-        })
-        return
-      }
       const container = containerRef.current
       if (!container) return
-      const slideCanvas = document.createElement('canvas')
-      slideCanvas.style.cssText =
-        'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
-      container.appendChild(slideCanvas)
-      const source = new DicomWsiTileSource(built, authHeaders(servicesManager))
-      let slide: NVSlide
-      try {
-        slide = NVSlide.fromSource(source) // refuses several optical paths or focal planes
-      } catch (err) {
-        slideCanvas.remove()
+      let slideCanvas: HTMLCanvasElement | null = null
+      let view: ReturnType<typeof mountWsiSlideView> | null = null
+      let limitTimeout: number | undefined
+      let limitNote: Status | null = null
+      const cannotShow = (err: unknown) =>
         setStatus({
           kind: 'note',
           message: withExtra(
             `This slide cannot be shown: ${err instanceof Error ? err.message : String(err)}.`,
           ),
         })
-        return
-      }
-      let view: ReturnType<typeof mountWsiSlideView> | null = null
-      let limitTimeout: number | undefined
-      let limitNote: Status | null = null
-      try {
-        // The ruler draws its length label on the slide itself, so we do NOT
-        // reflect it into the centered status overlay (that produced a floating
-        // duplicate of the reading). The onMeasure hook stays available for a
-        // future push into OHIF's MeasurementService.
-        view = mountWsiSlideView(slideCanvas, slide, {
-          // A brief note, cleared early when the requested level fits again.
-          onLevelLimit: (message) => {
-            window.clearTimeout(limitTimeout)
-            const shown = limitNote
-            setStatus((s) => (s === shown ? { kind: 'idle' } : s))
-            limitNote = message ? { kind: 'note', message } : null
-            if (!limitNote) return
-            const note = limitNote
-            setStatus(note)
-            limitTimeout = window.setTimeout(
-              () => setStatus((s) => (s === note ? { kind: 'idle' } : s)),
-              3000,
-            )
-          },
-        })
-        slideViewRef.current = view
-        view.setTool(activeOhifToolRef.current)
-        updateNiivueViewport(viewportId, { slideView: view })
-        refreshToolbar(servicesManager, viewportId)
-        loaded()
-      } catch (err) {
-        slide.dispose()
-        slideCanvas.remove()
-        console.error('[nv-ohif] WSI view failed', err)
-        setStatus({
-          kind: 'error',
-          message: withExtra('Failed to start the whole-slide viewer.'),
-        })
-        return
-      }
+      // Reads one frame per level whose metadata states no transfer syntax.
+      DicomWebWsiSource.open(
+        slideIndex,
+        { seriesUrl, headers: () => authHeaders(servicesManager) },
+        abort.signal,
+      ).then(
+        (source) => {
+          if (cancelled) return
+          let slide: NVSlide
+          try {
+            slide = NVSlide.fromSource(source)
+          } catch (err) {
+            cannotShow(err)
+            return
+          }
+          const canvas = document.createElement('canvas')
+          slideCanvas = canvas
+          canvas.style.cssText =
+            'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
+          container.appendChild(canvas)
+          try {
+            // The ruler draws its length label on the slide itself, so we do NOT
+            // reflect it into the centered status overlay (that produced a floating
+            // duplicate of the reading). The onMeasure hook stays available for a
+            // future push into OHIF's MeasurementService.
+            view = mountWsiSlideView(canvas, slide, {
+              // A brief note, cleared early when the requested level fits again.
+              onLevelLimit: (message) => {
+                window.clearTimeout(limitTimeout)
+                const shown = limitNote
+                setStatus((s) => (s === shown ? { kind: 'idle' } : s))
+                limitNote = message ? { kind: 'note', message } : null
+                if (!limitNote) return
+                const note = limitNote
+                setStatus(note)
+                limitTimeout = window.setTimeout(
+                  () => setStatus((s) => (s === note ? { kind: 'idle' } : s)),
+                  3000,
+                )
+              },
+            })
+            slideViewRef.current = view
+            view.setTool(activeOhifToolRef.current)
+            updateNiivueViewport(viewportId, { slideView: view })
+            refreshToolbar(servicesManager, viewportId)
+            loaded()
+          } catch (err) {
+            slide.dispose()
+            canvas.remove()
+            console.error('[nv-ohif] WSI view failed', err)
+            setStatus({
+              kind: 'error',
+              message: withExtra('Failed to start the whole-slide viewer.'),
+            })
+          }
+        },
+        (err) => {
+          // An undecodable transfer syntax lands here, named in the message.
+          if (!cancelled) cannotShow(err)
+        },
+      )
       return () => {
         cancelled = true
+        abort.abort()
         window.clearTimeout(limitTimeout)
         updateNiivueViewport(viewportId, { slideView: undefined })
         slideViewRef.current = null
         view?.dispose()
-        slideCanvas.width = 0
-        slideCanvas.height = 0
-        slideCanvas.remove()
+        if (slideCanvas) {
+          slideCanvas.width = 0
+          slideCanvas.height = 0
+          slideCanvas.remove()
+        }
       }
     }
 

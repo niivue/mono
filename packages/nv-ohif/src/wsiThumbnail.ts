@@ -16,8 +16,8 @@
 // an encoded frame becomes a Blob URL directly; raw pixels are painted to a
 // canvas and exported.
 
-import { imageIdUrl, parseMultipartRelated } from './dicomWadoRs'
-import { imageTypeString } from './wsiTileSource'
+import { parseMultipartRelated } from '@niivue/nv-ext-tile/dicom'
+import { imageIdUrl } from './dicomWadoRs'
 
 interface WsiThumbInstance extends Record<string, unknown> {
   imageId?: unknown
@@ -39,7 +39,7 @@ function frameCount(inst: WsiThumbInstance): number {
 // a LABEL (the slide's paper label) is the least useful, so only fall back to it.
 function flavorRank(inst: WsiThumbInstance): number {
   // Array-tolerant: dcmjs-naturalized instances deliver ImageType as an array.
-  const it = imageTypeString(inst.ImageType) ?? ''
+  const it = [inst.ImageType].flat().join('\\')
   if (it.includes('OVERVIEW')) return 0
   if (it.includes('THUMBNAIL')) return 1
   if (it.includes('LABEL')) return 3

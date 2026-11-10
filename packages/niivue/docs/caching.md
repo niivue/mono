@@ -279,8 +279,15 @@ which is why it lands identically on `gl/render.ts` and `wgpu/render.ts`.
 - Slice scrolling: the centroid marches along one axis, so the predicted step is
   the next slabs in the direction of travel.
 - Pan and 2D zoom: the centroid slides across the plane, so the predicted step is
-  the leading edge. Crossing a level boundary is not yet predicted; the plan swap
-  resets the predictor, which is correct but conservative.
+  the leading edge. Crossing a level boundary is not yet predicted; a grid plan swap
+  resets the predictor (`replan`), which is correct but conservative.
+- Multi-LOD octree plans have no grid (`gridDims` [1,1,1]), so there travel is
+  measured from brick centres in common-grid voxels, and each brick predicts
+  its same-level face neighbour as many of its own sizes ahead as the travel
+  covers. A refocused octree on the same common grid keeps its velocity through
+  `replan` but not its centre (the new plan covers the same view with other
+  bricks, so a refocus alone is not travel); any other swap, or a different
+  volume, resets.
 
 Camera-orbit prediction is still not built, and still should not be first.
 
@@ -320,8 +327,8 @@ Honest limitation on verification: in the dandi demo the working set rarely
 travels by a whole chunk. `budgetPlan: 'focus'` sizes the plan to the byte
 budget, so most of its datasets end up entirely resident and the centroid never
 moves, and on a coarse level a single wheel step is a small fraction of a chunk.
-The prediction is unit-tested (16 cases in `chunkPrediction.test.ts`, covering
-scrub, reversal, burst-with-idle-frames, pan, jump, cap and reset), but a live
+The prediction is unit-tested (26 cases in `chunkPrediction.test.ts`, covering
+scrub, reversal, burst-with-idle-frames, pan, jump, cap, reset and octree plans), but a live
 `predicted > 0` reading needs a store whose plan exceeds the residency budget
 being navigated at a fine level. That is a demo gap, not a feature gap, and it
 is the first thing to fix when stage E is measured.

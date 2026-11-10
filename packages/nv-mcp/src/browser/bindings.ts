@@ -158,8 +158,8 @@ const VOLUME_PROPS: Record<
   },
   cal_min: { field: 'calMin', shape: 'number', range: intensityRange },
   cal_max: { field: 'calMax', shape: 'number', range: intensityRange },
-  cal_min_neg: { field: 'calMinNeg', shape: 'number' },
-  cal_max_neg: { field: 'calMaxNeg', shape: 'number' },
+  cal_min_neg: { field: 'calMinNeg', shape: 'number', range: intensityRange },
+  cal_max_neg: { field: 'calMaxNeg', shape: 'number', range: intensityRange },
   frame: {
     field: 'frame4D',
     shape: 'number',
@@ -361,8 +361,8 @@ const LAYER_PROPS: Record<
   },
   cal_min: { field: 'calMin', shape: 'number', range: intensityRange },
   cal_max: { field: 'calMax', shape: 'number', range: intensityRange },
-  cal_min_neg: { field: 'calMinNeg', shape: 'number' },
-  cal_max_neg: { field: 'calMaxNeg', shape: 'number' },
+  cal_min_neg: { field: 'calMinNeg', shape: 'number', range: intensityRange },
+  cal_max_neg: { field: 'calMaxNeg', shape: 'number', range: intensityRange },
   invert: { field: 'isColormapInverted', shape: 'boolean' },
   colorbar: { field: 'isColorbarVisible', shape: 'boolean' },
   transparent_below_cal_min: {
@@ -376,6 +376,9 @@ const LAYER_PROPS: Record<
     range: () => ({ min: 0, max: 5, step: 0.1 }),
   },
 }
+
+/** Every layer property a control can bind: the fields, and the frame of a 4D layer. */
+const LAYER_NAMES = [...Object.keys(LAYER_PROPS), 'frame']
 
 function intensityRange(volume: ShownVolume | ShownMeshLayer): {
   min?: number
@@ -420,7 +423,7 @@ const FORMS: BindingVocabulary['forms'] = [
   },
   {
     form: 'mesh.<index>.layer.<layer>.<property>',
-    description: `A property of a loaded mesh's layer, both counted from 0, as set_mesh_layer names it: ${Object.keys(LAYER_PROPS).join(', ')}.`,
+    description: `A property of a loaded mesh's layer, both counted from 0, as set_mesh_layer names it: ${LAYER_NAMES.join(', ')}.`,
   },
   {
     form: 'mesh.<index>.tract.<option>',
@@ -591,6 +594,7 @@ export function resolveBinding(
           throw new Error(
             `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
           )
+        windowFits(bind, field, value as number, volume)
         return setVolume(index, { [field]: value } as VolumeUpdate)
       },
     }
@@ -648,6 +652,30 @@ export function resolveBinding(
   }
 }
 
+/**
+ * Throws in words when writing one end of the display window would put
+ * cal_min above cal_max as the other end stands now; set_volume and
+ * set_mesh_layer check only a call that gives both.
+ */
+function windowFits(
+  bind: string,
+  field: string,
+  value: number,
+  now: { calMin?: number; calMax?: number },
+): void {
+  const low = field === 'calMin' ? value : now.calMin
+  const high = field === 'calMax' ? value : now.calMax
+  if (
+    (field === 'calMin' || field === 'calMax') &&
+    low !== undefined &&
+    high !== undefined &&
+    low > high
+  )
+    throw new Error(
+      `${bind} cannot be ${value}: cal_min (${low}) must not be above cal_max (${high}).`,
+    )
+}
+
 /** Throws in words unless `value` is of the shape `bind` takes. */
 function check(bind: string, shape: Shape, value: ControlValue): void {
   const ok =
@@ -682,13 +710,13 @@ function meshTarget(bind: string, view: View): Target {
       : isLayer
         ? Number.isInteger(layerAt) &&
           (layerAt ?? -1) >= 0 &&
-          Object.hasOwn(LAYER_PROPS, name) &&
+          LAYER_NAMES.includes(name) &&
           rest.length === 1
         : Object.hasOwn(MESH_PROPS, name) && option === undefined)
   if (!Number.isInteger(index) || index < 0 || !known)
     throw new Error(
       `"${bind}" is not a mesh binding: it takes the form mesh.<index>.<property> (${Object.keys(MESH_PROPS).join(', ')}), ` +
-        `mesh.<index>.layer.<layer>.<property> (${Object.keys(LAYER_PROPS).join(', ')}), ` +
+        `mesh.<index>.layer.<layer>.<property> (${LAYER_NAMES.join(', ')}), ` +
         `mesh.<index>.tract.<option> (${Object.keys(TRACT_PROPS).join(', ')}) or ` +
         `mesh.<index>.connectome.<option> (${Object.keys(CONNECTOME_PROPS).join(', ')}).`,
     )
@@ -712,7 +740,16 @@ function meshTarget(bind: string, view: View): Target {
   }
 
   if (isLayer && layerAt !== undefined)
-    return layerTarget(bind, view, index, layerAt, name, mesh, current, gone)
+    return layerTarget({
+      bind,
+      view,
+      index,
+      layerAt,
+      name,
+      mesh,
+      current,
+      gone,
+    })
 
   if (!group || !table) {
     if (!view.setMesh)
@@ -805,16 +842,25 @@ function meshTarget(bind: string, view: View): Target {
  * holds the layer object too: a layer removed or loaded again in its place
  * stops taking writes meant for this one.
  */
-function layerTarget(
-  bind: string,
-  view: View,
-  index: number,
-  layerAt: number,
-  name: string,
-  mesh: ShownMesh,
-  current: () => ShownMesh | undefined,
-  gone: () => void,
-): Target {
+function layerTarget({
+  bind,
+  view,
+  index,
+  layerAt,
+  name,
+  mesh,
+  current,
+  gone,
+}: {
+  bind: string
+  view: View
+  index: number
+  layerAt: number
+  name: string
+  mesh: ShownMesh
+  current: () => ShownMesh | undefined
+  gone: () => void
+}): Target {
   const layers = mesh.layers ?? []
   const layer = layers[layerAt]
   if (!layer)
@@ -823,11 +869,42 @@ function layerTarget(
         ? `${mesh.name ?? `Mesh ${index}`} has no layer ${layerAt}: ${layers.length} ${layers.length === 1 ? 'is' : 'are'} loaded.`
         : `${mesh.name ?? `Mesh ${index}`} has no layers; add_mesh_layer adds one.`,
     )
+  const bound = () =>
+    current()?.layers?.[layerAt] === layer ? layer : undefined
+  const stillBound = () => {
+    gone()
+    if (!bound())
+      throw new Error(
+        `Layer ${layerAt} of mesh ${index} is no longer the one this control was bound to. Bind it again.`,
+      )
+  }
+  if (name === 'frame') {
+    if (!view.setMeshLayerFrame4D)
+      throw new Error("This page's NiiVue cannot change a mesh layer's frame.")
+    const setFrame = view.setMeshLayerFrame4D.bind(view)
+    const last = Math.max(0, (layer.nFrame4D ?? 1) - 1)
+    return {
+      shape: 'number',
+      min: 0,
+      max: last,
+      step: 1,
+      read: () => {
+        const now = bound()
+        return now ? (now.frame4D ?? 0) : undefined
+      },
+      write: (value) => {
+        stillBound()
+        check(bind, 'number', value)
+        const frame = value as number
+        if (!Number.isInteger(frame) || frame < 0 || frame > last)
+          throw new Error(`${bind} takes a whole number, 0 to ${last}.`)
+        return setFrame(index, layerAt, frame)
+      },
+    }
+  }
   if (!view.setMeshLayerProperty)
     throw new Error("This page's NiiVue cannot change a mesh layer.")
   const setLayer = view.setMeshLayerProperty.bind(view)
-  const bound = () =>
-    current()?.layers?.[layerAt] === layer ? layer : undefined
   const { field, shape, range, colormaps } = LAYER_PROPS[name]
   const choices = colormaps ? colormapChoices(view, true) : undefined
   return {
@@ -839,16 +916,13 @@ function layerTarget(
       return value === undefined ? undefined : (value as ControlValue)
     },
     write: (value) => {
-      gone()
-      if (!bound())
-        throw new Error(
-          `Layer ${layerAt} of mesh ${index} is no longer the one this control was bound to. Bind it again.`,
-        )
+      stillBound()
       check(bind, shape, value)
       if (choices && !choices.includes(value as string))
         throw new Error(
           `${bind} takes one of the colormaps: ${choices.join(', ')}.`,
         )
+      windowFits(bind, field, value as number, layer)
       return setLayer(index, layerAt, { [field]: value } as MeshLayerUpdate)
     },
   }
@@ -1206,6 +1280,14 @@ export function bindControls(
       entry.last = target.read?.()
       view.drawScene()
     } catch (error) {
+      // The surface already shows the refused value; put back what NiiVue
+      // holds, or sync() would skip the control (its target never changed).
+      entry.last = target.read?.()
+      const shownNow =
+        control && entry.last !== undefined
+          ? shown(control, entry.last)
+          : undefined
+      if (shownNow !== undefined) surface.update(event.id, { value: shownNow })
       fail(error, event)
     }
   }

@@ -145,6 +145,19 @@ describe('DicomWebWsiSource', () => {
     )
   })
 
+  test('reads an unstated syntax as JPEG when the server refuses stored bytes', async () => {
+    serve(() => new Response(null, { status: 406 }))
+    const slide = await slideOf('bot', (o) => {
+      delete o['00020010']
+    })
+    const s = await DicomWebWsiSource.open(slide, { seriesUrl: SERIES })
+    expect(s.manifest.levels[0]?.codec).toBe('image/jpeg')
+    serve(() => part(JPEG))
+    const { level, tile } = firstTile(s)
+    expect(await s.fetchTileBytes(level, tile, '')).toEqual(JPEG)
+    expect(calls.at(-1)?.headers.Accept).toContain('image/jpeg')
+  })
+
   test('refuses a JPEG-LS tile the server transcoded', async () => {
     serve(() => part(JPEG))
     const s = await DicomWebWsiSource.open(await slideOf('mono12'), {

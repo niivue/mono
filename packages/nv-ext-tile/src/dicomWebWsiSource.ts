@@ -175,14 +175,16 @@ export class DicomWebWsiSource implements SlideTileSource {
       const frame = level.frames.frame[0]
       const inst = instances[i as number]
       if (!inst || inst.transferSyntax || frame === undefined) continue
-      const bytes = await firstPart(
-        await fetch(frameUrl(series, inst.id, frame), {
-          headers: { ...options.headers?.(), Accept: ANY_SYNTAX },
-          signal,
-        }),
-        'WSI frame',
-      )
-      const ts = sniffSyntax(bytes)
+      const response = await fetch(frameUrl(series, inst.id, frame), {
+        headers: { ...options.headers?.(), Accept: ANY_SYNTAX },
+        signal,
+      })
+      let ts: string
+      if (response.status === 406) {
+        // No stored bytes on offer: tiles then ask for image/jpeg, the old default.
+        await response.body?.cancel()
+        ts = '1.2.840.10008.1.2.4.50'
+      } else ts = sniffSyntax(await firstPart(response, 'WSI frame'))
       for (const k of level.instances)
         (instances[k] as typeof inst).transferSyntax = ts
     }

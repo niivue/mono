@@ -39,6 +39,8 @@ export interface ZarrSlideUrlOptions extends ZarrSlideOptions {
 
 // As TiffSlideSource: one decoded tile stays under 64 MiB of RGBA.
 const MAX_TILE_SIZE = 4096
+// As TiffSlideSource: bounds the manifest's tile list.
+const MAX_TILES = 1 << 21
 // Zarr metadata stays HTTP-cacheable; chunk reads do not (see fromUrl).
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
@@ -174,6 +176,21 @@ export class ZarrSlideSource implements SlideTileSource {
           `OME-Zarr slide: level ${i} has ${count} channels; ${rgb ? 'RGB needs 3' : `channel ${channel} is out of range`}`,
         )
     }
+    // Before any read or tile list: chunk shapes a tile can use, and a tile
+    // count the manifest can hold.
+    let tileCount = 0
+    for (const [i, arr] of src.arrays.entries()) {
+      const [tw, th] = [arr.chunks[xs], arr.chunks[ys]]
+      if (!(Number.isInteger(tw) && Number.isInteger(th) && tw > 0 && th > 0))
+        throw new Error(`OME-Zarr slide: level ${i} chunk ${tw}x${th} is invalid`)
+      if (Math.max(tw, th) > MAX_TILE_SIZE)
+        throw new Error(
+          `OME-Zarr slide: level ${i} chunk ${tw}x${th} exceeds ${MAX_TILE_SIZE}`,
+        )
+      tileCount += Math.ceil(arr.shape[xs] / tw) * Math.ceil(arr.shape[ys] / th)
+      if (tileCount > MAX_TILES)
+        throw new Error(`OME-Zarr slide: more than ${MAX_TILES} tiles`)
+    }
     const fixed = (dim: number, c: number | zarr.Slice, level: number) =>
       dim === indices.time
         ? t
@@ -236,10 +253,6 @@ export class ZarrSlideSource implements SlideTileSource {
           arr.chunks[xs],
           arr.chunks[ys],
         ]
-        if (Math.max(tileWidth, tileHeight) > MAX_TILE_SIZE)
-          throw new Error(
-            `OME-Zarr slide: level ${index} chunk ${tileWidth}x${tileHeight} exceeds ${MAX_TILE_SIZE}`,
-          )
         const columns = Math.ceil(width / tileWidth)
         const rows = Math.ceil(height / tileHeight)
         const tiles: NVSlideTileManifest[] = []

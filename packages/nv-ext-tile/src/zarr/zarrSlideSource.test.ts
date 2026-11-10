@@ -428,6 +428,31 @@ test('a channel missing from a coarser level is refused on open', async () => {
   )
 })
 
+test('invalid chunk shapes and too many tiles are refused before any read', async () => {
+  // Metadata only: 1 x 2^21 + 1 one-pixel chunks, never written.
+  const store: Store = new Map()
+  const root = zarr.root(store)
+  await zarr.create(root, {
+    attributes: { ome: { version: '0.5', multiscales: multiscale(['y', 'x'], 1) } },
+  })
+  await zarr.create(root.resolve('0'), {
+    shape: [1, 2 ** 21 + 1],
+    chunkShape: [1, 1],
+    dtype: 'uint8',
+  })
+  await expect(ZarrSlideSource.fromStore(store)).rejects.toThrow(
+    'more than 2097152 tiles',
+  )
+  // A zero chunk width would loop forever building the tile list.
+  const meta = JSON.parse(new TextDecoder().decode(store.get('/0/zarr.json')))
+  meta.shape = [1, 4]
+  meta.chunk_grid.configuration.chunk_shape = [1, 0]
+  store.set('/0/zarr.json', new TextEncoder().encode(JSON.stringify(meta)))
+  await expect(ZarrSlideSource.fromStore(store)).rejects.toThrow(
+    'level 0 chunk 0x1 is invalid',
+  )
+})
+
 test('an aborted tile is reported aborted, not failed', async () => {
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },

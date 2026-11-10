@@ -4,6 +4,7 @@ import type {
   NVSlideRangeStatus,
   SlideSourceHost,
 } from '@niivue/niivue'
+import type { Pool } from 'geotiff'
 import { fromArrayBuffer } from 'geotiff'
 import { TiffSlideSource } from './tiff'
 
@@ -457,6 +458,61 @@ describe('TiffSlideSource', () => {
     ctrl.abort()
     await expect(opening).rejects.toMatchObject({ name: 'AbortError' })
     expect(server.requests.length).toBeGreaterThan(1)
+  })
+
+  test('returns a zero-byte (absent) tile transparent without decoding', async () => {
+    const sparse: Level = {
+      width: 128,
+      height: 64,
+      tile: 64,
+      compression: 7,
+      photometric: 6,
+      tiles: [JPEG_TILE, new Uint8Array(0)],
+    }
+    const tiff = await fromArrayBuffer(writeTiff([sparse]))
+    let decodes = 0
+    const pool = {
+      decode: () => {
+        decodes++
+        throw new Error('decoder called')
+      },
+    } as unknown as Pool
+    const source = await TiffSlideSource.fromGeoTIFF(tiff, { pool })
+    const level = source.manifest.levels[0]
+    const absent = level?.tiles[1]
+    if (!level || !absent) throw new Error('missing tile')
+    const rgba = await source.fetchTileBytes(level, absent, 'empty')
+    expect(rgba.length).toBe(64 * 64 * 4)
+    expect(rgba.every((v) => v === 0)).toBe(true)
+    expect(decodes).toBe(0)
+  })
+
+  test('keeps a planar tile whose first sample alone is absent', async () => {
+    const planar: Level = {
+      width: 64,
+      height: 64,
+      tile: 64,
+      compression: 1,
+      photometric: 2,
+      // One tile per sample (red, green, blue); red absent.
+      tiles: [
+        new Uint8Array(0),
+        new Uint8Array(4096).fill(180),
+        new Uint8Array(4096).fill(90),
+      ],
+      edit: (entries) => {
+        const planarEntry = entries.find((e) => e[0] === 284)
+        if (planarEntry) planarEntry[3] = 2
+      },
+    }
+    const source = await TiffSlideSource.fromGeoTIFF(
+      await fromArrayBuffer(writeTiff([planar])),
+    )
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('missing tile')
+    const rgba = await source.fetchTileBytes(level, tile, 'planar')
+    expect(Array.from(rgba.slice(0, 4))).toEqual([0, 180, 90, 255])
   })
 
   test('decodes YCbCr JPEG tiles (a codec core NiiVue lacks)', async () => {

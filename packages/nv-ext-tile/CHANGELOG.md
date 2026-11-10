@@ -1,3 +1,35 @@
+## 1.0.0-rc.35 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.139
+
+## 1.0.0-rc.34 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** sniff DICOMweb levels concurrently, assume JPEG when the sniff is refused ([4e4bf398](https://github.com/niivue/mono/commit/4e4bf398))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.33 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** show absent TIFF tiles transparent ([cebb178b](https://github.com/niivue/mono/commit/cebb178b))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.32 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+
 ## 1.0.0-rc.31 (2026-11-09)
 
 ### Updated Dependencies

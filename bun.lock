@@ -216,7 +216,7 @@
     },
     "packages/niivue": {
       "name": "@niivue/niivue",
-      "version": "1.0.0-rc.137",
+      "version": "1.0.0-rc.139",
       "dependencies": {
         "cbor-x": "^1.6.0",
         "clipper2-ts": "^2.0.1-13",
@@ -232,7 +232,6 @@
         "@types/earcut": "^3.0.0",
         "@webgpu/types": "^0.1.69",
         "dicom-parser": "^1.8.21",
-        "geotiff": "^3.0.5",
         "http-server": "^14.1.1",
         "monocart-coverage-reports": "^3.2.0",
         "playwright": "1.64.1",
@@ -260,7 +259,7 @@
     },
     "packages/nv-ext-drawing": {
       "name": "@niivue/nv-ext-drawing",
-      "version": "1.0.0-rc.138",
+      "version": "1.0.0-rc.140",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",
@@ -273,7 +272,7 @@
     },
     "packages/nv-ext-image-processing": {
       "name": "@niivue/nv-ext-image-processing",
-      "version": "1.0.0-rc.138",
+      "version": "1.0.0-rc.140",
       "dependencies": {
         "gl-matrix": "^3.4.4",
         "nifti-reader-js": "^0.8.0",
@@ -290,7 +289,7 @@
     },
     "packages/nv-ext-niimath": {
       "name": "@niivue/nv-ext-niimath",
-      "version": "1.0.0-rc.133",
+      "version": "1.0.0-rc.135",
       "dependencies": {
         "@niivue/niimath": "^1.2.0",
       },
@@ -306,7 +305,7 @@
     },
     "packages/nv-ext-save-html": {
       "name": "@niivue/nv-ext-save-html",
-      "version": "1.0.0-rc.138",
+      "version": "1.0.0-rc.140",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "~5.8.3",
@@ -319,7 +318,7 @@
     },
     "packages/nv-ext-tile": {
       "name": "@niivue/nv-ext-tile",
-      "version": "1.0.0-rc.31",
+      "version": "1.0.0-rc.35",
       "dependencies": {
         "geotiff": "^3.0.5",
         "zarrita": "^0.7.3",
@@ -343,7 +342,7 @@
     },
     "packages/nv-mcp": {
       "name": "@niivue/nv-mcp",
-      "version": "1.0.0-rc.127",
+      "version": "1.0.0-rc.129",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.30.0",
         "zod": "^4.6.5",
@@ -367,7 +366,7 @@
     },
     "packages/nv-ohif": {
       "name": "@niivue/nv-ohif",
-      "version": "1.0.0-rc.144",
+      "version": "1.0.0-rc.148",
       "dependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
         "@niivue/nv-ext-tile": "workspace:^",
@@ -392,7 +391,7 @@
     },
     "packages/nv-react": {
       "name": "@niivue/nvreact",
-      "version": "1.0.0-rc.138",
+      "version": "1.0.0-rc.140",
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.6.1",
         "@niivue/niivue": "workspace:*",
@@ -416,7 +415,7 @@
     },
     "packages/nv-web-component": {
       "name": "@niivue/nv-web-component",
-      "version": "1.0.0-rc.135",
+      "version": "1.0.0-rc.137",
       "dependencies": {
         "lit": "^3.3.2",
       },
@@ -433,7 +432,7 @@
     },
     "packages/uikit": {
       "name": "@niivue/uikit",
-      "version": "1.0.0-rc.134",
+      "version": "1.0.0-rc.136",
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",

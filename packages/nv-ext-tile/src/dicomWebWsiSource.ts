@@ -114,8 +114,12 @@ async function readCapped(
   return out
 }
 
-/** The first part of a (multipart/related) response. */
-async function firstPart(
+/**
+ * The first part of a WADO-RS (multipart/related) response, or the whole body
+ * if it is not multipart. Throws on a non-OK status, an empty part or a body
+ * past 64 MB; `what` names the resource in those errors.
+ */
+export async function readFirstPart(
   response: Response,
   what: string,
 ): Promise<Uint8Array> {
@@ -126,6 +130,28 @@ async function firstPart(
   )[0]
   if (!part?.length) throw new Error(`empty ${what} body`)
   return part
+}
+
+// Statuses by which a server refuses the any-syntax Accept itself.
+const REFUSED_ACCEPT = new Set([400, 406, 415])
+
+/**
+ * A level's transfer syntax from one of its frames. A server that refuses
+ * untranscoded frames (400, 406, 415) gets JPEG Baseline, as nv-ohif assumed
+ * before; its tiles are then asked for as image/jpeg. Other statuses (auth,
+ * missing, server errors), aborts and network errors reject.
+ */
+async function sniffLevel(
+  url: string,
+  headers: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(url, { headers, signal })
+  if (REFUSED_ACCEPT.has(response.status)) {
+    await response.body?.cancel()
+    return '1.2.840.10008.1.2.4.50'
+  }
+  return sniffSyntax(await readFirstPart(response, 'WSI frame'))
 }
 
 /**
@@ -161,7 +187,7 @@ export class DicomWebWsiSource implements SlideTileSource {
 
   /**
    * The source for `slide`. A level whose metadata states no transfer syntax
-   * costs one frame request here, to read it from the bytes.
+   * costs one frame request here, all levels at once, to read it from the bytes.
    */
   static async open(
     slide: DicomJsonSlide,
@@ -170,22 +196,22 @@ export class DicomWebWsiSource implements SlideTileSource {
   ): Promise<DicomWebWsiSource> {
     const instances = slide.instances.map((i) => ({ ...i }))
     const series = seriesOf(options.seriesUrl)
-    for (const level of slide.levels) {
-      const i = level.frames.instance[0]
-      const frame = level.frames.frame[0]
-      const inst = instances[i as number]
-      if (!inst || inst.transferSyntax || frame === undefined) continue
-      const bytes = await firstPart(
-        await fetch(frameUrl(series, inst.id, frame), {
-          headers: { ...options.headers?.(), Accept: ANY_SYNTAX },
+    // Concurrent: first paint waits one round trip, not one per level.
+    await Promise.all(
+      slide.levels.map(async (level) => {
+        const i = level.frames.instance[0]
+        const frame = level.frames.frame[0]
+        const inst = instances[i as number]
+        if (!inst || inst.transferSyntax || frame === undefined) return
+        const ts = await sniffLevel(
+          frameUrl(series, inst.id, frame),
+          { ...options.headers?.(), Accept: ANY_SYNTAX },
           signal,
-        }),
-        'WSI frame',
-      )
-      const ts = sniffSyntax(bytes)
-      for (const k of level.instances)
-        (instances[k] as typeof inst).transferSyntax = ts
-    }
+        )
+        for (const k of level.instances)
+          (instances[k] as typeof inst).transferSyntax = ts
+      }),
+    )
     return new DicomWebWsiSource({ ...slide, instances }, options)
   }
 
@@ -234,7 +260,7 @@ export class DicomWebWsiSource implements SlideTileSource {
         signal,
       },
     )
-    const frame = await firstPart(response, 'WSI tile')
+    const frame = await readFirstPart(response, 'WSI tile')
     this.host?.addWireBytes(frame.byteLength)
     if (isJp2 && !isJpeg2000(frame))
       throw new Error('WSI tile is not JPEG 2000 (the server transcoded it)')
@@ -265,7 +291,7 @@ export class DicomWebWsiSource implements SlideTileSource {
       },
       signal,
     })
-    return firstPart(response, 'ICC profile')
+    return readFirstPart(response, 'ICC profile')
   }
 }
 

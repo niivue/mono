@@ -23,12 +23,13 @@ export interface DicomWebWsiOptions {
   headers?: () => Record<string, string>
   /**
    * Fetches ICC bulk data by its resolved URL (e.g. OHIF's
-   * dataSource.retrieve.bulkDataURI); without it, fetch with `headers`.
+   * dataSource.retrieve.bulkDataURI), for URLs on the series' origin only;
+   * otherwise, without it, or when it resolves undefined or empty, fetch.
    */
   retrieveBulkData?: (
     url: string,
     signal?: AbortSignal,
-  ) => Promise<ArrayBuffer | Uint8Array>
+  ) => Promise<ArrayBuffer | Uint8Array | undefined>
 }
 
 /** SOI then the first frame marker: 0xf7 (SOF55) is JPEG-LS, 0xc0-0xcf JPEG; undefined otherwise. */
@@ -75,14 +76,15 @@ function sniffSyntax(frame: Uint8Array): string {
   throw new Error('WSI frame is not JPEG, JPEG 2000 or JPEG-LS')
 }
 
-/** A response body, refused past MAX_BODY whether or not Content-Length says so. */
+/** A response body, refused past `max` whether or not Content-Length says so. */
 async function readCapped(
   response: Response,
   what: string,
+  max: number,
 ): Promise<Uint8Array> {
   const refused = !response.ok
     ? `${what} HTTP ${response.status}`
-    : Number(response.headers.get('content-length')) > MAX_BODY
+    : Number(response.headers.get('content-length')) > max
       ? `${what} body too large`
       : undefined
   if (refused) {
@@ -98,7 +100,7 @@ async function readCapped(
     const { done, value } = await reader.read()
     if (done) break
     n += value.length
-    if (n > MAX_BODY) {
+    if (n > max) {
       await reader.cancel()
       throw new Error(`${what} body too large`)
     }
@@ -117,13 +119,14 @@ async function readCapped(
 /**
  * The first part of a WADO-RS (multipart/related) response, or the whole body
  * if it is not multipart. Throws on a non-OK status, an empty part or a body
- * past 64 MB; `what` names the resource in those errors.
+ * past `max` bytes (64 MB by default); `what` names the resource in those errors.
  */
 export async function readFirstPart(
   response: Response,
   what: string,
+  max = MAX_BODY,
 ): Promise<Uint8Array> {
-  const body = await readCapped(response, what)
+  const body = await readCapped(response, what, max)
   const part = parseMultipartRelated(
     body,
     response.headers.get('content-type') ?? '',
@@ -276,14 +279,15 @@ export class DicomWebWsiSource implements SlideTileSource {
     if (!icc?.bulkDataURI) return null
     const url = this.bulkUrl(icc.bulkDataURI)
     const { retrieveBulkData, headers } = this.options
-    if (retrieveBulkData) {
-      const data = await retrieveBulkData(url, signal)
+    // Auth goes only to the server it is for, not to a bulk host elsewhere:
+    // the host's retrieval carries its auth, so it gets same-origin URLs only.
+    const sameOrigin = new URL(url).origin === this.series.origin
+    const data = sameOrigin ? await retrieveBulkData?.(url, signal) : undefined
+    if (data?.byteLength) {
       if (data.byteLength > MAX_BODY)
         throw new Error(`ICC profile of ${data.byteLength} bytes`)
       return data instanceof Uint8Array ? data : new Uint8Array(data)
     }
-    // Auth goes only to the server it is for, not to a bulk host elsewhere.
-    const sameOrigin = new URL(url).origin === this.series.origin
     const response = await fetch(url, {
       headers: {
         ...(sameOrigin ? headers?.() : {}),

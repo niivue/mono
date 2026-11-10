@@ -248,7 +248,8 @@ Support boundary:
     sets the slide's display window, which defaults to the full BitsStored range.
     MONOCHROME1 is inverted after windowing. Colour above 8 bits is scaled to 8 by BitsStored.
   - Colour slides are colour-managed: the optical path's ICC profile (inline, or fetched
-    from its bulk-data URL) is applied through the registered ICC transform
+    from its bulk-data URL through the data source's `retrieve.bulkDataURI` when on the series origin,
+    else directly) is applied through the registered ICC transform
     (`registerDcm2niixDecoders` registers dcm2niix's), unless its ColorSpace is SRGB.
 - **Tile-cache limit:** when the requested level's visible tiles exceed NVSlide's tile cache,
   the viewer draws the finest coarser level that fits and shows a brief note (zoom in for full

@@ -93,8 +93,16 @@ export class ZarrSlideSource implements SlideTileSource {
       // Chromium's HTTP cache served truncated 206 bodies to concurrent
       // identical Range reads of a v3 shard (plan-tile punch list #10).
       const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
+      // While opening, the open signal cancels metadata and data-range reads.
+      const signal =
+        !source && options.signal
+          ? AbortSignal.any([request.signal, options.signal])
+          : request.signal
       const response = await fetchImpl(
-        chunk ? new Request(request, { cache: 'no-store' }) : request,
+        new Request(request, {
+          signal,
+          ...(chunk ? { cache: 'no-store' } : {}),
+        }),
       )
       // A HEAD (zarrita's shard-index probe) states the whole file's length.
       if (request.method !== 'HEAD')
@@ -107,7 +115,7 @@ export class ZarrSlideSource implements SlideTileSource {
       .replace(/[?#].*$/, '')
       .replace(/\/+$/, '')
       .replace(/^.*\//, '')
-    // ponytail: open is not cancelled on the wire, only checked after.
+    options.signal?.throwIfAborted()
     source = await ZarrSlideSource.fromStore(store, { id: name, ...options })
     options.signal?.throwIfAborted()
     return source

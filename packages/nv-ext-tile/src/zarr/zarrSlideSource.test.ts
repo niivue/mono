@@ -477,6 +477,49 @@ test('levels not listed finest first are refused', async () => {
   expect((await open([4, 2])).manifest.levels[1].downsample).toBe(2)
 })
 
+test('aborting fromUrl cancels its requests; tile reads after open keep their own signal', async () => {
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [{ shape: [1, 2], chunks: [1, 2], data: Uint8Array.from([1, 2]) }],
+    'uint8',
+  )
+  const { fetchImpl } = fakeFetch((p) => store.get(p.slice('/s.zarr'.length)))
+  const calls: Request[] = []
+  const spy = (r: Request) => {
+    calls.push(r)
+    return fetchImpl(r)
+  }
+  await expect(
+    ZarrSlideSource.fromUrl('http://h/s.zarr', {
+      fetch: spy,
+      signal: AbortSignal.abort(),
+    }),
+  ).rejects.toThrow()
+  expect(calls.length).toBe(0)
+  // Abort during open: the first request already carries an aborted signal.
+  const ac = new AbortController()
+  await expect(
+    ZarrSlideSource.fromUrl('http://h/s.zarr', {
+      fetch: (r) => {
+        ac.abort()
+        calls.push(r)
+        return fetchImpl(r)
+      },
+      signal: ac.signal,
+    }),
+  ).rejects.toThrow()
+  expect(calls[0]?.signal.aborted).toBe(true)
+  // Aborting after open leaves tile reads alone.
+  const late = new AbortController()
+  const source = await ZarrSlideSource.fromUrl('http://h/s.zarr', {
+    fetch: spy,
+    signal: late.signal,
+  })
+  late.abort()
+  const [l0] = source.manifest.levels
+  expect(Array.from((await tileBytes(source, l0))[0])).toEqual([1, 2])
+})
+
 test('an aborted tile is reported aborted, not failed', async () => {
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },

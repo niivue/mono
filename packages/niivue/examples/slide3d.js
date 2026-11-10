@@ -115,13 +115,15 @@ async function main() {
 
   // Draw mode (key "d"): intercept pointer events in the capture phase so they
   // paint the slide instead of orbiting; "u" undoes, "c" clears.
+  // nv.canvas, not `canvas`: a WebGPU-to-WebGL2 fallback swaps in a new element.
+  const target = nv.canvas
   let drawMode = false
   let drawing = false
   const css = (e) => {
-    const r = canvas.getBoundingClientRect()
+    const r = target.getBoundingClientRect()
     return [e.clientX - r.left, e.clientY - r.top]
   }
-  canvas.addEventListener(
+  target.addEventListener(
     'pointerdown',
     (e) => {
       if (!drawMode) return
@@ -132,7 +134,7 @@ async function main() {
     },
     true,
   )
-  canvas.addEventListener(
+  target.addEventListener(
     'pointermove',
     (e) => {
       if (!drawMode || !drawing) return

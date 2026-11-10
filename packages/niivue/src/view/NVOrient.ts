@@ -214,3 +214,10 @@ export function rgbaTextureKey(nvimage: NVImage): string {
     mod ? objectId(mod) : 0,
   ].join('|')
 }
+
+export function dimensionsMatch(
+  a: readonly number[],
+  b: readonly number[],
+): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}

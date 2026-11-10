@@ -348,6 +348,31 @@ test('non-finite samples do not widen the quantize range', async () => {
   ])
 })
 
+test('the data range samples the centre, not the whole single-level image', async () => {
+  // 4096 wide in 512-wide chunks: the 1024-wide centre is chunks 3 and 4.
+  const data = ramp(4096, (i) =>
+    i >= 1536 && i < 2560 ? 1000 + i - 1536 : 60000,
+  )
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [{ shape: [1, 4096], chunks: [1, 512], data }],
+    'uint16',
+  )
+  const read: string[] = []
+  const spy = {
+    get: (key: string) => {
+      read.push(key)
+      return store.get(key)
+    },
+  }
+  const source = await ZarrSlideSource.fromStore(spy)
+  expect(source.window).toEqual({ calMin: 1000, calMax: 2023 })
+  expect(read.filter((k) => k.includes('/c/')).sort()).toEqual([
+    '/0/c/0/3',
+    '/0/c/0/4',
+  ])
+})
+
 test('an aborted tile is reported aborted, not failed', async () => {
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },

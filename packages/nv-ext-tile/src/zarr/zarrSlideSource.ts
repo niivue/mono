@@ -190,7 +190,7 @@ export class ZarrSlideSource implements SlideTileSource {
         omero.max !== null &&
         omero.max > omero.min
           ? [omero.min, omero.max]
-          : await dataRange(src, select)
+          : await dataRange(src, select, ys, xs)
       quantize = { lo, scale: hi > lo ? 65535 / (hi - lo) : 0 }
     }
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
@@ -201,7 +201,7 @@ export class ZarrSlideSource implements SlideTileSource {
     const [calMin, calMax] = omero
       ? [toStored(omero.start), toStored(omero.end)]
       : dtype === 'uint16'
-        ? await dataRange(src, select)
+        ? await dataRange(src, select, ys, xs)
         : [0, 2 ** bitsStored - 1]
     // Degenerate (constant or all-NaN data): setWindow would refuse it.
     const window = rgb
@@ -374,8 +374,12 @@ function asBytes(a: Uint8Array | Uint16Array): Uint8Array {
   return new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
 }
 
-// ponytail: reads the whole coarsest level, the full image for a single-level
-// store; sample a few chunks if such stores turn up.
+// Samples at most RANGE_SPAN x RANGE_SPAN at the centre of the coarsest level,
+// so a large single-level store is not read whole on open.
+// shortcut: a range off-centre (or outside the sample) clamps; sample spread
+// chunks if that shows up on real slides.
+const RANGE_SPAN = 1024
+
 async function dataRange(
   src: OmeZarrSource,
   select: (
@@ -383,11 +387,21 @@ async function dataRange(
     x: zarr.Slice,
     level: number,
   ) => (number | zarr.Slice | null)[],
+  ys: number,
+  xs: number,
 ): Promise<[number, number]> {
   const last = src.arrays.length - 1
   const coarse = src.arrays[last]
+  const centre = (n: number) => {
+    const k = Math.min(n, RANGE_SPAN)
+    const a = Math.floor((n - k) / 2)
+    return zarr.slice(a, a + k)
+  }
   const data = (
-    await zarr.get(coarse, select(zarr.slice(null), zarr.slice(null), last))
+    await zarr.get(
+      coarse,
+      select(centre(coarse.shape[ys]), centre(coarse.shape[xs]), last),
+    )
   ).data as ArrayLike<number>
   let lo = Number.POSITIVE_INFINITY
   let hi = Number.NEGATIVE_INFINITY

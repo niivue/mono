@@ -312,8 +312,10 @@ export class ZarrSlideSource implements SlideTileSource {
         ? Array.from({ length: src.channelCount }, (_, c) => c)
         : [channel]
     // ponytail: every channel's range is read on open, inactive ones too, so
-    // showing one later has its window.
-    const displays = await Promise.all(shown.map(display))
+    // showing one later has its window. One channel at a time keeps open at
+    // RANGE_READS chunk reads in flight whatever the channel count.
+    const displays: Awaited<ReturnType<typeof display>>[] = []
+    for (const c of shown) displays.push(await display(c))
     const quantize: (Quantize | null)[] = []
     for (const [i, c] of shown.entries()) quantize[c] = displays[i].quantize
     const window = rgb || multi ? null : displays[0].window

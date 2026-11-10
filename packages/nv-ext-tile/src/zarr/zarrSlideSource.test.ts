@@ -605,6 +605,38 @@ test('the data range reads a few chunks at a time and stops after a failure', as
   )
 })
 
+test('a multi-channel store reads its channel ranges a few chunks at a time', async () => {
+  // 3 uint16 channels of 64 x 64 in 16 x 16 chunks, no omero windows: each
+  // channel's range samples all 16 of its chunks.
+  const store = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 1) },
+    [
+      {
+        shape: [3, 64, 64],
+        chunks: [1, 16, 16],
+        data: ramp(3 * 4096, (i) => i),
+      },
+    ],
+    'uint16',
+  )
+  let inFlight = 0
+  let peak = 0
+  let reads = 0
+  const source = await ZarrSlideSource.fromStore({
+    get: async (key: string) => {
+      if (!key.includes('/c/')) return store.get(key)
+      reads++
+      peak = Math.max(peak, ++inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight--
+      return store.get(key)
+    },
+  })
+  expect(source.manifest.channelInfo).toHaveLength(3)
+  expect(reads).toBe(48)
+  expect(peak).toBe(4)
+})
+
 test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {
   // 1 x 8192 in 512-wide chunks: the sampled chunks (0, 5, 10, 15) hold
   // `fill`; unsampled chunk 1 holds `values` in turn.

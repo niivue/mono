@@ -480,8 +480,11 @@ async function dataRange(
   const cells = spread(ys).flatMap((y) => spread(xs).map((x) => [y, x]))
   let lo = Number.POSITIVE_INFINITY
   let hi = Number.NEGATIVE_INFINITY
-  for (const [y, x] of cells) {
-    const { data } = await zarr.get(coarse, select(y, x, last))
+  // At most 16 small reads; in parallel to save remote round trips.
+  const reads = await Promise.all(
+    cells.map(([y, x]) => zarr.get(coarse, select(y, x, last))),
+  )
+  for (const { data } of reads) {
     for (const v of data as ArrayLike<number> & Iterable<number>) {
       if (!Number.isFinite(v)) continue
       if (v < lo) lo = v

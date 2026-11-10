@@ -373,6 +373,20 @@ test('the data range samples the centre, not the whole single-level image', asyn
   ])
 })
 
+test('a flat centre sample falls back to the whole level', async () => {
+  // int16, 4096 wide: zero at the centre, 100 in the leftmost chunk.
+  const data = Int16Array.from({ length: 4096 }, (_, i) => (i < 512 ? 100 : 0))
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [{ shape: [1, 4096], chunks: [1, 512], data }],
+    'int16',
+  )
+  const source = await ZarrSlideSource.fromStore(store)
+  const [l0] = source.manifest.levels
+  const [first] = await tileBytes(source, l0)
+  expect(Math.max(...u16(first))).toBe(65535)
+})
+
 test('an aborted tile is reported aborted, not failed', async () => {
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },

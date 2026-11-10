@@ -376,6 +376,7 @@ function asBytes(a: Uint8Array | Uint16Array): Uint8Array {
 
 // Samples at most RANGE_SPAN x RANGE_SPAN at the centre of the coarsest level,
 // so a large single-level store is not read whole on open.
+// A flat sample falls back to the whole level.
 // shortcut: a range off-centre (or outside the sample) clamps; sample spread
 // chunks if that shows up on real slides.
 const RANGE_SPAN = 1024
@@ -397,19 +398,24 @@ async function dataRange(
     const a = Math.floor((n - k) / 2)
     return zarr.slice(a, a + k)
   }
-  const data = (
-    await zarr.get(
-      coarse,
-      select(centre(coarse.shape[ys]), centre(coarse.shape[xs]), last),
-    )
-  ).data as ArrayLike<number>
-  let lo = Number.POSITIVE_INFINITY
-  let hi = Number.NEGATIVE_INFINITY
-  for (let i = 0; i < data.length; i++) {
-    const v = data[i]
-    if (!Number.isFinite(v)) continue
-    if (v < lo) lo = v
-    if (v > hi) hi = v
+  const rangeOf = async (y: zarr.Slice, x: zarr.Slice) => {
+    const { data } = await zarr.get(coarse, select(y, x, last))
+    let lo = Number.POSITIVE_INFINITY
+    let hi = Number.NEGATIVE_INFINITY
+    for (const v of data as ArrayLike<number> & Iterable<number>) {
+      if (!Number.isFinite(v)) continue
+      if (v < lo) lo = v
+      if (v > hi) hi = v
+    }
+    return [lo, hi] as [number, number]
   }
-  return [lo, hi]
+  const range = await rangeOf(
+    centre(coarse.shape[ys]),
+    centre(coarse.shape[xs]),
+  )
+  const cropped = coarse.shape[ys] > RANGE_SPAN || coarse.shape[xs] > RANGE_SPAN
+  // A flat centre (blank glass) says nothing about the rest: read it all.
+  return range[1] > range[0] || !cropped
+    ? range
+    : rangeOf(zarr.slice(null), zarr.slice(null))
 }

@@ -177,7 +177,7 @@ const slide = NVSlide.fromSource(source)
 if (source.window) slide.setWindow(source.window.calMin, source.window.calMax) // NVSlide does not read the window from the source
 ```
 
-Three uint8 channels show as RGB; any other store shows one channel in grey, windowed from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
+Three uint8 channels show as RGB; any other store shows one channel in grey, windowed from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
 
 Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 

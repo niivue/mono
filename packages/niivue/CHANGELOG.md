@@ -1,3 +1,13 @@
+## 1.0.0-rc.151 (2026-11-10)
+
+### Features
+
+- **demo-ext-tile:** anti-aliasing toggle works under WebGPU ([#643](https://github.com/niivue/mono/issues/643))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.150 (2026-11-10)
 
 ### Features

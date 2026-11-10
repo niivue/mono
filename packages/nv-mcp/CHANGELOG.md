@@ -1,3 +1,13 @@
+## 1.0.0-rc.136 (2026-11-10)
+
+### Fixes
+
+- **nv-mcp:** mesh-layer bindings and refused control writes ([8485c4fa](https://github.com/niivue/mono/commit/8485c4fa))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.135 (2026-11-10)
 
 ### Features

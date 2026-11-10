@@ -348,14 +348,12 @@ test('non-finite samples do not widen the quantize range', async () => {
   ])
 })
 
-test('the data range samples the centre, not the whole single-level image', async () => {
-  // 4096 wide in 512-wide chunks: the 1024-wide centre is chunks 3 and 4.
-  const data = ramp(4096, (i) =>
-    i >= 1536 && i < 2560 ? 1000 + i - 1536 : 60000,
-  )
+test('the data range samples a bounded grid of chunks, not the whole image', async () => {
+  // 1 x 8192 in 512-wide chunks (16): a grid of 4 spread chunks is read.
+  const data = ramp(8192, (i) => (i < 512 ? 100 + i : 50))
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },
-    [{ shape: [1, 4096], chunks: [1, 512], data }],
+    [{ shape: [1, 8192], chunks: [1, 512], data }],
     'uint16',
   )
   const read: string[] = []
@@ -366,25 +364,28 @@ test('the data range samples the centre, not the whole single-level image', asyn
     },
   }
   const source = await ZarrSlideSource.fromStore(spy)
-  expect(source.window).toEqual({ calMin: 1000, calMax: 2023 })
+  // Chunk 0 is 512 wide, under RANGE_SPAN, so it is read whole.
+  expect(source.window).toEqual({ calMin: 50, calMax: 611 })
   expect(read.filter((k) => k.includes('/c/')).sort()).toEqual([
-    '/0/c/0/3',
-    '/0/c/0/4',
+    '/0/c/0/0',
+    '/0/c/0/10',
+    '/0/c/0/15',
+    '/0/c/0/5',
   ])
 })
 
-test('a flat centre sample falls back to the whole level', async () => {
-  // int16, 4096 wide: zero at the centre, 100 in the leftmost chunk.
-  const data = Int16Array.from({ length: 4096 }, (_, i) => (i < 512 ? 100 : 0))
+test('a wide chunk is sampled from its middle, at most RANGE_SPAN wide', async () => {
+  // One 4096-wide chunk: values outside the middle 1024 are not seen.
+  const data = ramp(4096, (i) =>
+    i >= 1536 && i < 2560 ? 1000 + i - 1536 : 60000,
+  )
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },
-    [{ shape: [1, 4096], chunks: [1, 512], data }],
-    'int16',
+    [{ shape: [1, 4096], chunks: [1, 4096], data }],
+    'uint16',
   )
   const source = await ZarrSlideSource.fromStore(store)
-  const [l0] = source.manifest.levels
-  const [first] = await tileBytes(source, l0)
-  expect(Math.max(...u16(first))).toBe(65535)
+  expect(source.window).toEqual({ calMin: 1000, calMax: 2023 })
 })
 
 test('a timepoint missing from a coarser level is refused on open', async () => {

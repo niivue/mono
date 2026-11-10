@@ -53,7 +53,8 @@ type Quantize = { lo: number; scale: number }
  * fluorescence included (pass `channel` for one; the milestone-14 channel API
  * will tell them apart); otherwise one channel's samples go to NVSlide as `raw-gray`, windowed like
  * DICOM MONOCHROME. uint8/uint16 pass through; other dtypes are quantized to
- * uint16 over the omero min..max, else the coarsest level's data range.
+ * uint16 over the omero min..max, else an approximate data range sampled from
+ * the coarsest level.
  * A store with z or t > 1 is refused unless {@link ZarrSlideOptions} picks
  * the plane. NVSlide does not read a window from a source: apply
  * {@link window} with `slide.setWindow`.
@@ -243,7 +244,7 @@ export class ZarrSlideSource implements SlideTileSource {
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
     const toStored = (v: number) =>
       quantize ? (v - quantize.lo) * quantize.scale : v
-    // uint16 without a window: the coarsest level's range, so 12-bit data is
+    // uint16 without a window: the sampled data range, so 12-bit data is
     // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
     const [calMin, calMax] = omero
       ? [toStored(omero.start), toStored(omero.end)]
@@ -417,11 +418,11 @@ function asBytes(a: Uint8Array | Uint16Array): Uint8Array {
   return new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
 }
 
-// Samples at most RANGE_SPAN x RANGE_SPAN at the centre of the coarsest level,
-// so a large single-level store is not read whole on open.
-// A flat sample falls back to the whole level.
-// shortcut: a range off-centre (or outside the sample) clamps; sample spread
-// chunks if that shows up on real slides.
+// An approximate data range: a RANGE_GRID x RANGE_GRID grid of chunks spread
+// over the coarsest level, at most RANGE_SPAN square from the middle of each,
+// so open reads at most RANGE_GRID^2 chunks whatever the store's size. Values
+// outside the sample clamp; a valid omero window is preferred over this.
+const RANGE_GRID = 4
 const RANGE_SPAN = 1024
 
 async function dataRange(
@@ -436,29 +437,31 @@ async function dataRange(
 ): Promise<[number, number]> {
   const last = src.arrays.length - 1
   const coarse = src.arrays[last]
-  const centre = (n: number) => {
-    const k = Math.min(n, RANGE_SPAN)
-    const a = Math.floor((n - k) / 2)
-    return zarr.slice(a, a + k)
+  const spread = (dim: number) => {
+    const [n, c] = [coarse.shape[dim], coarse.chunks[dim]]
+    const count = Math.ceil(n / c)
+    const starts = new Set<number>()
+    for (let i = 0; i < RANGE_GRID; i++)
+      starts.add(
+        Math.max(0, Math.round((i * (count - 1)) / (RANGE_GRID - 1))) * c,
+      )
+    return [...starts].map((a) => {
+      const len = Math.min(c, n - a)
+      const k = Math.min(len, RANGE_SPAN)
+      const b = a + Math.floor((len - k) / 2)
+      return zarr.slice(b, b + k)
+    })
   }
-  const rangeOf = async (y: zarr.Slice, x: zarr.Slice) => {
+  const cells = spread(ys).flatMap((y) => spread(xs).map((x) => [y, x]))
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  for (const [y, x] of cells) {
     const { data } = await zarr.get(coarse, select(y, x, last))
-    let lo = Number.POSITIVE_INFINITY
-    let hi = Number.NEGATIVE_INFINITY
     for (const v of data as ArrayLike<number> & Iterable<number>) {
       if (!Number.isFinite(v)) continue
       if (v < lo) lo = v
       if (v > hi) hi = v
     }
-    return [lo, hi] as [number, number]
   }
-  const range = await rangeOf(
-    centre(coarse.shape[ys]),
-    centre(coarse.shape[xs]),
-  )
-  const cropped = coarse.shape[ys] > RANGE_SPAN || coarse.shape[xs] > RANGE_SPAN
-  // A flat centre (blank glass) says nothing about the rest: read it all.
-  return range[1] > range[0] || !cropped
-    ? range
-    : rangeOf(zarr.slice(null), zarr.slice(null))
+  return [lo, hi]
 }

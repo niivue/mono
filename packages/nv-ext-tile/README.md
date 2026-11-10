@@ -160,11 +160,13 @@ const slide = NVSlide.fromSource(source)
 ## OME-Zarr
 
 ```ts
-import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
 
 await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one whole level
-await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
+await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the volume is removed
 ```
+
+To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running.
 
 Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 

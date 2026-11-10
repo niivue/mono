@@ -109,6 +109,7 @@
       "dependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
+        "@niivue/nv-ext-tile": "workspace:*",
         "@niivue/nv-mcp": "workspace:*",
         "@niivue/uikit": "workspace:*",
         "nifti-reader-js": "^0.8.0",

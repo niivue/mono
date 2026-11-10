@@ -109,6 +109,15 @@ describe('core tool schemas', () => {
       'tab',
       'url',
     ])
+    expect(required('load_ome_zarr')).toEqual(['url'])
+    expect(properties('load_ome_zarr').sort()).toEqual([
+      'channel',
+      'level',
+      'stream',
+      'tab',
+      'timepoint',
+      'url',
+    ])
     // Every tool a page answers takes the tab to ask; the others do not.
     for (const name of Object.keys(CORE_SCHEMAS)) {
       const asksAPage = !['list_tabs', 'use_tab', 'new_tab'].includes(name)

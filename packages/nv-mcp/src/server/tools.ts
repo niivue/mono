@@ -92,6 +92,43 @@ export const CORE_SCHEMAS = {
         'Whether the volume is in MNI space, so an atlas applies. Guessed from the name otherwise.',
       ),
   },
+  load_ome_zarr: {
+    ...TAB_ARG,
+    url: z
+      .string()
+      .min(1)
+      .describe(
+        'Where the OME-Zarr store is: an http(s) address the page can fetch.',
+      ),
+    level: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'Pyramid level to load whole, 0 the finest; the finest that fits the budget otherwise. Ignored when streaming.',
+      ),
+    channel: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'One channel to show; every channel otherwise (streaming shows the first).',
+      ),
+    timepoint: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe('The timepoint of a time series; the first otherwise.'),
+    stream: z
+      .boolean()
+      .optional()
+      .describe(
+        'Stream the store brick by brick, finer near the crosshair, instead of loading one level whole. For stores too large to load.',
+      ),
+  },
   add_overlay: {
     ...TAB_ARG,
     url: z
@@ -697,6 +734,24 @@ export function registerCoreTools(
         tab,
         lead: (r) =>
           `Loaded ${(r as { name?: string })?.name ?? 'the volume'}.`,
+      }),
+  )
+
+  server.registerTool(
+    'load_ome_zarr',
+    {
+      title: 'Load an OME-Zarr store',
+      description:
+        'Loads an OME-Zarr (OME-NGFF) microscopy store into the page, replacing what is shown: one pyramid ' +
+        'level whole (each channel a volume), or, with `stream`, streamed brick by brick for stores too large ' +
+        'to load. Reports the name, how many volumes are shown and the extent in world units. A page that ' +
+        'did not provide the OME-Zarr loaders declines.',
+      inputSchema: strict(CORE_SCHEMAS.load_ome_zarr),
+    },
+    async ({ tab, ...params }) =>
+      context.answer('load_ome_zarr', params, {
+        tab,
+        lead: (r) => `Loaded ${(r as { name?: string })?.name ?? 'the store'}.`,
       }),
   )
 

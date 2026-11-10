@@ -263,6 +263,24 @@ describe('openOmeZarr level selection', () => {
     )
     await expect(outage.get('/zarr.json')).rejects.toThrow()
   })
+
+  test('a ranged read answered 200 is rejected; plain GET and HEAD pass', async () => {
+    const methods: string[] = []
+    // A server that ignores Range: every answer is the whole file, 200.
+    const store = omeZarrFetchStore('http://x/s', async (request) => {
+      methods.push(request.method)
+      return new Response(new Uint8Array(64))
+    })
+    expect((await store.get('/zarr.json'))?.length).toBe(64)
+    await expect(
+      store.getRange('/0/c/0/0', { offset: 0, length: 8 }),
+    ).rejects.toThrow('ignored the Range request')
+    // The suffix form HEADs first (zarrita's length probe), then ranges.
+    await expect(
+      store.getRange('/0/c/0/0', { suffixLength: 8 }),
+    ).rejects.toThrow('ignored the Range request')
+    expect(methods).toContain('HEAD')
+  })
 })
 
 describe('omeZarrVolumesFrom', () => {

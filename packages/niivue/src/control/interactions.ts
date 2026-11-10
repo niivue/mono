@@ -1,5 +1,6 @@
 import type { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
+import { annotationDelta } from '@/annotation/delta'
 import {
   shouldAppendMultiClickPoint,
   shouldStartFreshMultiClickContour,
@@ -310,13 +311,17 @@ function commitAnnotation(
   ann: VectorAnnotation,
   mergesOverlaps: boolean,
 ): void {
+  const before = ctrl.model.annotations
   ctrl.model.annotations = Annotation.storeAnnotation(
-    ctrl.model.annotations,
+    before,
     ann,
     mergesOverlaps,
   )
   ctrl.emit('annotationAdded', { annotation: ann })
-  ctrl.emit('annotationChanged', { action: 'draw' })
+  ctrl.emit('annotationChanged', {
+    action: 'draw',
+    ...annotationDelta(before, ctrl.model.annotations),
+  })
 }
 
 // Commit the finished bidirectional measurement.
@@ -1756,7 +1761,12 @@ export function initInteraction(ctrl: NiiVue): void {
                 ann.stats =
                   Annotation.computeAnnotationStats(ann, vol) ?? undefined
             }
-            ctrl.emit('annotationChanged', { action: 'resize' })
+            ctrl.emit('annotationChanged', {
+              action: 'resize',
+              added: [],
+              updated: [ann.id],
+              removed: [],
+            })
           }
         }
         ctrl._resizingControlPoint = -1
@@ -1862,6 +1872,7 @@ export function initInteraction(ctrl: NiiVue): void {
           if (cfg.isErasing) {
             // Commit the erase preview (already computed during pointermove)
             const preview = ctrl.model._annotationErasePreview
+            const beforeErase = ctrl.model.annotations
             if (preview) {
               // An erased measurement re-measures what is left (#115); the
               // preview keeps untouched annotations by identity.
@@ -1881,7 +1892,10 @@ export function initInteraction(ctrl: NiiVue): void {
                   : ann,
               )
             }
-            ctrl.emit('annotationChanged', { action: 'erase' })
+            ctrl.emit('annotationChanged', {
+              action: 'erase',
+              ...annotationDelta(beforeErase, ctrl.model.annotations),
+            })
           } else {
             const usePolygonMode = cfg.brushRadius <= 1
             let polygons: PolygonWithHoles[] = []

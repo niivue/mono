@@ -213,7 +213,17 @@ function mergeAnnotations(
         result.push(ann)
       }
     } else {
-      // Different label: cut new shape from existing
+      // Different label: cut new shape from existing. An untouched annotation
+      // keeps its identity, so change events do not report it as updated.
+      const touches = ann.polygons.some((existPoly) =>
+        newAnnotation.polygons.some((newPoly) =>
+          _clipperIntersects(existPoly, newPoly),
+        ),
+      )
+      if (!touches) {
+        result.push(ann)
+        continue
+      }
       let cutPolygons: PolygonWithHoles[] = ann.polygons
       for (const newPoly of newAnnotation.polygons) {
         const nextCut: PolygonWithHoles[] = []

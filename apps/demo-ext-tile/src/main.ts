@@ -60,11 +60,11 @@ function reloadWith(name: string, value: string): void {
 backendSelect.onchange = () => reloadWith('backend', backendSelect.value)
 aaToggle.onchange = () => reloadWith('aa', aaToggle.checked ? 'on' : 'off')
 
-// WebGPU unless ?backend=webgl2 or no adapter; SlideRendererGPU has no MSAA.
+// WebGPU unless ?backend=webgl2 or no adapter.
 const gpu =
   params.get('backend') === 'webgl2'
     ? null
-    : await SlideRendererGPU.create(canvas).catch((err) => {
+    : await SlideRendererGPU.create(canvas, { antialias }).catch((err) => {
         console.warn('WebGPU unavailable, using WebGL2', err)
         return null
       })
@@ -83,8 +83,7 @@ if (renderer instanceof SlideRenderer) {
   renderer.init(gl)
 }
 backendSelect.value = gpu ? 'webgpu' : 'webgl2'
-aaToggle.checked = antialias && !gpu
-aaToggle.disabled = !!gpu
+aaToggle.checked = antialias
 // HiDPI draws at the display's pixel ratio; it is disabled on a 1x display and
 // re-checked when the ratio changes (another monitor, browser zoom).
 function watchPixelRatio(): void {
@@ -175,7 +174,7 @@ function updateHud(s: NVSlideScreen): void {
         : 'fixed'
   hud.textContent = [
     `${slide.name}: ${slide.manifest.levels.length} levels${slide.colorLut ? `, ICC profile${slide.colorManagement ? '' : ' (off)'}` : ''}`,
-    `backend   ${gpu ? 'WebGPU' : `WebGL2${antialias ? ' AA' : ''}`}, ${filterSelect.value}, ${s.devicePixelRatio}x`,
+    `backend   ${gpu ? 'WebGPU' : 'WebGL2'}${antialias ? ' AA' : ''}, ${filterSelect.value}, ${s.devicePixelRatio}x`,
     `level     ${level ? `L${level.index} ${mode} ${level.width}x${level.height}` : '-'}`,
     `codec     ${level?.codec ?? '-'}`,
     `zoom      ${scale >= 1 ? `${scale.toFixed(2)}x` : `1:${(1 / scale).toFixed(1)}`}`,

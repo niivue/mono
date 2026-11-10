@@ -1,0 +1,37 @@
+[package]
+name = "zarrita"
+description = "A minimal, modular Zarr v2/v3 implementation for Rust (port of zarrita.js)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["fs", "native-blosc", "encode"]
+# Compressing codecs (gzip/zlib/zstd/lz4 encode). Off in the wasm decode core to keep it small.
+encode = []
+fs = ["zarrita-storage/fs"]
+fetch = ["zarrita-storage/fetch"]
+parallel = ["dep:rayon"]
+# Link c-blosc (encode + decode). Without it, a pure-Rust decoder is used.
+native-blosc = ["dep:blosc-src"]
+
+[dependencies]
+zarrita-storage = { workspace = true, default-features = false }
+bytes.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+flate2.workspace = true
+zstd.workspace = true
+crc32c.workspace = true
+bytemuck.workspace = true
+half.workspace = true
+blosc-src = { workspace = true, optional = true }
+lz4_flex.workspace = true
+rayon = { workspace = true, optional = true }
+
+[dev-dependencies]
+base64 = "0.22"
+tokio = { workspace = true, features = ["rt-multi-thread"] }

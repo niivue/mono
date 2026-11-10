@@ -25,7 +25,7 @@ import {
   channelVolumeFile,
   NiiDataType,
 } from '@niivue/niivue'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita/inline'
 import {
   allocTypedArrayLike,
   checkOmeZarrIndex,

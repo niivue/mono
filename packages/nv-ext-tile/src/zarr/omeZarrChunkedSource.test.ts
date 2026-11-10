@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita/inline'
 import { ByteLruCache, omeZarrChunkedSource } from './omeZarrChunkedSource'
 import { openOmeZarr } from './omeZarrLoader'
 

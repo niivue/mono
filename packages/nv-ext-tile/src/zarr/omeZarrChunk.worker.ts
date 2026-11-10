@@ -25,12 +25,17 @@
 
 import type { ChunkedVolumeFetch } from '@niivue/niivue'
 import { chunkTimingSnapshot } from '@niivue/niivue'
+import { configureWasm } from '@niivue/zarrita/inline'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_ERROR,
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
 } from './omeZarrChunkedSource'
+
+// Already one of a pool: decode here, on this thread, rather than nesting
+// another pool. gzip in wasm too, since the module is loaded for every store.
+configureWasm({ workers: 0, gzip: 'wasm' })
 
 const post = (
   self as unknown as {

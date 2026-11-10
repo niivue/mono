@@ -55,7 +55,7 @@
  * wall -- our ceiling is a policy, the browser's is not.
  */
 
-import type * as zarr from 'zarrita'
+import type * as zarr from '@niivue/zarrita/inline'
 
 /** What a {@link PersistentByteCache} has done since it was opened. */
 export interface PersistentCacheStats {

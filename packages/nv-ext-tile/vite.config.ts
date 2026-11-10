@@ -43,7 +43,12 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['@niivue/niivue', '@niivue/dcm2niix', 'geotiff', 'zarrita'],
+      external: [
+        '@niivue/niivue',
+        '@niivue/dcm2niix',
+        'geotiff',
+        /^@niivue\/zarrita(\/|$)/,
+      ],
     },
   },
 })

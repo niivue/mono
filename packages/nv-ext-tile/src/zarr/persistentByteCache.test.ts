@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type * as zarr from 'zarrita'
+import type * as zarr from '@niivue/zarrita/inline'
 import {
   clearPersistentByteCaches,
   openCacheStorageBacking,

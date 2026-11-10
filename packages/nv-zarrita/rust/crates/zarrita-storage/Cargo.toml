@@ -1,0 +1,22 @@
+[package]
+name = "zarrita-storage"
+description = "Storage backends for zarrita-rs (port of @zarrita/storage)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["fs"]
+fs = ["dep:tokio"]
+fetch = ["dep:reqwest", "dep:url"]
+
+[dependencies]
+bytes.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }

@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["crates/zarrita", "crates/zarrita-storage", "crates/zarrita-ndarray", "crates/zarrita-wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/cdrake/zarrita-rs"
+rust-version = "1.85"
+
+[workspace.dependencies]
+zarrita-storage = { path = "crates/zarrita-storage", default-features = false }
+zarrita = { path = "crates/zarrita" }
+bytes = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "rt", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+url = "2"
+futures = "0.3"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+zstd = { version = "0.13", default-features = false }
+crc32c = "0.6"
+bytemuck = { version = "1", features = ["derive"] }
+half = { version = "2", features = ["bytemuck"] }
+rayon = "1"
+blosc-src = { version = "0.3", features = ["lz4", "zlib", "zstd"] }
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode", "safe-encode"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+# The npm package's wasm build: `cargo build -p zarrita-wasm --release --target wasm32-unknown-unknown --profile wasm`
+[profile.wasm]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+panic = "abort"
+strip = true

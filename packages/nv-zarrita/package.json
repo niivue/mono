@@ -1,0 +1,66 @@
+{
+  "name": "@niivue/zarrita",
+  "version": "0.1.0",
+  "description": "zarrita.js-compatible Zarr reader with Rust/WebAssembly codecs (drop-in for zarrita)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./inline": {
+      "types": "./dist/inline/index.d.ts",
+      "import": "./dist/inline/index.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/wasm/assets.js src/wasm/assets.d.ts src/wasm/core.js src/wasm/core.d.ts src/wasm/copy.js src/wasm/copy.d.ts src/wasm/zarrita.wasm dist/wasm/ && bunx esbuild src/wasm/worker.js --bundle --format=esm --platform=neutral --outfile=dist/wasm/worker.js --log-level=warning && node scripts/build-inline.mjs",
+    "build:wasm": "cd rust && RUSTFLAGS=\"-C target-feature=+simd128,+bulk-memory\" CFLAGS_wasm32_unknown_unknown=\"-msimd128 -mbulk-memory -O3\" cargo build -p zarrita-wasm --target wasm32-unknown-unknown --profile wasm && cp target/wasm32-unknown-unknown/wasm/zarrita_wasm.wasm ../src/wasm/zarrita.wasm",
+    "test": "vitest run",
+    "test:dist": "node scripts/check-dist.mjs",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@zarrita/storage": "^0.2.0",
+    "numcodecs": "^0.3.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@petamoriken/float16": "^3.9.3",
+    "@types/ndarray": "^1.1.0",
+    "@types/ndarray-ops": "^1.2.7",
+    "@types/node": "^22.0.0",
+    "esbuild": "~0.25.12",
+    "ndarray": "^1.1.1",
+    "ndarray-ops": "^1.2.2",
+    "tintype": "^0.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "keywords": [
+    "zarr",
+    "zarrita",
+    "webassembly",
+    "wasm",
+    "ndarray",
+    "neuroimaging"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cdrake/zarrita-rs",
+    "directory": "js/zarrita-wasm"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

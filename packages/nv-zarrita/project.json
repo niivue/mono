@@ -1,0 +1,41 @@
+{
+  "name": "nv-zarrita",
+  "projectType": "library",
+  "tags": ["type:lib", "lang:typescript"],
+  "targets": {
+    "build": {
+      "command": "bun run build",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": [
+        "typescript",
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/scripts/**/*"
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"]
+    },
+    "lint": {
+      "command": "bunx biome check {projectRoot}",
+      "inputs": ["lintable"]
+    },
+    "format": {
+      "command": "bunx biome format {projectRoot} --write",
+      "inputs": ["lintable"]
+    },
+    "test": {
+      "command": "bunx vitest run",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"]
+    }
+  }
+}

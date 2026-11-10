@@ -1,0 +1,149 @@
+import * as path from 'node:path'
+import * as url from 'node:url'
+import {
+  type AbsolutePath,
+  type AsyncReadable,
+  FileSystemStore,
+  type GetOptions,
+  type RangeQuery,
+} from '@zarrita/storage'
+import { describe, expect, it } from 'vitest'
+import * as zarr from '../src/index.js'
+
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
+const fixturesRoot = path.resolve(__dirname, '../fixtures/v3/data.zarr')
+
+/** Wraps a store so every get/getRange call is observable. */
+function recordingStore<S extends AsyncReadable>(inner: S) {
+  const calls: Array<GetOptions | undefined> = []
+  const wrapped: AsyncReadable = {
+    get(key, opts) {
+      calls.push(opts)
+      return inner.get(key, opts)
+    },
+  }
+  if (inner.getRange) {
+    wrapped.getRange = (
+      key: AbsolutePath,
+      range: RangeQuery,
+      opts?: GetOptions,
+    ) => {
+      calls.push(opts)
+      return inner.getRange?.(key, range, opts) ?? Promise.resolve(undefined)
+    }
+  }
+  return { store: wrapped, calls }
+}
+
+describe('signal propagation through zarr.get', () => {
+  it('passes signal to store.get for a simple array', async () => {
+    const fsStore = new FileSystemStore(fixturesRoot)
+    const { store, calls } = recordingStore(fsStore)
+    const arr = await zarr.open.v3(
+      zarr.root(store).resolve('1d.contiguous.raw.i2'),
+      {
+        kind: 'array',
+      },
+    )
+    const ctl = new AbortController()
+    await zarr.get(arr, null, { signal: ctl.signal })
+    expect(calls.length).toBeGreaterThan(0)
+    const seen = calls.find((c) => c?.signal === ctl.signal)
+    expect(seen).toBeDefined()
+  })
+
+  it('aborting signal rejects a pending zarr.get', async () => {
+    const fsStore = new FileSystemStore(fixturesRoot)
+    const arr = await zarr.open.v3(
+      zarr.root(fsStore).resolve('1d.contiguous.raw.i2'),
+      { kind: 'array' },
+    )
+    const ctl = new AbortController()
+    ctl.abort(new Error('aborted'))
+    await expect(zarr.get(arr, null, { signal: ctl.signal })).rejects.toThrow(
+      /abort/i,
+    )
+  })
+
+  it('propagates signal through a sharded chunk getter (#306)', async () => {
+    const fsStore = new FileSystemStore(fixturesRoot)
+    const { store, calls } = recordingStore(fsStore)
+    const arr = await zarr.open.v3(
+      zarr.root(store).resolve('1d.chunked.compressed.sharded.i2'),
+      { kind: 'array' },
+    )
+    const ctl = new AbortController()
+    await zarr.get(arr, null, { signal: ctl.signal })
+    // The shard index + shard chunk reads should both see our signal.
+    const rangeCalls = calls.filter((c) => c?.signal === ctl.signal)
+    expect(rangeCalls.length).toBeGreaterThan(0)
+  })
+
+  it('still accepts the deprecated `opts` shim', async () => {
+    const fsStore = new FileSystemStore(fixturesRoot)
+    const arr = await zarr.open.v3(
+      zarr.root(fsStore).resolve('1d.contiguous.raw.i2'),
+      { kind: 'array' },
+    )
+    const ctl = new AbortController()
+    ctl.abort(new Error('aborted'))
+    await expect(
+      zarr.get(arr, null, { opts: { signal: ctl.signal } }),
+    ).rejects.toThrow(/abort/i)
+  })
+
+  it('merges `signal` and deprecated `opts.signal` via AbortSignal.any', async () => {
+    const fsStore = new FileSystemStore(fixturesRoot)
+    const arr = await zarr.open.v3(
+      zarr.root(fsStore).resolve('1d.contiguous.raw.i2'),
+      { kind: 'array' },
+    )
+    // Only the deprecated one is aborted; the resolved signal should
+    // still be aborted because of AbortSignal.any.
+    const live = new AbortController()
+    const aborted = new AbortController()
+    aborted.abort(new Error('deprecated aborted'))
+    await expect(
+      zarr.get(arr, null, {
+        signal: live.signal,
+        opts: { signal: aborted.signal },
+      }),
+    ).rejects.toThrow(/abort/i)
+  })
+})
+
+describe('zarr.set cancels on signal', () => {
+  it('aborting signal rejects a pending zarr.set', async () => {
+    const store = new Map<string, Uint8Array>()
+    const arr = await zarr.create(store, {
+      dtype: 'int16',
+      shape: [4],
+      chunkShape: [2],
+    })
+    const ctl = new AbortController()
+    ctl.abort(new Error('aborted'))
+    await expect(
+      zarr.set(arr, null, 42, { signal: ctl.signal }),
+    ).rejects.toThrow(/abort/i)
+  })
+})
+
+describe('signal propagation through extendStore pipeline', () => {
+  it('reaches the inner store through multiple extensions', async () => {
+    const fsStore = new FileSystemStore(fixturesRoot)
+    const { store: recorder, calls } = recordingStore(fsStore)
+    const composed = await zarr.extendStore(recorder, (s) =>
+      zarr.withRangeCoalescing(s),
+    )
+    const arr = await zarr.open.v3(
+      zarr.root(composed).resolve('1d.chunked.compressed.sharded.i2'),
+      { kind: 'array' },
+    )
+    const ctl = new AbortController()
+    await zarr.get(arr, null, { signal: ctl.signal })
+    // At least one of the inner-store calls carried our signal through
+    // the coalescing extension.
+    const seen = calls.some((c) => c?.signal === ctl.signal)
+    expect(seen).toBe(true)
+  })
+})

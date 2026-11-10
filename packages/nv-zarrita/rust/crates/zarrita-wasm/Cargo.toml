@@ -1,0 +1,15 @@
+[package]
+name = "zarrita-wasm"
+description = "WebAssembly decode core for the zarrita-wasm npm package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zarrita = { path = "../zarrita", default-features = false }
+serde_json.workspace = true
+bytes.workspace = true

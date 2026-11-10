@@ -132,6 +132,7 @@ function buildBackendToggle(pageDefault: Backend): HTMLSpanElement {
   ): HTMLAnchorElement => {
     const a = document.createElement('a')
     a.textContent = label
+    a.dataset.backend = backend
     a.href = backendSwitchUrl(backend)
     if (backend === current) a.setAttribute('aria-current', 'true')
     if (backend === 'webgpu' && !wgpuAvailable) {
@@ -144,6 +145,15 @@ function buildBackendToggle(pageDefault: Backend): HTMLSpanElement {
   wrap.appendChild(mk('webgl2', 'WebGL2'))
   wrap.appendChild(mk('webgpu', 'WebGPU'))
   return wrap
+}
+
+// Moves the toggle highlight to the backend the page ended up on (e.g. WebGL2
+// after requestAdapter() returned null).
+export function markBackendInUse(backend: Backend): void {
+  for (const a of document.querySelectorAll<HTMLElement>('.backend-toggle a')) {
+    if (a.dataset.backend === backend) a.setAttribute('aria-current', 'true')
+    else a.removeAttribute('aria-current')
+  }
 }
 
 export function installNav(pageDefault: Backend = 'webgl2'): void {

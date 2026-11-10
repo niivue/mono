@@ -15,7 +15,7 @@ import {
   SlideRendererGPU,
 } from '@niivue/niivue'
 import { getBackendFromUrl, isWebGpuAvailable } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 // Tiled pages default to WebGPU; the other iiif demos default to WebGL2.
 const backend = getBackendFromUrl('webgpu')
@@ -400,6 +400,7 @@ function zoomCentered(factor: number): void {
 async function main(): Promise<void> {
   els.source.value = sourceFromUrl()
   view = await createView()
+  markBackendInUse(view.kind === 'gpu' ? 'webgpu' : 'webgl2')
   view.renderer.isNearestInterpolation = els.filter.value === 'nearest'
   await loadManifestForCurrentSource()
   requestRender()

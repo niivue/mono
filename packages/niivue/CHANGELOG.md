@@ -1,3 +1,21 @@
+## 1.0.0-rc.142 (2026-11-10)
+
+### Features
+
+- **niivue:** multi-channel slides (NVSlide channels, setChannel, channelBlend) ([87e13ad4](https://github.com/niivue/mono/commit/87e13ad4))
+
+### Fixes
+
+- **niivue:** setChannel keeps a field passed as undefined ([c99b5435](https://github.com/niivue/mono/commit/c99b5435))
+- **niivue:** slide channel readback copies, known fields, no fetch when all hidden ([73f48b4e](https://github.com/niivue/mono/commit/73f48b4e))
+- **niivue:** slide channel audit follow-ups ([1f1fda20](https://github.com/niivue/mono/commit/1f1fda20))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.141 (2026-11-10)
 
 ### Features

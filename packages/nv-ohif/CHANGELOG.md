@@ -1,3 +1,11 @@
+## 1.0.0-rc.151 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.142
+- Updated nv-ext-tile to 1.0.0-rc.38
+- Updated uikit to 1.0.0-rc.139
+
 ## 1.0.0-rc.150 (2026-11-10)
 
 ### Updated Dependencies

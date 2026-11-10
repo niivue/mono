@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { wsiSeriesSlide } from './wsiSeries'
+import { wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
 
 // nv-ext-tile's DICOM-WSI fixtures, as PS3.18 DICOM JSON.
 const DIR = `${import.meta.dir}/../../nv-ext-tile/fixtures/dicom-wsi`
@@ -48,5 +48,44 @@ describe('wsiSeriesSlide', () => {
   it('notes a series without tiled levels', () => {
     const r = wsiSeriesSlide({ instances: [] })
     expect('note' in r && r.note).toContain('no tiled (VOLUME) pyramid levels')
+  })
+})
+
+describe('wsiRetrieveBulkData', () => {
+  it('is undefined without retrieve.bulkDataURI', () => {
+    expect(wsiRetrieveBulkData(undefined, '1')).toBeUndefined()
+    expect(wsiRetrieveBulkData({ retrieve: {} }, '1')).toBeUndefined()
+  })
+
+  it('retrieves through the data source', async () => {
+    const asked: unknown[] = []
+    const buf = new Uint8Array([7]).buffer
+    const retrieve = wsiRetrieveBulkData(
+      {
+        retrieve: {
+          bulkDataURI: async (o: unknown) => {
+            asked.push(o)
+            return buf
+          },
+        },
+      },
+      '1',
+    )
+    expect(await retrieve?.('https://h/bulk')).toBe(buf)
+    expect(asked).toEqual([
+      { StudyInstanceUID: '1', BulkDataURI: 'https://h/bulk' },
+    ])
+  })
+
+  it('rejects on abort without waiting for the data source', async () => {
+    const retrieve = wsiRetrieveBulkData(
+      { retrieve: { bulkDataURI: () => new Promise(() => {}) } },
+      '1',
+    )
+    const abort = new AbortController()
+    const pending = retrieve?.('https://h/bulk', abort.signal)
+    abort.abort()
+    expect(await pending?.catch((e: DOMException) => e.name)).toBe('AbortError')
+    await expect(retrieve?.('https://h/bulk', abort.signal)).rejects.toThrow()
   })
 })

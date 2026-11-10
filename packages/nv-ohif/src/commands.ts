@@ -1581,7 +1581,13 @@ export function getNiivueCommandsModule({
       const [calMin, calMax] = windowToRange(window, level)
       const slideView = getActiveNiivueEntry(servicesManager)?.slideView
       if (slideView) {
-        if (calMax > calMin) slideView.setWindow(calMin, calMax)
+        // A finite window can still overflow to an infinite bound.
+        if (
+          Number.isFinite(calMin) &&
+          Number.isFinite(calMax) &&
+          calMax > calMin
+        )
+          slideView.setWindow(calMin, calMax)
         return
       }
       const nv = getActiveNiivue(servicesManager)

@@ -424,9 +424,16 @@ Fired when a vector annotation is removed.
 #### `annotationChanged`
 Fired on annotation editing events (draw, erase, move, resize, undo, redo, clear).
 
+A draw fires `annotationAdded` and then `annotationChanged` with the new id in `added`; annotations it merged or cut appear in `updated` or `removed`. `addAnnotation` and `removeAnnotation` fire only `annotationAdded` / `annotationRemoved`; `loadAnnotationsJSON` and `loadDocument` fire neither.
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `action` | `'draw' \| 'erase' \| 'move' \| 'resize' \| 'undo' \| 'redo' \| 'clear'` | What happened |
+| `added` | `string[]` | Ids of annotations the change added |
+| `updated` | `string[]` | Ids of annotations whose geometry, stats or text changed |
+| `removed` | `string[]` | Ids of annotations the change removed |
+
+Ids are `VectorAnnotation.id`, which must be unique (drawn annotations get a random UUID).
 
 ---
 

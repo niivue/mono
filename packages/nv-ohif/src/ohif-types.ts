@@ -10,6 +10,7 @@
 // (DICOM vs NIfTI/custom), so consumers of this must probe defensively.
 export interface OhifDisplaySet {
   displaySetInstanceUID?: string
+  StudyInstanceUID?: string
   SeriesInstanceUID?: string
   SeriesDescription?: string
   Modality?: string

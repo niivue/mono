@@ -16,6 +16,9 @@
       #status { font-size: 0.85rem; opacity: 0.8; }
       #hud { position: absolute; top: 0.75rem; left: 0.75rem; padding: 0.5rem 0.75rem; background: rgba(5, 8, 8, 0.79); border: 1px solid rgba(116, 212, 207, 0.28); border-radius: 6px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34); font: 0.72rem/1.5 ui-monospace, monospace; white-space: pre; pointer-events: none; }
       #hud:empty { display: none; }
+      #credit { position: absolute; bottom: 0.5rem; right: 0.75rem; max-width: 60%; padding: 0.25rem 0.5rem; background: rgba(5, 8, 8, 0.79); border-radius: 4px; font-size: 0.75rem; }
+      #credit:empty { display: none; }
+      #credit a { color: inherit; }
       dialog { background: #2a2a2e; color: inherit; border: 1px solid #555; border-radius: 6px; width: min(48rem, 90vw); }
       dialog input { width: 100%; box-sizing: border-box; margin: 0.5rem 0; }
       dialog p { margin: 0; text-align: end; }
@@ -34,17 +37,18 @@
       <span id="status">Pick a slide.</span>
       <span class="backend">
         <label>Backend <select id="backend"><option value="webgpu">WebGPU</option><option value="webgl2">WebGL2</option></select></label>
-        <label title="Multisample anti-aliasing, WebGL2 only (reloads the page)"><input id="aa" type="checkbox" /> AA</label>
+        <label title="Multisample anti-aliasing (reloads the page)"><input id="aa" type="checkbox" /> AA</label>
         <label title="Draw at the display's pixel ratio (off: one canvas pixel per CSS pixel)"><input id="hidpi" type="checkbox" checked autocomplete="off" /> HiDPI</label>
       </span>
     </header>
     <main>
       <canvas id="canvas"></canvas>
       <div id="hud"></div>
+      <div id="credit"></div>
     </main>
     <dialog id="customDialog">
       <form method="dialog">
-        <label>Tiled TIFF / SVS, or DICOM-WSI manifest (.json) URL. The server must support Range + CORS.
+        <label>Tiled TIFF / SVS, DICOM-WSI manifest (.json), or OME-Zarr store (.zarr or a path ending in /) URL. The server must support Range + CORS.
           <input id="customUrl" type="text" inputmode="url" required />
         </label>
         <p>

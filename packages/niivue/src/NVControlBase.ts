@@ -1,6 +1,7 @@
 import { type vec2, type vec3, vec4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
+import { annotationDelta } from '@/annotation/delta'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
 import { getAnnotationSelection } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
@@ -152,7 +153,13 @@ import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
-import { defaultSlideChannels, isRgbSlide, NVSlide } from '@/slide/NVSlide'
+import {
+  defaultSlideChannels,
+  isRgbSlide,
+  type NVChannel,
+  NVSlide,
+  type NVSlideChannelBlend,
+} from '@/slide/NVSlide'
 import {
   isSlideDrawingSizeValid,
   SlideDrawing,
@@ -2745,7 +2752,12 @@ export default class NiiVue extends EventTarget {
     const ann = this.model.annotations.find((a) => a.id === id)
     if (!ann) return
     ann.text = text.length > 0 ? text : undefined
-    this.emit('annotationChanged', { action: 'move' })
+    this.emit('annotationChanged', {
+      action: 'move',
+      added: [],
+      updated: [id],
+      removed: [],
+    })
     this.drawScene()
   }
 
@@ -2759,9 +2771,15 @@ export default class NiiVue extends EventTarget {
   }
 
   clearAnnotations(): void {
+    const removed = this.model.annotations.map((a) => a.id)
     this.model.annotations.length = 0
     this._annotationUndoStack.clear()
-    this.emit('annotationChanged', { action: 'clear' })
+    this.emit('annotationChanged', {
+      action: 'clear',
+      added: [],
+      updated: [],
+      removed,
+    })
     this.drawScene()
   }
 
@@ -2800,8 +2818,9 @@ export default class NiiVue extends EventTarget {
   annotationUndo(): void {
     const restored = this._annotationUndoStack.undo(this.model.annotations)
     if (restored) {
+      const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
-      this.emit('annotationChanged', { action: 'undo' })
+      this.emit('annotationChanged', { action: 'undo', ...delta })
       this.drawScene()
     }
   }
@@ -2809,8 +2828,9 @@ export default class NiiVue extends EventTarget {
   annotationRedo(): void {
     const restored = this._annotationUndoStack.redo(this.model.annotations)
     if (restored) {
+      const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
-      this.emit('annotationChanged', { action: 'redo' })
+      this.emit('annotationChanged', { action: 'redo', ...delta })
       this.drawScene()
     }
   }
@@ -5827,6 +5847,30 @@ export default class NiiVue extends EventTarget {
     }
     this._slidePlane.levelIndex = levelIndex
     this.drawScene()
+  }
+
+  /** The slide plane's channels (see `NVSlide.channels`), or null without a plane. */
+  get slideChannels(): readonly Readonly<NVChannel>[] | null {
+    return this._slidePlane?.slide.channels ?? null
+  }
+
+  /**
+   * Update a slide plane channel (see `NVSlide.setChannel`, which throws a
+   * RangeError for a bad index, colormap or window). The slide's `change`
+   * event redraws. No-op without a plane.
+   */
+  setSlideChannel(index: number, update: Partial<NVChannel>): void {
+    this._slidePlane?.slide.setChannel(index, update)
+  }
+
+  /** How the slide plane's channels blend (see `NVSlide.channelBlend`), or null without a plane. */
+  get slideChannelBlend(): NVSlideChannelBlend | null {
+    return this._slidePlane?.slide.channelBlend ?? null
+  }
+
+  /** Set {@link slideChannelBlend}; ignored on an RGB slide. No-op without a plane. */
+  setSlideChannelBlend(blend: NVSlideChannelBlend): void {
+    this._slidePlane?.slide.setChannelBlend(blend)
   }
 
   /** Remove a slide plane registered with {@link setSlidePlane}. */

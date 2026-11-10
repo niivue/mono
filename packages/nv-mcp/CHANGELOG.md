@@ -1,3 +1,52 @@
+## 1.0.0-rc.145 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.152
+- Updated uikit to 1.0.0-rc.150
+
+## 1.0.0-rc.144 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.151
+- Updated uikit to 1.0.0-rc.149
+
+## 1.0.0-rc.143 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.150
+- Updated uikit to 1.0.0-rc.148
+
+## 1.0.0-rc.142 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.149
+- Updated uikit to 1.0.0-rc.147
+
+## 1.0.0-rc.141 (2026-11-10)
+
+### Features
+
+- **niivue,nv-mcp:** slide plane channel API; set_slide sets channels and blend ([#659](https://github.com/niivue/mono/issues/659))
+
+### Fixes
+
+- **nv-mcp:** set_slide checks every requested op before changing the slide ([#672](https://github.com/niivue/mono/issues/672))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.148
+- Updated uikit to 1.0.0-rc.146
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.140 (2026-11-10)
 
 ### Updated Dependencies

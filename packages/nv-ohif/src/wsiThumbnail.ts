@@ -16,7 +16,7 @@
 // an encoded frame becomes a Blob URL directly; raw pixels are painted to a
 // canvas and exported.
 
-import { parseMultipartRelated } from '@niivue/nv-ext-tile/dicom'
+import { readFirstPart } from '@niivue/nv-ext-tile/dicom'
 import { imageIdUrl } from './dicomWadoRs'
 
 interface WsiThumbInstance extends Record<string, unknown> {
@@ -74,12 +74,10 @@ export function frameEncoding(bytes: Uint8Array): 'jpeg' | 'png' | 'raw' {
   return 'raw'
 }
 
-// Hard ceiling on what a thumbnail fetch will download or decode. The preview
-// is a ~128px panel tile; a well-formed side image is a few MB at most. A store
-// that serves something enormous here (a mislabeled pyramid level, a raw
-// full-resolution frame) must degrade to the panel's default tile, never
-// allocate gigabytes in the renderer/GPU process.
+// A preview needs far less than readFirstPart's default 64 MB cap.
 export const MAX_THUMBNAIL_FETCH_BYTES = 32 * 1024 * 1024
+
+// MAX_THUMBNAIL_FETCH_BYTES caps the download; this bounds the decode.
 // Largest raw frame we will paint to a full-size canvas before downscaling
 // (canvases can be GPU/IOSurface-backed, so this bounds a GPU allocation too).
 export const MAX_THUMBNAIL_DECODE_PIXELS = 16 * 1024 * 1024
@@ -232,23 +230,14 @@ export async function fetchWsiThumbnailObjectUrl(
   const url = imageIdUrl(imageId)
   if (!url) return null
   try {
-    const response = await fetch(url, {
-      headers: { Accept: 'multipart/related; type="image/jpeg"', ...headers },
-      signal,
-    })
-    if (!response.ok) return null
-    // Refuse oversized payloads before (Content-Length) and after download —
-    // a preview must never buffer a runaway frame into memory.
-    const advertised = Number(response.headers.get('content-length'))
-    if (Number.isFinite(advertised) && advertised > MAX_THUMBNAIL_FETCH_BYTES) {
-      return null
-    }
-    const contentType = response.headers.get('content-type') ?? ''
-    const body = new Uint8Array(await response.arrayBuffer())
-    if (body.byteLength > MAX_THUMBNAIL_FETCH_BYTES) return null
-    const frame = parseMultipartRelated(body, contentType)[0]
-    if (!frame || frame.length === 0) return null
-
+    const frame = await readFirstPart(
+      await fetch(url, {
+        headers: { Accept: 'multipart/related; type="image/jpeg"', ...headers },
+        signal,
+      }),
+      'WSI thumbnail',
+      MAX_THUMBNAIL_FETCH_BYTES,
+    )
     const encoding = frameEncoding(frame)
     if (encoding !== 'raw') {
       const mime = `image/${encoding}`

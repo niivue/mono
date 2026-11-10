@@ -399,6 +399,44 @@ describe('DicomWebWsiSource', () => {
     expect(asked).toEqual([`${SERIES}/bulk/1.2.3.10/00282000`])
     expect(calls).toEqual([])
   })
+
+  test('never hands a bulk URI on another origin to the host hook', async () => {
+    serve(() => part(new Uint8Array([5])))
+    const asked: string[] = []
+    const s = await DicomWebWsiSource.open(
+      await slideOf('bot', (o) => {
+        const paths = (o['00480105'] as { Value: Json[] }).Value
+        ;(paths[0] as Json)['00282000'] = {
+          vr: 'OB',
+          BulkDataURI: 'https://cdn.test/icc',
+        }
+      }),
+      {
+        seriesUrl: SERIES,
+        headers: () => ({ Authorization: 'Bearer a' }),
+        retrieveBulkData: async (url) => {
+          asked.push(url)
+          return new Uint8Array([7]).buffer
+        },
+      },
+    )
+    expect(await s.fetchIccProfile()).toEqual(new Uint8Array([5]))
+    expect(asked).toEqual([])
+    expect(calls[0]?.url).toBe('https://cdn.test/icc')
+    expect(calls[0]?.headers.Authorization).toBeUndefined()
+  })
+
+  test('fetches bulk ICC data itself when the host hook resolves undefined', async () => {
+    serve(() => part(new Uint8Array([9])))
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+      retrieveBulkData: async () => undefined,
+    })
+    expect(await s.fetchIccProfile()).toEqual(new Uint8Array([9]))
+    expect(calls.map((c) => c.url)).toEqual([
+      `${SERIES}/bulk/1.2.3.10/00282000`,
+    ])
+  })
 })
 
 describe('parseMultipartRelated', () => {

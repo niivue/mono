@@ -1,3 +1,87 @@
+## 1.0.0-rc.56 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.152
+
+## 1.0.0-rc.55 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.151
+
+## 1.0.0-rc.54 (2026-11-10)
+
+### Features
+
+- **demo-ext-tile:** OME-Zarr slide menu with store credits ([2238ca69](https://github.com/niivue/mono/commit/2238ca69))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.150
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.53 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile:** ZarrSlideSource serves multi-channel stores through NVSlide channels ([c9ab2f9a](https://github.com/niivue/mono/commit/c9ab2f9a))
+
+### Fixes
+
+- **nv-ext-tile:** read multi-channel ranges one channel at a time ([e467cffb](https://github.com/niivue/mono/commit/e467cffb))
+- **nv-ext-tile:** open many-channel OME-Zarr stores with at most 4 channels visible ([fb697edd](https://github.com/niivue/mono/commit/fb697edd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.52 (2026-11-10)
+
+### Features
+
+- ⚠️  **niivue:** remove deprecated NVSlide.setWindow and window getter ([#659](https://github.com/niivue/mono/issues/659))
+
+### Breaking Changes
+
+- **niivue:** remove deprecated NVSlide.setWindow and window getter  ([#659](https://github.com/niivue/mono/issues/659))
+  `slide.setWindow(lo, hi)` -> `slide.setChannel(0,
+  { calMin: lo, calMax: hi })`; `slide.window` -> `slide.channels[0]`.
+  setChannel treats a non-finite bound as the default window instead of
+  rejecting it, so callers validate their own input.
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.149
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.51 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.148
+
+## 1.0.0-rc.50 (2026-11-10)
+
+### Fixes
+
+- **nv-ohif:** restore the 32 MiB thumbnail fetch cap ([03365e41](https://github.com/niivue/mono/commit/03365e41))
+- **nv-ohif:** ICC bulk data via OHIF data source; wsiThumbnail uses readFirstPart ([#650](https://github.com/niivue/mono/issues/650), [#657](https://github.com/niivue/mono/issues/657))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.49 (2026-11-10)
 
 ### Fixes

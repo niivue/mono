@@ -1579,6 +1579,21 @@
       "doc": null
     },
     {
+      "jsName": "slideChannelBlend",
+      "pyName": "slide_channel_blend",
+      "tsType": "NVSlideChannelBlend | null",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "max",
+          "additive"
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "How the slide plane's channels blend (see `NVSlide.channelBlend`), or null without a plane."
+    },
+    {
       "jsName": "version",
       "pyName": "version",
       "tsType": "string",
@@ -4003,6 +4018,46 @@
       "returnsDoc": null
     },
     {
+      "jsName": "setSlideChannel",
+      "pyName": "set_slide_channel",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "index",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "update",
+          "tsType": "Partial<NVChannel>",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Update a slide plane channel (see `NVSlide.setChannel`, which throws a\nRangeError for a bad index, colormap or window). The slide's `change`\nevent redraws. No-op without a plane.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSlideChannelBlend",
+      "pyName": "set_slide_channel_blend",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "blend",
+          "tsType": "NVSlideChannelBlend",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Set {@link slideChannelBlend}; ignored on an RGB slide. No-op without a plane.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "setSlidePlane",
       "pyName": "set_slide_plane",
       "isAsync": false,
@@ -4744,6 +4799,11 @@
         "jsName": "signals",
         "tsType": "NVSignal",
         "reason": "non-serializable nominal type: NVSignal"
+      },
+      {
+        "jsName": "slideChannels",
+        "tsType": "Readonly<NVChannel>",
+        "reason": "non-serializable nominal type: Readonly<NVChannel>"
       },
       {
         "jsName": "slideVector",

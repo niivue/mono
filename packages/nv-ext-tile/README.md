@@ -114,7 +114,7 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
   as OpenSlide shows them.
 - Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
-  the `webkitdirectory` input in the demo):
+  a `webkitdirectory` input):
 
   | Set | Frames | Holes | Bun | Chrome |
   |---|---|---|---|---|
@@ -159,7 +159,7 @@ const slide = NVSlide.fromSource(source)
 - A level whose metadata states no transfer syntax costs one frame request in `open` (all levels at once), which reads the syntax from the bytes. A server that refuses it (HTTP 400, 406 or 415) is assumed to serve JPEG Baseline; other errors fail the open.
 - JPEG 2000 and JPEG-LS tiles are requested untranscoded (`transfer-syntax=*`); a tile the server transcoded anyway is refused.
 - Responses are capped at 64 MB, also when streamed without Content-Length. `readFirstPart(response, what)` applies the same cap and returns the first multipart/related part, for a host's own WADO-RS requests.
-- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source), else fetched. `headers`, and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin. A relative `seriesUrl` resolves against the page.
+- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source) and the URL is on `seriesUrl`'s origin, else (or when it resolves undefined or empty) fetched. `headers`, and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin, so an ICC BulkDataURI on another origin that needs auth is unsupported (it is fetched without credentials). A relative `seriesUrl` resolves against the page.
 - One slide per optical path and focal plane, as for local files; a viewer that shows one picks `slides[0]`, the first path and lowest plane, and should say others exist.
 
 ## OME-Zarr
@@ -181,10 +181,10 @@ import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
 
 const source = await ZarrSlideSource.fromUrl(storeUrl) // or fromStore(store); { channel, z, t } pick a plane
 const slide = NVSlide.fromSource(source)
-if (source.window) slide.setWindow(source.window.calMin, source.window.calMax) // NVSlide does not read the window from the source
+if (source.window) slide.setChannel(0, source.window) // grey only: NVSlide does not read this window from the source
 ```
 
-Three uint8 channels show as RGB; any other store shows one channel in grey, windowed from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
+Three uint8 channels show as RGB. Other multi-channel stores open as `slide.channels`: omero label, colour (snapped to a colormap), window and `active` (inactive channels start hidden and are not fetched; only the first 4 active ones start visible, so many-channel stores keep a usable tile budget), composited by `slide.channelBlend` (MAX by default). A single-channel store, or `channel`, shows one channel in grey. Windows come from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
 
 Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 

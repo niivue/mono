@@ -797,6 +797,11 @@ export interface View {
   clearSlideDrawing?(): unknown
   slideDrawUndo?(): unknown
   slideDrawEnd?(): unknown
+  /** Null without a slide plane. */
+  readonly slideChannels?: readonly Readonly<SlideChannel>[] | null
+  setSlideChannel?(index: number, update: Partial<SlideChannel>): unknown
+  readonly slideChannelBlend?: SlideChannelBlend | null
+  setSlideChannelBlend?(blend: SlideChannelBlend): unknown
 
   // Chunked volumes.
   /** Tile a volume into a grid of bricks (or `null` to make it one texture again). */
@@ -907,6 +912,18 @@ export interface NiiVueHost {
   /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
   omeZarr?: () => Promise<OmeZarrLoaders>
 }
+
+/** A slide plane channel, as NiiVue's `NVChannel`; a default bound is NaN. */
+export interface SlideChannel {
+  name: string
+  colormap: string
+  calMin: number
+  calMax: number
+  visible: boolean
+}
+
+/** How a slide's visible channels combine. */
+export type SlideChannelBlend = 'max' | 'additive'
 
 /** The two `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives. */
 export interface OmeZarrLoaders {

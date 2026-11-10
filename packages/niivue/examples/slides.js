@@ -903,13 +903,16 @@ function showWindowControl(s) {
 els.window.addEventListener('change', () => {
   if (!slide) return
   const [lo, hi] = els.window.value.split(',').map(Number)
-  try {
-    slide.setWindow(lo, hi)
-  } catch {
-    // Not finite or not lo < hi: restore the window in force.
-    const w = slide.window
-    els.window.value = w ? `${w.calMin},${w.calMax}` : els.window.defaultValue
+  if (Number.isFinite(lo) && Number.isFinite(hi) && lo < hi) {
+    slide.setChannel(0, { calMin: lo, calMax: hi })
+    return
   }
+  // Restore the window in force.
+  const { calMin, calMax } = slide.channels[0]
+  els.window.value =
+    Number.isFinite(calMin) && Number.isFinite(calMax)
+      ? `${calMin},${calMax}`
+      : els.window.defaultValue
 })
 
 async function loadSlide() {

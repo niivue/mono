@@ -1,6 +1,5 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "plugins": ["./nx-tools/nx-pixi-plugin.js"],
   "namedInputs": {
     "typescript": [
       "{projectRoot}/**/*.ts",

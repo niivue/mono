@@ -11,7 +11,7 @@ See `README.md` for a package overview and `CONTRIBUTING.md` for detailed develo
 ```
 packages/       # Libraries (publishable). See each package's README for details.
 apps/           # Demo applications (private, not published). See each app's README.
-nx-tools/       # Custom Nx plugins and scripts (boundary checks, Pixi plugin, release)
+nx-tools/       # Custom Nx plugins and scripts (boundary checks, release, repo graph)
 ```
 
 - Each `packages/*` and `apps/*` directory has its own `README.md`, `package.json`, `project.json`, and `tsconfig.json`.

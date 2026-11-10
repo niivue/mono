@@ -106,7 +106,7 @@
       ]
     },
     "smoke": {
-      "command": "bun scripts/pixi-or-skip.ts smoke",
+      "command": "bun scripts/pixi-or-skip.ts -e notebook smoke",
       "options": { "cwd": "{projectRoot}" },
       "dependsOn": ["codegen"],
       "inputs": [

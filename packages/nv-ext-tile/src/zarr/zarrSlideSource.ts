@@ -46,7 +46,8 @@ const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
 // Stored = (v * k - lo) / span * 65535, with k = 1/2 when hi - lo overflows;
 // dividing before scaling keeps a subnormal span finite.
-type Quantize = { k: number; lo: number; span: number }
+// scale = 65535 / span, Infinity only for a subnormal span.
+type Quantize = { k: number; lo: number; span: number; scale: number }
 
 /**
  * NVSlide tile source for a 2D OME-Zarr image (0.4 / Zarr v2 and 0.5 / v3):
@@ -263,7 +264,8 @@ export class ZarrSlideSource implements SlideTileSource {
         ;[lo, hi] = [mid - half, mid + half]
       }
       const k = Number.isFinite(hi - lo) ? 1 : 0.5
-      quantize = { k, lo: lo * k, span: hi * k - lo * k }
+      const span = hi * k - lo * k
+      quantize = { k, lo: lo * k, span, scale: 65535 / span }
     }
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
     const toStored = (v: number) =>
@@ -425,12 +427,23 @@ export class ZarrSlideSource implements SlideTileSource {
         : new Uint8Array(w * h)
     if (q) {
       // Clamp: a Uint16Array store wraps out-of-range values; NaN stores 0.
-      for (let y = 0, o = 0; y < h; y++)
-        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
-          out[o] = Math.min(
-            65535,
-            Math.max(0, ((data[i] * q.k - q.lo) / q.span) * 65535 + 0.5),
-          )
+      // Multiply per pixel; divide only when a subnormal span overflows scale.
+      const { k, lo, span, scale } = q
+      if (Number.isFinite(scale)) {
+        for (let y = 0, o = 0; y < h; y++)
+          for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
+            out[o] = Math.min(
+              65535,
+              Math.max(0, (data[i] * k - lo) * scale + 0.5),
+            )
+      } else {
+        for (let y = 0, o = 0; y < h; y++)
+          for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
+            out[o] = Math.min(
+              65535,
+              Math.max(0, ((data[i] * k - lo) / span) * 65535 + 0.5),
+            )
+      }
     } else {
       for (let y = 0, o = 0; y < h; y++)
         for (let x = 0, i = y * sy; x < w; x++, i += sx, o++) out[o] = data[i]

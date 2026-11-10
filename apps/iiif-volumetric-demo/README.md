@@ -89,7 +89,8 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
 ### Backend switching
 
 Every niivue page reads a `?backend=webgl2|webgpu` URL query and
-passes it to the `NiiVue` constructor (default: `webgl2`). The shared
+passes it to the `NiiVue` constructor (default: `webgl2`; `tile-range.html`
+defaults to `webgpu`). The shared
 nav ribbon exposes a `WebGL2 / WebGPU` toggle that reloads the page
 with the new query; the WebGPU option is disabled when
 `navigator.gpu` is absent. The choice is preserved across in-app

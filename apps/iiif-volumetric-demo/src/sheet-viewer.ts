@@ -23,7 +23,7 @@ import NiiVue from '@niivue/niivue'
 import { NVCanvasViewportController } from '@niivue/niivue/viewport'
 
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 import {
   getSyntheticOverlayUrl,
   SYNTHETIC_VOLUME_ID,
@@ -213,6 +213,7 @@ async function createCells(volumeIds: string[]): Promise<void> {
       }
       const nv = new NiiVue(opts)
       await nv.attachToCanvas(els.canvas)
+      markBackendInUse(nv.backend ?? 'webgl2')
       const { labelEl, nameEl, metaAEl, metaBEl } = createLabelEl(idx, volumeId)
       els.labels.appendChild(labelEl)
       cells.push({ nv, volumeId, row, col, labelEl, nameEl, metaAEl, metaBEl })

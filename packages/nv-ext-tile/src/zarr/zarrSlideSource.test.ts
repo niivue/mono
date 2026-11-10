@@ -374,6 +374,36 @@ test('the data range samples a bounded grid of chunks, not the whole image', asy
   ])
 })
 
+test('a flat sample still quantizes values outside it to distinct levels', async () => {
+  // int32 and float32, 1 x 8192 in 512-wide chunks: the sampled chunks
+  // (0, 5, 10, 15) are all 7; chunk 1 holds 0, 7 and 14.
+  for (const dtype of ['int32', 'float32'] as const) {
+    const values = Array.from({ length: 8192 }, (_, i) =>
+      i >= 512 && i < 1024 ? [0, 7, 14][i % 3] : 7,
+    )
+    const store = await writeImage(
+      { multiscales: multiscale(['y', 'x'], 1) },
+      [
+        {
+          shape: [1, 8192],
+          chunks: [1, 512],
+          data:
+            dtype === 'int32'
+              ? Int32Array.from(values)
+              : Float32Array.from(values),
+        },
+      ],
+      dtype,
+    )
+    const source = await ZarrSlideSource.fromStore(store)
+    const [l0] = source.manifest.levels
+    const tile = l0.tiles[1]
+    if (!tile) throw new Error('no tile')
+    const out = u16(await source.fetchTileBytes(l0, tile, 't'))
+    expect(new Set(out.slice(0, 3)).size).toBe(3)
+  }
+})
+
 test('a wide chunk is sampled from its middle, at most RANGE_SPAN wide', async () => {
   // One 4096-wide chunk: values outside the middle 1024 are not seen.
   const data = ramp(4096, (i) =>

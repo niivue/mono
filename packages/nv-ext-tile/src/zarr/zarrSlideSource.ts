@@ -240,13 +240,21 @@ export class ZarrSlideSource implements SlideTileSource {
     const omero = raw && omeroWindowUsable(raw, dtype) ? raw : null
     let quantize: Quantize | null = null
     if (!rgb && dtype !== 'uint8' && dtype !== 'uint16') {
-      const [lo, hi] =
+      let [lo, hi] =
         omero &&
         omero.min !== null &&
         omero.max !== null &&
         omero.max > omero.min
           ? [omero.min, omero.max]
           : await dataRange(src, select, ys, xs)
+      // A flat sample says nothing of the rest: centre a window on it (one
+      // step per integer) so values outside the sample stay distinct.
+      if (Number.isFinite(lo) && hi <= lo) {
+        const half = dtype.startsWith('float')
+          ? Math.max(Math.abs(lo), 1)
+          : 32767.5
+        ;[lo, hi] = [lo - half, lo + half]
+      }
       quantize = { lo, scale: hi > lo ? 65535 / (hi - lo) : 0 }
     }
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16

@@ -448,6 +448,7 @@ function asBytes(a: Uint8Array | Uint16Array): Uint8Array {
 // so open reads at most RANGE_GRID^2 chunks whatever the store's size. Values
 // outside the sample clamp; a valid omero window is preferred over this.
 const RANGE_GRID = 4
+const RANGE_READS = 4
 const RANGE_SPAN = 1024
 
 async function dataRange(
@@ -480,16 +481,29 @@ async function dataRange(
   const cells = spread(ys).flatMap((y) => spread(xs).map((x) => [y, x]))
   let lo = Number.POSITIVE_INFINITY
   let hi = Number.NEGATIVE_INFINITY
-  // At most 16 small reads; in parallel to save remote round trips.
-  const reads = await Promise.all(
-    cells.map(([y, x]) => zarr.get(coarse, select(y, x, last))),
-  )
-  for (const { data } of reads) {
-    for (const v of data as ArrayLike<number> & Iterable<number>) {
-      if (!Number.isFinite(v)) continue
-      if (v < lo) lo = v
-      if (v > hi) hi = v
+  // A few reads at a time: fewer remote round trips, but each result is
+  // scanned and dropped as it lands, and a failure stops new reads.
+  let next = 0
+  let failed = false
+  const worker = async () => {
+    while (!failed && next < cells.length) {
+      const [y, x] = cells[next++]
+      try {
+        const { data } = await zarr.get(coarse, select(y, x, last))
+        for (const v of data as ArrayLike<number> & Iterable<number>) {
+          if (!Number.isFinite(v)) continue
+          if (v < lo) lo = v
+          if (v > hi) hi = v
+        }
+      } catch (e) {
+        failed = true
+        throw e
+      }
     }
   }
+  const settled = await Promise.allSettled(
+    Array.from({ length: RANGE_READS }, worker),
+  )
+  for (const r of settled) if (r.status === 'rejected') throw r.reason
   return [lo, hi]
 }

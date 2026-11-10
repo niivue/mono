@@ -374,6 +374,40 @@ test('the data range samples a bounded grid of chunks, not the whole image', asy
   ])
 })
 
+test('the data range reads a few chunks at a time and stops after a failure', async () => {
+  // 64 x 64 in 16 x 16 chunks: the 4 x 4 sample grid covers all 16 chunks.
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [{ shape: [64, 64], chunks: [16, 16], data: ramp(4096, (i) => i) }],
+    'uint16',
+  )
+  const isChunk = (k: string) => k.includes('/c/')
+  let inFlight = 0
+  let peak = 0
+  let reads = 0
+  const spy = (failKey?: string) => ({
+    get: async (key: string) => {
+      if (!isChunk(key)) return store.get(key)
+      reads++
+      peak = Math.max(peak, ++inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight--
+      if (key === failKey) throw new Error('chunk read failed')
+      return store.get(key)
+    },
+  })
+  const ok = await ZarrSlideSource.fromStore(spy())
+  expect(ok.window).toEqual({ calMin: 0, calMax: 4095 })
+  expect(reads).toBe(16)
+  expect(peak).toBe(4)
+  reads = 0
+  await expect(ZarrSlideSource.fromStore(spy('/0/c/0/0'))).rejects.toThrow(
+    'chunk read failed',
+  )
+  // The failing read was among the first 4; the other 3 finish, none start.
+  expect(reads).toBe(4)
+})
+
 test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {
   // 1 x 8192 in 512-wide chunks: the sampled chunks (0, 5, 10, 15) hold
   // `fill`; unsampled chunk 1 holds `values` in turn.

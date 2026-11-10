@@ -1,3 +1,16 @@
+## 1.0.0-rc.50 (2026-11-10)
+
+### Fixes
+
+- **nv-ohif:** restore the 32 MiB thumbnail fetch cap ([03365e41](https://github.com/niivue/mono/commit/03365e41))
+- **nv-ohif:** ICC bulk data via OHIF data source; wsiThumbnail uses readFirstPart ([#650](https://github.com/niivue/mono/issues/650), [#657](https://github.com/niivue/mono/issues/657))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.49 (2026-11-10)
 
 ### Fixes

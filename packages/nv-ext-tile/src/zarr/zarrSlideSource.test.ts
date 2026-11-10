@@ -382,10 +382,19 @@ test('a flat, empty or huge sample still quantizes values outside it to distinct
     { dtype: 'float32', fill: 7, values: [0, 7, 14] },
     { dtype: 'float32', fill: Number.NaN, values: [0, 7, 14] },
     { dtype: 'float64', fill: 1e308, values: [0.5e308, 1e308, 1.5e308] },
+    // Sampled range -1e308..1e308: hi - lo overflows.
+    { dtype: 'float64', fill: [-1e308, 1e308], values: [-5e307, 0, 5e307] },
+    // Sampled range 0..1e-323: 65535 / (hi - lo) overflows.
+    { dtype: 'float64', fill: [0, 1e-323], values: [0, 5e-324, 1e-323] },
   ] as const
   for (const { dtype, fill, values } of cases) {
+    // A pair fill alternates its two values across the sampled chunks.
     const all = Array.from({ length: 8192 }, (_, i) =>
-      i >= 512 && i < 1024 ? values[i % 3] : fill,
+      i >= 512 && i < 1024
+        ? values[i % 3]
+        : typeof fill === 'number'
+          ? fill
+          : fill[i % 2],
     )
     const data =
       dtype === 'int32'

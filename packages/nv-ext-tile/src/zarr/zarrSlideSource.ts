@@ -44,7 +44,9 @@ const MAX_TILES = 1 << 21
 // Zarr metadata stays HTTP-cacheable; chunk reads do not (see fromUrl).
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
-type Quantize = { lo: number; scale: number }
+// Stored = (v * k - lo) / span * 65535, with k = 1/2 when hi - lo overflows;
+// dividing before scaling keeps a subnormal span finite.
+type Quantize = { k: number; lo: number; span: number }
 
 /**
  * NVSlide tile source for a 2D OME-Zarr image (0.4 / Zarr v2 and 0.5 / v3):
@@ -248,25 +250,24 @@ export class ZarrSlideSource implements SlideTileSource {
         omero.max > omero.min
           ? [omero.min, omero.max]
           : await dataRange(src, select, ys, xs)
-      let scale = 65535 / (hi - lo)
-      // A flat, empty or overflowing range says nothing of the rest: centre a
-      // window on the sample (one step per unit, or half its magnitude for a
-      // flat float) so values outside it stay distinct.
-      if (!(scale > 0 && Number.isFinite(scale))) {
+      // A flat or empty sample says nothing of the rest: centre a window on
+      // it (one step per unit, or half its magnitude for a flat float) so
+      // values outside it stay distinct.
+      if (!(hi > lo)) {
         noData = !Number.isFinite(lo)
         const mid = noData ? 0 : lo
         const half =
           !noData && dtype.startsWith('float')
             ? Math.max(Math.abs(mid) / 2, 1)
             : 32767.5
-        lo = mid - half
-        scale = 32767.5 / half
+        ;[lo, hi] = [mid - half, mid + half]
       }
-      quantize = { lo, scale }
+      const k = Number.isFinite(hi - lo) ? 1 : 0.5
+      quantize = { k, lo: lo * k, span: hi * k - lo * k }
     }
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
     const toStored = (v: number) =>
-      quantize ? (v - quantize.lo) * quantize.scale : v
+      quantize ? ((v * quantize.k - quantize.lo) / quantize.span) * 65535 : v
     // uint16 without a window: the sampled data range, so 12-bit data is
     // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
     const [calMin, calMax] =
@@ -428,7 +429,7 @@ export class ZarrSlideSource implements SlideTileSource {
         for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
           out[o] = Math.min(
             65535,
-            Math.max(0, (data[i] - q.lo) * q.scale + 0.5),
+            Math.max(0, ((data[i] * q.k - q.lo) / q.span) * 65535 + 0.5),
           )
     } else {
       for (let y = 0, o = 0; y < h; y++)

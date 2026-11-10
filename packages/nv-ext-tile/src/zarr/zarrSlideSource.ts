@@ -166,6 +166,14 @@ export class ZarrSlideSource implements SlideTileSource {
     const active = info.channels.findIndex((c) => c.active)
     const channel = options.channel ?? Math.max(0, active)
     checkOmeZarrIndex('channel', channel, src.channelCount)
+    // As for t: a coarser level may drop channels the finest level has.
+    for (const [i, lv] of levels.entries()) {
+      const count = indices.channel < 0 ? 1 : lv.shape[indices.channel]
+      if (rgb ? count < 3 : channel >= count)
+        throw new Error(
+          `OME-Zarr slide: level ${i} has ${count} channels; ${rgb ? 'RGB needs 3' : `channel ${channel} is out of range`}`,
+        )
+    }
     const fixed = (dim: number, c: number | zarr.Slice, level: number) =>
       dim === indices.time
         ? t

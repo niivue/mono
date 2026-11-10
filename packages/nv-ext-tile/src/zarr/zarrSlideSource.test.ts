@@ -402,6 +402,32 @@ test('a timepoint missing from a coarser level is refused on open', async () => 
   await ZarrSlideSource.fromStore(store, { t: 0 })
 })
 
+test('a channel missing from a coarser level is refused on open', async () => {
+  const grey = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 2) },
+    [
+      { shape: [2, 2, 2], chunks: [1, 2, 2], data: ramp(8, (i) => i) },
+      { shape: [1, 1, 1], chunks: [1, 1, 1], data: ramp(1, () => 0) },
+    ],
+    'uint16',
+  )
+  await expect(
+    ZarrSlideSource.fromStore(grey, { channel: 1 }),
+  ).rejects.toThrow('level 1 has 1 channels; channel 1 is out of range')
+  await ZarrSlideSource.fromStore(grey, { channel: 0 })
+  const rgb = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 2) },
+    [
+      { shape: [3, 2, 2], chunks: [1, 2, 2], data: new Uint8Array(12) },
+      { shape: [1, 1, 1], chunks: [1, 1, 1], data: new Uint8Array(1) },
+    ],
+    'uint8',
+  )
+  await expect(ZarrSlideSource.fromStore(rgb)).rejects.toThrow(
+    'level 1 has 1 channels; RGB needs 3',
+  )
+})
+
 test('an aborted tile is reported aborted, not failed', async () => {
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },

@@ -1,3 +1,13 @@
+## 1.0.0-rc.154 (2026-11-10)
+
+### Fixes
+
+- **niivue:** cap slide level grids and coalesce tile retry events ([76380039](https://github.com/niivue/mono/commit/76380039))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.153 (2026-11-10)
 
 ### Fixes

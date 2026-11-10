@@ -1,3 +1,13 @@
+## 1.0.0-rc.146 (2026-11-10)
+
+### Fixes
+
+- **niivue:** NVSlide loads only the tiles that fit when no level does ([39b191bd](https://github.com/niivue/mono/commit/39b191bd))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.145 (2026-11-10)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

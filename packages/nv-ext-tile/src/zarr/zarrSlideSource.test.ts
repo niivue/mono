@@ -411,9 +411,9 @@ test('a channel missing from a coarser level is refused on open', async () => {
     ],
     'uint16',
   )
-  await expect(
-    ZarrSlideSource.fromStore(grey, { channel: 1 }),
-  ).rejects.toThrow('level 1 has 1 channels; channel 1 is out of range')
+  await expect(ZarrSlideSource.fromStore(grey, { channel: 1 })).rejects.toThrow(
+    'level 1 has 1 channels; channel 1 is out of range',
+  )
   await ZarrSlideSource.fromStore(grey, { channel: 0 })
   const rgb = await writeImage(
     { multiscales: multiscale(['c', 'y', 'x'], 2) },
@@ -433,7 +433,9 @@ test('invalid chunk shapes and too many tiles are refused before any read', asyn
   const store: Store = new Map()
   const root = zarr.root(store)
   await zarr.create(root, {
-    attributes: { ome: { version: '0.5', multiscales: multiscale(['y', 'x'], 1) } },
+    attributes: {
+      ome: { version: '0.5', multiscales: multiscale(['y', 'x'], 1) },
+    },
   })
   await zarr.create(root.resolve('0'), {
     shape: [1, 2 ** 21 + 1],
@@ -451,6 +453,27 @@ test('invalid chunk shapes and too many tiles are refused before any read', asyn
   await expect(ZarrSlideSource.fromStore(store)).rejects.toThrow(
     'level 0 chunk 0x1 is invalid',
   )
+})
+
+test('levels not listed finest first are refused', async () => {
+  const level = (n: number) => ({
+    shape: [n, n],
+    chunks: [n, n],
+    data: new Uint8Array(n * n),
+  })
+  const open = async (sizes: number[]) =>
+    ZarrSlideSource.fromStore(
+      await writeImage(
+        { multiscales: multiscale(['y', 'x'], sizes.length) },
+        sizes.map(level),
+        'uint8',
+      ),
+    )
+  await expect(open([2, 4])).rejects.toThrow(
+    'level 1 (4x4) is not smaller than level 0',
+  )
+  await expect(open([4, 4])).rejects.toThrow('level 1 (4x4) is not smaller')
+  expect((await open([4, 2])).manifest.levels[1].downsample).toBe(2)
 })
 
 test('an aborted tile is reported aborted, not failed', async () => {

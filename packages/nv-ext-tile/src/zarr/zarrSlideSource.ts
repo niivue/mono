@@ -176,18 +176,34 @@ export class ZarrSlideSource implements SlideTileSource {
           `OME-Zarr slide: level ${i} has ${count} channels; ${rgb ? 'RGB needs 3' : `channel ${channel} is out of range`}`,
         )
     }
-    // Before any read or tile list: chunk shapes a tile can use, and a tile
-    // count the manifest can hold.
+    // Before any read or tile list: chunk shapes a tile can use, level order,
+    // and a tile count the manifest can hold.
     let tileCount = 0
     for (const [i, arr] of src.arrays.entries()) {
       const [tw, th] = [arr.chunks[xs], arr.chunks[ys]]
       if (!(Number.isInteger(tw) && Number.isInteger(th) && tw > 0 && th > 0))
-        throw new Error(`OME-Zarr slide: level ${i} chunk ${tw}x${th} is invalid`)
+        throw new Error(
+          `OME-Zarr slide: level ${i} chunk ${tw}x${th} is invalid`,
+        )
       if (Math.max(tw, th) > MAX_TILE_SIZE)
         throw new Error(
           `OME-Zarr slide: level ${i} chunk ${tw}x${th} exceeds ${MAX_TILE_SIZE}`,
         )
-      tileCount += Math.ceil(arr.shape[xs] / tw) * Math.ceil(arr.shape[ys] / th)
+      // Levels must run finest first: each no larger, and smaller in x or y.
+      const [w, h] = [arr.shape[xs], arr.shape[ys]]
+      const prev = src.arrays[i - 1]
+      if (
+        prev &&
+        !(
+          w <= prev.shape[xs] &&
+          h <= prev.shape[ys] &&
+          w * h < prev.shape[xs] * prev.shape[ys]
+        )
+      )
+        throw new Error(
+          `OME-Zarr slide: level ${i} (${w}x${h}) is not smaller than level ${i - 1}`,
+        )
+      tileCount += Math.ceil(w / tw) * Math.ceil(h / th)
       if (tileCount > MAX_TILES)
         throw new Error(`OME-Zarr slide: more than ${MAX_TILES} tiles`)
     }

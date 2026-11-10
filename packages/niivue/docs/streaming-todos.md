@@ -44,8 +44,8 @@ compensation work"; decode and budget plans wait behind them.
       Two build invariants that are easy to undo by accident: the module that
       knows about the pool must stay OUTSIDE anything the worker imports (hence
       `fetchOmeZarrChunkedSource.ts` as its own file, with the worker importing
-      only the pool-free `openOmeZarrChunkedSource`), and zarrita's lazily
-      imported codecs need
+      only the pool-free `openOmeZarrChunkedSource`), and zarrita-rs's lazily
+      imported wasm codec core needs
       `worker.rollupOptions.output.inlineDynamicImports` in
       `vite.config.lib.ts` or the inlined worker code-splits into chunks it has
       nowhere to fetch.

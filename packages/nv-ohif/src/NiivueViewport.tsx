@@ -304,16 +304,17 @@ export function NiivueViewport(props: OhifViewportProps) {
     // the others stay overlay candidates.
     updateNiivueViewport(viewportId, {
       displaySets: displaySets.slice(0, 1),
-      overlayUIDs: [],
+      overlays: new Map(),
+      baseLoading: true,
       overlayLoading: false,
       sliceFrames: undefined,
     })
     refreshToolbar(servicesManager, viewportId)
 
     // Volume-loading routes call loadVolumes, which replaces nv.volumes to match
-    // the reset overlayUIDs=[]. Routes that do NOT load a volume (WSI /
+    // the reset overlays. Routes that do NOT load a volume (WSI /
     // unsupported / empty) must drop any volumes left from a previous series, or
-    // nv.volumes desyncs from overlayUIDs=[] — the volume-gated Overlay button
+    // nv.volumes desyncs from the empty overlays — the volume-gated Overlay button
     // would stay enabled on a WSI viewport and toggling it would stack volumes.
     const dropStaleVolumes = () => {
       if (nv.volumes.length > 0) void nv.removeAllVolumes().catch(() => {})
@@ -353,7 +354,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     const seedWindowLevel = () => {
       if (cancelled) return
       centerCrosshair(nv)
-      updateNiivueViewport(viewportId, { windowLevel: readBaseWindowLevel(nv) })
+      updateNiivueViewport(viewportId, {
+        windowLevel: readBaseWindowLevel(nv),
+        baseLoading: false,
+      })
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when
       // annotation geometry itself has not changed.
@@ -369,25 +373,21 @@ export function NiivueViewport(props: OhifViewportProps) {
     const direct = displaySetToNiivue(ds)
     if (direct) {
       loaded()
-      nv.loadVolumes([{ ...direct, ...voi }]).then(
-        () => {
-          // The slot was swapped away (e.g. to a WSI) while this load was in flight:
-          // its dropStaleVolumes() already ran and no-op'd because nv.volumes was
-          // still empty, so undo this now-stale load ourselves.
-          if (cancelled) {
-            void nv.removeAllVolumes().catch(() => {})
-            return
-          }
+      // Fetch first and install only if the slot still shows this series: a
+      // stale load must not replace (or, undone, remove) a newer base.
+      nv.prepareVolume({ ...direct, ...voi })
+        .then(async (image) => {
+          if (cancelled) return
+          await nv.loadVolumes([image])
           seedWindowLevel()
-        },
-        () => {
+        })
+        .catch(() => {
           if (!cancelled)
             setStatus({
               kind: 'error',
               message: withExtra('Failed to load volume.'),
             })
-        },
-      )
+        })
       return () => {
         cancelled = true
       }
@@ -548,13 +548,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           voi,
           () => cancelled,
         ).then((shown) => {
-          // Swapped away while this load was in flight: undo the now-stale load
-          // (its dropStaleVolumes already ran and no-op'd on an empty array).
-          if (!shown) {
-            void nv.removeAllVolumes().catch(() => {})
-            return
-          }
-          seedWindowLevel()
+          if (shown) seedWindowLevel()
         })
       })
       .catch((err) => {

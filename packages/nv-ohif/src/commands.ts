@@ -4,6 +4,7 @@ import {
   type AnnotationStats,
   generateShape,
   isAnnotationErased,
+  type NVImage,
   SLICE_TYPE,
   slice2DToMM,
   type VectorAnnotation,
@@ -125,23 +126,96 @@ interface DisplaySetServiceLike {
   getDisplaySetsForSeries?: (uid: string) => ReadonlyArray<OhifDisplaySet>
 }
 
-// The next display set in the study that NiiVue could load but is not already
-// the base or an overlay of this viewport.
-export function findOverlayCandidate(
-  entry: Pick<NiivueViewportEntry, 'displaySets' | 'overlayUIDs'>,
+// The study's display sets NiiVue could load as an overlay of this viewport:
+// neither its base nor already overlaid (SEG/RT and slides classify out).
+export function overlayCandidates(
+  entry: Pick<NiivueViewportEntry, 'displaySets' | 'overlays'>,
   activeDisplaySets: ReadonlyArray<OhifDisplaySet>,
-): OhifDisplaySet | undefined {
-  const loaded = new Set<string>(entry.overlayUIDs)
+): OhifDisplaySet[] {
+  const loaded = new Set<string>(entry.overlays.keys())
   for (const ds of entry.displaySets) {
     if (typeof ds.displaySetInstanceUID === 'string')
       loaded.add(ds.displaySetInstanceUID)
   }
-  return activeDisplaySets.find((ds) => {
+  return activeDisplaySets.filter((ds) => {
     const uid = ds.displaySetInstanceUID
     if (typeof uid !== 'string' || loaded.has(uid)) return false
     const kind = classifyDisplaySet(ds)
     return kind === 'nifti' || kind === 'dicom-volume'
   })
+}
+
+// OHIF (Cornerstone) colormap names whose NiiVue LUT is named differently.
+// Other names match NiiVue's case-insensitively.
+const CORNERSTONE_COLORMAPS: Record<string, string> = {
+  grayscale: 'gray',
+  hot_iron: 'hotiron',
+}
+
+/**
+ * The registered NiiVue colormap for a name or `{ name }` (OHIF passes
+ * either), or undefined when NiiVue has no such LUT.
+ */
+function niivueColormapName(
+  registered: readonly string[],
+  colormap: unknown,
+): string | undefined {
+  const raw =
+    typeof colormap === 'object' && colormap !== null
+      ? (colormap as { name?: unknown }).name
+      : colormap
+  if (typeof raw !== 'string') return undefined
+  const lower = raw.toLowerCase()
+  const name = CORNERSTONE_COLORMAPS[lower] ?? lower
+  return registered.find((n) => n.toLowerCase() === name)
+}
+
+/**
+ * OHIF's setViewportColormap on a NiiVue viewport: targets the base (no
+ * `displaySetInstanceUID`, or the base's) or an overlay; any other display set
+ * is a no-op. An unknown colormap keeps the current one, and `opacity` applies
+ * only when given (Cornerstone defaults it to 1, which would undo an overlay's
+ * blend). A hidden overlay stays hidden.
+ */
+export function setViewportColormap(
+  entry: NiivueViewportEntry,
+  { displaySetInstanceUID: uid, colormap, opacity }: Record<string, unknown>,
+): void {
+  const { nv } = entry
+  const isBase =
+    uid === undefined || uid === entry.displaySets[0]?.displaySetInstanceUID
+  const index = isBase ? 0 : overlayVolumeIndex(entry, uid as string)
+  if ((!isBase && index === 0) || !nv.volumes[index]) return
+  const name = niivueColormapName(nv.colormaps, colormap)
+  const alpha = Number.isFinite(opacity)
+    ? Math.min(1, Math.max(0, opacity as number))
+    : undefined
+  if (name === undefined && alpha === undefined) return
+  nv.setVolume(index, {
+    ...(name === undefined ? {} : { colormap: name }),
+    ...(alpha === undefined ? {} : { opacity: alpha }),
+  }).catch((err: unknown) =>
+    console.error('[nv-ohif] colormap update failed', err),
+  )
+}
+
+// The volume index of a display set's overlay, or 0 when it is not one.
+export function overlayVolumeIndex(
+  entry: NiivueViewportEntry,
+  uid?: string,
+): number {
+  const hdr = uid === undefined ? undefined : entry.overlays.get(uid)
+  const index = entry.nv.volumes.findIndex((v) => v.hdr === hdr)
+  return hdr && index > 0 ? index : 0
+}
+
+/** The loaded overlays' display sets, bottom layer first. */
+export function overlayOrder(entry: NiivueViewportEntry): string[] {
+  return [...entry.overlays.keys()]
+    .map((uid) => ({ uid, index: overlayVolumeIndex(entry, uid) }))
+    .filter((o) => o.index > 0)
+    .sort((a, b) => a.index - b.index)
+    .map((o) => o.uid)
 }
 
 // Every status write from this module bumps the entry's token, so a flash's
@@ -1403,16 +1477,41 @@ export function getNiivueCommandsModule({
     },
 
     /**
-     * Toggle a colormapped overlay: with overlays loaded, remove them;
-     * otherwise load the study's next loadable series on top of the base
-     * (fetch + dcm2niix conversion for DICOM).
+     * Toggle a colormapped overlay: cancel a load in flight; with overlays
+     * loaded, remove them; otherwise add the study's next loadable series.
      */
     niivueToggleOverlay: async () => {
       const entry = getActiveNiivueEntry(servicesManager)
       if (!entry) return
-      // A second press while loading cancels the load and releases the entry at
-      // once, so a third press starts a new load while the old one tears down.
-      if (entry.overlayLoading) {
+      const { nv, viewportId } = entry
+      if (entry.overlayLoading || entry.overlays.size === 0) {
+        await actions.niivueAddOverlay()
+        return
+      }
+      while (nv.volumes.length > 1) {
+        nv.model.removeVolume(nv.volumes.length - 1)
+      }
+      entry.overlays.clear()
+      await nv.updateGLVolume()
+      refreshToolbar(servicesManager, viewportId)
+    },
+
+    /**
+     * Add a series of the study as an overlay on the base (fetch + dcm2niix
+     * conversion for DICOM): `displaySetInstanceUID`, else the next loadable
+     * one. A load in flight is cancelled first; without a chosen series that
+     * is all a call does (the Overlay toggle's second press).
+     */
+    niivueAddOverlay: async ({
+      displaySetInstanceUID,
+    }: {
+      displaySetInstanceUID?: string
+    } = {}) => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      // Cancelling releases the entry at once, so a new load can start while
+      // the old one tears down.
+      if (entry.overlayLoading && !displaySetInstanceUID) {
         entry.overlayAbort?.abort()
         entry.overlayAbort = undefined
         entry.overlayLoading = false
@@ -1422,30 +1521,33 @@ export function getNiivueCommandsModule({
       }
       const { nv, viewportId } = entry
 
-      if (entry.overlayUIDs.length > 0) {
-        while (nv.volumes.length > 1) {
-          nv.model.removeVolume(nv.volumes.length - 1)
-        }
-        entry.overlayUIDs = []
-        await nv.updateGLVolume()
-        refreshToolbar(servicesManager, viewportId)
-        return
-      }
-
-      // Need a loaded base to overlay onto.
-      if (nv.volumes.length === 0) return
+      // Need a loaded base to overlay onto (until a new base loads, nv.volumes
+      // still holds the old one).
+      if (entry.baseLoading || nv.volumes.length === 0) return
 
       const dsService = ohifServices(servicesManager)?.displaySetService as
         | DisplaySetServiceLike
         | undefined
-      const candidate = findOverlayCandidate(
+      const candidates = overlayCandidates(
         entry,
         dsService?.getActiveDisplaySets?.() ?? [],
       )
+      const candidate = displaySetInstanceUID
+        ? candidates.find(
+            (ds) => ds.displaySetInstanceUID === displaySetInstanceUID,
+          )
+        : candidates[0]
       if (!candidate) {
-        flashStatus(entry, 'No other loadable series in this study.')
+        flashStatus(
+          entry,
+          displaySetInstanceUID
+            ? 'That series cannot be overlaid here.'
+            : 'No other loadable series in this study.',
+        )
         return
       }
+      // A chosen series replaces a load in flight: one load at a time.
+      entry.overlayAbort?.abort()
       const uid = String(candidate.displaySetInstanceUID)
       const label =
         typeof candidate.SeriesDescription === 'string'
@@ -1458,7 +1560,7 @@ export function getNiivueCommandsModule({
       // and the entry leaves the registry; (b) a NEW base series is hung in the
       // same viewport slot — the entry object is REUSED (so the registry check
       // alone passes), but the load effect replaces entry.displaySets and resets
-      // overlayUIDs. Guard on both: same registered entry AND same base series,
+      // overlays. Guard on both: same registered entry AND same base series,
       // so we never overlay onto the wrong anatomy or a destroyed instance. Both
       // also abort the conversion via entry.overlayAbort (see niivueRegistry).
       const baseDisplaySets = entry.displaySets
@@ -1472,15 +1574,15 @@ export function getNiivueCommandsModule({
       // Prepare (fetch + parse) the overlay, add it only if this load still owns
       // the viewport, then undo the add if it lost ownership DURING addVolume
       // (cancel press, swap, unmount). Removed by identity, so a newer load's
-      // volume or a swap's replaced array is left alone. Returns true if the
-      // overlay stuck.
+      // volume or a swap's replaced array is left alone. Returns the hdr of the
+      // overlay if it stuck.
       const addOverlayGuarded = async (
         spec: Parameters<typeof nv.prepareVolume>[0],
-      ): Promise<boolean> => {
+      ): Promise<NVImage['hdr'] | undefined> => {
         const image = await nv.prepareVolume(spec)
         if (stillLive() && !abort.signal.aborted) {
           await nv.addVolume(image)
-          if (stillLive() && !abort.signal.aborted) return true
+          if (stillLive() && !abort.signal.aborted) return image.hdr
           // addVolume stores a copy of `image` that shares its hdr.
           const i = nv.volumes.findIndex((v) => v.hdr === image.hdr)
           if (i >= 0) {
@@ -1490,18 +1592,19 @@ export function getNiivueCommandsModule({
         }
         // Cancelled: the cancel press cleared the status.
         abort.signal.throwIfAborted()
-        return false
+        return undefined
       }
 
       entry.overlayAbort = abort
       entry.overlayLoading = true
       try {
+        // Disables the dropdown's add list before the first await.
+        refreshToolbar(servicesManager, entry.viewportId)
         // Direct volume-URL display sets skip conversion.
         const direct = displaySetToNiivue(candidate)
-        let added: boolean
+        let added: NVImage['hdr'] | undefined
         let note: string | undefined
         if (direct) {
-          if (!stillLive()) return
           added = await addOverlayGuarded({
             ...direct,
             colormap: OVERLAY_COLORMAP,
@@ -1525,7 +1628,6 @@ export function getNiivueCommandsModule({
           })
           // A cancel press after convert resolved but before this resumed.
           abort.signal.throwIfAborted()
-          if (!stillLive()) return
           if (!converted) throw new Error('conversion produced no volume')
           note = converted.note
           added = await addOverlayGuarded({
@@ -1535,8 +1637,8 @@ export function getNiivueCommandsModule({
             opacity: OVERLAY_OPACITY,
           })
         }
-        if (!added) return
-        entry.overlayUIDs.push(uid)
+        if (!added || !owns()) return
+        entry.overlays.set(uid, added)
         if (note) flashStatus(entry, note)
         else writeStatus(entry, null)
       } catch (err) {
@@ -1557,6 +1659,78 @@ export function getNiivueCommandsModule({
           refreshToolbar(servicesManager, viewportId)
         }
       }
+    },
+
+    /** Show or hide an overlay (still loaded); toggles without `visible`. */
+    niivueSetOverlayVisible: ({
+      displaySetInstanceUID,
+      visible,
+    }: {
+      displaySetInstanceUID?: string
+      visible?: boolean
+    } = {}) => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      const index = overlayVolumeIndex(entry, displaySetInstanceUID)
+      if (index === 0) return
+      // Core keeps a hidden volume's opacity for when it is shown again.
+      const shown = entry.nv.volumes[index]?.visible !== false
+      entry.nv
+        .setVolume(index, { visible: visible ?? !shown })
+        .catch((err: unknown) =>
+          console.error('[nv-ohif] overlay visibility update failed', err),
+        )
+      refreshToolbar(servicesManager, entry.viewportId)
+    },
+
+    /**
+     * Move an overlay past the next one up (drawn over it) or down. The base
+     * stays the bottom layer.
+     */
+    niivueMoveOverlay: ({
+      displaySetInstanceUID,
+      direction,
+    }: {
+      displaySetInstanceUID?: string
+      direction?: 'up' | 'down'
+    } = {}) => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      const order = overlayOrder(entry)
+      const at = order.indexOf(displaySetInstanceUID as string)
+      const step = direction === 'up' ? 1 : direction === 'down' ? -1 : 0
+      const neighbor = order[at + step]
+      if (at < 0 || step === 0 || neighbor === undefined) return
+      const from = overlayVolumeIndex(entry, displaySetInstanceUID)
+      const to = overlayVolumeIndex(entry, neighbor)
+      // One layer at a time, past a cancelled load's volume between the two.
+      for (let i = from; i !== to; i += step)
+        (step > 0
+          ? entry.nv.moveVolumeUp(i)
+          : entry.nv.moveVolumeDown(i)
+        ).catch((err: unknown) =>
+          console.error('[nv-ohif] overlay move failed', err),
+        )
+      refreshToolbar(servicesManager, entry.viewportId)
+    },
+
+    /** Remove one overlay; the others keep their display-set mapping. */
+    niivueRemoveOverlay: ({
+      displaySetInstanceUID,
+    }: {
+      displaySetInstanceUID?: string
+    } = {}) => {
+      const entry = getActiveNiivueEntry(servicesManager)
+      if (!entry) return
+      const index = overlayVolumeIndex(entry, displaySetInstanceUID)
+      if (index === 0) return
+      entry.overlays.delete(displaySetInstanceUID as string)
+      entry.nv
+        .removeVolume(index)
+        .catch((err: unknown) =>
+          console.error('[nv-ohif] overlay removal failed', err),
+        )
+      refreshToolbar(servicesManager, entry.viewportId)
     },
 
     /**

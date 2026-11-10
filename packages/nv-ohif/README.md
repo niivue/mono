@@ -84,7 +84,8 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 ## Toolbar buttons
 
 The extension registers the commands (`niivueSetSliceType`, `niivueResetView`,
-`niivueSetClipPlane`, `niivueToggleOverlay`, `niivueSetWindowLevel`,
+`niivueSetClipPlane`, `niivueToggleOverlay`, `niivueAddOverlay`, `niivueSetOverlayVisible`,
+`niivueMoveOverlay`, `niivueRemoveOverlay`, `niivueSetWindowLevel`,
 `niivueSetWindowLevelPreset`, `niivueAutoWindowLevel`, `niivueSetColormap`,
 `niivueToggleColorbar`, `niivueToggleInterpolation`, `niivueToggleCrosshair`), the toolbar evaluators, and a customization pack with the
 button definitions. `niivue*` commands act only when the active viewport is NiiVue.
@@ -114,7 +115,7 @@ toolbarSections: [
 
 It also answers OHIF's standard `resetViewport`, `setViewportOrientation`
 (axial / sagittal / coronal / acquisition), `scaleUpViewport`, `scaleDownViewport`,
-`fitViewportToWindow`, `setWindowLevelPreset`, `rotateViewportCW`, `rotateViewportCCW`,
+`fitViewportToWindow`, `setWindowLevelPreset`, `setViewportColormap`, `rotateViewportCW`, `rotateViewportCCW`,
 `rotateViewportCWSet`, `flipViewportHorizontal`, `flipViewportVertical`,
 `setViewportHorizontalFlip` and `setViewportVerticalFlip` on a NiiVue viewport
 (`viewportId`, else the active one; rotate and flip apply to 2D tiles, and reset
@@ -123,7 +124,25 @@ standard hotkeys work in mixed layouts. This relies on the extension registering
 after cornerstone (newer command contexts win). The `NIIVUE` context is registered
 app-wide, so these names route through nv-ohif in every mode (delegating to
 `CORNERSTONE` when the viewport is not NiiVue), and a third-party extension that
-registers the same names in a context newer than `CORNERSTONE` is bypassed.
+registers the same names in a context newer than `CORNERSTONE` is bypassed. On a
+whole-slide viewport the volume-only ones (orientation, W/L presets, colormap,
+rotate/flip) are disabled.
+
+### Overlays
+
+A viewport holds one base series and any number of overlays drawn over it:
+
+| Command | Options | Effect |
+|---|---|---|
+| `niivueAddOverlay` | `displaySetInstanceUID?` | Load that series (else the study's next loadable one) as a warm, 0.5-opacity overlay. Refuses the base, a loaded overlay, and series NiiVue cannot load as a volume (SEG, RTSTRUCT, SR..., slides; RTDOSE is allowed). Does nothing until a newly hung base has loaded (the Overlay buttons are disabled meanwhile). Without a UID, a call while a load runs only cancels it; a UID it accepts replaces that load (one at a time). |
+| `niivueSetOverlayVisible` | `displaySetInstanceUID`, `visible?` | Hide or show it, keeping it loaded and its opacity; toggles without `visible`. |
+| `niivueMoveOverlay` | `displaySetInstanceUID`, `direction: 'up' \| 'down'` | Move it past the next overlay up (drawn over it) or down; the base stays the bottom layer. |
+| `niivueRemoveOverlay` | `displaySetInstanceUID` | Unload it. |
+| `setViewportColormap` | `viewportId?`, `displaySetInstanceUID?`, `colormap`, `opacity?` | OHIF's command: the base (no UID, or the base's) or an overlay; any other UID is a no-op. `colormap` is a NiiVue name (any case) or `Grayscale` / `hot_iron`, as a string or `{ name }`; an unknown name keeps the current one. `opacity` is clamped to 0..1; unlike Cornerstone, omitting it leaves it unchanged. |
+
+`niivueToggleOverlay` (the Overlay button) cancels a load in flight, else adds the
+next series or removes every overlay. A base swap or unmount drops the overlays and
+cancels a load in flight.
 
 `withNiivueSupport(button)` adds the `evaluate.niivue.unsupported` evaluator to a
 button: on a NiiVue viewport it disables buttons whose commands or tools are not in
@@ -220,8 +239,8 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   DOC, FID, ECG, HD and AU series (also skipped as overlays). RTDOSE is converted.
 - **One series per viewport.** Only the first display set hung in a viewport
   loads; a note names the rest.
-- A second Overlay press while an overlay converts cancels it, as do a base
-  swap and unmount.
+- A second Overlay press (or another `niivueAddOverlay`) while an overlay converts
+  cancels it, as do a base swap and unmount.
 
 ## Whole-slide imaging
 

@@ -1,4 +1,4 @@
-import type NiiVue from '@niivue/niivue'
+import type { default as NiiVue, NVImage } from '@niivue/niivue'
 import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
 import type { SliceFrames } from './sliceFrames'
 import type { WsiSlideView } from './wsiSlideView'
@@ -14,8 +14,14 @@ export interface NiivueViewportEntry {
   nv: NiiVue
   /** Display sets currently hung in the viewport (the base load). */
   displaySets: ReadonlyArray<OhifDisplaySet>
-  /** displaySetInstanceUIDs loaded as overlays (niivueToggleOverlay). */
-  overlayUIDs: string[]
+  /**
+   * Loaded overlays: displaySetInstanceUID -> the hdr its volume shares (core
+   * stores a copy of an added image, hdr included). Found by identity, since a
+   * cancelled load's volume can sit among them until it is removed.
+   */
+  overlays: Map<string, NVImage['hdr']>
+  /** Set from a base swap until the new base volume has loaded. */
+  baseLoading: boolean
   /** Guard against concurrent overlay loads. */
   overlayLoading: boolean
   /** Cancels the overlay load in flight (re-toggle, base swap, unregister). */
@@ -47,7 +53,8 @@ export function registerNiivue(viewportId: string, nv: NiiVue): void {
     viewportId,
     nv,
     displaySets: [],
-    overlayUIDs: [],
+    overlays: new Map(),
+    baseLoading: false,
     overlayLoading: false,
     clipPlane: 'none',
   })
@@ -68,7 +75,8 @@ export function updateNiivueViewport(
       | 'setStatus'
       | 'slideView'
       | 'windowLevel'
-      | 'overlayUIDs'
+      | 'overlays'
+      | 'baseLoading'
       | 'overlayLoading'
       | 'toolGroupId'
       | 'sliceFrames'

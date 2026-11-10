@@ -6,7 +6,6 @@ import {
   applyOhifLabelToAnnotation,
   applyOhifVisibilityToAnnotation,
   clearNiivueAnnotations,
-  findOverlayCandidate,
   flashStatus,
   getNiivueCommandsModule,
   jumpToNiivueMeasurement,
@@ -14,6 +13,8 @@ import {
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
+  overlayCandidates,
+  overlayOrder,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
@@ -82,7 +83,19 @@ function stubNiivue() {
     },
     async setVolume(index: number, opts: Record<string, unknown>) {
       volumeUpdates.push({ index, opts })
+      Object.assign(volumes[index] ?? {}, opts)
     },
+    // Like core: the model changes before the first await.
+    async removeVolume(index: number) {
+      volumes.splice(index, 1)
+    },
+    async moveVolumeUp(index: number) {
+      volumes.splice(index + 1, 0, ...volumes.splice(index, 1))
+    },
+    async moveVolumeDown(index: number) {
+      volumes.splice(index - 1, 0, ...volumes.splice(index, 1))
+    },
+    colormaps: ['Gray', 'Hotiron', 'Hsv', 'Viridis', 'Warm'],
     async recalculateCalMinMax(index: number) {
       recalculated.push(index)
     },
@@ -1927,10 +1940,13 @@ describe('niivueSetClipPlane', () => {
   })
 })
 
-describe('findOverlayCandidate', () => {
+describe('overlayCandidates', () => {
   const base = { displaySetInstanceUID: 'ds-base' }
-  it('picks the first loadable set that is not the base or an overlay', () => {
-    const entry = { displaySets: [base], overlayUIDs: ['ds-loaded'] }
+  it('lists the loadable sets that are not the base or an overlay', () => {
+    const entry = {
+      displaySets: [base],
+      overlays: new Map([['ds-loaded', {} as never]]),
+    }
     const candidates = [
       base,
       { displaySetInstanceUID: 'ds-loaded', url: 'https://x/a.nii.gz' },
@@ -1945,15 +1961,18 @@ describe('findOverlayCandidate', () => {
         ],
       },
       { displaySetInstanceUID: 'ds-next', url: 'https://x/b.nii.gz' },
+      { displaySetInstanceUID: 'ds-last', url: 'https://x/c.nii.gz' },
     ]
-    expect(findOverlayCandidate(entry, candidates)?.displaySetInstanceUID).toBe(
-      'ds-next',
-    )
+    expect(
+      overlayCandidates(entry, candidates).map(
+        (ds) => ds.displaySetInstanceUID,
+      ),
+    ).toEqual(['ds-next', 'ds-last'])
   })
 
-  it('returns undefined when nothing else is loadable', () => {
-    const entry = { displaySets: [base], overlayUIDs: [] }
-    expect(findOverlayCandidate(entry, [base])).toBeUndefined()
+  it('is empty when nothing else is loadable', () => {
+    const entry = { displaySets: [base], overlays: new Map() }
+    expect(overlayCandidates(entry, [base])).toEqual([])
   })
 })
 
@@ -2275,23 +2294,26 @@ describe('niivueToggleOverlay', () => {
     expect(nv.added).toHaveLength(1)
     expect(nv.added[0]?.colormap).toBe(OVERLAY_COLORMAP)
     expect(nv.added[0]?.opacity).toBe(OVERLAY_OPACITY)
-    expect(getNiivueEntryForViewport('vp-1')?.overlayUIDs).toEqual(['ds-2'])
+    expect([
+      ...(getNiivueEntryForViewport('vp-1')?.overlays.keys() ?? []),
+    ]).toEqual(['ds-2'])
   })
 
   it('removes loaded overlays on the second toggle', async () => {
     const nv = stubNiivue()
-    nv.volumes.push({ name: 'base' }, { name: 'overlay' })
+    const hdr = {}
+    nv.volumes.push({ name: 'base' }, { name: 'overlay', hdr })
     register('vp-1', nv)
     const entry = getNiivueEntryForViewport('vp-1')
     if (!entry) throw new Error('entry missing')
-    entry.overlayUIDs = ['ds-2']
+    entry.overlays.set('ds-2', hdr as never)
 
     const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
     await actions.niivueToggleOverlay()
     expect(nv.volumes).toHaveLength(1)
-    expect(entry.overlayUIDs).toEqual([])
+    expect(entry.overlays.size).toBe(0)
   })
 
   it('reports a failed load as an error status (#130)', async () => {
@@ -2423,7 +2445,7 @@ describe('niivueToggleOverlay', () => {
         resolvers[1]?.({ image: new File([], 'new.nii') })
         await second
         expect(nv.added.map((a) => a.name)).toEqual(['new.nii'])
-        expect(entry.overlayUIDs).toEqual(['ds-ct'])
+        expect([...entry.overlays.keys()]).toEqual(['ds-ct'])
         expect(entry.overlayLoading).toBe(false)
       } finally {
         convert.mockRestore()
@@ -2465,13 +2487,17 @@ describe('niivueToggleOverlay', () => {
         const second = actions.niivueToggleOverlay()
         resolvers[1]?.({ image: new File([], 'new.nii') })
         await second
+        // Load 1's volume is still between the base and load 2's.
+        const names = () => nv.volumes.map((v) => (v as { name: string }).name)
+        expect(names()).toEqual(['base', 'old.nii', 'new.nii'])
+        expect(overlayOrder(entry)).toEqual(['ds-ct'])
+        actions.niivueSetOverlayVisible({ displaySetInstanceUID: 'ds-ct' })
+        expect(nv.volumes[2]).toMatchObject({ visible: false })
+        actions.niivueRemoveOverlay({ displaySetInstanceUID: 'ds-ct' })
         release()
         await loading
-        expect(nv.volumes.map((v) => (v as { name: string }).name)).toEqual([
-          'base',
-          'new.nii',
-        ])
-        expect(entry.overlayUIDs).toEqual(['ds-ct'])
+        expect(names()).toEqual(['base'])
+        expect(entry.overlays.size).toBe(0)
       } finally {
         convert.mockRestore()
       }
@@ -2528,6 +2554,242 @@ describe('niivueToggleOverlay', () => {
     const { actions } = getNiivueCommandsModule({ servicesManager: sm })
     await actions.niivueToggleOverlay()
     expect(nv.added).toHaveLength(0)
+  })
+})
+
+// A viewport with a base and the named overlays already loaded.
+function withOverlays(
+  overlayNames: string[] = [],
+  study: Record<string, unknown>[] = [],
+) {
+  const nv = stubNiivue()
+  const overlays = overlayNames.map((name) => ({ name, hdr: {} }))
+  nv.volumes.push({ name: 'base', hdr: {} }, ...overlays)
+  register('vp-1', nv)
+  const statuses: Array<string | null> = []
+  updateNiivueViewport('vp-1', {
+    displaySets: [{ displaySetInstanceUID: 'ds-base' }],
+    overlays: new Map(overlays.map((v) => [`ds-${v.name}`, v.hdr as never])),
+    setStatus: (message) => statuses.push(message),
+  })
+  const entry = getNiivueEntryForViewport('vp-1')
+  if (!entry) throw new Error('entry missing')
+  const { actions, definitions } = getNiivueCommandsModule({
+    servicesManager: services('vp-1', study),
+  })
+  const setColormap = (opts: Record<string, unknown>) =>
+    (
+      definitions.setViewportColormap?.commandFn as (
+        o: Record<string, unknown>,
+      ) => void
+    )(opts)
+  const names = () => nv.volumes.map((v) => (v as { name: string }).name)
+  const volume = (name: string) =>
+    nv.volumes.find((v) => (v as { name: string }).name === name) as Record<
+      string,
+      unknown
+    >
+  return { nv, entry, actions, setColormap, names, volume, statuses }
+}
+
+describe('niivueAddOverlay', () => {
+  const study = [
+    { displaySetInstanceUID: 'ds-base' },
+    { displaySetInstanceUID: 'ds-a', url: 'https://x/a.nii.gz' },
+    { displaySetInstanceUID: 'ds-b', url: 'https://x/b.nii.gz' },
+    {
+      displaySetInstanceUID: 'ds-seg',
+      Modality: 'SEG',
+      instances: [
+        { imageId: 'wadors:https://h/studies/1/series/2/instances/3/frames/1' },
+      ],
+    },
+  ]
+
+  it('stacks the chosen series in the order added', async () => {
+    const { nv, entry, actions } = withOverlays([], study)
+    await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-b' })
+    await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-a' })
+    expect(nv.added.map((a) => a.url)).toEqual([
+      'https://x/b.nii.gz',
+      'https://x/a.nii.gz',
+    ])
+    expect(overlayOrder(entry)).toEqual(['ds-b', 'ds-a'])
+  })
+
+  it('refuses the base, a loaded overlay and a derived series', async () => {
+    const { nv, actions, statuses } = withOverlays(['a'], study)
+    for (const uid of ['ds-base', 'ds-a', 'ds-seg', 'ds-unknown'])
+      await actions.niivueAddOverlay({ displaySetInstanceUID: uid })
+    expect(nv.added).toHaveLength(0)
+    expect(statuses).toEqual(
+      Array(4).fill('That series cannot be overlaid here.'),
+    )
+  })
+
+  it('waits for a swapped-in base, whose old volumes are still shown', async () => {
+    const { nv, actions } = withOverlays([], study)
+    updateNiivueViewport('vp-1', { baseLoading: true })
+    await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-a' })
+    expect(nv.added).toHaveLength(0)
+  })
+
+  it('cancels a load in flight, then loads the chosen series', async () => {
+    const convert = spyOn(
+      dicomToNiivue,
+      'convertDisplaySetToNifti',
+    ).mockImplementation(() => new Promise(() => {}))
+    try {
+      const { entry, actions } = withOverlays(
+        [],
+        [
+          ...study,
+          {
+            displaySetInstanceUID: 'ds-ct',
+            Modality: 'CT',
+            instances: [
+              {
+                imageId:
+                  'wadors:https://h/studies/1/series/2/instances/9/frames/1',
+              },
+            ],
+          },
+        ],
+      )
+      void actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-ct' })
+      const signal = entry.overlayAbort?.signal
+      // A series that cannot be added leaves the load alone.
+      await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-base' })
+      expect(signal?.aborted).toBe(false)
+      await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-a' })
+      expect(signal?.aborted).toBe(true)
+      expect([...entry.overlays.keys()]).toEqual(['ds-a'])
+      expect(entry.overlayLoading).toBe(false)
+    } finally {
+      convert.mockRestore()
+    }
+  })
+  it('refreshes the toolbar as a load starts, not only when it ends', () => {
+    const convert = spyOn(
+      dicomToNiivue,
+      'convertDisplaySetToNifti',
+    ).mockImplementation(() => new Promise(() => {}))
+    try {
+      const ct = {
+        displaySetInstanceUID: 'ds-ct',
+        Modality: 'CT',
+        instances: [
+          {
+            imageId: 'wadors:https://h/studies/1/series/2/instances/9/frames/1',
+          },
+        ],
+      }
+      withOverlays([], [...study, ct])
+      const sm = services('vp-1', [...study, ct])
+      let refreshes = 0
+      Object.assign(sm.services, {
+        toolbarService: { refreshToolbarState: () => refreshes++ },
+      })
+      const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+      void actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-ct' })
+      expect(refreshes).toBe(1)
+    } finally {
+      convert.mockRestore()
+    }
+  })
+})
+
+describe('per-overlay commands', () => {
+  it('reorder, then style the moved overlay by display set', () => {
+    const { entry, actions, setColormap, names, volume } = withOverlays([
+      'a',
+      'b',
+    ])
+    actions.niivueMoveOverlay({
+      displaySetInstanceUID: 'ds-a',
+      direction: 'up',
+    })
+    expect(names()).toEqual(['base', 'b', 'a'])
+    expect(overlayOrder(entry)).toEqual(['ds-b', 'ds-a'])
+    actions.niivueMoveOverlay({
+      displaySetInstanceUID: 'ds-a',
+      direction: 'down',
+    })
+    expect(names()).toEqual(['base', 'a', 'b'])
+    actions.niivueMoveOverlay({
+      displaySetInstanceUID: 'ds-a',
+      direction: 'up',
+    })
+    setColormap({ displaySetInstanceUID: 'ds-a', colormap: { name: 'hsv' } })
+    expect(volume('a').colormap).toBe('Hsv')
+    expect(volume('b').colormap).toBeUndefined()
+  })
+
+  it('never move an overlay into the base or past a load in flight', () => {
+    const { nv, actions, names } = withOverlays(['a', 'b'])
+    nv.volumes.push({ name: 'loading' }) // appended by an unfinished load
+    actions.niivueMoveOverlay({
+      displaySetInstanceUID: 'ds-a',
+      direction: 'down',
+    })
+    actions.niivueMoveOverlay({
+      displaySetInstanceUID: 'ds-b',
+      direction: 'up',
+    })
+    actions.niivueMoveOverlay({ displaySetInstanceUID: 'ds-b' }) // no direction
+    expect(names()).toEqual(['base', 'a', 'b', 'loading'])
+  })
+
+  it('move past a cancelled load still between two overlays', () => {
+    const { nv, entry, actions, names } = withOverlays(['a', 'b'])
+    nv.volumes.splice(2, 0, { name: 'cancelled' })
+    actions.niivueMoveOverlay({
+      displaySetInstanceUID: 'ds-a',
+      direction: 'up',
+    })
+    expect(names()).toEqual(['base', 'cancelled', 'b', 'a'])
+    expect(overlayOrder(entry)).toEqual(['ds-b', 'ds-a'])
+  })
+
+  it('hide an overlay without unloading it, and show it again', () => {
+    const { nv, actions, volume } = withOverlays(['a'])
+    volume('a').opacity = 0.3
+    actions.niivueSetOverlayVisible({ displaySetInstanceUID: 'ds-a' })
+    expect(volume('a').visible).toBe(false)
+    expect(nv.volumes).toHaveLength(2)
+    actions.niivueSetOverlayVisible({
+      displaySetInstanceUID: 'ds-a',
+      visible: true,
+    })
+    expect(volume('a')).toMatchObject({ visible: true, opacity: 0.3 })
+  })
+
+  it('remove one overlay and keep the others mapped', () => {
+    const { entry, actions, setColormap, names, volume } = withOverlays([
+      'a',
+      'b',
+      'c',
+    ])
+    actions.niivueRemoveOverlay({ displaySetInstanceUID: 'ds-b' })
+    expect(names()).toEqual(['base', 'a', 'c'])
+    expect(overlayOrder(entry)).toEqual(['ds-a', 'ds-c'])
+    setColormap({ displaySetInstanceUID: 'ds-c', opacity: 2 })
+    expect(volume('c').opacity).toBe(1)
+  })
+})
+
+describe('setViewportColormap', () => {
+  it('targets the base without a display set and skips unknown ones', () => {
+    const { nv, setColormap, volume } = withOverlays(['a'])
+    setColormap({ colormap: 'Grayscale' })
+    setColormap({ displaySetInstanceUID: 'ds-base', colormap: 'hot_iron' })
+    setColormap({ displaySetInstanceUID: 'ds-other', colormap: 'viridis' })
+    setColormap({ displaySetInstanceUID: 'ds-a', colormap: 'no-such-map' })
+    expect(nv.volumeUpdates).toEqual([
+      { index: 0, opts: { colormap: 'Gray' } },
+      { index: 0, opts: { colormap: 'Hotiron' } },
+    ])
+    expect(volume('a').colormap).toBeUndefined()
   })
 })
 

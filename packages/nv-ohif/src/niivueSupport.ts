@@ -30,6 +30,7 @@ const SLIDE_SUPPORTED_TOOLS: readonly string[] = ['Length', 'Pan', 'Zoom']
 const SLIDE_UNSUPPORTED = [
   'setViewportOrientation',
   'setWindowLevelPreset',
+  'setViewportColormap',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ]
 // Host commands that act on display sets or app UI, not the viewport's

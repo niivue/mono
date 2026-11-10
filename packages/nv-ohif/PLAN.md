@@ -320,8 +320,12 @@ the differentiators:
 - Reset view (camera / pan / zoom / crosshair). **DONE**
 - **3D volume rendering** clip plane (off + 6 anatomical presets). **DONE**
   (exploded-block / drawing still to come.)
-- **Overlays** (load the study's next series as a colormapped overlay). **DONE**
-  (segmentation-specific overlays + colormap/opacity UI still to come.)
+- **Overlays**: colormapped series over the base. **DONE**: the Overlay toggle
+  (next series) and per-overlay commands (#104 part a): add a chosen series
+  (several allowed), visibility, colormap + opacity through OHIF's
+  `setViewportColormap`, order and remove; see the README's Overlays section.
+  Still to come: the toolbar dropdown (part b), segmentation-specific overlays,
+  and the OHIF-clone runtime check.
 - **Mesh / surface** overlay on the volume.
 - Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`;
   windows are per viewport, seeded from the hanging protocol's
@@ -329,7 +333,8 @@ the differentiators:
 - Colormap: a base-volume colormap dropdown (gray / hot / bone / cool / warm /
   viridis / plasma / inferno / turbo / jet), a colorbar (legend) toggle, and a
   smoothing toggle (nearest-neighbor vs linear interpolation). **DONE**
-  (per-overlay colormap + opacity UI still to come.)
+  (per-overlay colormap + opacity: `setViewportColormap` with the overlay's
+  `displaySetInstanceUID`; its UI still to come.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)
@@ -370,7 +375,7 @@ The extension now exposes the full OHIF module set for toolbar integration:
   copy to same-series siblings); the initial window comes from
   `displaySetOptions[0].options.voi`. Unchanged releases are silent.
 - `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
-  displaySets + overlayUIDs + clip preset + windowLevel + a status sink). The
+  displaySets + overlays + clip preset + windowLevel + a status sink). The
   viewport registers on attach and keeps displaySets/status current;
   commands/evaluators resolve the active viewport's entry through it by exact id
   (the sole registered entry only when there is no active viewport id). Overlay

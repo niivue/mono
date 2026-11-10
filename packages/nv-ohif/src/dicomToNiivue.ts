@@ -128,10 +128,10 @@ export async function convertDisplaySetToNifti(
  * Load `converted` into `nv`, publishing its slice map only once that volume
  * shows: until then (or after a failed load, which keeps the old volume) a
  * measurement must not take this series' DICOM identity. False when
- * `cancelled()` by the time the load resolves; the caller drops the volume.
+ * `cancelled()`: before the swap-in, nothing is installed.
  */
 export async function loadConversion(
-  nv: Pick<NiiVue, 'loadVolumes'>,
+  nv: Pick<NiiVue, 'prepareVolume' | 'loadVolumes'>,
   viewportId: string,
   converted: DicomConversion,
   spec: { calMin: number; calMax: number } | undefined,
@@ -140,7 +140,14 @@ export async function loadConversion(
   // The converted file's own name (.nii) lets NiiVue sniff the format.
   const { image } = converted
   try {
-    await nv.loadVolumes([{ url: image, name: image.name, ...spec }])
+    const volume = await nv.prepareVolume({
+      url: image,
+      name: image.name,
+      ...spec,
+    })
+    // A swapped-away load must not replace the newer base.
+    if (cancelled()) return false
+    await nv.loadVolumes([volume])
   } catch (err) {
     if (!cancelled())
       updateNiivueViewport(viewportId, { sliceFrames: undefined })

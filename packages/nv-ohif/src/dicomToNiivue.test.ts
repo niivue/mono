@@ -171,9 +171,11 @@ describe('loadConversion', () => {
     registerNiivue('vp-lc', {} as never)
     let release = () => {}
     const nv = {
+      prepareVolume: async () => ({}),
       loadVolumes: () => new Promise<void>((r) => (release = r)),
     } as unknown as NiiVue
     const shown = loadConversion(nv, 'vp-lc', converted, undefined, () => false)
+    await new Promise((r) => setTimeout(r)) // into loadVolumes
     expect(getNiivueEntry('vp-lc')?.sliceFrames).toBeUndefined()
     release()
     expect(await shown).toBe(true)
@@ -183,16 +185,35 @@ describe('loadConversion', () => {
   it('leaves no slice map when the load fails or was cancelled', async () => {
     registerNiivue('vp-lc', {} as never)
     const failing = {
+      prepareVolume: async () => ({}),
       loadVolumes: () => Promise.reject(new Error('bad')),
     } as unknown as NiiVue
     await expect(
       loadConversion(failing, 'vp-lc', converted, undefined, () => false),
     ).rejects.toThrow('bad')
     expect(getNiivueEntry('vp-lc')?.sliceFrames).toBeUndefined()
-    const ok = { loadVolumes: () => Promise.resolve() } as unknown as NiiVue
+    const ok = {
+      prepareVolume: async () => ({}),
+      loadVolumes: () => Promise.resolve(),
+    } as unknown as NiiVue
     expect(
       await loadConversion(ok, 'vp-lc', converted, undefined, () => true),
     ).toBe(false)
     expect(getNiivueEntry('vp-lc')?.sliceFrames).toBeUndefined()
+  })
+
+  it('does not install a volume prepared after the slot was swapped', async () => {
+    registerNiivue('vp-lc', {} as never)
+    let installs = 0
+    const nv = {
+      prepareVolume: async () => ({}),
+      loadVolumes: async () => {
+        installs++
+      },
+    } as unknown as NiiVue
+    expect(
+      await loadConversion(nv, 'vp-lc', converted, undefined, () => true),
+    ).toBe(false)
+    expect(installs).toBe(0)
   })
 })

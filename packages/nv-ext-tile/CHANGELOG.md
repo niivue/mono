@@ -1,3 +1,20 @@
+## 1.0.0-rc.47 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** take a tied finest level's extent independent of input order ([#649](https://github.com/niivue/mono/pull/649))
+- **nv-ext-tile:** read NewSubfileType as a bit field for padded TIFF levels ([f0fc6fa1](https://github.com/niivue/mono/commit/f0fc6fa1))
+- **nv-ext-tile:** index a tiled DICOM WSI level that states no ImageType ([#650](https://github.com/niivue/mono/pull/650))
+- **nv-ext-tile:** reject TIFF JPEG levels geotiff-rs cannot decode at open ([79a8b530](https://github.com/niivue/mono/commit/79a8b530))
+- **nv-ext-tile:** only a reduced-resolution TIFF image can be a padded level ([448f3032](https://github.com/niivue/mono/commit/448f3032))
+- **nv-ext-tile:** mark a DICOM WSI level with duplicate frames sparse ([a353a99f](https://github.com/niivue/mono/commit/a353a99f))
+- **nv-ext-tile:** join DICOM WSI frames of reference independent of input order ([#649](https://github.com/niivue/mono/pull/649))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.46 (2026-11-10)
 
 ### Fixes

@@ -1,3 +1,13 @@
+## 1.0.0-rc.148 (2026-11-10)
+
+### Features
+
+- **niivue,nv-mcp:** slide plane channel API; set_slide sets channels and blend ([#659](https://github.com/niivue/mono/issues/659))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.147 (2026-11-10)
 
 ### Fixes

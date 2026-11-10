@@ -341,13 +341,34 @@ describe('indexDicomWsiMetadata', () => {
       '00200052': { vr: 'UI', Value: [fr] },
     })
     const [bot, l1] = await Promise.all([json('bot'), json('bot-l1')])
+    // The fixture's level 1 keeps level 0's spacing; a real one doubles it.
+    const spaced = (o: Json, mm: number[]): Json => ({
+      ...o,
+      '52009229': {
+        vr: 'SQ',
+        Value: [
+          {
+            '00289110': {
+              vr: 'SQ',
+              Value: [{ '00280030': { vr: 'DS', Value: mm } }],
+            },
+          },
+        ],
+      },
+    })
     const levels = indexDicomWsiMetadata([
       tagged(bot as Json, '9.1', '9.10'),
-      tagged(l1 as Json, '9.2', '9.11'),
+      tagged(spaced(l1 as Json, [0.001, 0.0005]), '9.2', '9.11'),
     ])
     expect(
       levels.slides.map((s) => [s.levels.length, s.frameOfReference]),
     ).toEqual([[2, '9.10']])
+    // Another scan: no size in common, but half the width.
+    const other = indexDicomWsiMetadata([
+      tagged(bot as Json, '9.1', '9.10'),
+      tagged(l1 as Json, '9.2', '9.11'),
+    ])
+    expect(other.slides.map((s) => s.levels.length)).toEqual([1, 1])
     const rescan = indexDicomWsiMetadata([
       tagged(bot as Json, '9.1', '9.10'),
       tagged(bot as Json, '9.3', '9.12'),

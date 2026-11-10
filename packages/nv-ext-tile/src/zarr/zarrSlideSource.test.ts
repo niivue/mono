@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
-import type { NVSlideLevelManifest } from '@niivue/niivue'
+import { NVSlide, type NVSlideLevelManifest } from '@niivue/niivue'
 import * as zarr from 'zarrita'
 import { ZarrSlideSource } from './zarrSlideSource'
 
@@ -46,6 +46,12 @@ async function tileBytes(source: ZarrSlideSource, level: NVSlideLevelManifest) {
       t ? source.fetchTileBytes(level, t, 'x') : new Uint8Array(),
     ),
   )
+}
+
+function tileAt(level: NVSlideLevelManifest, i: number) {
+  const tile = level.tiles[i]
+  if (!tile) throw new Error(`no tile ${i}`)
+  return tile
 }
 
 function u16(bytes: Uint8Array): Uint16Array {
@@ -126,6 +132,8 @@ describe('ZarrSlideSource (synthetic)', () => {
     const source = await ZarrSlideSource.fromStore(store)
     const [l0, l1] = source.manifest.levels
     expect(source.manifest.channels).toBe('rgba')
+    expect(source.manifest.channelInfo).toBeUndefined()
+    expect(source.fetchTileSamples).toBeUndefined()
     expect(source.window).toBeNull()
     expect(source.manifest.pixelSpacingMM).toBeUndefined()
     expect(l0).toMatchObject({
@@ -184,7 +192,7 @@ describe('ZarrSlideSource (synthetic)', () => {
     expect(modes.get('/s.zarr/0/c/0/0')).toBe('no-store')
   })
 
-  test('multi-channel picks the first active channel; z > 1 needs the z option; uint16 windows to the data range', async () => {
+  test('the channel option shows one grey channel; z > 1 needs the z option; uint16 windows to the data range', async () => {
     const store = await writeImage(
       {
         multiscales: multiscale(['c', 'z', 'y', 'x'], 1),
@@ -196,8 +204,9 @@ describe('ZarrSlideSource (synthetic)', () => {
     await expect(ZarrSlideSource.fromStore(store)).rejects.toThrow(
       "pick one with the 'z' option",
     )
-    const source = await ZarrSlideSource.fromStore(store, { z: 1 })
+    const source = await ZarrSlideSource.fromStore(store, { z: 1, channel: 1 })
     const [l0] = source.manifest.levels
+    expect(source.fetchTileSamples).toBeUndefined()
     expect(source.window).toEqual({ calMin: 6, calMax: 7 })
     expect(Array.from(u16((await tileBytes(source, l0))[0]))).toEqual([6, 7])
   })
@@ -267,6 +276,183 @@ describe('ZarrSlideSource (synthetic)', () => {
     expect(u16((await tileBytes(source, l1))[0] ?? new Uint8Array())[0]).toBe(
       11,
     )
+  })
+
+  test('multi-channel store with every channel inactive shows the first', async () => {
+    const store = await writeImage(
+      {
+        multiscales: multiscale(['c', 'y', 'x'], 1),
+        omero: { channels: [{ active: false }, { active: false }] },
+      },
+      [{ shape: [2, 2, 2], chunks: [1, 2, 2], data: ramp(8, (i) => i) }],
+      'uint16',
+    )
+    const source = await ZarrSlideSource.fromStore(store)
+    expect(source.manifest.channelInfo?.map((c) => c.active)).toEqual([
+      true,
+      false,
+    ])
+  })
+
+  test('a store marking many channels active opens with the first 4 visible', async () => {
+    const store = await writeImage(
+      {
+        multiscales: multiscale(['c', 'y', 'x'], 1),
+        omero: {
+          channels: [
+            { active: false },
+            ...Array.from({ length: 6 }, () => ({ active: true })),
+          ],
+        },
+      },
+      [{ shape: [7, 2, 2], chunks: [1, 2, 2], data: ramp(28, (i) => i) }],
+      'uint16',
+    )
+    const source = await ZarrSlideSource.fromStore(store)
+    expect(source.manifest.channelInfo?.map((c) => c.active)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+    ])
+  })
+
+  test('multi-channel uint16: omero channelInfo, planes in requested order, unrequested channels unread', async () => {
+    // c, y, x = 3 x 2 x 3; value = 1000c + 3y + x.
+    const store = await writeImage(
+      {
+        multiscales: multiscale(['c', 'y', 'x'], 1),
+        omero: {
+          channels: [
+            {
+              label: 'DAPI',
+              color: '0000FF',
+              window: { start: 0, end: 1, min: 0, max: 1 },
+            },
+            {
+              color: '00FF00',
+              active: false,
+              window: { start: 10, end: 900, min: 0, max: 65535 },
+            },
+          ],
+        },
+      },
+      [
+        {
+          shape: [3, 2, 3],
+          chunks: [1, 2, 2],
+          data: ramp(18, (i) => 1000 * Math.floor(i / 6) + (i % 6)),
+        },
+      ],
+      'uint16',
+    )
+    const reads: string[] = []
+    const get = store.get.bind(store)
+    store.get = (key) => {
+      reads.push(key)
+      return get(key)
+    }
+    const source = await ZarrSlideSource.fromStore(store)
+    const [l0] = source.manifest.levels
+    expect(source.window).toBeNull()
+    expect(l0).toMatchObject({ codec: 'raw-gray', bitsStored: 16 })
+    // Placeholder window dropped for the data range; omero shorter than c.
+    expect(source.manifest.channelInfo).toEqual([
+      {
+        name: 'DAPI',
+        rgb: [0, 0, 255],
+        window: { calMin: 0, calMax: 5 },
+        active: true,
+      },
+      {
+        name: 'Channel 2',
+        rgb: [0, 255, 0],
+        window: { calMin: 10, calMax: 900 },
+        active: false,
+      },
+      {
+        name: 'Channel 3',
+        window: { calMin: 2000, calMax: 2005 },
+        active: true,
+      },
+    ])
+    expect(NVSlide.fromSource(source).channels).toEqual([
+      { name: 'DAPI', colormap: 'blue', calMin: 0, calMax: 5, visible: true },
+      {
+        name: 'Channel 2',
+        colormap: 'green',
+        calMin: 10,
+        calMax: 900,
+        visible: false,
+      },
+      // No omero colour: the next unused channel colormap.
+      {
+        name: 'Channel 3',
+        colormap: 'blue2cyan',
+        calMin: 2000,
+        calMax: 2005,
+        visible: true,
+      },
+    ])
+    reads.length = 0
+    const fetch = source.fetchTileSamples
+    if (!fetch) throw new Error('no fetchTileSamples')
+    // Right column tile: x = 2, y = 0..1.
+    const s = await fetch(l0, tileAt(l0, 1), [2, 0])
+    expect(s).toMatchObject({ width: 1, height: 2, bitsStored: 16, planes: 2 })
+    expect(s.samples).toBeInstanceOf(Uint16Array)
+    expect(Array.from(s.samples)).toEqual([2002, 2005, 2, 5])
+    expect(reads.some((k) => k.includes('/c/1/'))).toBe(false)
+  })
+
+  test('multi-channel float32 on x, y axes: per-channel quantization, uint8 stays 8-bit', async () => {
+    // c, x, y = 2 x 2 x 1: channel 0 over 0..1, channel 1 over 0..100.
+    const store = await writeImage(
+      {
+        multiscales: multiscale(['c', 'x', 'y'], 1),
+        omero: {
+          channels: [
+            { window: { start: 0, end: 1, min: 0, max: 1 } },
+            { window: { start: 0, end: 50, min: 0, max: 100 } },
+          ],
+        },
+      },
+      [
+        {
+          shape: [2, 2, 1],
+          chunks: [1, 2, 1],
+          data: Float32Array.from([0.5, 1, 50, 100]),
+        },
+      ],
+      'float32',
+    )
+    const source = await ZarrSlideSource.fromStore(store)
+    const [l0] = source.manifest.levels
+    expect(source.manifest.channelInfo?.map((c) => c.window)).toEqual([
+      { calMin: 0, calMax: 65535 },
+      { calMin: 0, calMax: 32767.5 },
+    ])
+    const s = await source.fetchTileSamples?.(l0, tileAt(l0, 0), [0, 1])
+    expect(Array.from(s?.samples ?? [])).toEqual([32768, 65535, 32768, 65535])
+    const u8 = await writeImage(
+      { multiscales: multiscale(['c', 'y', 'x'], 1) },
+      [
+        {
+          shape: [2, 1, 2],
+          chunks: [2, 1, 2],
+          data: Uint8Array.from([1, 2, 3, 4]),
+        },
+      ],
+      'uint8',
+    )
+    const s8 = await ZarrSlideSource.fromStore(u8)
+    const [m0] = s8.manifest.levels
+    const t = await s8.fetchTileSamples?.(m0, tileAt(m0, 0), [1])
+    expect(t?.samples).toBeInstanceOf(Uint8Array)
+    expect(Array.from(t?.samples ?? [])).toEqual([3, 4])
   })
 
   test('float32 is quantized to uint16 over the omero min..max', async () => {
@@ -419,6 +605,38 @@ test('the data range reads a few chunks at a time and stops after a failure', as
   )
 })
 
+test('a multi-channel store reads its channel ranges a few chunks at a time', async () => {
+  // 3 uint16 channels of 64 x 64 in 16 x 16 chunks, no omero windows: each
+  // channel's range samples all 16 of its chunks.
+  const store = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 1) },
+    [
+      {
+        shape: [3, 64, 64],
+        chunks: [1, 16, 16],
+        data: ramp(3 * 4096, (i) => i),
+      },
+    ],
+    'uint16',
+  )
+  let inFlight = 0
+  let peak = 0
+  let reads = 0
+  const source = await ZarrSlideSource.fromStore({
+    get: async (key: string) => {
+      if (!key.includes('/c/')) return store.get(key)
+      reads++
+      peak = Math.max(peak, ++inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight--
+      return store.get(key)
+    },
+  })
+  expect(source.manifest.channelInfo).toHaveLength(3)
+  expect(reads).toBe(48)
+  expect(peak).toBe(4)
+})
+
 test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {
   // 1 x 8192 in 512-wide chunks: the sampled chunks (0, 5, 10, 15) hold
   // `fill`; unsampled chunk 1 holds `values` in turn.
@@ -507,6 +725,10 @@ test('a channel missing from a coarser level is refused on open', async () => {
     'level 1 has 1 channels; channel 1 is out of range',
   )
   await ZarrSlideSource.fromStore(grey, { channel: 0 })
+  // Without `channel` both are shown, so both must exist at every level.
+  await expect(ZarrSlideSource.fromStore(grey)).rejects.toThrow(
+    'level 1 has 1 channels; all 2 are shown',
+  )
   const rgb = await writeImage(
     { multiscales: multiscale(['c', 'y', 'x'], 2) },
     [
@@ -692,6 +914,24 @@ describe('ZarrSlideSource (omezarr2d/variants)', () => {
             for (const v of u16(bytes)) sum += v
           expect(sum).toBe(expected.levels[i].sum_per_channel[channel])
         }
+      }
+      // No channel option: both channels as sample planes.
+      const source = await ZarrSlideSource.fromUrl(
+        `http://h/${name}.ome.zarr`,
+        { fetch: fetchImpl },
+      )
+      expect(source.manifest.channelInfo?.length).toBe(2)
+      for (const [i, level] of source.manifest.levels.entries()) {
+        const sums = [0, 0]
+        for (const tile of level.tiles) {
+          if (!tile) continue
+          const s = await source.fetchTileSamples?.(level, tile, [0, 1])
+          const n = tile.width * tile.height
+          s?.samples.forEach((v, j) => {
+            sums[j < n ? 0 : 1] += v
+          })
+        }
+        expect(sums).toEqual(expected.levels[i].sum_per_channel)
       }
     },
   )

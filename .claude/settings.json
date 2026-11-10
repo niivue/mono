@@ -9,5 +9,23 @@
   },
   "enabledPlugins": {
     "nx@nx-claude-plugins": true
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowRead": [
+        "/tmp/.nx",
+        "~/.nx"
+      ],
+      "allowWrite": [
+        "/tmp/.nx",
+        "~/.nx"
+      ]
+    },
+    "network": {
+      "allowUnixSockets": [
+        "/tmp/.nx",
+        "~/.nx"
+      ]
+    }
   }
 }

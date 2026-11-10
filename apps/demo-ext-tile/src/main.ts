@@ -531,11 +531,12 @@ function showCredit(a: Attribution | undefined): void {
           textContent: a.title,
         })
       : a.title
-  const rest = [a.credit ?? a.citation, a.license]
-    .filter((t) => typeof t === 'string' && t)
-    .map((t) => `. ${String(t).replace(/\.$/, '')}`)
+  const str = (t: unknown): t is string => typeof t === 'string' && t !== ''
+  const rest = [[a.credit, a.citation].find(str), a.license]
+    .filter(str)
+    .map((t) => `. ${t.replace(/\.$/, '')}`)
   credit.append(title, ...rest)
-  credit.title = a.modified ? `Modified: ${a.modified}` : ''
+  credit.title = str(a.modified) ? `Modified: ${a.modified}` : ''
 }
 
 // zarr.json is OME-Zarr 0.5 (v3); a v2 store (.zattrs) shows no credit.
@@ -554,7 +555,8 @@ const openUrl = (url: string) => {
     // Inside the loader, so a malformed URL is reported in the status line.
     const href = new URL(url, location.href).href
     const path = new URL(href).pathname
-    // A .zarr path (or one inside a store) or a directory (trailing /) is OME-Zarr.
+    // A .zarr path or a directory (trailing /) is OME-Zarr; it must name the
+    // store's group root, so a path to an array inside a store is refused.
     if (/\.zarr(\/|$)|\/$/.test(path)) {
       const [zarr, attribution] = await Promise.all([
         ZarrSlideSource.fromUrl(href, { signal }),

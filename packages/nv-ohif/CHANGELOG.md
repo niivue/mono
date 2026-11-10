@@ -1,3 +1,23 @@
+## 1.0.0-rc.157 (2026-11-10)
+
+### Features
+
+- **nv-ohif:** render whole-slide series with nv-ext-tile's DicomWebWsiSource ([a0386a22](https://github.com/niivue/mono/commit/a0386a22))
+
+### Fixes
+
+- **nv-ohif:** take the WSI series URL from an image ID that names a series ([a6fe33d6](https://github.com/niivue/mono/commit/a6fe33d6))
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.43
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.156 (2026-11-10)
 
 ### Updated Dependencies

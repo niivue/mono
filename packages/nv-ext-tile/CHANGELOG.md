@@ -1,3 +1,14 @@
+## 1.0.0-rc.43 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** read an unstated transfer syntax as JPEG when the server refuses stored bytes ([9e1e0e64](https://github.com/niivue/mono/commit/9e1e0e64))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.42 (2026-11-10)
 
 ### Updated Dependencies

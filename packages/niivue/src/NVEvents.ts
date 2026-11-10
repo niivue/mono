@@ -106,6 +106,12 @@ export type AnnotationAddedDetail = { annotation: VectorAnnotation }
 export type AnnotationRemovedDetail = { id: string }
 export type AnnotationChangedDetail = {
   action: 'draw' | 'erase' | 'move' | 'resize' | 'undo' | 'redo' | 'clear'
+  /** Ids of annotations this change added, so a listener need not diff. */
+  added: string[]
+  /** Ids of annotations whose geometry, stats or text changed. */
+  updated: string[]
+  /** Ids of annotations this change removed. */
+  removed: string[]
 }
 export type ColormapAddedDetail = { name: string }
 export type VolumeOrderChangedDetail = { volumes: NVImage[] }

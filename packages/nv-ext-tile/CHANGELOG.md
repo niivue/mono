@@ -1,3 +1,17 @@
+## 1.0.0-rc.44 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile:** read TIFF with @niivue/geotiff-rs; JPEG 2000 SVS through dcm2niix ([9b41f2af](https://github.com/niivue/mono/commit/9b41f2af))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.145
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.43 (2026-11-10)
 
 ### Fixes

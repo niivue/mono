@@ -1,3 +1,13 @@
+## 1.0.0-rc.132 (2026-11-10)
+
+### Fixes
+
+- **nv-mcp:** set_volume can show and hide a volume ([f616be34](https://github.com/niivue/mono/commit/f616be34))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.131 (2026-11-10)
 
 ### Updated Dependencies

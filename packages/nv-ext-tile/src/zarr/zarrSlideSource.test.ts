@@ -86,15 +86,15 @@ const multiscale = (axes: string[], n: number, units = false) => [
   {
     axes: axes.map((name) => ({
       name,
-      type: name === 'c' ? 'channel' : 'space',
-      ...(units && name !== 'c' ? { unit: 'micrometer' } : {}),
+      type: name === 'c' ? 'channel' : name === 't' ? 'time' : 'space',
+      ...(units && name !== 'c' && name !== 't' ? { unit: 'micrometer' } : {}),
     })),
     datasets: Array.from({ length: n }, (_, i) => ({
       path: String(i),
       coordinateTransformations: [
         {
           type: 'scale',
-          scale: axes.map((a) => (a === 'c' ? 1 : 0.5 * 2 ** i)),
+          scale: axes.map((a) => (a === 'c' || a === 't' ? 1 : 0.5 * 2 ** i)),
         },
       ],
     })),
@@ -385,6 +385,21 @@ test('a flat centre sample falls back to the whole level', async () => {
   const [l0] = source.manifest.levels
   const [first] = await tileBytes(source, l0)
   expect(Math.max(...u16(first))).toBe(65535)
+})
+
+test('a timepoint missing from a coarser level is refused on open', async () => {
+  const store = await writeImage(
+    { multiscales: multiscale(['t', 'y', 'x'], 2) },
+    [
+      { shape: [2, 2, 2], chunks: [1, 2, 2], data: ramp(8, (i) => i) },
+      { shape: [1, 1, 1], chunks: [1, 1, 1], data: ramp(1, () => 0) },
+    ],
+    'uint16',
+  )
+  await expect(ZarrSlideSource.fromStore(store, { t: 1 })).rejects.toThrow(
+    'level 1 has 1 timepoints; t 1 is out of range',
+  )
+  await ZarrSlideSource.fromStore(store, { t: 0 })
 })
 
 test('an aborted tile is reported aborted, not failed', async () => {

@@ -134,6 +134,12 @@ export class ZarrSlideSource implements SlideTileSource {
       return value ?? 0
     }
     const t = pick('t', indices.time, options.t)
+    // Pyramids keep every timepoint; a level that drops some cannot show t.
+    for (const [i, lv] of levels.entries())
+      if (indices.time >= 0 && t >= lv.shape[indices.time])
+        throw new Error(
+          `OME-Zarr slide: level ${i} has ${lv.shape[indices.time]} timepoints; t ${t} is out of range`,
+        )
     const z = pick('z', zs, options.z)
     // A pyramid may downsample (and shift) z too: each level reads the plane
     // nearest the chosen plane's position, by the declared scale/translation

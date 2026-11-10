@@ -313,6 +313,33 @@ describe('TiffSlideSource', () => {
     }
   })
 
+  test('keeps Philips levels padded to whole tiles, at their content size', async () => {
+    // 1024x768 base; d=4 holds 256x192 in a 256x256 image, d=8 and d=16 both
+    // fit one 128 px tile. Each would fail the aspect test.
+    const levels = [
+      rawLevel(0, 1024, 768, 128),
+      rawLevel(1, 512, 384, 128),
+      rawLevel(2, 256, 256, 128),
+      rawLevel(3, 128, 128, 128),
+      rawLevel(4, 128, 128, 128),
+    ]
+    const { source } = await open(writeTiff(levels))
+    const m = source.manifest
+    expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
+      [1024, 768, 1],
+      [512, 384, 2],
+      [256, 192, 4],
+      [128, 96, 8],
+      [64, 48, 16],
+    ])
+    const l2 = m.levels[2]
+    const tile = l2?.tiles.at(-1)
+    if (!l2 || !tile) throw new Error('missing tile')
+    expect(tile).toEqual({ x: 1, y: 1, width: 128, height: 64 })
+    const rgba = await source.fetchTileBytes(l2, tile, 'padded')
+    expect(pixel(rgba, 128, 127, 63)).toEqual([...rgbAt(2, 255, 191), 255])
+  })
+
   test('crops the bottom-right edge tile pixel-exact', async () => {
     const { source, events } = await open(writeTiff(PYRAMID))
     const level = source.manifest.levels[1]

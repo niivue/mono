@@ -73,6 +73,43 @@ export const EXTRA_SCHEMAS = {
       .min(1)
       .optional()
       .describe('For create: the widest raster the drawing is kept at.'),
+    channel: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'The slide channel to change with visible, colormap, cal_min and cal_max.',
+      ),
+    visible: z.boolean().optional().describe('Show or hide the channel.'),
+    colormap: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "The channel's colormap, by its lowercase name, such as gray, red or green.",
+      ),
+    cal_min: z
+      .number()
+      .nullable()
+      .optional()
+      .describe(
+        "The low end of the channel's window, in stored sample values; null for the stored range's low end.",
+      ),
+    cal_max: z
+      .number()
+      .nullable()
+      .optional()
+      .describe(
+        "The high end of the channel's window, in stored sample values; null for the stored range's high end.",
+      ),
+    channel_blend: z
+      .enum(['max', 'additive'])
+      .optional()
+      .describe(
+        'How the visible channels combine: the brighter of each (max) or their sum. An RGB slide is always additive.',
+      ),
   },
   chunk_stats: {
     ...TAB_ARG,
@@ -164,7 +201,9 @@ export function registerExtraTools(
     title: 'Work the slide plane',
     description:
       'For a whole-slide image: picks the resolution level of the slide plane, clears the plane, ' +
-      'or works on the slide drawing.',
+      'works on the slide drawing, or sets a channel (visible, colormap, window) and how the ' +
+      'channels blend. Reports the channels and blend afterwards when a slide plane is set; ' +
+      'where_am_i reports them too. A null cal_min or cal_max in the report is the stored range end.',
     inputSchema: EXTRA_SCHEMAS.set_slide,
   })
 

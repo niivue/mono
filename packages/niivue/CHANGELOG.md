@@ -1,3 +1,31 @@
+## 1.0.0-rc.149 (2026-11-10)
+
+### Features
+
+- ⚠️  **niivue:** remove deprecated NVSlide.setWindow and window getter ([#659](https://github.com/niivue/mono/issues/659))
+
+### Breaking Changes
+
+- **niivue:** remove deprecated NVSlide.setWindow and window getter  ([#659](https://github.com/niivue/mono/issues/659))
+  `slide.setWindow(lo, hi)` -> `slide.setChannel(0,
+  { calMin: lo, calMax: hi })`; `slide.window` -> `slide.channels[0]`.
+  setChannel treats a non-finite bound as the default window instead of
+  rejecting it, so callers validate their own input.
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.148 (2026-11-10)
+
+### Features
+
+- **niivue,nv-mcp:** slide plane channel API; set_slide sets channels and blend ([#659](https://github.com/niivue/mono/issues/659))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.147 (2026-11-10)
 
 ### Fixes

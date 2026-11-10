@@ -87,7 +87,7 @@ import type {
   VolumeUpdate,
 } from './view'
 import { worldUnit } from './view'
-import { viewportHandlers } from './viewport'
+import { slideState, viewportHandlers } from './viewport'
 import { within } from './wait'
 
 /** The default width a screenshot is scaled down to. */
@@ -600,6 +600,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         return {
           volume: null,
           description: 'No volume is loaded yet.',
+          ...slideState(view),
           ...(host.extraState?.() ?? {}),
         }
       }
@@ -615,6 +616,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ...counts(view),
         ...instancesState(view),
         description: await describe(),
+        ...slideState(view),
         ...(host.extraState?.() ?? {}),
       }
     },

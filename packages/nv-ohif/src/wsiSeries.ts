@@ -41,3 +41,43 @@ export function wsiSeriesSlide(
   }
   return { slide, seriesUrl }
 }
+
+interface BulkDataSource {
+  retrieve?: {
+    bulkDataURI?: (options: {
+      StudyInstanceUID?: string
+      BulkDataURI: string
+    }) => Promise<ArrayBuffer | undefined>
+  }
+}
+
+/**
+ * DicomWebWsiSource's `retrieveBulkData` backed by the OHIF data source, so the
+ * host's auth and client config apply; undefined when the data source has no
+ * `retrieve.bulkDataURI`. OHIF takes no AbortSignal or byte cap: an abort
+ * rejects at once but the download runs on, and the 64 MB cap applies after it.
+ * DicomWebWsiSource calls it only for URLs on the series' origin, so the
+ * host's auth never reaches another server. With `singlepart`
+ * including `bulkdata`, OHIF resolves undefined and the source fetches itself.
+ */
+export function wsiRetrieveBulkData(
+  dataSource: unknown,
+  StudyInstanceUID: string | undefined,
+):
+  | ((url: string, signal?: AbortSignal) => Promise<ArrayBuffer | undefined>)
+  | undefined {
+  const retrieve = (dataSource as BulkDataSource | undefined)?.retrieve
+  const bulkDataURI = retrieve?.bulkDataURI
+  if (typeof bulkDataURI !== 'function') return undefined
+  return async (BulkDataURI, signal) => {
+    signal?.throwIfAborted()
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(signal?.reason)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      bulkDataURI
+        .call(retrieve, { StudyInstanceUID, BulkDataURI })
+        .then(resolve, reject)
+        .finally(() => signal?.removeEventListener('abort', onAbort))
+    })
+  }
+}

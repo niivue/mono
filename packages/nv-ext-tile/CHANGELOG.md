@@ -1,3 +1,44 @@
+## 1.0.0-rc.52 (2026-11-10)
+
+### Features
+
+- ⚠️  **niivue:** remove deprecated NVSlide.setWindow and window getter ([#659](https://github.com/niivue/mono/issues/659))
+
+### Breaking Changes
+
+- **niivue:** remove deprecated NVSlide.setWindow and window getter  ([#659](https://github.com/niivue/mono/issues/659))
+  `slide.setWindow(lo, hi)` -> `slide.setChannel(0,
+  { calMin: lo, calMax: hi })`; `slide.window` -> `slide.channels[0]`.
+  setChannel treats a non-finite bound as the default window instead of
+  rejecting it, so callers validate their own input.
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.149
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.51 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.148
+
+## 1.0.0-rc.50 (2026-11-10)
+
+### Fixes
+
+- **nv-ohif:** restore the 32 MiB thumbnail fetch cap ([03365e41](https://github.com/niivue/mono/commit/03365e41))
+- **nv-ohif:** ICC bulk data via OHIF data source; wsiThumbnail uses readFirstPart ([#650](https://github.com/niivue/mono/issues/650), [#657](https://github.com/niivue/mono/issues/657))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.49 (2026-11-10)
 
 ### Fixes

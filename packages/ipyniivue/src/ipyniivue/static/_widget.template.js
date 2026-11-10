@@ -157,6 +157,7 @@ const PROPS_RO = [
   ["meshShaders", "mesh_shaders"],
   ["meshWriteExtensions", "mesh_write_extensions"],
   ["selectedAnnotation", "selected_annotation"],
+  ["slideChannelBlend", "slide_channel_blend"],
   ["version", "version"],
   ["volumeExtensions", "volume_extensions"],
   ["volumeTransforms", "volume_transforms"],

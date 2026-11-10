@@ -187,7 +187,7 @@ DICOM now works for `npm`-install consumers. The dcm2niix Web-Worker exit fix (w
 `callMain` in try/catch, read `err.status`; see the Phase-2 finding below) is merged
 upstream (`rordenlab/dcm2niix` `aae72ac`) and published in `@niivue/dcm2niix
 1.3.20260724`, the calendar-versioned npm `latest`. `packages/nv-ohif/package.json`
-requires `^1.3.20260724` (a34799f5), which excludes `1.2.0` and the `1.3.0-dev.0`
+required `^1.3.20260724` (a34799f5; now `^1.4.20261105-rc.3`), which excludes `1.2.0` and the `1.3.0-dev.0`
 prerelease that predate the fix; every nv-ohif release since 1.0.0-rc.0 ships with it. See the README
 `## DICOM support`.
 
@@ -224,7 +224,7 @@ that throw hit its catch, so it never reads `/output`. **Fix** (source is
 try/catch, use `err.status` on a thrown ExitStatus, then read `/output`. **Proven**:
 with the patched worker, our reconstructed JPEG-LS files convert in the real browser
 worker — 12-slice CTA -> a valid `vol.nii` (6,291,808 B = 512x512x12x2 + 352). Verified
-by driving the actual `niivue-dcm2niix` demo (`~/Dev/niivue-dcm2niix`) with our
+by driving the actual `niivue-dcm2niix` demo (a local checkout) with our
 reconstructed files (staged in `public/recon/` + `test-recon.html`). Patch saved to the
 session scratchpad as `dcm2niix-worker-exit-fix.patch`; upstream fix belongs in
 `@niivue/dcm2niix` (a published release then flows to every consumer, incl. this

@@ -1,3 +1,15 @@
+## 1.0.0-rc.147 (2026-11-10)
+
+### Fixes
+
+- **niivue:** check inline demo scripts for missing element ids ([d542d90e](https://github.com/niivue/mono/commit/d542d90e))
+- **niivue:** cap a one-row NVSlide view at the tile limit ([#666](https://github.com/niivue/mono/issues/666))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.146 (2026-11-10)
 
 ### Fixes

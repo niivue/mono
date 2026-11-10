@@ -1,3 +1,17 @@
+## 1.0.0-rc.54 (2026-11-10)
+
+### Features
+
+- **demo-ext-tile:** OME-Zarr slide menu with store credits ([2238ca69](https://github.com/niivue/mono/commit/2238ca69))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.150
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.53 (2026-11-10)
 
 ### Features

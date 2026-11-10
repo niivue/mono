@@ -501,9 +501,8 @@ async function dataRange(
       }
     }
   }
-  const settled = await Promise.allSettled(
-    Array.from({ length: RANGE_READS }, worker),
-  )
-  for (const r of settled) if (r.status === 'rejected') throw r.reason
+  // Reject on the first failure; reads already started (at most 3) finish
+  // unawaited, and a stalled one cannot hold the open.
+  await Promise.all(Array.from({ length: RANGE_READS }, worker))
   return [lo, hi]
 }

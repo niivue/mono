@@ -406,6 +406,17 @@ test('the data range reads a few chunks at a time and stops after a failure', as
   )
   // The failing read was among the first 4; the other 3 finish, none start.
   expect(reads).toBe(4)
+  // A failure rejects the open even while another read never settles.
+  const stalled = {
+    get: async (key: string) => {
+      if (!isChunk(key)) return store.get(key)
+      if (key === '/0/c/0/0') throw new Error('chunk read failed')
+      return new Promise<Uint8Array>(() => {})
+    },
+  }
+  await expect(ZarrSlideSource.fromStore(stalled)).rejects.toThrow(
+    'chunk read failed',
+  )
 })
 
 test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {

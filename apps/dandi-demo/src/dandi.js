@@ -544,9 +544,10 @@ function resizeSlideCanvas(screen) {
 
 async function createSlideView() {
   if (backend === 'webgpu' && 'gpu' in navigator) {
+    // A rejected adapter or device request falls back like a null one.
     const renderer = await SlideRendererGPU.create(els.slideCanvas, {
       antialias: isAntiAlias,
-    })
+    }).catch(() => null)
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable for the slide pane; using WebGL2')
   }

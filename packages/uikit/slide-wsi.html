@@ -101,7 +101,7 @@
       let view = null
       const createView = async () => {
         if (wantGpu) {
-          const renderer = await SlideRendererGPU.create(canvas, { antialias: isAntiAlias })
+          const renderer = await SlideRendererGPU.create(canvas, { antialias: isAntiAlias }).catch(() => null)
           if (renderer) return { kind: 'gpu', renderer }
         }
         const gl = canvas.getContext('webgl2', { alpha: false, antialias: isAntiAlias })

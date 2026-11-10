@@ -159,9 +159,10 @@ function resizeCanvas(screen: NVSlideScreen): void {
 
 async function createView(): Promise<SlideView> {
   if (backend === 'webgpu' && isWebGpuAvailable()) {
+    // A rejected adapter or device request falls back like a null one.
     const renderer = await SlideRendererGPU.create(els.canvas, {
       antialias: isAntiAlias,
-    })
+    }).catch(() => null)
     if (renderer) return { kind: 'gpu', renderer }
     console.warn('WebGPU unavailable; falling back to WebGL2')
   }

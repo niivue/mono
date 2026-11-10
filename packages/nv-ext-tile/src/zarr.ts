@@ -62,3 +62,8 @@ export {
   withPersistentBytes,
 } from './zarr/persistentByteCache'
 export { type StreamOmeZarrOptions, streamOmeZarr } from './zarr/streamOmeZarr'
+export {
+  type ZarrSlideOptions,
+  ZarrSlideSource,
+  type ZarrSlideUrlOptions,
+} from './zarr/zarrSlideSource'

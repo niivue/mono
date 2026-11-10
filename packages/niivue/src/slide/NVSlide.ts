@@ -1220,7 +1220,8 @@ export class NVSlide extends EventTarget {
 
   /** The displayed channels, one per source sample plane (see {@link NVChannel}). */
   get channels(): readonly Readonly<NVChannel>[] {
-    return this._channels
+    // Copies: a readback cannot change the slide behind setChannel's checks.
+    return this._channels.map((ch) => ({ ...ch }))
   }
 
   /**
@@ -1231,7 +1232,15 @@ export class NVSlide extends EventTarget {
   setChannel(c: number, update: Partial<NVChannel>): void {
     const old = this._channels[c]
     if (!old) throw new RangeError(`NVSlide has no channel ${c}`)
-    const next = { ...old, ...update }
+    const u = { ...old, ...update }
+    // Only the known fields: an extra key would be kept and saved.
+    const next: NVChannel = {
+      name: u.name,
+      colormap: u.colormap,
+      calMin: u.calMin,
+      calMax: u.calMax,
+      visible: u.visible,
+    }
     // An omitted (undefined) bound is the default, as a non-finite one is.
     next.calMin ??= Number.NaN
     next.calMax ??= Number.NaN
@@ -2035,12 +2044,16 @@ export class NVSlide extends EventTarget {
         for (;;) {
           const channels = this._visibleChannels()
           held = channels
-          samples = await this._source.fetchTileSamples(
-            level,
-            tile,
-            channels,
-            signal,
-          )
+          // Nothing shown: an empty tile, without asking the source.
+          samples = channels.length
+            ? await this._source.fetchTileSamples(level, tile, channels, signal)
+            : {
+                samples: new Uint8Array(0),
+                width: tile.width,
+                height: tile.height,
+                bitsStored: 8,
+                planes: 0,
+              }
           signal.throwIfAborted()
           if ((samples.planes ?? 1) !== channels.length)
             throw new Error(

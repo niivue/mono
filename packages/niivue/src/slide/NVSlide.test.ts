@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { log } from '@/logger'
 import type {
+  NVChannel,
   NVSlideChannelInfo,
   NVSlideColorLut,
   NVSlideLevelManifest,
@@ -1389,6 +1390,39 @@ describe('NVSlide channels', () => {
     await loadLevel(slide, 2)
     expect(source.requested.at(-1)).toEqual([0, 1, 2])
     expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 130, 255])
+    slide.dispose()
+  })
+
+  it('returns channel copies: a readback cannot change the slide', () => {
+    const { slide } = planarSlide(threeChannels())
+    let changes = 0
+    slide.addEventListener('change', () => changes++)
+    const ch = slide.channels[0] as NVChannel
+    ch.calMin = 9
+    ch.calMax = 1
+    expect(slide.window).toBeNull()
+    expect(changes).toBe(0)
+    slide.dispose()
+  })
+
+  it('keeps only the known channel fields', () => {
+    const { slide } = planarSlide(threeChannels())
+    slide.setChannel(0, { extra: 7 } as Partial<NVChannel>)
+    expect(Object.keys(slide.channels[0] ?? {}).sort()).toEqual([
+      'calMax',
+      'calMin',
+      'colormap',
+      'name',
+      'visible',
+    ])
+    slide.dispose()
+  })
+
+  it('does not fetch a tile with every channel hidden', async () => {
+    const { slide, source } = planarSlide([{ name: 'grey', active: false }])
+    await loadLevel(slide, 2)
+    expect(source.requested).toEqual([])
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([0, 0, 0, 255])
     slide.dispose()
   })
 

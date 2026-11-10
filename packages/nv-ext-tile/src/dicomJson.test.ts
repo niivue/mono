@@ -375,6 +375,12 @@ describe('indexDicomWsiMetadata', () => {
       tagged(spaced(l1 as Json, [0.0005, 0.0005]), '9.2', '9.11'),
     ])
     expect(shorter.slides.map((s) => s.levels.length)).toEqual([1, 1])
+    // A real 1 mm column spacing is not the 1\1 placeholder: half the size stays apart.
+    const mm1 = indexDicomWsiMetadata([
+      tagged(spaced(bot as Json, [0.5, 1]), '9.1', '9.10'),
+      tagged(spaced(l1 as Json, [0.5, 1]), '9.2', '9.11'),
+    ])
+    expect(mm1.slides.map((s) => s.levels.length)).toEqual([1, 1])
     const rescan = indexDicomWsiMetadata([
       tagged(bot as Json, '9.1', '9.10'),
       tagged(bot as Json, '9.3', '9.12'),

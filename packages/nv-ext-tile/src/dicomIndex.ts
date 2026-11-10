@@ -929,10 +929,10 @@ function joinFramesOfReference(infos: Placed[]): void {
     g.reduce((a, b) =>
       b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
     )
-  // NaN (no spacing, or spacingOf's 1\1 placeholder) never differs, so it joins.
+  // NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs, so it joins.
   const extent = (g: Placed[]) => {
     const { totalColumns, totalRows, pixelSpacingMM: mm } = finest(g)
-    return mm && mm[0] !== 1
+    return mm && !(mm[0] === 1 && mm[1] === 1)
       ? [totalColumns * mm[0], totalRows * mm[1]]
       : [Number.NaN, Number.NaN]
   }

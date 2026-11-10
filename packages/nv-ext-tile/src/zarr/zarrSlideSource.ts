@@ -1,7 +1,9 @@
 import type {
+  NVSlideChannelInfo,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
+  NVSlideTileSamples,
   NVSlideWindow,
   SlideSourceHost,
   SlideTileSource,
@@ -11,6 +13,7 @@ import * as zarr from 'zarrita'
 import { checkOmeZarrIndex, omeroWindowUsable } from './omeZarr'
 import {
   type OmeZarrSource,
+  omeZarrChannelName,
   omeZarrFetchStore,
   omeZarrNiftiDatatype,
   openOmeZarr,
@@ -21,7 +24,7 @@ export interface ZarrSlideOptions {
   id?: string
   /**
    * Channel to show in grey. Default: an RGB store (3 uint8 channels) shows
-   * in colour, any other the first omero-active channel.
+   * in colour, a multi-channel one serves every channel to NVSlide.
    */
   channel?: number
   /** Plane of a store with z > 1; required there. */
@@ -43,41 +46,53 @@ const MAX_TILE_SIZE = 4096
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
 type Quantize = { lo: number; scale: number }
+type Select = (
+  y: zarr.Slice,
+  x: zarr.Slice,
+  level: number,
+  c: number | zarr.Slice,
+) => (number | zarr.Slice | null)[]
 
 /**
  * NVSlide tile source for a 2D OME-Zarr image (0.4 / Zarr v2 and 0.5 / v3):
  * each multiscale dataset is a level and each y/x chunk (the inner chunk of a
- * shard) a tile, at one fixed t, c and z. Three uint8 channels show as RGB,
- * fluorescence included (pass `channel` for one; the milestone-14 channel API
- * will tell them apart); otherwise one channel's samples go to NVSlide as `raw-gray`, windowed like
- * DICOM MONOCHROME. uint8/uint16 pass through; other dtypes are quantized to
- * uint16 over the omero min..max, else the coarsest level's data range.
- * A store with z or t > 1 is refused unless {@link ZarrSlideOptions} picks
- * the plane. NVSlide does not read a window from a source: apply
- * {@link window} with `slide.setWindow`.
+ * shard) a tile, at one fixed t and z. Three uint8 channels show as RGB,
+ * fluorescence included (pass `channel` for one). Other multi-channel stores
+ * state omero label, colour, window and `active` in `manifest.channelInfo` and
+ * serve each visible channel's samples through `fetchTileSamples`, so NVSlide
+ * composites them. A single channel (or `channel`) goes to NVSlide as
+ * `raw-gray`, windowed like DICOM MONOCHROME. uint8/uint16 pass through; other
+ * dtypes are quantized to uint16 per channel over the omero min..max, else the
+ * coarsest level's data range. A store with z or t > 1 is refused unless
+ * {@link ZarrSlideOptions} picks the plane.
  */
 export class ZarrSlideSource implements SlideTileSource {
   private host: SlideSourceHost | null = null
+  /** Set only for a multi-channel store: NVSlide takes this path when present. */
+  readonly fetchTileSamples?: SlideTileSource['fetchTileSamples']
 
   private constructor(
     readonly manifest: NVSlideManifest,
     /**
-     * Default monochrome window (omero when usable, else the uint16 data
-     * range), or null for RGB. Interim: milestone 14 may replace
-     * `NVSlide.setWindow` with per-channel display; `raw-gray` stays valid.
+     * The grey channel's default window (omero when usable, else the uint16
+     * data range); null for RGB and multi-channel, whose windows are in
+     * `manifest.channelInfo`. NVSlide does not read it: apply it with
+     * `slide.setChannel(0, window)`.
      */
     readonly window: NVSlideWindow | null,
     private readonly arrays: zarr.Array<zarr.DataType, zarr.Readable>[],
-    private readonly select: (
-      y: zarr.Slice,
-      x: zarr.Slice,
-      level: number,
-    ) => (number | zarr.Slice | null)[],
+    private readonly select: Select,
     private readonly rgb: boolean,
     /** Positions of y, x and (RGB) c among the selection's sliced dims. */
     private readonly pos: readonly [number, number, number],
-    private readonly quantize: Quantize | null,
-  ) {}
+    /** The channel fetchTileBytes reads (unused for RGB). */
+    private readonly channel: number,
+    /** Per store channel; null passes samples through. */
+    private readonly quantize: (Quantize | null)[],
+  ) {
+    if (manifest.channelInfo)
+      this.fetchTileSamples = this.tileSamples.bind(this)
+  }
 
   /** Stream a store by URL (its root group). */
   static async fromUrl(
@@ -163,6 +178,7 @@ export class ZarrSlideSource implements SlideTileSource {
       options.channel === undefined &&
       src.channelCount === 3 &&
       dtype === 'uint8'
+    const multi = !rgb && options.channel === undefined && src.channelCount > 1
     const active = info.channels.findIndex((c) => c.active)
     const channel = options.channel ?? Math.max(0, active)
     checkOmeZarrIndex('channel', channel, src.channelCount)
@@ -174,47 +190,73 @@ export class ZarrSlideSource implements SlideTileSource {
           : dim === zs
             ? zByLevel[level]
             : null
-    const select = (y: zarr.Slice, x: zarr.Slice, level: number) =>
+    const select: Select = (y, x, level, c) =>
       shape.map((_, dim) =>
-        dim === ys
-          ? y
-          : dim === xs
-            ? x
-            : fixed(dim, rgb ? zarr.slice(0, 3) : channel, level),
+        dim === ys ? y : dim === xs ? x : fixed(dim, c, level),
       )
     const sliced = [ys, xs, rgb ? indices.channel : -1]
     const kept = sliced.filter((d) => d >= 0).sort((a, b) => a - b)
     const pos = sliced.map((d) => kept.indexOf(d)) as [number, number, number]
-    const raw = info.channels[channel]?.window
-    // A placeholder omero block (0..1 on integer data) is not usable.
-    const omero = raw && omeroWindowUsable(raw, dtype) ? raw : null
-    let quantize: Quantize | null = null
-    if (!rgb && dtype !== 'uint8' && dtype !== 'uint16') {
-      const [lo, hi] =
-        omero &&
-        omero.min !== null &&
-        omero.max !== null &&
-        omero.max > omero.min
-          ? [omero.min, omero.max]
-          : await dataRange(src, select, ys, xs)
-      quantize = { lo, scale: hi > lo ? 65535 / (hi - lo) : 0 }
-    }
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
-    const toStored = (v: number) =>
-      quantize ? (v - quantize.lo) * quantize.scale : v
-    // uint16 without a window: the coarsest level's range, so 12-bit data is
-    // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
-    const [calMin, calMax] = omero
-      ? [toStored(omero.start), toStored(omero.end)]
-      : dtype === 'uint16'
-        ? await dataRange(src, select, ys, xs)
-        : [0, 2 ** bitsStored - 1]
-    // Degenerate (constant or all-NaN data): setWindow would refuse it.
-    const window = rgb
-      ? null
-      : calMax > calMin
-        ? { calMin, calMax }
-        : { calMin: 0, calMax: 2 ** bitsStored - 1 }
+    // Quantization and default window of channel c, in stored sample units.
+    const display = async (c: number) => {
+      const raw = info.channels[c]?.window
+      // A placeholder omero block (0..1 on integer data) is not usable.
+      const omero = raw && omeroWindowUsable(raw, dtype) ? raw : null
+      const range = () =>
+        dataRange(src, (y, x, level) => select(y, x, level, c), ys, xs)
+      let quantize: Quantize | null = null
+      if (dtype !== 'uint8' && dtype !== 'uint16') {
+        const [lo, hi] =
+          omero &&
+          omero.min !== null &&
+          omero.max !== null &&
+          omero.max > omero.min
+            ? [omero.min, omero.max]
+            : await range()
+        quantize = { lo, scale: hi > lo ? 65535 / (hi - lo) : 0 }
+      }
+      const toStored = (v: number) =>
+        quantize ? (v - quantize.lo) * quantize.scale : v
+      // uint16 without a window: the coarsest level's range, so 12-bit data is
+      // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
+      const [calMin, calMax] = omero
+        ? [toStored(omero.start), toStored(omero.end)]
+        : dtype === 'uint16'
+          ? await range()
+          : [0, 2 ** bitsStored - 1]
+      // Degenerate (constant or all-NaN data): setChannel would refuse it.
+      const window: NVSlideWindow =
+        calMax > calMin
+          ? { calMin, calMax }
+          : { calMin: 0, calMax: 2 ** bitsStored - 1 }
+      return { quantize, window }
+    }
+    const shown = rgb
+      ? []
+      : multi
+        ? Array.from({ length: src.channelCount }, (_, c) => c)
+        : [channel]
+    // ponytail: every channel's range is read on open, inactive ones too, so
+    // showing one later has its window.
+    const displays = await Promise.all(shown.map(display))
+    const quantize: (Quantize | null)[] = []
+    for (const [i, c] of shown.entries()) quantize[c] = displays[i].quantize
+    const window = rgb || multi ? null : displays[0].window
+    const channelInfo: NVSlideChannelInfo[] | undefined = multi
+      ? displays.map(({ window }, c) => {
+          const omero = info.channels[c]
+          return {
+            name: omeZarrChannelName(src, c),
+            ...(omero?.color ? { rgb: omero.color } : {}),
+            window,
+            active: omero?.active ?? true,
+          }
+        })
+      : undefined
+    // A store marking every channel inactive still shows its first.
+    if (channelInfo?.[0] && !channelInfo.some((c) => c.active))
+      channelInfo[0].active = true
     const width0 = shape[xs]
     const manifestLevels = src.arrays.map(
       (arr, index): NVSlideLevelManifest => {
@@ -281,12 +323,14 @@ export class ZarrSlideSource implements SlideTileSource {
         ...(pixelSpacingMM[0] > 0 && pixelSpacingMM[1] > 0
           ? { pixelSpacingMM }
           : {}),
+        ...(channelInfo ? { channelInfo } : {}),
       },
       window,
       src.arrays,
       select,
       rgb,
       pos,
+      channel,
       quantize,
     )
   }
@@ -303,27 +347,78 @@ export class ZarrSlideSource implements SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const arr = this.arrays[level.index]
-    const tw = level.tileWidth ?? 0
-    const th = level.tileHeight ?? 0
-    const x0 = tile.x * tw
-    const y0 = tile.y * th
+    const c = this.rgb ? zarr.slice(0, 3) : this.channel
+    const { data, stride } = await this.read(level, tile, c, label, signal)
+    const [sy, sx, sc] = this.pos.map((p) => stride[p] ?? 0)
+    const { width: w, height: h } = tile
+    if (this.rgb) return rgba(data, sy, sx, sc, w, h)
+    const q = this.quantize[this.channel]
+    if (!q && sx === 1 && sy === w)
+      return asBytes(data as Uint8Array | Uint16Array)
+    const out =
+      level.bitsStored === 8 ? new Uint8Array(w * h) : new Uint16Array(w * h)
+    grayInto(out, 0, data, sy, sx, w, h, q)
+    return asBytes(out)
+  }
+
+  /** Planar samples of `channels`, one zarr read each. */
+  // ponytail: a chunk spanning c decodes once per visible channel; read one
+  // c slice and split it if such stores show up.
+  private async tileSamples(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    channels: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<NVSlideTileSamples> {
+    const { width: w, height: h } = tile
+    const n = w * h * channels.length
+    const out = level.bitsStored === 8 ? new Uint8Array(n) : new Uint16Array(n)
+    const label = `${level.index}/${tile.x}/${tile.y}`
+    await Promise.all(
+      channels.map(async (c, plane) => {
+        const { data, stride } = await this.read(
+          level,
+          tile,
+          c,
+          `${label} c${c}`,
+          signal,
+        )
+        const [sy, sx] = this.pos.map((p) => stride[p] ?? 0)
+        grayInto(out, plane * w * h, data, sy, sx, w, h, this.quantize[c])
+      }),
+    )
+    return {
+      samples: out,
+      width: w,
+      height: h,
+      bitsStored: level.bitsStored ?? 16,
+      planes: channels.length,
+    }
+  }
+
+  private async read(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    c: number | zarr.Slice,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<{ data: ArrayLike<number>; stride: number[] }> {
+    const x0 = tile.x * (level.tileWidth ?? 0)
+    const y0 = tile.y * (level.tileHeight ?? 0)
     this.host?.pushRangeEvent({ label, status: 'pending' })
     try {
       const sel = this.select(
         zarr.slice(y0, y0 + tile.height),
         zarr.slice(x0, x0 + tile.width),
         level.index,
+        c,
       )
-      const { data, stride } = await zarr.get(arr, sel, { signal })
+      const { data, stride } = await zarr.get(this.arrays[level.index], sel, {
+        signal,
+      })
       signal?.throwIfAborted()
       this.host?.updateRangeEvent(label, 'hit')
-      return this.toBytes(
-        data as ArrayLike<number>,
-        stride,
-        tile.width,
-        tile.height,
-      )
+      return { data: data as ArrayLike<number>, stride }
     } catch (error) {
       // zarrita shares a shard-index read, so an abort may be another tile's.
       const aborted =
@@ -332,47 +427,50 @@ export class ZarrSlideSource implements SlideTileSource {
       throw error
     }
   }
+}
 
-  // The selection keeps the sliced dims in declared order: [y, x] or [x, y],
-  // RGB with c among them. Strides are fixed per tile, so each loop is one case.
-  private toBytes(
-    data: ArrayLike<number>,
-    stride: number[],
-    w: number,
-    h: number,
-  ): Uint8Array {
-    const [sy, sx, sc] = this.pos.map((p) => stride[p] ?? 0)
-    if (this.rgb) {
-      const out = new Uint8Array(w * h * 4)
-      for (let y = 0, o = 0; y < h; y++)
-        for (let x = 0, i = y * sy; x < w; x++, i += sx, o += 4) {
-          out[o] = data[i]
-          out[o + 1] = data[i + sc]
-          out[o + 2] = data[i + 2 * sc]
-          out[o + 3] = 255
-        }
-      return out
+// The selection keeps the sliced dims in declared order: [y, x] or [x, y],
+// RGB with c among them. Strides are fixed per tile, so each loop is one case.
+function rgba(
+  data: ArrayLike<number>,
+  sy: number,
+  sx: number,
+  sc: number,
+  w: number,
+  h: number,
+): Uint8Array {
+  const out = new Uint8Array(w * h * 4)
+  for (let y = 0, o = 0; y < h; y++)
+    for (let x = 0, i = y * sy; x < w; x++, i += sx, o += 4) {
+      out[o] = data[i]
+      out[o + 1] = data[i + sc]
+      out[o + 2] = data[i + 2 * sc]
+      out[o + 3] = 255
     }
-    const q = this.quantize
-    if (!q && sx === 1 && sy === w)
-      return asBytes(data as Uint8Array | Uint16Array)
-    const out =
-      q || data instanceof Uint16Array
-        ? new Uint16Array(w * h)
-        : new Uint8Array(w * h)
-    if (q) {
-      // Clamp: a Uint16Array store wraps out-of-range values; NaN stores 0.
-      for (let y = 0, o = 0; y < h; y++)
-        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
-          out[o] = Math.min(
-            65535,
-            Math.max(0, (data[i] - q.lo) * q.scale + 0.5),
-          )
-    } else {
-      for (let y = 0, o = 0; y < h; y++)
-        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++) out[o] = data[i]
-    }
-    return asBytes(out)
+  return out
+}
+
+/** One grey plane into `out` from sample `o0`, quantized when `q` is set. */
+function grayInto(
+  out: Uint8Array | Uint16Array,
+  o0: number,
+  data: ArrayLike<number>,
+  sy: number,
+  sx: number,
+  w: number,
+  h: number,
+  q: Quantize | null,
+): void {
+  if (q) {
+    // Clamp: a Uint16Array store wraps out-of-range values; NaN stores 0.
+    for (let y = 0, o = o0; y < h; y++)
+      for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
+        out[o] = Math.min(65535, Math.max(0, (data[i] - q.lo) * q.scale + 0.5))
+  } else if (sx === 1 && sy === w) {
+    out.set(data, o0)
+  } else {
+    for (let y = 0, o = o0; y < h; y++)
+      for (let x = 0, i = y * sy; x < w; x++, i += sx, o++) out[o] = data[i]
   }
 }
 

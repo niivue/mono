@@ -1,3 +1,26 @@
+## 1.0.0-rc.141 (2026-11-10)
+
+### Features
+
+- ⚠️  **niivue:** default isAntiAlias to true ([#381](https://github.com/niivue/mono/issues/381))
+
+### Fixes
+
+- **niivue:** turn off anti-aliasing on WebKit in the remaining WebGPU-first demos ([#381](https://github.com/niivue/mono/issues/381))
+
+### Breaking Changes
+
+- **niivue:** default isAntiAlias to true  ([#381](https://github.com/niivue/mono/issues/381))
+  isAntiAlias defaults to true. Pages that choose the WebGPU
+  backend should pass isAntiAlias: false on WebKit (Safari, iOS) to avoid the
+  slowdown.
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.140 (2026-11-10)
 
 ### Features

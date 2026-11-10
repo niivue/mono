@@ -251,6 +251,7 @@ describe('core tool schemas', () => {
       'transform',
       'transparent_below_cal_min',
       'v1',
+      'visible',
       'volume',
     ])
     expect(required('set_labels')).toEqual([])

@@ -591,6 +591,18 @@ describe('set_volume', () => {
     expect(view.drawScene).toHaveBeenCalled()
   })
 
+  it('hides and shows a volume, reporting it while hidden', async () => {
+    const view = settableView()
+    const handlers = coreHandlers(host(view))
+    expect(await handlers.set_volume({ visible: false })).toMatchObject({
+      volume: { index: 0, visible: false },
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, { visible: false })
+    const shown = await handlers.set_volume({ visible: true })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, { visible: true })
+    expect((shown as { volume: object }).volume).not.toHaveProperty('visible')
+  })
+
   it('drops the negative colormap on an empty string, alone or with more', async () => {
     const view = settableView()
     const handlers = coreHandlers(host(view))

@@ -307,6 +307,12 @@ export const CORE_SCHEMAS = {
       .max(1)
       .optional()
       .describe('0 (hidden) to 1 (opaque).'),
+    visible: z
+      .boolean()
+      .optional()
+      .describe(
+        'false hides the volume (neither drawn nor picked) and keeps its opacity; true shows it again.',
+      ),
     cal_min: z
       .number()
       .nullable()

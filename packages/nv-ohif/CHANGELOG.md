@@ -1,3 +1,33 @@
+## 1.0.0-rc.166 (2026-11-10)
+
+### Features
+
+- ⚠️  **niivue:** remove deprecated NVSlide.setWindow and window getter ([#659](https://github.com/niivue/mono/issues/659))
+
+### Fixes
+
+- **nv-ohif:** skip a slide window whose bounds overflow to Infinity ([293869a6](https://github.com/niivue/mono/commit/293869a6))
+
+### Breaking Changes
+
+- **niivue:** remove deprecated NVSlide.setWindow and window getter  ([#659](https://github.com/niivue/mono/issues/659))
+  `slide.setWindow(lo, hi)` -> `slide.setChannel(0,
+  { calMin: lo, calMax: hi })`; `slide.window` -> `slide.channels[0]`.
+  setChannel treats a non-finite bound as the default window instead of
+  rejecting it, so callers validate their own input.
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.149
+- Updated nv-ext-tile to 1.0.0-rc.52
+- Updated uikit to 1.0.0-rc.147
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.165 (2026-11-10)
 
 ### Updated Dependencies

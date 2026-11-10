@@ -1,3 +1,30 @@
+## 1.0.0-rc.49 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** reject the data-range sample on the first failed read ([1dd00e94](https://github.com/niivue/mono/commit/1dd00e94))
+- **nv-ext-tile:** bound the data-range reads to 4 at a time ([6fe6bdc9](https://github.com/niivue/mono/commit/6fe6bdc9))
+- **nv-ext-tile:** quantize extreme float ranges without infinite intermediates ([a146361b](https://github.com/niivue/mono/commit/a146361b))
+- **nv-ext-tile:** nonzero quantize scale for empty or overflowing samples ([89b33979](https://github.com/niivue/mono/commit/89b33979))
+- **nv-ext-tile:** keep a nonzero quantize scale on a flat data-range sample ([102c7624](https://github.com/niivue/mono/commit/102c7624))
+- **nv-ext-tile:** cancel ZarrSlideSource.fromUrl requests on abort ([445f67ca](https://github.com/niivue/mono/commit/445f67ca))
+- **nv-ext-tile:** bound the OME-Zarr slide data-range sample ([#656](https://github.com/niivue/mono/issues/656))
+- **nv-ext-tile:** refuse OME-Zarr slide levels not listed finest first ([d5b63393](https://github.com/niivue/mono/commit/d5b63393))
+- **nv-ext-tile:** validate OME-Zarr slide chunks and cap the tile count ([fab34ef3](https://github.com/niivue/mono/commit/fab34ef3))
+- **nv-ext-tile:** refuse an OME-Zarr slide level missing the chosen channel ([#656](https://github.com/niivue/mono/issues/656))
+- **nv-ext-tile:** reject a ranged OME-Zarr read answered 200 ([2dea4add](https://github.com/niivue/mono/commit/2dea4add))
+
+### Performance
+
+- **nv-ext-tile:** multiply, not divide, in the quantize loop ([90c88fc9](https://github.com/niivue/mono/commit/90c88fc9))
+- **nv-ext-tile:** read the sampled data-range chunks in parallel ([b9b491c9](https://github.com/niivue/mono/commit/b9b491c9))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.48 (2026-11-10)
 
 ### Updated Dependencies

@@ -418,5 +418,18 @@ describe('indexDicomWsiMetadata', () => {
       expect(
         indexDicomWsiMetadata(order).slides.map((s) => s.frameOfReference),
       ).toEqual(['9.10'])
+    // Two finest instances of one frame of reference, tied in size but not in
+    // extent: neither anchors a join, in either order.
+    const tied = [
+      a,
+      tagged(spaced(bot as Json, [0.0005, 0.0005]), '9.4', '9.10'),
+      c,
+    ]
+    for (const order of [tied, [...tied].reverse()])
+      expect(
+        indexDicomWsiMetadata(order)
+          .slides.map((s) => s.frameOfReference)
+          .sort(),
+      ).toEqual(['9.10', '9.11'])
   })
 })

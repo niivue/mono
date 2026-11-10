@@ -172,6 +172,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'clearSlidePlane',
     'createSlideDrawing',
     'slideDrawUndo',
+    'setSlideChannel',
   ],
   chunks: [
     'chunkStreamStats',

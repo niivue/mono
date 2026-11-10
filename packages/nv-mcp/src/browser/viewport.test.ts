@@ -1,6 +1,8 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { describe, expect, it, mock, spyOn } from 'bun:test'
 
+import NiiVue, { NVSlide } from '@niivue/niivue'
 import { baseView, hostOf } from '../testing/fake-view'
+import { coreHandlers } from './scene'
 import type { View, Viewport } from './view'
 import { viewportHandlers } from './viewport'
 
@@ -176,7 +178,7 @@ describe('set_slide', () => {
     expect(view.slideDrawEnd).toHaveBeenCalledTimes(1)
     expect(view.clearSlideDrawing).toHaveBeenCalledTimes(1)
     expect(() => set_slide({})).toThrow(
-      'set_slide needs something to do: level, clear_plane or drawing.',
+      'set_slide needs something to do: level, clear_plane, drawing, channel or channel_blend.',
     )
     expect(() => set_slide({ drawing: 'paint' })).toThrow(
       'Unknown drawing "paint". One of: create, clear, undo, end.',
@@ -211,6 +213,110 @@ describe('set_slide', () => {
     expect(() => set_slide({ drawing: 'undo' })).toThrow(
       "This page's NiiVue has no slide drawing.",
     )
+  })
+
+  it("sets a real NVSlide's channels and blend, and reports them", async () => {
+    const slide = new NVSlide({
+      id: 's',
+      name: 's',
+      width: 8,
+      height: 8,
+      dtype: 'uint8',
+      channels: 'gray',
+      levels: [
+        {
+          index: 0,
+          width: 8,
+          height: 8,
+          downsample: 1,
+          tileWidth: 8,
+          tileHeight: 8,
+          columns: 1,
+          rows: 1,
+          tiles: [],
+        },
+      ],
+      channelInfo: [
+        { name: 'dapi', rgb: [0, 0, 255], active: true },
+        {
+          name: 'gfp',
+          rgb: [0, 255, 0],
+          window: { calMin: 1, calMax: 9 },
+          active: true,
+        },
+      ],
+    })
+    // A real controller's slide plane members. Getters are defined after
+    // baseView, whose spread would read them once.
+    const nv = new NiiVue({ backend: 'webgl2' })
+    // No requestAnimationFrame here; the redraw itself is niivue's to test.
+    spyOn(nv, 'drawScene').mockImplementation(() => {})
+    nv.setSlidePlane(slide, {
+      pixelToWorld: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    })
+    const view = Object.defineProperties(
+      baseView({
+        setSlideChannel: (index, update) => nv.setSlideChannel(index, update),
+        setSlideChannelBlend: (blend) => nv.setSlideChannelBlend(blend),
+        clearSlidePlane: mock(),
+        setSlidePlaneLevel: mock(),
+      }),
+      {
+        slideChannels: { get: () => nv.slideChannels },
+        slideChannelBlend: { get: () => nv.slideChannelBlend },
+      },
+    )
+    const { set_slide, where_am_i } = coreHandlers(hostOf(view))
+    const out = set_slide({
+      channel: 1,
+      visible: false,
+      colormap: 'red',
+      cal_min: 2,
+      channel_blend: 'additive',
+    })
+    expect(nv.slideChannels?.[1]).toEqual({
+      name: 'gfp',
+      colormap: 'red',
+      calMin: 2,
+      calMax: 9,
+      visible: false,
+    })
+    expect(slide.channelBlend).toBe('additive')
+    // A default bound is NaN, which the reply carries as null.
+    expect(JSON.parse(JSON.stringify(out)).channels[0]).toMatchObject({
+      name: 'dapi',
+      calMin: null,
+      calMax: null,
+    })
+    set_slide({ channel: 1, cal_max: null })
+    expect(slide.channels[1].calMax).toBeNaN()
+    expect(slide.channels[1].calMin).toBe(2)
+    expect(() => set_slide({ channel: 5, visible: true })).toThrow(RangeError)
+    expect(() => set_slide({ visible: true })).toThrow(
+      'visible, colormap, cal_min and cal_max need a channel.',
+    )
+    expect(() => set_slide({ channel: 0 })).toThrow(
+      'channel needs something to set: visible, colormap, cal_min or cal_max.',
+    )
+    expect(() =>
+      set_slide({ channel_blend: 'max', clear_plane: true }),
+    ).toThrow('clear_plane cannot be combined with channel changes.')
+    expect(view.clearSlidePlane).not.toHaveBeenCalled()
+    // A core rejection comes before the level changes.
+    expect(() =>
+      set_slide({ level: 1, channel: 0, colormap: 'bogus' }),
+    ).toThrow(RangeError)
+    expect(view.setSlidePlaneLevel).not.toHaveBeenCalled()
+    expect(await where_am_i({})).toMatchObject({ channelBlend: 'additive' })
+  })
+
+  it('refuses slide channels without a slide plane', () => {
+    for (const view of [baseView(), baseView({ slideChannels: null })]) {
+      const { set_slide } = viewportHandlers(hostOf(view))
+      expect(() => set_slide({ channel_blend: 'max' })).toThrow(
+        "This page's NiiVue has no slide plane.",
+      )
+    }
   })
 })
 

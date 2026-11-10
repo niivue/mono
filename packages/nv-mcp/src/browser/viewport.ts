@@ -14,19 +14,30 @@ import {
   numbers,
   type Params,
   pointIfGiven,
+  put,
   strings,
   text,
+  windowBound,
 } from './params'
 import { pickIndex } from './pick'
 import {
   type DocumentOptions,
   type Handlers,
   type NiiVueHost,
+  type SlideChannel,
+  type View,
   worldUnit,
 } from './view'
 
 const SAVES = ['document', 'volume', 'mesh', 'bitmap', 'drawing'] as const
 const SLIDE_DRAWING = ['create', 'clear', 'undo', 'end'] as const
+const CHANNEL_BLENDS = ['max', 'additive'] as const
+
+/** The slide plane's channels and blend; JSON carries a default (NaN) bound as null. */
+export function slideState(view: View) {
+  const channels = view.slideChannels
+  return channels ? { channels, channelBlend: view.slideChannelBlend } : {}
+}
 
 /** The handlers for the viewport, point mapping, slide, chunk and file tools. */
 export function viewportHandlers(host: NiiVueHost): Handlers {
@@ -135,14 +146,54 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
 
     set_slide(params: Params) {
       host.beforeAnswer?.()
-      let changed = false
+      // Channel arguments are checked first.
+      const channels = view.slideChannels
+      const channel = integer(params, 'channel')
+      // Only the keys given: setChannel resets a bound that is present but undefined.
+      const update: Partial<SlideChannel> = {}
+      put(update, 'visible', flag(params, 'visible'))
+      put(update, 'colormap', text(params, 'colormap'))
+      put(update, 'calMin', windowBound(params, 'cal_min'))
+      put(update, 'calMax', windowBound(params, 'cal_max'))
+      const hasUpdate = Object.keys(update).length > 0
+      const blend = choice(params, 'channel_blend', CHANNEL_BLENDS)
+      if ((channel !== undefined || hasUpdate || blend) && !channels)
+        throw new Error("This page's NiiVue has no slide plane.")
+      if (hasUpdate && channel === undefined)
+        throw new Error(
+          'visible, colormap, cal_min and cal_max need a channel.',
+        )
+      if (channel !== undefined && !hasUpdate)
+        throw new Error(
+          'channel needs something to set: visible, colormap, cal_min or cal_max.',
+        )
+      // Clearing the plane first would drop the channel changes unseen.
+      if ((channel !== undefined || blend) && flag(params, 'clear_plane'))
+        throw new Error('clear_plane cannot be combined with channel changes.')
+      if (channels && channel !== undefined && channel >= channels.length)
+        throw new RangeError(`NVSlide has no channel ${channel}`)
       const level = params?.level
+      const levelIndex =
+        level === undefined || level === null
+          ? undefined
+          : integer(params, 'level')
+      const drawing = choice(params, 'drawing', SLIDE_DRAWING)
+      const maxRaster = integer(params, 'max_raster', 1)
+      let changed = false
+      // First: setChannel is all-or-nothing, so a core rejection (unknown
+      // colormap, crossed bounds) leaves the level and drawing untouched.
+      if (channel !== undefined) {
+        view.setSlideChannel?.(channel, update)
+        changed = true
+      }
+      if (blend) {
+        view.setSlideChannelBlend?.(blend)
+        changed = true
+      }
       if (level !== undefined) {
         if (!view.setSlidePlaneLevel)
           throw new Error("This page's NiiVue has no slide plane.")
-        view.setSlidePlaneLevel(
-          level === null ? undefined : integer(params, 'level'),
-        )
+        view.setSlidePlaneLevel(levelIndex)
         changed = true
       }
       if (flag(params, 'clear_plane')) {
@@ -151,12 +202,10 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         view.clearSlidePlane()
         changed = true
       }
-      const drawing = choice(params, 'drawing', SLIDE_DRAWING)
       if (drawing) {
         const step = {
           create: view.createSlideDrawing
             ? () => {
-                const maxRaster = integer(params, 'max_raster', 1)
                 view.createSlideDrawing?.(
                   maxRaster === undefined ? undefined : { maxRaster },
                 )
@@ -175,12 +224,13 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed)
         throw new Error(
-          'set_slide needs something to do: level, clear_plane or drawing.',
+          'set_slide needs something to do: level, clear_plane, drawing, channel or channel_blend.',
         )
       view.drawScene()
       return {
         ...(level === undefined ? {} : { level }),
         ...(drawing ? { drawing } : {}),
+        ...slideState(view),
       }
     },
 

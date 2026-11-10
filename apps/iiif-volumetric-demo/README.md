@@ -24,7 +24,7 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
 - `range.html` — client-only chunk streaming proof-of-concept. It can
   load a static chunk-major `uint8` shard from Vite's public assets via
   `Range: bytes=start-end`, or fetch Pawpawsaurus OME-Zarr chunk objects
-  directly in the browser with `zarrita` and feed the decoded bytes
+  directly in the browser with `@niivue/zarrita-rs` and feed the decoded bytes
   through the same `chunkSource` path as the OME-Zarr and WSI pages. See
   [client-only Zarr streaming notes](docs/client-only-zarr-streaming.md).
 - `tile-range.html` — client-only tile streaming proof-of-concept. It

@@ -97,7 +97,7 @@
         "@niivue/geotiff-rs": "3.1.0-rc.0",
         "@niivue/niivue": "workspace:*",
         "@niivue/nv-ext-tile": "workspace:*",
-        "@niivue/zarrita-rs": "0.7.5-rc.0",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
       },
       "devDependencies": {
         "@playwright/test": "1.64.1",
@@ -154,7 +154,7 @@
       "name": "iiif-volumetric-demo",
       "dependencies": {
         "@niivue/niivue": "workspace:*",
-        "@niivue/zarrita-rs": "0.7.5-rc.0",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
       },
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",
@@ -165,7 +165,7 @@
     "apps/iiif-volumetric-server": {
       "name": "iiif-volumetric-server",
       "dependencies": {
-        "@niivue/zarrita-rs": "0.7.5-rc.0",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
         "@zarrita/storage": "^0.2.0",
         "cors": "^2.8.5",
         "dicom-parser": "^1.8.21",
@@ -200,7 +200,7 @@
     "apps/zarrita-compare": {
       "name": "zarrita-compare",
       "dependencies": {
-        "@niivue/zarrita-rs": "0.7.5-rc.0",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
         "@zarrita/storage": "^0.2.0",
         "zarrita": "^0.7.3",
       },
@@ -333,7 +333,7 @@
       "version": "1.0.0-rc.59",
       "dependencies": {
         "@niivue/geotiff-rs": "3.1.0-rc.0",
-        "@niivue/zarrita-rs": "0.7.5-rc.0",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
       },
       "devDependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
@@ -1076,7 +1076,7 @@
 
     "@niivue/web-bridge": ["@niivue/web-bridge@workspace:packages/niivue-web-bridge"],
 
-    "@niivue/zarrita-rs": ["@niivue/zarrita-rs@0.7.5-rc.0", "", { "dependencies": { "@zarrita/storage": "^0.2.0", "numcodecs": "^0.3.2" } }, "sha512-djxox9R3BzXUzH2bAu98xy0lPk7nBX1ksXQnuOamPmE0ty08fS828Szd7jVhBMz+tTnIKPaBMyTWOCFEaomZSg=="],
+    "@niivue/zarrita-rs": ["@niivue/zarrita-rs@0.7.5-rc.1", "", { "dependencies": { "@zarrita/storage": "^0.2.0", "numcodecs": "^0.3.2" } }, "sha512-GkZ5uqObf72fWvAK5wyixdRoTs/PB6s2Wh72uShyqA1N4Tki05SOdkKy8CQVPhs0h/OqUubJi1lUWTkKY4tZbA=="],
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 

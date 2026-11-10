@@ -13,12 +13,13 @@ Three modules, in layers:
 | Module | Responsibility |
 | --- | --- |
 | `src/zarr/omeZarr.ts` | The metadata. Parses a group's attributes into axes, pyramid datasets and omero channels, and answers the axis questions (which dimension is channel? which spatial axis is display x?). Pure JSON in, no network, Bun-testable. |
-| `src/zarr/omeZarrLoader.ts` | The pixels, whole levels at a time. Opens a store with zarrita, picks a pyramid level, pins time and channel, and assembles each requested channel into a NIfTI `File` for `loadVolumes`. |
+| `src/zarr/omeZarrLoader.ts` | The pixels, whole levels at a time. Opens a store with zarrita-rs, picks a pyramid level, pins time and channel, and assembles each requested channel into a NIfTI `File` for `loadVolumes`. |
 | `src/zarr/omeZarrChunkedSource.ts` | The pixels, brick by brick. Adapts an opened pyramid to the core `ChunkedVolumeSource` seam for `nv.loadChunkedVolume`, which streams multi-LOD bricks of stores far too large to load whole. |
 
 Unlike TIFF, the container itself is NOT hand-parsed: chunk layout, codecs
-(blosc, gzip, zstd) and both Zarr format versions come from `zarrita`, a
-runtime dependency.
+(blosc, gzip, zstd, lz4) and both Zarr format versions come from
+`@niivue/zarrita-rs/inline`, a runtime dependency that decodes chunks in
+wasm with no worker or asset URL for the host app to serve.
 
 ## Streaming very large stores
 

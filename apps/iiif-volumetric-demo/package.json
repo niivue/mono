@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@niivue/niivue": "workspace:*",
-    "@niivue/zarrita-rs": "0.7.5-rc.0"
+    "@niivue/zarrita-rs": "0.7.5-rc.1"
   },
   "devDependencies": {
     "@niivue/dev-images": "workspace:*",

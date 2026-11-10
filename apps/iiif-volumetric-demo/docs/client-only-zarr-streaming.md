@@ -9,7 +9,7 @@ The page has two sources:
 - `range shard`: a synthetic `uint8` volume packed into one chunk-major binary
   file and loaded with HTTP `Range` requests.
 - `pawpawsaurus zarr`: the local Pawpawsaurus OME-Zarr fixture loaded directly
-  from browser fetches with `zarrita`.
+  from browser fetches with `@niivue/zarrita-rs`.
 
 The useful URLs are:
 
@@ -98,7 +98,7 @@ path.
 
 ## OME-Zarr Source
 
-The Pawpawsaurus source uses `zarrita` in the browser:
+The Pawpawsaurus source uses `@niivue/zarrita-rs` in the browser:
 
 ```text
 FetchStore("/zarr/pawpawsaurus.ome.zarr")
@@ -122,7 +122,7 @@ zarr scale  [Z, Y, X] -> spacing       [X, Y, Z]
 ```
 
 When NiiVue asks for a viewer chunk at `[x0, y0, z0]` with dimensions
-`[sx, sy, sz]`, the demo asks `zarrita` for:
+`[sx, sy, sz]`, the demo asks `@niivue/zarrita-rs` for:
 
 ```text
 [slice(z0, z0 + sz), slice(y0, y0 + sy), slice(x0, x0 + sx)]
@@ -157,7 +157,7 @@ viewer chunks: 4 x 3 x 5 = 60 chunks
 zarr chunks:   8 x 8 x 8 = 512 chunks
 ```
 
-Each viewer brick is filled by `zarrita`, which fetches and decodes whatever
+Each viewer brick is filled by `@niivue/zarrita-rs`, which fetches and decodes whatever
 native Zarr chunks intersect that brick.
 
 ## Byte Cache

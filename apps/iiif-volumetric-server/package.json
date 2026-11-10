@@ -9,7 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@niivue/zarrita-rs": "0.7.5-rc.0",
+    "@niivue/zarrita-rs": "0.7.5-rc.1",
     "@zarrita/storage": "^0.2.0",
     "cors": "^2.8.5",
     "dicom-parser": "^1.8.21",

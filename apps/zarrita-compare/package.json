@@ -8,7 +8,7 @@
     "bench": "bench/run.sh"
   },
   "dependencies": {
-    "@niivue/zarrita-rs": "0.7.5-rc.0",
+    "@niivue/zarrita-rs": "0.7.5-rc.1",
     "@zarrita/storage": "^0.2.0",
     "zarrita": "^0.7.3"
   },

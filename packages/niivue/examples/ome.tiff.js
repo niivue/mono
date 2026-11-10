@@ -18,6 +18,8 @@ import {
 } from './ome.tiff.write.js'
 import { urlParamSelect } from './urlParamSelect.js'
 
+const gl1 = document.getElementById('gl1')
+
 // OME-TIFF is the third of the microscopy containers this package reads (see
 // docs/ome-tiff-format.md). A .tif holds a flat stack of image planes and
 // nothing else; the metadata block in the first directory is what says how

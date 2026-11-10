@@ -1,5 +1,13 @@
 import NiiVue from '../src/index.ts'
 
+const decimationSlide = document.getElementById('decimationSlide')
+const fiberColor = document.getElementById('fiberColor')
+const gl1 = document.getElementById('gl1')
+const radiusSlide = document.getElementById('radiusSlide')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const xrayCheck = document.getElementById('xrayCheck')
+
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }

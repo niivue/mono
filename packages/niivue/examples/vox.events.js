@@ -1,5 +1,12 @@
 import NiiVue from '../src/index.ts'
 
+const clearBtn = document.getElementById('clearBtn')
+const dragMode = document.getElementById('dragMode')
+const drawCheck = document.getElementById('drawCheck')
+const gl1 = document.getElementById('gl1')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 const MAX_LOG_ENTRIES = 200
 
 const CATEGORY = {
@@ -195,7 +202,7 @@ const nv1 = new NiiVue({
 let resizeTimer = 0
 function debouncedResizeLog(detail) {
   clearTimeout(resizeTimer)
-  resizeTimer = setTimeout(() => logEvent('canvasResize', detail), 300)
+  resizeTimer = window.setTimeout(() => logEvent('canvasResize', detail), 300)
 }
 
 // Register listeners for every event

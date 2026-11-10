@@ -1,5 +1,18 @@
 import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
+const clipButton = document.getElementById('clipButton')
+const durationSlider = document.getElementById('durationSlider')
+const easingSelect = document.getElementById('easingSelect')
+const fadeButton = document.getElementById('fadeButton')
+const gl1 = document.getElementById('gl1')
+const resetButton = document.getElementById('resetButton')
+const sliceType = document.getElementById('sliceType')
+const spinButton = document.getElementById('spinButton')
+const stats = document.getElementById('stats')
+const stopButton = document.getElementById('stopButton')
+const tourButton = document.getElementById('tourButton')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Animated transitions: animateTo moves the scene to a target state over
 // time. Each button awaits one or more transitions; pressing on or scrolling
 // the canvas, or pressing Stop, ends the one running and leaves the scene
@@ -30,7 +43,7 @@ const HOME = {
   scaleMultiplier: 1,
   crosshairMM: nv1.getCrosshairPos(),
   // Depth 2 puts the plane outside the volume, so nothing is cut.
-  clipPlanes: { 0: [2, 270, 0] },
+  clipPlanes: { 0: /** @type {[number, number, number]} */ ([2, 270, 0]) },
   volumes: { 1: { opacity: 0 } },
 }
 await nv1.animateTo(HOME, { duration: 0 })

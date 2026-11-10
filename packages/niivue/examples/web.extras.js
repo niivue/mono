@@ -1,6 +1,15 @@
 import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
+const cmapSelect = document.getElementById('cmapSelect')
+const fontSelect = document.getElementById('fontSelect')
+const fontSlide = document.getElementById('fontSlide')
+const gl1 = document.getElementById('gl1')
+const mat2Select = document.getElementById('mat2Select')
+const matSelect = document.getElementById('matSelect')
+const volumeSelect = document.getElementById('volumeSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Load from the community asset repositories rather than bundling.
 // All four base URLs below serve a `manifest.json` listing available
 // files, plus the files themselves.

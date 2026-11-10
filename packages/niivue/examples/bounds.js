@@ -1,5 +1,14 @@
 import NiiVue from '../src/index.ts'
 
+const bounds1 = document.getElementById('bounds1')
+const bounds2 = document.getElementById('bounds2')
+const broadcastSelect = document.getElementById('broadcastSelect')
+const gl1 = document.getElementById('gl1')
+const saveNv1 = document.getElementById('saveNv1')
+const saveNv2 = document.getElementById('saveNv2')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
 // anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
 const isWebKit =

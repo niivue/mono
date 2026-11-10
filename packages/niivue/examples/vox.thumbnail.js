@@ -1,5 +1,7 @@
 import NiiVue from '../src/index.ts'
 
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 webgpuCheck.onclick = function () {
   nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }

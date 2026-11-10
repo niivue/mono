@@ -1,7 +1,14 @@
 import NiiVue from '../src/index.ts'
 
+const aboutBtn = document.getElementById('aboutBtn')
+const clipBtn = document.getElementById('clipBtn')
+const gl1 = document.getElementById('gl1')
+const paqdSelect = document.getElementById('paqdSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 paqdSelect.onchange = function () {
   const _index = this.selectedIndex
+  /** @type {[number, number, number, number]} */
   let paqdUniforms = [0.2, 0.7, 0.9, 0.4]
   switch (this.value) {
     case 'rim':

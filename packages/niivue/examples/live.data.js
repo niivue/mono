@@ -1,5 +1,13 @@
 import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
+const gl1 = document.getElementById('gl1')
+const meshCheck = document.getElementById('meshCheck')
+const sliceType = document.getElementById('sliceType')
+const speedSlider = document.getElementById('speedSlider')
+const stats = document.getElementById('stats')
+const voxelCheck = document.getElementById('voxelCheck')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Live data updates: animate voxels and mesh vertices that are already loaded.
 //
 // - Voxels: a glowing blob orbits through the brain. Each frame edits the

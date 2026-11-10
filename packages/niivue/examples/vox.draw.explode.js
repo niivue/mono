@@ -1,5 +1,25 @@
 import NiiVue, { chunkVolumeGrid } from '../src/index.ts'
 
+const backend = document.getElementById('backend')
+const clearBtn = document.getElementById('clearBtn')
+const clipCheck = document.getElementById('clipCheck')
+const colorSel = document.getElementById('colorSel')
+const colorSwatch = document.getElementById('colorSwatch')
+const explode = document.getElementById('explode')
+const explodeVal = document.getElementById('explodeVal')
+const gl1 = document.getElementById('gl1')
+const hint = document.getElementById('hint')
+const overwriteCheck = document.getElementById('overwriteCheck')
+const penSize = document.getElementById('penSize')
+const saveBtn = document.getElementById('saveBtn')
+const svgBtn = document.getElementById('svgBtn')
+const tolVal = document.getElementById('tolVal')
+const toolSel = document.getElementById('toolSel')
+const undoBtn = document.getElementById('undoBtn')
+const view = document.getElementById('view')
+const wand2dCheck = document.getElementById('wand2dCheck')
+const wandTol = document.getElementById('wandTol')
+
 // A dedicated drawing demo that exercises feature parity across:
 //   - 2D slices and the 3D render (exploded blocks)
 //   - pen / eraser / flood-fill / magic wand / vector (SVG) annotations
@@ -12,12 +32,14 @@ import NiiVue, { chunkVolumeGrid } from '../src/index.ts'
 // bitmap (dimsRAS), independent of tiling, so it works on 2D slices and on the
 // separated 3D blocks alike.
 
+/** @type {[number, number, number]} */
 const GRID = [3, 3, 3]
 // The forced grid's chunks are small (a normal volume split in 27); any device
 // limit above the largest chunk edge works. 4096 is safely above real GPUs'
 // per-chunk needs here.
 const DEVICE_LIMIT = 4096
 // Match the renderer's per-chunk gradient halo so brick faces stay seam-free.
+/** @type {[number, number, number]} */
 const HALO = [3, 3, 3]
 
 // Ensure the loaded volume is tiled into a stable 3x3x3 grid so its blocks can

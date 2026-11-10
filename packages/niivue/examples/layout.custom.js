@@ -1,7 +1,13 @@
 import NiiVue from '../src/index.ts'
 
+const equalCheck = document.getElementById('equalCheck')
+const gl1 = document.getElementById('gl1')
+const layoutSelect = document.getElementById('layoutSelect')
+const radioCheck = document.getElementById('radioCheck')
+
 // ---------- Predefined custom layouts ----------
 
+/** @type {Record<string, import('../src/index.ts').CustomLayoutTile[]>} */
 const layouts = {
   // Sagittal on the left half, coronal top-right, axial bottom-right
   leftSag: [

@@ -1,5 +1,25 @@
 import NiiVue from '../src/index.ts'
 
+const apod = document.getElementById('apod')
+const apodVal = document.getElementById('apodVal')
+const avgCheck = document.getElementById('avgCheck')
+const colorBtn = document.getElementById('colorBtn')
+const fullRangeBtn = document.getElementById('fullRangeBtn')
+const gl1 = document.getElementById('gl1')
+const modeSelect = document.getElementById('modeSelect')
+const p0 = document.getElementById('p0')
+const p0Val = document.getElementById('p0Val')
+const p1 = document.getElementById('p1')
+const p1Val = document.getElementById('p1Val')
+const ppmHigh = document.getElementById('ppmHigh')
+const ppmHighVal = document.getElementById('ppmHighVal')
+const ppmLow = document.getElementById('ppmLow')
+const ppmLowVal = document.getElementById('ppmLowVal')
+const reactiveCheck = document.getElementById('reactiveCheck')
+const sceneSelect = document.getElementById('sceneSelect')
+const viewSelect = document.getElementById('viewSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Standalone NIfTI-MRS spectroscopy viewer. Emulates:
 //   spec2graph.py svs_se_30.nii -a --ppm-range 1.9 3.3
 // The complex FID is transformed (FFT + transient averaging + ppm windowing)
@@ -9,6 +29,7 @@ import NiiVue from '../src/index.ts'
 
 // Sampling location in the T2w world space (mm), shared by the crosshair and the
 // voxel marker so single-slice views land on the spectroscopy voxel.
+/** @type {[number, number, number]} */
 const MRS_LOC = [-17.3993, 0.0, 46.894901]
 const T2_URL = '/signals/svs_T2w.nii.gz'
 

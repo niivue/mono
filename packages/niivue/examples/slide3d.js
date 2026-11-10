@@ -119,6 +119,7 @@ async function main() {
   const target = nv.canvas
   let drawMode = false
   let drawing = false
+  /** @returns {[number, number]} */
   const css = (e) => {
     const r = target.getBoundingClientRect()
     return [e.clientX - r.left, e.clientY - r.top]

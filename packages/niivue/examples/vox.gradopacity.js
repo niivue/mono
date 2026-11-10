@@ -63,6 +63,16 @@ import { cortex, shiny } from '../src/assets/matcaps'
 import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
+const clipCheck = document.getElementById('clipCheck')
+const colorBtn = document.getElementById('colorBtn')
+const gl1 = document.getElementById('gl1')
+const gradSlider = document.getElementById('gradSlider')
+const matcapSelect = document.getElementById('matcapSelect')
+const opacitySlider = document.getElementById('opacitySlider')
+const silhouetteSlider = document.getElementById('silhouetteSlider')
+const volumeSelect = document.getElementById('volumeSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // mni152 and chris_t1 are MR (a skull-stripped brain and a whole head). The
 // cryosection (visiblehuman) and CT (torso) are the interesting silhouette
 // cases: their air/tissue and tissue/bone steps are much sharper than MR's.

@@ -22,15 +22,6 @@
     <main id="canvas-container">
       <canvas id="gl1"></canvas>
     </main>
-    <script type="module">
-      import NiiVue from '../src/index.ts'
-
-      sliceType.onchange = () => {
-        nv1.sliceType = parseInt(sliceType.value, 10)
-      }
-      const nv1 = new NiiVue()
-      await nv1.attachToCanvas(gl1)
-      await nv1.loadMeshes([{ url: '/meshes/BrainMesh_ICBM152.lh.mz3'}])
-    </script>
+    <script type="module" src="mesh.min.js"></script>
   </body>
 </html>

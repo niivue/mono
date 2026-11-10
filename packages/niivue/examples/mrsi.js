@@ -1,5 +1,33 @@
 import NiiVue, { MrsScene, SLICE_TYPE } from '../src/index.ts'
 
+const apod = document.getElementById('apod')
+const apodVal = document.getElementById('apodVal')
+const cmapSelect = document.getElementById('cmapSelect')
+const colorBtn = document.getElementById('colorBtn')
+const colorbarCheck = document.getElementById('colorbarCheck')
+const fullRangeBtn = document.getElementById('fullRangeBtn')
+const gl1 = document.getElementById('gl1')
+const makeMapBtn = document.getElementById('makeMapBtn')
+const mapMode = document.getElementById('mapMode')
+const mapOpacity = document.getElementById('mapOpacity')
+const mapOpacityVal = document.getElementById('mapOpacityVal')
+const maskCheck = document.getElementById('maskCheck')
+const modeSelect = document.getElementById('modeSelect')
+const p0 = document.getElementById('p0')
+const p0Val = document.getElementById('p0Val')
+const p1 = document.getElementById('p1')
+const p1Val = document.getElementById('p1Val')
+const ppmHigh = document.getElementById('ppmHigh')
+const ppmHighVal = document.getElementById('ppmHighVal')
+const ppmLow = document.getElementById('ppmLow')
+const ppmLowVal = document.getElementById('ppmLowVal')
+const reactiveCheck = document.getElementById('reactiveCheck')
+const snapCheck = document.getElementById('snapCheck')
+const threshold = document.getElementById('threshold')
+const thresholdVal = document.getElementById('thresholdVal')
+const viewSelect = document.getElementById('viewSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Reproduces the FSLeyes MRS plugin
 //  https://pages.fmrib.ox.ac.uk/wclarke/fsleyes-plugin-mrs/
 
@@ -50,6 +78,7 @@ try {
 
 // --- Controls ---------------------------------------------------------------
 
+/** @returns {[number, number] | null} */
 function ppmWindow() {
   const lo = parseFloat(ppmLow.value)
   const hi = parseFloat(ppmHigh.value)

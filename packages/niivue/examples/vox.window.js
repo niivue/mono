@@ -1,5 +1,14 @@
 import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
+const autoBtn = document.getElementById('autoBtn')
+const calMaxOut = document.getElementById('calMaxOut')
+const calMaxSlide = document.getElementById('calMaxSlide')
+const calMinOut = document.getElementById('calMinOut')
+const calMinSlide = document.getElementById('calMinSlide')
+const clipDarkCheck = document.getElementById('clipDarkCheck')
+const gl1 = document.getElementById('gl1')
+const resetBtn = document.getElementById('resetBtn')
+
 let gMin = 0
 let gMax = 1
 

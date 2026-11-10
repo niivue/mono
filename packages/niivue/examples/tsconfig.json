@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force"
+  },
+  "include": [
+    "*.js",
+    "*.min.js",
+    "cinematic/*.js",
+    "../src/vite-env.d.ts",
+    "demo-dom.d.ts"
+  ],
+  "exclude": []
+}

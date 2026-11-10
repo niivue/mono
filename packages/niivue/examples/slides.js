@@ -64,6 +64,7 @@ async function withFrameDecoder(signal, run, isRetry = false) {
     if (--p.active === 0 && p.retired) p.decoder.terminate()
   }
 }
+/** @type {import('../src/index.ts').SlideTileDecoder} */
 async function decodeDicomTile(bytes, { level, signal }) {
   const options = {
     photometric: level.photometric,

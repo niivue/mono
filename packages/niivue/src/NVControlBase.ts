@@ -152,7 +152,7 @@ import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
-import { NVSlide } from '@/slide/NVSlide'
+import { defaultSlideChannels, isRgbSlide, NVSlide } from '@/slide/NVSlide'
 import {
   isSlideDrawingSizeValid,
   SlideDrawing,
@@ -7445,7 +7445,18 @@ export default class NiiVue extends EventTarget {
     const sp = this._slidePlane
     if (!sp) return undefined
     const dr = this._slideDrawing
+    const { slide } = sp
+    const channels = JSON.stringify(slide.channels)
     return {
+      channels:
+        channels === JSON.stringify(defaultSlideChannels(slide.manifest))
+          ? undefined
+          : slide.channels.map((c) => ({ ...c })),
+      // An RGB slide reports 'additive' whatever was set: not a choice to save.
+      channelBlend:
+        slide.channelBlend === 'max' || isRgbSlide(slide.manifest)
+          ? undefined
+          : slide.channelBlend,
       manifest: sp.slide.manifest,
       manifestUrl: sp.slide.manifestUrl || undefined,
       pixelToWorld: [...sp.pixelToWorld],
@@ -7474,6 +7485,15 @@ export default class NiiVue extends EventTarget {
     const slide = sp.manifestUrl
       ? await NVSlide.fromManifestUrl(sp.manifestUrl)
       : new NVSlide(sp.manifest)
+    // Before setSlidePlane primes tiles, so hidden channels are not fetched.
+    sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
+      try {
+        slide.setChannel(i, c)
+      } catch (err) {
+        log.warn(`loadDocument: slide channel ${i} not restored`, err)
+      }
+    })
+    if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
     this.setSlidePlane(slide, {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { log } from '@/logger'
 import type {
+  NVChannel,
+  NVSlideChannelInfo,
   NVSlideColorLut,
   NVSlideLevelManifest,
   NVSlideManifest,
@@ -12,6 +14,7 @@ import type {
 } from './NVSlide'
 import {
   assertSingleSlidePlane,
+  compositeSamples,
   ManifestRangeSource,
   NVSlide,
   windowSamples,
@@ -1010,16 +1013,18 @@ describe('windowSamples', () => {
   })
 })
 
-describe('NVSlide monochrome window', () => {
-  // Bun has no ImageData/createImageBitmap: a stand-in bitmap carries its pixels.
-  type FakeBitmap = {
-    width: number
-    height: number
-    data: Uint8ClampedArray
-    closed: boolean
-    close(): void
-  }
-  const g = globalThis as Record<string, unknown>
+// Bun has no ImageData/createImageBitmap: a stand-in bitmap carries its pixels.
+type FakeBitmap = {
+  width: number
+  height: number
+  data: Uint8ClampedArray
+  closed: boolean
+  close(): void
+}
+const g = globalThis as Record<string, unknown>
+
+/** Install stand-in ImageData/createImageBitmap for the enclosing describe. */
+function useFakeBitmaps(): void {
   const saved = {
     ImageData: g.ImageData,
     createImageBitmap: g.createImageBitmap,
@@ -1052,6 +1057,19 @@ describe('NVSlide monochrome window', () => {
   })
   afterEach(() => {
     Object.assign(g, saved)
+  })
+}
+
+const pixel = (slide: NVSlide, key: string, offset = 0) =>
+  (slide.cachedTileBitmap(key) as unknown as FakeBitmap | null)?.data[offset]
+const rgbaAt = (slide: NVSlide, key: string) =>
+  Array.from(
+    (slide.cachedTileBitmap(key) as unknown as FakeBitmap).data.subarray(0, 4),
+  )
+
+describe('NVSlide monochrome window', () => {
+  useFakeBitmaps()
+  afterEach(() => {
     if (originalJls) NVSlide.registerTileDecoder('image/jls', originalJls)
   })
   const originalJls = NVSlide.tileDecoder('image/jls')
@@ -1071,9 +1089,6 @@ describe('NVSlide monochrome window', () => {
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     return slide
   }
-  const pixel = (slide: NVSlide, key: string) =>
-    (slide.cachedTileBitmap(key) as unknown as FakeBitmap | null)?.data[0]
-
   it('defaults to the level bitsStored range, the same in every tile and level', async () => {
     const slide = monoSlide(4095)
     await loadLevel(slide, 0)
@@ -1179,6 +1194,57 @@ describe('NVSlide monochrome window', () => {
     slide.dispose()
   })
 
+  it('renders setWindow and setChannel(0) identically, as windowSamples did', async () => {
+    const viaWindow = monoSlide(500)
+    const viaChannel = monoSlide(500)
+    expect(viaChannel.channels).toEqual([
+      {
+        name: 'gray',
+        colormap: 'gray',
+        calMin: Number.NaN,
+        calMax: Number.NaN,
+        visible: true,
+      },
+    ])
+    await loadLevel(viaWindow, 2)
+    await loadLevel(viaChannel, 2)
+    viaWindow.setWindow(0, 1000)
+    viaChannel.setChannel(0, { calMin: 0, calMax: 1000 })
+    await waitFor(
+      () =>
+        pixel(viaWindow, 'L2/0/0') === 128 &&
+        pixel(viaChannel, 'L2/0/0') === 128,
+    )
+    const bits = (s: NVSlide) =>
+      Array.from((s.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap).data)
+    const expected = Array.from(
+      windowSamples(
+        new Uint16Array(TILE_W * TILE_H).fill(500),
+        { calMin: 0, calMax: 1000 },
+        false,
+      ),
+    )
+    expect(bits(viaWindow)).toEqual(expected)
+    expect(bits(viaChannel)).toEqual(expected)
+    expect(viaChannel.window).toEqual({ calMin: 0, calMax: 1000 })
+    // A non-grey colormap takes the composite path: red carries the same grey level.
+    viaChannel.setChannel(0, { colormap: 'red' })
+    await waitFor(() => pixel(viaChannel, 'L2/0/0', 1) === 0)
+    expect(rgbaAt(viaChannel, 'L2/0/0')).toEqual([128, 0, 0, 255])
+    viaWindow.dispose()
+    viaChannel.dispose()
+  })
+
+  it('inverts MONOCHROME1 through a colormap too; window shows a one-sided bound', async () => {
+    const slide = monoSlide(500, 'MONOCHROME1')
+    slide.setChannel(0, { colormap: 'red' })
+    await loadLevel(slide, 2)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([224, 0, 0, 255]) // 255 - round(500 * 255 / 4095)
+    slide.setChannel(0, { calMin: 100 })
+    expect(slide.window).toEqual({ calMin: 100, calMax: Number.NaN })
+    slide.dispose()
+  })
+
   it('rejects a window that is not finite with calMin < calMax', () => {
     const slide = monoSlide(0)
     for (const [lo, hi] of [
@@ -1189,6 +1255,327 @@ describe('NVSlide monochrome window', () => {
     ] as const)
       expect(() => slide.setWindow(lo, hi)).toThrow(RangeError)
     expect(slide.window).toBeNull()
+    slide.dispose()
+  })
+})
+
+describe('compositeSamples', () => {
+  it('matches windowSamples for one grey channel', () => {
+    const samples = new Uint16Array([0, 100, 200, 300, 4095])
+    const w = { calMin: 100, calMax: 300 }
+    const grey = windowSamples(samples, w, false)
+    const lut = new Uint8Array(65536 * 4)
+    const table = windowSamples(
+      Uint16Array.from({ length: 65536 }, (_, v) => v),
+      w,
+      false,
+    )
+    lut.set(table)
+    expect(
+      Array.from(compositeSamples(samples, 5, [{ plane: 0, lut }], false)),
+    ).toEqual(Array.from(grey))
+  })
+})
+
+// Serves planar samples: every pixel of channel c holds values[c]. `pad` adds
+// right/bottom padding of 0s, `gate` holds each fetch, `planes` overrides the count.
+class PlanarSource implements SlideTileSource {
+  readonly requested: number[][] = []
+  pad = 0
+  gate: Promise<void> = Promise.resolve()
+  planes?: number
+  constructor(
+    readonly manifest: NVSlideManifest,
+    readonly values: number[],
+  ) {}
+  bind(): void {}
+  fetchTileBytes(): Promise<Uint8Array> {
+    throw new Error('a sample source is not asked for bytes')
+  }
+  async fetchTileSamples(
+    _level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    channels: readonly number[],
+  ): Promise<NVSlideTileSamples> {
+    this.requested.push([...channels])
+    await this.gate
+    const width = tile.width + this.pad
+    const height = tile.height + this.pad
+    const samples = new Uint8Array(width * height * channels.length)
+    channels.forEach((c, p) => {
+      for (let y = 0; y < tile.height; y++) {
+        const row = (p * height + y) * width
+        samples.fill(this.values[c] as number, row, row + tile.width)
+      }
+    })
+    return {
+      samples,
+      width,
+      height,
+      bitsStored: 8,
+      planes: this.planes ?? channels.length,
+    }
+  }
+}
+
+describe('NVSlide channels', () => {
+  useFakeBitmaps()
+
+  // Grey 100, red 200, blue 30: max gives (200, 100, 100), additive (255, 100, 130).
+  function planarSlide(
+    channelInfo?: NVSlideChannelInfo[],
+    values = [100, 200, 30],
+    options: { maxCacheBytes?: number } = {},
+  ): { slide: NVSlide; source: PlanarSource } {
+    const manifest = makePyramid()
+    manifest.channelInfo = channelInfo
+    for (const level of manifest.levels) level.bitsStored = 8
+    const source = new PlanarSource(manifest, values)
+    const slide = NVSlide.fromSource(source, options)
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    return { slide, source }
+  }
+  const threeChannels = (blueActive = true): NVSlideChannelInfo[] => [
+    { name: 'grey', rgb: [255, 255, 255], active: true },
+    { name: 'red', rgb: [255, 0, 0], active: true },
+    { name: 'blue', rgb: [0, 0, 255], active: blueActive },
+  ]
+
+  it('builds channels from channelInfo: colormap, usable window, active', () => {
+    const { slide } = planarSlide([
+      {
+        name: 'a',
+        rgb: [255, 0, 0],
+        window: { calMin: 5, calMax: 90 },
+        active: true,
+      },
+      { name: 'b', window: { calMin: 9, calMax: 9 }, active: false },
+    ])
+    expect(slide.channels).toEqual([
+      { name: 'a', colormap: 'red', calMin: 5, calMax: 90, visible: true },
+      {
+        name: 'b',
+        colormap: 'violet', // the palette's second entry: no stated colour
+        calMin: Number.NaN,
+        calMax: Number.NaN,
+        visible: false,
+      },
+    ])
+    expect(slide.channelBlend).toBe('max')
+    slide.dispose()
+  })
+
+  it('composites planar channels by max, and by sum once additive', async () => {
+    const { slide } = planarSlide(threeChannels())
+    await loadLevel(slide, 2)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 100, 255])
+    // Three uint8 planes per tile, beside the RGBA bitmap.
+    expect(slide.cacheBytes).toBe(TILE_W * TILE_H * (4 + 3))
+    slide.setChannelBlend('additive')
+    await waitFor(() => pixel(slide, 'L2/0/0', 2) === 130)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 130, 255])
+    slide.dispose()
+  })
+
+  it('neither fetches nor shows a hidden channel; showing it refetches', async () => {
+    const { slide, source } = planarSlide(threeChannels(false))
+    await loadLevel(slide, 2)
+    expect(source.requested).toEqual([[0, 1]])
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 100, 255])
+    slide.setChannelBlend('additive')
+    await waitFor(() => pixel(slide, 'L2/0/0') === 255)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 100, 255])
+    slide.setChannel(2, { visible: true })
+    expect(slide.cachedTileBitmap('L2/0/0')).toBeNull()
+    await loadLevel(slide, 2)
+    expect(source.requested.at(-1)).toEqual([0, 1, 2])
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 130, 255])
+    slide.dispose()
+  })
+
+  it('returns channel copies: a readback cannot change the slide', () => {
+    const { slide } = planarSlide(threeChannels())
+    let changes = 0
+    slide.addEventListener('change', () => changes++)
+    const ch = slide.channels[0] as NVChannel
+    ch.calMin = 9
+    ch.calMax = 1
+    expect(slide.window).toBeNull()
+    expect(changes).toBe(0)
+    slide.dispose()
+  })
+
+  it('keeps only the known channel fields', () => {
+    const { slide } = planarSlide(threeChannels())
+    slide.setChannel(0, { extra: 7 } as Partial<NVChannel>)
+    expect(Object.keys(slide.channels[0] ?? {}).sort()).toEqual([
+      'calMax',
+      'calMin',
+      'colormap',
+      'name',
+      'visible',
+    ])
+    slide.dispose()
+  })
+
+  it('keeps a field set to undefined', () => {
+    const { slide } = planarSlide(threeChannels())
+    slide.setChannel(0, {
+      name: undefined,
+      colormap: undefined,
+      visible: undefined,
+    })
+    expect(slide.channels[0]).toMatchObject({
+      name: 'grey',
+      colormap: 'gray',
+      visible: true,
+    })
+    slide.dispose()
+  })
+
+  it('does not fetch a tile with every channel hidden', async () => {
+    const { slide, source } = planarSlide([{ name: 'grey', active: false }])
+    await loadLevel(slide, 2)
+    expect(source.requested).toEqual([])
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([0, 0, 0, 255])
+    slide.dispose()
+  })
+
+  it('refetches a tile whose channel was shown while it loaded', async () => {
+    const { slide, source } = planarSlide(threeChannels(false))
+    let release = () => {}
+    source.gate = new Promise((resolve) => {
+      release = resolve
+    })
+    slide.setLevelChoice(2)
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    slide.setChannel(2, { visible: true })
+    slide.setChannel(2, { visible: false })
+    slide.setChannel(2, { visible: true })
+    source.gate = Promise.resolve()
+    release()
+    await waitFor(() => slide.stats.completed === 1)
+    expect(source.requested).toEqual([
+      [0, 1],
+      [0, 1, 2],
+    ])
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 100, 255])
+    slide.setChannelBlend('additive')
+    await waitFor(() => pixel(slide, 'L2/0/0', 2) === 130)
+    slide.dispose()
+  })
+
+  it('re-primes the coarsest level when a shown channel drops it', async () => {
+    const { slide, source } = planarSlide(threeChannels(false))
+    const coarsest = slide.manifest.levels[2]
+    const tile = coarsest?.tiles[0]
+    if (!coarsest || !tile) throw new Error('no coarsest tile')
+    slide.requestTile(coarsest, tile) // as setSlidePlane primes it
+    await waitFor(() => slide.stats.completed === 1)
+    slide.setChannel(2, { visible: true })
+    await waitFor(() => slide.stats.completed === 2)
+    expect(source.requested.at(-1)).toEqual([0, 1, 2])
+    expect(slide.cachedTileBitmap('L2/0/0')).not.toBeNull()
+    slide.dispose()
+  })
+
+  it('crops every plane of a padded sample frame', async () => {
+    const { slide, source } = planarSlide(threeChannels())
+    source.pad = 3
+    slide.setChannelBlend('additive')
+    await loadLevel(slide, 2)
+    const bitmap = slide.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap
+    expect([bitmap.width, bitmap.height]).toEqual([TILE_W, TILE_H])
+    const last = (TILE_W * TILE_H - 1) * 4
+    expect(Array.from(bitmap.data.subarray(last, last + 4))).toEqual([
+      255, 100, 130, 255,
+    ])
+    slide.dispose()
+  })
+
+  it('fails a tile whose plane count differs from the channels asked for', async () => {
+    const { slide, source } = planarSlide(threeChannels())
+    source.planes = 2
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    slide.setLevelChoice(2)
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    await waitFor(() => slide.stats.failures === 1)
+    expect(String(errors.mock.calls[0]?.[1])).toContain(
+      'Expected 3 sample planes, received 2',
+    )
+    expect(slide.cachedTileBitmap('L2/0/0')).toBeNull()
+    errors.mockRestore()
+    slide.dispose()
+  })
+
+  it('keeps a one-sided window from inverting; undefined bounds are the default', async () => {
+    const { slide } = planarSlide(threeChannels())
+    slide.setChannel(1, { calMin: 5000 }) // above every u8 sample: black, not inverted
+    await loadLevel(slide, 2)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([100, 100, 100, 255])
+    slide.setChannel(1, { calMin: undefined })
+    expect(slide.channels[1]?.calMin).toBeNaN()
+    slide.dispose()
+  })
+
+  it('re-renders cached tiles on a channel change without refetching', async () => {
+    const { slide, source } = planarSlide(threeChannels())
+    await loadLevel(slide, 2)
+    const changes: number[] = []
+    slide.addEventListener('change', () => changes.push(1))
+    slide.setChannel(1, { calMin: 0, calMax: 100 }) // red saturates
+    slide.setChannel(0, { visible: false })
+    await waitFor(() => pixel(slide, 'L2/0/0', 1) === 0)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 0, 30, 255])
+    expect(source.requested).toHaveLength(1)
+    expect(changes.length).toBeGreaterThan(0)
+    slide.dispose()
+  })
+
+  it('keeps an RGB slide additive', async () => {
+    const { slide } = planarSlide(undefined, [200, 100, 50])
+    expect(slide.channels.map((c) => c.colormap)).toEqual([
+      'red',
+      'green',
+      'blue',
+    ])
+    await loadLevel(slide, 2)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 50, 255])
+    slide.setChannelBlend('max')
+    expect(slide.channelBlend).toBe('additive')
+    // Green as grey overlaps red: additive sums them.
+    slide.setChannel(1, { colormap: 'gray' })
+    await waitFor(() => pixel(slide, 'L2/0/0') === 255)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 150, 255])
+    slide.dispose()
+  })
+
+  it('counts every fetched plane against the cache budget', () => {
+    // 75% of 3000 = 2250 B: L0's 16 tiles x 32 px x (4 + 3) B = 3584 B do not
+    // fit (without the planes, 2048 B would); L1's 4 tiles do.
+    const { slide } = planarSlide(threeChannels(), undefined, {
+      maxCacheBytes: 3000,
+    })
+    slide.setLevelChoice(0)
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    expect(slide.visibleTiles(WHOLE_SLIDE_SCREEN).level?.index).toBe(1)
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it('rejects bad channel updates and planes other than {0, 0}', () => {
+    const { slide } = planarSlide(threeChannels())
+    expect(() => slide.setChannel(3, { visible: true })).toThrow(RangeError)
+    expect(() => slide.setChannel(0, { calMin: 9, calMax: 9 })).toThrow(
+      RangeError,
+    )
+    expect(() => slide.setChannel(0, { colormap: 'no-such-map' })).toThrow(
+      RangeError,
+    )
+    expect(slide.plane).toEqual({ z: 0, t: 0 })
+    slide.setPlane({ z: 0, t: 0 })
+    expect(() => slide.setPlane({ z: 1, t: 0 })).toThrow(RangeError)
+    expect(() => slide.setPlane({ z: 0, t: 2 })).toThrow(RangeError)
     slide.dispose()
   })
 })

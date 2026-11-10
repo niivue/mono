@@ -1,3 +1,13 @@
+## 1.0.0-rc.34 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** sniff DICOMweb levels concurrently, assume JPEG when the sniff is refused ([4e4bf398](https://github.com/niivue/mono/commit/4e4bf398))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.33 (2026-11-10)
 
 ### Fixes

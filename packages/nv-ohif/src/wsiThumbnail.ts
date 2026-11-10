@@ -74,7 +74,10 @@ export function frameEncoding(bytes: Uint8Array): 'jpeg' | 'png' | 'raw' {
   return 'raw'
 }
 
-// The download is capped by readFirstPart (64 MB); this bounds the decode.
+// A preview needs far less than readFirstPart's default 64 MB cap.
+export const MAX_THUMBNAIL_FETCH_BYTES = 32 * 1024 * 1024
+
+// MAX_THUMBNAIL_FETCH_BYTES caps the download; this bounds the decode.
 // Largest raw frame we will paint to a full-size canvas before downscaling
 // (canvases can be GPU/IOSurface-backed, so this bounds a GPU allocation too).
 export const MAX_THUMBNAIL_DECODE_PIXELS = 16 * 1024 * 1024
@@ -233,6 +236,7 @@ export async function fetchWsiThumbnailObjectUrl(
         signal,
       }),
       'WSI thumbnail',
+      MAX_THUMBNAIL_FETCH_BYTES,
     )
     const encoding = frameEncoding(frame)
     if (encoding !== 'raw') {

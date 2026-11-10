@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
+  MAX_THUMBNAIL_FETCH_BYTES as FETCH_CAP,
   fetchWsiThumbnailObjectUrl,
   frameEncoding,
   pickThumbnailInstance,
@@ -8,8 +9,23 @@ import {
 
 const JPEG = '1.2.840.10008.1.2.4.50'
 const BASE = 'https://dicom.example.com/studies/S/series/Se/instances'
-// readFirstPart's cap (nv-ext-tile).
-const FETCH_CAP = 64 * 1024 * 1024
+/** A JPEG-looking body streamed in 1 MiB chunks; counts what was pulled. */
+function chunkedBody(mib: number) {
+  const seen = { pulled: 0, cancelled: false }
+  const body = new ReadableStream<Uint8Array>({
+    pull(c) {
+      if (seen.pulled === mib) return c.close()
+      const chunk = new Uint8Array(1 << 20)
+      if (seen.pulled === 0) chunk.set([0xff, 0xd8, 0xff])
+      seen.pulled++
+      c.enqueue(chunk)
+    },
+    cancel() {
+      seen.cancelled = true
+    },
+  })
+  return { body, seen }
+}
 
 function frameId(sop: string): string {
   return `wadors:${BASE}/${sop}/frames/1`
@@ -276,9 +292,10 @@ describe('fetchWsiThumbnailObjectUrl', () => {
   })
 
   it('rejects a response whose Content-Length exceeds the fetch cap', async () => {
+    const { body, seen } = chunkedBody(1)
     globalThis.fetch = (() =>
       Promise.resolve(
-        new Response(multipart('B', new Uint8Array([0xff, 0xd8, 0xff])), {
+        new Response(body, {
           status: 200,
           headers: {
             'content-type': 'multipart/related; type="image/jpeg"; boundary=B',
@@ -287,6 +304,24 @@ describe('fetchWsiThumbnailObjectUrl', () => {
         }),
       )) as unknown as typeof fetch
     expect(await fetchWsiThumbnailObjectUrl(instances())).toBeNull()
+    expect(seen.cancelled).toBe(true)
+    // At most what the stream had already queued before the check.
+    expect(seen.pulled).toBeLessThanOrEqual(1)
+  })
+
+  it('cancels a chunked body without Content-Length once it passes the cap', async () => {
+    const { body, seen } = chunkedBody(40)
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg' },
+        }),
+      )) as unknown as typeof fetch
+    expect(FETCH_CAP).toBe(32 << 20)
+    expect(await fetchWsiThumbnailObjectUrl(instances())).toBeNull()
+    expect(seen.cancelled).toBe(true)
+    expect(seen.pulled).toBeLessThan(40)
   })
 
   it('rejects an oversized body even without a Content-Length header', async () => {

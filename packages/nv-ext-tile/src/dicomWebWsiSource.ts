@@ -76,14 +76,15 @@ function sniffSyntax(frame: Uint8Array): string {
   throw new Error('WSI frame is not JPEG, JPEG 2000 or JPEG-LS')
 }
 
-/** A response body, refused past MAX_BODY whether or not Content-Length says so. */
+/** A response body, refused past `max` whether or not Content-Length says so. */
 async function readCapped(
   response: Response,
   what: string,
+  max: number,
 ): Promise<Uint8Array> {
   const refused = !response.ok
     ? `${what} HTTP ${response.status}`
-    : Number(response.headers.get('content-length')) > MAX_BODY
+    : Number(response.headers.get('content-length')) > max
       ? `${what} body too large`
       : undefined
   if (refused) {
@@ -99,7 +100,7 @@ async function readCapped(
     const { done, value } = await reader.read()
     if (done) break
     n += value.length
-    if (n > MAX_BODY) {
+    if (n > max) {
       await reader.cancel()
       throw new Error(`${what} body too large`)
     }
@@ -118,13 +119,14 @@ async function readCapped(
 /**
  * The first part of a WADO-RS (multipart/related) response, or the whole body
  * if it is not multipart. Throws on a non-OK status, an empty part or a body
- * past 64 MB; `what` names the resource in those errors.
+ * past `max` bytes (64 MB by default); `what` names the resource in those errors.
  */
 export async function readFirstPart(
   response: Response,
   what: string,
+  max = MAX_BODY,
 ): Promise<Uint8Array> {
-  const body = await readCapped(response, what)
+  const body = await readCapped(response, what, max)
   const part = parseMultipartRelated(
     body,
     response.headers.get('content-type') ?? '',

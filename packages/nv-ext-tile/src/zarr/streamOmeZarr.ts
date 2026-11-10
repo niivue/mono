@@ -21,6 +21,10 @@ export interface StreamOmeZarrOptions extends FetchOmeZarrChunkedSourceOptions {
   replace?: boolean
 }
 
+// The last replacement on each viewer: a replacement waits for it, so two
+// overlapping ones cannot both clear the scene before either adds its volume.
+const replacing = new WeakMap<Viewer, Promise<unknown>>()
+
 /**
  * Stream an OME-Zarr store into `nv` (added, as `loadChunkedVolume` adds,
  * unless `replace`) and own what that leaves running: once the streamed
@@ -38,10 +42,22 @@ export async function streamOmeZarr(
 ): Promise<NVChunkedVolume> {
   const source = await fetchOmeZarrChunkedSource(url, options)
   let chunked: NVChunkedVolume
-  try {
+  const show = async (): Promise<NVChunkedVolume> => {
     if (nv.isDestroyed) throw new Error('the viewer was destroyed')
     if (replace) await nv.removeAllVolumes()
-    chunked = await nv.loadChunkedVolume(source, volumeOptions)
+    return nv.loadChunkedVolume(source, volumeOptions)
+  }
+  try {
+    if (replace) {
+      const run = (replacing.get(nv) ?? Promise.resolve()).then(show)
+      replacing.set(
+        nv,
+        run.catch(() => {}),
+      )
+      chunked = await run
+    } else {
+      chunked = await show()
+    }
   } catch (err) {
     source.dispose?.()
     throw err

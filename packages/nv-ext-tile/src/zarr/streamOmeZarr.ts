@@ -40,9 +40,14 @@ export async function streamOmeZarr(
   { replace, ...options }: StreamOmeZarrOptions = {},
   volumeOptions?: ChunkedVolumeOptions,
 ): Promise<NVChunkedVolume> {
-  const source = await fetchOmeZarrChunkedSource(url, options)
+  // Opening starts now, but a replacement joins the queue at call time, so an
+  // earlier call whose store opens later cannot overwrite a newer one.
+  const opening = fetchOmeZarrChunkedSource(url, options)
+  opening.catch(() => {}) // awaited in show; this marks it handled while queued
+  let source: Awaited<typeof opening> | undefined
   let chunked: NVChunkedVolume
   const show = async (): Promise<NVChunkedVolume> => {
+    source = await opening
     if (nv.isDestroyed) throw new Error('the viewer was destroyed')
     if (replace) await nv.removeAllVolumes()
     return nv.loadChunkedVolume(source, volumeOptions)
@@ -59,9 +64,10 @@ export async function streamOmeZarr(
       chunked = await show()
     }
   } catch (err) {
-    source.dispose?.()
+    source?.dispose?.()
     throw err
   }
+  const opened = await opening // resolved by now; typed without the undefined
   // The scene holds a shallow copy of chunked.volume; its chunkSource is shared.
   const shown = (volume: { chunkSource?: unknown }): boolean =>
     volume.chunkSource === chunked.volume.chunkSource
@@ -69,7 +75,7 @@ export async function streamOmeZarr(
     nv.removeEventListener('volumeRemoved', onRemoved)
     nv.removeEventListener('viewDestroyed', onDestroyed)
     chunked.dispose()
-    source.dispose?.()
+    opened.dispose?.()
   }
   const onRemoved = (e: Event): void => {
     const { volume } = (e as CustomEvent<{ volume: { chunkSource?: unknown } }>)

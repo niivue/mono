@@ -202,6 +202,8 @@ const padToTiles = (n: number, downsample: number, tile: number) =>
 // padded to tiles, is its size on both axes. Padding hides the downsample
 // (91136 / 1024 = 89), so try powers of two from the smallest it allows that
 // no earlier (larger) image has taken: a one-tile image fits many.
+// Only an image marked reduced-resolution (NewSubfileType 1, as Philips
+// writes) is tried: a tiled macro can fit the padding too.
 // ponytail: powers of two only, as Philips writes; parse its XML
 // DICOM_PIXEL_SPACING if another padding writer needs other factors.
 function levelOf(
@@ -217,6 +219,7 @@ function levelOf(
   if (Math.abs(height - aspect * width) <= 1 + aspect) {
     return { img, width, height, downsample: baseWidth / width }
   }
+  if (img.fileDirectory.getValue('NewSubfileType') !== 1) return null
   const tileWidth = img.getTileWidth()
   const tileHeight = img.getTileHeight()
   if (width % tileWidth || height % tileHeight) return null

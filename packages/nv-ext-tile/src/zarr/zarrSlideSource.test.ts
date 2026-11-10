@@ -329,6 +329,25 @@ test('all-NaN data falls back to the full window', async () => {
   expect(source.window).toEqual({ calMin: 0, calMax: 65535 })
 })
 
+test('non-finite samples do not widen the quantize range', async () => {
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [
+      {
+        shape: [1, 4],
+        chunks: [1, 4],
+        data: Float32Array.from([0, 50, 100, Number.POSITIVE_INFINITY]),
+      },
+    ],
+    'float32',
+  )
+  const source = await ZarrSlideSource.fromStore(store)
+  const [l0] = source.manifest.levels
+  expect(Array.from(u16((await tileBytes(source, l0))[0]))).toEqual([
+    0, 32768, 65535, 65535,
+  ])
+})
+
 test('an aborted tile is reported aborted, not failed', async () => {
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },

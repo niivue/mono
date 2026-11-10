@@ -393,6 +393,7 @@ async function dataRange(
   let hi = Number.NEGATIVE_INFINITY
   for (let i = 0; i < data.length; i++) {
     const v = data[i]
+    if (!Number.isFinite(v)) continue
     if (v < lo) lo = v
     if (v > hi) hi = v
   }

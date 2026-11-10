@@ -1,3 +1,9 @@
+## 1.0.0-rc.160 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.46
+
 ## 1.0.0-rc.159 (2026-11-10)
 
 ### Updated Dependencies

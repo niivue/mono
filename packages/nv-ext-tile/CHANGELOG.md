@@ -1,3 +1,13 @@
+## 1.0.0-rc.46 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** keep TIFF levels padded to whole tiles (Philips) ([9215b24f](https://github.com/niivue/mono/commit/9215b24f))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.45 (2026-11-10)
 
 ### Updated Dependencies

@@ -7,6 +7,7 @@
 // Run: bun packages/niivue/scripts/check-blend-wgsl.mjs (exits 1 on a mismatch)
 import { readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
+import { OVERLAY_COLOR_BLEND } from '../src/NVConstants.ts'
 import { blendOverlayData } from '../src/volume/overlayBlend.ts'
 
 // Each overlay is [z0 rgba, z1 rgba]. z0: disjoint red and green. z1: gray
@@ -31,6 +32,27 @@ const CASES = {
 }
 const MODES = []
 for (let a = 0; a < 3; a++) for (let c = 0; c < 4; c++) MODES.push([a, c])
+const cpu = (name, z, A, C) =>
+  Array.from(
+    blendOverlayData(
+      CASES[name].map((o) => new Uint8Array(o[z])),
+      [1, 1, 1],
+      A,
+      C,
+    ),
+  )
+// Matching the CPU proves colour MAX only if some input tells it from ADDITIVE.
+const tellsMaxFromAdd = Object.keys(CASES).some((n) =>
+  [0, 1].some(
+    (z) =>
+      cpu(n, z, 0, OVERLAY_COLOR_BLEND.MAX).join() !==
+      cpu(n, z, 0, OVERLAY_COLOR_BLEND.ADDITIVE).join(),
+  ),
+)
+if (!tellsMaxFromAdd) {
+  console.error('inputs give colour MAX and ADDITIVE the same output')
+  process.exit(1)
+}
 
 const src = readFileSync(
   new URL('../src/wgpu/orient.ts', import.meta.url),
@@ -189,16 +211,7 @@ if (typeof r === 'string') {
 }
 let bad = 0
 for (const { name, A, C, z0, z1, err } of r) {
-  const cpu = (z) =>
-    Array.from(
-      blendOverlayData(
-        CASES[name].map((o) => new Uint8Array(o[z])),
-        [1, 1, 1],
-        A,
-        C,
-      ),
-    )
-  const want = [cpu(0), cpu(1)]
+  const want = [cpu(name, 0, A, C), cpu(name, 1, A, C)]
   const ok =
     !err &&
     [z0, z1].every((got, z) =>

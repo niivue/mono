@@ -10,7 +10,12 @@
 // "Backend feature parity"). The toggle is hidden on pages that don't
 // use NiiVue (e.g. stitch.html).
 
-import { type Backend, backendSwitchUrl, getBackendFromUrl } from './backend'
+import {
+  type Backend,
+  backendSwitchUrl,
+  getBackendFromUrl,
+  isWebGpuAvailable,
+} from './backend'
 
 type Page = { href: string; label: string }
 
@@ -116,8 +121,9 @@ function appendSeparator(slot: HTMLElement): void {
 }
 
 function buildBackendToggle(pageDefault: Backend): HTMLSpanElement {
-  const wgpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator
-  const current = getBackendFromUrl(pageDefault)
+  const wgpuAvailable = isWebGpuAvailable()
+  // Without WebGPU the page falls back to WebGL2, so mark the backend in use.
+  const current = wgpuAvailable ? getBackendFromUrl(pageDefault) : 'webgl2'
   const wrap = document.createElement('span')
   wrap.className = 'backend-toggle'
   const mk = (

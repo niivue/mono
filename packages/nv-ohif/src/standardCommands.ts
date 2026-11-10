@@ -17,6 +17,20 @@ import type { OhifExtensionParams } from './ohif-types'
  * (CommandsManager searches newer contexts first); any other target is handed
  * back to the CORNERSTONE context explicitly, which cannot re-enter here.
  */
+/**
+ * OHIF's rotate and flip commands. They act on 2D slice tiles only, so they
+ * no-op (and the toolbar disables them) on an NVSlide (WSI), render or graph view.
+ */
+export const NIIVUE_ROTATE_FLIP_COMMANDS = [
+  'rotateViewportCW',
+  'rotateViewportCCW',
+  'rotateViewportCWSet',
+  'flipViewportHorizontal',
+  'flipViewportVertical',
+  'setViewportHorizontalFlip',
+  'setViewportVerticalFlip',
+] as const
+
 export const NIIVUE_STANDARD_COMMANDS = [
   'resetViewport',
   'setViewportOrientation',
@@ -24,6 +38,7 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'scaleDownViewport',
   'fitViewportToWindow',
   'setWindowLevelPreset',
+  ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
 type StandardOptions = Record<string, unknown> & { viewportId?: string }
@@ -78,6 +93,44 @@ function setOrientation(
   if (sliceType !== undefined) nv.sliceType = sliceType
 }
 
+/** No 2D tile to turn or flip: a slide, a render-only or a graph-only view. */
+export function noTiles2D(entry: NiivueViewportEntry): boolean {
+  const { sliceType } = entry.nv
+  return (
+    Boolean(entry.slideView) ||
+    sliceType === SLICE_TYPE.RENDER ||
+    sliceType === SLICE_TYPE.NONE
+  )
+}
+
+// rotation: degrees clockwise on screen. 'set' is the turn as seen, so one flip
+// negates the stored rotation (Cornerstone's set mode).
+function turn(
+  entry: NiivueViewportEntry,
+  rotation: unknown,
+  mode: 'apply' | 'set',
+): void {
+  const degrees = Number(rotation)
+  if (noTiles2D(entry) || !Number.isFinite(degrees)) return
+  const { nv } = entry
+  if (mode === 'apply') nv.rotate2D(degrees / 90)
+  else
+    nv.rotation2D =
+      nv.isFlipped2DHorizontal !== nv.isFlipped2DVertical ? -degrees : degrees
+}
+
+function flip(
+  entry: NiivueViewportEntry,
+  axis: 'horizontal' | 'vertical',
+  value?: unknown,
+): void {
+  if (noTiles2D(entry)) return
+  const { nv } = entry
+  if (value === undefined) nv.flip2D(axis)
+  else if (axis === 'horizontal') nv.isFlipped2DHorizontal = Boolean(value)
+  else nv.isFlipped2DVertical = Boolean(value)
+}
+
 /** Command definitions for {@link NIIVUE_STANDARD_COMMANDS}. */
 export function getStandardCommandDefinitions({
   servicesManager,
@@ -124,6 +177,46 @@ export function getStandardCommandDefinitions({
           typeof opts.presetIndex === 'number' ? opts.presetIndex : undefined,
         ),
       ),
+    },
+    rotateViewportCW: {
+      commandFn: route('rotateViewportCW', (entry, opts) =>
+        turn(entry, opts.rotation, 'apply'),
+      ),
+      options: { rotation: 90 },
+    },
+    rotateViewportCCW: {
+      commandFn: route('rotateViewportCCW', (entry, opts) =>
+        turn(entry, opts.rotation, 'apply'),
+      ),
+      options: { rotation: -90 },
+    },
+    rotateViewportCWSet: {
+      commandFn: route('rotateViewportCWSet', (entry, opts) =>
+        turn(entry, opts.rotation, 'set'),
+      ),
+      options: { rotation: 90 },
+    },
+    flipViewportHorizontal: {
+      commandFn: route('flipViewportHorizontal', (entry) =>
+        flip(entry, 'horizontal'),
+      ),
+    },
+    flipViewportVertical: {
+      commandFn: route('flipViewportVertical', (entry) =>
+        flip(entry, 'vertical'),
+      ),
+    },
+    setViewportHorizontalFlip: {
+      commandFn: route('setViewportHorizontalFlip', (entry, opts) =>
+        flip(entry, 'horizontal', opts.flipped),
+      ),
+      options: { flipped: true },
+    },
+    setViewportVerticalFlip: {
+      commandFn: route('setViewportVerticalFlip', (entry, opts) =>
+        flip(entry, 'vertical', opts.flipped),
+      ),
+      options: { flipped: true },
     },
   }
 }

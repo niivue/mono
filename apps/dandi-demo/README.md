@@ -15,8 +15,10 @@ Options:
   backend is resolved (WebGPU adapter probe) before the streaming budget is
   chosen, so a fallback to WebGL2 gets WebGL2's budget; the HUD names the
   running backend.
-- `?aa=on|off` sets anti-aliasing for the volume pane (default on, but off in
+- `?aa=on|off` sets anti-aliasing for both panes (default on, but off in
   Safari and other WebKit browsers, whose WebGPU misrenders with it).
+- On a HiDPI display a Retina toggle draws the slide pane at native device
+  pixels (off: one canvas pixel per CSS pixel).
 - On the dev server the menu also offers two synthetic stores
   (`?dataset=synthetic` and `synthetic-oct`) generated per chunk by the dev
   server (`@niivue/dev-images`, `src/syntheticZarr.ts`): the geometry

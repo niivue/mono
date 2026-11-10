@@ -281,6 +281,11 @@ backend.onchange = async () => {
   reportParent()
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 // Optional `?backend=webgl2` (or webgpu) to pick the initial backend; the select
 // mirrors it and can still switch at runtime.
 const initialBackend =
@@ -292,12 +297,14 @@ backend.value = initialBackend
 const nv1 = new NiiVue({
   backgroundColor: [0.08, 0.09, 0.11, 1],
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
   sliceType: 4, // SLICE_TYPE.RENDER
   isColorbarVisible: false,
 })
 const nv2 = new NiiVue({
   backgroundColor: [0.08, 0.09, 0.11, 1],
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
   sliceType: parseInt(blockView.value, 10),
   isColorbarVisible: false,
   placeholderText: 'Click a block on the left',

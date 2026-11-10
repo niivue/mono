@@ -493,7 +493,7 @@
           <option value="webgl2">WebGL2</option>
         </select>
         <label for="aaSelect">Anti-alias</label>
-        <select id="aaSelect" title="Multisample anti-aliasing for the volume pane (reloads the page)">
+        <select id="aaSelect" title="Multisample anti-aliasing for both panes (reloads the page)">
           <option value="off">off</option>
           <option value="on">on</option>
         </select>
@@ -502,6 +502,7 @@
           <option value="linear" selected>linear</option>
           <option value="nearest">nearest</option>
         </select>
+        <label id="retinaLabel" hidden title="Slide pane at native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
       </span>
     </header>
     <main>

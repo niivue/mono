@@ -32,9 +32,18 @@
           <option value="dzi">demo</option>
         </select></label>
         <label class="backend">backend <select id="backendSelect">
-          <option value="webgl2">webgl2</option>
           <option value="webgpu">webgpu</option>
+          <option value="webgl2">webgl2</option>
         </select></label>
+        <label title="Multisample anti-aliasing (reloads the page)">AA <select id="aaSelect">
+          <option value="on">on</option>
+          <option value="off">off</option>
+        </select></label>
+        <label>interp <select id="filter" autocomplete="off">
+          <option value="linear">linear</option>
+          <option value="nearest">nearest</option>
+        </select></label>
+        <label id="retinaLabel" hidden title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
       <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure.</span><span id="status" data-state="wait">Loading slide...</span></footer>
@@ -58,18 +67,28 @@
 
       const params = new URLSearchParams(location.search)
       const src = params.get('src') || 'cptac'
-      const wantGpu = params.get('backend') === 'webgpu' && 'gpu' in navigator
-      // Wired before the slide loads, so both menus work even if it fails.
+      const wantGpu = params.get('backend') !== 'webgl2' && 'gpu' in navigator
+      // WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with anti-aliasing
+      // on, so it defaults off there and on elsewhere.
+      const isWebKit =
+        /AppleWebKit/.test(navigator.userAgent) &&
+        !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+      const aaParam = new URLSearchParams(location.search).get('aa')
+      const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
+      // Wired before the slide loads, so the menus work even if it fails.
       urlParamSelect(document.getElementById('srcSelect'), 'src', src === 'dzi' ? 'dzi' : 'cptac')
       urlParamSelect(document.getElementById('backendSelect'), 'backend', wantGpu ? 'webgpu' : 'webgl2')
+      urlParamSelect(document.getElementById('aaSelect'), 'aa', isAntiAlias ? 'on' : 'off')
       const canvas = document.getElementById('gl')
+      const filter = document.getElementById('filter')
+      const retina = document.getElementById('retina')
       const COLOR = [1, 0.85, 0, 1]
 
       // --- standalone slide viewer plumbing (mirrors examples/slides.js) --------
       const screenForCanvas = () => {
         const r = canvas.getBoundingClientRect()
         return { widthCss: r.width, heightCss: r.height,
-          devicePixelRatio: window.devicePixelRatio || 1 }
+          devicePixelRatio: retina.checked ? window.devicePixelRatio || 1 : 1 }
       }
       // slide.slideToScreen is the inverse of slide.screenToSlide (slide base
       // pixel -> canvas CSS); scale to device pixels for the overlay.
@@ -82,10 +101,10 @@
       let view = null
       const createView = async () => {
         if (wantGpu) {
-          const renderer = await SlideRendererGPU.create(canvas)
+          const renderer = await SlideRendererGPU.create(canvas, { antialias: isAntiAlias }).catch(() => null)
           if (renderer) return { kind: 'gpu', renderer }
         }
-        const gl = canvas.getContext('webgl2', { alpha: false, antialias: false })
+        const gl = canvas.getContext('webgl2', { alpha: false, antialias: isAntiAlias })
         const renderer = new SlideRenderer()
         renderer.init(gl)
         return { kind: 'gl', gl, renderer }
@@ -169,6 +188,7 @@
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
       view.renderer.overlayDraw = (f) => ruler.drawOverlay(f)
+      view.renderer.isNearestInterpolation = filter.value === 'nearest'
       slide.addEventListener('change', requestRender)
       setStatus(
         `Waiting for first click (${spacing() ? 'mm' : 'slide px'})`,
@@ -222,6 +242,18 @@
       document.getElementById('fontSize').addEventListener('input', (ev) => {
         labelSizePx = Number(ev.target.value); requestRender()
       })
+      filter.addEventListener('change', () => {
+        view.renderer.isNearestInterpolation = filter.value === 'nearest'; requestRender()
+      })
+      // Retina is offered only on a HiDPI display, re-checked when the window
+      // moves to a display with another pixel ratio (or the browser zoom changes).
+      const watchPixelRatio = () => {
+        document.getElementById('retinaLabel').hidden = window.devicePixelRatio <= 1
+        matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
+          'change', () => { watchPixelRatio(); requestRender() }, { once: true })
+      }
+      watchPixelRatio()
+      retina.addEventListener('change', requestRender)
     </script>
   </body>
 </html>

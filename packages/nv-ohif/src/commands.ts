@@ -1280,7 +1280,7 @@ export function voiRange(
   return { calMin, calMax }
 }
 
-/** Reset camera, pan, zoom, and crosshair (or refit a slide). */
+/** Reset camera, pan, zoom, crosshair, 2D rotation and flips (or refit a slide). */
 export function resetView(entry: NiivueViewportEntry): void {
   if (entry.slideView) {
     entry.slideView.resetView()
@@ -1293,6 +1293,10 @@ export function resetView(entry: NiivueViewportEntry): void {
   nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
   nv.renderPan = [...VIEW_DEFAULTS.renderPan]
   centerCrosshair(nv)
+  // Cornerstone's reset also clears rotation and flips.
+  nv.rotation2D = 0
+  nv.isFlipped2DHorizontal = false
+  nv.isFlipped2DVertical = false
 }
 
 /**
@@ -1372,7 +1376,7 @@ export function getNiivueCommandsModule({
       }
     },
 
-    /** Reset camera, pan, zoom, and crosshair to their defaults. */
+    /** Reset camera, pan, zoom, crosshair, 2D rotation and flips to their defaults. */
     niivueResetView: () => {
       const entry = getActiveNiivueEntry(servicesManager)
       if (entry) resetView(entry)

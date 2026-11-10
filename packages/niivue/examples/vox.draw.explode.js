@@ -263,6 +263,11 @@ function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 // Optional `?backend=webgl2` (or webgpu) to pick the initial backend; the select
 // mirrors it and can still switch at runtime.
 const initialBackend =
@@ -274,6 +279,7 @@ backend.value = initialBackend
 const nv1 = new NiiVue({
   backgroundColor: [0.1, 0.1, 0.12, 1],
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
 })
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 await nv1.attachToCanvas(gl1)

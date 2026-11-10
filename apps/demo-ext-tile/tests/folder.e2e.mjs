@@ -1,15 +1,18 @@
 /**
- * Browser check of the DICOM-WSI folder workflow, on the synthetic fixtures only
+ * Browser check of the DICOM-WSI custom-files workflow, on the synthetic fixtures only
  * (packages/nv-ext-tile/fixtures/dicom-wsi, ~70 KB). Seconds, not minutes; not in CI.
  *
  *   bunx nx e2e demo-ext-tile      # builds first, via Nx
  *
- * Opens the fixture folder through the webkitdirectory input, checks the slide
+ * Picks the fixture files through the Custom files input, checks the slide
  * list and the skipped files, opens `colors` (TILED_SPARSE 3 x 2, four solid-colour
  * JPEG tiles, two holes) and reads the canvas: each tile shows its colour and each
  * hole shows the background, with no placeholder and no request for it.
+ * Then opens a missing manifest by Custom URL and checks that the failure keeps
+ * the Slide and Series menus and that the Series menu still opens a slide.
  */
 
+import { readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, extname, join, normalize } from 'node:path'
@@ -64,7 +67,10 @@ try {
   page.on('pageerror', (e) => errors.push(e.message))
   // No ?url= default slide: the page starts empty.
   await page.goto(`http://127.0.0.1:${port}/index.html?url=`)
-  await page.setInputFiles('#folder', FIXTURES)
+  await page.setInputFiles(
+    '#files',
+    readdirSync(FIXTURES).map((f) => join(FIXTURES, f)),
+  )
   await page.waitForFunction(() =>
     /Indexed in/.test(document.getElementById('status').textContent),
   )
@@ -92,10 +98,11 @@ try {
     .getAttribute('value')
   await page.selectOption('#slides', value)
   await page.waitForFunction(() =>
-    /colors: 1 levels, 4 tiles, .* 0 failed/.test(
-      document.getElementById('status').textContent,
+    /^colors: 1 levels.*requests +4\/4 done.*failures +0/s.test(
+      document.getElementById('hud').textContent,
     ),
   )
+  await page.uncheck('#hudToggle') // the HUD covers the top-left cell
   await page.waitForTimeout(300)
   // Sample each cell centre of the fitted 40 x 30 slide from a screenshot.
   const shot = (await page.locator('#canvas').screenshot()).toString('base64')
@@ -147,6 +154,26 @@ try {
   cells.forEach((c, i) => {
     if (!near(c, expected[i])) fail(`cell ${i}: ${c} is not ${expected[i]}`)
   })
+
+  // A failed custom open keeps the slide on screen and its menu state.
+  await page.selectOption('#source', 'custom-url')
+  await page.fill('#customUrl', `http://127.0.0.1:${port}/missing.json`)
+  await page.press('#customUrl', 'Enter')
+  await page.waitForFunction(() =>
+    /HTTP 404/.test(document.getElementById('status').textContent),
+  )
+  if ((await page.inputValue('#source')) !== 'local')
+    fail('failed open did not restore the Slide menu')
+  if (!(await page.locator('#series').isVisible()))
+    fail('failed open hid the Series menu')
+  const paths = await page
+    .locator('#slides option', { hasText: /^paths / })
+    .first()
+    .getAttribute('value')
+  await page.selectOption('#slides', paths)
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Indexed in'),
+  )
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
 } finally {
   await browser.close()

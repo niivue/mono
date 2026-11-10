@@ -1,3 +1,133 @@
+## 1.0.0-rc.143 (2026-11-10)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.142 (2026-11-10)
+
+### Features
+
+- **niivue:** multi-channel slides (NVSlide channels, setChannel, channelBlend) ([87e13ad4](https://github.com/niivue/mono/commit/87e13ad4))
+
+### Fixes
+
+- **niivue:** setChannel keeps a field passed as undefined ([c99b5435](https://github.com/niivue/mono/commit/c99b5435))
+- **niivue:** slide channel readback copies, known fields, no fetch when all hidden ([73f48b4e](https://github.com/niivue/mono/commit/73f48b4e))
+- **niivue:** slide channel audit follow-ups ([1f1fda20](https://github.com/niivue/mono/commit/1f1fda20))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.141 (2026-11-10)
+
+### Features
+
+- ⚠️  **niivue:** default isAntiAlias to true ([#381](https://github.com/niivue/mono/issues/381))
+
+### Fixes
+
+- **niivue:** turn off anti-aliasing on WebKit in the remaining WebGPU-first demos ([#381](https://github.com/niivue/mono/issues/381))
+
+### Breaking Changes
+
+- **niivue:** default isAntiAlias to true  ([#381](https://github.com/niivue/mono/issues/381))
+  isAntiAlias defaults to true. Pages that choose the WebGPU
+  backend should pass isAntiAlias: false on WebKit (Safari, iOS) to avoid the
+  slowdown.
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.140 (2026-11-10)
+
+### Features
+
+- **niivue:** raw-gray slide tile codec ([db5b7f80](https://github.com/niivue/mono/commit/db5b7f80))
+
+### Fixes
+
+- **niivue:** reject raw-gray tiles with bitsStored above 16 ([259b92da](https://github.com/niivue/mono/commit/259b92da))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.139 (2026-11-10)
+
+### Features
+
+- **examples:** display controls on the slide examples; drop TIFF from slides.html ([9a50860c](https://github.com/niivue/mono/commit/9a50860c))
+
+### Fixes
+
+- **examples:** bind slide3d draw listeners to the live canvas after WebGPU fallback ([bf79b96a](https://github.com/niivue/mono/commit/bf79b96a))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.138 (2026-11-09)
+
+### Fixes
+
+- **examples:** use isDragDropEnabled in freesurfer.clip ([71434b59](https://github.com/niivue/mono/commit/71434b59))
+- **examples:** pass the option names NiiVue reads ([#586](https://github.com/niivue/mono/issues/586))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.137 (2026-11-09)
+
+### Fixes
+
+- **niivue:** choose slide levels by device pixels, not CSS pixels ([#638](https://github.com/niivue/mono/issues/638))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.136 (2026-11-09)
+
+### Fixes
+
+- **examples, demos:** live-demo punch list batch ([c26c14a5](https://github.com/niivue/mono/commit/c26c14a5))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.135 (2026-11-09)
+
+### Features
+
+- **niivue:** optional 4x MSAA for SlideRendererGPU ([#638](https://github.com/niivue/mono/issues/638))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.134 (2026-11-09)
+
+### Fixes
+
+- **niivue:** explain chunked volumes accurately in the log ([2e48c660](https://github.com/niivue/mono/commit/2e48c660))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.133 (2026-11-09)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

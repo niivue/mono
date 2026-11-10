@@ -68,11 +68,12 @@ const PRESETS: Preset[] = [
     codec: 'jpeg',
     tiling: 'TILED_FULL',
     approxMB: 191,
-    note: 'Hamamatsu brightfield, TILED_FULL but dicom-parser buffer overrun',
+    note: 'Hamamatsu brightfield, TILED_FULL; this script cannot build it (dicom-parser buffer overrun)',
     // The instances ARE TILED_FULL JPEG, but dicom-parser throws
-    // "buffer overrun" parsing them (before the pixel data), so the byte-range
-    // manifest cannot be built. Needs a parser workaround/alternative, not a
-    // tiling change. See docs/slide-plane-review-todos.md.
+    // "buffer overrun" parsing them (before the pixel data), so THIS script
+    // cannot build the byte-range manifest. The hosted manifest the slides demo
+    // streams (niivue-demo-images-lfs streaming/dicom-wsi/hamamatsu-2) loads
+    // fine. See docs/slide-plane-review-todos.md.
     unsupported:
       'dicom-parser raises a buffer overrun on these instances (pixel data is never reached).',
   },

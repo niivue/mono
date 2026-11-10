@@ -389,6 +389,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ? {}
         : { colormap: volume.colormap }),
       ...(volume.opacity === undefined ? {} : { opacity: volume.opacity }),
+      ...(volume.visible === false ? { visible: false } : {}),
       ...(labels ? { labels } : {}),
       ...(windowed ? { calMin: volume.calMin, calMax: volume.calMax } : {}),
       ...(spanned
@@ -532,6 +533,63 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           mm: Array.from(view.getCrosshairPos()),
           unit: worldUnit(view),
         },
+      }
+    },
+
+    async load_ome_zarr(params) {
+      const raw = text(params, 'url')
+      if (!raw) throw new Error('load_ome_zarr needs a url.')
+      const zarr = await host.omeZarr?.()
+      if (!zarr)
+        throw new Error(
+          'This page cannot open OME-Zarr stores: it did not provide the nv-ext-tile loaders.',
+        )
+      // zarrita needs an absolute URL; load_volume accepts relative ones.
+      const base = globalThis.location?.href
+      if (!URL.canParse(raw, base))
+        throw new Error(
+          `The OME-Zarr store at ${raw} could not be loaded: it is not a valid URL.`,
+        )
+      const url = new URL(raw, base).href
+      const stream = flag(params, 'stream') ?? false
+      const level = integer(params, 'level')
+      const channel = integer(params, 'channel')
+      const timepoint = integer(params, 'timepoint')
+      try {
+        if (stream) {
+          // Replaces, like load_volume, once the store has opened; the
+          // helper frees its manager and workers when the volume goes.
+          await zarr.streamOmeZarr(view, url, {
+            channel,
+            timepoint,
+            replace: true,
+          })
+        } else {
+          const channels = channel === undefined ? undefined : [channel]
+          const volumes = await zarr.loadOmeZarrVolumes(url, {
+            level,
+            channels,
+            timepoint,
+          })
+          await view.loadVolumes(volumes as VolumeToLoad[])
+        }
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `The OME-Zarr store at ${url} could not be loaded: ${why}`,
+        )
+      }
+      const name = view.volumes[0]?.name ?? nameFromUrl(url)
+      host.loaded?.({ url, name, mni: false })
+      host.beforeAnswer?.()
+      view.drawScene()
+      const min = Array.from(view.model.scene2mm([0, 0, 0]))
+      const max = Array.from(view.model.scene2mm([1, 1, 1]))
+      return {
+        name,
+        streamed: stream,
+        volumes: view.volumes.length,
+        bounds: { mm: { min, max }, unit: worldUnit(view) },
       }
     },
 
@@ -984,6 +1042,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'colormapNegative', clearable(params, 'colormap_negative'))
       const opacity = number(params, 'opacity')
       if (opacity !== undefined) update.opacity = clamp(opacity, 0, 1)
+      put(update, 'visible', flag(params, 'visible'))
       const calMin = windowBound(params, 'cal_min')
       const calMax = windowBound(params, 'cal_max')
       put(update, 'calMin', calMin)

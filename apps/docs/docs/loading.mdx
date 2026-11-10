@@ -125,8 +125,8 @@ const volumes = await loadOmeZarrVolumes(storeUrl, { level: 2 })
 await nv.loadVolumes(volumes)
 ```
 
-Stores too large to load whole stream brick by brick through
-`nv.loadChunkedVolume`, with finer levels near the crosshair. These pages
+Stores too large to load whole stream brick by brick with
+`streamOmeZarr(nv, storeUrl)` (through `nv.loadChunkedVolume`), with finer levels near the crosshair. These pages
 show the streaming paths:
 
 - [OME-Zarr multiscale stores](https://niivue.github.io/mono/demo-ext-tile/ome.zarr.html)

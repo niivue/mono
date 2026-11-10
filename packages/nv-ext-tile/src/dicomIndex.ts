@@ -929,15 +929,19 @@ function joinFramesOfReference(infos: Placed[]): void {
     g.reduce((a, b) =>
       b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
     )
-  // NaN (no spacing, or spacingOf's 1\1 placeholder) never differs, so it joins.
+  // NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs, so it joins.
   const extent = (g: Placed[]) => {
     const { totalColumns, totalRows, pixelSpacingMM: mm } = finest(g)
-    return mm && mm[0] !== 1
+    return mm && !(mm[0] === 1 && mm[1] === 1)
       ? [totalColumns * mm[0], totalRows * mm[1]]
       : [Number.NaN, Number.NaN]
   }
+  // Relative to the larger extent, so the result does not depend on order.
   const differs = (a: number[], b: number[]) =>
-    a.some((v, k) => Math.abs(v - (b[k] as number)) > 0.05 * v)
+    a.some((v, k) => {
+      const w = b[k] as number
+      return Math.abs(v - w) > 0.05 * Math.max(v, w)
+    })
   const joined = new Map<string, Placed[][]>()
   for (const g of groups.values()) {
     const { study, series, container } = g[0] as Placed

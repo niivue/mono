@@ -194,7 +194,13 @@ function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
-const nv1 = new NiiVue({})
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it defaults off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+antiAliasCheck.checked = !isWebKit
+const nv1 = new NiiVue({ isAntiAlias: antiAliasCheck.checked })
 nv1.addEventListener('locationChange', (e) => handleLocationChange(e.detail))
 nv1.addEventListener('clickToSegment', (e) => {
   const d = e.detail

@@ -1,3 +1,79 @@
+## 1.0.0-rc.141 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.143
+
+## 1.0.0-rc.140 (2026-11-10)
+
+### Features
+
+- **demos:** backend, anti-aliasing, interpolation and Retina controls on slide demos ([ad000b06](https://github.com/niivue/mono/commit/ad000b06))
+
+### Fixes
+
+- **demos:** a rejected WebGPU request falls back to WebGL2 ([919c3558](https://github.com/niivue/mono/commit/919c3558))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.139 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.142
+
+## 1.0.0-rc.138 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.141
+
+## 1.0.0-rc.137 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.140
+
+## 1.0.0-rc.136 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.139
+
+## 1.0.0-rc.135 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+
+## 1.0.0-rc.134 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.137
+
+## 1.0.0-rc.133 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.136
+
+## 1.0.0-rc.132 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.135
+
+## 1.0.0-rc.131 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.134
+
 ## 1.0.0-rc.130 (2026-11-09)
 
 ### Updated Dependencies

@@ -1,3 +1,117 @@
+## 1.0.0-rc.154 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.40
+
+## 1.0.0-rc.153 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.143
+- Updated nv-ext-tile to 1.0.0-rc.39
+- Updated uikit to 1.0.0-rc.141
+
+## 1.0.0-rc.152 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.140
+
+## 1.0.0-rc.151 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.142
+- Updated nv-ext-tile to 1.0.0-rc.38
+- Updated uikit to 1.0.0-rc.139
+
+## 1.0.0-rc.150 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.141
+- Updated nv-ext-tile to 1.0.0-rc.37
+- Updated uikit to 1.0.0-rc.138
+
+## 1.0.0-rc.149 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.140
+- Updated nv-ext-tile to 1.0.0-rc.36
+- Updated uikit to 1.0.0-rc.137
+
+## 1.0.0-rc.148 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.139
+- Updated nv-ext-tile to 1.0.0-rc.35
+- Updated uikit to 1.0.0-rc.136
+
+## 1.0.0-rc.147 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.34
+
+## 1.0.0-rc.146 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.33
+
+## 1.0.0-rc.145 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+- Updated nv-ext-tile to 1.0.0-rc.32
+- Updated uikit to 1.0.0-rc.135
+
+## 1.0.0-rc.144 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.137
+- Updated nv-ext-tile to 1.0.0-rc.31
+- Updated uikit to 1.0.0-rc.134
+
+## 1.0.0-rc.143 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.136
+- Updated nv-ext-tile to 1.0.0-rc.30
+- Updated uikit to 1.0.0-rc.133
+
+## 1.0.0-rc.142 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.135
+- Updated nv-ext-tile to 1.0.0-rc.29
+- Updated uikit to 1.0.0-rc.132
+
+## 1.0.0-rc.141 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.134
+- Updated nv-ext-tile to 1.0.0-rc.28
+- Updated uikit to 1.0.0-rc.131
+
+## 1.0.0-rc.140 (2026-11-09)
+
+### Features
+
+- **nv-ohif:** answer OHIF rotate/flip commands on NiiVue viewports ([6bebf88a](https://github.com/niivue/mono/commit/6bebf88a))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.139 (2026-11-09)
 
 ### Fixes

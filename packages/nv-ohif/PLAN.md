@@ -324,8 +324,9 @@ the differentiators:
   (next series) and per-overlay commands (#104 part a): add a chosen series
   (several allowed), visibility, colormap + opacity through OHIF's
   `setViewportColormap`, order and remove; see the README's Overlays section.
-  Still to come: the toolbar dropdown (part b), segmentation-specific overlays,
-  and the OHIF-clone runtime check.
+  The `NiivueOverlayMenu` toolbar dropdown over them (#104 part b) has landed.
+  Still to come: the OHIF-clone runtime check (both parts; it confirms the
+  toolbar uiType contract) and segmentation-specific overlays.
 - **Mesh / surface** overlay on the volume.
 - Window/level: OHIF's modality presets (+ robust auto) -> `calMin`/`calMax`;
   windows are per viewport, seeded from the hanging protocol's
@@ -334,7 +335,7 @@ the differentiators:
   viridis / plasma / inferno / turbo / jet), a colorbar (legend) toggle, and a
   smoothing toggle (nearest-neighbor vs linear interpolation). **DONE**
   (per-overlay colormap + opacity: `setViewportColormap` with the overlay's
-  `displaySetInstanceUID`; its UI still to come.)
+  `displaySetInstanceUID`, in the Overlays dropdown.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)

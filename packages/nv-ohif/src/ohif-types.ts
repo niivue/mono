@@ -129,6 +129,9 @@ export interface OhifToolbarEvaluation {
 }
 export interface OhifToolbarModuleEntry {
   name: string
+  // Makes `name` a toolbar uiType: a React component OHIF renders buttons of
+  // that uiType with (their props plus the evaluated state).
+  defaultComponent?: unknown
   evaluate?: (state: {
     viewportId?: string
     button?: OhifToolbarButton

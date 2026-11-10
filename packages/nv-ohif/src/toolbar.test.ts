@@ -18,6 +18,7 @@ import {
   getNiivueToolbarModule,
   NIIVUE_CLIP_SECTION,
   NIIVUE_COLORMAP_SECTION,
+  NIIVUE_OVERLAY_MENU_BUTTON,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWS_SECTION,
@@ -53,7 +54,12 @@ describe('toolbar definitions', () => {
 
   it('every button references a niivue command and a niivue evaluator', () => {
     for (const button of NIIVUE_TOOLBAR_BUTTONS) {
-      if (button.props.buttonSection) continue
+      // The overlay menu runs its commands itself.
+      if (
+        button.props.buttonSection ||
+        button.id === NIIVUE_OVERLAY_MENU_BUTTON
+      )
+        continue
       const { commands, evaluate } = button.props
       const commandName =
         typeof commands === 'string'

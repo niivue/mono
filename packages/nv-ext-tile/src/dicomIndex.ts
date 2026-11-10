@@ -904,6 +904,58 @@ const slideBase = (info: Placed, pathIndex: number): string =>
     pathName(info, pathIndex),
   ].join('|')
 
+const matrix = (info: Placed): string =>
+  `${info.totalColumns}x${info.totalRows}`
+
+/**
+ * Frames of reference of one study, series and container join when no level
+ * size is in both and their finest levels span the same width: some converters
+ * give each pyramid level its own FrameOfReferenceUID (OHIF's test slide does),
+ * while a rescan repeats the sizes and another scan spans another width. The
+ * joined instances take their finest level's frame of reference, before
+ * rankStatedPlanes, so planes are ranked across the joined slide.
+ */
+function joinFramesOfReference(infos: Placed[]): void {
+  const groups = new Map<string, Placed[]>()
+  for (const info of infos) {
+    if (!info.volume) continue
+    const { study, series, frameOfReference, container } = info
+    const key = [study, series, frameOfReference, container ?? ''].join('|')
+    const group = groups.get(key)
+    if (group) group.push(info)
+    else groups.set(key, [info])
+  }
+  const finest = (g: Placed[]) =>
+    g.reduce((a, b) =>
+      b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
+    )
+  // NaN (no spacing, or spacingOf's 1\1 placeholder) never differs, so it joins.
+  const width = (g: Placed[]) => {
+    const { totalColumns, pixelSpacingMM: mm } = finest(g)
+    return mm && mm[0] !== 1 ? totalColumns * mm[0] : Number.NaN
+  }
+  const joined = new Map<string, Placed[][]>()
+  for (const g of groups.values()) {
+    const { study, series, container } = g[0] as Placed
+    const key = [study, series, container ?? ''].join('|')
+    const list = joined.get(key) ?? []
+    const mine = new Set(g.map(matrix))
+    const into = list.find(
+      (e) =>
+        !e.some((i) => mine.has(matrix(i))) &&
+        !(Math.abs(width(e) - width(g)) > 0.05 * width(g)),
+    )
+    if (into) into.push(...g)
+    else list.push(g)
+    joined.set(key, list)
+  }
+  for (const list of joined.values())
+    for (const g of list) {
+      const { frameOfReference } = finest(g)
+      for (const info of g) info.frameOfReference = frameOfReference
+    }
+}
+
 /** Stated ZOffsets (µm) become ranks across all of a slide's levels, so a lower
  * level holding only some planes joins the right ones; implicit TILED_FULL
  * indices already are ranks. */
@@ -943,10 +995,7 @@ type GroupedSlide<I, C> = Omit<SlideIndexSlide, 'instances' | 'iccProfile'> & {
 
 /**
  * Contract 2: a slide is study + series + frame of reference + container +
- * optical path + focal plane. Slides apart only by frame of reference join
- * when no level size is in both: some converters give each pyramid level its
- * own FrameOfReferenceUID (OHIF's test slide does), while a rescan repeats the
- * sizes and stays its own slide.
+ * optical path + focal plane, after joinFramesOfReference.
  */
 export function groupSlides<I, C>(
   infos: InstanceInfo<I, C>[],
@@ -954,6 +1003,7 @@ export function groupSlides<I, C>(
   /** The name `skipped` gives an instance. */
   nameOf: (instance: I) => string,
 ): GroupedSlide<I, C>[] {
+  joinFramesOfReference(infos)
   rankStatedPlanes(infos)
   type Entry = { slide: GroupedSlide<I, C>; own: Member<I, C>[] }
   const slides = new Map<string, Entry>()
@@ -997,23 +1047,8 @@ export function groupSlides<I, C>(
       }
     })
   }
-  const sizes = (own: Member<I, C>[]) =>
-    new Set(own.map((m) => `${m.info.totalColumns}x${m.info.totalRows}`))
-  const joined = new Map<string, Entry[]>()
-  for (const entry of slides.values()) {
-    const { study, series, container, opticalPath, focalPlane } = entry.slide
-    const key = [study, series, container ?? '', opticalPath, focalPlane].join(
-      '|',
-    )
-    const list = joined.get(key) ?? []
-    const mine = sizes(entry.own)
-    const into = list.find((e) => ![...sizes(e.own)].some((k) => mine.has(k)))
-    if (into) into.own.push(...entry.own)
-    else list.push(entry)
-    joined.set(key, list)
-  }
   const reported = new Set<string>()
-  return [...joined.values()].flat().map(({ slide, own: members }) => {
+  return [...slides.values()].map(({ slide, own: members }) => {
     // Finest first; a concatenation's parts in order.
     members.sort(
       (a, b) =>
@@ -1045,8 +1080,6 @@ export function groupSlides<I, C>(
       return ok
     })
     slide.instances = own.map((m) => m.info.instance)
-    // Joined slides: the finest level's frame of reference names the slide.
-    slide.frameOfReference = (own[0] as Member<I, C>).info.frameOfReference
     const byMatrix = new Map<string, number[]>()
     own.forEach(({ info }, k) => {
       const key = `${info.totalColumns}x${info.totalRows}`

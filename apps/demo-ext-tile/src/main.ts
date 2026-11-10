@@ -11,6 +11,7 @@ import {
   registerDcm2niixTiffDecoders,
   TiffSlideSource,
 } from '@niivue/nv-ext-tile/tiff'
+import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
 
 let canvas = document.getElementById('canvas') as HTMLCanvasElement
 const filesInput = document.getElementById('files') as HTMLInputElement
@@ -33,6 +34,7 @@ const backendSelect = document.getElementById('backend') as HTMLSelectElement
 const aaToggle = document.getElementById('aa') as HTMLInputElement
 const hidpiToggle = document.getElementById('hidpi') as HTMLInputElement
 const filterSelect = document.getElementById('filter') as HTMLSelectElement
+const credit = document.getElementById('credit') as HTMLDivElement
 
 // Backend and AA are fixed when the canvas context is made, so changing them
 // reloads the page with ?backend= / ?aa=.
@@ -107,7 +109,17 @@ const pool = new Pool()
 
 let slide: NVSlide | null = null
 // TIFF sources hold geotiff state; DICOM-WSI sources only hold Files.
-type Source = SlideTileSource & { dispose?(): void }
+// An OME-Zarr store may carry an `attribution` attribute (the demo stores do).
+type Attribution = Partial<
+  Record<
+    'title' | 'url' | 'license' | 'credit' | 'citation' | 'modified',
+    string
+  >
+>
+type Source = SlideTileSource & {
+  dispose?(): void
+  attribution?: Attribution
+}
 let source: Source | null = null
 let frame = 0
 let needsFit = false
@@ -268,6 +280,9 @@ async function open(
     renderer.clearTextures()
     source = next instanceof NVSlide ? null : next
     slide = nextSlide
+    if (next instanceof ZarrSlideSource && next.window)
+      slide.setChannel(0, next.window)
+    showCredit(source?.attribution)
     slide.addEventListener('change', requestRender)
     opening = null
     shown = snapshot()
@@ -421,6 +436,12 @@ const group = (label: string, options: HTMLOptionElement[]) => {
   g.append(...options)
   return g
 }
+// 2D OME-Zarr stores mirrored on Hugging Face (pinned commit); credits are
+// read from each store's `attribution` attribute.
+const ZARR =
+  'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/f7cb7ad92d8ceacb1f922ecb17b0a60fd9710c71/omezarr2d/'
+const zarrOption = (name: string, note: string) =>
+  new Option(`${name} (${note})`, `${ZARR}${name}.ome.zarr`)
 // Shows what is open when it is not a listed slide: a custom URL or local files.
 const customOption = new Option()
 const customUrlOption = new Option('Custom URL...', 'custom-url')
@@ -461,6 +482,20 @@ sourceSelect.replaceChildren(
       'Monochrome 8-bit MONOCHROME1 (JPEG-LS near-lossless)',
     ),
   ]),
+  group('OME-Zarr', [
+    zarrOption('webb-cosmic-cliffs', '238 MB, RGB'),
+    zarrOption('nasa-moon-lroc-color', '187 MB, RGB'),
+    zarrOption('nasa-black-marble-europe', '161 MB, RGB'),
+    zarrOption('idr0157-asterella-thallus', '174 MB, brightfield RGB'),
+    zarrOption('idr0073-lung-tlo', '178 MB, IHC RGB'),
+    zarrOption('sentinel2-richat-structure', '231 MB, uint16, 6 bands'),
+    zarrOption('idr0033-cell-painting', '28 MB, uint16, 5 channels'),
+    zarrOption('idr0158-lymphoma-mxif', '189 MB, 5 channels'),
+    zarrOption('idr0054-tonsil-imc', '93 MB, 27 channels'),
+    zarrOption('idr0066-chick-embryo-mip', '25 MB, light-sheet'),
+    zarrOption('empiar10404-sars-cov-2-organoid', '186 MB, TEM'),
+    zarrOption('empiar12850-mouse-brain-tem', '164 MB, TEM, 27000 px'),
+  ]),
   group('Custom', [
     customUrlOption,
     new Option('Custom files...', 'custom-files'),
@@ -482,13 +517,55 @@ function showCurrent(value: string, label: string): void {
   status.title = ''
 }
 
+function showCredit(a: Attribution | undefined): void {
+  credit.replaceChildren()
+  if (typeof a?.title !== 'string') return
+  // Remote metadata: a link only for http(s), so a javascript: URL stays text.
+  const url = typeof a.url === 'string' ? URL.parse(a.url) : null
+  const title =
+    url && /^https?:$/.test(url.protocol)
+      ? Object.assign(document.createElement('a'), {
+          href: url.href,
+          target: '_blank',
+          rel: 'noopener',
+          textContent: a.title,
+        })
+      : a.title
+  const str = (t: unknown): t is string => typeof t === 'string' && t !== ''
+  const rest = [[a.credit, a.citation].find(str), a.license]
+    .filter(str)
+    .map((t) => `. ${t.replace(/\.$/, '')}`)
+  credit.append(title, ...rest)
+  credit.title = str(a.modified) ? `Modified: ${a.modified}` : ''
+}
+
+// zarr.json is OME-Zarr 0.5 (v3); a v2 store (.zattrs) shows no credit.
+const fetchAttribution = (href: string, signal: AbortSignal) => {
+  const u = new URL(href)
+  u.pathname = u.pathname.replace(/\/*$/, '/zarr.json')
+  return fetch(u, { signal })
+    .then((r) => r.json())
+    .then((j) => j.attributes?.attribution as Attribution | undefined)
+    .catch(() => undefined)
+}
+
 const openUrl = (url: string) => {
-  showCurrent(url, url.split('/').pop() ?? url)
+  showCurrent(url, url.replace(/\/+$/, '').split('/').pop() || url)
   return open(async (signal) => {
     // Inside the loader, so a malformed URL is reported in the status line.
     const href = new URL(url, location.href).href
+    const path = new URL(href).pathname
+    // A .zarr path or a directory (trailing /) is OME-Zarr; it must name the
+    // store's group root, so a path to an array inside a store is refused.
+    if (/\.zarr(\/|$)|\/$/.test(path)) {
+      const [zarr, attribution] = await Promise.all([
+        ZarrSlideSource.fromUrl(href, { signal }),
+        fetchAttribution(href, signal),
+      ])
+      return Object.assign(zarr, { attribution })
+    }
     // ponytail: a .json path is a hosted DICOM-WSI manifest; sniff if names lie.
-    if (!new URL(href).pathname.endsWith('.json'))
+    if (!path.endsWith('.json'))
       return TiffSlideSource.fromUrl(href, { pool, signal })
     const response = await fetch(href, { signal })
     if (!response.ok) throw new Error(`Slide manifest HTTP ${response.status}`)

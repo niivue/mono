@@ -1,4 +1,4 @@
-import type { FrameDecoder } from '@niivue/dcm2niix'
+import type { DecodedFrameSamples, FrameDecoder } from '@niivue/dcm2niix'
 import {
   NVSlide,
   type SlideIccTransform,
@@ -23,13 +23,19 @@ function isWorkerFailure(err: unknown): boolean {
 
 const LUT_SIZE = 33 // the standard device-link grid; exact to 0.5 at its nodes
 
+type Dcm2niixDecoders = {
+  decodeTile: SlideTileDecoder
+  bakeProfile: SlideIccTransform
+  decodeSamples: (bytes: Uint8Array) => Promise<DecodedFrameSamples>
+}
+
 /** Tile decoder and ICC transform over one lazily created dcm2niix pool, replaced when its workers die. */
 export function createDcm2niixDecoders(
   createDecoder: () => Promise<FrameDecoder> = () =>
     import('@niivue/dcm2niix').then((m) =>
       m.createFrameDecoder({ workers: 2 }),
     ),
-): { decodeTile: SlideTileDecoder; bakeProfile: SlideIccTransform } {
+): Dcm2niixDecoders {
   let pool: Pool | null = null
   const startPool = (): Pool => {
     const p: Pool = {
@@ -95,8 +101,16 @@ export function createDcm2niixDecoders(
       return createImageBitmap(new ImageData(rgba, f.width, f.height))
     })
 
-  return { decodeTile, bakeProfile }
+  const decodeSamples = (bytes: Uint8Array) =>
+    withPool(undefined, (d) => d.decode(bytes, { output: 'samples' }))
+
+  return { decodeTile, bakeProfile, decodeSamples }
 }
+
+// One pool for /dicom's NVSlide decoders and /tiff's JPEG 2000 tiles.
+let shared: Dcm2niixDecoders | null = null
+export const sharedDcm2niixDecoders = (): Dcm2niixDecoders =>
+  (shared ??= createDcm2niixDecoders())
 
 /**
  * Register JPEG 2000 and JPEG-LS tile decoders for NVSlide, backed by dcm2niix's
@@ -106,7 +120,7 @@ export function createDcm2niixDecoders(
  * Needs the optional peer dependency `@niivue/dcm2niix`.
  */
 export function registerDcm2niixDecoders(): void {
-  const { decodeTile, bakeProfile } = createDcm2niixDecoders()
+  const { decodeTile, bakeProfile } = sharedDcm2niixDecoders()
   for (const codec of ['image/jp2', 'image/jls'] as const)
     if (!NVSlide.tileDecoder(codec))
       NVSlide.registerTileDecoder(codec, decodeTile)

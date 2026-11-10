@@ -4,10 +4,11 @@
  *
  *   1. every import is relative and resolves inside the folder, except
  *      `@niivue/niivue` (the page maps it onto core's standalone build) and
- *      `@niivue/dcm2niix`, which only /dicom may import;
+ *      the optional `@niivue/dcm2niix`, which only /dicom and /tiff (JPEG
+ *      2000 tiles) may reach, and only through a dynamic import;
  *   2. nothing locates an asset through `import.meta.url`;
  *   3. each entry's static imports stay within its format: /tiff loads no
- *      zarrita code, /zarr and /dicom load no geotiff code.
+ *      zarrita code, /zarr and /dicom load no geotiff-rs code.
  *
  * Prints what each entry loads before any lazy chunk. Exits non-zero on any
  * violation. Run after `vite build -c vite.config.standalone.ts`.
@@ -23,16 +24,17 @@ const DIR = resolve(
 const ENTRIES = ['tiff.js', 'dicom.js', 'zarr.js']
 const CORE = '@niivue/niivue'
 const DCM2NIIX = '@niivue/dcm2niix'
+const DCM2NIIX_ENTRIES = ['dicom.js', 'tiff.js']
 // Text only a format's own dependency contains (zarrita's Zarr v3 metadata
-// key; geotiff's TIFF tag table).
+// key; geotiff-rs's TIFF tag table).
 const MARKERS: Record<string, string> = {
   zarrita: 'zarr_format',
-  geotiff: 'StripByteCounts',
+  'geotiff-rs': 'StripByteCounts',
 }
 const FORBIDDEN: Record<string, string[]> = {
   'tiff.js': ['zarrita'],
-  'dicom.js': ['zarrita', 'geotiff'],
-  'zarr.js': ['geotiff'],
+  'dicom.js': ['zarrita', 'geotiff-rs'],
+  'zarr.js': ['geotiff-rs'],
 }
 
 const listJs = (dir: string): string[] =>
@@ -60,6 +62,8 @@ for (const abs of listJs(DIR)) {
     if (!spec.startsWith('./') && !spec.startsWith('../')) {
       if (spec !== CORE && spec !== DCM2NIIX)
         errors.push(`${rel}: bare ${imp.kind} "${spec}"`)
+      if (spec === DCM2NIIX && imp.kind !== 'dynamic-import')
+        errors.push(`${rel}: ${imp.kind} of optional ${DCM2NIIX}`)
       bare.set(rel, (bare.get(rel) ?? new Set()).add(spec))
       continue
     }
@@ -98,7 +102,7 @@ for (const entry of ENTRIES) {
       errors.push(`${entry} statically loads ${dep} code`)
   }
   for (const f of files) {
-    if (entry !== 'dicom.js' && bare.get(f)?.has(DCM2NIIX))
+    if (!DCM2NIIX_ENTRIES.includes(entry) && bare.get(f)?.has(DCM2NIIX))
       errors.push(`${entry} reaches ${DCM2NIIX} through ${f}`)
   }
   const kb = files.reduce((n, f) => n + statSync(join(DIR, f)).size, 0) / 1024
@@ -112,4 +116,6 @@ if (errors.length > 0) {
   for (const e of errors) console.error(`  - ${e}`)
   process.exit(1)
 }
-console.log(`[standalone] ok: only ${CORE} and ${DCM2NIIX} (dicom) are bare`)
+console.log(
+  `[standalone] ok: only ${CORE} and ${DCM2NIIX} (dicom, tiff; lazy) are bare`,
+)

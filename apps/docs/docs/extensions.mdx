@@ -158,7 +158,7 @@ npm install @niivue/nv-ext-tile@next
 
 `@niivue/nv-ext-tile/tiff` streams tiled/pyramidal TIFF, BigTIFF, OME-TIFF and
 Aperio SVS slides into `NVSlide` over HTTP Range, reading and decoding
-(with [geotiff](https://github.com/geotiffjs/geotiff.js)) only the tiles in
+(with [@niivue/geotiff-rs](https://github.com/rordenlab/geotiff-rs)) only the tiles in
 view. The server must answer Range requests with `206` and allow them
 cross-origin; one that sends the whole file is refused.
 
@@ -171,7 +171,9 @@ const slide = NVSlide.fromSource(source)
 // when done: slide.dispose() and source.dispose()
 ```
 
-`TiffSlideSource.fromGeoTIFF(await fromBlob(file))` opens a local file.
+`TiffSlideSource.fromGeoTIFF(await fromBlob(file))` opens a local file;
+`registerDcm2niixTiffDecoders()` adds JPEG 2000 tiles (Aperio SVS) through
+`@niivue/dcm2niix`.
 `@niivue/nv-ext-tile/dicom` opens DICOM-WSI folders (`indexDicomWsi`,
 `DicomWsiSource`); `registerDcm2niixDecoders()` adds JPEG 2000 and JPEG-LS
 tiles and ICC colour management through `@niivue/dcm2niix`.

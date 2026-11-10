@@ -94,9 +94,9 @@
       "name": "demo-ext-tile",
       "dependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
+        "@niivue/geotiff-rs": "3.1.0-rc.0",
         "@niivue/niivue": "workspace:*",
         "@niivue/nv-ext-tile": "workspace:*",
-        "geotiff": "^3.0.5",
         "zarrita": "^0.7.3",
       },
       "devDependencies": {
@@ -321,7 +321,7 @@
       "name": "@niivue/nv-ext-tile",
       "version": "1.0.0-rc.43",
       "dependencies": {
-        "geotiff": "^3.0.5",
+        "@niivue/geotiff-rs": "3.1.0-rc.0",
         "zarrita": "^0.7.3",
       },
       "devDependencies": {
@@ -1036,6 +1036,8 @@
     "@niivue/dev-images": ["@niivue/dev-images@workspace:packages/dev-images"],
 
     "@niivue/docs-site": ["@niivue/docs-site@workspace:apps/docs"],
+
+    "@niivue/geotiff-rs": ["@niivue/geotiff-rs@3.1.0-rc.0", "", { "dependencies": { "@petamoriken/float16": "^3.9.3", "lerc": "^3.0.0", "pako": "^2.0.4", "quick-lru": "^6.1.1", "web-worker": "^1.5.0", "xml-utils": "^1.10.2", "zstddec": "^0.2.0" } }, "sha512-mmaU08MDlhpMrMe7f6++6kqV8upfc327z1hmNzOn3TNPoZSbKKzlD1713AxMpj406ocS/EvpsUsmIBJoUhuJig=="],
 
     "@niivue/niimath": ["@niivue/niimath@1.2.0", "", {}, "sha512-Llats13a09Pj9CRn0izLhG0TQ6sJ4ny5ZzQSbO8e4EjSpdLYM+amZA42ZuMAt+5k/N/Mh3mzt8423GcUkl0pig=="],
 

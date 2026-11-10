@@ -1,0 +1,7 @@
+import NiiVue from '../src/index.webgl2.ts'
+
+const gl1 = document.getElementById('gl1')
+
+const nv1 = new NiiVue()
+await nv1.attachToCanvas(gl1)
+await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])

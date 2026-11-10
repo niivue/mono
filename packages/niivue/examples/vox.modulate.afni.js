@@ -1,5 +1,11 @@
 import NiiVue from '../src/index.ts'
 
+const check = document.getElementById('check')
+const mode = document.getElementById('mode')
+const slide = document.getElementById('slide')
+const slideX = document.getElementById('slideX')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 const nv1 = new NiiVue({
   backgroundColor: [0.0, 0.0, 0.2, 1],
   is3DCrosshairVisible: true,

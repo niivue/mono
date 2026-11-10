@@ -7,6 +7,9 @@ import NiiVue, {
   SLICE_TYPE,
 } from '../src/index.ts'
 
+const gl1 = document.getElementById('gl1')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Allen "volume-viewer" datasets ship one JSON sidecar plus N PNG atlases, each
 // packing three independent channels into its R/G/B planes. See
 // docs/allen-atlas-format.md.

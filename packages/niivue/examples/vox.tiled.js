@@ -1,5 +1,14 @@
 import NiiVue from '../src/index.ts'
 
+const antiAliasCheck = document.getElementById('antiAliasCheck')
+const budgetSelect = document.getElementById('budgetSelect')
+const drawCheck = document.getElementById('drawCheck')
+const gl1 = document.getElementById('gl1')
+const layerSelect = document.getElementById('layerSelect')
+const limitSelect = document.getElementById('limitSelect')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Tiled (oversized) volume demo.
 //
 // A volume is split into per-chunk 3D sub-textures whenever any axis exceeds

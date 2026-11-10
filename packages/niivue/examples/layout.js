@@ -1,5 +1,26 @@
 import NiiVue from '../src/index.ts'
 
+const colorBtn = document.getElementById('colorBtn')
+const darkCheck = document.getElementById('darkCheck')
+const flipH = document.getElementById('flipH')
+const flipV = document.getElementById('flipV')
+const forceRenderCheck = document.getElementById('forceRenderCheck')
+const gl1 = document.getElementById('gl1')
+const heroSlide = document.getElementById('heroSlide')
+const marginSlide = document.getElementById('marginSlide')
+const mosaicBtn = document.getElementById('mosaicBtn')
+const mosaicStr = document.getElementById('mosaicStr')
+const multiplanarType = document.getElementById('multiplanarType')
+const orientText = document.getElementById('orientText')
+const radioCheck = document.getElementById('radioCheck')
+const rotCCW = document.getElementById('rotCCW')
+const rotCW = document.getElementById('rotCW')
+const rulerCheck = document.getElementById('rulerCheck')
+const sagNose = document.getElementById('sagNose')
+const sizeCheck = document.getElementById('sizeCheck')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 colorBtn.addEventListener('input', (event) => {
   const input = event.target
   const hex = input.value

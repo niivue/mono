@@ -1,5 +1,21 @@
 import NiiVue from '../src/index.ts'
 
+const aboutBtn = document.getElementById('aboutBtn')
+const alphaMode = document.getElementById('alphaMode')
+const checkCutaway = document.getElementById('checkCutaway')
+const clipSelect = document.getElementById('clipSelect')
+const colorBtn = document.getElementById('colorBtn')
+const colorSelect = document.getElementById('colorSelect')
+const gl1 = document.getElementById('gl1')
+const invertCheck = document.getElementById('invertCheck')
+const outlineSlide = document.getElementById('outlineSlide')
+const sliceType = document.getElementById('sliceType')
+const slideMin = document.getElementById('slideMin')
+const slideMinNeg = document.getElementById('slideMinNeg')
+const slideRange = document.getElementById('slideRange')
+const slideRangeNeg = document.getElementById('slideRangeNeg')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 checkCutaway.onclick = function () {
   nv1.isClipPlaneCutaway = this.checked
 }

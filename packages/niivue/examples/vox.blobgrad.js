@@ -105,6 +105,23 @@
 import { cortex, shiny } from '../src/assets/matcaps'
 import NiiVue from '../src/index.ts'
 
+const backCheck = document.getElementById('backCheck')
+const clipCheck = document.getElementById('clipCheck')
+const clipOverlayCheck = document.getElementById('clipOverlayCheck')
+const gl1 = document.getElementById('gl1')
+const gl2 = document.getElementById('gl2')
+const gradSlider = document.getElementById('gradSlider')
+const handle = document.getElementById('handle')
+const labelLeft = document.getElementById('labelLeft')
+const labelRight = document.getElementById('labelRight')
+const leftMode = document.getElementById('leftMode')
+const matcapSelect = document.getElementById('matcapSelect')
+const opacitySlider = document.getElementById('opacitySlider')
+const overlaySelect = document.getElementById('overlaySelect')
+const rightMode = document.getElementById('rightMode')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 const OVERLAYS = {
   spmMotor: {
     url: '/volumes/spmMotor.nii.gz',

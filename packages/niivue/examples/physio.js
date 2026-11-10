@@ -1,5 +1,11 @@
 import NiiVue from '../src/index.ts'
 
+const colorBtn = document.getElementById('colorBtn')
+const gl1 = document.getElementById('gl1')
+const legendCheck = document.getElementById('legendCheck')
+const viewSelect = document.getElementById('viewSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Standalone BIDS physio viewer. Emulates viewtsv on the cardiac/respiratory
 // recordings. Each .tsv.gz auto-fetches its .json sidecar for the sampling
 // rate and StartTime, so both traces share a common Time (s) axis even though

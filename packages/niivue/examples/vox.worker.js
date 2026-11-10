@@ -3,15 +3,20 @@ import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 // --- worker shims ---------------------------------------------------------
 // NiiVue is written for the DOM. These are the only globals it touches that a
 // worker does not already provide.
-self.window = self // reads window.devicePixelRatio, adds a keydown listener
-self.HTMLCanvasElement = OffscreenCanvas // `canvas instanceof HTMLCanvasElement` guards attach
-self.ResizeObserver = class {
+/** @type {any} the shims replace DOM types */
+const workerGlobal = self
+workerGlobal.window = self // reads window.devicePixelRatio, adds a keydown listener
+workerGlobal.HTMLCanvasElement = OffscreenCanvas // `canvas instanceof HTMLCanvasElement` guards attach
+workerGlobal.ResizeObserver = class {
   observe() {}
   disconnect() {}
 } // setupResizeHandler constructs one; the page forwards resizes instead
 // Font atlas and matcaps load through `new Image()`. An OffscreenCanvas is a
 // valid texImage2D source, so subclassing it needs no texture-upload patching.
-self.Image = class extends OffscreenCanvas {
+workerGlobal.Image = class extends OffscreenCanvas {
+  // NiiVue sets these before src.
+  onload = null
+  onerror = null
   constructor() {
     super(1, 1)
   }

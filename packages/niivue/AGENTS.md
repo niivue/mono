@@ -94,7 +94,8 @@ bunx nx e2e niivue       # fast tier via Nx
 
 The tiers are Playwright projects: `chromium` (fast) and `demo-smoke`; a bare
 `bunx playwright test` runs both. Use the fast tier while developing and the
-full one before pushing a change to the demos or to anything they load. A
+full one before pushing a change to the demos or to anything they load (run
+the demo static checks below too). A
 local run on macOS uses full Chromium on the real GPU by default (needs
 `bunx playwright install chromium`): the fast tier takes about 8 s on an M3
 Max, against more than a minute on SwiftShader. CI and other platforms stay on
@@ -190,6 +191,35 @@ An update writes only the references that do not match, so when two captures
 share one through `sameAs` and disagree, the second overwrites the first and
 the next run fails: that is the equivalence failing, not a stale reference.
 Look at every changed PNG before committing it: an update accepts whatever was drawn.
+
+### Demo static checks
+
+Fast, browser-free checks on `examples/`; `pr_gate.yml` runs all of them.
+demo-smoke stays the runtime check.
+
+```bash
+bun run typecheck           # also tsc -p examples/tsconfig.json: NiiVue API misuse in demo scripts
+bun run check:demo-assets   # literal /volumes/, /meshes/, /signals/ URLs missing from packages/dev-images
+bun run build:examples      # broken imports (empties dist/)
+bunx nx lint niivue         # Biome; noUndeclaredVariables is on for examples/**/*.js
+```
+
+`examples/tsconfig.json` checks the JS with `strict` off. `examples/demo-dom.d.ts`
+types DOM lookups as `any` and declares the debug handles pages put on
+`window` (`nv1`, `__bench`, ...), so only NiiVue API misuse is reported.
+`*.min.js` is listed explicitly: TS skips it in wildcards. Limits: misuse
+through untyped helper params is not caught; asset URLs built at runtime
+(`${...}`, bare file tables) are skipped; a `getElementById` id missing from
+its page is not checked (null at runtime; demo-smoke catches the throw).
+Deleting demo-smoke (#586) waits until these checks have run on CI a while.
+
+Demo conventions:
+
+- Look up every element: `const x = document.getElementById('x')`. No implicit
+  window named-access globals; tsc misses them once a file assigns
+  `x.onclick = ...`, so Biome catches them.
+- Page scripts live in `examples/<page>.js`, not inline `<script>`.
+  `vox.worker.html` uses `vox.worker.page.js`, since `vox.worker.js` is the worker.
 
 ### What's tested
 

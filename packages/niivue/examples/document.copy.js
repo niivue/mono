@@ -1,5 +1,15 @@
 import NiiVue from '../src/index.ts'
 
+const azimuth = document.getElementById('azimuth')
+const bottomToTop = document.getElementById('bottomToTop')
+const colormapSelect = document.getElementById('colormapSelect')
+const copyStatus = document.getElementById('copyStatus')
+const gl1 = document.getElementById('gl1')
+const gl2 = document.getElementById('gl2')
+const shaderSelect = document.getElementById('shaderSelect')
+const sliceType = document.getElementById('sliceType')
+const topToBottom = document.getElementById('topToBottom')
+
 // Each instance has its own controls; the copy buttons move the whole scene
 // (volumes, meshes, settings) between them as an in-memory NVD document.
 const nv1 = new NiiVue({ backgroundColor: [0.2, 0.2, 0.3, 1] })

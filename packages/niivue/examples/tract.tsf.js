@@ -1,5 +1,13 @@
 import NiiVue from '../src/index.ts'
 
+const calMinSlide = document.getElementById('calMinSlide')
+const fiberColor = document.getElementById('fiberColor')
+const fiberColormap = document.getElementById('fiberColormap')
+const gl1 = document.getElementById('gl1')
+const radiusSlide = document.getElementById('radiusSlide')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Tract scalar layer names (derived from filenames by the loader, extension stripped)
 const dpvName = 'mni152.SLF1_R' // from mni152.SLF1_R.tsf
 const dpsName = 'mni152.SLF1_R' // from mni152.SLF1_R.txt
@@ -25,9 +33,9 @@ function updateSliderRange() {
   if (mode === 'dpv') meta = mesh.trx.dpvMeta[dpvName]
   else if (mode === 'dps') meta = mesh.trx.dpsMeta[dpsName]
   if (meta) {
-    calMinSlide.min = Math.floor(meta.global_min)
-    calMinSlide.max = Math.ceil(meta.global_max)
-    calMinSlide.value = Math.floor(meta.global_min)
+    calMinSlide.min = Math.floor(meta.globalMin)
+    calMinSlide.max = Math.ceil(meta.globalMax)
+    calMinSlide.value = Math.floor(meta.globalMin)
   }
 }
 

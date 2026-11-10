@@ -1,7 +1,8 @@
 // Static checks on the demos in examples/ (#586):
 // - a literal /volumes/, /meshes/ or /signals/ URL names a file packages/dev-images
 //   lacks (URLs built at runtime, `${...}`, are skipped);
-// - a page script calls getElementById('x') for an id its page does not define.
+// - a page script, linked or inline, calls getElementById('x') for an id its
+//   page does not define.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { imagesDir } from '@niivue/dev-images'
@@ -12,6 +13,7 @@ const assetUrl =
   /['"`]\.?(\/(?:volumes|meshes|signals)\/[^'"`$?#]+)[^'"`]*['"`]/g
 // Page-relative scripts only (no URLs, no root-absolute paths).
 const pageScript = /<script[^>]*\bsrc="(?!\/)([^":]+\.js)"/g
+const inlineScript = /<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g
 const elementId = /[\s<]id="([^"]+)"/g
 const idLookup = /getElementById\(\s*['"]([^'"]+)['"]/g
 
@@ -31,6 +33,11 @@ for (const file of readdirSync(examplesDir, {
   for (const [, script] of text.matchAll(pageScript)) {
     for (const [, id] of read(join(dirname(file), script)).matchAll(idLookup)) {
       if (!ids.has(id)) problems.push(`${script}: no #${id} in ${file}`)
+    }
+  }
+  for (const [, script = ''] of text.matchAll(inlineScript)) {
+    for (const [, id] of script.matchAll(idLookup)) {
+      if (!ids.has(id)) problems.push(`${file}: inline script has no #${id}`)
     }
   }
 }

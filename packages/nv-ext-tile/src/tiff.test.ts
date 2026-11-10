@@ -682,6 +682,23 @@ describe('TiffSlideSource', () => {
     )
   })
 
+  test('rejects JPEG that geotiff-rs cannot decode at open', async () => {
+    const jpeg = (photometric: number, bits: number, compression = 7) => ({
+      ...rawLevel(0, 250, 175, 128),
+      compression,
+      photometric,
+      bits,
+    })
+    await openRejects(jpeg(6, 12), /12-bit JPEG is not supported/)
+    await openRejects(jpeg(1, 12), /12-bit JPEG is not supported/)
+    await openRejects(jpeg(6, 8, 6), /old-style JPEG is not supported/)
+    // Non-JPEG 16-bit gray and 8-bit YCbCr JPEG still open.
+    for (const lv of [{ ...jpeg(1, 16), compression: 1 }, jpeg(6, 8)]) {
+      const { source } = await open(writeTiff([lv]))
+      expect(source.manifest.levels.length).toBe(1)
+    }
+  })
+
   test('stops at a self-referencing IFD chain', async () => {
     const file = writeTiff([rawLevel(0, 250, 175, 128)])
     const view = new DataView(file)

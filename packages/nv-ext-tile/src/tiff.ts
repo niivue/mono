@@ -294,6 +294,17 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
         `TIFF level ${index}: ${img.getBitsPerSample(0)}-bit RGB is not supported (8-bit only)`,
       )
     }
+    // geotiff-rs decodes 8-bit JPEG only, and no old-style JPEG: reject the
+    // level at open rather than fail every tile. 8-bit lossless JPEG still
+    // fails per tile, as only the tile stream shows it.
+    const compression = img.fileDirectory.getValue('Compression')
+    const bits = img.getBitsPerSample(0)
+    if (compression === 6 || (compression === 7 && bits !== 8)) {
+      const kind = compression === 6 ? 'old-style' : `${bits}-bit`
+      throw new Error(
+        `TIFF level ${index}: ${kind} JPEG is not supported (8-bit only)`,
+      )
+    }
     const tiles: NVSlideTileManifest[] = []
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < columns; col++) {

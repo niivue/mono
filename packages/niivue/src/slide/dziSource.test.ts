@@ -29,6 +29,17 @@ describe('parseDziDescriptor', () => {
 })
 
 describe('buildDziManifest', () => {
+  test('refuses a grid over 2^22 tiles before building it', () => {
+    const d = {
+      tileSize: 1,
+      overlap: 0,
+      format: 'jpeg',
+      width: 2049,
+      height: 2048,
+    }
+    expect(() => buildDziManifest(d, 'huge')).toThrow('over the 4194304')
+  })
+
   test('emits a finest-first pyramid ending at a single-tile level', () => {
     const d = parseDziDescriptor(DZI_XML)
     const { manifest, dziLevelForIndex } = buildDziManifest(d, 'sample')

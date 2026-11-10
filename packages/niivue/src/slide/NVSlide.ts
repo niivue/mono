@@ -350,6 +350,8 @@ const DEFAULT_RANGE_LOG_LENGTH = 24
 // once on a gigapixel slide), spiking network sockets, decode threads, and
 // GPU-backed bitmap allocations in the browser's GPU process.
 const DEFAULT_MAX_CONCURRENT_TILE_LOADS = 12
+// Failed-tile retries due within one tick share a timer and a change event.
+const RETRY_TICK = 250 // ms
 
 /**
  * Coerce the caller's tile concurrency cap to a finite positive integer.
@@ -937,6 +939,17 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
   }
 }
 
+// The same bound as nv-ext-tile's DICOM-WSI index: the largest real level
+// grid is 379k tiles, so a hosted manifest past this is broken or hostile.
+const MAX_SLIDE_GRID = 1 << 22
+
+export function assertSlideGrid(tiles: number, levelIndex: number): void {
+  if (tiles > MAX_SLIDE_GRID)
+    throw new Error(
+      `Slide level ${levelIndex} has ${tiles} tiles, over the ${MAX_SLIDE_GRID} a level may hold`,
+    )
+}
+
 /**
  * A level that lists only its present tiles, or is sparse, becomes the dense
  * row-major grid with null holes, placed by each tile's x/y (a listing's order
@@ -945,6 +958,7 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
  */
 function placeListedTiles(level: NVSlideLevelManifest): NVSlideLevelManifest {
   const n = level.columns * level.rows
+  assertSlideGrid(n, level.index)
   if (!level.sparse && level.tiles.length === n) return level
   const grid: Array<NVSlideTileManifest | null> = new Array(n).fill(null)
   for (const tile of level.tiles) {
@@ -1005,7 +1019,10 @@ export class NVSlide extends EventTarget {
     string,
     { retryAt: number; delay: number }
   >()
-  private readonly _retryTimers = new Set<ReturnType<typeof setTimeout>>()
+  private readonly _retryTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >()
   private readonly _source: SlideTileSource
   private readonly _maxConcurrentLoads: number
   private _activeLoads = 0
@@ -1899,7 +1916,7 @@ export class NVSlide extends EventTarget {
     for (const controller of this._inflight.values()) controller.abort()
     this._inflight.clear()
     this._pending.clear()
-    for (const timer of this._retryTimers) clearTimeout(timer)
+    for (const timer of this._retryTimers.values()) clearTimeout(timer)
     this._retryTimers.clear()
     this._failed.clear()
   }
@@ -2133,12 +2150,22 @@ export class NVSlide extends EventTarget {
           30_000,
           (this._failed.get(key)?.delay ?? 500) * 2,
         )
-        this._failed.set(key, { retryAt: performance.now() + delay, delay })
-        const timer = setTimeout(() => {
-          this._retryTimers.delete(timer)
-          this._emitChange() // the view re-requests the tile if still wanted
-        }, delay)
-        this._retryTimers.add(timer)
+        const retryAt = performance.now() + delay
+        this._failed.set(key, { retryAt, delay })
+        // The slot ends at or after every retryAt in it, so its tiles are due;
+        // +1 ms: a timer may fire up to 1 ms early, before the gate in loadTile.
+        const slot = Math.ceil(retryAt / RETRY_TICK) * RETRY_TICK
+        if (!this._retryTimers.has(slot))
+          this._retryTimers.set(
+            slot,
+            setTimeout(
+              () => {
+                this._retryTimers.delete(slot)
+                this._emitChange() // the view re-requests tiles still wanted
+              },
+              slot - performance.now() + 1,
+            ),
+          )
       }
     } finally {
       this._activeLoads--

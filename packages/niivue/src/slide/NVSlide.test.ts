@@ -1039,6 +1039,41 @@ describe('NVSlide failed tiles', () => {
   })
 })
 
+describe('NVSlide retry timers', () => {
+  it('retry a burst of failed tiles on one change event', async () => {
+    const manifest = makeManifest(3)
+    const level = manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    for (const tile of level.tiles) if (tile) tile.frame = -1
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    let now = 0
+    const clock = spyOn(performance, 'now').mockImplementation(() => now)
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    await waitFor(() => slide.stats.failures === 3 && slide.pendingCount === 0)
+    let changes = 0
+    slide.addEventListener('change', () => changes++)
+    await new Promise((resolve) => setTimeout(resolve, 1100)) // the 1 s backoff
+    expect(changes).toBe(1)
+    now = 1000
+    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    expect(slide.stats.requested).toBe(6) // no tile is left waiting
+    clock.mockRestore()
+    error.mockRestore()
+    slide.dispose()
+  })
+})
+
+describe('slide level grid cap', () => {
+  it('refuses a grid over 2^22 tiles before allocating it', () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    if (!level) throw new Error('manifest has no level')
+    Object.assign(level, { columns: 2049, rows: 2048, tiles: [], sparse: true })
+    expect(() => new NVSlide(manifest)).toThrow('over the 4194304')
+  })
+})
+
 describe('windowSamples', () => {
   const w = { calMin: 100, calMax: 300 }
   it('maps the window to 0..255, clamping outside it', () => {

@@ -250,15 +250,24 @@ async function open(
       next.dispose?.()
       return
     }
+    // Build the replacement before releasing the slide on screen, so a source
+    // NVSlide rejects leaves the current slide showing.
+    let nextSlide: NVSlide
+    try {
+      nextSlide =
+        next instanceof NVSlide
+          ? next
+          : NVSlide.fromSource(next, { colorManagement: iccToggle.checked })
+    } catch (err) {
+      next.dispose?.()
+      throw err
+    }
     slide?.removeEventListener('change', requestRender)
     slide?.dispose()
     source?.dispose?.()
     renderer.clearTextures()
     source = next instanceof NVSlide ? null : next
-    slide =
-      next instanceof NVSlide
-        ? next
-        : NVSlide.fromSource(next, { colorManagement: iccToggle.checked })
+    slide = nextSlide
     slide.addEventListener('change', requestRender)
     opening = null
     shown = snapshot()

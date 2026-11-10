@@ -1,3 +1,26 @@
+## 1.0.0-rc.135 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile,nv-mcp:** streamOmeZarr frees its manager and workers ([e8f06ff1](https://github.com/niivue/mono/commit/e8f06ff1))
+- **nv-mcp:** load OME-Zarr through nv-ext-tile/zarr ([b5c237b6](https://github.com/niivue/mono/commit/b5c237b6))
+
+### Fixes
+
+- **nv-mcp:** name the store on an unparsable OME-Zarr url; OME-Zarr in the data palette ([efb6b015](https://github.com/niivue/mono/commit/efb6b015))
+- **nv-ext-tile,nv-mcp:** free a stream removed while it initializes ([2d4cf206](https://github.com/niivue/mono/commit/2d4cf206))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.143
+- Updated uikit to 1.0.0-rc.141
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.134 (2026-11-10)
 
 ### Updated Dependencies

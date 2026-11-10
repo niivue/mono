@@ -1418,6 +1418,21 @@ describe('NVSlide channels', () => {
     slide.dispose()
   })
 
+  it('keeps a field set to undefined', () => {
+    const { slide } = planarSlide(threeChannels())
+    slide.setChannel(0, {
+      name: undefined,
+      colormap: undefined,
+      visible: undefined,
+    })
+    expect(slide.channels[0]).toMatchObject({
+      name: 'grey',
+      colormap: 'gray',
+      visible: true,
+    })
+    slide.dispose()
+  })
+
   it('does not fetch a tile with every channel hidden', async () => {
     const { slide, source } = planarSlide([{ name: 'grey', active: false }])
     await loadLevel(slide, 2)

@@ -1235,11 +1235,12 @@ export class NVSlide extends EventTarget {
     const u = { ...old, ...update }
     // Only the known fields: an extra key would be kept and saved.
     const next: NVChannel = {
-      name: u.name,
-      colormap: u.colormap,
+      // An explicit undefined keeps the field; only the bounds reset (below).
+      name: u.name ?? old.name,
+      colormap: u.colormap ?? old.colormap,
       calMin: u.calMin,
       calMax: u.calMax,
-      visible: u.visible,
+      visible: u.visible ?? old.visible,
     }
     // An omitted (undefined) bound is the default, as a non-finite one is.
     next.calMin ??= Number.NaN

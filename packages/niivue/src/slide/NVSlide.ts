@@ -286,6 +286,12 @@ export interface NVSlideVisibleTiles {
    * (`maxCacheBytes`) or the visible-tile cap. Hosts can show this to the user.
    */
   requestedLevel?: NVSlideLevelManifest
+  /**
+   * Set when even `level` does not fit: `tiles` holds only the block nearest
+   * the view centre that the cache can keep, so the view settles instead of
+   * reloading tiles forever. Hosts can ask the user to zoom in.
+   */
+  capped?: boolean
 }
 
 export interface NVSlideScreenRect {
@@ -1654,30 +1660,36 @@ export class NVSlide extends EventTarget {
     )
       level = levels[pos] as NVSlideLevelManifest
     // Warn once per change of outcome; this runs every frame.
-    const fits = this.fitsCache(level, screen)
+    const capacity = this.tileCapacity(level)
+    const fits = this.tileSpan(level, screen).count <= capacity
     const budget =
       level === requested && fits ? '' : `${requested.index}>${level.index}`
     if (budget && budget !== this._budgetWarned)
       log.warn(
-        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so tiles will reload`}. Zoom in or raise maxCacheBytes.`,
+        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so only the ${capacity} tiles nearest the centre load`}. Zoom in or raise maxCacheBytes.`,
       )
     this._budgetWarned = budget
-    const tiles = this.tilesForLevel(level, screen)
+    const tiles = this.tilesForLevel(level, screen, capacity)
     return {
       level,
       tiles,
       fallback: this.fallbackTiles(level, tiles, screen),
       requestedLevel: level === requested ? undefined : requested,
+      capped: !fits || undefined,
     }
   }
 
-  // A quarter of the cache stays free for the coarse fallback layer and for
-  // requestTile() users (the wand, the 3D slide plane).
   private fitsCache(
     level: NVSlideLevelManifest,
     screen: NVSlideScreen,
   ): boolean {
-    const { count } = this.tileSpan(level, screen)
+    return this.tileSpan(level, screen).count <= this.tileCapacity(level)
+  }
+
+  // Tiles of `level` that can stay decoded at once. A quarter of the cache
+  // stays free for the coarse fallback layer and for requestTile() users (the
+  // wand, the 3D slide plane).
+  private tileCapacity(level: NVSlideLevelManifest): number {
     // Full tiles, not clipped edge extents: an upper bound, since a padded
     // edge frame is held whole until decodeTileBitmap crops it.
     // Sample tiles also keep their samples (1 or 2 bytes each), one plane per
@@ -1693,9 +1705,9 @@ export class NVSlide extends EventTarget {
       this.levelTileWidth(level) *
       this.levelTileHeight(level) *
       (4 + sampleBytes)
-    return (
-      count <= MAX_VISIBLE_TILES &&
-      count * tileBytes <= 0.75 * this._cache.maxBytes
+    return Math.min(
+      MAX_VISIBLE_TILES,
+      Math.floor((0.75 * this._cache.maxBytes) / tileBytes),
     )
   }
 
@@ -1790,20 +1802,34 @@ export class NVSlide extends EventTarget {
     }
   }
 
-  /** The tiles of one pyramid level covering the current viewport. */
+  /**
+   * The tiles of one pyramid level covering the current viewport, or when more
+   * than `limit` do, the centred block of at most `limit` shaped like the view.
+   */
   private tilesForLevel(
     level: NVSlideLevelManifest,
     screen: NVSlideScreen,
+    limit = MAX_VISIBLE_TILES,
   ): NVSlideVisibleTile[] {
     const dpr = screen.devicePixelRatio ?? 1
     const span = this.tileSpan(level, screen)
-    const { firstX, lastX, firstY, lastY, dsX, dsY } = span
+    let { firstX, lastX, firstY, lastY } = span
+    if (span.count > limit) {
+      const spanW = lastX - firstX + 1
+      const spanH = lastY - firstY + 1
+      const w = clamp(Math.floor(Math.sqrt((limit * spanW) / spanH)), 1, spanW)
+      const h = clamp(Math.floor(limit / w), 1, spanH)
+      firstX += Math.floor((spanW - w) / 2)
+      firstY += Math.floor((spanH - h) / 2)
+      lastX = firstX + w - 1
+      lastY = firstY + h - 1
+    }
+    const { dsX, dsY } = span
     const { tileWidth, tileHeight, viewLeft, viewTop, viewBottom } = span
     const screenScale = this.viewport.scale * dpr
     const tiles: NVSlideVisibleTile[] = []
-    outer: for (let y = firstY; y <= lastY; y++) {
+    for (let y = firstY; y <= lastY; y++) {
       for (let x = firstX; x <= lastX; x++) {
-        if (tiles.length >= MAX_VISIBLE_TILES) break outer
         const tile = this.tileAt(level, x, y)
         if (!tile) continue
         const baseX = tile.x * tileWidth * dsX

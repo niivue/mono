@@ -76,8 +76,11 @@ padded) x 4 bytes, plus 1 or 2 for a monochrome level's kept samples, against 3/
 of `maxCacheBytes` (the rest stays free for the coarse fallback and `requestTile`
 users), and at most the 4096-tile cap.
 When it steps down the result carries `requestedLevel`, and `log.warn` fires
-once per change of outcome; it also warns if even the coarsest level does not
-fit. The slides demo HUD shows e.g. "L1 (L0 exceeds the tile cache)".
+once per change of outcome. When even the coarsest level does not fit (a flat
+TIFF viewed whole), `tiles` holds only the centred block, shaped like the view,
+that fits, and the result carries `capped`; the rest of the view stays empty
+until a zoom in. The slides demo HUD shows e.g. "L1 (L0 exceeds the tile cache)"
+or "(no level fits the tile cache: centre only, zoom in)".
 Auto selection counts device pixels (`viewport.scale` x `devicePixelRatio`,
 #638), so on a 2x display the selected level has up to ~4x the visible tiles
 of a 1x display at the same CSS zoom, and this step-down triggers sooner.

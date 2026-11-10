@@ -294,6 +294,32 @@ describe('ZarrSlideSource (synthetic)', () => {
     ])
   })
 
+  test('a store marking many channels active opens with the first 4 visible', async () => {
+    const store = await writeImage(
+      {
+        multiscales: multiscale(['c', 'y', 'x'], 1),
+        omero: {
+          channels: [
+            { active: false },
+            ...Array.from({ length: 6 }, () => ({ active: true })),
+          ],
+        },
+      },
+      [{ shape: [7, 2, 2], chunks: [1, 2, 2], data: ramp(28, (i) => i) }],
+      'uint16',
+    )
+    const source = await ZarrSlideSource.fromStore(store)
+    expect(source.manifest.channelInfo?.map((c) => c.active)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+    ])
+  })
+
   test('multi-channel uint16: omero channelInfo, planes in requested order, unrequested channels unread', async () => {
     // c, y, x = 3 x 2 x 3; value = 1000c + 3y + x.
     const store = await writeImage(

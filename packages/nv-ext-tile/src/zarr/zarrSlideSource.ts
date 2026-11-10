@@ -42,6 +42,10 @@ export interface ZarrSlideUrlOptions extends ZarrSlideOptions {
 
 // As TiffSlideSource: one decoded tile stays under 64 MiB of RGBA.
 const MAX_TILE_SIZE = 4096
+// Each visible channel is a sample plane per tile in NVSlide's tile budget;
+// a store marking dozens active would leave room for one tile. The rest stay
+// listed, hidden, for the caller to show.
+const MAX_DEFAULT_VISIBLE = 4
 // Zarr metadata stays HTTP-cacheable; chunk reads do not (see fromUrl).
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
@@ -243,6 +247,7 @@ export class ZarrSlideSource implements SlideTileSource {
     const quantize: (Quantize | null)[] = []
     for (const [i, c] of shown.entries()) quantize[c] = displays[i].quantize
     const window = rgb || multi ? null : displays[0].window
+    let visible = 0
     const channelInfo: NVSlideChannelInfo[] | undefined = multi
       ? displays.map(({ window }, c) => {
           const omero = info.channels[c]
@@ -250,7 +255,7 @@ export class ZarrSlideSource implements SlideTileSource {
             name: omeZarrChannelName(src, c),
             ...(omero?.color ? { rgb: omero.color } : {}),
             window,
-            active: omero?.active ?? true,
+            active: (omero?.active ?? true) && visible++ < MAX_DEFAULT_VISIBLE,
           }
         })
       : undefined

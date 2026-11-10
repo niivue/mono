@@ -1,3 +1,20 @@
+## 1.0.0-rc.53 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile:** ZarrSlideSource serves multi-channel stores through NVSlide channels ([c9ab2f9a](https://github.com/niivue/mono/commit/c9ab2f9a))
+
+### Fixes
+
+- **nv-ext-tile:** read multi-channel ranges one channel at a time ([e467cffb](https://github.com/niivue/mono/commit/e467cffb))
+- **nv-ext-tile:** open many-channel OME-Zarr stores with at most 4 channels visible ([fb697edd](https://github.com/niivue/mono/commit/fb697edd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.52 (2026-11-10)
 
 ### Features

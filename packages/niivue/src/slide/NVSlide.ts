@@ -1817,7 +1817,12 @@ export class NVSlide extends EventTarget {
     if (span.count > limit) {
       const spanW = lastX - firstX + 1
       const spanH = lastY - firstY + 1
-      const w = clamp(Math.floor(Math.sqrt((limit * spanW) / spanH)), 1, spanW)
+      // w <= limit keeps w * h <= limit when the span is a single row (#666).
+      const w = clamp(
+        Math.floor(Math.sqrt((limit * spanW) / spanH)),
+        1,
+        Math.min(spanW, limit),
+      )
       const h = clamp(Math.floor(limit / w), 1, spanH)
       firstX += Math.floor((spanW - w) / 2)
       firstY += Math.floor((spanH - h) / 2)

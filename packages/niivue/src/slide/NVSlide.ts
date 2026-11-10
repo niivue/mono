@@ -461,6 +461,11 @@ const tileDecoders = new Map<string, SlideTileDecoder>([
     // like decoded DICOM monochrome tiles.
     async (bytes, { width, height, level }) => {
       const bitsStored = level.bitsStored ?? 16
+      if (bitsStored > 16) {
+        throw new Error(
+          `raw-gray supports bitsStored up to 16, received ${bitsStored}`,
+        )
+      }
       const wide = bitsStored > 8
       if (bytes.byteLength !== width * height * (wide ? 2 : 1)) {
         throw new Error(

@@ -1533,4 +1533,10 @@ describe('raw-gray tile decoder', () => {
       decode(new Uint8Array(3), { width: 2, height: 1, level: level(16) }),
     ).rejects.toThrow('Expected 2x1 16-bit samples')
   })
+
+  it('rejects bitsStored above 16, which the default window cannot show', async () => {
+    await expect(
+      decode(new Uint8Array(4), { width: 2, height: 1, level: level(32) }),
+    ).rejects.toThrow('raw-gray supports bitsStored up to 16, received 32')
+  })
 })

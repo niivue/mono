@@ -909,9 +909,9 @@ const matrix = (info: Placed): string =>
 
 /**
  * Frames of reference of one study, series and container join when no level
- * size is in both and their finest levels span the same width: some converters
+ * size is in both and their finest levels span the same extent: some converters
  * give each pyramid level its own FrameOfReferenceUID (OHIF's test slide does),
- * while a rescan repeats the sizes and another scan spans another width. The
+ * while a rescan repeats the sizes and another scan spans another extent. The
  * joined instances take their finest level's frame of reference, before
  * rankStatedPlanes, so planes are ranked across the joined slide.
  */
@@ -930,10 +930,14 @@ function joinFramesOfReference(infos: Placed[]): void {
       b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
     )
   // NaN (no spacing, or spacingOf's 1\1 placeholder) never differs, so it joins.
-  const width = (g: Placed[]) => {
-    const { totalColumns, pixelSpacingMM: mm } = finest(g)
-    return mm && mm[0] !== 1 ? totalColumns * mm[0] : Number.NaN
+  const extent = (g: Placed[]) => {
+    const { totalColumns, totalRows, pixelSpacingMM: mm } = finest(g)
+    return mm && mm[0] !== 1
+      ? [totalColumns * mm[0], totalRows * mm[1]]
+      : [Number.NaN, Number.NaN]
   }
+  const differs = (a: number[], b: number[]) =>
+    a.some((v, k) => Math.abs(v - (b[k] as number)) > 0.05 * v)
   const joined = new Map<string, Placed[][]>()
   for (const g of groups.values()) {
     const { study, series, container } = g[0] as Placed
@@ -942,8 +946,7 @@ function joinFramesOfReference(infos: Placed[]): void {
     const mine = new Set(g.map(matrix))
     const into = list.find(
       (e) =>
-        !e.some((i) => mine.has(matrix(i))) &&
-        !(Math.abs(width(e) - width(g)) > 0.05 * width(g)),
+        !e.some((i) => mine.has(matrix(i))) && !differs(extent(g), extent(e)),
     )
     if (into) into.push(...g)
     else list.push(g)

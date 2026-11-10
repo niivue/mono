@@ -145,6 +145,93 @@ describe('DicomWebWsiSource', () => {
     )
   })
 
+  /** bot plus its second level, both without a stated transfer syntax. */
+  async function twoLevels(): Promise<DicomJsonSlide> {
+    const os = [await json('bot'), await json('bot-l1')]
+    for (const o of os) delete o['00020010']
+    const slide = indexDicomWsiMetadata(os).slides[0]
+    if (slide?.levels.length !== 2) throw new Error('expected two levels')
+    return slide
+  }
+
+  test('sniffs all levels concurrently', async () => {
+    const release: (() => void)[] = []
+    globalThis.fetch = (() =>
+      new Promise<Response>((resolve) =>
+        release.push(() => resolve(part(JLS))),
+      )) as unknown as typeof fetch
+    const opened = DicomWebWsiSource.open(await twoLevels(), {
+      seriesUrl: SERIES,
+    })
+    await Bun.sleep(0)
+    const inFlight = release.length
+    for (const r of release) r()
+    expect(inFlight).toBe(2)
+    const s = await opened
+    expect(s.manifest.levels.map((l) => l.codec)).toEqual([
+      'image/jls',
+      'image/jls',
+    ])
+  })
+
+  test('assumes JPEG Baseline when the server refuses the sniff', async () => {
+    serve(() => new Response('no', { status: 406 }))
+    const s = await DicomWebWsiSource.open(await twoLevels(), {
+      seriesUrl: SERIES,
+    })
+    expect(calls.length).toBe(2)
+    expect(s.manifest.levels.map((l) => l.transferSyntaxUid)).toEqual([
+      '1.2.840.10008.1.2.4.50',
+      '1.2.840.10008.1.2.4.50',
+    ])
+    expect(s.manifest.levels[0]?.codec).toBe('image/jpeg')
+    serve(() => part(JPEG))
+    const { level, tile } = firstTile(s)
+    expect(await s.fetchTileBytes(level, tile, '')).toEqual(JPEG)
+    expect(calls[2]?.headers.Accept).toBe(
+      'multipart/related; type="image/jpeg"',
+    )
+  })
+
+  test('rejects a sniff the server refuses for another reason (401)', async () => {
+    serve(() => new Response('no', { status: 401 }))
+    await expect(
+      DicomWebWsiSource.open(await twoLevels(), { seriesUrl: SERIES }),
+    ).rejects.toThrow('WSI frame HTTP 401')
+  })
+
+  test('rejects an aborted sniff with AbortError', async () => {
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) =>
+        init?.signal?.addEventListener('abort', () =>
+          reject(init.signal?.reason),
+        ),
+      )) as unknown as typeof fetch
+    const ac = new AbortController()
+    const opened = DicomWebWsiSource.open(
+      await twoLevels(),
+      { seriesUrl: SERIES },
+      ac.signal,
+    )
+    ac.abort()
+    expect(((await opened.catch((e) => e)) as Error).name).toBe('AbortError')
+  })
+
+  test('rejects sniffed bytes that are no supported codec, and network errors', async () => {
+    serve(() => part(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])))
+    const slide = await twoLevels()
+    await expect(
+      DicomWebWsiSource.open(slide, { seriesUrl: SERIES }),
+    ).rejects.toThrow('not JPEG')
+    globalThis.fetch = (() =>
+      Promise.reject(
+        new TypeError('Failed to fetch'),
+      )) as unknown as typeof fetch
+    await expect(
+      DicomWebWsiSource.open(slide, { seriesUrl: SERIES }),
+    ).rejects.toThrow('Failed to fetch')
+  })
+
   test('refuses a JPEG-LS tile the server transcoded', async () => {
     serve(() => part(JPEG))
     const s = await DicomWebWsiSource.open(await slideOf('mono12'), {

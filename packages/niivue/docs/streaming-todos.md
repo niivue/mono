@@ -125,7 +125,8 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
       prediction. `src/volume/chunkPrediction.ts` now tracks the working-set
       centroid in chunk-grid coordinates, smooths it, extrapolates three frames,
       and fetches the same footprint translated by the resulting whole-chunk
-      step. One mechanism covers scrub and pan, it needs nothing from the camera
+      step (octree plans: brick-centre travel, same-level face neighbours).
+      One mechanism covers scrub and pan, it needs nothing from the camera
       plumbing, and both renderers call it the same way. Predicted chunks are
       fetched and never made resident, speculative reads are capped below the
       per-uploader prefetch limit, and only one flight of guesses is outstanding
@@ -146,8 +147,10 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
       budget navigated at a fine level. Worth a dedicated demo preset before
       stage E is measured.
 
-      Not yet predicted: crossing a level boundary during a zoom. The plan swap
-      resets the predictor, which is correct but conservative.
+      Not yet predicted: crossing a level boundary during a zoom. A grid plan
+      swap resets the predictor, which is correct but conservative; a refocused
+      octree on the same common grid keeps its velocity, not its centre
+      (`replan`).
 
 - [x] Demote on eviction instead of destroying. An evicted brick used to cost a
       full fetch + decode + upload to bring back; `src/volume/decodedChunkCache.ts`

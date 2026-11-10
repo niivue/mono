@@ -381,6 +381,16 @@ describe('indexDicomWsiMetadata', () => {
       tagged(spaced(l1 as Json, [0.5, 1]), '9.2', '9.11'),
     ])
     expect(mm1.slides.map((s) => s.levels.length)).toEqual([1, 1])
+    // 5.1% wider is within 5% of the larger extent, whichever order they come in.
+    const wider = spaced(l1 as Json, [0.001 * 1.051, 0.0005])
+    const near = [
+      tagged(bot as Json, '9.1', '9.10'),
+      tagged(wider, '9.2', '9.11'),
+    ]
+    for (const order of [near, [...near].reverse()])
+      expect(
+        indexDicomWsiMetadata(order).slides.map((s) => s.levels.length),
+      ).toEqual([2])
     const rescan = indexDicomWsiMetadata([
       tagged(bot as Json, '9.1', '9.10'),
       tagged(bot as Json, '9.3', '9.12'),

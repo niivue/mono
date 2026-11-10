@@ -19,7 +19,10 @@ Three modules, in layers:
 Unlike TIFF, the container itself is NOT hand-parsed: chunk layout, codecs
 (blosc, gzip, zstd, lz4) and both Zarr format versions come from
 `@niivue/zarrita-rs/inline`, a runtime dependency that decodes chunks in
-wasm with no worker or asset URL for the host app to serve.
+wasm with no worker or asset URL for the host app to serve. `OmeZarrSource.arrays` are therefore
+zarrita-rs arrays: read them with `@niivue/zarrita-rs/inline`. zarrita.js
+`get` throws on them, because each package keys its array context with its
+own private symbol.
 
 ## Streaming very large stores
 

@@ -1190,7 +1190,7 @@ describe('NVSlide monochrome window', () => {
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     await loadLevel(slide, 2)
     expect(pixel(slide, 'L2/0/0')).toBe(195) // 255 - 60, the default 0..255 window
-    slide.setWindow(0, 120)
+    slide.setChannel(0, { calMin: 0, calMax: 120 })
     await waitFor(() => pixel(slide, 'L2/0/0') === 127) // 255 - round(60 * 255 / 120)
     slide.dispose()
   })
@@ -1200,12 +1200,12 @@ describe('NVSlide monochrome window', () => {
     await loadLevel(slide, 2)
     const before = slide.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap
     expect(before.data[0]).toBe(31) // round(500 * 255 / 4095)
-    slide.setWindow(0, 1000)
+    slide.setChannel(0, { calMin: 0, calMax: 1000 })
     await waitFor(() => pixel(slide, 'L2/0/0') === 128)
     expect(before.closed).toBe(true)
     await loadLevel(slide, 1)
     expect(pixel(slide, 'L1/1/1')).toBe(128)
-    expect(slide.window).toEqual({ calMin: 0, calMax: 1000 })
+    expect(slide.channels[0]).toMatchObject({ calMin: 0, calMax: 1000 })
     slide.dispose()
   })
 
@@ -1225,7 +1225,8 @@ describe('NVSlide monochrome window', () => {
       return create(...args)
     }) as typeof createImageBitmap
     try {
-      for (let hi = 600; hi <= 1000; hi += 100) slide.setWindow(0, hi)
+      for (let hi = 600; hi <= 1000; hi += 100)
+        slide.setChannel(0, { calMin: 0, calMax: hi })
       await waitFor(
         () => pixel(slide, 'L2/0/0') === 128 && pixel(slide, 'L1/1/1') === 128,
       )
@@ -1237,10 +1238,9 @@ describe('NVSlide monochrome window', () => {
     slide.dispose()
   })
 
-  it('renders setWindow and setChannel(0) identically, as windowSamples did', async () => {
-    const viaWindow = monoSlide(500)
-    const viaChannel = monoSlide(500)
-    expect(viaChannel.channels).toEqual([
+  it('renders setChannel(0) as windowSamples does', async () => {
+    const slide = monoSlide(500)
+    expect(slide.channels).toEqual([
       {
         name: 'gray',
         colormap: 'gray',
@@ -1249,55 +1249,55 @@ describe('NVSlide monochrome window', () => {
         visible: true,
       },
     ])
-    await loadLevel(viaWindow, 2)
-    await loadLevel(viaChannel, 2)
-    viaWindow.setWindow(0, 1000)
-    viaChannel.setChannel(0, { calMin: 0, calMax: 1000 })
-    await waitFor(
-      () =>
-        pixel(viaWindow, 'L2/0/0') === 128 &&
-        pixel(viaChannel, 'L2/0/0') === 128,
-    )
-    const bits = (s: NVSlide) =>
-      Array.from((s.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap).data)
-    const expected = Array.from(
-      windowSamples(
-        new Uint16Array(TILE_W * TILE_H).fill(500),
-        { calMin: 0, calMax: 1000 },
-        false,
+    await loadLevel(slide, 2)
+    slide.setChannel(0, { calMin: 0, calMax: 1000 })
+    await waitFor(() => pixel(slide, 'L2/0/0') === 128)
+    expect(
+      Array.from(
+        (slide.cachedTileBitmap('L2/0/0') as unknown as FakeBitmap).data,
+      ),
+    ).toEqual(
+      Array.from(
+        windowSamples(
+          new Uint16Array(TILE_W * TILE_H).fill(500),
+          { calMin: 0, calMax: 1000 },
+          false,
+        ),
       ),
     )
-    expect(bits(viaWindow)).toEqual(expected)
-    expect(bits(viaChannel)).toEqual(expected)
-    expect(viaChannel.window).toEqual({ calMin: 0, calMax: 1000 })
     // A non-grey colormap takes the composite path: red carries the same grey level.
-    viaChannel.setChannel(0, { colormap: 'red' })
-    await waitFor(() => pixel(viaChannel, 'L2/0/0', 1) === 0)
-    expect(rgbaAt(viaChannel, 'L2/0/0')).toEqual([128, 0, 0, 255])
-    viaWindow.dispose()
-    viaChannel.dispose()
+    slide.setChannel(0, { colormap: 'red' })
+    await waitFor(() => pixel(slide, 'L2/0/0', 1) === 0)
+    expect(rgbaAt(slide, 'L2/0/0')).toEqual([128, 0, 0, 255])
+    slide.dispose()
   })
 
-  it('inverts MONOCHROME1 through a colormap too; window shows a one-sided bound', async () => {
+  it('inverts MONOCHROME1 through a colormap too; keeps a one-sided bound', async () => {
     const slide = monoSlide(500, 'MONOCHROME1')
     slide.setChannel(0, { colormap: 'red' })
     await loadLevel(slide, 2)
     expect(rgbaAt(slide, 'L2/0/0')).toEqual([224, 0, 0, 255]) // 255 - round(500 * 255 / 4095)
     slide.setChannel(0, { calMin: 100 })
-    expect(slide.window).toEqual({ calMin: 100, calMax: Number.NaN })
+    expect(slide.channels[0]).toMatchObject({
+      calMin: 100,
+      calMax: Number.NaN,
+    })
     slide.dispose()
   })
 
-  it('rejects a window that is not finite with calMin < calMax', () => {
+  it('rejects a window without calMin < calMax', () => {
     const slide = monoSlide(0)
     for (const [lo, hi] of [
       [5, 5],
       [6, 5],
-      [Number.NaN, 1],
-      [0, Number.POSITIVE_INFINITY],
     ] as const)
-      expect(() => slide.setWindow(lo, hi)).toThrow(RangeError)
-    expect(slide.window).toBeNull()
+      expect(() => slide.setChannel(0, { calMin: lo, calMax: hi })).toThrow(
+        RangeError,
+      )
+    expect(slide.channels[0]).toMatchObject({
+      calMin: Number.NaN,
+      calMax: Number.NaN,
+    })
     slide.dispose()
   })
 })
@@ -1443,7 +1443,10 @@ describe('NVSlide channels', () => {
     const ch = slide.channels[0] as NVChannel
     ch.calMin = 9
     ch.calMax = 1
-    expect(slide.window).toBeNull()
+    expect(slide.channels[0]).toMatchObject({
+      calMin: Number.NaN,
+      calMax: Number.NaN,
+    })
     expect(changes).toBe(0)
     slide.dispose()
   })
@@ -1612,6 +1615,9 @@ describe('NVSlide channels', () => {
     expect(() => slide.setChannel(0, { calMin: 9, calMax: 9 })).toThrow(
       RangeError,
     )
+    // A non-finite bound means the default (stored range), not an error.
+    slide.setChannel(0, { calMin: Number.NaN, calMax: 1 })
+    expect(slide.channels[0]?.calMin).toBeNaN()
     expect(() => slide.setChannel(0, { colormap: 'no-such-map' })).toThrow(
       RangeError,
     )

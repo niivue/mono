@@ -98,7 +98,7 @@ and nv-ohif use `@niivue/dcm2niix`'s `createFrameDecoder`.
 by the same dcm2niix pool. Samples are 8-16-bit unsigned; manifests carry DICOM `bitsStored`.
 - Colour above 8 bits is scaled to 8 by `round(v * 255 / (2^bitsStored - 1))`.
 - Monochrome tiles are decoded to samples, not RGBA. NVSlide windows them with one
-  `{ calMin, calMax }` for the whole slide (`slide.setWindow`; default `0..2^bitsStored - 1`),
+  `{ calMin, calMax }` for the whole slide (`slide.setChannel(0, { calMin, calMax })`; default `0..2^bitsStored - 1`),
   inverts MONOCHROME1 after windowing, and keeps the samples so a new window re-renders
   cached tiles without re-decoding (2 more bytes per pixel in the tile cache at 16 bits).
   A decoder that returns only a bitmap (the browser's baseline JPEG) is read back to 8-bit

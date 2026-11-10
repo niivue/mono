@@ -1889,6 +1889,11 @@ describe('niivueSetWindowLevel on a slide', () => {
     })
     actions.niivueSetWindowLevel({ window: 1000, level: 2000 })
     actions.niivueSetWindowLevel({ window: 0, level: -5 }) // empty: ignored
+    // Finite inputs whose bound overflows to Infinity: ignored
+    actions.niivueSetWindowLevel({
+      window: Number.MAX_VALUE,
+      level: Number.MAX_VALUE,
+    })
     expect(windows).toEqual([[1500, 2500]])
   })
 })

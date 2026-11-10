@@ -403,7 +403,7 @@ export function mountWsiSlideView(
     },
     fit,
     setWindow(calMin: number, calMax: number): void {
-      slide.setWindow(calMin, calMax)
+      slide.setChannel(0, { calMin, calMax })
     },
 
     async saveBitmap(filename = 'niivue-slide.png'): Promise<void> {

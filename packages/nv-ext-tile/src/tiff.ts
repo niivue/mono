@@ -202,6 +202,9 @@ const padToTiles = (n: number, downsample: number, tile: number) =>
 // padded to tiles, is its size on both axes. Padding hides the downsample
 // (91136 / 1024 = 89), so try powers of two from the smallest it allows that
 // no earlier (larger) image has taken: a one-tile image fits many.
+// Only an image marked reduced-resolution (NewSubfileType bit 0, as Philips
+// writes) and not a transparency mask (bit 2) is tried: a tiled macro can
+// fit the padding too.
 // ponytail: powers of two only, as Philips writes; parse its XML
 // DICOM_PIXEL_SPACING if another padding writer needs other factors.
 function levelOf(
@@ -217,6 +220,8 @@ function levelOf(
   if (Math.abs(height - aspect * width) <= 1 + aspect) {
     return { img, width, height, downsample: baseWidth / width }
   }
+  const subfileType = Number(img.fileDirectory.getValue('NewSubfileType') ?? 0)
+  if ((subfileType & 5) !== 1) return null
   const tileWidth = img.getTileWidth()
   const tileHeight = img.getTileHeight()
   if (width % tileWidth || height % tileHeight) return null
@@ -289,6 +294,17 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
     if (photometric === 2 && img.getBitsPerSample(0) !== 8) {
       throw new Error(
         `TIFF level ${index}: ${img.getBitsPerSample(0)}-bit RGB is not supported (8-bit only)`,
+      )
+    }
+    // geotiff-rs decodes 8-bit JPEG only, and no old-style JPEG: reject the
+    // level at open rather than fail every tile. 8-bit lossless JPEG still
+    // fails per tile, as only the tile stream shows it.
+    const compression = img.fileDirectory.getValue('Compression')
+    const bits = img.getBitsPerSample(0)
+    if (compression === 6 || (compression === 7 && bits !== 8)) {
+      const kind = compression === 6 ? 'old-style' : `${bits}-bit`
+      throw new Error(
+        `TIFF level ${index}: ${kind} JPEG is not supported (8-bit only)`,
       )
     }
     const tiles: NVSlideTileManifest[] = []

@@ -151,14 +151,16 @@ function render(): void {
 
 function updateHud(s: NVSlideScreen): void {
   if (!slide || !hudToggle.checked) return
-  const { level, tiles, requestedLevel } = slide.visibleTiles(s)
+  const { level, tiles, requestedLevel, capped } = slide.visibleTiles(s)
   const st = slide.stats
   const scale = slide.viewport.scale
-  const mode = requestedLevel
-    ? `(L${requestedLevel.index} exceeds the tile cache)`
-    : slide.levelChoice === 'auto'
-      ? 'auto'
-      : 'fixed'
+  const mode = capped
+    ? '(no level fits the tile cache: centre only, zoom in)'
+    : requestedLevel
+      ? `(L${requestedLevel.index} exceeds the tile cache)`
+      : slide.levelChoice === 'auto'
+        ? 'auto'
+        : 'fixed'
   hud.textContent = [
     `${slide.name}: ${slide.manifest.levels.length} levels${slide.colorLut ? `, ICC profile${slide.colorManagement ? '' : ' (off)'}` : ''}`,
     `backend   ${gpu ? 'WebGPU' : `WebGL2${antialias ? ' AA' : ''}`}, ${filterSelect.value}, ${s.devicePixelRatio}x`,

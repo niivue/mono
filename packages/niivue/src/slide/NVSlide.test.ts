@@ -901,6 +901,32 @@ describe('NVSlide tile-cache budget', () => {
     slide.dispose()
   })
 
+  it('loads only the centred tiles that fit when no level does', async () => {
+    // One level of 16 tiles (2048 B); the 525 B budget keeps 4.
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const manifest = makePyramid()
+    manifest.levels = manifest.levels.slice(0, 1)
+    const source = new CountingSource(manifest)
+    const slide = NVSlide.fromSource(source, { maxCacheBytes: 700 })
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const visible = slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(visible.capped).toBe(true)
+    expect(visible.tiles.map(({ tile }) => [tile.x, tile.y])).toEqual([
+      [1, 1],
+      [2, 1],
+      [1, 2],
+      [2, 2],
+    ])
+    expect(String(warn.mock.calls[0]?.[0])).toContain('only the 4 tiles')
+    await waitFor(() => slide.stats.completed === 4)
+    // Settled: later frames request nothing more.
+    for (let i = 0; i < 3; i++) slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(slide.stats.requested).toBe(4)
+    warn.mockRestore()
+    slide.dispose()
+  })
+
   it('reports no requested level when the requested one fits', () => {
     const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })

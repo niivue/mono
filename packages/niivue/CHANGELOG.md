@@ -1,3 +1,19 @@
+## 1.0.0-rc.140 (2026-11-10)
+
+### Features
+
+- **niivue:** raw-gray slide tile codec ([db5b7f80](https://github.com/niivue/mono/commit/db5b7f80))
+
+### Fixes
+
+- **niivue:** reject raw-gray tiles with bitsStored above 16 ([259b92da](https://github.com/niivue/mono/commit/259b92da))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.139 (2026-11-10)
 
 ### Features

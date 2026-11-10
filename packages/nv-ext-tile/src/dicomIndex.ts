@@ -925,10 +925,11 @@ function joinFramesOfReference(infos: Placed[]): void {
     if (group) group.push(info)
     else groups.set(key, [info])
   }
-  const finest = (g: Placed[]) =>
-    g.reduce((a, b) =>
-      b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
-    )
+  const area = (i: Placed) => i.totalColumns * i.totalRows
+  // Ties go to the lower frame of reference, so input order never decides.
+  const before = (a: Placed, b: Placed) =>
+    area(b) - area(a) || (a.frameOfReference < b.frameOfReference ? -1 : 1)
+  const finest = (g: Placed[]) => g.reduce((a, b) => (before(b, a) < 0 ? b : a))
   // NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs, so it joins.
   const extent = (g: Placed[]) => {
     const { totalColumns, totalRows, pixelSpacingMM: mm } = finest(g)
@@ -942,17 +943,23 @@ function joinFramesOfReference(infos: Placed[]): void {
       const w = b[k] as number
       return Math.abs(v - w) > 0.05 * Math.max(v, w)
     })
+  // Finest first, so each slide is anchored by its full-size level; a group
+  // that fits more than one slide (a coarse level beside two rescans) has no
+  // single owner and stays apart.
+  const sorted = [...groups.values()].sort((a, b) =>
+    before(finest(a), finest(b)),
+  )
   const joined = new Map<string, Placed[][]>()
-  for (const g of groups.values()) {
+  for (const g of sorted) {
     const { study, series, container } = g[0] as Placed
     const key = [study, series, container ?? ''].join('|')
     const list = joined.get(key) ?? []
     const mine = new Set(g.map(matrix))
-    const into = list.find(
+    const fits = list.filter(
       (e) =>
         !e.some((i) => mine.has(matrix(i))) && !differs(extent(g), extent(e)),
     )
-    if (into) into.push(...g)
+    if (fits.length === 1) fits[0]?.push(...g)
     else list.push(g)
     joined.set(key, list)
   }

@@ -396,5 +396,26 @@ describe('indexDicomWsiMetadata', () => {
       tagged(bot as Json, '9.3', '9.12'),
     ])
     expect(rescan.slides.map((s) => s.levels.length)).toEqual([1, 1])
+    // A coarse level fitting both rescans has no single owner, in any order.
+    const three = [
+      tagged(bot as Json, '9.1', '9.10'),
+      tagged(bot as Json, '9.3', '9.12'),
+      tagged(spaced(l1 as Json, [0.001, 0.0005]), '9.2', '9.11'),
+    ]
+    const [a, b, c] = three as [Json, Json, Json]
+    for (const order of [three, [c, b, a], [b, c, a], [c, a, b]])
+      expect(
+        indexDicomWsiMetadata(order)
+          .slides.map((s) => `${s.frameOfReference}:${s.levels.length}`)
+          .sort(),
+      ).toEqual(['9.10:1', '9.11:1', '9.12:1'])
+    // One rescan and its coarse level join whichever comes first.
+    for (const order of [
+      [a, c],
+      [c, a],
+    ])
+      expect(
+        indexDicomWsiMetadata(order).slides.map((s) => s.frameOfReference),
+      ).toEqual(['9.10'])
   })
 })

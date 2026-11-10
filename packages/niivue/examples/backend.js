@@ -238,9 +238,16 @@ antiAliasCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: antiAliasCheck.checked })
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it defaults off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+antiAliasCheck.checked = !isWebKit
 const api = webgpuCheck.checked ? 'webgpu' : 'webgl2'
 const nv1 = new NiiVue({
   backend: api,
+  isAntiAlias: antiAliasCheck.checked,
   backgroundColor: [0.4, 0.4, 0.45, 1],
   font: ubuntu,
   matcaps: { Cortex: cortex, Shiny: shiny },

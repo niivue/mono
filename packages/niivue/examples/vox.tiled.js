@@ -124,8 +124,15 @@ function handleLocationChange(data) {
   renderFooter()
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it defaults off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+antiAliasCheck.checked = !isWebKit
 const nv1 = new NiiVue({
   backend,
+  isAntiAlias: antiAliasCheck.checked,
   backgroundColor: [0.1, 0.1, 0.2, 1],
   // Debug override: 0 disables it (use the real GPU limit).
   maxTextureDimension3D: max3d > 0 ? max3d : undefined,

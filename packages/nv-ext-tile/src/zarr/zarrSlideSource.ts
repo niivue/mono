@@ -239,6 +239,7 @@ export class ZarrSlideSource implements SlideTileSource {
     // A placeholder omero block (0..1 on integer data) is not usable.
     const omero = raw && omeroWindowUsable(raw, dtype) ? raw : null
     let quantize: Quantize | null = null
+    let noData = false
     if (!rgb && dtype !== 'uint8' && dtype !== 'uint16') {
       let [lo, hi] =
         omero &&
@@ -247,26 +248,33 @@ export class ZarrSlideSource implements SlideTileSource {
         omero.max > omero.min
           ? [omero.min, omero.max]
           : await dataRange(src, select, ys, xs)
-      // A flat sample says nothing of the rest: centre a window on it (one
-      // step per integer) so values outside the sample stay distinct.
-      if (Number.isFinite(lo) && hi <= lo) {
-        const half = dtype.startsWith('float')
-          ? Math.max(Math.abs(lo), 1)
-          : 32767.5
-        ;[lo, hi] = [lo - half, lo + half]
+      let scale = 65535 / (hi - lo)
+      // A flat, empty or overflowing range says nothing of the rest: centre a
+      // window on the sample (one step per unit, or half its magnitude for a
+      // flat float) so values outside it stay distinct.
+      if (!(scale > 0 && Number.isFinite(scale))) {
+        noData = !Number.isFinite(lo)
+        const mid = noData ? 0 : lo
+        const half =
+          !noData && dtype.startsWith('float')
+            ? Math.max(Math.abs(mid) / 2, 1)
+            : 32767.5
+        lo = mid - half
+        scale = 32767.5 / half
       }
-      quantize = { lo, scale: hi > lo ? 65535 / (hi - lo) : 0 }
+      quantize = { lo, scale }
     }
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
     const toStored = (v: number) =>
       quantize ? (v - quantize.lo) * quantize.scale : v
     // uint16 without a window: the sampled data range, so 12-bit data is
     // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
-    const [calMin, calMax] = omero
-      ? [toStored(omero.start), toStored(omero.end)]
-      : dtype === 'uint16'
-        ? await dataRange(src, select, ys, xs)
-        : [0, 2 ** bitsStored - 1]
+    const [calMin, calMax] =
+      omero && !noData
+        ? [toStored(omero.start), toStored(omero.end)]
+        : dtype === 'uint16'
+          ? await dataRange(src, select, ys, xs)
+          : [0, 2 ** bitsStored - 1]
     // Degenerate (constant or all-NaN data): setWindow would refuse it.
     const window = rgb
       ? null

@@ -374,25 +374,28 @@ test('the data range samples a bounded grid of chunks, not the whole image', asy
   ])
 })
 
-test('a flat sample still quantizes values outside it to distinct levels', async () => {
-  // int32 and float32, 1 x 8192 in 512-wide chunks: the sampled chunks
-  // (0, 5, 10, 15) are all 7; chunk 1 holds 0, 7 and 14.
-  for (const dtype of ['int32', 'float32'] as const) {
-    const values = Array.from({ length: 8192 }, (_, i) =>
-      i >= 512 && i < 1024 ? [0, 7, 14][i % 3] : 7,
+test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {
+  // 1 x 8192 in 512-wide chunks: the sampled chunks (0, 5, 10, 15) hold
+  // `fill`; unsampled chunk 1 holds `values` in turn.
+  const cases = [
+    { dtype: 'int32', fill: 7, values: [0, 7, 14] },
+    { dtype: 'float32', fill: 7, values: [0, 7, 14] },
+    { dtype: 'float32', fill: Number.NaN, values: [0, 7, 14] },
+    { dtype: 'float64', fill: 1e308, values: [0.5e308, 1e308, 1.5e308] },
+  ] as const
+  for (const { dtype, fill, values } of cases) {
+    const all = Array.from({ length: 8192 }, (_, i) =>
+      i >= 512 && i < 1024 ? values[i % 3] : fill,
     )
+    const data =
+      dtype === 'int32'
+        ? Int32Array.from(all)
+        : dtype === 'float32'
+          ? Float32Array.from(all)
+          : Float64Array.from(all)
     const store = await writeImage(
       { multiscales: multiscale(['y', 'x'], 1) },
-      [
-        {
-          shape: [1, 8192],
-          chunks: [1, 512],
-          data:
-            dtype === 'int32'
-              ? Int32Array.from(values)
-              : Float32Array.from(values),
-        },
-      ],
+      [{ shape: [1, 8192], chunks: [1, 512], data }],
       dtype,
     )
     const source = await ZarrSlideSource.fromStore(store)
@@ -400,7 +403,11 @@ test('a flat sample still quantizes values outside it to distinct levels', async
     const tile = l0.tiles[1]
     if (!tile) throw new Error('no tile')
     const out = u16(await source.fetchTileBytes(l0, tile, 't'))
-    expect(new Set(out.slice(0, 3)).size).toBe(3)
+    expect([dtype, fill, new Set(out.slice(0, 3)).size]).toEqual([
+      dtype,
+      fill,
+      3,
+    ])
   }
 })
 

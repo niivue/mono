@@ -38,7 +38,7 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
-import { wsiSeriesSlide } from './wsiSeries'
+import { wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
 import { mountWsiSlideView } from './wsiSlideView'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
@@ -100,6 +100,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   displaySetsRef.current = displaySets
   const servicesManagerRef = useRef(servicesManager)
   servicesManagerRef.current = servicesManager
+  const dataSourceRef = useRef(props.dataSource)
+  dataSourceRef.current = props.dataSource
   const displaySetOptionsRef = useRef(props.displaySetOptions)
   displaySetOptionsRef.current = props.displaySetOptions
   const onElementEnabledRef = useRef(props.onElementEnabled)
@@ -424,7 +426,14 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Reads one frame per level whose metadata states no transfer syntax.
       DicomWebWsiSource.open(
         slideIndex,
-        { seriesUrl, headers: () => authHeaders(servicesManager) },
+        {
+          seriesUrl,
+          headers: () => authHeaders(servicesManager),
+          retrieveBulkData: wsiRetrieveBulkData(
+            dataSourceRef.current,
+            ds.StudyInstanceUID,
+          ),
+        },
         abort.signal,
       ).then(
         (source) => {

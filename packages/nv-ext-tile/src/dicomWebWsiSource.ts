@@ -23,12 +23,13 @@ export interface DicomWebWsiOptions {
   headers?: () => Record<string, string>
   /**
    * Fetches ICC bulk data by its resolved URL (e.g. OHIF's
-   * dataSource.retrieve.bulkDataURI); without it, fetch with `headers`.
+   * dataSource.retrieve.bulkDataURI), for URLs on the series' origin only;
+   * otherwise, without it, or when it resolves undefined or empty, fetch.
    */
   retrieveBulkData?: (
     url: string,
     signal?: AbortSignal,
-  ) => Promise<ArrayBuffer | Uint8Array>
+  ) => Promise<ArrayBuffer | Uint8Array | undefined>
 }
 
 /** SOI then the first frame marker: 0xf7 (SOF55) is JPEG-LS, 0xc0-0xcf JPEG; undefined otherwise. */
@@ -276,14 +277,15 @@ export class DicomWebWsiSource implements SlideTileSource {
     if (!icc?.bulkDataURI) return null
     const url = this.bulkUrl(icc.bulkDataURI)
     const { retrieveBulkData, headers } = this.options
-    if (retrieveBulkData) {
-      const data = await retrieveBulkData(url, signal)
+    // Auth goes only to the server it is for, not to a bulk host elsewhere:
+    // the host's retrieval carries its auth, so it gets same-origin URLs only.
+    const sameOrigin = new URL(url).origin === this.series.origin
+    const data = sameOrigin ? await retrieveBulkData?.(url, signal) : undefined
+    if (data?.byteLength) {
       if (data.byteLength > MAX_BODY)
         throw new Error(`ICC profile of ${data.byteLength} bytes`)
       return data instanceof Uint8Array ? data : new Uint8Array(data)
     }
-    // Auth goes only to the server it is for, not to a bulk host elsewhere.
-    const sameOrigin = new URL(url).origin === this.series.origin
     const response = await fetch(url, {
       headers: {
         ...(sameOrigin ? headers?.() : {}),

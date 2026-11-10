@@ -12,7 +12,7 @@
 
 import NiiVue, { type PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -142,6 +142,7 @@ async function main(): Promise<void> {
     maxTextureDimension3D: CHUNK_EDGE,
   })
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
 
   els.volume.addEventListener('change', () => {
     void loadVolume(els.volume.value)

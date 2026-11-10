@@ -27,7 +27,7 @@ import {
   suggestedOpacity,
   visibleChannels,
 } from './microscopy-core'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -652,6 +652,7 @@ async function main(): Promise<void> {
     volumeIsColormapAlphaOn2D: els.alpha2d.checked,
   })
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
   registerAllenColormaps(nv)
   nv.is3DCrosshairVisible = false
   nv.isOrientCubeVisible = false

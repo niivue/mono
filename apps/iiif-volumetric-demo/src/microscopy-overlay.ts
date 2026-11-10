@@ -14,7 +14,7 @@
 import NiiVue from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
 import { buildLogicalVolume, type Shape3 } from './logical-volume'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -236,6 +236,7 @@ async function main(): Promise<void> {
     isColorbarVisible: false,
   })
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
 
   els.base.addEventListener('change', () => {
     void loadBase(els.base.value)

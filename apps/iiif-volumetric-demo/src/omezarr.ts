@@ -52,7 +52,7 @@ import NiiVue, {
 } from '@niivue/niivue'
 
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -743,6 +743,7 @@ async function ensureNiivue(): Promise<void> {
   })
   nv.opts.isDragDropEnabled = false
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
 
   // locationChange emits whenever the crosshair moves — niivue snaps it
   // to the click point. We just cache the voxel coords for shift-click

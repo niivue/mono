@@ -1,3 +1,19 @@
+## 1.0.0-rc.140 (2026-11-10)
+
+### Features
+
+- **demos:** backend, anti-aliasing, interpolation and Retina controls on slide demos ([ad000b06](https://github.com/niivue/mono/commit/ad000b06))
+
+### Fixes
+
+- **demos:** a rejected WebGPU request falls back to WebGL2 ([919c3558](https://github.com/niivue/mono/commit/919c3558))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.139 (2026-11-10)
 
 ### Updated Dependencies

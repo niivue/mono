@@ -6,7 +6,8 @@
 // the same MVP as the volume, so it composites in-place and shares the camera —
 // orbit/zoom with the mouse and the slide moves with the brain. Tiles stream in
 // through NVSlide's cache (HTTP range / decode), so the plane sharpens as data
-// arrives. Works on both backends: append `?backend=webgpu` (default WebGL2).
+// arrives. Works on both backends: WebGPU by default, `?backend=webgl2` for
+// WebGL2, `?aa=on|off` to override the anti-aliasing default.
 
 import NiiVue, {
   axialPlaneTransform,
@@ -14,6 +15,7 @@ import NiiVue, {
   SHOW_RENDER,
   SLICE_TYPE,
 } from '../src/index.ts'
+import { backendFromUrl, isAntiAlias, watchRetina } from './displayControls.js'
 import { urlParamSelect } from './urlParamSelect.js'
 
 // Approximate MNI152 world extents (mm) for placing the slide plane.
@@ -22,22 +24,23 @@ const MNI = { xmin: -90, xmax: 90, ymin: -126, ymax: 90, zmin: -72, zmax: 108 }
 const hud = document.getElementById('hud')
 const canvas = document.getElementById('gl')
 
-function backendFromUrl() {
-  const raw = new URLSearchParams(window.location.search).get('backend')
-  return raw === 'webgpu' && 'gpu' in navigator ? 'webgpu' : 'webgl2'
-}
-
 // Wired before anything loads, so the menu works even if loading fails (#488).
 urlParamSelect(
   document.getElementById('backendSelect'),
   'backend',
   backendFromUrl(),
 )
+urlParamSelect(
+  document.getElementById('aaSelect'),
+  'aa',
+  isAntiAlias ? 'on' : 'off',
+)
 
 async function main() {
   const backend = backendFromUrl()
   const nv = new NiiVue({
     backend,
+    isAntiAlias,
     backgroundColor: [0.027, 0.063, 0.051, 1],
     sliceType: SLICE_TYPE.RENDER,
     showRender: SHOW_RENDER.ALWAYS,
@@ -46,6 +49,14 @@ async function main() {
   })
   await nv.attachToCanvas(canvas)
   document.getElementById('backendSelect').value = nv.backend
+  // Retina off draws in CSS pixels; -1 follows window.devicePixelRatio.
+  const retina = document.getElementById('retina')
+  const applyRetina = () => {
+    nv.devicePixelRatio = retina.checked ? -1 : 1
+  }
+  retina.addEventListener('change', applyRetina)
+  // Core re-sizes on a display change itself; only the control's visibility needs it.
+  watchRetina(document.getElementById('retinaControl'))
   await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
 
   // Load the slide and lay it onto a mid-axial plane spanning the MNI box.
@@ -104,13 +115,15 @@ async function main() {
 
   // Draw mode (key "d"): intercept pointer events in the capture phase so they
   // paint the slide instead of orbiting; "u" undoes, "c" clears.
+  // nv.canvas, not `canvas`: a WebGPU-to-WebGL2 fallback swaps in a new element.
+  const target = nv.canvas
   let drawMode = false
   let drawing = false
   const css = (e) => {
-    const r = canvas.getBoundingClientRect()
+    const r = target.getBoundingClientRect()
     return [e.clientX - r.left, e.clientY - r.top]
   }
-  canvas.addEventListener(
+  target.addEventListener(
     'pointerdown',
     (e) => {
       if (!drawMode) return
@@ -121,7 +134,7 @@ async function main() {
     },
     true,
   )
-  canvas.addEventListener(
+  target.addEventListener(
     'pointermove',
     (e) => {
       if (!drawMode || !drawing) return
@@ -201,7 +214,7 @@ async function main() {
   })
 
   const updateHud = () => {
-    const label = backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
+    const label = nv.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
     const s = slide.stats
     const lodLabel =
       lodSel.value === 'auto' ? 'LOD auto' : `LOD pinned L${lodSel.value}`

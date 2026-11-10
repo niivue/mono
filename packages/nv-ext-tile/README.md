@@ -151,20 +151,22 @@ const slide = NVSlide.fromSource(source)
 ```
 
 - Tiles are fetched by WADO-RS `{seriesUrl}/instances/{sop}/frames/{n}`, with the slide's abort signal. A query on `seriesUrl` (an access token) is kept on each frame URL.
-- A level whose metadata states no transfer syntax costs one frame request in `open`, which reads the syntax from the bytes.
+- A level whose metadata states no transfer syntax costs one frame request in `open` (all levels at once), which reads the syntax from the bytes. A server that refuses it (HTTP 400, 406 or 415) is assumed to serve JPEG Baseline; other errors fail the open.
 - JPEG 2000 and JPEG-LS tiles are requested untranscoded (`transfer-syntax=*`); a tile the server transcoded anyway is refused.
-- Responses are capped at 64 MB, also when streamed without Content-Length.
+- Responses are capped at 64 MB, also when streamed without Content-Length. `readFirstPart(response, what)` applies the same cap and returns the first multipart/related part, for a host's own WADO-RS requests.
 - ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source), else fetched. `headers`, and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin. A relative `seriesUrl` resolves against the page.
 - One slide per optical path and focal plane, as for local files; a viewer that shows one picks `slides[0]`, the first path and lowest plane, and should say others exist.
 
 ## OME-Zarr
 
 ```ts
-import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
 
 await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one whole level
-await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
+await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the volume is removed
 ```
+
+To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running.
 
 For a 2D image (one y/x plane per level), `ZarrSlideSource` streams chunks into `NVSlide` as tiles instead:
 

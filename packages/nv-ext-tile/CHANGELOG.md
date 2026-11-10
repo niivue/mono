@@ -1,3 +1,75 @@
+## 1.0.0-rc.39 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile,nv-mcp:** streamOmeZarr frees its manager and workers ([e8f06ff1](https://github.com/niivue/mono/commit/e8f06ff1))
+
+### Fixes
+
+- **nv-ext-tile:** a replacement stream queues at call time ([1ce37f46](https://github.com/niivue/mono/commit/1ce37f46))
+- **nv-ext-tile:** serialize overlapping replacement streams on a viewer ([a98778f1](https://github.com/niivue/mono/commit/a98778f1))
+- **nv-ext-tile,nv-mcp:** free a stream removed while it initializes ([2d4cf206](https://github.com/niivue/mono/commit/2d4cf206))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.143
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.38 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.142
+
+## 1.0.0-rc.37 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.141
+
+## 1.0.0-rc.36 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.140
+
+## 1.0.0-rc.35 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.139
+
+## 1.0.0-rc.34 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** sniff DICOMweb levels concurrently, assume JPEG when the sniff is refused ([4e4bf398](https://github.com/niivue/mono/commit/4e4bf398))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.33 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** show absent TIFF tiles transparent ([cebb178b](https://github.com/niivue/mono/commit/cebb178b))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.32 (2026-11-09)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.138
+
 ## 1.0.0-rc.31 (2026-11-09)
 
 ### Updated Dependencies

@@ -25,7 +25,7 @@ import NiiVue, {
   type VolumeChunkSource,
 } from '@niivue/niivue'
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -755,6 +755,7 @@ els.minimap.addEventListener('click', (e: MouseEvent) => {
 
 async function main(): Promise<void> {
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
   nv.sliceType = SLICE_TYPE.AXIAL
   await loadApi()
 }

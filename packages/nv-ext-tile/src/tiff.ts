@@ -455,6 +455,29 @@ export class TiffSlideSource implements SlideTileSource {
     this.host?.pushRangeEvent({ label, status: 'pending' })
     try {
       abort.throwIfAborted()
+      // TileByteCounts 0 marks a tile absent (Philips sparse ROIs, Aperio);
+      // like OpenSlide, show it transparent rather than decode zeros (green
+      // through YCbCr). Planar configuration 2 stores one tile per sample, so
+      // the tile is absent only when every sample's is; geotiff fills a lone
+      // absent sample with zeros.
+      const index = tile.y * level.columns + tile.x
+      const planes =
+        img.fileDirectory.getValue('PlanarConfiguration') === 2
+          ? img.getSamplesPerPixel()
+          : 1
+      let absent = true
+      for (let s = 0; s < planes && absent; s++) {
+        const byteCount = await img.fileDirectory.loadValueIndexed(
+          'TileByteCounts',
+          index + s * level.columns * level.rows,
+        )
+        absent = Number(byteCount) === 0
+      }
+      abort.throwIfAborted()
+      if (absent) {
+        this.host?.updateRangeEvent(label, 'hit')
+        return new Uint8Array(tile.width * tile.height * 4)
+      }
       const x0 = tile.x * img.getTileWidth()
       const y0 = tile.y * img.getTileHeight()
       const rgb = await img.readRGB({

@@ -89,6 +89,11 @@ function applyExplode() {
   nv1.drawScene()
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 // Repo convention: ?backend=webgl2 preselects the fallback so the same page can
 // be verified on either backend from the URL.
 const initialBackend =
@@ -99,6 +104,7 @@ backend.value = initialBackend
 
 const nv1 = new NiiVue({
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
   backgroundColor: [0.1, 0.1, 0.12, 1],
   matcaps: { Cortex: cortex, Shiny: shiny },
   showRender: SHOW_RENDER.ALWAYS,

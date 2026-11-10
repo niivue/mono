@@ -54,6 +54,17 @@ to start, NiiVue falls back to WebGL2:
 const nv = new NiiVue({ backend: 'webgpu' })
 ```
 
+Anti-aliasing (`isAntiAlias`) is on by default. On WebKit (Safari, iOS
+browsers) WebGPU with MSAA is about 4x slower, so the example pages pass
+`isAntiAlias: false` there:
+
+```js
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+const nv = new NiiVue({ backend: 'webgpu', isAntiAlias: !isWebKit })
+```
+
 Backend-only builds are smaller:
 
 ```js

@@ -30,7 +30,7 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 | `resize()` | Method | No | Force canvas resize | Call on SwiftUI size-class change |
 | `reinitializeView(options)` | Method | Yes | Recreate view (e.g. backend swap); `ReinitializeOptions` | Rare; advanced |
 | `backend` | Prop (get) | No | `'webgpu' \| 'webgl2' \| undefined` | Read for UI capability gating |
-| `isAntiAlias` | Prop (get) | No | Read-only | — |
+| `isAntiAlias` | Prop (get) | No | Read-only; default `true` (pass `false` for WebKit WebGPU, #381) | — |
 | `devicePixelRatio` / `forceDevicePixelRatio` | Prop | No | Override DPR | Tune for Retina/ProMotion |
 | `isDragDropEnabled` | Prop | No | Allow file drag-drop | Usually disable in native shell |
 

@@ -591,6 +591,18 @@ describe('set_volume', () => {
     expect(view.drawScene).toHaveBeenCalled()
   })
 
+  it('hides and shows a volume, reporting it while hidden', async () => {
+    const view = settableView()
+    const handlers = coreHandlers(host(view))
+    expect(await handlers.set_volume({ visible: false })).toMatchObject({
+      volume: { index: 0, visible: false },
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, { visible: false })
+    const shown = await handlers.set_volume({ visible: true })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, { visible: true })
+    expect((shown as { volume: object }).volume).not.toHaveProperty('visible')
+  })
+
   it('drops the negative colormap on an empty string, alone or with more', async () => {
     const view = settableView()
     const handlers = coreHandlers(host(view))
@@ -1659,6 +1671,60 @@ describe('set_volume affine', () => {
     expect(drawnWhenPlaced).toBe(0)
     expect(drawn).toBe(1)
     expect(got).toMatchObject({ volume: { index: 1, name: 'bold.nii.gz' } })
+  })
+})
+
+describe('load_ome_zarr', () => {
+  const omeZarr = () => ({
+    loadOmeZarrVolumes: mock(async () => [{ url: 'c0' }, { url: 'c1' }]),
+    streamOmeZarr: mock(async () => ({})),
+  })
+
+  it('loads one level whole through the page loaders', async () => {
+    const view = fakeView()
+    const zarr = omeZarr()
+    const result = await coreHandlers(
+      host(view, { omeZarr: async () => zarr }),
+    ).load_ome_zarr({ url: 'https://x/s.ome.zarr', level: 2, channel: 1 })
+    expect(zarr.loadOmeZarrVolumes).toHaveBeenCalledWith(
+      'https://x/s.ome.zarr',
+      { level: 2, channels: [1], timepoint: undefined },
+    )
+    expect(view.loadVolumes).toHaveBeenCalledWith([
+      { url: 'c0' },
+      { url: 'c1' },
+    ])
+    expect(result).toMatchObject({ streamed: false })
+  })
+
+  it('streams through the page helper, replacing the scene', async () => {
+    const view = fakeView()
+    const zarr = omeZarr()
+    await coreHandlers(host(view, { omeZarr: async () => zarr })).load_ome_zarr(
+      { url: 'https://x/s.ome.zarr', stream: true },
+    )
+    expect(zarr.streamOmeZarr).toHaveBeenCalledWith(
+      view,
+      'https://x/s.ome.zarr',
+      { channel: undefined, timepoint: undefined, replace: true },
+    )
+    expect(view.loadVolumes).not.toHaveBeenCalled()
+  })
+
+  it('names the store when the url cannot be parsed', async () => {
+    const zarr = omeZarr()
+    await expect(
+      coreHandlers(
+        host(fakeView(), { omeZarr: async () => zarr }),
+      ).load_ome_zarr({ url: 'http://a b/x' }),
+    ).rejects.toThrow('The OME-Zarr store at http://a b/x could not be loaded')
+    expect(zarr.loadOmeZarrVolumes).not.toHaveBeenCalled()
+  })
+
+  it('declines on a page without the loaders', async () => {
+    await expect(
+      coreHandlers(host()).load_ome_zarr({ url: 'https://x/s.ome.zarr' }),
+    ).rejects.toThrow('did not provide the nv-ext-tile loaders')
   })
 })
 

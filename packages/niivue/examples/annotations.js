@@ -105,7 +105,7 @@ const nv1 = new NiiVue({
   annotationBrushRadius: 2.0,
   crosshairWidth: 0,
   sliceType: SLICE_TYPE.MULTIPLANAR,
-  multiplanarLayout: MULTIPLANAR_TYPE.GRID,
+  multiplanarType: MULTIPLANAR_TYPE.GRID,
   showRender: SHOW_RENDER.ALWAYS,
 })
 

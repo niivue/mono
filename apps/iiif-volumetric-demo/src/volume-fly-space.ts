@@ -11,7 +11,7 @@ import type {
 import NiiVue from '@niivue/niivue'
 
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -272,6 +272,7 @@ interface NiiVueLike {
       extentsMax?: ArrayLike<number>
     }[]
   }
+  backend?: 'webgpu' | 'webgl2'
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   setInstances(instances: NVInstance[] | null): Promise<void>
   setGlobalCamera(camera: NVGlobalCamera): void
@@ -407,6 +408,7 @@ async function main(): Promise<void> {
   nv.opts.isInteractionEnabled = false
   nv.opts.isDragDropEnabled = false
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
   nv.sliceType = 4
   state.nv = nv
   state.nodes = createVolumeNodes(state.volumes)

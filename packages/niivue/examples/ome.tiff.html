@@ -100,10 +100,21 @@
           step="0.05"
           value="1"
         />
-        <span class="pair">
-          <label for="webgpuCheck">WebGPU</label>
-          <input type="checkbox" id="webgpuCheck"/>
-        </span>
+        <label for="backendSelect">Backend</label>
+        <select id="backendSelect" title="Rendering backend (reloads the page)">
+          <option value="webgpu">WebGPU</option>
+          <option value="webgl2">WebGL2</option>
+        </select>
+        <label for="aaSelect">Anti-alias</label>
+        <select id="aaSelect" title="Multisample anti-aliasing (reloads the page)">
+          <option value="off">off</option>
+          <option value="on">on</option>
+        </select>
+        <label for="interp">Interpolation</label>
+        <select id="interp" autocomplete="off" title="2D slice sampling">
+          <option value="linear">linear</option>
+          <option value="nearest">nearest</option>
+        </select>
       </div>
       <div id="credit"></div>
       <div id="channels"></div>

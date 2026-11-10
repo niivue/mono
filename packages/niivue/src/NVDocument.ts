@@ -60,7 +60,11 @@ import {
   type SerializedSignal,
   serializeSignal,
 } from '@/signal/persistence'
-import type { NVSlideManifest } from '@/slide/NVSlide'
+import type {
+  NVChannel,
+  NVSlideChannelBlend,
+  NVSlideManifest,
+} from '@/slide/NVSlide'
 import type { SlideVectorShape } from '@/slide/slideVector'
 import * as NVVolume from '@/volume/NVVolume'
 import { uniqueVolumeId } from '@/volume/volumeIds'
@@ -245,6 +249,10 @@ export type NVDocumentSlidePlane = {
   drawingHeight?: number
   /** Vector annotations in slide base-pixel coordinates (v8+). */
   vectorShapes?: SlideVectorShape[]
+  /** Channel state, when it differs from the manifest's defaults. */
+  channels?: NVChannel[]
+  /** Omitted when 'max'. */
+  channelBlend?: NVSlideChannelBlend
 }
 
 export type NVDocumentData = {

@@ -82,9 +82,18 @@
       <button id="svgBtn" type="button" title="Export vector annotations as SVG">SVG</button>
       <label for="backendSelect">Backend</label>
       <select id="backendSelect">
-        <option value="webgl2">WebGL2</option>
         <option value="webgpu">WebGPU</option>
+        <option value="webgl2">WebGL2</option>
       </select>
+      <label for="aaSelect">Anti-alias</label>
+      <select id="aaSelect" title="Multisample anti-aliasing (reloads the page)">
+        <option value="off">off</option>
+        <option value="on">on</option>
+      </select>
+      <label id="retinaControl" for="retina" title="Draw at the display's native pixel ratio, or in CSS pixels" hidden>
+        <input id="retina" type="checkbox" checked />
+        Retina
+      </label>
     </div>
     <div id="hud">loading…</div>
     <div id="help">

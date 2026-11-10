@@ -1,5 +1,19 @@
 import NiiVue from '../src/index.ts'
 
+const cardCheck = document.getElementById('cardCheck')
+const colorBtn = document.getElementById('colorBtn')
+const fmriCheck = document.getElementById('fmriCheck')
+const frameLabel = document.getElementById('frameLabel')
+const gl1 = document.getElementById('gl1')
+const headerBtn = document.getElementById('headerBtn')
+const lineOpacity = document.getElementById('lineOpacity')
+const lineSize = document.getElementById('lineSize')
+const nextFrame = document.getElementById('nextFrame')
+const prevFrame = document.getElementById('prevFrame')
+const respCheck = document.getElementById('respCheck')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // A task-fMRI run (TR 2 s) with its BIDS physio recordings. The cardiac (200 Hz)
 // and respiratory (50 Hz) traces are loaded as signals attached to the BOLD
 // volume (attachToId), so the graph shows the crosshair BOLD time-course (one
@@ -87,6 +101,7 @@ sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }
 headerBtn.onclick = () => {
+  /** @type {any} hdr: nifti-reader-js types omit toFormattedString */
   const hdr = nv1.volumes[0]?.hdr
   if (!hdr) return
   alert(

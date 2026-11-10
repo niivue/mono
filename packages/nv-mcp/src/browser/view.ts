@@ -58,6 +58,7 @@ export interface VolumeUpdate {
   colormap?: string
   colormapNegative?: string
   opacity?: number
+  visible?: boolean
   calMin?: number
   calMax?: number
   calMinNeg?: number
@@ -97,6 +98,7 @@ export interface ShownVolume {
   /** The intensities the volume actually spans. */
   globalMin?: number
   globalMax?: number
+  visible?: boolean
   /** For a 4D volume, the frame shown and how many there are, and how many the file holds. */
   frame4D?: number
   nFrame4D?: number
@@ -888,7 +890,7 @@ export interface NiiVueHost {
   describe?(): string | Promise<string>
   /** Tells the person something changed that they did not do. */
   announce?(text: string): void
-  /** Called after `load_volume` has loaded one. */
+  /** Called after `load_volume` or `load_ome_zarr` has loaded one. */
   loaded?(volume: LoadedVolume): void
   /** State of the app's own the server should watch between calls. */
   extraState?(): Record<string, unknown>
@@ -902,6 +904,23 @@ export interface NiiVueHost {
   controls?: HostedControls
   /** The data the page can load by id; a page without one declines the data tools. */
   data?: DataPalette
+  /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
+  omeZarr?: () => Promise<OmeZarrLoaders>
+}
+
+/** The two `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives. */
+export interface OmeZarrLoaders {
+  /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level. */
+  loadOmeZarrVolumes(
+    url: string,
+    options?: { level?: number; channels?: number[]; timepoint?: number },
+  ): Promise<unknown[]>
+  /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
+  streamOmeZarr(
+    view: unknown,
+    url: string,
+    options?: { channel?: number; timepoint?: number; replace?: boolean },
+  ): Promise<unknown>
 }
 
 export type Handler = (params: Record<string, unknown>) => unknown

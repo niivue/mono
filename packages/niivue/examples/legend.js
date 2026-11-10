@@ -1,5 +1,9 @@
 import NiiVue from '../src/index.ts'
 
+const gl1 = document.getElementById('gl1')
+const legendSelect = document.getElementById('legendSelect')
+const sliceType = document.getElementById('sliceType')
+
 // A voxel atlas (AAL) and a mesh atlas share one legend. Each item's
 // isLegendVisible decides whether its labels join it.
 legendSelect.onchange = async () => {

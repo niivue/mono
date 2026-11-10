@@ -20,7 +20,7 @@ import {
   niftiDatatype,
   type Shape3,
 } from './logical-volume'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -255,6 +255,7 @@ async function main(): Promise<void> {
     maxChunkResidencyBytes: RESIDENCY_BYTES,
   })
   await nv.attachToCanvas(els.canvas)
+  markBackendInUse(nv.backend ?? 'webgl2')
 
   els.volume.addEventListener('change', () => {
     const v = volumes.find((x) => x.id === els.volume.value)

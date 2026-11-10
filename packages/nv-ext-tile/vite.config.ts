@@ -46,7 +46,7 @@ export default defineConfig({
       external: [
         '@niivue/niivue',
         '@niivue/dcm2niix',
-        'geotiff',
+        '@niivue/geotiff-rs',
         /^@niivue\/zarrita(\/|$)/,
       ],
     },

@@ -1,3 +1,111 @@
+## 1.0.0-rc.160 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.46
+
+## 1.0.0-rc.159 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.146
+- Updated nv-ext-tile to 1.0.0-rc.45
+- Updated uikit to 1.0.0-rc.144
+
+## 1.0.0-rc.158 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.145
+- Updated nv-ext-tile to 1.0.0-rc.44
+- Updated uikit to 1.0.0-rc.143
+
+## 1.0.0-rc.157 (2026-11-10)
+
+### Features
+
+- **nv-ohif:** render whole-slide series with nv-ext-tile's DicomWebWsiSource ([a0386a22](https://github.com/niivue/mono/commit/a0386a22))
+
+### Fixes
+
+- **nv-ohif:** take the WSI series URL from an image ID that names a series ([a6fe33d6](https://github.com/niivue/mono/commit/a6fe33d6))
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.43
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.156 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.144
+- Updated nv-ext-tile to 1.0.0-rc.42
+- Updated uikit to 1.0.0-rc.142
+
+## 1.0.0-rc.155 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.41
+
+## 1.0.0-rc.154 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.40
+
+## 1.0.0-rc.153 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.143
+- Updated nv-ext-tile to 1.0.0-rc.39
+- Updated uikit to 1.0.0-rc.141
+
+## 1.0.0-rc.152 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.140
+
+## 1.0.0-rc.151 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.142
+- Updated nv-ext-tile to 1.0.0-rc.38
+- Updated uikit to 1.0.0-rc.139
+
+## 1.0.0-rc.150 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.141
+- Updated nv-ext-tile to 1.0.0-rc.37
+- Updated uikit to 1.0.0-rc.138
+
+## 1.0.0-rc.149 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.140
+- Updated nv-ext-tile to 1.0.0-rc.36
+- Updated uikit to 1.0.0-rc.137
+
+## 1.0.0-rc.148 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.139
+- Updated nv-ext-tile to 1.0.0-rc.35
+- Updated uikit to 1.0.0-rc.136
+
 ## 1.0.0-rc.147 (2026-11-10)
 
 ### Updated Dependencies

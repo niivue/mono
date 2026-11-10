@@ -1,3 +1,101 @@
+## 1.0.0-rc.139 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.146
+- Updated uikit to 1.0.0-rc.144
+
+## 1.0.0-rc.138 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.145
+- Updated uikit to 1.0.0-rc.143
+
+## 1.0.0-rc.137 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.144
+- Updated uikit to 1.0.0-rc.142
+
+## 1.0.0-rc.136 (2026-11-10)
+
+### Fixes
+
+- **nv-mcp:** mesh-layer bindings and refused control writes ([8485c4fa](https://github.com/niivue/mono/commit/8485c4fa))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.135 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile,nv-mcp:** streamOmeZarr frees its manager and workers ([e8f06ff1](https://github.com/niivue/mono/commit/e8f06ff1))
+- **nv-mcp:** load OME-Zarr through nv-ext-tile/zarr ([b5c237b6](https://github.com/niivue/mono/commit/b5c237b6))
+
+### Fixes
+
+- **nv-mcp:** name the store on an unparsable OME-Zarr url; OME-Zarr in the data palette ([efb6b015](https://github.com/niivue/mono/commit/efb6b015))
+- **nv-ext-tile,nv-mcp:** free a stream removed while it initializes ([2d4cf206](https://github.com/niivue/mono/commit/2d4cf206))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.143
+- Updated uikit to 1.0.0-rc.141
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.134 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.140
+
+## 1.0.0-rc.133 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.142
+- Updated uikit to 1.0.0-rc.139
+
+## 1.0.0-rc.132 (2026-11-10)
+
+### Fixes
+
+- **nv-mcp:** set_volume can show and hide a volume ([f616be34](https://github.com/niivue/mono/commit/f616be34))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.131 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.141
+- Updated uikit to 1.0.0-rc.138
+
+## 1.0.0-rc.130 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.140
+- Updated uikit to 1.0.0-rc.137
+
+## 1.0.0-rc.129 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.139
+- Updated uikit to 1.0.0-rc.136
+
 ## 1.0.0-rc.128 (2026-11-09)
 
 ### Updated Dependencies

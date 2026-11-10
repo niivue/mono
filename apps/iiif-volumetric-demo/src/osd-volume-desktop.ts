@@ -5,7 +5,7 @@
 import NiiVue from '@niivue/niivue'
 
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -179,6 +179,7 @@ interface NiiVueLike {
   azimuth: number
   elevation: number
   scaleMultiplier: number
+  backend?: 'webgpu' | 'webgl2'
   attachToCanvas(canvas: HTMLCanvasElement): Promise<unknown>
   loadVolumes(
     volumes: { url: string; name: string; colormap: string }[],
@@ -1256,6 +1257,7 @@ async function ensureVolumeRenderer(): Promise<NiiVueLike | null> {
     })
     await waitForVolumeCanvasSize()
     await nv.attachToCanvas(els.volumeCanvas)
+    markBackendInUse(nv.backend ?? 'webgl2')
     syncVolumeCanvasReference(nv)
     resizeVolumeRenderer(nv)
     state.volume.nv = nv

@@ -3,6 +3,35 @@ import { cortex, shiny } from '../src/assets/matcaps'
 import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
+const animateCheck = document.getElementById('animateCheck')
+const antiAliasCheck = document.getElementById('antiAliasCheck')
+const checkCutaway = document.getElementById('checkCutaway')
+const clipSelect = document.getElementById('clipSelect')
+const colorBtn = document.getElementById('colorBtn')
+const colorSelect = document.getElementById('colorSelect')
+const colorbarCheck = document.getElementById('colorbarCheck')
+const colormapSelect = document.getElementById('colormapSelect')
+const connectomeSlider = document.getElementById('connectomeSlider')
+const crosshairCheck = document.getElementById('crosshairCheck')
+const dprSelect = document.getElementById('dprSelect')
+const fpsCounter = document.getElementById('fpsCounter')
+const gl1 = document.getElementById('gl1')
+const gradSlider = document.getElementById('gradSlider')
+const matcapSelect = document.getElementById('matcapSelect')
+const meshOpacitySlider = document.getElementById('meshOpacitySlider')
+const meshSelect = document.getElementById('meshSelect')
+const orientCheck = document.getElementById('orientCheck')
+const radioCheck = document.getElementById('radioCheck')
+const saveBtn = document.getElementById('saveBtn')
+const saveMeshBtn = document.getElementById('saveMeshBtn')
+const saveVolBtn = document.getElementById('saveVolBtn')
+const shaderSelect = document.getElementById('shaderSelect')
+const sliceType = document.getElementById('sliceType')
+const tractCheck = document.getElementById('tractCheck')
+const volumeSelect = document.getElementById('volumeSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const xraySlide = document.getElementById('xraySlide')
+
 let isAnimating = false
 let azimuth = 0
 const elevation = 15
@@ -255,9 +284,16 @@ antiAliasCheck.onchange = async () => {
   await nv1.reinitializeView({ isAntiAlias: antiAliasCheck.checked })
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it defaults off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+antiAliasCheck.checked = !isWebKit
 const api = webgpuCheck.checked ? 'webgpu' : 'webgl2'
 const nv1 = new NiiVue({
   backend: api,
+  isAntiAlias: antiAliasCheck.checked,
   backgroundColor: [1, 1, 1, 1],
   font: ubuntu,
   matcaps: { Cortex: cortex, Shiny: shiny },

@@ -9,12 +9,16 @@ import NiiVue, {
   tiffChannelName,
   tiffIsTiled,
 } from '../src/index.ts'
+import { backendFromUrl, isAntiAlias } from './displayControls.js'
 import {
   imageJDescription,
   omeXml,
   phantomChannels,
   writeTiff,
 } from './ome.tiff.write.js'
+import { urlParamSelect } from './urlParamSelect.js'
+
+const gl1 = document.getElementById('gl1')
 
 // OME-TIFF is the third of the microscopy containers this package reads (see
 // docs/ome-tiff-format.md). A .tif holds a flat stack of image planes and
@@ -90,19 +94,24 @@ const SAMPLES = [
   },
 ]
 
-// Optional `?backend=webgl2` (or webgpu) picks the initial backend; the
-// checkbox mirrors it and can still switch at runtime.
-const backend =
-  new URLSearchParams(window.location.search).get('backend') === 'webgl2'
-    ? 'webgl2'
-    : 'webgpu'
-webgpuCheck.checked = backend === 'webgpu'
-webgpuCheck.onchange = async function () {
-  await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+// WebGPU by default; `?backend=webgl2` for WebGL2, `?aa=on|off` to override
+// the anti-aliasing default.
+const backend = backendFromUrl()
+// Wired before anything loads, so the menu works even if loading fails (#488).
+const backendSelect = document.getElementById('backendSelect')
+urlParamSelect(backendSelect, 'backend', backend)
+urlParamSelect(
+  document.getElementById('aaSelect'),
+  'aa',
+  isAntiAlias ? 'on' : 'off',
+)
+document.getElementById('interp').onchange = function () {
+  nv1.volumeIsNearestInterpolation = this.value === 'nearest'
 }
 
 const nv1 = new NiiVue({
   backend,
+  isAntiAlias,
   backgroundColor: [0, 0, 0, 1],
   sliceType: SLICE_TYPE.MULTIPLANAR,
   // The clip and zoom controls act on the 3D render, so keep its tile in the
@@ -134,6 +143,8 @@ nv1.addEventListener('locationChange', (e) => {
   footer.textContent = e.detail.string
 })
 await nv1.attachToCanvas(gl1)
+// The backend actually running, after any WebGPU fallback.
+backendSelect.value = nv1.backend
 
 // textContent (not innerHTML): messages include data-derived channel names.
 function say(message) {

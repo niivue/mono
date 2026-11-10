@@ -15,7 +15,7 @@ const DONT_SPLIT: u8 = 0x10;
 const HEADER: usize = 16;
 
 fn err(msg: impl Into<String>) -> Error {
-    Error::Unsupported(format!("blosc: {}", msg.into()))
+    Error::Corrupt(format!("blosc: {}", msg.into()))
 }
 
 fn u32le(b: &[u8], at: usize) -> Result<usize> {
@@ -129,8 +129,12 @@ fn decompress_block(
                     }
                     4 => zstd::bulk::decompress_to_buffer(input, dst)
                         .map_err(|e| err(e.to_string()))?,
-                    2 => return Err(err("snappy is not supported")),
-                    other => return Err(err(format!("unknown compressor code {other}"))),
+                    2 => return Err(Error::Unsupported("blosc: snappy compressor".into())),
+                    other => {
+                        return Err(Error::Unsupported(format!(
+                            "blosc: compressor code {other}"
+                        )));
+                    }
                 };
             if n != neblock {
                 return Err(err(format!(
@@ -180,31 +184,44 @@ fn unshuffle(typesize: usize, src: &[u8], dst: &mut [u8]) {
 
 /// Bit unshuffle (bitshuffle's `untrans_bit_elem`). Only whole groups of 8
 /// elements are bit-shuffled; trailing bytes are stored as is.
+///
+/// For each group of 8 elements and each byte position, the 8 bit-plane bytes
+/// form an 8x8 bit matrix; transposing it yields that byte of all 8 elements.
 fn bitunshuffle(typesize: usize, src: &[u8], dst: &mut [u8]) {
     let size = src.len() / typesize;
-    if size % 8 != 0 {
+    if !size.is_multiple_of(8) {
         dst.copy_from_slice(src);
         return;
     }
     let nrow = size / 8; // bytes per bit plane
-    dst[..size * typesize].fill(0);
     for j in 0..typesize {
-        for k in 0..8 {
-            let plane = &src[(j * 8 + k) * nrow..(j * 8 + k + 1) * nrow];
-            for (b, &byte) in plane.iter().enumerate() {
-                if byte == 0 {
-                    continue;
-                }
-                for bit in 0..8 {
-                    if byte >> bit & 1 == 1 {
-                        dst[(b * 8 + bit) * typesize + j] |= 1 << k;
-                    }
-                }
+        let planes: [&[u8]; 8] =
+            std::array::from_fn(|k| &src[(j * 8 + k) * nrow..(j * 8 + k + 1) * nrow]);
+        for b in 0..nrow {
+            let mut x = 0u64;
+            for (k, p) in planes.iter().enumerate() {
+                x |= (p[b] as u64) << (8 * k);
+            }
+            let y = transpose8(x).to_le_bytes();
+            let base = b * 8 * typesize + j;
+            for (bit, &v) in y.iter().enumerate() {
+                dst[base + bit * typesize] = v;
             }
         }
     }
     let off = size * typesize;
     dst[off..].copy_from_slice(&src[off..]);
+}
+
+/// Transpose an 8x8 bit matrix stored as bit `8 * row + col` (Hacker's Delight 7-3).
+#[inline]
+fn transpose8(mut x: u64) -> u64 {
+    let mut t = (x ^ (x >> 7)) & 0x00AA_00AA_00AA_00AA;
+    x ^= t ^ (t << 7);
+    t = (x ^ (x >> 14)) & 0x0000_CCCC_0000_CCCC;
+    x ^= t ^ (t << 14);
+    t = (x ^ (x >> 28)) & 0x0000_0000_F0F0_F0F0;
+    x ^ t ^ (t << 28)
 }
 
 /// BloscLZ decompressor (port of `blosclz_decompress`).
@@ -350,5 +367,48 @@ mod tests {
             }
         }
         assert!(cases > 1000);
+    }
+}
+
+#[cfg(test)]
+mod bit_tests {
+    fn naive(typesize: usize, src: &[u8], dst: &mut [u8]) {
+        let size = src.len() / typesize;
+        let nrow = size / 8;
+        dst[..size * typesize].fill(0);
+        for j in 0..typesize {
+            for k in 0..8 {
+                let plane = &src[(j * 8 + k) * nrow..(j * 8 + k + 1) * nrow];
+                for (b, &byte) in plane.iter().enumerate() {
+                    for bit in 0..8 {
+                        if byte >> bit & 1 == 1 {
+                            dst[(b * 8 + bit) * typesize + j] |= 1 << k;
+                        }
+                    }
+                }
+            }
+        }
+        let off = size * typesize;
+        dst[off..].copy_from_slice(&src[off..]);
+    }
+
+    #[test]
+    fn bitunshuffle_matches_reference() {
+        let mut seed = 3u64;
+        for &ts in &[1usize, 2, 3, 4, 8] {
+            for &n in &[8usize, 64, 1000] {
+                let src: Vec<u8> = (0..n * ts + 3)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                        (seed >> 40) as u8
+                    })
+                    .collect();
+                let src = &src[..n * ts];
+                let (mut a, mut b) = (vec![0u8; src.len()], vec![0u8; src.len()]);
+                super::bitunshuffle(ts, src, &mut a);
+                naive(ts, src, &mut b);
+                assert_eq!(a, b, "ts={ts} n={n}");
+            }
+        }
     }
 }

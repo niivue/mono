@@ -209,6 +209,16 @@ describe('wasm decode path', () => {
     setMode('workers')
     const res2 = await zarr.get(arr)
     expect((res2.data as Int16Array).buffer).toBeInstanceOf(ArrayBuffer)
+    // Sharded arrays take the same path (inner chunks written in place).
+    setMode('shared-workers')
+    const sharded = await zarr.open.v3(
+      zarr.root(store).resolve('3d.chunked.compressed.sharded.i2'),
+      { kind: 'array' },
+    )
+    expect(
+      ((await zarr.get(sharded)).data as Int16Array).buffer,
+    ).toBeInstanceOf(SharedArrayBuffer)
+    setMode('workers')
     const res3 = await zarr.get(arr, null, { useSharedArrayBuffer: true })
     expect((res3.data as Int16Array).buffer).toBeInstanceOf(SharedArrayBuffer)
     expect(Array.from(res3.data)).toStrictEqual(Array.from(res2.data))
@@ -289,6 +299,84 @@ describe('wasm decode path', () => {
     } finally {
       g.SharedArrayBuffer = saved
     }
+  })
+
+  it('reports corrupt chunks as decode errors, without falling back', async () => {
+    const fs = await import('node:fs/promises')
+    const store = new FileSystemStore(roots[1])
+    const corrupting = {
+      async get(key: `/${string}`) {
+        const bytes = await store.get(key)
+        if (!bytes || !key.includes('/c/')) return bytes
+        return bytes.slice(0, Math.floor(bytes.length / 2)) // truncated chunk
+      },
+    }
+    void fs
+    for (const name of [
+      '1d.contiguous.blosc.i2',
+      '1d.contiguous.zstd.i2',
+      '1d.contiguous.gzip.i2',
+    ]) {
+      const arr = await zarr.open
+        .v3(zarr.root(corrupting).resolve(name), { kind: 'array' })
+        .catch(() => null)
+      if (!arr) continue // fixture not present in this format
+      for (const mode of ['main', 'workers', 'shared-workers'] as const) {
+        setMode(mode)
+        const err = await zarr.get(arr).then(
+          () => null,
+          (e: unknown) => e as Error,
+        )
+        expect(err, `${name} ${mode}`).toBeInstanceOf(zarr.CodecPipelineError)
+        expect(String(err?.cause ?? err), `${name} ${mode}`).toMatch(
+          /corrupt chunk data/,
+        )
+      }
+    }
+  })
+
+  it('decodes chunks handed over as views into larger buffers', async () => {
+    // Range coalescing and sharding return subarrays of a bigger buffer.
+    // Workers must get exactly the view's bytes, and the caller's buffer
+    // must not be detached by the transfer.
+    const store = new FileSystemStore(roots[1])
+    const views: Uint8Array[] = []
+    const viewing = {
+      async get(key: `/${string}`) {
+        const bytes = await store.get(key)
+        if (!bytes || !key.includes('/c/')) return bytes
+        const big = new Uint8Array(bytes.length + 64).fill(0xab) // garbage around it
+        big.set(bytes, 32)
+        // A Node Buffer view: its .slice() is a view too, unlike Uint8Array's.
+        const view = Buffer.from(big.buffer, 32, bytes.length)
+        views.push(view)
+        return view
+      },
+    }
+    for (const name of [
+      '3d.chunked.i2',
+      '1d.contiguous.blosc.i2',
+      '1d.contiguous.gzip.i2',
+      '3d.chunked.mixed.i2.F',
+    ]) {
+      setMode('js')
+      const plain = await zarr.open.v3(zarr.root(store).resolve(name), {
+        kind: 'array',
+      })
+      const expected = logicalValues(await zarr.get(plain))
+      for (const mode of ['main', 'workers', 'shared-workers'] as const) {
+        setMode(mode)
+        const arr = await zarr.open.v3(zarr.root(viewing).resolve(name), {
+          kind: 'array',
+        })
+        expect(
+          logicalValues(await zarr.get(arr)),
+          `${name} ${mode}`,
+        ).toStrictEqual(expected)
+      }
+    }
+    expect(views.length).toBeGreaterThan(0)
+    for (const v of views) expect(v.buffer.byteLength).toBeGreaterThan(0) // not detached
   })
 
   it('leaves codecs overridden in the registry to zarrita.js', async () => {

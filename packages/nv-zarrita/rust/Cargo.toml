@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/cdrake/zarrita-rs"
-rust-version = "1.85"
+rust-version = "1.87"
 
 [workspace.dependencies]
 zarrita-storage = { path = "crates/zarrita-storage", default-features = false }

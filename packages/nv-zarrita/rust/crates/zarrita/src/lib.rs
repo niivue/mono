@@ -19,6 +19,7 @@ pub mod hierarchy;
 pub mod indexing;
 pub mod metadata;
 pub mod open;
+pub mod sharding;
 pub mod util;
 
 pub use dtype::DataType;

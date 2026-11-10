@@ -674,6 +674,7 @@ async function benchRenderFramesWithSplit(
  * any async write (setVolume's GPU rebuild) awaited. The duration is longer
  * than the run, so the transition never reaches its target and every step
  * writes a new value. Call `stop()` when the scenario is done.
+ * @param {'shortest' | 'literal'} [angles]
  */
 function steppedAnimation(nv, target, steps, angles = 'shortest') {
   let now = 0
@@ -1148,7 +1149,9 @@ async function tractRegen(iter = 5) {
     calMax: 0,
     calMinNeg: 0,
     calMaxNeg: 0,
-    fixedColor: [255, 255, 255, 255],
+    fixedColor: /** @type {[number, number, number, number]} */ ([
+      255, 255, 255, 255,
+    ]),
     groupColors: null,
     visibleGroups: null,
   }

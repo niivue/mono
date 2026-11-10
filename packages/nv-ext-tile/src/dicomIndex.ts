@@ -904,6 +904,65 @@ const slideBase = (info: Placed, pathIndex: number): string =>
     pathName(info, pathIndex),
   ].join('|')
 
+const matrix = (info: Placed): string =>
+  `${info.totalColumns}x${info.totalRows}`
+
+/**
+ * Frames of reference of one study, series and container join when no level
+ * size is in both and their finest levels span the same extent: some converters
+ * give each pyramid level its own FrameOfReferenceUID (OHIF's test slide does),
+ * while a rescan repeats the sizes and another scan spans another extent. The
+ * joined instances take their finest level's frame of reference, before
+ * rankStatedPlanes, so planes are ranked across the joined slide.
+ */
+function joinFramesOfReference(infos: Placed[]): void {
+  const groups = new Map<string, Placed[]>()
+  for (const info of infos) {
+    if (!info.volume) continue
+    const { study, series, frameOfReference, container } = info
+    const key = [study, series, frameOfReference, container ?? ''].join('|')
+    const group = groups.get(key)
+    if (group) group.push(info)
+    else groups.set(key, [info])
+  }
+  const finest = (g: Placed[]) =>
+    g.reduce((a, b) =>
+      b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
+    )
+  // NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs, so it joins.
+  const extent = (g: Placed[]) => {
+    const { totalColumns, totalRows, pixelSpacingMM: mm } = finest(g)
+    return mm && !(mm[0] === 1 && mm[1] === 1)
+      ? [totalColumns * mm[0], totalRows * mm[1]]
+      : [Number.NaN, Number.NaN]
+  }
+  // Relative to the larger extent, so the result does not depend on order.
+  const differs = (a: number[], b: number[]) =>
+    a.some((v, k) => {
+      const w = b[k] as number
+      return Math.abs(v - w) > 0.05 * Math.max(v, w)
+    })
+  const joined = new Map<string, Placed[][]>()
+  for (const g of groups.values()) {
+    const { study, series, container } = g[0] as Placed
+    const key = [study, series, container ?? ''].join('|')
+    const list = joined.get(key) ?? []
+    const mine = new Set(g.map(matrix))
+    const into = list.find(
+      (e) =>
+        !e.some((i) => mine.has(matrix(i))) && !differs(extent(g), extent(e)),
+    )
+    if (into) into.push(...g)
+    else list.push(g)
+    joined.set(key, list)
+  }
+  for (const list of joined.values())
+    for (const g of list) {
+      const { frameOfReference } = finest(g)
+      for (const info of g) info.frameOfReference = frameOfReference
+    }
+}
+
 /** Stated ZOffsets (µm) become ranks across all of a slide's levels, so a lower
  * level holding only some planes joins the right ones; implicit TILED_FULL
  * indices already are ranks. */
@@ -941,13 +1000,17 @@ type GroupedSlide<I, C> = Omit<SlideIndexSlide, 'instances' | 'iccProfile'> & {
   iccProfile?: C
 }
 
-/** Contract 2: a slide is study + series + frame of reference + container + optical path + focal plane. */
+/**
+ * Contract 2: a slide is study + series + frame of reference + container +
+ * optical path + focal plane, after joinFramesOfReference.
+ */
 export function groupSlides<I, C>(
   infos: InstanceInfo<I, C>[],
   skipped: SlideIndexSkipped[],
   /** The name `skipped` gives an instance. */
   nameOf: (instance: I) => string,
 ): GroupedSlide<I, C>[] {
+  joinFramesOfReference(infos)
   rankStatedPlanes(infos)
   type Entry = { slide: GroupedSlide<I, C>; own: Member<I, C>[] }
   const slides = new Map<string, Entry>()

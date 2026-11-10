@@ -3,6 +3,7 @@
 use crate::codecs::{ChunkMeta, CodecPipeline, RawChunk};
 use crate::dtype::DataType;
 use crate::metadata::{ArrayMetadata, Attributes, ChunkGrid, GroupMetadata};
+use crate::sharding::{Sharding, ShardingConfig};
 use crate::util::{ChunkKeyEncoder, c_order, fill_value_bytes, get_strides};
 use crate::{AbsolutePath, Error, Readable, Result, Writable};
 use bytes::Bytes;
@@ -85,6 +86,8 @@ pub struct Array<S> {
     fill: Vec<u8>,
     key_encoder: ChunkKeyEncoder,
     pipeline: Arc<CodecPipeline>,
+    /// Set for `sharding_indexed` arrays; `chunk_shape` is then the inner chunk shape.
+    sharding: Option<Arc<Sharding>>,
 }
 
 impl<S> std::fmt::Debug for Array<S> {
@@ -105,28 +108,50 @@ impl<S> Array<S> {
         let elem_size = dtype
             .byte_size()
             .ok_or_else(|| Error::Unsupported(format!("variable-length data type {dtype}")))?;
-        if metadata.codecs.iter().any(|c| c.name == "sharding_indexed") {
-            return Err(Error::Unsupported("sharding_indexed codec".into()));
-        }
         let ChunkGrid::Regular(grid) = &metadata.chunk_grid;
-        let chunk_shape: Vec<usize> = grid.chunk_shape.iter().map(|&x| x as usize).collect();
+        let grid_shape: Vec<usize> = grid.chunk_shape.iter().map(|&x| x as usize).collect();
         let shape: Vec<usize> = metadata.shape.iter().map(|&x| x as usize).collect();
-        if chunk_shape.len() != shape.len() {
+        if grid_shape.len() != shape.len() {
             return Err(Error::invalid_metadata(
                 "chunk_shape rank does not match shape rank",
             ));
         }
-        let pipeline = CodecPipeline::new(
-            &ChunkMeta {
-                data_type: dtype.clone(),
-                shape: chunk_shape.clone(),
-            },
-            &metadata.codecs,
-        )?;
+        let sharded = metadata
+            .codecs
+            .iter()
+            .position(|c| c.name == "sharding_indexed");
+        let (chunk_shape, pipeline, sharding) = match sharded {
+            None => {
+                let meta = ChunkMeta {
+                    data_type: dtype.clone(),
+                    shape: grid_shape.clone(),
+                };
+                (
+                    grid_shape,
+                    CodecPipeline::new(&meta, &metadata.codecs)?,
+                    None,
+                )
+            }
+            Some(0) if metadata.codecs.len() == 1 => {
+                let config: ShardingConfig = serde_json::from_value(serde_json::Value::Object(
+                    metadata.codecs[0].configuration.clone().unwrap_or_default(),
+                ))?;
+                let sharding = Sharding::new(&config, &grid_shape)?;
+                let meta = Sharding::inner_meta(&config, &dtype);
+                let pipeline = CodecPipeline::new(&meta, &config.codecs)?;
+                (meta.shape, pipeline, Some(Arc::new(sharding)))
+            }
+            Some(_) => {
+                return Err(Error::Unsupported(
+                    "codecs before or after sharding_indexed".into(),
+                ));
+            }
+        };
         Ok(Self {
             fill: fill_value_bytes(&dtype, &metadata.fill_value)?,
             key_encoder: ChunkKeyEncoder::new(&metadata.chunk_key_encoding),
             pipeline: Arc::new(pipeline),
+            sharding,
             location,
             metadata,
             dtype,
@@ -158,11 +183,19 @@ impl<S> Array<S> {
         self.elem_size
     }
 
+    /// Store key of the object holding a chunk: the chunk itself, or for a
+    /// sharded array the shard containing this inner chunk.
     pub fn chunk_path(&self, coords: &[usize]) -> Result<AbsolutePath> {
-        Ok(self
-            .location
-            .resolve(&self.key_encoder.encode(coords))?
-            .path)
+        let key = match &self.sharding {
+            Some(s) => self.key_encoder.encode(&s.shard_coords(coords)),
+            None => self.key_encoder.encode(coords),
+        };
+        Ok(self.location.resolve(&key)?.path)
+    }
+
+    /// Whether this array uses `sharding_indexed` (chunks are then inner chunks).
+    pub fn is_sharded(&self) -> bool {
+        self.sharding.is_some()
     }
 
     /// Decode stored bytes, or synthesize a fill-value chunk when the key is missing.
@@ -193,13 +226,16 @@ impl<S> Array<S> {
 impl<S: Readable> Array<S> {
     pub async fn get_chunk_bytes(&self, coords: &[usize]) -> Result<Option<Bytes>> {
         let path = self.chunk_path(coords)?;
-        Ok(self.location.store.get(&path).await?)
+        match &self.sharding {
+            Some(s) => s.chunk_bytes(&*self.location.store, coords, &path).await,
+            None => Ok(self.location.store.get(&path).await?),
+        }
     }
 
     /// Read and decode one chunk (TS `arr.getChunk`).
     pub async fn get_chunk(&self, coords: &[usize]) -> Result<RawChunk> {
         let path = self.chunk_path(coords)?;
-        let bytes = self.location.store.get(&path).await?;
+        let bytes = self.get_chunk_bytes(coords).await?;
         self.decode_chunk(bytes, Some(path.as_str()))
     }
 }
@@ -207,6 +243,9 @@ impl<S: Readable> Array<S> {
 impl<S: Writable> Array<S> {
     /// Encode and store one full chunk given as C-order native-endian bytes.
     pub async fn set_chunk(&self, coords: &[usize], data: Bytes) -> Result<()> {
+        if self.sharding.is_some() {
+            return Err(Error::Unsupported("writing sharded arrays".into()));
+        }
         let n: usize = self.chunk_shape.iter().product();
         if data.len() != n * self.elem_size {
             return Err(Error::InvalidSelection(format!(

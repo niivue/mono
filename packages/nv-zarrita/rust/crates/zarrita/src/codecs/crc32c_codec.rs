@@ -17,10 +17,10 @@ impl BytesToBytesCodec for Crc32cCodec {
         let n = b
             .len()
             .checked_sub(4)
-            .ok_or_else(|| Error::invalid_metadata("crc32c: chunk too short"))?;
+            .ok_or_else(|| Error::Corrupt("crc32c: chunk too short".into()))?;
         let expected = u32::from_le_bytes(b[n..].try_into().unwrap());
         if crc32c::crc32c(&b[..n]) != expected {
-            return Err(Error::invalid_metadata("crc32c checksum mismatch"));
+            return Err(Error::Corrupt("crc32c checksum mismatch".into()));
         }
         Ok(b.slice(..n))
     }

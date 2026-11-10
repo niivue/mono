@@ -5,6 +5,25 @@ import {
   SLICE_TYPE,
 } from '../src/NVConstants.ts'
 
+const annOpacity = document.getElementById('annOpacity')
+const brushLabel = document.getElementById('brushLabel')
+const brushRadius = document.getElementById('brushRadius')
+const clearBtn = document.getElementById('clearBtn')
+const enableCheck = document.getElementById('enableCheck')
+const eraserCheck = document.getElementById('eraserCheck')
+const fillOpacity = document.getElementById('fillOpacity')
+const labelSelect = document.getElementById('labelSelect')
+const loadBtn = document.getElementById('loadBtn')
+const loadFile = document.getElementById('loadFile')
+const redoBtn = document.getElementById('redoBtn')
+const saveBtn = document.getElementById('saveBtn')
+const show3dCheck = document.getElementById('show3dCheck')
+const strokeWidth = document.getElementById('strokeWidth')
+const toolSelect = document.getElementById('toolSelect')
+const undoBtn = document.getElementById('undoBtn')
+const volOpacity = document.getElementById('volOpacity')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 const LABEL_COLORS = {
   1: { fill: [1, 0, 0, 0.3], stroke: [1, 0, 0, 1] },
   2: { fill: [0, 1, 0, 0.3], stroke: [0, 1, 0, 1] },

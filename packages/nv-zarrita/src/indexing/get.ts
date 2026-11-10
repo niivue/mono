@@ -73,8 +73,8 @@ export async function get<
 
   const size = indexer.shape.reduce((a, b) => a * b, 1)
   // zarrita-wasm: with shared output, workers decode straight into `out`.
+  // Sharded arrays qualify too: their context reads and decodes inner chunks.
   const plan =
-    context.kind === 'regular' &&
     (setter as { directWrite?: boolean }).directWrite === true &&
     arr.getChunk === ZarrArray.prototype.getChunk
       ? context.codec.wasmPlan()

@@ -16,8 +16,14 @@ use std::ffi::CString;
 #[cfg(feature = "native-blosc")]
 use std::ffi::c_void;
 
+/// Data that fails to decode.
 fn codec_err(name: &str, msg: impl std::fmt::Display) -> Error {
-    Error::Unsupported(format!("{name}: {msg}"))
+    Error::Corrupt(format!("{name}: {msg}"))
+}
+
+/// A codec configuration this decoder does not accept.
+fn config_err(name: &str, msg: impl std::fmt::Display) -> Error {
+    Error::invalid_metadata(format!("{name}: {msg}"))
 }
 
 // ---------------------------------------------------------------- blosc
@@ -39,14 +45,14 @@ impl BloscCodec {
                 "noshuffle" => 0,
                 "shuffle" => 1,
                 "bitshuffle" => 2,
-                other => return Err(codec_err("blosc", format!("bad shuffle {other:?}"))),
+                other => return Err(config_err("blosc", format!("bad shuffle {other:?}"))),
             },
             Some(v) => v.as_i64().unwrap_or(1) as i32,
             None => 1,
         };
         let elem = meta.data_type.byte_size().unwrap_or(1);
         Ok(Self {
-            cname: CString::new(cname).map_err(|e| codec_err("blosc", e))?,
+            cname: CString::new(cname).map_err(|e| config_err("blosc", e))?,
             clevel: config_i64(c, "clevel").unwrap_or(5) as i32,
             shuffle: if shuffle < 0 {
                 if elem > 1 { 1 } else { 2 }

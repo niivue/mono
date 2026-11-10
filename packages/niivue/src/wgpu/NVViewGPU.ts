@@ -300,7 +300,7 @@ export default class NVView {
     this.canvas = canvas
     this.model = model
     this.options = options
-    this.isAntiAlias = options.isAntiAlias ?? false
+    this.isAntiAlias = options.isAntiAlias ?? true
     this.forceDevicePixelRatio = options.forceDevicePixelRatio ?? -1
     // State & resources (model owns them)
     this.device = null

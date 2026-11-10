@@ -1,6 +1,12 @@
 import { mat4, vec3 } from 'gl-matrix'
 import NiiVue from '../src/index.ts'
 
+const gizmo = document.getElementById('gizmo')
+const gl1 = document.getElementById('gl1')
+const resetAffine = document.getElementById('resetAffine')
+const target = document.getElementById('target')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 const RADII = [82, 64, 46] // concentric rings for X, Y, Z
 const CELL = 200 // per-dial height
 const AXES = ['X', 'Y', 'Z']
@@ -28,7 +34,7 @@ let drag = null
 const toRows = (m) =>
   [0, 1, 2, 3].map((r) => [0, 1, 2, 3].map((c) => m[c * 4 + r]))
 const toMat = (rows) =>
-  mat4.fromValues(...[0, 1, 2, 3].flatMap((c) => rows.map((row) => row[c])))
+  new Float32Array([0, 1, 2, 3].flatMap((c) => rows.map((row) => row[c])))
 const rad = (d) => (d * Math.PI) / 180
 
 // world-space T = translate(t) * about pivot( Rx Ry Rz S )

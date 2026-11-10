@@ -240,6 +240,17 @@ const canUseWorkers = (): boolean =>
   (isNode || typeof Worker !== 'undefined')
 
 /**
+ * An exact copy of `bytes` in a buffer of its own, safe to transfer. Not
+ * `bytes.slice()`: on a Node Buffer that returns a view, and `.buffer` of any
+ * view is the whole underlying buffer (other data, possibly a shared pool).
+ */
+function ownCopy(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy
+}
+
+/**
  * Decode one chunk with the wasm codec pipeline described by `spec`.
  * Large chunks go to the worker pool; small ones decode on this thread.
  */
@@ -255,7 +266,7 @@ export async function wasmDecode(
   let w = workers[0]
   for (const c of workers) if (c.inflight < w.inflight) w = c
   // Copy so the caller's buffer (which a cache may hold) is never detached.
-  const copy = bytes.slice()
+  const copy = ownCopy(bytes)
   const id = nextId++
   if (w.inflight++ === 0) w.port.ref?.() // busy workers keep Node alive until done
   return new Promise((resolve, reject) => {
@@ -287,7 +298,7 @@ export async function wasmDecodeInto(
   const workers = await getPool()
   let w = workers[0]
   for (const c of workers) if (c.inflight < w.inflight) w = c
-  const copy = bytes.slice()
+  const copy = ownCopy(bytes)
   const id = nextId++
   if (w.inflight++ === 0) w.port.ref?.()
   return new Promise((resolve, reject) => {

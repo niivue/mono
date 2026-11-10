@@ -1,5 +1,18 @@
 import NiiVue, { chunkVolumeGrid, extractChunkBlock } from '../src/index.ts'
 
+const backend = document.getElementById('backend')
+const blockOut = document.getElementById('blockOut')
+const blockView = document.getElementById('blockView')
+const clearBtn = document.getElementById('clearBtn')
+const explode = document.getElementById('explode')
+const explodeVal = document.getElementById('explodeVal')
+const gl1 = document.getElementById('gl1')
+const gl2 = document.getElementById('gl2')
+const grid = document.getElementById('grid')
+const hint = document.getElementById('hint')
+const linkCheck = document.getElementById('linkCheck')
+const parentOut = document.getElementById('parentOut')
+
 // Pick one block out of an exploded volume and open it, on its own, beside the
 // parent.
 //
@@ -30,10 +43,12 @@ const DEVICE_LIMIT = 4096
 // Match the renderer's per-chunk gradient halo so brick faces stay seam-free.
 // Extraction uses each brick's DATA region, not its halo, so adjacent blocks
 // tile the parent exactly.
+/** @type {[number, number, number]} */
 const HALO = [3, 3, 3]
 
 const PICK_SLOP_PX = 4 // a click that travelled further than this was a rotate
 
+/** @type {(import('../src/index.ts').ExplodedBlockPick & { block?: any }) | null} */
 let picked = null // the last ExplodedBlockPick, or null
 let pickSeq = 0 // serializes overlapping loads: last pick wins
 let syncing = false // re-entrancy guard for the linked crosshairs
@@ -145,6 +160,7 @@ async function pickAt(clientX, clientY) {
   const hit = nv1.pickExplodedBlock(clientX, clientY)
   if (!hit) return // empty space, or not over the render tile
   const vol = nv1.volumes[hit.volumeIndex]
+  /** @type {any} the demo adds boundsMM */
   const block = extractChunkBlock(vol, hit.chunkIndex)
   if (!block) return
 
@@ -281,6 +297,11 @@ backend.onchange = async () => {
   reportParent()
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 // Optional `?backend=webgl2` (or webgpu) to pick the initial backend; the select
 // mirrors it and can still switch at runtime.
 const initialBackend =
@@ -292,12 +313,14 @@ backend.value = initialBackend
 const nv1 = new NiiVue({
   backgroundColor: [0.08, 0.09, 0.11, 1],
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
   sliceType: 4, // SLICE_TYPE.RENDER
   isColorbarVisible: false,
 })
 const nv2 = new NiiVue({
   backgroundColor: [0.08, 0.09, 0.11, 1],
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
   sliceType: parseInt(blockView.value, 10),
   isColorbarVisible: false,
   placeholderText: 'Click a block on the left',

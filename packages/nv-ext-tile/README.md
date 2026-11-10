@@ -3,7 +3,7 @@
 Tiled and chunked image formats for NiiVue (slides and streamed volumes), one subpath per format, so a page loads only the format it uses:
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
 - `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders, hosted manifests and DICOMweb ([Local DICOM-WSI folders](#local-dicom-wsi-folders), [DICOMweb](#dicomweb)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
-- `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick ([OME-Zarr](#ome-zarr)).
+- `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick, and 2D OME-Zarr slides streamed tile by tile into `NVSlide` ([OME-Zarr](#ome-zarr)).
 
 Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`, and core's OME-Zarr exports; the APIs are unchanged, only the import paths differ.
 
@@ -17,18 +17,19 @@ Requires `@niivue/niivue` as a peer dependency, at least the core version curren
 
 ## TIFF
 
-Stream large tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio SVS whole-slide images into NiiVue's `NVSlide`, one tile at a time, using [geotiff](https://github.com/geotiffjs/geotiff.js).
+Stream large tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio SVS whole-slide images into NiiVue's `NVSlide`, one tile at a time, using [@niivue/geotiff-rs](https://github.com/rordenlab/geotiff-rs) (a read-only port of geotiff.js 3.1 with Rust/WASM decoders).
 
-Core NiiVue already reads TIFF volumes (strips, tiles, LZW, Deflate, PackBits) with no dependencies, but decodes the whole file. This package is for slides too large to fetch: it reads only the IFDs and the tiles in view, over HTTP Range, and adds the compressions core lacks (JPEG with `JPEGTables`, ZSTD, WebP, LERC). Apps that need it pay for `geotiff`; core users do not.
+Core NiiVue already reads TIFF volumes (strips, tiles, LZW, Deflate, PackBits) with no dependencies, but decodes the whole file. This package is for slides too large to fetch: it reads only the IFDs and the tiles in view, over HTTP Range, and adds the compressions core lacks (JPEG with `JPEGTables`, JPEG 2000, ZSTD, WebP, LERC). Apps that need it pay for `@niivue/geotiff-rs`; core users do not.
 
 ### Usage
 
 ```ts
 import { NVSlide, SlideRenderer } from '@niivue/niivue'
-import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
-import { fromBlob, Pool } from 'geotiff'
+import { registerDcm2niixTiffDecoders, TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
+import { fromBlob, Pool } from '@niivue/geotiff-rs'
 
 const pool = new Pool() // optional: decode in web workers
+registerDcm2niixTiffDecoders() // optional: JPEG 2000 tiles (Aperio SVS); needs @niivue/dcm2niix
 
 // Remote file, streamed by HTTP Range
 const source = await TiffSlideSource.fromUrl('https://example.org/slide.svs', { pool })
@@ -48,11 +49,11 @@ pool.destroy()
 
 ### What it reads
 
-- **Levels:** OME-TIFF pyramids in `SubIFDs` (first plane only), else every tiled image in the IFD chain, one per width, largest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped.
-- **Pixels:** geotiff's `readRGB` converts RGB, YCbCr, gray, palette and CMYK to 8-bit RGB. Tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge.
-- **Compression:** none, LZW, JPEG, Deflate, PackBits, LERC, ZSTD, WebP (geotiff's decoders). Not supported: old-style JPEG (6) and JPEG 2000 (Aperio 33003/33005), which geotiff cannot decode.
-- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires), at most 2^21 tiles across all levels, unsigned integer samples, RGB 8 bits per sample, no WhiteIsZero; other files are rejected. Only the first 64 IFDs (main chain or SubIFDs) are examined.
-- **Decoders trust the compressed stream.** A tile whose JPEG header claims 30000x30000 px can exhaust memory: geotiff offers no bound on decoded size. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
+- **Levels:** OME-TIFF pyramids in `SubIFDs` (first plane only), else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a power-of-two downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area.
+- **Pixels:** geotiff-rs's `readRGB` converts RGB, YCbCr, gray (incl. WhiteIsZero), palette and CMYK to 8-bit RGB. Tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge.
+- **Compression:** none, LZW, JPEG, Deflate, PackBits (Rust/WASM), LERC, ZSTD, WebP (JS). JPEG 2000 (Aperio 33003 and 33005, TIFF 34712) after `registerDcm2niixTiffDecoders()`, which decodes in @niivue/dcm2niix's OpenJPEG workers (loaded on the first such tile, one pool shared with `/dicom`'s `registerDcm2niixDecoders`) rather than the geotiff `Pool`; colour matches OpenSlide within 1. Without it those tiles fail with geotiff-rs's "has no built-in decoder" error. Not supported: old-style JPEG (6), 12-bit and lossless JPEG.
+- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires), at most 2^21 tiles across all levels, unsigned integer samples, RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
+- **JS decoders trust the compressed stream.** The Rust codecs and dcm2niix bound a tile's decoded size, but LERC, ZSTD and WebP do not: a hostile tile can exhaust memory. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
 Not supported yet: 16-bit and multichannel fluorescence planes (only 8-bit RGB/gray displays correctly), choosing an OME plane other than the first, TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
 
@@ -160,22 +161,38 @@ const slide = NVSlide.fromSource(source)
 ## OME-Zarr
 
 ```ts
-import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
 
 await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one whole level
-await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
+await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the volume is removed
 ```
 
-Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
+To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running.
+
+For a 2D image (one y/x plane per level), `ZarrSlideSource` streams chunks into `NVSlide` as tiles instead:
+
+```ts
+import { NVSlide } from '@niivue/niivue'
+import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
+
+const source = await ZarrSlideSource.fromUrl(storeUrl) // or fromStore(store); { channel, z, t } pick a plane
+const slide = NVSlide.fromSource(source)
+if (source.window) slide.setWindow(source.window.calMin, source.window.calMax) // NVSlide does not read the window from the source
+```
+
+Three uint8 channels show as RGB; any other store shows one channel in grey, windowed from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
+
+Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 
 ## Without a bundler
 
-`dist/standalone/` holds `tiff.js`, `dicom.js` and `zarr.js` with geotiff and zarrita bundled in and the Zarr worker inlined. Only `@niivue/niivue` stays a bare import, plus `@niivue/dcm2niix` in `/dicom`. Map them with an import map onto core's standalone build, so the page and the extension share one core (one NVSlide decoder registry, one chunk-timing recorder):
+`dist/standalone/` holds `tiff.js`, `dicom.js` and `zarr.js` with geotiff-rs (its WASM inlined) and zarrita bundled in and the Zarr worker inlined. Only `@niivue/niivue` stays a bare import, plus `@niivue/dcm2niix` in `/dicom` and `/tiff`, imported only when a registered decoder first runs. Map them with an import map onto core's standalone build, so the page and the extension share one core (one NVSlide decoder registry, one chunk-timing recorder):
 
 ```html
 <script type="importmap">
 { "imports": {
   "@niivue/niivue": "./niivue/niivue.js",
+  "@niivue/nv-ext-tile/tiff": "./nv-ext-tile/tiff.js",
   "@niivue/nv-ext-tile/zarr": "./nv-ext-tile/zarr.js",
   "@niivue/nv-ext-tile/dicom": "./nv-ext-tile/dicom.js",
   "@niivue/dcm2niix": "./dcm2niix/index.jpeg.js"
@@ -183,7 +200,7 @@ Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fall
 </script>
 ```
 
-Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-ext-tile/`, and, for JPEG 2000 / JPEG-LS tiles and ICC profiles, `@niivue/dcm2niix`'s `dist/` to `dcm2niix/` (its workers and WASM load relative to `index.jpeg.js`). A page using `@niivue/niivue/webgpu` or `/webgl2` maps those entries too; they share core's chunks with `niivue.js`. Without the dcm2niix mapping, tiles that need it fail (the slide counts them in `stats.failures`) and JPEG tiles still decode. `scripts/check-standalone.ts` runs with the build: it rejects any other bare import and any format reaching another's code. `bunx nx e2e nv-ext-tile` checks NIfTI, Zarr and DICOM pages built this way under a nested base.
+Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-ext-tile/`, and, for JPEG 2000 / JPEG-LS tiles (DICOM and TIFF) and ICC profiles, `@niivue/dcm2niix`'s `dist/` to `dcm2niix/` (its workers and WASM load relative to `index.jpeg.js`). A page using `@niivue/niivue/webgpu` or `/webgl2` maps those entries too; they share core's chunks with `niivue.js`. Without the dcm2niix mapping, tiles that need it fail (the slide counts them in `stats.failures`) and JPEG tiles still decode. `scripts/check-standalone.ts` runs with the build: it rejects any other bare import and any format reaching another's code. `bunx nx e2e nv-ext-tile` checks NIfTI, Zarr, TIFF and DICOM pages built this way under a nested base.
 
 ## Hosting an indexed slide
 
@@ -196,7 +213,7 @@ Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-e
 
 ## Range, CORS and full downloads
 
-Reads go through geotiff's 64 KiB block cache: the header and each level's tile offset table cost a few blocks, and a tile costs its compressed size rounded out to block boundaries.
+Reads go through geotiff-rs's 64 KiB block cache: the header and each level's tile offset table cost a few blocks, and a tile costs its compressed size rounded out to block boundaries.
 
 A remote server **must** support HTTP Range (`206 Partial Content`). If it answers `200`, `fromUrl` cancels that response and rejects with "server ignored the HTTP Range request"; there is no fallback to downloading the full slide. Cross-origin servers must send `Access-Control-Allow-Origin` and allow the `Range` request header. Exposing `Content-Range` (`Access-Control-Expose-Headers`) is optional: when visible, each response's start offset is checked against the request. For a server you cannot change, download the file and open it with `fromGeoTIFF(await fromBlob(file))`.
 
@@ -212,6 +229,6 @@ bunx nx build nv-ext-tile
 bunx nx typecheck nv-ext-tile
 ```
 
-Tests write small tiled TIFFs in memory (pyramid, SubIFDs, JPEG/YCbCr) and serve them through a fake Range server that records every request.
+Tests write small tiled TIFFs in memory (pyramid, SubIFDs, JPEG/YCbCr, JPEG 2000) and serve them through a fake Range server that records every request. With the OpenSlide Aperio samples in `$OPENSLIDE_APERIO` (`JP2K-33003-1.svs`, `CMU-1-JP2K-33005.svs`), they also check JPEG 2000 colour against OpenSlide; otherwise those tests are skipped.
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

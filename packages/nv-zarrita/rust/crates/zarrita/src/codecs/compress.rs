@@ -12,7 +12,7 @@ use std::io::Read;
 use std::io::Write;
 
 fn other(e: impl std::fmt::Display) -> Error {
-    Error::Unsupported(e.to_string())
+    Error::Corrupt(e.to_string())
 }
 
 pub struct GzipCodec {
@@ -112,6 +112,36 @@ impl BytesToBytesCodec for ZstdCodec {
                 .map_err(other)?
                 .into()),
             _ => Ok(zstd::stream::decode_all(&b[..]).map_err(other)?.into()),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "encode"))]
+mod tests {
+    use super::*;
+
+    /// Damaged data must be reported as corrupt, never as an unsupported feature
+    /// (the JS layer falls back to other decoders only for the latter).
+    #[test]
+    fn corrupt_data_is_corrupt_not_unsupported() {
+        let raw = Bytes::from(
+            (0..10_000u32)
+                .flat_map(|i| (i / 3).to_le_bytes())
+                .collect::<Vec<u8>>(),
+        );
+        let cfg = CodecConfig::new();
+        let codecs: Vec<Box<dyn BytesToBytesCodec>> = vec![
+            Box::new(GzipCodec::from_config(&cfg)),
+            Box::new(ZlibCodec::from_config(&cfg)),
+            Box::new(ZstdCodec::from_config(&cfg)),
+        ];
+        for c in codecs {
+            let mut enc = c.encode(raw.clone()).unwrap().to_vec();
+            assert_eq!(c.decode(enc.clone().into()).unwrap(), raw);
+            let n = enc.len();
+            enc.truncate(n / 2);
+            let e = c.decode(enc.into()).unwrap_err();
+            assert!(matches!(e, Error::Corrupt(_)), "got {e:?}");
         }
     }
 }

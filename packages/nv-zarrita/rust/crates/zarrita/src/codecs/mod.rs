@@ -4,9 +4,10 @@
 //! ([`RawChunk`]); typed views are only created at the very end, by `get`.
 //!
 //! Ported: `bytes`, `transpose`, `gzip`, `zlib`, `zstd`, `crc32c`, `blosc`
-//! (c-blosc via `blosc-src`), `shuffle`, `delta`.
+//! (c-blosc via `blosc-src`), `shuffle`, `delta`,
+//! `sharding_indexed` (see `crate::sharding`).
 //! Not supported on purpose: the standalone numcodecs `lz4` codec.
-//! TODO: `sharding_indexed`, `vlen-utf8`, `json2`, `bitround`, `scale_offset`,
+//! TODO: `vlen-utf8`, `json2`, `bitround`, `scale_offset`,
 //! `cast_value`.
 
 pub mod blosc_rs;

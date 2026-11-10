@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
+import type { Pool } from '@niivue/geotiff-rs'
+import { fromArrayBuffer, fromFile } from '@niivue/geotiff-rs'
 import type {
   NVSlideRangeEvent,
   NVSlideRangeStatus,
   SlideSourceHost,
 } from '@niivue/niivue'
-import type { Pool } from 'geotiff'
-import { fromArrayBuffer } from 'geotiff'
-import { TiffSlideSource } from './tiff'
+import { registerDcm2niixTiffDecoders, TiffSlideSource } from './tiff'
 
 // 64x64 baseline JPEG (cjpeg -sample 1x1): left half (200,30,30), right half (30,30,200).
 const JPEG_TILE = Uint8Array.from(
@@ -16,11 +17,20 @@ const JPEG_TILE = Uint8Array.from(
   (c) => c.charCodeAt(0),
 )
 
+// 16x16 lossless JPEG 2000 codestream (opj_compress -mct 1 -n 2) of RGB
+// (16x, 16y, 128).
+const J2K_TILE = Uint8Array.from(
+  atob(
+    '/0//UQAvAAAAAAAQAAAAEAAAAAAAAAAAAAAAEAAAABAAAAAAAAAAAAADBwEBBwEBBwEB/1IADAAAAAEBAQQEAAH/XAAHQEBISFD/ZAAlAAFDcmVhdGVkIGJ5IE9wZW5KUEVHIHZlcnNpb24gMi41LjT/kAAKAAAAAACoAAH/k8+0vBEdtk9h32cNPQ8B9ZqouL5H/LLzUHWs3o203Lf0KBnUUnqc3N0r1y2McJOIDUd/34CoFT4y0PYK28DY3s7q1XX+bmcCFlwZ34EwJ3Vmip8cpb26jzqvWzP8l0KQdPeib1EuYd72SMu4UcNYduwH/3/AfCJA+QIANqGZvz2mNF+g+cKAPmKisD/B84SD5wo2oZnPPmKisD//2Q==',
+  ),
+  (c) => c.charCodeAt(0),
+)
+
 interface Level {
   width: number
   height: number
   tile: number
-  compression: number // 1 none, 7 JPEG
+  compression: number // 1 none, 7 JPEG, 34712 JPEG 2000
   photometric: number // 2 RGB, 6 YCbCr
   tiles: Uint8Array[] // row-major, each a full (padded) tile
   bits?: number // per sample, default 8
@@ -303,6 +313,33 @@ describe('TiffSlideSource', () => {
     }
   })
 
+  test('keeps Philips levels padded to whole tiles, at their content size', async () => {
+    // 1024x768 base; d=4 holds 256x192 in a 256x256 image, d=8 and d=16 both
+    // fit one 128 px tile. Each would fail the aspect test.
+    const levels = [
+      rawLevel(0, 1024, 768, 128),
+      rawLevel(1, 512, 384, 128),
+      rawLevel(2, 256, 256, 128),
+      rawLevel(3, 128, 128, 128),
+      rawLevel(4, 128, 128, 128),
+    ]
+    const { source } = await open(writeTiff(levels))
+    const m = source.manifest
+    expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
+      [1024, 768, 1],
+      [512, 384, 2],
+      [256, 192, 4],
+      [128, 96, 8],
+      [64, 48, 16],
+    ])
+    const l2 = m.levels[2]
+    const tile = l2?.tiles.at(-1)
+    if (!l2 || !tile) throw new Error('missing tile')
+    expect(tile).toEqual({ x: 1, y: 1, width: 128, height: 64 })
+    const rgba = await source.fetchTileBytes(l2, tile, 'padded')
+    expect(pixel(rgba, 128, 127, 63)).toEqual([...rgbAt(2, 255, 191), 255])
+  })
+
   test('crops the bottom-right edge tile pixel-exact', async () => {
     const { source, events } = await open(writeTiff(PYRAMID))
     const level = source.manifest.levels[1]
@@ -577,15 +614,24 @@ describe('TiffSlideSource', () => {
     )
   })
 
-  test('rejects non-unsigned samples and WhiteIsZero', async () => {
+  test('rejects non-unsigned samples', async () => {
     await openRejects(
       { ...rawLevel(0, 250, 175, 128), sampleFormat: 3 },
       /SampleFormat 3 is not supported/,
     )
-    await openRejects(
-      { ...rawLevel(0, 250, 175, 128), edit: setTag(262, 0) },
-      /WhiteIsZero is not supported/,
+  })
+
+  test('shows WhiteIsZero 0 as white', async () => {
+    // Gray from the first sample: rgbAt gives 0 at x 0 and 7 at x 1.
+    const { source } = await open(
+      writeTiff([{ ...rawLevel(0, 250, 175, 128), edit: setTag(262, 0) }]),
     )
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('missing tile')
+    const rgba = await source.fetchTileBytes(level, tile, 'w')
+    expect(pixel(rgba, 128, 0, 0)).toEqual([255, 255, 255, 255])
+    expect(pixel(rgba, 128, 1, 0)).toEqual([248, 248, 248, 255])
   })
 
   test('checks Content-Range when the server exposes it', async () => {
@@ -652,4 +698,81 @@ describe('TiffSlideSource', () => {
       }),
     ).rejects.toThrow(/ignored the HTTP Range request/)
   })
+})
+
+// geotiff's decoder registry is process-wide: these run in order, after every
+// other TIFF test.
+describe('JPEG 2000 tiles', () => {
+  const tileOf = async (source: TiffSlideSource, x: number, y: number) => {
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[y * level.columns + x]
+    if (!level || !tile) throw new Error('missing tile')
+    return source.fetchTileBytes(level, tile, `${x},${y}`)
+  }
+
+  test('fail clearly until registered, then decode through dcm2niix', async () => {
+    const j2k: Level = {
+      width: 16,
+      height: 16,
+      tile: 16,
+      compression: 34712,
+      photometric: 2,
+      tiles: [J2K_TILE],
+    }
+    const { source } = await open(writeTiff([j2k]))
+    await expect(tileOf(source, 0, 0)).rejects.toThrow(
+      /JPEG 2000 \(TIFF compression 34712\) has no built-in decoder/,
+    )
+    registerDcm2niixTiffDecoders()
+    const rgba = await tileOf(source, 0, 0)
+    expect(pixel(rgba, 16, 0, 0)).toEqual([0, 0, 128, 255])
+    expect(pixel(rgba, 16, 5, 9)).toEqual([80, 144, 128, 255])
+    expect(pixel(rgba, 16, 15, 15)).toEqual([240, 240, 128, 255])
+  })
+
+  // OpenSlide samples (openslide.cs.cmu.edu/download/openslide-testdata/Aperio),
+  // read from disk when present. Expected pixels: OpenSlide 4 slidetool;
+  // dcm2niix's OpenJPEG lands within 1.
+  const dir = process.env.OPENSLIDE_APERIO ?? '/Volumes/TB5/openslide/Aperio'
+  const samples = [
+    // 33003: half-width YCbCr chroma. Tile 256, (14, 18) at (3584, 4608).
+    {
+      file: 'JP2K-33003-1.svs',
+      tile: [14, 18],
+      tileWidth: 256,
+      pixels: [
+        [100, 40, 95, 56, 119],
+        [246, 182, 244, 108, 156],
+        [200, 100, 187, 138, 167],
+      ],
+    },
+    // 33005: RGB with MCT. Tile 240, (29, 93) at (6960, 22320).
+    {
+      file: 'CMU-1-JP2K-33005.svs',
+      tile: [29, 93],
+      tileWidth: 240,
+      pixels: [
+        [90, 10, 187, 122, 160],
+        [230, 70, 189, 138, 168],
+        [140, 180, 199, 107, 147],
+      ],
+    },
+  ]
+  for (const { file, tile, tileWidth, pixels } of samples) {
+    const path = `${dir}/${file}`
+    const present = existsSync(path)
+    if (!present) console.log(`skip ${file}: not at ${path} (OPENSLIDE_APERIO)`)
+    test.skipIf(!present)(`matches OpenSlide on ${file}`, async () => {
+      registerDcm2niixTiffDecoders() // also when run alone (-t)
+      const source = await TiffSlideSource.fromGeoTIFF(await fromFile(path))
+      const rgba = await tileOf(source, tile[0] ?? 0, tile[1] ?? 0)
+      for (const [x = 0, y = 0, ...rgb] of pixels) {
+        const got = pixel(rgba, tileWidth, x, y)
+        rgb.forEach((v, c) => {
+          expect(Math.abs((got[c] ?? 0) - v)).toBeLessThanOrEqual(1)
+        })
+      }
+      source.dispose()
+    })
+  }
 })

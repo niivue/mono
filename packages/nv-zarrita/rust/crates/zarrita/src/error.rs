@@ -50,6 +50,11 @@ pub enum Error {
     #[error("Unsupported: {0}")]
     Unsupported(String),
 
+    /// Chunk bytes that fail to decode (truncated, corrupted, checksum mismatch).
+    /// Distinct from `Unsupported`, which means a valid feature this build lacks.
+    #[error("corrupt chunk data: {0}")]
+    Corrupt(String),
+
     #[error(transparent)]
     Store(#[from] zarrita_storage::StoreError),
 }

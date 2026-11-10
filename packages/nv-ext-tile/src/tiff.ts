@@ -1,22 +1,25 @@
 import type {
+  BlockedSourceOptions,
+  GeoTIFF,
+  Pool,
+  RemoteSourceOptions,
+} from '@niivue/geotiff-rs'
+import {
+  addDecoder,
+  BaseClient,
+  BaseDecoder,
+  BaseResponse,
+  fromCustomClient,
+  GeoTIFFImage,
+} from '@niivue/geotiff-rs'
+import type {
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import type {
-  BlockedSourceOptions,
-  GeoTIFF,
-  Pool,
-  RemoteSourceOptions,
-} from 'geotiff'
-import {
-  BaseClient,
-  BaseResponse,
-  fromCustomClient,
-  GeoTIFFImage,
-} from 'geotiff'
+import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
 
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
@@ -143,7 +146,7 @@ class RangeClient extends BaseClient {
   }
 }
 
-async function pyramidImages(tiff: GeoTIFF): Promise<GeoTIFFImage[]> {
+async function pyramidImages(tiff: GeoTIFF): Promise<TiffLevel[]> {
   const first = await tiff.getImage(0)
   // OME-TIFF (bioformats 6+) keeps the pyramid of each plane in SubIFDs; the
   // main IFD chain then holds channels/z/t planes, not levels.
@@ -179,38 +182,85 @@ async function pyramidImages(tiff: GeoTIFF): Promise<GeoTIFFImage[]> {
   return pyramidLevels(images)
 }
 
-// Tiled images, one per width, largest first (NVSlide.selectLevel walks levels
-// in order). A tiled image off the base aspect ratio (SVS macro between levels)
-// is not a level: it would be stretched over the slide. The tolerance is the
-// height error of rounding the level width to whole pixels.
-function pyramidLevels(images: GeoTIFFImage[]): GeoTIFFImage[] {
+// A pyramid level: its image and the slide area it holds, which is smaller
+// than the image when the writer padded it to whole tiles.
+interface TiffLevel {
+  img: GeoTIFFImage
+  width: number
+  height: number
+  downsample: number
+}
+
+const padToTiles = (n: number, downsample: number, tile: number) =>
+  Math.ceil(Math.ceil(n / downsample) / tile) * tile
+
+// `img` as a level of `base`, or null when it is not one: a tiled image off
+// the base aspect ratio (SVS macro between levels) would be stretched over the
+// slide. The tolerance is the height error of rounding the width to pixels.
+// Philips pads every level to whole tiles (91136x68096 / 128 is stored as
+// 1024x1024), so a whole-tile image is a level when some downsample's area,
+// padded to tiles, is its size on both axes. Padding hides the downsample
+// (91136 / 1024 = 89), so try powers of two from the smallest it allows that
+// no earlier (larger) image has taken: a one-tile image fits many.
+// ponytail: powers of two only, as Philips writes; parse its XML
+// DICOM_PIXEL_SPACING if another padding writer needs other factors.
+function levelOf(
+  base: GeoTIFFImage,
+  img: GeoTIFFImage,
+  taken: Map<number, TiffLevel>,
+): TiffLevel | null {
+  const baseWidth = base.getWidth()
+  const baseHeight = base.getHeight()
+  const width = img.getWidth()
+  const height = img.getHeight()
+  const aspect = baseHeight / baseWidth
+  if (Math.abs(height - aspect * width) <= 1 + aspect) {
+    return { img, width, height, downsample: baseWidth / width }
+  }
+  const tileWidth = img.getTileWidth()
+  const tileHeight = img.getTileHeight()
+  if (width % tileWidth || height % tileHeight) return null
+  for (
+    let d = 2 ** Math.ceil(Math.log2(baseWidth / width));
+    padToTiles(baseWidth, d, tileWidth) === width;
+    d *= 2
+  ) {
+    if (!taken.has(d) && padToTiles(baseHeight, d, tileHeight) === height) {
+      return {
+        img,
+        width: Math.ceil(baseWidth / d),
+        height: Math.ceil(baseHeight / d),
+        downsample: d,
+      }
+    }
+  }
+  return null
+}
+
+// Tiled images, one per downsample, finest first (NVSlide.selectLevel walks
+// levels in order). Philips-2 stores two 512-wide levels (512x1024, 512x512).
+function pyramidLevels(images: GeoTIFFImage[]): TiffLevel[] {
   const tiled = images
     .filter((img) => img.isTiled)
     .sort((a, b) => b.getWidth() - a.getWidth())
   const base = tiled[0]
   if (!base) return []
-  const aspect = base.getHeight() / base.getWidth()
-  const byWidth = new Map<number, GeoTIFFImage>()
+  const byDownsample = new Map<number, TiffLevel>()
   for (const img of tiled) {
-    const offAspect =
-      Math.abs(img.getHeight() - aspect * img.getWidth()) > 1 + aspect
-    if (!offAspect && !byWidth.has(img.getWidth())) {
-      byWidth.set(img.getWidth(), img)
+    const level = levelOf(base, img, byDownsample)
+    if (level && !byDownsample.has(level.downsample)) {
+      byDownsample.set(level.downsample, level)
     }
   }
-  return [...byWidth.values()]
+  return [...byDownsample.values()].sort((a, b) => a.downsample - b.downsample)
 }
 
-function buildTiffManifest(
-  images: GeoTIFFImage[],
-  id: string,
-): NVSlideManifest {
-  const base = images[0]
+function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
+  const base = images[0]?.img
   if (!base) throw new Error('TIFF has no tiled pyramid levels')
   let totalTiles = 0
-  const levels: NVSlideLevelManifest[] = images.map((img, index) => {
-    const width = img.getWidth()
-    const height = img.getHeight()
+  const levels: NVSlideLevelManifest[] = images.map((level, index) => {
+    const { img, width, height } = level
     const tileWidth = img.getTileWidth()
     const tileHeight = img.getTileHeight()
     // TIFF 6.0: tile width and length must be multiples of 16.
@@ -234,12 +284,8 @@ function buildTiffManifest(
       )
     }
     // readRGB returns RGB samples unscaled; only 8-bit fits the Uint8 tiles.
-    // Gray and palette are scaled to 8-bit by geotiff, except WhiteIsZero,
-    // whose conversion wraps 0 (white) to 256 = black in a Uint8Array.
+    // Gray and palette are scaled to 8-bit by geotiff-rs.
     const photometric = img.fileDirectory.getValue('PhotometricInterpretation')
-    if (photometric === 0) {
-      throw new Error(`TIFF level ${index}: WhiteIsZero is not supported`)
-    }
     if (photometric === 2 && img.getBitsPerSample(0) !== 8) {
       throw new Error(
         `TIFF level ${index}: ${img.getBitsPerSample(0)}-bit RGB is not supported (8-bit only)`,
@@ -260,7 +306,7 @@ function buildTiffManifest(
       index,
       width,
       height,
-      downsample: base.getWidth() / width,
+      downsample: level.downsample,
       tileWidth,
       tileHeight,
       columns,
@@ -325,6 +371,55 @@ function toRgba(
   return rgba
 }
 
+// geotiff-rs ships no JPEG 2000 codec. dcm2niix's OpenJPEG returns the whole
+// tile as final 8-bit RGB (or gray): it upsamples 33003's half-width chroma
+// and converts YCbCr itself, and geotiff-rs converts nothing after it.
+// ponytail: dcm2niix refuses tiles over 2048 px ('too-large'); MAX_TILE_SIZE allows 4096.
+class Dcm2niixJpeg2000Decoder extends BaseDecoder {
+  async decodeBlock(buffer: ArrayBufferLike): Promise<ArrayBufferLike> {
+    const { tileWidth, tileHeight, bitsPerSample, planarConfiguration } =
+      this.parameters
+    const frame = await sharedDcm2niixDecoders().decodeSamples(
+      new Uint8Array(buffer),
+    )
+    // geotiff-rs places 8-bit samples by the TIFF's tile size and sample count;
+    // a grey codestream in an RGB TIFF would leave it a short buffer.
+    const perPixel =
+      planarConfiguration === 2 || typeof bitsPerSample === 'number'
+        ? 1
+        : (bitsPerSample?.length ?? 1)
+    if (
+      frame.width !== tileWidth ||
+      frame.height !== tileHeight ||
+      frame.samples.byteLength !== tileWidth * tileHeight * perPixel
+    ) {
+      throw new Error(
+        `JPEG 2000 tile is ${frame.width}x${frame.height} (${frame.samples.byteLength} bytes), TIFF declares ${tileWidth}x${tileHeight} x ${perPixel} samples`,
+      )
+    }
+    return frame.samples.buffer // transferred from the worker, exactly the samples
+  }
+}
+
+/**
+ * Decode JPEG 2000 TIFF tiles (Aperio SVS 33003 and 33005, TIFF 34712) with
+ * dcm2niix's WASM worker pool, loaded on the first such tile and shared with
+ * `registerDcm2niixDecoders` from `/dicom`. Without it, such tiles fail with
+ * geotiff-rs's "no built-in decoder" error. Call it before reading tiles; it
+ * replaces any decoder registered for those compressions.
+ * Needs the optional peer dependency `@niivue/dcm2niix`.
+ */
+export function registerDcm2niixTiffDecoders(): void {
+  // preferWorker false: registrations do not reach geotiff Pool workers; the
+  // decode runs in dcm2niix's own workers.
+  addDecoder(
+    [33003, 33005, 34712],
+    async () => Dcm2niixJpeg2000Decoder,
+    undefined,
+    false,
+  )
+}
+
 function fileName(url: string): string {
   const last = url.replace(/[?#].*$/, '').replace(/^.*\//, '')
   try {
@@ -336,10 +431,10 @@ function fileName(url: string): string {
 
 /**
  * NVSlide tile source for tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio
- * SVS. geotiff parses IFDs lazily and reads one tile's bytes per request, then
- * decodes it (JPEG incl. JPEGTables, LZW, Deflate, PackBits, ZSTD, WebP, LERC)
- * and converts its photometric interpretation (YCbCr, palette, gray, CMYK) to
- * RGB. Tiles reach NVSlide as raw RGBA, cropped at the right/bottom edge.
+ * SVS. geotiff-rs parses IFDs lazily and reads one tile's bytes per request, then
+ * decodes it (JPEG incl. JPEGTables, LZW, Deflate, PackBits, ZSTD, WebP, LERC;
+ * JPEG 2000 after {@link registerDcm2niixTiffDecoders}) and converts its
+ * photometric interpretation (YCbCr, palette, gray, CMYK) to RGB. Tiles reach NVSlide as raw RGBA, cropped at the right/bottom edge.
  *
  * NVSlide.dispose() does not reach the source: call {@link dispose} too.
  */
@@ -350,7 +445,7 @@ export class TiffSlideSource implements SlideTileSource {
 
   private constructor(
     private readonly tiff: GeoTIFF,
-    private readonly images: GeoTIFFImage[],
+    private readonly images: TiffLevel[],
     id: string,
     private readonly pool: Pool | undefined,
     private readonly client: RangeClient | null,
@@ -374,7 +469,7 @@ export class TiffSlideSource implements SlideTileSource {
     }
     client.openSignal = options.signal ?? null
     let tiff: GeoTIFF
-    let images: GeoTIFFImage[]
+    let images: TiffLevel[]
     try {
       tiff = await fromCustomClient(
         client,
@@ -419,7 +514,7 @@ export class TiffSlideSource implements SlideTileSource {
 
   /** The base image's ICC profile (tag 34675, e.g. Aperio SVS); null without one. */
   async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
-    const dir = this.images[0]?.fileDirectory
+    const dir = this.images[0]?.img.fileDirectory
     // By number: geotiff 3's name lookup does not resolve 'ICCProfile'.
     if (!dir?.hasTag(34675)) return null
     signal?.throwIfAborted()
@@ -447,7 +542,7 @@ export class TiffSlideSource implements SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const img = this.images[level.index]
+    const img = this.images[level.index]?.img
     if (!img) throw new Error(`No TIFF level ${level.index}`)
     const abort = signal
       ? AbortSignal.any([signal, this.closed.signal])

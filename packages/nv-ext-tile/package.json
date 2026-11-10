@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-tile",
-  "version": "1.0.0-rc.34",
+  "version": "1.0.0-rc.46",
   "type": "module",
   "description": "Tiled and chunked image formats for NiiVue: pyramidal TIFF/OME-TIFF/SVS by HTTP Range (/tiff), DICOM-WSI folders and hosted manifests (/dicom), and OME-Zarr volumes (/zarr)",
   "exports": {
@@ -31,8 +31,8 @@
     }
   },
   "dependencies": {
-    "@niivue/zarrita": "workspace:*",
-    "geotiff": "^3.0.5"
+    "@niivue/geotiff-rs": "3.1.0-rc.0",
+    "@niivue/zarrita": "workspace:*"
   },
   "devDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",

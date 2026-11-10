@@ -1,5 +1,12 @@
 import NiiVue from '../src/index.ts'
 
+const downBtn = document.getElementById('downBtn')
+const gl1 = document.getElementById('gl1')
+const sliceType = document.getElementById('sliceType')
+const toBottomBtn = document.getElementById('toBottomBtn')
+const toTopBtn = document.getElementById('toTopBtn')
+const upBtn = document.getElementById('upBtn')
+
 const volumeSelect = document.getElementById('volumeSelect')
 
 // --- Populate the volume dropdown from the current volume list ---
@@ -10,7 +17,7 @@ function refreshVolumeList() {
     const vol = nv1.volumes[i]
     const label = vol.name || vol.url || `Volume ${i}`
     const opt = document.createElement('option')
-    opt.value = i
+    opt.value = String(i)
     opt.textContent = `[${i}] ${label}`
     volumeSelect.appendChild(opt)
   }

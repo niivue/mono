@@ -15,6 +15,7 @@ export const DATA_LOADERS = [
   'add_mesh_layer',
   'load_signal',
   'load_document',
+  'load_ome_zarr',
 ] as const
 
 export type DataLoader = (typeof DATA_LOADERS)[number]

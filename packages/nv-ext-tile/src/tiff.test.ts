@@ -314,9 +314,24 @@ describe('TiffSlideSource', () => {
   })
 
   // NewSubfileType 1: a reduced-resolution image, as Philips marks its levels.
-  const reduced = (entries: number[][]) => {
-    entries.unshift([254, 4, 1, 1])
+  const subfile = (type: number) => (entries: number[][]) => {
+    entries.unshift([254, 4, 1, type])
   }
+  const reduced = subfile(1)
+
+  test('NewSubfileType is a bit field: reduced multipage pads, a mask does not', async () => {
+    // 256x256 holds d=4 of the 1024x768 base, padded to 128 px tiles.
+    for (const [type, levels] of [
+      [3, 2],
+      [5, 1],
+    ]) {
+      const padded = { ...rawLevel(1, 256, 256, 128), edit: subfile(type ?? 0) }
+      const { source } = await open(
+        writeTiff([rawLevel(0, 1024, 768, 128), padded]),
+      )
+      expect(source.manifest.levels.length).toBe(levels ?? 0)
+    }
+  })
 
   test('a tiled macro that fits the tile padding does not replace a level', async () => {
     // The 256x256 macro, ahead of the 256x192 level, pads like d=4 would.

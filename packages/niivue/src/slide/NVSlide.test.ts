@@ -927,6 +927,23 @@ describe('NVSlide tile-cache budget', () => {
     slide.dispose()
   })
 
+  it('caps a one-row view at the tile limit (#666)', () => {
+    // 16 tiles in one row; the 525 B budget keeps 4 (the centred 6..9).
+    const slide = NVSlide.fromSource(new CountingSource(makeManifest(16)), {
+      maxCacheBytes: 700,
+    })
+    slide.setViewport({ centerX: 8 * TILE_W, centerY: TILE_H / 2, scale: 1 })
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const visible = slide.visibleTiles({
+      widthCss: 16 * TILE_W,
+      heightCss: TILE_H,
+    })
+    expect(visible.capped).toBe(true)
+    expect(visible.tiles.map(({ tile }) => tile.x)).toEqual([6, 7, 8, 9])
+    warn.mockRestore()
+    slide.dispose()
+  })
+
   it('reports no requested level when the requested one fits', () => {
     const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })

@@ -1200,10 +1200,12 @@ export class VolumeRenderer extends NVRenderer {
     // content match: a brick the new plan still contains keeps its bytes, and
     // a refocus back to this level finds them.
     entry.decoded.remap(oldToNew)
+    // A new grid makes the recorded travel meaningless (a refocused octree of
+    // the same volume keeps it), and the old uploader took its outstanding
+    // speculative reads with it.
+    if (entry.volume === vol) entry.predictor.replan(entry.plan, newPlan)
+    else entry.predictor.reset()
     entry.plan = newPlan
-    // A new grid makes the recorded travel meaningless, and the old uploader
-    // took its outstanding speculative reads with it.
-    entry.predictor.reset()
     entry.requestedThisFrame.length = 0
     entry.speculative.clear()
     entry.cubicSafe = planSupportsCubic(newPlan)

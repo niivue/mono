@@ -1,3 +1,13 @@
+## 1.0.0-rc.153 (2026-11-10)
+
+### Fixes
+
+- **niivue:** look-ahead chunk prefetch for multi-LOD octree plans ([ec9b1396](https://github.com/niivue/mono/commit/ec9b1396))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.152 (2026-11-10)
 
 ### Features

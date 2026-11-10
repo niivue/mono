@@ -1,3 +1,13 @@
+## 1.0.0-rc.33 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** show absent TIFF tiles transparent ([cebb178b](https://github.com/niivue/mono/commit/cebb178b))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.32 (2026-11-09)
 
 ### Updated Dependencies

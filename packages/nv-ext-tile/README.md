@@ -177,7 +177,7 @@ import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
 
 const source = await ZarrSlideSource.fromUrl(storeUrl) // or fromStore(store); { channel, z, t } pick a plane
 const slide = NVSlide.fromSource(source)
-if (source.window) slide.setWindow(source.window.calMin, source.window.calMax) // NVSlide does not read the window from the source
+if (source.window) slide.setChannel(0, source.window) // NVSlide does not read the window from the source
 ```
 
 Three uint8 channels show as RGB; any other store shows one channel in grey, windowed from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.

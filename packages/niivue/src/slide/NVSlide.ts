@@ -386,7 +386,7 @@ function freshStats(): NVSlideStats {
 }
 
 /** Monochrome samples to RGBA8 through `window`; MONOCHROME1 inverts after windowing. */
-// One table per window: setWindow re-windows every cached tile with the same one.
+// One table per window: setChannel re-windows every cached tile with the same one.
 let lastLut: { key: string; lut: Uint8Array } | null = null
 
 function windowLut(
@@ -1198,30 +1198,6 @@ export class NVSlide extends EventTarget {
 
   get cacheBytes(): number {
     return this._cache.bytes
-  }
-
-  /**
-   * Channel 0's window; null while both bounds show the stored range, and a
-   * non-finite bound as in {@link NVChannel}.
-   * @deprecated Read `channels[0]`.
-   */
-  get window(): NVSlideWindow | null {
-    const ch = this._channels[0]
-    return ch && (Number.isFinite(ch.calMin) || Number.isFinite(ch.calMax))
-      ? { calMin: ch.calMin, calMax: ch.calMax }
-      : null
-  }
-
-  /**
-   * Set channel 0's window (stored sample values) for every tile and level.
-   * @deprecated Use {@link setChannel}: `setChannel(0, { calMin, calMax })`.
-   */
-  setWindow(calMin: number, calMax: number): void {
-    if (!usableWindow({ calMin, calMax }))
-      throw new RangeError(
-        `NVSlide window needs finite calMin < calMax, got ${calMin}, ${calMax}`,
-      )
-    this.setChannel(0, { calMin, calMax })
   }
 
   /** The displayed channels, one per source sample plane (see {@link NVChannel}). */

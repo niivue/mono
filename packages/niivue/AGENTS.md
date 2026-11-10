@@ -86,18 +86,15 @@ which fakes the rAF stand-in and `performance.now`; `setImmediate` stays real,
 so awaiting it lets each frame's promise work land.
 
 ```bash
-bun run test:e2e         # fast tier: every spec but demo-smoke (config: playwright.config.ts)
-bun run test:e2e:full    # full suite: adds demo-smoke, every examples/*.html page (~3x the time)
-bun run test:e2e:metal   # full suite, minus any Metal-only exclusions (none at present); CI and local-metal.ts run this
-bunx nx e2e niivue       # fast tier via Nx
+bun run test:e2e         # every spec (config: playwright.config.ts)
+bun run test:e2e:metal   # same, minus any Metal-only exclusions (none at present); CI and local-metal.ts run this
+bunx nx e2e niivue       # via Nx
 ```
 
-The tiers are Playwright projects: `chromium` (fast) and `demo-smoke`; a bare
-`bunx playwright test` runs both. Use the fast tier while developing and the
-full one before pushing a change to the demos or to anything they load (run
-the demo static checks below too). A
+Demo pages are not loaded here; a change to the demos or to anything they
+load runs the demo static checks below. A
 local run on macOS uses full Chromium on the real GPU by default (needs
-`bunx playwright install chromium`): the fast tier takes about 8 s on an M3
+`bunx playwright install chromium`): the suite takes about 8 s on an M3
 Max, against more than a minute on SwiftShader. CI and other platforms stay on
 SwiftShader unless `PLAYWRIGHT_CHROMIUM_CHANNEL=chromium` is set; on a Mac,
 `PLAYWRIGHT_CHROMIUM_CHANNEL=` (empty) forces SwiftShader. A
@@ -131,8 +128,7 @@ Specs import `test` from `e2e/sharedPage.ts` (or `e2e/coverage.ts` for the
 per-test `page`), which collects Chromium V8 coverage from the shared page,
 the default `page` and pages a spec opens with `browser.newPage()`;
 `monocart-coverage-reports` maps it to `src/**/*.ts` through Vite's source maps
-(dev server or `E2E_BUNDLE=1` build). It costs about 30% of the full suite's
-time (most of it in demo-smoke), nothing when unset. Limits: page JavaScript
+(dev server or `E2E_BUNDLE=1` build). It adds to the suite's time, nothing when unset. Limits: page JavaScript
 only. Web Worker code (`workers/*.worker.ts` and what only they run) is not
 captured, nor is shader execution, nor a page opened with `context.newPage()`.
 Bun counts every line of a multi-line statement and V8 only its first, so for
@@ -195,11 +191,11 @@ Look at every changed PNG before committing it: an update accepts whatever was d
 ### Demo static checks
 
 Fast, browser-free checks on `examples/`; `pr_gate.yml` runs all of them.
-demo-smoke stays the runtime check.
 
 ```bash
 bun run typecheck           # also tsc -p examples/tsconfig.json: NiiVue API misuse in demo scripts
-bun run check:demo-assets   # literal /volumes/, /meshes/, /signals/ URLs missing from packages/dev-images
+bun run check:demos         # literal /volumes/, /meshes/, /signals/ URLs missing from packages/dev-images;
+                            # getElementById ids missing from the page that loads the script
 bun run build:examples      # broken imports (empties dist/)
 bunx nx lint niivue         # Biome; noUndeclaredVariables is on for examples/**/*.js
 ```
@@ -209,9 +205,9 @@ types DOM lookups as `any` and declares the debug handles pages put on
 `window` (`nv1`, `__bench`, ...), so only NiiVue API misuse is reported.
 `*.min.js` is listed explicitly: TS skips it in wildcards. Limits: misuse
 through untyped helper params is not caught; asset URLs built at runtime
-(`${...}`, bare file tables) are skipped; a `getElementById` id missing from
-its page is not checked (null at runtime; demo-smoke catches the throw).
-Deleting demo-smoke (#586) waits until these checks have run on CI a while.
+(`${...}`, bare file tables) are skipped; ids are checked only for literal
+`getElementById` calls in a page's own `<script src>`; errors raised only at
+runtime are not caught.
 
 Demo conventions:
 

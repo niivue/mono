@@ -71,8 +71,8 @@ jobs:
       - name: Build demos (niivue)
         run: bun run --cwd packages/niivue build:examples
 
-      - name: Demo assets exist (niivue)
-        run: bun run --cwd packages/niivue check:demo-assets
+      - name: Demo checks (niivue)
+        run: bun run --cwd packages/niivue check:demos
 
       - name: Notebook hygiene
         run: bun .github/scripts/check-notebook-hygiene.ts

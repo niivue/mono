@@ -24,7 +24,7 @@ const executablePathOverride: LaunchOptions = process.env
  * `PLAYWRIGHT_CHROMIUM_PATH` is ignored here: `channel` and `executablePath`
  * conflict.
  *
- * A local run on macOS defaults to this mode: the fast tier takes seconds on
+ * A local run on macOS defaults to this mode: the suite takes seconds on
  * the real GPU and over a minute on SwiftShader. CI and other platforms keep
  * SwiftShader unless the variable is set. Set it to an empty string
  * (`PLAYWRIGHT_CHROMIUM_CHANNEL=`) to run SwiftShader on a Mac, e.g. to check

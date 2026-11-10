@@ -4,7 +4,7 @@ import type { CoverageReportOptions } from 'monocart-coverage-reports'
 
 // Opt-in browser JS coverage (`E2E_COVERAGE=1`, `bun run test:e2e:coverage`).
 // Off by default: every hook below returns before touching the page, so the
-// fast tier is unaffected.
+// a normal run is unaffected.
 //
 // Covered pages: the worker-scoped shared page (e2e/sharedPage.ts), the
 // default per-test `page` fixture, and any page a spec opens itself with

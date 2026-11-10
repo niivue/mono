@@ -210,7 +210,6 @@ jobs:
         run: bunx --bun vite build
 
       # E2E_COVERAGE: browser JS coverage to coverage-e2e/lcov.info (e2e/coverage.ts).
-      # About +30% on the suite's time locally (most of it in demo-smoke).
       - name: Full e2e suite
         working-directory: packages/niivue
         env:

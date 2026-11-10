@@ -70,6 +70,7 @@ count says nothing about paths or planes: a level with `sparse: true` must state
   (listing order is not trusted; off-grid and duplicate tiles are dropped) into a copy;
   the caller's manifest is not changed.
 - Holes are skipped: nothing is fetched or drawn, as in OpenSlide.
+- A level grid over 2^22 tiles is refused (as nv-ext-tile's index refuses one), for any manifest and for a DZI descriptor, before anything is allocated.
 - A tile's `fileUrl` overrides the level's, for a level split across files (a concatenation).
 
 Producers: nv-ext-tile/dicom's `DicomWsiSource` (local folders) and `manifestFromIndex` (hosted

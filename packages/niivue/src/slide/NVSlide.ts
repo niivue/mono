@@ -713,8 +713,9 @@ export interface SlideSourceHost {
 }
 
 /**
- * A pluggable slide source: owns the pyramid manifest and fetches the ENCODED
- * bytes for one tile. NVSlide owns decoding (per `level.codec`), caching, stats
+ * A pluggable slide source: owns the pyramid manifest and fetches the bytes for
+ * one tile in its level's `codec`: compressed (e.g. `image/jpeg`) or raw samples
+ * (`raw-rgba` or `raw-gray`, as TIFF and Zarr return). NVSlide owns decoding, caching, stats
  * and the viewport; a source varies by FORMAT. {@link ManifestRangeSource} (the
  * default) addresses tiles as byte ranges in a per-level file (dicom-wsi-range-v1
  * and the synthetic pyramid); `DziSource` (per-tile URLs) and
@@ -725,7 +726,8 @@ export interface SlideTileSource {
   /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
   bind(host: SlideSourceHost): void
   /**
-   * Fetch the encoded bytes for one tile (NVSlide decodes per level.codec).
+   * Fetch one tile's bytes in `level.codec` (compressed or raw samples); NVSlide
+   * decodes them per that codec.
    *
    * `signal` fires when NVSlide no longer wants the tile -- the view moved on,
    * or the slide was disposed. A source that reads over the network should
@@ -1817,7 +1819,12 @@ export class NVSlide extends EventTarget {
     if (span.count > limit) {
       const spanW = lastX - firstX + 1
       const spanH = lastY - firstY + 1
-      const w = clamp(Math.floor(Math.sqrt((limit * spanW) / spanH)), 1, spanW)
+      // w <= limit keeps w * h <= limit when the span is a single row (#666).
+      const w = clamp(
+        Math.floor(Math.sqrt((limit * spanW) / spanH)),
+        1,
+        Math.min(spanW, limit),
+      )
       const h = clamp(Math.floor(limit / w), 1, spanH)
       firstX += Math.floor((spanW - w) / 2)
       firstY += Math.floor((spanH - h) / 2)

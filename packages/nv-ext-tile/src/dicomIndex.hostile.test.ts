@@ -678,6 +678,70 @@ describe('indexDicomWsi on hostile input', () => {
     ])
   })
 
+  test('a full grid with a duplicated position is sparse, so it opens, first frame winning', async () => {
+    const at = (c: number, r: number) =>
+      item(
+        sq(0x0048, 0x021a, [
+          item(
+            el(0x0048, 0x021e, 'SL', le(c, 4)),
+            el(0x0048, 0x021f, 'SL', le(r, 4)),
+          ),
+        ]),
+      )
+    const f = dicom(
+      {
+        org: null,
+        frames: el(0x0028, 0x0008, 'IS', str('5')),
+        perFrame: sq(0x5200, 0x9230, [
+          at(1, 1),
+          at(17, 1),
+          at(1, 17),
+          at(17, 17),
+          at(1, 1),
+        ]),
+      },
+      pixelData(Array.from({ length: 5 }, (_, k) => payload(k))),
+    )
+    const slide = (await indexDicomWsi([f])).slides[0] as SlideIndexSlide
+    const l0 = slide.levels[0]
+    expect([l0?.holes, l0?.duplicates, l0?.sparse]).toEqual([0, 1, true])
+    // What NVSlide's assertSingleSlidePlane passes: 5 frames on 4 tiles are not a dense grid.
+    expect(new DicomWsiSource(slide, [f]).manifest.levels[0]).toMatchObject({
+      sparse: true,
+      opticalPaths: 1,
+      focalPlanes: 1,
+    })
+    expect(await tileLabels(slide, [f])).toEqual([0, 1, 2, 3])
+  })
+
+  test('no ImageType: a stated multi-tile matrix is a level, a single-tile macro is not', async () => {
+    const volume = await indexDicomWsi([dicom({ imageType: null })])
+    expect(volume.slides.map((s) => s.levels.map((l) => l.width))).toEqual([
+      [32],
+    ])
+    const one = { frames: el(0x0028, 0x0008, 'IS', str('1')) }
+    const macro = (over: Record<string, Uint8Array | null>) =>
+      dicom({ imageType: null, ...one, ...over }, pixelData([payload(0)]))
+    for (const f of [
+      macro({
+        totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+      }),
+      macro({ totalColumns: null, totalRows: null }),
+    ])
+      expect((await indexDicomWsi([f])).slides).toEqual([])
+    // A stated type without VOLUME stays out, whatever its geometry.
+    const label = dicom({
+      imageType: el(
+        0x0008,
+        0x0008,
+        'CS',
+        str('ORIGINAL\\PRIMARY\\LABEL\\NONE'),
+      ),
+    })
+    expect((await indexDicomWsi([label])).slides).toEqual([])
+  })
+
   test('a TILED_SPARSE file with an empty NumberOfOpticalPaths still indexes', async () => {
     const pos = (c: number, r: number) =>
       item(

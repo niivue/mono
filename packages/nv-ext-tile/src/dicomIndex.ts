@@ -555,7 +555,11 @@ export function instanceGeometry<C>(
     series: str(T.series),
     frameOfReference: str(T.frameOfReference),
     container: str(T.container) || undefined,
-    volume: str(T.imageType).includes('VOLUME'),
+    // Without ImageType, a stated matrix of more than one tile is a pyramid
+    // level; a single-tile label, macro or thumbnail is not.
+    volume: str(T.imageType)
+      ? str(T.imageType).includes('VOLUME')
+      : T.totalColumns in a.number && T.totalRows in a.number && grid > 1,
     totalColumns,
     totalRows,
     tileWidth,
@@ -925,34 +929,60 @@ function joinFramesOfReference(infos: Placed[]): void {
     if (group) group.push(info)
     else groups.set(key, [info])
   }
-  const finest = (g: Placed[]) =>
-    g.reduce((a, b) =>
-      b.totalColumns * b.totalRows > a.totalColumns * a.totalRows ? b : a,
-    )
-  // NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs, so it joins.
-  const extent = (g: Placed[]) => {
-    const { totalColumns, totalRows, pixelSpacingMM: mm } = finest(g)
-    return mm && !(mm[0] === 1 && mm[1] === 1)
-      ? [totalColumns * mm[0], totalRows * mm[1]]
-      : [Number.NaN, Number.NaN]
-  }
+  const area = (i: Placed) => i.totalColumns * i.totalRows
+  // Ties go to the lower frame of reference, so input order never decides.
+  const before = (a: Placed, b: Placed) =>
+    area(b) - area(a) || (a.frameOfReference < b.frameOfReference ? -1 : 1)
+  const finest = (g: Placed[]) => g.reduce((a, b) => (before(b, a) < 0 ? b : a))
   // Relative to the larger extent, so the result does not depend on order.
   const differs = (a: number[], b: number[]) =>
     a.some((v, k) => {
       const w = b[k] as number
       return Math.abs(v - w) > 0.05 * Math.max(v, w)
     })
+  /**
+   * The extent of a group's finest instances (all of them when tied, so input
+   * order never picks one); undefined when they disagree, which joins nothing.
+   * NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs,
+   * so it joins.
+   */
+  const extent = (g: Placed[]): number[] | undefined => {
+    const top = area(finest(g))
+    const stated = g
+      .filter((i) => area(i) === top)
+      .flatMap(({ totalColumns, totalRows, pixelSpacingMM: mm }) =>
+        mm && !(mm[0] === 1 && mm[1] === 1)
+          ? [[totalColumns * mm[0], totalRows * mm[1]]]
+          : [],
+      )
+    if (stated.some((a) => stated.some((b) => differs(a, b)))) return undefined
+    return stated.length
+      ? [0, 1].map((k) => Math.min(...stated.map((e) => e[k] as number)))
+      : [Number.NaN, Number.NaN]
+  }
+  // Finest first, so each slide is anchored by its full-size level; a group
+  // that fits more than one slide (a coarse level beside two rescans) has no
+  // single owner and stays apart.
+  const sorted = [...groups.values()].sort((a, b) =>
+    before(finest(a), finest(b)),
+  )
   const joined = new Map<string, Placed[][]>()
-  for (const g of groups.values()) {
+  for (const g of sorted) {
     const { study, series, container } = g[0] as Placed
     const key = [study, series, container ?? ''].join('|')
     const list = joined.get(key) ?? []
     const mine = new Set(g.map(matrix))
-    const into = list.find(
-      (e) =>
-        !e.some((i) => mine.has(matrix(i))) && !differs(extent(g), extent(e)),
-    )
-    if (into) into.push(...g)
+    const at = extent(g)
+    const fits = list.filter((e) => {
+      const theirs = extent(e)
+      return (
+        at !== undefined &&
+        theirs !== undefined &&
+        !e.some((i) => mine.has(matrix(i))) &&
+        !differs(at, theirs)
+      )
+    })
+    if (fits.length === 1) fits[0]?.push(...g)
     else list.push(g)
     joined.set(key, list)
   }
@@ -1151,7 +1181,11 @@ function buildLevel(ks: number[], own: Member[]): SlideIndexLevel {
     frames,
     duplicates: total - placed,
     holes,
-    sparse: holes > 0 || ks.some((k) => (own[k] as Member).info.sparse),
+    // Frames past one per tile (duplicates, off-grid) are not a dense grid either.
+    sparse:
+      holes > 0 ||
+      total > placed ||
+      ks.some((k) => (own[k] as Member).info.sparse),
   }
 }
 

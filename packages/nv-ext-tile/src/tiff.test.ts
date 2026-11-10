@@ -313,6 +313,47 @@ describe('TiffSlideSource', () => {
     }
   })
 
+  // NewSubfileType 1: a reduced-resolution image, as Philips marks its levels.
+  const subfile = (type: number) => (entries: number[][]) => {
+    entries.unshift([254, 4, 1, type])
+  }
+  const reduced = subfile(1)
+
+  test('NewSubfileType is a bit field: reduced multipage pads, a mask does not', async () => {
+    // 256x256 holds d=4 of the 1024x768 base, padded to 128 px tiles.
+    for (const [type, levels] of [
+      [3, 2],
+      [5, 1],
+    ]) {
+      const padded = { ...rawLevel(1, 256, 256, 128), edit: subfile(type ?? 0) }
+      const { source } = await open(
+        writeTiff([rawLevel(0, 1024, 768, 128), padded]),
+      )
+      expect(source.manifest.levels.length).toBe(levels ?? 0)
+    }
+  })
+
+  test('a tiled macro that fits the tile padding does not replace a level', async () => {
+    // The 256x256 macro, ahead of the 256x192 level, pads like d=4 would.
+    const macro = rawLevel(3, 256, 256, 128)
+    const levels = [
+      rawLevel(0, 1024, 768, 128),
+      macro,
+      rawLevel(2, 256, 192, 128),
+    ]
+    const { source } = await open(writeTiff(levels))
+    const m = source.manifest
+    expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
+      [1024, 768, 1],
+      [256, 192, 4],
+    ])
+    const l1 = m.levels[1]
+    const tile = l1?.tiles[0]
+    if (!l1 || !tile) throw new Error('missing tile')
+    const rgba = await source.fetchTileBytes(l1, tile, 'level')
+    expect(pixel(rgba, 128, 5, 5)).toEqual([...rgbAt(2, 5, 5), 255])
+  })
+
   test('keeps Philips levels padded to whole tiles, at their content size', async () => {
     // 1024x768 base; d=4 holds 256x192 in a 256x256 image, d=8 and d=16 both
     // fit one 128 px tile. Each would fail the aspect test.
@@ -322,7 +363,7 @@ describe('TiffSlideSource', () => {
       rawLevel(2, 256, 256, 128),
       rawLevel(3, 128, 128, 128),
       rawLevel(4, 128, 128, 128),
-    ]
+    ].map((lv, i) => (i ? { ...lv, edit: reduced } : lv))
     const { source } = await open(writeTiff(levels))
     const m = source.manifest
     expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
@@ -654,6 +695,23 @@ describe('TiffSlideSource', () => {
       { ...rawLevel(0, 250, 175, 128), bits: 16 },
       /16-bit RGB is not supported/,
     )
+  })
+
+  test('rejects JPEG that geotiff-rs cannot decode at open', async () => {
+    const jpeg = (photometric: number, bits: number, compression = 7) => ({
+      ...rawLevel(0, 250, 175, 128),
+      compression,
+      photometric,
+      bits,
+    })
+    await openRejects(jpeg(6, 12), /12-bit JPEG is not supported/)
+    await openRejects(jpeg(1, 12), /12-bit JPEG is not supported/)
+    await openRejects(jpeg(6, 8, 6), /old-style JPEG is not supported/)
+    // Non-JPEG 16-bit gray and 8-bit YCbCr JPEG still open.
+    for (const lv of [{ ...jpeg(1, 16), compression: 1 }, jpeg(6, 8)]) {
+      const { source } = await open(writeTiff([lv]))
+      expect(source.manifest.levels.length).toBe(1)
+    }
   })
 
   test('stops at a self-referencing IFD chain', async () => {

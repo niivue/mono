@@ -42,6 +42,8 @@ export interface ZarrSlideUrlOptions extends ZarrSlideOptions {
 
 // As TiffSlideSource: one decoded tile stays under 64 MiB of RGBA.
 const MAX_TILE_SIZE = 4096
+// As TiffSlideSource: bounds the manifest's tile list.
+const MAX_TILES = 1 << 21
 // Each visible channel is a sample plane per tile in NVSlide's tile budget;
 // a store marking dozens active would leave room for one tile. The rest stay
 // listed, hidden, for the caller to show.
@@ -49,7 +51,10 @@ const MAX_DEFAULT_VISIBLE = 4
 // Zarr metadata stays HTTP-cacheable; chunk reads do not (see fromUrl).
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
-type Quantize = { lo: number; scale: number }
+// Stored = (v * k - lo) / span * 65535, with k = 1/2 when hi - lo overflows;
+// dividing before scaling keeps a subnormal span finite.
+// scale = 65535 / span, Infinity only for a subnormal span.
+type Quantize = { k: number; lo: number; span: number; scale: number }
 type Select = (
   y: zarr.Slice,
   x: zarr.Slice,
@@ -66,9 +71,9 @@ type Select = (
  * serve each visible channel's samples through `fetchTileSamples`, so NVSlide
  * composites them. A single channel (or `channel`) goes to NVSlide as
  * `raw-gray`, windowed like DICOM MONOCHROME. uint8/uint16 pass through; other
- * dtypes are quantized to uint16 per channel over the omero min..max, else the
- * coarsest level's data range. A store with z or t > 1 is refused unless
- * {@link ZarrSlideOptions} picks the plane.
+ * dtypes are quantized to uint16 per channel over the omero min..max, else an
+ * approximate data range sampled from the coarsest level. A store with z or
+ * t > 1 is refused unless {@link ZarrSlideOptions} picks the plane.
  */
 export class ZarrSlideSource implements SlideTileSource {
   private host: SlideSourceHost | null = null
@@ -109,8 +114,16 @@ export class ZarrSlideSource implements SlideTileSource {
       // Chromium's HTTP cache served truncated 206 bodies to concurrent
       // identical Range reads of a v3 shard (plan-tile punch list #10).
       const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
+      // While opening, the open signal cancels metadata and data-range reads.
+      const signal =
+        !source && options.signal
+          ? AbortSignal.any([request.signal, options.signal])
+          : request.signal
       const response = await fetchImpl(
-        chunk ? new Request(request, { cache: 'no-store' }) : request,
+        new Request(request, {
+          signal,
+          ...(chunk ? { cache: 'no-store' } : {}),
+        }),
       )
       // A HEAD (zarrita's shard-index probe) states the whole file's length.
       if (request.method !== 'HEAD')
@@ -123,7 +136,7 @@ export class ZarrSlideSource implements SlideTileSource {
       .replace(/[?#].*$/, '')
       .replace(/\/+$/, '')
       .replace(/^.*\//, '')
-    // ponytail: open is not cancelled on the wire, only checked after.
+    options.signal?.throwIfAborted()
     source = await ZarrSlideSource.fromStore(store, { id: name, ...options })
     options.signal?.throwIfAborted()
     return source
@@ -186,6 +199,47 @@ export class ZarrSlideSource implements SlideTileSource {
     const active = info.channels.findIndex((c) => c.active)
     const channel = options.channel ?? Math.max(0, active)
     checkOmeZarrIndex('channel', channel, src.channelCount)
+    // As for t: a coarser level may drop channels the finest level has.
+    for (const [i, lv] of levels.entries()) {
+      const count = indices.channel < 0 ? 1 : lv.shape[indices.channel]
+      // Multi-channel mode reads every channel at every level.
+      const need = rgb ? 3 : multi ? src.channelCount : channel + 1
+      if (count < need)
+        throw new Error(
+          `OME-Zarr slide: level ${i} has ${count} channels; ${rgb ? 'RGB needs 3' : multi ? `all ${need} are shown` : `channel ${channel} is out of range`}`,
+        )
+    }
+    // Before any read or tile list: chunk shapes a tile can use, level order,
+    // and a tile count the manifest can hold.
+    let tileCount = 0
+    for (const [i, arr] of src.arrays.entries()) {
+      const [tw, th] = [arr.chunks[xs], arr.chunks[ys]]
+      if (!(Number.isInteger(tw) && Number.isInteger(th) && tw > 0 && th > 0))
+        throw new Error(
+          `OME-Zarr slide: level ${i} chunk ${tw}x${th} is invalid`,
+        )
+      if (Math.max(tw, th) > MAX_TILE_SIZE)
+        throw new Error(
+          `OME-Zarr slide: level ${i} chunk ${tw}x${th} exceeds ${MAX_TILE_SIZE}`,
+        )
+      // Levels must run finest first: each no larger, and smaller in x or y.
+      const [w, h] = [arr.shape[xs], arr.shape[ys]]
+      const prev = src.arrays[i - 1]
+      if (
+        prev &&
+        !(
+          w <= prev.shape[xs] &&
+          h <= prev.shape[ys] &&
+          w * h < prev.shape[xs] * prev.shape[ys]
+        )
+      )
+        throw new Error(
+          `OME-Zarr slide: level ${i} (${w}x${h}) is not smaller than level ${i - 1}`,
+        )
+      tileCount += Math.ceil(w / tw) * Math.ceil(h / th)
+      if (tileCount > MAX_TILES)
+        throw new Error(`OME-Zarr slide: more than ${MAX_TILES} tiles`)
+    }
     const fixed = (dim: number, c: number | zarr.Slice, level: number) =>
       dim === indices.time
         ? t
@@ -210,25 +264,41 @@ export class ZarrSlideSource implements SlideTileSource {
       const range = () =>
         dataRange(src, (y, x, level) => select(y, x, level, c), ys, xs)
       let quantize: Quantize | null = null
+      let noData = false
       if (dtype !== 'uint8' && dtype !== 'uint16') {
-        const [lo, hi] =
+        let [lo, hi] =
           omero &&
           omero.min !== null &&
           omero.max !== null &&
           omero.max > omero.min
             ? [omero.min, omero.max]
             : await range()
-        quantize = { lo, scale: hi > lo ? 65535 / (hi - lo) : 0 }
+        // A flat or empty sample says nothing of the rest: centre a window on
+        // it (one step per unit, or half its magnitude for a flat float) so
+        // values outside it stay distinct.
+        if (!(hi > lo)) {
+          noData = !Number.isFinite(lo)
+          const mid = noData ? 0 : lo
+          const half =
+            !noData && dtype.startsWith('float')
+              ? Math.max(Math.abs(mid) / 2, 1)
+              : 32767.5
+          ;[lo, hi] = [mid - half, mid + half]
+        }
+        const k = Number.isFinite(hi - lo) ? 1 : 0.5
+        const span = hi * k - lo * k
+        quantize = { k, lo: lo * k, span, scale: 65535 / span }
       }
       const toStored = (v: number) =>
-        quantize ? (v - quantize.lo) * quantize.scale : v
-      // uint16 without a window: the coarsest level's range, so 12-bit data is
+        quantize ? ((v * quantize.k - quantize.lo) / quantize.span) * 65535 : v
+      // uint16 without a window: the sampled data range, so 12-bit data is
       // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
-      const [calMin, calMax] = omero
-        ? [toStored(omero.start), toStored(omero.end)]
-        : dtype === 'uint16'
-          ? await range()
-          : [0, 2 ** bitsStored - 1]
+      const [calMin, calMax] =
+        omero && !noData
+          ? [toStored(omero.start), toStored(omero.end)]
+          : dtype === 'uint16'
+            ? await range()
+            : [0, 2 ** bitsStored - 1]
       // Degenerate (constant or all-NaN data): setChannel would refuse it.
       const window: NVSlideWindow =
         calMax > calMin
@@ -275,10 +345,6 @@ export class ZarrSlideSource implements SlideTileSource {
           arr.chunks[xs],
           arr.chunks[ys],
         ]
-        if (Math.max(tileWidth, tileHeight) > MAX_TILE_SIZE)
-          throw new Error(
-            `OME-Zarr slide: level ${index} chunk ${tileWidth}x${tileHeight} exceeds ${MAX_TILE_SIZE}`,
-          )
         const columns = Math.ceil(width / tileWidth)
         const rows = Math.ceil(height / tileHeight)
         const tiles: NVSlideTileManifest[] = []
@@ -468,9 +534,23 @@ function grayInto(
 ): void {
   if (q) {
     // Clamp: a Uint16Array store wraps out-of-range values; NaN stores 0.
-    for (let y = 0, o = o0; y < h; y++)
-      for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
-        out[o] = Math.min(65535, Math.max(0, (data[i] - q.lo) * q.scale + 0.5))
+    // Multiply per pixel; divide only when a subnormal span overflows scale.
+    const { k, lo, span, scale } = q
+    if (Number.isFinite(scale)) {
+      for (let y = 0, o = o0; y < h; y++)
+        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
+          out[o] = Math.min(
+            65535,
+            Math.max(0, (data[i] * k - lo) * scale + 0.5),
+          )
+    } else {
+      for (let y = 0, o = o0; y < h; y++)
+        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
+          out[o] = Math.min(
+            65535,
+            Math.max(0, ((data[i] * k - lo) / span) * 65535 + 0.5),
+          )
+    }
   } else if (sx === 1 && sy === w) {
     out.set(data, o0)
   } else {
@@ -483,11 +563,12 @@ function asBytes(a: Uint8Array | Uint16Array): Uint8Array {
   return new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
 }
 
-// Samples at most RANGE_SPAN x RANGE_SPAN at the centre of the coarsest level,
-// so a large single-level store is not read whole on open.
-// A flat sample falls back to the whole level.
-// shortcut: a range off-centre (or outside the sample) clamps; sample spread
-// chunks if that shows up on real slides.
+// An approximate data range: a RANGE_GRID x RANGE_GRID grid of chunks spread
+// over the coarsest level, at most RANGE_SPAN square from the middle of each,
+// so open reads at most RANGE_GRID^2 chunks whatever the store's size. Values
+// outside the sample clamp; a valid omero window is preferred over this.
+const RANGE_GRID = 4
+const RANGE_READS = 4
 const RANGE_SPAN = 1024
 
 async function dataRange(
@@ -502,29 +583,46 @@ async function dataRange(
 ): Promise<[number, number]> {
   const last = src.arrays.length - 1
   const coarse = src.arrays[last]
-  const centre = (n: number) => {
-    const k = Math.min(n, RANGE_SPAN)
-    const a = Math.floor((n - k) / 2)
-    return zarr.slice(a, a + k)
+  const spread = (dim: number) => {
+    const [n, c] = [coarse.shape[dim], coarse.chunks[dim]]
+    const count = Math.ceil(n / c)
+    const starts = new Set<number>()
+    for (let i = 0; i < RANGE_GRID; i++)
+      starts.add(
+        Math.max(0, Math.round((i * (count - 1)) / (RANGE_GRID - 1))) * c,
+      )
+    return [...starts].map((a) => {
+      const len = Math.min(c, n - a)
+      const k = Math.min(len, RANGE_SPAN)
+      const b = a + Math.floor((len - k) / 2)
+      return zarr.slice(b, b + k)
+    })
   }
-  const rangeOf = async (y: zarr.Slice, x: zarr.Slice) => {
-    const { data } = await zarr.get(coarse, select(y, x, last))
-    let lo = Number.POSITIVE_INFINITY
-    let hi = Number.NEGATIVE_INFINITY
-    for (const v of data as ArrayLike<number> & Iterable<number>) {
-      if (!Number.isFinite(v)) continue
-      if (v < lo) lo = v
-      if (v > hi) hi = v
+  const cells = spread(ys).flatMap((y) => spread(xs).map((x) => [y, x]))
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  // A few reads at a time: fewer remote round trips, but each result is
+  // scanned and dropped as it lands, and a failure stops new reads.
+  let next = 0
+  let failed = false
+  const worker = async () => {
+    while (!failed && next < cells.length) {
+      const [y, x] = cells[next++]
+      try {
+        const { data } = await zarr.get(coarse, select(y, x, last))
+        for (const v of data as ArrayLike<number> & Iterable<number>) {
+          if (!Number.isFinite(v)) continue
+          if (v < lo) lo = v
+          if (v > hi) hi = v
+        }
+      } catch (e) {
+        failed = true
+        throw e
+      }
     }
-    return [lo, hi] as [number, number]
   }
-  const range = await rangeOf(
-    centre(coarse.shape[ys]),
-    centre(coarse.shape[xs]),
-  )
-  const cropped = coarse.shape[ys] > RANGE_SPAN || coarse.shape[xs] > RANGE_SPAN
-  // A flat centre (blank glass) says nothing about the rest: read it all.
-  return range[1] > range[0] || !cropped
-    ? range
-    : rangeOf(zarr.slice(null), zarr.slice(null))
+  // Reject on the first failure; reads already started (at most 3) finish
+  // unawaited, and a stalled one cannot hold the open.
+  await Promise.all(Array.from({ length: RANGE_READS }, worker))
+  return [lo, hi]
 }

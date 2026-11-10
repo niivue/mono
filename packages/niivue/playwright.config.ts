@@ -9,15 +9,11 @@ import { defaultLaunchOptions } from './e2e/launchOptions'
 // demos). Kept OUT of the hermetic unit `test` target — run with
 // `bun run test:e2e` (or `nx e2e niivue`).
 //
-// Two projects. `chromium` is every spec but the demo-page smoke test; it is
-// the fast development loop (`bun run test:e2e`). `demo-smoke` loads every
-// examples/*.html page (~80 tests, most of the suite's time) and runs only
-// in the full tier (`test:e2e:full`, `test:e2e:metal`, a bare
-// `playwright test`).
+// Demo pages are checked statically (typecheck, check:demos, build:examples),
+// not loaded here (#586).
 
 const PORT = 5273
 const BASE_URL = `http://localhost:${PORT}`
-const DEMO_SMOKE = '**/demo-smoke.spec.ts'
 
 export default defineConfig({
   testDir: './e2e',
@@ -55,12 +51,6 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: DEMO_SMOKE,
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'demo-smoke',
-      testMatch: DEMO_SMOKE,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

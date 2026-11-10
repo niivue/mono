@@ -152,7 +152,13 @@ import type { SignalFromUrlOptions } from '@/signal/NVSignal'
 import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
-import { defaultSlideChannels, isRgbSlide, NVSlide } from '@/slide/NVSlide'
+import {
+  defaultSlideChannels,
+  isRgbSlide,
+  type NVChannel,
+  NVSlide,
+  type NVSlideChannelBlend,
+} from '@/slide/NVSlide'
 import {
   isSlideDrawingSizeValid,
   SlideDrawing,
@@ -5827,6 +5833,30 @@ export default class NiiVue extends EventTarget {
     }
     this._slidePlane.levelIndex = levelIndex
     this.drawScene()
+  }
+
+  /** The slide plane's channels (see `NVSlide.channels`), or null without a plane. */
+  get slideChannels(): readonly Readonly<NVChannel>[] | null {
+    return this._slidePlane?.slide.channels ?? null
+  }
+
+  /**
+   * Update a slide plane channel (see `NVSlide.setChannel`, which throws a
+   * RangeError for a bad index, colormap or window). The slide's `change`
+   * event redraws. No-op without a plane.
+   */
+  setSlideChannel(index: number, update: Partial<NVChannel>): void {
+    this._slidePlane?.slide.setChannel(index, update)
+  }
+
+  /** How the slide plane's channels blend (see `NVSlide.channelBlend`), or null without a plane. */
+  get slideChannelBlend(): NVSlideChannelBlend | null {
+    return this._slidePlane?.slide.channelBlend ?? null
+  }
+
+  /** Set {@link slideChannelBlend}; ignored on an RGB slide. No-op without a plane. */
+  setSlideChannelBlend(blend: NVSlideChannelBlend): void {
+    this._slidePlane?.slide.setChannelBlend(blend)
   }
 
   /** Remove a slide plane registered with {@link setSlidePlane}. */

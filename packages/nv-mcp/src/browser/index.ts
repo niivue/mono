@@ -115,6 +115,8 @@ export type {
   SignalDisplay,
   SignalToLoad,
   SignalUpdate,
+  SlideChannel,
+  SlideChannelBlend,
   TilePoint,
   TransformedVolume,
   TransformInfo,

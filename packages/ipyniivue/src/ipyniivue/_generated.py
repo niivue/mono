@@ -274,6 +274,8 @@ and its volumes alive."""
     mesh_shaders = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     mesh_write_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     selected_annotation = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    slide_channel_blend = traitlets.Enum(["max", "additive"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """How the slide plane's channels blend (see `NVSlide.channelBlend`), or null without a plane."""
     version = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`."""
     volume_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -1821,6 +1823,30 @@ and its volumes alive."""
         x_frac : number
         """
         self.send({"cmd": "setSignalCursorFraction", "args": _make_args(x_frac)})
+
+    def set_slide_channel(self, index: Any, update: Any) -> None:
+        """Update a slide plane channel (see `NVSlide.setChannel`, which throws a RangeError for a bad index, colormap or window).
+
+        The slide's `change`
+        event redraws. No-op without a plane.
+
+        Parameters
+        ----------
+        index : number
+        update : Partial<NVChannel>
+        """
+        self.send({"cmd": "setSlideChannel", "args": _make_args(index, update)})
+
+    def set_slide_channel_blend(self, blend: Any) -> None:
+        """Set {@link slideChannelBlend}; ignored on an RGB slide.
+
+        No-op without a plane.
+
+        Parameters
+        ----------
+        blend : NVSlideChannelBlend
+        """
+        self.send({"cmd": "setSlideChannelBlend", "args": _make_args(blend)})
 
     def set_slide_plane(self, slide: Any, opts: Any) -> None:
         """Register an NVSlide to render as a textured plane in the 3D render view, laid into the loaded volume's world (mm) space.

@@ -105,9 +105,9 @@ by the same dcm2niix pool. Samples are 8-16-bit unsigned; manifests carry DICOM 
   samples for monochrome levels, so monochrome JPEG windows and inverts the same way. The
   read-back needs a 2D OffscreenCanvas (without one, Safari < 16.4, such tiles show
   unwindowed), and anti-fingerprinting browsers may perturb it by about 1 grey level.
-- Not in nv-mcp yet: `set_slide` drives the controller's slide plane, which has no window
-  or colour-management setter; a window or `color_management` parameter needs a NiiVue
-  accessor for the plane's slide (`setSlidePlaneWindow`, `setSlidePlaneColorManagement`) first.
+- nv-mcp: `set_slide` sets a slide plane channel's window (`cal_min`, `cal_max`) through
+  the controller's `setSlideChannel` (read back with `slideChannels`); colour management
+  is not exposed (it needs a setter such as `setSlidePlaneColorManagement`).
 - The slides demo shows a `calMin,calMax` field for monochrome slides; in OHIF,
   `niivueSetWindowLevel` sets it.
 

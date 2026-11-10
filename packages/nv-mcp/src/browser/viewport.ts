@@ -179,31 +179,15 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
           : integer(params, 'level')
       const drawing = choice(params, 'drawing', SLIDE_DRAWING)
       const maxRaster = integer(params, 'max_raster', 1)
-      let changed = false
-      // First: setChannel is all-or-nothing, so a core rejection (unknown
-      // colormap, crossed bounds) leaves the level and drawing untouched.
-      if (channel !== undefined) {
-        view.setSlideChannel?.(channel, update)
-        changed = true
-      }
-      if (blend) {
-        view.setSlideChannelBlend?.(blend)
-        changed = true
-      }
-      if (level !== undefined) {
-        if (!view.setSlidePlaneLevel)
-          throw new Error("This page's NiiVue has no slide plane.")
-        view.setSlidePlaneLevel(levelIndex)
-        changed = true
-      }
-      if (flag(params, 'clear_plane')) {
-        if (!view.clearSlidePlane)
-          throw new Error("This page's NiiVue has no slide plane.")
-        view.clearSlidePlane()
-        changed = true
-      }
-      if (drawing) {
-        const step = {
+      // Every requested op is checked before the first change, so a missing
+      // one leaves the slide as it was.
+      if (level !== undefined && !view.setSlidePlaneLevel)
+        throw new Error("This page's NiiVue has no slide plane.")
+      if (flag(params, 'clear_plane') && !view.clearSlidePlane)
+        throw new Error("This page's NiiVue has no slide plane.")
+      const step =
+        drawing &&
+        {
           create: view.createSlideDrawing
             ? () => {
                 view.createSlideDrawing?.(
@@ -218,7 +202,28 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
           undo: view.slideDrawUndo ? () => view.slideDrawUndo?.() : undefined,
           end: view.slideDrawEnd ? () => view.slideDrawEnd?.() : undefined,
         }[drawing]
-        if (!step) throw new Error("This page's NiiVue has no slide drawing.")
+      if (drawing && !step)
+        throw new Error("This page's NiiVue has no slide drawing.")
+      let changed = false
+      // First: setChannel is all-or-nothing, so a core rejection (unknown
+      // colormap, crossed bounds) leaves the level and drawing untouched.
+      if (channel !== undefined) {
+        view.setSlideChannel?.(channel, update)
+        changed = true
+      }
+      if (blend) {
+        view.setSlideChannelBlend?.(blend)
+        changed = true
+      }
+      if (level !== undefined) {
+        view.setSlidePlaneLevel?.(levelIndex)
+        changed = true
+      }
+      if (flag(params, 'clear_plane')) {
+        view.clearSlidePlane?.()
+        changed = true
+      }
+      if (step) {
         step()
         changed = true
       }

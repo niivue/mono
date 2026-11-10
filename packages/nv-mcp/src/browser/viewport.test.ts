@@ -310,6 +310,25 @@ describe('set_slide', () => {
     expect(await where_am_i({})).toMatchObject({ channelBlend: 'additive' })
   })
 
+  it('changes nothing when a requested op is missing', () => {
+    const view = baseView({
+      slideChannels: [
+        { name: 'a', colormap: 'gray', calMin: 0, calMax: 1, visible: true },
+      ],
+      setSlideChannel: mock(),
+      setSlideChannelBlend: mock(),
+    })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    expect(() =>
+      set_slide({ channel: 0, visible: false, drawing: 'create' }),
+    ).toThrow("This page's NiiVue has no slide drawing.")
+    expect(() => set_slide({ channel_blend: 'max', level: 1 })).toThrow(
+      "This page's NiiVue has no slide plane.",
+    )
+    expect(view.setSlideChannel).not.toHaveBeenCalled()
+    expect(view.setSlideChannelBlend).not.toHaveBeenCalled()
+  })
+
   it('refuses slide channels without a slide plane', () => {
     for (const view of [baseView(), baseView({ slideChannels: null })]) {
       const { set_slide } = viewportHandlers(hostOf(view))

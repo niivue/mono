@@ -348,14 +348,12 @@ test('non-finite samples do not widen the quantize range', async () => {
   ])
 })
 
-test('the data range samples the centre, not the whole single-level image', async () => {
-  // 4096 wide in 512-wide chunks: the 1024-wide centre is chunks 3 and 4.
-  const data = ramp(4096, (i) =>
-    i >= 1536 && i < 2560 ? 1000 + i - 1536 : 60000,
-  )
+test('the data range samples a bounded grid of chunks, not the whole image', async () => {
+  // 1 x 8192 in 512-wide chunks (16): a grid of 4 spread chunks is read.
+  const data = ramp(8192, (i) => (i < 512 ? 100 + i : 50))
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },
-    [{ shape: [1, 4096], chunks: [1, 512], data }],
+    [{ shape: [1, 8192], chunks: [1, 512], data }],
     'uint16',
   )
   const read: string[] = []
@@ -366,25 +364,119 @@ test('the data range samples the centre, not the whole single-level image', asyn
     },
   }
   const source = await ZarrSlideSource.fromStore(spy)
-  expect(source.window).toEqual({ calMin: 1000, calMax: 2023 })
+  // Chunk 0 is 512 wide, under RANGE_SPAN, so it is read whole.
+  expect(source.window).toEqual({ calMin: 50, calMax: 611 })
   expect(read.filter((k) => k.includes('/c/')).sort()).toEqual([
-    '/0/c/0/3',
-    '/0/c/0/4',
+    '/0/c/0/0',
+    '/0/c/0/10',
+    '/0/c/0/15',
+    '/0/c/0/5',
   ])
 })
 
-test('a flat centre sample falls back to the whole level', async () => {
-  // int16, 4096 wide: zero at the centre, 100 in the leftmost chunk.
-  const data = Int16Array.from({ length: 4096 }, (_, i) => (i < 512 ? 100 : 0))
+test('the data range reads a few chunks at a time and stops after a failure', async () => {
+  // 64 x 64 in 16 x 16 chunks: the 4 x 4 sample grid covers all 16 chunks.
   const store = await writeImage(
     { multiscales: multiscale(['y', 'x'], 1) },
-    [{ shape: [1, 4096], chunks: [1, 512], data }],
-    'int16',
+    [{ shape: [64, 64], chunks: [16, 16], data: ramp(4096, (i) => i) }],
+    'uint16',
+  )
+  const isChunk = (k: string) => k.includes('/c/')
+  let inFlight = 0
+  let peak = 0
+  let reads = 0
+  const spy = (failKey?: string) => ({
+    get: async (key: string) => {
+      if (!isChunk(key)) return store.get(key)
+      reads++
+      peak = Math.max(peak, ++inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight--
+      if (key === failKey) throw new Error('chunk read failed')
+      return store.get(key)
+    },
+  })
+  const ok = await ZarrSlideSource.fromStore(spy())
+  expect(ok.window).toEqual({ calMin: 0, calMax: 4095 })
+  expect(reads).toBe(16)
+  expect(peak).toBe(4)
+  reads = 0
+  await expect(ZarrSlideSource.fromStore(spy('/0/c/0/0'))).rejects.toThrow(
+    'chunk read failed',
+  )
+  // The failing read was among the first 4; the other 3 finish, none start.
+  expect(reads).toBe(4)
+  // A failure rejects the open even while another read never settles.
+  const stalled = {
+    get: async (key: string) => {
+      if (!isChunk(key)) return store.get(key)
+      if (key === '/0/c/0/0') throw new Error('chunk read failed')
+      return new Promise<Uint8Array>(() => {})
+    },
+  }
+  await expect(ZarrSlideSource.fromStore(stalled)).rejects.toThrow(
+    'chunk read failed',
+  )
+})
+
+test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {
+  // 1 x 8192 in 512-wide chunks: the sampled chunks (0, 5, 10, 15) hold
+  // `fill`; unsampled chunk 1 holds `values` in turn.
+  const cases = [
+    { dtype: 'int32', fill: 7, values: [0, 7, 14] },
+    { dtype: 'float32', fill: 7, values: [0, 7, 14] },
+    { dtype: 'float32', fill: Number.NaN, values: [0, 7, 14] },
+    { dtype: 'float64', fill: 1e308, values: [0.5e308, 1e308, 1.5e308] },
+    // Sampled range -1e308..1e308: hi - lo overflows.
+    { dtype: 'float64', fill: [-1e308, 1e308], values: [-5e307, 0, 5e307] },
+    // Sampled range 0..1e-323: 65535 / (hi - lo) overflows.
+    { dtype: 'float64', fill: [0, 1e-323], values: [0, 5e-324, 1e-323] },
+  ] as const
+  for (const { dtype, fill, values } of cases) {
+    // A pair fill alternates its two values across the sampled chunks.
+    const all = Array.from({ length: 8192 }, (_, i) =>
+      i >= 512 && i < 1024
+        ? values[i % 3]
+        : typeof fill === 'number'
+          ? fill
+          : fill[i % 2],
+    )
+    const data =
+      dtype === 'int32'
+        ? Int32Array.from(all)
+        : dtype === 'float32'
+          ? Float32Array.from(all)
+          : Float64Array.from(all)
+    const store = await writeImage(
+      { multiscales: multiscale(['y', 'x'], 1) },
+      [{ shape: [1, 8192], chunks: [1, 512], data }],
+      dtype,
+    )
+    const source = await ZarrSlideSource.fromStore(store)
+    const [l0] = source.manifest.levels
+    const tile = l0.tiles[1]
+    if (!tile) throw new Error('no tile')
+    const out = u16(await source.fetchTileBytes(l0, tile, 't'))
+    expect([dtype, fill, new Set(out.slice(0, 3)).size]).toEqual([
+      dtype,
+      fill,
+      3,
+    ])
+  }
+})
+
+test('a wide chunk is sampled from its middle, at most RANGE_SPAN wide', async () => {
+  // One 4096-wide chunk: values outside the middle 1024 are not seen.
+  const data = ramp(4096, (i) =>
+    i >= 1536 && i < 2560 ? 1000 + i - 1536 : 60000,
+  )
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [{ shape: [1, 4096], chunks: [1, 4096], data }],
+    'uint16',
   )
   const source = await ZarrSlideSource.fromStore(store)
-  const [l0] = source.manifest.levels
-  const [first] = await tileBytes(source, l0)
-  expect(Math.max(...u16(first))).toBe(65535)
+  expect(source.window).toEqual({ calMin: 1000, calMax: 2023 })
 })
 
 test('a timepoint missing from a coarser level is refused on open', async () => {
@@ -400,6 +492,123 @@ test('a timepoint missing from a coarser level is refused on open', async () => 
     'level 1 has 1 timepoints; t 1 is out of range',
   )
   await ZarrSlideSource.fromStore(store, { t: 0 })
+})
+
+test('a channel missing from a coarser level is refused on open', async () => {
+  const grey = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 2) },
+    [
+      { shape: [2, 2, 2], chunks: [1, 2, 2], data: ramp(8, (i) => i) },
+      { shape: [1, 1, 1], chunks: [1, 1, 1], data: ramp(1, () => 0) },
+    ],
+    'uint16',
+  )
+  await expect(ZarrSlideSource.fromStore(grey, { channel: 1 })).rejects.toThrow(
+    'level 1 has 1 channels; channel 1 is out of range',
+  )
+  await ZarrSlideSource.fromStore(grey, { channel: 0 })
+  const rgb = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 2) },
+    [
+      { shape: [3, 2, 2], chunks: [1, 2, 2], data: new Uint8Array(12) },
+      { shape: [1, 1, 1], chunks: [1, 1, 1], data: new Uint8Array(1) },
+    ],
+    'uint8',
+  )
+  await expect(ZarrSlideSource.fromStore(rgb)).rejects.toThrow(
+    'level 1 has 1 channels; RGB needs 3',
+  )
+})
+
+test('invalid chunk shapes and too many tiles are refused before any read', async () => {
+  // Metadata only: 1 x 2^21 + 1 one-pixel chunks, never written.
+  const store: Store = new Map()
+  const root = zarr.root(store)
+  await zarr.create(root, {
+    attributes: {
+      ome: { version: '0.5', multiscales: multiscale(['y', 'x'], 1) },
+    },
+  })
+  await zarr.create(root.resolve('0'), {
+    shape: [1, 2 ** 21 + 1],
+    chunkShape: [1, 1],
+    dtype: 'uint8',
+  })
+  await expect(ZarrSlideSource.fromStore(store)).rejects.toThrow(
+    'more than 2097152 tiles',
+  )
+  // A zero chunk width would loop forever building the tile list.
+  const meta = JSON.parse(new TextDecoder().decode(store.get('/0/zarr.json')))
+  meta.shape = [1, 4]
+  meta.chunk_grid.configuration.chunk_shape = [1, 0]
+  store.set('/0/zarr.json', new TextEncoder().encode(JSON.stringify(meta)))
+  await expect(ZarrSlideSource.fromStore(store)).rejects.toThrow(
+    'level 0 chunk 0x1 is invalid',
+  )
+})
+
+test('levels not listed finest first are refused', async () => {
+  const level = (n: number) => ({
+    shape: [n, n],
+    chunks: [n, n],
+    data: new Uint8Array(n * n),
+  })
+  const open = async (sizes: number[]) =>
+    ZarrSlideSource.fromStore(
+      await writeImage(
+        { multiscales: multiscale(['y', 'x'], sizes.length) },
+        sizes.map(level),
+        'uint8',
+      ),
+    )
+  await expect(open([2, 4])).rejects.toThrow(
+    'level 1 (4x4) is not smaller than level 0',
+  )
+  await expect(open([4, 4])).rejects.toThrow('level 1 (4x4) is not smaller')
+  expect((await open([4, 2])).manifest.levels[1].downsample).toBe(2)
+})
+
+test('aborting fromUrl cancels its requests; tile reads after open keep their own signal', async () => {
+  const store = await writeImage(
+    { multiscales: multiscale(['y', 'x'], 1) },
+    [{ shape: [1, 2], chunks: [1, 2], data: Uint8Array.from([1, 2]) }],
+    'uint8',
+  )
+  const { fetchImpl } = fakeFetch((p) => store.get(p.slice('/s.zarr'.length)))
+  const calls: Request[] = []
+  const spy = (r: Request) => {
+    calls.push(r)
+    return fetchImpl(r)
+  }
+  await expect(
+    ZarrSlideSource.fromUrl('http://h/s.zarr', {
+      fetch: spy,
+      signal: AbortSignal.abort(),
+    }),
+  ).rejects.toThrow()
+  expect(calls.length).toBe(0)
+  // Abort during open: the first request already carries an aborted signal.
+  const ac = new AbortController()
+  await expect(
+    ZarrSlideSource.fromUrl('http://h/s.zarr', {
+      fetch: (r) => {
+        ac.abort()
+        calls.push(r)
+        return fetchImpl(r)
+      },
+      signal: ac.signal,
+    }),
+  ).rejects.toThrow()
+  expect(calls[0]?.signal.aborted).toBe(true)
+  // Aborting after open leaves tile reads alone.
+  const late = new AbortController()
+  const source = await ZarrSlideSource.fromUrl('http://h/s.zarr', {
+    fetch: spy,
+    signal: late.signal,
+  })
+  late.abort()
+  const [l0] = source.manifest.levels
+  expect(Array.from((await tileBytes(source, l0))[0])).toEqual([1, 2])
 })
 
 test('an aborted tile is reported aborted, not failed', async () => {

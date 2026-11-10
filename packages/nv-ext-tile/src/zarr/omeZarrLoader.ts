@@ -320,7 +320,8 @@ export async function fetchOmeZarr(
 /**
  * A FetchStore that reads a successful HTML answer as a missing key: a dev server's or
  * SPA host's fallback page (200, for any path) is never store data, and zarrita
- * only falls back from v3 to v2 metadata on a missing key.
+ * only falls back from v3 to v2 metadata on a missing key. A ranged read answered
+ * 200 (the whole file) is rejected.
  */
 export function omeZarrFetchStore(
   url: string,
@@ -331,9 +332,18 @@ export function omeZarrFetchStore(
       const response = await fetchImpl(request)
       // Only a success: an HTML error page (502, 429, 403) must still throw.
       const type = response.headers.get('content-type')?.toLowerCase()
-      if (!response.ok || !type?.startsWith('text/html')) return response
-      await response.body?.cancel()
-      return new Response(null, { status: 404 })
+      if (response.ok && type?.startsWith('text/html')) {
+        await response.body?.cancel()
+        return new Response(null, { status: 404 })
+      }
+      // A server that ignores Range would send the whole file (a shard) per read.
+      if (response.status === 200 && request.headers.has('range')) {
+        await response.body?.cancel()
+        throw new Error(
+          `OME-Zarr: ${request.url} ignored the Range request (200, not 206)`,
+        )
+      }
+      return response
     },
   })
 }

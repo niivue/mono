@@ -1,3 +1,13 @@
+## 1.0.0-rc.152 (2026-11-10)
+
+### Features
+
+- **niivue:** annotationChanged carries added/updated/removed ids ([#125](https://github.com/niivue/mono/pull/125))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.151 (2026-11-10)
 
 ### Features

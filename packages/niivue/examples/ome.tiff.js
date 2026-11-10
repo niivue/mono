@@ -90,6 +90,11 @@ const SAMPLES = [
   },
 ]
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 // Optional `?backend=webgl2` (or webgpu) picks the initial backend; the
 // checkbox mirrors it and can still switch at runtime.
 const backend =
@@ -103,6 +108,7 @@ webgpuCheck.onchange = async function () {
 
 const nv1 = new NiiVue({
   backend,
+  isAntiAlias: !isWebKit,
   backgroundColor: [0, 0, 0, 1],
   sliceType: SLICE_TYPE.MULTIPLANAR,
   // The clip and zoom controls act on the 3D render, so keep its tile in the

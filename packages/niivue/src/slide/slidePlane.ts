@@ -12,9 +12,12 @@ export type Vec3 = [number, number, number]
 export interface SlidePlaneTile {
   /** Cache key matching NVSlide.tileKey: `L<index>/<x>/<y>`. */
   key: string
-  /** Tile grid column / row in its level. */
+  /** Level index, tile grid column / row in it, and tile size in level px. */
+  level: number
   col: number
   row: number
+  width: number
+  height: number
   /** World-mm quad corners: top-left, top-right, bottom-left, bottom-right
    * (in base-pixel order before transform). */
   corners: [Vec3, Vec3, Vec3, Vec3]
@@ -31,13 +34,32 @@ function apply(m: readonly number[], px: number, py: number): Vec3 {
 
 /**
  * A plane quad's 4 vertices, interleaved [pos.xyz, uv.xy] in TRIANGLE_STRIP
- * order TL, TR, BL, BR; UV origin top-left.
+ * order TL, TR, BL, BR; UV origin top-left, inset to the interior of a
+ * `gutter`-sized tile texture when given.
  */
 export function cornerQuad(
   corners: SlidePlaneTile['corners'],
+  gutter?: { width: number; height: number },
 ): Float32Array<ArrayBuffer> {
   const [tl, tr, bl, br] = corners
-  return new Float32Array([...tl, 0, 0, ...tr, 1, 0, ...bl, 0, 1, ...br, 1, 1])
+  // A tile texture's interior inside its 1-texel gutter (slide/tileGutter.ts).
+  const u0 = gutter ? 1 / (gutter.width + 2) : 0
+  const v0 = gutter ? 1 / (gutter.height + 2) : 0
+  const [u1, v1] = [1 - u0, 1 - v0]
+  return new Float32Array([
+    ...tl,
+    u0,
+    v0,
+    ...tr,
+    u1,
+    v0,
+    ...bl,
+    u0,
+    v1,
+    ...br,
+    u1,
+    v1,
+  ])
 }
 
 /**
@@ -73,8 +95,11 @@ export function slidePlaneTiles(
     const baseH = tile.height * dsY
     out.push({
       key: `L${level.index}/${tile.x}/${tile.y}`,
+      level: level.index,
       col: tile.x,
       row: tile.y,
+      width: tile.width,
+      height: tile.height,
       corners: [
         apply(pixelToWorld, baseX, baseY),
         apply(pixelToWorld, baseX + baseW, baseY),

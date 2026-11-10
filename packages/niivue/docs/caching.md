@@ -54,7 +54,7 @@ hole; the worst case is coarse data.
 | Tier | Holds | Where | Default budget |
 |---|---|---|---|
 | Decoded tiles | `ImageBitmap` per tile, accounted in decoded RGBA bytes | `NVSlideTileCache` (`slide/NVSlide.ts`) | 96 MB; dandi-demo raises it to 192 MB |
-| GPU tiles | One 2D texture per tile key | `TileTextureCache` (`slide/tileTextureCache.ts`) | 128 MB per renderer |
+| GPU tiles | One 2D texture per tile key, with a 1-texel gutter from its neighbours (`slide/tileGutter.ts`) | `TileTextureCache` (`slide/tileTextureCache.ts`) | 128 MB per renderer, gutter counted |
 
 The slide path already has the queue discipline the volume path lacks: the
 load queue drains LIFO (`pop`, not `shift`) and every dequeued tile is checked

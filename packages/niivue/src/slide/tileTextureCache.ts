@@ -57,6 +57,11 @@ export class TileTextureCache<T> {
     return entry.value
   }
 
+  /** Look up a texture without marking it used (any source). */
+  peek(key: string): T | undefined {
+    return this._entries.get(key)?.value
+  }
+
   /** Register a texture (destroying any previous entry under the same key). */
   set(key: string, value: T, bytes: number, source?: object): void {
     this.delete(key)

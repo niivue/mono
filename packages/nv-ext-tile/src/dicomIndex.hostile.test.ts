@@ -678,6 +678,42 @@ describe('indexDicomWsi on hostile input', () => {
     ])
   })
 
+  test('a full grid with a duplicated position is sparse, so it opens, first frame winning', async () => {
+    const at = (c: number, r: number) =>
+      item(
+        sq(0x0048, 0x021a, [
+          item(
+            el(0x0048, 0x021e, 'SL', le(c, 4)),
+            el(0x0048, 0x021f, 'SL', le(r, 4)),
+          ),
+        ]),
+      )
+    const f = dicom(
+      {
+        org: null,
+        frames: el(0x0028, 0x0008, 'IS', str('5')),
+        perFrame: sq(0x5200, 0x9230, [
+          at(1, 1),
+          at(17, 1),
+          at(1, 17),
+          at(17, 17),
+          at(1, 1),
+        ]),
+      },
+      pixelData(Array.from({ length: 5 }, (_, k) => payload(k))),
+    )
+    const slide = (await indexDicomWsi([f])).slides[0] as SlideIndexSlide
+    const l0 = slide.levels[0]
+    expect([l0?.holes, l0?.duplicates, l0?.sparse]).toEqual([0, 1, true])
+    // What NVSlide's assertSingleSlidePlane passes: 5 frames on 4 tiles are not a dense grid.
+    expect(new DicomWsiSource(slide, [f]).manifest.levels[0]).toMatchObject({
+      sparse: true,
+      opticalPaths: 1,
+      focalPlanes: 1,
+    })
+    expect(await tileLabels(slide, [f])).toEqual([0, 1, 2, 3])
+  })
+
   test('a TILED_SPARSE file with an empty NumberOfOpticalPaths still indexes', async () => {
     const pos = (c: number, r: number) =>
       item(

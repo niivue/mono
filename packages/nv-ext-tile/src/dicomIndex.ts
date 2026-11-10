@@ -1158,7 +1158,11 @@ function buildLevel(ks: number[], own: Member[]): SlideIndexLevel {
     frames,
     duplicates: total - placed,
     holes,
-    sparse: holes > 0 || ks.some((k) => (own[k] as Member).info.sparse),
+    // Frames past one per tile (duplicates, off-grid) are not a dense grid either.
+    sparse:
+      holes > 0 ||
+      total > placed ||
+      ks.some((k) => (own[k] as Member).info.sparse),
   }
 }
 

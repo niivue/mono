@@ -299,6 +299,7 @@ describe('indexDicomWsiMetadata', () => {
     // Not VOLUME, so placed but never grouped: only the budget is exercised.
     const big = (sop: string) => ({
       SOPInstanceUID: sop,
+      ImageType: 'ORIGINAL\\PRIMARY\\LABEL\\NONE',
       Rows: 1,
       Columns: 1,
       TotalPixelMatrixColumns: 2048,

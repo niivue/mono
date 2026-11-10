@@ -555,7 +555,11 @@ export function instanceGeometry<C>(
     series: str(T.series),
     frameOfReference: str(T.frameOfReference),
     container: str(T.container) || undefined,
-    volume: str(T.imageType).includes('VOLUME'),
+    // Without ImageType, a stated matrix of more than one tile is a pyramid
+    // level; a single-tile label, macro or thumbnail is not.
+    volume: str(T.imageType)
+      ? str(T.imageType).includes('VOLUME')
+      : T.totalColumns in a.number && T.totalRows in a.number && grid > 1,
     totalColumns,
     totalRows,
     tileWidth,

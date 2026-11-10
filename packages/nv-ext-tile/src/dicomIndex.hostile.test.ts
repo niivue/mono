@@ -714,6 +714,34 @@ describe('indexDicomWsi on hostile input', () => {
     expect(await tileLabels(slide, [f])).toEqual([0, 1, 2, 3])
   })
 
+  test('no ImageType: a stated multi-tile matrix is a level, a single-tile macro is not', async () => {
+    const volume = await indexDicomWsi([dicom({ imageType: null })])
+    expect(volume.slides.map((s) => s.levels.map((l) => l.width))).toEqual([
+      [32],
+    ])
+    const one = { frames: el(0x0028, 0x0008, 'IS', str('1')) }
+    const macro = (over: Record<string, Uint8Array | null>) =>
+      dicom({ imageType: null, ...one, ...over }, pixelData([payload(0)]))
+    for (const f of [
+      macro({
+        totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
+      }),
+      macro({ totalColumns: null, totalRows: null }),
+    ])
+      expect((await indexDicomWsi([f])).slides).toEqual([])
+    // A stated type without VOLUME stays out, whatever its geometry.
+    const label = dicom({
+      imageType: el(
+        0x0008,
+        0x0008,
+        'CS',
+        str('ORIGINAL\\PRIMARY\\LABEL\\NONE'),
+      ),
+    })
+    expect((await indexDicomWsi([label])).slides).toEqual([])
+  })
+
   test('a TILED_SPARSE file with an empty NumberOfOpticalPaths still indexes', async () => {
     const pos = (c: number, r: number) =>
       item(

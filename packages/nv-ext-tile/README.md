@@ -110,7 +110,7 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
   as OpenSlide shows them.
 - Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
-  the `webkitdirectory` input in the demo):
+  a `webkitdirectory` input):
 
   | Set | Frames | Holes | Bun | Chrome |
   |---|---|---|---|---|

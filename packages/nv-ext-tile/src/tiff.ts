@@ -1,22 +1,25 @@
 import type {
+  BlockedSourceOptions,
+  GeoTIFF,
+  Pool,
+  RemoteSourceOptions,
+} from '@niivue/geotiff-rs'
+import {
+  addDecoder,
+  BaseClient,
+  BaseDecoder,
+  BaseResponse,
+  fromCustomClient,
+  GeoTIFFImage,
+} from '@niivue/geotiff-rs'
+import type {
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import type {
-  BlockedSourceOptions,
-  GeoTIFF,
-  Pool,
-  RemoteSourceOptions,
-} from 'geotiff'
-import {
-  BaseClient,
-  BaseResponse,
-  fromCustomClient,
-  GeoTIFFImage,
-} from 'geotiff'
+import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
 
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
@@ -234,12 +237,8 @@ function buildTiffManifest(
       )
     }
     // readRGB returns RGB samples unscaled; only 8-bit fits the Uint8 tiles.
-    // Gray and palette are scaled to 8-bit by geotiff, except WhiteIsZero,
-    // whose conversion wraps 0 (white) to 256 = black in a Uint8Array.
+    // Gray and palette are scaled to 8-bit by geotiff-rs.
     const photometric = img.fileDirectory.getValue('PhotometricInterpretation')
-    if (photometric === 0) {
-      throw new Error(`TIFF level ${index}: WhiteIsZero is not supported`)
-    }
     if (photometric === 2 && img.getBitsPerSample(0) !== 8) {
       throw new Error(
         `TIFF level ${index}: ${img.getBitsPerSample(0)}-bit RGB is not supported (8-bit only)`,
@@ -325,6 +324,55 @@ function toRgba(
   return rgba
 }
 
+// geotiff-rs ships no JPEG 2000 codec. dcm2niix's OpenJPEG returns the whole
+// tile as final 8-bit RGB (or gray): it upsamples 33003's half-width chroma
+// and converts YCbCr itself, and geotiff-rs converts nothing after it.
+// ponytail: dcm2niix refuses tiles over 2048 px ('too-large'); MAX_TILE_SIZE allows 4096.
+class Dcm2niixJpeg2000Decoder extends BaseDecoder {
+  async decodeBlock(buffer: ArrayBufferLike): Promise<ArrayBufferLike> {
+    const { tileWidth, tileHeight, bitsPerSample, planarConfiguration } =
+      this.parameters
+    const frame = await sharedDcm2niixDecoders().decodeSamples(
+      new Uint8Array(buffer),
+    )
+    // geotiff-rs places 8-bit samples by the TIFF's tile size and sample count;
+    // a grey codestream in an RGB TIFF would leave it a short buffer.
+    const perPixel =
+      planarConfiguration === 2 || typeof bitsPerSample === 'number'
+        ? 1
+        : (bitsPerSample?.length ?? 1)
+    if (
+      frame.width !== tileWidth ||
+      frame.height !== tileHeight ||
+      frame.samples.byteLength !== tileWidth * tileHeight * perPixel
+    ) {
+      throw new Error(
+        `JPEG 2000 tile is ${frame.width}x${frame.height} (${frame.samples.byteLength} bytes), TIFF declares ${tileWidth}x${tileHeight} x ${perPixel} samples`,
+      )
+    }
+    return frame.samples.buffer // transferred from the worker, exactly the samples
+  }
+}
+
+/**
+ * Decode JPEG 2000 TIFF tiles (Aperio SVS 33003 and 33005, TIFF 34712) with
+ * dcm2niix's WASM worker pool, loaded on the first such tile and shared with
+ * `registerDcm2niixDecoders` from `/dicom`. Without it, such tiles fail with
+ * geotiff-rs's "no built-in decoder" error. Call it before reading tiles; it
+ * replaces any decoder registered for those compressions.
+ * Needs the optional peer dependency `@niivue/dcm2niix`.
+ */
+export function registerDcm2niixTiffDecoders(): void {
+  // preferWorker false: registrations do not reach geotiff Pool workers; the
+  // decode runs in dcm2niix's own workers.
+  addDecoder(
+    [33003, 33005, 34712],
+    async () => Dcm2niixJpeg2000Decoder,
+    undefined,
+    false,
+  )
+}
+
 function fileName(url: string): string {
   const last = url.replace(/[?#].*$/, '').replace(/^.*\//, '')
   try {
@@ -336,10 +384,10 @@ function fileName(url: string): string {
 
 /**
  * NVSlide tile source for tiled/pyramidal TIFF, BigTIFF, OME-TIFF and Aperio
- * SVS. geotiff parses IFDs lazily and reads one tile's bytes per request, then
- * decodes it (JPEG incl. JPEGTables, LZW, Deflate, PackBits, ZSTD, WebP, LERC)
- * and converts its photometric interpretation (YCbCr, palette, gray, CMYK) to
- * RGB. Tiles reach NVSlide as raw RGBA, cropped at the right/bottom edge.
+ * SVS. geotiff-rs parses IFDs lazily and reads one tile's bytes per request, then
+ * decodes it (JPEG incl. JPEGTables, LZW, Deflate, PackBits, ZSTD, WebP, LERC;
+ * JPEG 2000 after {@link registerDcm2niixTiffDecoders}) and converts its
+ * photometric interpretation (YCbCr, palette, gray, CMYK) to RGB. Tiles reach NVSlide as raw RGBA, cropped at the right/bottom edge.
  *
  * NVSlide.dispose() does not reach the source: call {@link dispose} too.
  */

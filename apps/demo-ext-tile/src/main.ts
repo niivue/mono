@@ -1,3 +1,4 @@
+import { fromBlob, Pool } from '@niivue/geotiff-rs'
 import type { NVSlideScreen, SlideTileSource } from '@niivue/niivue'
 import { NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
 import {
@@ -6,8 +7,10 @@ import {
   registerDcm2niixDecoders,
   type SlideIndex,
 } from '@niivue/nv-ext-tile/dicom'
-import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
-import { fromBlob, Pool } from 'geotiff'
+import {
+  registerDcm2niixTiffDecoders,
+  TiffSlideSource,
+} from '@niivue/nv-ext-tile/tiff'
 
 let canvas = document.getElementById('canvas') as HTMLCanvasElement
 const filesInput = document.getElementById('files') as HTMLInputElement
@@ -276,8 +279,10 @@ async function open(
 }
 
 // DICOM-WSI files: index the headers (no pixel data), list the slides, open one.
-// JPEG 2000 and JPEG-LS tiles decode in dcm2niix's WASM workers.
+// JPEG 2000 and JPEG-LS tiles decode in dcm2niix's WASM workers, for DICOM-WSI
+// and for JPEG 2000 TIFF (Aperio 33003/33005) alike.
 registerDcm2niixDecoders()
+registerDcm2niixTiffDecoders()
 const SYNTAX: Record<string, string> = {
   '1.2.840.10008.1.2.4.50': 'JPEG',
   '1.2.840.10008.1.2.4.51': 'JPEG',
@@ -387,8 +392,7 @@ slideSelect.addEventListener('change', () =>
 
 // OpenSlide test slides mirrored on Hugging Face (pinned commit; Range + CORS
 // after a redirect to its CDN). Only single-file TIFF-based formats stream;
-// the JPEG 2000 SVS files (compression 33003/33005) are left out because
-// upstream geotiff cannot decode them.
+// the JPEG 2000 SVS files (compression 33003/33005) decode through dcm2niix.
 const HF =
   'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/cfff0272e4e7cdbc324863f15f55edd8a848acfb/openslide/'
 const tiffOption = (path: string, note: string) =>
@@ -418,6 +422,9 @@ sourceSelect.replaceChildren(
     tiffOption('Aperio/CMU-1.svs', '178 MB, ICC'),
     tiffOption('Aperio/CMU-2.svs', '391 MB'),
     tiffOption('Aperio/CMU-3.svs', '254 MB'),
+    tiffOption('Aperio/CMU-1-JP2K-33005.svs', '133 MB, JPEG 2000 RGB'),
+    tiffOption('Aperio/JP2K-33003-1.svs', '64 MB, JPEG 2000 YCbCr'),
+    tiffOption('Aperio/JP2K-33003-2.svs', '289 MB, JPEG 2000 YCbCr'),
     tiffOption('Generic-TIFF/CMU-1.tiff', '204 MB, 9 levels'),
     tiffOption('Huron/Huron-1.tif', '36 MB'),
     tiffOption('Huron/Huron-1-40x.tif', '116 MB'),

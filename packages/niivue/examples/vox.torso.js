@@ -2,6 +2,13 @@ import { cortex, shiny } from '../src/assets/matcaps'
 import NiiVue from '../src/index.ts'
 import { SHOW_RENDER } from '../src/NVConstants.ts'
 
+const clipSelect = document.getElementById('clipSelect')
+const gl1 = document.getElementById('gl1')
+const gradSlider = document.getElementById('gradSlider')
+const matcapSelect = document.getElementById('matcapSelect')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 gradSlider.oninput = () => {
   nv1.volumeIllumination = Number(gradSlider.value) / 100
 }

@@ -1,3 +1,17 @@
+## 1.0.0-rc.145 (2026-11-10)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.144 (2026-11-10)
+
+### Fixes
+
+- **examples:** static checks on the demos ([#586](https://github.com/niivue/mono/pull/586))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.143 (2026-11-10)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

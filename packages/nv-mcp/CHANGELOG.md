@@ -1,3 +1,27 @@
+## 1.0.0-rc.138 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.145
+- Updated uikit to 1.0.0-rc.143
+
+## 1.0.0-rc.137 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.144
+- Updated uikit to 1.0.0-rc.142
+
+## 1.0.0-rc.136 (2026-11-10)
+
+### Fixes
+
+- **nv-mcp:** mesh-layer bindings and refused control writes ([8485c4fa](https://github.com/niivue/mono/commit/8485c4fa))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.135 (2026-11-10)
 
 ### Features

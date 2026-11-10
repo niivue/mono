@@ -1,5 +1,20 @@
 import NiiVue from '../src/index.ts'
 
+const alphaMode = document.getElementById('alphaMode')
+const colorBtn = document.getElementById('colorBtn')
+const colormapSelect = document.getElementById('colormapSelect')
+const crosshairCheck = document.getElementById('crosshairCheck')
+const gl1 = document.getElementById('gl1')
+const orientCubeCheck = document.getElementById('orientCubeCheck')
+const saveBitmapBtn = document.getElementById('saveBitmapBtn')
+const shaderSelect = document.getElementById('shaderSelect')
+const sliceType = document.getElementById('sliceType')
+const slideMin = document.getElementById('slideMin')
+const slideMinNeg = document.getElementById('slideMinNeg')
+const slideRange = document.getElementById('slideRange')
+const slideRangeNeg = document.getElementById('slideRangeNeg')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }

@@ -401,9 +401,21 @@ describe('indexDicomWsi on hostile input', () => {
       [2, 0],
     ])
   })
-  test('a lower level holding only some planes joins the planes it holds', async () => {
+  // Planes rank across the joined slide, also when each level has its own frame of reference.
+  test.each([
+    false,
+    true,
+  ])('a lower level holding only some planes joins the planes it holds (own frame of reference: %p)', async (ownFrame) => {
     // Level 0: 2 x 1 tiles at 0 and 2 µm; level 1: one tile at 2 µm only.
+    // FrameOfReferenceUID (0020,0052) goes right after the series, in tag order.
+    const frameOf = (uid: string) => ({
+      series: cat(
+        el(0x0020, 0x000e, 'UI', str('1.2.9.3', '\0')),
+        ownFrame ? el(0x0020, 0x0052, 'UI', str(uid, '\0')) : new Uint8Array(),
+      ),
+    })
     const l0 = dicom({
+      ...frameOf('1.2.9.50'),
       sop: el(0x0008, 0x0018, 'UI', str('1.2.9.40', '\0')),
       totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
       focalPlanes: el(0x0048, 0x0303, 'UL', le(2, 4)),
@@ -416,6 +428,7 @@ describe('indexDicomWsi on hostile input', () => {
     const l1 = dicom(
       {
         sop: el(0x0008, 0x0018, 'UI', str('1.2.9.41', '\0')),
+        ...frameOf('1.2.9.51'),
         frames: el(0x0028, 0x0008, 'IS', str('1')),
         totalColumns: el(0x0048, 0x0006, 'UL', le(16, 4)),
         totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
@@ -423,7 +436,9 @@ describe('indexDicomWsi on hostile input', () => {
       },
       pixelData([payload(9)]),
     )
-    expect(planesOf(await indexDicomWsi([l0, l1]))).toEqual([
+    const idx = await indexDicomWsi([l0, l1])
+    expect(idx.skipped).toEqual([])
+    expect(planesOf(idx)).toEqual([
       [0, [[32, 2, 0]]],
       [
         1,

@@ -1,3 +1,69 @@
+## 1.0.0-rc.44 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile:** read TIFF with @niivue/geotiff-rs; JPEG 2000 SVS through dcm2niix ([9b41f2af](https://github.com/niivue/mono/commit/9b41f2af))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.145
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.43 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** read an unstated transfer syntax as JPEG when the server refuses stored bytes ([9e1e0e64](https://github.com/niivue/mono/commit/9e1e0e64))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.42 (2026-11-10)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.144
+
+## 1.0.0-rc.41 (2026-11-10)
+
+### Features
+
+- **nv-ext-tile:** ZarrSlideSource for 2D OME-Zarr slides ([0bcded27](https://github.com/niivue/mono/commit/0bcded27))
+
+### Fixes
+
+- **nv-ext-tile:** refuse a timepoint a coarser level lacks ([224bd34b](https://github.com/niivue/mono/commit/224bd34b))
+- **nv-ext-tile:** a flat centre sample reads the whole level for the range ([c32e56d0](https://github.com/niivue/mono/commit/c32e56d0))
+- **nv-ext-tile:** sample the centre of the coarsest level for the data range ([6dc01d9c](https://github.com/niivue/mono/commit/6dc01d9c))
+- **nv-ext-tile:** skip non-finite samples in the zarr slide data range ([333af33b](https://github.com/niivue/mono/commit/333af33b))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.40 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** the frame-of-reference extent check is order-independent ([8a60f496](https://github.com/niivue/mono/commit/8a60f496))
+- **nv-ext-tile:** only the 1\1 placeholder skips the extent check ([f1dcaa94](https://github.com/niivue/mono/commit/f1dcaa94))
+- **nv-ext-tile:** compare height too when joining frames of reference ([9d9c1a46](https://github.com/niivue/mono/commit/9d9c1a46))
+- **nv-ext-tile:** rank focal planes across frames of reference joined into one slide ([e6615c03](https://github.com/niivue/mono/commit/e6615c03))
+- **nv-ext-tile:** join pyramid levels split only by frame of reference ([80c477d2](https://github.com/niivue/mono/commit/80c477d2))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.39 (2026-11-10)
 
 ### Features

@@ -1,5 +1,29 @@
 import NiiVue from '../src/index.ts'
 
+const anteriorBtn = document.getElementById('anteriorBtn')
+const antiAliasCheck = document.getElementById('antiAliasCheck')
+const closeBtn = document.getElementById('closeBtn')
+const gl1 = document.getElementById('gl1')
+const inferiorBtn = document.getElementById('inferiorBtn')
+const leftBtn = document.getElementById('leftBtn')
+const loadBtn = document.getElementById('loadBtn')
+const loadFile = document.getElementById('loadFile')
+const opacitySlider = document.getElementById('opacitySlider')
+const overwriteCheck = document.getElementById('overwriteCheck')
+const penSize = document.getElementById('penSize')
+const penValue = document.getElementById('penValue')
+const posteriorBtn = document.getElementById('posteriorBtn')
+const rightBtn = document.getElementById('rightBtn')
+const rimCheck = document.getElementById('rimCheck')
+const saveBtn = document.getElementById('saveBtn')
+const segmentCheck = document.getElementById('segmentCheck')
+const sliceType = document.getElementById('sliceType')
+const statsBtn = document.getElementById('statsBtn')
+const superiorBtn = document.getElementById('superiorBtn')
+const svgBtn = document.getElementById('svgBtn')
+const undoBtn = document.getElementById('undoBtn')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 let isDrawing = false
 
 function setDrawingUI(enabled) {
@@ -116,7 +140,7 @@ async function openDrawing(source) {
 }
 
 loadFile.onchange = async function () {
-  const file = this.files?.[0]
+  const file = loadFile.files?.[0]
   if (!file) return
   const name = file.name.toLowerCase()
   if (!name.endsWith('.nii') && !name.endsWith('.nii.gz')) {

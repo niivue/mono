@@ -1,5 +1,22 @@
 import NiiVue, { lookupColorMap } from '../src/index.ts'
 
+const aboutBtn = document.getElementById('aboutBtn')
+const alphaMode = document.getElementById('alphaMode')
+const checkCutaway = document.getElementById('checkCutaway')
+const clipSelect = document.getElementById('clipSelect')
+const colorBtn = document.getElementById('colorBtn')
+const colorSelect = document.getElementById('colorSelect')
+const gl1 = document.getElementById('gl1')
+const maxOut = document.getElementById('maxOut')
+const minOut = document.getElementById('minOut')
+const opacityOut = document.getElementById('opacityOut')
+const outlineSlide = document.getElementById('outlineSlide')
+const sliceType = document.getElementById('sliceType')
+const slideMin = document.getElementById('slideMin')
+const slideOpacity = document.getElementById('slideOpacity')
+const slideRange = document.getElementById('slideRange')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Three task maps over one anatomical template, each with its own colormap and
 // its own visibility, but sharing ONE threshold and ONE opacity.
 //

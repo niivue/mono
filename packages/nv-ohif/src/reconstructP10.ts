@@ -1,4 +1,4 @@
-import { parseMultipartRelated } from './dicomWadoRs'
+import { parseMultipartRelated } from '@niivue/nv-ext-tile/dicom'
 
 // Fetch DICOM Part-10 files for dcm2niix from a DICOMweb data source: WADO-RS
 // RetrieveInstance when the server allows it, else reconstruct each instance from

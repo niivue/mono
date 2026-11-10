@@ -10,6 +10,23 @@ import siamT1 from './siam_t1.json'
 import tsAbdoPelvis from './ts_abdopelvis.json'
 import tsWholeBody from './ts_wholebody.json'
 
+const aaCheck = document.getElementById('aaCheck')
+const clipColorSelect = document.getElementById('clipColorSelect')
+const clipSelect = document.getElementById('clipSelect')
+const colorBtn = document.getElementById('colorBtn')
+const controls = document.getElementById('controls')
+const cutawayCheck = document.getElementById('cutawayCheck')
+const gl1 = document.getElementById('gl1')
+const labelSelect = document.getElementById('labelSelect')
+const modeSelect = document.getElementById('modeSelect')
+const modeText = document.getElementById('modeText')
+const saveBtn = document.getElementById('saveBtn')
+const stochasticCheck = document.getElementById('stochasticCheck')
+const tfSelect = document.getElementById('tfSelect')
+const timeText = document.getElementById('timeText')
+const volumeSelect = document.getElementById('volumeSelect')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Transfer functions: NiiVue colormaps with the optional cinematic keys
 // (E, S, gradient, gMax, shininess, labelBlend; see ColorMap).
 const PRESETS = {
@@ -146,7 +163,12 @@ const SAMPLES = [
   },
 ]
 for (const url of params.getAll('url')) {
-  SAMPLES.unshift({ name: url.split('/').pop(), url, tf: 'cr_skin_bone' })
+  SAMPLES.unshift({
+    id: url,
+    name: url.split('/').pop(),
+    url,
+    tf: 'cr_skin_bone',
+  })
 }
 for (const [i, sample] of SAMPLES.entries()) {
   volumeSelect.add(new Option(sample.name, String(i)))
@@ -162,6 +184,7 @@ const tfParam = params.get('tf')
 tfSelect.value = isPreset(tfParam) ? tfParam : selectedSample().tf
 if (params.get('mode')) modeSelect.value = params.get('mode')
 
+/** @type {[string, number, number, number][]} */
 const SLIDERS = [
   ['lightElevation', -90, 90, 1],
   ['lightAzimuth', -90, 90, 1],
@@ -179,6 +202,7 @@ const SLIDERS = [
   ['specular', 0, 3, 0.05],
 ]
 
+/** @type {[number, number, number, number]} */
 let background = [0, 0, 0, 1]
 const MESH_XRAY = 0.1
 const nv1 = new NiiVue({
@@ -205,7 +229,7 @@ for (const [key, min, max, step] of SLIDERS) {
     min,
     max,
     step,
-    value: params.get(key) ?? nv1.volumeCinematic[key],
+    value: String(params.get(key) ?? nv1.volumeCinematic[key]),
   })
   const out = document.createElement('output')
   out.textContent = input.value
@@ -216,7 +240,7 @@ for (const [key, min, max, step] of SLIDERS) {
   label.append(key, input, out)
   controls.append(label)
   sliders[key] = input
-  if (params.has(key)) input.oninput()
+  if (params.has(key)) input.dispatchEvent(new Event('input'))
 }
 
 // Render settings a material table suggests (e.g. stronger AO), shown on the
@@ -369,7 +393,8 @@ function extractedT1Preset(vol) {
 function applyColormap() {
   const vol = nv1.volumes[0]
   if (!vol) return
-  const isCalibrated = !!selectedSample().labels?.table.normalize
+  const labels = selectedSample().labels
+  const isCalibrated = !!labels && 'normalize' in labels.table
   const isCinematic = modeSelect.value === 'cinematic'
   if (!isCalibrated) {
     const build = VOLUME_PRESETS[tfSelect.value]
@@ -397,7 +422,7 @@ function applyColormap() {
 // fitted to the scan's raw intensities cannot match: offer only the others.
 function syncPresetOptions() {
   const sample = selectedSample()
-  const isCalibrated = !!sample.labels?.table.normalize
+  const isCalibrated = !!sample.labels && 'normalize' in sample.labels.table
   for (const option of tfSelect.options)
     if (option.value in VOLUME_PRESETS) option.disabled = isCalibrated
   if (isCalibrated && tfSelect.value in VOLUME_PRESETS)
@@ -518,8 +543,10 @@ modeSelect.onchange = applyMode
 
 colorBtn.oninput = () => {
   const hex = colorBtn.value
-  background = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-  background.push(1)
+  const [r, g, b] = [1, 3, 5].map(
+    (i) => parseInt(hex.slice(i, i + 2), 16) / 255,
+  )
+  background = [r, g, b, 1]
   nv1.backgroundColor = background
 }
 stochasticCheck.checked = params.get('fastlight') === '1'

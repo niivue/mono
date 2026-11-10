@@ -1,5 +1,15 @@
 import NiiVue, { SHOW_RENDER } from '../src/index.ts'
 
+const aboutBtn = document.getElementById('aboutBtn')
+const gl1 = document.getElementById('gl1')
+const radioCheck = document.getElementById('radioCheck')
+const slabCheck = document.getElementById('slabCheck')
+const slabLabel = document.getElementById('slabLabel')
+const slabSlide = document.getElementById('slabSlide')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const xrayCheck = document.getElementById('xrayCheck')
+
 // Live demo for https://github.com/niivue/mono/issues/451 (see About).
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)

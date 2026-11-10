@@ -49,6 +49,16 @@
       "semicolons": "asNeeded"
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/niivue/examples/**/*.js"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUndeclaredVariables": "error" }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

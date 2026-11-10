@@ -1,5 +1,23 @@
 import NiiVue from '../src/index.ts'
 
+const checkCutaway = document.getElementById('checkCutaway')
+const clipSelect = document.getElementById('clipSelect')
+const colorBtn = document.getElementById('colorBtn')
+const colorSelect = document.getElementById('colorSelect')
+const crosshairCheck = document.getElementById('crosshairCheck')
+const decimationSlide = document.getElementById('decimationSlide')
+const fiberSelect = document.getElementById('fiberSelect')
+const gl1 = document.getElementById('gl1')
+const meshOpacitySlide = document.getElementById('meshOpacitySlide')
+const meshSelect = document.getElementById('meshSelect')
+const shaderSelect = document.getElementById('shaderSelect')
+const sliceType = document.getElementById('sliceType')
+const thresholdLabel = document.getElementById('thresholdLabel')
+const thresholdSlide = document.getElementById('thresholdSlide')
+const volumeOpacitySlide = document.getElementById('volumeOpacitySlide')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const xrayCheck = document.getElementById('xrayCheck')
+
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }
@@ -133,18 +151,22 @@ fiberSelect.onchange = async function () {
 
   if (mode === 'show0') {
     // First group only (green)
+    /** @type {Record<string, [number, number, number, number]>} */
     const groupColors = { [groupNames[0]]: [0, 255, 0, 255] }
     await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
   } else if (mode === 'show1') {
     // Second group only (red)
+    /** @type {Record<string, [number, number, number, number]>} */
     const groupColors = { [groupNames[1]]: [255, 0, 0, 255] }
     await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
   } else if (mode === 'show2') {
     // Third group only (blue)
+    /** @type {Record<string, [number, number, number, number]>} */
     const groupColors = { [groupNames[2]]: [25, 25, 255, 255] }
     await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
   } else if (mode === 'show012') {
     // First three groups simultaneously (green, red, blue)
+    /** @type {Record<string, [number, number, number, number]>} */
     const groupColors = {
       [groupNames[0]]: [0, 255, 0, 255],
       [groupNames[1]]: [255, 0, 0, 255],
@@ -197,6 +219,6 @@ for (let g = 0; g < Math.min(3, groupNames.length); g++) {
 }
 mesh.trx.dps.z_score = zScores
 mesh.trx.dpsMeta.z_score = {
-  global_min: 0,
-  global_max: Math.max(...groupZValues),
+  globalMin: 0,
+  globalMax: Math.max(...groupZValues),
 }

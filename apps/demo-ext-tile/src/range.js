@@ -22,7 +22,7 @@ import {
   openOmeZarr,
   parseOmeZarrAttrs,
 } from '@niivue/nv-ext-tile/zarr'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita-rs/inline'
 
 // Resolved up front: without a WebGPU adapter NiiVue falls back to WebGL2,
 // which needs WebGL2's smaller streaming budget (DEFAULT_RESIDENCY_BYTES).

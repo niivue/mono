@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>zarrita vs zarrita-rs</title>
+<style>
+	body { font: 14px system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+	label { display: block; margin: .5rem 0; }
+	input[type=text] { width: 100%; }
+	table { border-collapse: collapse; margin-top: 1rem; }
+	td, th { border: 1px solid #ccc; padding: .3rem .6rem; text-align: right; }
+	td:first-child, th:first-child { text-align: left; }
+</style>
+<h1>zarrita.js vs zarrita-rs</h1>
+<p>Reads the same array with each library over HTTP. The server must allow CORS.</p>
+<label>Store URL <input id="url" type="text" value="https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0062A/6001240.zarr"></label>
+<label>Array path in store <input id="path" type="text" value="0"></label>
+<label>Selection
+	<select id="sel">
+		<option value="plane-z">middle plane (last two axes)</option>
+		<option value="plane-x">middle plane (orthogonal, strided)</option>
+		<option value="full">whole array</option>
+	</select>
+</label>
+<label>Timed reads per library <input id="iters" type="number" value="5" min="1" max="50"></label>
+<button id="run" type="button">Run</button>
+<div id="out"></div>
+<script type="module" src="./src/compare.js"></script>

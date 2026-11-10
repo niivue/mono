@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@niivue/geotiff-rs": "3.1.0-rc.0",
-    "zarrita": "^0.7.3"
+    "@niivue/zarrita-rs": "0.7.5-rc.0"
   },
   "devDependencies": {
     "@niivue/dcm2niix": "^1.4.20261105-rc.3",

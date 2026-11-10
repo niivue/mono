@@ -33,7 +33,7 @@ import {
   timeChunkPhaseAsync,
   withSpatialUnits,
 } from '@niivue/niivue'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita-rs/inline'
 import { allocTypedArrayLike, checkOmeZarrIndex } from './omeZarr'
 import {
   type OmeZarrLoadOptions,

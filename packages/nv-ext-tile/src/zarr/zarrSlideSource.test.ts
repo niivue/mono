@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { NVSlide, type NVSlideLevelManifest } from '@niivue/niivue'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita-rs/inline'
 import { ZarrSlideSource } from './zarrSlideSource'
 
 // The milestone-13 regression set (omezarr2d/variants on Hugging Face). Not in

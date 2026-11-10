@@ -18,7 +18,7 @@ const coreFromSource: Plugin = {
 }
 
 // Shared with vite.config.standalone.ts. The Zarr chunk worker is inlined as
-// one blob, which has nowhere to fetch a chunk from, so zarrita's dynamically
+// one blob, which has nowhere to fetch a chunk from, so zarrita-rs's dynamically
 // imported codecs fold into it.
 export const worker = {
   plugins: () => [coreFromSource],
@@ -47,7 +47,7 @@ export default defineConfig({
         '@niivue/niivue',
         '@niivue/dcm2niix',
         '@niivue/geotiff-rs',
-        'zarrita',
+        /^@niivue\/zarrita-rs(\/|$)/,
       ],
     },
   },

@@ -9,6 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@niivue/zarrita-rs": "0.7.5-rc.0",
     "@zarrita/storage": "^0.2.0",
     "cors": "^2.8.5",
     "dicom-parser": "^1.8.21",
@@ -18,8 +19,7 @@
     "nifti-reader-js": "^0.6.8",
     "nrrd-js": "^0.2.1",
     "pako": "^2.1.0",
-    "pngjs": "^7.0.0",
-    "zarrita": "^0.7.3"
+    "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

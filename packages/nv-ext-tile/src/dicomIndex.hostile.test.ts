@@ -186,7 +186,111 @@ describe('indexDicomWsi on hostile input', () => {
       totalColumns: el(0x0048, 0x0006, 'UL', le(0xffffffff, 4)),
       totalRows: el(0x0048, 0x0007, 'UL', le(0xffffffff, 4)),
     })
-    expect(await reasons(giant)).toEqual(['malformed'])
+    expect(await reasons(giant)).toEqual(['too-large'])
+  })
+
+  test('a level past the tile cap says it is too large, with its sizes', async () => {
+    // About 1 TB of RGB at 256-px tiles: 2344 x 2344 tiles, over 2^22.
+    const idx = await indexDicomWsi([
+      dicom({
+        rows: el(0x0028, 0x0010, 'US', le(256, 2)),
+        columns: el(0x0028, 0x0011, 'US', le(256, 2)),
+        totalColumns: el(0x0048, 0x0006, 'UL', le(600000, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(600000, 4)),
+      }),
+    ])
+    expect(idx.skipped.map((k) => [k.reason, k.message])).toEqual([
+      [
+        'too-large',
+        '600000 x 600000 px in 256 x 256-px tiles is 5494336 tiles, over the 4194304 a level may hold',
+      ],
+    ])
+  })
+
+  test('an undefined-length UN element is skipped as an implicit VR sequence', async () => {
+    // PS3.5 6.2.2: its items are implicit VR little endian, so tag + 4-byte
+    // length; one value holds the bytes of a sequence delimiter.
+    const implicit = (
+      g: number,
+      e: number,
+      value: Uint8Array,
+      length = value.length,
+    ) => cat(tag(g, e), le(length, 4), value)
+    const un = cat(
+      el(0x0011, 0x1010, 'UN', new Uint8Array(0), UNDEF),
+      item(
+        implicit(0x0011, 0x1011, new Uint8Array([0xfe, 0xff, 0xdd, 0xe0])),
+        implicit(0x0011, 0x1012, new Uint8Array(0), UNDEF),
+        fragment(new Uint8Array([1, 2, 3, 4])),
+        item(implicit(0x0011, 0x1013, str('ab'))),
+        tag(0xfffe, 0xe0dd),
+        le(0, 4),
+      ),
+      fragment(str('xy')),
+      tag(0xfffe, 0xe0dd),
+      le(0, 4),
+    )
+    // Before Rows/Columns, so misreading it would lose them.
+    const f = dicom({
+      photometric: cat(el(0x0028, 0x0004, 'CS', str('YBR_FULL_422')), un),
+    })
+    const idx = await indexDicomWsi([f])
+    expect(idx.skipped).toEqual([])
+    expect(await tileLabels(idx.slides[0] as SlideIndexSlide, [f])).toEqual([
+      0, 1, 2, 3,
+    ])
+  })
+
+  test('a text value over 1 KiB is malformed, never decoded', async () => {
+    const f = dicom({
+      study: el(0x0020, 0x000d, 'UT', new Uint8Array(16 << 20).fill(0x31)),
+    })
+    expect((await indexDicomWsi([f])).skipped[0]?.message).toBe(
+      '16777216-byte UT at byte 226',
+    )
+  })
+
+  test('more than 4096 OpticalPathSequence items are malformed', async () => {
+    const id = el(0x0048, 0x0106, 'SH', str('1'))
+    const f = dicom({
+      opticalPathSeq: sq(0x0048, 0x0105, Array(4097).fill(item(id))),
+    })
+    expect((await indexDicomWsi([f])).skipped[0]?.message).toBe(
+      'over 4096 optical paths',
+    )
+  })
+
+  test('a header of millions of elements indexes in bounded memory', () => {
+    // In a fresh process, as peak RSS only grows. 16 MiB of header: junk
+    // top-level elements, then one per-frame item repeating a ZOffset. Each
+    // element took about 200 bytes of heap before (940 MB here, now 85).
+    const script = `
+      const { indexDicomWsi } = await import(${JSON.stringify(`${import.meta.dir}/dicomIndex.ts`)})
+      const half = 8 << 20
+      const b = new Uint8Array(2 * half + 1024)
+      const v = new DataView(b.buffer)
+      b.set([68, 73, 67, 77], 128)
+      let o = 132
+      const put = (bytes) => { b.set(bytes, o); o += bytes.length }
+      const junk = [0x09, 0, 0, 0x10, 76, 79, 0, 0] // (0009,1000) LO, empty
+      while (o < half) put(junk)
+      put([0, 0x52, 0x30, 0x92, 83, 81, 0, 0, 255, 255, 255, 255, 254, 255, 0, 224, 255, 255, 255, 255])
+      const z = [0x40, 0, 0x4a, 0x07, 68, 83, 2, 0, 49, 32] // (0040,074A) DS '1'
+      while (o < 2 * half) put(z)
+      put([254, 255, 13, 224, 0, 0, 0, 0, 254, 255, 221, 224, 0, 0, 0, 0])
+      put([0xe0, 0x7f, 0x10, 0, 79, 66, 0, 0, 255, 255, 255, 255, 254, 255, 0, 224, 0, 0, 0, 0, 254, 255, 221, 224, 0, 0, 0, 0])
+      const file = new File([b.subarray(0, o)], 'h.dcm')
+      const r0 = process.resourceUsage().maxRSS
+      const idx = await indexDicomWsi([file])
+      // ru_maxrss is bytes on macOS, KiB on Linux: scale by what rss says.
+      const unit = process.memoryUsage().rss / r0 > 100 ? 1024 : 1
+      const mb = ((process.resourceUsage().maxRSS - r0) * unit) / 2 ** 20
+      console.log(JSON.stringify({ reason: idx.skipped[0]?.reason, mb }))
+    `
+    const run = Bun.spawnSync([process.execPath, '-e', script])
+    const { reason, mb } = JSON.parse(run.stdout.toString())
+    expect(reason).toBe('not-tiled') // only the memory matters
+    expect(mb).toBeLessThan(300)
   })
 
   test('a value claiming to run past the file is malformed, not a whole-file read', async () => {

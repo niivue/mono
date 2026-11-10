@@ -1,3 +1,13 @@
+## 1.0.0-rc.57 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** bound DICOM-WSI header heap, report oversized levels, skip undefined-length UN ([7d27f045](https://github.com/niivue/mono/commit/7d27f045))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.56 (2026-11-10)
 
 ### Updated Dependencies

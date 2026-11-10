@@ -11,6 +11,7 @@ export type SlideIndexSkipReason =
   | 'transfer-syntax' // implicit VR, big endian or deflated
   | 'uncompressed' // native pixel data: no tile codec reads it
   | 'malformed' // a header or item that does not parse, or a value out of range
+  | 'too-large' // a level of more tiles than the index holds
   | 'not-tiled' // no tile geometry (not WSI)
 
 export interface SlideIndexSkipped {
@@ -183,6 +184,23 @@ export const NUMBER_KEYWORDS: Record<number, string> = {
   [T.opticalPaths]: 'NumberOfOpticalPaths',
   [T.focalPlanes]: 'TotalPixelMatrixFocalPlanes',
 }
+// Top-level tags the index reads. Others are walked, not kept, so a header of
+// millions of elements costs no heap per element.
+const TOP_TAGS = new Set([
+  ...Object.keys(TEXT_KEYWORDS).map(Number),
+  ...Object.keys(NUMBER_KEYWORDS).map(Number),
+  T.spacing,
+  T.eot,
+  T.eotLengths,
+])
+// Each two-letter VR by its bytes, so walk allocates no string per element.
+const VR_NAMES: string[] = []
+for (let i = 65; i <= 90; i++)
+  for (let j = 65; j <= 90; j++)
+    VR_NAMES[(i << 8) | j] = String.fromCharCode(i, j)
+// Longer than any UID, code string or decimal list the index reads; a longer
+// value is not decoded (spreading megabytes into fromCharCode costs gigabytes).
+const MAX_TEXT = 1024
 // VRs whose length field is 4 bytes after 2 reserved bytes (PS3.5 7.1.2).
 const LONG_VR = new Set('OB OD OF OL OV OW SQ SV UC UN UR UT UV'.split(' '))
 // Implicit VR little endian, explicit VR big endian, deflated.
@@ -234,10 +252,24 @@ function u32(b: Uint8Array, o: number): number {
   )
 }
 
+// The one object walk visits, refilled per element (a visitor copies what it
+// keeps): an object per element costs hundreds of MB in garbage for a header of
+// millions of elements.
+const visited: Element = {
+  tag: 0,
+  vr: '',
+  offset: 0,
+  length: 0,
+  root: 0,
+  item: 0,
+  depth: 0,
+}
+
 /**
  * Visit every element from `o` until `end`, a delimiter, or (at the top level)
- * Pixel Data, whose offset it returns. `size` is the file's, so a value that
- * claims to run past the file is malformed, not a reason to read further.
+ * Pixel Data, whose offset it returns, skipping top-level elements the index
+ * does not read. `size` is the file's, so a value that claims to run past the
+ * file is malformed, not a reason to read further.
  */
 function walk(
   b: Uint8Array,
@@ -253,17 +285,26 @@ function walk(
     const tag = tagOf(u16(b, o), u16(b, o + 2))
     if (tag === T.itemEnd || tag === T.sequenceEnd) return o + 8
     if (at.depth === 0 && tag === T.pixelData) return o
-    const vr = String.fromCharCode(b[o + 4] as number, b[o + 5] as number)
-    if (!/^[A-Z]{2}$/.test(vr))
+    const vr = VR_NAMES[((b[o + 4] as number) << 8) | (b[o + 5] as number)]
+    if (vr === undefined)
       throw new Skip('malformed', `no explicit VR at byte ${o}`)
     const long = LONG_VR.has(vr)
     const length = long ? u32(b, o + 8) : u16(b, o + 6)
     const value = o + (long ? 12 : 8)
-    if (vr === 'SQ' || (vr === 'UN' && length === UNDEFINED_LENGTH)) {
+    if (vr === 'UN' && length === UNDEFINED_LENGTH) {
+      o = skipImplicitSequence(b, value, size, at.depth + 1)
+      continue
+    }
+    if (vr === 'SQ') {
       if (at.depth >= MAX_DEPTH)
         throw new Skip('malformed', `sequences nested deeper than ${MAX_DEPTH}`)
       const stop = length === UNDEFINED_LENGTH ? size : value + length
       let p = value
+      // One object for all the items, as for elements.
+      const inner =
+        at.depth === 0
+          ? { root: tag, item: 0, depth: 1 }
+          : { ...at, depth: at.depth + 1 }
       for (let item = 0; p < stop; item++) {
         const itemTag = tagOf(u16(b, p), u16(b, p + 2))
         if (itemTag === T.sequenceEnd) {
@@ -275,10 +316,7 @@ function walk(
         const itemLength = u32(b, p + 4)
         const itemEnd =
           itemLength === UNDEFINED_LENGTH ? size : p + 8 + itemLength
-        const inner =
-          at.depth === 0
-            ? { root: tag, item, depth: 1 }
-            : { ...at, depth: at.depth + 1 }
+        if (at.depth === 0) inner.item = item
         const after = walk(b, p + 8, itemEnd, size, inner, visit)
         p = itemLength === UNDEFINED_LENGTH ? after : itemEnd
       }
@@ -290,33 +328,92 @@ function walk(
     if (value + length > size)
       throw new Skip('malformed', `${vr} at byte ${o} runs past the file`)
     if (value + length > b.length) throw new NeedMore()
-    visit({ tag, vr, offset: value, length, ...at })
+    if (at.depth || TOP_TAGS.has(tag)) {
+      const e = visited
+      e.tag = tag
+      e.vr = vr
+      e.offset = value
+      e.length = length
+      e.root = at.root
+      e.item = at.item
+      e.depth = at.depth
+      visit(e)
+    }
     o = value + length
   }
   return o
 }
 
-const text = (b: Uint8Array, e: Element): string =>
-  String.fromCharCode(...b.subarray(e.offset, e.offset + e.length)).replace(
-    /[\0 ]+$/,
-    '',
-  )
+/**
+ * Skip an undefined-length UN element's value from `p`: an implicit VR little
+ * endian sequence (PS3.5 6.2.2), so its items are stepped over by length, never
+ * walked as explicit VR. Returns the offset after its delimiter.
+ */
+function skipImplicitSequence(
+  b: Uint8Array,
+  p: number,
+  size: number,
+  depth: number,
+): number {
+  if (depth > MAX_DEPTH)
+    throw new Skip('malformed', `sequences nested deeper than ${MAX_DEPTH}`)
+  for (;;) {
+    const itemTag = tagOf(u16(b, p), u16(b, p + 2))
+    const itemLength = u32(b, p + 4)
+    p += 8
+    if (itemTag === T.sequenceEnd) return p
+    if (itemTag !== T.item)
+      throw new Skip('malformed', `no item at byte ${p - 8}`)
+    if (itemLength !== UNDEFINED_LENGTH) p += itemLength
+    else
+      for (;;) {
+        const tag = tagOf(u16(b, p), u16(b, p + 2))
+        const length = u32(b, p + 4)
+        p += 8
+        if (tag === T.itemEnd) break
+        p =
+          length === UNDEFINED_LENGTH
+            ? skipImplicitSequence(b, p, size, depth + 1)
+            : p + length
+        if (p > size)
+          throw new Skip('malformed', 'UN sequence runs past the file')
+      }
+    if (p > size) throw new Skip('malformed', 'UN sequence runs past the file')
+  }
+}
 
-/** A numeric value: binary for US/UL/SL/FL/FD, else the first value of IS/DS text. NaN when it does not parse. */
-function numberOf(b: Uint8Array, e: Element): number {
+function text(b: Uint8Array, e: Element): string {
+  if (e.length > MAX_TEXT)
+    throw new Skip('malformed', `${e.length}-byte ${e.vr} at byte ${e.offset}`)
+  // Built char by char, trailing NUL and space padding trimmed as bytes: a
+  // subarray and a spread per value cost hundreds of MB in garbage for
+  // millions of per-frame values.
+  let end = e.offset + e.length
+  while (end > e.offset && (b[end - 1] === 0 || b[end - 1] === 0x20)) end--
+  let t = ''
+  for (let i = e.offset; i < end; i++) t += String.fromCharCode(b[i] as number)
+  return t
+}
+
+/**
+ * A numeric value: binary for US/UL/SL/FL/FD, else the first value of IS/DS
+ * text. NaN when it does not parse. `v` views all of `b`, so no DataView is made
+ * per element.
+ */
+function numberOf(b: Uint8Array, v: DataView, e: Element): number {
   const bytes = VR_BYTES[e.vr]
   if (!bytes) return Number(text(b, e).split('\\')[0])
   if (e.length < bytes) return Number.NaN
-  const v = new DataView(b.buffer, b.byteOffset + e.offset, bytes)
+  const o = e.offset
   return e.vr === 'US'
-    ? v.getUint16(0, true)
+    ? v.getUint16(o, true)
     : e.vr === 'UL'
-      ? v.getUint32(0, true)
+      ? v.getUint32(o, true)
       : e.vr === 'SL'
-        ? v.getInt32(0, true)
+        ? v.getInt32(o, true)
         : e.vr === 'FL'
-          ? v.getFloat32(0, true)
-          : v.getFloat64(0, true)
+          ? v.getFloat32(o, true)
+          : v.getFloat64(o, true)
 }
 
 /**
@@ -388,10 +485,10 @@ export interface InstanceInfo<
 
 type ReadAt = (offset: number, length: number) => Promise<Uint8Array>
 
-function refuseSyntax(b: Uint8Array, elements: Element[]): void {
+function refuseSyntax(b: Uint8Array, top: Map<number, Element>): void {
   // The file meta group is always explicit VR little endian, so its transfer
   // syntax is known even when the data set after it does not parse.
-  const ts = elements.find((e) => e.tag === T.transferSyntax)
+  const ts = top.get(T.transferSyntax)
   if (ts && REFUSED_SYNTAXES.has(text(b, ts)))
     throw new Skip(
       'transfer-syntax',
@@ -402,7 +499,12 @@ function refuseSyntax(b: Uint8Array, elements: Element[]): void {
 async function readHeader(
   readAt: ReadAt,
   size: number,
-): Promise<{ b: Uint8Array; pixel: number; elements: Element[] }> {
+): Promise<{
+  b: Uint8Array
+  pixel: number
+  top: Map<number, Element>
+  attributes: WsiAttributes<SlideIndexIccProfile>
+}> {
   let want = Math.min(size, 1 << 20)
   let b: Uint8Array = new Uint8Array(0)
   for (;;) {
@@ -412,7 +514,8 @@ async function readHeader(
     grown.set(b)
     grown.set(more, b.length)
     b = grown
-    const elements: Element[] = []
+    const reader = attributeReader(b)
+    const { top } = reader
     try {
       if (String.fromCharCode(...b.subarray(128, 132)) !== 'DICM')
         throw new Skip('not-dicom', 'no DICM preamble')
@@ -422,13 +525,13 @@ async function readHeader(
         size,
         size,
         { root: 0, item: 0, depth: 0 },
-        (e) => elements.push(e),
+        reader.visit,
       )
       if (pixel + 20 > b.length) throw new NeedMore() // Pixel Data and the BOT item header
-      refuseSyntax(b, elements)
-      return { b, pixel, elements }
+      refuseSyntax(b, top)
+      return { b, pixel, top, attributes: reader.attributes() }
     } catch (err) {
-      refuseSyntax(b, elements)
+      refuseSyntax(b, top)
       if (!(err instanceof NeedMore)) throw err
       if (want >= size)
         throw new Skip('not-tiled', 'no Pixel Data (e.g. a DICOMDIR)')
@@ -439,12 +542,20 @@ async function readHeader(
   }
 }
 
-/** The header's attributes, in the form both readers share. */
-function readAttributes(
-  b: Uint8Array,
-  elements: Element[],
-  top: Map<number, Element>,
-): WsiAttributes<SlideIndexIccProfile> {
+/** Copy the visited element into `map`, reusing the copy a repeated tag made. */
+function keep(map: Map<number, Element>, e: Element): void {
+  const kept = map.get(e.tag)
+  if (kept) Object.assign(kept, e)
+  else map.set(e.tag, { ...e })
+}
+
+/**
+ * Collects the header's attributes, in the form both readers share, as walk
+ * visits them: only what the index reads is kept, never the elements.
+ */
+function attributeReader(b: Uint8Array) {
+  const top = new Map<number, Element>()
+  const view = new DataView(b.buffer, b.byteOffset, b.length)
   const a: WsiAttributes<SlideIndexIccProfile> = {
     text: {},
     number: {},
@@ -459,42 +570,80 @@ function readAttributes(
   }
   const colorSpaces: (string | undefined)[] = []
   const spacings: (string | undefined)[] = []
-  for (const e of elements) {
-    if (e.depth === 0) continue
-    if (e.root === T.opticalPathSeq && e.depth === 1) {
+  // Decoded once at the end: the last of each wins, so a repeated one costs nothing.
+  const shared = new Map<number, Element>()
+  // Per-frame optical path identifiers, one string per distinct value.
+  const frameIds = new Map<string, string>()
+  const visit = (e: Element): void => {
+    if (e.depth === 0) {
+      keep(top, e)
+    } else if (e.root === T.opticalPathSeq && e.depth === 1) {
+      if (e.item >= MAX_PAIRS)
+        throw new Skip('malformed', `over ${MAX_PAIRS} optical paths`)
       if (e.tag === T.opticalPathId) a.pathIds[e.item] = text(b, e)
-      if (e.tag === T.iccProfile)
-        a.icc[e.item] = { offset: e.offset, length: e.length }
+      if (e.tag === T.iccProfile) {
+        a.icc[e.item] ??= { offset: 0, length: 0 }
+        const icc = a.icc[e.item] as SlideIndexIccProfile
+        icc.offset = e.offset
+        icc.length = e.length
+      }
       if (e.tag === T.colorSpace) colorSpaces[e.item] = text(b, e)
     } else if (e.root === T.shared) {
-      if (e.tag === T.spacing) spacings[0] = text(b, e)
-      if (e.tag === T.opticalPathId) a.sharedPath = text(b, e)
-      if (e.tag === T.zOffset) a.sharedZ = numberOf(b, e)
+      if (
+        e.tag === T.spacing ||
+        e.tag === T.opticalPathId ||
+        e.tag === T.zOffset
+      )
+        keep(shared, e)
     } else if (e.root === T.perFrame) {
       const f = e.item
       a.perFrame = Math.max(a.perFrame, f + 1)
-      if (e.tag === T.columnPosition) a.column[f] = numberOf(b, e)
-      else if (e.tag === T.rowPosition) a.row[f] = numberOf(b, e)
-      else if (e.tag === T.zOffset) a.z[f] = numberOf(b, e)
-      else if (e.tag === T.opticalPathId) a.path[f] = text(b, e)
-      else if (e.tag === T.spacing && f === 0) spacings[1] = text(b, e)
+      if (e.tag === T.columnPosition) a.column[f] = numberOf(b, view, e)
+      else if (e.tag === T.rowPosition) a.row[f] = numberOf(b, view, e)
+      else if (e.tag === T.zOffset) a.z[f] = numberOf(b, view, e)
+      else if (e.tag === T.opticalPathId) {
+        const id = text(b, e)
+        let known = frameIds.get(id)
+        if (known === undefined) {
+          // Each makes a pair at least.
+          if (frameIds.size >= MAX_PAIRS)
+            throw new Skip(
+              'malformed',
+              `over ${MAX_PAIRS} (optical path, focal plane) pairs`,
+            )
+          known = id
+          frameIds.set(id, id)
+        }
+        a.path[f] = known
+      } else if (e.tag === T.spacing && f === 0) spacings[1] = text(b, e)
     }
   }
-  a.icc.forEach((v, i) => {
-    if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
-  })
-  const topSpacing = top.get(T.spacing)
-  if (topSpacing) spacings[2] = text(b, topSpacing)
-  a.spacing = [0, 1, 2].map((i) => spacings[i]?.split('\\').map(Number))
-  for (const tag of Object.keys(TEXT_KEYWORDS).map(Number)) {
-    const e = top.get(tag)
-    if (e) a.text[tag] = text(b, e)
+  const attributes = (): WsiAttributes<SlideIndexIccProfile> => {
+    const sharedOf = (tag: number) => {
+      const e = shared.get(tag)
+      return e && text(b, e)
+    }
+    spacings[0] = sharedOf(T.spacing)
+    a.sharedPath = sharedOf(T.opticalPathId)
+    const z = shared.get(T.zOffset)
+    if (z) a.sharedZ = numberOf(b, view, z)
+    a.icc.forEach((v, i) => {
+      if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
+    })
+    const topSpacing = top.get(T.spacing)
+    if (topSpacing) spacings[2] = text(b, topSpacing)
+    a.spacing = [0, 1, 2].map((i) => spacings[i]?.split('\\').map(Number))
+    for (const tag of Object.keys(TEXT_KEYWORDS).map(Number)) {
+      const e = top.get(tag)
+      if (e) a.text[tag] = text(b, e)
+    }
+    for (const tag of Object.keys(NUMBER_KEYWORDS).map(Number)) {
+      const e = top.get(tag)
+      if (e) a.number[tag] = numberOf(b, view, e)
+    }
+    return a
   }
-  for (const tag of Object.keys(NUMBER_KEYWORDS).map(Number)) {
-    const e = top.get(tag)
-    if (e) a.number[tag] = numberOf(b, e)
-  }
-  return a
+  return { top, visit, attributes }
 }
 
 /**
@@ -525,7 +674,10 @@ export function instanceGeometry<C>(
   const rows = Math.ceil(totalRows / tileHeight)
   const grid = columns * rows
   if (grid > MAX_GRID)
-    throw new Skip('malformed', `${grid} tiles in one level (over ${MAX_GRID})`)
+    throw new Skip(
+      'too-large',
+      `${totalColumns} x ${totalRows} px in ${tileWidth} x ${tileHeight}-px tiles is ${grid} tiles, over the ${MAX_GRID} a level may hold`,
+    )
   const focalPlaneCount = int(T.focalPlanes, 1, 1, 0xffff)
   const concatOffset = int(T.concatOffset, 0, 0, 0xffffffff)
   const organization = str(T.organization)
@@ -679,14 +831,9 @@ async function indexInstance(file: File): Promise<InstanceInfo> {
   const size = file.size
   const readAt: ReadAt = async (offset, length) =>
     new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
-  const { b, pixel, elements } = await readHeader(readAt, size)
-  const top = new Map<number, Element>()
-  for (const e of elements) if (e.depth === 0) top.set(e.tag, e)
+  const { b, pixel, top, attributes } = await readHeader(readAt, size)
   // Each frame needs at least its 8-byte item header after Pixel Data.
-  const g = instanceGeometry(
-    readAttributes(b, elements, top),
-    Math.floor((size - pixel) / 8),
-  )
+  const g = instanceGeometry(attributes, Math.floor((size - pixel) / 8))
   const instance = {
     ...g.instance,
     file: fileKey(file),

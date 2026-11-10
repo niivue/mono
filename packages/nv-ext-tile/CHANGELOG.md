@@ -1,3 +1,19 @@
+## 1.0.0-rc.40 (2026-11-10)
+
+### Fixes
+
+- **nv-ext-tile:** the frame-of-reference extent check is order-independent ([8a60f496](https://github.com/niivue/mono/commit/8a60f496))
+- **nv-ext-tile:** only the 1\1 placeholder skips the extent check ([f1dcaa94](https://github.com/niivue/mono/commit/f1dcaa94))
+- **nv-ext-tile:** compare height too when joining frames of reference ([9d9c1a46](https://github.com/niivue/mono/commit/9d9c1a46))
+- **nv-ext-tile:** rank focal planes across frames of reference joined into one slide ([e6615c03](https://github.com/niivue/mono/commit/e6615c03))
+- **nv-ext-tile:** join pyramid levels split only by frame of reference ([80c477d2](https://github.com/niivue/mono/commit/80c477d2))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.39 (2026-11-10)
 
 ### Features

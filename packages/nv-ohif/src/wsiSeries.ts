@@ -12,11 +12,12 @@ export function wsiSeriesSlide(
   // TILED_FULL and TILED_SPARSE alike: the index places each frame.
   const instances = ds.instances ?? []
   const { slides, skipped } = indexDicomWsiMetadata(instances)
-  const imageId =
-    instances
-      .map((i) => i.imageId)
-      .find((id): id is string => typeof id === 'string') ?? ds.imageIds?.[0]
-  const seriesUrl = imageId ? seriesUrlFromImageId(imageId) : null
+  // The first id naming a series: a skipped side image may come first.
+  const seriesUrl =
+    [...instances.map((i) => i.imageId), ...(ds.imageIds ?? [])]
+      .filter((id): id is string => typeof id === 'string')
+      .map(seriesUrlFromImageId)
+      .find((url) => url !== null) ?? null
   const slide = slides[0]
   if (!slide) {
     const why = skipped[0]?.message

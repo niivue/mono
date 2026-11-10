@@ -26,6 +26,18 @@ describe('wsiSeriesSlide', () => {
     expect('note' in r && r.note).toContain('2 focal planes')
   })
 
+  it('takes the series URL past a side image that names no series', async () => {
+    const r = wsiSeriesSlide({
+      instances: [
+        { imageId: 'wadouri:https://h/side.dcm' },
+        await instance('bot'),
+      ],
+    })
+    expect('slide' in r && r.seriesUrl).toBe(
+      'https://h/dicomweb/studies/1/series/2',
+    )
+  })
+
   it('notes imageIds that name no WADO-RS series', async () => {
     const r = wsiSeriesSlide({
       instances: [{ ...(await instance('bot')), imageId: 'wadouri:x.dcm' }],

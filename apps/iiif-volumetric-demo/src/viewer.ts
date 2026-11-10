@@ -16,7 +16,7 @@
 import NiiVue from '@niivue/niivue'
 
 import { getBackendFromUrl } from './backend'
-import { installNav } from './nav'
+import { installNav, markBackendInUse } from './nav'
 
 installNav()
 
@@ -401,6 +401,7 @@ async function ensureNiivue(): Promise<void> {
     })
     state.nv.opts.isDragDropEnabled = false
     await state.nv.attachToCanvas(els.canvas)
+    markBackendInUse(state.nv.backend ?? 'webgl2')
     els.niivuePill.textContent = `niivue · ready (${BACKEND})`
     els.niivuePill.classList.add('green')
   } catch (err) {

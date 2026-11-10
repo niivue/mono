@@ -1,6 +1,15 @@
 import NiiVue from '../src/index.ts'
 
+const colorMode = document.getElementById('colorMode')
+const colorSelect = document.getElementById('colorSelect')
+const decimationSlide = document.getElementById('decimationSlide')
+const gl1 = document.getElementById('gl1')
+const groupSelect = document.getElementById('groupSelect')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // A palette of distinct colors for group selection (RGBA 0-255)
+/** @type {[number, number, number, number][]} */
 const groupPalette = [
   [230, 25, 75, 255], // red
   [60, 180, 75, 255], // green

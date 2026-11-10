@@ -94,7 +94,8 @@ bunx nx e2e niivue       # fast tier via Nx
 
 The tiers are Playwright projects: `chromium` (fast) and `demo-smoke`; a bare
 `bunx playwright test` runs both. Use the fast tier while developing and the
-full one before pushing a change to the demos or to anything they load. A
+full one before pushing a change to the demos or to anything they load (run
+the demo static checks below too). A
 local run on macOS uses full Chromium on the real GPU by default (needs
 `bunx playwright install chromium`): the fast tier takes about 8 s on an M3
 Max, against more than a minute on SwiftShader. CI and other platforms stay on
@@ -190,6 +191,35 @@ An update writes only the references that do not match, so when two captures
 share one through `sameAs` and disagree, the second overwrites the first and
 the next run fails: that is the equivalence failing, not a stale reference.
 Look at every changed PNG before committing it: an update accepts whatever was drawn.
+
+### Demo static checks
+
+Fast, browser-free checks on `examples/`; `pr_gate.yml` runs all of them.
+demo-smoke stays the runtime check.
+
+```bash
+bun run typecheck           # also tsc -p examples/tsconfig.json: NiiVue API misuse in demo scripts
+bun run check:demo-assets   # literal /volumes/, /meshes/, /signals/ URLs missing from packages/dev-images
+bun run build:examples      # broken imports (empties dist/)
+bunx nx lint niivue         # Biome; noUndeclaredVariables is on for examples/**/*.js
+```
+
+`examples/tsconfig.json` checks the JS with `strict` off. `examples/demo-dom.d.ts`
+types DOM lookups as `any` and declares the debug handles pages put on
+`window` (`nv1`, `__bench`, ...), so only NiiVue API misuse is reported.
+`*.min.js` is listed explicitly: TS skips it in wildcards. Limits: misuse
+through untyped helper params is not caught; asset URLs built at runtime
+(`${...}`, bare file tables) are skipped; a `getElementById` id missing from
+its page is not checked (null at runtime; demo-smoke catches the throw).
+Deleting demo-smoke (#586) waits until these checks have run on CI a while.
+
+Demo conventions:
+
+- Look up every element: `const x = document.getElementById('x')`. No implicit
+  window named-access globals; tsc misses them once a file assigns
+  `x.onclick = ...`, so Biome catches them.
+- Page scripts live in `examples/<page>.js`, not inline `<script>`.
+  `vox.worker.html` uses `vox.worker.page.js`, since `vox.worker.js` is the worker.
 
 ### What's tested
 
@@ -327,7 +357,7 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 
 **Future opportunity — WebGPU `clip-distances`:** a commented-out block in `src/wgpu/NVViewGPU.ts` (just above `requestDevice`) sketches a hardware-accelerated mesh clip plane path gated on the `clip-distances` feature. Adapter support is still patchy (notably Safari), so the code is parked. Activation guidance lives next to the block.
 
-**Known issue — Safari WebGPU with MSAA:** WebKit's WebGPU (Safari, every iOS browser) runs the fragment shader once per MSAA sample, so `isAntiAlias: true` makes the volume ray-march about 4x slower (#381). It is still present in Safari Technology Preview 255 (November 2026). We work around it rather than splitting the volume into a single-sample pass: `isAntiAlias` defaults to `false`, and most live demos default to the WebGL2 backend. The demos that default to WebGPU with anti-aliasing on (`examples/slides.js`, `apps/demo-ext-tile/src/range.js`, `apps/dandi-demo/src/dandi.js`) turn it off on WebKit; `?aa=on|off` overrides. Retest every couple of months, comparing `isAntiAlias: true` against `false` on the WebGPU backend; once Safari is fixed, remove those WebKit checks. `SlideRendererGPU.create(canvas, { antialias })` (`src/wgpu/slide.ts`) draws into a 4x multisample target resolved to the canvas; the slides demo passes its Anti-alias setting to both renderers.
+**Known issue — Safari WebGPU with MSAA:** WebKit's WebGPU (Safari, every iOS browser) runs the fragment shader once per MSAA sample, so `isAntiAlias: true` makes the volume ray-march about 4x slower (#381). It is still present in Safari Technology Preview 255 (November 2026). WebGL2 MSAA has no such cost, so `isAntiAlias` defaults to `true` and core pages default to the WebGL2 backend. Core does not detect WebKit: a page that picks `backend: 'webgpu'` (or imports `@niivue/niivue/webgpu`, whose default backend is WebGPU) without `isAntiAlias: false` (e.g. `examples/cinematic/`) hits the slowdown on WebKit. We work around it rather than splitting the volume into a single-sample pass: the demos that default to WebGPU (the slide examples, `apps/demo-ext-tile/src/range.js`, `ome.zarr.js` and `vox.block.pick.zarr.js`, `apps/dandi-demo/src/dandi.js`, and the `bounds`, `ome.tiff`, `vox.block.pick`, `vox.draw.explode`, `vox.events`, `vox.gestures`, `vox.gradopacity.explode` and `vox.min.webgpu` examples) and the example pages with an AntiAlias checkbox (`backend`, `dev`, `vox.draw`, `vox.tiled`) turn anti-aliasing off on WebKit, on both backends as `slides.js` does; `?aa=on|off` overrides in the slides, range and dandi demos. Other pages with a WebGPU switch keep the default, so switching them to WebGPU on WebKit runs with MSAA. Retest every couple of months, comparing `isAntiAlias: true` against `false` on the WebGPU backend; once Safari is fixed, remove those WebKit checks. `SlideRendererGPU.create(canvas, { antialias })` (`src/wgpu/slide.ts`) draws into a 4x multisample target resolved to the canvas; the slides demo passes its Anti-alias setting to both renderers.
 
 ## API conventions
 

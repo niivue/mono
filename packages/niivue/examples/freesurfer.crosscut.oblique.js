@@ -1,5 +1,13 @@
 import NiiVue from '../src/index.ts'
 
+const aboutBtn = document.getElementById('aboutBtn')
+const gl1 = document.getElementById('gl1')
+const shaderSelect = document.getElementById('shaderSelect')
+const sliceShaderSelect = document.getElementById('sliceShaderSelect')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const widthSlider = document.getElementById('widthSlider')
+
 // Live demo for https://github.com/niivue/mono/issues/92: a T1 acquired
 // ~10 degrees oblique with its left mid-thickness surface in world space.
 // 2D slices follow the volume's voxel plane. 'crosscut' cuts the mesh with

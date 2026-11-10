@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
+import { parseMultipartRelated } from '@niivue/nv-ext-tile/dicom'
 import {
-  multipartBoundary,
-  parseMultipartRelated,
   retrieveInstanceUrlFromImageId,
+  seriesUrlFromImageId,
 } from './dicomWadoRs'
 
 describe('retrieveInstanceUrlFromImageId', () => {
@@ -71,22 +71,19 @@ describe('retrieveInstanceUrlFromImageId', () => {
   })
 })
 
-describe('multipartBoundary', () => {
-  it('reads quoted and unquoted boundaries', () => {
+describe('seriesUrlFromImageId', () => {
+  const series = 'https://host/dicomweb/studies/1.2/series/3.4'
+
+  it('cuts a frame imageId back to its series, keeping the query', () => {
     expect(
-      multipartBoundary(
-        'multipart/related; type="application/dicom"; boundary="abc123"',
+      seriesUrlFromImageId(
+        `wadors:${series}/instances/5.6/frames/1?access_token=t`,
       ),
-    ).toBe('abc123')
-    expect(
-      multipartBoundary(
-        'multipart/related; boundary=abc123; type="application/dicom"',
-      ),
-    ).toBe('abc123')
+    ).toBe(`${series}?access_token=t`)
   })
 
-  it('returns null when absent', () => {
-    expect(multipartBoundary('application/dicom')).toBeNull()
+  it('returns null without a series segment', () => {
+    expect(seriesUrlFromImageId('wadors:https://host/studies/1.2')).toBeNull()
   })
 })
 

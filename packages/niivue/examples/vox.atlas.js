@@ -1,5 +1,17 @@
 import NiiVue from '../src/index.ts'
 
+const aboutBtn = document.getElementById('aboutBtn')
+const colorBtn = document.getElementById('colorBtn')
+const colorbarCheck = document.getElementById('colorbarCheck')
+const darkCheck = document.getElementById('darkCheck')
+const gl1 = document.getElementById('gl1')
+const legendCheck = document.getElementById('legendCheck')
+const legendToggleCheck = document.getElementById('legendToggleCheck')
+const nearestCheck = document.getElementById('nearestCheck')
+const opacitySlider = document.getElementById('opacitySlider')
+const outlineSlider = document.getElementById('outlineSlider')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // Label volumes default to nearest (NIFTI_INTENT_LABEL or a label colormap);
 // this overrides it for the atlas.
 nearestCheck.onclick = function () {

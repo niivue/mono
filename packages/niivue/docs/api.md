@@ -264,7 +264,7 @@ pick up the new colors on their next change (`setMeshLayerProperty`,
 const nv1 = new NiiVue({
   // Infrastructure (top-level)
   backend: 'webgpu',
-  isAntiAlias: false, // default; true enables 4x MSAA (slow on Safari WebGPU, #318)
+  isAntiAlias: true, // default 4x MSAA; false for WebKit WebGPU, which shades every sample (#381)
 
   // All config properties are flat (same names as controller getters/setters)
   backgroundColor: [0, 0, 0, 1],

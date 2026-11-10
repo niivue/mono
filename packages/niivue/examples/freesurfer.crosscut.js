@@ -1,5 +1,12 @@
 import NiiVue from '../src/index.ts'
 
+const gl1 = document.getElementById('gl1')
+const shaderSelect = document.getElementById('shaderSelect')
+const sliceShaderSelect = document.getElementById('sliceShaderSelect')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const widthSlider = document.getElementById('widthSlider')
+
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }

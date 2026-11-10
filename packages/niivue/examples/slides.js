@@ -5,7 +5,7 @@
 // demo just wires DOM controls to it and draws it with a backend-selected
 // renderer: SlideRenderer (WebGL2) or SlideRendererGPU (WebGPU). WebGPU by
 // default; add `?backend=webgl2` for WebGL2, `?aa=on|off` to override the
-// anti-aliasing default.
+// anti-aliasing default. TIFF/SVS slides live in apps/demo-ext-tile.
 //
 // The synthetic pyramid (public/tile-range-poc/) streams one tile's worth of
 // bytes at a time over HTTP 206 range requests, so a multi-gigabyte slide never
@@ -23,7 +23,7 @@ import {
   SlideRendererGPU,
   SlideVectorLayer,
 } from '../src/index.ts'
-import { createTiffSource } from './tiff-source.js'
+import { backendFromUrl, isAntiAlias, watchRetina } from './displayControls.js'
 import { urlParamSelect } from './urlParamSelect.js'
 
 // DZI sources construct via NVSlide.fromSource(DziSource.fromUrl(...)) rather
@@ -31,12 +31,6 @@ import { urlParamSelect } from './urlParamSelect.js'
 const DZI_URLS = {
   'dzi-highsmith':
     'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
-}
-
-// TIFF/SVS sources build a geotiff-backed SlideTileSource. The OpenSlide server
-// has no CORS, so the file is served from the streaming media base below.
-const TIFF_URLS = {
-  'tiff-cmu1': 'svs/CMU-1-Small-Region.svs',
 }
 
 // NVSlide core ships no JPEG 2000 or JPEG-LS codec: dcm2niix's WASM worker pool
@@ -70,6 +64,7 @@ async function withFrameDecoder(signal, run, isRetry = false) {
     if (--p.active === 0 && p.retired) p.decoder.terminate()
   }
 }
+/** @type {import('../src/index.ts').SlideTileDecoder} */
 async function decodeDicomTile(bytes, { level, signal }) {
   const options = {
     photometric: level.photometric,
@@ -107,8 +102,6 @@ const MANIFEST_PATHS = {
   synthetic: SYNTHETIC_MANIFEST_PATH,
   'dicom-wsi': DICOM_WSI_PATH,
   'openslide-3dhistech-1': 'dicom-wsi/3dhistech-1/manifest.json',
-  // hamamatsu-2 omitted: dicom-parser raises a buffer overrun building its
-  // manifest (see scripts/fetch-openslide-dicom.ts), so it never loads.
   'openslide-jp2k-33003-1': 'dicom-wsi/jp2k-33003-1/manifest.json',
   // Monochrome JPEG-LS test slides (3dhistech-1 luminance): window, BitsStored, MONOCHROME1.
   'mono12-jls': 'dicom-wsi/mono12-jls/manifest.json',
@@ -123,14 +116,6 @@ const MAX_CACHE_BYTES = 96 * 1024 * 1024
 const TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
 const RANGE_LOG_LENGTH = 24
 
-// WebKit (Safari, and every iOS browser) misrenders WebGPU with anti-aliasing
-// on, so it defaults off there and on elsewhere.
-const isWebKit =
-  /AppleWebKit/.test(navigator.userAgent) &&
-  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
-const aaParam = new URLSearchParams(location.search).get('aa')
-const isAntiAlias = aaParam ? aaParam === 'on' : !isWebKit
-
 function el(id) {
   const node = document.getElementById(id)
   if (!node) throw new Error(`Missing #${id}`)
@@ -141,6 +126,8 @@ const els = {
   backendSelect: el('backendSelect'),
   aaSelect: el('aaSelect'),
   slideFilter: el('slideFilter'),
+  retinaControl: el('retinaControl'),
+  retina: el('retina'),
   source: el('source'),
   levelMode: el('levelMode'),
   windowControl: el('windowControl'),
@@ -195,22 +182,17 @@ let wandTolerance = 40
 let drawLut = null
 const DRAW_OPACITY = 0.85
 
-function backendFromUrl() {
-  const raw = new URLSearchParams(window.location.search).get('backend')
-  return raw === 'webgl2' ? 'webgl2' : 'webgpu'
-}
-
 function resolveDemoUrl(path) {
   const base = import.meta.env.BASE_URL || '/'
   const normalized = base.endsWith('/') ? base : `${base}/`
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
-// Streaming slides (DICOM-WSI, OpenSlide DICOM, SVS) come from the Git LFS
+// Streaming slides (DICOM-WSI, OpenSlide DICOM) come from the Git LFS
 // repository the Pages build uses, so `bun run dev` loads them with no fetch
 // step: manifests from raw, binaries from the LFS media endpoint (raw returns
 // LFS pointers). VITE_STREAMING_ASSET_BASE=/ serves local copies instead
-// (scripts/fetch-dicom-wsi.ts, scripts/fetch-openslide-dicom.ts, public/svs/).
+// (scripts/fetch-dicom-wsi.ts, scripts/fetch-openslide-dicom.ts).
 const STREAMING_REPO = 'niivue/niivue-demo-images-lfs/main/streaming/'
 const STREAMING_ASSET_BASE =
   import.meta.env.VITE_STREAMING_ASSET_BASE ||
@@ -280,7 +262,8 @@ function screenForCanvas() {
   return {
     widthCss: rect.width,
     heightCss: rect.height,
-    devicePixelRatio: window.devicePixelRatio || 1,
+    // Retina off draws in CSS pixels.
+    devicePixelRatio: els.retina.checked ? window.devicePixelRatio || 1 : 1,
   }
 }
 
@@ -882,14 +865,16 @@ els.source.addEventListener('change', () => {
   void loadSlide()
 })
 window.addEventListener('resize', requestRender)
+watchRetina(els.retinaControl, requestRender)
+els.retina.addEventListener('change', requestRender)
 
-// Bumped on each load so a slower source (e.g. TIFF) that started earlier cannot
+// Bumped on each load so a slower source (e.g. DZI) that started earlier cannot
 // resolve after a newer selection and desync the visible slide from the dropdown.
 let loadSeq = 0
 
 // Turn a load failure into an actionable hint. Most demo sources need a
 // gitignored fixture fetched by a script, or an external host to be reachable;
-// without this a missing SVS or an offline DZI shows only a raw fetch error.
+// without this a missing manifest or an offline DZI shows only a raw fetch error.
 function hintForSource(src) {
   if (src === 'dzi-highsmith') {
     return ` Fetched from ${new URL(DZI_URLS[src]).host}; check your network/CORS (this external DZI must be online).`
@@ -902,9 +887,6 @@ function hintForSource(src) {
     return ` Did you run scripts/fetch-openslide-dicom.ts --slide=${src.replace('openslide-', '')}?`
   }
   if (src === 'dicom-wsi') return ' Did you run scripts/fetch-dicom-wsi.ts?'
-  if (src === 'tiff-cmu1') {
-    return ` Serve ${TIFF_URLS[src]} same-origin under public/ (the .svs is gitignored; the OpenSlide host has no CORS).`
-  }
   return ''
 }
 
@@ -951,15 +933,9 @@ async function loadSlide() {
       showTileGrid: els.showGrid.checked,
     }
     const dziUrl = DZI_URLS[els.source.value]
-    const tiffUrl = TIFF_URLS[els.source.value]
     let next
     if (dziUrl) {
       next = NVSlide.fromSource(await DziSource.fromUrl(dziUrl), opts)
-    } else if (tiffUrl) {
-      next = NVSlide.fromSource(
-        await createTiffSource(resolveStreamingMediaUrl(tiffUrl)),
-        opts,
-      )
     } else {
       next = await slideFromManifest(opts)
     }

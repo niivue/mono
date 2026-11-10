@@ -3,7 +3,7 @@
 Tiled and chunked image formats for NiiVue (slides and streamed volumes), one subpath per format, so a page loads only the format it uses:
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
 - `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders, hosted manifests and DICOMweb ([Local DICOM-WSI folders](#local-dicom-wsi-folders), [DICOMweb](#dicomweb)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
-- `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick ([OME-Zarr](#ome-zarr)).
+- `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick, and 2D OME-Zarr slides streamed tile by tile into `NVSlide` ([OME-Zarr](#ome-zarr)).
 
 Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`, and core's OME-Zarr exports; the APIs are unchanged, only the import paths differ.
 
@@ -152,22 +152,37 @@ const slide = NVSlide.fromSource(source)
 ```
 
 - Tiles are fetched by WADO-RS `{seriesUrl}/instances/{sop}/frames/{n}`, with the slide's abort signal. A query on `seriesUrl` (an access token) is kept on each frame URL.
-- A level whose metadata states no transfer syntax costs one frame request in `open`, which reads the syntax from the bytes.
+- A level whose metadata states no transfer syntax costs one frame request in `open` (all levels at once), which reads the syntax from the bytes. A server that refuses it (HTTP 400, 406 or 415) is assumed to serve JPEG Baseline; other errors fail the open.
 - JPEG 2000 and JPEG-LS tiles are requested untranscoded (`transfer-syntax=*`); a tile the server transcoded anyway is refused.
-- Responses are capped at 64 MB, also when streamed without Content-Length.
+- Responses are capped at 64 MB, also when streamed without Content-Length. `readFirstPart(response, what)` applies the same cap and returns the first multipart/related part, for a host's own WADO-RS requests.
 - ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source), else fetched. `headers`, and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin. A relative `seriesUrl` resolves against the page.
 - One slide per optical path and focal plane, as for local files; a viewer that shows one picks `slides[0]`, the first path and lowest plane, and should say others exist.
 
 ## OME-Zarr
 
 ```ts
-import { fetchOmeZarrChunkedSource, loadOmeZarrVolumes } from '@niivue/nv-ext-tile/zarr'
+import { loadOmeZarrVolumes, streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
 
 await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one whole level
-await nv.loadChunkedVolume(await fetchOmeZarrChunkedSource(storeUrl)) // or stream bricks
+await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the volume is removed
 ```
 
-Reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
+To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running.
+
+For a 2D image (one y/x plane per level), `ZarrSlideSource` streams chunks into `NVSlide` as tiles instead:
+
+```ts
+import { NVSlide } from '@niivue/niivue'
+import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
+
+const source = await ZarrSlideSource.fromUrl(storeUrl) // or fromStore(store); { channel, z, t } pick a plane
+const slide = NVSlide.fromSource(source)
+if (source.window) slide.setWindow(source.window.calMin, source.window.calMax) // NVSlide does not read the window from the source
+```
+
+Three uint8 channels show as RGB; any other store shows one channel in grey, windowed from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
+
+Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `zarrita` is a dependency. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 
 ## Without a bundler
 

@@ -65,6 +65,15 @@ jobs:
       - name: Packed-consumer smoke test (niivue)
         run: bunx nx run niivue:smoke
 
+      # Catches broken imports and missing demo assets before merge; the
+      # Pages workflow builds the examples only after a push to main. It
+      # empties packages/niivue/dist, so keep it after the steps that use it.
+      - name: Build demos (niivue)
+        run: bun run --cwd packages/niivue build:examples
+
+      - name: Demo assets exist (niivue)
+        run: bun run --cwd packages/niivue check:demo-assets
+
       - name: Notebook hygiene
         run: bun .github/scripts/check-notebook-hygiene.ts
 

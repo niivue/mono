@@ -9,7 +9,7 @@ export const NIIVUE_SOP_CLASS_HANDLER_ID =
   '@niivue/nv-ohif.sopClassHandlerModule.niivue-wsi'
 
 // VL Whole Slide Microscopy Image Storage. NiiVue renders these as a tiled
-// deep-zoom via NVSlide (see wsiTileSource / NiivueViewport's `wsi` branch).
+// deep-zoom via NVSlide (see NiivueViewport's `wsi` branch).
 const VL_WHOLE_SLIDE_MICROSCOPY_IMAGE_STORAGE = '1.2.840.10008.5.1.4.1.1.77.1.6'
 
 interface WsiInstance extends Record<string, unknown> {

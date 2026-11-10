@@ -22,9 +22,13 @@
       "options": { "cwd": "{projectRoot}" }
     },
     "typecheck": {
-      "command": "bunx tsc --noEmit",
+      "command": "bunx tsc --noEmit && bunx tsc -p examples/tsconfig.json",
       "options": { "cwd": "{projectRoot}" },
-      "inputs": ["typescript"]
+      "inputs": [
+        "typescript",
+        "{projectRoot}/examples/**/*.js",
+        "{projectRoot}/examples/tsconfig.json"
+      ]
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",

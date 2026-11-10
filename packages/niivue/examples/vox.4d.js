@@ -1,5 +1,19 @@
 import NiiVue from '../src/index.ts'
 
+const autoCalCheck = document.getElementById('autoCalCheck')
+const colorBtn = document.getElementById('colorBtn')
+const colorbarCheck = document.getElementById('colorbarCheck')
+const dprSelect = document.getElementById('dprSelect')
+const fixedRangeCheck = document.getElementById('fixedRangeCheck')
+const gl1 = document.getElementById('gl1')
+const graphCheck = document.getElementById('graphCheck')
+const loadAllBtn = document.getElementById('loadAllBtn')
+const nextFrame = document.getElementById('nextFrame')
+const normalCheck = document.getElementById('normalCheck')
+const prevFrame = document.getElementById('prevFrame')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 graphCheck.onclick = function () {
   nv1.isGraphVisible = this.checked
 }

@@ -8,6 +8,9 @@ import NiiVue, {
 } from '../src/index.ts'
 import manifest from './allen.imsc.json'
 
+const gl1 = document.getElementById('gl1')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 // The two viewers of the Allen Integrated Mitotic Stem Cell essay
 // (imsc.allencell.org), rebuilt on NiiVue.
 //
@@ -131,6 +134,7 @@ function channelKind() {
 // tint(); density and brightness reshape that ramp (Allen's viewer uses
 // brightness 1.6). Allen's densities are 0.06 raw and 0.4 segmented; NiiVue's
 // step scale differs, so the matching values are 0.5 and 3.
+/** @type {[string, number][]} */
 const renderModes = [
   ['Composite', VOLUME_RENDER_MODE.COMPOSITE],
   ['Maximum', VOLUME_RENDER_MODE.MAXIMUM],
@@ -269,6 +273,7 @@ async function showLoaded() {
 
 // Every change to the viewer's volumes runs here, one at a time and to
 // completion, so a load never swaps volumes under a setVolume still running.
+/** @type {Promise<unknown>} */
 let commits = Promise.resolve()
 function commit(step) {
   const done = commits.then(step)

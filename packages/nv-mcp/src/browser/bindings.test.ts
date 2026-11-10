@@ -263,6 +263,37 @@ describe('bindControls: the view and volumes', () => {
     expect(view.volumes[0].calMax).toBe(60)
   })
 
+  it('refuses a volume window end that would cross the other end', () => {
+    const { add_control, memory, view, onError } = setup()
+    add_control({
+      id: 'lo',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.cal_min',
+    })
+    const before = memory.list().find((c) => c.id === 'lo')?.value
+    memory.simulate({ id: 'lo', type: 'change', value: 90 })
+    expect(view.setVolume).not.toHaveBeenCalled()
+    // The refused value does not stay on the control.
+    expect(memory.list().find((c) => c.id === 'lo')?.value).toBe(before)
+    expect(onError.mock.calls[0]?.[0].message).toBe(
+      'volume.0.cal_min cannot be 90: cal_min (90) must not be above cal_max (80).',
+    )
+  })
+
+  it('gives a negative window end the same slider range as cal_min', () => {
+    const { add_control } = setup()
+    const got = add_control({
+      id: 'neg',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.0.cal_min_neg',
+    }) as Reported
+    expect(got.control).toMatchObject({ min: 0, max: 100 })
+  })
+
   it('offers the colormaps for a volume colormap', () => {
     const { add_control, memory, view } = setup()
     const got = add_control({
@@ -1026,6 +1057,8 @@ function meshView(writeWait?: number) {
           globalMin: -1,
           globalMax: 4,
           opacity: 1,
+          frame4D: 1,
+          nFrame4D: 3,
         },
       ],
     },
@@ -1073,6 +1106,10 @@ function meshView(writeWait?: number) {
         return Promise.resolve()
       },
     ),
+    setMeshLayerFrame4D: mock((index: number, layer: number, frame: number) => {
+      Object.assign(meshes[index].layers?.[layer] ?? {}, { frame4D: frame })
+      return Promise.resolve()
+    }),
   })
   const memory = memoryControls()
   const onError = mock((_error: Error) => {})
@@ -1501,6 +1538,64 @@ describe('bindControls: meshes', () => {
     expect(got.control.max).toBe(4)
     memory.simulate({ id: 't', type: 'change', value: 1.5 })
     expect(meshes[0].layers?.[0].calMin).toBe(1.5)
+  })
+
+  it("drives a 4D mesh layer's frame, refusing one it does not have", () => {
+    const { add_control, memory, meshes, onError } = meshView()
+    const got = add_control({
+      id: 'f',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.layer.0.frame',
+    }) as Reported
+    expect(got.control).toMatchObject({ value: 1, min: 0, max: 2, step: 1 })
+    memory.simulate({ id: 'f', type: 'change', value: 2 })
+    expect(meshes[0].layers?.[0].frame4D).toBe(2)
+    // A spec's own max may reach past the layer's frames.
+    add_control({
+      id: 'g',
+      kind: 'number',
+      x: 0,
+      y: 1,
+      max: 5,
+      bind: 'mesh.0.layer.0.frame',
+    })
+    memory.simulate({ id: 'g', type: 'change', value: 3 })
+    expect(onError.mock.calls[0]?.[0].message).toBe(
+      'mesh.0.layer.0.frame takes a whole number, 0 to 2.',
+    )
+  })
+
+  it("gives a mesh layer's negative window the layer's range", () => {
+    const { add_control } = meshView()
+    const got = add_control({
+      id: 'n',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.layer.0.cal_max_neg',
+    }) as Reported
+    expect(got.control).toMatchObject({ min: -1, max: 4 })
+  })
+
+  it('refuses a mesh layer window end that would cross the other end', () => {
+    const { add_control, memory, view, onError } = meshView()
+    add_control({
+      id: 'hi',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'mesh.0.layer.0.cal_max',
+    })
+    const before = memory.list().find((c) => c.id === 'hi')?.value
+    memory.simulate({ id: 'hi', type: 'change', value: -0.5 })
+    expect(view.setMeshLayerProperty).not.toHaveBeenCalled()
+    // The refused value does not stay on the control.
+    expect(memory.list().find((c) => c.id === 'hi')?.value).toBe(before)
+    expect(onError.mock.calls[0]?.[0].message).toBe(
+      'mesh.0.layer.0.cal_max cannot be -0.5: cal_min (0) must not be above cal_max (-0.5).',
+    )
   })
 
   it("drives a mesh layer's colormap and opacity", () => {

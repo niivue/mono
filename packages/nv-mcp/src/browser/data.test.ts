@@ -113,6 +113,16 @@ describe('the data palette', () => {
     expect(load_data({ id: 'nope' })).rejects.toThrow('There is: mni, motor')
   })
 
+  it('holds an OME-Zarr store', () => {
+    const { add_data } = setup()
+    const got = add_data({
+      id: 'zarr',
+      tool: 'load_ome_zarr',
+      args: { url: '/s.ome.zarr', stream: true },
+    }) as { data: { tool: string } }
+    expect(got.data.tool).toBe('load_ome_zarr')
+  })
+
   it('removes an agent entry and keeps the page entries', () => {
     const { add_data, remove_data } = setup()
     add_data({ id: 'tracts', tool: 'load_mesh', args: { url: '/m.trx' } })

@@ -1,5 +1,12 @@
 import NiiVue from '../src/index.ts'
 
+const clearBtn = document.getElementById('clearBtn')
+const dragMode = document.getElementById('dragMode')
+const drawCheck = document.getElementById('drawCheck')
+const gl1 = document.getElementById('gl1')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
 const MAX_LOG_ENTRIES = 200
 
 const CATEGORY = {
@@ -171,6 +178,11 @@ function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
 
+// WebKit (Safari, and every iOS browser) runs WebGPU about 4x slower with
+// anti-aliasing on (#381), so it is off there and on elsewhere (as slides.js).
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
 // Optional `?backend=webgl2` (or webgpu) picks the initial backend; the
 // WebGPU checkbox mirrors it and can still switch at runtime.
 const initialBackend =
@@ -183,13 +195,14 @@ const nv1 = new NiiVue({
   backgroundColor: [0.2, 0.2, 0.2, 1],
   isColorbarVisible: true,
   backend: initialBackend,
+  isAntiAlias: !isWebKit,
 })
 
 // Debounce canvasResize to avoid feedback loops
 let resizeTimer = 0
 function debouncedResizeLog(detail) {
   clearTimeout(resizeTimer)
-  resizeTimer = setTimeout(() => logEvent('canvasResize', detail), 300)
+  resizeTimer = window.setTimeout(() => logEvent('canvasResize', detail), 300)
 }
 
 // Register listeners for every event

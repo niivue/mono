@@ -12,12 +12,6 @@
     <main id="canvas-container">
       <canvas id="gl1"></canvas>
     </main>
-    <script type="module">
-      import NiiVue from '../src/index.webgpu.ts'
-
-      const nv1 = new NiiVue()
-      await nv1.attachToCanvas(gl1)
-      await nv1.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
-    </script>
+    <script type="module" src="vox.min.webgpu.js"></script>
   </body>
 </html>

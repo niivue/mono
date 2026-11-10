@@ -1,0 +1,59 @@
+import NiiVue from '../src/index.ts'
+import { SLICE_TYPE } from '../src/NVConstants.ts'
+
+const fontSelect = document.getElementById('fontSelect')
+const gl1 = document.getElementById('gl1')
+
+const fontSlide = document.getElementById('fontSlide')
+const webgpuCheck = document.getElementById('webgpuCheck')
+
+// Initial slider value (10) should map to the default fontScale (0.4).
+const SLIDER_TO_FONT_SCALE = 0.04
+const nv1 = new NiiVue()
+nv1.sliceType = SLICE_TYPE.AXIAL
+nv1.is3DCrosshairVisible = false
+await nv1.attachToCanvas(gl1)
+webgpuCheck.onclick = function () {
+  nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
+}
+async function fetchManifest(baseUrl) {
+  const resp = await fetch(`${baseUrl}manifest.json`)
+  if (!resp.ok)
+    throw new Error(
+      `Failed to fetch ${baseUrl}manifest.json: ${resp.status} ${resp.statusText}`,
+    )
+  return resp.json()
+}
+function populateSelect(selectEl, items) {
+  for (const item of items) {
+    const opt = document.createElement('option')
+    opt.textContent = item
+    selectEl.appendChild(opt)
+  }
+}
+const FONT_BASE = 'https://raw.githubusercontent.com/niivue/fonts/main/fonts/'
+try {
+  populateSelect(fontSelect, await fetchManifest(FONT_BASE))
+} catch (err) {
+  console.error('Could not load font manifest:', err)
+  // Overwrite the hidden placeholder so the error is visible while the
+  // dropdown is collapsed, not only when the user opens it.
+  fontSelect.options[0].textContent = '(failed to load font list)'
+  fontSelect.options[0].hidden = false
+}
+fontSelect.onchange = async () => {
+  // Poem is the only CJK-capable font in the remote manifest; pair
+  // it with CJK sample text to exercise the Unicode glyph path.
+  if (fontSelect.value === 'Poem') {
+    nv1.placeholderText = `麻雀虽小`
+  } else {
+    nv1.placeholderText = `Sphinx of black quartz, judge my vow`
+  }
+  // URL-encode the font name so any future manifest entries with
+  // spaces or non-ASCII characters resolve cleanly.
+  const base = FONT_BASE + encodeURIComponent(fontSelect.value)
+  await nv1.setFontFromUrl({ atlas: `${base}.png`, metrics: `${base}.json` })
+}
+fontSlide.oninput = function () {
+  nv1.fontScale = Number(this.value) * SLIDER_TO_FONT_SCALE
+}

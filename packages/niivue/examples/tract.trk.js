@@ -1,5 +1,15 @@
 import NiiVue from '../src/index.ts'
 
+const colorBtn = document.getElementById('colorBtn')
+const fiberColor = document.getElementById('fiberColor')
+const gl1 = document.getElementById('gl1')
+const opacitySlide = document.getElementById('opacitySlide')
+const radiusSlide = document.getElementById('radiusSlide')
+const shaderDrop = document.getElementById('shaderDrop')
+const sliceType = document.getElementById('sliceType')
+const webgpuCheck = document.getElementById('webgpuCheck')
+const xraySlide = document.getElementById('xraySlide')
+
 sliceType.onchange = () => {
   nv1.sliceType = parseInt(sliceType.value, 10)
 }

@@ -27,6 +27,10 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "typecheck": {
+      "command": "bunx tsc --noEmit",
+      "options": { "cwd": "{projectRoot}" }
+    },
     "lint": {
       "command": "bunx biome check {projectRoot}",
       "inputs": ["lintable"]

@@ -4,7 +4,8 @@
 import * as zw from '@niivue/zarrita-rs'
 import * as zjs from 'zarrita'
 
-const $ = (id) => document.getElementById(id)
+/** @param {string} id */
+const $ = (id) => /** @type {HTMLInputElement} */ (document.getElementById(id))
 const median = (v) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]
 
 function selection(shape, kind) {

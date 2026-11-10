@@ -89,13 +89,17 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - `pixelSpacingMM` is the level-0 PixelSpacing: shared PixelMeasures, else the first
   frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
-  `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed` or
-  `not-tiled`.
+  `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed`,
+  `too-large` (a level of more than 2^22 tiles) or `not-tiled`.
+- Undefined-length UN elements (implicit VR sequences, PS3.5 6.2.2) are skipped.
 - Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
-  a level at 2^22 tiles, a file at 4096 (optical path, focal plane) pairs, TILED_FULL
-  frames at tiles x planes x NumberOfOpticalPaths, and counts and offsets are checked
-  against the file size (`malformed` otherwise). A slide's levels total at most
-  2 x 2^22 tiles; levels past that are dropped and listed in `skipped`.
+  a file at 4096 optical paths and 4096 (optical path, focal plane) pairs, TILED_FULL
+  frames at tiles x planes x NumberOfOpticalPaths, text values the index reads at
+  1 KiB, and counts and offsets are checked against the file size (`malformed`
+  otherwise). Only the elements the index reads are kept, so a 64 MiB header of
+  millions of elements costs at most about 100 MB beyond its bytes, not GBs. A
+  slide's levels total at most 2 x 2^22 tiles; levels past that are dropped and
+  listed in `skipped`.
 - The index holds only per-frame data, bounded by the files' sizes, so a folder of
   many slides indexes in memory proportional to its headers. Each level reports
   `duplicates` and `holes`; its grid-sized tile map is built only when

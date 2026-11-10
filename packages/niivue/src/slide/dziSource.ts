@@ -1,9 +1,10 @@
-import type {
-  NVSlideLevelManifest,
-  NVSlideManifest,
-  NVSlideTileManifest,
-  SlideSourceHost,
-  SlideTileSource,
+import {
+  assertSlideGrid,
+  type NVSlideLevelManifest,
+  type NVSlideManifest,
+  type NVSlideTileManifest,
+  type SlideSourceHost,
+  type SlideTileSource,
 } from './NVSlide'
 
 // DeepZoom (DZI) descriptor: <Image TileSize Overlap Format><Size Width Height/>.
@@ -52,6 +53,8 @@ export function buildDziManifest(
   // overlap > 0: DziSource decodes + crops each tile to its core, returning
   // raw RGBA; overlap 0: the JPEG bytes pass straight to the image/jpeg decoder.
   const codec = overlap > 0 ? 'raw-rgba' : 'image/jpeg'
+  // The finest level has the most tiles: bound it before building any.
+  assertSlideGrid(Math.ceil(width / tileSize) * Math.ceil(height / tileSize), 0)
   const maxLevel = Math.ceil(Math.log2(Math.max(width, height)))
   const levels: NVSlideLevelManifest[] = []
   const dziLevelForIndex: number[] = []

@@ -15,6 +15,11 @@
  * chunk step -- the next slabs along the scrub, or the tiles about to come in
  * from the leading edge of a pan.
  *
+ * A multi-LOD octree plan has no grid (`gridDims` [1,1,1], every `gridIndex`
+ * [0,0,0]), so there travel is measured in common-grid voxels from brick
+ * centres, and each brick predicts its same-level neighbour as many of its own
+ * sizes ahead as the travel covers (coarse bricks usually stay put).
+ *
  * Two properties keep the prediction honest:
  *
  * - It reads only the working set, so it costs one pass over a list the caller
@@ -75,7 +80,12 @@ const NO_PREDICTION: readonly number[] = []
  */
 export class ChunkTravelPredictor {
   private _center: [number, number, number] | null = null
+  /** In chunks for a grid plan, in common voxels for an octree plan. */
   private readonly _velocity: [number, number, number] = [0, 0, 0]
+  /** Jump/still threshold scale: 1 for a grid, mean brick dims for an octree. */
+  private readonly _unit: [number, number, number] = [1, 1, 1]
+  private _indexPlan: ChunkPlan | null = null
+  private _index: Map<number, number> | null = null
 
   /**
    * Forget the current travel. Call when the working set stops being
@@ -87,6 +97,30 @@ export class ChunkTravelPredictor {
     this._velocity[0] = 0
     this._velocity[1] = 0
     this._velocity[2] = 0
+    this._unit.fill(1)
+    this._indexPlan = null
+    this._index = null
+  }
+
+  /**
+   * A plan swap for the same volume. A refocused octree on the same common
+   * grid keeps its velocity, since a focus that follows the view swaps plans
+   * as it moves; any other swap resets. The centre is not kept: the new plan
+   * covers the same view with other bricks, so their centroid moves even when
+   * the view does not, and the next frame only sets a new baseline.
+   */
+  replan(from: ChunkPlan, to: ChunkPlan): void {
+    const [fx, fy, fz] = from.volumeDims
+    const [tx, ty, tz] = to.volumeDims
+    if (
+      isOctreePlan(from) &&
+      isOctreePlan(to) &&
+      fx === tx &&
+      fy === ty &&
+      fz === tz
+    ) {
+      this._center = null
+    } else this.reset()
   }
 
   /**
@@ -109,14 +143,21 @@ export class ChunkTravelPredictor {
       // be off the volume -- so hold the last velocity rather than resetting.
       return NO_PREDICTION
     }
-    const center = centroidOf(plan, requested)
+    const octree = isOctreePlan(plan)
+    // Grid plans measure in chunks; an earlier octree plan's unit must not leak.
+    if (!octree) this._unit.fill(1)
+    const center = octree
+      ? brickCentroid(plan, requested, this._unit)
+      : centroidOf(plan, requested)
     if (!center) return NO_PREDICTION
     const previous = this._center
     this._center = center
     if (!previous) return NO_PREDICTION
 
     for (let a = 0; a < 3; a++) {
-      if (Math.abs(center[a] - previous[a]) <= JUMP_CHUNKS) continue
+      if (Math.abs(center[a] - previous[a]) <= JUMP_CHUNKS * this._unit[a]) {
+        continue
+      }
       // A discontinuity, not travel. Drop the velocity so the next frame
       // measures afresh instead of extrapolating across the gap.
       this._velocity[0] = 0
@@ -125,9 +166,9 @@ export class ChunkTravelPredictor {
       return NO_PREDICTION
     }
     if (
-      Math.abs(center[0] - previous[0]) < STILL_EPSILON &&
-      Math.abs(center[1] - previous[1]) < STILL_EPSILON &&
-      Math.abs(center[2] - previous[2]) < STILL_EPSILON
+      Math.abs(center[0] - previous[0]) < STILL_EPSILON * this._unit[0] &&
+      Math.abs(center[1] - previous[1]) < STILL_EPSILON * this._unit[1] &&
+      Math.abs(center[2] - previous[2]) < STILL_EPSILON * this._unit[2]
     ) {
       // Travel is measured per MOVE, not per frame. A scrub is discrete -- one
       // wheel step, then idle frames until the next -- so a still frame holds
@@ -135,6 +176,13 @@ export class ChunkTravelPredictor {
       // only ever fired during a continuous drag, which is the one case that
       // needs it least.
       return NO_PREDICTION
+    }
+    if (octree) {
+      for (let a = 0; a < 3; a++) {
+        const delta = center[a] - previous[a]
+        this._velocity[a] += (delta - this._velocity[a]) * VELOCITY_SMOOTHING
+      }
+      return this._predictBricks(plan, requested, max)
     }
     const step: Vec3i = [0, 0, 0]
     let moved = false
@@ -148,6 +196,161 @@ export class ChunkTravelPredictor {
     if (!moved) return NO_PREDICTION
     return translateChunkSet(plan, requested, step, max)
   }
+
+  /**
+   * Octree look-ahead: each requested brick steps by the travel measured in its
+   * own sizes, walking face neighbours one brick at a time, and names the
+   * same-level brick it lands on.
+   */
+  private _predictBricks(
+    plan: ChunkPlan,
+    requested: readonly number[],
+    max: number,
+  ): readonly number[] {
+    if (this._indexPlan !== plan) {
+      this._index = faceIndex(plan)
+      this._indexPlan = plan
+    }
+    const index = this._index as Map<number, number>
+    const already = new Set(requested)
+    const out: number[] = []
+    for (const ci of requested) {
+      const desc = plan.chunks[ci]
+      if (!desc) continue
+      let cur = ci
+      for (let a = 0; a < 3 && cur >= 0; a++) {
+        const dims = desc.voxelDims[a]
+        const ahead = Math.round((this._velocity[a] * LOOKAHEAD_FRAMES) / dims)
+        const step = Math.max(
+          -MAX_STEP_CHUNKS,
+          Math.min(MAX_STEP_CHUNKS, ahead),
+        )
+        for (let k = 0; k < Math.abs(step); k++) {
+          const c = plan.chunks[cur]
+          const [x, y, z] = c.voxelOrigin
+          // Forward: the neighbour starts where this brick ends. Backward: it
+          // ends where this brick starts (tag a + 1), whatever its size.
+          const next =
+            step > 0
+              ? index.get(
+                  faceKey(
+                    plan,
+                    a === 0 ? x + c.voxelDims[0] : x,
+                    a === 1 ? y + c.voxelDims[1] : y,
+                    a === 2 ? z + c.voxelDims[2] : z,
+                    0,
+                  ),
+                )
+              : index.get(faceKey(plan, x, y, z, a + 1))
+          if (
+            next === undefined ||
+            plan.chunks[next].sourceLevel !== desc.sourceLevel
+          ) {
+            cur = -1
+            break
+          }
+          cur = next
+        }
+      }
+      if (cur < 0 || already.has(cur)) continue
+      already.add(cur)
+      out.push(cur)
+      if (out.length >= max) break
+    }
+    return out
+  }
+}
+
+/**
+ * A multi-LOD octree plan: many bricks, but the placeholder 1x1x1 grid. One
+ * too large for faceKey to stay exact is left to the grid path, which predicts
+ * nothing for it, rather than predicting wrong bricks.
+ */
+function isOctreePlan(plan: ChunkPlan): boolean {
+  const [gx, gy, gz] = plan.gridDims
+  const [vx, vy, vz] = plan.volumeDims
+  return (
+    gx * gy * gz === 1 &&
+    plan.chunks.length > 1 &&
+    (vx + 1) * (vy + 1) * (vz + 1) * 4 <= Number.MAX_SAFE_INTEGER
+  )
+}
+
+/**
+ * A common-grid corner plus a tag, packed into one exact number.
+ *
+ * ponytail: exact while (vx+1)(vy+1)(vz+1)*4 < 2^53, i.e. up to ~130k voxels
+ * an axis; a bigger common grid needs a two-level key.
+ */
+function faceKey(
+  plan: ChunkPlan,
+  x: number,
+  y: number,
+  z: number,
+  tag: number,
+): number {
+  const [vx, vy] = plan.volumeDims
+  return (x + (vx + 1) * (y + (vy + 1) * z)) * 4 + tag
+}
+
+/**
+ * Face-neighbour index, built once per plan: each brick under its origin (tag
+ * 0) and under its far face on each axis (tags 1..3). Octree leaves are
+ * disjoint and same-level neighbours share the other two origins, so a key
+ * names at most one brick.
+ */
+function faceIndex(plan: ChunkPlan): Map<number, number> {
+  const index = new Map<number, number>()
+  plan.chunks.forEach((c, i) => {
+    const [x, y, z] = c.voxelOrigin
+    const [dx, dy, dz] = c.voxelDims
+    index.set(faceKey(plan, x, y, z, 0), i)
+    index.set(faceKey(plan, x + dx, y, z, 1), i)
+    index.set(faceKey(plan, x, y + dy, z, 2), i)
+    index.set(faceKey(plan, x, y, z + dz, 3), i)
+  })
+  return index
+}
+
+/**
+ * Volume-weighted mean of brick centres, in common voxels, so a window over
+ * mixed levels moves with the window rather than with its many fine bricks.
+ * Writes the unweighted mean brick dims to `unit`. Null when no index names a
+ * brick of this plan.
+ */
+function brickCentroid(
+  plan: ChunkPlan,
+  indices: readonly number[],
+  unit: [number, number, number],
+): [number, number, number] | null {
+  let sx = 0
+  let sy = 0
+  let sz = 0
+  let sw = 0
+  let dx = 0
+  let dy = 0
+  let dz = 0
+  let n = 0
+  for (const ci of indices) {
+    const desc = plan.chunks[ci]
+    if (!desc) continue
+    const [ox, oy, oz] = desc.voxelOrigin
+    const [wx, wy, wz] = desc.voxelDims
+    const w = wx * wy * wz
+    sx += (ox + wx / 2) * w
+    sy += (oy + wy / 2) * w
+    sz += (oz + wz / 2) * w
+    sw += w
+    dx += wx
+    dy += wy
+    dz += wz
+    n++
+  }
+  if (n === 0) return null
+  unit[0] = dx / n
+  unit[1] = dy / n
+  unit[2] = dz / n
+  return [sx / sw, sy / sw, sz / sw]
 }
 
 /**

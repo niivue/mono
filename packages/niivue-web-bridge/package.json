@@ -35,8 +35,8 @@
   },
   "devDependencies": {
     "@niivue/niivue": "workspace:*",
-    "@types/bun": "^1.1.13",
-    "typescript": "~5.8.3",
+    "@types/bun": "^1.4.0",
+    "typescript": "^5.9.3",
     "vite": "^6.3.2",
     "vite-plugin-dts": "^4.5.4"
   },

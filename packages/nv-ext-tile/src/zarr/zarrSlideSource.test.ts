@@ -25,7 +25,8 @@ function fakeFetch(read: (path: string) => Uint8Array | undefined) {
   const fetchImpl = async (request: Request) => {
     const path = decodeURIComponent(new URL(request.url).pathname)
     modes.set(path, request.cache)
-    const body = read(path)
+    // TS 5.9 BodyInit rejects SharedArrayBuffer-backed views; fixtures are ArrayBuffer-backed.
+    const body = read(path) as Uint8Array<ArrayBuffer> | undefined
     if (!body) return new Response(null, { status: 404 })
     const m = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '')
     // Bun sets no Content-Length on a constructed Response; FetchStore HEADs for it.

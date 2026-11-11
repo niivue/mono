@@ -23,7 +23,10 @@ async function slideOf(
 }
 
 const enc = new TextEncoder()
-function multipart(payload: Uint8Array, boundary = 'B0UND'): Uint8Array {
+function multipart(
+  payload: Uint8Array,
+  boundary = 'B0UND',
+): Uint8Array<ArrayBuffer> {
   const head = enc.encode(
     `--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
   )

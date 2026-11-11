@@ -1774,7 +1774,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         height: picture.height,
         canvas: { width: canvas.width, height: canvas.height },
         // NiiVue's capture is its instance's rect, so a point picked on the
-        // picture is this far from the canvas pixel map_point takes.
+        // picture is this far from the canvas pixel map_point takes, after
+        // scaling by region over the picture's size (per axis: height rounds).
+        region: { width: drawn.width, height: drawn.height },
         origin:
           drawn === canvas
             ? [0, 0]

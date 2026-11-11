@@ -20,9 +20,9 @@ Unlike TIFF, the container itself is NOT hand-parsed: chunk layout, codecs
 (blosc, gzip, zstd, lz4) and both Zarr format versions come from
 `@niivue/zarrita-rs/inline`, a runtime dependency that decodes chunks in
 wasm with no worker or asset URL for the host app to serve. `OmeZarrSource.arrays` are therefore
-zarrita-rs arrays: read them with `@niivue/zarrita-rs/inline`. zarrita.js
-`get` throws on them, because each package keys its array context with its
-own private symbol.
+`@niivue/zarrita-rs/inline` arrays: read them with that entry's `get`. The
+default `@niivue/zarrita-rs` entry and zarrita.js both throw on them, because
+each keys its array context with its own private symbol.
 
 ## Streaming very large stores
 

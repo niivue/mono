@@ -1304,6 +1304,33 @@ describe('NvSceneController', () => {
       expect(images).toEqual([0])
     })
 
+    test('volumeAdded reports the current index, or nothing once the viewer is removed', async () => {
+      controller.setLayout('1x2')
+      const added: number[] = []
+      controller.on('volumeAdded', (index) => added.push(index))
+      const finishers: (() => void)[] = []
+      for (const nv of mockInstances) {
+        nv.addVolume.mockImplementation(
+          (opts: { url: string }) =>
+            new Promise((res) => {
+              finishers.push(() => {
+                nv.volumes.push({ url: opts.url })
+                res(undefined)
+              })
+            }),
+        )
+      }
+      const removedLoad = controller.loadVolume(0, { url: 'a.nii' })
+      const keptLoad = controller.loadVolume(1, { url: 'b.nii' })
+      await flushPromises()
+
+      controller.removeViewer(0)
+      for (const finish of finishers) finish()
+      await Promise.all([removedLoad, keptLoad])
+
+      expect(added).toEqual([0])
+    })
+
     test('removeViewer while broadcasting notifies once', () => {
       controller.setLayout('1x2')
       controller.setBroadcasting(true)

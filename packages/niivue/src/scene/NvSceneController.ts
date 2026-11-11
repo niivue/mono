@@ -434,7 +434,9 @@ export class NvSceneController {
       const vols = viewer.niivue.volumes
       const image = vols[vols.length - 1]
       if (!image) throw new Error('Volume was not added')
-      this.emit('volumeAdded', index, opts, image)
+      // The viewer may have moved or been removed while the volume loaded.
+      const currentIndex = this.viewers.indexOf(viewer)
+      if (currentIndex >= 0) this.emit('volumeAdded', currentIndex, opts, image)
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }

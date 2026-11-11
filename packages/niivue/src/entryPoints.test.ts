@@ -95,8 +95,9 @@ describe('entry points', () => {
       if (file.endsWith('.test.ts')) continue
       const source = await read(file)
       if (
-        (!file.startsWith('scene/') && /from '@\/index'/.test(source)) ||
-        /from '(?:@|\.\.?)\/(?:\.\.\/)*scene\//.test(source)
+        (!file.startsWith('scene/') &&
+          /(?:from |import\()'@\/index'/.test(source)) ||
+        /(?:from |import\()'(?:@|\.\.?)\/(?:\.\.\/)*scene\//.test(source)
       )
         offenders.push(file)
     }

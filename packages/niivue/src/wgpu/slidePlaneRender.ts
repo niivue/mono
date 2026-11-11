@@ -53,6 +53,17 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `
 
+// One per plane draw in a render pass: queue writes land before the pass
+// submits, so two RENDER tiles sharing a uniform or vertex buffer would both
+// draw with the last tile's camera and tiles.
+interface DrawSlot {
+  uniform: GPUBuffer
+  group: GPUBindGroup
+  vertex: GPUBuffer | null
+  entries: PlaneVertexEntry[]
+  builtTiles: readonly SlidePlaneTile[] | null
+}
+
 interface PlaneVertexEntry {
   tile: SlidePlaneTile
   firstVertex: number
@@ -66,11 +77,11 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   private _uniformBGL: GPUBindGroupLayout | null = null
   private _textureBGL: GPUBindGroupLayout | null = null
   private _sampler: GPUSampler | null = null
-  private _uniformBuffer: GPUBuffer | null = null
-  private _uniformGroup: GPUBindGroup | null = null
-  private _vertexBuffer: GPUBuffer | null = null
-  private _entries: PlaneVertexEntry[] = []
-  private _builtTiles: readonly SlidePlaneTile[] | null = null
+  private _slots: DrawSlot[] = []
+  private _slotsUsed = 0
+  private _pass: GPURenderPassEncoder | null = null
+  // Buffers replaced during a pass, destroyed once it has been submitted.
+  private _retired: GPUBuffer[] = []
   // One texture + bind group per resident tile, keyed by NVSlide tile key.
   // Byte-budgeted: tiles that leave the working set are evicted each frame
   // (evict runs before beginFrame, so nothing referenced by the in-flight
@@ -141,39 +152,76 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       )
     this._pipeline = pipelineFor(false)
     this._lutPipeline = pipelineFor(true)
-    // mat4 (64) + opacity vec4 (16)
-    this._uniformBuffer = uniformBuffer(device, 80)
-    this._uniformGroup = device.createBindGroup({
-      layout: this._uniformBGL,
-      entries: [
-        { binding: 0, resource: { buffer: this._uniformBuffer } },
-        { binding: 1, resource: this._sampler },
-      ],
-    })
     this.isReady = true
+  }
+
+  // The next draw slot of `pass`. A new pass means the last one was submitted:
+  // its retired buffers can go, and textures are evicted once per pass (before
+  // beginFrame), never between two draws that bind them.
+  private _nextSlot(
+    device: GPUDevice,
+    pass: GPURenderPassEncoder,
+    mvpMatrix: Float32Array,
+    opacity: number,
+  ): DrawSlot | null {
+    if (!this._uniformBGL || !this._sampler) return null
+    if (pass !== this._pass) {
+      this._pass = pass
+      this._slotsUsed = 0
+      for (const buffer of this._retired) buffer.destroy()
+      this._retired = []
+      this._textures.evictToBudget()
+      this._textures.beginFrame()
+    }
+    let slot = this._slots[this._slotsUsed]
+    if (!slot) {
+      // mat4 (64) + opacity vec4 (16)
+      const uniform = uniformBuffer(device, 80)
+      slot = {
+        uniform,
+        group: device.createBindGroup({
+          layout: this._uniformBGL,
+          entries: [
+            { binding: 0, resource: { buffer: uniform } },
+            { binding: 1, resource: this._sampler },
+          ],
+        }),
+        vertex: null,
+        entries: [],
+        builtTiles: null,
+      }
+      this._slots.push(slot)
+    }
+    this._slotsUsed++
+    this._scratch.set(mvpMatrix, 0)
+    this._scratch[16] = opacity
+    device.queue.writeBuffer(slot.uniform, 0, this._scratch)
+    return slot
   }
 
   // Build one vertex buffer holding every visible plane quad (4 verts each).
   // Rebuilt whenever the tile set changes (e.g. a camera-LOD level switch).
   private _buildVertices(
     device: GPUDevice,
+    slot: DrawSlot,
     tiles: readonly SlidePlaneTile[],
   ): void {
     const data = new Float32Array(tiles.length * 4 * 5)
-    this._entries = []
+    slot.entries = []
     let o = 0
     tiles.forEach((tile, i) => {
       data.set(cornerQuad(tile.corners, tile), o)
       o += 20
-      this._entries.push({ tile, firstVertex: i * 4, uv: tile })
+      slot.entries.push({ tile, firstVertex: i * 4, uv: tile })
     })
-    if (this._vertexBuffer) this._vertexBuffer.destroy()
-    this._vertexBuffer = device.createBuffer({
+    // An earlier draw of this pass may have bound it.
+    if (slot.vertex) this._retired.push(slot.vertex)
+    slot.vertex = device.createBuffer({
       size: Math.max(20, data.byteLength),
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     })
-    device.queue.writeBuffer(this._vertexBuffer, 0, data)
-    this._builtTiles = tiles
+    device.queue.writeBuffer(slot.vertex, 0, data)
+    slot.builtTiles = tiles
   }
 
   private _textureFor(
@@ -210,31 +258,21 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     slide: NVSlide,
     opacity = 1,
   ): void {
-    if (
-      !this.isReady ||
-      !this._pipeline ||
-      !this._uniformBuffer ||
-      !this._uniformGroup
-    )
-      return
-    if (this._builtTiles !== tiles || !this._vertexBuffer) {
-      this._buildVertices(device, tiles)
-    }
-    if (!this._vertexBuffer || this._entries.length === 0) return
-    // Evict BEFORE beginFrame: the previous frame's working set (and anything
-    // drawn earlier this frame) keeps its frame stamp and is never destroyed
-    // while a command encoder that references it is still in flight.
-    this._textures.evictToBudget()
-    this._textures.beginFrame()
-    this._writeUniform(device, this._uniformBuffer, mvpMatrix, opacity)
+    if (!this.isReady || !this._pipeline) return
+    const slot = this._nextSlot(device, pass, mvpMatrix, opacity)
+    if (!slot) return
+    if (slot.builtTiles !== tiles || !slot.vertex)
+      this._buildVertices(device, slot, tiles)
+    const vertex = slot.vertex
+    if (!vertex || slot.entries.length === 0) return
     const lut = slide.displayColorLut
     if (lut && this._luts && this._lutPipeline) {
       pass.setPipeline(this._lutPipeline)
       pass.setBindGroup(2, this._luts.group(lut))
     } else pass.setPipeline(this._pipeline)
-    pass.setBindGroup(0, this._uniformGroup)
-    pass.setVertexBuffer(0, this._vertexBuffer)
-    for (const entry of this._entries) {
+    pass.setBindGroup(0, slot.group)
+    pass.setVertexBuffer(0, vertex)
+    for (const entry of slot.entries) {
       const bitmap = slide.cachedTileBitmap(entry.tile.key)
       if (!bitmap) continue
       const tex = this._textureFor(device, slide, entry.tile, bitmap)
@@ -244,7 +282,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       if (tex.width !== entry.uv.width || tex.height !== entry.uv.height) {
         entry.uv = tex
         device.queue.writeBuffer(
-          this._vertexBuffer,
+          vertex,
           entry.firstVertex * 20,
           cornerQuad(entry.tile.corners, tex),
         )
@@ -262,14 +300,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     ann: SlidePlaneAnnotation,
     opacity = 1,
   ): void {
-    if (
-      !this.isReady ||
-      !this._pipeline ||
-      !this._uniformBuffer ||
-      !this._uniformGroup ||
-      !this._textureBGL
-    )
-      return
+    if (!this.isReady || !this._pipeline || !this._textureBGL) return
     // (Re)create the annotation texture when its size changes.
     if (
       !this._annTexture ||
@@ -312,23 +343,13 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       })
     }
     device.queue.writeBuffer(this._annVertexBuffer, 0, data)
-    this._writeUniform(device, this._uniformBuffer, mvpMatrix, opacity)
+    const slot = this._nextSlot(device, pass, mvpMatrix, opacity)
+    if (!slot) return
     pass.setPipeline(this._pipeline)
-    pass.setBindGroup(0, this._uniformGroup)
+    pass.setBindGroup(0, slot.group)
     pass.setBindGroup(1, this._annGroup)
     pass.setVertexBuffer(0, this._annVertexBuffer)
     pass.draw(4)
-  }
-
-  private _writeUniform(
-    device: GPUDevice,
-    buffer: GPUBuffer,
-    mvpMatrix: Float32Array,
-    opacity: number,
-  ): void {
-    this._scratch.set(mvpMatrix, 0)
-    this._scratch[16] = opacity
-    device.queue.writeBuffer(buffer, 0, this._scratch)
   }
 
   destroy(): void {
@@ -336,23 +357,25 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._gutter.destroy()
     this._luts?.clear()
     this._luts = null
-    if (this._vertexBuffer) this._vertexBuffer.destroy()
-    if (this._uniformBuffer) this._uniformBuffer.destroy()
+    for (const slot of this._slots) {
+      slot.uniform.destroy()
+      slot.vertex?.destroy()
+    }
+    for (const buffer of this._retired) buffer.destroy()
     if (this._annTexture) this._annTexture.destroy()
     if (this._annVertexBuffer) this._annVertexBuffer.destroy()
     this._annTexture = null
     this._annVertexBuffer = null
     this._annGroup = null
-    this._vertexBuffer = null
-    this._uniformBuffer = null
-    this._uniformGroup = null
+    this._slots = []
+    this._retired = []
+    this._slotsUsed = 0
+    this._pass = null
     this._pipeline = null
     this._lutPipeline = null
     this._uniformBGL = null
     this._textureBGL = null
     this._sampler = null
-    this._builtTiles = null
-    this._entries = []
     this.isReady = false
   }
 }

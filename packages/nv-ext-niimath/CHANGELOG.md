@@ -1,3 +1,7 @@
+## 1.0.0-rc.157 (2026-11-11)
+
+This was a version bump only for nv-ext-niimath to align it with other projects, there were no code changes.
+
 ## 1.0.0-rc.156 (2026-11-11)
 
 This was a version bump only for nv-ext-niimath to align it with other projects, there were no code changes.

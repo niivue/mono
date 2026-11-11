@@ -1,3 +1,18 @@
+## 1.0.0-rc.67 (2026-11-11)
+
+### Fixes
+
+- main typecheck after #700 + TS bump; drop stale zarrita-compare lock entries ([#700](https://github.com/niivue/mono/issues/700))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.162
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.66 (2026-11-11)
 
 ### Fixes

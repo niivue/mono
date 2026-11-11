@@ -1,5 +1,7 @@
 import './index.css'
 
+import type { ImageFromUrlOptions } from '@niivue/niivue'
+import { defaultLayouts, defaultSliceLayouts } from '@niivue/niivue/scene'
 import {
   type ChangeEvent,
   useCallback,
@@ -10,11 +12,8 @@ import {
 } from 'react'
 import { NvSceneProvider } from './context'
 import { useScene, useSceneEvent } from './hooks'
-import { defaultLayouts } from './layouts'
 import { NvScene } from './nvscene'
-import { defaultSliceLayouts } from './nvscene-controller'
 import { NvViewer } from './nvviewer'
-import type { ImageFromUrlOptions } from './types'
 
 const MNI_URL = 'https://niivue.github.io/niivue-demo-images/mni152.nii.gz'
 

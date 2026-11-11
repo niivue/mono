@@ -1,6 +1,6 @@
 import type { NiiVueOptions } from '@niivue/niivue'
 import NiiVue from '@niivue/niivue'
-import { defaultViewerOptions } from './nvscene-controller'
+import { defaultViewerOptions } from '@niivue/niivue/scene'
 
 export type OptionValues = Record<string, unknown>
 

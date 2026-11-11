@@ -1,7 +1,7 @@
 import { mock } from 'bun:test'
 
 // Real enum values from @niivue/niivue
-export const SLICE_TYPE = {
+const SLICE_TYPE = {
   AXIAL: 0,
   CORONAL: 1,
   SAGITTAL: 2,
@@ -22,7 +22,7 @@ const DRAG_MODE = {
   windowing: 9,
 } as const
 
-export const SHOW_RENDER = {
+const SHOW_RENDER = {
   NEVER: 0,
   ALWAYS: 1,
   AUTO: 2,

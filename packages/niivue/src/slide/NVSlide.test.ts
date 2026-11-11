@@ -2011,3 +2011,354 @@ describe('raw-gray tile decoder', () => {
     ).rejects.toThrow('raw-gray supports bitsStored up to 16, received 32')
   })
 })
+
+// 30 x 14 at level 0 (edge tiles 6 x 2), downsampled 2 and 4. Sample planes
+// encode where they came from: level * 10000 + channel * 1000 + gy * 32 + gx.
+function codedManifest(): NVSlideManifest {
+  const levels = [1, 2, 4].map((downsample, index): NVSlideLevelManifest => {
+    const width = Math.ceil(30 / downsample)
+    const height = Math.ceil(14 / downsample)
+    const columns = Math.ceil(width / TILE_W)
+    const rows = Math.ceil(height / TILE_H)
+    const tiles: NVSlideTileManifest[] = []
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < columns; x++)
+        tiles.push({
+          x,
+          y,
+          width: Math.min(TILE_W, width - x * TILE_W),
+          height: Math.min(TILE_H, height - y * TILE_H),
+        })
+    return {
+      index,
+      width,
+      height,
+      downsample,
+      tileWidth: TILE_W,
+      tileHeight: TILE_H,
+      columns,
+      rows,
+      bitsStored: 16,
+      tiles,
+    }
+  })
+  return {
+    id: 'coded',
+    name: 'coded',
+    width: 30,
+    height: 14,
+    tileSize: TILE_W,
+    dtype: 'uint16',
+    channels: 'planar',
+    levels,
+  }
+}
+
+class CodedSource implements SlideTileSource {
+  readonly requested: number[][] = []
+  gate: Promise<void> = Promise.resolve()
+  constant?: number[]
+  fail = false
+  constructor(readonly manifest: NVSlideManifest) {}
+  bind(): void {}
+  fetchTileBytes(): Promise<Uint8Array> {
+    throw new Error('a sample source is not asked for bytes')
+  }
+  async fetchTileSamples(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    channels: readonly number[],
+  ): Promise<NVSlideTileSamples> {
+    this.requested.push([...channels])
+    await this.gate
+    if (this.fail) throw new Error('tile fetch failed')
+    const { width, height } = tile
+    const samples = new Uint16Array(width * height * channels.length)
+    channels.forEach((c, p) => {
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++)
+          samples[(p * height + y) * width + x] =
+            this.constant?.[c] ??
+            level.index * 10000 +
+              c * 1000 +
+              (tile.y * TILE_H + y) * 32 +
+              tile.x * TILE_W +
+              x
+    })
+    return { samples, width, height, bitsStored: 16, planes: channels.length }
+  }
+}
+
+describe('NVSlide.sampleAt', () => {
+  useFakeBitmaps()
+  const channelInfo = (
+    blueActive = false,
+    storedToValue?: NVSlideChannelInfo['storedToValue'],
+  ): NVSlideChannelInfo[] =>
+    ['grey', 'red', 'blue'].map((name, c) => ({
+      name,
+      active: c < 2 || blueActive,
+      storedToValue,
+    }))
+  function codedSlide(
+    info = channelInfo(),
+    options: { maxCacheBytes?: number; maxConcurrentLoads?: number } = {},
+    manifest = codedManifest(),
+  ) {
+    manifest.channelInfo = info
+    const source = new CodedSource(manifest)
+    return { slide: NVSlide.fromSource(source, options), source }
+  }
+  const sample = (
+    channel: number,
+    name: string,
+    value: number,
+    level: number,
+  ) => ({ channel, name, value, stored: value, level, exact: level === 0 })
+  const missing = (s: ReturnType<NVSlide['sampleAt']>) =>
+    s.map((r) => r.missing)
+
+  it('reads each visible channel at level 0, exact; never fetches a hidden one', async () => {
+    const { slide, source } = codedSlide()
+    // The bottom-right edge tile (6 x 2), pixel (5, 1).
+    expect(await slide.loadSampleAt(29.5, 13)).toEqual([
+      sample(0, 'grey', 13 * 32 + 29, 0),
+      sample(1, 'red', 1000 + 13 * 32 + 29, 0),
+      {
+        channel: 2,
+        name: 'blue',
+        value: null,
+        stored: null,
+        level: 0,
+        exact: false,
+        missing: 'hidden',
+      },
+    ])
+    expect(source.requested).toEqual([[0, 1]])
+    slide.dispose()
+  })
+
+  it('reads a channel from its held plane, not its index', async () => {
+    const info = channelInfo(true)
+    ;(info[1] as NVSlideChannelInfo).active = false
+    const { slide, source } = codedSlide(info)
+    const [, red, blue] = await slide.loadSampleAt(2, 1)
+    expect(source.requested).toEqual([[0, 2]])
+    expect(red?.missing).toBe('hidden')
+    expect(blue).toEqual(sample(2, 'blue', 2000 + 32 + 2, 0))
+    slide.dispose()
+  })
+
+  it('serves the finest resident level; opts.level pins one', async () => {
+    const { slide } = codedSlide()
+    // Level 2 is 8 x 4: (floor(29 * 8 / 30), floor(13 * 4 / 14)) = (7, 3).
+    const coarse = await slide.loadSampleAt(29, 13, { level: 2 })
+    expect(coarse[0]).toEqual(sample(0, 'grey', 20000 + 3 * 32 + 7, 2))
+    expect(slide.sampleAt(29, 13)[1]).toEqual(
+      sample(1, 'red', 21000 + 3 * 32 + 7, 2),
+    )
+    expect(missing(slide.sampleAt(29, 13, { level: 0 }))).toEqual(
+      Array(3).fill('uncached'),
+    )
+    // Level 1, tile (1, 0), pixel (0, 2): global (8, 2).
+    expect((await slide.loadSampleAt(17, 5, { level: 1 }))[0]).toEqual(
+      sample(0, 'grey', 10000 + 2 * 32 + 8, 1),
+    )
+    await slide.loadSampleAt(29, 13)
+    expect(slide.sampleAt(29, 13)[0]?.level).toBe(0)
+    expect(slide.sampleAt(29, 13, { level: 2 })[0]?.level).toBe(2)
+    slide.dispose()
+  })
+
+  it('tells outside, uncached and hole apart', async () => {
+    const { slide } = codedSlide()
+    for (const [x, y] of [
+      [-1, 0],
+      [30, 0],
+      [0, 14],
+      [Number.NaN, 0],
+    ])
+      expect(missing(slide.sampleAt(x as number, y as number))).toEqual(
+        Array(3).fill('outside'),
+      )
+    expect(slide.sampleAt(0, 0)[0]).toEqual({
+      channel: 0,
+      name: 'grey',
+      value: null,
+      stored: null,
+      level: null,
+      exact: false,
+      missing: 'uncached',
+    })
+    slide.dispose()
+
+    const manifest = codedManifest()
+    for (const level of manifest.levels) level.tiles[0] = null
+    const holed = codedSlide(channelInfo(), {}, manifest)
+    expect(missing(holed.slide.sampleAt(0, 0))).toEqual(Array(3).fill('hole'))
+    expect(missing(await holed.slide.loadSampleAt(0, 0))).toEqual(
+      Array(3).fill('hole'),
+    )
+    expect(holed.source.requested).toEqual([])
+    holed.slide.dispose()
+    // A hole at level 0 only: a coarser tile could serve it.
+    const base = codedManifest()
+    ;(base.levels[0] as NVSlideLevelManifest).tiles[0] = null
+    const l0 = codedSlide(channelInfo(), {}, base).slide
+    expect(missing(l0.sampleAt(0, 0))[0]).toBe('uncached')
+    expect(missing(l0.sampleAt(0, 0, { level: 0 }))[0]).toBe('hole')
+    l0.dispose()
+  })
+
+  it('peeks: LRU order and cacheHits are unchanged', async () => {
+    // A full level-0 tile: 8 x 4 RGBA plus two u16 planes = 256 bytes.
+    const { slide } = codedSlide(channelInfo(), { maxCacheBytes: 512 })
+    await slide.loadSampleAt(0, 0)
+    await slide.loadSampleAt(8, 0)
+    const hits = slide.stats.cacheHits
+    expect(slide.sampleAt(0, 0)[0]?.level).toBe(0) // the oldest entry
+    await slide.loadSampleAt(16, 0) // evicts the oldest
+    expect(missing(slide.sampleAt(0, 0))[0]).toBe('uncached')
+    expect(slide.sampleAt(8, 0)[0]?.level).toBe(0)
+    expect(slide.stats.cacheHits).toBe(hits)
+    slide.dispose()
+  })
+
+  it('maps quantized samples through storedToValue, clipped at the ends', async () => {
+    const { slide, source } = codedSlide(
+      channelInfo(true, { scale: 0.5, offset: -10 }),
+    )
+    source.constant = [0, 65535, 300]
+    const [grey, red, blue] = await slide.loadSampleAt(3, 3)
+    expect(grey).toMatchObject({ stored: 0, value: -10, exact: false })
+    expect(grey?.clipped).toBe(true)
+    expect(red).toMatchObject({ value: 65535 * 0.5 - 10, clipped: true })
+    expect(blue).toEqual({
+      channel: 2,
+      name: 'blue',
+      value: 140,
+      stored: 300,
+      level: 0,
+      exact: false,
+    })
+    slide.dispose()
+  })
+
+  it('reads u8 samples', async () => {
+    const manifest = makePyramid()
+    manifest.channelInfo = channelInfo(true)
+    const slide = NVSlide.fromSource(new PlanarSource(manifest, [100, 200, 30]))
+    const values = (await slide.loadSampleAt(5, 5)).map((s) => s.stored)
+    expect(values).toEqual([100, 200, 30])
+    slide.dispose()
+  })
+
+  it('reports a MONOCHROME1 sample as stored, not inverted', async () => {
+    const jls = NVSlide.tileDecoder('image/jls')
+    NVSlide.registerTileDecoder('image/jls', async () => ({
+      samples: new Uint16Array(TILE_W * TILE_H).fill(500),
+      width: TILE_W,
+      height: TILE_H,
+      bitsStored: 16,
+    }))
+    const manifest = makePyramid()
+    for (const level of manifest.levels)
+      Object.assign(level, {
+        codec: 'image/jls',
+        photometric: 'MONOCHROME1',
+        bitsStored: 12,
+      })
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    expect(await slide.loadSampleAt(1, 1)).toEqual([sample(0, 'gray', 500, 0)])
+    if (jls) NVSlide.registerTileDecoder('image/jls', jls)
+    slide.dispose()
+  })
+
+  it('loadSampleAt survives a pan, honours signal and resolves a failure uncached', async () => {
+    const { slide, source } = codedSlide()
+    let release = () => {}
+    source.gate = new Promise((resolve) => {
+      release = resolve
+    })
+    const panned = slide.loadSampleAt(0, 0)
+    // The viewport moves to another level and corner: not aborted (requestTile).
+    slide.setViewport({ centerX: 28, centerY: 12, scale: 4 })
+    slide.setLevelChoice(0)
+    slide.requestVisibleTiles({ widthCss: 8, heightCss: 4 })
+    const stop = new AbortController()
+    const aborted = slide.loadSampleAt(8, 4, { signal: stop.signal })
+    stop.abort(new Error('stop'))
+    await expect(aborted).rejects.toThrow('stop')
+    release()
+    expect((await panned)[0]?.level).toBe(0)
+    expect(slide.stats.aborted).toBe(0)
+
+    source.fail = true
+    const quiet = spyOn(console, 'error').mockImplementation(() => {})
+    expect(missing(await slide.loadSampleAt(16, 8))[0]).toBe('uncached')
+    // Held back after the failure: settles at once, without a new fetch.
+    const fetches = source.requested.length
+    expect(missing(await slide.loadSampleAt(16, 8))[0]).toBe('uncached')
+    expect(source.requested.length).toBe(fetches)
+    quiet.mockRestore()
+    slide.dispose()
+  })
+
+  it('reads an RGB bitmap tile back one pixel', async () => {
+    // A stand-in canvas that honours drawImage's source x, y.
+    g.OffscreenCanvas = class {
+      getContext() {
+        let px = new Uint8ClampedArray(4)
+        return {
+          drawImage: (b: FakeBitmap, sx: number, sy: number) => {
+            const o = (sy * b.width + sx) * 4
+            px = b.data.slice(o, o + 4)
+          },
+          getImageData: () => ({ data: px }),
+        }
+      }
+    }
+    const rgbSlide = () => {
+      const manifest = makePyramid()
+      for (const level of manifest.levels) level.codec = 'raw-rgba'
+      return NVSlide.fromSource({
+        manifest,
+        bind() {},
+        fetchTileBytes: async (_level, tile) => {
+          const bytes = new Uint8Array(tile.width * tile.height * 4)
+          for (let i = 0; i < tile.width * tile.height; i++)
+            bytes.set([i, 100 + i, 50, 255], i * 4)
+          return bytes
+        },
+      })
+    }
+    const slide = rgbSlide()
+    // Tile (0, 0), pixel (3, 2): i = 19.
+    expect(await slide.loadSampleAt(3, 2)).toEqual([
+      sample(0, 'red', 19, 0),
+      sample(1, 'green', 119, 0),
+      sample(2, 'blue', 50, 0),
+    ])
+    expect(slide.sampleAt(4, 2)[0]?.stored).toBe(20) // the reused context
+    slide.dispose()
+    g.OffscreenCanvas = undefined
+    const bare = rgbSlide()
+    expect(missing(await bare.loadSampleAt(3, 2))[0]).toBe('uncached')
+    bare.dispose()
+  })
+
+  it('dispose settles a readout queued behind an unrelated load', async () => {
+    const { slide, source } = codedSlide(channelInfo(), {
+      maxConcurrentLoads: 1,
+    })
+    source.gate = new Promise(() => {}) // tile 0 never lands
+    const first = slide.loadSampleAt(0, 0)
+    const queued = slide.loadSampleAt(8, 0)
+    const removed = spyOn(slide, 'removeEventListener')
+    slide.dispose()
+    expect(missing(await queued)[0]).toBe('uncached')
+    expect(missing(await first)[0]).toBe('uncached')
+    expect(source.requested.length).toBe(1) // tile 1 was never fetched
+    expect(removed.mock.calls.filter(([t]) => t === 'change').length).toBe(2)
+  })
+})

@@ -171,6 +171,8 @@ TRX, TT, TSF (scalars), VTK lines.
 
 The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volumes[0] as an opaque base under the overlays, which suits neuroimaging; set the first row for fluorescence channel fusion.
 
+**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. Not yet in `locationChange`, MCP or ipyniivue (later PRs).
+
 ## 8. Mesh Rendering (global)
 
 | Feature | Kind | Notes |

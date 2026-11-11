@@ -20,6 +20,8 @@ import {
   TiffSlideSource,
 } from '@niivue/nv-ext-tile/tiff'
 import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
+// Optional: remove this import, its call and the @niivue/uikit dependency to drop the minimap.
+import { attachMinimap } from './minimap'
 
 let canvas = document.getElementById('canvas') as HTMLCanvasElement
 const filesInput = document.getElementById('files') as HTMLInputElement
@@ -711,6 +713,7 @@ const gestures = new NVSlideController(canvas, {
   onChange: requestRender,
 })
 window.addEventListener('resize', requestRender)
+attachMinimap(canvas, renderer, () => slide, requestRender)
 
 // Default slide so the Pages demo is not empty; ?url= (empty) starts blank.
 const startUrl = params.get('url') ?? sourceSelect.options[0]?.value ?? ''

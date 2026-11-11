@@ -11,6 +11,7 @@
     "@niivue/geotiff-rs": "3.1.0-rc.0",
     "@niivue/niivue": "workspace:*",
     "@niivue/nv-ext-tile": "workspace:*",
+    "@niivue/uikit": "workspace:*",
     "@niivue/zarrita-rs": "0.7.5-rc.1"
   },
   "devDependencies": {

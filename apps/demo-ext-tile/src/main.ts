@@ -657,7 +657,7 @@ const openUrl = (url: string) => {
       ])
       return Object.assign(zarr, { attribution })
     }
-    if (/\.dzi$/i.test(path)) return DziSource.fromUrl(href)
+    if (/\.dzi$/i.test(path)) return DziSource.fromUrl(href, undefined, signal)
     // ponytail: a .json path is a hosted DICOM-WSI manifest; sniff if names lie.
     if (!path.endsWith('.json'))
       return TiffSlideSource.fromUrl(href, { pool, signal })

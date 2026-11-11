@@ -20,26 +20,33 @@ export interface DziDescriptor {
 // it works in both the browser and Node without a DOMParser.
 export function parseDziDescriptor(xml: string): DziDescriptor {
   const attr = (name: string): string | null => {
-    const m = new RegExp(`${name}\\s*=\\s*"([^"]*)"`).exec(xml)
-    return m ? (m[1] ?? null) : null
+    const m = new RegExp(`${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`).exec(xml)
+    return m ? (m[1] ?? m[2] ?? null) : null
   }
-  const tileSize = Number(attr('TileSize'))
-  const overlap = Number(attr('Overlap') ?? '0')
+  const int = (name: string, min: number, fallback?: string): number => {
+    const value = Number(attr(name) ?? fallback)
+    if (!Number.isInteger(value) || value < min) {
+      throw new Error(
+        `Invalid .dzi descriptor: ${name} must be an integer >= ${min}`,
+      )
+    }
+    return value
+  }
   const format = (attr('Format') ?? 'jpeg').toLowerCase()
-  const width = Number(attr('Width'))
-  const height = Number(attr('Height'))
-  if (
-    !Number.isFinite(tileSize) ||
-    tileSize < 1 ||
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width < 1 ||
-    height < 1
-  ) {
-    throw new Error('Invalid .dzi descriptor (missing TileSize/Width/Height)')
+  if (!DZI_FORMATS.includes(format)) {
+    throw new Error(`Unsupported .dzi tile format "${format}"`)
   }
-  return { tileSize, overlap, format, width, height }
+  return {
+    tileSize: int('TileSize', 1),
+    overlap: int('Overlap', 0, '0'),
+    format,
+    width: int('Width', 1),
+    height: int('Height', 1),
+  }
 }
+
+// Tile formats the browser decodes natively (createImageBitmap sniffs the bytes).
+const DZI_FORMATS = ['jpeg', 'jpg', 'png', 'webp']
 
 // Build the NVSlide pyramid manifest from a DZI descriptor. DZI levels run
 // 0 (1x1) .. maxLevel (full res); we emit finest-first (index 0 = maxLevel) down
@@ -137,8 +144,12 @@ export class DziSource implements SlideTileSource {
     this.dziLevelForIndex = dziLevelForIndex
   }
 
-  static async fromUrl(dziUrl: string, id?: string): Promise<DziSource> {
-    const response = await fetch(dziUrl)
+  static async fromUrl(
+    dziUrl: string,
+    id?: string,
+    signal?: AbortSignal,
+  ): Promise<DziSource> {
+    const response = await fetch(dziUrl, { signal })
     if (!response.ok) {
       throw new Error(`DZI descriptor HTTP ${response.status}`)
     }
@@ -153,7 +164,7 @@ export class DziSource implements SlideTileSource {
     const { manifest, dziLevelForIndex } = buildDziManifest(desc, name)
     // "<base>.dzi" -> tiles live under "<base>_files/".
     const tilesBase = path.replace(/\.dzi$/i, '_files')
-    const ext = desc.format === 'png' ? 'png' : 'jpg'
+    const ext = desc.format === 'jpeg' ? 'jpg' : desc.format
     return new DziSource(
       manifest,
       tilesBase,

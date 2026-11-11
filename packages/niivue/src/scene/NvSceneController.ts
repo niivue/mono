@@ -638,11 +638,6 @@ export class NvSceneController {
       }
     })
 
-    // Notify synchronously — viewer slot is registered and usable
-    this.onViewerCreated?.(niivue, index)
-    this.emit('viewerCreated', niivue, index)
-    this.notify()
-
     // Async canvas attachment — viewer is already registered
     viewer.ready = niivue
       .attachToCanvas(canvas)
@@ -669,6 +664,12 @@ export class NvSceneController {
         }
         throw error
       })
+
+    // Notify after `ready` holds the attachment, so a load started from a
+    // callback waits for it.
+    this.onViewerCreated?.(niivue, index)
+    this.emit('viewerCreated', niivue, index)
+    this.notify()
 
     return viewer.ready.then(() => viewer)
   }

@@ -1258,6 +1258,23 @@ describe('NvSceneController', () => {
       expect(controller.getSnapshot().viewerStates[0]?.errors).toEqual([])
     })
 
+    test('a load started from viewerCreated waits for attachment and rejects if it fails', async () => {
+      const attach = deferAttach()
+      let loadPromise: Promise<unknown> | undefined
+      controller.on('viewerCreated', (_nv, index) => {
+        loadPromise = controller.loadVolume(index, { url: 'brain.nii.gz' })
+      })
+      const addPromise = controller.addViewer().catch(() => undefined)
+      await flushPromises()
+      expect(mockInstances[0]?.addVolume).not.toHaveBeenCalled()
+
+      attach.reject(new Error('attach failed'))
+      await addPromise
+
+      await expect(loadPromise).rejects.toThrow('removed before it was ready')
+      expect(mockInstances[0]?.addVolume).not.toHaveBeenCalled()
+    })
+
     test('attachment finishing after removal leaves the viewer alone', async () => {
       const attach = deferAttach()
       const addPromise = controller.addViewer()

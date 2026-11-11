@@ -33,7 +33,7 @@ export interface DrawLineParams {
   penOverwrites?: boolean
 }
 
-export interface FloodFillSectionParams {
+interface FloodFillSectionParams {
   img2D: Uint8Array
   dims2D: readonly number[]
   minPt: readonly number[]
@@ -655,10 +655,6 @@ export function drawPenFilled(
   }
 
   return { drawBitmap: newDrawBitmap, success: true }
-}
-
-export function isPenLocationValid(penLocation: number[]): boolean {
-  return !Number.isNaN(penLocation[0])
 }
 
 export function isSamePoint(ptA: number[], ptB: number[]): boolean {

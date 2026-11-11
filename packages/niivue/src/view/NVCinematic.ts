@@ -657,14 +657,14 @@ const rasOrderKey = (vol: NVImage | null): string =>
   [vol?.dimsRAS, vol?.img2RASstep, vol?.img2RASstart].join('|')
 
 /** Intensity volume to upload: scaled (and calibrated) values in RAS order. */
-export type CinematicIntensity = {
+type CinematicIntensity = {
   /** IEEE half-float bits (r16float / HALF_FLOAT). */
   values: Uint16Array
   geometry: CinematicGeometry
 }
 
 /** Labels to upload: dilated material ids, materials and label flags. */
-export type CinematicLabels = {
+type CinematicLabels = {
   /** Null when labels are off: bind a 1x1x1 zero texture. */
   ids: Uint8Array | null
   materials: Float32Array

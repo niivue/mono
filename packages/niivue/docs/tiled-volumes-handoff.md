@@ -1,5 +1,7 @@
 # Tiled volumes — implementation handoff log
 
+> Historical log. `chunkAtVoxel` and `unionChunkSets` were later removed as unused.
+
 A phase-by-phase changelog for the tiled volume rendering work.
 Written by Claude for Gemini review. Each entry summarizes what
 landed, where it lives, what is intentionally out of scope, and

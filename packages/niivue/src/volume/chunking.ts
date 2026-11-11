@@ -180,7 +180,7 @@ export function chunkVolume(
  * This is useful for visualization modes that want stable semantic cells
  * (for example a 3x3x3 exploded view) even when the source volume would
  * otherwise fit in one texture. Each axis is partitioned into `gridDims[a]`
- * non-empty chunks using a constant ceil stride so `chunkAtVoxel` remains
+ * non-empty chunks using a constant ceil stride so `floor(voxel / stride)` stays
  * well-defined.
  */
 export function chunkVolumeGrid(
@@ -584,34 +584,6 @@ export function identityChunkSampleTransform(
 }
 
 /**
- * Find the chunk that owns a given volume voxel coordinate. Returns null
- * if the coordinate is outside the volume. Halo regions are NOT considered
- * — each data voxel belongs to exactly one chunk.
- */
-export function chunkAtVoxel(
-  plan: ChunkPlan,
-  voxel: Vec3i,
-): VolumeChunkDesc | null {
-  for (let a = 0; a < 3; a++) {
-    if (voxel[a] < 0 || voxel[a] >= plan.volumeDims[a]) return null
-  }
-  const cx = Math.min(
-    plan.gridDims[0] - 1,
-    Math.floor(voxel[0] / plan.stride[0]),
-  )
-  const cy = Math.min(
-    plan.gridDims[1] - 1,
-    Math.floor(voxel[1] / plan.stride[1]),
-  )
-  const cz = Math.min(
-    plan.gridDims[2] - 1,
-    Math.floor(voxel[2] / plan.stride[2]),
-  )
-  const idx = (cz * plan.gridDims[1] + cy) * plan.gridDims[0] + cx
-  return plan.chunks[idx] ?? null
-}
-
-/**
  * Stable identity of a chunk's fetched content + placement: two chunks with the
  * same key cover the same source-level region and draw into the same world
  * sub-cube, so a resident GPU texture for one can be reused for the other.
@@ -988,7 +960,7 @@ export function chunkVolumeMultiLOD(
       grid[a] = count
       stride[a] = Math.ceil(commonDims[a] / grid[a])
       // A ceil stride can leave the last cells empty (e.g. 10 voxels in 4 cells
-      // strides by 3 and fills only 4); drop them so `chunkAtVoxel`'s index math
+      // strides by 3 and fills only 4); drop them so the `floor(voxel / stride)` index
       // still lands on a real brick.
       grid[a] = Math.ceil(commonDims[a] / stride[a])
     }

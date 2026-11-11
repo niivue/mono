@@ -9,12 +9,6 @@ import type { CanvasViewport, NVBounds } from '@/NVTypes'
 /** Registry of controllers sharing each canvas, for coordinating canvas replacement */
 const canvasInstances = new WeakMap<HTMLCanvasElement, Set<NiiVue>>()
 
-/** Identity viewport: no pan, no zoom — reproduces pre-viewport behavior */
-const IDENTITY_VIEWPORT: Readonly<CanvasViewport> = Object.freeze({
-  pan: [0, 0] as [number, number],
-  zoom: 1,
-})
-
 /** Per-canvas virtual camera: pans/zooms all sibling instances together */
 const canvasViewports = new WeakMap<HTMLCanvasElement, CanvasViewport>()
 
@@ -29,7 +23,7 @@ export function getCanvasViewport(
 }
 
 /** True when the viewport is the identity transform (fast path skip) */
-export function isIdentityViewport(v: CanvasViewport): boolean {
+function isIdentityViewport(v: CanvasViewport): boolean {
   return v.pan[0] === 0 && v.pan[1] === 0 && v.zoom === 1
 }
 
@@ -101,8 +95,6 @@ export function computeBoundsPixelRect(
     isOffscreen: right <= 0 || left >= cw || bottom <= 0 || top >= ch,
   }
 }
-
-export { IDENTITY_VIEWPORT }
 
 /** Add a controller to the canvas instance registry. Used by single-backend
  *  lifecycle modules (`viewWebGL2`, `viewWebGPU`) so that `setViewport` fan-out

@@ -19,7 +19,7 @@ import { test } from './sharedPage'
 // spec module, no imports).
 
 /** Module exports a scene needs (the subset of `/src/index.ts` it reads). */
-export type SceneLib = {
+type SceneLib = {
   SLICE_TYPE: Record<
     'AXIAL' | 'CORONAL' | 'SAGITTAL' | 'MULTIPLANAR' | 'RENDER',
     number
@@ -39,7 +39,7 @@ export type SceneLib = {
 }
 
 /** A NIfTI built in the page by `Phantoms.nifti`. */
-export type NiftiSpec = {
+type NiftiSpec = {
   name: string
   /** Voxels per axis. */
   dims: [number, number, number]
@@ -60,7 +60,7 @@ export type NiftiSpec = {
  * Synthetic data, built in the page. The 32^3 volumes share one 1 mm grid
  * centred on the origin, so any of them can overlay any other.
  */
-export type Phantoms = {
+type Phantoms = {
   /** Side of the shared grid (32). */
   N: number
   /** A uint8 image on the shared grid from a per-voxel function. */
@@ -120,7 +120,7 @@ export type Phantoms = {
  * The internals of a view that scenes read or wrap (both backends have them).
  * Not public API: a scene that needs one is checking how a result was reached.
  */
-export type SceneView = {
+type SceneView = {
   render: () => void
   isBusy: boolean
   _getMeshGpu: (mesh: unknown) => unknown
@@ -152,7 +152,7 @@ export type SceneView = {
   }
 }
 
-export type SceneContext = {
+type SceneContext = {
   nv: NiiVue
   /** `nv.view` with the internals scenes may read. */
   view: () => SceneView
@@ -166,7 +166,7 @@ export type SceneContext = {
   canvas: HTMLCanvasElement
 }
 
-export type Step = {
+type Step = {
   /** Names the capture: `<scene>--<step>-<backend>.png`. */
   name: string
   run: (ctx: SceneContext) => Promise<void>

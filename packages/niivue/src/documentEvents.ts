@@ -9,7 +9,7 @@
 import { settingEquals } from './documentSettings'
 
 /** The model's settings groups, in the order a load applies them. */
-export const SETTINGS_GROUPS = [
+const SETTINGS_GROUPS = [
   'scene',
   'layout',
   'ui',

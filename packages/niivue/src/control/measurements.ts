@@ -24,7 +24,7 @@ export type AddMeasurementOptions = Partial<
 >
 
 /** Default hit radius for {@link pickMeasurement}, in canvas pixels. */
-export const MEASUREMENT_PICK_RADIUS_PX = 8
+const MEASUREMENT_PICK_RADIUS_PX = 8
 
 /**
  * Derive the slice orientation a segment most plausibly lies on: the axis with

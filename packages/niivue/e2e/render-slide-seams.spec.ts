@@ -12,7 +12,8 @@ import { syntheticVolume } from './syntheticVolume'
 // nearest must still show only source texel values. The bottom-right tile,
 // drawn last, arrives after the others have been drawn: the first frame after
 // it lands must already show its neighbours' refreshed borders (nothing else
-// asks for a repaint when tiles stream).
+// asks for a repaint when tiles stream). Tiles uploaded under nearest skip
+// the gutter copies; the first linear frame after must refill them.
 //
 // WebGPU is skipped when the runner has no adapter.
 
@@ -78,8 +79,14 @@ function expectRamps(
 }
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
-  for (const scale of [1.5, 3]) {
-    test(`slide tiles meet without seams at ${scale}x (${backend})`, async ({
+  for (const [scale, nearestFirst] of [
+    [1.5, false],
+    [3, false],
+    [1.5, true],
+    [3, true],
+  ] as const) {
+    const loaded = nearestFirst ? ', loaded under nearest' : ''
+    test(`slide tiles meet without seams at ${scale}x (${backend}${loaded})`, async ({
       page,
     }) => {
       const result = await page.evaluate(`(async () => {
@@ -108,6 +115,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           renderer.init(gl)
           draw = () => renderer.draw(gl, [slide], screen)
         }
+        renderer.isNearestInterpolation = ${nearestFirst}
         const until = async (keys, drawing) => {
           for (let i = 0; i < 100 && !cached(keys); i++) {
             if (drawing) draw()
@@ -137,9 +145,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           }
           return { red, green, diagonal }
         }
-        const linear = read()
-        renderer.isNearestInterpolation = true
-        const nearest = read()
+        const first = read()
+        renderer.isNearestInterpolation = !${nearestFirst}
+        const second = read()
+        const [linear, nearest] = ${nearestFirst} ? [second, first] : [first, second]
         renderer.destroy()
         canvas.remove()
         return { linear, nearest }
@@ -157,6 +166,76 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       )
     })
   }
+
+  // Nearest skips the gutter copies, so the gutter holds nothing: off pixel
+  // boundaries with MSAA, a partly covered pixel samples past the tile edge,
+  // which must still read the edge texel (a gutter read lets the slide's
+  // dark background through).
+  test(`nearest never shows the gutter off pixel boundaries (${backend})`, async ({
+    page,
+  }) => {
+    const result = await page.evaluate(`(async () => {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        const adapter = await navigator.gpu.requestAdapter().catch(() => null)
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('/src/index.ts')
+      const { slide, release, cached } = (${rampSlide})(NVSlide)
+      release()
+      const size = ${CANVAS}
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = size
+      document.body.appendChild(canvas)
+      const screen = { widthCss: size, heightCss: size, devicePixelRatio: 1 }
+      slide.setViewport({ centerX: 16.3, centerY: 16.3, scale: 2.5 })
+      let renderer, draw
+      if ('${backend}' === 'webgpu') {
+        renderer = await SlideRendererGPU.create(canvas, { antialias: true })
+        if (!renderer) return { skip: 'SlideRendererGPU unavailable' }
+        draw = () => renderer.render([slide], screen)
+      } else {
+        const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true })
+        renderer = new SlideRenderer()
+        renderer.init(gl)
+        draw = () => renderer.draw(gl, [slide], screen)
+      }
+      renderer.isNearestInterpolation = true
+      const keys = ['L0/0/0', 'L0/1/0', 'L0/0/1', 'L0/1/1']
+      for (let i = 0; i < 100 && !cached(keys); i++) {
+        draw()
+        await new Promise((res) => setTimeout(res, 20))
+      }
+      draw()
+      const c = document.createElement('canvas')
+      c.width = c.height = size
+      const ctx = c.getContext('2d')
+      ctx.drawImage(canvas, 0, 0)
+      const px = Array.from(ctx.getImageData(0, 0, size, size).data)
+      renderer.destroy()
+      canvas.remove()
+      return { px }
+    })()`)
+    const r = result as { skip?: string; px: number[] }
+    test.skip(Boolean(r.skip), r.skip)
+    // Screen x of slide x: 64 + (x - 16.3) * 2.5. Rows and columns through
+    // both tiles of each axis, between the outer edges' partial pixels.
+    const at = (x: number, y: number, ch: number): number =>
+      r.px[4 * (y * CANVAS + x) + ch] as number
+    const first = Math.ceil(64 - 16.3 * 2.5) + 1
+    const last = Math.floor(64 + 15.7 * 2.5) - 1
+    for (const line of [24, 80]) {
+      const red: number[] = []
+      const green: number[] = []
+      for (let i = first; i <= last; i++) {
+        red.push(at(i, line, 0))
+        green.push(at(line, i, 1))
+        expect([i, at(i, line, 2), at(line, i, 2)]).toEqual([i, 255, 255])
+      }
+      expect(red).toEqual([...red].sort((a, b) => a - b))
+      expect(green).toEqual([...green].sort((a, b) => a - b))
+    }
+  })
 
   // The same slide as a plane in the 3D render tile (slidePlaneRender.ts),
   // seen from above with the volume hidden.

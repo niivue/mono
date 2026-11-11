@@ -37,7 +37,7 @@ struct SlideUniforms {
   opacity: f32,
   isPlaceholder: f32,
   showGrid: f32,
-  pad: f32,
+  isNearest: f32,
   placeholderColor: vec4f,
   gridColor: vec4f,
 };
@@ -82,7 +82,13 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   } else {
     // Tile textures carry a 1-texel gutter (slide/tileGutter.ts): sample the interior.
     let size = vec2f(textureDimensions(slideTex));
-    base = textureSample(slideTex, slideSampler, (in.uv * (size - 2.0) + 1.0) / size);
+    var texel = in.uv * (size - 2.0) + 1.0;
+    // Nearest skips the gutter copies, yet an edge sample (uv at 0 or 1, or
+    // past it under MSAA) would read the gutter: clamp to the edge texels.
+    if (u.isNearest == 1.0) {
+      texel = clamp(texel, vec2f(1.5), size - 1.5);
+    }
+    base = textureSample(slideTex, slideSampler, texel / size);
     base = vec4f(applyColorLut(base.rgb), base.a);
   }
   base.a = base.a * u.opacity;
@@ -340,6 +346,8 @@ export class SlideRendererGPU {
     this._uniformCursor = 0
     this._textures.evictToBudget()
     this._textures.beginFrame()
+    if (!this.isNearestInterpolation)
+      this._gutter.resync(this._device, this._textures)
     const encoder = this._device.createCommandEncoder()
     const canvasView = this._context.getCurrentTexture().createView()
     const msaa = this._msaaView(width, height)
@@ -503,6 +511,8 @@ export class SlideRendererGPU {
             row: item.tile.y,
           },
           this._textures,
+          // Nearest needs no gutter (the shader clamps); resync fills it.
+          !this.isNearestInterpolation,
         ),
       bitmap.width * bitmap.height * 4,
     )
@@ -539,11 +549,11 @@ export class SlideRendererGPU {
     data[13] = options.uvBottom
     data[14] = 1
     data[15] = options.uvBottom
-    // opacity, isPlaceholder, showGrid, pad
+    // opacity, isPlaceholder, showGrid, isNearest
     data[16] = options.opacity
     data[17] = options.isPlaceholder ? 1 : 0
     data[18] = options.showGrid ? 1 : 0
-    data[19] = 0
+    data[19] = this.isNearestInterpolation ? 1 : 0
     // placeholderColor
     data[20] = options.placeholderColor[0]
     data[21] = options.placeholderColor[1]

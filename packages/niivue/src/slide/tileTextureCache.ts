@@ -62,6 +62,11 @@ export class TileTextureCache<T> {
     return this._entries.get(key)?.value
   }
 
+  /** Resident textures, without marking them used. */
+  *values(): IterableIterator<T> {
+    for (const entry of this._entries.values()) yield entry.value
+  }
+
   /** Register a texture (destroying any previous entry under the same key). */
   set(key: string, value: T, bytes: number, source?: object): void {
     this.delete(key)

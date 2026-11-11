@@ -161,6 +161,7 @@ export class SlideRenderer extends NVRenderer {
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
     gl.activeTexture(gl.TEXTURE0)
+    if (!this.isNearestInterpolation) this._gutter.resync(gl, this._textures)
     gl.bindSampler(0, this.isNearestInterpolation ? this._nearestSampler : null)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
@@ -326,6 +327,8 @@ export class SlideRenderer extends NVRenderer {
             row: item.tile.y,
           },
           this._textures,
+          // Nearest needs no gutter (the shader clamps); resync fills it.
+          !this.isNearestInterpolation,
         ),
       bitmap.width * bitmap.height * 4,
     )
@@ -426,6 +429,10 @@ export class SlideRenderer extends NVRenderer {
       options.isPlaceholder ? 1 : 0,
     )
     gl.uniform1i(this._shader.uniforms.showGrid, options.showGrid ? 1 : 0)
+    gl.uniform1i(
+      this._shader.uniforms.isNearest,
+      this.isNearestInterpolation ? 1 : 0,
+    )
     gl.uniform4fv(this._shader.uniforms.placeholderColor, placeholderColor)
     gl.uniform4fv(this._shader.uniforms.gridColor, gridColor)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)

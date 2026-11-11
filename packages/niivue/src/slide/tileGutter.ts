@@ -10,9 +10,12 @@
 // from the neighbours' textures, so no decoded CPU bytes are kept: an upload
 // fills its own border (8 copies) and refreshes the slots of resident
 // neighbours that now read from it (at most 16), so borders converge as tiles
-// stream and a frame without uploads does no gutter work.
+// stream and a frame without uploads does no gutter work. Under nearest
+// filtering the shaders clamp to the edge texels, so uploads skip the copies
+// and the first linear frame after refills every resident border once.
 
 import { log } from '@/logger'
+import type { TileTextureCache } from './tileTextureCache'
 
 /** Interior size of a tile texture (the bitmap size). */
 export interface GutterTile {
@@ -155,14 +158,23 @@ function fillSlot<T extends GutterTile>(
   }
 }
 
+/** Looks a tile texture of `slide` up by tile key in `cache`. */
+export function slideNeighbour<T extends { slide: object }>(
+  cache: TileTextureCache<T>,
+  slide: object,
+): (key: string) => T | undefined {
+  return (key) => {
+    const n = cache.peek(key)
+    return n?.slide === slide ? n : undefined
+  }
+}
+
 /**
- * Fill the gutter of `tile` (tile `col`, `row` of level `level`, just
- * uploaded and already returned by `neighbour`) and refresh the slots of
- * resident neighbours that now read from it. `neighbour` looks a texture up
- * by tile key; `copy` records one copy into `dst`, where a null `src` means
- * `dst`'s own edge.
+ * Fill the 8 border slots of `tile` (tile `col`, `row` of level `level`) from
+ * its resident neighbours. `neighbour` looks a texture up by tile key; `copy`
+ * records one copy into `dst`, where a null `src` means `dst`'s own edge.
  */
-export function syncGutters<T extends GutterTile>(
+export function fillGutter<T extends GutterTile>(
   level: number,
   col: number,
   row: number,
@@ -172,6 +184,22 @@ export function syncGutters<T extends GutterTile>(
 ): void {
   for (const [dx, dy] of NEIGHBOURS)
     fillSlot(level, col, row, tile, dx, dy, neighbour, copy)
+}
+
+/**
+ * Fill the gutter of `tile` (just uploaded and already returned by
+ * `neighbour`) and refresh the slots of resident neighbours that now read
+ * from it. Arguments as for `fillGutter`.
+ */
+export function syncGutters<T extends GutterTile>(
+  level: number,
+  col: number,
+  row: number,
+  tile: T,
+  neighbour: (key: string) => T | undefined,
+  copy: (src: T | null, dst: T, c: GutterCopy) => void,
+): void {
+  fillGutter(level, col, row, tile, neighbour, copy)
   for (const [ox, oy] of NEIGHBOURS) {
     const n = neighbour(`L${level}/${col + ox}/${row + oy}`)
     if (!n) continue

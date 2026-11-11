@@ -1,3 +1,22 @@
+## 1.0.0-rc.162 (2026-11-11)
+
+### Features
+
+- **uikit:** slide minimap widget for NVSlide ([3960f0cc](https://github.com/niivue/mono/commit/3960f0cc))
+
+### Fixes
+
+- **uikit:** redraw minimap tiles re-rendered by setChannel ([e8e60d43](https://github.com/niivue/mono/commit/e8e60d43))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.164
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.161 (2026-11-11)
 
 ### Updated Dependencies

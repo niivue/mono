@@ -1,3 +1,14 @@
+## 1.0.0-rc.164 (2026-11-11)
+
+### Features
+
+- **uikit:** slide minimap widget for NVSlide ([3960f0cc](https://github.com/niivue/mono/commit/3960f0cc))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.163 (2026-11-11)
 
 ### Fixes

@@ -111,7 +111,7 @@ export interface OmeZarrSource {
   info: OmeZarrInfo
   /** Resolution levels, finest first. */
   levels: OmeZarrLevel[]
-  /** The `@niivue/zarrita-rs` arrays backing `levels`, index for index. Read them with `@niivue/zarrita-rs/inline`: zarrita.js `get` throws on them. */
+  /** The `@niivue/zarrita-rs/inline` arrays backing `levels`, index for index. Read them with that entry's `get`: the default `@niivue/zarrita-rs` entry and zarrita.js throw on them. */
   arrays: zarr.Array<zarr.DataType, zarr.Readable>[]
   /** Concrete axes shared by every level. */
   axes: OmeZarrAxis[]

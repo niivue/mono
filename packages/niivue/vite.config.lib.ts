@@ -103,8 +103,6 @@ export default defineConfig({
     }),
   ],
   build: {
-    outDir: 'dist',
-    emptyOutDir: true,
     lib: {
       entry: {
         niivue: fileURLToPath(new URL('./src/index.ts', import.meta.url)),

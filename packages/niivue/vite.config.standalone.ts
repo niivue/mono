@@ -52,6 +52,9 @@ export default defineConfig({
         // survive a consumer's bundler. Nothing re-bundles this folder, so
         // strip it (over a quarter of the bytes).
         minify: { codegen: { removeWhitespace: true } },
+        // Vite drops legal comments when minifying; keep any licence notice
+        // a bundled dependency carries.
+        comments: { legal: true },
       },
     },
   },

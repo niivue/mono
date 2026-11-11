@@ -17,8 +17,7 @@
       "entry": ["src/demos/*.ts", "src/components/Gallery*.tsx"]
     },
     "apps/iiif-volumetric-demo": {
-      // Hidden dev-only pages, not in vite build inputs (see README).
-      "entry": ["src/**/*.test.ts", "src/stitch.ts", "src/volume-fly-space.ts"]
+      "entry": ["src/**/*.test.ts"]
     },
     "apps/iiif-volumetric-server": {
       "entry": ["scripts/*.ts"]

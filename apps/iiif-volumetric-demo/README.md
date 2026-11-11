@@ -229,16 +229,6 @@ with a DICOM WSI fixture so the browser can fetch
 files; for the default fixture open
 `http://127.0.0.1:8087/tile-range.html?source=dicom-wsi&id=cptac-brca_dicom`.
 
-> **Hidden pages** (source kept in the repo, but not in the nav or the
-> production build — open directly during development):
->
-> - `volume-fly-space.html` — WASD-fly through a constellation of NIfTI
->   volumes via niivue's `space: 'global3d'` instances. A retired
->   proof-of-concept for planning the subvolume streaming strategy.
-> - `stitch.html` — standalone WebGL2 diagnostic for texture-stitching
->   boundary artifacts (NxN GPU textures as adjacent quads under a shear
->   matrix). Raw WebGL2, no niivue, no IIIF dependency.
-
 ### 6. Stop
 
 `Ctrl-C` in each terminal. Fixtures persist; re-running step 3 is only

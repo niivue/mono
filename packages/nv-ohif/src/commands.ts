@@ -182,6 +182,8 @@ export function setViewportColormap(
   { displaySetInstanceUID: uid, colormap, opacity }: Record<string, unknown>,
 ): void {
   const { nv } = entry
+  // The volumes still belong to the series being replaced.
+  if (entry.baseLoading) return
   const isBase =
     uid === undefined || uid === entry.displaySets[0]?.displaySetInstanceUID
   const index = isBase ? 0 : overlayVolumeIndex(entry, uid as string)
@@ -1547,7 +1549,10 @@ export function getNiivueCommandsModule({
         return
       }
       // A chosen series replaces a load in flight: one load at a time.
-      entry.overlayAbort?.abort()
+      if (entry.overlayAbort) {
+        entry.overlayAbort.abort()
+        writeStatus(entry, null)
+      }
       const uid = String(candidate.displaySetInstanceUID)
       const label =
         typeof candidate.SeriesDescription === 'string'

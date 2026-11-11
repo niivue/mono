@@ -273,6 +273,15 @@ describe('indexDicomWsi on hostile input', () => {
     expect(await reasons(new File([whole], 'h.dcm'))).toEqual(['not-tiled'])
   })
 
+  test('tiny native Pixel Data at the end of the file is not truncated', async () => {
+    const pre = cat(new Uint8Array(128), str('DICM'))
+    const tiny = cat(pre, el(0x7fe0, 0x0010, 'OB', new Uint8Array(4)))
+    expect(await reasons(new File([tiny], 'h.dcm'))).toEqual(['not-tiled'])
+    // Encapsulated Pixel Data cut before its offset-table item is truncated.
+    const cut = cat(pre, el(0x7fe0, 0x0010, 'OB', new Uint8Array(0), UNDEF))
+    expect(await reasons(new File([cut], 'h.dcm'))).toEqual(['malformed'])
+  })
+
   test('a text value over 1 KiB is malformed, never decoded', async () => {
     const f = dicom({
       study: el(0x0020, 0x000d, 'UT', new Uint8Array(16 << 20).fill(0x31)),

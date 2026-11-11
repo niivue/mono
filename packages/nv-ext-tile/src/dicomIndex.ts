@@ -543,7 +543,12 @@ async function readHeader(
       // (NeedMore with the whole file read, below) is a truncated file.
       if (pixel >= size)
         throw new Skip('not-tiled', 'no Pixel Data (e.g. a DICOMDIR)')
-      if (pixel + 20 > b.length) throw new NeedMore() // Pixel Data and the BOT item header
+      // Pixel Data's header, plus the BOT item header when encapsulated.
+      if (
+        pixel + 12 > b.length ||
+        (u32(b, pixel + 8) === UNDEFINED_LENGTH && pixel + 20 > b.length)
+      )
+        throw new NeedMore()
       refuseSyntax(b, top)
       return { b, pixel, top, attributes: reader.attributes() }
     } catch (err) {

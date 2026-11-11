@@ -74,9 +74,13 @@ export function fitGutterSource(
   const height = Math.min(bitmap.height, maxTexture - 2)
   if (width === bitmap.width && height === bitmap.height) return bitmap
   if (unscalable.has(bitmap)) return null
-  const canvas = new OffscreenCanvas(width, height)
-  const ctx = canvas.getContext('2d')
-  if (!ctx) {
+  // Safari before 16.4 has WebGL2 but no OffscreenCanvas.
+  const canvas =
+    typeof OffscreenCanvas === 'undefined'
+      ? null
+      : new OffscreenCanvas(width, height)
+  const ctx = canvas?.getContext('2d')
+  if (!canvas || !ctx) {
     unscalable.add(bitmap)
     log.warn('No 2D context to scale an oversize slide tile')
     return null

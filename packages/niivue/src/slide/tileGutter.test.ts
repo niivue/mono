@@ -237,4 +237,16 @@ describe('fitGutterSource', () => {
       globalThis.OffscreenCanvas = original
     }
   })
+
+  test('no OffscreenCanvas at all is null, not a throw', () => {
+    const original = globalThis.OffscreenCanvas
+    // @ts-expect-error: a browser without OffscreenCanvas
+    delete globalThis.OffscreenCanvas
+    try {
+      const bitmap = { width: 8192, height: 100 } as ImageBitmap
+      expect(fitGutterSource(bitmap, 8192)).toBeNull()
+    } finally {
+      globalThis.OffscreenCanvas = original
+    }
+  })
 })

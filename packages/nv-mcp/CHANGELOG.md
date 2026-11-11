@@ -1,3 +1,13 @@
+## 1.0.0-rc.161 (2026-11-11)
+
+### Features
+
+- **nv-mcp:** address slide channels by name in set_slide ([881feab1](https://github.com/niivue/mono/commit/881feab1))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.160 (2026-11-11)
 
 ### Updated Dependencies

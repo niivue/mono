@@ -903,9 +903,8 @@ async function loadSlide() {
   els.fallback.setAttribute('aria-hidden', 'true')
   els.fallback.textContent = ''
   // Tear down the outgoing slide before loading the next: drop its render
-  // listener, dispose its bitmap cache + in-flight fetches, and clear the
-  // renderer's per-tile texture cache so the new source cannot inherit stale
-  // tiles keyed by the same L/x/y (ghost tiles).
+  // listener, dispose its bitmap cache + in-flight fetches, and free the
+  // renderer's tile textures for it.
   const prev = slide
   slide = null
   hasFit = false

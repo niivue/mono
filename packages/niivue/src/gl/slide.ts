@@ -15,6 +15,7 @@ import {
 import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
+  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
@@ -234,12 +235,9 @@ export class SlideRenderer extends NVRenderer {
     gl.enable(gl.DEPTH_TEST)
   }
 
-  // Drop every cached tile texture without tearing down the renderer. Tile
-  // textures are keyed by tile key (`L{i}/{x}/{y}`), a namespace shared by every
-  // slide, and `textureForBitmap` reuses a cached texture whenever key + size
-  // match without re-uploading — so a consumer that swaps the slide behind this
-  // renderer must call this first, or the new slide inherits the old slide's
-  // tiles (ghost tiles).
+  // Drop every cached tile texture without tearing down the renderer: frees a
+  // swapped-out slide's tiles now rather than when the byte budget evicts them
+  // (textures are keyed by slide, see slideTileKey).
   clearTextures(): void {
     this._textures.clear()
     this._luts.clear(this._gl)
@@ -308,7 +306,8 @@ export class SlideRenderer extends NVRenderer {
     bitmap: ImageBitmap,
   ): TileTextureGL | null {
     // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
-    const existing = this._textures.get(item.key, bitmap)
+    const key = slideTileKey(item.slide, item.key)
+    const existing = this._textures.get(key, bitmap)
     if (existing) return existing
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile
     // and a volume brick are two consumers of the same streamed source, and
@@ -321,7 +320,7 @@ export class SlideRenderer extends NVRenderer {
           bitmap,
           {
             slide: item.slide,
-            key: item.key,
+            key,
             level: item.level.index,
             col: item.tile.x,
             row: item.tile.y,

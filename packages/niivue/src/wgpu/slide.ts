@@ -16,6 +16,7 @@ import {
 import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
+  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
@@ -429,9 +430,8 @@ export class SlideRendererGPU {
   }
 
   // Drop every cached tile texture without tearing down the renderer. Mirrors
-  // SlideRenderer.clearTextures (GL): tile textures are keyed by tile key, a
-  // namespace shared across slides, so a consumer swapping the slide must clear
-  // first to avoid inheriting the previous slide's tiles (ghost tiles).
+  // SlideRenderer.clearTextures (GL): frees a swapped-out slide's tiles now
+  // rather than when the byte budget evicts them.
   clearTextures(): void {
     this._textures.clear()
     this._luts.clear()
@@ -492,7 +492,8 @@ export class SlideRendererGPU {
     bitmap: ImageBitmap,
   ): TileTextureGPU | null {
     // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
-    const existing = this._textures.get(item.key, bitmap)
+    const key = slideTileKey(item.slide, item.key)
+    const existing = this._textures.get(key, bitmap)
     if (existing) return existing
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile
     // and a volume brick are two consumers of the same streamed source, and
@@ -505,7 +506,7 @@ export class SlideRendererGPU {
           bitmap,
           {
             slide: item.slide,
-            key: item.key,
+            key,
             level: item.level.index,
             col: item.tile.x,
             row: item.tile.y,

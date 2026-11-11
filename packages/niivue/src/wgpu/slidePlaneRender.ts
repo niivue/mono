@@ -7,6 +7,7 @@ import {
 } from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
+  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -181,12 +182,18 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     tile: SlidePlaneTile,
     bitmap: ImageBitmap,
   ): (TileTextureGPU & { group: GPUBindGroup }) | null {
-    const existing = this._textures.get(tile.key, bitmap)
+    const key = slideTileKey(slide, tile.key)
+    const existing = this._textures.get(key, bitmap)
     if (existing?.group)
       return existing as TileTextureGPU & { group: GPUBindGroup }
     if (!this._textureBGL) return null
     const entry: (TileTextureGPU & { group?: GPUBindGroup }) | null =
-      this._gutter.upload(device, bitmap, { ...tile, slide }, this._textures)
+      this._gutter.upload(
+        device,
+        bitmap,
+        { ...tile, slide, key },
+        this._textures,
+      )
     if (!entry) return null
     const group = device.createBindGroup({
       layout: this._textureBGL,

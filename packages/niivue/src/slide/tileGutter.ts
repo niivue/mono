@@ -15,7 +15,7 @@
 // and the first linear frame after refills every resident border once.
 
 import { log } from '@/logger'
-import type { TileTextureCache } from './tileTextureCache'
+import { slideTileKey, type TileTextureCache } from './tileTextureCache'
 
 /** Interior size of a tile texture (the bitmap size). */
 export interface GutterTile {
@@ -24,9 +24,7 @@ export interface GutterTile {
 }
 
 /**
- * Where a tile goes: its cache key (NVSlide's `L<level>/<col>/<row>`), grid
- * position and slide. Keys do not name the slide, so a neighbour is read only
- * when it was uploaded from the same slide.
+ * Where a tile goes: its cache key (`slideTileKey`), grid position and slide.
  */
 export interface GutterAt {
   slide: object
@@ -159,14 +157,11 @@ function fillSlot<T extends GutterTile>(
 }
 
 /** Looks a tile texture of `slide` up by tile key in `cache`. */
-export function slideNeighbour<T extends { slide: object }>(
+export function slideNeighbour<T>(
   cache: TileTextureCache<T>,
   slide: object,
 ): (key: string) => T | undefined {
-  return (key) => {
-    const n = cache.peek(key)
-    return n?.slide === slide ? n : undefined
-  }
+  return (key) => cache.peek(slideTileKey(slide, key))
 }
 
 /**

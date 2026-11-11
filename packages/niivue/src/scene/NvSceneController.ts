@@ -1,10 +1,13 @@
-import type { NiiVueOptions, NVImage } from '@niivue/niivue'
-import NiiVue, { DRAG_MODE, SHOW_RENDER, SLICE_TYPE } from '@niivue/niivue'
-import type { LayoutConfig } from './layouts'
+// Imports the public entry, not its modules: the build then loads NiiVue from
+// ./niivue.js, so the wrappers share the consumer's NiiVue and can mock it.
+import type { ImageFromUrlOptions, NiiVueOptions, NVImage } from '@/index'
+import NiiVue, { DRAG_MODE, SHOW_RENDER, SLICE_TYPE } from '@/index'
+import type { LayoutConfig, LayoutFunction } from './layouts'
 import { defaultLayouts } from './layouts'
-import type { ImageFromUrlOptions, NvSceneEventMap, ViewerState } from './types'
+import type { NvSceneEventMap, ViewerState } from './types'
 
-export { SLICE_TYPE }
+export type { LayoutConfig, LayoutFunction, NvSceneEventMap, ViewerState }
+export { defaultLayouts, SLICE_TYPE }
 
 export type NiivueCallback = (nv: NiiVue, index: number) => void
 
@@ -13,6 +16,7 @@ export interface ViewerSlot {
   niivue: NiiVue
   canvasElement: HTMLCanvasElement
   containerDiv: HTMLDivElement
+  ready: Promise<void>
 }
 
 export interface NvSceneControllerSnapshot {
@@ -143,6 +147,9 @@ export const defaultViewerOptions: Partial<NiiVueOptions> = {
  * The scene layout controls the position of each canvas via layout functions that
  * return absolute positioning styles. The scene container is responsive and maintains
  * the requested layout proportionally.
+ *
+ * Shared by `@niivue/nvreact` and `@niivue/nv-web-component`. Browser integration
+ * (it creates container divs and canvases), so it has no `@niivue/nv-mcp` tool.
  */
 export class NvSceneController {
   containerElement: HTMLElement | null = null
@@ -263,7 +270,7 @@ export class NvSceneController {
     // Fill all available slots when a container is present
     if (this.containerElement) {
       while (this.viewers.length < this.slots) {
-        this.addViewer()
+        void this.addViewer().catch(() => undefined)
       }
     }
 
@@ -323,6 +330,7 @@ export class NvSceneController {
     } catch (err) {
       this.addError(viewer.id, err)
       this.emit('error', index, err)
+      this.notify()
     }
   }
 
@@ -368,8 +376,15 @@ export class NvSceneController {
     const viewer = this.viewers[index]
     if (!viewer) return
     this.viewerSliceLayouts.set(viewer.id, layout)
-    this.applySliceLayout(viewer.niivue, layout)
-    this.notify()
+    // A failed attach is reported by addViewer; only apply on success.
+    viewer.ready.then(
+      () => {
+        if (this.viewersById.get(viewer.id) !== viewer) return
+        this.applySliceLayout(viewer.niivue, layout)
+        this.notify()
+      },
+      () => undefined,
+    )
   }
 
   getViewerSliceLayout(index: number): SliceLayoutTile[] | null {
@@ -398,24 +413,40 @@ export class NvSceneController {
 
   // --- Volume management ---
 
+  // A failed attach already reported its error and removed the viewer.
+  private async waitForViewerReady(viewer: ViewerSlot): Promise<boolean> {
+    await viewer.ready.catch(() => undefined)
+    return this.viewersById.get(viewer.id) === viewer
+  }
+
   async loadVolume(index: number, opts: ImageFromUrlOptions): Promise<NVImage> {
     const viewer = this.viewers[index]
     if (!viewer) throw new Error(`No viewer at index ${index}`)
 
     this.incrementLoading(viewer.id)
     try {
+      if (!(await this.waitForViewerReady(viewer))) {
+        throw new Error(
+          `Viewer at index ${index} was removed before it was ready`,
+        )
+      }
       await viewer.niivue.addVolume(opts)
       const vols = viewer.niivue.volumes
       const image = vols[vols.length - 1]
       if (!image) throw new Error('Volume was not added')
-      this.emit('volumeAdded', index, opts, image)
+      // The viewer may have moved or been removed while the volume loaded.
+      const currentIndex = this.viewers.indexOf(viewer)
+      if (currentIndex >= 0) this.emit('volumeAdded', currentIndex, opts, image)
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }
       return image
     } catch (err) {
-      this.addError(viewer.id, err)
-      this.emit('error', index, err)
+      // Once removed, index may name another viewer.
+      if (this.viewersById.get(viewer.id) === viewer) {
+        this.addError(viewer.id, err)
+        this.emit('error', index, err)
+      }
       throw err
     } finally {
       this.decrementLoading(viewer.id)
@@ -436,6 +467,7 @@ export class NvSceneController {
   async removeVolume(index: number, url: string): Promise<void> {
     const viewer = this.viewers[index]
     if (!viewer) return
+    if (!(await this.waitForViewerReady(viewer))) return
     const nv = viewer.niivue
     const volIdx = nv.volumes.findIndex(
       (v: NVImage) => v.url === url || v.name === url,
@@ -456,12 +488,13 @@ export class NvSceneController {
    * Look up the Niivue instance and NVImage at the given viewer and volume indices.
    * Returns undefined if either index is out of bounds.
    */
-  private findVolume(
+  private async findVolume(
     viewerIndex: number,
     volumeIndex: number,
-  ): { nv: NiiVue; vol: NVImage; volumeIndex: number } | undefined {
+  ): Promise<{ nv: NiiVue; vol: NVImage; volumeIndex: number } | undefined> {
     const viewer = this.viewers[viewerIndex]
     if (!viewer) return undefined
+    if (!(await this.waitForViewerReady(viewer))) return undefined
     const nv = viewer.niivue
     const vol = nv.volumes[volumeIndex] as NVImage | undefined
     if (!vol) return undefined
@@ -474,7 +507,7 @@ export class NvSceneController {
     volumeIndex: number,
     colormap: string,
   ): Promise<void> {
-    const found = this.findVolume(viewerIndex, volumeIndex)
+    const found = await this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { colormap })
     this.emit('colormapChanged', viewerIndex, volumeIndex, colormap)
@@ -488,7 +521,7 @@ export class NvSceneController {
     calMin: number,
     calMax: number,
   ): Promise<void> {
-    const found = this.findVolume(viewerIndex, volumeIndex)
+    const found = await this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { calMin, calMax })
     this.emit('intensityChanged', viewerIndex, volumeIndex, calMin, calMax)
@@ -501,7 +534,7 @@ export class NvSceneController {
     volumeIndex: number,
     opacity: number,
   ): Promise<void> {
-    const found = this.findVolume(viewerIndex, volumeIndex)
+    const found = await this.findVolume(viewerIndex, volumeIndex)
     if (!found) return
     await found.nv.setVolume(found.volumeIndex, { opacity })
     this.emit('opacityChanged', viewerIndex, volumeIndex, opacity)
@@ -523,6 +556,10 @@ export class NvSceneController {
     const errors = this.viewerErrors.get(id) ?? []
     errors.push(error)
     this.viewerErrors.set(id, errors)
+  }
+
+  private getViewerIndex(viewer: ViewerSlot): number {
+    return this.viewers.findIndex((candidate) => candidate.id === viewer.id)
   }
 
   // --- Viewer lifecycle ---
@@ -565,12 +602,13 @@ export class NvSceneController {
     this.loadingCounts.set(id, 0)
     this.viewerErrors.set(id, [])
 
-    const viewer: ViewerSlot = {
+    const viewer = {
       id,
       niivue,
       canvasElement: canvas,
       containerDiv,
-    }
+      ready: Promise.resolve(),
+    } satisfies ViewerSlot
 
     // Register the viewer synchronously so callers (e.g. setLayout) can
     // add multiple viewers in a loop without awaiting each one.
@@ -582,10 +620,16 @@ export class NvSceneController {
 
     // Wire NiiVue event listeners (sync — before attachment)
     niivue.addEventListener('locationChange', (evt) => {
-      this.emit('locationChange', index, evt.detail)
+      const currentIndex = this.getViewerIndex(viewer)
+      if (currentIndex >= 0) {
+        this.emit('locationChange', currentIndex, evt.detail)
+      }
     })
     niivue.addEventListener('volumeLoaded', (evt) => {
-      this.emit('imageLoaded', index, evt.detail.volume)
+      const currentIndex = this.getViewerIndex(viewer)
+      if (currentIndex >= 0) {
+        this.emit('imageLoaded', currentIndex, evt.detail.volume)
+      }
       if (this.broadcasting) {
         this.rewireBroadcasting()
       }
@@ -596,27 +640,41 @@ export class NvSceneController {
       }
     })
 
-    // Notify synchronously — viewer slot is registered and usable
+    // Async canvas attachment — viewer is already registered
+    viewer.ready = niivue
+      .attachToCanvas(canvas)
+      .then(() => {
+        if (this.viewersById.get(viewer.id) !== viewer) return
+
+        const sliceLayout = this.viewerSliceLayouts.get(id) ?? null
+        this.applySliceLayout(niivue, sliceLayout)
+
+        if (this.broadcasting) {
+          this.setBroadcasting(true)
+        }
+
+        this.notify()
+      })
+      .catch((error: unknown) => {
+        if (this.viewersById.get(viewer.id) === viewer) {
+          const currentIndex = this.viewers.indexOf(viewer)
+          this.addError(viewer.id, error)
+          if (currentIndex >= 0) {
+            this.emit('error', currentIndex, error)
+            // An error listener may already have removed it; -1 is a no-op.
+            this.removeViewer(this.viewers.indexOf(viewer))
+          }
+        }
+        throw error
+      })
+
+    // Notify after `ready` holds the attachment, so a load started from a
+    // callback waits for it.
     this.onViewerCreated?.(niivue, index)
     this.emit('viewerCreated', niivue, index)
     this.notify()
 
-    // Async canvas attachment — viewer is already registered
-    const ready = niivue.attachToCanvas(canvas).then(() => {
-      // Apply the current slice layout (default axial).
-      this.applySliceLayout(niivue, null)
-
-      // Update broadcasting to include new viewer
-      if (this.broadcasting) {
-        this.setBroadcasting(true)
-      }
-
-      this.notify()
-
-      return viewer
-    })
-
-    return ready
+    return viewer.ready.then(() => viewer)
   }
 
   removeViewer(index: number, shouldNotify = true): void {
@@ -638,9 +696,9 @@ export class NvSceneController {
     this.viewers.splice(index, 1)
     this.updateLayout()
 
-    // Update broadcasting for remaining viewers
+    // Update broadcasting for remaining viewers without notifying twice.
     if (this.broadcasting && this.viewers.length > 0) {
-      this.setBroadcasting(true)
+      this.rewireBroadcasting()
     }
 
     this.emit('viewerRemoved', index)

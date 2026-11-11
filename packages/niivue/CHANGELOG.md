@@ -1,3 +1,48 @@
+## 1.0.0-rc.161 (2026-11-11)
+
+### Fixes
+
+- guard missing OffscreenCanvas; keep tiny native Pixel Data not-tiled ([b308657c](https://github.com/niivue/mono/commit/b308657c))
+- **niivue:** draw a placeholder for a slide tile that cannot be scaled ([134914d1](https://github.com/niivue/mono/commit/134914d1))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.160 (2026-11-11)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.159 (2026-11-11)
+
+### Fixes
+
+- **niivue:** attach-failure cleanup removes the failed viewer by identity ([ead26c44](https://github.com/niivue/mono/commit/ead26c44))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.158 (2026-11-11)
+
+### Features
+
+- **niivue:** side-effect-free @niivue/niivue/scene subpath (scene controller, layouts, types) ([f5a8d852](https://github.com/niivue/mono/commit/f5a8d852))
+
+### Fixes
+
+- **niivue:** volumeAdded reports the viewer's current index ([e34dc700](https://github.com/niivue/mono/commit/e34dc700))
+- **niivue:** notify viewer creation after attachment starts ([4868616c](https://github.com/niivue/mono/commit/4868616c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.157 (2026-11-11)
 
 ### Fixes

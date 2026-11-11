@@ -22,7 +22,7 @@ const coreFromSource: Plugin = {
 // imported codecs fold into it.
 export const worker = {
   plugins: () => [coreFromSource],
-  rollupOptions: { output: { inlineDynamicImports: true } },
+  rollupOptions: { output: { codeSplitting: false } },
 }
 export const entry = {
   tiff: 'src/tiff.ts',

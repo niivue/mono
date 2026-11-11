@@ -156,6 +156,8 @@ path; the eventual core-overlay cutover (step 6) beyond noting it.
 
 # Module 1 implementation plan - terminated-line builder
 
+**Status:** the builder now lives only in `packages/uikit/src/line.ts`; the core copy in `view/NVLine.ts` was removed as dead code (no core caller).
+
 **Scope:** the terminator vocabulary + `ARROW` as a backend-agnostic pure-data
 builder over a line record. Builder-only: no renderer, shader, package, or backend
 code - the arrow-from-segments math that UIKit's (and, if ever wanted, core's) line

@@ -32,12 +32,6 @@
  */
 
 let enabled = false
-// Inner-loop per-mesh-iter sub-phase markers are very chatty (3 begin/end
-// pairs × N meshes × M tiles per frame). At browser timer resolution of
-// 100µs each pair is rounded down, which biases phase-sum LOW versus the
-// outer cpu measure. Toggle this off to distinguish real CPU cost from
-// instrumentation-rounding artefact.
-let meshPhaseEnabled = true
 
 const phaseTotals: Map<string, number> = new Map()
 let lastPhaseTotals: Map<string, number> = new Map()
@@ -46,7 +40,6 @@ let cpuStartTime = 0
 let submitStartTime = 0
 let nextActionTag: string | null = null
 let activeActionTag: string | null = null
-let lastFrameReport: FrameReport | null = null
 
 export type FrameReport = {
   /** Action label set via `setNextActionTag` before the frame, or null. */
@@ -69,14 +62,6 @@ export function setPerfMarksEnabled(value: boolean): void {
 
 export function arePerfMarksEnabled(): boolean {
   return enabled
-}
-
-export function setMeshPhaseEnabled(value: boolean): void {
-  meshPhaseEnabled = value
-}
-
-export function areMeshPhasesEnabled(): boolean {
-  return meshPhaseEnabled
 }
 
 /**
@@ -102,10 +87,6 @@ export function subscribeFrameReports(
   return () => {
     frameSubscribers.delete(cb)
   }
-}
-
-export function getLastFrameReport(): FrameReport | null {
-  return lastFrameReport
 }
 
 export function markCpuStart(): void {
@@ -162,20 +143,19 @@ export function markEnd(): void {
     /* missing start mark */
   }
   lastPhaseTotals = new Map(phaseTotals)
-  const phases: Record<string, number> = {}
-  for (const [k, v] of phaseTotals) phases[k] = v
-  lastFrameReport = {
-    tag: activeActionTag,
-    cpuMs: submitStartTime - cpuStartTime,
-    submitMs: endTime - submitStartTime,
-    totalMs: endTime - cpuStartTime,
-    phases,
-  }
-  activeActionTag = null
   if (frameSubscribers.size > 0) {
-    const report = lastFrameReport
+    const phases: Record<string, number> = {}
+    for (const [k, v] of phaseTotals) phases[k] = v
+    const report: FrameReport = {
+      tag: activeActionTag,
+      cpuMs: submitStartTime - cpuStartTime,
+      submitMs: endTime - submitStartTime,
+      totalMs: endTime - cpuStartTime,
+      phases,
+    }
     for (const cb of frameSubscribers) cb(report)
   }
+  activeActionTag = null
   try {
     performance.clearMarks('niivue:cpu-start')
     performance.clearMarks('niivue:submit-start')

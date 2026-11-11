@@ -9,10 +9,5 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx"
   },
-  "include": [
-    "src/lib.ts",
-    "src/nvcontainer.tsx",
-    "src/nvscene-controller.ts",
-    "src/layouts.ts"
-  ]
+  "include": ["src/lib.ts", "src/nvcontainer.tsx"]
 }

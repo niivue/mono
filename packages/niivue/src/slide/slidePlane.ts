@@ -131,7 +131,7 @@ export interface SlidePlaneAnnotation {
 }
 
 /** Camera state captured during the last render, used for screen->slide picking. */
-export interface SlidePlanePickFrame {
+interface SlidePlanePickFrame {
   mvp: Float32Array
   /** Render-tile rect within the canvas (device px): left, top, width, height. */
   ltwh: [number, number, number, number]

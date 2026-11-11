@@ -38,7 +38,6 @@ niivue/mono/
 │   ├── nv-ext-save-html/    @niivue/nv-ext-save-html — Export scene as HTML
 │   └── dev-images/      @niivue/dev-images — Shared test images (Git LFS)
 ├── nx-tools/
-│   ├── nx-pixi-plugin.js       Local NX plugin for Python dependency inference
 │   ├── pixi-version-actions.js  Custom NX Release versioning for pyproject.toml (Python)
 │   └── check-boundaries.js     Module boundary enforcement
 ├── package.json         Bun workspaces + root devDependencies
@@ -70,14 +69,7 @@ demo-ext-dcm2niix ──→ niivue
 nv-react ──→ niivue
 ```
 
-TypeScript dependencies are detected by NX from `package.json` or `implicitDependencies` in `project.json`. Python dependencies are detected automatically by a local plugin (`nx-tools/nx-pixi-plugin.js`) that reads a `[tool.nx]` section in `pyproject.toml`:
-
-```toml
-[tool.nx]
-workspace-dependencies = ["some-py-package"]
-```
-
-Pixi ignores `[tool.*]` sections, so this doesn't interfere with conda dependency resolution. The plugin creates a graph edge for each listed project.
+Dependencies are detected by NX from `package.json`, source imports, or `implicitDependencies` in `project.json` (use the latter for Python-to-Python edges).
 
 ### Module boundaries
 
@@ -292,7 +284,6 @@ bunx nx reset
 
 Defines workspace-wide defaults:
 
-- **plugins** — local plugins like the Pixi graph plugin that extends NX's understanding of the workspace
 - **namedInputs** — reusable file patterns (`typescript`, `python`) that targets reference for cache invalidation
 - **targetDefaults** — default settings for each target name: whether to cache, and which upstream targets must run first (`dependsOn: ["^build"]` means "build my dependencies before building me")
 - **release** — configuration for `nx release`: which packages to include, versioning strategy (conventional commits), and changelog generation
@@ -304,7 +295,7 @@ Each project's `project.json` declares:
 - **name** — the project identifier used in NX commands
 - **projectType** — `"application"` or `"library"`
 - **tags** — labels for boundary enforcement and filtering (e.g. `lang:typescript`, `type:app`)
-- **implicitDependencies** — manual dependency declarations for the graph (used for TS projects; Python deps are auto-detected by the plugin)
+- **implicitDependencies** — manual dependency declarations for the graph (e.g. for Python-to-Python edges)
 - **targets** — the commands NX can run, each with a `command`, optional `inputs`/`outputs` for caching, and optional `options.cwd` for working directory
 
 ### pyproject.toml (Python projects)
@@ -314,14 +305,12 @@ Each Python project's `pyproject.toml` is the single source of truth for metadat
 - **[project]** — PEP 621 metadata (name, version, dependencies, optional extras)
 - **[build-system]** — the build backend (`hatchling` for `ipyniivue`)
 - **[tool.pixi.*]** — Pixi's [pyproject.toml layout](https://pixi.prefix.dev/dev/python/pyproject_toml/): workspace, environments, features, tasks. Pixi reads these sections directly; there is no separate `pixi.toml`.
-- **[tool.nx]** — optional workspace-dependencies list used by `nx-pixi-plugin.js` to create dependency edges in the Nx graph
 - **[tool.ruff]**, **[tool.mypy]**, **[tool.pytest.ini_options]** — linter, type-checker, and test-runner config
 
 Nx targets wrap Python tools in `pixi run -e dev <tool>` so the same versions run locally and in CI. `pixi install -e dev` provisions the environment.
 
 ### nx-tools/
 
-- **nx-pixi-plugin.js** — local NX plugin that reads `[tool.nx]` sections in `pyproject.toml` (and `pixi.toml`, if ever used) and creates dependency edges in the graph for listed workspace projects. This gives Python projects the same automatic dependency detection that TypeScript projects get from `package.json`
 - **pixi-version-actions.js** — custom NX Release version actions class that reads/writes the `version` field in `pyproject.toml` (or `pixi.toml`), enabling `nx release` to version Python packages the same way it versions TypeScript packages via `package.json`
 - **check-boundaries.js** — validates that the dependency graph follows architectural rules (no app-to-app deps, no cross-language deps)
 
@@ -337,11 +326,7 @@ Nx targets wrap Python tools in `pixi run -e dev <tool>` so the same versions ru
 ### Python (Pixi)
 
 1. Create the directory under `apps/` or `packages/`
-2. Add a `pyproject.toml` with `[project]`, `[build-system]`, `[tool.pixi.*]`, and (if applicable) `[tool.nx]`, `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]` sections — see `packages/ipyniivue/pyproject.toml` for a reference layout
+2. Add a `pyproject.toml` with `[project]`, `[build-system]`, `[tool.pixi.*]`, and (if applicable) `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]` sections — see `packages/ipyniivue/pyproject.toml` for a reference layout
 3. Add a `project.json` following the pattern in any existing Python project (wrap tool invocations in `pixi run -e dev <tool>`)
 4. Run `pixi install -e dev` from the new project directory
-5. If it depends on another Python workspace project, add a `[tool.nx]` section with `workspace-dependencies` — the graph plugin will detect it automatically:
-   ```toml
-   [tool.nx]
-   workspace-dependencies = ["other-py-project"]
-   ```
+5. If it depends on another Python workspace project, list it in `implicitDependencies` in `project.json`

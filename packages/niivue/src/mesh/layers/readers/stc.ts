@@ -2,7 +2,7 @@ import type { LUT } from '@/NVTypes'
 
 export const extensions = ['STC']
 
-export type LayerReadResult = {
+type LayerReadResult = {
   values: Float32Array
   nFrame4D: number
   colormapLabel?: LUT | null

@@ -4,8 +4,8 @@ import { clearMockInstances, registerNiivueMock } from './__mocks__/niivue'
 
 registerNiivueMock()
 
+import { NvSceneController } from '@niivue/niivue/scene'
 import { useNiivue, useScene, useSceneEvent } from './hooks'
-import { NvSceneController } from './nvscene-controller'
 
 describe('useScene', () => {
   beforeEach(() => {

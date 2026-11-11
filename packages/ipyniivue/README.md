@@ -18,8 +18,10 @@ bun install                       # from the monorepo root, once
 bunx nx codegen ipyniivue         # builds widget.js into static/
 cd packages/ipyniivue
 pip install -e .                  # plain-pip path
-# or, to match the Nx-invoked tool environment (ruff/mypy/pytest/jupyter):
+# or, to match the Nx-invoked tool environment (ruff/mypy/pytest/hatchling):
 pixi install -e dev
+# plus the Jupyter stack, for `bunx nx smoke ipyniivue` and `pixi run -e notebook lab`:
+pixi install -e notebook
 ```
 
 `packages/ipyniivue/pyproject.toml` is the single source of truth:

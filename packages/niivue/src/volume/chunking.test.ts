@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type ChunkPlan,
-  chunkAtVoxel,
   chunkLodDownsample,
   chunkOwnedTexBox,
   chunkSampleTransform,
@@ -307,56 +306,6 @@ describe('chunkVolume — input validation', () => {
       'too small for halo',
     )
     expect(() => chunkVolume([5, 5, 5], 3, [1, 1, 1])).not.toThrow()
-  })
-})
-
-describe('chunkAtVoxel', () => {
-  test('returns the single chunk for sub-limit volumes', () => {
-    const plan = chunkVolume([100, 100, 100], 2048)
-    const c = chunkAtVoxel(plan, [50, 50, 50])
-    expect(c).toBe(plan.chunks[0])
-  })
-
-  test('returns the correct chunk for multi-chunk volumes', () => {
-    const plan = chunkVolume([4096, 4096, 4096], 2048)
-    // origin
-    expect(chunkAtVoxel(plan, [0, 0, 0])?.gridIndex).toEqual([0, 0, 0])
-    // first chunk last-included voxel on x (stride=2046)
-    expect(chunkAtVoxel(plan, [2045, 0, 0])?.gridIndex).toEqual([0, 0, 0])
-    // next chunk first voxel on x
-    expect(chunkAtVoxel(plan, [2046, 0, 0])?.gridIndex).toEqual([1, 0, 0])
-    // last voxel of the volume
-    expect(chunkAtVoxel(plan, [4095, 4095, 4095])?.gridIndex).toEqual([2, 2, 2])
-  })
-
-  test('returns null for out-of-bounds coords', () => {
-    const plan = chunkVolume([100, 100, 100], 2048)
-    expect(chunkAtVoxel(plan, [-1, 0, 0])).toBeNull()
-    expect(chunkAtVoxel(plan, [0, -1, 0])).toBeNull()
-    expect(chunkAtVoxel(plan, [0, 0, -1])).toBeNull()
-    expect(chunkAtVoxel(plan, [100, 0, 0])).toBeNull()
-    expect(chunkAtVoxel(plan, [0, 100, 0])).toBeNull()
-    expect(chunkAtVoxel(plan, [0, 0, 100])).toBeNull()
-  })
-
-  test('every data voxel maps to exactly one chunk that contains it', () => {
-    const plan = chunkVolume([300, 300, 300], 128)
-    // Sample a sparse grid of voxels rather than all 27M
-    const step = 17
-    for (let z = 0; z < 300; z += step) {
-      for (let y = 0; y < 300; y += step) {
-        for (let x = 0; x < 300; x += step) {
-          const c = chunkAtVoxel(plan, [x, y, z])
-          expect(c).not.toBeNull()
-          if (!c) continue
-          for (let a = 0; a < 3; a++) {
-            const v = [x, y, z][a]
-            expect(v).toBeGreaterThanOrEqual(c.voxelOrigin[a])
-            expect(v).toBeLessThan(c.voxelOrigin[a] + c.voxelDims[a])
-          }
-        }
-      }
-    }
   })
 })
 
@@ -1381,9 +1330,8 @@ describe('chunkVolumeMultiLOD — pinned gridDims lattice', () => {
       0,
     )
     expect(sum).toBe(512 * 384 * 640)
-    // chunkAtVoxel indexes by gridDims/stride, so the emit order matters.
-    expect(chunkAtVoxel(plan, [0, 0, 0])?.gridIndex).toEqual([0, 0, 0])
-    expect(chunkAtVoxel(plan, [511, 383, 639])?.gridIndex).toEqual([1, 2, 3])
+    expect(plan.chunks[0].gridIndex).toEqual([0, 0, 0])
+    expect(plan.chunks[23].gridIndex).toEqual([1, 2, 3])
   })
 
   test('grows an axis whose brick would not fit the device limit', () => {

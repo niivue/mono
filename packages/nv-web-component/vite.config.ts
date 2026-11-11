@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     dts({
       entryRoot: 'src',
-      exclude: ['src/**/*.test.ts', 'src/**/__mocks__/**'],
+      exclude: ['src/**/*.test.ts'],
       tsconfigPath: './tsconfig.json',
     }),
   ],
@@ -18,7 +18,7 @@ export default defineConfig({
       fileName: 'nv-web-component',
     },
     rollupOptions: {
-      external: ['@niivue/niivue'],
+      external: [/^@niivue\/niivue(\/|$)/],
     },
   },
 })

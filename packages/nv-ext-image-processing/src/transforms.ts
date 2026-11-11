@@ -30,11 +30,6 @@ function getBridge(): NVWorker {
   return bridge
 }
 
-export function terminateWorker(): void {
-  bridge?.terminate()
-  bridge = null
-}
-
 // ---------------------------------------------------------------------------
 // Worker result → patched NIFTI header
 // ---------------------------------------------------------------------------

@@ -67,22 +67,8 @@ class PixiVersionActions extends VersionActions {
     return null
   }
 
-  async readCurrentVersionOfDependency(tree, _projectGraph, depName) {
-    if (this.manifestsToUpdate.length === 0) {
-      return { currentVersion: null, dependencyCollection: null }
-    }
-    try {
-      const content = tree.read(this.manifestsToUpdate[0].manifestPath, 'utf-8')
-      const toolNxMatch = content.match(
-        /\[tool\.nx\][\s\S]*?workspace-dependencies\s*=\s*\[([^\]]*)\]/,
-      )
-      if (toolNxMatch?.[1].includes(`"${depName}"`)) {
-        return {
-          currentVersion: null,
-          dependencyCollection: 'workspace-dependencies',
-        }
-      }
-    } catch {}
+  // Python projects declare workspace deps via implicitDependencies, not in pyproject.toml.
+  async readCurrentVersionOfDependency(_tree, _projectGraph, _depName) {
     return { currentVersion: null, dependencyCollection: null }
   }
 

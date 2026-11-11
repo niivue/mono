@@ -8,7 +8,6 @@ import {
   floodFill3D,
   floodFillSection,
   getSliceIndices,
-  isPenLocationValid,
   isSamePoint,
   magicWand3D,
   PEN_SLICE_TYPE,
@@ -613,23 +612,6 @@ describe('floodFillSection', () => {
     for (let i = 0; i < w * h; i++) {
       expect(img[i]).toBe(1)
     }
-  })
-})
-
-// ---------------------------------------------------------------------------
-// isPenLocationValid
-// ---------------------------------------------------------------------------
-describe('isPenLocationValid', () => {
-  test('NaN_returnsFalse', () => {
-    expect(isPenLocationValid([NaN, 0, 0])).toBe(false)
-  })
-
-  test('validCoord_returnsTrue', () => {
-    expect(isPenLocationValid([1, 2, 3])).toBe(true)
-  })
-
-  test('zeroCoord_returnsTrue', () => {
-    expect(isPenLocationValid([0, 0, 0])).toBe(true)
   })
 })
 

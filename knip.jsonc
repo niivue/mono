@@ -1,18 +1,59 @@
 {
   "$schema": "https://unpkg.com/knip@6.39.0/schema-jsonc.json",
-  // Run through niivue:knip to select the niivue workspace.
   "workspaces": {
+    ".": {
+      // Run manually, from workflows, or from nx.json (versionActions, changelog renderer).
+      "entry": [
+        ".github/scripts/*.ts",
+        "nx-tools/*.{js,ts}",
+        "apps/medgfx/scripts/*.ts"
+      ]
+    },
+    "apps/demo-ext-tile": {
+      "entry": ["scripts/*.ts"]
+    },
+    "apps/docs": {
+      // Demos load via MDX `import()` + raw-loader; gallery components via gallery-plugin addRoute.
+      "entry": ["src/demos/*.ts", "src/components/Gallery*.tsx"]
+    },
+    "apps/iiif-volumetric-demo": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "apps/iiif-volumetric-server": {
+      "entry": ["scripts/*.ts"]
+    },
+    // Bare `bun test` in project.json, which Knip doesn't read. Not a packages/* glob:
+    // overriding `entry` drops Knip's src/index.ts default, nv-ohif's only public entry.
+    "packages/dev-images": { "entry": ["src/**/*.test.ts"] },
+    "packages/nv-ext-drawing": { "entry": ["src/**/*.test.ts"] },
+    "packages/nv-ext-image-processing": { "entry": ["src/**/*.test.ts"] },
+    "packages/nv-ext-save-html": { "entry": ["src/**/*.test.ts"] },
+    "packages/ipyniivue": {
+      // Reaches _widget.template.js, which imports the bundled @niivue/* devDependencies.
+      "entry": ["tests/**/*.test.ts"]
+    },
+    "packages/nv-ext-tile": {
+      "entry": ["scripts/*.ts"]
+    },
+    "packages/nv-react": {
+      // build:lib bundles src/lib.ts (exports point at dist/types, which Knip can't map back).
+      "entry": ["src/lib.ts!", "src/**/*.test.{ts,tsx}"]
+    },
     "packages/niivue": {
-      // Public package entries stay protected; tests and standalone tools stay reachable.
+      // Public entries are kept explicit so a Knip plugin change cannot silently drop them (Knip
+      // currently also finds src/index*.ts and hints they are redundant). Tests and tools stay reachable.
       "entry": [
         "src/index.ts!",
         "src/index.webgpu.ts!",
         "src/index.webgl2.ts!",
         "src/control/NVCanvasViewportController.ts!",
+        "src/scene/NvSceneController.ts!",
         "src/assets/fonts/index.ts!",
         "src/assets/matcaps/index.ts!",
         "src/**/*.test.ts",
+        "e2e/coverageGlobalSetup.ts",
         "examples/vox.worker.js",
+        "scripts/check-blend-wgsl.mjs",
         "scripts/fetch-dicom-wsi.ts",
         "scripts/fetch-openslide-dicom.ts",
         "bench/build-report.ts",
@@ -25,17 +66,14 @@
         "!src/**/*.test.ts!",
         "!src/volume/tiffBuilders.ts!"
       ],
-      "vite": {
-        "config": [
-          "vite.config.js",
-          "vite.config.lib.ts",
-          "vite.config.standalone.ts",
-          "vite.config.examples.ts"
-        ]
+      // Reader/writer modules are consumed through `import * as` maps in `_registry.ts`
+      // (including the optional `isCurv` hook), which Knip can't trace. Types stay reported.
+      "ignoreIssues": {
+        "src/**/{readers,writers}/*.ts": ["exports"]
       },
-      // Playwright loads this Vite browser URL inside page.evaluate.
+      // Playwright loads Vite browser URLs inside page.evaluate.
       "paths": {
-        "/src/index.ts": ["./src/index.ts"]
+        "/src/*": ["./src/*"]
       }
     }
   }

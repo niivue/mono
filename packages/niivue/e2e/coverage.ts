@@ -55,7 +55,7 @@ export const coverageOptions: CoverageReportOptions = {
 const started = new WeakSet<Page>()
 
 /** Starts coverage on a page before it navigates. No-op unless enabled. */
-export async function startCoverage(page: Page): Promise<void> {
+async function startCoverage(page: Page): Promise<void> {
   if (!coverageEnabled || started.has(page)) return
   started.add(page)
   // resetOnNavigation off: the shared page navigates once, but a spec may
@@ -64,7 +64,7 @@ export async function startCoverage(page: Page): Promise<void> {
 }
 
 /** Takes a page's coverage and adds it to the on-disk cache. */
-export async function stopCoverage(page: Page): Promise<void> {
+async function stopCoverage(page: Page): Promise<void> {
   if (!started.has(page) || page.isClosed()) return
   started.delete(page)
   const entries = await page.coverage.stopJSCoverage()

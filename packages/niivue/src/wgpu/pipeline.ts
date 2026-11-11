@@ -24,7 +24,7 @@ export function linearSampler(device: GPUDevice): GPUSampler {
   return device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
 }
 
-export function uniformEntry(
+function uniformEntry(
   visibility: GPUShaderStageFlags,
 ): GPUBindGroupLayoutEntry {
   return { binding: 0, visibility, buffer: { type: 'uniform' } }

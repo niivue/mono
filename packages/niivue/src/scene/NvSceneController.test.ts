@@ -1,16 +1,7 @@
 // biome-ignore-all lint/style/noNonNullAssertion: test file — assertions on known state are safe
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
-import {
-  clearMockInstances,
-  mockInstances,
-  registerNiivueMock,
-  SHOW_RENDER,
-  SLICE_TYPE,
-} from './__mocks__/niivue'
-
-// Register the module mock before importing the controller
-registerNiivueMock()
-
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import * as niivueEntry from '@/index'
+import { SHOW_RENDER, SLICE_TYPE } from '@/NVConstants'
 import { defaultLayouts } from './layouts'
 import {
   defaultSliceLayout,
@@ -19,19 +10,136 @@ import {
   heroRenderSliceLayout,
   NvSceneController,
   quadSliceLayout,
+  type SliceLayoutTile,
   splitSliceLayout,
   stackedSliceLayout,
   triSliceLayout,
-} from './nvscene-controller'
+} from './NvSceneController'
+
+// The controller's only runtime dependency is NiiVue from '@/index'. Each test
+// swaps in FakeNiiVue (live bindings reach the imported controller) and puts the
+// real module back: Bun module mocks are process-wide, and other test files
+// import '@/index' too.
+
+type Mocked = ReturnType<typeof mock>
+
+interface MockNiiVue {
+  attachToCanvas: Mocked
+  addVolume: Mocked
+  removeVolume: Mocked
+  broadcastTo: Mocked
+  setVolume: Mocked
+  destroy: Mocked
+  addEventListener: Mocked
+  /** Call the handlers registered via addEventListener */
+  emitEvent: (name: string, detail: unknown) => void
+  volumes: unknown[]
+  meshes: unknown[]
+  customLayout: unknown[] | null
+  sliceType: number
+  showRender: number
+}
+
+const mockInstances: MockNiiVue[] = []
+/** Results for the next attachToCanvas calls, in order; default resolves. */
+const attachToCanvasResults: Promise<void>[] = []
+
+function clearMockInstances(): void {
+  mockInstances.length = 0
+  attachToCanvasResults.length = 0
+}
+
+/** Called with `new` by the controller; returns the stub it records. */
+function FakeNiiVue(): MockNiiVue {
+  const handlers = new Map<string, Set<(evt: unknown) => void>>()
+  const nv: MockNiiVue = {
+    attachToCanvas: mock(
+      () => attachToCanvasResults.shift() ?? Promise.resolve(),
+    ),
+    addVolume: mock((opts: { url: string }) => {
+      const vol = { url: opts.url, name: opts.url }
+      nv.volumes.push(vol)
+      return Promise.resolve(vol)
+    }),
+    removeVolume: mock((volIdx: number) => {
+      nv.volumes.splice(volIdx, 1)
+      return Promise.resolve()
+    }),
+    broadcastTo: mock(() => {}),
+    setVolume: mock(() => Promise.resolve()),
+    destroy: mock(() => {}),
+    addEventListener: mock((name: string, cb: (evt: unknown) => void) => {
+      if (!handlers.has(name)) handlers.set(name, new Set())
+      handlers.get(name)?.add(cb)
+    }),
+    emitEvent(name, detail) {
+      for (const cb of handlers.get(name) ?? []) cb({ detail })
+    },
+    volumes: [],
+    meshes: [],
+    customLayout: null,
+    sliceType: SLICE_TYPE.AXIAL,
+    showRender: SHOW_RENDER.AUTO,
+  }
+  mockInstances.push(nv)
+  return nv
+}
+
+const realEntry = { ...niivueEntry }
+const fakeEntry = { ...realEntry, default: FakeNiiVue, NiiVue: FakeNiiVue }
+
+/** Just enough DOM for the controller: it only creates and nests elements. */
+class TestElement {
+  className = ''
+  style: Record<string, string> = {}
+  width = 0
+  height = 0
+  children: TestElement[] = []
+  parentNode: TestElement | null = null
+
+  appendChild(child: TestElement): void {
+    child.parentNode = this
+    this.children.push(child)
+  }
+
+  remove(): void {
+    if (!this.parentNode) return
+    this.parentNode.children = this.parentNode.children.filter(
+      (child) => child !== this,
+    )
+    this.parentNode = null
+  }
+
+  /** Class selectors only ('.name'). */
+  querySelectorAll(selector: string): TestElement[] {
+    const className = selector.slice(1)
+    return this.children.flatMap((child) => [
+      ...(child.className === className ? [child] : []),
+      ...child.querySelectorAll(selector),
+    ])
+  }
+}
+
+const flushPromises = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('NvSceneController', () => {
-  let controller: NvSceneController
+  let controller: InstanceType<typeof NvSceneController>
   let container: HTMLElement
 
   beforeEach(() => {
+    mock.module('@/index', () => fakeEntry)
     clearMockInstances()
+    globalThis.document = {
+      createElement: () => new TestElement(),
+    } as unknown as Document
     controller = new NvSceneController()
-    container = document.createElement('div')
+    container = new TestElement() as unknown as HTMLElement
+  })
+
+  afterEach(() => {
+    mock.module('@/index', () => realEntry)
+    Reflect.deleteProperty(globalThis, 'document')
   })
 
   // --- Construction & defaults ---
@@ -595,7 +703,7 @@ describe('NvSceneController', () => {
       controller.setLayout('2x2')
     })
 
-    test('setViewerSliceLayout stores and applies custom layout via nv.customLayout', () => {
+    test('setViewerSliceLayout stores and applies custom layout via nv.customLayout', async () => {
       const layout = [
         {
           sliceType: SLICE_TYPE.AXIAL,
@@ -604,11 +712,12 @@ describe('NvSceneController', () => {
       ]
       controller.setViewerSliceLayout(0, layout)
       expect(controller.getViewerSliceLayout(0)).toEqual(layout)
+      await flushPromises()
       const nv = mockInstances[0]!
       expect(nv.customLayout).toEqual(layout)
     })
 
-    test('setViewerSliceLayout with multi-tile layout sets customLayout on niivue', () => {
+    test('setViewerSliceLayout with multi-tile layout sets customLayout on niivue', async () => {
       const layout = [
         {
           sliceType: SLICE_TYPE.SAGITTAL,
@@ -624,11 +733,12 @@ describe('NvSceneController', () => {
         },
       ]
       controller.setViewerSliceLayout(0, layout)
+      await flushPromises()
       const nv = mockInstances[0]!
       expect(nv.customLayout).toEqual(layout)
     })
 
-    test('setViewerSliceLayout with sliceMM passes it through', () => {
+    test('setViewerSliceLayout with sliceMM passes it through', async () => {
       const layout = [
         {
           sliceType: SLICE_TYPE.AXIAL,
@@ -637,6 +747,7 @@ describe('NvSceneController', () => {
         },
       ]
       controller.setViewerSliceLayout(0, layout)
+      await flushPromises()
       const nv = mockInstances[0]!
       expect(nv.customLayout).toEqual(layout)
     })
@@ -645,7 +756,7 @@ describe('NvSceneController', () => {
       expect(controller.getViewerSliceLayout(0)).toBeNull()
     })
 
-    test('setViewerSliceLayout with null resets to axial and clears customLayout', () => {
+    test('setViewerSliceLayout with null resets to axial and clears customLayout', async () => {
       // First set a layout, then clear it
       const layout = [
         {
@@ -655,14 +766,16 @@ describe('NvSceneController', () => {
       ]
       controller.setViewerSliceLayout(0, layout)
       controller.setViewerSliceLayout(0, null)
+      await flushPromises()
       const nv = mockInstances[0]!
       expect(nv.customLayout).toBeNull()
       expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
       expect(nv.showRender).toBe(SHOW_RENDER.NEVER)
     })
 
-    test('setViewerSliceLayout with empty array resets like null', () => {
+    test('setViewerSliceLayout with empty array resets like null', async () => {
       controller.setViewerSliceLayout(0, [])
+      await flushPromises()
       const nv = mockInstances[0]!
       expect(nv.customLayout).toBeNull()
       expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
@@ -702,6 +815,8 @@ describe('NvSceneController', () => {
       const promise = controller.loadVolume(0, { url: 'test.nii' })
       expect(controller.getSnapshot().isLoading).toBe(true)
 
+      // addVolume runs once the viewer is attached
+      await flushPromises()
       resolveVolume?.({ url: 'test.nii', name: 'test.nii' })
       await promise
       expect(controller.getSnapshot().isLoading).toBe(false)
@@ -759,16 +874,15 @@ describe('NvSceneController', () => {
       expect(nv.removeVolume).toHaveBeenCalledWith(0)
     })
 
-    test('removeVolume is a no-op when volume is not found', () => {
+    test('removeVolume is a no-op when volume is not found', async () => {
       const cb = mock((_index: number, _url: string) => {})
       controller.on('volumeRemoved', cb)
-      controller.removeVolume(0, 'nonexistent.nii')
+      await controller.removeVolume(0, 'nonexistent.nii')
       expect(cb).not.toHaveBeenCalled()
     })
 
-    test('removeVolume is a no-op for invalid viewer index', () => {
-      // Should not throw
-      controller.removeVolume(99, 'test.nii')
+    test('removeVolume is a no-op for invalid viewer index', async () => {
+      await controller.removeVolume(99, 'test.nii')
     })
 
     test('viewerStates tracks loading and errors per viewer', () => {
@@ -1026,6 +1140,218 @@ describe('NvSceneController', () => {
       controller.on('opacityChanged', cb)
       await controller.setOpacity(0, 5, 0.5)
       expect(cb).not.toHaveBeenCalled()
+    })
+  })
+
+  // --- Attachment and stale indices ---
+
+  describe('attachment and stale indices', () => {
+    beforeEach(() => {
+      controller.setContainerElement(container)
+    })
+
+    const deferAttach = () => {
+      let resolve: () => void = () => {}
+      let reject: (err: Error) => void = () => {}
+      attachToCanvasResults.push(
+        new Promise<void>((res, rej) => {
+          resolve = res
+          reject = rej
+        }),
+      )
+      return { resolve, reject }
+    }
+
+    test('waits for canvas attachment before loading volumes', async () => {
+      const attach = deferAttach()
+      const viewerReady = controller.addViewer()
+
+      const loadPromise = controller.loadVolume(0, { url: 'brain.nii.gz' })
+      expect(mockInstances[0]?.addVolume).not.toHaveBeenCalled()
+
+      attach.resolve()
+      await viewerReady
+      await loadPromise
+
+      expect(mockInstances[0]?.addVolume).toHaveBeenCalledWith({
+        url: 'brain.nii.gz',
+      })
+    })
+
+    test('preserves slice layout requested while attachment is pending', async () => {
+      const attach = deferAttach()
+      const addPromise = controller.addViewer()
+      const layout: SliceLayoutTile[] = [
+        { sliceType: SLICE_TYPE.CORONAL, position: [0, 0, 1, 1] },
+      ]
+
+      controller.setViewerSliceLayout(0, layout)
+      attach.resolve()
+      await addPromise
+      await flushPromises()
+
+      expect(mockInstances[0]?.customLayout).toBe(layout)
+    })
+
+    test('removes a viewer when attachment fails', async () => {
+      const errorCb = mock((_index: number, _err: unknown) => {})
+      controller.on('error', errorCb)
+      attachToCanvasResults.push(Promise.reject(new Error('attach failed')))
+      const addPromise = controller.addViewer()
+
+      await expect(addPromise).rejects.toThrow('attach failed')
+
+      expect(controller.getSnapshot().viewerCount).toBe(0)
+      expect((container as unknown as TestElement).children).toHaveLength(0)
+      expect(mockInstances[0]?.destroy).toHaveBeenCalled()
+      expect(errorCb.mock.calls[0]?.[0]).toBe(0)
+    })
+
+    test('a failed attachment whose error listener removes it leaves other viewers', async () => {
+      const attach = deferAttach()
+      controller.setLayout('1x2')
+      controller.on('error', (index) => controller.removeViewer(index))
+
+      attach.reject(new Error('attach failed'))
+      await flushPromises()
+
+      expect(controller.getSnapshot().viewerCount).toBe(1)
+      expect(controller.getNiivue(0) as unknown).toBe(mockInstances[1])
+    })
+
+    test('setLayout reports a failed attachment without an unhandled rejection', async () => {
+      const errorCb = mock((_index: number, _err: unknown) => {})
+      controller.on('error', errorCb)
+      attachToCanvasResults.push(Promise.reject(new Error('attach failed')))
+
+      controller.setLayout('1x1')
+      await flushPromises()
+
+      expect(errorCb).toHaveBeenCalled()
+      expect(controller.getSnapshot().viewerCount).toBe(0)
+    })
+
+    test('a slice layout set before a failed attachment does not reject', async () => {
+      const attach = deferAttach()
+      const addPromise = controller.addViewer().catch(() => undefined)
+      controller.setViewerSliceLayout(0, defaultSliceLayout)
+
+      attach.reject(new Error('attach failed'))
+      await addPromise
+      await flushPromises()
+
+      expect(controller.getSnapshot().viewerCount).toBe(0)
+    })
+
+    test('loadVolume rejects for a viewer removed before attachment finished', async () => {
+      const attach = deferAttach()
+      const addPromise = controller.addViewer()
+      const loadPromise = controller.loadVolume(0, { url: 'brain.nii.gz' })
+
+      controller.removeViewer(0)
+      attach.resolve()
+      await addPromise
+
+      await expect(loadPromise).rejects.toThrow('removed before it was ready')
+      expect(mockInstances[0]?.addVolume).not.toHaveBeenCalled()
+    })
+
+    test('a failed attachment under a pending load reports one error, for that viewer', async () => {
+      const attach = deferAttach()
+      controller.setLayout('1x2')
+      const errors: number[] = []
+      controller.on('error', (index) => errors.push(index))
+      const loadPromise = controller.loadVolume(0, { url: 'brain.nii.gz' })
+
+      attach.reject(new Error('attach failed'))
+
+      await expect(loadPromise).rejects.toThrow('removed before it was ready')
+      expect(errors).toEqual([0])
+      expect(controller.getSnapshot().viewerStates[0]?.errors).toEqual([])
+    })
+
+    test('a load started from viewerCreated waits for attachment and rejects if it fails', async () => {
+      const attach = deferAttach()
+      let loadPromise: Promise<unknown> | undefined
+      controller.on('viewerCreated', (_nv, index) => {
+        loadPromise = controller.loadVolume(index, { url: 'brain.nii.gz' })
+      })
+      const addPromise = controller.addViewer().catch(() => undefined)
+      await flushPromises()
+      expect(mockInstances[0]?.addVolume).not.toHaveBeenCalled()
+
+      attach.reject(new Error('attach failed'))
+      await addPromise
+
+      await expect(loadPromise).rejects.toThrow('removed before it was ready')
+      expect(mockInstances[0]?.addVolume).not.toHaveBeenCalled()
+    })
+
+    test('attachment finishing after removal leaves the viewer alone', async () => {
+      const attach = deferAttach()
+      const addPromise = controller.addViewer()
+
+      controller.removeViewer(0)
+      attach.resolve()
+      await addPromise
+
+      expect(mockInstances[0]?.showRender).toBe(SHOW_RENDER.AUTO)
+    })
+
+    test('viewer events report the current index after an earlier viewer is removed', () => {
+      controller.setLayout('1x2')
+      const [removed, kept] = mockInstances
+      const locations: number[] = []
+      const images: number[] = []
+      controller.on('locationChange', (index) => locations.push(index))
+      controller.on('imageLoaded', (index) => images.push(index))
+
+      controller.removeViewer(0)
+      kept!.emitEvent('locationChange', {})
+      kept!.emitEvent('volumeLoaded', { volume: {} })
+      removed!.emitEvent('locationChange', {})
+      removed!.emitEvent('volumeLoaded', { volume: {} })
+
+      expect(locations).toEqual([0])
+      expect(images).toEqual([0])
+    })
+
+    test('volumeAdded reports the current index, or nothing once the viewer is removed', async () => {
+      controller.setLayout('1x2')
+      const added: number[] = []
+      controller.on('volumeAdded', (index) => added.push(index))
+      const finishers: (() => void)[] = []
+      for (const nv of mockInstances) {
+        nv.addVolume.mockImplementation(
+          (opts: { url: string }) =>
+            new Promise((res) => {
+              finishers.push(() => {
+                nv.volumes.push({ url: opts.url })
+                res(undefined)
+              })
+            }),
+        )
+      }
+      const removedLoad = controller.loadVolume(0, { url: 'a.nii' })
+      const keptLoad = controller.loadVolume(1, { url: 'b.nii' })
+      await flushPromises()
+
+      controller.removeViewer(0)
+      for (const finish of finishers) finish()
+      await Promise.all([removedLoad, keptLoad])
+
+      expect(added).toEqual([0])
+    })
+
+    test('removeViewer while broadcasting notifies once', () => {
+      controller.setLayout('1x2')
+      controller.setBroadcasting(true)
+      const listener = mock(() => {})
+      controller.subscribe(listener)
+
+      controller.removeViewer(0)
+
+      expect(listener).toHaveBeenCalledTimes(1)
     })
   })
 })

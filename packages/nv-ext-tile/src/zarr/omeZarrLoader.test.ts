@@ -245,7 +245,7 @@ describe('openOmeZarr level selection', () => {
         new URL(request.url).pathname.slice(2) as `/${string}`,
       )
       return bytes
-        ? new Response(bytes)
+        ? new Response(bytes as Uint8Array<ArrayBuffer>)
         : new Response('<!doctype html>', {
             headers: { 'content-type': 'text/html' },
           })

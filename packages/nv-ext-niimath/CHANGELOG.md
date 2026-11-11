@@ -1,3 +1,19 @@
+## 1.0.0-rc.156 (2026-11-11)
+
+This was a version bump only for nv-ext-niimath to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.155 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.159
+
+## 1.0.0-rc.154 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.158
+
 ## 1.0.0-rc.153 (2026-11-11)
 
 ### Updated Dependencies

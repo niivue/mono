@@ -1,12 +1,11 @@
 {
   "name": "niivue-mono",
   "devDependencies": {
-    "@biomejs/biome": "latest",
-    "@niivue/niivue": "workspace:*",
+    "@biomejs/biome": "2.4.10",
     "@nx/js": "^22.6.3",
-    "@types/bun": "^1.3.12",
+    "@types/bun": "^1.4.0",
     "knip": "6.39.0",
-    "nx": "latest"
+    "nx": "22.6.3"
   },
   "private": true,
   "scripts": {
@@ -18,7 +17,8 @@
     "graph:query": "bun nx-tools/repo-graph.ts query",
     "typecheck": "nx run-many -t typecheck",
     "test": "nx run-many -t test",
-    "check-boundaries": "node nx-tools/check-boundaries.js"
+    "check-boundaries": "node nx-tools/check-boundaries.js",
+    "knip": "knip"
   },
   "workspaces": [
     "apps/*",

@@ -123,7 +123,7 @@ export function cropVolume(volume: VolumeHandle, bbox: Bbox6): VolumeHandle {
   })
 }
 
-export function shiftAffineTranslation(
+function shiftAffineTranslation(
   affine: Affine4x4 | null,
   x0: number,
   y0: number,

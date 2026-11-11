@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-image-processing",
-  "version": "1.0.0-rc.158",
+  "version": "1.0.0-rc.162",
   "type": "module",
   "description": "Image processing extensions for NiiVue (Otsu thresholding, haze removal, etc.)",
   "main": "./dist/nv-ext-image-processing.js",
@@ -20,8 +20,8 @@
   },
   "devDependencies": {
     "@niivue/niivue": "workspace:*",
-    "typescript": "~5.8.3",
-    "vite": "^6.3.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
     "vite-plugin-dts": "^4.5.4"
   },
   "scripts": {
@@ -29,8 +29,7 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "gl-matrix": "^3.4.4",
-    "nifti-reader-js": "^0.8.0"
+    "gl-matrix": "^3.4.4"
   },
   "publishConfig": {
     "access": "public"

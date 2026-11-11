@@ -1,15 +1,24 @@
-import type { NiiVueOptions, NVImage } from '@niivue/niivue'
+import type {
+  ImageFromUrlOptions,
+  NiiVueOptions,
+  NVImage,
+} from '@niivue/niivue'
 import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
-import { css, html, LitElement, type PropertyValues } from 'lit'
-import { defaultLayouts } from './layouts'
 import {
+  defaultLayouts,
   defaultSliceLayouts,
   defaultViewerOptions,
   NvSceneController,
   type NvSceneControllerSnapshot,
   type SliceLayoutTile,
-} from './nvscene-controller'
-import type { ImageFromUrlOptions } from './types'
+} from '@niivue/niivue/scene'
+import {
+  css,
+  type HTMLTemplateResult,
+  html,
+  LitElement,
+  type PropertyValues,
+} from 'lit'
 
 export const defaultElementName = 'niivue-viewer'
 export const defaultSceneElementName = 'niivue-scene'
@@ -120,7 +129,7 @@ export class NiivueViewerElement extends LitElement {
     return this.niivue
   }
 
-  override render() {
+  override render(): HTMLTemplateResult {
     return html`<div id="container"><canvas class="niivue-canvas"></canvas></div>`
   }
 
@@ -345,7 +354,7 @@ export class NiivueSceneElement extends LitElement {
     this.forwardSceneEvents()
   }
 
-  override render() {
+  override render(): HTMLTemplateResult {
     return html`<div id="scene"></div>`
   }
 

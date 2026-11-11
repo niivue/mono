@@ -1,4 +1,4 @@
-export interface CanvasPosition {
+interface CanvasPosition {
   top: string
   left: string
   width: string

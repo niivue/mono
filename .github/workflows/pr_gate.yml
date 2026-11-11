@@ -45,7 +45,8 @@ jobs:
         run: git diff --exit-code -- packages/ipyniivue/api.generated.json packages/ipyniivue/src/ipyniivue/_generated.py packages/ipyniivue/src/ipyniivue/static/_widget.template.js
 
       # Pixi provisions the Python dev env used by ipyniivue's Nx
-      # targets (ruff, mypy, pytest, hatchling/python-build, jupyter).
+      # targets (ruff, mypy, pytest, hatchling/python-build). The Jupyter
+      # stack lives in the separate `notebook` env and is not installed here.
       # Cached across runs by prefix-dev/setup-pixi.
       - uses: prefix-dev/setup-pixi@v0.8.1
         with:

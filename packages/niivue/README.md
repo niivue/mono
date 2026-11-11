@@ -35,7 +35,7 @@ The normal audit includes tests, examples (including their worker), and standalo
 scripts. The production configuration checks library sources without treating
 examples or test consumers as usage; it retains Vite support for `import.meta.glob`.
 Both protect exports from all published package entry points. These targets scope
-reporting to `packages/niivue`; they are not a complete audit of the monorepo.
+reporting to `packages/niivue`; `bun run knip` at the root audits the whole monorepo.
 
 This is a manual review tool, not a CI gate. It exits with status 1 while findings
 remain, including deliberately deferred exports. An unused export is a candidate,
@@ -104,6 +104,25 @@ import NiiVueWebGL2 from '@niivue/niivue/webgl2' // WebGL2-only
 ```
 
 In backend-only builds, selecting the missing backend throws an explicit error.
+
+### Multi-viewer scenes
+
+`@niivue/niivue/scene` exports `NvSceneController`, which lays out several NiiVue
+instances in one container element (it creates their divs and canvases) and can
+sync them. `@niivue/nvreact` and `@niivue/nv-web-component` are built on it.
+The subpath is side-effect free, is not part of the root entry, and has no
+standalone copy. Scene viewers use the universal `@niivue/niivue` build: in an
+app built on `@niivue/niivue/webgpu` or `/webgl2` they are not `instanceof` that
+backend-only `NiiVue` class, and they bring in the other backend's view code.
+
+```js
+import { NvSceneController } from '@niivue/niivue/scene'
+
+const scene = new NvSceneController()
+scene.setContainerElement(document.getElementById('viewers'))
+scene.setLayout('1x2') // two viewers side by side
+await scene.loadVolume(0, { url: '/volumes/mni152.nii.gz' })
+```
 
 ### Without a bundler (standalone ES modules)
 

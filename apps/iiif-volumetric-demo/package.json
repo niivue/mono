@@ -14,7 +14,8 @@
   },
   "devDependencies": {
     "@niivue/dev-images": "workspace:*",
+    "@types/bun": "^1.4.0",
     "playwright": "1.64.1",
-    "vite": "^6.3.2"
+    "vite": "^8.3.8"
   }
 }

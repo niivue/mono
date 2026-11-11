@@ -223,7 +223,7 @@ export function isMenuItemSelectable(item: MenuItemSpec): boolean {
 }
 
 /** The `ButtonSpec` a menu button draws as (label plus room for the chevron). */
-export function menuButtonSpec(
+function menuButtonSpec(
   spec: MenuButtonSpec,
   buttonStyle: ButtonStyle,
   style: MenuStyle,
@@ -264,7 +264,7 @@ export function layoutMenuButton(
 }
 
 /** The height of one row: a separator's or an item's. */
-export function menuRowHeight(item: MenuItemSpec, style: MenuStyle): number {
+function menuRowHeight(item: MenuItemSpec, style: MenuStyle): number {
   return item.kind === 'separator' ? style.separatorHeight : style.itemHeight
 }
 

@@ -4,8 +4,8 @@ import { clearMockInstances, registerNiivueMock } from './__mocks__/niivue'
 
 registerNiivueMock()
 
+import { NvSceneController } from '@niivue/niivue/scene'
 import { NvScene } from './nvscene'
-import { NvSceneController } from './nvscene-controller'
 
 describe('NvScene', () => {
   let controller: NvSceneController

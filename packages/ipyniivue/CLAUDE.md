@@ -419,7 +419,8 @@ bunx nx smoke ipyniivue            # Python-only nbconvert; verifies imports
                                    # smoke section above for the real check.
 pip install -e .                   # Local dev install (from this directory)
 pixi install -e dev                # Provision the Nx-invoked tool env
-                                   # (ruff/mypy/pytest/jupyter/hatchling)
+                                   # (ruff/mypy/pytest/hatchling)
+pixi install -e notebook           # dev + Jupyter stack (smoke, lab)
 jupyter lab --no-browser           # Manual inspection
 ```
 
@@ -427,7 +428,8 @@ The `lint`, `format`, `typecheck`, `test`, `build`, and `smoke` Nx
 targets wrap their Python tools (ruff/mypy/pytest/hatchling) via
 [scripts/pixi-or-skip.ts](scripts/pixi-or-skip.ts) (a cross-platform Bun
 wrapper, so it works on Windows too): when `pixi` is on
-`PATH` they run under `pixi run -e dev` and enforce normally (CI
+`PATH` they run under `pixi run -e dev` (`smoke`: `-e notebook`, the
+dev tools plus the Jupyter stack) and enforce normally (CI
 installs pixi via setup-pixi); when `pixi` is absent the Python step is
 **skipped with a notice and the target still succeeds**, so a
 TypeScript-only contributor's `nx run-many` does not hard-fail on this

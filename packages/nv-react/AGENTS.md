@@ -28,10 +28,6 @@ bunx nx typecheck nv-react
 bunx nx lint nv-react
 ```
 
-### Example-app scripts
-
-The `example:setup` / `example:dev` scripts in `package.json` pack the library tarball and install it into a sibling `example-app/` directory. Those scripts are retained for when an example app is added alongside the library; they will fail if `example-app/` is not present.
-
 After UI changes, start the dev server (`bun run dev`) and visually verify with a browser or Chrome DevTools MCP.
 
 ## Project structure
@@ -39,13 +35,10 @@ After UI changes, start the dev server (`bun run dev`) and visually verify with 
 ```
 src/                    # Library source (published as @niivue/nvreact)
   lib.ts                # Public API entry point — all exports (barrel, biome-ignore on noBarrelFile)
-  nvscene-controller.ts # Core controller: manages Niivue instances, layout, broadcasting, volumes
   nvscene.tsx           # <NvScene> — multi-viewer container bound to a controller
   nvviewer.tsx          # <NvViewer> — standalone single-instance viewer with declarative volumes
   hooks.ts              # useScene, useNiivue, useSceneEvent
   context.tsx           # NvSceneProvider, useSceneContext
-  layouts.ts            # Grid layout presets (1x1, 1x2, 2x2, ...)
-  types.ts              # Shared types and event map
   App.tsx               # In-package demo component
   frontend.tsx          # Demo entry point (React root)
   index.html            # Demo HTML shell
@@ -58,7 +51,7 @@ scripts/                # Package scripts
 
 ## Key APIs
 
-- **`NvSceneController`** — the only class; manages Niivue instances, layout, broadcasting, and volume loading. Implements `subscribe`/`getSnapshot` for `useSyncExternalStore`.
+- **`NvSceneController`** — manages Niivue instances, layout, broadcasting, and volume loading. Implements `subscribe`/`getSnapshot` for `useSyncExternalStore`. It, the grid layouts and `NvSceneEventMap` live in `@niivue/niivue/scene` (shared with `@niivue/nv-web-component`, tested there); `lib.ts` re-exports them.
 - **`NvScene`** — React component that renders a controller's viewers in a CSS grid.
 - **`NvViewer`** — standalone viewer with declarative `volumes` prop (auto-diffs).
 - **`useScene(controller?, layouts?, viewerDefaults?)`** — creates or wraps a controller, returns `{ scene, snapshot }` via `useSyncExternalStore`.
@@ -110,7 +103,7 @@ Relative imports use `./` prefix with no file extensions.
 
 | Element | Style | Examples |
 |---|---|---|
-| Files (library) | lowercase kebab-case | `nvscene-controller.ts` |
+| Files (library) | lowercase kebab-case | `nvviewer-options.ts` |
 | Files (React entry) | PascalCase | `App.tsx` |
 | Components | PascalCase, `Nv` prefix | `NvScene`, `NvViewer` |
 | Hooks | camelCase, `use` prefix | `useScene`, `useNiivue` |

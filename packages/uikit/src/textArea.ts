@@ -280,7 +280,7 @@ export function textAreaScrollbar(
 }
 
 /** The width the rows have for glyphs, keeping room for the caret. */
-export function textAreaWrapWidth(
+function textAreaWrapWidth(
   layout: TextAreaLayout,
   style: TextAreaStyle,
 ): number {
@@ -363,7 +363,7 @@ function endsSoftRow(row: TextRow, caret: number): boolean {
 }
 
 /** The x offset of `caret` from the left edge of its row. */
-export function caretXInRow(
+function caretXInRow(
   advances: readonly number[],
   row: TextRow,
   caret: number,

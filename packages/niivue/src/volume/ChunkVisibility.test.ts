@@ -6,7 +6,6 @@ import {
   chunksNotClippedOut,
   chunksOverlappingVoxelBox,
   orderByViewCenter,
-  unionChunkSets,
 } from './ChunkVisibility'
 import { type ChunkPlan, chunkVolume, type Vec3i } from './chunking'
 
@@ -185,17 +184,6 @@ describe('chunksBackToFront', () => {
     expect(chunksBackToFront(plan, [1, 1, 0])).toEqual([1, 0])
     // Reversed ray: brick 0 (low y) is now farther and drawn first.
     expect(chunksBackToFront(plan, [-1, -1, 0])).toEqual([0, 1])
-  })
-})
-
-describe('unionChunkSets', () => {
-  test('merges and sorts overlapping per-tile lists', () => {
-    expect(unionChunkSets([[3, 1], [1, 2], [5]])).toEqual([1, 2, 3, 5])
-  })
-
-  test('empty input yields an empty set', () => {
-    expect(unionChunkSets([])).toEqual([])
-    expect(unionChunkSets([[], []])).toEqual([])
   })
 })
 

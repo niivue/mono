@@ -1,6 +1,6 @@
+import type { NvSceneController } from '@niivue/niivue/scene'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef } from 'react'
-import type { NvSceneController } from './nvscene-controller'
 
 interface NiivueControllerProps {
   scene: NvSceneController

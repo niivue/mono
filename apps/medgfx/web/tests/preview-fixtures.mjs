@@ -120,7 +120,7 @@ function dataArray(intent, dataType, dims, values) {
   </DataArray>`
 }
 
-export function gifti(spec) {
+function gifti(spec) {
   const arrays = []
   if (spec.vertices) {
     arrays.push(
@@ -240,7 +240,7 @@ export const SPECIMENS = {
 }
 
 /** A closed octahedron, big enough in mm to look like something on screen. */
-export function octahedron(radius = 40) {
+function octahedron(radius = 40) {
   const r = radius
   const vertices = [r, 0, 0, -r, 0, 0, 0, r, 0, 0, -r, 0, 0, 0, r, 0, 0, -r]
   const triangles = [

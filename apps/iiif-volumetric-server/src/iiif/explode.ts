@@ -1,7 +1,6 @@
 // Exploded-view composition.
 
 import type {
-  Shape3,
   Vec3,
   VolumeHandle,
   VoxelArray,
@@ -22,7 +21,7 @@ export interface ExplodeParams {
   ez?: number | string
 }
 
-export interface NormalizedExplodeParams {
+interface NormalizedExplodeParams {
   nx: number
   ny: number
   nz: number
@@ -31,7 +30,7 @@ export interface NormalizedExplodeParams {
   ez: number
 }
 
-export interface ExplodeCell {
+interface ExplodeCell {
   i: number
   j: number
   k: number
@@ -246,6 +245,3 @@ function clampInt(
   }
   return n
 }
-
-export type Shape3Mutable = [number, number, number]
-export type { Shape3, Vec3 }

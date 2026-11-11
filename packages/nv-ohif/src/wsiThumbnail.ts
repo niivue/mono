@@ -80,7 +80,7 @@ export const MAX_THUMBNAIL_FETCH_BYTES = 32 * 1024 * 1024
 // MAX_THUMBNAIL_FETCH_BYTES caps the download; this bounds the decode.
 // Largest raw frame we will paint to a full-size canvas before downscaling
 // (canvases can be GPU/IOSurface-backed, so this bounds a GPU allocation too).
-export const MAX_THUMBNAIL_DECODE_PIXELS = 16 * 1024 * 1024
+const MAX_THUMBNAIL_DECODE_PIXELS = 16 * 1024 * 1024
 
 interface RawImageInfo {
   width: number

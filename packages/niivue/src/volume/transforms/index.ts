@@ -98,13 +98,6 @@ export function transformNames(): string[] {
 }
 
 /**
- * Get a transform by name.
- */
-export function getTransform(name: string): VolumeTransform | undefined {
-  return transformsByName.get(name)
-}
-
-/**
  * Get metadata for a specific transform (name, description, options, resultDefaults).
  */
 export function getTransformInfo(name: string): TransformInfo | undefined {
@@ -116,13 +109,6 @@ export function getTransformInfo(name: string): TransformInfo | undefined {
     options: t.options ?? [],
     resultDefaults: t.resultDefaults,
   }
-}
-
-/**
- * Get metadata for all registered transforms.
- */
-export function getTransformInfos(): TransformInfo[] {
-  return transformNames().map((n) => getTransformInfo(n) as TransformInfo)
 }
 
 // ---------------------------------------------------------------------------

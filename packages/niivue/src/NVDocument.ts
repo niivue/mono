@@ -100,7 +100,7 @@ const DOCUMENT_VERSION = NVConstants.NVD_DOCUMENT_VERSION
  * Embedded volume data for self-contained documents.
  * Stores the complete NIFTI header and raw voxel data.
  */
-export type NVDocumentVolumeData = {
+type NVDocumentVolumeData = {
   hdr: NIFTI1 | NIFTI2
   img: Uint8Array
   datatypeCode: number
@@ -146,7 +146,7 @@ export type NVDocumentVolume = {
  * Embedded mesh data for self-contained documents.
  * Stores positions, indices, and vertex colors.
  */
-export type NVDocumentMeshData = {
+type NVDocumentMeshData = {
   positions: Uint8Array // Float32Array as bytes
   indices: Uint8Array // Uint32Array as bytes
   colors: Uint8Array // Uint32Array as bytes
@@ -157,7 +157,7 @@ export type NVDocumentMeshData = {
  * Embedded tract source data for self-contained documents.
  * Stores streamline vertices, offsets, and scalar overlays.
  */
-export type NVDocumentTractData = {
+type NVDocumentTractData = {
   vertices: Uint8Array // Float32Array as bytes
   offsets: Uint8Array // Uint32Array as bytes
   dpv: Record<string, Uint8Array> // per-vertex Float32Arrays as bytes

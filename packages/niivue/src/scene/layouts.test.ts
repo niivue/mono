@@ -10,8 +10,8 @@ import {
   layout3x3,
 } from './layouts'
 
-// Stub container element — layout functions receive it but most don't use it
-const container = document.createElement('div')
+// Layout functions receive the container but none of these read it
+const container = {} as HTMLElement
 
 describe('layout1x1', () => {
   test('returns full-size position for index 0', () => {

@@ -223,4 +223,4 @@ defineNiivueWebComponents({
 
 ## Exports
 
-The package exports `NiivueViewerElement`, `NiivueSceneElement`, `NvSceneController`, `defaultLayouts`, `defaultSliceLayouts`, `defaultViewerOptions`, `DRAG_MODE`, `SLICE_TYPE`, and NiiVue types.
+The package exports `NiivueViewerElement`, `NiivueSceneElement`, `NvSceneController`, `defaultLayouts`, `defaultSliceLayouts`, `defaultViewerOptions`, `DRAG_MODE`, `SLICE_TYPE`, and NiiVue types. `NvSceneController` and the layouts are re-exported from `@niivue/niivue/scene`.

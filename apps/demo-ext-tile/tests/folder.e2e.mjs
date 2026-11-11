@@ -10,6 +10,7 @@
  * hole shows the background, with no placeholder and no request for it.
  * Then opens a missing manifest by Custom URL and checks that the failure keeps
  * the Slide and Series menus and that the Series menu still opens a slide.
+ * The minimap must draw top right, and a click on it must move the view.
  */
 
 import { readdirSync } from 'node:fs'
@@ -103,12 +104,53 @@ try {
     ),
   )
   await page.uncheck('#hudToggle') // the HUD covers the top-left cell
-  // The optional minimap (src/minimap.ts) would widen the non-black box below.
+  const canvasShot = async () => {
+    await page.waitForTimeout(300)
+    return (await page.locator('#canvas').screenshot()).toString('base64')
+  }
+  // The box of pixels that differ between two shots, or that are not black in one.
+  const boxOf = (a, b = null) =>
+    page.evaluate(
+      async ([a, b]) => {
+        const pixels = async (png) => {
+          const img = new Image()
+          img.src = `data:image/png;base64,${png}`
+          await img.decode()
+          const c = new OffscreenCanvas(img.width, img.height)
+          const ctx = c.getContext('2d')
+          ctx.drawImage(img, 0, 0)
+          return [ctx.getImageData(0, 0, img.width, img.height).data, img.width]
+        }
+        const [pa, w] = await pixels(a)
+        const pb = b ? (await pixels(b))[0] : null
+        let [left, top, right, bottom] = [w, pa.length, -1, -1]
+        for (let i = 0; i < pa.length; i += 4) {
+          const hit = pb
+            ? pa[i] !== pb[i] ||
+              pa[i + 1] !== pb[i + 1] ||
+              pa[i + 2] !== pb[i + 2]
+            : pa[i] + pa[i + 1] + pa[i + 2] > 0
+          if (!hit) continue
+          const x = (i / 4) % w
+          const y = Math.floor(i / 4 / w)
+          left = Math.min(left, x)
+          right = Math.max(right, x)
+          top = Math.min(top, y)
+          bottom = Math.max(bottom, y)
+        }
+        return { left, top, right, bottom, width: w }
+      },
+      [a, b],
+    )
   const minimap = page.getByLabel('Minimap')
-  if (await minimap.count()) await minimap.uncheck()
-  await page.waitForTimeout(300)
+  const withMinimap = await canvasShot()
+  // The minimap would widen the non-black box below.
+  await minimap.uncheck()
   // Sample each cell centre of the fitted 40 x 30 slide from a screenshot.
-  const shot = (await page.locator('#canvas').screenshot()).toString('base64')
+  const shot = await canvasShot()
+  const map = await boxOf(withMinimap, shot)
+  if (!(map.right >= map.left && map.left > map.width / 2))
+    fail(`minimap not drawn top right: ${JSON.stringify(map)}`)
   const cells = await page.evaluate(async (png) => {
     const img = new Image()
     img.src = `data:image/png;base64,${png}`
@@ -157,6 +199,25 @@ try {
   cells.forEach((c, i) => {
     if (!near(c, expected[i])) fail(`cell ${i}: ${c} is not ${expected[i]}`)
   })
+
+  // A click near the minimap's top-left corner recentres the view there. The
+  // fitted 40 x 30 slide is past native resolution, so it cannot zoom in and
+  // the pan clamp leaves it a small move: assert only that it moved.
+  const fitted = await boxOf(shot)
+  await minimap.check()
+  await page.waitForTimeout(300)
+  await page.locator('#canvas').click({
+    position: {
+      x: map.left + (map.right - map.left) * 0.15,
+      y: map.top + (map.bottom - map.top) * 0.15,
+    },
+  })
+  await minimap.uncheck()
+  const moved = await boxOf(await canvasShot())
+  if (moved.left === fitted.left && moved.top === fitted.top)
+    fail(
+      `minimap click did not move the view: ${JSON.stringify({ fitted, moved })}`,
+    )
 
   // A failed custom open keeps the slide on screen and its menu state.
   await page.selectOption('#source', 'custom-url')

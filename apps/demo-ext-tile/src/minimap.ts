@@ -21,6 +21,27 @@ export function attachMinimap(
   document.getElementById('status')?.before(label)
   toggle.addEventListener('change', requestRender)
 
+  // Rebuilt lazily when the slide on screen changes (or the toggle flips).
+  let shown: NVSlide | null = null
+  let minimap: UIKitSlideMinimapOverlay | null = null
+  const sync = (): void => {
+    const slide = toggle.checked ? getSlide() : null
+    if (slide === shown) return
+    if (minimap) {
+      controls.remove(minimap)
+      minimap.destroy()
+    }
+    // Top right: the HUD is top left and the credit bottom right.
+    minimap = slide
+      ? new UIKitSlideMinimapOverlay(slide, { corner: 'top-right' })
+      : null
+    if (minimap) controls.add(minimap)
+    shown = slide
+  }
+  // Registered before the control layer's, so a press between a slide swap and
+  // the next frame reaches the new slide's minimap, not the disposed one's.
+  canvas.addEventListener('pointerdown', sync, { capture: true })
+
   // The control layer's capture-phase listeners stop presses the minimap takes,
   // so they never reach the NVSlideController pan / zoom-box gestures.
   const controls = new UIKitControls()
@@ -36,23 +57,8 @@ export function attachMinimap(
     },
     drawScene: requestRender,
   })
-  // Rebuilt lazily when the slide on screen changes (or the toggle flips).
-  let shown: NVSlide | null = null
-  let minimap: UIKitSlideMinimapOverlay | null = null
   renderer.overlayDraw = (frame) => {
-    const slide = toggle.checked ? getSlide() : null
-    if (slide !== shown) {
-      if (minimap) {
-        controls.remove(minimap)
-        minimap.destroy()
-      }
-      // Top right: the HUD is top left and the credit bottom right.
-      minimap = slide
-        ? new UIKitSlideMinimapOverlay(slide, { corner: 'top-right' })
-        : null
-      if (minimap) controls.add(minimap)
-      shown = slide
-    }
+    sync()
     controls.drawOverlay(frame)
   }
 }

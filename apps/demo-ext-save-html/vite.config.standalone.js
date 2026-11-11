@@ -17,7 +17,7 @@ export default defineConfig({
       fileName: () => 'niivue-standalone.js',
     },
     // Do NOT externalize anything — bundle all deps into one file
-    rollupOptions: {
+    rolldownOptions: {
       external: [],
     },
     // Inline all assets (fonts, matcaps) as data URIs

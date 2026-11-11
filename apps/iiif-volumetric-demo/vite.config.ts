@@ -30,7 +30,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'esnext',
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
         sheet: resolve(__dirname, 'sheet.html'),

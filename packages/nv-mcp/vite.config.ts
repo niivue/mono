@@ -20,7 +20,7 @@ export default defineConfig({
       },
       formats: ['es'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       // The server entry runs under Bun and imports its SDK from there; the
       // browser entry imports nothing; the uikit entry imports the page's
       // own @niivue/uikit. None of them is bundled in.

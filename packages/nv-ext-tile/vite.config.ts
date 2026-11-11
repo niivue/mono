@@ -22,7 +22,7 @@ const coreFromSource: Plugin = {
 // imported codecs fold into it.
 export const worker = {
   plugins: () => [coreFromSource],
-  rollupOptions: { output: { codeSplitting: false } },
+  rolldownOptions: { output: { codeSplitting: false } },
 }
 export const entry = {
   tiff: 'src/tiff.ts',
@@ -42,7 +42,7 @@ export default defineConfig({
       entry,
       formats: ['es'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: [
         '@niivue/niivue',
         '@niivue/dcm2niix',

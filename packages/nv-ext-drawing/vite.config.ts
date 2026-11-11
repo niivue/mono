@@ -13,7 +13,7 @@ export default defineConfig({
       formats: ['es'],
       fileName: 'nv-ext-drawing',
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ['@niivue/niivue'],
     },
   },

@@ -33,7 +33,7 @@ export interface SaveHTMLOptions {
    * The bundle must export `NiiVue` as its **default export** and must
    * have all dependencies (cbor-x, gl-matrix, nifti-reader-js, etc.) inlined.
    *
-   * Build one with e.g. `vite build` using `rollupOptions.external: []`.
+   * Build one with e.g. `vite build` using `rolldownOptions.external: []`.
    */
   niivueBundleSource: string
 

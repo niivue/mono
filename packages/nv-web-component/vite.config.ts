@@ -17,7 +17,7 @@ export default defineConfig({
       formats: ['es'],
       fileName: 'nv-web-component',
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: [/^@niivue\/niivue(\/|$)/],
     },
   },

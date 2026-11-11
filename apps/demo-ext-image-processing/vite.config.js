@@ -39,7 +39,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'esnext',
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         imgproc: fileURLToPath(new URL('imgproc.html', import.meta.url)),
       },

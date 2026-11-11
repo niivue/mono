@@ -11,7 +11,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'esnext',
-    rollupOptions: {
+    rolldownOptions: {
       input: [
         'index.html',
         'ome.zarr.html',

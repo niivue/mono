@@ -11,7 +11,7 @@ export default defineConfig({
       formats: ['es'],
       fileName: 'nv-ext-niimath',
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ['@niivue/niimath'],
     },
   },

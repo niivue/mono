@@ -85,4 +85,21 @@ describe('entry points', () => {
     // an event's detail has to be able to name the type too.
     expect(declared.filter((n) => !root.has(n))).toEqual([])
   })
+
+  test('only src/scene imports @/index, and nothing imports src/scene', async () => {
+    // vite.config.lib.ts externalizes '@/index' to ./niivue.js for the scene
+    // entry; anywhere else it would make an entry import itself. And the scene
+    // subpath must stay out of the root entries' graph.
+    const offenders: string[] = []
+    for await (const file of new Bun.Glob('**/*.ts').scan(import.meta.dir)) {
+      if (file.endsWith('.test.ts')) continue
+      const source = await read(file)
+      if (
+        (!file.startsWith('scene/') && /from '@\/index'/.test(source)) ||
+        /from '(?:@|\.\.?)\/(?:\.\.\/)*scene\//.test(source)
+      )
+        offenders.push(file)
+    }
+    expect(offenders).toEqual([])
+  })
 })

@@ -471,8 +471,11 @@ The package ships three hand-maintained entry points:
 | `@niivue/niivue/webgl2` | `src/index.webgl2.ts` | WebGL2 only |
 | `@niivue/niivue/webgpu` | `src/index.webgpu.ts` | WebGPU only |
 
-(The other `package.json` subpaths, `./viewport`, `./assets/fonts` and
-`./assets/matcaps`, point straight at a module and have no hand-written index.)
+(The other `package.json` subpaths, `./viewport`, `./scene`, `./assets/fonts`
+and `./assets/matcaps`, point straight at a module and have no hand-written
+index. `./scene` imports NiiVue from `@/index`, which `vite.config.lib.ts`
+externalizes to `./niivue.js`; `src/entryPoints.test.ts` checks nothing else
+imports `@/index` and no entry imports `src/scene`.)
 
 The library build prepends `/// <reference types="@webgpu/types" preserve="true" />` to the
 `types` file of every `package.json` export (`vite.config.lib.ts`), so a new

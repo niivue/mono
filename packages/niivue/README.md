@@ -105,6 +105,25 @@ import NiiVueWebGL2 from '@niivue/niivue/webgl2' // WebGL2-only
 
 In backend-only builds, selecting the missing backend throws an explicit error.
 
+### Multi-viewer scenes
+
+`@niivue/niivue/scene` exports `NvSceneController`, which lays out several NiiVue
+instances in one container element (it creates their divs and canvases) and can
+sync them. `@niivue/nvreact` and `@niivue/nv-web-component` are built on it.
+The subpath is side-effect free, is not part of the root entry, and has no
+standalone copy. Scene viewers use the universal `@niivue/niivue` build: in an
+app built on `@niivue/niivue/webgpu` or `/webgl2` they are not `instanceof` that
+backend-only `NiiVue` class, and they bring in the other backend's view code.
+
+```js
+import { NvSceneController } from '@niivue/niivue/scene'
+
+const scene = new NvSceneController()
+scene.setContainerElement(document.getElementById('viewers'))
+scene.setLayout('1x2') // two viewers side by side
+await scene.loadVolume(0, { url: '/volumes/mni152.nii.gz' })
+```
+
 ### Without a bundler (standalone ES modules)
 
 The entry points above import `cbor-x`, `gl-matrix` and `nifti-reader-js` by

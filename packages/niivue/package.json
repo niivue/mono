@@ -23,6 +23,10 @@
       "types": "./dist/control/NVCanvasViewportController.d.ts",
       "import": "./dist/viewport.js"
     },
+    "./scene": {
+      "types": "./dist/scene/NvSceneController.d.ts",
+      "import": "./dist/scene.js"
+    },
     "./assets/fonts": {
       "types": "./dist/assets/fonts/index.d.ts",
       "import": "./dist/assets/fonts/index.js"

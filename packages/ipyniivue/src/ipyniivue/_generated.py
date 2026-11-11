@@ -276,6 +276,8 @@ and its volumes alive."""
     selected_annotation = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     slide_channel_blend = traitlets.Enum(["max", "additive"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """How the slide plane's channels blend (see `NVSlide.channelBlend`), or null without a plane."""
+    slide_color_management = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Whether the slide plane applies its ICC colour management (see `NVSlide.colorManagement`), or null without a plane."""
     version = traitlets.Unicode(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """The `@niivue/niivue` package version, e.g. `1.0.0-rc.55`."""
     volume_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -1847,6 +1849,17 @@ and its volumes alive."""
         blend : NVSlideChannelBlend
         """
         self.send({"cmd": "setSlideChannelBlend", "args": _make_args(blend)})
+
+    def set_slide_color_management(self, on: Any) -> None:
+        """Set {@link slideColorManagement}; redraws only.
+
+        No-op without a plane.
+
+        Parameters
+        ----------
+        on : boolean
+        """
+        self.send({"cmd": "setSlideColorManagement", "args": _make_args(on)})
 
     def set_slide_plane(self, slide: Any, opts: Any) -> None:
         """Register an NVSlide to render as a textured plane in the 3D render view, laid into the loaded volume's world (mm) space.

@@ -151,6 +151,12 @@ describe('slide channels in a document', () => {
     const sp = await roundTrip(slidePlane({}))
     expect(sp.channels).toBeUndefined()
     expect(sp.channelBlend).toBeUndefined()
+    expect(sp.colorManagement).toBeUndefined()
+  })
+
+  test('restores and saves colour management turned off', async () => {
+    const sp = await roundTrip(slidePlane({ colorManagement: false }))
+    expect(sp.colorManagement).toBe(false)
   })
 
   test('omits the blend an RGB slide is fixed to', async () => {

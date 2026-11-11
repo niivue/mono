@@ -539,6 +539,16 @@ describe('core tools over the bridge', () => {
       })
       expect(refused.isError).toBe(true)
     }
+    const managed = await client.callTool({
+      name: 'set_slide',
+      arguments: { color_management: false },
+    })
+    expect(json(managed)).toMatchObject({ params: { color_management: false } })
+    const badManaged = await client.callTool({
+      name: 'set_slide',
+      arguments: { color_management: 'off' },
+    })
+    expect(badManaged.isError).toBe(true)
     const laid = await client.callTool({
       name: 'set_view',
       arguments: { slice: 'multiplanar', layout: 'row', colorbar: true },

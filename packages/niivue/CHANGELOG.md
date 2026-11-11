@@ -1,3 +1,20 @@
+## 1.0.0-rc.158 (2026-11-11)
+
+### Features
+
+- **niivue:** side-effect-free @niivue/niivue/scene subpath (scene controller, layouts, types) ([f5a8d852](https://github.com/niivue/mono/commit/f5a8d852))
+
+### Fixes
+
+- **niivue:** volumeAdded reports the viewer's current index ([e34dc700](https://github.com/niivue/mono/commit/e34dc700))
+- **niivue:** notify viewer creation after attachment starts ([4868616c](https://github.com/niivue/mono/commit/4868616c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.157 (2026-11-11)
 
 ### Fixes

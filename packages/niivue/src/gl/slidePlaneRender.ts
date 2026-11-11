@@ -7,6 +7,7 @@ import {
 } from '@/slide/slidePlane'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
+  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -94,9 +95,15 @@ export class SlidePlaneRenderer extends NVRenderer {
     tile: SlidePlaneTile,
     bitmap: ImageBitmap,
   ): TileTextureGL | null {
-    const existing = this._textures.get(tile.key, bitmap)
+    const key = slideTileKey(slide, tile.key)
+    const existing = this._textures.get(key, bitmap)
     if (existing) return existing
-    return this._gutter.upload(gl, bitmap, { ...tile, slide }, this._textures)
+    return this._gutter.upload(
+      gl,
+      bitmap,
+      { ...tile, slide, key },
+      this._textures,
+    )
   }
 
   /** Bind the program and uniforms, and set the plane's depth/blend state. */

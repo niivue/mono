@@ -114,8 +114,9 @@ neighbour textures (a clamped own edge while a neighbour is absent); an upload
 fills its own border and refreshes the neighbours that read from it, so no
 decoded bytes are kept. Cost: about 1.6% more texture memory at 256 px tiles
 (0.8% at 512) and about 25 small GPU copies per upload (8 own slots, a
-staging copy, up to 16 neighbour slots); a texture is read as a neighbour only
-when it came from the same slide, since tile keys do not name the slide.
+staging copy, up to 16 neighbour slots). Textures are cached per slide
+(`slideTileKey`), so slides sharing tile keys keep their own textures and a
+neighbour is always from the same slide.
 Under nearest filtering the shaders clamp to the edge texels and uploads skip
 the copies; the first linear frame after refills every resident border once.
 

@@ -437,7 +437,9 @@ describe('indexDicomWsi on hostile input', () => {
         pos(17, 17),
       ]),
     })
-    const ws = (await indexDicomWsi([white])).slides[0] as SlideIndexSlide
+    // Through the public entry, whichever module implements it.
+    const { indexDicomWsi: indexViaEntry } = await import('./dicom')
+    const ws = (await indexViaEntry([white])).slides[0] as SlideIndexSlide
     const { manifest } = new DicomWsiSource(ws, [white])
     expect(manifest.backgroundColor).toEqual([1, 1, 1, 1])
     expect(manifest.levels[0]?.tiles.map((t) => t === null)).toEqual([

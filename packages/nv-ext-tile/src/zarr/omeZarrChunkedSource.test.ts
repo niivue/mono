@@ -230,6 +230,18 @@ describe('omeZarrChunkedSource', () => {
     expect(out[out.length - 1]).toBe(11000 + 100 + 20 + 3)
   })
 
+  test('streams the first active channel by default', async () => {
+    const opened = await openOmeZarr(makeTczyxStore())
+    opened.info.channels = [{ ...opened.info.channels[0], active: false }]
+    const bytes = await omeZarrChunkedSource(opened).fetchChunk({
+      levelIndex: 0,
+      texOrigin: [0, 0, 0],
+      texDims: [4, 3, 2],
+      bytesPerVoxel: 2,
+    })
+    expect(voxels(bytes)[0]).toBe(1000)
+  })
+
   test('transposes an x y z-ordered store to x-fastest bricks', async () => {
     const source = omeZarrChunkedSource(await openOmeZarr(makeXyzStore()))
     expect(source.levels[0].shape).toEqual([2, 3, 4])

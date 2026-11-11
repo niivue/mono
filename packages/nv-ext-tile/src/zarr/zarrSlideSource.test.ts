@@ -279,6 +279,23 @@ describe('ZarrSlideSource (synthetic)', () => {
     )
   })
 
+  test('an explicit channel shows even when omero marks it inactive', async () => {
+    const store = await writeImage(
+      {
+        multiscales: multiscale(['c', 'y', 'x'], 1),
+        omero: { channels: [{ active: true }, { active: false }] },
+      },
+      [{ shape: [2, 2, 2], chunks: [1, 2, 2], data: ramp(8, (i) => i) }],
+      'uint16',
+    )
+    const source = await ZarrSlideSource.fromStore(store, { channel: 1 })
+    const [l0] = source.manifest.levels
+    expect(source.manifest.channelInfo).toBeUndefined()
+    expect(Array.from(u16((await tileBytes(source, l0))[0]))).toEqual([
+      4, 5, 6, 7,
+    ])
+  })
+
   test('multi-channel store with every channel inactive shows the first', async () => {
     const store = await writeImage(
       {
@@ -295,30 +312,45 @@ describe('ZarrSlideSource (synthetic)', () => {
     ])
   })
 
-  test('a store marking many channels active opens with the first 4 visible', async () => {
+  test.each([
+    // tonsil IMC style: 6 stated active of 7, all shown (no cap)
+    [
+      'stated flags',
+      [{ active: false }, ...Array(6).fill({ active: true })],
+      [false, true, true, true, true, true, true],
+    ],
+    // every flag stated true is no choice: the first 4 show, as with no flags
+    [
+      'all stated active',
+      Array(7).fill({ active: true }),
+      [true, true, true, true, false, false, false],
+    ],
+    // a missing flag counts as active
+    [
+      'mixed flags',
+      [{}, { active: false }, ...Array(5).fill({})],
+      [true, false, true, true, true, true, true],
+    ],
+    // flags stated only past the old cap: still no cap
+    [
+      'flags past the cap',
+      [...Array(5).fill({}), { active: true }, { active: false }],
+      [true, true, true, true, true, true, false],
+    ],
+    // no flag stated: the first 4 show (tile budget)
+    [
+      'no flags',
+      Array(7).fill({}),
+      [true, true, true, true, false, false, false],
+    ],
+  ])('%s: visible channels follow omero active', async (_, channels, active) => {
     const store = await writeImage(
-      {
-        multiscales: multiscale(['c', 'y', 'x'], 1),
-        omero: {
-          channels: [
-            { active: false },
-            ...Array.from({ length: 6 }, () => ({ active: true })),
-          ],
-        },
-      },
+      { multiscales: multiscale(['c', 'y', 'x'], 1), omero: { channels } },
       [{ shape: [7, 2, 2], chunks: [1, 2, 2], data: ramp(28, (i) => i) }],
       'uint16',
     )
     const source = await ZarrSlideSource.fromStore(store)
-    expect(source.manifest.channelInfo?.map((c) => c.active)).toEqual([
-      false,
-      true,
-      true,
-      true,
-      true,
-      false,
-      false,
-    ])
+    expect(source.manifest.channelInfo?.map((c) => c.active)).toEqual(active)
   })
 
   test('multi-channel uint16: omero channelInfo, planes in requested order, unrequested channels unread', async () => {

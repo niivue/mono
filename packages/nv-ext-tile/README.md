@@ -171,7 +171,9 @@ await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one wh
 await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the volume is removed
 ```
 
-To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running.
+`loadOmeZarrVolumes` loads the channels omero marks active (a missing flag counts as active; all marked inactive loads channel 0). `channels: [i, ...]` loads exactly those, visible; `channels: 'all'` loads every one, inactive ones hidden.
+
+To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running. `omeZarrChannelOptions(source.zarr, c)` gives a streamed channel the loader's `name`, `colormap`, `calMin`/`calMax` and `visible`.
 
 For a 2D image (one y/x plane per level), `ZarrSlideSource` streams chunks into `NVSlide` as tiles instead:
 
@@ -184,7 +186,7 @@ const slide = NVSlide.fromSource(source)
 if (source.window) slide.setChannel(0, source.window) // grey only: NVSlide does not read this window from the source
 ```
 
-Three uint8 channels show as RGB. Other multi-channel stores open as `slide.channels`: omero label, colour (snapped to a colormap), window and `active` (inactive channels start hidden and are not fetched; only the first 4 active ones start visible, so many-channel stores keep a usable tile budget), composited by `slide.channelBlend` (MAX by default). A single-channel store, or `channel`, shows one channel in grey. Windows come from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
+Three uint8 channels show as RGB. Other multi-channel stores open as `slide.channels`: omero label, colour (snapped to a colormap), window and `active` (as for volumes; inactive channels start hidden and are not fetched; a store that marks no channel inactive, with no flags or every channel active, shows its first 4 to keep a usable tile budget), composited by `slide.channelBlend` (MAX by default). A single-channel store, or `channel`, shows one channel in grey. Windows come from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
 
 Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `@niivue/zarrita-rs` (zarrita.js with Rust/WebAssembly codecs, its `inline` entry) is a dependency. `OmeZarrSource.arrays` are built with `@niivue/zarrita-rs/inline`: read them with that entry's `get`. The default `@niivue/zarrita-rs` entry and zarrita.js both throw on them, since each keys its array context with its own private symbol. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 

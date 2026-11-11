@@ -5,6 +5,7 @@ import {
   fetchOmeZarr,
   omeZarrBlockToDisplay,
   omeZarrChannelName,
+  omeZarrChannelOptions,
   omeZarrFetchStore,
   omeZarrVolumesFrom,
   openOmeZarr,
@@ -324,6 +325,116 @@ describe('omeZarrVolumesFrom', () => {
     expect(volumes[1].calMin).toBeUndefined()
     expect(volumes[0].colormap).toBe('gray')
     expect(volumes[1].colormap).toBe('violet')
+  })
+
+  test.each([
+    [
+      'mixed flags (missing counts active)',
+      [undefined, false],
+      undefined,
+      ['nuclei'],
+      [true],
+    ],
+    ['all inactive: channel 0', [false, false], undefined, ['nuclei'], [true]],
+    [
+      'explicit channels show',
+      [false, false],
+      [1, 0],
+      ['membrane', 'nuclei'],
+      [true, true],
+    ],
+    [
+      "'all' hides inactive",
+      [false, true],
+      'all',
+      ['nuclei', 'membrane'],
+      [false, true],
+    ],
+    [
+      "'all', all inactive: channel 0",
+      [false, false],
+      'all',
+      ['nuclei', 'membrane'],
+      [true, false],
+    ],
+  ] as const)('%s', async (_, flags, channels, names, visible) => {
+    const source = await openOmeZarr(makeTczyxStore())
+    source.info.channels = source.info.channels.map((channel, c) => ({
+      ...channel,
+      active: flags[c] ?? true,
+      activeStated: flags[c] !== undefined,
+    }))
+    const volumes = await omeZarrVolumesFrom(source, {
+      channels: channels as number[] | 'all' | undefined,
+    })
+    expect(volumes.map((v) => v.name)).toEqual([...names])
+    expect(volumes.map((v) => v.visible)).toEqual([...visible])
+  })
+
+  test('omeZarrChannelOptions matches the loaded volumes', async () => {
+    const source = await openOmeZarr(makeTczyxStore())
+    const volumes = await omeZarrVolumesFrom(source, { channels: [1] })
+    const { url: _url, ...loaded } = volumes[0]
+    expect(omeZarrChannelOptions(source, 1, [1])).toEqual(loaded as never)
+    expect(omeZarrChannelOptions(source, 1)).toEqual({
+      name: 'membrane',
+      colormap: 'red',
+      calMin: 100,
+      calMax: 3000,
+      visible: true,
+    })
+  })
+
+  test('omeZarrChannelOptions defaults `together` to the active channels', async () => {
+    const source = await openOmeZarr(makeTczyxStore())
+    source.info.channels = source.info.channels.map((channel) => ({
+      ...channel,
+      color: null,
+      active: channel.label === 'membrane',
+    }))
+    // Palette rotation over [membrane]: membrane first, nuclei appended.
+    expect(omeZarrChannelOptions(source, 1)).toMatchObject({
+      colormap: 'green',
+      visible: true,
+    })
+    expect(omeZarrChannelOptions(source, 0)).toMatchObject({
+      colormap: 'violet',
+      visible: false,
+    })
+  })
+
+  test('a repeated channel gets a ramp per position', async () => {
+    const source = await openOmeZarr(makeTczyxStore())
+    const volumes = await omeZarrVolumesFrom(source, { channels: [1, 1] })
+    expect(volumes.map((v) => v.colormap)).toEqual(['red', 'violet'])
+  })
+
+  test('windows against the loaded level dtype', async () => {
+    const source = await openOmeZarr(makeTczyxStore())
+    source.info.channels[0].window = { start: 0, end: 1, min: 0, max: 1 }
+    // Usable on float data, a placeholder on uint16.
+    source.levels[1].dtype = 'float32'
+    const [coarse] = await omeZarrVolumesFrom(source, {
+      channels: [0],
+      level: 1,
+    })
+    expect(coarse.calMax).toBe(1)
+    const [fine] = await omeZarrVolumesFrom(source, { channels: [0], level: 0 })
+    expect(fine.calMax).toBeUndefined()
+  })
+
+  test('reads active flags from the store attributes', async () => {
+    const store = makeTczyxStore()
+    const attrs = JSON.parse(new TextDecoder().decode(store.get('/.zattrs')))
+    attrs.omero.channels[0].active = false
+    store.set('/.zattrs', jsonBytes(attrs))
+    const source = await openOmeZarr(store)
+    expect(source.info.channels.map((c) => c.activeStated)).toEqual([
+      true,
+      false,
+    ])
+    const volumes = await omeZarrVolumesFrom(source)
+    expect(volumes.map((v) => v.name)).toEqual(['membrane'])
   })
 
   test('pins the requested channel and timepoint', async () => {

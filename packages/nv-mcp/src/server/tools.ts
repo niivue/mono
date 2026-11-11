@@ -114,7 +114,7 @@ export const CORE_SCHEMAS = {
       .min(0)
       .optional()
       .describe(
-        'One channel to show; every channel otherwise (streaming shows the first).',
+        'One channel to show; otherwise the channels the store marks active (streaming shows the first active one).',
       ),
     timepoint: z
       .number()
@@ -743,7 +743,7 @@ export function registerCoreTools(
       title: 'Load an OME-Zarr store',
       description:
         'Loads an OME-Zarr (OME-NGFF) microscopy store into the page, replacing what is shown: one pyramid ' +
-        'level whole (each channel a volume), or, with `stream`, streamed brick by brick for stores too large ' +
+        'level whole (each active channel a volume), or, with `stream`, streamed brick by brick for stores too large ' +
         'to load. Reports the name, how many volumes are shown and the extent in world units. A page that ' +
         'did not provide the OME-Zarr loaders declines.',
       inputSchema: strict(CORE_SCHEMAS.load_ome_zarr),

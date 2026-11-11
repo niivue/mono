@@ -10,7 +10,11 @@ import type {
 } from '@niivue/niivue'
 import { omeLengthToMicrons } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
-import { checkOmeZarrIndex, omeroWindowUsable } from './omeZarr'
+import {
+  checkOmeZarrIndex,
+  omeroActiveChannels,
+  omeroWindowUsable,
+} from './omeZarr'
 import {
   type OmeZarrSource,
   omeZarrChannelName,
@@ -44,9 +48,10 @@ export interface ZarrSlideUrlOptions extends ZarrSlideOptions {
 const MAX_TILE_SIZE = 4096
 // As TiffSlideSource: bounds the manifest's tile list.
 const MAX_TILES = 1 << 21
-// Each visible channel is a sample plane per tile in NVSlide's tile budget;
-// a store marking dozens active would leave room for one tile. The rest stay
-// listed, hidden, for the caller to show.
+// Each visible channel is a sample plane per tile in NVSlide's tile budget
+// (tileCapacity): 27 u16 planes of 512² fit 4 tiles in the default cache. Caps a
+// store that marks no channel inactive (many exports mark all active); a chosen
+// subset is honoured. The rest stay listed, hidden, for the caller to show.
 const MAX_DEFAULT_VISIBLE = 4
 // Zarr metadata stays HTTP-cacheable; chunk reads do not (see fromUrl).
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
@@ -196,8 +201,8 @@ export class ZarrSlideSource implements SlideTileSource {
       src.channelCount === 3 &&
       dtype === 'uint8'
     const multi = !rgb && options.channel === undefined && src.channelCount > 1
-    const active = info.channels.findIndex((c) => c.active)
-    const channel = options.channel ?? Math.max(0, active)
+    const active = omeroActiveChannels(info.channels, src.channelCount)
+    const channel = options.channel ?? active[0]
     checkOmeZarrIndex('channel', channel, src.channelCount)
     // As for t: a coarser level may drop channels the finest level has.
     for (const [i, lv] of levels.entries()) {
@@ -319,7 +324,10 @@ export class ZarrSlideSource implements SlideTileSource {
     const quantize: (Quantize | null)[] = []
     for (const [i, c] of shown.entries()) quantize[c] = displays[i].quantize
     const window = rgb || multi ? null : displays[0].window
-    let visible = 0
+    // Only a store that marks some channel inactive has chosen; one marking
+    // none (no flags, or every channel active) gets the capped default.
+    const chosen = info.channels.some((c) => c.activeStated && !c.active)
+    const visible = chosen ? active : active.slice(0, MAX_DEFAULT_VISIBLE)
     const channelInfo: NVSlideChannelInfo[] | undefined = multi
       ? displays.map(({ window }, c) => {
           const omero = info.channels[c]
@@ -327,13 +335,10 @@ export class ZarrSlideSource implements SlideTileSource {
             name: omeZarrChannelName(src, c),
             ...(omero?.color ? { rgb: omero.color } : {}),
             window,
-            active: (omero?.active ?? true) && visible++ < MAX_DEFAULT_VISIBLE,
+            active: visible.includes(c),
           }
         })
       : undefined
-    // A store marking every channel inactive still shows its first.
-    if (channelInfo?.[0] && !channelInfo.some((c) => c.active))
-      channelInfo[0].active = true
     const width0 = shape[xs]
     const manifestLevels = src.arrays.map(
       (arr, index): NVSlideLevelManifest => {

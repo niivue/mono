@@ -122,6 +122,35 @@ describe('NiivueOverlayMenu', () => {
     expect(html.match(/aria-label="Remove /g)).toHaveLength(2)
   })
 
+  it('follows the toolbar open state and reports open and close', () => {
+    viewport()
+    const Menu = overlayMenuComponent({ servicesManager: services })
+    expect(renderToStaticMarkup(<Menu isOpen />)).toStartWith(
+      '<details style="position:relative" open="">',
+    )
+    const events: string[] = []
+    const tree = Menu({
+      isOpen: false,
+      onOpen: () => events.push('open'),
+      onClose: () => events.push('close'),
+    })
+    const { onToggle, onKeyDown, onBlur } = tree.props as {
+      onToggle: (e: unknown) => void
+      onKeyDown: (e: unknown) => void
+      onBlur: (e: unknown) => void
+    }
+    const inside = {}
+    const details = { open: true, contains: (n: unknown) => n === inside }
+    onToggle({ currentTarget: details })
+    // The toggle React fires when it applies isOpen is not a user action.
+    onToggle({ currentTarget: { open: false } })
+    onKeyDown({ key: 'Escape' })
+    onKeyDown({ key: 'a' })
+    onBlur({ currentTarget: details, relatedTarget: inside })
+    onBlur({ currentTarget: details, relatedTarget: null })
+    expect(events).toEqual(['open', 'close', 'close'])
+  })
+
   it('sends each control to its overlay command on the NIIVUE context', () => {
     viewport()
     const calls: unknown[][] = []

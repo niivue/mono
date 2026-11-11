@@ -88,7 +88,9 @@ const ROW: CSSProperties = { display: 'flex', gap: 4, alignItems: 'center' }
  * of the study, and per overlay show/hide, colormap, opacity, order and remove.
  * Acts on the active viewport through the overlay commands, which refresh the
  * toolbar, so OHIF re-renders it with the new state. OHIF passes the button's
- * props plus the evaluated `disabled` / `disabledText`.
+ * props, the evaluated `disabled` / `disabledText`, and its open state
+ * (`isOpen` / `onOpen` / `onClose`), which closes the menu when another
+ * toolbar menu opens. Escape and focus leaving the menu close it too.
  */
 export function overlayMenuComponent({
   servicesManager,
@@ -99,11 +101,17 @@ export function overlayMenuComponent({
     tooltip,
     disabled,
     disabledText,
+    isOpen,
+    onOpen,
+    onClose,
   }: {
     label?: string
     tooltip?: string
     disabled?: boolean
     disabledText?: string
+    isOpen?: boolean
+    onOpen?: () => void
+    onClose?: () => void
   }) {
     const entry = getActiveNiivueEntry(servicesManager)
     if (disabled || !entry)
@@ -128,7 +136,22 @@ export function overlayMenuComponent({
       dsService?.getActiveDisplaySets?.() ?? [],
     )
     return (
-      <details style={{ position: 'relative' }}>
+      <details
+        style={{ position: 'relative' }}
+        open={isOpen}
+        onToggle={(e) => {
+          const open = e.currentTarget.open
+          // React setting `open` from isOpen also fires toggle: report changes only.
+          if (open !== isOpen) (open ? onOpen : onClose)?.()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose?.()
+        }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            onClose?.()
+        }}
+      >
         <summary title={tooltip}>{label}</summary>
         <div style={PANEL}>
           <select

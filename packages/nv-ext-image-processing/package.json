@@ -29,8 +29,7 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "gl-matrix": "^3.4.4",
-    "nifti-reader-js": "^0.8.0"
+    "gl-matrix": "^3.4.4"
   },
   "publishConfig": {
     "access": "public"

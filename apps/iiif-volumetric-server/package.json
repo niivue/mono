@@ -18,7 +18,6 @@
     "morgan": "^1.10.0",
     "nifti-reader-js": "^0.6.8",
     "nrrd-js": "^0.2.1",
-    "pako": "^2.1.0",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {

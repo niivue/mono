@@ -1,12 +1,11 @@
 {
   "name": "niivue-mono",
   "devDependencies": {
-    "@biomejs/biome": "latest",
-    "@niivue/niivue": "workspace:*",
+    "@biomejs/biome": "2.4.10",
     "@nx/js": "^22.6.3",
     "@types/bun": "^1.3.12",
     "knip": "6.39.0",
-    "nx": "latest"
+    "nx": "22.6.3"
   },
   "private": true,
   "scripts": {

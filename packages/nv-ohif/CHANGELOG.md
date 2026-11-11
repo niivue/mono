@@ -1,3 +1,19 @@
+## 1.0.0-rc.175 (2026-11-11)
+
+### Features
+
+- **nv-ohif:** Overlays toolbar dropdown ([9f3bc680](https://github.com/niivue/mono/commit/9f3bc680))
+
+### Fixes
+
+- **nv-ohif:** overlay menu follows the OHIF toolbar open state ([433796b4](https://github.com/niivue/mono/commit/433796b4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.174 (2026-11-11)
 
 ### Features

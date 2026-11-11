@@ -27,12 +27,7 @@ import { setTexParams } from './glUtil'
 import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
-
-type SlideTexture = {
-  texture: WebGLTexture
-  width: number
-  height: number
-}
+import { TileGutterGL, type TileTextureGL } from './tileGutter'
 
 export class SlideRenderer extends NVRenderer {
   private _shader: Shader | null = null // the variant in use
@@ -45,10 +40,11 @@ export class SlideRenderer extends NVRenderer {
   private readonly _luts = new ColorLutTexturesGL()
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer.
-  private readonly _textures = new TileTextureCache<SlideTexture>(
+  private readonly _textures = new TileTextureCache<TileTextureGL>(
     DEFAULT_TILE_TEXTURE_BYTES,
     (entry) => this._gl?.deleteTexture(entry.texture),
   )
+  private readonly _gutter = new TileGutterGL()
   /**
    * UIKit overlay hook: invoked at the end of every frame (after the slide tiles,
    * before GL state is restored) so a widget can draw over the slide in screen
@@ -185,11 +181,21 @@ export class SlideRenderer extends NVRenderer {
         slide.opacity,
         false,
       )
+      // Upload every tile before drawing any: an upload refreshes resident
+      // neighbours' gutters, which must land before those are drawn (WebGPU
+      // submits its gutter copies ahead of the frame).
+      const quads: [
+        NVSlideVisibleTile,
+        TileTextureGL | null,
+        NVSlideScreenRect,
+        boolean,
+      ][] = []
       forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
-        const texture = bitmap
-          ? this.textureForBitmap(gl, item.key, bitmap)
-          : null
-        if (isFallback && !texture) return
+        const texture = bitmap ? this.textureForBitmap(gl, item, bitmap) : null
+        if (!isFallback || texture)
+          quads.push([item, texture, rect, isFallback])
+      })
+      for (const [item, texture, rect, isFallback] of quads)
         this.drawTile(
           gl,
           width,
@@ -200,10 +206,9 @@ export class SlideRenderer extends NVRenderer {
           slide.gridColor,
           slide.opacity,
           item,
-          !bitmap,
+          !texture,
           !isFallback && slide.showTileGrid,
         )
-      })
     }
 
     // The overlay's font atlas keeps its own (linear) filtering.
@@ -254,6 +259,7 @@ export class SlideRenderer extends NVRenderer {
     this._luts.clear(this._gl)
     this._lines.destroy()
     this._font.destroy()
+    this._gutter.destroy(this._gl)
     const gl = this._gl
     if (gl) {
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
@@ -297,37 +303,32 @@ export class SlideRenderer extends NVRenderer {
 
   private textureForBitmap(
     gl: WebGL2RenderingContext,
-    key: string,
+    item: NVSlideVisibleTile,
     bitmap: ImageBitmap,
-  ): SlideTexture | null {
+  ): TileTextureGL {
     // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
-    const existing = this._textures.get(key, bitmap)
+    const existing = this._textures.get(item.key, bitmap)
     if (existing) return existing
-    const texture = gl.createTexture()
-    if (!texture) return null
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
-    const bytes = bitmap.width * bitmap.height * 4
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile
     // and a volume brick are two consumers of the same streamed source, and
     // both pay their texture cost on this thread.
-    timeChunkPhase(
+    return timeChunkPhase(
       'upload',
       () =>
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
+        this._gutter.upload(
+          gl,
           bitmap,
+          {
+            slide: item.slide,
+            key: item.key,
+            level: item.level.index,
+            col: item.tile.x,
+            row: item.tile.y,
+          },
+          this._textures,
         ),
-      bytes,
+      bitmap.width * bitmap.height * 4,
     )
-    const entry = { texture, width: bitmap.width, height: bitmap.height }
-    this._textures.set(key, entry, bitmap.width * bitmap.height * 4, bitmap)
-    return entry
   }
 
   private drawRect(

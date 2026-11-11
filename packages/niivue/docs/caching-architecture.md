@@ -97,7 +97,7 @@ A deep-zoom slide is a different resource, so it has its own stack.
 
 | Tier | Holds | Budget | Code |
 |---|---|---|---|
-| Tile textures | Per-tile GPU textures | 128 MB per renderer | `slide/tileTextureCache.ts` |
+| Tile textures | Per-tile GPU textures, with a 1-texel gutter | 128 MB per renderer, gutter counted | `slide/tileTextureCache.ts` |
 | Decoded tiles | `ImageBitmap` per tile | 96 MB, counted as RGBA | `slide/NVSlide.ts` |
 | HTTP cache | Range responses | Browser policy | not ours |
 
@@ -106,6 +106,16 @@ previous frame's working set is exempt and a texture referenced by an
 unsubmitted command encoder cannot be destroyed under it. That eviction pass
 exists because a deep-zoom pan across a gigapixel slide used to ratchet GPU
 memory up until the browser's GPU process was killed.
+
+Each tile texture is (w+2) x (h+2): its border holds the neighbouring tiles'
+edge texels, so linear filtering has no seam at tile borders
+(`slide/tileGutter.ts`). The border is copied on the GPU from resident
+neighbour textures (a clamped own edge while a neighbour is absent); an upload
+fills its own border and refreshes the neighbours that read from it, so no
+decoded bytes are kept. Cost: about 1.6% more texture memory at 256 px tiles
+(0.8% at 512) and at most 25 small GPU copies per upload (8 own slots, a
+staging copy, up to 16 neighbour slots); a texture is read as a neighbour only
+when it came from the same slide, since tile keys do not name the slide.
 
 The decoded-tile cache counts RGBA bytes rather than the JPEG size, because
 encoded accounting silently blew the budget. Above it sits the coarse fallback

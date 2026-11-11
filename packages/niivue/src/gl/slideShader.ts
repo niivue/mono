@@ -30,7 +30,9 @@ out vec4 color;
 void main(void) {
   vec4 base = placeholderColor;
   if (isPlaceholder != 1) {
-    base = texture(slideTexture, uv);
+    // Tile textures carry a 1-texel gutter (slide/tileGutter.ts): sample the interior.
+    vec2 size = vec2(textureSize(slideTexture, 0));
+    base = texture(slideTexture, (uv * (size - 2.0) + 1.0) / size);
     base.rgb = applyColorLut(base.rgb);
   }
   base.a *= opacity;

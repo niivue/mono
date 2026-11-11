@@ -12,6 +12,7 @@ import {
 import { NVRenderer } from '@/view/NVRenderer'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { alphaPipelineDesc, linearSampler, uniformBuffer } from './pipeline'
+import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
 // in the 3D render tile: each level tile is a world-mm quad (from
@@ -52,8 +53,10 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 `
 
 interface PlaneVertexEntry {
-  key: string
+  tile: SlidePlaneTile
   firstVertex: number
+  /** Interior size the quad's UVs were inset for. */
+  uv: { width: number; height: number }
 }
 
 export class SlidePlaneRendererGPU extends NVRenderer {
@@ -71,10 +74,10 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   // Byte-budgeted: tiles that leave the working set are evicted each frame
   // (evict runs before beginFrame, so nothing referenced by the in-flight
   // command encoder is ever destroyed).
-  private readonly _textures = new TileTextureCache<{
-    texture: GPUTexture
-    group: GPUBindGroup
-  }>(DEFAULT_TILE_TEXTURE_BYTES, (entry) => entry.texture.destroy())
+  private readonly _textures = new TileTextureCache<
+    TileTextureGPU & { group?: GPUBindGroup }
+  >(DEFAULT_TILE_TEXTURE_BYTES, (entry) => entry.texture.destroy())
+  private readonly _gutter = new TileGutterGPU()
   private readonly _scratch = new Float32Array(20) // mat4 (16) + opacity vec4 (4)
   // Annotation overlay (slide-space drawing).
   private _annTexture: GPUTexture | null = null
@@ -159,9 +162,9 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._entries = []
     let o = 0
     tiles.forEach((tile, i) => {
-      data.set(cornerQuad(tile.corners), o)
+      data.set(cornerQuad(tile.corners, tile), o)
       o += 20
-      this._entries.push({ key: tile.key, firstVertex: i * 4 })
+      this._entries.push({ tile, firstVertex: i * 4, uv: tile })
     })
     if (this._vertexBuffer) this._vertexBuffer.destroy()
     this._vertexBuffer = device.createBuffer({
@@ -174,35 +177,21 @@ export class SlidePlaneRendererGPU extends NVRenderer {
 
   private _textureFor(
     device: GPUDevice,
-    key: string,
+    slide: NVSlide,
+    tile: SlidePlaneTile,
     bitmap: ImageBitmap,
-  ): GPUBindGroup | null {
-    const existing = this._textures.get(key, bitmap)
-    if (existing) return existing.group
+  ): (TileTextureGPU & { group: GPUBindGroup }) | null {
+    const existing = this._textures.get(tile.key, bitmap)
+    if (existing?.group)
+      return existing as TileTextureGPU & { group: GPUBindGroup }
     if (!this._textureBGL) return null
-    const texture = device.createTexture({
-      size: [bitmap.width, bitmap.height, 1],
-      format: 'rgba8unorm',
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    })
-    device.queue.copyExternalImageToTexture({ source: bitmap }, { texture }, [
-      bitmap.width,
-      bitmap.height,
-    ])
+    const entry: TileTextureGPU & { group?: GPUBindGroup } =
+      this._gutter.upload(device, bitmap, { ...tile, slide }, this._textures)
     const group = device.createBindGroup({
       layout: this._textureBGL,
-      entries: [{ binding: 0, resource: texture.createView() }],
+      entries: [{ binding: 0, resource: entry.texture.createView() }],
     })
-    this._textures.set(
-      key,
-      { texture, group },
-      bitmap.width * bitmap.height * 4,
-      bitmap,
-    )
-    return group
+    return Object.assign(entry, { group })
   }
 
   draw(
@@ -238,11 +227,21 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass.setBindGroup(0, this._uniformGroup)
     pass.setVertexBuffer(0, this._vertexBuffer)
     for (const entry of this._entries) {
-      const bitmap = slide.cachedTileBitmap(entry.key)
+      const bitmap = slide.cachedTileBitmap(entry.tile.key)
       if (!bitmap) continue
-      const group = this._textureFor(device, entry.key, bitmap)
-      if (!group) continue
-      pass.setBindGroup(1, group)
+      const tex = this._textureFor(device, slide, entry.tile, bitmap)
+      if (!tex) continue
+      // A decoded or fitted tile can differ from its manifest size: inset the
+      // UVs by the texture actually uploaded (lands before this frame submits).
+      if (tex.width !== entry.uv.width || tex.height !== entry.uv.height) {
+        entry.uv = tex
+        device.queue.writeBuffer(
+          this._vertexBuffer,
+          entry.firstVertex * 20,
+          cornerQuad(entry.tile.corners, tex),
+        )
+      }
+      pass.setBindGroup(1, tex.group)
       pass.draw(4, 1, entry.firstVertex)
     }
   }
@@ -326,6 +325,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
 
   destroy(): void {
     this._textures.clear()
+    this._gutter.destroy()
     this._luts?.clear()
     this._luts = null
     if (this._vertexBuffer) this._vertexBuffer.destroy()

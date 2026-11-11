@@ -5,6 +5,7 @@ import type {
   NVSlideColor,
   NVSlideScreen,
   NVSlideScreenRect,
+  NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
   buildSlideOverlay,
@@ -24,6 +25,7 @@ import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
+import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
 /** The slide shader, with or without the colour table lookup (bind group 1). */
 const shaderCode = (lut: boolean): string => /* wgsl */ `
@@ -78,7 +80,9 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
   if (u.isPlaceholder == 1.0) {
     base = u.placeholderColor;
   } else {
-    base = textureSample(slideTex, slideSampler, in.uv);
+    // Tile textures carry a 1-texel gutter (slide/tileGutter.ts): sample the interior.
+    let size = vec2f(textureDimensions(slideTex));
+    base = textureSample(slideTex, slideSampler, (in.uv * (size - 2.0) + 1.0) / size);
     base = vec4f(applyColorLut(base.rgb), base.a);
   }
   base.a = base.a * u.opacity;
@@ -98,12 +102,6 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 // 2 vec4 corners + 2 vec4 uvs + 4 scalar floats + 2 vec4 colors = 16 vec4 lanes.
 const UNIFORM_FLOAT_COUNT = 16 * 4
 const UNIFORM_BYTE_SIZE = UNIFORM_FLOAT_COUNT * 4
-
-type SlideTexture = {
-  texture: GPUTexture
-  width: number
-  height: number
-}
 
 type QuadOptions = {
   uvTop: number
@@ -140,10 +138,11 @@ export class SlideRendererGPU {
   // frame instead of accumulating for the life of the renderer. Eviction runs
   // before beginFrame (see render), so a texture referenced by the frame just
   // submitted is never destroyed while its commands are in flight.
-  private readonly _textures = new TileTextureCache<SlideTexture>(
+  private readonly _textures = new TileTextureCache<TileTextureGPU>(
     DEFAULT_TILE_TEXTURE_BYTES,
     (entry) => entry.texture.destroy(),
   )
+  private readonly _gutter = new TileGutterGPU()
   private readonly _uniformPool: GPUBuffer[] = []
   private _uniformCursor = 0
   /**
@@ -377,7 +376,7 @@ export class SlideRendererGPU {
       })
 
       forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
-        const texture = bitmap ? this.textureForBitmap(item.key, bitmap) : null
+        const texture = bitmap ? this.textureForBitmap(item, bitmap) : null
         if (isFallback && !texture) return
         this.drawQuad(
           pass,
@@ -449,6 +448,7 @@ export class SlideRendererGPU {
     this._msaaTexture?.destroy()
     this._msaaTexture = null
     this._textures.clear()
+    this._gutter.destroy()
     this._luts.clear()
     this._lines.destroy()
     this._font.destroy()
@@ -480,40 +480,32 @@ export class SlideRendererGPU {
   }
 
   private textureForBitmap(
-    key: string,
+    item: NVSlideVisibleTile,
     bitmap: ImageBitmap,
-  ): SlideTexture | null {
+  ): TileTextureGPU {
     // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
-    const existing = this._textures.get(key, bitmap)
+    const existing = this._textures.get(item.key, bitmap)
     if (existing) return existing
-    const texture = this._device.createTexture({
-      size: [bitmap.width, bitmap.height],
-      format: 'rgba8unorm',
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    })
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile
     // and a volume brick are two consumers of the same streamed source, and
     // both pay their texture cost on this thread.
-    timeChunkPhase(
+    return timeChunkPhase(
       'upload',
       () =>
-        this._device.queue.copyExternalImageToTexture(
-          { source: bitmap },
-          { texture },
-          [bitmap.width, bitmap.height],
+        this._gutter.upload(
+          this._device,
+          bitmap,
+          {
+            slide: item.slide,
+            key: item.key,
+            level: item.level.index,
+            col: item.tile.x,
+            row: item.tile.y,
+          },
+          this._textures,
         ),
       bitmap.width * bitmap.height * 4,
     )
-    const entry: SlideTexture = {
-      texture,
-      width: bitmap.width,
-      height: bitmap.height,
-    }
-    this._textures.set(key, entry, bitmap.width * bitmap.height * 4, bitmap)
-    return entry
   }
 
   private drawQuad(

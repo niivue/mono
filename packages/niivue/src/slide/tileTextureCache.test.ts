@@ -17,6 +17,16 @@ describe('TileTextureCache', () => {
     expect(cache.size).toBe(2)
   })
 
+  it('peek ignores the source and leaves LRU order alone', () => {
+    const { cache, destroyed } = makeCache(50)
+    cache.set('a', 'texA', 40, {})
+    cache.set('b', 'texB', 40)
+    cache.beginFrame()
+    expect(cache.peek('a')).toBe('texA')
+    cache.evictToBudget()
+    expect(destroyed).toEqual(['texA'])
+  })
+
   it('destroys the previous value when a key is replaced', () => {
     const { cache, destroyed } = makeCache(100)
     cache.set('a', 'old', 10)

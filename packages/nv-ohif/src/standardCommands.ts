@@ -3,11 +3,13 @@ import {
   applyWindowLevelPreset,
   NIIVUE_SLICE_TYPES,
   resetView,
+  setViewportColormap,
 } from './commands'
 import {
   getActiveNiivueEntry,
   type NiivueViewportEntry,
   ohifCommandsManager,
+  refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
 
@@ -38,6 +40,7 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'scaleDownViewport',
   'fitViewportToWindow',
   'setWindowLevelPreset',
+  'setViewportColormap',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
@@ -177,6 +180,12 @@ export function getStandardCommandDefinitions({
           typeof opts.presetIndex === 'number' ? opts.presetIndex : undefined,
         ),
       ),
+    },
+    setViewportColormap: {
+      commandFn: route('setViewportColormap', (entry, opts) => {
+        setViewportColormap(entry, opts)
+        refreshToolbar(servicesManager, entry.viewportId)
+      }),
     },
     rotateViewportCW: {
       commandFn: route('rotateViewportCW', (entry, opts) =>

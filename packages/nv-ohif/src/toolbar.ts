@@ -441,10 +441,12 @@ export function getNiivueToolbarModule({
     },
     {
       name: OVERLAY_EVALUATOR,
-      evaluate: volumeEvaluator((entry) => ({
-        disabled: false,
-        isActive: entry.overlayUIDs.length > 0,
-      })),
+      // A newly hung base is still loading (or failed): nothing to overlay.
+      evaluate: volumeEvaluator((entry) =>
+        entry.baseLoading
+          ? { disabled: true, disabledText: 'Waiting for the series to load' }
+          : { disabled: false, isActive: entry.overlays.size > 0 },
+      ),
     },
     {
       name: WL_PRESET_EVALUATOR,

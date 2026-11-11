@@ -211,8 +211,11 @@ describe('toolbar evaluators', () => {
     if (!entry) throw new Error('entry missing')
     const evaluate = evaluator('evaluate.niivue.overlay')
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
-    entry.overlayUIDs = ['ds-2']
+    entry.overlays.set('ds-2', {} as never)
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
+    // Disabled while a newly hung base loads over the old volumes.
+    updateNiivueViewport('vp-1', { baseLoading: true })
+    expect(evaluate({ viewportId: 'vp-1' })?.disabled).toBe(true)
     // A non-NiiVue viewport never inherits the NiiVue one's state.
     expect(evaluate({ viewportId: 'vp-none' })).toEqual({
       disabled: true,

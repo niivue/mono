@@ -1132,7 +1132,6 @@ describe('reflectNiivueAnnotation', () => {
     nv.annotations = [annotation]
     reflectNiivueAnnotation('vp-d2', svc.servicesManager, annotation)
     nv.annotations = []
-    const none = { added: [], updated: [], removed: [] }
     applyNiivueAnnotationDelta('vp-d2', svc.servicesManager, {
       ...none,
       removed: ['gone'],
@@ -1143,91 +1142,70 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(1)
   })
 
-  it('a delta retries an add that returned no uid (#125)', () => {
+  // A viewport whose OHIF addRawMeasurement the test replaces.
+  function rawAddViewport(vp: string) {
     const nv = stubNiivue()
-    register('vp-d3', nv)
-    updateNiivueViewport('vp-d3', {
+    register(vp, nv)
+    updateNiivueViewport(vp, {
       displaySets: backing as unknown as Parameters<
         typeof updateNiivueViewport
       >[1]['displaySets'],
     })
-    const svc = measurementServices('vp-d3', backing)
-    const measurementService = (
+    const svc = measurementServices(vp, backing)
+    const service = (
       svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
     ).services.measurementService as {
       addRawMeasurement: (...args: unknown[]) => string | undefined
     }
-    const add = measurementService.addRawMeasurement
-    let attempts = 0
-    measurementService.addRawMeasurement = (...args) => {
-      attempts += 1
-      return attempts === 1 ? undefined : add(...args)
-    }
-    nv.annotations = [ellipse('late')]
-    const none = { added: [], updated: [], removed: [] }
-    applyNiivueAnnotationDelta('vp-d3', svc.servicesManager, {
-      ...none,
-      added: ['late'],
-    })
-    expect(svc.added).toHaveLength(0)
-    applyNiivueAnnotationDelta('vp-d3', svc.servicesManager, none)
-    expect(attempts).toBe(2)
-    expect(svc.added).toHaveLength(1)
-  })
+    return { nv, svc, service, add: service.addRawMeasurement }
+  }
+  const none = { added: [], updated: [], removed: [] }
 
-  it('no-uid adds are not capped (#125)', () => {
-    const nv = stubNiivue()
-    register('vp-d4', nv)
-    updateNiivueViewport('vp-d4', {
-      displaySets: backing as unknown as Parameters<
-        typeof updateNiivueViewport
-      >[1]['displaySets'],
-    })
-    const svc = measurementServices('vp-d4', backing)
-    const measurementService = (
-      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
-    ).services.measurementService as {
-      addRawMeasurement: (...args: unknown[]) => string | undefined
-    }
-    const add = measurementService.addRawMeasurement
+  it('a later delta retries a no-uid add, uncapped (#125)', () => {
+    const { nv, svc, service, add } = rawAddViewport('vp-d3')
     let ready = false
-    measurementService.addRawMeasurement = (...args) =>
-      ready ? add(...args) : undefined
+    service.addRawMeasurement = (...args) => (ready ? add(...args) : undefined)
     nv.annotations = [ellipse('late')]
-    const none = { added: [], updated: [], removed: [] }
     for (let i = 0; i < 4; i++)
-      applyNiivueAnnotationDelta('vp-d4', svc.servicesManager, {
+      applyNiivueAnnotationDelta('vp-d3', svc.servicesManager, {
         ...none,
         added: ['late'],
       })
+    expect(svc.added).toHaveLength(0)
     ready = true
-    reconcileNiivueAnnotations('vp-d4', svc.servicesManager)
+    applyNiivueAnnotationDelta('vp-d3', svc.servicesManager, none)
     expect(svc.added).toHaveLength(1)
   })
 
-  it('alternating throws and no-uid adds still reach the cap (#125)', () => {
-    const nv = stubNiivue()
-    register('vp-d5', nv)
-    updateNiivueViewport('vp-d5', {
-      displaySets: backing as unknown as Parameters<
-        typeof updateNiivueViewport
-      >[1]['displaySets'],
-    })
-    const svc = measurementServices('vp-d5', backing)
-    const measurementService = (
-      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
-    ).services.measurementService as {
-      addRawMeasurement: (...args: unknown[]) => string | undefined
-    }
+  it('a throw after a no-uid add still warns (#125)', () => {
+    const { nv, svc, service } = rawAddViewport('vp-d4')
     let calls = 0
-    measurementService.addRawMeasurement = () => {
+    service.addRawMeasurement = () => {
+      calls += 1
+      if (calls > 1) throw new Error('mapping failed')
+      return undefined
+    }
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    nv.annotations = [ellipse('waited')]
+    applyNiivueAnnotationDelta('vp-d4', svc.servicesManager, {
+      ...none,
+      added: ['waited'],
+    })
+    applyNiivueAnnotationDelta('vp-d4', svc.servicesManager, none)
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('alternating throws and no-uid adds still reach the cap (#125)', () => {
+    const { nv, svc, service } = rawAddViewport('vp-d5')
+    let calls = 0
+    service.addRawMeasurement = () => {
       calls += 1
       if (calls % 2) throw new Error('mapping failed')
       return undefined
     }
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     nv.annotations = [ellipse('flaky')]
-    const none = { added: [], updated: [], removed: [] }
     for (let i = 0; i < 10; i++)
       applyNiivueAnnotationDelta('vp-d5', svc.servicesManager, {
         ...none,
@@ -1772,9 +1750,13 @@ describe('reflectNiivueAnnotation', () => {
           | { text?: string }
           | undefined
         if (a) a.text = text || undefined
-        // Mirror NiivueViewport: setAnnotationText emits annotationChanged, which
-        // reconciles.
-        reconcileNiivueAnnotations('vp-loop', sm)
+        // Mirror NiivueViewport: setAnnotationText emits annotationChanged with
+        // updated: [id], which applies the delta.
+        applyNiivueAnnotationDelta('vp-loop', sm, {
+          added: [],
+          updated: [id],
+          removed: [],
+        })
       },
     }
     register('vp-loop', nv)
@@ -1863,7 +1845,11 @@ describe('reflectNiivueAnnotation', () => {
           | { text?: string }
           | undefined
         if (a) a.text = text || undefined
-        reconcileNiivueAnnotations('vp-loop2', sm)
+        applyNiivueAnnotationDelta('vp-loop2', sm, {
+          added: [],
+          updated: [id],
+          removed: [],
+        })
       },
     }
     register('vp-loop2', nv)

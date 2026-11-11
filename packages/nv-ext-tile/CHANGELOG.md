@@ -1,3 +1,19 @@
+## 1.0.0-rc.62 (2026-11-11)
+
+### Fixes
+
+- **nv-ext-tile:** pin the DICOM slide tile cap to NiiVue's MAX_SLIDE_GRID ([efcba196](https://github.com/niivue/mono/commit/efcba196))
+- **nv-ext-tile:** report a truncated UN sequence as malformed ([a1846e43](https://github.com/niivue/mono/commit/a1846e43))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.157
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.61 (2026-11-11)
 
 ### Features

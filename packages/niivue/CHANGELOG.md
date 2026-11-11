@@ -1,3 +1,15 @@
+## 1.0.0-rc.157 (2026-11-11)
+
+### Fixes
+
+- **nv-ext-tile:** pin the DICOM slide tile cap to NiiVue's MAX_SLIDE_GRID ([efcba196](https://github.com/niivue/mono/commit/efcba196))
+- **niivue:** fail when an oversize slide tile has no 2D context to scale it ([63d8df5f](https://github.com/niivue/mono/commit/63d8df5f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.156 (2026-11-11)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

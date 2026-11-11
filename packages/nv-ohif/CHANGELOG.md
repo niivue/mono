@@ -1,3 +1,20 @@
+## 1.0.0-rc.178 (2026-11-11)
+
+### Fixes
+
+- **nv-ohif:** style the overlay menu trigger like OHIF toolbar buttons ([dbabcb7a](https://github.com/niivue/mono/commit/dbabcb7a))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.157
+- Updated nv-ext-tile to 1.0.0-rc.62
+- Updated uikit to 1.0.0-rc.155
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.177 (2026-11-11)
 
 ### Updated Dependencies

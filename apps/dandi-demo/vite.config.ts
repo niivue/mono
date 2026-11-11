@@ -24,7 +24,7 @@ export default defineConfig({
     target: 'esnext',
     rollupOptions: {
       input: {
-        index: resolve(__dirname, 'index.html'),
+        index: resolve(import.meta.dirname, 'index.html'),
       },
     },
   },

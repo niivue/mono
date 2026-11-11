@@ -13,6 +13,6 @@
   },
   "devDependencies": {
     "@niivue/dev-images": "workspace:*",
-    "vite": "^6.3.2"
+    "vite": "^8.3.8"
   }
 }

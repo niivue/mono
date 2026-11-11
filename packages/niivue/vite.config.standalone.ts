@@ -31,7 +31,6 @@ export default defineConfig({
   plugins: [inlineImageAssets()],
   build: {
     outDir: 'dist/standalone',
-    emptyOutDir: true,
     target: 'es2022',
     lib: {
       entry: {

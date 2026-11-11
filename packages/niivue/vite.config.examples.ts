@@ -51,8 +51,6 @@ export default defineConfig({
     format: 'es',
   },
   build: {
-    outDir: 'dist',
-    emptyOutDir: true,
     rolldownOptions: {
       input,
     },

@@ -34,7 +34,11 @@ import {
   withSpatialUnits,
 } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
-import { allocTypedArrayLike, checkOmeZarrIndex } from './omeZarr'
+import {
+  allocTypedArrayLike,
+  checkOmeZarrIndex,
+  omeroActiveChannels,
+} from './omeZarr'
 import {
   type OmeZarrLoadOptions,
   type OmeZarrSource,
@@ -211,7 +215,7 @@ export class ByteLruCache {
 
 /** Options for {@link omeZarrChunkedSource}. */
 export interface OmeZarrChunkedSourceOptions {
-  /** Channel to stream. Defaults to the first. */
+  /** Channel to stream. Defaults to the first active one (omero). */
   channel?: number
   /** Timepoint to stream. Defaults to the first. */
   timepoint?: number
@@ -377,7 +381,9 @@ export function omeZarrChunkedSource(
   const datatypeCode = omeZarrNiftiDatatype(dtype)
   const bytesPerVoxel = getBitsPerVoxel(datatypeCode) / 8
 
-  const channel = options.channel ?? 0
+  const channel =
+    options.channel ??
+    omeroActiveChannels(source.info.channels, source.channelCount)[0]
   checkOmeZarrIndex('channel', channel, source.channelCount)
   const timepoint = options.timepoint ?? 0
   checkOmeZarrIndex('timepoint', timepoint, source.timepointCount)

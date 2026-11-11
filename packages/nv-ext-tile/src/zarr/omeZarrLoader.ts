@@ -13,7 +13,8 @@
  *
  * Channel display comes from the store's own `omero` block: each volume is
  * named by its channel label, coloured by the closest palette match to its
- * stated colour, and windowed to its stated intensity range.
+ * stated colour, and windowed to its stated intensity range. By default only
+ * the channels omero marks active load.
  *
  * The metadata parse lives in `omeZarr.ts`; store access and chunk decoding
  * are zarrita's. See `docs/ome-zarr-format.md`.
@@ -33,6 +34,7 @@ import {
   type OmeZarrAxisIndices,
   type OmeZarrInfo,
   type OmeZarrSpatialOrder,
+  omeroActiveChannels,
   omeroWindowUsable,
   omeZarrAxisIndices,
   omeZarrResolveAxes,
@@ -124,10 +126,11 @@ export interface OmeZarrSource {
 /** Options for {@link loadOmeZarrVolumes}. */
 export interface OmeZarrLoadOptions {
   /**
-   * Channel indices to load, in the order the volumes should be returned.
-   * Defaults to every channel.
+   * Channel indices to load, all visible, in the order the volumes should be
+   * returned. `'all'` loads every channel, hiding those omero marks inactive.
+   * Defaults to the active channels (see {@link omeZarrChannelOptions}).
    */
-  channels?: number[]
+  channels?: number[] | 'all'
   /** Timepoint to load. Defaults to the first. */
   timepoint?: number
   /**
@@ -362,6 +365,65 @@ export function omeZarrChannelName(
 }
 
 /**
+ * Display options for channel `c` as {@link omeZarrVolumesFrom} sets them: omero
+ * label, colour and usable window, and `visible` when omero marks it active (a
+ * missing flag counts as active; when every channel is marked inactive, channel 0
+ * stays visible). Use it to style channels streamed through `omeZarrChunkedSource`.
+ * `together` lists the channels shown with `c`, so two stating the same colour
+ * get distinct ramps; it defaults to the active channels.
+ */
+export function omeZarrChannelOptions(
+  source: OmeZarrSource,
+  c: number,
+  together: readonly number[] = omeroActiveChannels(
+    source.info.channels,
+    source.channelCount,
+  ),
+): OmeZarrChannelDisplay {
+  const list = together.includes(c) ? together : [...together, c]
+  const colormaps = channelColormapsFor(
+    list.map((i) => source.info.channels[i]?.color),
+  )
+  // The chunked source requires levels to share a dtype.
+  return channelDisplay(
+    source,
+    c,
+    colormaps[list.indexOf(c)],
+    source.levels[0].dtype,
+  )
+}
+
+/** What {@link omeZarrChannelOptions} returns. */
+export interface OmeZarrChannelDisplay {
+  name: string
+  colormap: string
+  calMin?: number
+  calMax?: number
+  visible: boolean
+}
+
+function channelDisplay(
+  source: OmeZarrSource,
+  c: number,
+  colormap: string,
+  dtype: string,
+): OmeZarrChannelDisplay {
+  // A placeholder window is dropped, so the caller falls back to the data's
+  // own range as it does for a channel with no window.
+  const stated = source.info.channels[c]?.window
+  const window = stated && omeroWindowUsable(stated, dtype) ? stated : null
+  return {
+    name: omeZarrChannelName(source, c),
+    colormap,
+    ...(window ? { calMin: window.start, calMax: window.end } : {}),
+    visible: omeroActiveChannels(
+      source.info.channels,
+      source.channelCount,
+    ).includes(c),
+  }
+}
+
+/**
  * The finest level whose per-channel decoded size fits the budget, else the
  * coarsest level there is (levels are listed finest first).
  */
@@ -450,7 +512,9 @@ export async function omeZarrVolumesFrom(
 
   const total = source.channelCount
   const wanted =
-    options.channels ?? Array.from({ length: total }, (_unused, i) => i)
+    options.channels === 'all'
+      ? Array.from({ length: total }, (_unused, i) => i)
+      : (options.channels ?? omeroActiveChannels(source.info.channels, total))
   // Validate up front so a bad index fails before any chunk is fetched.
   for (const channel of wanted) checkOmeZarrIndex('channel', channel, total)
 
@@ -483,22 +547,23 @@ export async function omeZarrVolumesFrom(
       block.stride,
       order,
     )
-    const name = omeZarrChannelName(source, channel)
-    // A placeholder window is dropped, so the caller falls back to the
-    // data's own range as it does for a channel with no window.
-    const stated = source.info.channels[channel]?.window
-    const window = stated && omeroWindowUsable(stated, dtype) ? stated : null
+    const display = channelDisplay(
+      source,
+      channel,
+      colormaps[orderIndex],
+      dtype,
+    )
     volumes.push({
+      ...display,
       url: omeZarrChannelFile(
         dims,
         source.levels[level].spacingUm,
         datatypeCode,
         img,
-        name,
+        display.name,
       ),
-      name,
-      colormap: colormaps[orderIndex],
-      ...(window ? { calMin: window.start, calMax: window.end } : {}),
+      // Only 'all' loads inactive channels; requested ones always show.
+      visible: options.channels !== 'all' || display.visible,
     })
   }
   return volumes

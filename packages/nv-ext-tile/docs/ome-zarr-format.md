@@ -97,7 +97,10 @@ The group may carry display metadata alongside the pyramid:
 The loader consumes all of it: each volume is named by its channel `label`,
 its colormap is the closest `CHANNEL_COLORMAPS` hue to `color` (falling back
 to the shared palette rotation, so channels never collide), and `window.start`
-/`window.end` become `calMin`/`calMax`. Colours tolerate a leading `#` and an
+/`window.end` become `calMin`/`calMax`. By default only channels not marked
+`"active": false` load (channel 0 when every one is); `channels: 'all'` loads
+the rest hidden. `omeZarrChannelOptions` returns the
+same styling for a streamed channel. Colours tolerate a leading `#` and an
 appended alpha byte. A store without an omero block gets positional names and
 palette colours, like a colourless OME-TIFF.
 

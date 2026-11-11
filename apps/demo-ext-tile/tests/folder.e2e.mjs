@@ -103,6 +103,9 @@ try {
     ),
   )
   await page.uncheck('#hudToggle') // the HUD covers the top-left cell
+  // The optional minimap (src/minimap.ts) would widen the non-black box below.
+  const minimap = page.getByLabel('Minimap')
+  if (await minimap.count()) await minimap.uncheck()
   await page.waitForTimeout(300)
   // Sample each cell centre of the fitted 40 x 30 slide from a screenshot.
   const shot = (await page.locator('#canvas').screenshot()).toString('base64')

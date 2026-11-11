@@ -39,7 +39,7 @@ export const TAG = {
 // uncompressed little/big-endian syntaxes (1.2.840.10008.1.2[.1|.2]) are not.
 // We read this from the file-meta header so detection works even when the
 // PixelData element itself has not been parsed (header-only metadata read).
-export function isEncapsulatedTransferSyntax(uid: string): boolean {
+function isEncapsulatedTransferSyntax(uid: string): boolean {
   const u = uid.trim()
   return u.startsWith('1.2.840.10008.1.2.4') || u === '1.2.840.10008.1.2.5'
 }

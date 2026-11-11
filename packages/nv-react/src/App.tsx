@@ -397,5 +397,3 @@ export function App() {
     </NvSceneProvider>
   )
 }
-
-export default App

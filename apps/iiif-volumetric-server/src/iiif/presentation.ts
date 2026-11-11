@@ -5,7 +5,6 @@ import type {
   Axis,
   Dtype,
   Shape3,
-  Vec3,
 } from '../adapters/volumeHandle.ts'
 import type { LevelMetadata, RegistryEntry } from '../registry.ts'
 import type { Bbox6, ExplodeLayout } from './explode.ts'
@@ -594,5 +593,3 @@ function sliceCount(shape: Shape3, axis: Axis): number {
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
-
-export type { Vec3 }

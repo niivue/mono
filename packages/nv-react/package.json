@@ -24,9 +24,7 @@
     "build:lib": "NODE_ENV=production bun build ./src/lib.ts --outdir=dist --target=browser --format=esm --external react --external react-dom --external @niivue/niivue",
     "build:types": "tsc -p tsconfig.build.json",
     "build:package": "bun run build:lib && bun run build:types",
-    "pack:local": "bun run build:package && bun pm pack",
-    "example:setup": "bun run pack:local && cd example-app && rm -rf node_modules bun.lock && bun install",
-    "example:dev": "bun run example:setup && cd example-app && bun dev"
+    "pack:local": "bun run build:package && bun pm pack"
   },
   "dependencies": {},
   "peerDependencies": {

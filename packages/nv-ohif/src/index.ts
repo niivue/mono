@@ -17,8 +17,11 @@ import {
   withNiivueSupport,
 } from './niivueSupport'
 import type {
+  OhifCommandsManager,
+  OhifCustomizationModuleEntry,
   OhifDisplaySet,
   OhifExtension,
+  OhifExtensionManager,
   OhifSopClassHandlerEntry,
   OhifToolbarButton,
   OhifViewportModuleEntry,
@@ -31,12 +34,15 @@ import {
 import { NIIVUE_STANDARD_COMMANDS } from './standardCommands'
 import {
   getNiivueToolbarModule,
+  NIIVUE_CAPTURE_BUTTON,
   NIIVUE_CLIP_SECTION,
   NIIVUE_COLORBAR_BUTTON,
   NIIVUE_COLORMAP_SECTION,
+  NIIVUE_CROSSHAIR_BUTTON,
   NIIVUE_INTERPOLATION_BUTTON,
   NIIVUE_OVERLAY_BUTTON,
   NIIVUE_RESET_BUTTON,
+  NIIVUE_RULER_BUTTON,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_VIEWS_SECTION,
@@ -66,8 +72,11 @@ const niivueOhifExtension: OhifExtension = {
 export default niivueOhifExtension
 
 export type {
+  OhifCommandsManager,
+  OhifCustomizationModuleEntry,
   OhifDisplaySet,
   OhifExtension,
+  OhifExtensionManager,
   OhifSopClassHandlerEntry,
   OhifToolbarButton,
   OhifViewportModuleEntry,
@@ -80,14 +89,17 @@ export {
   getNiivueSopClassHandlerModule,
   getNiivueToolbarModule,
   getNiivueViewportModule,
+  NIIVUE_CAPTURE_BUTTON,
   NIIVUE_CLIP_PLANES,
   NIIVUE_CLIP_SECTION,
   NIIVUE_COLORBAR_BUTTON,
   NIIVUE_COLORMAP_SECTION,
   NIIVUE_COLORMAPS,
+  NIIVUE_CROSSHAIR_BUTTON,
   NIIVUE_INTERPOLATION_BUTTON,
   NIIVUE_OVERLAY_BUTTON,
   NIIVUE_RESET_BUTTON,
+  NIIVUE_RULER_BUTTON,
   NIIVUE_SLICE_TYPES,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
   NIIVUE_STANDARD_COMMANDS,

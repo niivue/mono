@@ -87,7 +87,7 @@ function drawnIndex(volumes: ReadonlyArray<ShownVolume>, id?: string): number {
 }
 
 /** The instances NiiVue holds, as the tool reports them: degrees, volumes by index and name. */
-export function reportedInstances(view: View): Record<string, unknown>[] {
+function reportedInstances(view: View): Record<string, unknown>[] {
   return (view.opts?.instances ?? []).map((inst) => {
     const index = drawnIndex(view.volumes, inst.volumeId)
     const global3d = inst.space === 'global3d' || inst.position !== undefined

@@ -1,11 +1,7 @@
 import type NiiVue from '@niivue/niivue'
-import type {
-  ImageFromUrlOptions,
-  NiiVueOptions,
-  NVImage,
-} from '@niivue/niivue'
+import type { ImageFromUrlOptions, NVImage } from '@niivue/niivue'
 
-export type { ImageFromUrlOptions, NiiVueOptions, NVImage }
+export type { ImageFromUrlOptions }
 
 export interface NvSceneEventMap {
   viewerCreated: (nv: NiiVue, index: number) => void

@@ -81,7 +81,7 @@ const formatNames: Record<string, string> = {
 }
 
 /** The extension that identifies the format, looking past a `.gz` wrapper. */
-export function formatName(fileName: string): string {
+function formatName(fileName: string): string {
   let name = fileName.toLowerCase()
   if (name.endsWith('.gz')) name = name.slice(0, -3)
   const dot = name.lastIndexOf('.')
@@ -96,7 +96,7 @@ export function formatName(fileName: string): string {
  * when that axis is flipped. The conventional code labels the *source* axes, so
  * this inverts the mapping rather than reading it off directly.
  */
-export function orientationCode(permRAS: number[] | undefined): string {
+function orientationCode(permRAS: number[] | undefined): string {
   if (!permRAS || permRAS.length < 3) return '—'
   const positive = ['R', 'A', 'S']
   const negative = ['L', 'P', 'I']
@@ -271,7 +271,7 @@ export function describeScene(
   return { pairs, displayable: true }
 }
 
-export function formatBytes(bytes: number): string {
+function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—'
   const units = ['B', 'KB', 'MB', 'GB']
   let value = bytes

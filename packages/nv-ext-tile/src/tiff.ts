@@ -620,7 +620,8 @@ function buildTiffManifest(
       ...(gray
         ? {
             codec: 'raw-gray',
-            photometric: 'MONOCHROME2',
+            // WhiteIsZero, as the single-channel readRGB path shows it.
+            photometric: photometric === 0 ? 'MONOCHROME1' : 'MONOCHROME2',
             bitsStored: gray.bitsStored,
           }
         : { codec: 'raw-rgba' }),

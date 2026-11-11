@@ -790,7 +790,7 @@ function grayLevel(
   level: number,
   width: number,
   height: number,
-  { bits = 16, sampleFormat = 1, tile = 16 } = {},
+  { bits = 16, sampleFormat = 1, tile = 16, photometric = 1 } = {},
 ): Level {
   const Typed = (
     {
@@ -820,7 +820,7 @@ function grayLevel(
     height,
     tile,
     compression: 1,
-    photometric: 1,
+    photometric,
     tiles,
     bits,
     samples: 1,
@@ -948,6 +948,16 @@ describe('multi-channel OME-TIFF', () => {
     await expect(openOme('XYCZT', [0, 1], { inner: far })).rejects.toThrow(
       /maps to IFD 9999/,
     )
+  })
+
+  test('keeps WhiteIsZero planes white at 0', async () => {
+    const source = await openOme('XYCZT', [0, 1, 2, 3], {
+      dtype: { photometric: 0 },
+    })
+    expect(source.manifest.levels.map((l) => l.photometric)).toEqual([
+      'MONOCHROME1',
+      'MONOCHROME1',
+    ])
   })
 
   test('reads single-quoted OME-XML attributes', async () => {

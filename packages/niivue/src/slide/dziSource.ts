@@ -20,26 +20,33 @@ export interface DziDescriptor {
 // it works in both the browser and Node without a DOMParser.
 export function parseDziDescriptor(xml: string): DziDescriptor {
   const attr = (name: string): string | null => {
-    const m = new RegExp(`${name}\\s*=\\s*"([^"]*)"`).exec(xml)
-    return m ? (m[1] ?? null) : null
+    const m = new RegExp(`${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`).exec(xml)
+    return m ? (m[1] ?? m[2] ?? null) : null
   }
-  const tileSize = Number(attr('TileSize'))
-  const overlap = Number(attr('Overlap') ?? '0')
+  const int = (name: string, min: number, fallback?: string): number => {
+    const value = Number(attr(name) ?? fallback)
+    if (!Number.isInteger(value) || value < min) {
+      throw new Error(
+        `Invalid .dzi descriptor: ${name} must be an integer >= ${min}`,
+      )
+    }
+    return value
+  }
   const format = (attr('Format') ?? 'jpeg').toLowerCase()
-  const width = Number(attr('Width'))
-  const height = Number(attr('Height'))
-  if (
-    !Number.isFinite(tileSize) ||
-    tileSize < 1 ||
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width < 1 ||
-    height < 1
-  ) {
-    throw new Error('Invalid .dzi descriptor (missing TileSize/Width/Height)')
+  if (!DZI_FORMATS.includes(format)) {
+    throw new Error(`Unsupported .dzi tile format "${format}"`)
   }
-  return { tileSize, overlap, format, width, height }
+  return {
+    tileSize: int('TileSize', 1),
+    overlap: int('Overlap', 0, '0'),
+    format,
+    width: int('Width', 1),
+    height: int('Height', 1),
+  }
 }
+
+// Tile formats the browser decodes natively (createImageBitmap sniffs the bytes).
+const DZI_FORMATS = ['jpeg', 'jpg', 'png', 'webp']
 
 // Build the NVSlide pyramid manifest from a DZI descriptor. DZI levels run
 // 0 (1x1) .. maxLevel (full res); we emit finest-first (index 0 = maxLevel) down
@@ -119,40 +126,49 @@ export class DziSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
   private host: SlideSourceHost | null = null
   private readonly tilesBase: string
-  private readonly ext: string
+  private readonly tileSuffix: string // ".jpg" plus the descriptor's query
   private readonly overlap: number
   private readonly dziLevelForIndex: number[]
 
   private constructor(
     manifest: NVSlideManifest,
     tilesBase: string,
-    ext: string,
+    tileSuffix: string,
     overlap: number,
     dziLevelForIndex: number[],
   ) {
     this.manifest = manifest
     this.tilesBase = tilesBase
-    this.ext = ext
+    this.tileSuffix = tileSuffix
     this.overlap = overlap
     this.dziLevelForIndex = dziLevelForIndex
   }
 
-  static async fromUrl(dziUrl: string, id?: string): Promise<DziSource> {
-    const response = await fetch(dziUrl)
+  static async fromUrl(
+    dziUrl: string,
+    id?: string,
+    signal?: AbortSignal,
+  ): Promise<DziSource> {
+    const response = await fetch(dziUrl, { signal })
     if (!response.ok) {
       throw new Error(`DZI descriptor HTTP ${response.status}`)
     }
     const xml = await response.text()
     const desc = parseDziDescriptor(xml)
-    const name = id ?? dziUrl.replace(/^.*\//, '').replace(/\.dzi$/i, '')
+    // Tiles keep the descriptor's query (cache version, auth token); not its fragment.
+    const url = dziUrl.replace(/#.*/, '')
+    const q = url.indexOf('?')
+    const path = q < 0 ? url : url.slice(0, q)
+    const query = q < 0 ? '' : url.slice(q)
+    const name = id ?? path.replace(/^.*\//, '').replace(/\.dzi$/i, '')
     const { manifest, dziLevelForIndex } = buildDziManifest(desc, name)
     // "<base>.dzi" -> tiles live under "<base>_files/".
-    const tilesBase = dziUrl.replace(/\.dzi$/i, '_files')
-    const ext = desc.format === 'png' ? 'png' : 'jpg'
+    const tilesBase = path.replace(/\.dzi$/i, '_files')
+    const ext = desc.format === 'jpeg' ? 'jpg' : desc.format
     return new DziSource(
       manifest,
       tilesBase,
-      ext,
+      `.${ext}${query}`,
       desc.overlap,
       dziLevelForIndex,
     )
@@ -169,7 +185,7 @@ export class DziSource implements SlideTileSource {
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const dziLevel = this.dziLevelForIndex[level.index] ?? 0
-    const url = `${this.tilesBase}/${dziLevel}/${tile.x}_${tile.y}.${this.ext}`
+    const url = `${this.tilesBase}/${dziLevel}/${tile.x}_${tile.y}${this.tileSuffix}`
     this.host?.pushRangeEvent({ label, status: 'pending' })
     let bytes: Uint8Array
     try {

@@ -1,6 +1,11 @@
 import { fromBlob, Pool } from '@niivue/geotiff-rs'
 import type { NVSlideScreen, SlideTileSource } from '@niivue/niivue'
-import { NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
+import {
+  DziSource,
+  NVSlide,
+  SlideRenderer,
+  SlideRendererGPU,
+} from '@niivue/niivue'
 import {
   DicomWsiSource,
   indexDicomWsi,
@@ -30,6 +35,7 @@ const status = document.getElementById('status') as HTMLSpanElement
 const iccToggle = document.getElementById('icc') as HTMLInputElement
 const hud = document.getElementById('hud') as HTMLDivElement
 const hudToggle = document.getElementById('hudToggle') as HTMLInputElement
+const gridToggle = document.getElementById('grid') as HTMLInputElement
 const backendSelect = document.getElementById('backend') as HTMLSelectElement
 const aaToggle = document.getElementById('aa') as HTMLInputElement
 const hidpiToggle = document.getElementById('hidpi') as HTMLInputElement
@@ -99,6 +105,10 @@ function watchPixelRatio(): void {
 }
 watchPixelRatio()
 hidpiToggle.addEventListener('change', () => requestRender())
+// Outlines each drawn tile; fires 'change', which redraws.
+gridToggle.addEventListener('change', () =>
+  slide?.setTileGridVisible(gridToggle.checked),
+)
 filterSelect.addEventListener('change', () => {
   renderer.isNearestInterpolation = filterSelect.value === 'nearest'
   requestRender()
@@ -107,6 +117,10 @@ filterSelect.addEventListener('change', () => {
 const pool = new Pool()
 
 let slide: NVSlide | null = null
+const slideOptions = () => ({
+  colorManagement: iccToggle.checked,
+  showTileGrid: gridToggle.checked,
+})
 // TIFF sources hold geotiff state; DICOM-WSI sources only hold Files.
 // An OME-Zarr store may carry an `attribution` attribute (the demo stores do).
 type Attribution = Partial<
@@ -268,7 +282,7 @@ async function open(
       nextSlide =
         next instanceof NVSlide
           ? next
-          : NVSlide.fromSource(next, { colorManagement: iccToggle.checked })
+          : NVSlide.fromSource(next, slideOptions())
     } catch (err) {
       next.dispose?.()
       throw err
@@ -281,7 +295,7 @@ async function open(
     slide = nextSlide
     if (next instanceof ZarrSlideSource && next.window)
       slide.setChannel(0, next.window)
-    showCredit(source?.attribution)
+    showCredit(source?.attribution ?? credits.get(current))
     slide.addEventListener('change', requestRender)
     opening = null
     shown = snapshot()
@@ -420,16 +434,82 @@ slideSelect.addEventListener('change', () =>
 // the JPEG 2000 SVS files (compression 33003/33005) decode through dcm2niix.
 const HF =
   'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/cfff0272e4e7cdbc324863f15f55edd8a848acfb/openslide/'
-const tiffOption = (path: string, note: string) =>
-  new Option(
-    `${path.split('/').pop()} (${note})`,
-    path.startsWith('https:') ? path : HF + path,
+// Credits for the listed non-Zarr slides, keyed by menu value; shown like a
+// Zarr store's `attribution`. OpenSlide licences and credits are from
+// openslide-testdata/index.json (CC0-1.0 unless noted).
+const credits = new Map<string, Attribution>()
+const OPENSLIDE = 'https://openslide.cs.cmu.edu/download/openslide-testdata/'
+const FREE = 'Free to use and distribute, with or without modification'
+const RADBOUD = {
+  credit: 'Computational Pathology Group, Radboud University Medical Center',
+}
+const HURON = { credit: 'Huron Digital Pathology' }
+const OPENSLIDE_CREDITS: Record<string, Attribution> = {
+  'Aperio/JP2K-33003-1.svs': { license: FREE },
+  'Aperio/JP2K-33003-2.svs': { license: FREE },
+  'Huron/Huron-1.tif': HURON,
+  'Huron/Huron-1-40x.tif': HURON,
+  'Huron/Huron-1-Uncompressed.tif': HURON,
+  'Philips-TIFF/Philips-1.tiff': RADBOUD,
+  'Philips-TIFF/Philips-2.tiff': RADBOUD,
+  'Philips-TIFF/Philips-4.tiff': RADBOUD,
+  'Leica/Leica-1.scn': { credit: 'Yves Sucaet', license: FREE },
+  'Ventana/Ventana-1.bif': { credit: 'PathAI' },
+  'DICOM/3DHISTECH-1.zip': { credit: '3DHISTECH' },
+  'DICOM/3DHISTECH-2.zip': { credit: 'Dr. Mario Kreutzfeldt' },
+  'DICOM/Hamamatsu-2.zip': { credit: 'Hamamatsu' },
+  'DICOM/Leica-4.zip': { credit: 'Leica' },
+  'DICOM/JP2K-33003-1-v2.zip': { license: FREE },
+}
+const openslideCredit = (
+  file: string,
+  title = `OpenSlide test data ${file}`,
+) => ({
+  title,
+  url: `${OPENSLIDE}${file.split('/')[0]}/`,
+  license: 'CC0-1.0',
+  ...OPENSLIDE_CREDITS[file],
+})
+const credited = (option: HTMLOptionElement, a: Attribution) => {
+  credits.set(option.value, a)
+  return option
+}
+const tiffOption = (path: string, note: string) => {
+  const name = path.split('/').pop()
+  const remote = path.startsWith('https:') // the LFS copy of an Aperio slide
+  return credited(
+    new Option(`${name} (${note})`, remote ? path : HF + path),
+    openslideCredit(remote ? `Aperio/${name}` : path),
   )
+}
 // Hosted DICOM-WSI manifests (dicom-wsi-range-v1), each naming its .dcm files.
 const DICOM =
   'https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/streaming/dicom-wsi/'
+// Each hosted slide's source: an OpenSlide DICOM archive, or its own credit.
+const LUMINANCE = openslideCredit(
+  'DICOM/3DHISTECH-1.zip',
+  'Luminance of OpenSlide test data DICOM/3DHISTECH-1.zip',
+)
+const DICOM_CREDITS: Record<string, Attribution> = {
+  '3dhistech-1': openslideCredit('DICOM/3DHISTECH-1.zip'),
+  '3dhistech-2': openslideCredit('DICOM/3DHISTECH-2.zip'),
+  // ponytail: source only; its licence is not recorded here.
+  'cptac-brca': {
+    title: 'CPTAC-BRCA, NCI Imaging Data Commons',
+    url: 'https://portal.imaging.datacommons.cancer.gov/',
+  },
+  'hamamatsu-2': openslideCredit('DICOM/Hamamatsu-2.zip'),
+  'leica-4': openslideCredit('DICOM/Leica-4.zip'),
+  'cmu-1-jp2k-rct': openslideCredit('DICOM/CMU-1-JP2K-RCT-v2.zip'),
+  'jp2k-33003-1': openslideCredit('DICOM/JP2K-33003-1-v2.zip'),
+  'mono12-jls': LUMINANCE,
+  'mono8-jls-m1': LUMINANCE,
+}
 const dicomOption = (dir: string, label: string) =>
-  new Option(label, `${DICOM}${dir}/manifest.json`)
+  credited(
+    new Option(label, `${DICOM}${dir}/manifest.json`),
+    DICOM_CREDITS[dir] ?? {},
+  )
 const group = (label: string, options: HTMLOptionElement[]) => {
   const g = Object.assign(document.createElement('optgroup'), { label })
   g.append(...options)
@@ -494,6 +574,20 @@ sourceSelect.replaceChildren(
     zarrOption('idr0066-chick-embryo-mip', '25 MB, light-sheet'),
     zarrOption('empiar10404-sars-cov-2-organoid', '186 MB, TEM'),
     zarrOption('empiar12850-mouse-brain-tem', '164 MB, TEM, 27000 px'),
+  ]),
+  // Deep Zoom: core reads DZI itself (DziSource), no extension needed.
+  group('Deep Zoom (DZI)', [
+    credited(
+      new Option(
+        'OpenSeadragon highsmith (web)',
+        'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
+      ),
+      // ponytail: OpenSeadragon gives no credit or licence for this image.
+      {
+        title: 'OpenSeadragon example image',
+        url: 'https://openseadragon.github.io/examples/tilesource-dzi/',
+      },
+    ),
   ]),
   group('Custom', [
     customUrlOption,
@@ -563,6 +657,7 @@ const openUrl = (url: string) => {
       ])
       return Object.assign(zarr, { attribution })
     }
+    if (/\.dzi$/i.test(path)) return DziSource.fromUrl(href, undefined, signal)
     // ponytail: a .json path is a hosted DICOM-WSI manifest; sniff if names lie.
     if (!path.endsWith('.json'))
       return TiffSlideSource.fromUrl(href, { pool, signal })
@@ -571,7 +666,7 @@ const openUrl = (url: string) => {
     // GitHub raw serves LFS pointers, so the listed manifests' relative .dcm
     // paths resolve against its media endpoint, which serves the LFS files.
     return new NVSlide(await response.json(), {
-      colorManagement: iccToggle.checked,
+      ...slideOptions(),
       manifestUrl: href.startsWith(DICOM)
         ? href.replace(
             'https://raw.githubusercontent.com/',

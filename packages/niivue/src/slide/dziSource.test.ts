@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-import { buildDziManifest, parseDziDescriptor } from './dziSource'
+import { buildDziManifest, DziSource, parseDziDescriptor } from './dziSource'
 
 const DZI_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <Image TileSize="256" Overlap="0" Format="jpeg"
@@ -25,6 +25,32 @@ describe('parseDziDescriptor', () => {
       ).overlap,
     ).toBe(0)
     expect(() => parseDziDescriptor('<Image Format="png"/>')).toThrow()
+  })
+
+  test('accepts single-quoted attributes', () => {
+    const d = parseDziDescriptor(
+      "<Image TileSize='254' Overlap='1' Format='png'><Size Width='10' Height='20'/></Image>",
+    )
+    expect(d).toEqual({
+      tileSize: 254,
+      overlap: 1,
+      format: 'png',
+      width: 10,
+      height: 20,
+    })
+  })
+
+  test('refuses a non-integer overlap and an unsupported format', () => {
+    const size = '<Size Width="10" Height="10"/>'
+    expect(() =>
+      parseDziDescriptor(`<Image TileSize="256" Overlap="x">${size}</Image>`),
+    ).toThrow('Overlap')
+    expect(() =>
+      parseDziDescriptor(`<Image TileSize="256" Overlap="-1">${size}</Image>`),
+    ).toThrow('Overlap')
+    expect(() =>
+      parseDziDescriptor(`<Image TileSize="256" Format="tiff">${size}</Image>`),
+    ).toThrow('Unsupported')
   })
 })
 
@@ -71,5 +97,61 @@ describe('buildDziManifest', () => {
         expect(t.height).toBeLessThanOrEqual(256)
       }
     }
+  })
+})
+
+describe('DziSource.fromUrl', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  test('keeps the descriptor query on tile URLs and drops the fragment', async () => {
+    const urls: string[] = []
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      urls.push(String(url))
+      return new Response(urls.length === 1 ? DZI_XML : new Uint8Array([1]))
+    }) as unknown as typeof fetch
+    const source = await DziSource.fromUrl(
+      'https://example.org/a/image.dzi?v=1&t=x?y#frag',
+    )
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('no tile')
+    await source.fetchTileBytes(level, tile, 'L0')
+
+    expect(source.manifest.name).toBe('image (DZI)')
+    expect(urls[1]).toBe(
+      `https://example.org/a/image_files/10/0_0.jpg?v=1&t=x?y`,
+    )
+  })
+
+  test('requests tiles in the descriptor format and forwards the signal', async () => {
+    const urls: string[] = []
+    const signals: (AbortSignal | null | undefined)[] = []
+    globalThis.fetch = mock(
+      async (url: string | URL | Request, init?: RequestInit) => {
+        urls.push(String(url))
+        signals.push(init?.signal)
+        return new Response(
+          urls.length === 1
+            ? DZI_XML.replace('Format="jpeg"', 'Format="webp"')
+            : new Uint8Array([1]),
+        )
+      },
+    ) as unknown as typeof fetch
+    const controller = new AbortController()
+    const source = await DziSource.fromUrl(
+      'https://example.org/image.dzi',
+      undefined,
+      controller.signal,
+    )
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('no tile')
+    await source.fetchTileBytes(level, tile, 'L0')
+
+    expect(signals[0]).toBe(controller.signal)
+    expect(urls[1]).toBe('https://example.org/image_files/10/0_0.webp')
   })
 })

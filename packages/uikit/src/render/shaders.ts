@@ -328,3 +328,64 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return vec4f(color.rgb, color.a * coverage);
 }
 `
+
+// One textured quad (an image placed at a canvas-pixel box), e.g. the slide
+// minimap thumbnail. Same corner order and pixel-to-NDC mapping as the rects;
+// uv (0,0) is the image's top-left row as uploaded (no unpack flip).
+
+export const GL_IMAGE_VERT = `#version 300 es
+precision highp float;
+uniform vec2 canvasSize;
+uniform vec4 box; // (x, y, width, height) in canvas pixels
+out vec2 vUv;
+
+void main() {
+  vec2 corner = vec2(float(gl_VertexID >> 1), float(gl_VertexID & 1));
+  vec2 ndc = ((box.xy + corner * box.zw) / canvasSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
+  vUv = corner;
+}
+`
+
+export const GL_IMAGE_FRAG = `#version 300 es
+precision highp float;
+uniform highp sampler2D image;
+in vec2 vUv;
+out vec4 fragColor;
+
+void main() {
+  fragColor = texture(image, vUv);
+}
+`
+
+export const WGSL_IMAGE = `
+struct ImageUniforms {
+    canvasSize: vec2f,
+    _pad: vec2f,
+    box: vec4f,
+};
+
+@group(0) @binding(0) var<uniform> u: ImageUniforms;
+@group(0) @binding(1) var imageTex: texture_2d<f32>;
+@group(0) @binding(2) var imageSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@vertex
+fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
+    let corner = vec2f(f32(vIdx >> 1u), f32(vIdx & 1u));
+    let ndc = ((u.box.xy + corner * u.box.zw) / u.canvasSize) * 2.0 - 1.0;
+    var out: VertexOutput;
+    out.position = vec4f(ndc.x, -ndc.y, 0.0, 1.0);
+    out.uv = corner;
+    return out;
+}
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
+    return textureSample(imageTex, imageSampler, in.uv);
+}
+`

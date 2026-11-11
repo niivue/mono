@@ -15,7 +15,7 @@ export default defineConfig({
     outDir: 'dist/standalone',
     emptyOutDir: true,
     target: 'es2022',
-    minify: 'esbuild',
+    minify: 'oxc',
     lib: {
       entry,
       formats: ['es'],

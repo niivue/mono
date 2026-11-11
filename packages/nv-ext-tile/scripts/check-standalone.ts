@@ -6,7 +6,7 @@
  *      `@niivue/niivue` (the page maps it onto core's standalone build) and
  *      the optional `@niivue/dcm2niix`, which only /dicom and /tiff (JPEG
  *      2000 tiles) may reach, and only through a dynamic import. A dynamic
- *      import of a `node:` builtin is allowed: zarrita-rs's Node-only worker
+ *      import of `node:worker_threads` is allowed: zarrita-rs's Node-only worker
  *      branch, which the minifier inlines (browsers never run it);
  *   2. nothing locates an asset through `import.meta.url`;
  *   3. each entry's static imports stay within its format: /tiff loads no
@@ -27,6 +27,7 @@ const ENTRIES = ['tiff.js', 'dicom.js', 'zarr.js']
 const CORE = '@niivue/niivue'
 const DCM2NIIX = '@niivue/dcm2niix'
 const DCM2NIIX_ENTRIES = ['dicom.js', 'tiff.js']
+const NODE_WORKER = 'node:worker_threads'
 // Text only a format's own dependency contains (zarrita's Zarr v3 metadata
 // key; geotiff-rs's TIFF tag table).
 const MARKERS: Record<string, string> = {
@@ -62,7 +63,7 @@ for (const abs of listJs(DIR)) {
   for (const imp of transpiler.scanImports(code)) {
     const spec = imp.path
     if (!spec.startsWith('./') && !spec.startsWith('../')) {
-      const nodeOnly = spec.startsWith('node:') && imp.kind === 'dynamic-import'
+      const nodeOnly = spec === NODE_WORKER && imp.kind === 'dynamic-import'
       if (spec !== CORE && spec !== DCM2NIIX && !nodeOnly)
         errors.push(`${rel}: bare ${imp.kind} "${spec}"`)
       if (spec === DCM2NIIX && imp.kind !== 'dynamic-import')

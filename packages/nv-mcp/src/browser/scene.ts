@@ -1773,6 +1773,15 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         width: picture.width,
         height: picture.height,
         canvas: { width: canvas.width, height: canvas.height },
+        // NiiVue's capture is its instance's rect, so a point picked on the
+        // picture is this far from the canvas pixel map_point takes.
+        origin:
+          drawn === canvas
+            ? [0, 0]
+            : [
+                Math.max(0, view.view?.boundsOffsetX ?? 0),
+                Math.max(0, view.view?.boundsOffsetY ?? 0),
+              ],
       }
     },
   }

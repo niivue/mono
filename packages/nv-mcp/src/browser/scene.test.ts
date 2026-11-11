@@ -1326,6 +1326,7 @@ describe('screenshot', () => {
       width: 640,
       height: 480,
       canvas: { width: 640, height: 480 },
+      origin: [0, 0],
     })
     expect(calls).toEqual(['draw', 'toDataURL:image/png'])
     await expect(coreHandlers(host(fakeView())).screenshot({})).rejects.toThrow(
@@ -1356,7 +1357,13 @@ describe('screenshot', () => {
       const view = fakeView({
         canvas,
         drawScene: mock(() => calls.push('draw')),
-        view: { render: () => calls.push('render') },
+        // The instance draws into the canvas's right half: the picture's
+        // top-left is canvas pixel 440, which map_point needs.
+        view: {
+          render: () => calls.push('render'),
+          boundsOffsetX: 440,
+          boundsOffsetY: 0,
+        },
         getCanvasImage: () => captures.shift() ?? null,
       })
       expect(await coreHandlers(host(view)).screenshot({})).toEqual({
@@ -1365,6 +1372,7 @@ describe('screenshot', () => {
         width: 200,
         height: 100,
         canvas: { width: 640, height: 480 },
+        origin: [440, 0],
       })
       expect(calls).toEqual(['put:200'])
       await expect(coreHandlers(host(view)).screenshot({})).rejects.toThrow(

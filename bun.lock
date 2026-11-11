@@ -197,17 +197,6 @@
         "vite": "^6.3.2",
       },
     },
-    "apps/zarrita-compare": {
-      "name": "zarrita-compare",
-      "dependencies": {
-        "@niivue/zarrita-rs": "0.7.5-rc.1",
-        "@zarrita/storage": "^0.2.0",
-        "zarrita": "^0.7.3",
-      },
-      "devDependencies": {
-        "vite": "^6.3.2",
-      },
-    },
     "packages/dev-images": {
       "name": "@niivue/dev-images",
       "version": "0.1.0",
@@ -3425,10 +3414,6 @@
     "yocto-queue": ["yocto-queue@1.2.2", "", {}, "sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ=="],
 
     "yoctocolors": ["yoctocolors@2.2.0", "", {}, "sha512-xYqdZFUK/VYazNl/oCDYN+3WloWQwMfZxBoiNt6qNyk+xfOdi598muWE42rNZFp1kNOiqW936q5RhUdnpqElSg=="],
-
-    "zarrita": ["zarrita@0.7.3", "", { "dependencies": { "@zarrita/storage": "^0.2.0", "numcodecs": "^0.3.2" } }, "sha512-wChTQ1Ox75INoQCzKAfLWAfB70JJ4KjdW8Sz5x4ZWrFB4Dw+YZdnxHTL0xSdsrB9EmKSeK7fS1Y+I2ibhfGbkw=="],
-
-    "zarrita-compare": ["zarrita-compare@workspace:apps/zarrita-compare"],
 
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 

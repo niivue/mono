@@ -8,7 +8,7 @@
  *      2000 tiles) may reach, and only through a dynamic import;
  *   2. nothing locates an asset through `import.meta.url`;
  *   3. each entry's static imports stay within its format: /tiff loads no
- *      zarrita code, /zarr and /dicom load no geotiff-rs code.
+ *      zarrita-rs code, /zarr and /dicom load no geotiff-rs code.
  *
  * Prints what each entry loads before any lazy chunk. Exits non-zero on any
  * violation. Run after `vite build -c vite.config.standalone.ts`.
@@ -25,15 +25,15 @@ const ENTRIES = ['tiff.js', 'dicom.js', 'zarr.js']
 const CORE = '@niivue/niivue'
 const DCM2NIIX = '@niivue/dcm2niix'
 const DCM2NIIX_ENTRIES = ['dicom.js', 'tiff.js']
-// Text only a format's own dependency contains (zarrita's Zarr v3 metadata
+// Text only a format's own dependency contains (zarrita-rs's Zarr v3 metadata
 // key; geotiff-rs's TIFF tag table).
 const MARKERS: Record<string, string> = {
-  zarrita: 'zarr_format',
+  'zarrita-rs': 'zarr_format',
   'geotiff-rs': 'StripByteCounts',
 }
 const FORBIDDEN: Record<string, string[]> = {
-  'tiff.js': ['zarrita'],
-  'dicom.js': ['zarrita', 'geotiff-rs'],
+  'tiff.js': ['zarrita-rs'],
+  'dicom.js': ['zarrita-rs', 'geotiff-rs'],
   'zarr.js': ['geotiff-rs'],
 }
 

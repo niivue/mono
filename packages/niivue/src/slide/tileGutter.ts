@@ -55,6 +55,17 @@ const NEIGHBOURS = [
   [1, 1],
 ] as const
 
+/**
+ * [offset, length] of the part of a `size`-texel bitmap axis uploaded so the
+ * padded texture fits `maxTexture`: the centre, cropped by the excess.
+ * shortcut: crops rather than downscales, fine for the 1-2 texel overshoot of
+ * a limit-sized tile; downscale if larger-than-limit tiles must render whole.
+ */
+export function gutterFit(size: number, maxTexture: number): [number, number] {
+  const length = Math.min(size, maxTexture - 2)
+  return [(size - length) >> 1, length]
+}
+
 /** GPU bytes of a w x h tile texture with its gutter. */
 export function gutterTextureBytes(width: number, height: number): number {
   return (width + 2) * (height + 2) * 4
@@ -77,7 +88,8 @@ function gutterAxis(
  * resident source: for an edge the neighbour, for a corner the diagonal, then
  * the edge neighbour beside it (clamped along the other axis, as at the slide
  * edge), else the tile's own edge. With `only`, copies only when that is the
- * source. Same-column (row) tiles share a width (height), as in any grid.
+ * source. A neighbour whose shared edge differs in length (a decoded tile
+ * smaller than its grid cell) is skipped, so no copy reads past its edge.
  */
 function fillSlot<T extends GutterTile>(
   level: number,
@@ -95,7 +107,12 @@ function fillSlot<T extends GutterTile>(
     const sx = sources[i] as number
     const sy = sources[i + 1] as number
     const src = sx || sy ? neighbour(`L${level}/${col + sx}/${row + sy}`) : tile
-    if (!src) continue
+    if (
+      !src ||
+      (sx && !sy && src.height !== tile.height) ||
+      (sy && !sx && src.width !== tile.width)
+    )
+      continue
     if (only && src !== only) return
     const [x, srcX, width] = gutterAxis(
       dx,

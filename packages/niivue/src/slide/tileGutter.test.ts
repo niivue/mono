@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { syncGutters } from '@/slide/tileGutter'
+import { gutterFit, syncGutters } from '@/slide/tileGutter'
 
 // A CPU stand-in for a padded tile texture: one value per texel.
 interface Tex {
@@ -122,5 +122,41 @@ describe('syncGutters', () => {
     // Pushes: left and right neighbours' facing edge and top corner (no
     // diagonal above), the three tiles below one slot each.
     expect(copies.filter((c) => c.includes('>n '))).toHaveLength(7)
+  })
+
+  test('a neighbour with a shorter shared edge is never read past its edge', () => {
+    // A 2x3 tile above a 4x3 tile in the same column, plus a short 4x1 tile
+    // to the right of the lower one: decoded tiles smaller than their cells.
+    const tiles = new Map<string, { width: number; height: number }>([
+      ['L0/0/0', { width: 2, height: 3 }],
+      ['L0/0/1', { width: 4, height: 3 }],
+      ['L0/1/1', { width: 4, height: 1 }],
+    ])
+    for (const [key, tile] of tiles) {
+      const [col, row] = key.split('/').slice(1).map(Number) as [number, number]
+      syncGutters(
+        0,
+        col,
+        row,
+        tile,
+        (k) => tiles.get(k),
+        (src, dst, c) => {
+          const from = src ?? dst
+          expect(c.srcX + c.width).toBeLessThanOrEqual(from.width + 2)
+          expect(c.srcY + c.height).toBeLessThanOrEqual(from.height + 2)
+          expect(c.x + c.width).toBeLessThanOrEqual(dst.width + 2)
+          expect(c.y + c.height).toBeLessThanOrEqual(dst.height + 2)
+        },
+      )
+    }
+  })
+})
+
+describe('gutterFit', () => {
+  test('crops a bitmap axis so the padded texture fits the limit', () => {
+    expect(gutterFit(256, 8192)).toEqual([0, 256])
+    expect(gutterFit(8190, 8192)).toEqual([0, 8190])
+    expect(gutterFit(8192, 8192)).toEqual([1, 8190])
+    expect(gutterFit(8191, 8192)).toEqual([0, 8190])
   })
 })

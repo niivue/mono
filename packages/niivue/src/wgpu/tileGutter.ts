@@ -1,5 +1,6 @@
 import {
   type GutterAt,
+  gutterFit,
   gutterTextureBytes,
   syncGutters,
 } from '@/slide/tileGutter'
@@ -32,7 +33,9 @@ export class TileGutterGPU {
     at: GutterAt,
     cache: TileTextureCache<TileTextureGPU>,
   ): TileTextureGPU {
-    const { width, height } = bitmap
+    const max = device.limits.maxTextureDimension2D
+    const [left, width] = gutterFit(bitmap.width, max)
+    const [top, height] = gutterFit(bitmap.height, max)
     const { slide, level, col, row } = at
     const tile = {
       texture: device.createTexture({
@@ -49,7 +52,7 @@ export class TileGutterGPU {
       slide,
     }
     device.queue.copyExternalImageToTexture(
-      { source: bitmap },
+      { source: bitmap, origin: [left, top] },
       { texture: tile.texture, origin: [1, 1] },
       [width, height],
     )

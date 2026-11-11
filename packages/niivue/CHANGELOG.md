@@ -1,3 +1,13 @@
+## 1.0.0-rc.167 (2026-11-11)
+
+### Performance
+
+- **niivue:** skip slide tile gutter copies under nearest filtering ([#684](https://github.com/niivue/mono/issues/684))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.166 (2026-11-11)
 
 ### Features

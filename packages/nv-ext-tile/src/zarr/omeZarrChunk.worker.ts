@@ -25,12 +25,18 @@
 
 import type { ChunkedVolumeFetch } from '@niivue/niivue'
 import { chunkTimingSnapshot } from '@niivue/niivue'
+import { configureWasm } from '@niivue/zarrita-rs/inline'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_ERROR,
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
 } from './omeZarrChunkedSource'
+
+// This worker is one of a pool already, so decode on this thread rather than
+// start a nested pool. The wasm module is loaded for every store this worker
+// reads, so the browser's own gzip decoder would save no download here.
+configureWasm({ workers: 0, gzip: 'wasm' })
 
 const post = (
   self as unknown as {

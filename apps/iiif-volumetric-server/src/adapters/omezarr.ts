@@ -20,8 +20,8 @@
 // from (Z, Y, X) to (X, Y, Z) — VolumeHandle's convention. No transpose
 // needed.
 
+import * as zarr from '@niivue/zarrita-rs'
 import FileSystemStore from '@zarrita/storage/fs'
-import * as zarr from 'zarrita'
 import type {
   AdapterChannel,
   AdapterContext,

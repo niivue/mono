@@ -97,7 +97,7 @@
         "@niivue/geotiff-rs": "3.1.0-rc.0",
         "@niivue/niivue": "workspace:*",
         "@niivue/nv-ext-tile": "workspace:*",
-        "zarrita": "^0.7.3",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
       },
       "devDependencies": {
         "@playwright/test": "1.64.1",
@@ -154,7 +154,7 @@
       "name": "iiif-volumetric-demo",
       "dependencies": {
         "@niivue/niivue": "workspace:*",
-        "zarrita": "^0.7.3",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
       },
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",
@@ -165,6 +165,7 @@
     "apps/iiif-volumetric-server": {
       "name": "iiif-volumetric-server",
       "dependencies": {
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
         "@zarrita/storage": "^0.2.0",
         "cors": "^2.8.5",
         "dicom-parser": "^1.8.21",
@@ -175,7 +176,6 @@
         "nrrd-js": "^0.2.1",
         "pako": "^2.1.0",
         "pngjs": "^7.0.0",
-        "zarrita": "^0.7.3",
       },
       "devDependencies": {
         "@types/cors": "^2.8.17",
@@ -194,6 +194,17 @@
       "devDependencies": {
         "cbor-x": "^1.6.0",
         "playwright": "1.64.1",
+        "vite": "^6.3.2",
+      },
+    },
+    "apps/zarrita-compare": {
+      "name": "zarrita-compare",
+      "dependencies": {
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
+        "@zarrita/storage": "^0.2.0",
+        "zarrita": "^0.7.3",
+      },
+      "devDependencies": {
         "vite": "^6.3.2",
       },
     },
@@ -322,7 +333,7 @@
       "version": "1.0.0-rc.60",
       "dependencies": {
         "@niivue/geotiff-rs": "3.1.0-rc.0",
-        "zarrita": "^0.7.3",
+        "@niivue/zarrita-rs": "0.7.5-rc.1",
       },
       "devDependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
@@ -1064,6 +1075,8 @@
     "@niivue/uikit": ["@niivue/uikit@workspace:packages/uikit"],
 
     "@niivue/web-bridge": ["@niivue/web-bridge@workspace:packages/niivue-web-bridge"],
+
+    "@niivue/zarrita-rs": ["@niivue/zarrita-rs@0.7.5-rc.1", "", { "dependencies": { "@zarrita/storage": "^0.2.0", "numcodecs": "^0.3.2" } }, "sha512-GkZ5uqObf72fWvAK5wyixdRoTs/PB6s2Wh72uShyqA1N4Tki05SOdkKy8CQVPhs0h/OqUubJi1lUWTkKY4tZbA=="],
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
@@ -3414,6 +3427,8 @@
     "yoctocolors": ["yoctocolors@2.2.0", "", {}, "sha512-xYqdZFUK/VYazNl/oCDYN+3WloWQwMfZxBoiNt6qNyk+xfOdi598muWE42rNZFp1kNOiqW936q5RhUdnpqElSg=="],
 
     "zarrita": ["zarrita@0.7.3", "", { "dependencies": { "@zarrita/storage": "^0.2.0", "numcodecs": "^0.3.2" } }, "sha512-wChTQ1Ox75INoQCzKAfLWAfB70JJ4KjdW8Sz5x4ZWrFB4Dw+YZdnxHTL0xSdsrB9EmKSeK7fS1Y+I2ibhfGbkw=="],
+
+    "zarrita-compare": ["zarrita-compare@workspace:apps/zarrita-compare"],
 
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 

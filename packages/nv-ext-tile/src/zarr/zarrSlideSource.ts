@@ -9,7 +9,7 @@ import type {
   SlideTileSource,
 } from '@niivue/niivue'
 import { omeLengthToMicrons } from '@niivue/niivue'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita-rs/inline'
 import { checkOmeZarrIndex, omeroWindowUsable } from './omeZarr'
 import {
   type OmeZarrSource,

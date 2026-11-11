@@ -4,7 +4,7 @@ import {
   omeZarrChunkedSource,
   openOmeZarr,
 } from '@niivue/nv-ext-tile/zarr'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita-rs/inline'
 
 // Pick one brick out of an exploded STREAMED volume and open that brick, on its
 // own, beside the whole heart.

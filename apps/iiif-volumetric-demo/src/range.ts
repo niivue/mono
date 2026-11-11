@@ -5,7 +5,7 @@ import NiiVue, {
   SLICE_TYPE,
   type VolumeChunkSource,
 } from '@niivue/niivue'
-import * as zarr from 'zarrita'
+import * as zarr from '@niivue/zarrita-rs/inline'
 import { getBackendFromUrl } from './backend'
 import {
   buildLogicalVolume,

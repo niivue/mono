@@ -135,6 +135,10 @@ export default defineConfig({
         replacement: src('control/NVCanvasViewportController.ts'),
       },
       {
+        find: /^@niivue\/niivue\/scene$/,
+        replacement: src('scene/NvSceneController.ts'),
+      },
+      {
         find: /^@niivue\/niivue\/assets\/(fonts|matcaps)$/,
         replacement: src('assets/$1/index.ts'),
       },

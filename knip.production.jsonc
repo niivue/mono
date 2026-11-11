@@ -9,6 +9,7 @@
         "src/index.webgpu.ts!",
         "src/index.webgl2.ts!",
         "src/control/NVCanvasViewportController.ts!",
+        "src/scene/NvSceneController.ts!",
         "src/assets/fonts/index.ts!",
         "src/assets/matcaps/index.ts!"
       ],

@@ -120,6 +120,9 @@ export default defineConfig({
             import.meta.url,
           ),
         ),
+        scene: fileURLToPath(
+          new URL('./src/scene/NvSceneController.ts', import.meta.url),
+        ),
         'assets/fonts/index': fileURLToPath(
           new URL('./src/assets/fonts/index.ts', import.meta.url),
         ),
@@ -130,8 +133,13 @@ export default defineConfig({
       formats: ['es'],
     },
     rollupOptions: {
-      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js'],
-      output: { chunkFileNames: coreChunkFileNames('') },
+      // Only the scene entry imports '@/index': it loads NiiVue from niivue.js,
+      // sharing the consumer's copy and leaving the other entries' chunks as is.
+      external: ['cbor-x', 'gl-matrix', 'nifti-reader-js', '@/index'],
+      output: {
+        chunkFileNames: coreChunkFileNames(''),
+        paths: { '@/index': './niivue.js' },
+      },
     },
   },
 })

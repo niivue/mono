@@ -1,3 +1,13 @@
+## 1.0.0-rc.166 (2026-11-11)
+
+### Features
+
+- slide demos use NVSlideController (zoom box, middle pan) ([c7e66f5b](https://github.com/niivue/mono/commit/c7e66f5b))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.165 (2026-11-11)
 
 ### Features

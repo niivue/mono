@@ -3,6 +3,7 @@ import {
   layoutSlideMinimap,
   minimapToSlide,
   type SlideMinimapSpec,
+  thumbnailTileSpan,
 } from './slideMinimap'
 
 // 1000x500 slide, 800x600 canvas at dpr 2 (400x300 CSS), 1 CSS px per slide px.
@@ -78,5 +79,25 @@ describe('minimapToSlide', () => {
         y: yAxisUp ? 0 : 500,
       })
     }
+  })
+})
+
+describe('thumbnailTileSpan', () => {
+  it('tiles a row on whole pixels with no gaps or overlaps', () => {
+    // 2220 px of 240 px tiles (last one cropped) at a non-integer scale.
+    const k = 1024 / 2967
+    let edge = 0
+    for (let i = 0; i < 10; i++) {
+      const [start, end] = thumbnailTileSpan(
+        i,
+        240,
+        Math.min(240, 2220 - i * 240),
+        k,
+      )
+      expect(Number.isInteger(start) && Number.isInteger(end)).toBe(true)
+      expect(start).toBe(edge)
+      edge = end
+    }
+    expect(edge).toBe(Math.round(2220 * k))
   })
 })

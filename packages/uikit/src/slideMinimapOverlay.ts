@@ -17,6 +17,7 @@ import {
   type MinimapCorner,
   minimapToSlide,
   type SlideMinimapLayout,
+  thumbnailTileSpan,
 } from './slideMinimap'
 
 /** What the minimap uses of an NVSlide. */
@@ -131,11 +132,11 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
         continue
       }
       if (this.drawnTiles.get(key) === bitmap) continue
-      const x = tile.x * tileW * k
-      const w = tile.width * k
-      const h = tile.height * k
-      const y = tile.y * tileH * k
-      ctx.clearRect(x, yUp ? this.thumbnail.height - y - h : y, w, h)
+      const [x, x1] = thumbnailTileSpan(tile.x, tileW, tile.width, k)
+      const [y, y1] = thumbnailTileSpan(tile.y, tileH, tile.height, k)
+      const w = x1 - x
+      const h = y1 - y
+      ctx.clearRect(x, yUp ? this.thumbnail.height - y1 : y, w, h)
       if (yUp) {
         // y-up tiles stack from the bottom and their rows are stored bottom-up.
         ctx.save()

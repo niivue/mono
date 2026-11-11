@@ -202,12 +202,15 @@ describe('fitGutterSource', () => {
   test('scales a bitmap down so the padded texture fits the limit', () => {
     const drawn: number[][] = []
     let has2d = true
+    let canvases = 0
     const original = globalThis.OffscreenCanvas
     globalThis.OffscreenCanvas = class {
       constructor(
         readonly width: number,
         readonly height: number,
-      ) {}
+      ) {
+        canvases++
+      }
       getContext() {
         return (
           has2d && {
@@ -220,11 +223,28 @@ describe('fitGutterSource', () => {
       const bitmap = { width: 8192, height: 100 } as ImageBitmap
       expect(fitGutterSource(bitmap, 8194)).toBe(bitmap)
       const fitted = fitGutterSource(bitmap, 8192)
-      expect([fitted.width, fitted.height]).toEqual([8190, 100])
+      expect([fitted?.width, fitted?.height]).toEqual([8190, 100])
       expect(drawn).toEqual([[0, 0, 8190, 100]])
-      // Never a blank tile: no 2D context is an error.
+      // Never a blank tile: no 2D context is null (the placeholder draws),
+      // and that bitmap is not retried every frame.
       has2d = false
-      expect(() => fitGutterSource(bitmap, 8192)).toThrow('No 2D context')
+      const unscalable = { width: 8192, height: 100 } as ImageBitmap
+      expect(fitGutterSource(unscalable, 8192)).toBeNull()
+      const tried = canvases
+      expect(fitGutterSource(unscalable, 8192)).toBeNull()
+      expect(canvases).toBe(tried)
+    } finally {
+      globalThis.OffscreenCanvas = original
+    }
+  })
+
+  test('no OffscreenCanvas at all is null, not a throw', () => {
+    const original = globalThis.OffscreenCanvas
+    // @ts-expect-error: a browser without OffscreenCanvas
+    delete globalThis.OffscreenCanvas
+    try {
+      const bitmap = { width: 8192, height: 100 } as ImageBitmap
+      expect(fitGutterSource(bitmap, 8192)).toBeNull()
     } finally {
       globalThis.OffscreenCanvas = original
     }

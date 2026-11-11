@@ -253,6 +253,35 @@ describe('indexDicomWsi on hostile input', () => {
     expect(await reasons(new File([inItem], 'h.dcm'))).toEqual(['malformed'])
   })
 
+  test('an SQ cut off by the end of the file is malformed', async () => {
+    const pre = cat(new Uint8Array(128), str('DICM'))
+    const open = cat(pre, el(0x0011, 0x1010, 'SQ', new Uint8Array(0), UNDEF))
+    const inItem = cat(open, tag(0xfffe, 0xe000), le(UNDEF, 4))
+    const tooLong = cat(pre, el(0x0011, 0x1010, 'SQ', new Uint8Array(0), 1000))
+    // Cut inside an item tag, an item length, a delimiter, a nested element.
+    const cuts = [
+      [0xfe, 0xff],
+      [0xfe, 0xff, 0x00, 0xe0],
+      [0xfe, 0xff, 0xdd, 0xe0],
+    ]
+      .map((bytes) => cat(open, new Uint8Array(bytes)))
+      .concat(cat(inItem, new Uint8Array([0x11, 0x00])))
+    for (const head of [open, inItem, tooLong, ...cuts])
+      expect(await reasons(new File([head], 'h.dcm'))).toEqual(['malformed'])
+    // A file that ends between elements has no Pixel Data: not truncated.
+    const whole = cat(pre, el(0x0011, 0x1010, 'SQ', new Uint8Array(0), 0))
+    expect(await reasons(new File([whole], 'h.dcm'))).toEqual(['not-tiled'])
+  })
+
+  test('tiny native Pixel Data at the end of the file is not truncated', async () => {
+    const pre = cat(new Uint8Array(128), str('DICM'))
+    const tiny = cat(pre, el(0x7fe0, 0x0010, 'OB', new Uint8Array(4)))
+    expect(await reasons(new File([tiny], 'h.dcm'))).toEqual(['not-tiled'])
+    // Encapsulated Pixel Data cut before its offset-table item is truncated.
+    const cut = cat(pre, el(0x7fe0, 0x0010, 'OB', new Uint8Array(0), UNDEF))
+    expect(await reasons(new File([cut], 'h.dcm'))).toEqual(['malformed'])
+  })
+
   test('a text value over 1 KiB is malformed, never decoded', async () => {
     const f = dicom({
       study: el(0x0020, 0x000d, 'UT', new Uint8Array(16 << 20).fill(0x31)),

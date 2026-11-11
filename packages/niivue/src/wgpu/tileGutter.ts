@@ -32,8 +32,9 @@ export class TileGutterGPU {
     bitmap: ImageBitmap,
     at: GutterAt,
     cache: TileTextureCache<TileTextureGPU>,
-  ): TileTextureGPU {
+  ): TileTextureGPU | null {
     const source = fitGutterSource(bitmap, device.limits.maxTextureDimension2D)
+    if (!source) return null
     const { width, height } = source
     const { slide, level, col, row } = at
     const tile = {

@@ -33,11 +33,12 @@ export class TileGutterGL {
     bitmap: ImageBitmap,
     at: GutterAt,
     cache: TileTextureCache<TileTextureGL>,
-  ): TileTextureGL {
+  ): TileTextureGL | null {
     const source = fitGutterSource(
       bitmap,
       gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
     )
+    if (!source) return null
     const { width, height } = source
     const { slide, level, col, row } = at
     const tile = { texture: gl.createTexture(), width, height, slide }

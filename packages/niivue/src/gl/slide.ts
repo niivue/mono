@@ -305,7 +305,7 @@ export class SlideRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     item: NVSlideVisibleTile,
     bitmap: ImageBitmap,
-  ): TileTextureGL {
+  ): TileTextureGL | null {
     // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
     const existing = this._textures.get(item.key, bitmap)
     if (existing) return existing

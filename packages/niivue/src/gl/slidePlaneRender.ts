@@ -93,7 +93,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     slide: NVSlide,
     tile: SlidePlaneTile,
     bitmap: ImageBitmap,
-  ): TileTextureGL {
+  ): TileTextureGL | null {
     const existing = this._textures.get(tile.key, bitmap)
     if (existing) return existing
     return this._gutter.upload(gl, bitmap, { ...tile, slide }, this._textures)
@@ -149,7 +149,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     const drawn: [SlidePlaneTile, TileTextureGL][] = []
     for (const tile of tiles) {
       const bitmap = slide.cachedTileBitmap(tile.key)
-      if (bitmap) drawn.push([tile, this._textureFor(gl, slide, tile, bitmap)])
+      const tex = bitmap && this._textureFor(gl, slide, tile, bitmap)
+      if (tex) drawn.push([tile, tex])
     }
     for (const [tile, tex] of drawn) {
       gl.bufferData(

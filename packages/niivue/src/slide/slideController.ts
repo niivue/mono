@@ -85,6 +85,7 @@ export class NVSlideController {
     canvas.addEventListener('pointermove', this._onMove)
     canvas.addEventListener('pointerup', this._onEnd)
     canvas.addEventListener('pointercancel', this._onEnd)
+    canvas.addEventListener('pointerleave', this._onLeave)
     // Capture taken elsewhere ends the gesture, or later presses are ignored.
     canvas.addEventListener('lostpointercapture', this._onEnd)
     canvas.addEventListener('wheel', this._onWheel, { passive: false })
@@ -106,6 +107,7 @@ export class NVSlideController {
     c.removeEventListener('pointermove', this._onMove)
     c.removeEventListener('pointerup', this._onEnd)
     c.removeEventListener('pointercancel', this._onEnd)
+    c.removeEventListener('pointerleave', this._onLeave)
     c.removeEventListener('lostpointercapture', this._onEnd)
     c.removeEventListener('wheel', this._onWheel)
     c.removeEventListener('contextmenu', this._onContextMenu)
@@ -221,6 +223,18 @@ export class NVSlideController {
     this._end(g, event.type === 'pointerup')
   }
 
+  // Leaving before capture: the release may land outside the canvas, and a
+  // gesture left live would resume as a drag when a held button comes back.
+  private _onLeave = (event: PointerEvent): void => {
+    const g = this._gesture
+    if (
+      g &&
+      g.pointerId === event.pointerId &&
+      !this._canvas.hasPointerCapture(g.pointerId)
+    )
+      this._end(g, false)
+  }
+
   /** The box a contrast, zoom or measurement drag is shaping. */
   private _boxFor(mode: DRAG_MODE): NVSlideMeasurement | null {
     if (isBoxMode(mode)) return this.selection
@@ -241,8 +255,14 @@ export class NVSlideController {
     this.activeMeasurement = null
     if (committed && g.isDrag) {
       if (g.mode === DRAG_MODE.contrast) this._options.onContrast?.(box)
-      else if (g.mode === DRAG_MODE.roiSelection) this._zoomTo(box)
-      else this.measurements.push(box)
+      else if (g.mode === DRAG_MODE.roiSelection) {
+        // A box dragged back to a point would zoom to native resolution.
+        if (
+          Math.abs(g.lastX - g.startX) >= crosshairPanThresholdCssPx ||
+          Math.abs(g.lastY - g.startY) >= crosshairPanThresholdCssPx
+        )
+          this._zoomTo(box)
+      } else this.measurements.push(box)
     }
     this._options.onChange?.()
   }

@@ -231,6 +231,25 @@ describe('NVSlideController', () => {
     expect(r.pans).toEqual([])
   })
 
+  test('leaving before capture ends the gesture; a held button back in does not pan', () => {
+    const r = rig()
+    r.fire('pointerdown', 98, 50)
+    r.fire('pointerleave', 100, 50)
+    // Released outside, then back over the canvas with a button held.
+    r.fire('pointermove', 60, 50)
+    expect(r.pans).toEqual([])
+    expect(r.captures()).toBe(0)
+  })
+
+  test('a zoom box dragged back to its start does not zoom', () => {
+    const r = rig({ primary: DRAG_MODE.roiSelection })
+    r.fire('pointerdown', 50, 50)
+    r.fire('pointermove', 70, 70)
+    r.fire('pointermove', 50, 50)
+    r.fire('pointerup', 50, 50)
+    expect(r.viewports).toEqual([])
+  })
+
   test('a click takes no pointer capture', () => {
     const r = rig()
     r.fire('pointerdown', 10, 10)

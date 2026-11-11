@@ -358,6 +358,9 @@ function skipImplicitSequence(
   if (depth > MAX_DEPTH)
     throw new Skip('malformed', `sequences nested deeper than ${MAX_DEPTH}`)
   for (;;) {
+    // EOF before the delimiter: a truncated sequence, not a missing Pixel Data.
+    if (p + 8 > size)
+      throw new Skip('malformed', 'UN sequence runs past the file')
     const itemTag = tagOf(u16(b, p), u16(b, p + 2))
     const itemLength = u32(b, p + 4)
     p += 8
@@ -367,6 +370,8 @@ function skipImplicitSequence(
     if (itemLength !== UNDEFINED_LENGTH) p += itemLength
     else
       for (;;) {
+        if (p + 8 > size)
+          throw new Skip('malformed', 'UN sequence runs past the file')
         const tag = tagOf(u16(b, p), u16(b, p + 2))
         const length = u32(b, p + 4)
         p += 8

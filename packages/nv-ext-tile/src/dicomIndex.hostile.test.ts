@@ -241,6 +241,18 @@ describe('indexDicomWsi on hostile input', () => {
     ])
   })
 
+  test('a UN sequence cut off by the end of the file is malformed', async () => {
+    const head = cat(
+      new Uint8Array(128),
+      str('DICM'),
+      el(0x0011, 0x1010, 'UN', new Uint8Array(0), UNDEF),
+    )
+    // Ends inside the sequence, and inside an undefined-length item.
+    expect(await reasons(new File([head], 'h.dcm'))).toEqual(['malformed'])
+    const inItem = cat(head, tag(0xfffe, 0xe000), le(UNDEF, 4))
+    expect(await reasons(new File([inItem], 'h.dcm'))).toEqual(['malformed'])
+  })
+
   test('a text value over 1 KiB is malformed, never decoded', async () => {
     const f = dicom({
       study: el(0x0020, 0x000d, 'UT', new Uint8Array(16 << 20).fill(0x31)),

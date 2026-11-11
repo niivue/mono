@@ -7,8 +7,9 @@ title: Extensions, DICOM and image processing
 
 The core `@niivue/niivue` package views images. Heavier jobs, such as
 converting DICOM or running image filters, live in separate extension
-packages so you only ship what you use. Each one lists `@niivue/niivue` as a
-peer dependency, so install it alongside the extension. The packages are in prerelease, published
+packages so you only ship what you use. Each one that works on NiiVue
+objects lists `@niivue/niivue` as a peer dependency, so install it alongside
+the extension (`nv-ext-niimath` is standalone). The packages are in prerelease, published
 under the `next` tag:
 
 ```bash

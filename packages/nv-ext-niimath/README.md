@@ -8,8 +8,6 @@ Browser-side niimath pipelines for [NiiVue](https://github.com/niivue), wrapping
 bun add @niivue/nv-ext-niimath
 ```
 
-Requires `@niivue/niivue` as a peer dependency.
-
 ## Usage
 
 ```ts

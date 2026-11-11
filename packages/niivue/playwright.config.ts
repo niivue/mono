@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import { coverageEnabled } from './e2e/coverage'
-import { defaultLaunchOptions } from './e2e/launchOptions'
+import { channel, defaultLaunchOptions } from './e2e/launchOptions'
 
 // End-to-end tests that need a real browser: rendering, a GPU context, DOM
 // image decoding, real Workers and canvas input. State and logic tests drive a
@@ -34,7 +34,11 @@ export default defineConfig({
   globalSetup: coverageEnabled ? './e2e/coverageGlobalSetup.ts' : undefined,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Chromium 156+ on real GPUs (the `chromium` channel) can deadlock a
+  // renderer in its WebGPU reply path under parallel load (~1 in 5 full runs;
+  // 149 did not). The page never recovers, so retry once in a fresh worker
+  // rather than going serial (3x slower).
+  retries: process.env.CI || channel ? 1 : 0,
   // The JSON report feeds .github/scripts/check-no-skipped-tests.ts.
   reporter: process.env.CI
     ? [

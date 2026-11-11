@@ -74,12 +74,10 @@ export const EXTRA_SCHEMAS = {
       .optional()
       .describe('For create: the widest raster the drawing is kept at.'),
     channel: z
-      .number()
-      .int()
-      .min(0)
+      .union([z.number().int().min(0), z.string().min(1)])
       .optional()
       .describe(
-        'The slide channel to change with visible, colormap, cal_min and cal_max.',
+        'The slide channel to change with visible, colormap, cal_min and cal_max: its index from 0, or its exact name (case ignored) as the reported channels list it. A name two channels share is refused; give the index.',
       ),
     visible: z.boolean().optional().describe('Show or hide the channel.'),
     colormap: z

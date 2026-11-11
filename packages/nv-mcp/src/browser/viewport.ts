@@ -33,6 +33,26 @@ const SAVES = ['document', 'volume', 'mesh', 'bitmap', 'drawing'] as const
 const SLIDE_DRAWING = ['create', 'clear', 'undo', 'end'] as const
 const CHANNEL_BLENDS = ['max', 'additive'] as const
 
+/** The index of the one slide channel named `name`, case ignored as `pickIndex` does. */
+function channelByName(
+  channels: readonly Readonly<SlideChannel>[] | null | undefined,
+  name: string,
+): number {
+  if (!channels) throw new Error("This page's NiiVue has no slide plane.")
+  const wanted = name.toLowerCase()
+  const hits = channels.flatMap((c, i) =>
+    c.name.toLowerCase() === wanted ? [i] : [],
+  )
+  if (hits.length === 1) return hits[0]
+  if (hits.length > 1)
+    throw new Error(
+      `Slide channels ${hits.join(', ')} are all named "${name}"; give the index.`,
+    )
+  throw new Error(
+    `No slide channel is named "${name}". Channels: ${channels.map((c, i) => `${i} (${c.name})`).join(', ')}.`,
+  )
+}
+
 /** The slide plane's channels and blend; JSON carries a default (NaN) bound as null. */
 export function slideState(view: View) {
   const channels = view.slideChannels
@@ -148,7 +168,10 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       host.beforeAnswer?.()
       // Channel arguments are checked first.
       const channels = view.slideChannels
-      const channel = integer(params, 'channel')
+      const channel =
+        typeof params?.channel === 'string'
+          ? channelByName(channels, params.channel)
+          : integer(params, 'channel')
       // Only the keys given: setChannel resets a bound that is present but undefined.
       const update: Partial<SlideChannel> = {}
       put(update, 'visible', flag(params, 'visible'))

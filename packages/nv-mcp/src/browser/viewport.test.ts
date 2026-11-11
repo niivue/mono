@@ -291,6 +291,9 @@ describe('set_slide', () => {
     set_slide({ channel: 1, cal_max: null })
     expect(slide.channels[1].calMax).toBeNaN()
     expect(slide.channels[1].calMin).toBe(2)
+    // A name, case ignored, reaches the same NVSlide.setChannel.
+    set_slide({ channel: 'GFP', visible: true })
+    expect(nv.slideChannels?.[1].visible).toBe(true)
     expect(() => set_slide({ channel: 5, visible: true })).toThrow(RangeError)
     expect(() => set_slide({ visible: true })).toThrow(
       'visible, colormap, cal_min and cal_max need a channel.',
@@ -329,10 +332,43 @@ describe('set_slide', () => {
     expect(view.setSlideChannelBlend).not.toHaveBeenCalled()
   })
 
+  it('takes a channel by index or by its one name', () => {
+    const slideChannel = (name: string) => ({
+      name,
+      colormap: 'gray',
+      calMin: 0,
+      calMax: 1,
+      visible: true,
+    })
+    const view = baseView({
+      slideChannels: ['dapi', 'gfp', 'gfp'].map(slideChannel),
+      setSlideChannel: mock(),
+    })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    set_slide({ channel: 2, visible: false })
+    set_slide({ channel: 'dapi', visible: false })
+    expect(view.setSlideChannel).toHaveBeenNthCalledWith(1, 2, {
+      visible: false,
+    })
+    expect(view.setSlideChannel).toHaveBeenNthCalledWith(2, 0, {
+      visible: false,
+    })
+    expect(() => set_slide({ channel: 'gfp', visible: true })).toThrow(
+      'Slide channels 1, 2 are all named "gfp"; give the index.',
+    )
+    expect(() => set_slide({ channel: 'gf', visible: true })).toThrow(
+      'No slide channel is named "gf". Channels: 0 (dapi), 1 (gfp), 2 (gfp).',
+    )
+    expect(view.setSlideChannel).toHaveBeenCalledTimes(2)
+  })
+
   it('refuses slide channels without a slide plane', () => {
     for (const view of [baseView(), baseView({ slideChannels: null })]) {
       const { set_slide } = viewportHandlers(hostOf(view))
       expect(() => set_slide({ channel_blend: 'max' })).toThrow(
+        "This page's NiiVue has no slide plane.",
+      )
+      expect(() => set_slide({ channel: 'gfp', visible: true })).toThrow(
         "This page's NiiVue has no slide plane.",
       )
     }

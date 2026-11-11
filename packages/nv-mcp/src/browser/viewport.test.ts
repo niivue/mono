@@ -341,12 +341,12 @@ describe('set_slide', () => {
       visible: true,
     })
     const view = baseView({
-      slideChannels: ['dapi', 'gfp', 'gfp'].map(slideChannel),
+      slideChannels: ['dapi ', 'gfp', 'gfp'].map(slideChannel),
       setSlideChannel: mock(),
     })
     const { set_slide } = viewportHandlers(hostOf(view))
     set_slide({ channel: 2, visible: false })
-    set_slide({ channel: 'dapi', visible: false })
+    set_slide({ channel: ' DAPI', visible: false })
     expect(view.setSlideChannel).toHaveBeenNthCalledWith(1, 2, {
       visible: false,
     })
@@ -357,7 +357,7 @@ describe('set_slide', () => {
       'Slide channels 1, 2 are all named "gfp"; give the index.',
     )
     expect(() => set_slide({ channel: 'gf', visible: true })).toThrow(
-      'No slide channel is named "gf". Channels: 0 (dapi), 1 (gfp), 2 (gfp).',
+      'No slide channel is named "gf". Channels: 0 (dapi ), 1 (gfp), 2 (gfp).',
     )
     expect(view.setSlideChannel).toHaveBeenCalledTimes(2)
   })

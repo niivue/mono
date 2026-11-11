@@ -4,7 +4,9 @@ import type {
   NVChunkedVolume,
 } from '@niivue/niivue'
 import { fetchOmeZarrChunkedSource } from './fetchOmeZarrChunkedSource'
+import { omeroActiveChannels } from './omeZarr'
 import type { FetchOmeZarrChunkedSourceOptions } from './omeZarrChunkedSource'
+import { omeZarrChannelOptions } from './omeZarrLoader'
 
 type Viewer = Pick<
   NiiVue,
@@ -50,7 +52,10 @@ export async function streamOmeZarr(
     source = await opening
     if (nv.isDestroyed) throw new Error('the viewer was destroyed')
     if (replace) await nv.removeAllVolumes()
-    return nv.loadChunkedVolume(source, volumeOptions)
+    return nv.loadChunkedVolume(source, {
+      ...omeroDisplay(source.zarr, options.channel),
+      ...volumeOptions,
+    })
   }
   try {
     if (replace) {
@@ -92,4 +97,17 @@ export async function streamOmeZarr(
   // before these listeners.
   if (nv.isDestroyed || !nv.volumes.some(shown)) release()
   return chunked
+}
+
+// The streamed channel's omero name, colour and window, as a whole-level load
+// shows it; none for a store without omero, so it keeps the chunked defaults.
+function omeroDisplay(
+  zarr: Parameters<typeof omeZarrChannelOptions>[0],
+  channel = omeroActiveChannels(zarr.info.channels, zarr.channelCount)[0],
+): ChunkedVolumeOptions {
+  if (zarr.info.channels.length === 0) return {}
+  // Colormaps are assigned across the active set, as a whole-level load does,
+  // so two channels stated with the same colour still get distinct ramps.
+  const { visible: _visible, ...display } = omeZarrChannelOptions(zarr, channel)
+  return display
 }

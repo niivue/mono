@@ -68,8 +68,6 @@ export interface OmeZarrChannel {
   window: OmeZarrWindow | null
   /** False only when the file explicitly deactivates the channel. */
   active: boolean
-  /** Whether the file states `active` for this channel (unset: not stated). */
-  activeStated?: boolean
 }
 
 /** Everything this package reads from an OME-Zarr group's attributes. */
@@ -202,7 +200,6 @@ function parseChannel(entry: unknown): OmeZarrChannel {
     color: parseOmeroColor(obj.color),
     window,
     active: obj.active !== false,
-    activeStated: typeof obj.active === 'boolean',
   }
 }
 

@@ -326,7 +326,7 @@ export class ZarrSlideSource implements SlideTileSource {
     const window = rgb || multi ? null : displays[0].window
     // Only a store that marks some channel inactive has chosen; one marking
     // none (no flags, or every channel active) gets the capped default.
-    const chosen = info.channels.some((c) => c.activeStated && !c.active)
+    const chosen = info.channels.some((c) => !c.active)
     const visible = chosen ? active : active.slice(0, MAX_DEFAULT_VISIBLE)
     const channelInfo: NVSlideChannelInfo[] | undefined = multi
       ? displays.map(({ window }, c) => {

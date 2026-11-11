@@ -362,7 +362,6 @@ describe('omeZarrVolumesFrom', () => {
     source.info.channels = source.info.channels.map((channel, c) => ({
       ...channel,
       active: flags[c] ?? true,
-      activeStated: flags[c] !== undefined,
     }))
     const volumes = await omeZarrVolumesFrom(source, {
       channels: channels as number[] | 'all' | undefined,
@@ -429,10 +428,7 @@ describe('omeZarrVolumesFrom', () => {
     attrs.omero.channels[0].active = false
     store.set('/.zattrs', jsonBytes(attrs))
     const source = await openOmeZarr(store)
-    expect(source.info.channels.map((c) => c.activeStated)).toEqual([
-      true,
-      false,
-    ])
+    expect(source.info.channels.map((c) => c.active)).toEqual([false, true])
     const volumes = await omeZarrVolumesFrom(source)
     expect(volumes.map((v) => v.name)).toEqual(['membrane'])
   })

@@ -8,9 +8,20 @@ mock.module('./fetchOmeZarrChunkedSource', () => ({
   fetchOmeZarrChunkedSource: async (url: string) => {
     const id = ++opened
     await holds.get(url)
-    return { id, url, dispose: () => disposed.push(id) }
+    return {
+      id,
+      url,
+      zarr: zarrs.get(url) ?? noOmero,
+      dispose: () => disposed.push(id),
+    }
   },
 }))
+const noOmero = {
+  info: { channels: [] },
+  channelCount: 1,
+  levels: [{ dtype: 'uint16' }],
+}
+const zarrs = new Map<string, unknown>()
 const { streamOmeZarr } = await import('./streamOmeZarr')
 
 test('overlapping replacement streams leave only the last volume shown', async () => {
@@ -93,5 +104,62 @@ test('an earlier replacement whose store opens later does not overwrite a newer 
   await Promise.all([a, b])
   expect(volumes.map((v) => v.chunkSource.url)).toEqual([
     'https://example.test/late-b.zarr',
+  ])
+})
+
+test('a streamed channel takes its omero name, colour and window; caller options win', async () => {
+  const window = { start: 5, end: 50, min: 0, max: 65535 }
+  zarrs.set('https://example.test/omero.zarr', {
+    info: {
+      channels: [
+        { label: 'DAPI', color: [0, 0, 255], window, active: false },
+        { label: 'CD19', color: [255, 0, 0], window, active: true },
+      ],
+    },
+    channelCount: 2,
+    levels: [{ dtype: 'uint16' }],
+  })
+  // Two active channels stated red get distinct ramps, as in a whole-level load.
+  zarrs.set('https://example.test/twored.zarr', {
+    info: {
+      channels: [
+        { label: 'A', color: [255, 0, 0], window, active: true },
+        { label: 'B', color: [255, 0, 0], window, active: true },
+      ],
+    },
+    channelCount: 2,
+    levels: [{ dtype: 'uint16' }],
+  })
+  const loaded: unknown[] = []
+  const nv = {
+    isDestroyed: false,
+    volumes: [] as unknown[],
+    addEventListener() {},
+    removeEventListener() {},
+    async removeAllVolumes() {},
+    async loadChunkedVolume(source: unknown, options: unknown) {
+      loaded.push(options)
+      const volume = { chunkSource: source }
+      nv.volumes.push(volume)
+      return { volume, dispose() {} }
+    },
+  }
+  const viewer = nv as unknown as Parameters<typeof streamOmeZarr>[0]
+  await streamOmeZarr(viewer, 'https://example.test/omero.zarr')
+  await streamOmeZarr(
+    viewer,
+    'https://example.test/omero.zarr',
+    {},
+    { colormap: 'gray' },
+  )
+  await streamOmeZarr(viewer, 'https://example.test/plain.zarr')
+  await streamOmeZarr(viewer, 'https://example.test/twored.zarr', {
+    channel: 1,
+  })
+  expect(loaded).toEqual([
+    { name: 'CD19', colormap: 'red', calMin: 5, calMax: 50 },
+    { name: 'CD19', colormap: 'gray', calMin: 5, calMax: 50 },
+    {},
+    { name: 'B', colormap: 'violet', calMin: 5, calMax: 50 },
   ])
 })

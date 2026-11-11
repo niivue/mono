@@ -33,15 +33,15 @@ const SAVES = ['document', 'volume', 'mesh', 'bitmap', 'drawing'] as const
 const SLIDE_DRAWING = ['create', 'clear', 'undo', 'end'] as const
 const CHANNEL_BLENDS = ['max', 'additive'] as const
 
-/** The index of the one slide channel named `name`, case ignored as `pickIndex` does. */
+/** The index of the one slide channel named `name`, case and edge spaces ignored as `pickIndex` does. */
 function channelByName(
   channels: readonly Readonly<SlideChannel>[] | null | undefined,
   name: string,
 ): number {
   if (!channels) throw new Error("This page's NiiVue has no slide plane.")
-  const wanted = name.toLowerCase()
+  const wanted = name.trim().toLowerCase()
   const hits = channels.flatMap((c, i) =>
-    c.name.toLowerCase() === wanted ? [i] : [],
+    c.name.trim().toLowerCase() === wanted ? [i] : [],
   )
   if (hits.length === 1) return hits[0]
   if (hits.length > 1)

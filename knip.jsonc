@@ -7,7 +7,9 @@
         ".github/scripts/*.ts",
         "nx-tools/*.{js,ts}",
         "apps/medgfx/scripts/*.ts"
-      ]
+      ],
+      // .github/build-pages.sh --serve runs it; Knip does not read shell scripts.
+      "ignoreDependencies": ["http-server"]
     },
     "apps/demo-ext-tile": {
       "entry": ["scripts/*.ts"]

@@ -1326,11 +1326,75 @@ describe('screenshot', () => {
       width: 640,
       height: 480,
       canvas: { width: 640, height: 480 },
+      region: { width: 640, height: 480 },
+      origin: [0, 0],
     })
     expect(calls).toEqual(['draw', 'toDataURL:image/png'])
     await expect(coreHandlers(host(fakeView())).screenshot({})).rejects.toThrow(
       'no canvas',
     )
+  })
+
+  it("takes NiiVue's own capture where it has one, not a bare render", async () => {
+    const calls: string[] = []
+    const image = { width: 200, height: 100 } as ImageData
+    const global = globalThis as { document?: unknown }
+    const before = global.document
+    global.document = {
+      visibilityState: 'visible',
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          putImageData: (put: ImageData) => calls.push(`put:${put.width}`),
+          drawImage: () => calls.push('scale'),
+        }),
+        toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+      }),
+    }
+    try {
+      const canvas = { width: 640, height: 480 } as HTMLCanvasElement
+      // A 320 x 240 crop scaled to 80 wide: only region gives the scale back.
+      const crop = { width: 320, height: 240 } as ImageData
+      const captures = [image, crop, null]
+      const view = fakeView({
+        canvas,
+        drawScene: mock(() => calls.push('draw')),
+        // The instance draws into the canvas's right half: the picture's
+        // top-left is canvas pixel 440, which map_point needs.
+        view: {
+          render: () => calls.push('render'),
+          boundsOffsetX: 440,
+          boundsOffsetY: 0,
+        },
+        getCanvasImage: () => captures.shift() ?? null,
+      })
+      expect(await coreHandlers(host(view)).screenshot({})).toEqual({
+        data: 'iVBORw0KGgo=',
+        mimeType: 'image/png',
+        width: 200,
+        height: 100,
+        canvas: { width: 640, height: 480 },
+        region: { width: 200, height: 100 },
+        origin: [440, 0],
+      })
+      expect(calls).toEqual(['put:200'])
+      expect(
+        await coreHandlers(host(view)).screenshot({ max_width: 80 }),
+      ).toMatchObject({
+        width: 80,
+        height: 60,
+        region: { width: 320, height: 240 },
+        origin: [440, 0],
+      })
+      expect(calls).toEqual(['put:200', 'put:320', 'scale'])
+      await expect(coreHandlers(host(view)).screenshot({})).rejects.toThrow(
+        'could not draw a frame',
+      )
+    } finally {
+      if (before === undefined) delete global.document
+      else global.document = before
+    }
   })
 
   it('refuses a stale picture when the backend draws nothing or is not there yet', async () => {

@@ -12,7 +12,7 @@ import { DicomWsiSource } from './dicomWsiSource'
 
 const LONG = new Set('OB OD OF OL OV OW SQ SV UC UN UR UT UV'.split(' '))
 const UNDEF = 0xffffffff
-const cat = (...parts: Uint8Array[]): Uint8Array => {
+const cat = (...parts: Uint8Array[]): Uint8Array<ArrayBuffer> => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
   let o = 0
   for (const p of parts) {

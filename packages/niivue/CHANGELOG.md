@@ -1,3 +1,17 @@
+## 1.0.0-rc.155 (2026-11-11)
+
+### Fixes
+
+- **niivue:** scale oversize slide tiles, refresh skipped gutters, inset plane UVs by texture ([2449692e](https://github.com/niivue/mono/commit/2449692e))
+- **niivue:** keep slide tile gutter copies in bounds and under the texture limit ([5c00d35e](https://github.com/niivue/mono/commit/5c00d35e))
+- **niivue:** 1-texel tile gutter to remove slide seams under linear filtering ([f9b9df21](https://github.com/niivue/mono/commit/f9b9df21))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.154 (2026-11-10)
 
 ### Fixes

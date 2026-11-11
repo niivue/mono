@@ -12,6 +12,8 @@
 // neighbours that now read from it (at most 16), so borders converge as tiles
 // stream and a frame without uploads does no gutter work.
 
+import { log } from '@/logger'
+
 /** Interior size of a tile texture (the bitmap size). */
 export interface GutterTile {
   width: number
@@ -55,20 +57,30 @@ const NEIGHBOURS = [
   [1, 1],
 ] as const
 
+// Bitmaps that could not be scaled: retrying every frame would fail again.
+const unscalable = new WeakSet<ImageBitmap>()
+
 /**
  * `bitmap`, scaled down per axis when its padded texture would exceed
  * `maxTexture` (the renderers stretch the interior over the tile's quad).
+ * Null when it needs scaling and there is no 2D context: the renderers then
+ * draw the tile's placeholder, never a blank tile, and the frame goes on.
  */
 export function fitGutterSource(
   bitmap: ImageBitmap,
   maxTexture: number,
-): ImageBitmap | OffscreenCanvas {
+): ImageBitmap | OffscreenCanvas | null {
   const width = Math.min(bitmap.width, maxTexture - 2)
   const height = Math.min(bitmap.height, maxTexture - 2)
   if (width === bitmap.width && height === bitmap.height) return bitmap
+  if (unscalable.has(bitmap)) return null
   const canvas = new OffscreenCanvas(width, height)
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('No 2D context to scale an oversize slide tile')
+  if (!ctx) {
+    unscalable.add(bitmap)
+    log.warn('No 2D context to scale an oversize slide tile')
+    return null
+  }
   ctx.drawImage(bitmap, 0, 0, width, height)
   return canvas
 }

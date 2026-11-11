@@ -185,8 +185,9 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     if (existing?.group)
       return existing as TileTextureGPU & { group: GPUBindGroup }
     if (!this._textureBGL) return null
-    const entry: TileTextureGPU & { group?: GPUBindGroup } =
+    const entry: (TileTextureGPU & { group?: GPUBindGroup }) | null =
       this._gutter.upload(device, bitmap, { ...tile, slide }, this._textures)
+    if (!entry) return null
     const group = device.createBindGroup({
       layout: this._textureBGL,
       entries: [{ binding: 0, resource: entry.texture.createView() }],

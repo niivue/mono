@@ -41,8 +41,8 @@
       "entry": ["src/lib.ts!", "src/**/*.test.{ts,tsx}"]
     },
     "packages/niivue": {
-      // Public entries are listed: Knip mis-joins the lib config's absolute entry paths, and
-      // vite.config.e2e.ts reaches the index files only through spec text. Tests and tools stay reachable.
+      // Public entries are kept explicit so a Knip plugin change cannot silently drop them (Knip
+      // currently also finds src/index*.ts and hints they are redundant). Tests and tools stay reachable.
       "entry": [
         "src/index.ts!",
         "src/index.webgpu.ts!",

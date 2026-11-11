@@ -1,3 +1,19 @@
+## 1.0.0-rc.163 (2026-11-11)
+
+### Fixes
+
+- **nv-mcp:** ignore edge spaces when set_slide matches a channel name ([c0a1dfbd](https://github.com/niivue/mono/commit/c0a1dfbd))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.169
+- Updated uikit to 1.0.0-rc.167
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.162 (2026-11-11)
 
 ### Features

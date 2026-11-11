@@ -1,3 +1,17 @@
+## 1.0.0-rc.167 (2026-11-11)
+
+### Fixes
+
+- **uikit:** snap minimap thumbnail tiles to whole pixels ([50c9669d](https://github.com/niivue/mono/commit/50c9669d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.169
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.166 (2026-11-11)
 
 ### Updated Dependencies

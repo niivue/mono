@@ -14,14 +14,17 @@
 import { createFrameDecoder } from '@niivue/dcm2niix'
 import {
   buildDrawingLut,
+  DRAG_MODE,
   DziSource,
   drawingBitmapToRGBA,
   lookupColorMap,
   NVSlide,
+  NVSlideController,
   SlideDrawing,
   SlideRenderer,
   SlideRendererGPU,
   SlideVectorLayer,
+  slideOverlayContent,
 } from '../src/index.ts'
 import { backendFromUrl, isAntiAlias, watchRetina } from './displayControls.js'
 import { urlParamSelect } from './urlParamSelect.js'
@@ -158,7 +161,6 @@ let view = null
 let slide = null
 let animationFrame = 0
 let hasFit = false
-let drag = null
 // Slide-space drawing: a SlideDrawing raster (painted with the shared pen tools,
 // in slide pixels) shown via a stacked Canvas2D overlay mapped through NVSlide's
 // screen<->slide transform, so the annotation stays registered under pan/zoom.
@@ -299,6 +301,7 @@ async function createView() {
 function drawView(screen) {
   if (!view || !slide) return
   const slides = [slide]
+  view.renderer.overlay = slideOverlayContent(slide, screen, gestures)
   if (view.kind === 'gpu') {
     view.renderer.render(slides, screen)
   } else {
@@ -663,12 +666,11 @@ function zoomCentered(factor) {
 }
 
 els.canvas.addEventListener('pointerdown', (event) => {
-  // NB: do NOT setPointerCapture here. Capturing on every press makes the next
-  // click elsewhere (e.g. a header link) get swallowed clearing the capture
-  // ("link needs several clicks"). Capture is taken on the first move instead
-  // (a real drag) and released on pointerup.
-  // Draw mode paints the slide instead of panning.
-  if (drawMode && drawing) {
+  // Draw strokes take no pointer capture: a captured click can swallow the next
+  // click elsewhere (a header link needing two). Pan and zoom go through
+  // `gestures`, which captures only once a press becomes a drag.
+  // Draw mode paints the slide with the left button (gestures leave it free).
+  if (event.button === 0 && drawMode && drawing) {
     // Vector tool draws a freehand polygon in slide coords (not the raster).
     if (drawTool === 'vector') {
       const sp = eventToSlide(event)
@@ -710,11 +712,6 @@ els.canvas.addEventListener('pointerdown', (event) => {
     }
     return
   }
-  drag = {
-    pointerId: event.pointerId,
-    lastX: event.clientX,
-    lastY: event.clientY,
-  }
 })
 
 els.canvas.addEventListener('pointermove', (event) => {
@@ -752,17 +749,10 @@ els.canvas.addEventListener('pointermove', (event) => {
     }
     return
   }
-  if (!drag || drag.pointerId !== event.pointerId || !slide) return
-  const dx = event.clientX - drag.lastX
-  const dy = event.clientY - drag.lastY
-  drag.lastX = event.clientX
-  drag.lastY = event.clientY
-  slide.panByScreenDelta(dx, dy, screenForCanvas())
 })
 
-// On window (not the canvas) so a release outside the canvas still ends the
-// drag/stroke — we no longer setPointerCapture (capture swallows the next click
-// on header links). Pan/draw track via canvas pointermove while over the slide.
+// On window (not the canvas) so a release outside the canvas still ends a
+// stroke, which takes no pointer capture.
 window.addEventListener('pointerup', (event) => {
   if (drawStroke?.pointerId === event.pointerId) {
     // Filled pen: close the recorded outline and fill its interior on release.
@@ -780,7 +770,6 @@ window.addEventListener('pointerup', (event) => {
     drawStroke = null
     lastRasterPt = null
   }
-  if (drag?.pointerId === event.pointerId) drag = null
 })
 
 window.addEventListener('pointercancel', (event) => {
@@ -788,11 +777,11 @@ window.addEventListener('pointercancel', (event) => {
     drawStroke = null
     lastRasterPt = null
   }
-  if (drag?.pointerId === event.pointerId) drag = null
 })
 
 els.drawBtn.addEventListener('click', () => {
   drawMode = !drawMode
+  gestures.primaryDragMode = drawMode ? DRAG_MODE.none : DRAG_MODE.pan
   els.drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
   els.canvas.style.cursor = drawMode ? 'crosshair' : 'grab'
 })
@@ -834,21 +823,15 @@ els.exportSvg.addEventListener('click', () => {
   URL.revokeObjectURL(url)
 })
 
-els.canvas.addEventListener(
-  'wheel',
-  (event) => {
-    event.preventDefault()
-    if (!slide) return
-    const rect = els.canvas.getBoundingClientRect()
-    slide.zoomBy(
-      Math.exp(-event.deltaY * 0.0013),
-      event.clientX - rect.left,
-      event.clientY - rect.top,
-      screenForCanvas(),
-    )
-  },
-  { passive: false },
-)
+// Left drag pans (painted instead in draw mode), middle drag pans, right drag
+// zooms to a box, the wheel zooms about the pointer.
+const gestures = new NVSlideController(els.canvas, {
+  slide: () => slide,
+  screen: screenForCanvas,
+  primaryDragMode: DRAG_MODE.pan,
+  secondaryDragMode: DRAG_MODE.roiSelection,
+  onChange: requestRender,
+})
 
 els.levelMode.addEventListener('change', () => {
   slide?.setLevelChoice(

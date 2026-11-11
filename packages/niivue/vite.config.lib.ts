@@ -6,11 +6,11 @@ import { defineConfig, normalizePath } from 'vite'
 import dts from 'vite-plugin-dts'
 
 /**
- * Rollup plugin that inlines image assets as base64 data URIs in lib mode.
+ * Plugin that inlines image assets as base64 data URIs in lib mode.
  *
  * We cannot emit separate asset files and reference them via
  * `new URL('./foo.png', import.meta.url)` because Vite's `optimizeDeps`
- * (esbuild) moves the bundled JS into `.vite/deps/` without copying the
+ * moves the bundled JS into `.vite/deps/` without copying the
  * referenced assets, breaking runtime asset resolution for downstream
  * consumers. See: https://github.com/niivue/mono/issues/10
  *
@@ -39,7 +39,7 @@ export function inlineImageAssets(): Plugin {
 }
 
 /**
- * Rollup names a shared chunk after one of its modules, which labels the core
+ * Rolldown names a shared chunk after one of its modules, which labels the core
  * chunk (the controller and what every entry needs) after an incidental
  * helper. Name it for what it is. Shared with vite.config.standalone.ts.
  */
@@ -132,7 +132,7 @@ export default defineConfig({
       },
       formats: ['es'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       // Only the scene entry imports '@/index': it loads NiiVue from niivue.js,
       // sharing the consumer's copy and leaving the other entries' chunks as is.
       external: ['cbor-x', 'gl-matrix', 'nifti-reader-js', '@/index'],

@@ -44,16 +44,16 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  // One input per examples/*.html, so this is a code-splitting build. Vite's
-  // default worker.format of 'iife' is rejected outright by Rollup in that
-  // mode, and any worker reached from an example fails the whole build.
+  // One input per examples/*.html, so this is a code-splitting build. Rollup
+  // (Vite 7) rejected the default worker.format 'iife' there; Rolldown accepts
+  // it, and 'es' keeps the workers module workers as in dev.
   worker: {
     format: 'es',
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
+    rolldownOptions: {
       input,
     },
   },

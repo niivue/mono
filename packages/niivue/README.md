@@ -68,7 +68,7 @@ in production is one well-predicted branch per call site. See
 ### Development Workflows
 
 - **`bun run dev`** — Serves the `examples/` pages from source with hot reloading at `localhost:5273`. The pages `import '../src/index.ts'` directly, so dev and the deployed build run the same files. On-demand sample data (DICOM-WSI) is downloaded into `public/` if missing.
-- **`bun run demo`** — Builds the examples site to `dist/` and serves it with `http-server`. Use this to test the actual built output or before deploying to GitHub Pages.
+- **`bun run demo`** — Builds the examples site to `dist/` and serves it with `vite preview`. Use this to test the actual built output or before deploying to GitHub Pages.
 
 ## Usage
 

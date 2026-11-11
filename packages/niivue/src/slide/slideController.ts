@@ -16,7 +16,11 @@ export interface NVSlideControllerOptions {
   slide: () => NVSlide | null
   /** The pane's size in CSS pixels. */
   screen: () => NVSlideScreen
-  /** Left button. Default `crosshairPan`: click to locate, drag to pan. */
+  /**
+   * Left button. Default `crosshairPan`: click to locate, drag to pan.
+   * `roiSelection` drags a box and zooms the view to fit it on release, no
+   * finer than native resolution.
+   */
   primaryDragMode?: DRAG_MODE
   /** Right button. Default `pan`. */
   secondaryDragMode?: DRAG_MODE
@@ -37,6 +41,10 @@ export interface NVSlideControllerOptions {
   onChange?: () => void
 }
 
+/** Modes that drag the `selection` box. */
+const isBoxMode = (mode: DRAG_MODE): boolean =>
+  mode === DRAG_MODE.contrast || mode === DRAG_MODE.roiSelection
+
 type Gesture = {
   pointerId: number
   mode: DRAG_MODE
@@ -50,9 +58,9 @@ type Gesture = {
 /**
  * Pointer and wheel gestures for an NVSlide on its own canvas, with a primary
  * (left) and secondary (right) drag mode as NiiVue has: `pan`, `crosshair`,
- * `crosshairPan`, `windowing`, `contrast` (a box), `measurement` or `none`.
- * The wheel always zooms about the pointer. `slideOverlayContent` draws the
- * rulers and the contrast box.
+ * `crosshairPan`, `windowing`, `contrast` (a box), `roiSelection` (zoom to a
+ * box), `measurement` or `none`. The middle button pans and the wheel zooms
+ * about the pointer. `slideOverlayContent` draws the rulers and the boxes.
  */
 export class NVSlideController {
   primaryDragMode: DRAG_MODE
@@ -61,7 +69,7 @@ export class NVSlideController {
   readonly measurements: NVSlideMeasurement[] = []
   /** The ruler being dragged, or null. */
   activeMeasurement: NVSlideMeasurement | null = null
-  /** The box a contrast drag is selecting, or null. */
+  /** The box a contrast or zoom (`roiSelection`) drag is selecting, or null. */
   selection: NVSlideMeasurement | null = null
 
   private readonly _canvas: HTMLCanvasElement
@@ -77,10 +85,12 @@ export class NVSlideController {
     canvas.addEventListener('pointermove', this._onMove)
     canvas.addEventListener('pointerup', this._onEnd)
     canvas.addEventListener('pointercancel', this._onEnd)
+    canvas.addEventListener('pointerleave', this._onLeave)
     // Capture taken elsewhere ends the gesture, or later presses are ignored.
     canvas.addEventListener('lostpointercapture', this._onEnd)
     canvas.addEventListener('wheel', this._onWheel, { passive: false })
     canvas.addEventListener('contextmenu', this._onContextMenu)
+    canvas.addEventListener('mousedown', this._onMouseDown)
   }
 
   /** Drop every ruler. */
@@ -97,13 +107,17 @@ export class NVSlideController {
     c.removeEventListener('pointermove', this._onMove)
     c.removeEventListener('pointerup', this._onEnd)
     c.removeEventListener('pointercancel', this._onEnd)
+    c.removeEventListener('pointerleave', this._onLeave)
     c.removeEventListener('lostpointercapture', this._onEnd)
     c.removeEventListener('wheel', this._onWheel)
     c.removeEventListener('contextmenu', this._onContextMenu)
+    c.removeEventListener('mousedown', this._onMouseDown)
   }
 
+  // The middle button always pans, as in OHIF and most slide viewers.
   private _modeFor(button: number): DRAG_MODE {
     if (button === 0) return this.primaryDragMode
+    if (button === 1) return DRAG_MODE.pan
     return button === 2 ? this.secondaryDragMode : DRAG_MODE.none
   }
 
@@ -123,6 +137,16 @@ export class NVSlideController {
   }
 
   private _onDown = (event: PointerEvent): void => {
+    // A press while a gesture is live but uncaptured (or from the same pointer)
+    // means its release fell outside the canvas before capture: drop it. A pen
+    // can return with a new pointerId, so the id alone is not enough.
+    const live = this._gesture
+    if (
+      live &&
+      (live.pointerId === event.pointerId ||
+        !this._canvas.hasPointerCapture(live.pointerId))
+    )
+      this._end(live, false)
     // One gesture at a time: a second finger or pen is ignored.
     if (this._gesture) return
     const mode = this._modeFor(event.button)
@@ -138,24 +162,30 @@ export class NVSlideController {
       lastY: y,
       isDrag: false,
     }
-    this._canvas.setPointerCapture(event.pointerId)
     if (mode === DRAG_MODE.crosshair) this._crosshairAt(x, y)
     const start = slide.screenToSlide(x, y, this._options.screen())
     if (mode === DRAG_MODE.measurement)
       this.activeMeasurement = { start, end: { ...start } }
-    if (mode === DRAG_MODE.contrast)
-      this.selection = { start, end: { ...start } }
+    if (isBoxMode(mode)) this.selection = { start, end: { ...start } }
   }
 
   private _onMove = (event: PointerEvent): void => {
     const g = this._gesture
     if (!g || g.pointerId !== event.pointerId) return
+    // Released outside the canvas before capture: the pointerup never came.
+    if (event.buttons === 0) {
+      this._end(g, false)
+      return
+    }
     const [x, y] = this._local(event)
     if (
       !g.isDrag &&
       Math.hypot(x - g.startX, y - g.startY) < crosshairPanThresholdCssPx
     )
       return
+    // Capture only once it is a drag: a captured click can swallow the next
+    // click elsewhere on the page (a header link needing two clicks).
+    if (!g.isDrag) this._canvas.setPointerCapture(g.pointerId)
     g.isDrag = true
     const dx = x - g.lastX
     const dy = y - g.lastY
@@ -174,6 +204,7 @@ export class NVSlideController {
         this._options.onWindow?.(dx, dy, false)
         break
       case DRAG_MODE.contrast:
+      case DRAG_MODE.roiSelection:
       case DRAG_MODE.measurement: {
         const box = this._boxFor(g.mode)
         const end = this._slidePoint(x, y)
@@ -192,9 +223,21 @@ export class NVSlideController {
     this._end(g, event.type === 'pointerup')
   }
 
-  /** The box a contrast or measurement drag is shaping. */
+  // Leaving before capture: the release may land outside the canvas, and a
+  // gesture left live would resume as a drag when a held button comes back.
+  private _onLeave = (event: PointerEvent): void => {
+    const g = this._gesture
+    if (
+      g &&
+      g.pointerId === event.pointerId &&
+      !this._canvas.hasPointerCapture(g.pointerId)
+    )
+      this._end(g, false)
+  }
+
+  /** The box a contrast, zoom or measurement drag is shaping. */
   private _boxFor(mode: DRAG_MODE): NVSlideMeasurement | null {
-    if (mode === DRAG_MODE.contrast) return this.selection
+    if (isBoxMode(mode)) return this.selection
     return mode === DRAG_MODE.measurement ? this.activeMeasurement : null
   }
 
@@ -212,9 +255,42 @@ export class NVSlideController {
     this.activeMeasurement = null
     if (committed && g.isDrag) {
       if (g.mode === DRAG_MODE.contrast) this._options.onContrast?.(box)
-      else this.measurements.push(box)
+      else if (g.mode === DRAG_MODE.roiSelection) {
+        // A box dragged back to a point would zoom to native resolution.
+        if (
+          Math.abs(g.lastX - g.startX) >= crosshairPanThresholdCssPx ||
+          Math.abs(g.lastY - g.startY) >= crosshairPanThresholdCssPx
+        )
+          this._zoomTo(box)
+      } else this.measurements.push(box)
     }
     this._options.onChange?.()
+  }
+
+  /**
+   * Centre on a slide-pixel box and zoom in to fit it, no finer than one base
+   * pixel per device pixel (OHIF's zoom box). It never zooms out; the wheel can
+   * zoom past native resolution.
+   */
+  private _zoomTo({ start, end }: NVSlideMeasurement): void {
+    const slide = this._options.slide()
+    if (!slide) return
+    const screen = this._options.screen()
+    const w = Math.abs(end.x - start.x)
+    const h = Math.abs(end.y - start.y)
+    slide.setViewport({
+      centerX: (start.x + end.x) / 2,
+      centerY: (start.y + end.y) / 2,
+      scale: Math.max(
+        slide.viewport.scale,
+        Math.min(
+          screen.widthCss / w,
+          screen.heightCss / h,
+          1 / (screen.devicePixelRatio ?? 1),
+        ),
+      ),
+    })
+    slide.clampViewport(screen)
   }
 
   private _onWheel = (event: WheelEvent): void => {
@@ -231,6 +307,11 @@ export class NVSlideController {
           ? event.deltaY * screen.heightCss
           : event.deltaY
     slide.zoomBy(Math.exp(-px * 0.0013), x, y, screen)
+  }
+
+  // The middle button pans; browser auto-scroll (Windows, Linux) would fight it.
+  private _onMouseDown = (event: MouseEvent): void => {
+    if (event.button === 1) event.preventDefault()
   }
 
   // The secondary button drags; the browser menu would interrupt it.

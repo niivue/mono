@@ -1990,6 +1990,8 @@ Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (defa
 
 Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render/none — `none` skips the spatial pass so a signal graph fills the canvas, see "signal mode" above), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
 
+**NVSlide panes** use `NVSlideController` (`src/slide/slideController.ts`) with the same primary/secondary modes (`pan`, `crosshair`, `crosshairPan`, `windowing`, `contrast`, `measurement`, `roiSelection`, `none`). There `roiSelection` is a zoom box, fit on release and capped at native resolution (one base pixel per device pixel); the middle button always pans and the wheel zooms about the pointer.
+
 **Overlay rendering:** Selection boxes use GlyphBatch panels (`_dragOverlay.rect`). Measurement/angle lines use line renderer (`_dragOverlay.lines`). Overlay state lives on `model._dragOverlay` (transient, not serialized).
 
 **Drawing priority:** When `draw.isEnabled && drawingVolume`, drawing intercepts left-button before drag mode dispatch.

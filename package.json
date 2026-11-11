@@ -18,7 +18,8 @@
     "graph:query": "bun nx-tools/repo-graph.ts query",
     "typecheck": "nx run-many -t typecheck",
     "test": "nx run-many -t test",
-    "check-boundaries": "node nx-tools/check-boundaries.js"
+    "check-boundaries": "node nx-tools/check-boundaries.js",
+    "knip": "knip"
   },
   "workspaces": [
     "apps/*",

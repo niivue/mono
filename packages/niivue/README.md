@@ -35,7 +35,7 @@ The normal audit includes tests, examples (including their worker), and standalo
 scripts. The production configuration checks library sources without treating
 examples or test consumers as usage; it retains Vite support for `import.meta.glob`.
 Both protect exports from all published package entry points. These targets scope
-reporting to `packages/niivue`; they are not a complete audit of the monorepo.
+reporting to `packages/niivue`; `bun run knip` at the root audits the whole monorepo.
 
 This is a manual review tool, not a CI gate. It exits with status 1 while findings
 remain, including deliberately deferred exports. An unused export is a candidate,

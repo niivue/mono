@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import type { NVSlideTileManifest } from '@niivue/niivue'
+import { MAX_SLIDE_GRID, type NVSlideTileManifest } from '@niivue/niivue'
 import {
   indexDicomWsi,
+  MAX_SLIDE_TILES,
   type SlideIndex,
   type SlideIndexLevel,
   type SlideIndexSlide,
@@ -240,4 +241,8 @@ describe('DicomWsiSource', () => {
       /changed since/,
     )
   })
+})
+
+test('the slide tile cap follows the grid NVSlide accepts', () => {
+  expect(MAX_SLIDE_TILES).toBe(2 * MAX_SLIDE_GRID)
 })

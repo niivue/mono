@@ -829,11 +829,14 @@ function grayLevel(
 }
 
 // One plane per IFD id, each a 2-level SubIFD pyramid (40x32, 20x16).
-const grayPlanes = (ids: number[], dtype = {}) =>
-  ids.map((id) => [
-    grayLevel(id, 0, 40, 32, dtype),
-    grayLevel(id, 1, 20, 16, dtype),
-  ])
+const grayPlanes = (
+  ids: number[],
+  dtype: object | ((id: number) => object) = {},
+) =>
+  ids.map((id) => {
+    const d = typeof dtype === 'function' ? dtype(id) : dtype
+    return [grayLevel(id, 0, 40, 32, d), grayLevel(id, 1, 20, 16, d)]
+  })
 
 const omeXml = (pixels: string, inner = '') =>
   `<?xml version="1.0"?><OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06" UUID="urn:uuid:self"><Image ID="Image:0"><Pixels ID="Pixels:0" ${pixels}>${inner}</Pixels></Image></OME>`
@@ -850,7 +853,7 @@ async function openOme(
     z?: number
     t?: number
     inner?: string
-    dtype?: object
+    dtype?: object | ((id: number) => object)
     singleQuotes?: boolean
   } = {},
 ) {
@@ -958,6 +961,15 @@ describe('multi-channel OME-TIFF', () => {
       'MONOCHROME1',
       'MONOCHROME1',
     ])
+  })
+
+  test('rejects channels with different PhotometricInterpretation', async () => {
+    // XYCZT: plane 1 is channel 1; one manifest photometric would invert it.
+    await expect(
+      openOme('XYCZT', [0, 1, 2, 3], {
+        dtype: (id: number) => ({ photometric: id === 1 ? 0 : 1 }),
+      }),
+    ).rejects.toThrow("channel 1's PhotometricInterpretation differs")
   })
 
   test('reads single-quoted OME-XML attributes', async () => {

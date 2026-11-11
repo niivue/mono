@@ -394,6 +394,14 @@ async function openTiff(
       )
   const img0 = base[0]?.img
   if (!img0) throw new Error('TIFF has no tiled pyramid levels')
+  // The level manifest has one photometric for every channel plane.
+  const photometric = (i: TiffLevel['img']) =>
+    i.fileDirectory.getValue('PhotometricInterpretation')
+  for (const [c, levels] of planes.entries())
+    if (levels.some(({ img }) => photometric(img) !== photometric(img0)))
+      throw new Error(
+        `OME-TIFF: channel ${c}'s PhotometricInterpretation differs from channel 0's`,
+      )
   const bits = img0.getBitsPerSample(0)
   const raw = img0.getSampleFormat(0) === 1 && (bits === 8 || bits === 16)
   const bitsStored = raw && bits === 8 ? 8 : 16

@@ -56,14 +56,19 @@ const NEIGHBOURS = [
 ] as const
 
 /**
- * [offset, length] of the part of a `size`-texel bitmap axis uploaded so the
- * padded texture fits `maxTexture`: the centre, cropped by the excess.
- * shortcut: crops rather than downscales, fine for the 1-2 texel overshoot of
- * a limit-sized tile; downscale if larger-than-limit tiles must render whole.
+ * `bitmap`, scaled down per axis when its padded texture would exceed
+ * `maxTexture` (the renderers stretch the interior over the tile's quad).
  */
-export function gutterFit(size: number, maxTexture: number): [number, number] {
-  const length = Math.min(size, maxTexture - 2)
-  return [(size - length) >> 1, length]
+export function fitGutterSource(
+  bitmap: ImageBitmap,
+  maxTexture: number,
+): ImageBitmap | OffscreenCanvas {
+  const width = Math.min(bitmap.width, maxTexture - 2)
+  const height = Math.min(bitmap.height, maxTexture - 2)
+  if (width === bitmap.width && height === bitmap.height) return bitmap
+  const canvas = new OffscreenCanvas(width, height)
+  canvas.getContext('2d')?.drawImage(bitmap, 0, 0, width, height)
+  return canvas
 }
 
 /** GPU bytes of a w x h tile texture with its gutter. */
@@ -88,7 +93,7 @@ function gutterAxis(
  * resident source: for an edge the neighbour, for a corner the diagonal, then
  * the edge neighbour beside it (clamped along the other axis, as at the slide
  * edge), else the tile's own edge. With `only`, copies only when that is the
- * source. A neighbour whose shared edge differs in length (a decoded tile
+ * source or was skipped for the source used. A neighbour whose shared edge differs in length (a decoded tile
  * smaller than its grid cell) is skipped, so no copy reads past its edge.
  */
 function fillSlot<T extends GutterTile>(
@@ -103,17 +108,20 @@ function fillSlot<T extends GutterTile>(
   only?: T,
 ): void {
   const sources = dx && dy ? [dx, dy, dx, 0, 0, dy, 0, 0] : [dx, dy, 0, 0]
+  // Sources after `only` (even one skipped for its size) now feed the slot.
+  let pending = only
   for (let i = 0; i < sources.length; i += 2) {
     const sx = sources[i] as number
     const sy = sources[i + 1] as number
     const src = sx || sy ? neighbour(`L${level}/${col + sx}/${row + sy}`) : tile
+    if (!src) continue
+    if (src === pending) pending = undefined
     if (
-      !src ||
       (sx && !sy && src.height !== tile.height) ||
       (sy && !sx && src.width !== tile.width)
     )
       continue
-    if (only && src !== only) return
+    if (pending) return
     const [x, srcX, width] = gutterAxis(
       dx,
       tile.width,

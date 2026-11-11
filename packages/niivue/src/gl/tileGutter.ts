@@ -1,7 +1,7 @@
 import {
+  fitGutterSource,
   type GutterAt,
   type GutterCopy,
-  gutterFit,
   gutterTextureBytes,
   syncGutters,
 } from '@/slide/tileGutter'
@@ -34,17 +34,17 @@ export class TileGutterGL {
     at: GutterAt,
     cache: TileTextureCache<TileTextureGL>,
   ): TileTextureGL {
-    const max = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
-    const [left, width] = gutterFit(bitmap.width, max)
-    const [top, height] = gutterFit(bitmap.height, max)
+    const source = fitGutterSource(
+      bitmap,
+      gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
+    )
+    const { width, height } = source
     const { slide, level, col, row } = at
     const tile = { texture: gl.createTexture(), width, height, slide }
     gl.bindTexture(gl.TEXTURE_2D, tile.texture)
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width + 2, height + 2)
     setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, left)
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, top)
     gl.texSubImage2D(
       gl.TEXTURE_2D,
       0,
@@ -54,10 +54,8 @@ export class TileGutterGL {
       height,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      bitmap,
+      source,
     )
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0)
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0)
     cache.set(at.key, tile, gutterTextureBytes(width, height), bitmap)
     const neighbour = (key: string): TileTextureGL | undefined => {
       const n = cache.peek(key)

@@ -55,6 +55,8 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 interface PlaneVertexEntry {
   tile: SlidePlaneTile
   firstVertex: number
+  /** Interior size the quad's UVs were inset for. */
+  uv: { width: number; height: number }
 }
 
 export class SlidePlaneRendererGPU extends NVRenderer {
@@ -162,7 +164,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     tiles.forEach((tile, i) => {
       data.set(cornerQuad(tile.corners, tile), o)
       o += 20
-      this._entries.push({ tile, firstVertex: i * 4 })
+      this._entries.push({ tile, firstVertex: i * 4, uv: tile })
     })
     if (this._vertexBuffer) this._vertexBuffer.destroy()
     this._vertexBuffer = device.createBuffer({
@@ -178,17 +180,18 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     slide: NVSlide,
     tile: SlidePlaneTile,
     bitmap: ImageBitmap,
-  ): GPUBindGroup | null {
+  ): (TileTextureGPU & { group: GPUBindGroup }) | null {
     const existing = this._textures.get(tile.key, bitmap)
-    if (existing?.group) return existing.group
+    if (existing?.group)
+      return existing as TileTextureGPU & { group: GPUBindGroup }
     if (!this._textureBGL) return null
     const entry: TileTextureGPU & { group?: GPUBindGroup } =
       this._gutter.upload(device, bitmap, { ...tile, slide }, this._textures)
-    entry.group = device.createBindGroup({
+    const group = device.createBindGroup({
       layout: this._textureBGL,
       entries: [{ binding: 0, resource: entry.texture.createView() }],
     })
-    return entry.group
+    return Object.assign(entry, { group })
   }
 
   draw(
@@ -226,9 +229,19 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     for (const entry of this._entries) {
       const bitmap = slide.cachedTileBitmap(entry.tile.key)
       if (!bitmap) continue
-      const group = this._textureFor(device, slide, entry.tile, bitmap)
-      if (!group) continue
-      pass.setBindGroup(1, group)
+      const tex = this._textureFor(device, slide, entry.tile, bitmap)
+      if (!tex) continue
+      // A decoded or fitted tile can differ from its manifest size: inset the
+      // UVs by the texture actually uploaded (lands before this frame submits).
+      if (tex.width !== entry.uv.width || tex.height !== entry.uv.height) {
+        entry.uv = tex
+        device.queue.writeBuffer(
+          this._vertexBuffer,
+          entry.firstVertex * 20,
+          cornerQuad(entry.tile.corners, tex),
+        )
+      }
+      pass.setBindGroup(1, tex.group)
       pass.draw(4, 1, entry.firstVertex)
     }
   }

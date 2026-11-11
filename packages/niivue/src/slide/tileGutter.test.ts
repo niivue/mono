@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { gutterFit, syncGutters } from '@/slide/tileGutter'
+import { fitGutterSource, syncGutters } from '@/slide/tileGutter'
 
 // A CPU stand-in for a padded tile texture: one value per texel.
 interface Tex {
@@ -150,13 +150,77 @@ describe('syncGutters', () => {
       )
     }
   })
+
+  test('replacing a tile with a smaller one refreshes neighbours that skip it', () => {
+    // Texels are numbered per tile, so a stale copy is visible.
+    type T = { width: number; height: number; texels: Float32Array; id: number }
+    const make = (width: number, height: number, id: number): T => {
+      const t = {
+        width,
+        height,
+        id,
+        texels: new Float32Array((width + 2) * (height + 2)),
+      }
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++)
+          t.texels[(y + 1) * (width + 2) + x + 1] = id * 1000 + 10 * y + x
+      return t
+    }
+    const tiles = new Map<string, T>()
+    const upload = (key: string, col: number, row: number, t: T): void => {
+      tiles.set(key, t)
+      syncGutters(
+        0,
+        col,
+        row,
+        t,
+        (k) => tiles.get(k),
+        (src, dst, c) => {
+          const from = src ?? dst
+          for (let y = 0; y < c.height; y++)
+            for (let x = 0; x < c.width; x++)
+              dst.texels[(c.y + y) * (dst.width + 2) + c.x + x] = from.texels[
+                (c.srcY + y) * (from.width + 2) + c.srcX + x
+              ] as number
+        },
+      )
+    }
+    upload('L0/0/1', 0, 1, make(4, 3, 2))
+    upload('L0/0/0', 0, 0, make(4, 3, 1))
+    const below = tiles.get('L0/0/1') as T
+    // Top border of the lower tile reads the upper tile's last row.
+    expect(below.texels[1]).toBe(1000 + 20)
+    upload('L0/0/0', 0, 0, make(2, 3, 3))
+    // Now a clamped copy of its own first row, not the old upper tile.
+    expect(Array.from(below.texels.subarray(0, 6))).toEqual([
+      2000, 2000, 2001, 2002, 2003, 2003,
+    ])
+  })
 })
 
-describe('gutterFit', () => {
-  test('crops a bitmap axis so the padded texture fits the limit', () => {
-    expect(gutterFit(256, 8192)).toEqual([0, 256])
-    expect(gutterFit(8190, 8192)).toEqual([0, 8190])
-    expect(gutterFit(8192, 8192)).toEqual([1, 8190])
-    expect(gutterFit(8191, 8192)).toEqual([0, 8190])
+describe('fitGutterSource', () => {
+  test('scales a bitmap down so the padded texture fits the limit', () => {
+    const drawn: number[][] = []
+    const original = globalThis.OffscreenCanvas
+    globalThis.OffscreenCanvas = class {
+      constructor(
+        readonly width: number,
+        readonly height: number,
+      ) {}
+      getContext() {
+        return {
+          drawImage: (_b: unknown, ...args: number[]) => drawn.push(args),
+        }
+      }
+    } as unknown as typeof OffscreenCanvas
+    try {
+      const bitmap = { width: 8192, height: 100 } as ImageBitmap
+      expect(fitGutterSource(bitmap, 8194)).toBe(bitmap)
+      const fitted = fitGutterSource(bitmap, 8192)
+      expect([fitted.width, fitted.height]).toEqual([8190, 100])
+      expect(drawn).toEqual([[0, 0, 8190, 100]])
+    } finally {
+      globalThis.OffscreenCanvas = original
+    }
   })
 })

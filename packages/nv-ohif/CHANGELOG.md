@@ -1,3 +1,13 @@
+## 1.0.0-rc.186 (2026-11-11)
+
+### Fixes
+
+- **nv-ohif:** warn on a throw after a no-uid add; PR 706 follow-ups ([75d78a6d](https://github.com/niivue/mono/commit/75d78a6d))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.185 (2026-11-11)
 
 ### Features

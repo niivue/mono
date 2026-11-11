@@ -1656,10 +1656,10 @@ describe('NVSlide channels', () => {
     expect(() => slide.setChannel(0, { colormap: 'no-such-map' })).toThrow(
       RangeError,
     )
-    expect(slide.plane).toEqual({ z: 0, t: 0 })
-    slide.setPlane({ z: 0, t: 0 })
-    expect(() => slide.setPlane({ z: 1, t: 0 })).toThrow(RangeError)
-    expect(() => slide.setPlane({ z: 0, t: 2 })).toThrow(RangeError)
+    expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
+    slide.setPlaneIndex({ z: 0, t: 0 })
+    expect(() => slide.setPlaneIndex({ z: 1, t: 0 })).toThrow(RangeError)
+    expect(() => slide.setPlaneIndex({ z: 0, t: 2 })).toThrow(RangeError)
     slide.dispose()
   })
 })

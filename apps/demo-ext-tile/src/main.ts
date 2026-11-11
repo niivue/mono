@@ -20,6 +20,7 @@ import {
   TiffSlideSource,
 } from '@niivue/nv-ext-tile/tiff'
 import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
+import { droppedFiles } from './drop'
 // Optional: remove this import, its call and the @niivue/uikit dependency to drop the minimap.
 import { attachMinimap } from './minimap'
 
@@ -430,6 +431,34 @@ filesInput.addEventListener('change', () => {
   const files = [...(filesInput.files ?? [])]
   filesInput.value = '' // so the same files can be picked again
   if (!files.length) return
+  lastFiles = files
+  void openFiles(files)
+})
+// Drop files or folders anywhere on the page: the same path as Custom files.
+const dropZone = document.querySelector('main') as HTMLElement
+const dragsFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files')
+for (const type of ['dragenter', 'dragover'] as const)
+  document.addEventListener(type, (e) => {
+    if (!dragsFiles(e)) return
+    e.preventDefault() // allows the drop
+    dropZone.classList.add('drop')
+  })
+document.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) dropZone.classList.remove('drop') // left the window
+})
+document.addEventListener('drop', async (e) => {
+  if (!e.dataTransfer || !dragsFiles(e)) return
+  e.preventDefault()
+  dropZone.classList.remove('drop')
+  // Claim the open generation now: an open started while the folder is walked
+  // is newer and wins, so a slow walk must not replace it (or its status).
+  const id = ++openCount
+  const files = await droppedFiles(e.dataTransfer).catch((err) => {
+    if (id === openCount)
+      status.textContent = `Drop failed: ${err instanceof Error ? err.message : err}`
+    return []
+  })
+  if (id !== openCount || !files.length) return
   lastFiles = files
   void openFiles(files)
 })

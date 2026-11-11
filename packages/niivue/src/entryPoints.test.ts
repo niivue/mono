@@ -96,8 +96,10 @@ describe('entry points', () => {
       const source = await read(file)
       if (
         (!file.startsWith('scene/') &&
-          /(?:from |import\()'@\/index'/.test(source)) ||
-        /(?:from |import\()'(?:@|\.\.?)\/(?:\.\.\/)*scene\//.test(source)
+          /(?:from\s*|import\s*\(\s*)['"]@\/index['"]/.test(source)) ||
+        /(?:from\s*|import\s*\(\s*)['"](?:@|\.\.?)\/(?:\.\.\/)*scene\//.test(
+          source,
+        )
       )
         offenders.push(file)
     }

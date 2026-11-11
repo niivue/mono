@@ -2640,7 +2640,7 @@ describe('niivueAddOverlay', () => {
       'convertDisplaySetToNifti',
     ).mockImplementation(() => new Promise(() => {}))
     try {
-      const { entry, actions } = withOverlays(
+      const { entry, actions, statuses } = withOverlays(
         [],
         [
           ...study,
@@ -2661,7 +2661,10 @@ describe('niivueAddOverlay', () => {
       // A series that cannot be added leaves the load alone.
       await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-base' })
       expect(signal?.aborted).toBe(false)
-      await actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-a' })
+      const added = actions.niivueAddOverlay({ displaySetInstanceUID: 'ds-a' })
+      // The cancelled load's progress does not linger over the new one.
+      expect(statuses.at(-1)).toBeNull()
+      await added
       expect(signal?.aborted).toBe(true)
       expect([...entry.overlays.keys()]).toEqual(['ds-a'])
       expect(entry.overlayLoading).toBe(false)
@@ -2790,6 +2793,14 @@ describe('setViewportColormap', () => {
       { index: 0, opts: { colormap: 'Hotiron' } },
     ])
     expect(volume('a').colormap).toBeUndefined()
+  })
+
+  it('ignores updates while a new base is loading', () => {
+    const { nv, entry, setColormap } = withOverlays(['a'])
+    entry.baseLoading = true
+    setColormap({ colormap: 'Grayscale' })
+    setColormap({ displaySetInstanceUID: 'ds-a', colormap: 'viridis' })
+    expect(nv.volumeUpdates).toEqual([])
   })
 })
 

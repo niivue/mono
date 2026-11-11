@@ -27,7 +27,7 @@ export type GraphSeries = {
 }
 
 /** Independent-axis description for the multi-series (signal) graph mode. */
-export type GraphAxis = {
+type GraphAxis = {
   label: string
   /** draw high-to-low (MR ppm convention) */
   reversed: boolean
@@ -42,7 +42,7 @@ export type GraphAxis = {
  * zoomed and is omitted when its x is outside the visible window. A y of
  * `-Infinity`/`+Infinity` pins the label to the bottom/top of the plot area.
  */
-export type GraphAnnotation = {
+type GraphAnnotation = {
   text: string
   x: number
   y: number
@@ -92,7 +92,7 @@ export type GraphData = {
 
 /** Pan/zoom control buttons drawn at the bottom of a dense signal graph. */
 export type GraphControlId = 'panLeft' | 'zoomOut' | 'zoomIn' | 'panRight'
-export type GraphControl = {
+type GraphControl = {
   id: GraphControlId
   label: string
   /** box rect in canvas pixels */

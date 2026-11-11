@@ -68,8 +68,11 @@
       ],
       // Reader/writer modules are consumed through `import * as` maps in `_registry.ts`
       // (including the optional `isCurv` hook), which Knip can't trace. Types stay reported.
+      // NVCanvasViewportController keeps its named and default export (deprecated
+      // API, outside the dependency cleanup: plan decision 5).
       "ignoreIssues": {
-        "src/**/{readers,writers}/*.ts": ["exports"]
+        "src/**/{readers,writers}/*.ts": ["exports"],
+        "src/control/NVCanvasViewportController.ts": ["duplicates"]
       },
       // Playwright loads Vite browser URLs inside page.evaluate.
       "paths": {

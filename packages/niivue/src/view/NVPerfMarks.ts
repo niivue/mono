@@ -169,19 +169,27 @@ export function markEnd(): void {
  * Sub-phase timer. Returns a start-time token (or 0 when disabled).
  * Pair with `endPhase(token, name)` to accumulate `now()-token` ms
  * into the named bucket.
+ *
+ * The phase helpers have no callers in shipped code: add them around a hot
+ * section while profiling, and `FrameReport.phases` reports the buckets.
+ * @public
  */
 export function beginPhase(): number {
   if (!enabled) return 0
   return performance.now()
 }
 
+/** @public */
 export function endPhase(startMs: number, name: string): void {
   if (!enabled || startMs === 0) return
   const dt = performance.now() - startMs
   phaseTotals.set(name, (phaseTotals.get(name) ?? 0) + dt)
 }
 
-/** Increment a named counter by 1 (used for iteration counts). */
+/**
+ * Increment a named counter by 1 (used for iteration counts).
+ * @public
+ */
 export function tickPhase(name: string): void {
   if (!enabled) return
   phaseTotals.set(name, (phaseTotals.get(name) ?? 0) + 1)

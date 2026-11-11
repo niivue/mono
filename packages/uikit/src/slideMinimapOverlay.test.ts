@@ -63,4 +63,48 @@ describe('UIKitSlideMinimapOverlay', () => {
     minimap.pointerCancel()
     expect(minimap.pointerMove(image.x, image.y)).toBe(false)
   })
+
+  it('redraws a tile whose cached bitmap was re-rendered under the same key', () => {
+    const drawn: unknown[] = []
+    const ctx = {
+      clearRect() {},
+      drawImage: (b: unknown) => drawn.push(b),
+    }
+    const saved = globalThis.OffscreenCanvas
+    globalThis.OffscreenCanvas = class {
+      constructor(
+        public width: number,
+        public height: number,
+      ) {}
+      getContext = () => ctx
+    } as unknown as typeof OffscreenCanvas
+    try {
+      const tile = { x: 0, y: 0, width: 100, height: 50 }
+      const slide = fakeSlide()
+      const level = { width: 100, height: 50, tileWidth: 256, tiles: [tile] }
+      slide.manifest = { ...slide.manifest, levels: [level] } as NVSlideManifest
+      let bitmap: object | null = null
+      let requests = 0
+      slide.requestTile = () => {
+        requests++
+      }
+      slide.cachedTileBitmap = () => bitmap as never
+      const minimap = new UIKitSlideMinimapOverlay(slide as UIKitMinimapSlide)
+      const update = () =>
+        (minimap as unknown as { updateThumbnail(): void }).updateThumbnail()
+      update()
+      expect(requests).toBe(1)
+      bitmap = { version: 1 }
+      update()
+      update()
+      bitmap = { version: 2 } // setChannel re-rendered it
+      update()
+      expect(drawn).toEqual([{ version: 1 }, { version: 2 }])
+      bitmap = null // evicted: keep the drawn tile, no refetch
+      update()
+      expect(requests).toBe(1)
+    } finally {
+      globalThis.OffscreenCanvas = saved
+    }
+  })
 })

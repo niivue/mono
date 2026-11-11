@@ -62,7 +62,9 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   private readonly wgpu = new WgpuImageRenderer()
   private thumbnail: OffscreenCanvas | null = null
   private thumbnailVersion = 0
-  private readonly drawnTiles = new Set<string>()
+  // The bitmap last drawn per tile key: setChannel re-renders a cached tile
+  // under the same key, so a new bitmap there means redraw it.
+  private readonly drawnTiles = new Map<string, ImageBitmap>()
   private lastLayout: SlideMinimapLayout | null = null
   private dragging = false
 
@@ -99,7 +101,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     return this.lastLayout
   }
 
-  /** Composite any newly cached coarsest-level tiles into the thumbnail. */
+  /** Composite new or re-rendered coarsest-level tiles into the thumbnail. */
   private updateThumbnail(): void {
     const { manifest } = this.slide
     const level = manifest.levels.at(-1)
@@ -122,14 +124,18 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     for (const tile of level.tiles) {
       if (!tile) continue
       const key = this.slide.tileKey(level, tile)
-      if (this.drawnTiles.has(key)) continue
-      this.slide.requestTile(level, tile)
       const bitmap = this.slide.cachedTileBitmap(key)
-      if (!bitmap) continue
+      if (!bitmap) {
+        // An evicted tile stays drawn; only fetch one never drawn.
+        if (!this.drawnTiles.has(key)) this.slide.requestTile(level, tile)
+        continue
+      }
+      if (this.drawnTiles.get(key) === bitmap) continue
       const x = tile.x * tileW * k
       const w = tile.width * k
       const h = tile.height * k
       const y = tile.y * tileH * k
+      ctx.clearRect(x, yUp ? this.thumbnail.height - y - h : y, w, h)
       if (yUp) {
         // y-up tiles stack from the bottom and their rows are stored bottom-up.
         ctx.save()
@@ -140,7 +146,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
       } else {
         ctx.drawImage(bitmap, x, y, w, h)
       }
-      this.drawnTiles.add(key)
+      this.drawnTiles.set(key, bitmap)
       this.thumbnailVersion++
     }
   }

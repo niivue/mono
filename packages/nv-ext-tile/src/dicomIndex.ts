@@ -300,7 +300,12 @@ function walk(
     if (vr === 'SQ') {
       if (at.depth >= MAX_DEPTH)
         throw new Skip('malformed', `sequences nested deeper than ${MAX_DEPTH}`)
-      const stop = length === UNDEFINED_LENGTH ? size : value + length
+      const unbounded = length === UNDEFINED_LENGTH
+      const stop = unbounded ? size : value + length
+      // As for UN: EOF inside a sequence is a truncated file, not a missing Pixel Data.
+      if (stop > size)
+        throw new Skip('malformed', `SQ at byte ${o} runs past the file`)
+      let closed = false
       let p = value
       // One object for all the items, as for elements.
       const inner =
@@ -309,19 +314,22 @@ function walk(
           : { ...at, depth: at.depth + 1 }
       for (let item = 0; p < stop; item++) {
         const itemTag = tagOf(u16(b, p), u16(b, p + 2))
+        const itemLength = u32(b, p + 4)
         if (itemTag === T.sequenceEnd) {
           p += 8
+          closed = true
           break
         }
         if (itemTag !== T.item)
           throw new Skip('malformed', `no item at byte ${p}`)
-        const itemLength = u32(b, p + 4)
         const itemEnd =
           itemLength === UNDEFINED_LENGTH ? size : p + 8 + itemLength
         if (at.depth === 0) inner.item = item
         const after = walk(b, p + 8, itemEnd, size, inner, visit)
         p = itemLength === UNDEFINED_LENGTH ? after : itemEnd
       }
+      if (unbounded && !closed)
+        throw new Skip('malformed', `SQ at byte ${o} runs past the file`)
       o = p
       continue
     }
@@ -382,10 +390,7 @@ function skipImplicitSequence(
           length === UNDEFINED_LENGTH
             ? skipImplicitSequence(b, p, size, depth + 1)
             : p + length
-        if (p > size)
-          throw new Skip('malformed', 'UN sequence runs past the file')
       }
-    if (p > size) throw new Skip('malformed', 'UN sequence runs past the file')
   }
 }
 
@@ -534,6 +539,10 @@ async function readHeader(
         { root: 0, item: 0, depth: 0 },
         reader.visit,
       )
+      // A walk that ends at EOF found no Pixel Data; one cut short by EOF
+      // (NeedMore with the whole file read, below) is a truncated file.
+      if (pixel >= size)
+        throw new Skip('not-tiled', 'no Pixel Data (e.g. a DICOMDIR)')
       if (pixel + 20 > b.length) throw new NeedMore() // Pixel Data and the BOT item header
       refuseSyntax(b, top)
       return { b, pixel, top, attributes: reader.attributes() }
@@ -541,7 +550,7 @@ async function readHeader(
       refuseSyntax(b, top)
       if (!(err instanceof NeedMore)) throw err
       if (want >= size)
-        throw new Skip('not-tiled', 'no Pixel Data (e.g. a DICOMDIR)')
+        throw new Skip('malformed', 'the file ends inside an element')
       if (want >= MAX_HEADER)
         throw new Skip('malformed', `header over ${MAX_HEADER >> 20} MiB`)
       want = Math.min(size, MAX_HEADER, want * 4)

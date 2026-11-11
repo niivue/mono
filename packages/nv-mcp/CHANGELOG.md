@@ -1,3 +1,18 @@
+## 1.0.0-rc.162 (2026-11-11)
+
+### Features
+
+- **nv-ext-tile:** honour omero active channels for OME-Zarr volumes and slides ([39a3ef34](https://github.com/niivue/mono/commit/39a3ef34))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.168
+- Updated uikit to 1.0.0-rc.166
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.161 (2026-11-11)
 
 ### Features

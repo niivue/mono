@@ -1,3 +1,20 @@
+## 1.0.0-rc.168 (2026-11-11)
+
+### Refactors
+
+- ⚠️  **niivue:** rename NVSlide plane/setPlane to planeIndex/setPlaneIndex ([9cfc70a4](https://github.com/niivue/mono/commit/9cfc70a4))
+
+### Breaking Changes
+
+- **niivue:** rename NVSlide plane/setPlane to planeIndex/setPlaneIndex  ([9cfc70a4](https://github.com/niivue/mono/commit/9cfc70a4))
+  NVSlide.plane is now NVSlide.planeIndex and
+  NVSlide.setPlane() is now NVSlide.setPlaneIndex(); no aliases are kept.
+  Claude-Session: https://claude.ai/code/session_01F6ttnTMSWvBfPipb4HPyjh
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.167 (2026-11-11)
 
 ### Performance

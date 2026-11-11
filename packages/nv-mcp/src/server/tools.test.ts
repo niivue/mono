@@ -524,6 +524,21 @@ describe('core tools over the bridge', () => {
       params: { volume: 'zstat', colormap: 'red', cal_min: 2.3 },
     })
     expect(json(drawn)).not.toHaveProperty('params.tab')
+    // A slide channel by index or by name; the page resolves the name.
+    for (const channel of [1, 'gfp']) {
+      const slid = await client.callTool({
+        name: 'set_slide',
+        arguments: { channel, visible: false },
+      })
+      expect(json(slid)).toMatchObject({ params: { channel, visible: false } })
+    }
+    for (const channel of [-1, 1.5, '']) {
+      const refused = await client.callTool({
+        name: 'set_slide',
+        arguments: { channel, visible: false },
+      })
+      expect(refused.isError).toBe(true)
+    }
     const laid = await client.callTool({
       name: 'set_view',
       arguments: { slice: 'multiplanar', layout: 'row', colorbar: true },

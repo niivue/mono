@@ -23,7 +23,7 @@ bun run dev                          # Hot-reload dev server at localhost:5273
 bun run build                        # Library build to ./dist (vite.config.lib.ts, ES)
 bun run build:examples               # Examples site build (vite.config.examples.ts)
 bun run deploy                       # Production examples-site build (GitHub Pages)
-bun run demo                         # Build examples and serve with http-server
+bun run demo                         # Build examples and serve with vite preview
 bun run lint                         # Biome check (src/)
 bun run lint:fix                     # Biome check --fix
 bun run typecheck                    # tsc --noEmit

@@ -146,8 +146,8 @@ knows about the pool must stay OUTSIDE anything the worker imports, which is why
 `fetchOmeZarrChunkedSource` lives in its own file and the worker imports only the
 pool-free `openOmeZarrChunkedSource`. And `@niivue/zarrita-rs/inline` loads its base64 wasm
 codec core through a dynamic import, which would split the worker bundle into chunks
-that an inlined worker has nowhere to fetch from, so `vite.config.lib.ts` sets
-`worker.rollupOptions.output.inlineDynamicImports`. The pool itself is imported
+that an inlined worker has nowhere to fetch from, so nv-ext-tile's `vite.config.ts` sets
+`worker.rolldownOptions.output.codeSplitting: false`. The pool itself is imported
 on demand, so the megabyte-scale inlined worker is only downloaded by a caller
 who actually streams chunks.
 

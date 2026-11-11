@@ -58,7 +58,7 @@
     "build:examples": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.examples.ts",
     "check:demos": "bun scripts/check-demos.ts",
     "deploy": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.examples.ts --mode production",
-    "demo": "bun run build:examples && bunx http-server dist/ --cors -o",
+    "demo": "bun run build:examples && bunx --bun vite preview --config vite.config.examples.ts --open /examples/index.html",
     "preview": "vite preview",
     "e2e:serve": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --port 5273 --strictPort",
     "e2e:serve:bundle": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite build --config vite.config.e2e.ts --logLevel warn && bunx vite preview --config vite.config.e2e.ts --configLoader runner",
@@ -116,11 +116,10 @@
     "@types/earcut": "^3.0.0",
     "@webgpu/types": "^0.1.69",
     "dicom-parser": "^1.8.21",
-    "http-server": "^14.1.1",
     "monocart-coverage-reports": "^3.2.0",
     "playwright": "1.64.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "vite": "^8.3.8",
     "vite-plugin-dts": "^4.5.4"
   },
   "publishConfig": {

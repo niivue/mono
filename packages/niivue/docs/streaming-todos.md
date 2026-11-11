@@ -46,8 +46,8 @@ compensation work"; decode and budget plans wait behind them.
       `fetchOmeZarrChunkedSource.ts` as its own file, with the worker importing
       only the pool-free `openOmeZarrChunkedSource`), and zarrita-rs's lazily
       imported wasm codec core needs
-      `worker.rollupOptions.output.inlineDynamicImports` in
-      `vite.config.lib.ts` or the inlined worker code-splits into chunks it has
+      `worker.rolldownOptions.output.codeSplitting: false` in nv-ext-tile's
+      `vite.config.ts` or the inlined worker code-splits into chunks it has
       nowhere to fetch.
 
       Not addressed here, by design: the GPU upload stays on the render thread

@@ -80,10 +80,10 @@ export default mergeConfig(
       minify: false,
       // E2E_COVERAGE=1 maps browser coverage back to src/ (e2e/coverage.ts).
       sourcemap: process.env.E2E_COVERAGE === '1',
-      rollupOptions: {
+      rolldownOptions: {
         // Vite drops entry exports in app builds; the specs import them.
         preserveEntrySignatures: 'exports-only',
-        input: { ...examples.build?.rollupOptions?.input, ...srcEntries },
+        input: { ...examples.build?.rolldownOptions?.input, ...srcEntries },
         output: {
           entryFileNames: (chunk) =>
             chunk.name.startsWith('src/')

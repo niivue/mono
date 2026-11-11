@@ -1279,12 +1279,12 @@ export class NVSlide extends EventTarget {
   }
 
   /** The focal plane and time point shown; only {z: 0, t: 0} so far. */
-  get plane(): NVSlidePlaneIndex {
+  get planeIndex(): NVSlidePlaneIndex {
     return { z: 0, t: 0 }
   }
 
   /** Throws unless `plane` is {z: 0, t: 0}: slides hold one plane until focal stacks land. */
-  setPlane(plane: NVSlidePlaneIndex): void {
+  setPlaneIndex(plane: NVSlidePlaneIndex): void {
     if (plane.z !== 0 || plane.t !== 0)
       throw new RangeError(
         `NVSlide has only plane {z: 0, t: 0}, got {z: ${plane.z}, t: ${plane.t}}`,

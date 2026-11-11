@@ -1,10 +1,13 @@
 import { fromBlob, Pool } from '@niivue/geotiff-rs'
 import type { NVSlideScreen, SlideTileSource } from '@niivue/niivue'
 import {
+  DRAG_MODE,
   DziSource,
   NVSlide,
+  NVSlideController,
   SlideRenderer,
   SlideRendererGPU,
+  slideOverlayContent,
 } from '@niivue/niivue'
 import {
   DicomWsiSource,
@@ -165,6 +168,7 @@ function render(): void {
   if (needsFit) slide.fitToScreen(s)
   needsFit = false
   slide.clampViewport(s)
+  renderer.overlay = slideOverlayContent(slide, s, gestures)
   if (renderer instanceof SlideRendererGPU) renderer.render([slide], s)
   else if (gl) renderer.draw(gl, [slide], s)
   updateHud(s)
@@ -698,36 +702,14 @@ customDialog.addEventListener('close', () => {
   else sourceSelect.value = current // cancelled: show what is open
 })
 
-let drag: { x: number; y: number } | null = null
-canvas.addEventListener('pointerdown', (e) => {
-  drag = { x: e.clientX, y: e.clientY }
-  canvas.setPointerCapture(e.pointerId)
+// Left and middle drag pan, right drag zooms to a box, the wheel zooms.
+const gestures = new NVSlideController(canvas, {
+  slide: () => slide,
+  screen,
+  primaryDragMode: DRAG_MODE.pan,
+  secondaryDragMode: DRAG_MODE.roiSelection,
+  onChange: requestRender,
 })
-canvas.addEventListener('pointermove', (e) => {
-  if (!drag || !slide) return
-  slide.panByScreenDelta(e.clientX - drag.x, e.clientY - drag.y, screen())
-  drag = { x: e.clientX, y: e.clientY }
-  requestRender()
-})
-canvas.addEventListener('pointerup', () => {
-  drag = null
-})
-canvas.addEventListener(
-  'wheel',
-  (e) => {
-    e.preventDefault()
-    if (!slide) return
-    const rect = canvas.getBoundingClientRect()
-    slide.zoomBy(
-      Math.exp(-e.deltaY * 0.0013),
-      e.clientX - rect.left,
-      e.clientY - rect.top,
-      screen(),
-    )
-    requestRender()
-  },
-  { passive: false },
-)
 window.addEventListener('resize', requestRender)
 
 // Default slide so the Pages demo is not empty; ?url= (empty) starts blank.

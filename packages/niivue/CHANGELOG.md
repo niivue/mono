@@ -1,3 +1,16 @@
+## 1.0.0-rc.161 (2026-11-11)
+
+### Fixes
+
+- guard missing OffscreenCanvas; keep tiny native Pixel Data not-tiled ([b308657c](https://github.com/niivue/mono/commit/b308657c))
+- **niivue:** draw a placeholder for a slide tile that cannot be scaled ([134914d1](https://github.com/niivue/mono/commit/134914d1))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.160 (2026-11-11)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

@@ -1,3 +1,20 @@
+## 1.0.0-rc.66 (2026-11-11)
+
+### Fixes
+
+- guard missing OffscreenCanvas; keep tiny native Pixel Data not-tiled ([b308657c](https://github.com/niivue/mono/commit/b308657c))
+- **nv-ext-tile:** report a DICOM header cut off by the end of the file as malformed ([b3cdc35b](https://github.com/niivue/mono/commit/b3cdc35b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.161
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.65 (2026-11-11)
 
 ### Updated Dependencies

@@ -160,6 +160,14 @@ function readAttributes(o: unknown): WsiAttributes<DicomJsonIccProfile> {
     const id = get(p, 'OpticalPathIdentifier', T.opticalPathId)
     if (id !== undefined) a.pathIds[i] = text(id)
   })
+  const lab = text(get(o, 'RecommendedAbsentPixelCIELabValue', T.absentLab))
+    .split('\\')
+    .map(Number)
+  if (
+    lab.length === 3 &&
+    lab.every((v) => Number.isInteger(v) && v >= 0 && v <= 0xffff)
+  )
+    a.absentLab = lab
   const sharedPath = pathId(shared)
   if (sharedPath !== undefined) a.sharedPath = text(sharedPath)
   perFrame.forEach((g, f) => {

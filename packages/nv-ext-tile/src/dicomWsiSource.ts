@@ -6,6 +6,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
+import { dicomLabToSrgb } from './cielab'
 import {
   fileKey,
   type InstanceCore,
@@ -225,6 +226,14 @@ export function manifestOf<I extends InstanceCore>(
     dtype: 'uint8',
     channels: 'encoded-rgb',
     ...(slide.pixelSpacingMM ? { pixelSpacingMM: slide.pixelSpacingMM } : {}),
+    ...(inst0.absentLab
+      ? {
+          backgroundColor: [
+            ...dicomLabToSrgb(inst0.absentLab).map((v) => v / 255),
+            1,
+          ] as [number, number, number, number],
+        }
+      : {}),
     ...(slide.iccProfile
       ? {
           iccProfile: {

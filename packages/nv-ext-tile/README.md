@@ -70,7 +70,9 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 
 - `indexDicomWsi` reads only headers and item tags (`File.slice`), never pixel data.
   It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
-- It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
+- It handles multi-fragment frames, TILED_SPARSE (holes show the slide's
+  `backgroundColor`, from RecommendedAbsentPixelCIELabValue (0048,0015) when
+  stated, local or DICOMweb; the 3D slide plane leaves them empty), and
   concatenations. TILED_FULL frames keep their implicit order; per-frame
   positions, when given, win (items holding only other metadata, such as Frame
   Content, do not change the order). A file with no DimensionOrganizationType is

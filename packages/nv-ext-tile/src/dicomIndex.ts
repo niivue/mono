@@ -32,6 +32,8 @@ export interface SlideIndexInstance {
   transferSyntax: string
   photometric: string
   bitsStored: number
+  /** RecommendedAbsentPixelCIELabValue (0048,0015), DICOM-encoded L*, a*, b*. */
+  absentLab?: number[]
 }
 
 export interface SlideIndexFrames {
@@ -139,6 +141,7 @@ export const T = {
   colorSpace: tagOf(0x0028, 0x2002),
   container: tagOf(0x0040, 0x0512),
   zOffset: tagOf(0x0040, 0x074a),
+  absentLab: tagOf(0x0048, 0x0015),
   volumeWidth: tagOf(0x0048, 0x0001),
   volumeHeight: tagOf(0x0048, 0x0002),
   totalColumns: tagOf(0x0048, 0x0006),
@@ -192,6 +195,7 @@ const TOP_TAGS = new Set([
   ...Object.keys(TEXT_KEYWORDS).map(Number),
   ...Object.keys(NUMBER_KEYWORDS).map(Number),
   T.spacing,
+  T.absentLab,
   T.eot,
   T.eotLengths,
 ])
@@ -444,6 +448,7 @@ export interface WsiAttributes<C> {
   icc: (C | undefined)[]
   sharedPath?: string
   sharedZ?: number
+  absentLab?: number[]
   /** Per-frame functional group items. */
   perFrame: number
   /** Per frame, when stated: 1-based pixel position, ZOffset (µm), OpticalPathIdentifier. */
@@ -651,6 +656,9 @@ function attributeReader(b: Uint8Array) {
     a.icc.forEach((v, i) => {
       if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
     })
+    const lab = top.get(T.absentLab)
+    if (lab?.vr === 'US' && lab.length >= 6)
+      a.absentLab = [0, 2, 4].map((k) => view.getUint16(lab.offset + k, true))
     const topSpacing = top.get(T.spacing)
     if (topSpacing) spacings[2] = text(b, topSpacing)
     a.spacing = [0, 1, 2].map((i) => spacings[i]?.split('\\').map(Number))
@@ -723,6 +731,7 @@ export function instanceGeometry<C>(
       transferSyntax: str(T.transferSyntax),
       photometric: str(T.photometric),
       bitsStored: int(T.bitsStored, 8, 1, 32),
+      ...(a.absentLab ? { absentLab: a.absentLab } : {}),
     },
     study: str(T.study),
     series: str(T.series),

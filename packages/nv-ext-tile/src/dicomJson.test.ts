@@ -208,6 +208,19 @@ describe('indexDicomWsiMetadata', () => {
     })
     expect(tiles(slide)).toEqual([[0, 0, 1, 0, 2, 0]])
     expect(slide.levels[0]).toMatchObject({ holes: 4, sparse: true })
+    expect(slide.instances[0]?.absentLab).toBeUndefined()
+    // RecommendedAbsentPixelCIELabValue, naturalized and PS3.18; bad values are dropped.
+    const lab = (v: unknown) =>
+      indexDicomWsiMetadata([{ ...instance, ...(v as object) }]).slides[0]
+        ?.instances[0]?.absentLab
+    expect(
+      lab({ RecommendedAbsentPixelCIELabValue: [0xffff, 0x8080, 0x8080] }),
+    ).toEqual([0xffff, 0x8080, 0x8080])
+    expect(lab({ '00480015': { vr: 'US', Value: [100, 200, 300] } })).toEqual([
+      100, 200, 300,
+    ])
+    for (const bad of [[1, 2], [1, 2, 70000], [1, 2, 1.5], 'x'])
+      expect(lab({ RecommendedAbsentPixelCIELabValue: bad })).toBeUndefined()
     // Per-frame groups left as bulk data are absent: implicit TILED_FULL order.
     const bulk = {
       ...instance,

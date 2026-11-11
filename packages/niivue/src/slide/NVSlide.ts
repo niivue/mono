@@ -196,6 +196,8 @@ export interface NVSlideManifest {
   pixelSpacingMM?: readonly [number, number]
   /** DICOM-WSI: the optical path's ICC profile, (0048,0105) > (0028,2000). */
   iccProfile?: NVSlideIccProfile
+  /** Default {@link NVSlideOptions.backgroundColor}, shown in holes (DICOM-WSI: (0048,0015)). */
+  backgroundColor?: NVSlideColor
   /**
    * The sample channels a {@link SlideTileSource.fetchTileSamples} source
    * serves. Absent: one grey channel for a monochrome slide, else red, green
@@ -1084,7 +1086,8 @@ export class NVSlide extends EventTarget {
       options.targetScreenPixelsPerTilePixel ??
       DEFAULT_TARGET_SCREEN_PIXELS_PER_TILE_PIXEL
     this.showTileGrid = options.showTileGrid ?? false
-    this.backgroundColor = options.backgroundColor ?? [0.027, 0.063, 0.051, 1]
+    this.backgroundColor = options.backgroundColor ??
+      manifest.backgroundColor ?? [0.027, 0.063, 0.051, 1]
     this.placeholderColor = options.placeholderColor ?? [0.067, 0.098, 0.09, 1]
     this.gridColor = options.gridColor ?? [0.455, 0.831, 0.812, 0.24]
     this.spatialTransform = options.spatialTransform ?? null

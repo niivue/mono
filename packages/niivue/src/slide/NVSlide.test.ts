@@ -3,6 +3,7 @@ import { log } from '@/logger'
 import type {
   NVChannel,
   NVSlideChannelInfo,
+  NVSlideColor,
   NVSlideColorLut,
   NVSlideLevelManifest,
   NVSlideManifest,
@@ -199,6 +200,21 @@ describe('NVSlide tile loading', () => {
     expect(slide.stats.failures).toBe(3)
     expect(slide.pendingCount).toBe(0)
     slide.dispose()
+  })
+})
+
+describe('NVSlide background colour', () => {
+  it('defaults to the manifest colour; an option wins', () => {
+    const manifest: NVSlideManifest = {
+      ...makeManifest(1),
+      backgroundColor: [1, 1, 1, 1],
+    }
+    const white: NVSlideColor = [1, 1, 1, 1]
+    expect(new NVSlide(manifest).backgroundColor).toEqual(white)
+    expect(
+      new NVSlide(manifest, { backgroundColor: [0, 0, 0, 1] }).backgroundColor,
+    ).toEqual([0, 0, 0, 1])
+    expect(new NVSlide(makeManifest(1)).backgroundColor).not.toEqual(white)
   })
 })
 

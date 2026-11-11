@@ -7,6 +7,10 @@ import type {
   OhifToolbarEvaluation,
   OhifToolbarModuleEntry,
 } from './ohif-types'
+import {
+  NIIVUE_OVERLAY_MENU_UI_TYPE,
+  overlayMenuComponent,
+} from './overlayMenu'
 
 // Toolbar button + section ids (referenced from a mode's toolbar sections).
 export const NIIVUE_VIEWS_SECTION = 'NiivueViews'
@@ -15,6 +19,7 @@ export const NIIVUE_WL_SECTION = 'NiivueWindowLevel'
 export const NIIVUE_COLORMAP_SECTION = 'NiivueColormap'
 export const NIIVUE_RESET_BUTTON = 'NiivueReset'
 export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
+export const NIIVUE_OVERLAY_MENU_BUTTON = 'NiivueOverlayMenu'
 export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
 export const NIIVUE_INTERPOLATION_BUTTON = 'NiivueInterpolation'
 export const NIIVUE_RULER_BUTTON = 'NiivueRuler'
@@ -271,6 +276,15 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
     },
   },
   {
+    id: NIIVUE_OVERLAY_MENU_BUTTON,
+    uiType: NIIVUE_OVERLAY_MENU_UI_TYPE,
+    props: {
+      label: 'Overlays',
+      tooltip: 'Add, style, order and remove overlays (NiiVue)',
+      evaluate: OVERLAY_EVALUATOR,
+    },
+  },
+  {
     // Toggles the NiiVue crosshair on/off. A mode uses this in place of
     // cornerstone's Crosshairs button on a NiiVue viewport (that one no-ops).
     id: NIIVUE_CROSSHAIR_BUTTON,
@@ -351,7 +365,8 @@ export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
  *   toolbarButtons:  [..., { $reference: 'niivue.toolbarButtons' }]
  *   toolbarSections: [..., { $reference: 'niivue.toolbarSections' },
  *                     { primary: [...ids, 'NiivueViews', 'NiivueClip',
- *                                 'NiivueOverlay', 'NiivueReset'] }]
+ *                                 'NiivueOverlay', 'NiivueOverlayMenu',
+ *                                 'NiivueReset'] }]
  */
 export const niivueToolbarCustomization = {
   'niivue.toolbarButtons': NIIVUE_TOOLBAR_BUTTONS,
@@ -407,9 +422,17 @@ function volumeEvaluator(
  */
 export function getNiivueToolbarModule({
   servicesManager,
+  commandsManager,
 }: OhifExtensionParams = {}): OhifToolbarModuleEntry[] {
   return [
     niivueSupportEvaluator(servicesManager),
+    {
+      name: NIIVUE_OVERLAY_MENU_UI_TYPE,
+      defaultComponent: overlayMenuComponent({
+        servicesManager,
+        commandsManager,
+      }),
+    },
     {
       name: NIIVUE_EVALUATOR,
       evaluate: ({ viewportId }) =>

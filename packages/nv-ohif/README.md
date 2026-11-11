@@ -74,7 +74,8 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   NiiVue viewport), a **capture** button (`NiivueCapture`, save the viewport as
   PNG — use in place of cornerstone's Capture, which errors on a NiiVue
   viewport), an **overlay** toggle (load the study's next series as a colormapped
-  overlay), and a reset-view button — all with active/disabled state tracked per
+  overlay), an **Overlays** dropdown (`NiivueOverlayMenu`, see [Overlays](#overlays)),
+  and a reset-view button — all with active/disabled state tracked per
   viewport.
 - Backs OHIF's full **Measurement** tool group (Length, ellipse / rectangle /
   circle / freehand / spline / livewire ROIs, Bidirectional, ArrowAnnotate) with
@@ -108,7 +109,7 @@ toolbarSections: [
   // of a cornerstone button is silently dropped.
   { primary: [/* ...your button ids, */ 'NiivueViews', 'NiivueClip',
               'NiivueWindowLevel', 'NiivueColormap', 'NiivueColorbar', 'NiivueInterpolation',
-              'NiivueRuler', 'NiivueOverlay', 'NiivueReset', 'NiivueCapture',
+              'NiivueRuler', 'NiivueOverlay', 'NiivueOverlayMenu', 'NiivueReset', 'NiivueCapture',
               'NiivueCrosshair'] },
 ],
 ```
@@ -139,6 +140,13 @@ A viewport holds one base series and any number of overlays drawn over it:
 | `niivueMoveOverlay` | `displaySetInstanceUID`, `direction: 'up' \| 'down'` | Move it past the next overlay up (drawn over it) or down; the base stays the bottom layer. |
 | `niivueRemoveOverlay` | `displaySetInstanceUID` | Unload it. |
 | `setViewportColormap` | `viewportId?`, `displaySetInstanceUID?`, `colormap`, `opacity?` | OHIF's command: the base (no UID, or the base's) or an overlay; any other UID is a no-op. `colormap` is a NiiVue name (any case) or `Grayscale` / `hot_iron`, as a string or `{ name }`; an unknown name keeps the current one. `opacity` is clamped to 0..1; unlike Cornerstone, omitting it leaves it unchanged. |
+
+The `NiivueOverlayMenu` button (uiType `niivue.overlayMenu`, a component the
+toolbar module registers) is a dropdown over these commands: a list of the study's
+series that can be added (disabled while one loads), then one row per overlay, top
+layer first, with visibility, colormap (the colormap dropdown's names), opacity,
+up/down and remove. It is disabled off NiiVue, on a whole-slide viewport and
+until a base volume has loaded.
 
 `niivueToggleOverlay` (the Overlay button) cancels a load in flight, else adds the
 next series or removes every overlay. A base swap or unmount drops the overlays and

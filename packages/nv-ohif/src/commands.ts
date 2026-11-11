@@ -121,7 +121,7 @@ const VIEW_DEFAULTS = {
   crosshairPos: [0.5, 0.5, 0.5] as [number, number, number],
 }
 
-interface DisplaySetServiceLike {
+export interface DisplaySetServiceLike {
   getActiveDisplaySets?: () => OhifDisplaySet[]
   getDisplaySetsForSeries?: (uid: string) => ReadonlyArray<OhifDisplaySet>
 }

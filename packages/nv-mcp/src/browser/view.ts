@@ -574,6 +574,11 @@ export interface View {
    * nothing).
    */
   view?: { render(): unknown; isBusy?: boolean } | null
+  /**
+   * NiiVue 1.0's capture: renders a frame now and returns this instance's
+   * drawn region, or null when no frame could be drawn.
+   */
+  getCanvasImage?(): ImageData | null
   model: {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple

@@ -1758,12 +1758,13 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // The render backend skips frames while it uploads a texture, as
       // after a 4D frame change, and a frame drawn then is blank.
       await untilIdle(view, waits?.busyMs ?? BUSY_WAIT_MS)
-      if (!drawNow(view, canvas))
+      const drawn = drawNow(view, canvas)
+      if (!drawn)
         throw new Error(
           'NiiVue could not draw a frame (its canvas is detached, its GPU context was lost, or its renderer is still starting), so there is no current picture.',
         )
       const picture =
-        canvas.width > maxWidth ? scaledCopy(canvas, maxWidth) : canvas
+        drawn.width > maxWidth ? scaledCopy(drawn, maxWidth) : drawn
       const dataUrl = picture.toDataURL('image/png')
       const comma = dataUrl.indexOf(',')
       return {
@@ -1868,11 +1869,15 @@ export function planeIsCut(plane: readonly [number, number, number]): boolean {
  * it. NiiVue 1.0's `drawScene` only schedules one, and a WebGL drawing
  * buffer does not survive to the next task unless it was asked to; its
  * render backend draws on demand. A canvas whose drawing buffer does not
- * fit its box yet, as one NiiVue has not sized, is sized first. False when
- * the backend drew nothing or does not exist yet, so the canvas still holds
- * an older frame.
+ * fit its box yet, as one NiiVue has not sized, is sized first. Returns the
+ * drawn picture: a copy of NiiVue's own capture where it has one, else the
+ * canvas. Null when the backend drew nothing or does not exist yet, so the
+ * canvas still holds an older frame.
  */
-function drawNow(view: View, canvas: HTMLCanvasElement): boolean {
+function drawNow(
+  view: View,
+  canvas: HTMLCanvasElement,
+): HTMLCanvasElement | null {
   const box = canvas.getBoundingClientRect?.()
   if (box && box.width > 0 && view.resize) {
     // NiiVue's own ratio: with forceDevicePixelRatio the window's would never
@@ -1882,11 +1887,25 @@ function drawNow(view: View, canvas: HTMLCanvasElement): boolean {
     const wanted = Math.max(1, Math.floor(box.width * scale))
     if (canvas.width !== wanted) view.resize()
   }
+  // NiiVue's own capture syncs pending state and wires the overlay hooks (UIKit
+  // widgets) before it renders, which a bare render() skips.
+  if (view.getCanvasImage) {
+    const image = view.getCanvasImage()
+    if (!image) return null
+    const copy = document.createElement('canvas')
+    copy.width = image.width
+    copy.height = image.height
+    const context = copy.getContext('2d')
+    if (!context)
+      throw new Error('The page cannot copy the picture: no 2d context.')
+    context.putImageData(image, 0, 0)
+    return copy
+  }
   view.drawScene()
   // NiiVue holds null while it creates or recreates its backend; undefined is
   // a host with no render backend, whose drawScene draws itself.
-  if (view.view === null) return false
-  return view.view?.render() !== false
+  if (view.view === null) return null
+  return view.view?.render() !== false ? canvas : null
 }
 
 /** A bound as NiiVue resolves it: given, filled by the colormap, kept, or NaN for the default. */

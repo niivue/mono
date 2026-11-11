@@ -1333,6 +1333,49 @@ describe('screenshot', () => {
     )
   })
 
+  it("takes NiiVue's own capture where it has one, not a bare render", async () => {
+    const calls: string[] = []
+    const image = { width: 200, height: 100 } as ImageData
+    const copy = {
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        putImageData: (put: ImageData) => calls.push(`put:${put.width}`),
+      }),
+      toDataURL: () => 'data:image/png;base64,iVBORw0KGgo=',
+    }
+    const global = globalThis as { document?: unknown }
+    const before = global.document
+    global.document = {
+      visibilityState: 'visible',
+      createElement: () => copy,
+    }
+    try {
+      const canvas = { width: 640, height: 480 } as HTMLCanvasElement
+      const captures = [image, null]
+      const view = fakeView({
+        canvas,
+        drawScene: mock(() => calls.push('draw')),
+        view: { render: () => calls.push('render') },
+        getCanvasImage: () => captures.shift() ?? null,
+      })
+      expect(await coreHandlers(host(view)).screenshot({})).toEqual({
+        data: 'iVBORw0KGgo=',
+        mimeType: 'image/png',
+        width: 200,
+        height: 100,
+        canvas: { width: 640, height: 480 },
+      })
+      expect(calls).toEqual(['put:200'])
+      await expect(coreHandlers(host(view)).screenshot({})).rejects.toThrow(
+        'could not draw a frame',
+      )
+    } finally {
+      if (before === undefined) delete global.document
+      else global.document = before
+    }
+  })
+
   it('refuses a stale picture when the backend draws nothing or is not there yet', async () => {
     for (const backend of [{ render: () => false }, null]) {
       const toDataURL = mock(() => 'data:image/png;base64,iVBORw0KGgo=')

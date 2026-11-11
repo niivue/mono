@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { fitGutterSource, syncGutters } from '@/slide/tileGutter'
+import {
+  fillGutter,
+  fitGutterSource,
+  type GutterCopy,
+  syncGutters,
+} from '@/slide/tileGutter'
 
 // A CPU stand-in for a padded tile texture: one value per texel.
 interface Tex {
@@ -14,9 +19,22 @@ const COLS = [4, 4, 2]
 const ROWS = [3, 3]
 const value = (x: number, y: number): number => 100 * y + x
 
-function uploadAll(order: [number, number][]): Map<string, Tex> {
-  const textures = new Map<string, Tex>()
-  for (const [col, row] of order) {
+function copyTexels(src: Tex | null, dst: Tex, c: GutterCopy): void {
+  const from = src ?? dst
+  for (let y = 0; y < c.height; y++)
+    for (let x = 0; x < c.width; x++)
+      dst.texels[(c.y + y) * (dst.width + 2) + c.x + x] = from.texels[
+        (c.srcY + y) * (from.width + 2) + c.srcX + x
+      ] as number
+}
+
+// Uploads tiles in `order`; the first `synced` (all by default) sync gutters.
+function uploadAll(
+  order: [number, number][],
+  textures = new Map<string, Tex>(),
+  synced = order.length,
+): Map<string, Tex> {
+  for (const [i, [col, row]] of order.entries()) {
     const width = COLS[col] as number
     const height = ROWS[row] as number
     const tex: Tex = {
@@ -31,21 +49,8 @@ function uploadAll(order: [number, number][]): Map<string, Tex> {
           3 * row + y,
         )
     textures.set(`L0/${col}/${row}`, tex)
-    syncGutters(
-      0,
-      col,
-      row,
-      tex,
-      (key) => textures.get(key),
-      (src, dst, c) => {
-        const from = src ?? dst
-        for (let y = 0; y < c.height; y++)
-          for (let x = 0; x < c.width; x++)
-            dst.texels[(c.y + y) * (dst.width + 2) + c.x + x] = from.texels[
-              (c.srcY + y) * (from.width + 2) + c.srcX + x
-            ] as number
-      },
-    )
+    if (i < synced)
+      syncGutters(0, col, row, tex, (key) => textures.get(key), copyTexels)
   }
   return textures
 }
@@ -89,6 +94,16 @@ describe('syncGutters', () => {
         number,
       ][]),
     )
+  })
+
+  test('fillGutter on every tile repairs uploads that skipped the sync', () => {
+    // Half synced, half not (nearest), then the linear resync.
+    const textures = uploadAll(GRID, new Map(), 3)
+    for (const [key, tex] of textures) {
+      const [col, row] = key.split('/').slice(1).map(Number) as [number, number]
+      fillGutter(0, col, row, tex, (k) => textures.get(k), copyTexels)
+    }
+    expectSeamless(textures)
   })
 
   test('an absent neighbour leaves a clamped copy of the own edge', () => {

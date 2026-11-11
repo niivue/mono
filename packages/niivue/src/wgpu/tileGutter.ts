@@ -1,18 +1,29 @@
 import {
+  fillGutter,
   fitGutterSource,
   type GutterAt,
+  type GutterCopy,
   gutterTextureBytes,
+  slideNeighbour,
   syncGutters,
 } from '@/slide/tileGutter'
 import type { TileTextureCache } from '@/slide/tileTextureCache'
 
-/** A slide tile texture: `width` x `height` interior plus a 1-texel gutter. */
+/**
+ * A slide tile texture: `width` x `height` interior plus a 1-texel gutter, at
+ * tile `col`, `row` of level `level`.
+ */
 export type TileTextureGPU = {
   texture: GPUTexture
   width: number
   height: number
   slide: object
+  level: number
+  col: number
+  row: number
 }
+
+type Copy = [src: TileTextureGPU | null, dst: TileTextureGPU, c: GutterCopy]
 
 /**
  * Uploads slide tiles with a 1-texel gutter (see slide/tileGutter.ts). The
@@ -25,13 +36,19 @@ export type TileTextureGPU = {
  */
 export class TileGutterGPU {
   private _scratch: GPUTexture | null = null
+  // An upload skipped its gutter copies since the last resync.
+  private _stale = false
 
-  /** Upload `bitmap` as tile `at` into `cache`, then sync its gutter there. */
+  /**
+   * Upload `bitmap` as tile `at` into `cache`, then sync its gutter there
+   * unless `sync` is false (nearest filtering: `resync` before linear).
+   */
   upload(
     device: GPUDevice,
     bitmap: ImageBitmap,
     at: GutterAt,
     cache: TileTextureCache<TileTextureGPU>,
+    sync = true,
   ): TileTextureGPU | null {
     const source = fitGutterSource(bitmap, device.limits.maxTextureDimension2D)
     if (!source) return null
@@ -50,6 +67,9 @@ export class TileGutterGPU {
       width,
       height,
       slide,
+      level,
+      col,
+      row,
     }
     device.queue.copyExternalImageToTexture(
       { source },
@@ -57,11 +77,40 @@ export class TileGutterGPU {
       [width, height],
     )
     cache.set(at.key, tile, gutterTextureBytes(width, height), bitmap)
-    const neighbour = (key: string): TileTextureGPU | undefined => {
-      const n = cache.peek(key)
-      return n?.slide === slide ? n : undefined
+    if (!sync) {
+      this._stale = true
+      return tile
     }
-    const size = Math.max(width, height) + 2
+    const copies: Copy[] = []
+    syncGutters(level, col, row, tile, slideNeighbour(cache, slide), (...c) =>
+      copies.push(c),
+    )
+    this._copy(device, copies)
+    return tile
+  }
+
+  /** Refill every resident tile's gutter if an upload skipped its own. */
+  resync(device: GPUDevice, cache: TileTextureCache<TileTextureGPU>): void {
+    if (!this._stale) return
+    this._stale = false
+    const copies: Copy[] = []
+    for (const t of cache.values())
+      fillGutter(
+        t.level,
+        t.col,
+        t.row,
+        t,
+        slideNeighbour(cache, t.slide),
+        (...c) => copies.push(c),
+      )
+    this._copy(device, copies)
+  }
+
+  private _copy(device: GPUDevice, copies: Copy[]): void {
+    // At least 1: a texture cannot be empty.
+    let size = 1
+    for (const [src, dst] of copies)
+      if (!src) size = Math.max(size, dst.width + 2, dst.height + 2)
     if (!this._scratch || this._scratch.width < size) {
       this._scratch?.destroy()
       this._scratch = device.createTexture({
@@ -72,28 +121,29 @@ export class TileGutterGPU {
     }
     const scratch = this._scratch
     const encoder = device.createCommandEncoder()
-    // Staged once for all of the tile's own-edge slots.
-    let staged = false
-    syncGutters(level, col, row, tile, neighbour, (src, dst, c) => {
-      if (!src && !staged)
+    // Staged once for all of a tile's own-edge slots.
+    let staged: TileTextureGPU | null = null
+    for (const [src, dst, c] of copies) {
+      if (!src && dst !== staged) {
         encoder.copyTextureToTexture(
           { texture: dst.texture },
           { texture: scratch },
-          [width + 2, height + 2],
+          [dst.width + 2, dst.height + 2],
         )
-      staged ||= !src
+        staged = dst
+      }
       encoder.copyTextureToTexture(
         { texture: src?.texture ?? scratch, origin: [c.srcX, c.srcY] },
         { texture: dst.texture, origin: [c.x, c.y] },
         [c.width, c.height],
       )
-    })
+    }
     device.queue.submit([encoder.finish()])
-    return tile
   }
 
   destroy(): void {
     this._scratch?.destroy()
     this._scratch = null
+    this._stale = false
   }
 }

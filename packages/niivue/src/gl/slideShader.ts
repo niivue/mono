@@ -21,6 +21,7 @@ ${colorLutGlsl(lut)}
 uniform float opacity;
 uniform int isPlaceholder;
 uniform int showGrid;
+uniform int isNearest;
 uniform vec4 placeholderColor;
 uniform vec4 gridColor;
 
@@ -32,7 +33,11 @@ void main(void) {
   if (isPlaceholder != 1) {
     // Tile textures carry a 1-texel gutter (slide/tileGutter.ts): sample the interior.
     vec2 size = vec2(textureSize(slideTexture, 0));
-    base = texture(slideTexture, (uv * (size - 2.0) + 1.0) / size);
+    vec2 texel = uv * (size - 2.0) + 1.0;
+    // Nearest skips the gutter copies, yet an edge sample (uv at 0 or 1, or
+    // past it under MSAA) would read the gutter: clamp to the edge texels.
+    if (isNearest == 1) texel = clamp(texel, vec2(1.5), size - 1.5);
+    base = texture(slideTexture, texel / size);
     base.rgb = applyColorLut(base.rgb);
   }
   base.a *= opacity;

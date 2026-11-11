@@ -3,6 +3,7 @@ import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
 import {
   applyDefaultAnnotationText,
+  applyNiivueAnnotationDelta,
   applyOhifLabelToAnnotation,
   applyOhifVisibilityToAnnotation,
   clearNiivueAnnotations,
@@ -1070,6 +1071,76 @@ describe('reflectNiivueAnnotation', () => {
     expect(refreshed.uid).toBe(aUid)
     expect(refreshed.uid).not.toBe(uidB)
     expect(refreshed.data.area).toBe(999)
+  })
+
+  it('a delta re-reflects only the ids it names (#125)', () => {
+    const nv = stubNiivue()
+    register('vp-d1', nv)
+    updateNiivueViewport('vp-d1', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-d1', backing)
+    reflectNiivueAnnotation('vp-d1', svc.servicesManager, ellipse('A'))
+    reflectNiivueAnnotation('vp-d1', svc.servicesManager, ellipse('B'))
+    reflectNiivueAnnotation('vp-d1', svc.servicesManager, ellipse('C'))
+    const aUid = (svc.added[0]?.data.schema as { uid: string }).uid
+    const cUid = (svc.added[2]?.data.schema as { uid: string }).uid
+    // B changed too, but the delta names only A: no full sweep reaches B.
+    const changed = (id: string) => {
+      const a = ellipse(id)
+      ;(a as { stats: Record<string, number> }).stats = {
+        area: 999,
+        min: 5,
+        mean: 50,
+        max: 200,
+        stdDev: 12,
+      }
+      return a
+    }
+    nv.annotations = [changed('A'), changed('B')]
+    applyNiivueAnnotationDelta('vp-d1', svc.servicesManager, {
+      added: [],
+      updated: ['A'],
+      removed: ['C'],
+    })
+    expect(svc.added).toHaveLength(4)
+    expect((svc.added[3]?.data.schema as { uid: string }).uid).toBe(aUid)
+    expect(svc.removed).toEqual([cUid])
+  })
+
+  it('a delta retries a thrown remove from an earlier delta (#125)', () => {
+    const nv = stubNiivue()
+    register('vp-d2', nv)
+    updateNiivueViewport('vp-d2', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-d2', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as { remove: (uid: string) => void }
+    let attempts = 0
+    measurementService.remove = (uid) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('temporarily unavailable')
+      svc.removed.push(uid)
+    }
+    const annotation = ellipse('gone')
+    nv.annotations = [annotation]
+    reflectNiivueAnnotation('vp-d2', svc.servicesManager, annotation)
+    nv.annotations = []
+    const none = { added: [], updated: [], removed: [] }
+    applyNiivueAnnotationDelta('vp-d2', svc.servicesManager, {
+      ...none,
+      removed: ['gone'],
+    })
+    expect(svc.removed).toHaveLength(0)
+    applyNiivueAnnotationDelta('vp-d2', svc.servicesManager, none)
+    expect(attempts).toBe(2)
+    expect(svc.removed).toHaveLength(1)
   })
 
   it('reconcile detects slice-depth changes in reflected geometry', () => {

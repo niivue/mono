@@ -1,4 +1,5 @@
 import type {
+  AnnotationChangedDetail,
   NiiVueOptions,
   VectorAnnotation,
   VolumeUpdatedDetail,
@@ -13,6 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
+  applyNiivueAnnotationDelta,
   centerCrosshair,
   clearNiivueAnnotations,
   readBaseWindowLevel,
@@ -231,16 +233,16 @@ export function NiivueViewport(props: OhifViewportProps) {
       const id = (e as CustomEvent<{ id: string }>).detail?.id
       if (id) removeNiivueAnnotation(viewportId, servicesManagerRef.current, id)
     }
+    // A 'draw' can also MERGE (clipper union/cut) a reflected annotation out of
+    // the set with no annotationRemoved event; its id arrives in `removed`.
     const onAnnotationChanged = (e: Event) => {
-      const action = (e as CustomEvent<{ action: string }>).detail?.action
-      if (!action) return
-      // onAnnotationAdded already reflected the new annotation, but a 'draw' can
-      // also MERGE (clipper union/cut) a previously reflected annotation out of
-      // the set with no annotationRemoved event, so its row would linger
-      // (round-2 review R2-2). Every action reconciles: it is diff-based (only
-      // touches changed/vanished/new rows) and re-entrancy guarded, so
-      // reconciling on 'draw' just prunes any consumed row and no-ops the rest.
-      reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
+      const detail = (e as CustomEvent<AnnotationChangedDetail>).detail
+      if (detail)
+        applyNiivueAnnotationDelta(
+          viewportId,
+          servicesManagerRef.current,
+          detail,
+        )
     }
     nv.addEventListener('annotationAdded', onAnnotationAdded)
     nv.addEventListener('annotationRemoved', onAnnotationRemoved)

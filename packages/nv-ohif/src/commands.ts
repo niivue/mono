@@ -1,4 +1,5 @@
 import {
+  type AnnotationChangedDetail,
   type AnnotationPoint,
   type AnnotationScreenShape,
   type AnnotationStats,
@@ -1224,100 +1225,118 @@ export function clearNiivueAnnotations(
   hiddenAnnotations.delete(viewportId)
 }
 
+// Add, update in place, or (for a geometry OHIF cannot show) remove one
+// annotation's row. Unchanged rows keep their uid, so OHIF panel selection / jump
+// on rows the user did not edit is preserved.
+function syncNiivueAnnotation(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  entry: NiivueViewportEntry,
+  annotation: VectorAnnotation,
+): void {
+  const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
+  const hash = rowHash(annotation, entry.sliceFrames)
+  if (existing && existing.hash === hash) return
+  const result = reflectNiivueAnnotationResult(
+    viewportId,
+    servicesManager,
+    annotation,
+    existing?.uid,
+  )
+  // On success reflect stored {uid, hash}.
+  if (result.status !== 'permanentlyUnsupported') return
+  // The current geometry cannot be represented in OHIF (freehand hole / split,
+  // degenerate shape). Per product decision, DELETE any prior row rather than
+  // leave it misrepresenting the new geometry, and negative-cache the hash so
+  // the permanently-bad shape is not re-attempted every event. A later edit
+  // changes the hash and reflects afresh.
+  //
+  // If the removal THROWS (transient), removeNiivueAnnotation returns false and
+  // preserves the { uid, hash } entry: leave it so a later sync retries the
+  // removal, instead of overwriting it with a uid-less negative cache (which
+  // would orphan the OHIF row + leak measurementToAnnotation and block all
+  // future removal, round-5 F1).
+  const removed = existing?.uid
+    ? removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
+    : true
+  if (!removed) return
+  let map = reflectedAnnotations.get(viewportId)
+  if (!map) {
+    map = new Map()
+    reflectedAnnotations.set(viewportId, map)
+  }
+  map.set(annotation.id, { hash })
+  // retryableFailure (no entry / backing series not ready yet / service hiccup)
+  // stores nothing, so a later sync retries it.
+}
+
 /**
- * Reconcile a viewport's reflected panel rows against NiiVue's current annotation
- * set. Used for edits that the per-row annotationAdded / annotationRemoved events
- * do not cover, where the change event carries only an action (no id): a resize or
- * move (geometry/stats changed on an existing shape), an erase, or an undo/redo
- * (membership changed).
- *
- * Diff-based, keyed on annotation id, so it only touches rows that actually
- * changed:
- *   - annotation gone      -> remove its row
- *   - annotation new       -> add a row
- *   - annotation changed   -> update the existing row in place (reuse the uid)
- *   - annotation unchanged -> leave its row (keeps its uid, so OHIF panel
- *                             selection / jump on rows the user did not edit is
- *                             preserved)
- *   - unsupported geometry -> delete any prior row and negative-cache the hash
- *   - transient failure    -> leave uncached and retry on a later reconcile
- *
- * Re-entrancy guarded: an update-in-place reflect can synchronously broadcast
- * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter here.
+ * Re-entrancy guard: an update-in-place reflect can synchronously broadcast
+ * MEASUREMENT_UPDATED, whose handler may emit annotationChanged and re-enter.
  * Those nested calls are echoes of our own OHIF writes (never a fresh user
- * action), so they are skipped — without this a single resize would recurse to a
+ * action), so they are skipped; without this a single resize would recurse to a
  * stack overflow (round-2 review R2-0).
  */
 const reconcilingViewports = new Set<string>()
-export function reconcileNiivueAnnotations(
+function guarded(
   viewportId: string,
-  servicesManager: OhifExtensionParams['servicesManager'],
-): void {
+  run: (entry: NiivueViewportEntry) => void,
+) {
   if (reconcilingViewports.has(viewportId)) return
   const entry = getNiivueEntry(viewportId)
   if (!entry) return
   reconcilingViewports.add(viewportId)
   try {
-    const live = entry.nv.annotations
-    const liveIds = new Set(live.map((a) => a.id))
-
-    // Remove rows for annotations that no longer exist.
-    const byView = reflectedAnnotations.get(viewportId)
-    if (byView) {
-      for (const annotationId of [...byView.keys()]) {
-        if (!liveIds.has(annotationId))
-          removeNiivueAnnotation(viewportId, servicesManager, annotationId)
-      }
-    }
-    // Failures for vanished annotations with no row left (erase / undo). A row
-    // still present is a pending removal whose attempt count must survive.
-    const rows = reflectedAnnotations.get(viewportId)
-    for (const annotationId of mappingFailures.get(viewportId)?.keys() ?? [])
-      if (!liveIds.has(annotationId) && !rows?.has(annotationId))
-        clearMappingFailure(viewportId, annotationId)
-
-    // Add new annotations and update changed rows in place.
-    for (const annotation of live) {
-      const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-      const hash = rowHash(annotation, entry.sliceFrames)
-      if (existing && existing.hash === hash) continue
-      const result = reflectNiivueAnnotationResult(
-        viewportId,
-        servicesManager,
-        annotation,
-        existing?.uid,
-      )
-      // On success reflect stored {uid, hash}.
-      if (result.status === 'permanentlyUnsupported') {
-        // The current geometry cannot be represented in OHIF (freehand hole /
-        // split, degenerate shape). Per product decision, DELETE any prior row
-        // rather than leave it misrepresenting the new geometry, and negative-
-        // cache the hash so the permanently-bad shape is not re-attempted every
-        // event. A later edit changes the hash and reflects afresh.
-        //
-        // If the removal THROWS (transient), removeNiivueAnnotation returns false
-        // and preserves the { uid, hash } entry: leave it so the NEXT reconcile
-        // retries the removal, instead of overwriting it with a uid-less negative
-        // cache (which would orphan the OHIF row + leak measurementToAnnotation and
-        // block all future removal — round-5 F1).
-        const removed = existing?.uid
-          ? removeNiivueAnnotation(viewportId, servicesManager, annotation.id)
-          : true
-        if (!removed) continue
-        let map = reflectedAnnotations.get(viewportId)
-        if (!map) {
-          map = new Map()
-          reflectedAnnotations.set(viewportId, map)
-        }
-        map.set(annotation.id, { hash })
-      }
-      // retryableFailure (no entry / backing series not ready yet / service
-      // hiccup): leave it UNcached so the next reconcile retries — e.g. once a
-      // DICOM series finishes loading, the row appears without a content edit.
-    }
+    run(entry)
   } finally {
     reconcilingViewports.delete(viewportId)
   }
+}
+
+/**
+ * Apply one annotationChanged delta to the viewport's panel rows: remove the
+ * removed ids' rows, add or update the added and updated ones. Annotations whose
+ * last OHIF add/remove threw are retried too, as each change used to retry them.
+ */
+export function applyNiivueAnnotationDelta(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+  delta: Pick<AnnotationChangedDetail, 'added' | 'updated' | 'removed'>,
+): void {
+  guarded(viewportId, (entry) => {
+    const live = new Map(entry.nv.annotations.map((a) => [a.id, a]))
+    const failed = [...(mappingFailures.get(viewportId)?.keys() ?? [])]
+    for (const id of new Set([...delta.removed, ...failed]))
+      if (!live.has(id)) removeNiivueAnnotation(viewportId, servicesManager, id)
+    for (const id of new Set([...delta.added, ...delta.updated, ...failed])) {
+      const annotation = live.get(id)
+      if (annotation)
+        syncNiivueAnnotation(viewportId, servicesManager, entry, annotation)
+    }
+  })
+}
+
+/**
+ * Bring every panel row in line with NiiVue's annotations. Run at the load
+ * boundary, where no annotation changed but a row may now reflect: OHIF's
+ * backing series or the converted volume's slice map became ready.
+ */
+export function reconcileNiivueAnnotations(
+  viewportId: string,
+  servicesManager: OhifExtensionParams['servicesManager'],
+): void {
+  guarded(viewportId, (entry) => {
+    const live = entry.nv.annotations
+    const liveIds = new Set(live.map((a) => a.id))
+    for (const annotationId of [
+      ...(reflectedAnnotations.get(viewportId)?.keys() ?? []),
+      ...(mappingFailures.get(viewportId)?.keys() ?? []),
+    ])
+      if (!liveIds.has(annotationId))
+        removeNiivueAnnotation(viewportId, servicesManager, annotationId)
+    for (const annotation of live)
+      syncNiivueAnnotation(viewportId, servicesManager, entry, annotation)
+  })
 }
 
 /**

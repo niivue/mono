@@ -67,7 +67,9 @@ export function fitGutterSource(
   const height = Math.min(bitmap.height, maxTexture - 2)
   if (width === bitmap.width && height === bitmap.height) return bitmap
   const canvas = new OffscreenCanvas(width, height)
-  canvas.getContext('2d')?.drawImage(bitmap, 0, 0, width, height)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('No 2D context to scale an oversize slide tile')
+  ctx.drawImage(bitmap, 0, 0, width, height)
   return canvas
 }
 

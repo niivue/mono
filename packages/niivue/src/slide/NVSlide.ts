@@ -941,7 +941,7 @@ export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
 
 // The same bound as nv-ext-tile's DICOM-WSI index: the largest real level
 // grid is 379k tiles, so a hosted manifest past this is broken or hostile.
-const MAX_SLIDE_GRID = 1 << 22
+export const MAX_SLIDE_GRID = 1 << 22
 
 export function assertSlideGrid(tiles: number, levelIndex: number): void {
   if (tiles > MAX_SLIDE_GRID)

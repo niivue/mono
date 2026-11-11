@@ -82,6 +82,21 @@ const PANEL: CSSProperties = {
   fontSize: 12,
 }
 const ROW: CSSProperties = { display: 'flex', gap: 4, alignItems: 'center' }
+// OHIF's toolbar buttons (Tailwind h-10 text-base text-foreground/80): an
+// unstyled summary is black 16px text on the dark toolbar.
+const TRIGGER: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  height: 40,
+  padding: '0 8px',
+  border: 'none',
+  borderRadius: 8,
+  background: 'transparent',
+  color: 'hsl(var(--foreground, 0 0% 98%) / 0.8)',
+  fontSize: 13,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+}
 
 /**
  * The toolbar's overlay dropdown (`uiType: 'niivue.overlayMenu'`): add a series
@@ -116,7 +131,12 @@ export function overlayMenuComponent({
     const entry = getActiveNiivueEntry(servicesManager)
     if (disabled || !entry)
       return (
-        <button type="button" disabled title={disabledText ?? tooltip}>
+        <button
+          type="button"
+          disabled
+          title={disabledText ?? tooltip}
+          style={{ ...TRIGGER, cursor: 'default', opacity: 0.5 }}
+        >
           {label}
         </button>
       )
@@ -152,7 +172,9 @@ export function overlayMenuComponent({
             onClose?.()
         }}
       >
-        <summary title={tooltip}>{label}</summary>
+        <summary title={tooltip} style={TRIGGER}>
+          {label}
+        </summary>
         <div style={PANEL}>
           <select
             aria-label="Add overlay"

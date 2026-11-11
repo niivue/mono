@@ -104,9 +104,10 @@ describe('NiivueOverlayMenu', () => {
     const html = renderToStaticMarkup(
       <Menu label="Overlays" disabled disabledText="No base" />,
     )
-    expect(html).toBe(
-      '<button type="button" disabled="" title="No base">Overlays</button>',
+    expect(html).toStartWith(
+      '<button type="button" disabled="" title="No base"',
     )
+    expect(html).toEndWith('>Overlays</button>')
   })
 
   it('renders the add list and one control row per overlay', () => {

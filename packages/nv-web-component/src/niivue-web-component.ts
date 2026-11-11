@@ -1,6 +1,12 @@
 import type { NiiVueOptions, NVImage } from '@niivue/niivue'
 import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
-import { css, html, LitElement, type PropertyValues } from 'lit'
+import {
+  css,
+  type HTMLTemplateResult,
+  html,
+  LitElement,
+  type PropertyValues,
+} from 'lit'
 import { defaultLayouts } from './layouts'
 import {
   defaultSliceLayouts,
@@ -120,7 +126,7 @@ export class NiivueViewerElement extends LitElement {
     return this.niivue
   }
 
-  override render() {
+  override render(): HTMLTemplateResult {
     return html`<div id="container"><canvas class="niivue-canvas"></canvas></div>`
   }
 
@@ -345,7 +351,7 @@ export class NiivueSceneElement extends LitElement {
     this.forwardSceneEvents()
   }
 
-  override render() {
+  override render(): HTMLTemplateResult {
     return html`<div id="scene"></div>`
   }
 

@@ -5,7 +5,7 @@
 
 import type { TypedVoxelArray } from '@niivue/niivue'
 
-export type Shape3 = [number, number, number]
+type Shape3 = [number, number, number]
 
 export interface ApiVolume {
   id: string
@@ -33,11 +33,11 @@ export type Family = 'all' | 'raw' | 'seg'
 // A segmentation mask is a filled solid where a fluorescence channel is sparse,
 // so the same overlay opacity that reads well for `_raw` buries everything
 // under `_seg`. Fade masks further than raw channels.
-export const SEG_OPACITY_SCALE = 0.5
+const SEG_OPACITY_SCALE = 0.5
 
 // Whole-volume load budget. Bigger sources belong on the streaming pages, which
 // fetch a level/region at a time instead of the entire array.
-export const MAX_WHOLE_VOLUME_VOXELS = 64_000_000
+const MAX_WHOLE_VOLUME_VOXELS = 64_000_000
 
 // Allen ships each tagged structure twice: the raw fluorescence image and the
 // segmentation derived from it, distinguished only by a `_raw` / `_seg` suffix
@@ -58,7 +58,7 @@ export function visibleChannels(d: Dataset, family: Family): ApiVolume[] {
   return d.channels.filter((entry) => matchesFamily(entry, family))
 }
 
-export function voxels(shape: Shape3): number {
+function voxels(shape: Shape3): number {
   return shape[0] * shape[1] * shape[2]
 }
 

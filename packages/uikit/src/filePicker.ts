@@ -117,7 +117,7 @@ export function resolveFilePickerStyle(
 }
 
 /** The button style a picker's button is laid out and drawn with. */
-export function filePickerButtonStyle(style: FilePickerStyle): ButtonStyle {
+function filePickerButtonStyle(style: FilePickerStyle): ButtonStyle {
   return resolveButtonStyle(DEFAULT_BUTTON_STYLE, style.button)
 }
 

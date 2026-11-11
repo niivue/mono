@@ -51,7 +51,7 @@ function instanceRefs(ds: OhifDisplaySet): InstanceRef[] {
  * Fetch every instance of a DICOMweb display set as a DICOM P10 File.
  * Fetches run with bounded concurrency; progress is reported per frame.
  */
-export async function fetchDicomInstanceFiles(
+async function fetchDicomInstanceFiles(
   ds: OhifDisplaySet,
   options: DicomConvertOptions = {},
 ): Promise<File[]> {

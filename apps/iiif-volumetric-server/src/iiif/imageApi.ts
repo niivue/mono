@@ -7,9 +7,9 @@ import type {
 } from '../adapters/volumeHandle.ts'
 import { rgbaToPng } from '../util/png.ts'
 
-export const IMAGE_API_CONTEXT = 'http://iiif.io/api/image/3/context.json'
-export const IMAGE_API_PROFILE = 'level1'
-export const IMAGE_API_PROTOCOL = 'http://iiif.io/api/image'
+const IMAGE_API_CONTEXT = 'http://iiif.io/api/image/3/context.json'
+const IMAGE_API_PROFILE = 'level1'
+const IMAGE_API_PROTOCOL = 'http://iiif.io/api/image'
 
 export interface InfoJsonOpts {
   baseUrl: string

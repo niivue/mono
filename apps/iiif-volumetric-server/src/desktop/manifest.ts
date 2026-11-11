@@ -7,7 +7,7 @@ import type { Dtype, Shape3, Vec3 } from '../adapters/volumeHandle.ts'
 const DEFAULT_TILE_SIZE = 1024
 const DEFAULT_GAP = 96
 
-export interface DesktopVolumeLevel {
+interface DesktopVolumeLevel {
   level: number
   shape: Shape3
   spacing: Vec3
@@ -15,7 +15,7 @@ export interface DesktopVolumeLevel {
   bytes?: number | null
 }
 
-export interface DesktopVolume {
+interface DesktopVolume {
   id: string
   format: string
   shape: Shape3
@@ -32,7 +32,7 @@ export interface BuildDesktopManifestArgs {
   gap?: number
 }
 
-export interface DesktopManifestItem {
+interface DesktopManifestItem {
   id: string
   type: 'NiftiVolumeItem'
   label: string

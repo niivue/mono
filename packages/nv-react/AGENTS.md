@@ -28,10 +28,6 @@ bunx nx typecheck nv-react
 bunx nx lint nv-react
 ```
 
-### Example-app scripts
-
-The `example:setup` / `example:dev` scripts in `package.json` pack the library tarball and install it into a sibling `example-app/` directory. Those scripts are retained for when an example app is added alongside the library; they will fail if `example-app/` is not present.
-
 After UI changes, start the dev server (`bun run dev`) and visually verify with a browser or Chrome DevTools MCP.
 
 ## Project structure

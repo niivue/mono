@@ -11,7 +11,7 @@ export const EXAMPLES_DIR = 'packages/niivue/examples'
 // Pages left out of the gallery.
 const HIDDEN = new Set<string>()
 
-export type GalleryFile = { name: string; code: string }
+type GalleryFile = { name: string; code: string }
 
 export type GalleryExample = {
   slug: string

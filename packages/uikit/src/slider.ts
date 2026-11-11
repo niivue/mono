@@ -200,11 +200,7 @@ export function valueToFraction(
   return Math.min(1, Math.max(0, (value - min) / (max - min)))
 }
 
-export function fractionToValue(
-  fraction: number,
-  min: number,
-  max: number,
-): number {
+function fractionToValue(fraction: number, min: number, max: number): number {
   return min + Math.min(1, Math.max(0, fraction)) * (max - min)
 }
 

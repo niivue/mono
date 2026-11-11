@@ -9,7 +9,7 @@ export const SLICE_TYPE = {
   RENDER: 4,
 } as const
 
-export const DRAG_MODE = {
+const DRAG_MODE = {
   none: 0,
   contrast: 1,
   measurement: 2,
@@ -68,7 +68,7 @@ export interface MockNiiVue {
  * can tell live options (setters) from construction-only ones. Values are the
  * mock's defaults.
  */
-export const MOCK_OPTION_DEFAULTS = {
+const MOCK_OPTION_DEFAULTS = {
   sliceType: SLICE_TYPE.AXIAL as number,
   showRender: SHOW_RENDER.AUTO as number,
   primaryDragMode: DRAG_MODE.crosshair as number,
@@ -84,7 +84,7 @@ type MockFields = Omit<
 >
 
 /** Create a fresh MockNiiVue instance with all methods stubbed */
-export function createMockNiiVue(): MockFields {
+function createMockNiiVue(): MockFields {
   const handlers = new Map<string, Set<(evt: unknown) => void>>()
 
   const instance: MockFields = {
@@ -147,7 +147,7 @@ export function clearMockInstances(): void {
  * Captures constructor options and returns a mock instance.
  * We push `this` (the actual instance) so tests can mutate it directly.
  */
-export class NiiVue {
+class NiiVue {
   [key: string]: unknown
 
   constructor(opts: Record<string, unknown> = {}) {
@@ -176,11 +176,8 @@ for (const key of Object.keys(MOCK_OPTION_DEFAULTS)) {
   })
 }
 
-// Default export to match `import NiiVue from "@niivue/niivue"`
-export default NiiVue
-
 // NVImage is just a type, export a placeholder for value-level usage
-export class NVImage {}
+class NVImage {}
 
 /**
  * Register the module mock. Call this at the top of test files

@@ -142,7 +142,7 @@ export function assemblePart10(
 }
 
 // dcmjs `data.DicomDict` shape we depend on (no upstream .d.ts).
-export interface DcmjsDicomDict {
+interface DcmjsDicomDict {
   meta: JsonDataset
   dict: JsonDataset
   write(options?: {

@@ -8,7 +8,7 @@
 // matrix (row-major) mapping voxel axes to world axes; identity if
 // unknown.
 
-export type ScalarDtype =
+type ScalarDtype =
   | 'uint8'
   | 'int8'
   | 'uint16'
@@ -17,10 +17,10 @@ export type ScalarDtype =
   | 'int32'
   | 'float32'
   | 'float64'
-export type ColorDtype = 'rgb24' | 'rgba32'
+type ColorDtype = 'rgb24' | 'rgba32'
 export type Dtype = ScalarDtype | ColorDtype
 
-export type TypedScalarArray =
+type TypedScalarArray =
   | Uint8Array
   | Int8Array
   | Uint16Array

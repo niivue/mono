@@ -90,7 +90,7 @@ export interface WindowLevelPreset {
 // only when the host app does not expose the customization (e.g. a bare mode).
 // The live values come from OHIF via the customization service (see
 // resolveWindowLevelPreset), so a consumer's overrides flow through.
-export const FALLBACK_WL_PRESETS: Record<string, WindowLevelPreset[]> = {
+const FALLBACK_WL_PRESETS: Record<string, WindowLevelPreset[]> = {
   CT: [
     {
       id: 'ct-soft-tissue',
@@ -265,7 +265,7 @@ interface CustomizationServiceLike {
 }
 
 /** OHIF's window/level presets (customization first, built-in fallback). */
-export function windowLevelPresets(
+function windowLevelPresets(
   servicesManager: OhifExtensionParams['servicesManager'],
 ): Record<string, WindowLevelPreset[]> {
   const svc = ohifServices(servicesManager)?.customizationService as
@@ -997,7 +997,7 @@ export function jumpToNiivueMeasurement(
  * echoes MEASUREMENT_REMOVED synchronously; removingUids marks those so we do
  * not double-remove).
  */
-export function applyOhifRemoveToAnnotation(measurementUid: string): void {
+function applyOhifRemoveToAnnotation(measurementUid: string): void {
   if (removingUids.has(measurementUid)) return
   const ref = measurementToAnnotation.get(measurementUid)
   if (!ref) return

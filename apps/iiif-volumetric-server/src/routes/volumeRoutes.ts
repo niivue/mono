@@ -32,7 +32,6 @@ import {
   type ContentEncoding,
   compressBuffer,
   dtypeByteSize,
-  encodeNifti,
   encodeNiftiRaw,
   negotiateEncoding,
 } from '../util/niftiEncoder.ts'
@@ -655,7 +654,7 @@ function parseBbox(s: unknown): Bbox | null {
   return { x0, y0, z0, x1, y1, z1 }
 }
 
-export interface CropMeta {
+interface CropMeta {
   data: Uint8Array
   shape: Shape3
   spacing: import('../adapters/volumeHandle.ts').Vec3
@@ -683,7 +682,7 @@ export async function cropRawNiftiFile(
   return encodeNiftiRaw(meta)
 }
 
-export async function cropRawNiftiData(
+async function cropRawNiftiData(
   filePath: string,
   layout: RawLevelLayout,
   bbox: Bbox,
@@ -837,11 +836,7 @@ function typedArrayForDtype(dtype: Dtype): TypedScalarCtor | null {
   }
 }
 
-export function cropNifti(volume: VolumeHandle, bbox: Bbox): Buffer {
-  return encodeNifti(cropNiftiMeta(volume, bbox))
-}
-
-export function cropNiftiRaw(volume: VolumeHandle, bbox: Bbox): Buffer {
+function cropNiftiRaw(volume: VolumeHandle, bbox: Bbox): Buffer {
   return encodeNiftiRaw(cropNiftiMeta(volume, bbox))
 }
 

@@ -568,15 +568,15 @@ function annotationPointsLps(
 // niivue annotation id -> OHIF measurement uid, per viewport, so a removed or
 // cleared annotation can remove its panel row.
 // viewportId -> (annotationId -> { OHIF measurement uid, content hash }). The hash
-// lets reconcile touch only the rows whose annotation actually changed, so an edit
+// lets a sync touch only the rows whose annotation actually changed, so an edit
 // to one annotation never re-mints another's uid (which would drop OHIF's panel
 // selection / jump on a row the user never touched).
 interface ReflectedRow {
   // The OHIF measurement uid, or absent when the row is a NEGATIVE CACHE entry for
-  // a permanently-unsupported geometry: the hash lets reconcile skip re-attempting
+  // a permanently-unsupported geometry: the hash lets a sync skip re-attempting
   // the reflect until the annotation content changes. Transient/retryable failures
-  // are NOT cached (they get no entry), so they retry on the next reconcile once
-  // the backing series / service becomes ready.
+  // are NOT cached (they get no entry), so they retry on a later delta or at the
+  // load boundary once the backing series / service becomes ready.
   uid?: string
   hash: string
 }
@@ -591,30 +591,46 @@ const mappingFailures = new Map<
   Map<string, { hash: string; attempts: number }>
 >()
 
+function failuresFor(viewportId: string) {
+  let byView = mappingFailures.get(viewportId)
+  if (!byView) {
+    byView = new Map()
+    mappingFailures.set(viewportId, byView)
+  }
+  return byView
+}
+
 function recordMappingFailure(
   viewportId: string,
   annotationId: string,
   hash: string,
   action: string,
   err: unknown,
-  capped = true,
 ): void {
-  let byView = mappingFailures.get(viewportId)
-  if (!byView) {
-    byView = new Map()
-    mappingFailures.set(viewportId, byView)
-  }
+  const byView = failuresFor(viewportId)
   const prev = byView.get(annotationId)
-  // Warn once per failing change (hash), so a later remove failure is still logged.
-  if (capped && prev?.hash !== hash)
+  const attempts = prev?.hash === hash ? prev.attempts : 0
+  // Warn on the first throw per change (hash), even after no-uid waits.
+  if (attempts === 0)
     console.warn(
       `[nv-ohif] measurement ${action} failed for annotation ${annotationId} (retrying up to ${MAX_MAPPING_ATTEMPTS} attempts)`,
       err,
     )
+  byView.set(annotationId, { hash, attempts: attempts + 1 })
+}
+
+// An add that returned no uid: OHIF is not ready. Retried on every later delta,
+// uncapped and unlogged; keeps the throw count, so alternating results still cap.
+function recordMappingWait(
+  viewportId: string,
+  annotationId: string,
+  hash: string,
+): void {
+  const byView = failuresFor(viewportId)
+  const prev = byView.get(annotationId)
   byView.set(annotationId, {
     hash,
-    // A no-uid wait keeps the throw count, so alternating results still cap.
-    attempts: (prev?.hash === hash ? prev.attempts : 0) + (capped ? 1 : 0),
+    attempts: prev?.hash === hash ? prev.attempts : 0,
   })
 }
 
@@ -886,9 +902,7 @@ function reflectNiivueAnnotationResult(
     return { status: 'retryableFailure' }
   }
   if (!acceptedUid) {
-    // No uid means OHIF is not ready, like a missing backing series: retry on
-    // every later delta and at the load boundary, uncapped and unlogged.
-    recordMappingFailure(viewportId, annotation.id, hash, 'add', null, false)
+    recordMappingWait(viewportId, annotation.id, hash)
     return { status: 'retryableFailure' }
   }
   clearMappingFailure(viewportId, annotation.id)
@@ -939,7 +953,7 @@ export function applyOhifLabelToAnnotation(
   // an update-in-place reflect broadcasts MEASUREMENT_UPDATED carrying the row
   // label we just wrote from the annotation's own text, and setAnnotationText
   // always re-emits annotationChanged (even for identical text) which would
-  // re-drive reconcile -> reflect -> ... (round-2 review R2-0).
+  // re-drive sync -> reflect -> ... (round-2 review R2-0).
   const current = entry.nv.annotations.find((a) => a.id === ref.annotationId)
   if (current && (current.text ?? '') === (label ?? '')) return
   entry.nv.setAnnotationText(ref.annotationId, label ?? '')
@@ -1144,7 +1158,7 @@ export function subscribeOhifLabelSync(
  * Returns true when the row is gone (removed, or there was nothing / no uid to
  * remove, or the host has no remove so recovery is impossible). Returns FALSE only
  * when an available remove() THREW: the bookkeeping is preserved so the caller can
- * retry on a later reconcile instead of orphaning the OHIF row (round-5 F1).
+ * retry on a later sync instead of orphaning the OHIF row (round-5 F1).
  */
 export function removeNiivueAnnotation(
   viewportId: string,
@@ -1161,7 +1175,7 @@ export function removeNiivueAnnotation(
     ?.measurementService as MeasurementServiceLike | undefined
   if (row.uid) {
     // After the retry cap, fall through and drop the bookkeeping: the OHIF row
-    // is orphaned, but the maps stop growing and reconcile stops retrying.
+    // is orphaned, but the maps stop growing and sync stops retrying.
     if (
       measurementService?.remove &&
       !mappingExhausted(viewportId, annotationId, row.hash)
@@ -1171,7 +1185,7 @@ export function removeNiivueAnnotation(
         measurementService.remove(row.uid)
       } catch (err) {
         // A THROWN remove is transient — keep the bookkeeping so the next
-        // reconcile retries the OHIF-side removal.
+        // a later sync retries the OHIF-side removal.
         recordMappingFailure(viewportId, annotationId, row.hash, 'remove', err)
         return false
       } finally {
@@ -1187,7 +1201,7 @@ export function removeNiivueAnnotation(
   if (byView.size === 0) reflectedAnnotations.delete(viewportId)
   clearMappingFailure(viewportId, annotationId)
   // Only drop the hidden flag when the annotation is actually gone from NiiVue.
-  // removeNiivueAnnotation also runs on reconcile's permanently-unsupported path,
+  // removeNiivueAnnotation also runs on the sync's permanently-unsupported path,
   // which drops the OHIF row while the annotation is still alive; clearing there
   // would un-hide a shape the user hid (and leave no row to re-hide it). On a
   // genuine delete the annotation is already spliced out (removeAnnotation emits
@@ -1303,7 +1317,7 @@ function guarded(
 /**
  * Apply one annotationChanged delta to the viewport's panel rows: remove the
  * removed ids' rows, add or update the added and updated ones. Annotations whose
- * last OHIF add/remove threw are retried too, as each change used to retry them.
+ * last OHIF add/remove threw or returned no uid are retried too.
  */
 export function applyNiivueAnnotationDelta(
   viewportId: string,
@@ -1332,17 +1346,12 @@ export function reconcileNiivueAnnotations(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
-  guarded(viewportId, (entry) => {
-    const live = entry.nv.annotations
-    const liveIds = new Set(live.map((a) => a.id))
-    for (const annotationId of [
-      ...(reflectedAnnotations.get(viewportId)?.keys() ?? []),
-      ...(mappingFailures.get(viewportId)?.keys() ?? []),
-    ])
-      if (!liveIds.has(annotationId))
-        removeNiivueAnnotation(viewportId, servicesManager, annotationId)
-    for (const annotation of live)
-      syncNiivueAnnotation(viewportId, servicesManager, entry, annotation)
+  const live = getNiivueEntry(viewportId)?.nv.annotations
+  if (!live) return
+  applyNiivueAnnotationDelta(viewportId, servicesManager, {
+    added: [],
+    updated: live.map((a) => a.id),
+    removed: [...(reflectedAnnotations.get(viewportId)?.keys() ?? [])],
   })
 }
 

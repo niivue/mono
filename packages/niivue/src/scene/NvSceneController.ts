@@ -659,7 +659,8 @@ export class NvSceneController {
           this.addError(viewer.id, error)
           if (currentIndex >= 0) {
             this.emit('error', currentIndex, error)
-            this.removeViewer(currentIndex)
+            // An error listener may already have removed it; -1 is a no-op.
+            this.removeViewer(this.viewers.indexOf(viewer))
           }
         }
         throw error

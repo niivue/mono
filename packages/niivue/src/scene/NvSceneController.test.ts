@@ -1207,6 +1207,18 @@ describe('NvSceneController', () => {
       expect(errorCb.mock.calls[0]?.[0]).toBe(0)
     })
 
+    test('a failed attachment whose error listener removes it leaves other viewers', async () => {
+      const attach = deferAttach()
+      controller.setLayout('1x2')
+      controller.on('error', (index) => controller.removeViewer(index))
+
+      attach.reject(new Error('attach failed'))
+      await flushPromises()
+
+      expect(controller.getSnapshot().viewerCount).toBe(1)
+      expect(controller.getNiivue(0) as unknown).toBe(mockInstances[1])
+    })
+
     test('setLayout reports a failed attachment without an unhandled rejection', async () => {
       const errorCb = mock((_index: number, _err: unknown) => {})
       controller.on('error', errorCb)

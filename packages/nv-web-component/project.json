@@ -35,6 +35,7 @@
     "test": {
       "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
       "inputs": ["typescript", "{projectRoot}/src/**/*"]
     }
   }

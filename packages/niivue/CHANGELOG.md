@@ -1,3 +1,19 @@
+## 1.0.0-rc.165 (2026-11-11)
+
+### Features
+
+- **niivue:** NVSlide zoom box and middle-button pan ([2417b872](https://github.com/niivue/mono/commit/2417b872))
+
+### Fixes
+
+- **niivue:** end uncaptured slide gestures on leave; skip collapsed zoom box ([#713](https://github.com/niivue/mono/issues/713))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.164 (2026-11-11)
 
 ### Features

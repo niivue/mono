@@ -50,6 +50,7 @@ package-private (see "Conventions for contributors").
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
+| `layoutSlideMinimap` | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
 | `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
 | `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |
@@ -738,7 +739,7 @@ and `urlParamSelect.js` are shared by the pages.
 | `ruler.html` | The ruler on a blank pane |
 | `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick |
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels |
-| `slide-wsi.html` | The ruler on the standalone WSI viewer with a DICOM whole-slide image |
+| `slide-wsi.html` | The ruler and the slide minimap on the standalone WSI viewer with a DICOM whole-slide image |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
 
 ## Conventions for contributors

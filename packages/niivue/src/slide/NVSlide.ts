@@ -1938,10 +1938,8 @@ export class NVSlide extends EventTarget {
     return level.tiles[y * level.columns + x] ?? null
   }
 
-  private tileKey(
-    level: NVSlideLevelManifest,
-    tile: NVSlideTileManifest,
-  ): string {
+  /** The cache key {@link cachedTileBitmap} takes for a tile of a level. */
+  tileKey(level: NVSlideLevelManifest, tile: NVSlideTileManifest): string {
     return `L${level.index}/${tile.x}/${tile.y}`
   }
 

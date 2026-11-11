@@ -46,12 +46,14 @@
         <label id="retinaLabel" hidden title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
-      <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure.</span><span id="status" data-state="wait">Loading slide...</span></footer>
+      <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure. Drag the minimap to jump.</span><span id="status" data-state="wait">Loading slide...</span></footer>
     </div>
 
     <script type="module">
       import { DziSource, NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
-      import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
+      import {
+        loadDefaultFont, UIKitControls, UIKitRulerOverlay, UIKitSlideMinimapOverlay,
+      } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -187,7 +189,20 @@
       document.getElementById('backendSelect').value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
-      view.renderer.overlayDraw = (f) => ruler.drawOverlay(f)
+      // The minimap owns presses on itself through the control layer, so they
+      // never reach the pan / measure handlers below.
+      const controls = new UIKitControls().add(new UIKitSlideMinimapOverlay(slide))
+      controls.attach({
+        canvas,
+        clientToCanvas: (clientX, clientY) => {
+          const r = canvas.getBoundingClientRect()
+          const x = ((clientX - r.left) * canvas.width) / r.width
+          const y = ((clientY - r.top) * canvas.height) / r.height
+          return x >= 0 && y >= 0 && x < canvas.width && y < canvas.height ? [x, y] : null
+        },
+        drawScene: requestRender,
+      })
+      view.renderer.overlayDraw = (f) => { ruler.drawOverlay(f); controls.drawOverlay(f) }
       view.renderer.isNearestInterpolation = filter.value === 'nearest'
       slide.addEventListener('change', requestRender)
       setStatus(

@@ -5,7 +5,9 @@
  *   1. every import is relative and resolves inside the folder, except
  *      `@niivue/niivue` (the page maps it onto core's standalone build) and
  *      the optional `@niivue/dcm2niix`, which only /dicom and /tiff (JPEG
- *      2000 tiles) may reach, and only through a dynamic import;
+ *      2000 tiles) may reach, and only through a dynamic import. A dynamic
+ *      import of a `node:` builtin is allowed: zarrita-rs's Node-only worker
+ *      branch, which the minifier inlines (browsers never run it);
  *   2. nothing locates an asset through `import.meta.url`;
  *   3. each entry's static imports stay within its format: /tiff loads no
  *      zarrita code, /zarr and /dicom load no geotiff-rs code.
@@ -60,7 +62,8 @@ for (const abs of listJs(DIR)) {
   for (const imp of transpiler.scanImports(code)) {
     const spec = imp.path
     if (!spec.startsWith('./') && !spec.startsWith('../')) {
-      if (spec !== CORE && spec !== DCM2NIIX)
+      const nodeOnly = spec.startsWith('node:') && imp.kind === 'dynamic-import'
+      if (spec !== CORE && spec !== DCM2NIIX && !nodeOnly)
         errors.push(`${rel}: bare ${imp.kind} "${spec}"`)
       if (spec === DCM2NIIX && imp.kind !== 'dynamic-import')
         errors.push(`${rel}: ${imp.kind} of optional ${DCM2NIIX}`)

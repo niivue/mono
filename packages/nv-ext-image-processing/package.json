@@ -21,7 +21,7 @@
   "devDependencies": {
     "@niivue/niivue": "workspace:*",
     "typescript": "^5.9.3",
-    "vite": "^6.3.2",
+    "vite": "^8.3.8",
     "vite-plugin-dts": "^4.5.4"
   },
   "scripts": {

@@ -4,11 +4,13 @@ import { OVERLAY_ALPHA_BLEND, OVERLAY_COLOR_BLEND } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import {
   buildOrientUniforms,
+  dimensionsMatch,
   labelLutTexels,
   prepareRGBAData,
   rgbaTextureKey,
 } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
+import { objectId } from '@/volume/dataVersion'
 import {
   IDENTITY_MTX,
   type ModulationTextureParams,
@@ -289,29 +291,14 @@ function getTextureFormat(nvimage: NVImage): {
   throw new Error(`Unsupported NIfTI datatype ${dt}`)
 }
 
-const _labelColormapIds = new WeakMap<object, number>()
-let _nextLabelColormapId = 1
-
-function labelColormapId(colormapLabel: object): number {
-  const existing = _labelColormapIds.get(colormapLabel)
-  if (existing) return existing
-  const id = _nextLabelColormapId++
-  _labelColormapIds.set(colormapLabel, id)
-  return id
-}
-
 function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
   if (isLabelVol) {
     const label = NVCmaps.shownLabelLut(nvimage)
     return label
-      ? `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
+      ? `label:${objectId(label)}:${objectId(label.lut)}`
       : 'label:none'
   }
   return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
-}
-
-function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
 function writeOrientUniforms(

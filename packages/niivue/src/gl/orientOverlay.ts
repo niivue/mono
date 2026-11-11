@@ -11,11 +11,13 @@ import { log } from '@/logger'
 import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import {
   buildOrientUniforms,
+  dimensionsMatch,
   labelLutTexels,
   prepareRGBAData,
   rgbaTextureKey,
 } from '@/view/NVOrient'
 import type { ChunkPlan } from '@/volume/chunking'
+import { objectId } from '@/volume/dataVersion'
 import {
   IDENTITY_MTX,
   type ModulationTextureParams,
@@ -746,27 +748,12 @@ export type OverlayTextureCache = {
   modKey: string
 }
 
-const _labelColormapIds = new WeakMap<object, number>()
-let _nextLabelColormapId = 1
-
-function labelColormapId(colormapLabel: object): number {
-  const existing = _labelColormapIds.get(colormapLabel)
-  if (existing) return existing
-  const id = _nextLabelColormapId++
-  _labelColormapIds.set(colormapLabel, id)
-  return id
-}
-
 function overlayColormapKey(nvimage: NVImage): string {
   const label = NVCmaps.shownLabelLut(nvimage)
   if (label) {
-    return `label:${labelColormapId(label)}:${labelColormapId(label.lut)}`
+    return `label:${objectId(label)}:${objectId(label.lut)}`
   }
   return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
-}
-
-function dimensionsMatch(a: readonly number[], b: readonly number[]): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
 export function destroyOverlayTextureCache(

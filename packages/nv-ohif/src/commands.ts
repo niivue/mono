@@ -613,7 +613,8 @@ function recordMappingFailure(
     )
   byView.set(annotationId, {
     hash,
-    attempts: !capped ? 0 : prev?.hash === hash ? prev.attempts + 1 : 1,
+    // A no-uid wait keeps the throw count, so alternating results still cap.
+    attempts: (prev?.hash === hash ? prev.attempts : 0) + (capped ? 1 : 0),
   })
 }
 

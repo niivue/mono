@@ -1205,6 +1205,39 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(1)
   })
 
+  it('alternating throws and no-uid adds still reach the cap (#125)', () => {
+    const nv = stubNiivue()
+    register('vp-d5', nv)
+    updateNiivueViewport('vp-d5', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-d5', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      addRawMeasurement: (...args: unknown[]) => string | undefined
+    }
+    let calls = 0
+    measurementService.addRawMeasurement = () => {
+      calls += 1
+      if (calls % 2) throw new Error('mapping failed')
+      return undefined
+    }
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    nv.annotations = [ellipse('flaky')]
+    const none = { added: [], updated: [], removed: [] }
+    for (let i = 0; i < 10; i++)
+      applyNiivueAnnotationDelta('vp-d5', svc.servicesManager, {
+        ...none,
+        added: ['flaky'],
+      })
+    // throw, no-uid, throw, no-uid, throw: the third throw hits the cap.
+    expect(calls).toBe(5)
+    warn.mockRestore()
+  })
+
   it('reconcile detects slice-depth changes in reflected geometry', () => {
     const nv = stubNiivue()
     register('vp-depth', nv)

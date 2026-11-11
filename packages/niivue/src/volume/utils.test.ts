@@ -18,6 +18,7 @@ import {
   reorientDrawingToNative,
   reorientDrawingToRAS,
   robustDisplayWindow,
+  robustMinMax,
   temporalUnitScale,
   toTypedView,
   toTypedViewOrU8,
@@ -278,6 +279,19 @@ describe('calMinMax', () => {
     // 5 * 2 + 10 = 20
     expect(gMin).toBe(20)
     expect(gMax).toBe(20)
+  })
+})
+
+describe('robustMinMax', () => {
+  test('matchesCalMinMaxOnTheSameSamples', () => {
+    const hdr = makeMinimalHeader({ dims: [3, 10, 10, 10, 1, 1, 1, 1] })
+    const img = Float32Array.from({ length: 1000 }, (_, i) => (i % 7) * i)
+    img[3] = Number.NaN
+    expect(robustMinMax(img)).toEqual(calMinMax(hdr, img))
+  })
+
+  test('nullWithoutFiniteValues', () => {
+    expect(robustMinMax(Float32Array.from([Number.NaN]))).toBeNull()
   })
 })
 

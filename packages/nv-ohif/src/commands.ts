@@ -582,9 +582,9 @@ interface ReflectedRow {
 }
 const reflectedAnnotations = new Map<string, Map<string, ReflectedRow>>()
 
-// Thrown OHIF add/remove errors per annotation, keyed on the content hash so an
-// edit retries afresh. Only thrown errors count: a not-yet-loaded backing series
-// is a normal wait and keeps retrying every reconcile.
+// Failed OHIF add/remove calls (thrown, or an add that returned no uid) per
+// annotation, keyed on the content hash so an edit retries afresh. A
+// not-yet-loaded backing series is a normal wait, retried at the load boundary.
 const MAX_MAPPING_ATTEMPTS = 3
 const mappingFailures = new Map<
   string,
@@ -883,7 +883,17 @@ function reflectNiivueAnnotationResult(
     recordMappingFailure(viewportId, annotation.id, hash, 'add', err)
     return { status: 'retryableFailure' }
   }
-  if (!acceptedUid) return { status: 'retryableFailure' }
+  if (!acceptedUid) {
+    // Recorded like a throw so the next delta retries it, not only the load boundary.
+    recordMappingFailure(
+      viewportId,
+      annotation.id,
+      hash,
+      'add',
+      'no uid returned',
+    )
+    return { status: 'retryableFailure' }
+  }
   clearMappingFailure(viewportId, annotation.id)
 
   let byView = reflectedAnnotations.get(viewportId)

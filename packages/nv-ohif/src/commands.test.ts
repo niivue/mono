@@ -1143,6 +1143,38 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(1)
   })
 
+  it('a delta retries an add that returned no uid (#125)', () => {
+    const nv = stubNiivue()
+    register('vp-d3', nv)
+    updateNiivueViewport('vp-d3', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-d3', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      addRawMeasurement: (...args: unknown[]) => string | undefined
+    }
+    const add = measurementService.addRawMeasurement
+    let attempts = 0
+    measurementService.addRawMeasurement = (...args) => {
+      attempts += 1
+      return attempts === 1 ? undefined : add(...args)
+    }
+    nv.annotations = [ellipse('late')]
+    const none = { added: [], updated: [], removed: [] }
+    applyNiivueAnnotationDelta('vp-d3', svc.servicesManager, {
+      ...none,
+      added: ['late'],
+    })
+    expect(svc.added).toHaveLength(0)
+    applyNiivueAnnotationDelta('vp-d3', svc.servicesManager, none)
+    expect(attempts).toBe(2)
+    expect(svc.added).toHaveLength(1)
+  })
+
   it('reconcile detects slice-depth changes in reflected geometry', () => {
     const nv = stubNiivue()
     register('vp-depth', nv)

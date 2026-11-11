@@ -75,19 +75,22 @@ ruff = ">=0.6"
 mypy = ">=1.10"
 
 [tool.pixi.feature.dev.dependencies]
-# Jupyter stack is heavier and pins well via conda-forge; keep it here
-# rather than in the PEP 621 examples group so plain pip installs do
-# not pull jupyterlab unexpectedly.
+# Python build frontend used by the Nx `build` target.
+python-build = ">=1.2"
+hatchling = ">=1.25"
+
+[tool.pixi.feature.notebook.dependencies]
+# Jupyter stack for the `smoke` and `lab` tasks only, kept out of `dev` so CI
+# lint/typecheck/test/build installs stay lean. conda-forge pins it well, and
+# keeping it out of the PEP 621 dev group spares plain pip installs.
 jupyter = ">=1"
 jupyterlab = ">=4"
 ipykernel = ">=6"
 nbclient = ">=0.10"
 nbformat = ">=5"
-# Python build frontend used by the Nx `build` target.
-python-build = ">=1.2"
-hatchling = ">=1.25"
+nbconvert-core = ">=7"
 
-[tool.pixi.feature.dev.tasks]
+[tool.pixi.feature.notebook.tasks]
 # Headless execution of the smoke-test notebook. Verifies Python-side
 # imports, widget construction, and method calls don't raise. Does NOT
 # verify the browser-side rendering; that requires a real browser.
@@ -98,17 +101,7 @@ lab = "jupyter lab"
 [tool.pixi.environments]
 default = { features = [], solve-group = "default" }
 dev = { features = ["dev"], solve-group = "default" }
-
-# ----------------------------------------------------------------------
-# Nx dependency graph
-# ----------------------------------------------------------------------
-
-[tool.nx]
-# Workspace dependencies for the Nx graph. None today; codegen reads
-# niivue source via filesystem, not via package import. The TypeScript
-# edges to @niivue/nv-ext-* are picked up by the @nx/js plugin from
-# import statements in src/ipyniivue/static/_widget.template.js.
-workspace-dependencies = []
+notebook = { features = ["dev", "notebook"], solve-group = "default" }
 
 # ----------------------------------------------------------------------
 # Ruff (linter + formatter) — sole Python style gate

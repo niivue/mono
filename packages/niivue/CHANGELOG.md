@@ -1,3 +1,16 @@
+## 1.0.0-rc.163 (2026-11-11)
+
+### Fixes
+
+- **niivue:** validate DZI descriptors and cancel superseded descriptor fetches ([d961ea51](https://github.com/niivue/mono/commit/d961ea51))
+- **niivue:** keep a DZI descriptor's query on tile URLs ([78c589b4](https://github.com/niivue/mono/commit/78c589b4))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.162 (2026-11-11)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

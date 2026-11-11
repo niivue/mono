@@ -162,6 +162,15 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
 | `loadMatcap(nameOrUrl)` | Method (async) | Register matcap at runtime |
 
+**Channel blending: slides vs volumes.** An `NVSlide` blends its channels with one per-slide `channelBlend` (`setSlideChannelBlend`, default `'max'`; an RGB slide is always additive). Volumes load one `NVImage` per channel and blend through three global settings. The nearest volume equivalents (they match where channels are opaque: volume colours are alpha-weighted by each colormap's alpha ramp, slide colours are not):
+
+| Slide `channelBlend` | `volumeIsChannelStack` | `volumeOverlayAlphaBlend` | `volumeOverlayColorBlend` |
+|---|---|---|---|
+| `'max'` (slide default) | `true` | `MAX` (default) | `MAX` |
+| `'additive'` | `true` | `MAX` (default) | `ADDITIVE` (default) |
+
+The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volumes[0] as an opaque base under the overlays, which suits neuroimaging; set the first row for fluorescence channel fusion.
+
 ## 8. Mesh Rendering (global)
 
 | Feature | Kind | Notes |

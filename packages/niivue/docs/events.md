@@ -91,7 +91,9 @@ nv.addEventListener('locationChange', (e) => {
 ```
 
 #### `frameChange`
-Fired when the current 4D frame changes on a volume.
+Fired when the current 4D frame changes on a volume. For a volume with a
+`frameSource` (frames fetched on demand) it fires once the new frame is in
+`img`, for each volume of the source's group.
 
 | Field | Type | Description |
 |-------|------|-------------|

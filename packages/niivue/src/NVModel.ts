@@ -1592,6 +1592,15 @@ export default class NVModel {
       // the header URL/File. Runtime-only, same allowlist contract as
       // _sourceFile above.
       ...(pairedImage != null ? { _urlImageData: pairedImage } : {}),
+      // The shown frame is per volume: options loaded into two viewers share
+      // the source object, so each volume inherits it with its own `frame`.
+      ...(overrides.frameSource
+        ? {
+            frameSource: Object.assign(Object.create(overrides.frameSource), {
+              frame: overrides.frameSource.frame,
+            }),
+          }
+        : {}),
     }
     NVCmaps.resolveDefaultWindow(prepared)
     return NVModel.applyColormap(prepared, overrides.colormap)

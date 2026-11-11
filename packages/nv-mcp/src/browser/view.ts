@@ -103,6 +103,8 @@ export interface ShownVolume {
   frame4D?: number
   nFrame4D?: number
   nTotalFrame4D?: number
+  /** Frames fetched on demand (lazy OME-Zarr time): the frame shown and how many there are. */
+  frameSource?: { count: number; frame: number }
   isColormapInverted?: boolean
   colormapType?: number
   isTransparentBelowCalMin?: boolean
@@ -943,7 +945,13 @@ export interface OmeZarrLoaders {
   /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level. */
   loadOmeZarrVolumes(
     url: string,
-    options?: { level?: number; channels?: number[]; timepoint?: number },
+    options?: {
+      level?: number
+      channels?: number[]
+      timepoint?: number
+      lazyTime?: boolean
+      labels?: boolean
+    },
   ): Promise<unknown[]>
   /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
   streamOmeZarr(

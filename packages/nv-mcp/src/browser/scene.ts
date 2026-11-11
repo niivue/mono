@@ -381,7 +381,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       !labels && volume.calMin !== undefined && volume.calMax !== undefined
     const spanned =
       volume.globalMin !== undefined && volume.globalMax !== undefined
-    const frames = volume.nFrame4D ?? 1
+    const frames = volume.frameSource?.count ?? volume.nFrame4D ?? 1
     return {
       index,
       name: volume.name,
@@ -395,7 +395,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       ...(spanned
         ? { globalMin: volume.globalMin, globalMax: volume.globalMax }
         : {}),
-      ...(frames > 1 ? { frame: volume.frame4D ?? 0, frames } : {}),
+      ...(frames > 1
+        ? { frame: volume.frameSource?.frame ?? volume.frame4D ?? 0, frames }
+        : {}),
       ...(volume.nTotalFrame4D !== undefined && volume.nTotalFrame4D > frames
         ? { framesInFile: volume.nTotalFrame4D }
         : {}),
@@ -555,6 +557,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const level = integer(params, 'level')
       const channel = integer(params, 'channel')
       const timepoint = integer(params, 'timepoint')
+      const lazyTime = flag(params, 'lazy_time')
+      const labels = flag(params, 'labels')
       try {
         if (stream) {
           // Replaces, like load_volume, once the store has opened; the
@@ -570,6 +574,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
             level,
             channels,
             timepoint,
+            lazyTime,
+            labels,
           })
           await view.loadVolumes(volumes as VolumeToLoad[])
         }
@@ -1097,7 +1103,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (frame !== undefined) {
         if (!Number.isInteger(frame) || frame < 0)
           throw new Error('frame must be a whole number, counted from 0.')
-        const frames = volume.nFrame4D ?? 1
+        const frames = volume.frameSource?.count ?? volume.nFrame4D ?? 1
         if (frame >= frames) {
           throw new Error(
             frames > 1

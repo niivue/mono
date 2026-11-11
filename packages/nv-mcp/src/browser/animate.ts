@@ -87,7 +87,7 @@ export function animateHandlers(host: NiiVueHost): Handlers {
       if (calMax !== undefined) target.calMax = calMax
       if (opacity !== undefined) target.opacity = clamp(opacity, 0, 1)
       if (frame !== undefined) {
-        const frames = shown.nFrame4D ?? 1
+        const frames = shown.frameSource?.count ?? shown.nFrame4D ?? 1
         if (frame >= frames)
           throw new Error(
             `${shown.name} has ${frames} frame${frames === 1 ? '' : 's'}, numbered from 0; there is no frame ${frame}.`,

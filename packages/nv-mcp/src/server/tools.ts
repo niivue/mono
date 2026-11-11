@@ -128,6 +128,18 @@ export const CORE_SCHEMAS = {
       .describe(
         'Stream the store brick by brick, finer near the crosshair, instead of loading one level whole. For stores too large to load.',
       ),
+    lazy_time: z
+      .boolean()
+      .optional()
+      .describe(
+        'Fetch other timepoints on demand: set_volume frame then switches every channel of the store to that timepoint. Ignored when streaming.',
+      ),
+    labels: z
+      .boolean()
+      .optional()
+      .describe(
+        'Show the store as a segmentation (a label colormap). Detected from its image-label metadata otherwise. Ignored when streaming.',
+      ),
   },
   add_overlay: {
     ...TAB_ARG,

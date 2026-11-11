@@ -1675,6 +1675,11 @@ and its volumes alive."""
     def set_frame_4d(self, id: Any, frame: Any) -> None:
         """Set the current 4D frame for a volume.
 
+        A volume with a `frameSource` (frames fetched on demand) loads the frame
+        for every volume of its source's group and resolves once it is shown; a
+        newer call supersedes a pending one (which then resolves with no change),
+        and a failed load rejects, keeping the frame shown.
+
         Parameters
         ----------
         id : string

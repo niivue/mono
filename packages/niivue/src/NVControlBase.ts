@@ -145,6 +145,7 @@ import type {
   VectorAnnotation,
   ViewHitTest,
   VolumeChunkExplode,
+  VolumeFrameSource,
   VolumeUpdate,
   WheelZoomAnchor,
 } from '@/NVTypes'
@@ -4374,6 +4375,18 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+    // A frame-source volume holds one frame: its frame goes through the source.
+    // The other options apply now, so a failed or slow fetch cannot drop them
+    // or land them on a volume that moved into this index meanwhile.
+    const source = volumes[volumeIndex].frameSource
+    if (source && options.frame4D !== undefined) {
+      const { frame4D, ...rest } = options
+      await Promise.all([
+        this._setSourceFrame(source, frame4D),
+        Object.keys(rest).length > 0 && this.setVolume(volumeIndex, rest),
+      ])
+      return
+    }
     // Only a colormap change applies its window: callers that re-send the
     // current colormap with every update keep the user's window (#395).
     if (options.colormap !== volumes[volumeIndex].colormap)
@@ -5050,11 +5063,16 @@ export default class NiiVue extends EventTarget {
    */
   getFrame4D(id: string): number {
     const vol = this.volumes.find((v) => v.id === id)
-    return vol?.frame4D ?? 0
+    return vol?.frameSource?.frame ?? vol?.frame4D ?? 0
   }
 
   /**
    * Set the current 4D frame for a volume.
+   *
+   * A volume with a `frameSource` (frames fetched on demand) loads the frame
+   * for every volume of its source's group and resolves once it is shown; a
+   * newer call supersedes a pending one (which then resolves with no change),
+   * and a failed load rejects, keeping the frame shown.
    * @param id - Volume ID (typically the URL or name)
    * @param frame - Frame index (0-based, clamped to valid range)
    */
@@ -5064,6 +5082,7 @@ export default class NiiVue extends EventTarget {
       log.warn(`setFrame4D: volume with id "${id}" not found`)
       return
     }
+    if (vol.frameSource) return this._setSourceFrame(vol.frameSource, frame)
     const maxFrame = (vol.nFrame4D ?? 1) - 1
     // frame4D is a frame INDEX: round to an integer and clamp. Guard NaN/Infinity
     // from a public caller (Math.min(NaN, max) is NaN, and NaN === frame4D is
@@ -5085,6 +5104,58 @@ export default class NiiVue extends EventTarget {
     this.createOnLocationChange()
   }
 
+  /** The pending frame request per frame-source group, aborted by the next. */
+  private _frameRequests = new WeakMap<object, AbortController>()
+
+  /**
+   * Switch every volume sharing `source.group` to `frame` (see
+   * {@link VolumeFrameSource}): fetch all, then commit together in one upload.
+   * A newer request aborts this one, which then resolves without a change; a
+   * failed fetch commits nothing and rejects.
+   */
+  private async _setSourceFrame(
+    source: VolumeFrameSource,
+    frame: number,
+  ): Promise<void> {
+    const members = this.volumes.filter(
+      (v) => v.frameSource?.group === source.group,
+    )
+    // Grouped stores may differ in length: clamp to the shortest.
+    const count = Math.min(...members.map((v) => v.frameSource?.count ?? 1))
+    const t = Number.isFinite(frame)
+      ? Math.max(0, Math.min(Math.round(frame), count - 1))
+      : source.frame
+    this._frameRequests.get(source.group)?.abort()
+    if (members.every((v) => v.frameSource?.frame === t)) return
+    const request = new AbortController()
+    this._frameRequests.set(source.group, request)
+    let frames: ArrayLike<number>[]
+    try {
+      frames = await Promise.all(
+        members.map((v) => v.frameSource?.load(t, request.signal) ?? []),
+      )
+    } catch (err) {
+      if (request.signal.aborted) return
+      log.warn(`setFrame4D: frame ${t} could not be loaded`, err)
+      throw err
+    } finally {
+      if (this._frameRequests.get(source.group) === request)
+        this._frameRequests.delete(source.group)
+    }
+    if (request.signal.aborted) return
+    const shown = members.filter((v) => this.volumes.includes(v))
+    for (const [i, vol] of members.entries()) {
+      if (!vol.img || !vol.frameSource || !shown.includes(vol)) continue
+      vol.img.set(frames[i])
+      vol.frameSource.frame = t
+      markVolumeDataChanged(vol)
+      NVModel.growLabelRange(vol)
+      this.emit('frameChange', { volume: vol, frame: t })
+    }
+    await this._updateGL('none', shown)
+    this.createOnLocationChange()
+  }
+
   /**
    * Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
    * Updates the volume's calibration range and triggers a GPU update.
@@ -5100,7 +5171,8 @@ export default class NiiVue extends EventTarget {
       )
       return
     }
-    const f = frame ?? vol.frame4D ?? 0
+    // A frame-source volume holds only the frame it shows.
+    const f = vol.frameSource ? 0 : (frame ?? vol.frame4D ?? 0)
     const [pct2, pct98, mnScale, mxScale] = calMinMaxFrame(vol, f)
     vol.calMin = pct2
     vol.calMax = pct98

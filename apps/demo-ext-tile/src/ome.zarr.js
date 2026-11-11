@@ -12,6 +12,11 @@ import {
 // timepoints, and loads each selected channel as its own volume: named,
 // coloured and windowed by the store's omero display block when it has one.
 //
+// Timepoints load on demand (`lazyTime`): the slider and Play switch every
+// channel through `setFrame4D`, which fetches the frame (cached afterwards).
+// Play waits for each frame to show before scheduling the next, so a slow
+// store plays slower instead of piling up requests.
+//
 // The streaming demo (range.html) is the other OME-Zarr consumer: it reads
 // bricks of very large stores on demand. This loader reads whole (budgeted)
 // levels, which is the right shape for multi-channel fluorescence data.
@@ -23,6 +28,8 @@ const levelSelect = document.getElementById('level')
 const viewSelect = document.getElementById('view')
 const timepointPair = document.getElementById('timepointPair')
 const timepointInput = document.getElementById('timepoint')
+const timepointValue = document.getElementById('timepointValue')
+const playButton = document.getElementById('play')
 const creditLine = document.getElementById('credit')
 const channelsBox = document.getElementById('channels')
 const loadButton = document.getElementById('load')
@@ -53,7 +60,7 @@ const SAMPLES = [
     url: 'https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0101A/13457537.zarr',
     credit:
       'Image Data Resource idr0101 (Chessel et al., CC BY 4.0). NGFF 0.4, the ' +
-      'full tczyx shape: pick a timepoint before loading.',
+      'full tczyx shape: the timepoint slider and Play fetch frames on demand.',
   },
   {
     label: 'IDR: 50-channel imaging mass cytometry, 464 x 494 (92 MB full)',
@@ -136,6 +143,9 @@ function fail(message, err) {
 
 /** The opened store currently on offer. */
 let source = null
+// The store whose volumes are on screen: the slider drives them only while it
+// is also the store offered (opening another store resets the slider for it).
+let shownSource = null
 
 /** How many channels start ticked: plenty to see, not fifty volumes. */
 const DEFAULT_CHECKED = 4
@@ -148,6 +158,7 @@ function megabytes(bytes) {
 
 /** Describe an opened store and offer its channels, levels and timepoints. */
 function offer(next, label) {
+  stopPlayback()
   source = next
   channelsBox.replaceChildren()
   for (let c = 0; c < source.channelCount; c++) {
@@ -185,6 +196,7 @@ function offer(next, label) {
   timepointInput.value = String(
     defaultT !== null && defaultT < source.timepointCount ? defaultT : 0,
   )
+  timepointValue.textContent = timepointInput.value
 
   loadButton.disabled = false
   const axes = source.axes.map((a) => a.name).join(' ')
@@ -303,6 +315,7 @@ loadButton.onclick = async () => {
     return
   }
   loadButton.disabled = true
+  stopPlayback()
   const level = Number(levelSelect.value)
   const timepoint = Number(timepointInput.value) || 0
   say(`Reading ${channels.length} channel(s) at level ${level}...`)
@@ -311,8 +324,11 @@ loadButton.onclick = async () => {
       channels,
       level,
       timepoint,
+      lazyTime: true,
     })
+    shownSource = null
     await nv1.loadVolumes(volumes)
+    shownSource = source
     lastLoaded = volumes
     applyDisplay(volumes)
     const vol = nv1.volumes[0]
@@ -336,6 +352,67 @@ loadButton.onclick = async () => {
     fail('Could not load the channels', err)
   } finally {
     loadButton.disabled = false
+  }
+}
+
+/**
+ * Show timepoint `t` on every channel. Resolves once it is drawn, or at once
+ * when a newer request replaced it.
+ */
+async function showTimepoint(t) {
+  const vol = nv1.volumes[0]
+  if (shownSource === source && vol?.frameSource) {
+    await nv1.setFrame4D(vol.id, t)
+  }
+}
+
+// Before a load the slider picks the timepoint to load; after, it switches.
+// A newer request supersedes an older one still loading, so scrubbing is safe.
+timepointInput.oninput = () => {
+  timepointValue.textContent = timepointInput.value
+  showTimepoint(Number(timepointInput.value)).catch((err) => {
+    const vol = nv1.volumes[0]
+    timepointInput.value = String(vol ? nv1.getFrame4D(vol.id) : 0)
+    timepointValue.textContent = timepointInput.value
+    fail('Could not load that timepoint', err)
+  })
+}
+
+/** Minimum time a frame stays on screen during playback. */
+const FRAME_MS = 250
+let playback = 0
+
+function stopPlayback() {
+  playback += 1
+  playButton.textContent = 'Play'
+}
+
+playButton.onclick = async () => {
+  if (playButton.textContent !== 'Play') {
+    stopPlayback()
+    return
+  }
+  const run = ++playback
+  playButton.textContent = 'Pause'
+  while (run === playback) {
+    const vol = nv1.volumes[0]
+    if (shownSource !== source || !vol?.frameSource) {
+      break
+    }
+    const started = performance.now()
+    try {
+      await showTimepoint((nv1.getFrame4D(vol.id) + 1) % vol.frameSource.count)
+    } catch (err) {
+      fail('Playback stopped: a timepoint did not load', err)
+      break
+    }
+    timepointInput.value = String(nv1.getFrame4D(vol.id))
+    timepointValue.textContent = timepointInput.value
+    const rest = FRAME_MS - (performance.now() - started)
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, rest)))
+  }
+  if (run === playback) {
+    stopPlayback()
   }
 }
 

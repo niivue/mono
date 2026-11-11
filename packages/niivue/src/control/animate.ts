@@ -283,11 +283,13 @@ export function planAnimation(
       want.frame4D !== undefined &&
       finite(`volumes[${i}].frame4D`, want.frame4D)
     ) {
-      const last = Math.max(0, (vol.nFrame4D ?? 1) - 1)
+      const frames = vol.frameSource?.count ?? vol.nFrame4D ?? 1
+      const last = Math.max(0, frames - 1)
       const to = Math.max(0, Math.min(Math.round(want.frame4D), last))
+      const from = vol.frameSource?.frame ?? vol.frame4D ?? 0
       channels.push({
         name: `volumes[${i}].frame4D`,
-        tracks: [track(vol.frame4D ?? 0, to, 'index')],
+        tracks: [track(from, to, 'index')],
         // setFrame4D finds a volume by id; one without an id takes the
         // frame through setVolume instead.
         write: ([v]) =>

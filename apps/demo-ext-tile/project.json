@@ -36,7 +36,7 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "e2e": {
-      "command": "node tests/folder.e2e.mjs",
+      "command": "node tests/folder.e2e.mjs && node tests/omezarr-time.e2e.mjs",
       "options": {
         "cwd": "{projectRoot}"
       },

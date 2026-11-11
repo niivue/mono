@@ -174,6 +174,19 @@ await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the
 
 `loadOmeZarrVolumes` loads the channels omero marks active (a missing flag counts as active; all marked inactive loads channel 0). `channels: [i, ...]` loads exactly those, visible; `channels: 'all'` loads every one, inactive ones hidden.
 
+Time series: `timepoint` picks the timepoint loaded. With `lazyTime: true` the others load on demand: each volume carries a `frameSource`, so `await nv.setFrame4D(volume.id, t)` fetches frame `t` for every channel of the store and resolves once it is shown (a newer request cancels an older one; a failed fetch rejects and keeps the frame shown). Decoded frames are cached per store up to `frameCacheBytes` (256 MiB), least recently used evicted first. Pass the same object as `lazyTime` to two stores (raw + segmentation) to switch them together. A document saves the frame shown as a plain volume. Streamed volumes (`streamOmeZarr`) keep a fixed timepoint.
+
+A store with `image-label` metadata (a segmentation), or any store loaded with `labels: true`, gets the generated `Random` label colormap (ID 0 clear) instead of the omero ramp and window; `labels: false` overrides the detection.
+
+```ts
+const time = {}
+await nv.loadVolumes([
+  ...(await loadOmeZarrVolumes(rawUrl, { lazyTime: time })),
+  ...(await loadOmeZarrVolumes(segUrl, { lazyTime: time })),
+])
+await nv.setFrame4D(nv.volumes[0].id, 5) // raw and seg both show t = 5
+```
+
 To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running. `omeZarrChannelOptions(source.zarr, c)` gives a streamed channel the loader's `name`, `colormap`, `calMin`/`calMax` and `visible`.
 
 For a 2D image (one y/x plane per level), `ZarrSlideSource` streams chunks into `NVSlide` as tiles instead:

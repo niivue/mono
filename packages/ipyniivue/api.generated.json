@@ -3824,7 +3824,7 @@
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Set the current 4D frame for a volume.",
+      "doc": "Set the current 4D frame for a volume.\n\nA volume with a `frameSource` (frames fetched on demand) loads the frame\nfor every volume of its source's group and resolves once it is shown; a\nnewer call supersedes a pending one (which then resolves with no change),\nand a failed load rejects, keeping the frame shown.",
       "returnsDoc": null
     },
     {

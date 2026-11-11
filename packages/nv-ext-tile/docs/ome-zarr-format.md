@@ -65,6 +65,12 @@ skips that root probe, and the `zarr.json` 404 it logs on a v2 store. A successf
   The read block is transposed to NIfTI's x-fastest layout when the two
   disagree.
 - 2D images (two spatial axes) load as single-slice volumes.
+- Time series: one timepoint per load, or all of them on demand with
+  `lazyTime` (`setFrame4D` reads frame `t` of every channel through the
+  volume's `frameSource`; a byte-bounded LRU keeps decoded frames).
+- Label images: `image-label` in the attributes (top level in 0.4, under `ome`
+  in 0.5) loads with a generated label colormap. Its `colors` table is not
+  read yet.
 - Dtypes: (u)int8, (u)int16, (u)int32, float32, float64.
 - Voxel spacing from each dataset's `scale` transform, converted to
   MICROMETRES via the axis `unit` (shared `omeLengthToMicrons`; an unstated

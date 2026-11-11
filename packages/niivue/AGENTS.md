@@ -1180,6 +1180,10 @@ a rebuild.
   event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
   run per frame). A coalesced `updateVolumeData` settles when its follow-up
   upload finishes (#447).
+- **Frame sources (lazy time).** A volume with `frameSource` (set by
+  `@niivue/nv-ext-tile`'s `lazyTime`) stays one frame (`nFrame4D` 1: every img
+  reader indexes `frame4D * nVox3D`); its time axis lives on the source, and
+  frame changes go through `_setSourceFrame` (see its JSDoc; `src/frameSource.test.ts`).
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update

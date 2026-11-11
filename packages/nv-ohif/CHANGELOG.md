@@ -1,3 +1,20 @@
+## 1.0.0-rc.185 (2026-11-11)
+
+### Features
+
+- **nv-ohif:** apply annotationChanged deltas instead of a full reconcile ([#125](https://github.com/niivue/mono/pull/125))
+
+### Fixes
+
+- **nv-ohif:** keep the throw count across a no-uid add ([194b177c](https://github.com/niivue/mono/commit/194b177c))
+- **nv-ohif:** do not cap retries of an add that returned no uid ([0cac3c5d](https://github.com/niivue/mono/commit/0cac3c5d))
+- **nv-ohif:** retry an add that returned no uid on the next delta ([5815e19e](https://github.com/niivue/mono/commit/5815e19e))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.184 (2026-11-11)
 
 ### Updated Dependencies

@@ -1,3 +1,19 @@
+## 1.0.0-rc.174 (2026-11-11)
+
+### Features
+
+- **nv-ohif:** per-overlay commands (add chosen series, visibility, order, remove, colormap) ([29904da0](https://github.com/niivue/mono/commit/29904da0))
+
+### Fixes
+
+- **nv-ohif:** clear a cancelled overlay's status; skip colormaps during a base swap ([d9847351](https://github.com/niivue/mono/commit/d9847351))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.173 (2026-11-10)
 
 ### Updated Dependencies

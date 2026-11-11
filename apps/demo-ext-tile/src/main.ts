@@ -37,6 +37,12 @@ const customCancel = document.getElementById(
 ) as HTMLButtonElement
 const levelSelect = document.getElementById('level') as HTMLSelectElement
 const status = document.getElementById('status') as HTMLSpanElement
+const spinner = document.getElementById('spinner') as HTMLSpanElement
+// The ring replaces the status text on screen; screen readers still read it.
+function spin(on: boolean): void {
+  spinner.hidden = !on
+  status.classList.toggle('spinning', on)
+}
 const iccToggle = document.getElementById('icc') as HTMLInputElement
 const hud = document.getElementById('hud') as HTMLDivElement
 const hudToggle = document.getElementById('hudToggle') as HTMLInputElement
@@ -254,6 +260,7 @@ function snapshot() {
 let shown = snapshot()
 
 function restoreMenu(): void {
+  spin(false) // every failed open ends here
   const s = shown
   if (s.value) showCurrent(s.value, s.label)
   else sourceSelect.value = current = ''
@@ -275,6 +282,7 @@ async function open(
   opening?.abort()
   opening = new AbortController()
   status.textContent = 'Opening...'
+  spin(true)
   try {
     const next = await load(opening.signal)
     if (id !== openCount) {
@@ -304,6 +312,7 @@ async function open(
     showCredit(source?.attribution ?? credits.get(current))
     slide.addEventListener('change', requestRender)
     opening = null
+    spin(false)
     shown = snapshot()
     status.textContent = indexNote // slide stats are in the HUD
     levelSelect.replaceChildren(
@@ -368,8 +377,7 @@ async function openFiles(files: File[]): Promise<void> {
   const id = ++openCount
   opening?.abort()
   opening = new AbortController()
-  const kind = files.length === 1 ? await sniff(first) : 'dicom'
-  if (id !== openCount) return
+  spin(true)
   const openTiff = () =>
     void open(async () =>
       TiffSlideSource.fromGeoTIFF(await fromBlob(first), {
@@ -377,9 +385,11 @@ async function openFiles(files: File[]): Promise<void> {
         pool,
       }),
     )
-  if (kind === 'tiff') return openTiff()
-  status.textContent = `Indexing ${files.length} files...`
   try {
+    const kind = files.length === 1 ? await sniff(first) : 'dicom'
+    if (id !== openCount) return
+    if (kind === 'tiff') return openTiff()
+    status.textContent = `Indexing ${files.length} files...`
     const t0 = performance.now()
     const index = await indexDicomWsi(files)
     if (id !== openCount) return

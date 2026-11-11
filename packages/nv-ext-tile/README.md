@@ -45,17 +45,18 @@ source.dispose()
 pool.destroy()
 ```
 
-`fromUrl` accepts `fetch` to supply your own fetch (e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name.
+`fromUrl` accepts `fetch` to supply your own fetch (e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name. Both open methods take `z` / `t` to pick an OME-TIFF plane (default 0).
 
 ### What it reads
 
-- **Levels:** OME-TIFF pyramids in `SubIFDs` (first plane only), else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a power-of-two downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area.
+- **Levels:** OME-TIFF pyramids in each plane's `SubIFDs`, else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a power-of-two downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area.
 - **Pixels:** geotiff-rs's `readRGB` converts RGB, YCbCr, gray (incl. WhiteIsZero), palette and CMYK to 8-bit RGB. Tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge.
+- **OME-TIFF channels:** the OME-XML (first IFD's ImageDescription) maps channel, `z` and `t` to a main-chain IFD by `DimensionOrder` and `TiffData` (`IFD`, `First*`, `PlaneCount`). With more than one 1-sample channel, as for the ZarrSlideSource: `manifest.channelInfo` gets each `Channel`'s `Name` and `Color` (snapped to a colormap); OME-XML has no `active`, so the first 4 start visible and the rest hidden (not fetched); `fetchTileSamples` serves the visible channels' samples as `raw-gray` for `NVSlide` to composite. uint8 windows span 0-255; uint16 ones use the data range of up to 1024 x 1024 samples at the centre of the coarsest level; other types are quantized to uint16 over that range. RGB OME-TIFF stays `raw-rgba`; with several RGB channels, the first shows. Limits: a plane that another file of a multi-file set holds (`TiffData` `UUID` not this file's) is refused, the first `Image` only, plane IFDs below 4096, every channel's pyramid must match the first's; windows sample only the centre of the coarsest level. geotiff walks the IFD chain to a plane, so a deep `z` costs a read per IFD before it (z 977 of the 3910-plane Avivator brain: ~6 s).
 - **Compression:** none, LZW, JPEG, Deflate, PackBits (Rust/WASM), LERC, ZSTD, WebP (JS). JPEG 2000 (Aperio 33003 and 33005, TIFF 34712) after `registerDcm2niixTiffDecoders()`, which decodes in @niivue/dcm2niix's OpenJPEG workers (loaded on the first such tile, one pool shared with `/dicom`'s `registerDcm2niixDecoders`) rather than the geotiff `Pool`; colour matches OpenSlide within 1. Without it those tiles fail with geotiff-rs's "has no built-in decoder" error. Not supported: old-style JPEG (6), 12-bit and lossless JPEG.
-- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires), at most 2^21 tiles across all levels, unsigned integer samples, RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
+- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires; a one-tile level may be its exact size, as bioformats writes), at most 2^21 tiles across all levels, unsigned integer samples (any type for OME-TIFF channels), RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
 - **JS decoders trust the compressed stream.** The Rust codecs and dcm2niix bound a tile's decoded size, but LERC, ZSTD and WebP do not: a hostile tile can exhaust memory. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
-Not supported yet: 16-bit and multichannel fluorescence planes (only 8-bit RGB/gray displays correctly), choosing an OME plane other than the first, TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
+Not supported yet: 16-bit single-channel planes (shown scaled to 8-bit), TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
 
 ## Local DICOM-WSI folders
 
@@ -235,6 +236,6 @@ bunx nx build nv-ext-tile
 bunx nx typecheck nv-ext-tile
 ```
 
-Tests write small tiled TIFFs in memory (pyramid, SubIFDs, JPEG/YCbCr, JPEG 2000) and serve them through a fake Range server that records every request. With the OpenSlide Aperio samples in `$OPENSLIDE_APERIO` (`JP2K-33003-1.svs`, `CMU-1-JP2K-33005.svs`), they also check JPEG 2000 colour against OpenSlide; otherwise those tests are skipped.
+Tests write small tiled TIFFs in memory (pyramid, SubIFDs, multi-channel OME-TIFF, JPEG/YCbCr, JPEG 2000) and serve them through a fake Range server that records every request. With the OpenSlide Aperio samples in `$OPENSLIDE_APERIO` (`JP2K-33003-1.svs`, `CMU-1-JP2K-33005.svs`), they also check JPEG 2000 colour against OpenSlide; otherwise those tests are skipped.
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

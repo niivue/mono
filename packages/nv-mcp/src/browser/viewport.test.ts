@@ -222,6 +222,24 @@ describe('set_slide', () => {
     expect(changes).toEqual([])
   })
 
+  it('refuses a channel or blend without its setter, before changing anything', () => {
+    const changes: unknown[] = []
+    const view = baseView({
+      slideChannels: [
+        { name: 'a', colormap: 'gray', calMin: 0, calMax: 1, visible: true },
+      ],
+      setSlideColorManagement: (on: boolean) => changes.push(on),
+    })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    expect(() =>
+      set_slide({ channel: 0, visible: false, color_management: false }),
+    ).toThrow("This page's NiiVue cannot change slide channels.")
+    expect(() =>
+      set_slide({ channel_blend: 'max', color_management: false }),
+    ).toThrow("This page's NiiVue cannot change the channel blend.")
+    expect(changes).toEqual([])
+  })
+
   it('refuses a page without a slide plane or slide drawing', () => {
     const { set_slide } = viewportHandlers(hostOf(baseView()))
     expect(() => set_slide({ level: 1 })).toThrow(
@@ -325,7 +343,9 @@ describe('set_slide', () => {
     )
     expect(() =>
       set_slide({ channel_blend: 'max', clear_plane: true }),
-    ).toThrow('clear_plane cannot be combined with channel changes.')
+    ).toThrow(
+      'clear_plane cannot be combined with channel, channel_blend or color_management.',
+    )
     expect(view.clearSlidePlane).not.toHaveBeenCalled()
     // A core rejection comes before the level changes.
     expect(() =>
@@ -334,7 +354,9 @@ describe('set_slide', () => {
     expect(view.setSlidePlaneLevel).not.toHaveBeenCalled()
     expect(() =>
       set_slide({ color_management: true, clear_plane: true }),
-    ).toThrow('clear_plane cannot be combined with channel changes.')
+    ).toThrow(
+      'clear_plane cannot be combined with channel, channel_blend or color_management.',
+    )
     expect(await where_am_i({})).toMatchObject({
       channelBlend: 'additive',
       colorManagement: false,

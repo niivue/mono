@@ -200,7 +200,9 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         )
       // Clearing the plane first would drop the channel changes unseen.
       if ((channel !== undefined || plane) && flag(params, 'clear_plane'))
-        throw new Error('clear_plane cannot be combined with channel changes.')
+        throw new Error(
+          'clear_plane cannot be combined with channel, channel_blend or color_management.',
+        )
       if (channels && channel !== undefined && channel >= channels.length)
         throw new RangeError(`NVSlide has no channel ${channel}`)
       const level = params?.level
@@ -216,6 +218,10 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         throw new Error("This page's NiiVue has no slide plane.")
       if (flag(params, 'clear_plane') && !view.clearSlidePlane)
         throw new Error("This page's NiiVue has no slide plane.")
+      if (channel !== undefined && !view.setSlideChannel)
+        throw new Error("This page's NiiVue cannot change slide channels.")
+      if (blend && !view.setSlideChannelBlend)
+        throw new Error("This page's NiiVue cannot change the channel blend.")
       if (colorManagement !== undefined && !view.setSlideColorManagement)
         throw new Error(
           "This page's NiiVue cannot change slide colour management.",

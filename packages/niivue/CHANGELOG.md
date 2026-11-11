@@ -1,3 +1,14 @@
+## 1.0.0-rc.159 (2026-11-11)
+
+### Fixes
+
+- **niivue:** attach-failure cleanup removes the failed viewer by identity ([ead26c44](https://github.com/niivue/mono/commit/ead26c44))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.158 (2026-11-11)
 
 ### Features

@@ -1,3 +1,20 @@
+## 1.0.0-rc.157 (2026-11-11)
+
+### Fixes
+
+- **niivue:** attach-failure cleanup removes the failed viewer by identity ([ead26c44](https://github.com/niivue/mono/commit/ead26c44))
+- **nv-react:** use the @niivue/niivue/scene controller; nv-web-component too ([5ff5ac43](https://github.com/niivue/mono/commit/5ff5ac43))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.159
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.156 (2026-11-11)
 
 ### Updated Dependencies

@@ -1,3 +1,24 @@
+## 1.0.0-rc.164 (2026-11-11)
+
+### Features
+
+- **niivue:** slide plane colour management setter; nv-mcp set_slide color_management ([4512a1fd](https://github.com/niivue/mono/commit/4512a1fd))
+
+### Fixes
+
+- **nv-mcp:** set_slide checks every setter before a change; Codex 727-r1 ([5aded1e8](https://github.com/niivue/mono/commit/5aded1e8))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.170
+- Updated uikit to 1.0.0-rc.168
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.163 (2026-11-11)
 
 ### Fixes

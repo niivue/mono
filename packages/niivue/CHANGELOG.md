@@ -1,3 +1,13 @@
+## 1.0.0-rc.170 (2026-11-11)
+
+### Features
+
+- **niivue:** slide plane colour management setter; nv-mcp set_slide color_management ([4512a1fd](https://github.com/niivue/mono/commit/4512a1fd))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.169 (2026-11-11)
 
 ### Performance

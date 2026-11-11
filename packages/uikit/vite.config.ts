@@ -28,7 +28,7 @@ export default defineConfig(({ command }) => ({
     },
     // UIKit brings its own rendering; @niivue/niivue is only a peer for the
     // lifecycle hook (added later), so keep it external when it is used.
-    rollupOptions: {
+    rolldownOptions: {
       external: ['@niivue/niivue'],
     },
   },

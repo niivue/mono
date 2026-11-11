@@ -11,7 +11,7 @@ export default defineConfig({
       formats: ['es'],
       fileName: 'nv-ext-save-html',
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ['@niivue/niivue'],
     },
   },

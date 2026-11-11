@@ -20,7 +20,7 @@ export default defineConfig({
       entry,
       formats: ['es'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ['@niivue/niivue', '@niivue/dcm2niix'],
       output: { chunkFileNames: 'chunks/[name]-[hash].js' },
     },

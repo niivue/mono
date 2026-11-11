@@ -27,7 +27,7 @@ export default defineConfig({
     outDir: 'dist',
     target: 'esnext',
     emptyOutDir: true,
-    rollupOptions: {
+    rolldownOptions: {
       // Two entries, one build. The app page and the Quick Look preview page
       // are separate documents but share NiiVue, so a multi-page build emits
       // the library once as a common chunk instead of duplicating ~1.3 MB into

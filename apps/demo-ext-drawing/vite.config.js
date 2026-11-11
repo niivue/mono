@@ -43,7 +43,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'esnext',
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         drawing: fileURLToPath(new URL('drawing.html', import.meta.url)),
         magicWand: fileURLToPath(new URL('magic-wand.html', import.meta.url)),

@@ -119,20 +119,20 @@ export class DziSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
   private host: SlideSourceHost | null = null
   private readonly tilesBase: string
-  private readonly ext: string
+  private readonly tileSuffix: string // ".jpg" plus the descriptor's query
   private readonly overlap: number
   private readonly dziLevelForIndex: number[]
 
   private constructor(
     manifest: NVSlideManifest,
     tilesBase: string,
-    ext: string,
+    tileSuffix: string,
     overlap: number,
     dziLevelForIndex: number[],
   ) {
     this.manifest = manifest
     this.tilesBase = tilesBase
-    this.ext = ext
+    this.tileSuffix = tileSuffix
     this.overlap = overlap
     this.dziLevelForIndex = dziLevelForIndex
   }
@@ -144,15 +144,20 @@ export class DziSource implements SlideTileSource {
     }
     const xml = await response.text()
     const desc = parseDziDescriptor(xml)
-    const name = id ?? dziUrl.replace(/^.*\//, '').replace(/\.dzi$/i, '')
+    // Tiles keep the descriptor's query (cache version, auth token); not its fragment.
+    const url = dziUrl.replace(/#.*/, '')
+    const q = url.indexOf('?')
+    const path = q < 0 ? url : url.slice(0, q)
+    const query = q < 0 ? '' : url.slice(q)
+    const name = id ?? path.replace(/^.*\//, '').replace(/\.dzi$/i, '')
     const { manifest, dziLevelForIndex } = buildDziManifest(desc, name)
     // "<base>.dzi" -> tiles live under "<base>_files/".
-    const tilesBase = dziUrl.replace(/\.dzi$/i, '_files')
+    const tilesBase = path.replace(/\.dzi$/i, '_files')
     const ext = desc.format === 'png' ? 'png' : 'jpg'
     return new DziSource(
       manifest,
       tilesBase,
-      ext,
+      `.${ext}${query}`,
       desc.overlap,
       dziLevelForIndex,
     )
@@ -169,7 +174,7 @@ export class DziSource implements SlideTileSource {
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const dziLevel = this.dziLevelForIndex[level.index] ?? 0
-    const url = `${this.tilesBase}/${dziLevel}/${tile.x}_${tile.y}.${this.ext}`
+    const url = `${this.tilesBase}/${dziLevel}/${tile.x}_${tile.y}${this.tileSuffix}`
     this.host?.pushRangeEvent({ label, status: 'pending' })
     let bytes: Uint8Array
     try {

@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-import { buildDziManifest, parseDziDescriptor } from './dziSource'
+import { buildDziManifest, DziSource, parseDziDescriptor } from './dziSource'
 
 const DZI_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <Image TileSize="256" Overlap="0" Format="jpeg"
@@ -71,5 +71,32 @@ describe('buildDziManifest', () => {
         expect(t.height).toBeLessThanOrEqual(256)
       }
     }
+  })
+})
+
+describe('DziSource.fromUrl', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  test('keeps the descriptor query on tile URLs and drops the fragment', async () => {
+    const urls: string[] = []
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      urls.push(String(url))
+      return new Response(urls.length === 1 ? DZI_XML : new Uint8Array([1]))
+    }) as unknown as typeof fetch
+    const source = await DziSource.fromUrl(
+      'https://example.org/a/image.dzi?v=1&t=x?y#frag',
+    )
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('no tile')
+    await source.fetchTileBytes(level, tile, 'L0')
+
+    expect(source.manifest.name).toBe('image (DZI)')
+    expect(urls[1]).toBe(
+      `https://example.org/a/image_files/10/0_0.jpg?v=1&t=x?y`,
+    )
   })
 })

@@ -106,10 +106,8 @@ function omeroDisplay(
   channel = omeroActiveChannels(zarr.info.channels, zarr.channelCount)[0],
 ): ChunkedVolumeOptions {
   if (zarr.info.channels.length === 0) return {}
-  const { visible: _visible, ...display } = omeZarrChannelOptions(
-    zarr,
-    channel,
-    [channel],
-  )
+  // Colormaps are assigned across the active set, as a whole-level load does,
+  // so two channels stated with the same colour still get distinct ramps.
+  const { visible: _visible, ...display } = omeZarrChannelOptions(zarr, channel)
   return display
 }

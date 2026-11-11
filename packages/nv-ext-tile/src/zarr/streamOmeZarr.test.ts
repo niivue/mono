@@ -119,6 +119,17 @@ test('a streamed channel takes its omero name, colour and window; caller options
     channelCount: 2,
     levels: [{ dtype: 'uint16' }],
   })
+  // Two active channels stated red get distinct ramps, as in a whole-level load.
+  zarrs.set('https://example.test/twored.zarr', {
+    info: {
+      channels: [
+        { label: 'A', color: [255, 0, 0], window, active: true },
+        { label: 'B', color: [255, 0, 0], window, active: true },
+      ],
+    },
+    channelCount: 2,
+    levels: [{ dtype: 'uint16' }],
+  })
   const loaded: unknown[] = []
   const nv = {
     isDestroyed: false,
@@ -142,9 +153,13 @@ test('a streamed channel takes its omero name, colour and window; caller options
     { colormap: 'gray' },
   )
   await streamOmeZarr(viewer, 'https://example.test/plain.zarr')
+  await streamOmeZarr(viewer, 'https://example.test/twored.zarr', {
+    channel: 1,
+  })
   expect(loaded).toEqual([
     { name: 'CD19', colormap: 'red', calMin: 5, calMax: 50 },
     { name: 'CD19', colormap: 'gray', calMin: 5, calMax: 50 },
     {},
+    { name: 'B', colormap: 'violet', calMin: 5, calMax: 50 },
   ])
 })

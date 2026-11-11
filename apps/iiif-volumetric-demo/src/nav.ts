@@ -7,8 +7,7 @@
 // The nav also renders a WebGPU/WebGL2 backend toggle that reloads the
 // current page with the new `?backend=` query, so manual verification is
 // symmetric across both NiiVue backends (see packages/niivue/AGENTS.md
-// "Backend feature parity"). The toggle is hidden on pages that don't
-// use NiiVue (e.g. stitch.html).
+// "Backend feature parity").
 
 import {
   type Backend,
@@ -102,9 +101,9 @@ function makeLink(page: Page, currentPath: string): HTMLAnchorElement {
   if (isActive) {
     a.setAttribute('aria-current', 'page')
   }
-  // Carry an explicit `?backend=` choice across navigation so it sticks
-  // (stitch.html ignores it but keeps it for the way back). Without one, each
-  // page uses its own default (tile-range WebGPU, the others WebGL2).
+  // Carry an explicit `?backend=` choice across navigation so it sticks.
+  // Without one, each page uses its own default (tile-range WebGPU, the
+  // others WebGL2).
   const chosen = new URLSearchParams(window.location.search).get('backend')
   a.href =
     chosen === 'webgpu' || chosen === 'webgl2'

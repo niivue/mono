@@ -49,9 +49,7 @@ Use the shared nav in the header, or open pages directly:
 - `http://127.0.0.1:8087/index.html` — 2D IIIF slices plus a 3D volume render.
 - `http://127.0.0.1:8087/sheet.html` — 3x3 sheet of independent volumes.
 - `http://127.0.0.1:8087/osd-volume-desktop.html` — deep-zoom 2D desktop with a selected 3D volume.
-- `http://127.0.0.1:8087/volume-fly-space.html` — fly through many volumes in one global scene.
 - `http://127.0.0.1:8087/omezarr.html` — OME-Zarr pyramid and subvolume streaming demo.
-- `http://127.0.0.1:8087/stitch.html` — standalone WebGL2 texture-stitching diagnostic.
 
 Add `?backend=webgpu` or `?backend=webgl2` on NiiVue pages to pick the
 renderer. WebGL2 is the default.

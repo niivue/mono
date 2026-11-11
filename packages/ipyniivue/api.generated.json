@@ -1594,6 +1594,17 @@
       "doc": "How the slide plane's channels blend (see `NVSlide.channelBlend`), or null without a plane."
     },
     {
+      "jsName": "slideColorManagement",
+      "pyName": "slide_color_management",
+      "tsType": "boolean | null",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Whether the slide plane applies its ICC colour management (see `NVSlide.colorManagement`), or null without a plane."
+    },
+    {
       "jsName": "version",
       "pyName": "version",
       "tsType": "string",
@@ -4055,6 +4066,23 @@
       ],
       "returns": "void",
       "doc": "Set {@link slideChannelBlend}; ignored on an RGB slide. No-op without a plane.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSlideColorManagement",
+      "pyName": "set_slide_color_management",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "on",
+          "tsType": "boolean",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Set {@link slideColorManagement}; redraws only. No-op without a plane.",
       "returnsDoc": null
     },
     {

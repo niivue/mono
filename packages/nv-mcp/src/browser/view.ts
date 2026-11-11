@@ -802,6 +802,8 @@ export interface View {
   setSlideChannel?(index: number, update: Partial<SlideChannel>): unknown
   readonly slideChannelBlend?: SlideChannelBlend | null
   setSlideChannelBlend?(blend: SlideChannelBlend): unknown
+  readonly slideColorManagement?: boolean | null
+  setSlideColorManagement?(on: boolean): unknown
 
   // Chunked volumes.
   /** Tile a volume into a grid of bricks (or `null` to make it one texture again). */

@@ -158,6 +158,7 @@ const PROPS_RO = [
   ["meshWriteExtensions", "mesh_write_extensions"],
   ["selectedAnnotation", "selected_annotation"],
   ["slideChannelBlend", "slide_channel_blend"],
+  ["slideColorManagement", "slide_color_management"],
   ["version", "version"],
   ["volumeExtensions", "volume_extensions"],
   ["volumeTransforms", "volume_transforms"],

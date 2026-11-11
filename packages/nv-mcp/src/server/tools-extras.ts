@@ -108,6 +108,12 @@ export const EXTRA_SCHEMAS = {
       .describe(
         'How the visible channels combine: the brighter of each (max) or their sum. An RGB slide is always additive.',
       ),
+    color_management: z
+      .boolean()
+      .optional()
+      .describe(
+        "Apply the slide's ICC colour profile (true) or show the decoded colours as stored (false).",
+      ),
   },
   chunk_stats: {
     ...TAB_ARG,

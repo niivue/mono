@@ -53,10 +53,16 @@ function channelByName(
   )
 }
 
-/** The slide plane's channels and blend; JSON carries a default (NaN) bound as null. */
+/** The slide plane's channels, blend and colour management; JSON carries a default (NaN) bound as null. */
 export function slideState(view: View) {
   const channels = view.slideChannels
-  return channels ? { channels, channelBlend: view.slideChannelBlend } : {}
+  return channels
+    ? {
+        channels,
+        channelBlend: view.slideChannelBlend,
+        colorManagement: view.slideColorManagement,
+      }
+    : {}
 }
 
 /** The handlers for the viewport, point mapping, slide, chunk and file tools. */
@@ -180,7 +186,9 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       put(update, 'calMax', windowBound(params, 'cal_max'))
       const hasUpdate = Object.keys(update).length > 0
       const blend = choice(params, 'channel_blend', CHANNEL_BLENDS)
-      if ((channel !== undefined || hasUpdate || blend) && !channels)
+      const colorManagement = flag(params, 'color_management')
+      const plane = blend || colorManagement !== undefined
+      if ((channel !== undefined || hasUpdate || plane) && !channels)
         throw new Error("This page's NiiVue has no slide plane.")
       if (hasUpdate && channel === undefined)
         throw new Error(
@@ -191,7 +199,7 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
           'channel needs something to set: visible, colormap, cal_min or cal_max.',
         )
       // Clearing the plane first would drop the channel changes unseen.
-      if ((channel !== undefined || blend) && flag(params, 'clear_plane'))
+      if ((channel !== undefined || plane) && flag(params, 'clear_plane'))
         throw new Error('clear_plane cannot be combined with channel changes.')
       if (channels && channel !== undefined && channel >= channels.length)
         throw new RangeError(`NVSlide has no channel ${channel}`)
@@ -208,6 +216,10 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         throw new Error("This page's NiiVue has no slide plane.")
       if (flag(params, 'clear_plane') && !view.clearSlidePlane)
         throw new Error("This page's NiiVue has no slide plane.")
+      if (colorManagement !== undefined && !view.setSlideColorManagement)
+        throw new Error(
+          "This page's NiiVue cannot change slide colour management.",
+        )
       const step =
         drawing &&
         {
@@ -238,6 +250,10 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         view.setSlideChannelBlend?.(blend)
         changed = true
       }
+      if (colorManagement !== undefined) {
+        view.setSlideColorManagement?.(colorManagement)
+        changed = true
+      }
       if (level !== undefined) {
         view.setSlidePlaneLevel?.(levelIndex)
         changed = true
@@ -252,7 +268,7 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed)
         throw new Error(
-          'set_slide needs something to do: level, clear_plane, drawing, channel or channel_blend.',
+          'set_slide needs something to do: level, clear_plane, drawing, channel, channel_blend or color_management.',
         )
       view.drawScene()
       return {

@@ -5873,6 +5873,16 @@ export default class NiiVue extends EventTarget {
     this._slidePlane?.slide.setChannelBlend(blend)
   }
 
+  /** Whether the slide plane applies its ICC colour management (see `NVSlide.colorManagement`), or null without a plane. */
+  get slideColorManagement(): boolean | null {
+    return this._slidePlane?.slide.colorManagement ?? null
+  }
+
+  /** Set {@link slideColorManagement}; redraws only. No-op without a plane. */
+  setSlideColorManagement(on: boolean): void {
+    if (this._slidePlane) this._slidePlane.slide.colorManagement = on
+  }
+
   /** Remove a slide plane registered with {@link setSlidePlane}. */
   clearSlidePlane(): void {
     if (this._slidePlaneSlide && this._slidePlaneOnChange) {
@@ -7501,6 +7511,7 @@ export default class NiiVue extends EventTarget {
         slide.channelBlend === 'max' || isRgbSlide(slide.manifest)
           ? undefined
           : slide.channelBlend,
+      colorManagement: slide.colorManagement ? undefined : false,
       manifest: sp.slide.manifest,
       manifestUrl: sp.slide.manifestUrl || undefined,
       pixelToWorld: [...sp.pixelToWorld],
@@ -7538,6 +7549,7 @@ export default class NiiVue extends EventTarget {
       }
     })
     if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
+    if (sp.colorManagement === false) slide.colorManagement = false
     this.setSlidePlane(slide, {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,

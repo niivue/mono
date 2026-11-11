@@ -201,6 +201,7 @@ describe('syncGutters', () => {
 describe('fitGutterSource', () => {
   test('scales a bitmap down so the padded texture fits the limit', () => {
     const drawn: number[][] = []
+    let has2d = true
     const original = globalThis.OffscreenCanvas
     globalThis.OffscreenCanvas = class {
       constructor(
@@ -208,9 +209,11 @@ describe('fitGutterSource', () => {
         readonly height: number,
       ) {}
       getContext() {
-        return {
-          drawImage: (_b: unknown, ...args: number[]) => drawn.push(args),
-        }
+        return (
+          has2d && {
+            drawImage: (_b: unknown, ...args: number[]) => drawn.push(args),
+          }
+        )
       }
     } as unknown as typeof OffscreenCanvas
     try {
@@ -219,6 +222,9 @@ describe('fitGutterSource', () => {
       const fitted = fitGutterSource(bitmap, 8192)
       expect([fitted.width, fitted.height]).toEqual([8190, 100])
       expect(drawn).toEqual([[0, 0, 8190, 100]])
+      // Never a blank tile: no 2D context is an error.
+      has2d = false
+      expect(() => fitGutterSource(bitmap, 8192)).toThrow('No 2D context')
     } finally {
       globalThis.OffscreenCanvas = original
     }

@@ -1,3 +1,16 @@
+## 1.0.0-rc.171 (2026-11-11)
+
+### Fixes
+
+- **niivue:** keep WebGPU slide-plane buffers per draw for the whole pass ([1ef0868b](https://github.com/niivue/mono/commit/1ef0868b))
+- **niivue:** key slide tile textures by slide, so two slides draw in one frame ([c8471499](https://github.com/niivue/mono/commit/c8471499))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.170 (2026-11-11)
 
 ### Features

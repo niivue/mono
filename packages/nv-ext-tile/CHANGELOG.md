@@ -1,3 +1,24 @@
+## 1.0.0-rc.76 (2026-11-11)
+
+### Features
+
+- **nv-ext-tile:** multi-channel OME-TIFF slides ([dd46acda](https://github.com/niivue/mono/commit/dd46acda))
+
+### Fixes
+
+- **nv-ext-tile:** reject OME-TIFF channels with mixed PhotometricInterpretation; Codex 728-r2 ([b4efc5b9](https://github.com/niivue/mono/commit/b4efc5b9))
+- **nv-ext-tile:** keep multi-channel WhiteIsZero TIFF planes white at 0; Codex 728-r1 ([bb2f0e11](https://github.com/niivue/mono/commit/bb2f0e11))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.171
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.75 (2026-11-11)
 
 ### Updated Dependencies

@@ -53,7 +53,7 @@ export const defaultLaunchOptions: LaunchOptions = channel
  * the first frame, and every later `onSubmittedWorkDone` rejects with "A valid
  * external Instance reference no longer exists".
  */
-export const webgpuLaunchOptions: LaunchOptions = channel
+const webgpuLaunchOptions: LaunchOptions = channel
   ? hardwareGpuLaunchOptions
   : {
       args: [

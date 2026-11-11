@@ -73,20 +73,6 @@ type VolumeReadResult = {
 const volumeModules: Record<string, VolumeReader> = volumeReaderModules
 const volumeReaderByExt = NVLoader.buildExtensionMap(volumeModules)
 
-/** Extensions supported for layer loading (scalar-only + mesh scalar + volume) */
-export function layerExtensions(): string[] {
-  const exts = new Set<string>()
-  for (const k of layerReaderByExt.keys()) exts.add(k)
-  // MZ3 and GII support scalar-only mode
-  exts.add('MZ3')
-  exts.add('GII')
-  // Volume formats that can provide per-vertex scalars
-  exts.add('NII')
-  exts.add('MGH')
-  exts.add('MGZ')
-  return Array.from(exts).sort()
-}
-
 // --- Default layer values ---
 
 const LAYER_DEFAULTS: Omit<NVMeshLayer, 'values' | 'globalMin' | 'globalMax'> =

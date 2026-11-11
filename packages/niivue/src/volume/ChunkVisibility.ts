@@ -476,20 +476,6 @@ export function chunksOverlappingVoxelBox(
   return out
 }
 
-/**
- * Union of several per-tile chunk-index lists into one deduplicated,
- * ascending working set. The renderer collects one list per layout tile
- * (frustum cull for 3D tiles, `chunksCrossingSlice` for 2D tiles) and folds
- * them together here.
- */
-export function unionChunkSets(sets: readonly number[][]): number[] {
-  const seen = new Set<number>()
-  for (const set of sets) {
-    for (const i of set) seen.add(i)
-  }
-  return [...seen].sort((a, b) => a - b)
-}
-
 /** One cube in a chunked draw: a plan chunk, or a retiring one from a swap. */
 export type ChunkDrawItem<TRetiring> = { index: number; retiring?: TRetiring }
 

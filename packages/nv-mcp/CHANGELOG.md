@@ -1,3 +1,17 @@
+## 1.0.0-rc.165 (2026-11-11)
+
+### Fixes
+
+- **nv-mcp:** return the screenshot crop size so a scaled bounded capture maps back ([69a638c8](https://github.com/niivue/mono/commit/69a638c8))
+- **nv-mcp:** report the screenshot's crop origin for map_point ([7b1c73e8](https://github.com/niivue/mono/commit/7b1c73e8))
+- **nv-mcp:** take screenshots through NiiVue's getCanvasImage ([#594](https://github.com/niivue/mono/issues/594))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.164 (2026-11-11)
 
 ### Features

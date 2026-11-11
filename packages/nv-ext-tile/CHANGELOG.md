@@ -1,3 +1,31 @@
+## 1.0.0-rc.61 (2026-11-11)
+
+### Features
+
+- ⚠️  **nv-ext-tile:** OmeZarrSource.arrays are zarrita-rs arrays ([689ad403](https://github.com/niivue/mono/commit/689ad403))
+- **nv-ext-tile:** read OME-Zarr with @niivue/zarrita-rs from npm ([a5ddc50b](https://github.com/niivue/mono/commit/a5ddc50b))
+
+### Fixes
+
+- **nv-ext-tile:** read standalone lz4 stores through zarrita-rs rc.1 ([4551baec](https://github.com/niivue/mono/commit/4551baec))
+
+### Breaking Changes
+
+- **nv-ext-tile:** OmeZarrSource.arrays are zarrita-rs arrays  ([689ad403](https://github.com/niivue/mono/commit/689ad403))
+  OmeZarrSource.arrays hold @niivue/zarrita-rs arrays.
+  Read them with @niivue/zarrita-rs/inline's get, not zarrita.js.
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+  Claude-Session: https://claude.ai/code/session_01Ds8jyAKyruMG4DGCtUZ8iS
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.156
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.60 (2026-11-11)
 
 ### Updated Dependencies

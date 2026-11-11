@@ -68,8 +68,11 @@ const index = await indexDicomWsi(files)
 const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 ```
 
-- `indexDicomWsi` reads only headers and item tags (`File.slice`), never pixel data.
+- `indexDicomWsi` parses only headers and item tags, never pixel data.
   It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
+  In a page it runs in an inlined worker that reads 1 MiB blocks (`FileReaderSync`), so
+  an item walk reads each file through; without a worker (Bun, or a CSP that blocks
+  `blob:` workers) it reads with `File.slice` on the calling thread.
 - It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
   concatenations. TILED_FULL frames keep their implicit order; per-frame
   positions, when given, win (items holding only other metadata, such as Frame
@@ -114,21 +117,21 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
   as OpenSlide shows them.
 - Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
-  a `webkitdirectory` input):
+  a `webkitdirectory` input, in the worker; Bun on the calling thread):
 
   | Set | Frames | Holes | Bun | Chrome |
   |---|---|---|---|---|
-  | Hamamatsu-2 (EOT) | 6,199 | 0 | 2 ms | 12 ms |
-  | 3DHISTECH-2 (BOT, sparse, split L0) | 56,233 | 449,040 | 65 ms | 102 ms |
-  | Leica-4 (sparse) | 8,546 | 0 | 73 ms | 323 ms |
-  | 3DHISTECH-1 | 4,434 | 0 | 100 ms | 643 ms |
-  | JP2K-33003-1 (item walk) | 4,569 | 0 | 93 ms | 600 ms |
-  | CMU-1-JP2K-ICT (item walk) | 24,813 | 0 | 159 ms | 952 ms |
-  | CMU-1-JP2K-33005 (item walk) | 28,284 | 0 | 280 ms | 1.74 s |
-  | CMU-1-JP2K-RCT (item walk) | 24,813 | 0 | 429 ms | 2.78 s |
+  | Hamamatsu-2 (EOT) | 6,199 | 0 | 2 ms | 11 ms |
+  | 3DHISTECH-2 (BOT, sparse, split L0) | 56,233 | 449,040 | 65 ms | 43 ms |
+  | Leica-4 (sparse) | 8,546 | 0 | 73 ms | 72 ms |
+  | 3DHISTECH-1 | 4,434 | 0 | 100 ms | 210 ms |
+  | JP2K-33003-1 (item walk) | 4,569 | 0 | 93 ms | 43 ms |
+  | CMU-1-JP2K-ICT (item walk) | 24,813 | 0 | 159 ms | 206 ms |
+  | CMU-1-JP2K-33005 (item walk) | 28,284 | 0 | 280 ms | 88 ms |
+  | CMU-1-JP2K-RCT (item walk) | 24,813 | 0 | 429 ms | 383 ms |
 
-  Indexing awaits `File.slice` reads, so the page stays responsive; a folder without
-  offset tables just takes longer in the browser.
+  Chrome on the main thread (`File.slice`, ~0.1 ms a read whatever its size) took
+  0.3-2.9 s for the last six; the page stayed responsive either way (no task over 50 ms).
 
 - Test fixtures: `fixtures/dicom-wsi` (synthetic, about 60 KB, with the generator
   `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's

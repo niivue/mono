@@ -1,4 +1,5 @@
-// Fails when a Playwright JSON report contains a skipped test, or no tests.
+// Fails when a Playwright JSON report contains a skipped test, or no tests;
+// lists flaky ones (passed on retry) without failing.
 //
 // The full-suite-metal job runs on a real GPU, where nothing should skip. GPU
 // specs skip rather than fail when an adapter or backend is missing, so a skip
@@ -60,6 +61,17 @@ if (skipped.length > 0) {
   console.error(`${skipped.length} of ${total} tests were skipped:`)
   for (const line of skipped) console.error(`  ${line}`)
   process.exit(1)
+}
+
+// A retried pass (#723) is reported, not failed, so a local run cannot hide it.
+const flaky = specs.flatMap((spec) =>
+  spec.tests
+    .filter((test) => test.status === 'flaky')
+    .map(() => `${spec.file}:${spec.line} ${spec.title}`),
+)
+if (flaky.length > 0) {
+  console.log(`${flaky.length} of ${total} tests passed only on retry:`)
+  for (const line of flaky) console.log(`  ${line}`)
 }
 
 console.log(`${total} tests, none skipped.`)

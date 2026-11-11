@@ -1175,6 +1175,36 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.added).toHaveLength(1)
   })
 
+  it('no-uid adds are not capped (#125)', () => {
+    const nv = stubNiivue()
+    register('vp-d4', nv)
+    updateNiivueViewport('vp-d4', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-d4', backing)
+    const measurementService = (
+      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
+    ).services.measurementService as {
+      addRawMeasurement: (...args: unknown[]) => string | undefined
+    }
+    const add = measurementService.addRawMeasurement
+    let ready = false
+    measurementService.addRawMeasurement = (...args) =>
+      ready ? add(...args) : undefined
+    nv.annotations = [ellipse('late')]
+    const none = { added: [], updated: [], removed: [] }
+    for (let i = 0; i < 4; i++)
+      applyNiivueAnnotationDelta('vp-d4', svc.servicesManager, {
+        ...none,
+        added: ['late'],
+      })
+    ready = true
+    reconcileNiivueAnnotations('vp-d4', svc.servicesManager)
+    expect(svc.added).toHaveLength(1)
+  })
+
   it('reconcile detects slice-depth changes in reflected geometry', () => {
     const nv = stubNiivue()
     register('vp-depth', nv)

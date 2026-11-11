@@ -582,9 +582,9 @@ interface ReflectedRow {
 }
 const reflectedAnnotations = new Map<string, Map<string, ReflectedRow>>()
 
-// Failed OHIF add/remove calls (thrown, or an add that returned no uid) per
-// annotation, keyed on the content hash so an edit retries afresh. A
-// not-yet-loaded backing series is a normal wait, retried at the load boundary.
+// Failed OHIF add/remove calls per annotation, keyed on the content hash so an
+// edit retries afresh. Thrown errors are capped; an add that returned no uid is
+// a wait and is not. A not-yet-loaded backing series is retried at the load boundary.
 const MAX_MAPPING_ATTEMPTS = 3
 const mappingFailures = new Map<
   string,
@@ -597,6 +597,7 @@ function recordMappingFailure(
   hash: string,
   action: string,
   err: unknown,
+  capped = true,
 ): void {
   let byView = mappingFailures.get(viewportId)
   if (!byView) {
@@ -605,14 +606,14 @@ function recordMappingFailure(
   }
   const prev = byView.get(annotationId)
   // Warn once per failing change (hash), so a later remove failure is still logged.
-  if (prev?.hash !== hash)
+  if (capped && prev?.hash !== hash)
     console.warn(
       `[nv-ohif] measurement ${action} failed for annotation ${annotationId} (retrying up to ${MAX_MAPPING_ATTEMPTS} attempts)`,
       err,
     )
   byView.set(annotationId, {
     hash,
-    attempts: prev?.hash === hash ? prev.attempts + 1 : 1,
+    attempts: !capped ? 0 : prev?.hash === hash ? prev.attempts + 1 : 1,
   })
 }
 
@@ -884,14 +885,9 @@ function reflectNiivueAnnotationResult(
     return { status: 'retryableFailure' }
   }
   if (!acceptedUid) {
-    // Recorded like a throw so the next delta retries it, not only the load boundary.
-    recordMappingFailure(
-      viewportId,
-      annotation.id,
-      hash,
-      'add',
-      'no uid returned',
-    )
+    // No uid means OHIF is not ready, like a missing backing series: retry on
+    // every later delta and at the load boundary, uncapped and unlogged.
+    recordMappingFailure(viewportId, annotation.id, hash, 'add', null, false)
     return { status: 'retryableFailure' }
   }
   clearMappingFailure(viewportId, annotation.id)

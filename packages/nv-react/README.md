@@ -143,6 +143,14 @@ function App() {
 
 ## Scene controller
 
+`NvSceneController` comes from `@niivue/niivue/scene`; this package re-exports it with its layouts and types.
+
+Since moving there it shares `@niivue/nv-web-component`'s attach handling:
+
+- `setViewerSliceLayout` applies once the viewer's canvas is attached, so it is deferred to a later microtask even for an attached viewer.
+- A viewer whose canvas fails to attach is removed, after an `error` event for its index; `addViewer()` rejects with that error.
+- Calls on such a viewer made before the failure: `loadVolume` rejects (`removed before it was ready`); `removeVolume`, `setColormap`, `setCalMinMax` and `setOpacity` resolve without effect.
+
 ### Viewer management
 
 ```tsx

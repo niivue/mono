@@ -1,5 +1,17 @@
-import type { NiiVueOptions, NVImage } from '@niivue/niivue'
+import type {
+  ImageFromUrlOptions,
+  NiiVueOptions,
+  NVImage,
+} from '@niivue/niivue'
 import NiiVue, { DRAG_MODE, SLICE_TYPE } from '@niivue/niivue'
+import {
+  defaultLayouts,
+  defaultSliceLayouts,
+  defaultViewerOptions,
+  NvSceneController,
+  type NvSceneControllerSnapshot,
+  type SliceLayoutTile,
+} from '@niivue/niivue/scene'
 import {
   css,
   type HTMLTemplateResult,
@@ -7,15 +19,6 @@ import {
   LitElement,
   type PropertyValues,
 } from 'lit'
-import { defaultLayouts } from './layouts'
-import {
-  defaultSliceLayouts,
-  defaultViewerOptions,
-  NvSceneController,
-  type NvSceneControllerSnapshot,
-  type SliceLayoutTile,
-} from './nvscene-controller'
-import type { ImageFromUrlOptions } from './types'
 
 export const defaultElementName = 'niivue-viewer'
 export const defaultSceneElementName = 'niivue-scene'

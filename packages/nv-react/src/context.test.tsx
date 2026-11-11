@@ -4,8 +4,8 @@ import { clearMockInstances, registerNiivueMock } from './__mocks__/niivue'
 
 registerNiivueMock()
 
+import { NvSceneController } from '@niivue/niivue/scene'
 import { NvSceneProvider, useSceneContext } from './context'
-import { NvSceneController } from './nvscene-controller'
 
 /** Helper component that reads context and renders the layout name */
 function ContextReader() {

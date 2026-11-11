@@ -1,17 +1,21 @@
-// biome-ignore lint/performance/noBarrelFile: package entry point
-export { NvSceneProvider, useSceneContext } from './context'
-export { useNiivue, useScene, useSceneEvent } from './hooks'
-export { defaultLayouts } from './layouts'
-export { NvScene } from './nvscene'
+// biome-ignore-all lint/performance/noBarrelFile: package entry point
+export type {
+  ImageFromUrlOptions,
+  NiiVueOptions,
+  NVImage,
+} from '@niivue/niivue'
 export type {
   BroadcastOptions,
   NiivueCallback,
   NvSceneControllerSnapshot,
+  NvSceneEventMap,
   SliceLayoutConfig,
   SliceLayoutTile,
   ViewerSlot,
-} from './nvscene-controller'
+  ViewerState,
+} from '@niivue/niivue/scene'
 export {
+  defaultLayouts,
   defaultSliceLayout,
   defaultSliceLayouts,
   defaultViewerOptions,
@@ -22,13 +26,9 @@ export {
   splitSliceLayout,
   stackedSliceLayout,
   triSliceLayout,
-} from './nvscene-controller'
+} from '@niivue/niivue/scene'
+export { NvSceneProvider, useSceneContext } from './context'
+export { useNiivue, useScene, useSceneEvent } from './hooks'
+export { NvScene } from './nvscene'
 export type { NvViewerProps } from './nvviewer'
 export { NvViewer } from './nvviewer'
-export type {
-  ImageFromUrlOptions,
-  NiiVueOptions,
-  NVImage,
-  NvSceneEventMap,
-  ViewerState,
-} from './types'

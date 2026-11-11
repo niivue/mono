@@ -1,5 +1,5 @@
+import type { NvSceneController } from '@niivue/niivue/scene'
 import { createContext, type ReactNode, useContext } from 'react'
-import type { NvSceneController } from './nvscene-controller'
 
 const NvSceneContext = createContext<NvSceneController | null>(null)
 

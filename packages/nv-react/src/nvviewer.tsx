@@ -1,11 +1,14 @@
-import type { NiiVueOptions, NVImage } from '@niivue/niivue'
+import type {
+  ImageFromUrlOptions,
+  NiiVueOptions,
+  NVImage,
+} from '@niivue/niivue'
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+import { defaultViewerOptions } from '@niivue/niivue/scene'
 import type { CSSProperties } from 'react'
 import { useEffect, useRef } from 'react'
-import { defaultViewerOptions } from './nvscene-controller'
 import type { OptionValues } from './nvviewer-options'
 import { applyLiveOptions, signature, splitOptions } from './nvviewer-options'
-import type { ImageFromUrlOptions } from './types'
 
 /** Tracked visual properties for a loaded volume */
 interface VolumeVisualProps {

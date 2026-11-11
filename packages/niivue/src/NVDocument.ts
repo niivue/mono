@@ -253,6 +253,8 @@ export type NVDocumentSlidePlane = {
   channels?: NVChannel[]
   /** Omitted when 'max'. */
   channelBlend?: NVSlideChannelBlend
+  /** ICC colour management; omitted when on. */
+  colorManagement?: false
 }
 
 export type NVDocumentData = {

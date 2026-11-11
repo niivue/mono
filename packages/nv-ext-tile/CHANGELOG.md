@@ -1,3 +1,25 @@
+## 1.0.0-rc.75 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.170
+
+## 1.0.0-rc.74 (2026-11-11)
+
+### Fixes
+
+- Codex r1 on PR 725, stream ramps and minimap press ([7a8ec295](https://github.com/niivue/mono/commit/7a8ec295))
+- **nv-ext-tile:** style a streamed OME-Zarr channel from its omero metadata ([c2724456](https://github.com/niivue/mono/commit/c2724456))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.169
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.73 (2026-11-11)
 
 ### Features

@@ -573,7 +573,18 @@ export interface View {
    * `render` returns false when it drew nothing (before #596 it returns
    * nothing).
    */
-  view?: { render(): unknown; isBusy?: boolean } | null
+  view?: {
+    render(): unknown
+    isBusy?: boolean
+    /** Top-left of this instance's drawn rect on the canvas, in pixels. */
+    boundsOffsetX?: number
+    boundsOffsetY?: number
+  } | null
+  /**
+   * NiiVue 1.0's capture: renders a frame now and returns this instance's
+   * drawn region, or null when no frame could be drawn.
+   */
+  getCanvasImage?(): ImageData | null
   model: {
     mm2scene(mm: number[]): Triple
     scene2mm(frac: number[]): Triple
@@ -802,6 +813,8 @@ export interface View {
   setSlideChannel?(index: number, update: Partial<SlideChannel>): unknown
   readonly slideChannelBlend?: SlideChannelBlend | null
   setSlideChannelBlend?(blend: SlideChannelBlend): unknown
+  readonly slideColorManagement?: boolean | null
+  setSlideColorManagement?(on: boolean): unknown
 
   // Chunked volumes.
   /** Tile a volume into a grid of bricks (or `null` to make it one texture again). */

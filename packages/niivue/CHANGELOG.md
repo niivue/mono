@@ -1,3 +1,24 @@
+## 1.0.0-rc.170 (2026-11-11)
+
+### Features
+
+- **niivue:** slide plane colour management setter; nv-mcp set_slide color_management ([4512a1fd](https://github.com/niivue/mono/commit/4512a1fd))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.169 (2026-11-11)
+
+### Performance
+
+- **niivue:** set the WebGL2 slide isNearest uniform once per shader use ([45dca65d](https://github.com/niivue/mono/commit/45dca65d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.168 (2026-11-11)
 
 ### Refactors

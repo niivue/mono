@@ -250,6 +250,7 @@ export class SlideRenderer extends NVRenderer {
     if (!shader) return
     this._shader = shader
     shader.use(gl)
+    gl.uniform1i(shader.uniforms.isNearest, this.isNearestInterpolation ? 1 : 0)
     if (lut) this._luts.bind(gl, lut)
   }
 
@@ -428,10 +429,6 @@ export class SlideRenderer extends NVRenderer {
       options.isPlaceholder ? 1 : 0,
     )
     gl.uniform1i(this._shader.uniforms.showGrid, options.showGrid ? 1 : 0)
-    gl.uniform1i(
-      this._shader.uniforms.isNearest,
-      this.isNearestInterpolation ? 1 : 0,
-    )
     gl.uniform4fv(this._shader.uniforms.placeholderColor, placeholderColor)
     gl.uniform4fv(this._shader.uniforms.gridColor, gridColor)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)

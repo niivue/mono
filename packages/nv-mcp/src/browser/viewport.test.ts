@@ -178,7 +178,7 @@ describe('set_slide', () => {
     expect(view.slideDrawEnd).toHaveBeenCalledTimes(1)
     expect(view.clearSlideDrawing).toHaveBeenCalledTimes(1)
     expect(() => set_slide({})).toThrow(
-      'set_slide needs something to do: level, clear_plane, drawing, channel or channel_blend.',
+      'set_slide needs something to do: level, clear_plane, drawing, channel, channel_blend or color_management.',
     )
     expect(() => set_slide({ drawing: 'paint' })).toThrow(
       'Unknown drawing "paint". One of: create, clear, undo, end.',
@@ -203,6 +203,41 @@ describe('set_slide', () => {
     set_slide({ drawing: 'undo' })
     set_slide({ drawing: 'end' })
     expect(seen).toEqual(['clear', 'undo', 'end'])
+  })
+
+  it('refuses color_management without the setter, before changing anything', () => {
+    const changes: unknown[] = []
+    const view = baseView({
+      slideChannels: [
+        { name: 'a', colormap: 'gray', calMin: 0, calMax: 1, visible: true },
+      ],
+      setSlideChannel: (c: number, u: unknown) => changes.push([c, u]),
+    })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    const missing = "This page's NiiVue cannot change slide colour management."
+    expect(() =>
+      set_slide({ channel: 0, visible: false, color_management: false }),
+    ).toThrow(missing)
+    expect(() => set_slide({ color_management: false })).toThrow(missing)
+    expect(changes).toEqual([])
+  })
+
+  it('refuses a channel or blend without its setter, before changing anything', () => {
+    const changes: unknown[] = []
+    const view = baseView({
+      slideChannels: [
+        { name: 'a', colormap: 'gray', calMin: 0, calMax: 1, visible: true },
+      ],
+      setSlideColorManagement: (on: boolean) => changes.push(on),
+    })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    expect(() =>
+      set_slide({ channel: 0, visible: false, color_management: false }),
+    ).toThrow("This page's NiiVue cannot change slide channels.")
+    expect(() =>
+      set_slide({ channel_blend: 'max', color_management: false }),
+    ).toThrow("This page's NiiVue cannot change the channel blend.")
+    expect(changes).toEqual([])
   })
 
   it('refuses a page without a slide plane or slide drawing', () => {
@@ -258,12 +293,14 @@ describe('set_slide', () => {
       baseView({
         setSlideChannel: (index, update) => nv.setSlideChannel(index, update),
         setSlideChannelBlend: (blend) => nv.setSlideChannelBlend(blend),
+        setSlideColorManagement: (on) => nv.setSlideColorManagement(on),
         clearSlidePlane: mock(),
         setSlidePlaneLevel: mock(),
       }),
       {
         slideChannels: { get: () => nv.slideChannels },
         slideChannelBlend: { get: () => nv.slideChannelBlend },
+        slideColorManagement: { get: () => nv.slideColorManagement },
       },
     )
     const { set_slide, where_am_i } = coreHandlers(hostOf(view))
@@ -273,6 +310,7 @@ describe('set_slide', () => {
       colormap: 'red',
       cal_min: 2,
       channel_blend: 'additive',
+      color_management: false,
     })
     expect(nv.slideChannels?.[1]).toEqual({
       name: 'gfp',
@@ -282,6 +320,8 @@ describe('set_slide', () => {
       visible: false,
     })
     expect(slide.channelBlend).toBe('additive')
+    expect(slide.colorManagement).toBe(false)
+    expect(out).toMatchObject({ colorManagement: false })
     // A default bound is NaN, which the reply carries as null.
     expect(JSON.parse(JSON.stringify(out)).channels[0]).toMatchObject({
       name: 'dapi',
@@ -303,14 +343,24 @@ describe('set_slide', () => {
     )
     expect(() =>
       set_slide({ channel_blend: 'max', clear_plane: true }),
-    ).toThrow('clear_plane cannot be combined with channel changes.')
+    ).toThrow(
+      'clear_plane cannot be combined with channel, channel_blend or color_management.',
+    )
     expect(view.clearSlidePlane).not.toHaveBeenCalled()
     // A core rejection comes before the level changes.
     expect(() =>
       set_slide({ level: 1, channel: 0, colormap: 'bogus' }),
     ).toThrow(RangeError)
     expect(view.setSlidePlaneLevel).not.toHaveBeenCalled()
-    expect(await where_am_i({})).toMatchObject({ channelBlend: 'additive' })
+    expect(() =>
+      set_slide({ color_management: true, clear_plane: true }),
+    ).toThrow(
+      'clear_plane cannot be combined with channel, channel_blend or color_management.',
+    )
+    expect(await where_am_i({})).toMatchObject({
+      channelBlend: 'additive',
+      colorManagement: false,
+    })
   })
 
   it('changes nothing when a requested op is missing', () => {
@@ -341,12 +391,12 @@ describe('set_slide', () => {
       visible: true,
     })
     const view = baseView({
-      slideChannels: ['dapi', 'gfp', 'gfp'].map(slideChannel),
+      slideChannels: ['dapi ', 'gfp', 'gfp'].map(slideChannel),
       setSlideChannel: mock(),
     })
     const { set_slide } = viewportHandlers(hostOf(view))
     set_slide({ channel: 2, visible: false })
-    set_slide({ channel: 'dapi', visible: false })
+    set_slide({ channel: ' DAPI', visible: false })
     expect(view.setSlideChannel).toHaveBeenNthCalledWith(1, 2, {
       visible: false,
     })
@@ -357,7 +407,7 @@ describe('set_slide', () => {
       'Slide channels 1, 2 are all named "gfp"; give the index.',
     )
     expect(() => set_slide({ channel: 'gf', visible: true })).toThrow(
-      'No slide channel is named "gf". Channels: 0 (dapi), 1 (gfp), 2 (gfp).',
+      'No slide channel is named "gf". Channels: 0 (dapi ), 1 (gfp), 2 (gfp).',
     )
     expect(view.setSlideChannel).toHaveBeenCalledTimes(2)
   })

@@ -107,8 +107,9 @@ by the same dcm2niix pool. Samples are 8-16-bit unsigned; manifests carry DICOM 
   read-back needs a 2D OffscreenCanvas (without one, Safari < 16.4, such tiles show
   unwindowed), and anti-fingerprinting browsers may perturb it by about 1 grey level.
 - nv-mcp: `set_slide` sets a slide plane channel's window (`cal_min`, `cal_max`) through
-  the controller's `setSlideChannel` (read back with `slideChannels`); colour management
-  is not exposed (it needs a setter such as `setSlidePlaneColorManagement`).
+  the controller's `setSlideChannel` (read back with `slideChannels`); `color_management`
+  toggles the ICC table through `setSlideColorManagement` (read back with
+  `slideColorManagement`).
 - The slides demo shows a `calMin,calMax` field for monochrome slides; in OHIF,
   `niivueSetWindowLevel` sets it.
 

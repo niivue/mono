@@ -107,3 +107,18 @@ export function minimapToSlide(
     y: (spec.yAxisUp ? 1 - v : v) * spec.slideHeight,
   }
 }
+
+/**
+ * A tile's [start, end) thumbnail pixels along one axis at scale k. Rounding
+ * the shared edges keeps neighbours abutting on whole pixels: fractional edges
+ * antialias to partial alpha that shows as seams.
+ */
+export function thumbnailTileSpan(
+  index: number,
+  tileSize: number,
+  extent: number,
+  k: number,
+): [number, number] {
+  const start = index * tileSize
+  return [Math.round(start * k), Math.round((start + extent) * k)]
+}

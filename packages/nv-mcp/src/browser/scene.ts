@@ -594,6 +594,11 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     },
 
     async where_am_i() {
+      // The slide plane's samples at the crosshair, when it is on the slide.
+      const slideHere = () => {
+        const slide = view.slideSampleAt?.()
+        return slide ? { slide } : {}
+      }
       host.beforeAnswer?.()
       const volume = view.volumes[0]?.name ?? null
       if (!volume) {
@@ -601,6 +606,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           volume: null,
           description: 'No volume is loaded yet.',
           ...slideState(view),
+          ...slideHere(),
           ...(host.extraState?.() ?? {}),
         }
       }
@@ -617,6 +623,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         ...instancesState(view),
         description: await describe(),
         ...slideState(view),
+        ...slideHere(),
         ...(host.extraState?.() ?? {}),
       }
     },

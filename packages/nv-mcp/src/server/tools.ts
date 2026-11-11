@@ -789,8 +789,9 @@ export function registerCoreTools(
         'Reports where the crosshair is now: its position in world units (with `unit`: mm, or um ' +
         'on a micrometre volume) and as fractions of the ' +
         'volume, the volumes shown and how each is drawn, the atlas region there if any, which ' +
-        'plane is cut, where the camera looks from, the view layout, which tab answered, and the ' +
-        'description a listener would hear.',
+        'plane is cut, where the camera looks from, the view layout, which tab answered, the ' +
+        "slide plane's channel values under the crosshair (slide, as sample_slide reports them), " +
+        'and the description a listener would hear.',
       inputSchema: strict(CORE_SCHEMAS.where_am_i),
       annotations: { readOnlyHint: true },
     },

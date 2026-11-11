@@ -38,6 +38,7 @@ function rig(
   const crosshairs: number[][] = []
   const windows: Array<[number, number, boolean]> = []
   const boxes: unknown[] = []
+  const hovers: Array<number[] | null> = []
   const ctl = new NVSlideController(canvas, {
     slide: () => slide,
     screen: () => ({
@@ -50,6 +51,7 @@ function rig(
     onCrosshair: (p) => crosshairs.push([p.x, p.y]),
     onWindow: (dx, dy, done) => windows.push([dx, dy, done]),
     onContrast: (box) => boxes.push(box),
+    onHover: (p) => hovers.push(p && [p.x, p.y]),
   })
   const fire = (
     type: string,
@@ -78,6 +80,7 @@ function rig(
     crosshairs,
     windows,
     boxes,
+    hovers,
     viewports,
     clamps: () => clamps,
     captures: () => captures,
@@ -85,6 +88,17 @@ function rig(
 }
 
 describe('NVSlideController', () => {
+  test('hover reports moves without a gesture, and null on leave', () => {
+    const r = rig()
+    r.fire('pointermove', 3, 4, 0, undefined, 0)
+    r.fire('pointerdown', 3, 4)
+    r.fire('pointermove', 30, 4)
+    r.fire('pointerup', 30, 4)
+    r.fire('pointermove', 7, 8, 0, undefined, 0)
+    r.fire('pointerleave', 7, 8, 0, undefined, 0)
+    expect(r.hovers).toEqual([[3, 4], [7, 8], null])
+  })
+
   test('crosshairPan: a click places the crosshair, a drag pans', () => {
     const r = rig()
     r.fire('pointerdown', 10, 10)

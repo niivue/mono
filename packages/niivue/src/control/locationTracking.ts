@@ -6,6 +6,7 @@ import { isPaqd } from '@/NVConstants'
 import type {
   LUT,
   NiiVueLocation,
+  NiiVueLocationSlide,
   NiiVueLocationValue,
   NVImage,
   NVMesh as NVMeshType,
@@ -30,15 +31,17 @@ export interface LocationContext {
 }
 
 /**
- * Build a NiiVueLocation message from the current crosshair position.
- * Returns null if there are no volumes or meshes to report on.
+ * Build a NiiVueLocation message from the current crosshair position, with
+ * `slide` (the slide plane's samples there) when given.
+ * Returns null if there are no volumes, meshes or slide to report on.
  * May lazily build and mutate `ctx._drawLut` when a drawing is present.
  */
 export function buildLocationMessage(
   ctx: LocationContext,
   axCorSag: number,
+  slide: NiiVueLocationSlide | null = null,
 ): NiiVueLocation | null {
-  if (ctx.volumes.length === 0 && ctx.meshes.length === 0) return null
+  if (ctx.volumes.length === 0 && ctx.meshes.length === 0 && !slide) return null
   // Dynamic decimal places based on field of view
   const [, , range] = ctx.model.sceneExtentsMinMax()
   const fov = Math.max(Math.max(range[0], range[1]), range[2])
@@ -126,6 +129,12 @@ export function buildLocationMessage(
       }
     }
   }
+  if (slide) {
+    const values = slide.samples.map((s) =>
+      s.value === null ? '-' : flt2str(s.value, 3),
+    )
+    str += ` ${slide.name}: ${values.join(' ')}`
+  }
   const frac = ctx.model.scene.crosshairPos
   const vox = ctx.model.scene2vox(frac)
   const msg: NiiVueLocation = {
@@ -163,5 +172,6 @@ export function buildLocationMessage(
     }),
     string: str,
   }
+  if (slide) msg.slide = slide
   return msg
 }

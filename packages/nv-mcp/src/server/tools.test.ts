@@ -198,6 +198,13 @@ describe('core tool schemas', () => {
     expect(required('edit_annotations')).toEqual(['action'])
     expect(required('edit_measurements')).toEqual(['action'])
     expect(required('save')).toEqual(['what'])
+    expect(required('sample_slide')).toEqual(['x', 'y'])
+    expect(properties('sample_slide').sort()).toEqual([
+      'fetch',
+      'tab',
+      'x',
+      'y',
+    ])
     expect(required('add_control')).toEqual(['id', 'kind'])
     expect(required('list_controls')).toEqual([])
     expect(required('set_control')).toEqual(['id'])
@@ -226,6 +233,7 @@ describe('core tool schemas', () => {
       'capabilities',
       'list_meshes',
       'map_point',
+      'sample_slide',
     ])
       expect([name, byName[name].annotations?.readOnlyHint]).toEqual([
         name,
@@ -549,6 +557,18 @@ describe('core tools over the bridge', () => {
       arguments: { color_management: 'off' },
     })
     expect(badManaged.isError).toBe(true)
+    const sampled = await client.callTool({
+      name: 'sample_slide',
+      arguments: { x: 3.5, y: 4, fetch: true },
+    })
+    expect(json(sampled)).toMatchObject({
+      params: { x: 3.5, y: 4, fetch: true },
+    })
+    const unplaced = await client.callTool({
+      name: 'sample_slide',
+      arguments: { x: 3 },
+    })
+    expect(unplaced.isError).toBe(true)
     const laid = await client.callTool({
       name: 'set_view',
       arguments: { slice: 'multiplanar', layout: 'row', colorbar: true },

@@ -349,6 +349,31 @@ function histogramPercentiles(
 }
 
 /**
+ * The volume auto-window rule ({@link calMinMax}) for any sample set, e.g. a
+ * slide source's coarse-level sample: `[p2, p98, min, max]` of the finite
+ * values, zeros excluded from the percentile population; null when none is finite.
+ */
+export function robustMinMax(
+  values: TypedVoxelArray,
+): [number, number, number, number] | null {
+  const stats = robustRange(values, 0, values.length)
+  if (!stats) return null
+  const { mn, mx, nZero, nSkip } = stats
+  if (mx === mn) return [mn, mx, mn, mx]
+  const [lo, hi] = histogramPercentiles(
+    values,
+    0,
+    values.length,
+    mn,
+    mx,
+    nZero,
+    nSkip,
+  )
+  const scl = (1001 - 1) / (mx - mn)
+  return [lo / scl + mn, hi / scl + mn, mn, mx]
+}
+
+/**
  * Calculates min/max intensity values from volume data.
  * Returns [robust_min, robust_max, global_min, global_max].
  * Robust values are based on 2%-98% histogram percentiles.

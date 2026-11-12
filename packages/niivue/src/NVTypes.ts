@@ -5,6 +5,7 @@ import type {
   OVERLAY_COLOR_BLEND,
   PEN_SHAPE,
 } from '@/NVConstants'
+import type { NVSlideSample } from '@/slide/NVSlide'
 import type { FontMetrics } from '@/view/NVFont'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
@@ -1893,7 +1894,19 @@ export type NiiVueLocation = {
   frac: number[]
   xy: [number, number]
   values: NiiVueLocationValue[]
+  /** The slide plane under the crosshair (projected onto it); absent off the plane. */
+  slide?: NiiVueLocationSlide
   string: string
+}
+
+/** Slide-plane samples at a base (level-0) pixel, from the tile cache. */
+export type NiiVueLocationSlide = {
+  id: string
+  name: string
+  x: number
+  y: number
+  /** One per channel; `value` null when missing (see `NVSlideSample.missing`). */
+  samples: NVSlideSample[]
 }
 
 export type NVFontData = {

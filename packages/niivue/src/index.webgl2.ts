@@ -130,6 +130,7 @@ export type {
   NIFTI2,
   NIFTIHeader,
   NiiVueLocation,
+  NiiVueLocationSlide,
   NiiVueLocationValue,
   NiiVueOptions,
   NVBounds,

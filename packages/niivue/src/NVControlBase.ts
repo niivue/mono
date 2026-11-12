@@ -123,6 +123,7 @@ import type {
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
+  NiiVueLocationSlide,
   NiiVueOptions,
   NVBounds,
   NVConnectomeOptions,
@@ -159,6 +160,7 @@ import {
   type NVChannel,
   NVSlide,
   type NVSlideChannelBlend,
+  type NVSlideSample,
 } from '@/slide/NVSlide'
 import {
   isSlideDrawingSizeValid,
@@ -166,7 +168,11 @@ import {
   slideDrawingSize,
 } from '@/slide/slideDrawing'
 import type { SlidePlaneState } from '@/slide/slidePlane'
-import { pickSlidePixel, slideExtentCorners } from '@/slide/slidePlane'
+import {
+  pickSlidePixel,
+  slideExtentCorners,
+  worldToSlidePixel,
+} from '@/slide/slidePlane'
 import { SlideVectorLayer } from '@/slide/slideVector'
 import { crosshairExplodeOffset } from '@/view/crosshairExplode'
 import { type MeshRebuild, mergeMeshRebuild } from '@/view/meshGpuSync'
@@ -415,6 +421,24 @@ function sameRange(
   return a[0] === b[0] && a[1] === b[1]
 }
 
+/** Whether two slide readouts read the same samples from the same levels. */
+function sameSlideSamples(
+  a: NVSlideSample[] | null,
+  b: NVSlideSample[] | null,
+): boolean {
+  if (!a || !b) return !a && !b
+  return (
+    a.length === b.length &&
+    a.every(
+      (s, i) =>
+        s.level === b[i].level &&
+        s.missing === b[i].missing &&
+        s.name === b[i].name &&
+        Object.is(s.stored, b[i].stored),
+    )
+  )
+}
+
 /** A caller queued behind the GPU update lock. */
 type UpdateWaiter = { resolve: () => void; reject: (err: unknown) => void }
 /** Settles a follow-up's callers once its own pass is done (see `_runFollowUp`). */
@@ -484,6 +508,8 @@ export default class NiiVue extends EventTarget {
   private _slidePlane: SlidePlaneState | null = null
   private _slidePlaneSlide: NVSlide | null = null
   private _slidePlaneOnChange: (() => void) | null = null
+  // The slide samples the last locationChange carried, to re-emit only when they change.
+  private _slideLocationSamples: NVSlideSample[] | null = null
   private _slideDrawing: SlideDrawing | null = null
   private _slideVector: SlideVectorLayer | null = null
   private _slideLastRasterPt: [number, number] | null = null
@@ -5312,9 +5338,25 @@ export default class NiiVue extends EventTarget {
         mm = [snapped[0], snapped[1], snapped[2]]
       }
     }
-    const frac = this.model.mm2scene(mm)
-    for (let i = 0; i < 3; i++) {
-      frac[i] = Math.max(0, Math.min(1, frac[i]))
+    const sp = this._slidePlane
+    let frac: vec3
+    if (sp) {
+      // The slide can reach past the scene extents (a slide-only scene has
+      // only placeholder ones, stored inverted): clamp in mm to their union
+      // and keep the fraction unclamped.
+      const { width, height } = sp.slide.manifest
+      const corners = slideExtentCorners(sp.pixelToWorld, width, height)
+      const { extentsMin, extentsMax } = this.model
+      const clamped = mm.map((v, i) => {
+        const axis = [...corners.map((c) => c[i]), extentsMin[i], extentsMax[i]]
+        return Math.max(Math.min(...axis), Math.min(Math.max(...axis), v))
+      })
+      frac = this.model.mm2scene(clamped)
+    } else {
+      frac = this.model.mm2scene(mm)
+      for (let i = 0; i < 3; i++) {
+        frac[i] = Math.max(0, Math.min(1, frac[i]))
+      }
     }
     this.model.scene.crosshairPos = frac
     applyPanFollowsCrosshair(this)
@@ -5337,7 +5379,11 @@ export default class NiiVue extends EventTarget {
   }
 
   createOnLocationChange(axCorSag = NaN): void {
-    const msg = buildLocationMessage(this, axCorSag)
+    const slide = this.slideSampleAt()
+    // A readout that just went away still emits, so listeners can clear it.
+    const hadSlide = this._slideLocationSamples !== null
+    this._slideLocationSamples = slide?.samples ?? null
+    const msg = buildLocationMessage(this, axCorSag, slide, hadSlide)
     if (msg) this.emit('locationChange', msg)
     // Refresh the signal readout so the status bar reflects the new voxel value
     // when the crosshair moves or the 4D frame changes (no-op without signals).
@@ -5823,8 +5869,17 @@ export default class NiiVue extends EventTarget {
       )
     }
     this._slidePlaneSlide = slide
-    this._slidePlaneOnChange = (): void => this.drawScene()
+    this._slidePlaneOnChange = (): void => {
+      this.drawScene()
+      // A tile that lands under the crosshair re-emits locationChange, once per
+      // change of samples (about once per level), never per tile.
+      const now = this.slideSampleAt()?.samples ?? null
+      if (!sameSlideSamples(now, this._slideLocationSamples))
+        this.createOnLocationChange()
+    }
     slide.addEventListener('change', this._slidePlaneOnChange)
+    // A swapped slide reads differently at the same crosshair.
+    this.createOnLocationChange()
     this.drawScene()
   }
 
@@ -5899,6 +5954,8 @@ export default class NiiVue extends EventTarget {
     this._slideVector = null
     this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = null
+    // Listeners drop the readout of the removed slide.
+    if (this._slideLocationSamples) this.createOnLocationChange()
     this.drawScene()
   }
 
@@ -5954,6 +6011,48 @@ export default class NiiVue extends EventTarget {
       version: 0,
     }
     this._refreshSlideAnnotation()
+  }
+
+  /**
+   * The slide plane's samples at base pixel `x`, `y` (cache only, as
+   * `NVSlide.sampleAt`), or, with no point given, at the crosshair projected
+   * onto the plane. Null without a plane, or with the crosshair off it.
+   * Throws when only one of `x`, `y` is given.
+   */
+  slideSampleAt(x?: number, y?: number): NiiVueLocationSlide | null {
+    const p = this._slideSamplePoint(x, y)
+    return p && this._slideLocation(p, p.slide.sampleAt(p.x, p.y))
+  }
+
+  /** {@link slideSampleAt}, fetching the level-0 tile first (`NVSlide.loadSampleAt`). */
+  async loadSlideSampleAt(
+    x?: number,
+    y?: number,
+  ): Promise<NiiVueLocationSlide | null> {
+    const p = this._slideSamplePoint(x, y)
+    return p && this._slideLocation(p, await p.slide.loadSampleAt(p.x, p.y))
+  }
+
+  private _slideSamplePoint(x?: number, y?: number) {
+    if ((x === undefined) !== (y === undefined))
+      throw new Error('slideSampleAt: give both x and y, or neither')
+    const sp = this._slidePlane
+    if (!sp) return null
+    const p =
+      x === undefined || y === undefined
+        ? worldToSlidePixel(
+            sp,
+            this.model.scene2mm(this.model.scene.crosshairPos),
+          )
+        : { x, y }
+    return p && { slide: sp.slide, x: p.x, y: p.y }
+  }
+
+  private _slideLocation(
+    p: { slide: NVSlide; x: number; y: number },
+    samples: NVSlideSample[],
+  ): NiiVueLocationSlide {
+    return { id: p.slide.id, name: p.slide.name, x: p.x, y: p.y, samples }
   }
 
   /** Map a canvas CSS pixel to slide base-pixel coords, or null off-plane. */

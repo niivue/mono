@@ -115,6 +115,19 @@ export const EXTRA_SCHEMAS = {
         "Apply the slide's ICC colour profile (true) or show the decoded colours as stored (false).",
       ),
   },
+  sample_slide: {
+    ...TAB_ARG,
+    x: z
+      .number()
+      .describe('Slide base-level pixel column, from 0 at the left.'),
+    y: z.number().describe('Slide base-level pixel row, from 0 at the top.'),
+    fetch: z
+      .boolean()
+      .optional()
+      .describe(
+        'Fetch the full-resolution tile first when it is not cached (slower); otherwise read only what is cached.',
+      ),
+  },
   chunk_stats: {
     ...TAB_ARG,
     reset_timing: z
@@ -210,6 +223,18 @@ export function registerExtraTools(
       'the channels, blend and colour management afterwards when a slide plane is set; ' +
       'where_am_i reports them too. A null cal_min or cal_max in the report is the stored range end.',
     inputSchema: EXTRA_SCHEMAS.set_slide,
+  })
+
+  registerSimple(server, context, 'sample_slide', {
+    title: 'Read slide pixel values',
+    description:
+      "Reads each channel's value at a pixel of the slide plane, from the cached tiles " +
+      '(the finest level held) or, with fetch, the full-resolution tile. Each sample: value ' +
+      '(data units; null = unavailable, see missing: outside, hole, uncached or hidden), ' +
+      'stored, level, and exact (false = a coarser level or quantized data). where_am_i ' +
+      'reports the same at the crosshair as slide.',
+    inputSchema: EXTRA_SCHEMAS.sample_slide,
+    readOnly: true,
   })
 
   registerSimple(server, context, 'chunk_stats', {

@@ -2888,6 +2888,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "loadSlideSampleAt",
+      "pyName": "load_slide_sample_at",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<NiiVueLocationSlide | null>",
+      "doc": "{@link slideSampleAt}, fetching the level-0 tile first (`NVSlide.loadSampleAt`).",
+      "returnsDoc": null
+    },
+    {
       "jsName": "loadVolumes",
       "pyName": "load_volumes",
       "isAsync": true,
@@ -4356,6 +4379,29 @@
       ],
       "returns": "{ x: number; y: number; } | null",
       "doc": "Map a canvas CSS pixel to slide base-pixel coords, or null off-plane.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "slideSampleAt",
+      "pyName": "slide_sample_at",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number | undefined",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "NiiVueLocationSlide | null",
+      "doc": "The slide plane's samples at base pixel `x`, `y` (cache only, as\n`NVSlide.sampleAt`), or, with no point given, at the crosshair projected\nonto the plane. Null without a plane, or with the crosshair off it.\nThrows when only one of `x`, `y` is given.",
       "returnsDoc": null
     },
     {

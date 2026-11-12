@@ -72,7 +72,7 @@ ordering: emit after the mutation.
 ### User Interaction
 
 #### `locationChange`
-Fired when the crosshair position changes (user click, keyboard navigation, or programmatic).
+Fired when the crosshair position changes (user click, keyboard navigation, or programmatic), and on a slide plane when a landing tile changes the slide samples under the crosshair.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -82,6 +82,7 @@ Fired when the crosshair position changes (user click, keyboard navigation, or p
 | `xy` | `[number, number]` | Mouse position on canvas |
 | `axCorSag` | `number` | Slice orientation (0=sagittal, 1=coronal, 2=axial); `SLICE_TYPE.RENDER` for a 3D render depth pick |
 | `values` | `NiiVueLocationValue[]` | Per-volume data (name, value, label) |
+| `slide` | `NiiVueLocationSlide?` | On a slide plane, when the crosshair projected onto it is on the slide: `{id, name, x, y, samples}`, base-level pixel and one `NVSlideSample` per channel from the tile cache (`value` null when missing). Re-emitted when a landing tile changes the samples |
 | `string` | `string` | Human-readable location with values |
 
 ```js

@@ -425,6 +425,154 @@ describe('set_slide', () => {
   })
 })
 
+describe('sample_slide', () => {
+  it("reads a real NVSlide's cached and fetched samples, and where_am_i reads the crosshair", async () => {
+    const g = globalThis as Record<string, unknown>
+    const saved = {
+      ImageData: g.ImageData,
+      createImageBitmap: g.createImageBitmap,
+    }
+    g.ImageData = class {}
+    g.createImageBitmap = async () => ({ width: 8, height: 8, close() {} })
+    // Channel c at (x, y) stores 100 c + 8 y + x.
+    const slide = NVSlide.fromSource({
+      manifest: {
+        id: 'sid',
+        name: 'tissue',
+        width: 8,
+        height: 8,
+        dtype: 'uint16',
+        channels: 'planar',
+        channelInfo: [
+          { name: 'dapi', active: true },
+          { name: 'gfp', active: false },
+        ],
+        levels: [
+          {
+            index: 0,
+            width: 8,
+            height: 8,
+            downsample: 1,
+            tileWidth: 8,
+            tileHeight: 8,
+            columns: 1,
+            rows: 1,
+            tiles: [{ x: 0, y: 0, width: 8, height: 8 }],
+          },
+        ],
+      },
+      bind() {},
+      fetchTileBytes: () => Promise.reject(new Error('samples only')),
+      async fetchTileSamples(_level, _tile, channels) {
+        const samples = new Uint16Array(64 * channels.length)
+        channels.forEach((c, p) => {
+          for (let i = 0; i < 64; i++) samples[p * 64 + i] = 100 * c + i
+        })
+        return { samples, width: 8, height: 8, bitsStored: 16, planes: 1 }
+      },
+    })
+    const nv = new NiiVue({ backend: 'webgl2' })
+    spyOn(nv, 'drawScene').mockImplementation(() => {})
+    const sampleAt = spyOn(slide, 'sampleAt')
+    nv.setSlidePlane(slide, {
+      // The crosshair's world origin lands on slide pixel (4, 4).
+      pixelToWorld: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -4, -4, 0, 1],
+    })
+    const view = Object.defineProperties(
+      baseView({
+        slideSampleAt: (x, y) => nv.slideSampleAt(x, y),
+        loadSlideSampleAt: (x, y) => nv.loadSlideSampleAt(x, y),
+      }),
+      { slideChannels: { get: () => nv.slideChannels } },
+    )
+    const { sample_slide, where_am_i } = coreHandlers(hostOf(view))
+    try {
+      // Hidden channels are never fetched; the JSON reply carries null.
+      const fetched = await sample_slide({ x: 3, y: 2, fetch: true })
+      expect(fetched).toEqual({
+        slide: {
+          id: 'sid',
+          name: 'tissue',
+          x: 3,
+          y: 2,
+          samples: [
+            {
+              channel: 0,
+              name: 'dapi',
+              value: 19,
+              stored: 19,
+              level: 0,
+              exact: true,
+            },
+            {
+              channel: 1,
+              name: 'gfp',
+              value: null,
+              stored: null,
+              level: 0,
+              exact: false,
+              missing: 'hidden',
+            },
+          ],
+        },
+      })
+      const cached = JSON.parse(
+        JSON.stringify(await sample_slide({ x: 9, y: 0 })),
+      )
+      expect(cached.slide.samples[0]).toMatchObject({
+        value: null,
+        missing: 'outside',
+      })
+      expect(sampleAt).toHaveBeenCalledWith(9, 0)
+      expect(await where_am_i({})).toMatchObject({
+        slide: {
+          x: 4,
+          y: 4,
+          samples: [{ name: 'dapi', value: 36 }, { missing: 'hidden' }],
+        },
+      })
+      // A slide-only page reports it too.
+      view.volumes = []
+      expect(await where_am_i({})).toMatchObject({
+        volume: null,
+        slide: { x: 4, y: 4 },
+      })
+      nv.clearSlidePlane()
+      expect(await where_am_i({})).not.toHaveProperty('slide')
+    } finally {
+      slide.dispose()
+      Object.assign(g, saved)
+    }
+  })
+
+  it('refuses without x and y, a slide plane or a fetch hook', async () => {
+    const { sample_slide } = viewportHandlers(hostOf(baseView()))
+    await expect(sample_slide({ x: 1 })).rejects.toThrow(
+      'sample_slide needs x and y, in slide base pixels.',
+    )
+    await expect(sample_slide({ x: 1, y: 'a' })).rejects.toThrow(
+      'y must be a number.',
+    )
+    await expect(sample_slide({ x: 1, y: 2 })).rejects.toThrow(
+      "This page's NiiVue has no slide plane.",
+    )
+    const channels = [
+      { name: 'a', colormap: 'gray', calMin: 0, calMax: 1, visible: true },
+    ]
+    const slideSampleAt = mock(() => null)
+    const cacheOnly = viewportHandlers(
+      hostOf(baseView({ slideChannels: channels, slideSampleAt })),
+    )
+    await expect(
+      cacheOnly.sample_slide({ x: 1, y: 2, fetch: true }),
+    ).rejects.toThrow("This page's NiiVue cannot fetch slide tiles.")
+    expect(slideSampleAt).not.toHaveBeenCalled()
+    await expect(cacheOnly.sample_slide({ x: 1, y: 2 })).rejects.toThrow(
+      "This page's NiiVue has no slide plane.",
+    )
+  })
+})
+
 describe('chunk_stats', () => {
   it('reports the stream, timing and compensation, rebaking or resetting when asked', () => {
     const view = baseView({

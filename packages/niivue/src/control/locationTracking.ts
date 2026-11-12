@@ -6,6 +6,7 @@ import { isPaqd } from '@/NVConstants'
 import type {
   LUT,
   NiiVueLocation,
+  NiiVueLocationSlide,
   NiiVueLocationValue,
   NVImage,
   NVMesh as NVMeshType,
@@ -30,15 +31,19 @@ export interface LocationContext {
 }
 
 /**
- * Build a NiiVueLocation message from the current crosshair position.
- * Returns null if there are no volumes or meshes to report on.
+ * Build a NiiVueLocation message from the current crosshair position, with
+ * `slide` (the slide plane's samples there) when given.
+ * Returns null if there are no volumes, meshes or slide to report on, unless `always`.
  * May lazily build and mutate `ctx._drawLut` when a drawing is present.
  */
 export function buildLocationMessage(
   ctx: LocationContext,
   axCorSag: number,
+  slide: NiiVueLocationSlide | null = null,
+  always = false,
 ): NiiVueLocation | null {
-  if (ctx.volumes.length === 0 && ctx.meshes.length === 0) return null
+  if (!always && ctx.volumes.length === 0 && ctx.meshes.length === 0 && !slide)
+    return null
   // Dynamic decimal places based on field of view
   const [, , range] = ctx.model.sceneExtentsMinMax()
   const fov = Math.max(Math.max(range[0], range[1]), range[2])
@@ -109,8 +114,13 @@ export function buildLocationMessage(
           const bitmap = getDrawingBitmap(ctx.model.drawingVolume)
           if (bitmap.length === nv) {
             const vox = ctx.model.scene2vox(ctx.model.scene.crosshairPos)
+            // Off the volume (a crosshair out on a slide plane): no label,
+            // rather than a wrapped index into another row.
+            const inside = [0, 1, 2].every(
+              (i) => vox[i] >= 0 && vox[i] < dims[i + 1],
+            )
             const vx = vox[0] + vox[1] * dims[1] + vox[2] * dims[1] * dims[2]
-            const drawVal = bitmap[vx]
+            const drawVal = inside ? bitmap[vx] : 0
             if (drawVal > 0) {
               if (!ctx._drawLut) {
                 const cm = NVCmaps.lookupColorMap(ctx.model.draw.colormap)
@@ -125,6 +135,12 @@ export function buildLocationMessage(
         }
       }
     }
+  }
+  if (slide) {
+    const values = slide.samples.map((s) =>
+      s.value === null ? '-' : flt2str(s.value, 3),
+    )
+    str += ` ${slide.name}: ${values.join(' ')}`
   }
   const frac = ctx.model.scene.crosshairPos
   const vox = ctx.model.scene2vox(frac)
@@ -163,5 +179,6 @@ export function buildLocationMessage(
     }),
     string: str,
   }
+  if (slide) msg.slide = slide
   return msg
 }

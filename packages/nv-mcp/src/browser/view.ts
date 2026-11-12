@@ -815,6 +815,10 @@ export interface View {
   setSlideChannelBlend?(blend: SlideChannelBlend): unknown
   readonly slideColorManagement?: boolean | null
   setSlideColorManagement?(on: boolean): unknown
+  /** Cache only; at the crosshair without a point. Null without a plane (or the crosshair off it). */
+  slideSampleAt?(x?: number, y?: number): SlideLocation | null
+  /** slideSampleAt, fetching the level-0 tile first. */
+  loadSlideSampleAt?(x?: number, y?: number): Promise<SlideLocation | null>
 
   // Chunked volumes.
   /** Tile a volume into a grid of bricks (or `null` to make it one texture again). */
@@ -933,6 +937,29 @@ export interface SlideChannel {
   calMin: number
   calMax: number
   visible: boolean
+}
+
+/** One channel's value at a slide pixel, as NiiVue's `NVSlideSample`. */
+export interface SlideSample {
+  channel: number
+  name: string
+  /** Null when missing; NaN (null in JSON) for a stored NaN. */
+  value: number | null
+  stored: number | null
+  level: number | null
+  /** Level 0 and not quantized. */
+  exact: boolean
+  missing?: 'outside' | 'hole' | 'uncached' | 'hidden'
+  clipped?: true
+}
+
+/** A slide plane's samples at a base-level pixel, as NiiVue's `NiiVueLocationSlide`. */
+export interface SlideLocation {
+  id: string
+  name: string
+  x: number
+  y: number
+  samples: SlideSample[]
 }
 
 /** How a slide's visible channels combine. */

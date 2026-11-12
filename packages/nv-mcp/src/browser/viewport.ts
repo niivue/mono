@@ -284,6 +284,24 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       }
     },
 
+    async sample_slide(params: Params) {
+      host.beforeAnswer?.()
+      const x = number(params, 'x')
+      const y = number(params, 'y')
+      if (x === undefined || y === undefined)
+        throw new Error('sample_slide needs x and y, in slide base pixels.')
+      const fetch = flag(params, 'fetch')
+      if (!view.slideChannels || !view.slideSampleAt)
+        throw new Error("This page's NiiVue has no slide plane.")
+      if (fetch && !view.loadSlideSampleAt)
+        throw new Error("This page's NiiVue cannot fetch slide tiles.")
+      const slide = fetch
+        ? await view.loadSlideSampleAt?.(x, y)
+        : view.slideSampleAt(x, y)
+      if (!slide) throw new Error("This page's NiiVue has no slide plane.")
+      return { slide }
+    },
+
     chunk_stats(params: Params) {
       host.beforeAnswer?.()
       if (!view.chunkStreamStats)

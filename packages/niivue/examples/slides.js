@@ -162,6 +162,8 @@ let view = null
 let slide = null
 let animationFrame = 0
 let hasFit = false
+// The slide pixel under the pointer, for the HUD's value readout.
+let hoverCss = null // the pointer in canvas CSS px: a pan moves the slide under it
 // Slide-space drawing: a SlideDrawing raster (painted with the shared pen tools,
 // in slide pixels) shown via a stacked Canvas2D overlay mapped through NVSlide's
 // screen<->slide transform, so the annotation stays registered under pan/zoom.
@@ -587,7 +589,26 @@ function updateHud(screen) {
     <div class="row"><span class="key">wire</span><span>${formatBytes(s.wireBytes)}</span></div>
     <div class="row"><span class="key">cache</span><span>${formatBytes(s.cacheBytes)} / ${s.cacheHits} hits</span></div>
     <div class="row"><span class="key">failures</span><span class="${s.failures > 0 ? 'bad' : ''}">${s.failures}</span></div>
+    ${hoverRow()}
   `
+}
+
+// Per-channel values under the pointer, from cached tiles only (render runs
+// again when a tile lands, so a finer level shows up without a new move).
+function hoverRow() {
+  if (!hoverCss) return ''
+  const hoverPoint = slide.screenToSlide(
+    hoverCss.xCss,
+    hoverCss.yCss,
+    screenForCanvas(),
+  )
+  const samples = slide.sampleAt(hoverPoint.x, hoverPoint.y)
+  if (samples[0]?.missing === 'outside') return ''
+  const values = samples
+    .map((s) => `${s.name} ${s.value ?? s.missing}`)
+    .join(', ')
+  const at = `${Math.floor(hoverPoint.x)},${Math.floor(hoverPoint.y)}`
+  return `<div class="row"><span class="key">value</span><span>${html(at)} ${html(values)} (L${samples[0]?.level ?? '-'})</span></div>`
 }
 
 function updateRangeLog() {
@@ -834,6 +855,10 @@ const gestures = new NVSlideController(els.canvas, {
   primaryDragMode: DRAG_MODE.pan,
   secondaryDragMode: DRAG_MODE.roiSelection,
   onChange: requestRender,
+  onHover: (point) => {
+    hoverCss = point && slide.slideToScreen(point.x, point.y, screenForCanvas())
+    requestRender()
+  },
 })
 
 els.levelMode.addEventListener('change', () => {

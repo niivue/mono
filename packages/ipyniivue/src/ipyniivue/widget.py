@@ -669,6 +669,15 @@ class NiiVue(_GeneratedNiiVue):
         ...     lambda detail: print(detail.get("string")),
         ... )
         >>> unsubscribe()
+
+        With a slide plane, ``locationChange`` carries ``slide`` (one
+        sample per channel; ``value`` is ``None`` when unavailable, and
+        ``missing`` says why):
+
+        >>> def on_slide(detail):
+        ...     for s in (detail.get("slide") or {}).get("samples", []):
+        ...         print(s["name"], s["value"], s.get("missing"))
+        >>> unsubscribe = nv.on("locationChange", on_slide)
         """
         if event not in NIIVUE_EVENT_NAMES:
             known = ", ".join(sorted(NIIVUE_EVENT_NAMES))

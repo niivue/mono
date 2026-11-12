@@ -1,3 +1,14 @@
+## 1.0.0-rc.185 (2026-11-12)
+
+### Fixes
+
+- **niivue:** a third finger's lift no longer ends a slide pinch ([75946fdb](https://github.com/niivue/mono/commit/75946fdb))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.184 (2026-11-12)
 
 ### Features

@@ -151,6 +151,17 @@ describe('ManifestRangeSource transport', () => {
     await expect(read()).rejects.toThrow('Content-Range starts at 0')
   })
 
+  test('a 206 whose Content-Range ends elsewhere is refused', async () => {
+    // Right length, but the server says it sent bytes 100-114 (15 bytes).
+    const short = () =>
+      new Response(new Uint8Array(LEN), {
+        status: 206,
+        headers: { 'content-range': 'bytes 100-114/4096' },
+      })
+    const { read } = source([short, short])
+    await expect(read()).rejects.toThrow('Content-Range ends at 114')
+  })
+
   test('without Content-Range a correct length is accepted (T5)', async () => {
     const { read } = source([
       () => new Response(new Uint8Array(LEN), { status: 206 }),

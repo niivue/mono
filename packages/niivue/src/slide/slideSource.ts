@@ -405,21 +405,24 @@ export class ManifestRangeSource implements SlideTileSource {
         const bytes = await readCapped(response, fragment.length)
         host.addWireBytes(bytes.byteLength)
         // Content-Range is hidden cross-origin unless exposed; then it is checked.
-        const at = /^bytes (\d+)-/.exec(
-          response.headers.get('Content-Range') ?? '',
-        )?.[1]
-        const misplaced = at !== undefined && Number(at) !== start
-        if (!misplaced && bytes.byteLength === fragment.length) {
+        const [, at, to] =
+          /^bytes (\d+)-(\d+)/.exec(
+            response.headers.get('Content-Range') ?? '',
+          ) ?? []
+        const why =
+          at !== undefined && Number(at) !== start
+            ? `Content-Range starts at ${at}, requested ${start}`
+            : bytes.byteLength !== fragment.length
+              ? `Expected ${fragment.length} bytes, received ${bytes.byteLength}`
+              : to !== undefined && Number(to) !== end
+                ? `Content-Range ends at ${to}, requested ${end}`
+                : null
+        if (!why) {
           host.rangeHit()
           host.updateRangeEvent(rangeLabel, 'hit')
           return bytes
         }
-        if (attempt)
-          throw new Error(
-            misplaced
-              ? `Content-Range starts at ${at}, requested ${start}`
-              : `Expected ${fragment.length} bytes, received ${bytes.byteLength}`,
-          )
+        if (attempt) throw new Error(why)
       }
     } catch (error) {
       // The 'pending' entry must not outlive the request: a rejected fetch

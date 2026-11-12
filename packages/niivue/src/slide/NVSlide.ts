@@ -1317,7 +1317,11 @@ export class NVSlide extends EventTarget {
   private _commitPlane(manifest: NVSlideManifest, p: NVSlidePlaneIndex): void {
     this._manifest = manifest
     this._planeIndex = { z: p.z, t: p.t }
-    this._lodLevel = null
+    // Same level index on the new plane: a switch must not undo the hysteresis.
+    const lod = this._lodLevel
+    this._lodLevel = lod
+      ? (manifest.levels.find((l) => l.index === lod.index) ?? null)
+      : null
     this._visibleMemo = null
     // Loads of other planes are no longer wanted by anyone (P3, P4).
     const prefix = `z${p.z}t${p.t}/`
@@ -1781,7 +1785,8 @@ export class NVSlide extends EventTarget {
       this._coverOwner.want([])
       return visible
     }
-    if (level !== this._shownLevel) {
+    // By index: a plane switch replaces the level objects, not the level.
+    if (level.index !== this._shownLevel?.index) {
       this._shownLevel = level
       this.dispatchEvent(
         new CustomEvent<NVSlideLevelChangeDetail>('levelchange', {
@@ -1912,8 +1917,15 @@ export class NVSlide extends EventTarget {
         if (!view) load.viewOnly = false
       }
       if (o.rank <= load.rank) {
+        // Nearest focus among the best-rank owners, each at its current focus.
+        let dist = focus ? this._focusDist(level, tile, focus) : Infinity
+        for (const w of load.owners) {
+          const s = w as OwnerState
+          if (s !== o && s.rank === o.rank && s.focus)
+            dist = Math.min(dist, this._focusDist(level, tile, s.focus))
+        }
         load.rank = o.rank
-        load.dist = focus ? this._focusDist(level, tile, focus) : Infinity
+        load.dist = dist
       }
     }
     for (const key of o.keys.keys()) {
@@ -2400,7 +2412,8 @@ export class NVSlide extends EventTarget {
     } finally {
       this._activeLoads--
       if (this._loads.get(key) === load) this._loads.delete(key)
-      this._emitChange()
+      // dispose() already sent the last change (clearCache).
+      if (!this._disposed) this._emitChange()
       this._drainLoadQueue()
       this._settleIfIdle()
     }

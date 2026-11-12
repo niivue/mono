@@ -65,7 +65,10 @@ export function pickLevel(
       if (devicePxPerBasePx * level.downsample >= t) return level
     return levels[levels.length - 1] ?? null
   }
-  const pos = current ? levels.indexOf(current) : -1
+  // By manifest index, not identity: a plane switch replaces the level objects.
+  const pos = current
+    ? levels.findIndex((level) => level.index === current.index)
+    : -1
   if (
     pos >= 0 &&
     pos >=
@@ -73,7 +76,7 @@ export function pickLevel(
     pos <=
       levels.indexOf(finest(target * LOD_HYSTERESIS) as NVSlideLevelManifest)
   )
-    return current ?? null
+    return levels[pos] ?? null
   return finest(target)
 }
 

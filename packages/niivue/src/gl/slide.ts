@@ -225,6 +225,8 @@ export class SlideRenderer {
     )
     const ndc = this._ndc
     const uv = this._uv
+    // Unit 2's binding before the first label texture, restored after the slides.
+    let unit2: WebGLTexture | null | undefined
     for (let s = 0; s < plan.slides.length; s++) {
       const slide = plan.slides[s] as NVSlide
       const shader = this.useShader(gl, slide)
@@ -277,6 +279,9 @@ export class SlideRenderer {
         }
         if (texture?.labels) {
           gl.activeTexture(gl.TEXTURE2)
+          unit2 ??= gl.getParameter(
+            gl.TEXTURE_BINDING_2D,
+          ) as WebGLTexture | null
           gl.bindTexture(gl.TEXTURE_2D, texture.labels)
           gl.activeTexture(gl.TEXTURE0)
         }
@@ -296,6 +301,11 @@ export class SlideRenderer {
       }
     }
 
+    if (unit2 !== undefined) {
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, unit2)
+      gl.activeTexture(gl.TEXTURE0)
+    }
     // The overlay's font atlas keeps its own (linear) filtering.
     gl.bindSampler(0, null)
     this._drawOverlay(gl, width, height, dpr)

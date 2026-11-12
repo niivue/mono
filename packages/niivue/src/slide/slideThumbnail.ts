@@ -36,6 +36,11 @@ export function composeThumbnail(
   if (!ctx) return null
   // Minified tiles: browsers filter better than bilinear at 'high'.
   ctx.imageSmoothingQuality = 'high'
+  // Label channels alone: no blended colours between IDs, as the GPU draws them nearest.
+  ctx.imageSmoothingEnabled = !(
+    channels.some((c) => c.visible) &&
+    channels.every((c, i) => !c.visible || info?.[i]?.kind === 'label')
+  )
   // Rounded edges: fractional ones would leave seams between tiles.
   const draw = (
     src: CanvasImageSource,

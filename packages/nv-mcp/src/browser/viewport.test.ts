@@ -170,6 +170,50 @@ describe('set_slide plane and interpolation', () => {
     })
     expect(() => set_slide({ plane: { z: -1, t: 0 } })).toThrow()
   })
+
+  const planeView = (planes: { z: number; t: number } | null) =>
+    ({
+      drawScene: mock(),
+      slideChannels: planes ? [] : null,
+      slidePlanes: planes,
+      setSlidePlaneIndex: mock(async () => planes !== null),
+      setSlidePlaneInterpolation: mock(),
+      clearSlidePlane: mock(),
+    }) as unknown as View
+
+  it('refuses an out-of-range plane before changing anything', () => {
+    const view = planeView({ z: 3, t: 1 })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    expect(() => set_slide({ nearest: true, plane: { z: 3, t: 0 } })).toThrow(
+      'NVSlide has planes z < 3, t < 1, got {z: 3, t: 0}',
+    )
+    expect(() => set_slide({ plane: { z: 0, t: 1 } })).toThrow(RangeError)
+    expect(() => set_slide({ nearest: true, plane: { z: -1, t: 0 } })).toThrow()
+    expect(view.setSlidePlaneInterpolation).not.toHaveBeenCalled()
+    expect(view.setSlidePlaneIndex).not.toHaveBeenCalled()
+  })
+
+  it('declines plane and nearest without a slide plane', () => {
+    const view = planeView(null)
+    const { set_slide } = viewportHandlers(hostOf(view))
+    for (const params of [{ plane: { z: 1, t: 0 } }, { nearest: true }])
+      expect(() => set_slide(params)).toThrow(
+        "This page's NiiVue has no slide plane.",
+      )
+    expect(view.setSlidePlaneIndex).not.toHaveBeenCalled()
+    expect(view.setSlidePlaneInterpolation).not.toHaveBeenCalled()
+  })
+
+  it('refuses plane or nearest with clear_plane', () => {
+    const view = planeView({ z: 3, t: 1 })
+    const { set_slide } = viewportHandlers(hostOf(view))
+    for (const extra of [{ plane: { z: 1, t: 0 } }, { nearest: false }])
+      expect(() => set_slide({ clear_plane: true, ...extra })).toThrow(
+        'clear_plane cannot be combined with channel, channel_blend, color_management, plane or nearest.',
+      )
+    expect(view.clearSlidePlane).not.toHaveBeenCalled()
+    expect(view.setSlidePlaneIndex).not.toHaveBeenCalled()
+  })
 })
 
 describe('set_slide', () => {
@@ -384,7 +428,7 @@ describe('set_slide', () => {
     expect(() =>
       set_slide({ channel_blend: 'max', clear_plane: true }),
     ).toThrow(
-      'clear_plane cannot be combined with channel, channel_blend or color_management.',
+      'clear_plane cannot be combined with channel, channel_blend, color_management, plane or nearest.',
     )
     expect(view.clearSlidePlane).not.toHaveBeenCalled()
     // A core rejection comes before the level changes.
@@ -395,7 +439,7 @@ describe('set_slide', () => {
     expect(() =>
       set_slide({ color_management: true, clear_plane: true }),
     ).toThrow(
-      'clear_plane cannot be combined with channel, channel_blend or color_management.',
+      'clear_plane cannot be combined with channel, channel_blend, color_management, plane or nearest.',
     )
     expect(await where_am_i({})).toMatchObject({
       channelBlend: 'additive',

@@ -8,6 +8,7 @@
 // drag re-fuses without re-uploading.
 
 import { colormapKey, lutrgba8 } from '@/cmap/NVCmaps'
+import { log } from '@/logger'
 import type {
   NVChannel,
   NVSlide,
@@ -214,7 +215,10 @@ export function labelColor(id: number): number {
   return (0xff000000 | (byte(16) << 16) | (byte(8) << 8) | byte(0)) >>> 0
 }
 
-const LABEL_TABLE_WIDTH = 4096
+// WebGL2's guaranteed MAX_TEXTURE_SIZE: the table texture fits any device.
+const LABEL_TABLE_WIDTH = 2048
+/** Largest stated label ID + 1 a table holds (16 MiB); larger IDs keep the hash colour. */
+export const MAX_LABEL_TABLE_IDS = LABEL_TABLE_WIDTH * LABEL_TABLE_WIDTH
 type LabelColors = NonNullable<NVSlideChannelInfo['labelColors']>
 const NO_COLORS: LabelColors = []
 /** The label tables of `slides`' label channels (memoised per labelColors). */
@@ -244,20 +248,29 @@ const labelTables = new WeakMap<LabelColors, LabelTable>()
 /**
  * The table of `labelColors`: dense to the largest stated ID (ID 0 black
  * unless stated), defaults filled in. Memoized by array identity.
- * ponytail: dense, 4 B per ID up to the largest override (IDs < 2^24 -> 64 MiB,
- * 4096 rows); go sparse (sorted IDs, binary search) if sources state huge sparse IDs.
+ * IDs that are not integers in [0, MAX_LABEL_TABLE_IDS) are skipped with a
+ * warning (manifest data: one bad entry must not take the slide down).
+ * ponytail: dense, 4 B per ID up to the largest override (<= 16 MiB);
+ * go sparse (sorted IDs, binary search) if sources state huge sparse IDs.
  */
 export function labelTable(labelColors: LabelColors = NO_COLORS): LabelTable {
   let table = labelTables.get(labelColors)
   if (!table) {
-    const size = 1 + labelColors.reduce((m, c) => Math.max(m, c.id), 0)
+    const valid = labelColors.filter(
+      ({ id }) => Number.isInteger(id) && id >= 0 && id < MAX_LABEL_TABLE_IDS,
+    )
+    if (valid.length < labelColors.length)
+      log.warn(
+        `${labelColors.length - valid.length} labelColors IDs outside [0, ${MAX_LABEL_TABLE_IDS}) skipped; they keep the default colour`,
+      )
+    const size = 1 + valid.reduce((m, c) => Math.max(m, c.id), 0)
     const width = Math.min(size, LABEL_TABLE_WIDTH)
     const colors = new Uint32Array(width * Math.ceil(size / width))
     for (let id = 1; id < size; id++) colors[id] = labelColor(id)
     for (const {
       id,
       rgba: [r, g, b, a],
-    } of labelColors) {
+    } of valid) {
       const k = (c: number) => Math.round((c * a) / 255)
       colors[id] = (0xff000000 | (k(b) << 16) | (k(g) << 8) | k(r)) >>> 0
     }
@@ -528,6 +541,8 @@ export function fuseTarget<
   const mixed = plan.layers.length > 0 && plan.labels.length > 0
   if (!target || (target.labels !== undefined) !== mixed) {
     const bytes = gutterTextureBytes(width, height) * (mixed ? 2 : 1)
+    // A wrong-shape or stale entry is replaced: free it first so reserve does not count it.
+    cache.delete(at.key)
     // Over the size limit, or the frame's texture budget (ENG-11): not drawn.
     if (Math.max(width, height) + 2 > maxTexture || !cache.reserve(bytes))
       return null

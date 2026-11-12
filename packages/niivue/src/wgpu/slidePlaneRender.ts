@@ -102,6 +102,8 @@ interface DrawSlot {
   builtFor: { slide: NVSlide; pixelToWorld?: readonly number[] } | null
   /** Interior size each tile quad's UVs were inset for. */
   insets: { width: number; height: number }[]
+  // Per slot, so two slides drawn in one pass keep their own absent colour.
+  bg: { texture: GPUTexture; group: GPUBindGroup; source: Float64Array } | null
 }
 
 type PlaneTexture = TileTextureGPU & { group?: GPUBindGroup }
@@ -151,10 +153,6 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   private readonly _drawn: ((PlaneTexture & { group: GPUBindGroup }) | null)[] =
     []
   private readonly _at = new WeakMap<SlidePlaneTile, GutterAt>()
-  // The slide's absent colour as a 1x1 texture, and the colour it holds.
-  private _bgTexture: GPUTexture | null = null
-  private _bgGroup: GPUBindGroup | null = null
-  private readonly _bgSource = new Float64Array(4)
   private readonly _bgColor = new Uint8ClampedArray(4)
   // Annotation overlay (slide-space drawing).
   private _annTexture: GPUTexture | null = null
@@ -284,6 +282,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
         builtTiles: [],
         builtFor: null,
         insets: [],
+        bg: null,
       }
       this._slots.push(slot)
     }
@@ -381,29 +380,37 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     })
   }
 
-  // The bind group of a 1x1 texture of the slide's absent colour.
-  private _absentGroup(device: GPUDevice, slide: NVSlide): GPUBindGroup | null {
+  // The bind group of `slot`'s 1x1 texture of the slide's absent colour.
+  private _absentGroup(
+    device: GPUDevice,
+    slot: DrawSlot,
+    slide: NVSlide,
+  ): GPUBindGroup | null {
     if (!this._textureBGL) return null
     const color = slide.backgroundColor
-    if (this._bgGroup && color.every((c, i) => c === this._bgSource[i]))
-      return this._bgGroup
-    if (!this._bgTexture) {
-      this._bgTexture = device.createTexture({
+    if (slot.bg && color.every((c, i) => c === slot.bg?.source[i]))
+      return slot.bg.group
+    if (!slot.bg) {
+      const texture = device.createTexture({
         size: [1, 1],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       })
-      this._bgGroup = this._group(device, this._bgTexture)
+      slot.bg = {
+        texture,
+        group: this._group(device, texture),
+        source: new Float64Array(4),
+      }
     }
-    this._bgSource.set(color)
+    slot.bg.source.set(color)
     this._bgColor.set(color.map((c) => c * 255))
     device.queue.writeTexture(
-      { texture: this._bgTexture },
+      { texture: slot.bg.texture },
       this._bgColor,
       { bytesPerRow: 4 },
       [1, 1],
     )
-    return this._bgGroup
+    return slot.bg.group
   }
 
   /**
@@ -468,7 +475,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass.setVertexBuffer(0, vertex)
     const absent =
       pixelToWorld && slide.manifest.backgroundColor
-        ? this._absentGroup(device, slide)
+        ? this._absentGroup(device, slot, slide)
         : null
     if (absent) {
       pass.setPipeline(plain)
@@ -581,13 +588,11 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     for (const slot of this._slots) {
       slot.uniform.destroy()
       slot.vertex?.destroy()
+      slot.bg?.texture.destroy()
     }
     for (const buffer of this._retired) buffer.destroy()
     this._annTexture?.destroy()
     this._annVertexBuffer?.destroy()
-    this._bgTexture?.destroy()
-    this._bgTexture = null
-    this._bgGroup = null
     this._annTexture = null
     this._annVertexBuffer = null
     this._annGroup = null

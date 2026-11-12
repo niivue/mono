@@ -236,7 +236,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         draw = () => renderer.render(slides, screen)
         glError = () => gl.getError()
       }
-      for (let i = 0; i < 100 && slides.some((s, k) => !s.cachedTile('L' + k + '/0/0') || !s.colorLut); i++) {
+      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile(s.tileKey(s.manifest.levels[0], { x: 0, y: 0 })) || !s.colorLut); i++) {
         for (const s of slides) s.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }

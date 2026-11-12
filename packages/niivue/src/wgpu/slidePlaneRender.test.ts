@@ -6,6 +6,7 @@ import { SlidePlaneRendererGPU } from './slidePlaneRender'
 // Bun has no WebGPU: stub the flag namespaces the renderer reads.
 Object.assign(globalThis, {
   GPUBufferUsage: { UNIFORM: 64, COPY_DST: 8, VERTEX: 32 },
+  GPUTextureUsage: { TEXTURE_BINDING: 4, COPY_DST: 2 },
 })
 
 type FakeBuffer = { id: number; destroyed: boolean; destroy(): void }
@@ -133,5 +134,52 @@ describe('SlidePlaneRendererGPU', () => {
     expect(writes.filter((b) => b === vertex).length).toBe(before)
     r.draw(device, fakePass().pass, mvp, set.slice(1), slide)
     expect(writes.filter((b) => b === vertex).length).toBe(before + 1)
+  })
+
+  test('two slides in one pass keep their own absent colour', () => {
+    const { device } = fakeDevice()
+    // Each 1x1 texture remembers the last colour written to it.
+    const colorOf = new Map<object, number[]>()
+    Object.assign(device, {
+      createTexture: () => ({ createView: () => ({}), destroy: () => {} }),
+      queue: {
+        writeBuffer: () => {},
+        writeTexture: (d: { texture: object }, data: Uint8ClampedArray) =>
+          colorOf.set(d.texture, [...data]),
+      },
+    })
+    const r = readyRenderer()
+    const groupTexture = new Map<object, object>()
+    Object.assign(r, {
+      _textureBGL: {},
+      _group: (_: GPUDevice, texture: object) => {
+        const g = {}
+        groupTexture.set(g, texture)
+        return g
+      },
+    })
+    const absent: object[] = []
+    const { pass } = fakePass()
+    Object.assign(pass, {
+      setBindGroup: (i: number, g: object) => {
+        if (i === 1) absent.push(g)
+      },
+    })
+    const dicom = (backgroundColor: number[]) =>
+      ({
+        ...slide,
+        manifest: { width: 1, height: 1, backgroundColor: [0, 0, 0] },
+        backgroundColor,
+      }) as unknown as NVSlide
+    const p2w = [1, 0, 0, 0, 1, 0]
+    const mvp = new Float32Array(16)
+    r.draw(device, pass, mvp, tiles(1), dicom([1, 0, 0, 1]), 1, p2w)
+    r.draw(device, pass, mvp, tiles(1), dicom([0, 0, 1, 1]), 1, p2w)
+    expect(
+      absent.map((g) => colorOf.get(groupTexture.get(g) as object)),
+    ).toEqual([
+      [255, 0, 0, 255],
+      [0, 0, 255, 255],
+    ])
   })
 })

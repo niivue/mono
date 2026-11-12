@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
+import { log } from '@/logger'
 import type {
   NVChannel,
   NVSlide,
@@ -16,6 +17,7 @@ import {
   fuseUniforms,
   labelColor,
   labelTable,
+  MAX_LABEL_TABLE_IDS,
   rawFormat,
   rawPoolBytes,
   resolveWindow,
@@ -559,6 +561,26 @@ describe('labels', () => {
     expect(labelTable().size).toBe(1)
   })
 
+  it('skips label IDs a 2048 x 2048 table cannot hold, with a warning', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const colors = [
+      { id: 2 ** 31, rgba: [255, 0, 0, 255] as const },
+      { id: MAX_LABEL_TABLE_IDS, rgba: [255, 0, 0, 255] as const },
+      { id: -1, rgba: [255, 0, 0, 255] as const },
+      { id: 1.5, rgba: [255, 0, 0, 255] as const },
+      { id: 3, rgba: [0, 0, 255, 255] as const },
+    ]
+    const table = labelTable(colors)
+    expect([table.size, table.width, table.colors.length]).toEqual([4, 4, 4])
+    expect(table.colors[3]).toBe(0xffff0000)
+    expect(warn).toHaveBeenCalledTimes(1)
+    const edge = labelTable([
+      { id: MAX_LABEL_TABLE_IDS - 1, rgba: [0, 0, 0, 255] as const },
+    ])
+    expect([edge.width, edge.colors.length / edge.width]).toEqual([2048, 2048])
+    warn.mockRestore()
+  })
+
   it('highlights the selected ID of its channel, dims the others', () => {
     const dim = ID1.map((c) => (c * 77) >> 8)
     const ids = new Uint16Array([1, 2, 0])
@@ -648,6 +670,36 @@ describe('labels', () => {
     const intensity = target()
     expect([intensity?.labels, cache.bytes]).toEqual([undefined, 48])
     expect(destroyed).toEqual([mixed as object])
+  })
+
+  it('frees the entry it remakes before reserving, so a touched tile remakes at the budget', () => {
+    const cache = new TileTextureCache<{ labels?: boolean }>(96, () => {})
+    const t = tile(new Uint16Array(4), { channels: [0, 1] })
+    t.samples.planes = 2
+    t.samples.width = 2
+    const slide = {
+      displayGeneration: 1,
+      channels: [channel(), channel()],
+      channelBlend: 'max',
+      manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
+      selectedLabel: null,
+    } as unknown as NVSlide
+    const at = { slide, key: 'k', level: level(), col: 0, row: 0 }
+    const create = (_w: number, _h: number, labels: boolean) =>
+      labels ? { labels } : {}
+    cache.evictToBudget()
+    cache.beginFrame()
+    expect(fuseTarget([], cache, at, slide, t, 4096, create)).not.toBeNull()
+    // Next frame: planTextures touches the drawn tile before it is fused.
+    cache.evictToBudget()
+    cache.beginFrame()
+    cache.touch('k', t.samples)
+    Object.assign(slide, {
+      displayGeneration: 2,
+      channels: [channel(), channel({ visible: false })],
+    })
+    expect(fuseTarget([], cache, at, slide, t, 4096, create)).not.toBeNull()
+    expect(cache.bytes).toBe(48)
   })
 })
 

@@ -319,6 +319,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._begin(gl, shader, mvpMatrix, opacity)
     let nearest = false
     let labelBlend = 0
+    // Unit 2's binding before the first label texture (a shared context), restored after.
+    let unit2: WebGLTexture | null | undefined
     const sum = slide.channelBlend === 'additive' ? 2 : 1
     for (let i = 0; i < tiles.length; i++) {
       const tex = drawn[i]
@@ -347,11 +349,17 @@ export class SlidePlaneRenderer extends NVRenderer {
       }
       if (tex.labels) {
         gl.activeTexture(gl.TEXTURE2)
+        unit2 ??= gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null
         gl.bindTexture(gl.TEXTURE_2D, tex.labels)
         gl.activeTexture(gl.TEXTURE0)
       }
       gl.bindTexture(gl.TEXTURE_2D, tex.texture)
       gl.drawArrays(gl.TRIANGLE_STRIP, (i + 1) * 4, 4)
+    }
+    if (unit2 !== undefined) {
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, unit2)
+      gl.activeTexture(gl.TEXTURE0)
     }
     gl.bindSampler(0, null)
     if (lut) this._luts.bind(gl, null)

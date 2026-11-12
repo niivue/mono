@@ -209,10 +209,43 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           'channel needs something to set: visible, colormap, color, cal_min or cal_max.',
         )
-      // Clearing the plane first would drop the channel changes unseen.
-      if ((channel !== undefined || plane) && flag(params, 'clear_plane'))
+      const planeArg = params?.plane as Params | undefined
+      const planeIndex =
+        planeArg === undefined || planeArg === null
+          ? undefined
+          : {
+              z: integer(planeArg, 'z', 0) ?? 0,
+              t: integer(planeArg, 't', 0) ?? 0,
+            }
+      const nearest = flag(params, 'nearest')
+      const planes = view.slidePlanes
+      if (
+        (planeIndex || nearest !== undefined) &&
+        (!planes ||
+          !view.setSlidePlaneIndex ||
+          !view.setSlidePlaneInterpolation)
+      )
+        throw new Error("This page's NiiVue has no slide plane.")
+      // The switch itself is async: an out-of-range plane must fail before
+      // the other changes apply.
+      if (
+        planes &&
+        planeIndex &&
+        !(planeIndex.z < planes.z && planeIndex.t < planes.t)
+      )
+        throw new RangeError(
+          `NVSlide has planes z < ${planes.z}, t < ${planes.t}, got {z: ${planeIndex.z}, t: ${planeIndex.t}}`,
+        )
+      // Clearing the plane first would drop the other plane changes unseen.
+      if (
+        (channel !== undefined ||
+          plane ||
+          planeIndex ||
+          nearest !== undefined) &&
+        flag(params, 'clear_plane')
+      )
         throw new Error(
-          'clear_plane cannot be combined with channel, channel_blend or color_management.',
+          'clear_plane cannot be combined with channel, channel_blend, color_management, plane or nearest.',
         )
       if (channels && channel !== undefined && channel >= channels.length)
         throw new RangeError(`NVSlide has no channel ${channel}`)
@@ -230,19 +263,6 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         level === undefined || level === null
           ? undefined
           : integer(params, 'level')
-      const planeArg = params?.plane as { z?: unknown; t?: unknown } | undefined
-      const planeIndex =
-        planeArg === undefined
-          ? undefined
-          : {
-              z: integer(planeArg as Params, 'z', 0) ?? 0,
-              t: integer(planeArg as Params, 't', 0) ?? 0,
-            }
-      const nearest = flag(params, 'nearest')
-      if (planeIndex && !view.setSlidePlaneIndex)
-        throw new Error("This page's NiiVue cannot switch slide planes.")
-      if (nearest !== undefined && !view.setSlidePlaneInterpolation)
-        throw new Error("This page's NiiVue has no slide plane.")
       const drawing = choice(params, 'drawing', SLIDE_DRAWING)
       const maxRaster = integer(params, 'max_raster', 1)
       // Every requested op is checked before the first change, so a missing

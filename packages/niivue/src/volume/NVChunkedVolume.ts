@@ -372,8 +372,7 @@ export function createSourceRegionReader(
     // An aborted read only settles to its AbortError: start a fresh one.
     if (cached && !cached.controller.signal.aborted) {
       cached.waiters++
-      joinRead(cached, signal)
-      return cached.promise
+      return joinRead(cached, signal)
     }
     const controller = new AbortController()
     const promise = acquire()
@@ -397,7 +396,7 @@ export function createSourceRegionReader(
       .finally(() => release())
     const entry: InflightRead = { promise, controller, waiters: 1 }
     inflight.set(key, entry)
-    joinRead(entry, signal)
+    const joined = joinRead(entry, signal)
     // Drop the in-flight entry on settle. Attach cleanup as BOTH handlers of a
     // .then so the derived promise resolves even when `promise` rejects (a
     // brick that exhausts retries) — a bare `.finally` here would re-raise into
@@ -413,7 +412,7 @@ export function createSourceRegionReader(
         (bytes) => onChunk(bytes, req),
         () => {},
       )
-    return promise
+    return joined
   }
 }
 
@@ -483,19 +482,41 @@ interface InflightRead {
 /**
  * Register one caller's interest in an in-flight read, and abort the read once
  * every caller has withdrawn. A caller with no signal never withdraws, so a
- * renderer that supplies none behaves exactly as it did before.
+ * renderer that supplies none behaves exactly as it did before. Returns the
+ * read as this caller sees it.
  */
-function joinRead(entry: InflightRead, signal: AbortSignal | undefined): void {
-  if (!signal) return
+function joinRead(
+  entry: InflightRead,
+  signal: AbortSignal | undefined,
+): Promise<Uint8Array> {
+  if (!signal) return entry.promise
   const withdraw = (): void => {
     entry.waiters--
     if (entry.waiters <= 0) entry.controller.abort(signal.reason)
   }
   if (signal.aborted) {
     withdraw()
-    return
+    return Promise.reject(signal.reason)
   }
-  signal.addEventListener('abort', withdraw, { once: true })
+  // The caller's own abort rejects its read at once; the shared read goes on
+  // while another caller still wants it.
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      withdraw()
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    entry.promise.then(
+      (bytes) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(bytes)
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+    )
+  })
 }
 
 // --- the manager ------------------------------------------------------------

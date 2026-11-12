@@ -525,7 +525,8 @@ describe('createSourceChunkLoader', () => {
     first.abort()
     expect(seen?.aborted).toBe(false)
     release?.()
-    await expect(a).resolves.toHaveLength(2)
+    // The cancelled caller rejects; the shared read still serves the other.
+    await expect(a).rejects.toBeDefined()
     await expect(b).resolves.toHaveLength(2)
     second.abort()
   })
@@ -2030,4 +2031,47 @@ test('a request for a region whose sole reader aborted fetches it again', async 
   const second = read(req)
   await expect(first).rejects.toBeDefined()
   expect([...new Uint8Array((await second) as Uint8Array)]).toEqual([7])
+})
+
+test('a caller that aborts a shared region read rejects; the other still gets it', async () => {
+  let release: () => void = () => {}
+  let fetches = 0
+  const source = {
+    levels: [{ level: 0, shape: [2, 2, 2], spacing: [1, 1, 1] }],
+    datatypeCode: 2,
+    fetchChunk: async ({ signal }: { signal?: AbortSignal }) => {
+      fetches++
+      await new Promise<void>((r) => {
+        release = r
+      })
+      signal?.throwIfAborted()
+      return new Uint8Array([7])
+    },
+  } as unknown as ChunkedVolumeSource
+  const read = createSourceRegionReader(source, {
+    maxConcurrentLoads: 4,
+    retryAttempts: 1,
+  })
+  const req = {
+    levelIndex: 0,
+    texOrigin: [0, 0, 0] as Vec3i,
+    texDims: [1, 1, 1] as Vec3i,
+    bytesPerVoxel: 1,
+    frame: 0,
+  }
+  const gone = new AbortController()
+  const stays = new AbortController()
+  const outcome = (p: Promise<unknown>) =>
+    p.then(
+      () => 'resolved',
+      () => 'rejected',
+    )
+  const aborted = outcome(read({ ...req, signal: gone.signal }))
+  const active = read({ ...req, signal: stays.signal })
+  await new Promise((r) => setTimeout(r, 0))
+  gone.abort()
+  release()
+  expect(await aborted).toBe('rejected')
+  expect([...new Uint8Array((await active) as Uint8Array)]).toEqual([7])
+  expect(fetches).toBe(1)
 })

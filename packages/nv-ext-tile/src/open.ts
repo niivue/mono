@@ -238,16 +238,8 @@ async function openUrl(
       const { ZarrSlideSource } = await import('./zarr/zarrSlideSource')
       return ZarrSlideSource.fromUrl(url, {
         signal,
-        // A plain init, so a wrapper that spreads it keeps Range and signal.
-        ...(fetchImpl && {
-          fetch: (r: Request) =>
-            fetchImpl(r.url, {
-              method: r.method,
-              headers: Object.fromEntries(r.headers),
-              signal: r.signal,
-              cache: r.cache,
-            }),
-        }),
+        // The loader passes a plain init, so a spreading wrapper keeps Range and signal.
+        fetch: fetchImpl,
       })
     }
     case 'dzi':

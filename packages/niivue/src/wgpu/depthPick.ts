@@ -76,7 +76,8 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
       // The same visibility rule sampleSlice draws with: without alpha clipping
       // the whole plane is a solid slab, so every in-cube hit is pickable.
       var visible = !alphaClipDark();
-      if (!visible) { visible = textureSampleLevel(volume, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0; }
+      // backOpacity 0: a channel stack, whose drawn channels are all in the overlay.
+      if (!visible && params.backOpacity > 0.0) { visible = textureSampleLevel(volume, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0; }
       if (!visible && params.numVolumes > 1.0) {
         visible = textureSampleLevel(overlay, tex_sampler, chunkTexCoord(pos), 0.0).a > 0.0;
       }
@@ -106,8 +107,11 @@ fn fragment_main(in: VertexOutput) -> FragmentOutput {
     clipSampleRange(dir, vec4f(start, 0.0), params.clipPlanes[i], &sampleRange, &hasClip);
   }
   let isClip = (sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0));
-  // Check if clip plane configuration eliminates background entirely
-  var skipBackground = false;
+  // Check if clip plane configuration eliminates background entirely; a
+  // channel stack (backOpacity 0) picks from the overlay, which holds every
+  // drawn channel, so a hidden volumes[0] cannot answer. Mirrored in
+  // gl/depthPickShader.ts.
+  var skipBackground = params.backOpacity <= 0.0;
   if (cutaway) {
     if (hasClip && sampleRange.x <= 0.0 && sampleRange.y >= len) {
       skipBackground = true;

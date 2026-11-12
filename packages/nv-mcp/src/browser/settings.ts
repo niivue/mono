@@ -78,6 +78,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'moveVolumeUp',
     'getDescriptives',
     'recalculateCalMinMax',
+    'volumeHistogram',
     'loadImgV1',
     'loadDeferred4DVolumes',
     'setModulationImage',
@@ -96,6 +97,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'hitTest',
     'canvasToMM',
     'mmToCanvas',
+    'pickAt',
   ],
   camera: [
     'setClipPlanes',

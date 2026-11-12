@@ -1,4 +1,4 @@
-// Compiles and runs the WebGPU overlay blend shaders from src/wgpu/orient.ts
+// Compiles and runs the WebGPU overlay blend shaders from src/wgpu/blendOverlays.ts
 // in the system Chrome (needs a real GPU) and compares every mode
 // (alphaBlend, colorBlend) with the CPU blendOverlayData, allowing 1 for
 // rounding. Each case blends a 1x1x2 volume as two z-slabs, one pass per
@@ -55,7 +55,7 @@ if (!tellsMaxFromAdd) {
 }
 
 const src = readFileSync(
-  new URL('../src/wgpu/orient.ts', import.meta.url),
+  new URL('../src/wgpu/blendOverlays.ts', import.meta.url),
   'utf8',
 )
 const grab = (n) => src.match(new RegExp(`const ${n} = \`([\\s\\S]*?)\``))[1]

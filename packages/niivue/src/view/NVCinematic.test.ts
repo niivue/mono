@@ -94,6 +94,12 @@ describe('labelMaterials', () => {
     expect(isVisible[7]).toBe(0)
   })
 
+  test('selectedLabelsDimTheOthers', () => {
+    const { materials } = labelMaterials(table, [], 1, [3])
+    expect(materials[3 * 8 + 3]).toBe(1)
+    expect(materials[7 * 8 + 3]).toBeCloseTo((0.25 * 128) / 255)
+  })
+
   test('plainLabelTableIsLabelShaped', () => {
     const { materials } = labelMaterials({
       ...table,

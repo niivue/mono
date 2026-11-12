@@ -48,6 +48,13 @@ import { type DocumentUrlResolver, resolveLinkedEntry } from '@/documentLinks'
 import { defaultMatcap, matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
+  attachFrameSource,
+  checkedSource,
+  type DocumentSourceResolver,
+  restoreStreamedVolume,
+  type SourceRestore,
+} from '@/documentSources'
+import {
   addUndoBitmap,
   clearAllUndoBitmaps,
   createDrawingVolume,
@@ -147,6 +154,7 @@ import type {
   ViewHitTest,
   VolumeChunkExplode,
   VolumeFrameSource,
+  VolumeHistogram,
   VolumeUpdate,
   WheelZoomAnchor,
 } from '@/NVTypes'
@@ -222,7 +230,11 @@ import {
   chunkTimingSnapshot,
   resetChunkTiming as clearChunkTiming,
 } from '@/volume/chunkTiming'
-import { commitDirtyVolumes, markVolumeDataChanged } from '@/volume/dataVersion'
+import {
+  commitDirtyVolumes,
+  markVolumeDataChanged,
+  objectId,
+} from '@/volume/dataVersion'
 import type { DescriptiveStats } from '@/volume/descriptives'
 import {
   computeModulationData,
@@ -244,6 +256,7 @@ import * as NVVolumeTransforms from '@/volume/transforms'
 import {
   calculateWorldExtents,
   calMinMaxFrame,
+  frameHistogram,
   reorientDrawingToNative,
   reorientDrawingToRAS,
   volumeTR,
@@ -568,10 +581,42 @@ export default class NiiVue extends EventTarget {
   _baseCoarseFloor: NVImage | null = null
   /** @internal Counts floors that reached the view: tells two equal floors (two nulls) apart. */
   _baseCoarseFloorSets = 0
+  /** @internal A floor the next update pass installs (see {@link _queueBaseCoarseFloor}). */
+  _queuedCoarseFloor: {
+    floor: NVImage | null
+    onInstall?: (set: number, replaced: NVImage | null) => void
+  } | null = null
+
+  /**
+   * @internal Install `floor` in the next GPU update pass, before its volumes
+   * rebuild, so a streamed frame switch shows the new floor and bricks
+   * together (see `UpdateBindGroupsOptions.coarseFloor`).
+   */
+  _queueBaseCoarseFloor(
+    floor: NVImage | null,
+    onInstall?: (set: number, replaced: NVImage | null) => void,
+  ): void {
+    this._queuedCoarseFloor = { floor, onInstall }
+  }
 
   /** @internal Registration hook for {@link NVChunkedVolume}. */
   _registerChunkedVolume(chunked: NVChunkedVolume): void {
     this._chunkedVolumes.add(chunked)
+    // The readouts share one cap: a new handle shrinks every share.
+    for (const c of this._chunkedVolumes) c._trimReadout()
+  }
+
+  /** @internal Live streamed-volume handles (their readouts share one cap). */
+  get _chunkedVolumeCount(): number {
+    return this._chunkedVolumes.size
+  }
+
+  /** @internal How many streamed volumes switch frames with `group`. */
+  _chunkedVolumesIn(group: object | undefined): number {
+    let n = 0
+    for (const c of this._chunkedVolumes)
+      if (c.volume.frameSource?.group === group) n++
+    return n
   }
 
   /** @internal Deregistration hook for {@link NVChunkedVolume}. */
@@ -3086,14 +3131,29 @@ export default class NiiVue extends EventTarget {
     const token = this._beginUpdate()
     let failed = false
     let error: unknown
+    // A floor queued by a frame switch lands in this pass, with its bricks.
+    const floor = this._queuedCoarseFloor
+    this._queuedCoarseFloor = null
     try {
       this._computeModulationData()
-      if (!this.view) return
-      await this.view.updateBindGroups({ meshes, volumes: changed, colorbars })
-      this.drawScene()
+      if (this.view)
+        await this.view.updateBindGroups({
+          meshes,
+          volumes: changed,
+          colorbars,
+          ...(floor && { coarseFloor: floor.floor }),
+        })
+      if (floor) {
+        this._baseCoarseFloorSets++
+        floor.onInstall?.(this._baseCoarseFloorSets, this._baseCoarseFloor)
+        this._baseCoarseFloor = floor.floor
+      }
+      if (this.view) this.drawScene()
     } catch (err) {
       failed = true
       error = err
+      // Not on the view: the next pass tries again, unless a newer one came.
+      if (floor) this._queuedCoarseFloor ??= floor
       throw err
     } finally {
       // This pass's callers settle now, not after the follow-ups chained below.
@@ -3602,6 +3662,8 @@ export default class NiiVue extends EventTarget {
       | NVImage
       | Array<ImageFromUrlOptions | NVImage>,
   ): Promise<this> {
+    // A new scene supersedes a document still restoring.
+    this._documentLoad?.abort()
     if (!Array.isArray(volumes)) volumes = [volumes]
     if (this.model.ui.isThumbnailVisible) {
       this._deferredVolumes = volumes
@@ -4060,6 +4122,7 @@ export default class NiiVue extends EventTarget {
     pathOrFile: string | File,
     options: Record<string, unknown> = {},
   ): Promise<void> {
+    this._documentLoad?.abort()
     await this._dispatchImage(pathOrFile, options, true)
   }
 
@@ -5140,6 +5203,9 @@ export default class NiiVue extends EventTarget {
    * the volumes it switches: it belongs to them, not to the group object, which
    * a replacement scene may reuse.
    */
+  /** The running loadDocument, aborted by the next. */
+  private _documentLoad: AbortController | null = null
+
   private _frameRequests = new Map<
     object,
     { ctl: AbortController; members: NVImage[] }
@@ -5200,6 +5266,8 @@ export default class NiiVue extends EventTarget {
       }
     } catch (err) {
       if (request.signal.aborted) return
+      // The other members' reads are for nothing now; stop them.
+      request.abort()
       log.warn(`setFrame4D: frame ${t} could not be loaded`, err)
       throw err
     } finally {
@@ -5207,11 +5275,26 @@ export default class NiiVue extends EventTarget {
         this._frameRequests.delete(source.group)
     }
     if (request.signal.aborted) return
+    // A pass already running would build the new loaders' bricks before the
+    // floor it does not know about: swap only between passes.
+    while (this._updating && !request.signal.aborted)
+      await this.whenUpdatesSettle()
+    if (request.signal.aborted) return
     const shown = [...frames.keys()].filter((v) => this.volumes.includes(v))
     const switched: NVImage[] = []
+    // Every member switches in one synchronous step and one GPU update (which
+    // also installs a streamed member's floor), so no drawn frame mixes time
+    // points. `commit` must not throw (it only swaps prepared state).
+    for (const vol of shown) vol.frameSource?.commit?.(t, vol)
     for (const vol of shown) {
       const img = frames.get(vol)
-      if (!vol.img || !vol.frameSource || !img) continue
+      if (!vol.frameSource || !img) continue
+      if (vol.frameSource.commit) {
+        vol.frameSource.frame = t
+        switched.push(vol)
+        continue
+      }
+      if (!vol.img) continue
       vol.img.set(img)
       vol.frameSource.frame = t
       markVolumeDataChanged(vol)
@@ -5226,12 +5309,101 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * Histogram of a volume's intensities, cached per data generation, so a UI
+   * can call it on every redraw but should not call it per hover. `coverage`
+   * says what was counted: `'volume'` the whole frame in memory, `'level'` a
+   * streamed volume's coarsest pyramid level (its coarse floor), `'sample'` a
+   * centred crop of that level (the window probe); `level` and `frame` say
+   * which. Null when nothing is in memory to count (a streamed volume with no
+   * floor or probe) or the volume is RGB.
+   * @param volumeIndex - Index into `volumes`
+   * @param options - `bins` (default 256); `frame` (default the one shown):
+   *   a frame of a 4D volume, or, for a frame source, the shown frame only
+   */
+  volumeHistogram(
+    volumeIndex: number,
+    options: { bins?: number; frame?: number } = {},
+  ): VolumeHistogram | null {
+    const vol = this.volumes[volumeIndex]
+    if (!vol) return null
+    const bins = options.bins ?? 256
+    if (!Number.isInteger(bins) || bins < 1)
+      throw new RangeError(
+        `volumeHistogram: bins must be a positive integer, got ${bins}`,
+      )
+    // `frame` is the source's frame number: a frame source (lazy or
+    // streamed) holds only the frame it shows, so only that one counts.
+    const f = options.frame
+    const held = vol.frameSource?.frame
+    if (f !== undefined && held !== undefined && f !== held)
+      throw new RangeError(
+        `volumeHistogram: ${vol.name} holds only frame ${held}; show frame ${f} first`,
+      )
+    const frames = vol.nFrame4D ?? 1
+    if (
+      f !== undefined &&
+      held === undefined &&
+      !(Number.isInteger(f) && f >= 0 && f < frames)
+    )
+      throw new RangeError(
+        `volumeHistogram: frame ${f} is not one of 0..${frames - 1}`,
+      )
+    let image = vol
+    let frame = vol.frameSource ? 0 : (options.frame ?? vol.frame4D ?? 0)
+    let shown = vol.frameSource?.frame ?? frame
+    let coverage: VolumeHistogram['coverage'] = 'volume'
+    let level: number | undefined
+    if (!vol.img) {
+      const sample = this._chunkedOf(vol)?.histogramSample
+      if (!sample) return null
+      ;({ image, coverage, level } = sample)
+      frame = 0
+      shown = sample.frame
+    }
+    const generation = [
+      objectId(image),
+      image._dataVersion ?? 0,
+      shown,
+      bins,
+      frame,
+    ].join('|')
+    let hist = this._histograms.get(vol)
+    if (hist?.generation !== generation) {
+      const counted = frameHistogram(image, frame, bins)
+      if (!counted) return null
+      hist = {
+        ...counted,
+        coverage,
+        ...(level !== undefined && { level }),
+        frame: shown,
+        generation,
+      }
+      this._histograms.set(vol, hist)
+    }
+    // A copy: a caller editing its counts cannot change the cached ones.
+    return { ...hist, counts: hist.counts.slice() }
+  }
+
+  /** Histograms by volume, keyed by generation (see {@link volumeHistogram}). */
+  private _histograms = new WeakMap<NVImage, VolumeHistogram>()
+
+  /** The streamed-volume handle that owns `vol`, if any. */
+  private _chunkedOf(vol: NVImage): NVChunkedVolume | undefined {
+    for (const c of this._chunkedVolumes) if (c.id === vol.id) return c
+    return undefined
+  }
+
+  /**
    * Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
-   * Updates the volume's calibration range and triggers a GPU update.
+   * Updates the volume's calibration range and triggers a GPU update. A
+   * streamed volume reads its histogram sample (see {@link volumeHistogram}).
+   * @param percentiles - [low, high] in percent (default [2, 98]); zeros are
+   *   left out of the population, as for the default window.
    */
   async recalculateCalMinMax(
     volumeIndex: number,
     frame?: number,
+    percentiles?: readonly [number, number],
   ): Promise<void> {
     const vol = this.volumes[volumeIndex]
     if (!vol) {
@@ -5240,9 +5412,29 @@ export default class NiiVue extends EventTarget {
       )
       return
     }
+    if (
+      percentiles &&
+      !(
+        percentiles[0] >= 0 &&
+        percentiles[0] < percentiles[1] &&
+        percentiles[1] <= 100
+      )
+    )
+      throw new RangeError(
+        `recalculateCalMinMax: percentiles must be 0 <= low < high <= 100, got [${percentiles}]`,
+      )
     // A frame-source volume holds only the frame it shows.
     const f = vol.frameSource ? 0 : (frame ?? vol.frame4D ?? 0)
-    const [pct2, pct98, mnScale, mxScale] = calMinMaxFrame(vol, f)
+    const image = vol.img ? vol : this._chunkedOf(vol)?.histogramSample?.image
+    if (!image) {
+      log.warn(`recalculateCalMinMax: volume ${volumeIndex} has no sample`)
+      return
+    }
+    const [pct2, pct98, mnScale, mxScale] = calMinMaxFrame(
+      image,
+      image === vol ? f : 0,
+      percentiles,
+    )
     vol.calMin = pct2
     vol.calMax = pct98
     vol.robustMin = pct2
@@ -5428,6 +5620,25 @@ export default class NiiVue extends EventTarget {
    */
   setCrosshairPos(pos: [number, number, number]): void {
     this._setCrosshairPos(pos)
+  }
+
+  /**
+   * Depth-pick the canvas pixel `[x, y]` (device pixels, as a double-click
+   * does): the world point of the first drawn volume voxel or mesh under it.
+   * On a channel stack (`volumeIsChannelStack`) any drawn channel answers, not
+   * only `volumes[0]`. With `moveCrosshair` the crosshair goes there too.
+   * Null on a miss or with no view.
+   */
+  async pickAt(
+    x: number,
+    y: number,
+    options: { moveCrosshair?: boolean } = {},
+  ): Promise<[number, number, number] | null> {
+    const mm = (await this.view?.depthPick(x, y)) ?? null
+    if (mm && options.moveCrosshair)
+      this._setCrosshairPos(mm, SLICE_TYPE.RENDER)
+    else this.drawScene()
+    return mm
   }
 
   /**
@@ -7421,6 +7632,7 @@ export default class NiiVue extends EventTarget {
   }
 
   destroy(): void {
+    this._documentLoad?.abort()
     // A second call would reach renderers whose GPU device is already gone.
     if (this._destroyed) return
     this._destroyed = true
@@ -7829,21 +8041,44 @@ export default class NiiVue extends EventTarget {
    * against where the document lives rather than the page, or refuse some.
    * Skipping the document's first volume also skips its drawing, which belongs
    * to that volume's grid.
+   *
+   * `options.resolveSource` reopens a lazy or streamed volume's saved source
+   * descriptor, with the host's credentials (see {@link DocumentSourceResolver}).
+   * Without it, or when it yields no source, a lazy volume shows its embedded
+   * frame as a static volume and a streamed one is skipped with a warning. A
+   * newer `loadDocument` supersedes this one: its pending source opens are
+   * aborted and anything they would add is dropped.
    */
   async loadDocument(
     source: string | File,
     options?: {
       fill?: SettingsFillPolicy
       resolveUrl?: DocumentUrlResolver
+      resolveSource?: DocumentSourceResolver
     },
   ): Promise<void> {
     const resolveUrl = options?.resolveUrl
+    this._documentLoad?.abort()
+    const load = new AbortController()
+    this._documentLoad = load
+    const restore: SourceRestore = {
+      resolve: options?.resolveSource,
+      signal: load.signal,
+      groups: new Map(),
+    }
     // Fetch the document file
     const buffer = await NVLoader.fetchFile(source)
+    // Superseded by a newer loadDocument: leave the scene to it.
+    if (load.signal.aborted) return
     const data = new Uint8Array(buffer)
 
     // Parse the document
     const doc = NVDocument.deserialize(data)
+    // Sources are checked before the scene is cleared, so a malformed one
+    // cannot fail the load half way.
+    for (const v of doc.volumes ?? [])
+      if (v.source !== undefined)
+        v.source = checkedSource(v.source, v.name ?? '')
     // Colormaps first: volumes resolve their colormap names while rebuilding.
     for (const [name, cmap] of Object.entries(doc.colormaps ?? {}))
       this.addColormap(name, cmap)
@@ -7853,6 +8088,7 @@ export default class NiiVue extends EventTarget {
     this.clearSlidePlane()
     await this.removeAllVolumes()
     await this.removeAllMeshes()
+    if (load.signal.aborted) return
     // Loads deferred behind an earlier thumbnail would replace the document.
     this._deferredVolumes = null
     this._deferredMeshes = null
@@ -7902,6 +8138,7 @@ export default class NiiVue extends EventTarget {
       // offline, blocked) must not cost the document its data.
       try {
         if (this.view) await this.view.loadThumbnail(thumbnailUrl)
+        if (load.signal.aborted) return
       } catch (err) {
         log.warn(`loadDocument: thumbnail not loaded: ${err}`)
         this.model.ui.isThumbnailVisible = false
@@ -7925,17 +8162,37 @@ export default class NiiVue extends EventTarget {
         if (i === 0) isBackgroundSkipped = true
         continue
       }
+      const saved = entry.source
+      // A streamed entry has neither voxels nor a url (a linked lazy one has a url).
+      if (saved && !entry.data && !entry.url) {
+        // Added (and announced) through addVolume, like loadChunkedVolume.
+        await restoreStreamedVolume(this, { ...entry, source: saved }, restore)
+        if (load.signal.aborted) return
+        continue
+      }
       const volume = await NVDocument.reconstructVolume(this.model, entry)
+      if (volume && saved) await attachFrameSource(volume, saved, restore)
+      if (load.signal.aborted) {
+        // A newer document cleared the scene; this volume is not part of it.
+        const at = volume ? this.model.volumes.indexOf(volume) : -1
+        if (at >= 0) this.model.volumes.splice(at, 1)
+        return
+      }
       if (volume) this.emit('volumeLoaded', { volume })
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
     const meshesBefore = this.model.meshes.length
-    await Promise.all(
+    const added = await Promise.all(
       (doc.meshes ?? []).map((m) => {
         const entry = resolveLinkedEntry(m, 'mesh', resolveUrl)
         return entry ? NVDocument.reconstructMesh(this.model, entry) : undefined
       }),
     )
+    if (load.signal.aborted) {
+      // A newer document cleared the scene; these meshes are not part of it.
+      this.model.meshes = this.model.meshes.filter((m) => !added.includes(m))
+      return
+    }
     for (const mesh of this.model.meshes.slice(meshesBefore)) {
       this.emit('meshLoaded', { mesh })
     }
@@ -7945,6 +8202,7 @@ export default class NiiVue extends EventTarget {
 
     // Update GPU resources and render
     await this._updateGLChanged()
+    if (load.signal.aborted) return
     // A document's fontScale/fontMinSize take effect at resize (#377).
     this.resize()
 
@@ -7977,6 +8235,7 @@ export default class NiiVue extends EventTarget {
     if (doc.slidePlane) {
       try {
         await this._restoreSlidePlaneFromDoc(doc.slidePlane)
+        if (load.signal.aborted) return
       } catch (err) {
         log.warn(
           `loadDocument: failed to restore slide plane: ${err instanceof Error ? err.message : err}`,

@@ -1024,8 +1024,24 @@ in volume order (later overlays on top); colour `MAX` keeps the per-component
 max of the premultiplied colours; every mode but `OVER` is commutative.
 `volumeIsChannelStack` blends volumes[0] in as one more overlay (both views'
 `_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
-fused channels land on the canvas background; ignored with one volume, while
-volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
+fused channels land on the canvas background; ignored with one volume, in
+multi-instance mode, and while volumes[0] is chunked unless every volume is
+streamed (`chunkSource`): then both renderers fuse each base chunk's drawn
+bricks in the upload pump (`view/chunkStackFuse.ts` `pump`; GL
+`blendOverlaysGL` in `gl/blendOverlays.ts`, WebGPU `blendOverlaysGPU` in
+`wgpu/blendOverlays.ts`, the same accumulate-then-normalise passes; GL reads
+back and `blendOverlayData`s only without float render targets) into the
+overlay slot (`e2e/render-streamed.spec.ts`). A chunk fuses once all its drawn
+channels' bricks are resident, keeps its old fused texture until the new one
+lands, follows its brick region across plan swaps, re-fuses when a blend mode
+changes, and never draws under another source generation (a frame switch), so
+a switch never shows old and new time points side by side. Known limit: no
+per-channel opacity (the brick bakes leave opacity out and the blends have no
+per-layer weight; adding one changes the blend shared with whole-volume
+overlays). `e2e/streamed-stack-switch.spec.ts` with `STACK_FUSE_BENCH=1`
+benches it; the GL blend matches `blendOverlayData` exactly. Depth picks on a stack
+skip the base march (`backOpacity` 0 in the pick shaders) and answer from any
+drawn channel; the CPU chunked pick uses `stackPickSampler`. Hidden (or opacity 0) and
 PAQD volumes do not join as channels. Stacked channels keep their colormap's
 alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
 `keepColormapAlpha` in `gl/orientOverlay.ts`);
@@ -1184,6 +1200,19 @@ a rebuild.
   `@niivue/nv-ext-tile`'s `lazyTime`) stays one frame (`nFrame4D` 1: every img
   reader indexes `frame4D * nVox3D`); its time axis lives on the source, and
   frame changes go through `_setSourceFrame` (see its JSDoc; `src/frameSource.test.ts`).
+  `NVChunkedVolume` installs one too (`commit` swaps in a new per-frame chunk
+  loader, so `volumeSourceKey` drops the old frame's bricks;
+  `src/volume/NVChunkedVolume.frames.test.ts`). A source `descriptor` is saved
+  in documents and reopened by `loadDocument`'s `resolveSource`
+  (`src/documentSources.ts`, `src/loadDocument.sources.test.ts`); a newer
+  `loadDocument`, `loadVolumes` or `loadImage` aborts a restore still pending.
+  A switch is two-phase: every member's `load` stages first, then the group
+  swaps in one synchronous `commit` between GPU passes, and the coarse floor is
+  installed inside that update (`UpdateBindGroupsOptions.coarseFloor`) before
+  the bricks rebuild. The source reader's `onChunk(bytes, req)` sees every
+  decoded region; a streamed volume's readout (`NVImage.voxelValue`) is exact
+  from its plan's decoded bricks and otherwise reads the coarse floor,
+  flagged `approximate`.
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update

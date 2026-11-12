@@ -64,7 +64,17 @@ function ownFrameSource(source: VolumeFrameSource | undefined): {
           get group() {
             return source.group
           },
+          get descriptor() {
+            return source.descriptor
+          },
+          get revision() {
+            return source.revision
+          },
           load: (frame, signal) => source.load(frame, signal),
+          ...(source.commit && {
+            commit: (frame: number, volume: NVImage) =>
+              source.commit?.(frame, volume),
+          }),
         },
       }
     : {}

@@ -3,6 +3,7 @@ import {
   drawnOpacity,
   isChannelStackActive,
   isVolumeDrawn,
+  stackPickSampler,
 } from './NVVolumeVisibility'
 
 // The overlay bake, the 2D/3D background opacity uniforms and both depth
@@ -59,11 +60,33 @@ describe('isChannelStackActive', () => {
     expect(isChannelStackActive(true, [])).toBe(false)
   })
 
+  test('on over a streamed base when every channel is streamed', () => {
+    const streamed = { chunkPlan: {}, chunkSource: () => {} }
+    expect(isChannelStackActive(true, [streamed, { chunkSource: {} }])).toBe(
+      true,
+    )
+    expect(isChannelStackActive(true, [streamed, {}])).toBe(false)
+  })
+
   test('off while volumes[0] is chunked', () => {
     expect(isChannelStackActive(true, [{ chunkPlan: {} }, {}])).toBe(false)
   })
 
   test('a chunked overlay does not turn it off', () => {
     expect(isChannelStackActive(true, [{}, { chunkPlan: {} }])).toBe(true)
+  })
+})
+
+describe('stackPickSampler', () => {
+  test('the strongest drawn channel answers; hidden ones do not', () => {
+    const a = { pickSampler: (x: number) => (x < 0 ? 5 : 0) }
+    const b = { pickSampler: (x: number) => (x > 0 ? 3 : 0) }
+    const pick = stackPickSampler([a, b])
+    expect([pick?.(-1, 0, 0), pick?.(1, 0, 0), pick?.(0, 0, 0)]).toEqual([
+      5, 3, 0,
+    ])
+    const hidden = stackPickSampler([{ ...a, visible: false }, b])
+    expect(hidden?.(-1, 0, 0)).toBe(0)
+    expect(stackPickSampler([{}, { visible: false, ...b }])).toBeUndefined()
   })
 })

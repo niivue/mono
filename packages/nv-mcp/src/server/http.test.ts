@@ -38,6 +38,7 @@ const CORE_TOOLS = [
   'remove_volume',
   'reorder_volume',
   'describe_volume',
+  'volume_histogram',
   'get_options',
   'set_options',
   'capabilities',
@@ -74,6 +75,7 @@ const CORE_TOOLS = [
   'load_data',
   'set_viewport',
   'map_point',
+  'pick_point',
   'set_slide',
   'sample_slide',
   'chunk_stats',
@@ -307,6 +309,25 @@ describe('the server, end to end', () => {
       await call('set_camera', { azimuth: 45, elevation: -20 }),
     )
     expect(turned).toMatchObject({ camera: { azimuth: 45, elevation: -20 } })
+
+    const counted = await call('volume_histogram', { volume: 1, bins: 3 })
+    expect(text(counted)).toMatch(
+      /^Counted 8 voxels of zstat\.nii\.gz, the whole frame\./,
+    )
+    expect(json(counted)).toMatchObject({
+      histogram: { counts: [6, 0, 2], coverage: 'volume', voxels: 8 },
+    })
+    const picked = await call('pick_point', {
+      canvas: [100, 80],
+      move_crosshair: true,
+    })
+    expect(text(picked)).toMatch(
+      /^Picked -36, 6, 2 mm\. left insula at -36, 6, 2 mm\./,
+    )
+    expect(json(picked)).toMatchObject({
+      mm: [-36, 6, 2],
+      where: { crosshair: { mm: mm(-36, 6, 2) } },
+    })
 
     const drawn = await call('set_volume', {
       volume: 'zstat',

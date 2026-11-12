@@ -359,9 +359,13 @@ const actions: Record<string, PageAction> = {
   },
 }
 
+/** Frames a volume can show: its frame source's (lazy time) or its own. */
+const frameCount = (v: (typeof nv.volumes)[number]): number =>
+  v.frameSource?.count ?? v.nFrame4D ?? 1
+
 /** The first loaded volume with more than one frame, or a throw saying there is none. */
 function seriesVolume(): (typeof nv.volumes)[number] {
-  const volume = nv.volumes.find((v) => (v.nFrame4D ?? 1) > 1)
+  const volume = nv.volumes.find((v) => frameCount(v) > 1)
   if (!volume)
     throw new Error('No loaded volume has more than one frame to step through.')
   return volume
@@ -370,9 +374,9 @@ function seriesVolume(): (typeof nv.volumes)[number] {
 /** Moves the series volume `by` frames, wrapping at either end. */
 async function stepFrame(by: number): Promise<void> {
   const volume = seriesVolume()
-  const frames = volume.nFrame4D ?? 1
-  const frame = ((volume.frame4D ?? 0) + by + frames) % frames
   if (volume.id === undefined) throw new Error(`${volume.name} has no id.`)
+  const frames = frameCount(volume)
+  const frame = (nv.getFrame4D(volume.id) + by + frames) % frames
   await nv.setFrame4D(volume.id, frame)
 }
 

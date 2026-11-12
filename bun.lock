@@ -288,6 +288,19 @@
         "@niivue/niivue": "workspace:*",
       },
     },
+    "packages/nv-ext-isosurface": {
+      "name": "@niivue/nv-ext-isosurface",
+      "version": "1.0.0-rc.0",
+      "devDependencies": {
+        "@niivue/niivue": "workspace:*",
+        "typescript": "^5.9.3",
+        "vite": "^8.3.8",
+        "vite-plugin-dts": "^4.5.4",
+      },
+      "peerDependencies": {
+        "@niivue/niivue": "workspace:*",
+      },
+    },
     "packages/nv-ext-niimath": {
       "name": "@niivue/nv-ext-niimath",
       "version": "1.0.0-rc.159",
@@ -990,6 +1003,8 @@
     "@niivue/nv-ext-drawing": ["@niivue/nv-ext-drawing@workspace:packages/nv-ext-drawing"],
 
     "@niivue/nv-ext-image-processing": ["@niivue/nv-ext-image-processing@workspace:packages/nv-ext-image-processing"],
+
+    "@niivue/nv-ext-isosurface": ["@niivue/nv-ext-isosurface@workspace:packages/nv-ext-isosurface"],
 
     "@niivue/nv-ext-niimath": ["@niivue/nv-ext-niimath@workspace:packages/nv-ext-niimath"],
 

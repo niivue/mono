@@ -35,6 +35,7 @@ niivue/mono/
 │   ├── nv-react/        @niivue/nvreact — React bindings
 │   ├── nv-ext-drawing/      @niivue/nv-ext-drawing — Drawing & segmentation tools
 │   ├── nv-ext-image-processing/ @niivue/nv-ext-image-processing — Image processing
+│   ├── nv-ext-isosurface/     @niivue/nv-ext-isosurface — Per-channel isosurfaces
 │   ├── nv-ext-save-html/    @niivue/nv-ext-save-html — Export scene as HTML
 │   └── dev-images/      @niivue/dev-images — Shared test images (Git LFS)
 ├── nx-tools/
@@ -65,6 +66,7 @@ NX tracks project dependencies to run tasks in the correct order:
 demo-ext-drawing ──→ nv-ext-drawing ──→ niivue
 demo-ext-image-processing ──→ nv-ext-image-processing ──→ niivue
 demo-ext-save-html ──→ nv-ext-save-html ──→ niivue
+nv-ext-isosurface ──→ niivue
 demo-ext-dcm2niix ──→ niivue
 nv-react ──→ niivue
 ```

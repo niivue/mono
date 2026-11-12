@@ -29,14 +29,43 @@ export function drawnOpacity(vol: {
 }
 
 /**
+ * The CPU pick sampler of a channel stack: the strongest window-visible value
+ * of any drawn channel's `pickSampler`, so a pick lands on whichever channel
+ * is on screen there, not only volumes[0]'s (#370). Null when none has one.
+ */
+export function stackPickSampler(
+  volumes: readonly {
+    visible?: boolean
+    opacity?: number
+    pickSampler?: (x: number, y: number, z: number) => number
+  }[],
+): ((x: number, y: number, z: number) => number) | undefined {
+  const samplers = volumes
+    .filter(isVolumeDrawn)
+    .flatMap((v) => (v.pickSampler ? [v.pickSampler] : []))
+  if (!samplers.length) return undefined
+  return (x, y, z) => {
+    let best = 0
+    for (const s of samplers) best = Math.max(best, s(x, y, z))
+    return best
+  }
+}
+
+/**
  * Whether the channel stack (VolumeRenderConfig.isChannelStack) applies to
  * this volume list: the option is on, there is more than one volume, and
- * volumes[0] is not chunked. When it applies, volumes[0] joins the overlay
- * blend and its own draw opacity is 0, so every channel is weighted alike.
+ * volumes[0] is either not chunked or every volume is streamed (a
+ * `chunkSource`), whose bricks the renderers fuse per base chunk. When it
+ * applies, volumes[0] joins the overlay blend and its own draw opacity is 0,
+ * so every channel is weighted alike.
  */
 export function isChannelStackActive(
   isChannelStack: boolean,
-  volumes: readonly { chunkPlan?: unknown }[],
+  volumes: readonly { chunkPlan?: unknown; chunkSource?: unknown }[],
 ): boolean {
-  return isChannelStack && volumes.length > 1 && !volumes[0].chunkPlan
+  return (
+    isChannelStack &&
+    volumes.length > 1 &&
+    (!volumes[0].chunkPlan || volumes.every((v) => !!v.chunkSource))
+  )
 }

@@ -329,6 +329,16 @@ function noStatsReason(
   return `NiiVue could not compute statistics for ${volume.name}${options.masks?.length ? ' with that mask' : ''}.`
 }
 
+/** `auto_window`'s percentiles, [low, high] in percent, when given. */
+function percentilesOf(params: Params): [number, number] | undefined {
+  const p = numbers(params, 'percentiles', 2)
+  if (p && !(p[0] >= 0 && p[0] < p[1] && p[1] <= 100))
+    throw new Error(
+      'percentiles is [low, high] in percent, 0 <= low < high <= 100.',
+    )
+  return p && [p[0], p[1]]
+}
+
 /** The handlers for the core tools, over this host. */
 export function coreHandlers(host: NiiVueHost): Handlers {
   const { view } = host
@@ -420,6 +430,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
       ...(volume.hiddenLabels?.length
         ? { hiddenLabels: [...volume.hiddenLabels] }
+        : {}),
+      ...(volume.selectedLabels?.length
+        ? { selectedLabels: [...volume.selectedLabels] }
         : {}),
       ...(volume.modulateAlpha ? { modulateAlpha: volume.modulateAlpha } : {}),
       ...(volume.chunkPlan
@@ -1128,6 +1141,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
       const hiddenLabels = numbers(params, 'hidden_labels')
       if (hiddenLabels !== undefined) update.hiddenLabels = hiddenLabels
+      put(update, 'selectedLabels', numbers(params, 'selected_labels'))
       const modulateAlpha = number(params, 'modulate_alpha')
       if (modulateAlpha !== undefined)
         update.modulateAlpha = clamp(modulateAlpha, 0, 1)
@@ -1135,7 +1149,9 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       // What is not a field of the volume: each its own NiiVue call.
       const labels = text(params, 'labels')
       const modulate = params?.modulate
-      const autoWindow = flag(params, 'auto_window')
+      // percentiles asks for the recomputed window by itself.
+      const percentiles = percentilesOf(params)
+      const autoWindow = percentiles ? true : flag(params, 'auto_window')
       const allFrames = flag(params, 'load_all_frames')
       const affine = params?.affine
       const resetAffine = flag(params, 'reset_affine')
@@ -1215,7 +1231,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           throw new Error(
             "This page's NiiVue cannot recompute a volume's window.",
           )
-        await view.recalculateCalMinMax(index, update.frame4D)
+        await view.recalculateCalMinMax(index, update.frame4D, percentiles)
       }
       if (resetAffine) {
         if (!view.resetVolumeAffine)
@@ -1436,7 +1452,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const img = volume.img
       if (!img)
         throw new Error(`${volume.name} holds no voxel values to write over.`)
-      const autoWindow = flag(params, 'auto_window') ?? false
+      const percentiles = percentilesOf(params)
+      const autoWindow = Boolean(percentiles) || flag(params, 'auto_window')
       if (autoWindow && !view.recalculateCalMinMax)
         throw new Error(
           "This page's NiiVue cannot recompute a volume's window.",
@@ -1499,7 +1516,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       if (autoWindow) {
         const now = view.volumes.indexOf(volume)
         if (now < 0) return gone(true)
-        await view.recalculateCalMinMax?.(now)
+        await view.recalculateCalMinMax?.(now, undefined, percentiles)
       }
       const shown = view.volumes.indexOf(volume)
       if (shown < 0) return gone(false)
@@ -1600,6 +1617,58 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         out.affine = view.getVolumeAffine(index)
       }
       return out
+    },
+
+    volume_histogram(params) {
+      requireVolume()
+      host.beforeAnswer?.()
+      if (!view.volumeHistogram)
+        throw new Error("This page's NiiVue cannot count a volume's histogram.")
+      const index = volumeIndex(params)
+      const volume = view.volumes[index]
+      const options: { bins?: number; frame?: number } = {}
+      put(options, 'bins', integer(params, 'bins', 1))
+      const frame = integer(params, 'frame')
+      if (frame !== undefined) {
+        const shown = volume.frameSource?.frame
+        if (shown !== undefined && frame !== shown)
+          throw new Error(
+            `${volume.name} holds only the frame shown (${shown}) in memory; set_volume frame first to count another.`,
+          )
+        const frames = volume.nFrame4D ?? 1
+        if (shown === undefined && frame >= frames)
+          throw new Error(
+            frames > 1
+              ? `${volume.name} has ${frames} frames, numbered 0 to ${frames - 1}.`
+              : `${volume.name} has one frame only.`,
+          )
+        options.frame = frame
+      }
+      const histogram = view.volumeHistogram(index, options)
+      if (!histogram)
+        throw new Error(
+          `NiiVue has nothing of ${volume.name} in memory to count: it is RGB, or streamed and its coarsest level has not arrived yet.`,
+        )
+      return {
+        volume: { index, name: volume.name },
+        histogram: { ...histogram, counts: Array.from(histogram.counts) },
+      }
+    },
+
+    async pick_point(params) {
+      host.beforeAnswer?.()
+      if (!view.pickAt)
+        throw new Error("This page's NiiVue cannot depth-pick a pixel.")
+      const at = numbers(params, 'canvas', 2)
+      if (!at) throw new Error('pick_point needs canvas: [x, y] pixels.')
+      const moveCrosshair = flag(params, 'move_crosshair') ?? false
+      const mm = await view.pickAt(at[0], at[1], { moveCrosshair })
+      if (!mm) return { canvas: at, mm: null }
+      const picked = { canvas: at, mm: Array.from(mm), unit: worldUnit(view) }
+      if (!moveCrosshair) return picked
+      host.moved?.(Array.from(view.crosshairPos))
+      // where_am_i's crosshair can differ from the pick: NiiVue may snap it to a voxel centre.
+      return { ...picked, where: await handlers.where_am_i({}) }
     },
 
     set_view(params) {

@@ -1,3 +1,18 @@
+## 1.0.0-rc.178 (2026-11-12)
+
+### Features
+
+- **niivue, nv-mcp, nv-ext-isosurface:** tile lane E volumes (lazy frames, restore, readout, histogram, picking, streamed stacks, isosurface) ([8e60f2b4](https://github.com/niivue/mono/commit/8e60f2b4))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.183
+- Updated uikit to 1.0.0-rc.181
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.177 (2026-11-12)
 
 ### Features

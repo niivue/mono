@@ -1,3 +1,29 @@
+## 1.0.0-rc.183 (2026-11-12)
+
+### Features
+
+- **niivue, nv-mcp, nv-ext-isosurface:** tile lane E volumes (lazy frames, restore, readout, histogram, picking, streamed stacks, isosurface) ([8e60f2b4](https://github.com/niivue/mono/commit/8e60f2b4))
+
+### Fixes
+
+- **niivue:** recalculateCalMinMax rejects a frame a lazy volume does not hold ([e53c92e0](https://github.com/niivue/mono/commit/e53c92e0))
+- **niivue:** bounds-check streamed voxel reads; a decoded NaN is exact ([de609051](https://github.com/niivue/mono/commit/de609051))
+- **niivue:** the readout never holds a brick larger than readoutBytes ([e79a4f1c](https://github.com/niivue/mono/commit/e79a4f1c))
+- **niivue:** a caller that aborts a shared region read rejects ([e3f3dbbe](https://github.com/niivue/mono/commit/e3f3dbbe))
+- **niivue:** dispose a lazy restore's source when it is superseded ([b673a095](https://github.com/niivue/mono/commit/b673a095))
+- **niivue:** fresh read after an aborted region; release superseded and wrong-kind sources ([c4d05b85](https://github.com/niivue/mono/commit/c4d05b85))
+- **niivue:** drop Bearer param values with leading whitespace ([3169fadb](https://github.com/niivue/mono/commit/3169fadb))
+- **niivue:** newest frame request wins through the floor wait; drop protocol-relative URL params ([538e70eb](https://github.com/niivue/mono/commit/538e70eb))
+- **niivue:** commit a frame switch only between floor installs ([2ec0844c](https://github.com/niivue/mono/commit/2ec0844c))
+- **niivue:** PR 747 review findings (frame floor race, credentials, restore) ([bb86fad0](https://github.com/niivue/mono/commit/bb86fad0))
+- **niivue:** settle on fused stack chunks; quiet pick abort on destroy ([bdefac9c](https://github.com/niivue/mono/commit/bdefac9c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.182 (2026-11-12)
 
 ### Features

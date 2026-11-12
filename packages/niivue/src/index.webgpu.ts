@@ -172,6 +172,7 @@ export type {
   VolumeFrameSource,
   VolumeUpdate,
   OrientationTextPosition,
+  RulerUnits,
   Rotation2D,
   WheelZoomAnchor,
 } from './NVTypes'
@@ -263,13 +264,26 @@ export type {
   NVSlideMeasurement,
   NVSlidePoint,
 } from './slide/slideController'
-export { NVSlideController } from './slide/slideController'
+export { NVSlideController, windowDragStep } from './slide/slideController'
 export type {
   SlideOverlayContent,
   SlideOverlaySource,
   SlideOverlayStyle,
 } from './slide/slideOverlay'
 export { slideOverlayContent } from './slide/slideOverlay'
+export type {
+  SlideBackendKind,
+  SlideRenderBackend,
+  SlideView,
+  SlideViewOptions,
+} from './slide/slideView'
+export {
+  attachSlideLens,
+  formatSlideSample,
+  linkSlideViews,
+  slideStatsSummary,
+} from './slide/slideView'
+export { createSlideView } from './slide/slideViewWebGPU'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export type {
@@ -329,6 +343,7 @@ export type {
 } from './volume/ChunkedVolumeSource'
 // OME-TIFF and plain TIFF stacks (multi-channel microscopy)
 export {
+  addChannelColormap,
   CHANNEL_COLORMAPS,
   CHANNEL_GRAY_COLORMAP,
   channelColormapFor,

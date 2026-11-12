@@ -294,6 +294,7 @@ describe('set_slide', () => {
         setSlideChannel: (index, update) => nv.setSlideChannel(index, update),
         setSlideChannelBlend: (blend) => nv.setSlideChannelBlend(blend),
         setSlideColorManagement: (on) => nv.setSlideColorManagement(on),
+        addColormap: (name, cmap) => nv.addColormap(name, cmap),
         clearSlidePlane: mock(),
         setSlidePlaneLevel: mock(),
       }),
@@ -336,11 +337,26 @@ describe('set_slide', () => {
     expect(nv.slideChannels?.[1].visible).toBe(true)
     expect(() => set_slide({ channel: 5, visible: true })).toThrow(RangeError)
     expect(() => set_slide({ visible: true })).toThrow(
-      'visible, colormap, cal_min and cal_max need a channel.',
+      'visible, colormap, color, cal_min and cal_max need a channel.',
     )
     expect(() => set_slide({ channel: 0 })).toThrow(
-      'channel needs something to set: visible, colormap, cal_min or cal_max.',
+      'channel needs something to set: visible, colormap, color, cal_min or cal_max.',
     )
+    // An exact colour registers a black-to-colour ramp through NiiVue.
+    set_slide({ channel: 0, color: '#FF8000' })
+    expect(nv.slideChannels?.[0].colormap).toBe('#ff8000')
+    expect(() =>
+      set_slide({ channel: 0, color: 'ff8000', colormap: 'red' }),
+    ).toThrow('Give colormap or color, not both.')
+    expect(() => set_slide({ channel: 0, color: 'orange' })).toThrow(
+      'color must be #rrggbb',
+    )
+    // Crossed bounds fail before the colour registers a colormap.
+    const added = spyOn(view, 'addColormap')
+    expect(() =>
+      set_slide({ channel: 0, color: '#123456', cal_min: 9, cal_max: 3 }),
+    ).toThrow(RangeError)
+    expect(added).not.toHaveBeenCalled()
     expect(() =>
       set_slide({ channel_blend: 'max', clear_plane: true }),
     ).toThrow(

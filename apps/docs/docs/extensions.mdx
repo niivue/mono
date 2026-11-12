@@ -173,6 +173,10 @@ const slide = NVSlide.fromSource(source)
 // pass { ownsSource: false } to keep a shared source and dispose it yourself
 ```
 
+`createSlideView(canvas, { slide })` from `@niivue/niivue` then runs the
+renderer (WebGPU, falling back to WebGL2), the frame loop, resize and the
+pan/zoom gestures; `view.destroy()` releases all of it.
+
 `TiffSlideSource.fromGeoTIFF(await fromBlob(file))` opens a local file;
 `registerDcm2niixTiffDecoders()` adds JPEG 2000 tiles (Aperio SVS) through
 `@niivue/dcm2niix`.

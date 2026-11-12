@@ -46,14 +46,12 @@
         <label id="retinaLabel" hidden title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
-      <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure. Drag the minimap to jump.</span><span id="status" data-state="wait">Loading slide...</span></footer>
+      <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure. Drag the minimap to jump.</span><span id="status" data-state="wait">Loading slide...</span><span id="credit"></span></footer>
     </div>
 
     <script type="module">
-      import { DziSource, NVSlide, SlideRenderer, SlideRendererGPU } from '@niivue/niivue'
-      import {
-        loadDefaultFont, UIKitControls, UIKitRulerOverlay, UIKitSlideMinimapOverlay,
-      } from './src/index.ts'
+      import { createSlideView, DRAG_MODE, DziSource, NVSlide } from '@niivue/niivue'
+      import { attachSlideMinimap, loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -65,6 +63,10 @@
       const DZI = 'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi'
       const TISSUE = {
         cptac: `${WSI_BASE}/cptac-brca/manifest.json`, // CPTAC breast-cancer H&E
+      }
+      const CREDIT = {
+        cptac: 'CPTAC-BRCA, The Cancer Imaging Archive, CC BY 4.0 (https://doi.org/10.7937/TCIA.CAEM-YS80)',
+        dzi: "OpenSeadragon's home-page demo image (openseadragon.github.io), no licence stated",
       }
 
       const params = new URLSearchParams(location.search)
@@ -81,52 +83,17 @@
       urlParamSelect(document.getElementById('srcSelect'), 'src', src === 'dzi' ? 'dzi' : 'cptac')
       urlParamSelect(document.getElementById('backendSelect'), 'backend', wantGpu ? 'webgpu' : 'webgl2')
       urlParamSelect(document.getElementById('aaSelect'), 'aa', isAntiAlias ? 'on' : 'off')
-      const canvas = document.getElementById('gl')
+      document.getElementById('credit').textContent = CREDIT[src === 'dzi' ? 'dzi' : 'cptac']
       const filter = document.getElementById('filter')
       const retina = document.getElementById('retina')
       const COLOR = [1, 0.85, 0, 1]
-
-      // --- standalone slide viewer plumbing (mirrors examples/slides.js) --------
-      const screenForCanvas = () => {
-        const r = canvas.getBoundingClientRect()
-        return { widthCss: r.width, heightCss: r.height,
-          devicePixelRatio: retina.checked ? window.devicePixelRatio || 1 : 1 }
-      }
-      // slide.slideToScreen is the inverse of slide.screenToSlide (slide base
-      // pixel -> canvas CSS); scale to device pixels for the overlay.
-      const slideToDevice = (p, screen) => {
-        const { xCss, yCss } = slide.slideToScreen(p.x, p.y, screen)
-        const dpr = screen.devicePixelRatio ?? 1
-        return [xCss * dpr, yCss * dpr]
-      }
-
-      let view = null
-      const createView = async () => {
-        if (wantGpu) {
-          const renderer = await SlideRendererGPU.create(canvas, { antialias: isAntiAlias }).catch(() => null)
-          if (renderer) return { kind: 'gpu', renderer }
-        }
-        const gl = canvas.getContext('webgl2', { alpha: false, antialias: isAntiAlias })
-        const renderer = new SlideRenderer()
-        renderer.init(gl)
-        return { kind: 'gl', gl, renderer }
-      }
-      const drawView = (screen) => {
-        view.renderer.render([slide], screen)
-      }
-
-      let frame = 0
-      const requestRender = () => {
-        if (frame) return
-        frame = requestAnimationFrame(() => { frame = 0; render() })
-      }
 
       // --- measurement (endpoints stored in SLIDE coords so they track the ----
       // tissue through pan/zoom) --------------------------------------------
       const spacing = () => slide.manifest.pixelSpacingMM // [x,y] mm/px or undefined
       let ruleA = null // {x,y} slide px
       let ruleB = null
-      let hoverCss = null
+      let hover = null // slide px under the pointer while the second click is pending
       let labelSizePx = 24 // ruler label height in px (font-size slider)
 
       // Physical distance when the slide carries pixel spacing (PixelSpacing /
@@ -145,10 +112,18 @@
           : { length: mm, units: 'mm', decimals: 2, ticks: true }
       }
 
+      // slide.slideToScreen is the inverse of slide.screenToSlide (slide base
+      // pixel -> canvas CSS); scale to device pixels for the overlay.
+      const slideToDevice = (p, screen) => {
+        const { xCss, yCss } = slide.slideToScreen(p.x, p.y, screen)
+        const dpr = screen.devicePixelRatio ?? 1
+        return [xCss * dpr, yCss * dpr]
+      }
+
+      // Set the ruler geometry BEFORE the frame draws it.
       const updateRuler = (screen) => {
         const a = ruleA
-        let b = ruleB
-        if (a && !b && hoverCss) b = slide.screenToSlide(hoverCss[0], hoverCss[1], screen)
+        const b = ruleB ?? (a && hover)
         if (!a || !b) { ruler.clear(); return }
         const m = measure(a, b)
         ruler.setRuler({
@@ -163,18 +138,6 @@
         )
       }
 
-      let hasFit = false
-      const render = () => {
-        const screen = screenForCanvas()
-        const dpr = screen.devicePixelRatio ?? 1
-        canvas.width = Math.max(1, Math.floor(screen.widthCss * dpr))
-        canvas.height = Math.max(1, Math.floor(screen.heightCss * dpr))
-        if (!hasFit) { slide.fitToScreen(screen); hasFit = true }
-        slide.clampViewport(screen)
-        updateRuler(screen) // set ruler geometry BEFORE the frame draws it
-        drawView(screen)
-      }
-
       // --- load + wire ----------------------------------------------------------
       const opts = { maxCacheBytes: 96 * 1024 * 1024 }
       // fromManifestUrl resolves relative tile paths against the manifest URL, so
@@ -184,90 +147,53 @@
         src === 'dzi'
           ? NVSlide.fromSource(await DziSource.fromUrl(DZI), opts)
           : await NVSlide.fromManifestUrl(manifestUrl, opts)
-      view = await createView()
-      document.getElementById('backendSelect').value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
-      // The minimap owns presses on itself through the control layer, so they
-      // never reach the pan / measure handlers below.
-      const controls = new UIKitControls().add(new UIKitSlideMinimapOverlay(slide))
-      controls.attach({
-        canvas,
-        clientToCanvas: (clientX, clientY) => {
-          const r = canvas.getBoundingClientRect()
-          const x = ((clientX - r.left) * canvas.width) / r.width
-          const y = ((clientY - r.top) * canvas.height) / r.height
-          return x >= 0 && y >= 0 && x < canvas.width && y < canvas.height ? [x, y] : null
+      // A click places a ruler end, a drag pans, the wheel zooms (no double-click
+      // zoom: the primary mode is not pan).
+      const view = await createSlideView(document.getElementById('gl'), {
+        backend: wantGpu ? 'webgpu' : 'webgl2',
+        antialias: isAntiAlias,
+        hidpi: retina.checked,
+        slide,
+        controller: {
+          primaryDragMode: DRAG_MODE.crosshairPan,
+          onCrosshair: (p) => {
+            if (!ruleA || ruleB) { ruleA = p; ruleB = null; hover = null }
+            else ruleB = p
+            view.requestRender()
+          },
+          onHover: (p) => {
+            if (!ruleA || ruleB) return
+            hover = p
+            view.requestRender()
+          },
         },
-        drawScene: requestRender,
+        onBeforeRender: updateRuler,
+        onRender: () => {
+          // Retina is offered only on a HiDPI display (another monitor, browser zoom).
+          document.getElementById('retinaLabel').hidden = window.devicePixelRatio <= 1
+        },
       })
-      view.renderer.overlayDraw = (f) => { ruler.drawOverlay(f); controls.drawOverlay(f) }
+      document.getElementById('backendSelect').value = view.backend
+      view.addOverlay(ruler)
+      // The minimap owns presses on itself, so they never reach the pan / measure gestures.
+      attachSlideMinimap(view)
       view.renderer.isNearestInterpolation = filter.value === 'nearest'
-      slide.addEventListener('change', requestRender)
       setStatus(
         `Waiting for first click (${spacing() ? 'mm' : 'slide px'})`,
         'wait',
       )
-      requestRender()
 
-      // --- interaction ----------------------------------------------------------
-      const cssPos = (ev) => {
-        const r = canvas.getBoundingClientRect()
-        return [ev.clientX - r.left, ev.clientY - r.top]
-      }
-      let drag = null
-      canvas.addEventListener('pointerdown', (ev) => {
-        drag = { id: ev.pointerId, lastX: ev.clientX, lastY: ev.clientY,
-          downX: ev.clientX, downY: ev.clientY, moved: 0 }
-      })
-      canvas.addEventListener('pointermove', (ev) => {
-        if (drag && drag.id === ev.pointerId) {
-          const dx = ev.clientX - drag.lastX
-          const dy = ev.clientY - drag.lastY
-          drag.moved += Math.abs(dx) + Math.abs(dy)
-          drag.lastX = ev.clientX
-          drag.lastY = ev.clientY
-          if (drag.moved > 4) { slide.panByScreenDelta(dx, dy, screenForCanvas()); requestRender() }
-        } else if (ruleA && !ruleB) {
-          hoverCss = cssPos(ev)
-          requestRender()
-        }
-      })
-      window.addEventListener('pointerup', (ev) => {
-        if (!drag || drag.id !== ev.pointerId) return
-        const wasClick = drag.moved <= 4
-        drag = null
-        if (!wasClick) return // a pan, not a measurement click
-        const [cx, cy] = cssPos(ev)
-        const s = slide.screenToSlide(cx, cy, screenForCanvas())
-        if (!ruleA || ruleB) { ruleA = s; ruleB = null; hoverCss = null }
-        else ruleB = s
-        requestRender()
-      })
-      canvas.addEventListener('wheel', (ev) => {
-        ev.preventDefault()
-        const [cx, cy] = cssPos(ev)
-        slide.zoomBy(Math.exp(-ev.deltaY * 0.0013), cx, cy, screenForCanvas())
-        requestRender()
-      }, { passive: false })
-      document.getElementById('fit').addEventListener('click', () => {
-        slide.fitToScreen(screenForCanvas()); requestRender()
-      })
+      // --- controls ---------------------------------------------------------------
+      document.getElementById('fit').addEventListener('click', () => view.fit())
       document.getElementById('fontSize').addEventListener('input', (ev) => {
-        labelSizePx = Number(ev.target.value); requestRender()
+        labelSizePx = Number(ev.target.value); view.requestRender()
       })
       filter.addEventListener('change', () => {
-        view.renderer.isNearestInterpolation = filter.value === 'nearest'; requestRender()
+        view.renderer.isNearestInterpolation = filter.value === 'nearest'; view.requestRender()
       })
-      // Retina is offered only on a HiDPI display, re-checked when the window
-      // moves to a display with another pixel ratio (or the browser zoom changes).
-      const watchPixelRatio = () => {
-        document.getElementById('retinaLabel').hidden = window.devicePixelRatio <= 1
-        matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
-          'change', () => { watchPixelRatio(); requestRender() }, { once: true })
-      }
-      watchPixelRatio()
-      retina.addEventListener('change', requestRender)
+      retina.addEventListener('change', () => { view.hidpi = retina.checked })
     </script>
   </body>
 </html>

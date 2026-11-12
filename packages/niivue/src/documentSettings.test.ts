@@ -315,3 +315,21 @@ describe('ui.orientationTextPosition document round-trip', () => {
     expect(restored.orientationTextPosition).toBe('corner')
   })
 })
+
+describe('ui.rulerUnits document round-trip', () => {
+  test("'auto' is omitted; 'um' survives sparsify then fill", () => {
+    expect(
+      sparsifyGroup('ui', { ...UI_DEFAULTS }, UI_DEFAULTS),
+    ).not.toHaveProperty('rulerUnits')
+    const sparse = sparsifyGroup(
+      'ui',
+      { ...UI_DEFAULTS, rulerUnits: 'um' },
+      UI_DEFAULTS,
+    )
+    expect(sparse).toEqual({ rulerUnits: 'um' })
+    expect(
+      fillGroup('ui', { ...UI_DEFAULTS }, UI_DEFAULTS, sparse, undefined)
+        .rulerUnits,
+    ).toBe('um')
+  })
+})

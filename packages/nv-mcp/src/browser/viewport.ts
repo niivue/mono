@@ -182,6 +182,15 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       const update: Partial<SlideChannel> = {}
       put(update, 'visible', flag(params, 'visible'))
       put(update, 'colormap', text(params, 'colormap'))
+      // An exact colour: a black-to-colour ramp, as core's addChannelColormap.
+      const hex = text(params, 'color')?.replace(/^#/, '').toLowerCase()
+      if (hex !== undefined && !/^[0-9a-f]{6}$/.test(hex))
+        throw new Error(`color must be #rrggbb, not "${params?.color}".`)
+      if (hex && update.colormap)
+        throw new Error('Give colormap or color, not both.')
+      if (hex && !view.addColormap)
+        throw new Error("This page's NiiVue cannot add a colormap.")
+      if (hex) update.colormap = `#${hex}`
       put(update, 'calMin', windowBound(params, 'cal_min'))
       put(update, 'calMax', windowBound(params, 'cal_max'))
       const hasUpdate = Object.keys(update).length > 0
@@ -192,11 +201,11 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         throw new Error("This page's NiiVue has no slide plane.")
       if (hasUpdate && channel === undefined)
         throw new Error(
-          'visible, colormap, cal_min and cal_max need a channel.',
+          'visible, colormap, color, cal_min and cal_max need a channel.',
         )
       if (channel !== undefined && !hasUpdate)
         throw new Error(
-          'channel needs something to set: visible, colormap, cal_min or cal_max.',
+          'channel needs something to set: visible, colormap, color, cal_min or cal_max.',
         )
       // Clearing the plane first would drop the channel changes unseen.
       if ((channel !== undefined || plane) && flag(params, 'clear_plane'))
@@ -205,6 +214,15 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         )
       if (channels && channel !== undefined && channel >= channels.length)
         throw new RangeError(`NVSlide has no channel ${channel}`)
+      // All or nothing: crossed bounds are refused before a color registers
+      // its colormap. NaN (null) bounds take the stored range's ends.
+      if (channels && channel !== undefined && hex) {
+        const ch = channels[channel]
+        const lo = update.calMin ?? ch?.calMin ?? Number.NaN
+        const hi = update.calMax ?? ch?.calMax ?? Number.NaN
+        if (Number.isFinite(lo) && Number.isFinite(hi) && !(lo < hi))
+          throw new RangeError(`cal_min ${lo} must be below cal_max ${hi}`)
+      }
       const level = params?.level
       const levelIndex =
         level === undefined || level === null
@@ -249,6 +267,18 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       // First: setChannel is all-or-nothing, so a core rejection (unknown
       // colormap, crossed bounds) leaves the level and drawing untouched.
       if (channel !== undefined) {
+        if (hex) {
+          const [r, g, b] = [0, 2, 4].map((i) =>
+            Number.parseInt(hex.slice(i, i + 2), 16),
+          )
+          // Alpha as the bundled channel ramps have it.
+          view.addColormap?.(`#${hex}`, {
+            R: [0, r],
+            G: [0, g],
+            B: [0, b],
+            A: [0, 128],
+          })
+        }
         view.setSlideChannel?.(channel, update)
         changed = true
       }

@@ -12,8 +12,13 @@
       header select { max-width: 22rem; }
       header .backend { margin-left: auto; }
       main { flex: 1; min-height: 0; position: relative; }
+      main[data-compare='side'] { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+      main[data-compare='lens'] #canvas2 { position: absolute; inset: 0; }
+      #channels2 { position: absolute; bottom: 2.5rem; left: 0.75rem; max-height: 40%; overflow: auto; padding: 0.25rem 0.5rem; background: rgba(5, 8, 8, 0.85); border-radius: 6px; font-size: 0.8rem; }
+      #channels2 fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
       main.drop { outline: 3px dashed #74d4cf; outline-offset: -3px; }
       canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      canvas[hidden] { display: none; }
       #status { font-size: 0.85rem; opacity: 0.8; }
       #spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid rgba(255, 255, 255, 0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; }
       #spinner[hidden] { display: none; }
@@ -22,6 +27,11 @@
       @media (prefers-reduced-motion: reduce) { #spinner { animation-duration: 4s; } }
       #hud { position: absolute; top: 0.75rem; left: 0.75rem; padding: 0.5rem 0.75rem; background: rgba(5, 8, 8, 0.79); border: 1px solid rgba(116, 212, 207, 0.28); border-radius: 6px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34); font: 0.72rem/1.5 ui-monospace, monospace; white-space: pre; pointer-events: none; }
       #hud:empty { display: none; }
+      #channels { position: absolute; top: 12rem; right: 0.75rem; max-height: calc(100% - 15rem); overflow: auto; padding: 0.25rem 0.5rem; background: rgba(5, 8, 8, 0.85); border-radius: 6px; font-size: 0.8rem; }
+      #channels fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+      #channels summary { cursor: pointer; }
+      #channels :focus-visible, #channels2 :focus-visible, header :focus-visible { outline: 2px solid #74d4cf; outline-offset: 1px; }
+      #readout { font: 0.75rem ui-monospace, monospace; opacity: 0.85; }
       #credit { position: absolute; bottom: 0.5rem; right: 0.75rem; max-width: 60%; padding: 0.25rem 0.5rem; background: rgba(5, 8, 8, 0.79); border-radius: 4px; font-size: 0.75rem; }
       #credit:empty { display: none; }
       #credit a { color: inherit; }
@@ -42,8 +52,13 @@
       <label title="Apply the slide's ICC profile (sRGB display)"><input id="icc" type="checkbox" checked autocomplete="off" /> Colour management</label>
       <label title="Outline each drawn tile"><input id="grid" type="checkbox" autocomplete="off" /> Grid</label>
       <label title="Show or hide the info panel (I)"><input id="hudToggle" type="checkbox" checked autocomplete="off" /> HUD</label>
+      <label title="Whole-slide overview; click or drag it to jump"><input id="minimap" type="checkbox" checked autocomplete="off" /> Minimap</label>
+      <label title="What a left drag does (middle drag always pans; windowing and contrast set the channel picked in the channel panel)">Drag <select id="drag" autocomplete="off"><option value="3">pan</option><option value="9">window/level</option><option value="1">contrast box</option></select></label>
+ <label title="A second view of the slide, linked in physical units, with its own channels: beside this one, or through a lens that follows the pointer">Compare <select id="compare" autocomplete="off"><option value="single">off</option><option value="side">side by side</option><option value="lens">lens</option></select></label>
+      <span id="planes" hidden></span>
       <span id="spinner" aria-hidden="true" hidden></span>
       <span id="status" role="status">Pick a slide.</span>
+      <output id="readout" aria-live="off" title="Values under the pointer, from the tiles loaded"></output>
       <span class="backend">
         <label>Backend <select id="backend"><option value="webgpu">WebGPU</option><option value="webgl2">WebGL2</option></select></label>
         <label title="Multisample anti-aliasing (reloads the page)"><input id="aa" type="checkbox" /> AA</label>
@@ -52,7 +67,10 @@
     </header>
     <main>
       <canvas id="canvas"></canvas>
+      <canvas id="canvas2" hidden></canvas>
       <div id="hud"></div>
+      <details id="channels" open hidden><summary>Channels</summary></details>
+      <details id="channels2" open hidden><summary>Compare channels</summary></details>
       <div id="credit"></div>
     </main>
     <dialog id="customDialog">

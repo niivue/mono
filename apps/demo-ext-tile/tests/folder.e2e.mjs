@@ -1,6 +1,6 @@
 /**
  * Browser check of the DICOM-WSI custom-files workflow, on the synthetic fixtures only
- * (packages/nv-ext-tile/fixtures/dicom-wsi, ~70 KB). Seconds, not minutes; not in CI.
+ * (packages/nv-ext-tile/fixtures/dicom-wsi, ~70 KB). Seconds, not minutes; CI runs it (niivue-e2e.yml, demo-ext-tile job).
  *
  *   bunx nx e2e demo-ext-tile      # builds first, via Nx
  *
@@ -19,7 +19,7 @@ import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '@playwright/test'
+import { chromium, firefox, webkit } from '@playwright/test'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DIST = join(HERE, '..', 'dist')
@@ -62,7 +62,11 @@ const fail = (msg) => {
   process.exitCode = 1
 }
 const t0 = performance.now()
-const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] })
+// E2E_BROWSER=firefox|webkit runs the same checks in those engines (#738).
+const engine = process.env.E2E_BROWSER ?? 'chromium'
+const browser = await { chromium, firefox, webkit }[engine].launch(
+  engine === 'chromium' ? { args: ['--enable-unsafe-swiftshader'] } : {},
+)
 try {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
   const errors = []
@@ -116,7 +120,7 @@ try {
     .getAttribute('value')
   await page.selectOption('#slides', value)
   await page.waitForFunction(() =>
-    /^colors: 1 levels.*requests +4\/4 done.*failures +0/s.test(
+    /\nslide +colors: 1 levels.*requests +4\/4 done.*failures +0/s.test(
       document.getElementById('hud').textContent,
     ),
   )
@@ -290,7 +294,7 @@ try {
     () => document.querySelectorAll('#slides option').length === 1,
   )
   await page.waitForFunction(() =>
-    /^colors: 1 levels.*requests +4\/4 done/s.test(
+    /\nslide +colors: 1 levels.*requests +4\/4 done/s.test(
       document.getElementById('hud').textContent,
     ),
   )
@@ -322,6 +326,7 @@ try {
     const dirEntry = (fullPath, children) =>
       entry(fullPath, {
         isFile: false,
+        isDirectory: true,
         createReader: () => {
           let left = children
           return {
@@ -347,7 +352,7 @@ try {
     document.getElementById('status').title.includes('slide/not-dicom.dcm'),
   )
   await page.waitForFunction(() =>
-    /^colors: 1 levels.*requests +4\/4 done.*failures +0/s.test(
+    /\nslide +colors: 1 levels.*requests +4\/4 done.*failures +0/s.test(
       document.getElementById('hud').textContent,
     ),
   )
@@ -362,6 +367,7 @@ try {
     const tree = {
       fullPath: '/old',
       isFile: false,
+      isDirectory: true,
       createReader: () => {
         let left = [
           {

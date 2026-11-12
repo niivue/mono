@@ -48,6 +48,16 @@ describe('entry points', () => {
     ])
   })
 
+  test('createSlideView is bound to the backends of each entry', async () => {
+    const from = async (file: string) =>
+      /export \{ createSlideView \} from '\.\/slide\/(\w+)'/.exec(
+        await read(file),
+      )?.[1]
+    expect(await from(ENTRY.root)).toBe('slideViewBoth')
+    expect(await from(ENTRY.webgl2)).toBe('slideViewWebGL2')
+    expect(await from(ENTRY.webgpu)).toBe('slideViewWebGPU')
+  })
+
   test('the backend entries export nothing the universal entry lacks', async () => {
     const root = exportedNames(await read(ENTRY.root))
     for (const file of [ENTRY.webgl2, ENTRY.webgpu]) {

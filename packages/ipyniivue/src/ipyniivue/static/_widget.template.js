@@ -107,6 +107,7 @@ const PROPS_RW = [
   ["renderPan", "render_pan"],
   ["renderPivotMM", "render_pivot_mm"],
   ["rotation2D", "rotation_2d"],
+  ["rulerUnits", "ruler_units"],
   ["rulerWidth", "ruler_width"],
   ["scaleMultiplier", "scale_multiplier"],
   ["secondaryDragMode", "secondary_drag_mode"],

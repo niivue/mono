@@ -1,5 +1,6 @@
 import { mmPerPixel2D, mmPerPixelRender } from '@/math/NVTransforms'
 import { SLICE_TYPE } from '@/NVConstants'
+import type { RulerUnits } from '@/NVTypes'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import type { BuildLineFn, LineData } from './NVLine'
 import { type SliceTile, slicePanUV } from './NVSliceLayout'
@@ -37,16 +38,38 @@ function selectRulerTile(tiles: SliceTile[]): SliceTile | null {
   return best
 }
 
+// Millimetres per unit for a fixed `rulerUnits`.
+const UNIT_MM: Record<Exclude<RulerUnits, 'auto'>, number> = {
+  nm: 1e-6,
+  um: 1e-3,
+  mm: 1,
+  cm: 10,
+}
+
 /**
- * Choose a ruler length (in mm) and label string.
- * Returns { lengthMM, label } or null if nothing reasonable fits.
+ * Choose a ruler length (in mm) and label string. `units` 'auto' picks cm, mm
+ * or um by the field; a fixed unit labels the largest 1/2/5 x 10^n of it that
+ * fits. Returns { lengthMM, label } or null if nothing reasonable fits.
  */
 export function chooseRulerSize(
   fovMM: number,
+  units: RulerUnits = 'auto',
 ): { lengthMM: number; label: string } | null {
   // Ruler should fit within ~65% of tile width
   const maxMM = fovMM * 0.65
   if (maxMM <= 0) return null
+  const perUnit = units === 'auto' ? undefined : UNIT_MM[units]
+  if (perUnit) {
+    const maxUnits = maxMM / perUnit
+    const decade = 10 ** Math.floor(Math.log10(maxUnits))
+    // toPrecision drops float noise such as 0.30000000000000004.
+    const value = Number(
+      (
+        (NICE_VALUES.slice(1).find((v) => v * decade <= maxUnits) ?? 1) * decade
+      ).toPrecision(1),
+    )
+    return { lengthMM: value * perUnit, label: `${value} ${units}` }
+  }
 
   // Try cm first (if object is large enough)
   if (fovMM >= 50) {
@@ -166,12 +189,16 @@ export type RenderRulerScale = {
 }
 
 /**
- * Build a checkerboard scale ruler on the best 2D tile, or with `renderScale`
- * and no 2D tile, on the 3D render tile (an orthographic projection, so one
- * mm-per-pixel holds at any rotation; this is how a `setSlidePlane` slide gets
- * a scale bar). `mmPerUnit` converts scene units to mm (1e-3 for a micrometer
- * volume, see `spatialUnit`). Returns lines and labels in canvas-pixel
- * coordinates, or null if no ruler should be drawn.
+ * Build a checkerboard scale ruler on the best 2D tile; with no 2D tile, on
+ * the widest mosaic render tile ("A R 0", projected orthographically from its
+ * own screen bounds), else with `renderScale` on the 3D render tile (an
+ * orthographic projection, so one mm-per-pixel holds at any rotation; this is
+ * how a `setSlidePlane` slide gets a scale bar). `global3d` tiles get none:
+ * their camera is perspective, so no single length holds across the tile.
+ * `mmPerUnit` converts scene units to mm (1e-3 for a micrometer volume, see
+ * `spatialUnit`); `units` fixes the label's unit (see {@link chooseRulerSize}).
+ * Returns lines and labels in canvas-pixel coordinates, or null if no ruler
+ * should be drawn.
  */
 export function buildRuler(
   tiles: SliceTile[],
@@ -181,6 +208,7 @@ export function buildRuler(
   pan2Dxyzmm: ArrayLike<number>,
   mmPerUnit = 1,
   renderScale?: RenderRulerScale,
+  units: RulerUnits = 'auto',
 ): RulerResult | null {
   const tile = selectRulerTile(tiles)
   let ltwh: number[]
@@ -204,30 +232,46 @@ export function buildRuler(
     const dataSpan = tile.screen.fovMM[(tile.clipRot ?? 0) % 180 ? 1 : 0]
     fieldMM = Math.min(ltwh[2] * mmPerPx, Math.abs(dataSpan) * mmPerUnit)
   } else {
+    // A mosaic render tile's ortho window is its screen's u span across the
+    // tile width (calculateMvpMatrix2D with an origin), whatever its rotation.
+    let mosaic: SliceTile | null = null
+    for (const t of tiles)
+      if (
+        t.axCorSag === SLICE_TYPE.RENDER &&
+        t.space !== 'global3d' &&
+        t.renderOrientation !== undefined &&
+        t.screen &&
+        t.leftTopWidthHeight &&
+        t.leftTopWidthHeight[2] > (mosaic?.leftTopWidthHeight?.[2] ?? 0)
+      )
+        mosaic = t
     const render =
       renderScale &&
       tiles.find(
         (t) =>
           t.axCorSag === SLICE_TYPE.RENDER &&
           t.space !== 'global3d' &&
-          // A mosaic render tile ("A R 0") is projected from its own screen
-          // bounds, not the scene radius and zoom: no ruler there.
           t.renderOrientation === undefined &&
           t.leftTopWidthHeight,
       )
-    if (!render?.leftTopWidthHeight || !renderScale) return null
-    ltwh = render.leftTopWidthHeight
-    mmPerPx =
-      mmPerPixelRender(
-        ltwh,
-        renderScale.furthestFromPivot,
-        renderScale.scaleMultiplier,
-      ) * mmPerUnit
+    if (mosaic?.screen && mosaic.leftTopWidthHeight) {
+      ltwh = mosaic.leftTopWidthHeight
+      mmPerPx =
+        mmPerPixel2D(mosaic.screen.mnMM, mosaic.screen.mxMM, ltwh) * mmPerUnit
+    } else if (render?.leftTopWidthHeight && renderScale) {
+      ltwh = render.leftTopWidthHeight
+      mmPerPx =
+        mmPerPixelRender(
+          ltwh,
+          renderScale.furthestFromPivot,
+          renderScale.scaleMultiplier,
+        ) * mmPerUnit
+    } else return null
     fieldMM = ltwh[2] * mmPerPx
   }
   if (!(mmPerPx > 0)) return null
   const [tileLeft, tileTop, tileWidth, tileHeight] = ltwh
-  const ruler = chooseRulerSize(fieldMM)
+  const ruler = chooseRulerSize(fieldMM, units)
   if (!ruler) return null
 
   const rulerPx = ruler.lengthMM / mmPerPx

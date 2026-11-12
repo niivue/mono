@@ -315,6 +315,9 @@ export default class NVModel {
       ...(options.rulerWidth !== undefined && {
         rulerWidth: options.rulerWidth,
       }),
+      ...(options.rulerUnits !== undefined && {
+        rulerUnits: options.rulerUnits,
+      }),
       ...((options.graphNormalizeValues !== undefined ||
         options.graphIsRangeCalMinMax !== undefined ||
         options.graphShowVolumeTimecourse !== undefined ||

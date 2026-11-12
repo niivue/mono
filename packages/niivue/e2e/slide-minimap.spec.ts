@@ -98,6 +98,9 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       }
       const both = centre()
       slide.setChannel(1, { visible: false })
+      // A channel change recomposes at most every 100 ms (window/level drags):
+      // the next frame after that interval shows it.
+      await new Promise((res) => setTimeout(res, 150))
       const red = centre()
       minimap.destroy()
       renderer.destroy()

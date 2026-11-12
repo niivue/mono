@@ -1,4 +1,5 @@
 import { SlideRenderer } from '@/gl/slide'
+import { log } from '@/logger'
 import {
   createSlideViewWith,
   type SlideBackendFactory,
@@ -17,7 +18,17 @@ export const webgl2SlideBackend: SlideBackendFactory = {
     })
     if (!gl) return null
     const renderer = new SlideRenderer({ maxRawPoolBytes })
-    renderer.init(gl)
+    try {
+      renderer.init(gl)
+    } catch (err) {
+      // Free what init allocated; a teardown failure must not hide why.
+      try {
+        renderer.destroy()
+      } catch (cleanup) {
+        log.warn('slide renderer teardown after a failed init threw', cleanup)
+      }
+      throw err
+    }
     return renderer
   },
 }

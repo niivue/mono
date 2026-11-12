@@ -106,9 +106,9 @@ describe('slide plane readout', () => {
     const { slide, release } = gatedSlide()
     const nv = new NiiVue({ backend: 'webgl2' })
     spyOn(nv, 'drawScene').mockImplementation(() => {})
+    nv.setSlidePlane(slide, { pixelToWorld: IDENTITY })
     const seen: NiiVueLocation[] = []
     nv.addEventListener('locationChange', (e) => seen.push(e.detail))
-    nv.setSlidePlane(slide, { pixelToWorld: IDENTITY })
     nv.setCrosshairPos([2.5, 3.5, 0])
     expect(seen).toHaveLength(1)
     expect(seen[0].values).toEqual([])
@@ -126,9 +126,12 @@ describe('slide plane readout', () => {
     // A change that leaves the samples alone (a window) does not re-emit.
     slide.setChannel(0, { calMin: 1, calMax: 9 })
     expect(seen).toHaveLength(2)
-    // Off the plane: no slide, so nothing to report in a slide-only scene.
+    // Off the plane: one event without a slide clears the readout, then none.
     nv.setCrosshairPos([-50, 3.5, 0])
-    expect(seen).toHaveLength(2)
+    expect(seen).toHaveLength(3)
+    expect(seen[2].slide).toBeUndefined()
+    nv.setCrosshairPos([-60, 3.5, 0])
+    expect(seen).toHaveLength(3)
     expect(nv.slideSampleAt()).toBeNull()
     // An explicit point is sampled even off the slide.
     expect(nv.slideSampleAt(9, 0)?.samples[0].missing).toBe('outside')
@@ -137,5 +140,26 @@ describe('slide plane readout', () => {
     expect(nv.slideSampleAt(3, 3)).toBeNull()
     expect(await nv.loadSlideSampleAt(3, 3)).toBeNull()
     slide.dispose()
+  })
+
+  test('swapping or clearing the plane re-emits the readout', () => {
+    const one = gatedSlide().slide
+    const two = gatedSlide().slide
+    Object.assign(two, { name: 'other' })
+    const nv = new NiiVue({ backend: 'webgl2' })
+    spyOn(nv, 'drawScene').mockImplementation(() => {})
+    const seen: NiiVueLocation[] = []
+    nv.addEventListener('locationChange', (e) => seen.push(e.detail))
+    nv.setSlidePlane(one, { pixelToWorld: IDENTITY })
+    nv.setCrosshairPos([2, 3, 0])
+    expect(seen.at(-1)?.slide?.name).toBe('tissue')
+    nv.setSlidePlane(two, { pixelToWorld: IDENTITY })
+    expect(seen.at(-1)?.slide?.name).toBe('other')
+    const n = seen.length
+    nv.clearSlidePlane()
+    expect(seen).toHaveLength(n + 1)
+    expect(seen.at(-1)?.slide).toBeUndefined()
+    one.dispose()
+    two.dispose()
   })
 })

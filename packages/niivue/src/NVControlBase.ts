@@ -5363,8 +5363,10 @@ export default class NiiVue extends EventTarget {
 
   createOnLocationChange(axCorSag = NaN): void {
     const slide = this.slideSampleAt()
+    // A readout that just went away still emits, so listeners can clear it.
+    const hadSlide = this._slideLocationSamples !== null
     this._slideLocationSamples = slide?.samples ?? null
-    const msg = buildLocationMessage(this, axCorSag, slide)
+    const msg = buildLocationMessage(this, axCorSag, slide, hadSlide)
     if (msg) this.emit('locationChange', msg)
     // Refresh the signal readout so the status bar reflects the new voxel value
     // when the crosshair moves or the 4D frame changes (no-op without signals).
@@ -5849,7 +5851,6 @@ export default class NiiVue extends EventTarget {
       )
     }
     this._slidePlaneSlide = slide
-    this._slideLocationSamples = null
     this._slidePlaneOnChange = (): void => {
       this.drawScene()
       // A tile that lands under the crosshair re-emits locationChange, once per
@@ -5859,6 +5860,8 @@ export default class NiiVue extends EventTarget {
         this.createOnLocationChange()
     }
     slide.addEventListener('change', this._slidePlaneOnChange)
+    // A swapped slide reads differently at the same crosshair.
+    this.createOnLocationChange()
     this.drawScene()
   }
 
@@ -5928,12 +5931,13 @@ export default class NiiVue extends EventTarget {
     }
     this._slidePlaneSlide = null
     this._slidePlaneOnChange = null
-    this._slideLocationSamples = null
     this._slidePlane = null
     this._slideDrawing = null
     this._slideVector = null
     this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = null
+    // Listeners drop the readout of the removed slide.
+    if (this._slideLocationSamples) this.createOnLocationChange()
     this.drawScene()
   }
 

@@ -33,15 +33,17 @@ export interface LocationContext {
 /**
  * Build a NiiVueLocation message from the current crosshair position, with
  * `slide` (the slide plane's samples there) when given.
- * Returns null if there are no volumes, meshes or slide to report on.
+ * Returns null if there are no volumes, meshes or slide to report on, unless `always`.
  * May lazily build and mutate `ctx._drawLut` when a drawing is present.
  */
 export function buildLocationMessage(
   ctx: LocationContext,
   axCorSag: number,
   slide: NiiVueLocationSlide | null = null,
+  always = false,
 ): NiiVueLocation | null {
-  if (ctx.volumes.length === 0 && ctx.meshes.length === 0 && !slide) return null
+  if (!always && ctx.volumes.length === 0 && ctx.meshes.length === 0 && !slide)
+    return null
   // Dynamic decimal places based on field of view
   const [, , range] = ctx.model.sceneExtentsMinMax()
   const fov = Math.max(Math.max(range[0], range[1]), range[2])

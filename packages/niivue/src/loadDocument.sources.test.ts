@@ -453,6 +453,7 @@ test('credential denylist: tokens, cookies, signed-URL params, bearer values, pr
       note: 'Bearer abc',
       other: 'bearer\tabc',
       mirror: '//alice:secret@cdn.example.org/a',
+      spaced: '  Bearer abc123',
     },
   })
   expect(d).toEqual({ kind: 'k', url: '//host/a.zarr', params: { channel: 1 } })

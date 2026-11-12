@@ -108,7 +108,7 @@ export function savedDescriptor(
     ([k, v]) =>
       !isCredentialParam(k) &&
       // A URL-valued param (protocol-relative too) may itself be signed.
-      !(typeof v === 'string' && /:\/\/|^\s*\/\/|^bearer\s/i.test(v)) &&
+      !(typeof v === 'string' && /:\/\/|^\s*(\/\/|bearer\s)/i.test(v)) &&
       (v === null || ['string', 'number', 'boolean'].includes(typeof v)),
   )
   if (params.length) out.params = Object.fromEntries(params)

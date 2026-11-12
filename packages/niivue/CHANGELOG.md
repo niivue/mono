@@ -1,3 +1,13 @@
+## 1.0.0-rc.174 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** 2-98% slide windows and storedToValue for quantized channels ([685750ee](https://github.com/niivue/mono/commit/685750ee))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.173 (2026-11-12)
 
 ### Features

@@ -1,3 +1,23 @@
+## 1.0.0-rc.80 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** 2-98% slide windows and storedToValue for quantized channels ([685750ee](https://github.com/niivue/mono/commit/685750ee))
+
+### Fixes
+
+- **nv-ext-tile:** jitter the window sample within each stride ([f0092091](https://github.com/niivue/mono/commit/f0092091))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.79 (2026-11-12)
 
 ### Updated Dependencies

@@ -107,8 +107,8 @@ export function savedDescriptor(
   const params = Object.entries(d.params ?? {}).filter(
     ([k, v]) =>
       !isCredentialParam(k) &&
-      // A URL-valued param may itself be signed.
-      !(typeof v === 'string' && (v.includes('://') || /^bearer\s/i.test(v))) &&
+      // A URL-valued param (protocol-relative too) may itself be signed.
+      !(typeof v === 'string' && /:\/\/|^\s*\/\/|^bearer\s/i.test(v)) &&
       (v === null || ['string', 'number', 'boolean'].includes(typeof v)),
   )
   if (params.length) out.params = Object.fromEntries(params)

@@ -5252,13 +5252,23 @@ export default class NiiVue extends EventTarget {
     try {
       // A volume added to the group during the fetch switches with it; a
       // shorter one lowers the clamp, so the frame is fetched again for all.
+      // The request stays registered through the wait, so a newer one aborts it.
       for (;;) {
+        if (request.signal.aborted) break
         const missing = members.filter((v) => !frames.has(v))
-        if (!missing.length || request.signal.aborted) break
-        const loaded = await Promise.all(
-          missing.map((v) => v.frameSource?.load(t, request.signal) ?? []),
-        )
-        for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
+        if (missing.length) {
+          const loaded = await Promise.all(
+            missing.map((v) => v.frameSource?.load(t, request.signal) ?? []),
+          )
+          for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
+        } else if (this._updating || this._floorInstall) {
+          // A pass already running would build the new loaders' bricks before
+          // the floor it does not know about: swap only between passes. Nor
+          // mid floor install: a frame-0 floor landing after the swap would
+          // draw under frame t's bricks.
+          await (this._floorInstall?.catch(() => {}) ??
+            this.whenUpdatesSettle())
+        } else break
         members = pending.members.filter((v) => this.volumes.includes(v))
         const clamped = clampFrame(members)
         if (clamped !== t) {
@@ -5276,13 +5286,7 @@ export default class NiiVue extends EventTarget {
       if (this._frameRequests.get(source.group) === pending)
         this._frameRequests.delete(source.group)
     }
-    if (request.signal.aborted) return
-    // A pass already running would build the new loaders' bricks before the
-    // floor it does not know about: swap only between passes.
-    // Nor mid floor install: a frame-0 floor landing after the swap would
-    // draw under frame t's bricks.
-    while ((this._updating || this._floorInstall) && !request.signal.aborted)
-      await (this._floorInstall?.catch(() => {}) ?? this.whenUpdatesSettle())
+    // Synchronous from here to the commit: no newer request can start between.
     if (request.signal.aborted) return
     const shown = [...frames.keys()].filter((v) => this.volumes.includes(v))
     const switched: NVImage[] = []

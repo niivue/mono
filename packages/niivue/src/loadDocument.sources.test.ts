@@ -448,7 +448,12 @@ test('credential denylist: tokens, cookies, signed-URL params, bearer values, pr
   const d = savedDescriptor({
     kind: 'k',
     url: '//user:pw@host/a.zarr;jsessionid=XYZ',
-    params: { channel: 1, note: 'Bearer abc', other: 'bearer\tabc' },
+    params: {
+      channel: 1,
+      note: 'Bearer abc',
+      other: 'bearer\tabc',
+      mirror: '//alice:secret@cdn.example.org/a',
+    },
   })
   expect(d).toEqual({ kind: 'k', url: '//host/a.zarr', params: { channel: 1 } })
   expect(

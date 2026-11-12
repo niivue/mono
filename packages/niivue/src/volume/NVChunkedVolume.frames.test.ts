@@ -568,3 +568,40 @@ test('a switch during the first floor install never draws the frame-0 floor unde
   for (const d of drawn) expect(['1@0', '101@1']).toContain(d)
   expect(drawn.at(-1)).toBe('101@1')
 })
+
+test('the newest frame request wins through a floor install wait', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  // Floor installs land only when the test releases them.
+  const installs: Array<() => void> = []
+  let gated = false
+  const view: Record<string, unknown> = {
+    setCoarseFloor: () =>
+      gated ? new Promise<void>((r) => installs.push(r)) : undefined,
+  }
+  nv.view = new Proxy(view, {
+    get: (t, k) =>
+      k in t ? t[k as string] : k === 'then' ? undefined : () => {},
+  }) as never
+  const chunked = await nv.loadChunkedVolume(source(1))
+  const vol = nv.volumes[0]
+  const floor = (
+    nv as unknown as { _setBaseCoarseFloor(v: NVImage): Promise<void> }
+  )._setBaseCoarseFloor.bind(nv)
+  gated = true
+  const installA = floor(vol)
+  const toFrame1 = nv.setFrame4D(vol.id ?? '', 1)
+  await until(() => installs.length === 1)
+  await new Promise((r) => setTimeout(r, 20))
+  const installB = floor(vol)
+  const toFrame2 = nv.setFrame4D(vol.id ?? '', 2)
+  await until(() => installs.length === 2)
+  await new Promise((r) => setTimeout(r, 20))
+  gated = false
+  installs[1]()
+  await installB
+  await new Promise((r) => setTimeout(r, 20))
+  installs[0]()
+  await Promise.all([installA, toFrame1, toFrame2])
+  expect(chunked.frame).toBe(2)
+  expect(vol.frameSource?.frame).toBe(2)
+})

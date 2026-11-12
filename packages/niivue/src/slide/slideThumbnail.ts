@@ -34,6 +34,8 @@ export function composeThumbnail(
   )
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
+  // Minified tiles: browsers filter better than bilinear at 'high'.
+  ctx.imageSmoothingQuality = 'high'
   // Rounded edges: fractional ones would leave seams between tiles.
   const draw = (
     src: CanvasImageSource,

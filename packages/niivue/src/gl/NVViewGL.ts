@@ -62,6 +62,7 @@ import {
   drawnOpacity,
   isChannelStackActive,
   isVolumeDrawn,
+  stackPickSampler,
 } from '@/view/NVVolumeVisibility'
 import { orientationTextPlacements } from '@/view/orientationLabels'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
@@ -458,6 +459,8 @@ export default class NVGlview {
       if (!gl) {
         return
       }
+      if (opts.coarseFloor !== undefined)
+        await this.setCoarseFloor(opts.coarseFloor)
       const vols = this.model.getVolumes()
       const scope = volumeUpdateScope(
         vols,
@@ -1572,6 +1575,7 @@ export default class NVGlview {
                 scaleMultiplier: md.scene.scaleMultiplier,
               }
             : undefined,
+          md.ui.rulerUnits,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)
@@ -2117,8 +2121,17 @@ export default class NVGlview {
     // 3D render. Mirrors the WebGPU backend.
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
       const vol = md.volumes[0]
-      // A hidden background is not drawn, so it must not answer a pick.
-      if (vol?.extentsMin && vol?.extentsMax && isVolumeDrawn(vol)) {
+      // A hidden background is not drawn, so it must not answer a pick; a
+      // channel stack answers from any drawn channel (#370).
+      const stack = this._isChannelStack(md.volumes)
+      const pickSampler = stack
+        ? stackPickSampler(md.volumes)
+        : vol?.pickSampler
+      if (
+        vol?.extentsMin &&
+        vol?.extentsMax &&
+        (stack ? md.volumes.some(isVolumeDrawn) : isVolumeDrawn(vol))
+      ) {
         const near = NVTransforms.unprojectScreen(
           hit.normalizedX,
           hit.normalizedY,
@@ -2164,7 +2177,7 @@ export default class NVGlview {
               ? composePlaneVisibility({
                   lo: vol.extentsMin,
                   hi: vol.extentsMax,
-                  base: vol.pickSampler,
+                  base: pickSampler,
                   drawing: this._drawingPickGrid,
                   paqd: this.volumeRenderer.paqdPickGrid
                     ? {
@@ -2186,7 +2199,7 @@ export default class NVGlview {
           chunkExplodeEnabled(vol.chunkExplode)
         ) {
           const matRAS = vol.matRAS
-          const base = vol.pickSampler
+          const base = pickSampler
           const sample = base
             ? (vx: number, vy: number, vz: number): number => {
                 const mm = NVTransforms.vox2mm(
@@ -2222,13 +2235,13 @@ export default class NVGlview {
           // bounding-box / clip surface, which is what the GPU shader does with
           // its own miss.
           const hitMM =
-            (vol.pickSampler
+            (pickSampler
               ? NVTransforms.rayMarchFirstVisibleMM(
                   near,
                   far,
                   vol.extentsMin,
                   vol.extentsMax,
-                  vol.pickSampler,
+                  pickSampler,
                   md.clipPlanes,
                   md.scene.isClipPlaneCutaway,
                 )
@@ -2264,11 +2277,13 @@ export default class NVGlview {
     // Draw volume with depth-pick shader (raymarches from any viewing angle)
     const volumes = md.getVolumes()
     // A hidden (or fully transparent) background is not drawn, so it must not
-    // answer a pick either; matches the WebGPU gate.
+    // answer a pick either; a channel stack answers from any drawn channel,
+    // through the overlay (#370). Matches the WebGPU gate.
+    const stack = this._isChannelStack(volumes)
     if (
       this.volumeRenderer.hasVolume() &&
       volumes.length > 0 &&
-      isVolumeDrawn(volumes[0])
+      (stack ? volumes.some(isVolumeDrawn) : isVolumeDrawn(volumes[0]))
     ) {
       const vol = volumes[0]
       if (vol?.matRAS && vol.volScale) {
@@ -2282,6 +2297,7 @@ export default class NVGlview {
           md.scene.isClipPlaneCutaway,
           Math.min(volumes.length, 2),
           md.volume.paqdUniforms,
+          stack ? 0 : 1,
         )
       }
     }

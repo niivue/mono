@@ -72,6 +72,13 @@ export const VOLUME_SCHEMAS = {
       .describe(
         "Recompute cal_min and cal_max from the new values. The volume's window is kept otherwise.",
       ),
+    percentiles: z
+      .array(z.number().min(0).max(100))
+      .length(2)
+      .optional()
+      .describe(
+        'The window auto_window takes, [low, high] in percent of the non-zero voxels; [2, 98] otherwise. Giving it recomputes the window, auto_window or not.',
+      ),
   },
   remove_volume: {
     ...TAB_ARG,
@@ -117,6 +124,25 @@ export const VOLUME_SCHEMAS = {
       .optional()
       .describe(
         "Report the volume's affine, its 4 by 4 voxel-to-world matrix, too.",
+      ),
+  },
+  volume_histogram: {
+    ...TAB_ARG,
+    volume: VOLUME_ARG.optional(),
+    bins: z
+      .number()
+      .int()
+      .min(1)
+      .max(4096)
+      .optional()
+      .describe('How many equal-width bins span min to max. 256 otherwise.'),
+    frame: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'The frame of a 4D volume to count; the frame shown otherwise. A volume whose frames are fetched on demand holds only the frame shown.',
       ),
   },
 } as const
@@ -183,5 +209,31 @@ export function registerVolumeTools(
     inputSchema: VOLUME_SCHEMAS.describe_volume,
     readOnly: true,
     lead: named('volume', 'Described'),
+  })
+
+  registerSimple(server, context, 'volume_histogram', {
+    title: "Count a volume's intensities",
+    description:
+      "NiiVue's intensity histogram of one volume: `counts` per bin (bin i spans min + i * (max - min) / " +
+      'bins, the last includes max), the calibrated `min` and `max`, the finite `voxels` counted (zeros ' +
+      'included), and `coverage`, what was counted: `volume` the whole frame in memory, `level` a ' +
+      "streamed volume's coarsest pyramid level (`level` says which), `sample` a centred crop of that " +
+      'level. `frame` is the time point counted. NiiVue caches it per `generation`, which changes only ' +
+      'when the counted data does, so asking again is cheap; it is not a scan at the crosshair.',
+    inputSchema: VOLUME_SCHEMAS.volume_histogram,
+    readOnly: true,
+    lead: (r) => {
+      const { volume, histogram } = (r ?? {}) as {
+        volume?: { name?: string }
+        histogram?: { coverage?: string; voxels?: number }
+      }
+      if (!volume?.name || !histogram) return undefined
+      const what = {
+        volume: 'the whole frame',
+        level: 'its coarsest streamed level',
+        sample: 'a centred sample of its coarsest streamed level',
+      }[histogram.coverage ?? '']
+      return `Counted ${histogram.voxels} voxels of ${volume.name}${what ? `, ${what}` : ''}.`
+    },
   })
 }

@@ -142,6 +142,14 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     ])
   })
 
+  test('a read that returns no bytes (a file shrunk under us) is skipped, not looped on', async () => {
+    const good = dicom()
+    const empty = async () => new Uint8Array(0)
+    const idx = await indexDicomWsiOnThread([good], undefined, empty)
+    expect(idx.skipped.map((s) => s.reason)).toEqual(['malformed'])
+    expect(idx.skipped[0]?.message).toContain('no bytes at 0')
+  }, 2000)
+
   test('one bad file never costs the others their slides', async () => {
     const good = dicom()
     const bad = dicom({ rows: el(0x0028, 0x0010, 'US', new Uint8Array(0)) }) // an empty US
@@ -332,6 +340,50 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     const { reason, mb } = JSON.parse(run.stdout.toString())
     expect(reason).toBe('not-tiled') // only the memory matters
     expect(mb).toBeLessThan(300)
+  })
+
+  test('a growing header is read in chunks of at most 4 MiB, each byte once', async () => {
+    // 20 MiB of private OB elements before Pixel Data: the header grows to
+    // 64 MiB-capped sizes in place, never re-reading or copying its prefix.
+    const junk = el(0x0009, 0x1010, 'OB', new Uint8Array(1 << 16))
+    const file = dicom({
+      junk: cat(...Array.from({ length: 320 }, () => junk)),
+    })
+    const reads: number[] = []
+    const idx = await indexDicomWsiOnThread(
+      [file],
+      undefined,
+      async (f, offset, length) => {
+        reads.push(length)
+        return new Uint8Array(
+          await f.slice(offset, offset + length).arrayBuffer(),
+        )
+      },
+    )
+    expect(idx.slides).toHaveLength(1)
+    expect(Math.max(...reads)).toBeLessThanOrEqual(4 << 20)
+    // Header bytes plus a few small frame-table and item reads.
+    expect(reads.reduce((a, b) => a + b, 0)).toBeLessThan(file.size + (1 << 20))
+  })
+
+  test('records ImageOrientationSlide when stated as six numbers', async () => {
+    const at = (v: string) =>
+      dicom({ orientation: el(0x0048, 0x0102, 'DS', str(v)) })
+    const [slide] = (await indexDicomWsiOnThread([at('0\\-1\\0\\-1\\0\\0')]))
+      .slides
+    expect(slide?.imageOrientationSlide).toEqual([0, -1, 0, -1, 0, 0])
+    const [bad] = (await indexDicomWsiOnThread([at('1\\0')])).slides
+    expect(bad?.imageOrientationSlide).toBeUndefined()
+  })
+
+  test('per-frame items past NumberOfFrames are refused as they come', async () => {
+    const perFrame = sq(
+      0x5200,
+      0x9230,
+      Array.from({ length: 5 }, () => item(el(0x0009, 0x1000, 'LO', str('x')))),
+    )
+    const idx = await indexDicomWsiOnThread([dicom({ perFrame })])
+    expect(idx.skipped[0]?.message).toMatch(/past NumberOfFrames/)
   })
 
   test('a value claiming to run past the file is malformed, not a whole-file read', async () => {

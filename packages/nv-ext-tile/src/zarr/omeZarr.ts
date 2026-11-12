@@ -89,6 +89,62 @@ export interface OmeZarrInfo {
   defaults: { z: number | null; t: number | null }
   /** Whether the group declares `image-label` metadata (a segmentation). */
   isLabel: boolean
+  /** `image-label.colors` by label value, 0-255 RGBA; empty when absent. */
+  labelColors: { id: number; rgba: [number, number, number, number] }[]
+  /**
+   * The group's `attribution` (a NiiVue convention, not NGFF): string fields
+   * only, `url` only when http(s). Null when absent.
+   */
+  attribution: OmeZarrAttribution | null
+}
+
+/** Credit for a store; the shape of `NVSlideAttribution`. */
+export interface OmeZarrAttribution {
+  title?: string
+  url?: string
+  license?: string
+  credit?: string
+  citation?: string
+  modified?: string
+}
+
+const ATTRIBUTION_KEYS = [
+  'title',
+  'url',
+  'license',
+  'credit',
+  'citation',
+  'modified',
+] as const
+
+function parseAttribution(value: unknown): OmeZarrAttribution | null {
+  const obj = asObject(value)
+  if (!obj) return null
+  const out: OmeZarrAttribution = {}
+  for (const key of ATTRIBUTION_KEYS) {
+    const v = obj[key]
+    if (typeof v === 'string' && v !== '') out[key] = v
+  }
+  if (out.url && !/^https?:\/\//i.test(out.url)) delete out.url
+  return Object.keys(out).length > 0 ? out : null
+}
+
+function parseLabelColors(imageLabel: JsonObject | null) {
+  const colors = Array.isArray(imageLabel?.colors) ? imageLabel.colors : []
+  const out: OmeZarrInfo['labelColors'] = []
+  for (const entry of colors) {
+    const obj = asObject(entry)
+    const id = obj?.['label-value']
+    const rgba = asNumberArray(obj?.rgba)
+    if (
+      typeof id === 'number' &&
+      Number.isInteger(id) &&
+      rgba?.length === 4 &&
+      rgba.every((v) => Number.isInteger(v) && v >= 0 && v <= 255)
+    )
+      out.push({ id, rgba: [rgba[0], rgba[1], rgba[2], rgba[3]] })
+  }
+  return out
 }
 
 type JsonObject = Record<string, unknown>
@@ -278,6 +334,8 @@ export function parseOmeZarrAttrs(attrs: unknown): OmeZarrInfo {
     channels,
     defaults,
     isLabel: asObject(ome?.['image-label']) !== null,
+    labelColors: parseLabelColors(asObject(ome?.['image-label'])),
+    attribution: parseAttribution(rootAttrs?.attribution),
   }
 }
 

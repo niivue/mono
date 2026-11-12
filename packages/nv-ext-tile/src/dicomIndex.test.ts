@@ -3,6 +3,8 @@ import { readdirSync } from 'node:fs'
 import { MAX_SLIDE_GRID, type NVSlideTileManifest } from '@niivue/niivue'
 import {
   blockReader,
+  fileKeys,
+  firstInput,
   indexDicomWsiOnThread,
   MAX_SLIDE_TILES,
   type SlideIndex,
@@ -190,6 +192,50 @@ describe('indexDicomWsiOnThread', () => {
       ['not-dicom.dcm', 'not-dicom'],
     ])
   })
+})
+
+test('an abort during a file read rejects the index, not a skipped file', async () => {
+  const stop = new AbortController()
+  const read = async (): Promise<Uint8Array> => {
+    stop.abort()
+    throw stop.signal.reason
+  }
+  const one = new File([new Uint8Array(256)], 'one.dcm')
+  const indexed = indexDicomWsiOnThread([one], ['one.dcm'], read, {
+    signal: stop.signal,
+  })
+  await expect(indexed).rejects.toMatchObject({ name: 'AbortError' })
+})
+
+test("a read's own AbortError, the caller not aborting, skips that file only", async () => {
+  const read = async (): Promise<Uint8Array> => {
+    throw new DOMException('file read interrupted', 'AbortError')
+  }
+  const one = new File([new Uint8Array(256)], 'one.dcm')
+  const idx = await indexDicomWsiOnThread([one], ['one.dcm'], read, {
+    signal: new AbortController().signal,
+  })
+  expect(idx.skipped.map((s) => s.file)).toEqual(['one.dcm'])
+})
+
+test('same-named files get distinct keys', () => {
+  const f = (n: string) => new File([], n)
+  expect(fileKeys([f('a'), f('a'), f('a (2)'), f('b')])).toEqual([
+    'a',
+    'a (2)',
+    'a (2) (2)',
+    'b',
+  ])
+})
+
+test('a slide of a million instances ranks without a stack overflow', () => {
+  const instances = Array.from({ length: 1_000_000 }, (_, i) => ({
+    file: String(i),
+  }))
+  const position = new Map([['999999', 7]])
+  expect(
+    firstInput({ instances } as unknown as SlideIndexSlide, position),
+  ).toBe(7)
 })
 
 describe('DicomWsiSource', () => {

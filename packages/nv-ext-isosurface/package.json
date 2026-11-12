@@ -1,0 +1,34 @@
+{
+  "name": "@niivue/nv-ext-isosurface",
+  "version": "1.0.0-rc.3",
+  "type": "module",
+  "description": "Per-channel isosurface meshes from NiiVue chunked (streamed) volumes",
+  "main": "./dist/nv-ext-isosurface.js",
+  "module": "./dist/nv-ext-isosurface.js",
+  "types": "./dist/isosurface.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/isosurface.d.ts",
+      "import": "./dist/nv-ext-isosurface.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@niivue/niivue": "workspace:*"
+  },
+  "devDependencies": {
+    "@niivue/niivue": "workspace:*",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "scripts": {
+    "build": "npx vite build",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -8,6 +8,7 @@ NiiVue is a tool for visualizing volumes, meshes, and tractography streamlines c
 
 - [Bun](https://bun.sh/)
 - A browser with WebGPU support (Chrome, Firefox). Safari works if you have a recent MacOS (version 26) or iOS. Older browsers will fall back to the WebGL2 renderer.
+- Slides (`NVSlide`) need `AbortSignal.any` (Chrome 116, Firefox 124, Safari 17.4); `@niivue/nv-ext-tile` DICOM-WSI indexing also needs resizable `ArrayBuffer`s (Chrome 111, Firefox 128, Safari 16.4) and says so when they are missing.
 
 ### Build Commands
 

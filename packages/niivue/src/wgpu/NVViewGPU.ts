@@ -62,6 +62,7 @@ import {
   drawnOpacity,
   isChannelStackActive,
   isVolumeDrawn,
+  stackPickSampler,
 } from '@/view/NVVolumeVisibility'
 import { orientationTextPlacements } from '@/view/orientationLabels'
 import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
@@ -80,6 +81,7 @@ import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
 import { sceneUnit } from '@/volume/utils'
 import { WGPUBench } from './bench'
+import { maxBlendSliceDim } from './blendOverlays'
 import { BoxLineRenderer } from './boxLine'
 import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
@@ -88,7 +90,6 @@ import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
-import { maxBlendSliceDim } from './orient'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
@@ -746,6 +747,8 @@ export default class NVView {
       const buffs = this.buffers
       const device = this.device
       if (!device) return
+      if (opts.coarseFloor !== undefined)
+        await this.setCoarseFloor(opts.coarseFloor)
       const vols = this.model.getVolumes()
       const scope = volumeUpdateScope(
         vols,
@@ -1920,6 +1923,7 @@ export default class NVView {
                 scaleMultiplier: md.scene.scaleMultiplier,
               }
             : undefined,
+          md.ui.rulerUnits,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)
@@ -2991,8 +2995,17 @@ export default class NVView {
     // 3D render. Meshes, if any, still take the GPU path below for 2D tiles.
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
       const vol = md.volumes[0]
-      // A hidden background is not drawn, so it must not answer a pick.
-      if (vol?.extentsMin && vol?.extentsMax && isVolumeDrawn(vol)) {
+      // A hidden background is not drawn, so it must not answer a pick; a
+      // channel stack answers from any drawn channel (#370).
+      const stack = this._isChannelStack(md.volumes)
+      const pickSampler = stack
+        ? stackPickSampler(md.volumes)
+        : vol?.pickSampler
+      if (
+        vol?.extentsMin &&
+        vol?.extentsMax &&
+        (stack ? md.volumes.some(isVolumeDrawn) : isVolumeDrawn(vol))
+      ) {
         const near = NVTransforms.unprojectScreen(
           hit.normalizedX,
           hit.normalizedY,
@@ -3038,7 +3051,7 @@ export default class NVView {
               ? composePlaneVisibility({
                   lo: vol.extentsMin,
                   hi: vol.extentsMax,
-                  base: vol.pickSampler,
+                  base: pickSampler,
                   drawing: this._drawingPickGrid,
                   paqd: this.volumeRenderer.paqdPickGrid
                     ? {
@@ -3060,7 +3073,7 @@ export default class NVView {
           chunkExplodeEnabled(vol.chunkExplode)
         ) {
           const matRAS = vol.matRAS
-          const base = vol.pickSampler
+          const base = pickSampler
           const sample = base
             ? (vx: number, vy: number, vz: number): number => {
                 const mm = NVTransforms.vox2mm(
@@ -3096,13 +3109,13 @@ export default class NVView {
           // bounding-box / clip surface, which is what the GPU shader does with
           // its own miss.
           const hitMM =
-            (vol.pickSampler
+            (pickSampler
               ? NVTransforms.rayMarchFirstVisibleMM(
                   near,
                   far,
                   vol.extentsMin,
                   vol.extentsMax,
-                  vol.pickSampler,
+                  pickSampler,
                   md.clipPlanes,
                   md.scene.isClipPlaneCutaway,
                 )
@@ -3133,7 +3146,13 @@ export default class NVView {
     const volumes = md.getVolumes()
     const vr = this.volumeRenderer
     let volumeUniformData: Float32Array | null = null
-    if (vr.hasVolume() && volumes.length > 0 && isVolumeDrawn(volumes[0])) {
+    // A channel stack answers from any drawn channel, through the overlay (#370).
+    const stack = this._isChannelStack(volumes)
+    if (
+      vr.hasVolume() &&
+      volumes.length > 0 &&
+      (stack ? volumes.some(isVolumeDrawn) : isVolumeDrawn(volumes[0]))
+    ) {
       const matRAS = volumes[0].matRAS
       const volScale = volumes[0].volScale
       const volumeTexture = vr.volumeTexture
@@ -3161,7 +3180,8 @@ export default class NVView {
           0,
           1.0, // invGamma: neutral
           0, // lodOpacityScale: unused by the pick shader
-          1.0, // backOpacity: neutral
+          // backOpacity: 0 makes a channel stack skip the background march.
+          stack ? 0 : 1.0,
         ]
         // The chunkSubOrigin / chunkSubSize / dataOriginTexFrac .w lanes carry
         // the crosshair planes for SLICES mode, not padding. See sliceFrac() in

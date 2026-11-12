@@ -137,6 +137,8 @@ export function computeAnnotationStats(
       ras[depthDim] = depthVox
 
       const val = getVoxelValue(volume, ras[0], ras[1], ras[2])
+      // NaN: no data there (float padding, a streamed brick not yet decoded).
+      if (!Number.isFinite(val)) continue
       count++
       sum += val
       sumSq += val * val

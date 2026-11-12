@@ -1,3 +1,69 @@
+## 1.0.0-rc.92 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.185
+
+## 1.0.0-rc.91 (2026-11-12)
+
+### Features
+
+- **niivue, nv-ext-tile:** tile lane A slide sources (opener, fetch contract, transport checks, grey/signed, vendor layouts) ([fca4aed8](https://github.com/niivue/mono/commit/fca4aed8))
+
+### Fixes
+
+- **niivue:** a manifest's own origin gets the custom fetch with a cross-origin baseUrl ([c43372a7](https://github.com/niivue/mono/commit/c43372a7))
+- **nv-ext-tile:** hold every custom fetch to its signal in slideFetch ([6b12c8d7](https://github.com/niivue/mono/commit/6b12c8d7))
+- **nv-ext-tile:** opening a hosted manifest settles on abort when a custom fetch ignores it ([3243bb3e](https://github.com/niivue/mono/commit/3243bb3e))
+- **nv-ext-tile:** same-named local files keep distinct keys; rank slides without a spread ([06bdc395](https://github.com/niivue/mono/commit/06bdc395))
+- **nv-ext-tile:** only a caller abort rejects indexing; mixed slides list in input order ([def0549f](https://github.com/niivue/mono/commit/def0549f))
+- **nv-ext-tile:** pass a custom fetch straight to the Zarr loader after main's (url, init) ZarrFetch ([58c665f3](https://github.com/niivue/mono/commit/58c665f3))
+- **nv-ext-tile:** a disposed TIFF source refuses its cached ICC profile; an abort mid-read rejects thread-side indexing ([6b32c84e](https://github.com/niivue/mono/commit/6b32c84e))
+- **nv-ext-tile:** DicomPlaneStack ICC profile follows the initial plane ([39a66ba2](https://github.com/niivue/mono/commit/39a66ba2))
+- **nv-ext-tile:** PR 746 review fixes (sub-8-bit grey, Philips regex, capped reads) ([0a9d883f](https://github.com/niivue/mono/commit/0a9d883f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.184
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.90 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.183
+
+## 1.0.0-rc.89 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.182
+
+## 1.0.0-rc.88 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** Zarr byte cache, worker decode, native types and lazy channels ([5dea525b](https://github.com/niivue/mono/commit/5dea525b))
+
+### Fixes
+
+- **nv-ext-tile:** label colormap starts and ends on a clear entry ([d7263e7d](https://github.com/niivue/mono/commit/d7263e7d))
+- **nv-ext-tile:** a cut label table ends on a clear entry so dropped IDs show clear ([cf67f918](https://github.com/niivue/mono/commit/cf67f918))
+- **nv-ext-tile:** label colormaps that always register, one per added segmentation ([721d63b3](https://github.com/niivue/mono/commit/721d63b3))
+- **nv-ext-tile:** drop hidden-channel results after dispose; count bodies without Content-Length ([7dc87cf9](https://github.com/niivue/mono/commit/7dc87cf9))
+- **nv-ext-tile:** PR 745 review fixes for budget, aborts and worker byte counts ([6ff7f9f8](https://github.com/niivue/mono/commit/6ff7f9f8))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.87 (2026-11-12)
 
 ### Features

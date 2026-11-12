@@ -27,6 +27,7 @@ import {
   type SettingsSavePolicy,
   sparsifyGroup,
 } from '@/documentSettings'
+import { documentSource, type NVDocumentSource } from '@/documentSources'
 import { urlVolumeOptions } from '@/documentVolumeOptions'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import { encodeRLE } from '@/drawing/rle'
@@ -50,6 +51,7 @@ import type {
   NVConnectomeOptions,
   NVImage,
   NVMeshLayer,
+  NVMesh as NVMeshModel,
   NVTractData,
   NVTractOptions,
   UIConfig,
@@ -122,6 +124,8 @@ export type NVDocumentVolume = {
   /** Hidden label values; written only when non-empty. Additive, no version
    * bump: an older reader just shows every label. */
   hiddenLabels?: number[]
+  /** Highlighted label IDs; written only when non-empty, like hiddenLabels. */
+  selectedLabels?: number[]
   opacity?: number
   /** The explicit hide toggle (`setVolume(i, { visible: false })`); written
    * only when false, so documents without hidden volumes are unchanged. */
@@ -137,6 +141,11 @@ export type NVDocumentVolume = {
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
   frame4D?: number
+  /**
+   * Lazy or streamed source (no version bump: an older reader keeps the
+   * embedded frame and skips a streamed entry, which has no url or data).
+   */
+  source?: NVDocumentSource
   /** Embedded volume data (when URL is not a valid remote URL) */
   data?: NVDocumentVolumeData
   /** v9 and earlier: compiled label LUT, converted on load by upgradeColormaps. */
@@ -420,11 +429,12 @@ export function serialize(
   // (restorable) volumes' relative order intact; the modulationImage link is by
   // volume id and resolves by find-by-id at render time, so a reference to a
   // dropped volume degrades to a no-op rather than corrupting the document.
+  // A streamed volume with a source descriptor is saved by that descriptor.
   const volumes: NVDocumentVolume[] = model.volumes
-    .filter((v) => !isTransientStreamedVolume(v))
-    .map((v) => {
+    .filter((v) => !isTransientStreamedVolume(v) || v.frameSource?.descriptor)
+    .map((v, _, kept) => {
       const vol: NVDocumentVolume = {
-        url: v.url,
+        url: isTransientStreamedVolume(v) ? undefined : v.url,
         name: v.name,
         id: v.id,
         colormap: v.colormap,
@@ -446,7 +456,10 @@ export function serialize(
         frame4D: v.frame4D,
       }
       if (v.visible === false) vol.visible = false
+      const source = documentSource(v, kept)
+      if (source) vol.source = source
       if (v.hiddenLabels?.length) vol.hiddenLabels = [...v.hiddenLabels]
+      if (v.selectedLabels?.length) vol.selectedLabels = [...v.selectedLabels]
 
       // Embed volume data for a self-contained document, UNLESS linkData is set
       // and this volume has a fetchable URL (then the loader refetches it). A
@@ -997,6 +1010,7 @@ export async function reconstructVolume(
         base.isNearestInterpolation = v.isNearestInterpolation
       if (v.atlasOutline !== undefined) base.atlasOutline = v.atlasOutline
       if (v.hiddenLabels !== undefined) base.hiddenLabels = v.hiddenLabels
+      if (v.selectedLabels !== undefined) base.selectedLabels = v.selectedLabels
       if (v.opacity !== undefined) base.opacity = v.opacity
       if (v.visible !== undefined) base.visible = v.visible
       if (v.calMin !== undefined) base.calMin = v.calMin
@@ -1053,7 +1067,7 @@ export async function reconstructVolume(
 export async function reconstructMesh(
   model: NVModel,
   m: NVDocumentMesh,
-): Promise<void> {
+): Promise<NVMeshModel | null> {
   try {
     if (m.data) {
       // Reconstruct mesh from embedded data
@@ -1178,14 +1192,14 @@ export async function reconstructMesh(
       }
 
       const mesh = NVMesh.createMesh(positions, indices, colors, meshOpts)
-      await model.addMesh(mesh)
+      return await model.addMesh(mesh)
     } else if (m.url) {
       // Load from URL. Forward URL-referenced scalar overlay layers so they are
       // fetched and applied — previously they were dropped, leaving surfaces
       // without their overlays. See selectUrlMeshLayers for why URL-less layers
       // are skipped on this path.
       const layers = selectUrlMeshLayers(m.layers)
-      await model.addMesh({
+      return await model.addMesh({
         url: m.url,
         name: m.name,
         opacity: m.opacity,
@@ -1201,6 +1215,7 @@ export async function reconstructMesh(
   } catch (err) {
     log.warn(`Failed to load mesh ${m.name ?? m.url}:`, err)
   }
+  return null
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

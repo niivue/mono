@@ -47,7 +47,10 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 | `setVolume(index, VolumeUpdate)` | Method | Yes | Per-layer props: `calMin`, `calMax`, `colormap`, `opacity`, `colormapNegative`, `modulationImage`, … | Slider/picker bindings |
 | `setModulationImage(targetId, modulatorId)` | Method | Yes | Modulate overlay brightness by another volume | |
 | `loadImgV1(volumeIndex, flipX?, flipY?, flipZ?)` | Method | Yes | Convert to V1 RGB vector | |
-| `recalculateCalMinMax(volumeIndex)` | Method | Yes | Reset window/level from data | "Auto window" button |
+| `recalculateCalMinMax(volumeIndex, frame?, percentiles?)` | Method | Yes | Reset window/level from data; `percentiles` `[low, high]` (default `[2, 98]`) | "Auto window" button |
+| `volumeHistogram(volumeIndex, { bins?, frame? })` | Method | No | Counts with `coverage` (`volume`, a streamed volume's coarsest `level`, or a `sample` crop), cached per generation | Histogram widget |
+| `setVolume(i, { selectedLabels })` | Method | Yes | Highlight label IDs; the other labels draw at a quarter alpha (2D, 3D, cinematic) | |
+| Streamed readout | — | — | A streamed volume reads exact values from its decoded bricks; where none is decoded it reads the coarse floor, flagged `approximate` in `locationChange` values (`~` in the string) | |
 | `volumes` | Prop (get) | No | `readonly NVImage[]` | Observable list for SwiftUI |
 | `useLoader(…)` | Method | No | Register custom format reader | Usually unused from native |
 
@@ -133,7 +136,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
 | `orientationTextPosition` | Prop | `'edges'` (default): a letter mid-left and mid-top of each 2D tile; `'corner'`: one combined label (e.g. `RS`) at the tile's top-left corner |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
-| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
+| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown, and on mosaic render tiles; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
+| `rulerUnits` | Prop | `'auto'` (default), `'nm'`, `'um'`, `'mm'`, `'cm'`: the scale bar's unit, volumes and slide panes; no ruler on `global3d` tiles (perspective) |
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |
@@ -157,7 +161,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeIsV1SliceShader` | Prop | Treat overlay as fiber direction |
 | `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `UNION` (2, 1-prod(1-a), order-free). Only with 2+ overlays |
 | `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average), `OVER` (2, composited in volume order, later overlays on top; with alpha `UNION` this is source-over), `MAX` (3, per-component max of the opacity-weighted colours; with alpha `MAX` this is Vol-E's channel fusion). Only with 2+ overlays |
-| `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Ignored while volumes[0] is chunked |
+| `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Over a chunked base only when every volume is streamed (per-chunk fuse, no per-channel opacity) |
 | `volumeMatcap` | Prop | Matcap image URL (`loadMatcap` resolves an `opts.matcaps` name to it). An image that fails to load draws the instance default (first `matcaps` entry), then plain white, with a console warning |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
 | `loadMatcap(nameOrUrl)` | Method (async) | Register matcap at runtime |
@@ -171,13 +175,18 @@ TRX, TT, TSF (scalars), VTK lines.
 
 The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volumes[0] as an opaque base under the overlays, which suits neuroimaging; set the first row for fluorescence channel fusion.
 
-**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. On a slide plane, `locationChange` carries `slide: {id, name, x, y, samples}` while the crosshair, projected onto the plane, is on the slide (also in a slide-only scene), and re-emits when a tile lands that changes those samples; `nv.slideSampleAt(x?, y?)` / `nv.loadSlideSampleAt(x?, y?)` read it at a point or the crosshair. Standalone panes: `NVSlideController` `onHover(point | null)`. MCP: `where_am_i.slide`, `sample_slide`.
+**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. On a slide plane, `locationChange` carries `slide: {id, name, x, y, samples}` while the crosshair, projected onto the plane, is on the slide (also in a slide-only scene), and re-emits when a tile lands that changes those samples; `nv.slideSampleAt(x?, y?)` / `nv.loadSlideSampleAt(x?, y?)` read it at a point or the crosshair. Standalone panes: `NVSlideController` `onHover(point | null)`, coalesced to one call per frame (latest point); `null` fires at once on leave. MCP: `where_am_i.slide`, `sample_slide`.
 
 `toValue(stored, map)` / `toStored(value, map)` convert through a channel's `storedToValue` (`stored * scale + offset`; `toStored` rounds unless `quantized: false`, so `toStored(toValue(s))` is `s`). A `raw-gray` level's samples are u8 (`bitsStored` <= 8), u16 (default), or `sampleType` `'i16'` / `'f32'`. Single-channel rules: a bytes source (no `fetchTileSamples`) may state `channelInfo` only on a monochrome level, and its tiles fill channel 0 only (several channels warn); an RGB bytes source with `channelInfo` throws.
 
 | Feature | Kind | Notes |
 |---|---|---|
 | `NVSlideOptions.ownsSource` | Option | `slide.dispose()` also disposes the source (default true). `false` for a shared source, which the caller disposes |
+| `ManifestRangeSource(manifest, ManifestRangeSourceOptions)` | Class | A byte-range manifest source; `{ fetch?: SlideFetch, baseUrl? }`: a custom `(url, init?) => Promise<Response>` for reads on `baseUrl`'s origin (elsewhere a plain fetch without credentials) and the base for relative URLs. A 206 that is not exactly its range is read once more with `no-store`, then refused; a whole-file 200 is refused past 64 MiB |
+| `createSlideView(canvas, opts)` | Export | A standalone slide pane: renderer (WebGPU, WebGL2 fallback), frame loop, resize and pixel-ratio watch, fit, controller and overlay, `addOverlay`, `setSlide`, one `destroy`; bound per entry |
+| `linkSlideViews(views)` / `attachSlideLens(main, lens)` | Export | Viewports synced in mm (or slide fractions), echo suppressed, first view leads; the lens shows a linked view through a pointer circle |
+| `formatSlideSample(x, y, samples)` / `slideStatsSummary(slide, screen)` | Export | Readout line and HUD rows |
+| `NVSlideController` defaults | Class | Without `onWindow` / `onContrast`, a windowing drag or contrast box sets `windowChannel`'s window (`windowDragStep`); double-click zoom only while the primary mode is `pan`; pinch zoom (`isPinchZoom`); `otherButtonDragMode`, `isWheelDeltaModeScaled`, `cancelGesture()` |
 | `NVSlide.setRendererBudget(renderer, budget \| null)` | Method | A renderer's tile texture and raw pool bytes; tile capacity and its warning use the smallest registered. The slide renderers register through `SlideBudgetRegistration` and unregister slides they stop drawing |
 
 ## 8. Mesh Rendering (global)
@@ -248,6 +257,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)`, `crosshairPan(10)` (click sets crosshair, drag past 4 CSS px pans) |
 | `setDragMode(modeOrString)` | Method | Convenience |
 | `isSnapToVoxelCenters` | Prop | |
+| `pickAt(x, y, { moveCrosshair? })` | Method | Depth-pick a canvas pixel as a double-click does; on a channel stack any drawn channel answers |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
 | `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); hidden labels show as a colour outline; name click still moves the crosshair; off by default |
@@ -296,6 +306,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `lookupColorMap(name)` | Export | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, applied on load and when `setVolume` changes the colormap |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
+| `addChannelColormap(rgb)` | Export | No | Registers a black-to-`rgb` ramp named `#rrggbb` (an exact omero colour) and returns the name |
 | `colormapNames(kind?)` | Method | No | `'continuous'` / `'label'` filter |
 | `loadMatcap(nameOrUrl)` | Method | Yes | |
 
@@ -346,6 +357,7 @@ a drag and `azimuth` updates — Swift state needs to follow).
 | `serializeDocument()` | Method | No | Returns CBOR `Uint8Array` |
 | `saveDocument(filename?)` | Method | No | Triggers browser download (.nvd). A matcap from `opts.matcaps` is saved by its name (`'cortex'`), not its URL |
 | `loadDocument(urlOrFile)` | Method | Yes | Reverse of save. A matcap saved by name is looked up in this instance's `matcaps`; see §7 |
+| `loadDocument(src, { resolveSource })` | Method | Yes | Reopens a lazy or streamed volume from its saved source descriptor (URL without query or credentials) with the host's credentials; a newer `loadDocument`, `loadVolumes` or `loadImage` aborts a pending restore |
 | `volumeWriteExtensions`, `volumeExtensions` | Prop (get) | No | |
 
 For a native shell, prefer `serializeDocument()` + `saveBitmap()` returning the
@@ -399,6 +411,7 @@ ship in `@niivue/nv-ext-drawing` and `@niivue/nv-ext-image-processing`.
 |---|---|---|---|
 | `getFrame4D(id)` | Method | No | Current frame index |
 | `setFrame4D(id, frame)` | Method | Yes | |
+| `NVChunkedVolume` lazy frames | Method | Yes | `loadChunkedVolume(source, { frame, frameGroup })`, `setFrame(t)`: a streamed source with `frames` switches time points, the whole group in one update |
 | `loadDeferred4DVolumes(id)` | Method | Yes | Pull remaining frames |
 | `isGraphVisible`, `graphNormalizeValues`, `graphIsRangeCalMinMax` | Prop | — | 4D graph overlay |
 | `frameChange` event | Event | — | |

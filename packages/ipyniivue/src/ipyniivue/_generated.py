@@ -212,6 +212,7 @@ off-window crosshair is brought back."""
     render_pan = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=2, maxlen=2, allow_none=True).tag(sync=True)
     render_pivot_mm = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=3, maxlen=3, allow_none=True).tag(sync=True)
     rotation_2d = traitlets.Float(None, allow_none=True).tag(sync=True)
+    ruler_units = traitlets.Enum(["auto", "nm", "um", "mm", "cm"], None, allow_none=True).tag(sync=True)
     ruler_width = traitlets.Float(None, allow_none=True).tag(sync=True)
     scale_multiplier = traitlets.Float(None, allow_none=True).tag(sync=True)
     secondary_drag_mode = traitlets.Float(None, allow_none=True).tag(sync=True)
@@ -1092,10 +1093,17 @@ and its volumes alive."""
         Skipping the document's first volume also skips its drawing, which belongs
         to that volume's grid.
 
+        `options.resolveSource` reopens a lazy or streamed volume's saved source
+        descriptor, with the host's credentials (see {@link DocumentSourceResolver}).
+        Without it, or when it yields no source, a lazy volume shows its embedded
+        frame as a static volume and a streamed one is skipped with a warning. A
+        newer `loadDocument` supersedes this one: its pending source opens are
+        aborted and anything they would add is dropped.
+
         Parameters
         ----------
         source : string | File
-        options : { fill?: SettingsFillPolicy | undefined; resolveUrl?: DocumentUrlResolver | undefined; } | undefined
+        options : { fill?: SettingsFillPolicy | undefined; resolveUrl?: DocumentUrlResolver | undefined; resolveSource?: DocumentSourceResolver | undefined; } | undefined
         """
         self.send({"cmd": "loadDocument", "args": _make_args(source, options)})
 
@@ -1311,6 +1319,25 @@ and its volumes alive."""
         """
         self.send({"cmd": "moveVolumeUp", "args": _make_args(volume_index)})
 
+    async def pick_at(self, x: Any, y: Any, options: Any = _UNSET) -> Any:
+        """Depth-pick the canvas pixel `[x, y]` (device pixels, as a double-click does): the world point of the first drawn volume voxel or mesh under it.
+
+        On a channel stack (`volumeIsChannelStack`) any drawn channel answers, not
+        only `volumes[0]`. With `moveCrosshair` the crosshair goes there too.
+        Null on a miss or with no view.
+
+        Parameters
+        ----------
+        x : number
+        y : number
+        options : { moveCrosshair?: boolean | undefined; }
+
+        Returns
+        -------
+        Promise<[number, number, number] | null>
+        """
+        return await self._request("pickAt", _make_args(x, y, options))
+
     async def pick_exploded_block(self, client_x: Any, client_y: Any) -> Any:
         """Resolve a pointer position over the 3D render onto one exploded brick of a chunked volume, or null when the point misses every visible brick.
 
@@ -1368,17 +1395,22 @@ and its volumes alive."""
         """
         self.send({"cmd": "rebakeChunkedOverlays", "args": []})
 
-    def recalculate_cal_min_max(self, volume_index: Any, frame: Any = _UNSET) -> None:
+    def recalculate_cal_min_max(self, volume_index: Any, frame: Any = _UNSET, percentiles: Any = _UNSET) -> None:
         """Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
 
-        Updates the volume's calibration range and triggers a GPU update.
+        Updates the volume's calibration range and triggers a GPU update. A
+        streamed volume reads its histogram sample (see {@link volumeHistogram}).
+        A frame-source volume holds only its shown frame; another `frame` throws.
 
         Parameters
         ----------
         volume_index : number
         frame : number | undefined
+        percentiles : readonly [number, number] | undefined
+            [low, high] in percent (default [2, 98]); zeros are
+            left out of the population, as for the default window.
         """
-        self.send({"cmd": "recalculateCalMinMax", "args": _make_args(volume_index, frame)})
+        self.send({"cmd": "recalculateCalMinMax", "args": _make_args(volume_index, frame, percentiles)})
 
     def refresh_drawing(self) -> None:
         """Mark the drawing texture as dirty and schedule a redraw.
@@ -2224,6 +2256,30 @@ and its volumes alive."""
         data : ArrayLike<number> | undefined
         """
         self.send({"cmd": "updateVolumeData", "args": _make_args(volume_index, data)})
+
+    async def volume_histogram(self, volume_index: Any, options: Any = _UNSET) -> Any:
+        """Histogram of a volume's intensities, cached per data generation, so a UI can call it on every redraw but should not call it per hover.
+
+        `coverage`
+        says what was counted: `'volume'` the whole frame in memory, `'level'` a
+        streamed volume's coarsest pyramid level (its coarse floor), `'sample'` a
+        centred crop of that level (the window probe); `level` and `frame` say
+        which. Null when nothing is in memory to count (a streamed volume with no
+        floor or probe) or the volume is RGB.
+
+        Parameters
+        ----------
+        volume_index : number
+            Index into `volumes`
+        options : { bins?: number | undefined; frame?: number | undefined; }
+            `bins` (default 256); `frame` (default the one shown):
+            a frame of a 4D volume, or, for a frame source, the shown frame only
+
+        Returns
+        -------
+        VolumeHistogram | null
+        """
+        return await self._request("volumeHistogram", _make_args(volume_index, options))
 
     async def vox2frac(self, vox: Any) -> Any:
         """Convert RAS voxel coordinates to scene fraction [0,1].

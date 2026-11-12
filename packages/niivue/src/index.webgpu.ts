@@ -26,6 +26,10 @@ export type {
   DocumentLinkKind,
   DocumentUrlResolver,
 } from './documentLinks'
+export type {
+  DocumentSourceResolver,
+  NVDocumentSource,
+} from './documentSources'
 // Sparse-document settings policies: which settings saveDocument includes, and
 // how loadDocument fills settings a sparse document omits
 export type {
@@ -170,8 +174,11 @@ export type {
   VolumeChunkSource,
   VolumeChunkSourceRequest,
   VolumeFrameSource,
+  VolumeHistogram,
+  VolumeSourceDescriptor,
   VolumeUpdate,
   OrientationTextPosition,
+  RulerUnits,
   Rotation2D,
   WheelZoomAnchor,
 } from './NVTypes'
@@ -243,6 +250,8 @@ export { NVSlide } from './slide/NVSlide'
 export type { NVSlideCapacityLimit } from './slide/slideLod'
 export { toStored, toValue } from './slide/slideChannels'
 export type {
+  ManifestRangeSourceOptions,
+  SlideFetch,
   SlidePlaneCapable,
   SlideSourceHost,
   SlideTileSource,
@@ -264,13 +273,26 @@ export type {
   NVSlideMeasurement,
   NVSlidePoint,
 } from './slide/slideController'
-export { NVSlideController } from './slide/slideController'
+export { NVSlideController, windowDragStep } from './slide/slideController'
 export type {
   SlideOverlayContent,
   SlideOverlaySource,
   SlideOverlayStyle,
 } from './slide/slideOverlay'
 export { slideOverlayContent } from './slide/slideOverlay'
+export type {
+  SlideBackendKind,
+  SlideRenderBackend,
+  SlideView,
+  SlideViewOptions,
+} from './slide/slideView'
+export {
+  attachSlideLens,
+  formatSlideSample,
+  linkSlideViews,
+  slideStatsSummary,
+} from './slide/slideView'
+export { createSlideView } from './slide/slideViewWebGPU'
 export type { SlideVectorKind, SlideVectorShape } from './slide/slideVector'
 export { SlideVectorLayer } from './slide/slideVector'
 export type {
@@ -330,6 +352,7 @@ export type {
 } from './volume/ChunkedVolumeSource'
 // OME-TIFF and plain TIFF stacks (multi-channel microscopy)
 export {
+  addChannelColormap,
   CHANNEL_COLORMAPS,
   CHANNEL_GRAY_COLORMAP,
   channelColormapFor,
@@ -391,6 +414,8 @@ export {
   type ChunkedVolumeOptions,
   NVChunkedVolume,
 } from './volume/NVChunkedVolume'
+// Mesh construction for extensions building derived meshes (isosurfaces)
+export { createMesh } from './mesh/NVMesh'
 // Volume construction/serialization for extensions building derived volumes
 // (e.g. wrapping segmentation labels into an overlay NVImage)
 export { nii2volume, writeVolume } from './volume/NVVolume'

@@ -4,7 +4,12 @@ import { log } from '@/logger'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { PropertyChangeDetail } from '@/NVEvents'
-import type { NVImage, TypedVoxelArray, VolumeChunkSource } from '@/NVTypes'
+import type {
+  NVImage,
+  TypedVoxelArray,
+  VolumeChunkSource,
+  VolumeSourceDescriptor,
+} from '@/NVTypes'
 import type {
   BudgetPlan,
   BudgetPlanContext,
@@ -78,6 +83,39 @@ export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   maxConcurrentLoads?: number
   /** Retry attempts for a transient fetch failure (default 3, exp backoff). */
   retryAttempts?: number
+  /** First time point shown (default 0); see {@link NVChunkedVolume.setFrame}. */
+  frame?: number
+  /**
+   * Volumes whose frame sources share this object switch time points together
+   * (`setFrame4D` on any member moves all). Default: this volume alone.
+   */
+  frameGroup?: object
+  /**
+   * Bytes of the current plan's bricks a frame switch fetches before it
+   * commits, nearest the focus first (default 64 MiB), for the whole frame
+   * group, floors included. The rest stream after. Floor: every member
+   * always stages its floor and one brick, so a group of n stages at least
+   * n of each whatever this says.
+   */
+  frameStagingBytes?: number
+  /**
+   * Cap on the decoded bytes the exact voxel readout keeps (default 384 MiB,
+   * the decoded tier's cap), shared by every streamed volume of the viewer.
+   */
+  readoutBytes?: number
+  /** Saved in documents so `loadDocument` can reopen this volume. */
+  descriptor?: VolumeSourceDescriptor
+}
+
+/** Default {@link ChunkedVolumeOptions.frameStagingBytes}. */
+const FRAME_STAGING_BYTES = 64 * 1024 ** 2
+
+/** What a frame switch fetched before it commits. */
+interface StagedFrame {
+  bricks: Map<string, Uint8Array>
+  floor: NVImage | null
+  /** The window probe re-read for the frame, when there is no floor. */
+  probe: NVImage | null
 }
 
 /**
@@ -265,28 +303,40 @@ function positiveIntOption(value: number): number {
   return Math.max(1, Math.floor(value) || 1)
 }
 
+/** One region read of a {@link ChunkedVolumeSource}: level, region and frame. */
+export interface SourceRegionRead {
+  levelIndex: number
+  texOrigin: Vec3i
+  texDims: Vec3i
+  bytesPerVoxel: number
+  frame: number
+  signal?: AbortSignal
+}
+
+interface SourceReaderOptions {
+  maxConcurrentLoads: number
+  retryAttempts: number
+  /**
+   * Base of the retry backoff in ms (default RETRY_BASE_DELAY_MS). Only
+   * tests pass it, so a retry does not wait out the real backoff.
+   */
+  retryDelayMs?: number
+  /** Called once per decoded region, however many requests share it. */
+  onChunk?: (bytes: Uint8Array, req: SourceRegionRead) => void
+}
+
 /**
- * Wrap a {@link ChunkedVolumeSource} as a renderer `VolumeChunkSource`: dispatch
- * each brick to its own pyramid level (`desc.sourceLevel`), bound in-flight
- * fetches to `maxConcurrentLoads` (so a big focus never floods the connection
- * pool), retry transient failures, and dedup concurrent requests for the same
- * region. In-flight entries are dropped on settle so resolved buffers are not
- * retained (residency/eviction is the renderer's job).
+ * Read regions of a {@link ChunkedVolumeSource}: bound in-flight fetches to
+ * `maxConcurrentLoads` (so a big focus never floods the connection pool),
+ * retry transient failures, and dedup concurrent requests for the same region
+ * and frame. In-flight entries are dropped on settle so resolved buffers are
+ * not retained (residency/eviction is the renderer's job). One reader serves
+ * every frame, so the bound holds across a time scrub.
  */
-export function createSourceChunkLoader(
+export function createSourceRegionReader(
   source: ChunkedVolumeSource,
-  opts: {
-    maxConcurrentLoads: number
-    retryAttempts: number
-    /**
-     * Base of the retry backoff in ms (default RETRY_BASE_DELAY_MS). Only
-     * tests pass it, so a retry does not wait out the real backoff.
-     */
-    retryDelayMs?: number
-    /** Called once per decoded region, however many requests share it. */
-    onChunk?: (bytes: Uint8Array, bytesPerVoxel: number) => void
-  },
-): VolumeChunkSource {
+  opts: SourceReaderOptions,
+): (req: SourceRegionRead) => Promise<Uint8Array> {
   // Clamp at the point the options are consumed; see positiveIntOption.
   const maxConcurrent = positiveIntOption(opts.maxConcurrentLoads)
   const totalAttempts = positiveIntOption(opts.retryAttempts)
@@ -313,40 +363,40 @@ export function createSourceChunkLoader(
     else active--
   }
 
-  return (request) => {
-    const levelIndex = request.desc.sourceLevel ?? 0
-    const texOrigin = request.desc.texOrigin
-    const texDims = request.desc.texDims
-    const signal = request.signal
-    // Content key (level + region), stable across plan swaps where the chunk
-    // INDEX changes but the fetched region does not.
-    const key = `${levelIndex}|${texOrigin.join(',')}|${texDims.join(',')}`
+  return (req) => {
+    const { levelIndex, texOrigin, texDims, bytesPerVoxel, frame, signal } = req
+    // Content key (frame + level + region), stable across plan swaps where
+    // the chunk INDEX changes but the fetched region does not.
+    const key = `${frame}|${levelIndex}|${texOrigin.join(',')}|${texDims.join(',')}`
     const cached = inflight.get(key)
-    if (cached) {
+    // An aborted read only settles to its AbortError: start a fresh one.
+    if (cached && !cached.controller.signal.aborted) {
       cached.waiters++
-      joinRead(cached, signal)
-      return cached.promise
+      return joinRead(cached, signal)
     }
     const controller = new AbortController()
     const promise = acquire()
-      .then(() =>
-        withRetry(
+      .then(() => {
+        // Withdrawn while queued: give the slot back without fetching.
+        if (controller.signal.aborted) throw controller.signal.reason
+        return withRetry(
           () =>
             source.fetchChunk({
               levelIndex,
               texOrigin,
               texDims,
-              bytesPerVoxel: request.bytesPerVoxel,
+              bytesPerVoxel,
               signal: controller.signal,
+              ...(frame !== 0 && { frame }),
             }),
           totalAttempts,
           opts.retryDelayMs,
-        ),
-      )
+        )
+      })
       .finally(() => release())
     const entry: InflightRead = { promise, controller, waiters: 1 }
     inflight.set(key, entry)
-    joinRead(entry, signal)
+    const joined = joinRead(entry, signal)
     // Drop the in-flight entry on settle. Attach cleanup as BOTH handlers of a
     // .then so the derived promise resolves even when `promise` rejects (a
     // brick that exhausts retries) — a bare `.finally` here would re-raise into
@@ -359,11 +409,67 @@ export function createSourceChunkLoader(
     const onChunk = opts.onChunk
     if (onChunk)
       promise.then(
-        (bytes) => onChunk(bytes, request.bytesPerVoxel),
+        (bytes) => onChunk(bytes, req),
         () => {},
       )
-    return promise
+    return joined
   }
+}
+
+/**
+ * The renderer `VolumeChunkSource` for one frame: dispatch each brick to its
+ * own pyramid level (`desc.sourceLevel`) through `read`. `staged` holds bricks
+ * a frame switch fetched before it committed; each is handed out once.
+ */
+function frameChunkLoader(
+  read: (req: SourceRegionRead) => Promise<Uint8Array>,
+  frame: number,
+  staged?: Map<string, Uint8Array>,
+): VolumeChunkSource {
+  return (request) => {
+    const levelIndex = request.desc.sourceLevel ?? 0
+    const { texOrigin, texDims } = request.desc
+    if (staged?.size) {
+      const key = regionKey(levelIndex, texOrigin, texDims)
+      const bytes = staged.get(key)
+      if (bytes) {
+        staged.delete(key)
+        return Promise.resolve(bytes)
+      }
+    }
+    return read({
+      levelIndex,
+      texOrigin,
+      texDims,
+      bytesPerVoxel: request.bytesPerVoxel,
+      frame,
+      signal: request.signal,
+    })
+  }
+}
+
+function regionKey(levelIndex: number, origin: Vec3i, dims: Vec3i): string {
+  return `${levelIndex}|${origin.join(',')}|${dims.join(',')}`
+}
+
+function chunkRegionKeys(plan: ChunkPlan): string[] {
+  return plan.chunks.map((c) =>
+    regionKey(c.sourceLevel ?? 0, c.texOrigin, c.texDims),
+  )
+}
+
+/**
+ * Wrap a {@link ChunkedVolumeSource} as a renderer `VolumeChunkSource` for
+ * `opts.frame` (default 0); see {@link createSourceRegionReader}.
+ */
+export function createSourceChunkLoader(
+  source: ChunkedVolumeSource,
+  opts: SourceReaderOptions & { frame?: number },
+): VolumeChunkSource {
+  return frameChunkLoader(
+    createSourceRegionReader(source, opts),
+    opts.frame ?? 0,
+  )
 }
 
 /** One in-flight region read, shared by every caller that asked for it. */
@@ -376,19 +482,41 @@ interface InflightRead {
 /**
  * Register one caller's interest in an in-flight read, and abort the read once
  * every caller has withdrawn. A caller with no signal never withdraws, so a
- * renderer that supplies none behaves exactly as it did before.
+ * renderer that supplies none behaves exactly as it did before. Returns the
+ * read as this caller sees it.
  */
-function joinRead(entry: InflightRead, signal: AbortSignal | undefined): void {
-  if (!signal) return
+function joinRead(
+  entry: InflightRead,
+  signal: AbortSignal | undefined,
+): Promise<Uint8Array> {
+  if (!signal) return entry.promise
   const withdraw = (): void => {
     entry.waiters--
     if (entry.waiters <= 0) entry.controller.abort(signal.reason)
   }
   if (signal.aborted) {
     withdraw()
-    return
+    return Promise.reject(signal.reason)
   }
-  signal.addEventListener('abort', withdraw, { once: true })
+  // The caller's own abort rejects its read at once; the shared read goes on
+  // while another caller still wants it.
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      withdraw()
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    entry.promise.then(
+      (bytes) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(bytes)
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+    )
+  })
 }
 
 // --- the manager ------------------------------------------------------------
@@ -450,6 +578,8 @@ export class NVChunkedVolume {
   // repeat call does not re-fetch the coarse level.
   private floorVolume: NVImage | null = null
   private floorBuilt = false
+  /** The first floor build, while in flight: a frame switch waits for it. */
+  private floorPending: Promise<NVImage | null> | null = null
   // The last floor this manager got onto the view, and the floor it replaced.
   private floorSet: { set: number; replaced: NVImage | null } | null = null
   /**
@@ -466,6 +596,17 @@ export class NVChunkedVolume {
    */
   private observedLabelRange: [number, number] | null = null
   private labelGrowHandle: ReturnType<typeof setTimeout> | null = null
+  /** Shared by every frame's loader, so the fetch bound holds across a scrub. */
+  private readonly read: (req: SourceRegionRead) => Promise<Uint8Array>
+  private shownFrame: number
+  /** The staged bricks the shown frame's loader still hands out. */
+  private servedBricks = new Map<string, Uint8Array>()
+  /** The frame `load` fetched, waiting for `commit`; one slot, newest wins. */
+  private staged: (StagedFrame & { t: number }) | null = null
+  /** Recently decoded bricks, for the exact voxel readout. */
+  private readonly readout: BrickReadout
+  /** The window probe, kept as the histogram sample when there is no floor. */
+  private probe: { image: NVImage; frame: number } | null = null
 
   constructor(
     host: NiiVue,
@@ -477,6 +618,21 @@ export class NVChunkedVolume {
     }
     this.host = host
     this.source = source
+    // Integer label textures hold uint32/int32 IDs exactly; 64-bit types do
+    // not reach the GPU as integers, so an ID past 2^24 would blend (Q10).
+    if (
+      NVCmaps.isLabelColormap(options.colormap) &&
+      WIDE_LABEL_TYPES.has(source.datatypeCode)
+    )
+      throw new Error(
+        `label channel datatype ${source.datatypeCode} can hold IDs above 2^24, which do not read back exactly`,
+      )
+    const readoutBytes = options.readoutBytes ?? READOUT_BYTES
+    this.readout = new BrickReadout(
+      source,
+      () => this.shownFrame,
+      () => readoutBytes / Math.max(1, host._chunkedVolumeCount),
+    )
     // Decided before the colormap fills the bounds: a CT window sets the
     // display, not the robust/global range a reset or a contrast drag needs.
     this.wantsAutoWindow =
@@ -509,6 +665,7 @@ export class NVChunkedVolume {
 
     const finest = source.levels[0]
     this.plan = this.buildPlan()
+    this.readout.keep(this.plan)
     this.volume = createStreamingNVImage({
       shape: finest.shape,
       spacing: finest.spacing,
@@ -532,12 +689,246 @@ export class NVChunkedVolume {
     this.volumeId = volumeId
     this.volume.chunkPlan = this.plan
     this.volume.pickSampler = this.buildPickSampler()
-    this.volume.chunkSource = createSourceChunkLoader(source, {
+    this.read = createSourceRegionReader(source, {
       maxConcurrentLoads: options.maxConcurrentLoads ?? 6,
       retryAttempts: options.retryAttempts ?? 3,
-      onChunk: (bytes, bytesPerVoxel) =>
-        this.growLabelsFromChunk(bytes, bytesPerVoxel),
+      onChunk: (bytes, req) => {
+        // A staged frame grows the palette on commit, never if it is aborted.
+        if (req.frame === this.shownFrame)
+          this.growLabelsFromChunk(bytes, req.bytesPerVoxel)
+        this.readout.add(bytes, req)
+      },
     })
+    this.volume.voxelValue = (x, y, z) => this.voxelSample(x, y, z)
+    const frames = Math.max(1, source.frames ?? 1)
+    this.shownFrame = Math.min(
+      frames - 1,
+      Math.max(0, Math.round(options.frame ?? 0) || 0),
+    )
+    this.volume.chunkSource = frameChunkLoader(this.read, this.shownFrame)
+    this.stagingBytes = options.frameStagingBytes ?? FRAME_STAGING_BYTES
+    this.volume.frameSource = {
+      count: frames,
+      frame: this.shownFrame,
+      group: options.frameGroup ?? this,
+      load: async (t, signal) => {
+        this.staged = null
+        // A sibling failing aborts the group after this member staged.
+        signal.addEventListener(
+          'abort',
+          () => {
+            if (this.staged?.t === t) this.staged = null
+          },
+          { once: true },
+        )
+        const staged = await this.stageFrame(t, this.stagingShare(), signal)
+        // An abort can land after the reads resolve: never keep its bytes.
+        if (!signal.aborted) this.staged = { ...staged, t }
+        return []
+      },
+      commit: (t, scene) => this.commitFrame(t, scene),
+      descriptor: options.descriptor && {
+        ...options.descriptor,
+        revision: options.descriptor.revision ?? source.revision,
+      },
+      revision: source.revision,
+    }
+  }
+
+  /**
+   * The in-memory sample a histogram or auto window of this volume reads: the
+   * coarse floor (the whole coarsest level, shown frame), else the window
+   * probe (a centred crop of it, `level` and `frame` as fetched). Null when
+   * neither was fetched.
+   */
+  get histogramSample(): {
+    image: NVImage
+    coverage: 'level' | 'sample'
+    level: number
+    frame: number
+  } | null {
+    const level = this.source.levels.length - 1
+    if (this.floorVolume?.img)
+      return {
+        image: this.floorVolume,
+        coverage: 'level',
+        level,
+        frame: this.shownFrame,
+      }
+    return this.probe && { ...this.probe, coverage: 'sample', level }
+  }
+
+  /**
+   * Value at common-grid voxel [x, y, z]: exact from the finest decoded brick
+   * of the shown frame; else the coarse floor's (`exact` false); NaN where
+   * neither holds data.
+   */
+  private voxelSample(
+    x: number,
+    y: number,
+    z: number,
+  ): { value: number; exact: boolean } {
+    const hdr = this.volume.hdr
+    const calibrate = (v: number) => v * hdr.scl_slope + hdr.scl_inter
+    const raw = this.readout.value(x, y, z)
+    // A decoded NaN is data, not a missing brick.
+    if (raw !== undefined) return { value: calibrate(raw), exact: true }
+    const floor = this.floorVolume
+    const common = this.source.levels[0].shape
+    const dims = floor?.hdr.dims
+    if (!floor?.img || !dims) return { value: Number.NaN, exact: false }
+    const at = [x, y, z].map((v, i) =>
+      Math.min(dims[i + 1] - 1, Math.floor((v * dims[i + 1]) / common[i])),
+    )
+    if (at.some((v) => v < 0)) return { value: Number.NaN, exact: false }
+    const idx = at[0] + dims[1] * (at[1] + dims[2] * at[2])
+    return { value: calibrate(floor.img[idx]), exact: false }
+  }
+
+  /** @internal Re-fit the readout to its share of the cap (the handle count moved). */
+  _trimReadout(): void {
+    this.readout.trim()
+  }
+
+  /** Time points the source holds (1 without a time axis). */
+  get frames(): number {
+    return this.volume.frameSource?.count ?? 1
+  }
+
+  /** The time point shown. */
+  get frame(): number {
+    return this.shownFrame
+  }
+
+  /**
+   * Show time point `frame` (clamped) on this volume and every volume of its
+   * frame group, as `setFrame4D` does: the current plan's bricks nearest the
+   * focus (up to `frameStagingBytes`) and the coarse floor are fetched first,
+   * then the whole group commits in one update, so no view mixes two time
+   * points. A newer call aborts a pending one, which resolves unchanged; a
+   * failed fetch rejects and keeps the shown frame.
+   */
+  setFrame(frame: number): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    return this.host.setFrame4D(this.id, frame)
+  }
+
+  private readonly stagingBytes: number
+
+  /**
+   * This volume's part of the staging budget: `frameStagingBytes` is for the
+   * whole frame group (floors included), split evenly across its streamed
+   * members.
+   */
+  private stagingShare(): number {
+    const group = this.volume.frameSource?.group
+    return this.stagingBytes / Math.max(1, this.host._chunkedVolumesIn(group))
+  }
+
+  /** Fetch what time point `t` needs before it can be shown. */
+  private async stageFrame(
+    t: number,
+    budgetBytes: number,
+    signal: AbortSignal,
+  ): Promise<StagedFrame> {
+    const bpv = getBitsPerVoxel(this.source.datatypeCode) / 8
+    const common = this.source.levels[0].shape
+    const focus = this.focusFrac.map((f, i) => f * common[i])
+    const dist = (c: ChunkPlan['chunks'][number]): number => {
+      let d = 0
+      for (let i = 0; i < 3; i++) {
+        const mid = c.voxelOrigin[i] + c.voxelDims[i] / 2 - focus[i]
+        d += mid * mid
+      }
+      return d
+    }
+    const chunks = [...this.plan.chunks].sort((a, b) => dist(a) - dist(b))
+    const picks: typeof chunks = []
+    // The first floor may still be building for the old frame: stage frame
+    // t's own instead of letting that one land under t's bricks.
+    const hasFloor = this.floorBuilt
+      ? this.floorVolume !== null
+      : (await this.floorPending) != null
+    signal.throwIfAborted()
+    // The floor (or else the probe) is required, so it counts first.
+    const coarse = this.source.levels[this.source.levels.length - 1].shape
+    let bytes = hasFloor
+      ? coarse[0] * coarse[1] * coarse[2] * bpv
+      : (this.probe?.image.img?.byteLength ?? 0)
+    for (const c of chunks) {
+      const n = c.texDims[0] * c.texDims[1] * c.texDims[2] * bpv
+      if (picks.length && bytes + n > budgetBytes) break
+      picks.push(c)
+      bytes += n
+    }
+    const bricks = new Map<string, Uint8Array>()
+    const reads = picks.map(async (c) => {
+      const level = c.sourceLevel ?? 0
+      const data = await this.read({
+        levelIndex: level,
+        texOrigin: c.texOrigin,
+        texDims: c.texDims,
+        bytesPerVoxel: bpv,
+        frame: t,
+        signal,
+      })
+      bricks.set(regionKey(level, c.texOrigin, c.texDims), data)
+    })
+    const floor = hasFloor
+      ? this.buildCoarseFloor(t, signal)
+      : Promise.resolve(null)
+    // Without a floor the histogram reads the probe: keep it on the frame.
+    const probe =
+      !hasFloor && this.probe
+        ? this.readProbe(t, signal)
+        : Promise.resolve(null)
+    const [built, probed] = await Promise.all([floor, probe, ...reads])
+    signal.throwIfAborted()
+    return { bricks, floor: built, probe: probed }
+  }
+
+  /**
+   * Show the staged time point `t` on `scene` (the host's copy of the
+   * volume): swap in its loader and queue its floor into the group's GPU
+   * update, which installs the floor before it rebuilds the bricks, so no
+   * frame shows one time point's floor under the other's bricks.
+   */
+  private commitFrame(t: number, scene: NVImage): void {
+    const staged = this.staged
+    this.staged = null
+    if (!staged || staged.t !== t || this.disposed) return
+    // A new loader identity is what makes the renderer drop the old frame's
+    // resident and decoded bricks (volumeSourceKey).
+    this.servedBricks = staged.bricks
+    const loader = frameChunkLoader(this.read, t, staged.bricks)
+    this.volume.chunkSource = loader
+    scene.chunkSource = loader
+    this.shownFrame = t
+    this.readout.reset(staged.bricks, t)
+    if (this.volume.frameSource) this.volume.frameSource.frame = t
+    const bpv = getBitsPerVoxel(this.source.datatypeCode) / 8
+    for (const bytes of staged.bricks.values())
+      this.growLabelsFromChunk(bytes, bpv)
+    if (staged.probe) this.probe = { image: staged.probe, frame: t }
+    const old = this.floorVolume
+    if (!staged.floor) return
+    const img = staged.floor.img
+    if (img)
+      this.growLabelsFromChunk(
+        new Uint8Array(img.buffer, img.byteOffset, img.byteLength),
+        bpv,
+      )
+    this.floorVolume = staged.floor
+    if (!old) return
+    // Only the floor this volume owns on the view (or has queued for it);
+    // another base keeps its own.
+    if (
+      this.host._baseCoarseFloor === old ||
+      this.host._queuedCoarseFloor?.floor === old
+    )
+      this.host._queueBaseCoarseFloor(staged.floor, (set, replaced) => {
+        this.floorSet = { set, replaced }
+      })
   }
 
   /**
@@ -603,10 +994,15 @@ export class NVChunkedVolume {
   async applyCoarseFloor(): Promise<boolean> {
     if (!this.o.coarseFloor || this.disposed) return false
     if (!this.floorBuilt) {
-      this.floorVolume = await this.buildCoarseFloor()
+      this.floorPending ??= this.buildCoarseFloor()
+      const built = await this.floorPending
       this.floorBuilt = true
+      // A frame switch committed meanwhile already brought its own floor.
+      this.floorVolume ??= built
+      this.floorPending = null
     }
     if (this.disposed) return false
+    // A frame switch commits only between installs (see _setSourceFrame).
     await this.host._setBaseCoarseFloor(this.floorVolume, (set, replaced) => {
       this.floorSet = { set, replaced }
     })
@@ -1092,6 +1488,11 @@ export class NVChunkedVolume {
       if (this.disposed) return
       this.plan = plan
       this.volume.chunkPlan = plan
+      this.readout.keep(plan)
+      // Staged bricks the new plan does not request would wait forever.
+      const kept = new Set(chunkRegionKeys(plan))
+      for (const key of this.servedBricks.keys())
+        if (!kept.has(key)) this.servedBricks.delete(key)
       try {
         await this.host.swapVolumeChunkPlan(this.id, plan, {
           keepUntilCovered: this.o.swapPolicy === 'keepUntilCovered',
@@ -1129,7 +1530,10 @@ export class NVChunkedVolume {
    * per-voxel intensity, or when the fetch fails — a missing floor degrades to
    * today's behavior, so it must never fail the load.
    */
-  private async buildCoarseFloor(): Promise<NVImage | null> {
+  private async buildCoarseFloor(
+    frame = this.shownFrame,
+    signal?: AbortSignal,
+  ): Promise<NVImage | null> {
     const levelIndex = this.source.levels.length - 1
     const coarse = this.source.levels[levelIndex]
     const dims: Vec3i = [coarse.shape[0], coarse.shape[1], coarse.shape[2]]
@@ -1152,11 +1556,13 @@ export class NVChunkedVolume {
     }
     try {
       const bytesPerVoxel = getBitsPerVoxel(this.source.datatypeCode) / 8
-      const bytes = await this.source.fetchChunk({
+      const bytes = await this.read({
         levelIndex,
         texOrigin: [0, 0, 0],
         texDims: dims,
         bytesPerVoxel,
+        frame,
+        signal,
       })
       const floor = createStreamingNVImage({
         shape: dims,
@@ -1182,6 +1588,8 @@ export class NVChunkedVolume {
       ])
       return floor
     } catch (err) {
+      // A frame switch's floor must fail the switch, not degrade silently.
+      if (signal) throw err
       log.warn('NVChunkedVolume: coarse floor unavailable', err)
       return null
     }
@@ -1344,10 +1752,29 @@ export class NVChunkedVolume {
    * window. Only used when no coarse floor exists to read instead.
    */
   private async probeWindow(): Promise<void> {
+    if (!getTypedArrayConstructor(this.source.datatypeCode) || this.disposed)
+      return
+    const frame = this.shownFrame
+    try {
+      const probe = await this.readProbe(frame)
+      if (this.disposed) return
+      // A switch committed meanwhile: the window still fits, the sample does not.
+      if (frame === this.shownFrame) this.probe = { image: probe, frame }
+      this.applyAutoWindow(probe)
+    } catch (err) {
+      log.warn('NVChunkedVolume: window probe unavailable', err)
+    }
+  }
+
+  /** The window probe's crop of the coarsest level at `frame`. */
+  private async readProbe(
+    frame: number,
+    signal?: AbortSignal,
+  ): Promise<NVImage> {
     const levelIndex = this.source.levels.length - 1
     const level = this.source.levels[levelIndex]
     const Ctor = getTypedArrayConstructor(this.source.datatypeCode)
-    if (!Ctor || this.disposed) return
+    if (!Ctor) throw new TypeError('no typed array for the datatype')
     const texDims: Vec3i = [
       Math.min(level.shape[0], WINDOW_PROBE_MAX_EDGE),
       Math.min(level.shape[1], WINDOW_PROBE_MAX_EDGE),
@@ -1358,35 +1785,32 @@ export class NVChunkedVolume {
       Math.floor((level.shape[1] - texDims[1]) / 2),
       Math.floor((level.shape[2] - texDims[2]) / 2),
     ]
-    try {
-      const bytesPerVoxel = getBitsPerVoxel(this.source.datatypeCode) / 8
-      const bytes = await this.source.fetchChunk({
-        levelIndex,
-        texOrigin,
-        texDims,
-        bytesPerVoxel,
-      })
-      if (this.disposed) return
-      const probe = createStreamingNVImage({
-        shape: texDims,
-        spacing: level.spacing,
-        datatypeCode: this.source.datatypeCode,
-        xyztUnits: this.source.xyztUnits,
-        calMin: 0,
-        calMax: 1,
-        name: `${this.volume.name} window probe`,
-        id: `${this.volumeId}:window-probe`,
-      })
-      probe.img = toVoxelView(
-        bytes,
-        Ctor,
-        bytesPerVoxel,
-        texDims[0] * texDims[1] * texDims[2],
-      )
-      this.applyAutoWindow(probe)
-    } catch (err) {
-      log.warn('NVChunkedVolume: window probe unavailable', err)
-    }
+    const bytesPerVoxel = getBitsPerVoxel(this.source.datatypeCode) / 8
+    const bytes = await this.read({
+      levelIndex,
+      texOrigin,
+      texDims,
+      bytesPerVoxel,
+      frame,
+      signal,
+    })
+    const probe = createStreamingNVImage({
+      shape: texDims,
+      spacing: level.spacing,
+      datatypeCode: this.source.datatypeCode,
+      xyztUnits: this.source.xyztUnits,
+      calMin: 0,
+      calMax: 1,
+      name: `${this.volume.name} window probe`,
+      id: `${this.volumeId}:window-probe`,
+    })
+    probe.img = toVoxelView(
+      bytes,
+      Ctor,
+      bytesPerVoxel,
+      texDims[0] * texDims[1] * texDims[2],
+    )
+    return probe
   }
 
   private applyRenderCentering(): void {
@@ -1419,6 +1843,122 @@ function toVoxelView(
   // `buffer` is typed ArrayBufferLike (it may be a SharedArrayBuffer); every
   // typed-array constructor accepts either, so narrow for the signature.
   return new Ctor(aligned.buffer as ArrayBuffer, aligned.byteOffset, voxels)
+}
+
+/** NIfTI types whose IDs reach the GPU as floats: FLOAT64, INT64, UINT64. */
+const WIDE_LABEL_TYPES = new Set([64, 1024, 1280])
+
+/**
+ * Cap on the bytes the voxel readout keeps, the decoded tier's own cap: its
+ * bricks are the very buffers the renderer's tier holds for the same plan, so
+ * below the cap they cost no extra memory.
+ */
+const READOUT_BYTES = 384 * 1024 ** 2
+
+type ReadoutBrick = {
+  level: number
+  origin: Vec3i
+  dims: Vec3i
+  view: TypedVoxelArray
+}
+
+/**
+ * The decoded bricks of the shown frame's current plan, so a hover readout
+ * is exact (source values, labels as integer IDs) at the finest level held.
+ * Like the renderer's decoded tier it shadows the plan (a refocus drops the
+ * bricks the new plan left), and a frame switch starts it over from the
+ * bricks that switch staged; bricks of a frame not yet shown never enter.
+ * ponytail: linear scan per read; a few hundred bricks at hover rate.
+ */
+class BrickReadout {
+  private bricks = new Map<string, ReadoutBrick>()
+  private bytes = 0
+  constructor(
+    private readonly source: ChunkedVolumeSource,
+    private readonly frame: () => number,
+    private readonly cap: () => number,
+  ) {}
+
+  /** Regions of the current plan: only its bricks are on screen to read. */
+  private planKeys = new Set<string>()
+
+  add(bytes: Uint8Array, req: SourceRegionRead): void {
+    const key = regionKey(req.levelIndex, req.texOrigin, req.texDims)
+    if (req.frame === this.frame() && this.planKeys.has(key))
+      this.put(key, bytes)
+  }
+
+  /** Start over on frame `t` with the bricks its switch staged. */
+  reset(staged: ReadonlyMap<string, Uint8Array>, _t: number): void {
+    this.bricks.clear()
+    this.bytes = 0
+    for (const [key, bytes] of staged) this.put(key, bytes)
+  }
+
+  /** Drop the bricks a new plan no longer holds. */
+  keep(plan: ChunkPlan): void {
+    const kept = new Set(chunkRegionKeys(plan))
+    this.planKeys = kept
+    for (const [key, b] of this.bricks)
+      if (!kept.has(key)) {
+        this.bricks.delete(key)
+        this.bytes -= b.view.byteLength
+      }
+  }
+
+  private put(key: string, bytes: Uint8Array): void {
+    const Ctor = getTypedArrayConstructor(this.source.datatypeCode)
+    const bpv = getBitsPerVoxel(this.source.datatypeCode) / 8
+    if (!Ctor || !(bpv > 0)) return
+    const [level, origin, dims] = key
+      .split('|')
+      .map((p, i) => (i ? (p.split(',').map(Number) as Vec3i) : Number(p))) as [
+      number,
+      Vec3i,
+      Vec3i,
+    ]
+    const voxels = dims[0] * dims[1] * dims[2]
+    // A short reply fails its upload; it never reaches the readout either.
+    if (bytes.byteLength < voxels * bpv) return
+    const old = this.bricks.get(key)
+    if (old) this.bytes -= old.view.byteLength
+    this.bricks.delete(key)
+    // The cap holds even for one brick: a bigger one reads as approximate.
+    if (voxels * bpv > this.cap()) return
+    const view = toVoxelView(bytes, Ctor, bpv, voxels)
+    this.bricks.set(key, { level, origin, dims, view })
+    this.bytes += view.byteLength
+    this.trim()
+  }
+
+  /** Evict the oldest bricks down to the current share of the cap. */
+  trim(): void {
+    for (const [k, b] of this.bricks) {
+      if (this.bytes <= this.cap()) break
+      this.bricks.delete(k)
+      this.bytes -= b.view.byteLength
+    }
+  }
+
+  /** Raw value at common-grid voxel [x, y, z], undefined when no brick holds it. */
+  value(x: number, y: number, z: number): number | undefined {
+    const levels = this.source.levels
+    const common = levels[0].shape
+    let best: number | undefined
+    let bestLevel = Number.POSITIVE_INFINITY
+    for (const { level, origin: o, dims, view } of this.bricks.values()) {
+      if (level >= bestLevel) continue
+      const shape = levels[level].shape
+      const [w, h, d] = dims
+      const lx = Math.floor((x * shape[0]) / common[0]) - o[0]
+      const ly = Math.floor((y * shape[1]) / common[1]) - o[1]
+      const lz = Math.floor((z * shape[2]) / common[2]) - o[2]
+      if (lx < 0 || ly < 0 || lz < 0 || lx >= w || ly >= h || lz >= d) continue
+      best = view[lx + w * (ly + h * lz)]
+      bestLevel = level
+    }
+    return best
+  }
 }
 
 /** Per-axis max of `halo` and `minHalo`; never shrinks an axis. */

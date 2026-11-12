@@ -8,6 +8,7 @@ export const depthPickVertexShader = volumeVertexShader
 
 export const depthPickFragmentShader = `${fragmentPreamble}
 uniform float numVolumes;
+uniform float backOpacity;
 uniform sampler3D overlay;
 uniform vec4 paqdUniforms;
 uniform sampler3D paqd;
@@ -72,7 +73,8 @@ void main() {
       // The same visibility rule sampleSlice draws with: without alpha clipping
       // the whole plane is a solid slab, so every in-cube hit is pickable.
       bool visible = isAlphaClipDark <= 0.5;
-      if (!visible) visible = texture(volume, chunkTexCoord(pos)).a > 0.0;
+      // backOpacity 0: a channel stack, whose drawn channels are all in the overlay.
+      if (!visible && backOpacity > 0.0) visible = texture(volume, chunkTexCoord(pos)).a > 0.0;
       if (!visible && numVolumes > 1.0) {
         visible = texture(overlay, chunkTexCoord(pos)).a > 0.0;
       }
@@ -99,8 +101,10 @@ void main() {
     clipSampleRange(dir, vec4(start, 0.0), clipPlanes[i], sampleRange, hasClip);
   }
   bool isClip = (sampleRange.x > 0.0) || ((sampleRange.y < len) && (sampleRange.y > 0.0));
-  // Check if clip plane configuration eliminates background entirely
-  bool skipBackground = false;
+  // Check if clip plane configuration eliminates background entirely; a
+  // channel stack (backOpacity 0) picks from the overlay, which holds every
+  // drawn channel, so a hidden volumes[0] cannot answer.
+  bool skipBackground = backOpacity <= 0.0;
   if (cutaway) {
     if (hasClip && sampleRange.x <= 0.0 && sampleRange.y >= len) {
       skipBackground = true;

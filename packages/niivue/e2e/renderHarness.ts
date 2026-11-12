@@ -190,6 +190,8 @@ export type Scene = {
   sameAs?: string
   /** Further states, each captured after its `run`, in order. */
   steps?: Step[]
+  /** Triple the timeout (a scene SwiftShader's WebGPU draws slowly). */
+  slow?: boolean
 }
 
 const SIZE = 160
@@ -642,6 +644,7 @@ export function registerScenes(scenes: Scene[]): void {
   for (const backend of ['webgl2', 'webgpu'] as const) {
     for (const scene of scenes) {
       test(`${scene.name} (${backend})`, async ({ page }) => {
+        if (scene.slow) test.slow()
         const steps = scene.steps ?? []
         const args = JSON.stringify({
           backend,

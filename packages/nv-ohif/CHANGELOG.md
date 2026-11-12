@@ -1,3 +1,49 @@
+## 1.0.0-rc.210 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.185
+- Updated nv-ext-tile to 1.0.0-rc.92
+- Updated uikit to 1.0.0-rc.183
+
+## 1.0.0-rc.209 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.184
+- Updated nv-ext-tile to 1.0.0-rc.91
+- Updated uikit to 1.0.0-rc.182
+
+## 1.0.0-rc.208 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.183
+- Updated nv-ext-tile to 1.0.0-rc.90
+- Updated uikit to 1.0.0-rc.181
+
+## 1.0.0-rc.207 (2026-11-12)
+
+### Features
+
+- slide viewer shell (createSlideView) for every NVSlide consumer ([7c86bb87](https://github.com/niivue/mono/commit/7c86bb87))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.182
+- Updated nv-ext-tile to 1.0.0-rc.89
+- Updated uikit to 1.0.0-rc.180
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.206 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.88
+
 ## 1.0.0-rc.205 (2026-11-12)
 
 ### Features

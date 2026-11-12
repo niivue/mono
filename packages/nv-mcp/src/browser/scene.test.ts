@@ -2499,7 +2499,11 @@ describe('update_volume_data', () => {
       1,
       new Int16Array([9, 9, 9, 9]),
     )
-    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(1)
+    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(
+      1,
+      undefined,
+      undefined,
+    )
     expect(view.drawScene).toHaveBeenCalledTimes(3)
   })
 
@@ -2629,7 +2633,11 @@ describe('update_volume_data', () => {
         auto_window: true,
       }),
     ).toMatchObject({ wrote: 4, volume: { index: 2, name: 'bold.nii.gz' } })
-    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(2)
+    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(
+      2,
+      undefined,
+      undefined,
+    )
   })
 
   it('says so when the volume it wrote is removed before it could be windowed', async () => {
@@ -2696,5 +2704,190 @@ describe('update_volume_data', () => {
     } finally {
       globalThis.fetch = realFetch
     }
+  })
+})
+
+/** A streamed volume as NVChunkedVolume leaves it: bricks and a frame source, no voxels. */
+function streamedView(overrides: Partial<View> = {}) {
+  const view = fakeView({
+    volumes: [
+      {
+        name: 'stream.ome.zarr',
+        id: 's0',
+        chunkPlan: { gridDims: [2, 2, 2] },
+        frameSource: { count: 5, frame: 0 },
+      },
+    ],
+    // As NiiVue does: a frame-source volume takes its frame through the source.
+    setVolume: mock(async (index: number, update: VolumeUpdate) => {
+      const volume = view.volumes[index]
+      const { frame4D, ...rest } = update
+      if (frame4D !== undefined && volume.frameSource)
+        volume.frameSource.frame = frame4D
+      Object.assign(volume, rest)
+    }),
+    recalculateCalMinMax: mock(async () => {}),
+    getDescriptives: mock(() => null),
+    ...overrides,
+  })
+  return view
+}
+
+describe('a streamed volume with a lazy time axis', () => {
+  it('shows, reports and windows a frame through its frame source', async () => {
+    const view = streamedView()
+    const { set_volume, describe_volume } = coreHandlers(host(view))
+    expect(await set_volume({ frame: 4 })).toMatchObject({
+      volume: { frame: 4, frames: 5 },
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, { frame4D: 4 })
+    await expect(set_volume({ frame: 5 })).rejects.toThrow(
+      'stream.ome.zarr has 5 frames, numbered 0 to 4',
+    )
+    await set_volume({ frame: 2, auto_window: true })
+    expect(view.recalculateCalMinMax).toHaveBeenLastCalledWith(0, 2, undefined)
+    expect(await describe_volume({})).toMatchObject({
+      volume: { frame: 2, frames: 5, chunkGrid: [2, 2, 2] },
+      statsError:
+        'stream.ome.zarr is streamed in bricks, so there are no whole-volume voxels to count.',
+    })
+  })
+})
+
+describe('auto_window percentiles', () => {
+  it('passes them to recalculateCalMinMax, recomputing the window by themselves', async () => {
+    const view = settableView()
+    view.recalculateCalMinMax = mock(async () => {})
+    const { set_volume } = coreHandlers(host(view))
+    await set_volume({ volume: 1, percentiles: [5, 95] })
+    expect(view.recalculateCalMinMax).toHaveBeenLastCalledWith(
+      1,
+      undefined,
+      [5, 95],
+    )
+    expect(view.setVolume).not.toHaveBeenCalled()
+    await set_volume({ volume: 1, frame: 3, auto_window: true })
+    expect(view.recalculateCalMinMax).toHaveBeenLastCalledWith(1, 3, undefined)
+    await expect(set_volume({ percentiles: [90, 10] })).rejects.toThrow(
+      'percentiles is [low, high] in percent',
+    )
+  })
+
+  it('reach update_volume_data too', async () => {
+    const view = fakeView({
+      volumes: [{ name: 'a.nii', img: new Int16Array([1, 2, 3, 4]) }],
+      updateVolumeData: mock(async () => {}),
+      recalculateCalMinMax: mock(async () => {}),
+    })
+    await coreHandlers(host(view)).update_volume_data({
+      values: [4, 3, 2, 1],
+      percentiles: [1, 99],
+    })
+    expect(view.recalculateCalMinMax).toHaveBeenCalledWith(
+      0,
+      undefined,
+      [1, 99],
+    )
+  })
+})
+
+describe('selected_labels', () => {
+  it('highlights label values through setVolume and reports them', async () => {
+    const view = settableView()
+    const result = await coreHandlers(host(view)).set_volume({
+      selected_labels: [3, 7],
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, {
+      selectedLabels: [3, 7],
+    })
+    expect(result).toMatchObject({ volume: { selectedLabels: [3, 7] } })
+  })
+})
+
+describe('volume_histogram', () => {
+  const histogram = {
+    counts: new Uint32Array([5, 0, 3]),
+    min: 0,
+    max: 30,
+    voxels: 8,
+    coverage: 'volume' as const,
+    frame: 1,
+    generation: 'g1',
+  }
+
+  it("answers NiiVue's histogram, counts as a plain list", () => {
+    const view = settableView()
+    view.volumeHistogram = mock(() => histogram)
+    const got = coreHandlers(host(view)).volume_histogram({
+      volume: 1,
+      bins: 3,
+      frame: 1,
+    })
+    expect(view.volumeHistogram).toHaveBeenCalledWith(1, { bins: 3, frame: 1 })
+    expect(JSON.parse(JSON.stringify(got))).toEqual({
+      volume: { index: 1, name: 'bold.nii.gz' },
+      histogram: { ...histogram, counts: [5, 0, 3] },
+    })
+  })
+
+  it('refuses a frame it cannot count, and says why there is none', () => {
+    const view = settableView()
+    view.volumeHistogram = mock(() => null)
+    const { volume_histogram } = coreHandlers(host(view))
+    expect(() => volume_histogram({ volume: 1, frame: 200 })).toThrow(
+      'bold.nii.gz has 200 frames, numbered 0 to 199.',
+    )
+    expect(() => volume_histogram({})).toThrow(
+      'NiiVue has nothing of mni152.nii.gz in memory to count',
+    )
+    const streamed = streamedView({ volumeHistogram: mock(() => histogram) })
+    expect(() =>
+      coreHandlers(host(streamed)).volume_histogram({ frame: 3 }),
+    ).toThrow('stream.ome.zarr holds only the frame shown (0) in memory')
+  })
+})
+
+describe('pick_point', () => {
+  it('depth-picks a pixel, moving the crosshair only when asked', async () => {
+    const moved = mock()
+    const view = fakeView({
+      pickAt: mock(
+        async (
+          _x: number,
+          _y: number,
+          options?: { moveCrosshair?: boolean },
+        ) => {
+          if (options?.moveCrosshair) view.crosshairPos = [0.55, 0.5, 0.5]
+          return [10, 0, 0]
+        },
+      ),
+    })
+    const { pick_point } = coreHandlers(host(view, { moved }))
+    expect(await pick_point({ canvas: [12, 34] })).toEqual({
+      canvas: [12, 34],
+      mm: [10, 0, 0],
+      unit: 'mm',
+    })
+    expect(view.pickAt).toHaveBeenLastCalledWith(12, 34, {
+      moveCrosshair: false,
+    })
+    expect(moved).not.toHaveBeenCalled()
+    const got = (await pick_point({
+      canvas: [12, 34],
+      move_crosshair: true,
+    })) as { where: { crosshair: { mm: number[] }; description: string } }
+    expect(view.pickAt).toHaveBeenLastCalledWith(12, 34, {
+      moveCrosshair: true,
+    })
+    expect(near(got.where.crosshair.mm, [10, 0, 0])).toBe(true)
+    expect(got.where.description).toBe('Crosshair at 10, 0, 0 mm.')
+    expect(moved).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers a miss with a null point', async () => {
+    const view = fakeView({ pickAt: mock(async () => null) })
+    expect(
+      await coreHandlers(host(view)).pick_point({ canvas: [1, 2] }),
+    ).toEqual({ canvas: [1, 2], mm: null })
   })
 })

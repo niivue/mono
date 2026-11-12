@@ -125,14 +125,18 @@ export function labelMaterials(
   table: ColorMap,
   hidden: readonly number[] = [],
   scale = 1,
+  selected: readonly number[] = [],
 ): { materials: Float32Array; isVisible: Uint8Array } {
   const materials = new Float32Array(MATERIAL_TEXELS * 4)
   const isVisible = new Uint8Array(256)
   const hiddenSet = new Set(hidden)
+  const selectedSet = new Set(selected)
   for (let i = 0; i < table.R.length; i++) {
     const k = table.I?.[i] ?? i
     if (k < 1 || k >= HIDDEN_LABEL) continue
-    const opacity = hiddenSet.has(k) ? 0 : (table.A?.[i] ?? 255) / 255
+    // A selection dims the other labels, as shownLabelLut does in 2D.
+    const dim = selectedSet.size && !selectedSet.has(k) ? 0.25 : 1
+    const opacity = hiddenSet.has(k) ? 0 : (dim * (table.A?.[i] ?? 255)) / 255
     materials.set(
       [table.R[i] / 255, table.G[i] / 255, table.B[i] / 255, opacity],
       k * 8,
@@ -833,6 +837,7 @@ export class CinematicCpuCache {
       labelVol?.frame4D,
       labelVol ? colormapKey(labelVol.colormap) : '',
       labelVol?.hiddenLabels?.join(),
+      labelVol?.selectedLabels?.join(),
     ]
     if (!sameKey(labelKey, this._labelKey)) {
       this._labelKey = labelKey
@@ -843,6 +848,7 @@ export class CinematicCpuCache {
           labelCmap,
           labelVol?.hiddenLabels,
           this._scale,
+          labelVol?.selectedLabels,
         )
         out.labels = {
           ids: dilateLabels(ids, this._geometry.dims, isVisible),

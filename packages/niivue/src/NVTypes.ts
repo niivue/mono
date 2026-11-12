@@ -237,6 +237,11 @@ export type NVImage = {
    * Ignored unless {@link colormap} is a label colormap.
    */
   hiddenLabels?: number[]
+  /**
+   * Highlighted label IDs (a segmentation selection): when non-empty, every
+   * other label is drawn at a quarter of its alpha. Label colormaps only.
+   */
+  selectedLabels?: number[]
   /** Whether this volume has imaginary data (complex) */
   isImaginary?: boolean
   /**
@@ -281,6 +286,17 @@ export type NVImage = {
    * bounding-box surface.
    */
   pickSampler?: (x: number, y: number, z: number) => number
+  /**
+   * Voxel value at RAS voxel `[x, y, z]` for a volume with no `img`: a
+   * streamed volume reads its finest decoded brick there (`exact`), else its
+   * coarse floor (`exact` false), else NaN. `getVoxelValue` and the location
+   * readout use it.
+   */
+  voxelValue?: (
+    x: number,
+    y: number,
+    z: number,
+  ) => { value: number; exact: boolean }
   /**
    * Marks this volume as an independently-streamed hi-res overlay layer that
    * composites over a chunked base volume. The value is the cache-key of the
@@ -771,6 +787,12 @@ export type LayoutConfig = {
  */
 export type OrientationTextPosition = 'edges' | 'corner'
 
+/**
+ * The scale ruler's unit: `'auto'` picks cm, mm or um by the field of view;
+ * any other value labels the ruler in that unit.
+ */
+export type RulerUnits = 'auto' | 'nm' | 'um' | 'mm' | 'cm'
+
 /** UI config: visual chrome (colorbars, orient, fonts, crosshair appearance, measurements) */
 export type UIConfig = {
   isColorbarVisible: boolean
@@ -831,6 +853,8 @@ export type UIConfig = {
   measureLineColor: number[]
   measureTextColor: number[]
   rulerWidth: number
+  /** The scale ruler's unit (`isRulerVisible`, the slide scale bar). Default 'auto'. */
+  rulerUnits: RulerUnits
   graph: GraphConfig
 }
 
@@ -858,8 +882,10 @@ export type VolumeRenderConfig = {
    * volumes[0] joins the overlay blend instead of being drawn as an opaque
    * base, and the fused result lands on the canvas background. Pair it with
    * OVERLAY_COLOR_BLEND.MAX for Vol-E style fusion. volumes[0] still sets the
-   * render grid. Ignored while volumes[0] is chunked (streamed or oversized):
-   * the chunked overlay path keys on the base and cannot blend it into itself.
+   * render grid. Over a chunked base it applies only when every volume is
+   * streamed (a `chunkSource` on the base grid): each base chunk then fuses
+   * the drawn channels' bricks (per-channel opacity is not applied there). An
+   * oversized in-memory base ignores it.
    * Stacked channels keep their colormap's alpha ramp; in 3D each channel's
    * opacity sets how dense it looks.
    */
@@ -1408,6 +1434,7 @@ export type NiiVueOptions = {
   measureLineColor?: number[]
   measureTextColor?: number[]
   rulerWidth?: number
+  rulerUnits?: RulerUnits
   graphNormalizeValues?: boolean
   graphIsRangeCalMinMax?: boolean
   graphShowVolumeTimecourse?: boolean
@@ -1612,6 +1639,46 @@ export type CompletedAngle = {
 // Load / Update Option Types
 // ============================================================
 
+/** An intensity histogram ({@link NiiVue.volumeHistogram}). */
+export interface VolumeHistogram {
+  /** Voxels per bin; bin i spans `min + i * (max - min) / bins`, the last includes max. */
+  counts: Uint32Array
+  /** Finite calibrated range counted. */
+  min: number
+  max: number
+  /** Finite voxels counted (zeros included). */
+  voxels: number
+  /**
+   * What was counted: 'volume' the whole frame in memory; 'level' a streamed
+   * volume's coarsest pyramid level; 'sample' a centred crop of that level.
+   */
+  coverage: 'volume' | 'level' | 'sample'
+  /** Pyramid level counted ('level' and 'sample'). */
+  level?: number
+  /** Time point counted. */
+  frame: number
+  /** Changes whenever the counted data does; equal generations, equal counts. */
+  generation: string
+}
+
+/**
+ * Where a lazy or streamed volume's data lives, as JSON a document can keep
+ * (see {@link VolumeFrameSource.descriptor}). Never functions, tokens or signed
+ * URLs: documents save `url` without its query, fragment or user info, and drop
+ * params whose names look like credentials. The host reopens it, with its own
+ * credentials, through `loadDocument`'s `resolveSource`.
+ */
+export interface VolumeSourceDescriptor {
+  /** Which opener the host resolves it with, e.g. 'ome-zarr'. */
+  kind: string
+  /** Where the data lives. */
+  url: string
+  /** Opener arguments (level, channel, ...). */
+  params?: Record<string, string | number | boolean | null>
+  /** Source structure generation when saved; a restore warns when it moved. */
+  revision?: string
+}
+
 /**
  * A time axis fetched one frame at a time (e.g. a lazily loaded OME-Zarr
  * store). The volume stays a single-frame image (`nFrame4D` 1, `frame4D` 0)
@@ -1627,6 +1694,17 @@ export interface VolumeFrameSource {
   readonly group: object
   /** Fetch frame `frame`: `nVox3D` values in the volume's datatype. */
   load(frame: number, signal: AbortSignal): Promise<ArrayLike<number>>
+  /**
+   * Streamed volumes (no `img`): show the frame `load` prepared, in place of
+   * `img.set`. Synchronous and must not throw: NiiVue calls it for every
+   * group member in one step once all have loaded, between GPU update
+   * passes, then runs one GPU update for the group.
+   */
+  commit?(frame: number, volume: NVImage): void
+  /** Saved in documents so `loadDocument` can reattach the source. */
+  readonly descriptor?: VolumeSourceDescriptor
+  /** Structure generation (a metadata hash), as `ChunkedVolumeSource.revision`. */
+  readonly revision?: string
 }
 
 /**
@@ -1659,6 +1737,8 @@ export type ImageFromUrlOptions = {
   atlasOutline?: number
   /** Label values of a label/atlas volume to hide (default: none) */
   hiddenLabels?: number[]
+  /** Label IDs to highlight; the others draw at a quarter alpha (default: none) */
+  selectedLabels?: number[]
   /** Minimum intensity for negative color mapping (default: NaN = symmetric) */
   calMinNeg?: number
   /** Maximum intensity for negative color mapping (default: NaN = symmetric) */
@@ -1905,6 +1985,11 @@ export type NiiVueLocationValue = {
   vox: number[]
   /** Label name for atlas/parcellation volumes (when colormapLabel is set) */
   label?: string
+  /**
+   * True when `value` is approximate: a streamed volume with no decoded brick
+   * there reads its coarse floor (the string marks it with a leading ~).
+   */
+  approximate?: boolean
 }
 
 export type NiiVueLocation = {

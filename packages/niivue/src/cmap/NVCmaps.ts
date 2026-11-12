@@ -203,7 +203,11 @@ export type ColormapKind = 'continuous' | 'label'
 type HiddenLabelSource = {
   colormapLabel?: LUT | null
   hiddenLabels?: number[]
+  selectedLabels?: number[]
 }
+
+/** Alpha scale of labels outside a non-empty `selectedLabels`. */
+const UNSELECTED_ALPHA = 0.25
 
 const _shownLabelLuts = new WeakMap<
   HiddenLabelSource,
@@ -212,22 +216,37 @@ const _shownLabelLuts = new WeakMap<
 
 /**
  * The label LUT the GPU draws: `colormapLabel` with each `hiddenLabels` value
- * made transparent (alpha 0, RGB kept). Memoized per volume, so the result is
- * a new object only when the LUT or the hidden set changes: the orient caches
+ * made transparent (alpha 0, RGB kept) and, when `selectedLabels` is non-empty,
+ * every unselected label at a quarter alpha. Memoized per volume, so the result is
+ * a new object only when the LUT, hidden or selected set changes: the orient caches
  * and `chunkedDisplayKey` key on its identity and re-upload exactly then.
  */
 export function shownLabelLut(vol: HiddenLabelSource): LUT | null {
   const source = vol.colormapLabel ?? null
-  const hidden = vol.hiddenLabels
-  if (!source || !hidden?.length) return source
-  const key = hidden.join(',')
+  const hidden = vol.hiddenLabels ?? []
+  const selected = vol.selectedLabels ?? []
+  if (!source || (!hidden.length && !selected.length)) return source
+  const key = `${hidden.join(',')}|${selected.join(',')}`
   const hit = _shownLabelLuts.get(vol)
   if (hit?.source === source && hit.key === key) return hit.shown
   const lut = source.lut.slice()
   const min = source.min ?? 0
-  for (const value of hidden) {
+  const row = (value: number): number => {
     const i = value - min
-    if (Number.isInteger(i) && i >= 0 && i * 4 < lut.length) lut[i * 4 + 3] = 0
+    return Number.isInteger(i) && i >= 0 && i * 4 < lut.length ? i * 4 + 3 : -1
+  }
+  if (selected.length) {
+    const keep = selected.map(row).filter((a) => a >= 0)
+    const kept = keep.map((a) => lut[a])
+    for (let a = 3; a < lut.length; a += 4)
+      lut[a] = Math.round(lut[a] * UNSELECTED_ALPHA)
+    keep.forEach((a, k) => {
+      lut[a] = kept[k]
+    })
+  }
+  for (const value of hidden) {
+    const a = row(value)
+    if (a >= 0) lut[a] = 0
   }
   const shown = { ...source, lut }
   _shownLabelLuts.set(vol, { source, key, shown })

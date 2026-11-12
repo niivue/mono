@@ -21,6 +21,12 @@ export type UpdateBindGroupsOptions = {
    * `volumes: []`, set it because mesh layers carry colorbars.
    */
   colorbars?: boolean
+  /**
+   * Install this base coarse floor (null clears it) inside the same busy
+   * pass, before the volumes rebuild, so no frame draws it under the old
+   * bricks (a streamed frame switch). Omitted: the floor is left alone.
+   */
+  coarseFloor?: NVImage | null
 }
 
 export type VolumeUpdateScope = {

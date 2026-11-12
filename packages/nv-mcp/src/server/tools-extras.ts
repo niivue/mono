@@ -49,6 +49,21 @@ export const EXTRA_SCHEMAS = {
       'A voxel of the base volume, [i, j, k]: says where it is in world units and on the canvas.',
     ).optional(),
   },
+  pick_point: {
+    ...TAB_ARG,
+    canvas: z
+      .array(z.number())
+      .length(2)
+      .describe(
+        "A canvas pixel, [x, y]: the drawing buffer's (device) pixels, as map_point and screenshot's origin and region count them.",
+      ),
+    move_crosshair: z
+      .boolean()
+      .optional()
+      .describe(
+        'Move the crosshair to the point picked, as a double-click does. Left where it is otherwise.',
+      ),
+  },
   set_slide: {
     ...TAB_ARG,
     level: z
@@ -99,6 +114,13 @@ export const EXTRA_SCHEMAS = {
       .optional()
       .describe(
         "The channel's colormap, by its lowercase name, such as gray, red or green.",
+      ),
+    color: z
+      .string()
+      .regex(/^#?[0-9a-fA-F]{6}$/)
+      .optional()
+      .describe(
+        'An exact channel colour as hex (#rrggbb), such as an OME-Zarr omero colour: the channel gets a black-to-colour ramp named after it. Instead of colormap.',
       ),
     cal_min: z
       .number()
@@ -226,12 +248,33 @@ export function registerExtraTools(
     readOnly: true,
   })
 
+  registerSimple(server, context, 'pick_point', {
+    title: 'Pick the point under a pixel',
+    description:
+      'Depth-picks a canvas pixel as a double-click does: the world point of the first drawn volume ' +
+      'voxel or mesh under it, on a slice or the 3D render (on a channel stack any drawn channel ' +
+      'answers). `mm` is null when nothing is drawn there. With move_crosshair the crosshair goes ' +
+      'there and `where` is the where_am_i reply, whose crosshair may be snapped to a voxel centre.',
+    inputSchema: EXTRA_SCHEMAS.pick_point,
+    lead: (r) => {
+      const { mm, unit, where } = (r ?? {}) as {
+        mm?: number[] | null
+        unit?: string
+        where?: { description?: string }
+      }
+      if (mm === null) return 'Nothing is drawn under that pixel.'
+      if (!mm) return undefined
+      const at = `Picked ${mm.map((v) => Math.round(v)).join(', ')} ${unit}.`
+      return where?.description ? `${at} ${where.description}` : at
+    },
+  })
+
   registerSimple(server, context, 'set_slide', {
     title: 'Work the slide plane',
     description:
       'For a whole-slide image: picks the resolution level, focal plane / time point and ' +
       'interpolation of the slide plane, clears the plane, ' +
-      'works on the slide drawing, or sets a channel (visible, colormap, window) and how the ' +
+      'works on the slide drawing, or sets a channel (visible, colormap or an exact #rrggbb color, window) and how the ' +
       "channels blend, and turns colour management (the slide's ICC profile) on or off. Reports " +
       'the channels, blend and colour management afterwards when a slide plane is set; ' +
       'where_am_i reports them too. A null cal_min or cal_max in the report is the stored range end.',

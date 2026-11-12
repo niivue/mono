@@ -1,3 +1,83 @@
+## 1.0.0-rc.185 (2026-11-12)
+
+### Fixes
+
+- **niivue:** a third finger's lift no longer ends a slide pinch ([75946fdb](https://github.com/niivue/mono/commit/75946fdb))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.184 (2026-11-12)
+
+### Features
+
+- **niivue, nv-ext-tile:** tile lane A slide sources (opener, fetch contract, transport checks, grey/signed, vendor layouts) ([fca4aed8](https://github.com/niivue/mono/commit/fca4aed8))
+
+### Fixes
+
+- **niivue:** a manifest's own origin gets the custom fetch with a cross-origin baseUrl ([c43372a7](https://github.com/niivue/mono/commit/c43372a7))
+- **nv-ext-tile:** hold every custom fetch to its signal in slideFetch ([6b12c8d7](https://github.com/niivue/mono/commit/6b12c8d7))
+- **niivue:** a disposed ManifestRangeSource settles reads a custom fetch leaves pending, and cancels late bodies ([3c71f665](https://github.com/niivue/mono/commit/3c71f665))
+- **niivue:** a ManifestRangeSource read refuses a reply that settles after dispose ([24094525](https://github.com/niivue/mono/commit/24094525))
+- **niivue:** a disposed ManifestRangeSource never fetches a whole ICC profile ([eb742908](https://github.com/niivue/mono/commit/eb742908))
+- **niivue:** ManifestRangeSource checks the Content-Range end too ([a09602ea](https://github.com/niivue/mono/commit/a09602ea))
+- **niivue:** ManifestRangeSource without baseUrl scopes custom fetch to the host manifest origin ([4db2ea5b](https://github.com/niivue/mono/commit/4db2ea5b))
+- **nv-ext-tile:** PR 746 review fixes (sub-8-bit grey, Philips regex, capped reads) ([0a9d883f](https://github.com/niivue/mono/commit/0a9d883f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.183 (2026-11-12)
+
+### Features
+
+- **niivue, nv-mcp, nv-ext-isosurface:** tile lane E volumes (lazy frames, restore, readout, histogram, picking, streamed stacks, isosurface) ([8e60f2b4](https://github.com/niivue/mono/commit/8e60f2b4))
+
+### Fixes
+
+- **niivue:** recalculateCalMinMax rejects a frame a lazy volume does not hold ([e53c92e0](https://github.com/niivue/mono/commit/e53c92e0))
+- **niivue:** bounds-check streamed voxel reads; a decoded NaN is exact ([de609051](https://github.com/niivue/mono/commit/de609051))
+- **niivue:** the readout never holds a brick larger than readoutBytes ([e79a4f1c](https://github.com/niivue/mono/commit/e79a4f1c))
+- **niivue:** a caller that aborts a shared region read rejects ([e3f3dbbe](https://github.com/niivue/mono/commit/e3f3dbbe))
+- **niivue:** dispose a lazy restore's source when it is superseded ([b673a095](https://github.com/niivue/mono/commit/b673a095))
+- **niivue:** fresh read after an aborted region; release superseded and wrong-kind sources ([c4d05b85](https://github.com/niivue/mono/commit/c4d05b85))
+- **niivue:** drop Bearer param values with leading whitespace ([3169fadb](https://github.com/niivue/mono/commit/3169fadb))
+- **niivue:** newest frame request wins through the floor wait; drop protocol-relative URL params ([538e70eb](https://github.com/niivue/mono/commit/538e70eb))
+- **niivue:** commit a frame switch only between floor installs ([2ec0844c](https://github.com/niivue/mono/commit/2ec0844c))
+- **niivue:** PR 747 review findings (frame floor race, credentials, restore) ([bb86fad0](https://github.com/niivue/mono/commit/bb86fad0))
+- **niivue:** settle on fused stack chunks; quiet pick abort on destroy ([bdefac9c](https://github.com/niivue/mono/commit/bdefac9c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.182 (2026-11-12)
+
+### Features
+
+- slide viewer shell (createSlideView) for every NVSlide consumer ([7c86bb87](https://github.com/niivue/mono/commit/7c86bb87))
+
+### Fixes
+
+- **niivue:** tear down a WebGL2 slide renderer whose init failed ([0377013c](https://github.com/niivue/mono/commit/0377013c))
+- **niivue:** cancelGesture skips the done callback ([acdf83cf](https://github.com/niivue/mono/commit/acdf83cf))
+- **niivue:** retry any backend after a failure on a fresh canvas ([f7448bba](https://github.com/niivue/mono/commit/f7448bba))
+- **niivue, uikit:** PR 744 review round 3 ([f6ffd355](https://github.com/niivue/mono/commit/f6ffd355))
+- **niivue, uikit:** PR 744 review findings ([48c0805f](https://github.com/niivue/mono/commit/48c0805f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.181 (2026-11-12)
 
 ### Features

@@ -298,8 +298,8 @@ function robustRange(
 }
 
 /**
- * Compute 2%/98% histogram percentile bins from a typed array slice.
- * Returns [lo_bin, hi_bin] indices into a 1001-bin histogram.
+ * Compute low/high (default 2%/98%) histogram percentile bins from a typed
+ * array slice. Returns [lo_bin, hi_bin] indices into a 1001-bin histogram.
  */
 function histogramPercentiles(
   imgRaw: TypedVoxelArray,
@@ -309,6 +309,8 @@ function histogramPercentiles(
   mx: number,
   nZero: number,
   nSkip: number,
+  loFrac = 0.02,
+  hiFrac = 0.02,
 ): [number, number] {
   const nVox = end - start
   // The population is the voxels the histogram actually holds. Zeros are
@@ -317,7 +319,9 @@ function histogramPercentiles(
   // they were skipped, and counting them would push BOTH percentiles inward --
   // a store that is 80% NaN padding, as several DANDI float OCT volumes are,
   // would get a 10%-90% window while asking for 2%-98%.
-  const n2pct = Math.round((nVox - nZero - nSkip) * 0.02)
+  const population = nVox - nZero - nSkip
+  const nLo = Math.round(population * loFrac)
+  const nHi = Math.round(population * hiFrac)
   const nBins = 1001
   const scl = (nBins - 1) / (mx - mn)
   const hist = new Uint32Array(nBins)
@@ -329,14 +333,14 @@ function histogramPercentiles(
   }
   let n = 0
   let lo = 0
-  while (n < n2pct && lo < nBins) {
+  while (n < nLo && lo < nBins) {
     n += hist[lo]
     lo++
   }
   lo = Math.max(0, lo - 1)
   n = 0
   let hi = nBins - 1
-  while (n < n2pct && hi >= 0) {
+  while (n < nHi && hi >= 0) {
     n += hist[hi]
     hi--
   }
@@ -442,10 +446,12 @@ export function robustDisplayWindow(
  * Calculates robust min/max intensity for a specific 4D frame.
  * Returns [robust_min, robust_max, global_min, global_max].
  * Unlike calMinMax, this always computes the robust range (ignores hdr.cal_min/cal_max).
+ * `percentiles` ([low, high], 0-100) replaces the default 2%-98%.
  */
 export function calMinMaxFrame(
   vol: NVImage,
   frame: number,
+  percentiles?: readonly [number, number],
 ): [number, number, number, number] {
   const hdr = vol.hdr
   const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter
@@ -467,10 +473,54 @@ export function calMinMaxFrame(
     mx,
     nZero,
     nSkip,
+    ...(percentiles
+      ? ([percentiles[0] / 100, (100 - percentiles[1]) / 100] as const)
+      : []),
   )
   if (lo === hi) return [mnScale, mxScale, mnScale, mxScale]
   const scl = (1001 - 1) / (mx - mn)
   return [r2c(lo / scl + mn), r2c(hi / scl + mn), mnScale, mxScale]
+}
+
+/**
+ * Intensity histogram of one frame of `vol.img`: `bins` equal-width bins over
+ * the finite calibrated range [min, max] (the last bin includes max). Zeros
+ * are counted, non-finite voxels are not. Null for RGB data or no finite voxel.
+ */
+export function frameHistogram(
+  vol: NVImage,
+  frame: number,
+  bins: number,
+): { counts: Uint32Array; min: number; max: number; voxels: number } | null {
+  const hdr = vol.hdr
+  const imgRaw = toTypedView(vol.img as TypedVoxelArray, hdr.datatypeCode)
+  if (!imgRaw) return null
+  const offset = frame * vol.nVox3D
+  const end = Math.min(offset + vol.nVox3D, imgRaw.length)
+  const stats = robustRange(imgRaw, offset, end)
+  if (!stats) return null
+  const { mn, mx, nSkip } = stats
+  // Bins are calibrated half-open intervals from the calibrated minimum: a
+  // negative slope maps the raw maximum there, so bin from it, downwards.
+  // One spare bin takes the calibrated max; NaN and +-Infinity fail the test.
+  const descending = hdr.scl_slope < 0
+  const origin = descending ? mx : mn
+  const step = mx > mn ? (descending ? -bins : bins) / (mx - mn) : 0
+  const tally = new Uint32Array(bins + 1)
+  for (let i = offset; i < end; i++) {
+    const b = Math.floor((imgRaw[i] - origin) * step)
+    if (b >= 0 && b <= bins) tally[b]++
+  }
+  tally[bins - 1] += tally[bins]
+  const counts = tally.slice(0, bins)
+  const r2c = (v: number) => v * hdr.scl_slope + hdr.scl_inter
+  const [a, b] = [r2c(mn), r2c(mx)]
+  return {
+    counts,
+    min: Math.min(a, b),
+    max: Math.max(a, b),
+    voxels: end - offset - nSkip,
+  }
 }
 
 // ============================================================================
@@ -906,16 +956,10 @@ export function getVoxelValue(
   rz: number,
   frame = 0,
 ): number {
-  if (
-    !volume.img ||
-    !volume.dimsRAS ||
-    !volume.img2RASstep ||
-    !volume.img2RASstart
-  )
-    return 0
   const dims = volume.dimsRAS
-  // Bounds check in RAS space
+  // Bounds check in RAS space, streamed volumes included
   if (
+    !dims ||
     rx < 0 ||
     rx >= dims[1] ||
     ry < 0 ||
@@ -924,6 +968,9 @@ export function getVoxelValue(
     rz >= dims[3]
   )
     return 0
+  if (!volume.img && volume.voxelValue)
+    return volume.voxelValue(rx, ry, rz).value
+  if (!volume.img || !volume.img2RASstep || !volume.img2RASstart) return 0
   // Compute native flat index from RAS coordinates
   const start = volume.img2RASstart
   const step = volume.img2RASstep

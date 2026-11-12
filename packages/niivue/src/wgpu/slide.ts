@@ -260,85 +260,92 @@ export class SlideRendererGPU {
     const device = await adapter.requestDevice()
     if (!device) return null
 
-    const context = canvas.getContext('webgpu')
-    if (!context) return null
-    const format = navigator.gpu.getPreferredCanvasFormat()
-    context.configure({ device, format, alphaMode: 'opaque' })
+    // The device is ours until the renderer owns it: free it on any failure.
+    let created = false
+    try {
+      const context = canvas.getContext('webgpu')
+      if (!context) return null
+      const format = navigator.gpu.getPreferredCanvasFormat()
+      context.configure({ device, format, alphaMode: 'opaque' })
 
-    const sampler = linearSampler(device)
-    const fragment = GPUShaderStage.FRAGMENT
-    const uniformLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX | fragment,
-          buffer: {
-            type: 'uniform',
-            hasDynamicOffset: true,
-            minBindingSize: UNIFORM_BYTES,
+      const sampler = linearSampler(device)
+      const fragment = GPUShaderStage.FRAGMENT
+      const uniformLayout = device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.VERTEX | fragment,
+            buffer: {
+              type: 'uniform',
+              hasDynamicOffset: true,
+              minBindingSize: UNIFORM_BYTES,
+            },
           },
-        },
-        { binding: 1, visibility: fragment, sampler: {} },
-        { binding: 2, visibility: fragment, sampler: {} },
-      ],
-    })
-    const textureLayout = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: fragment, texture: {} },
-        { binding: 1, visibility: fragment, texture: {} },
-      ],
-    })
-    const lutLayout = colorLutLayout(device)
-    const msaaCount = options.antialias ? 4 : 1
-    const pipeline = device.createRenderPipeline(
-      alphaPipelineDesc(device, {
-        module: device.createShaderModule({ code: shaderCode(false) }),
-        bindGroupLayouts: [uniformLayout, textureLayout],
+          { binding: 1, visibility: fragment, sampler: {} },
+          { binding: 2, visibility: fragment, sampler: {} },
+        ],
+      })
+      const textureLayout = device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: fragment, texture: {} },
+          { binding: 1, visibility: fragment, texture: {} },
+        ],
+      })
+      const lutLayout = colorLutLayout(device)
+      const msaaCount = options.antialias ? 4 : 1
+      const pipeline = device.createRenderPipeline(
+        alphaPipelineDesc(device, {
+          module: device.createShaderModule({ code: shaderCode(false) }),
+          bindGroupLayouts: [uniformLayout, textureLayout],
+          format,
+          msaaCount,
+        }),
+      )
+      const lutPipeline = device.createRenderPipeline(
+        alphaPipelineDesc(device, {
+          module: device.createShaderModule({ code: shaderCode(true) }),
+          bindGroupLayouts: [uniformLayout, textureLayout, lutLayout],
+          format,
+          msaaCount,
+        }),
+      )
+
+      const placeholderTexture = device.createTexture({
+        size: [1, 1],
+        format: 'rgba8unorm',
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      })
+      device.queue.writeTexture(
+        { texture: placeholderTexture },
+        new Uint8Array([255, 255, 255, 255]),
+        { bytesPerRow: 4, rowsPerImage: 1 },
+        [1, 1],
+      )
+
+      const renderer = new SlideRendererGPU(
+        canvas,
+        device,
+        context,
+        pipeline,
+        lutPipeline,
+        uniformLayout,
+        textureLayout,
+        lutLayout,
+        sampler,
+        placeholderTexture,
         format,
         msaaCount,
-      }),
-    )
-    const lutPipeline = device.createRenderPipeline(
-      alphaPipelineDesc(device, {
-        module: device.createShaderModule({ code: shaderCode(true) }),
-        bindGroupLayouts: [uniformLayout, textureLayout, lutLayout],
-        format,
-        msaaCount,
-      }),
-    )
-
-    const placeholderTexture = device.createTexture({
-      size: [1, 1],
-      format: 'rgba8unorm',
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    })
-    device.queue.writeTexture(
-      { texture: placeholderTexture },
-      new Uint8Array([255, 255, 255, 255]),
-      { bytesPerRow: 4, rowsPerImage: 1 },
-      [1, 1],
-    )
-
-    const renderer = new SlideRendererGPU(
-      canvas,
-      device,
-      context,
-      pipeline,
-      lutPipeline,
-      uniformLayout,
-      textureLayout,
-      lutLayout,
-      sampler,
-      placeholderTexture,
-      format,
-      msaaCount,
-      rawPoolBytes(options.maxRawPoolBytes),
-    )
-    await renderer._initOverlay()
-    return renderer
+        rawPoolBytes(options.maxRawPoolBytes),
+      )
+      await renderer._initOverlay()
+      created = true
+      return renderer
+    } finally {
+      if (!created) device.destroy()
+    }
   }
 
   // The slide pass has no depth attachment; overlays match its sample count.

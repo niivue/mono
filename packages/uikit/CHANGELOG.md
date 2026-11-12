@@ -1,3 +1,42 @@
+## 1.0.0-rc.183 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.185
+
+## 1.0.0-rc.182 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.184
+
+## 1.0.0-rc.181 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.183
+
+## 1.0.0-rc.180 (2026-11-12)
+
+### Features
+
+- slide viewer shell (createSlideView) for every NVSlide consumer ([7c86bb87](https://github.com/niivue/mono/commit/7c86bb87))
+
+### Fixes
+
+- **niivue, uikit:** PR 744 review round 3 ([f6ffd355](https://github.com/niivue/mono/commit/f6ffd355))
+- **niivue, uikit:** PR 744 review findings ([48c0805f](https://github.com/niivue/mono/commit/48c0805f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.182
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.179 (2026-11-12)
 
 ### Features

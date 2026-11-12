@@ -255,6 +255,45 @@ ds, _ = sparse('colors', '1.2.3.80', list(COLORS))
 ds.SeriesInstanceUID = series_uid('colors')
 save(ds, [jpeg(c) for c in COLORS.values()], 'colors.dcm')
 
+# Associated images of the 'bot' specimen (same study, series and container):
+# a native RGB label (16 x 8, red rising along x), a real-JPEG overview, and a
+# thumbnail of one payload split in two fragments.
+EXPLICIT = UID('1.2.840.10008.1.2.1')
+d, _ = full('bot', '1.2.3.12', w=16, h=8)
+d.file_meta.TransferSyntaxUID = EXPLICIT
+d.ImageType = ['ORIGINAL', 'PRIMARY', 'LABEL', 'NONE']
+d.Rows, d.Columns = 8, 16
+d.NumberOfFrames = 1
+d.PhotometricInterpretation = 'RGB'
+d.PlanarConfiguration = 0
+d.PixelData = bytes(v for y in range(8) for x in range(16) for v in (x * 16, y * 32, 7))
+d['PixelData'].VR = 'OB'
+d.save_as('label.dcm', enforce_file_format=True)
+d, _ = full('bot', '1.2.3.13', w=16, h=16)
+d.ImageType = ['ORIGINAL', 'PRIMARY', 'OVERVIEW', 'NONE']
+d.NumberOfFrames = 1
+save(d, [jpeg((10, 120, 200))], 'overview.dcm')
+d, _ = full('bot', '1.2.3.14', w=16, h=16)
+d.ImageType = ['DERIVED', 'PRIMARY', 'THUMBNAIL', 'RESAMPLED']
+d.NumberOfFrames = 1
+save(d, [payload('bot thumb')], 'thumbnail.dcm', per_frame=2)
+
+# Signed MONOCHROME2 8-bit JPEG with a rescale: every tile stores grey 200, a
+# signed -56 (data value 2 * -56 - 10 = -122).
+def grey_jpeg(v: int) -> bytes:
+    pgm = b'P5 %d %d 255\n' % (TILE, TILE) + bytes([v]) * (TILE * TILE)
+    return subprocess.run(['cjpeg', '-quality', '100', '-grayscale'], input=pgm, capture_output=True, check=True).stdout
+
+
+ds, _ = full('monosigned', '1.2.3.93')
+ds.SeriesInstanceUID = series_uid('monosigned')
+ds.PhotometricInterpretation = 'MONOCHROME2'
+ds.SamplesPerPixel = 1
+ds.PixelRepresentation = 1
+ds.RescaleSlope, ds.RescaleIntercept = 2, -10
+del ds.OpticalPathSequence[0].ICCProfile
+save(ds, [grey_jpeg(200)] * 6, 'monosigned.dcm', json_bulk=True)
+
 # Refused transfer syntaxes, and a file that is not DICOM.
 for name, ts in (('implicit', '1.2.840.10008.1.2'), ('bigendian', '1.2.840.10008.1.2.2'), ('deflated', '1.2.840.10008.1.2.1.99')):
     d = Dataset()

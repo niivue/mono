@@ -64,7 +64,9 @@ export function extractLivewireSlice(
     ras[ax1] = j
     for (let i = 0; i < width; i++) {
       ras[ax0] = i
-      image[j * width + i] = getVoxelValue(volume, ras[0], ras[1], ras[2])
+      const v = getVoxelValue(volume, ras[0], ras[1], ras[2])
+      // No data (NaN) is flat ground for the edge cost.
+      image[j * width + i] = Number.isFinite(v) ? v : 0
     }
   }
 

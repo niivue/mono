@@ -17,7 +17,11 @@ const read = blockReader(
 self.onmessage = async (e: MessageEvent<{ files: File[]; keys: string[] }>) => {
   try {
     const { files, keys } = e.data
-    self.postMessage({ index: await indexDicomWsiOnThread(files, keys, read) })
+    const onProgress = (done: number, total: number) =>
+      self.postMessage({ progress: [done, total] })
+    self.postMessage({
+      index: await indexDicomWsiOnThread(files, keys, read, { onProgress }),
+    })
   } catch (err) {
     self.postMessage({ error: String(err) })
   }

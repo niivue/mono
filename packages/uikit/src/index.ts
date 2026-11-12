@@ -179,6 +179,13 @@ export type {
 export { DEFAULT_SLIDER_STYLE } from './slider'
 export type { UIKitSliderOverlayOptions } from './sliderOverlay'
 export { UIKitSliderOverlay } from './sliderOverlay'
+export type { SlideHudRows } from './slideView'
+export {
+  attachSlideChannelPanel,
+  attachSlideHud,
+  attachSlideMinimap,
+  attachSlidePlaneControl,
+} from './slideView'
 export { loadDefaultFont } from './text/defaultFont'
 export type {
   RawFontFile,

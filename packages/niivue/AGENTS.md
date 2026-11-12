@@ -492,20 +492,22 @@ touches `src/index.ts` and no other entry point as a defect until shown otherwis
 ### The only sanctioned differences
 
 `src/index.webgl2.ts` and `src/index.webgpu.ts` are the same file apart from
-three lines: the header comment, the backend's own slide renderer, and the
-default export.
+four lines: the header comment, the backend's own slide renderer, the module
+`createSlideView` comes from, and the default export.
 
 ```bash
 diff src/index.webgl2.ts src/index.webgpu.ts
-# exactly three hunks:
+# exactly four hunks:
 #   the 'WebGL2-only distribution' header comment vs 'WebGPU-only'
 #   export { SlideRenderer } from './gl/slide'
 #                             vs   { SlideRendererGPU } from './wgpu/slide'
 #   export { default, default as NiiVue } from './NVControlWebGL2'
 #                                          vs   './NVControlWebGPU'
+#   export { createSlideView } from './slide/slideViewWebGL2'
+#                               vs   './slide/slideViewWebGPU'
 ```
 
-A fourth hunk is a bug. That diff is the cheapest pre-push check there is.
+A fifth hunk is a bug. That diff is the cheapest pre-push check there is.
 
 Against the root entry, the one sanctioned omission is the **`*Detail` event
 payload types** re-exported from `./NVEvents` (`VolumeLoadedDetail`,
@@ -1024,8 +1026,24 @@ in volume order (later overlays on top); colour `MAX` keeps the per-component
 max of the premultiplied colours; every mode but `OVER` is commutative.
 `volumeIsChannelStack` blends volumes[0] in as one more overlay (both views'
 `_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
-fused channels land on the canvas background; ignored with one volume, while
-volumes[0] is chunked, and in multi-instance mode. Hidden (or opacity 0) and
+fused channels land on the canvas background; ignored with one volume, in
+multi-instance mode, and while volumes[0] is chunked unless every volume is
+streamed (`chunkSource`): then both renderers fuse each base chunk's drawn
+bricks in the upload pump (`view/chunkStackFuse.ts` `pump`; GL
+`blendOverlaysGL` in `gl/blendOverlays.ts`, WebGPU `blendOverlaysGPU` in
+`wgpu/blendOverlays.ts`, the same accumulate-then-normalise passes; GL reads
+back and `blendOverlayData`s only without float render targets) into the
+overlay slot (`e2e/render-streamed.spec.ts`). A chunk fuses once all its drawn
+channels' bricks are resident, keeps its old fused texture until the new one
+lands, follows its brick region across plan swaps, re-fuses when a blend mode
+changes, and never draws under another source generation (a frame switch), so
+a switch never shows old and new time points side by side. Known limit: no
+per-channel opacity (the brick bakes leave opacity out and the blends have no
+per-layer weight; adding one changes the blend shared with whole-volume
+overlays). `e2e/streamed-stack-switch.spec.ts` with `STACK_FUSE_BENCH=1`
+benches it; the GL blend matches `blendOverlayData` exactly. Depth picks on a stack
+skip the base march (`backOpacity` 0 in the pick shaders) and answer from any
+drawn channel; the CPU chunked pick uses `stackPickSampler`. Hidden (or opacity 0) and
 PAQD volumes do not join as channels. Stacked channels keep their colormap's
 alpha ramp in the orient bake (`modFlags.z` in `orient.wgsl`,
 `keepColormapAlpha` in `gl/orientOverlay.ts`);
@@ -1184,6 +1202,19 @@ a rebuild.
   `@niivue/nv-ext-tile`'s `lazyTime`) stays one frame (`nFrame4D` 1: every img
   reader indexes `frame4D * nVox3D`); its time axis lives on the source, and
   frame changes go through `_setSourceFrame` (see its JSDoc; `src/frameSource.test.ts`).
+  `NVChunkedVolume` installs one too (`commit` swaps in a new per-frame chunk
+  loader, so `volumeSourceKey` drops the old frame's bricks;
+  `src/volume/NVChunkedVolume.frames.test.ts`). A source `descriptor` is saved
+  in documents and reopened by `loadDocument`'s `resolveSource`
+  (`src/documentSources.ts`, `src/loadDocument.sources.test.ts`); a newer
+  `loadDocument`, `loadVolumes` or `loadImage` aborts a restore still pending.
+  A switch is two-phase: every member's `load` stages first, then the group
+  swaps in one synchronous `commit` between GPU passes, and the coarse floor is
+  installed inside that update (`UpdateBindGroupsOptions.coarseFloor`) before
+  the bricks rebuild. The source reader's `onChunk(bytes, req)` sees every
+  decoded region; a streamed volume's readout (`NVImage.voxelValue`) is exact
+  from its plan's decoded bricks and otherwise reads the coarse floor,
+  flagged `approximate`.
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
@@ -1994,11 +2025,13 @@ Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (defa
 
 Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` (axial/coronal/sagittal/multiplanar/render/none — `none` skips the spatial pass so a signal graph fills the canvas, see "signal mode" above), `MULTIPLANAR_TYPE` (auto/column/grid/row), `SHOW_RENDER`, and `NiiDataType`.
 
-**NVSlide panes** use `NVSlideController` (`src/slide/slideController.ts`) with the same primary/secondary modes (`pan`, `crosshair`, `crosshairPan`, `windowing`, `contrast`, `measurement`, `roiSelection`, `none`). There `roiSelection` is a zoom box, fit on release and capped at native resolution (one base pixel per device pixel); the middle button always pans and the wheel zooms about the pointer.
+**NVSlide panes** use `NVSlideController` (`src/slide/slideController.ts`) with the same primary/secondary modes (`pan`, `crosshair`, `crosshairPan`, `windowing`, `contrast`, `measurement`, `roiSelection`, `none`). There `roiSelection` is a zoom box, fit on release and capped at native resolution (one base pixel per device pixel); the middle button always pans, the wheel and a two-finger pinch zoom about the pointer, and a double-click zooms 2x (shift: out) while the primary mode is `pan`, within 4 px of the last press the controller took (a widget over the canvas takes its own). `middleDragMode`, `otherButtonDragMode` (buttons 3/4, default `none`), `isContextMenuBlocked`, `isPinchZoom` (default true), `wheelZoomRate` and `isWheelDeltaModeScaled` (line/page deltas to px, default true) let a host keep its own button and wheel behaviour (nv-ohif runs its tool on every button, no pinch, raw deltas); `cancelGesture()` ends a gesture without committing it. Without `onWindow` / `onContrast`, a windowing drag or contrast box sets `windowChannel`'s window itself (stored units; `windowDragStep` is the maths). `callbackOnly` reports the drag to `onDrag`.
+
+**Slide viewer shell.** `createSlideView(canvas, opts)` (`src/slide/slideView.ts`) owns one standalone slide pane: renderer (WebGPU then WebGL2, or the reverse with `backend: 'webgl2'`), the rAF loop (plus a 100 ms timer, as rAF pauses in a hidden tab), resize (ResizeObserver) and pixel-ratio watch, fit on the first sized frame and again on resizes until the viewport moves, the controller and its overlay, composable `addOverlay` (UIKit) and `addRenderListener`, and one idempotent `destroy`. `controllerOverlay: false` leaves the rulers to the host (nv-ohif draws a UIKit ruler from the controller's measurement). A WebGL2 start that gets no context after a WebGPU attempt retries once on a cloned canvas (`view.canvas`), and puts the original back if that fails too. It owns the slide (`ownsSlide`, default true: `setSlide` and `destroy` dispose the one they release) but not the canvas, and not a caller's `renderer`. It holds no format policy or app state. Backend factories are bound per entry (`slideViewWebGL2.ts`, `slideViewWebGPU.ts`, `slideViewBoth.ts`, as `control/view*.ts`), so `createSlideView` is the fourth sanctioned line where the two backend entries differ. `linkSlideViews` syncs viewports in mm when every slide states `pixelSpacingMM`, else as fractions of each slide, with echo suppression; `attachSlideLens` (also `slide/slideView.ts`) shows a second linked view through a pointer-following circle. UIKit's `attachSlidePlaneControl` (`uikit/src/slideView.ts`) adds z/t sliders over the plane contract (`planes`, async `setPlaneIndex`), hidden for a fixed source. `formatSlideSample` and `slideStatsSummary` are the readout and HUD text. UIKit adds `attachSlideMinimap`, `attachSlideHud` and `attachSlideChannelPanel`.
 
 **NVSlide request owners and planes.** Every tile load belongs to request owners (`slide.createRequestOwner(kind)`: `readout`, `view`, `plane3d`, `thumbnail`, `prefetch`, ranked 0, 1, 1, 2, 3); `owner.want(tiles, focus)` replaces its set each frame and `release()` drops it. A load is shared by its owners and cancelled (dequeued, or aborted in flight) when the last leaves; the queue serves (rank, distance to focus, age) with every 4th dequeue the oldest non-view load (`slide/slideLoadQueue.ts`). `requestTile` is gone. The 2D view, its coarse coverage (`prefetch`), thumbnails, the 3D plane (`SlidePlaneState.owner`, released by `releaseSlidePlane`) and `loadSampleAt` each own their loads; `_wanted` stays within tile capacity. LOD is one rule for 2D and 3D (`slideLod.pickLevel`, 1.1 hysteresis). Tile keys are `z<z>t<t>/L<i>/<x>/<y>`, produced only by `slide.tileKey`; `setPlaneIndex` is async, holds the old plane until the new plane's visible tiles are resident, then switches whole. Events: `tileerror`, `levelchange`, `idle`, `planechange`, `change`.
 
-**NVSlide pixel readout.** `slide.sampleAt(x, y, {level?})` (base-level pixels, as `screenToSlide` returns) is synchronous and cache-only: it reads the finest resident tile (or level `index` `level`) through `_cache.peek`, never fetches, and leaves the LRU order and `cacheHits` alone, so hover can call it. `loadSampleAt(x, y, {level?, signal?})` fetches that level's covering tile (default 0) first through a one-shot `readout` request owner; `signal` stops the wait and cancels the load unless another owner wants it. Both return one `NVSlideSample` per channel: `stored` is the cached sample (before window, MONOCHROME1 inversion and ICC; bitmap-only RGB tiles are read back 1x1), `value` maps it through `NVSlideChannelInfo.storedToValue` when the source quantized it, and `exact` means level 0 and not quantized. `missing` is `outside`, `hole`, `uncached` or `hidden` (hidden channels are never fetched). Scalar tiles are read from `samples` only, so the readout survives dropping their RGBA bitmaps (#159). On a slide plane, `createOnLocationChange` passes `nv.slideSampleAt()` (the crosshair projected orthogonally onto the plane by `worldToSlidePixel`, so a crosshair off the plane's depth still reads the pixel under it) to `buildLocationMessage` as `NiiVueLocation.slide`; a scene with only a slide plane emits too. The plane's `change` listener re-emits only when those samples (level, stored, missing) differ from the last emitted ones, about once per level, never per tile. `NVSlideController.onHover(point | null)` fires on a gesture-less `pointermove` and with null on `pointerleave` (no rAF coalescing: browsers align `pointermove` to frames); the app calls `sampleAt`. nv-mcp reads it through `View.slideSampleAt` / `loadSlideSampleAt` (`where_am_i.slide`, `sample_slide`).
+**NVSlide pixel readout.** `slide.sampleAt(x, y, {level?})` (base-level pixels, as `screenToSlide` returns) is synchronous and cache-only: it reads the finest resident tile (or level `index` `level`) through `_cache.peek`, never fetches, and leaves the LRU order and `cacheHits` alone, so hover can call it. `loadSampleAt(x, y, {level?, signal?})` fetches that level's covering tile (default 0) first through a one-shot `readout` request owner; `signal` stops the wait and cancels the load unless another owner wants it. Both return one `NVSlideSample` per channel: `stored` is the cached sample (before window, MONOCHROME1 inversion and ICC; bitmap-only RGB tiles are read back 1x1), `value` maps it through `NVSlideChannelInfo.storedToValue` when the source quantized it, and `exact` means level 0 and not quantized. `missing` is `outside`, `hole`, `uncached` or `hidden` (hidden channels are never fetched). Scalar tiles are read from `samples` only, so the readout survives dropping their RGBA bitmaps (#159). On a slide plane, `createOnLocationChange` passes `nv.slideSampleAt()` (the crosshair projected orthogonally onto the plane by `worldToSlidePixel`, so a crosshair off the plane's depth still reads the pixel under it) to `buildLocationMessage` as `NiiVueLocation.slide`; a scene with only a slide plane emits too. The plane's `change` listener re-emits only when those samples (level, stored, missing) differ from the last emitted ones, about once per level, never per tile. `NVSlideController.onHover(point | null)` fires on a gesture-less `pointermove`, at most once per frame (rAF, latest point; a high-rate mouse fires several moves per frame), and with null at once on `pointerleave`, cancelling a pending frame; the app calls `sampleAt`. nv-mcp reads it through `View.slideSampleAt` / `loadSlideSampleAt` (`where_am_i.slide`, `sample_slide`).
 
 **NVSlide modules.** `NVSlide.ts` keeps the slide state and load queue; the rest is split under `src/slide/`: `slideSource.ts` (the `SlideTileSource` contract, optional `SlidePlaneCapable` for z/t planes, `ManifestRangeSource`, the `tileDecoders` registry incl. `raw-gray`), `slideChannels.ts` (`toValue`/`toStored` through `storedToValue`, default channels and windows, the single-channel `channelInfo` rules), `slideLod.ts` (level choice, tile span and capacity), `slideThumbnail.ts` (CPU composite of a level) and `tileLru.ts` (`NVSlideTileCache`). `dispose()` aborts loads, disposes the source when it owns it (`ownsSource`, default true; a throwing constructor leaves it with the caller) and clears the cache last, even if the source's dispose throws, so `loadSampleAt` waiters settle. Renderers state their tile texture and raw pool bytes with `setRendererBudget`, through `SlideBudgetRegistration` (`slideFuse.ts`): `sync(slides)` per draw, `clear()` on destroy, and the views clear the plane renderer's when the slide plane is removed or replaced. `SlideRenderer.render(slides, screen)` and `SlideRendererGPU.render` are the only entry on both backends (the GL `draw(gl, ...)` is removed; `SlideRenderer` no longer extends NVRenderer). Both consume one backend-neutral frame plan (`slide/slideTiles.ts`): background, fallback coarsest first, then targets, with every upload and fuse before the first draw.
 
@@ -2036,6 +2069,10 @@ on the render tile. Standalone NVSlide panes get the same bar from
 bottom-left, `slideScaleBar` picks the length from `pixelSpacingMM[0]` and
 `viewport.scale` (labels "um" below 1 mm, the font has no µ), none without
 spacing; `scaleBarLines` is shared with `NVRuler`, so no shader change.
+`rulerUnits` (`'auto' | 'nm' | 'um' | 'mm' | 'cm'`, default `'auto'`) fixes the
+bar's unit for both; mosaic render tiles get the bar from their own screen
+bounds, and `global3d` tiles get none (their camera is perspective, owner
+decision).
 
 **`SliceTile`** key fields: `leftTopWidthHeight`, `axCorSag`, `screen` (ortho mm bounds), `azimuth`/`elevation`, `sliceMM` (mosaic mm position), `renderOrientation`, `crossLines`, `showLabels`. Cached `mvpMatrix`/`planeNormal`/`planePoint` populated during render for picking.
 

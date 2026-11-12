@@ -1,4 +1,5 @@
 import type {
+  NVSlideAttribution,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileCodec,
@@ -6,15 +7,17 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
+import { cleanAttribution } from './attribution'
 import { dicomLabToSrgb } from './cielab'
 import {
-  fileKey,
+  fileKeys,
   type InstanceCore,
   type SlideIndexLevel,
   type SlideIndexSlide,
   tileMap,
 } from './dicomIndex'
 import type { DicomJsonSlide } from './dicomJson'
+import { linked } from './rangeFetch'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
 // registered decoder, e.g. registerDcm2niixDecoders()).
@@ -27,12 +30,13 @@ export const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
-/** The slide's files in `slide.instances` order; each must be the file that was indexed. */
+/** The slide's files in `slide.instances` order; `files` as indexed, in the same order. */
 export function filesFor(
   slide: SlideIndexSlide,
   files: readonly File[],
 ): File[] {
-  const byKey = new Map(files.map((f) => [fileKey(f), f]))
+  const keys = fileKeys(files)
+  const byKey = new Map(files.map((f, i) => [keys[i], f]))
   return slide.instances.map((inst) => {
     const file = byKey.get(inst.file)
     if (!file) throw new Error(`${inst.file} is not among the files`)
@@ -74,6 +78,27 @@ export function fragmentsOf(
   return fragments
 }
 
+/** `read`, rejecting with the signal's reason as soon as it aborts (File.slice reads take none). */
+export function abortable<T>(
+  read: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason)
+  let onAbort = () => {}
+  return Promise.race([
+    read,
+    new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason)
+      signal.addEventListener('abort', onAbort, { once: true })
+    }),
+  ]).finally(() => signal.removeEventListener('abort', onAbort))
+}
+
+export interface DicomWsiSourceOptions {
+  /** Credit for the slide, as `manifest.attribution`. */
+  attribution?: NVSlideAttribution
+}
+
 /**
  * A SlideTileSource for one slide of a {@link SlideIndex}, reading each tile
  * from the local files with `File.slice`. Pass the same files that were indexed.
@@ -84,18 +109,39 @@ export class DicomWsiSource implements SlideTileSource {
   /** Each level's tile map (frame slot per tile), built here rather than at indexing. */
   private readonly maps: Int32Array[]
   private host: SlideSourceHost | null = null
+  private readonly closed = new AbortController()
 
   constructor(
     readonly slide: SlideIndexSlide,
     files: readonly File[],
+    options: DicomWsiSourceOptions = {},
   ) {
     this.files = filesFor(slide, files)
     this.maps = slide.levels.map(tileMap)
     this.manifest = manifestOf(slide, this.maps, { fileUrl: (i) => i.file })
+    const attribution = cleanAttribution(options.attribution)
+    if (attribution) this.manifest.attribution = attribution
   }
 
   bind(host: SlideSourceHost): void {
     this.host = host
+  }
+
+  /** A slice of `file`, abandoned on `signal` or dispose. */
+  private read(
+    file: File,
+    start: number,
+    end: number,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    const abort = linked(signal, this.closed.signal)
+    return abortable(
+      file
+        .slice(start, end)
+        .arrayBuffer()
+        .then((b) => new Uint8Array(b)),
+      abort,
+    )
   }
 
   /** The optical path's ICC profile, read from the level-0 file; null without one. */
@@ -104,11 +150,7 @@ export class DicomWsiSource implements SlideTileSource {
     const l0 = this.slide.levels[0]
     if (!icc || !l0) return null
     const file = this.files[l0.instances[0] as number] as File
-    const bytes = new Uint8Array(
-      await file.slice(icc.offset, icc.offset + icc.length).arrayBuffer(),
-    )
-    signal?.throwIfAborted()
-    return bytes
+    return this.read(file, icc.offset, icc.offset + icc.length, signal)
   }
 
   async fetchTileBytes(
@@ -126,10 +168,7 @@ export class DicomWsiSource implements SlideTileSource {
     const offset = frames.offset[slot] as number
     const length = frames.length[slot] as number
     // Read the item header too: its tag proves the index still matches the file.
-    const span = new Uint8Array(
-      await file.slice(offset - 8, offset + length).arrayBuffer(),
-    )
-    signal?.throwIfAborted()
+    const span = await this.read(file, offset - 8, offset + length, signal)
     this.host?.addWireBytes(span.byteLength)
     const parts = fragmentsOf(span, `${file.name} frame ${frames.frame[slot]}`)
     if (parts.length === 1) return span.subarray(8) // one fragment: no copy
@@ -140,6 +179,11 @@ export class DicomWsiSource implements SlideTileSource {
       o += p.length
     }
     return out
+  }
+
+  /** Later reads, and reads in flight, reject AbortError. The files are the caller's. Idempotent. */
+  dispose(): void {
+    this.closed.abort()
   }
 }
 
@@ -206,6 +250,10 @@ export function manifestOf<I extends InstanceCore>(
       transferSyntaxUid: inst.transferSyntax,
       photometric: inst.photometric,
       bitsStored: inst.bitsStored,
+      // Signed monochrome: NVSlide sign-extends the decoded samples (S7).
+      ...(inst.signed && inst.photometric.startsWith('MONOCHROME')
+        ? { sampleType: 'i16' as const }
+        : {}),
       frames: level.frames.frame.length,
       // The index made one slide per optical path and focal plane.
       opticalPaths: 1,
@@ -225,6 +273,27 @@ export function manifestOf<I extends InstanceCore>(
     tileSize: l0.tileWidth,
     dtype: 'uint8',
     channels: 'encoded-rgb',
+    // One grey channel, as NVSlide shows a monochrome slide without one (S1),
+    // stating the rescale to data units.
+    ...(inst0.photometric.startsWith('MONOCHROME')
+      ? {
+          channelInfo: [
+            {
+              name: 'gray',
+              active: true,
+              ...(inst0.rescale
+                ? {
+                    storedToValue: {
+                      scale: inst0.rescale.slope,
+                      offset: inst0.rescale.intercept,
+                      quantized: false,
+                    },
+                  }
+                : {}),
+            },
+          ],
+        }
+      : {}),
     ...(slide.pixelSpacingMM ? { pixelSpacingMM: slide.pixelSpacingMM } : {}),
     ...(inst0.absentLab
       ? {

@@ -3,9 +3,14 @@
 // on it: fileKey (nv-ext-tile) keys by it, keeping same-named files distinct.
 async function walk(entry: FileSystemEntry): Promise<File[]> {
   if (entry.isFile) {
+    // One unreadable file (moved, no permission) must not lose the rest.
     const file = await new Promise<File>((resolve, reject) =>
       (entry as FileSystemFileEntry).file(resolve, reject),
-    )
+    ).catch((err) => {
+      console.warn(`Skipped ${entry.fullPath}:`, err)
+      return null
+    })
+    if (!file) return []
     const path = entry.fullPath.replace(/^\//, '')
     if (path !== file.name)
       Object.defineProperty(file, 'webkitRelativePath', { value: path })

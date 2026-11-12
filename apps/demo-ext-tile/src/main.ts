@@ -453,12 +453,19 @@ document.addEventListener('drop', async (e) => {
   // Claim the open generation now: an open started while the folder is walked
   // is newer and wins, so a slow walk must not replace it (or its status).
   const id = ++openCount
+  let failure = 'Drop had no files'
   const files = await droppedFiles(e.dataTransfer).catch((err) => {
-    if (id === openCount)
-      status.textContent = `Drop failed: ${err instanceof Error ? err.message : err}`
+    failure = `Drop failed: ${err instanceof Error ? err.message : err}`
     return []
   })
-  if (id !== openCount || !files.length) return
+  if (id !== openCount) return
+  if (!files.length) {
+    // This drop claimed the generation, so it ends the open it superseded.
+    opening?.abort()
+    restoreMenu()
+    status.textContent = failure
+    return
+  }
   lastFiles = files
   void openFiles(files)
 })

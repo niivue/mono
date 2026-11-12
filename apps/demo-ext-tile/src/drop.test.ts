@@ -52,3 +52,15 @@ test('walks folders in batches, keys their files by relative path', async () => 
   ])
   expect(files[4]).toBe(loose)
 })
+
+test('an unreadable file is skipped, not the whole drop', async () => {
+  const gone = {
+    isFile: true,
+    fullPath: '/slide/gone.dcm',
+    file: (_: unknown, fail: (e: Error) => void) => fail(new Error('NotFound')),
+  }
+  const tree = dir('/slide', [file('/slide/good.dcm'), gone])
+  const dt = { items: [item(tree)] } as unknown as DataTransfer
+  const files = await droppedFiles(dt)
+  expect(files.map((f) => f.webkitRelativePath)).toEqual(['slide/good.dcm'])
+})

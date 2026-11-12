@@ -1,3 +1,23 @@
+## 1.0.0-rc.176 (2026-11-12)
+
+### Features
+
+- slide readout in locationChange, slide panes and MCP ([d0bcff89](https://github.com/niivue/mono/commit/d0bcff89))
+
+### Fixes
+
+- **niivue:** slideSampleAt refuses a lone coordinate ([67c382a2](https://github.com/niivue/mono/commit/67c382a2))
+- **niivue:** crosshair arms reach a crosshair past the scene extents ([65389ecf](https://github.com/niivue/mono/commit/65389ecf))
+- **niivue:** crosshair clamp includes the slide plane ([74d7b46d](https://github.com/niivue/mono/commit/74d7b46d))
+- **niivue:** re-emit the slide readout when a channel is renamed ([2366dbb7](https://github.com/niivue/mono/commit/2366dbb7))
+- **niivue:** emit locationChange when the slide readout changes or goes away ([0157e440](https://github.com/niivue/mono/commit/0157e440))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.175 (2026-11-12)
 
 ### Features

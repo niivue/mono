@@ -1296,7 +1296,7 @@ describe('chunkVolumeMultiLOD — budget pass cost', () => {
       }
     }
     expect(totalDataVoxels(plan)).toBe(8192 * 4096 * 1024)
-  })
+  }, 10_000) // above the 6 s bound, so the assertion (not bun's 5 s default) decides
 })
 
 describe('chunkVolumeMultiLOD — pinned gridDims lattice', () => {

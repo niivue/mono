@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { channelColormapsFor } from '@niivue/niivue'
 import {
+  countingFetch,
   defaultOmeZarrLevel,
   fetchOmeZarr,
   omeZarrBlockToDisplay,
@@ -241,17 +242,15 @@ describe('openOmeZarr level selection', () => {
   test('an HTML fallback page reads as a missing key', async () => {
     const store = makeTczyxStore()
     // A dev server answers every missing path with its index page.
-    const fetchImpl = async (request: Request) => {
-      const bytes = store.get(
-        new URL(request.url).pathname.slice(2) as `/${string}`,
-      )
+    const fetchImpl = async (url: string) => {
+      const bytes = store.get(new URL(url).pathname.slice(2) as `/${string}`)
       return bytes
         ? new Response(bytes as Uint8Array<ArrayBuffer>)
         : new Response('<!doctype html>', {
             headers: { 'content-type': 'text/html' },
           })
     }
-    const source = await fetchOmeZarr('http://x/s', { fetchImpl })
+    const source = await fetchOmeZarr('http://x/s', { fetch: fetchImpl })
     expect(source.levels.length).toBeGreaterThan(0)
     // An HTML error page is still an error, not a missing key.
     const outage = omeZarrFetchStore(
@@ -268,8 +267,8 @@ describe('openOmeZarr level selection', () => {
   test('a ranged read answered 200 is rejected; plain GET and HEAD pass', async () => {
     const methods: string[] = []
     // A server that ignores Range: every answer is the whole file, 200.
-    const store = omeZarrFetchStore('http://x/s', async (request) => {
-      methods.push(request.method)
+    const store = omeZarrFetchStore('http://x/s', async (_url, init) => {
+      methods.push(init?.method ?? 'GET')
       return new Response(new Uint8Array(64))
     })
     expect((await store.get('/zarr.json'))?.length).toBe(64)
@@ -589,5 +588,29 @@ describe('omeZarrBlockToDisplay', () => {
     })
     expect(img).toBe(data)
     expect(dims).toEqual([3, 2, 1])
+  })
+})
+
+describe('countingFetch', () => {
+  test('counts the body when there is no Content-Length, and keeps it readable', async () => {
+    const counted: number[] = []
+    const f = countingFetch(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(Uint8Array.from([1, 2, 3]))
+              c.close()
+            },
+          }),
+          { status: 206 },
+        ),
+      (n) => counted.push(n),
+    )
+    const r = await f('http://x/s/0/c/0')
+    expect(r.headers.get('content-length')).toBeNull()
+    expect(counted).toEqual([3])
+    expect(r.status).toBe(206)
+    expect(Array.from(new Uint8Array(await r.arrayBuffer()))).toEqual([1, 2, 3])
   })
 })

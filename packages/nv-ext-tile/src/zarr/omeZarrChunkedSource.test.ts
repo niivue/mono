@@ -476,3 +476,16 @@ describe('ByteLruCache', () => {
     expect(reads.get('/0/1.1.1')).toBe(1)
   })
 })
+
+test('T6: only a credential-free URL persists (no query, userinfo or custom fetch)', async () => {
+  const { persistable } = await import('./omeZarrChunkedSource')
+  expect(persistable('https://s3.example/a.zarr', {})).toBe(true)
+  expect(persistable('https://s3.example/a.zarr?token=x', {})).toBe(false)
+  expect(persistable('https://u:p@s3.example/a.zarr', {})).toBe(false)
+  expect(persistable('blob:https://app/x', {})).toBe(false)
+  expect(
+    persistable('https://s3.example/a.zarr', {
+      fetch: (u, init) => fetch(u, init),
+    }),
+  ).toBe(false)
+})

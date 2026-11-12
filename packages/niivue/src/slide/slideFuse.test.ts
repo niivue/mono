@@ -169,7 +169,7 @@ describe('fuseUniforms', () => {
     const [head, width, , , rest, s] = Float32Array.from(
       fuseUniforms(layer, 0, false),
     ) as unknown as number[]
-    const n = f(f(Math.max(f(f(v) * s) - head, -3.4e38) - rest) * 255)
+    const n = f(f(Math.max(f(f(f(v) * s) - head), f(-3.4e38)) - rest) * 255)
     let g = Math.floor(f(f(n / width) + 0.5))
     if (f(f(g - 0.5) * width) > n) g -= 1
     else if (f(f(g + 0.5) * width) <= n) g += 1

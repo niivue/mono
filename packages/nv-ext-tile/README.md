@@ -4,6 +4,7 @@ Tiled and chunked image formats for NiiVue (slides and streamed volumes), one su
 - `@niivue/nv-ext-tile/tiff`: tiled TIFF (below).
 - `@niivue/nv-ext-tile/dicom`: DICOM-WSI folders, hosted manifests and DICOMweb ([Local DICOM-WSI folders](#local-dicom-wsi-folders), [DICOMweb](#dicomweb)). It is a whole-slide adapter, not a DICOM loader: convert other DICOM to NIfTI with `@niivue/dcm2niix`.
 - `@niivue/nv-ext-tile/zarr`: OME-Zarr volumes, whole levels or streamed brick by brick, and 2D OME-Zarr slides streamed tile by tile into `NVSlide` ([OME-Zarr](#ome-zarr)).
+- `@niivue/nv-ext-tile/open`: one opener for all of the above ([Opening any slide](#opening-any-slide)); each format loads only when a slide of it opens.
 
 Replaces `@niivue/nv-ext-wsi` and `@niivue/nv-ext-tiff`, and core's OME-Zarr exports; the APIs are unchanged, only the import paths differ.
 
@@ -14,6 +15,23 @@ bun add @niivue/nv-ext-tile
 ```
 
 Requires `@niivue/niivue` as a peer dependency, at least the core version current when this package was published (`workspace:^`, which `bun publish` writes as `^<that version>`).
+
+## Opening any slide
+
+```ts
+import { NVSlide } from '@niivue/niivue'
+import { openSlide } from '@niivue/nv-ext-tile/open'
+
+// A URL (TIFF, OME-Zarr, DZI, hosted manifest), or local TIFFs and DICOM-WSI files.
+const { candidates, index } = await openSlide(input, { fetch, signal, pool })
+// Every slide found is listed; none is chosen for you.
+const slide = NVSlide.fromSource(await candidates[0].open())
+```
+
+- `sniffSlide(input, { fetch, signal })` names the kind: a URL by its path (`.zarr` or a trailing `/`, `.dzi`, `.json`, TIFF suffixes), else by one `bytes=0-131` Range probe through `fetch` (TIFF or DICM magic, then JSON or XML by Content-Type or first byte); a file by its magic bytes; several files are a DICOM folder (`openSlide` still lists the TIFFs among them). A TIFF with `DICM` at byte 128 is indexed as DICOM and listed as a TIFF too.
+- `openSlide` returns `{ kind, candidates, index? }`. Each local TIFF is a candidate; a DICOM folder gives one per optical path and focal plane; its label, overview and thumbnail images and skipped files stay in `index`, never in `candidates`. `candidate.open(signal)` makes the source; the slide that adopts it owns it (`NVSlide.dispose` disposes it).
+- Options: `fetch` (a `SlideFetch`, `(url, init?) => Promise<Response>`) serves every read of TIFF, DICOMweb, OME-Zarr and the sniff probe, and a hosted manifest's reads on its own origin (tile files elsewhere are read without credentials); a DZI rejects one (its tiles use the global fetch). `signal`; `pool` (TIFF, borrowed); `tiff` (TIFF options such as `placement`, `z`, `t`); `attribution` (TIFF, DICOM and manifests: set on the manifest, text only, `url` only when http(s)); `baseUrl` (a hosted manifest's relative URLs; default the manifest URL); `onProgress(done, total)` (DICOM indexing).
+- Not opened by URL: a bare DICOM file (host a manifest), a local OME-Zarr folder or DZI.
 
 ## TIFF
 
@@ -45,18 +63,26 @@ slide.dispose()
 pool.destroy()
 ```
 
-`fromUrl` accepts `fetch` to supply your own fetch (e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name. Both open methods take `z` / `t` to pick an OME-TIFF plane (default 0).
+`fromUrl` accepts `fetch` (a `SlideFetch`, `(url, init?) => Promise<Response>`, e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name. Both open methods take `z` / `t` to pick an OME-TIFF (or Argos) plane (default 0; Argos, the middle), `placement` (vendor layouts, below) and `attribution` (kept as `manifest.attribution`: text fields, `url` only when http(s)).
 
 ### What it reads
 
-- **Levels:** OME-TIFF pyramids in each plane's `SubIFDs`, else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a power-of-two downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area.
-- **Pixels:** geotiff-rs's `readRGB` converts RGB, YCbCr, gray (incl. WhiteIsZero), palette and CMYK to 8-bit RGB. Tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge.
-- **OME-TIFF channels:** the OME-XML (first IFD's ImageDescription) maps channel, `z` and `t` to a main-chain IFD by `DimensionOrder` and `TiffData` (`IFD`, `First*`, `PlaneCount`). With more than one 1-sample channel, as for the ZarrSlideSource: `manifest.channelInfo` gets each `Channel`'s `Name` and `Color` (snapped to a colormap); OME-XML has no `active`, so the first 4 start visible and the rest hidden (not fetched); `fetchTileSamples` serves the visible channels' samples as `raw-gray` for `NVSlide` to composite. Default windows are the 2-98% range (the volume rule) of a sample of the coarsest level, as for the ZarrSlideSource; non-uint8/16 types are quantized to uint16 over the sample's min..max, with `channelInfo[c].storedToValue` mapping samples back (`NVSlide.sampleAt` reports approximate data values). RGB OME-TIFF stays `raw-rgba`; with several RGB channels, the first shows. Limits: a plane that another file of a multi-file set holds (`TiffData` `UUID` not this file's) is refused, the first `Image` only, plane IFDs below 4096, every channel's pyramid must match the first's. geotiff walks the IFD chain to a plane, so a deep `z` costs a read per IFD before it (z 977 of the 3910-plane Avivator brain: ~6 s).
+- **Levels:** OME-TIFF pyramids in each plane's `SubIFDs`, else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area. The downsample is the one Philips's XML states for that padded size (its pixel spacing ratio, any factor), else the first free power of two.
+- **Vendor layouts:**
+  - *Argos AVS z-stack* (one pyramid per focal plane, `MinZ`/`MaxZ` in tag 65000): `SlidePlaneCapable` with `planes.z` focal planes; it opens on the middle plane (the unstacked scan's focus) unless `z` is given.
+  - *Hamamatsu NDPI* (one JPEG strip per level): read as virtual `image/jpeg` tiles of whole restart intervals (tag 65426), each wrapped as a small JPEG, so no strip is decoded whole; a strip without restart markers is one tile if it fits 4096 px. Locally a tile reads only its intervals; by URL the first tile of a 512 px band reads that band through geotiff's 64 KiB blocks (CMU-1 level 0: 2.4 MB, then 0 for the band's other 24 tiles). Files over 4 GiB are not supported: their 32-bit offsets wrap, and geotiff-rs cannot parse their IFDs.
+  - *`placement: true`* (off by default until `NVSlide` draws placed tiles; off, these files open as their storage grid, unchanged) adds `level.placement`, per-piece crops and origins, and makes the manifest's width/height the placed extent: Ventana BIF tile joints (XMP `TileJointInfo`; overlaps split at their midpoint; frames past `NumCols` dropped; joints that do not resolve, such as iScan Coreo files whose background frames are not joined, keep the grid with one warning), Trestle `OverlapsXY` per level, and Leica SCN regions (several brightfield images side by side in one storage grid, placed by their `<view>` in the collection; one region opens as its own pyramid).
+- **Pixels:** geotiff-rs's `readRGB` converts RGB, YCbCr, palette and CMYK to 8-bit RGB; those tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge, an absent tile (`TileByteCounts` 0) transparent. A one-sample grey image (BlackIsZero, WhiteIsZero as `MONOCHROME1`; plain TIFF or an OME-TIFF with one channel) is `raw-gray` with one `manifest.channelInfo` entry, windowed by `NVSlide`: uint8/uint16/int16/float32 samples native (int8 widens to int16, float16 to float32), uint32/int32/float64 quantized to uint16 (`storedToValue`). A uint8 image opens at 0-255, as it showed before, with no extra reads; wider types default to the 2-98% range of a coarsest-level sample, read at open (up to 16 tiles). An absent grey tile reads as zeros (no alpha), as a multi-channel plane or a Zarr fill value.
+- **OME-TIFF channels:** the OME-XML (first IFD's ImageDescription) maps channel, `z` and `t` to a main-chain IFD by `DimensionOrder` and `TiffData` (`IFD`, `First*`, `PlaneCount`). With more than one 1-sample channel, as for the ZarrSlideSource: `manifest.channelInfo` gets each `Channel`'s `Name` and `Color` (snapped to a colormap); OME-XML has no `active`, so the first 4 start visible and the rest hidden (not fetched); `fetchTileSamples` serves the visible channels' samples for `NVSlide` to composite. Default windows are the 2-98% range (the volume rule) of a sample of the coarsest level, as for the ZarrSlideSource, read at open for the visible channels only; a hidden channel's is read the first time it is shown and stated through `SlideSourceHost.channelInfoChanged` before its first tile (a 27-channel uint8 file: 114 open reads, 7.3 MB, against 313 and 21 MB when every channel was sampled). Sample types follow the grey rule above (int16/float32 native); uint32/int32/float64 are quantized to uint16 over the sample's min..max, with `channelInfo[c].storedToValue` mapping samples back (`NVSlide.sampleAt` reports approximate data values). XML entities and character references in channel names are decoded. An OME-TIFF with more than one `z` or `t` is `SlidePlaneCapable`: `planes` states the counts (and `zPositionsUm` from `PhysicalSizeZ` in µm), `preparePlane(p, signal)` reads that plane's IFDs (no pixels) and returns its manifest, whose levels state `plane`, so one source serves every plane; a plane whose pyramid differs from the open one's rejects `RangeError`. RGB OME-TIFF stays `raw-rgba`; with several RGB channels, the first shows. Limits: a plane that another file of a multi-file set holds (`TiffData` `UUID` not this file's) is refused, the first `Image` only, plane IFDs below 4096, every channel's pyramid must match the first's. geotiff walks the IFD chain to a plane, so a deep `z` costs a read per IFD before it (z 977 of the 3910-plane Avivator brain: ~6 s).
 - **Compression:** none, LZW, JPEG, Deflate, PackBits (Rust/WASM), LERC, ZSTD, WebP (JS). JPEG 2000 (Aperio 33003 and 33005, TIFF 34712) after `registerDcm2niixTiffDecoders()`, which decodes in @niivue/dcm2niix's OpenJPEG workers (loaded on the first such tile, one pool shared with `/dicom`'s `registerDcm2niixDecoders`) rather than the geotiff `Pool`; colour matches OpenSlide within 1. Without it those tiles fail with geotiff-rs's "has no built-in decoder" error. Not supported: old-style JPEG (6), 12-bit and lossless JPEG.
-- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires; a one-tile level may be its exact size, as bioformats writes), at most 2^21 tiles across all levels, unsigned integer samples (any type for OME-TIFF channels), RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
+- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires; a one-tile level may be its exact size, as bioformats writes), at most 2^21 tiles across all levels, unsigned integer samples for RGB and palette (any type for grey), RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
 - **JS decoders trust the compressed stream.** The Rust codecs and dcm2niix bound a tile's decoded size, but LERC, ZSTD and WebP do not: a hostile tile can exhaust memory. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
-Not supported yet: 16-bit single-channel planes (shown scaled to 8-bit), TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
+**Migration (rc), other sources.** `openSlide` (and any `DziSource`) rejects a custom `fetch` for a DZI: its tiles use the global fetch. DICOM-WSI indexing needs resizable `ArrayBuffer`s (Chrome 111, Firefox 128, Safari 16.4) and rejects with that message without them. Label, overview and thumbnail instances moved from `index.skipped` to `index.associated`. DICOMweb `headers` is deprecated for `fetch`.
+
+**Migration (rc).** Single-channel grey TIFF is now `raw-gray` with a channel, not an 8-bit RGB bitmap: it is windowed, and 16-bit data keeps its 16 bits. int16 and float32 samples (single and multi-channel) are native, no longer quantized to uint16, so their windows and `NVSlide.sampleAt` `stored` values are data values and `storedToValue` is gone. A saved document's stored-unit window for such a slide changes meaning: convert it with the old map, `value = stored * scale + offset` (from the saved `storedToValue`), or reset it.
+
+Not supported yet: TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
 
 ## Local DICOM-WSI folders
 
@@ -65,9 +91,12 @@ import { DicomWsiSource, indexDicomWsi, registerDcm2niixDecoders } from '@niivue
 
 registerDcm2niixDecoders() // JPEG 2000 and JPEG-LS tiles, and ICC colour management; needs @niivue/dcm2niix
 const files = [...folderInput.files] // <input type="file" webkitdirectory>
-const index = await indexDicomWsi(files)
-const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
+const index = await indexDicomWsi(files, { signal, onProgress: (done, total) => {} })
+const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files, { attribution }))
 ```
+
+- `signal` stops indexing (the worker is terminated) and rejects with its reason;
+  `onProgress(done, total)` runs after each file, from the worker or this thread.
 
 - `indexDicomWsi` parses only headers and item tags, never pixel data.
   It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
@@ -82,6 +111,15 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   Content, do not change the order). A file with no DimensionOrganizationType is
   placed by its per-frame positions (path and plane from per-frame values) when
   it gives them, else in the implicit order.
+- Label, overview and thumbnail instances (ImageType value 3 `LABEL`, `OVERVIEW`,
+  `THUMBNAIL`, single frame) are never slides: they are listed in `index.associated`.
+  `associatedImages(index, slide)` picks a slide's (same study and container, else
+  series); `readAssociatedImage(image, files, signal)` returns its encoded frame
+  (`codec`, `bytes`) or, for native 8-bit grey/RGB pixel data (labels often are),
+  `raw-rgba`; `associatedImageBitmap` decodes it through NVSlide's tile decoders
+  (JPEG and native built in, JPEG 2000/JPEG-LS once registered). Associated
+  images are not in `index.skipped`, except a native one that is not 8-bit grey or
+  RGB (`uncompressed`); a tiled (multi-frame) one is in neither list.
 - Each optical path and focal plane becomes its own slide. A shared
   OpticalPathIdentifier assigns every frame to that path; an identifier missing
   from OpticalPathSequence is its own path. `focalPlane` is a plane index, not µm:
@@ -91,14 +129,32 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   index (scanners give TotalPixelMatrixOriginSequence no Z), so it is matched by
   index and may join the wrong plane if other levels hold a different set of planes.
   A single shared ZOffset in a multi-plane TILED_FULL file is ignored. ZOffset on
-  only some of a file's frames is `malformed`.
+  only some of a file's frames is `malformed`. A plane's stated ZOffset is kept as
+  `zOffsetUm`.
+- **Focal planes as one source.** `focalStacks(index.slides)` groups the slides of
+  one study, series, container and optical path, planes in rank order;
+  `new DicomPlaneStack(stack.map((s) => new DicomWsiSource(s, files)), { zPositionsUm })`
+  (or `DicomWebWsiSource`s) is `SlidePlaneCapable`: `planes` `{ z, t: 1 }`,
+  `preparePlane(p, signal)` returns plane `p`'s manifest, whose levels state `plane`,
+  so one bound source serves every plane. A plane out of bounds, or whose level-0
+  size, spacing or sample semantics differ from the open one's, rejects `RangeError`.
+  The stack owns its plane sources.
+- **Monochrome.** A MONOCHROME1/2 slide states one grey `channelInfo` entry (as NVSlide
+  shows one without it), with `storedToValue` `{ scale: RescaleSlope, offset:
+  RescaleIntercept, quantized: false }` when the top-level rescale is stated. A signed
+  one (PixelRepresentation 1) states `sampleType: 'i16'` on its levels, so NVSlide reads
+  the decoded samples as two's complement.
 - `pixelSpacingMM` is the level-0 PixelSpacing: shared PixelMeasures, else the first
   frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
-  `transfer-syntax` (explicit VR little endian only), `uncompressed`, `malformed`,
+  `transfer-syntax` (explicit VR little endian only), `uncompressed` (native pixel
+  data of a level, or of an associated image that is not 8-bit grey or RGB), `malformed`,
   `too-large` (a level of more than 2^22 tiles) or `not-tiled`.
 - Undefined-length UN elements (implicit VR sequences, PS3.5 6.2.2) are skipped.
-- Hostile input is bounded: the header read stops at 64 MiB, sequences at 8 levels,
+- Hostile input is bounded: the header read stops at 64 MiB, grown in place in 4 MiB
+  reads (a header costs its bytes plus one read, not twice its size; a 60 MiB header's
+  peak RSS 145 -> 117 MB), per-frame items past NumberOfFrames are refused as they
+  come, sequences at 8 levels,
   a file at 4096 optical paths and 4096 (optical path, focal plane) pairs, TILED_FULL
   frames at tiles x planes x NumberOfOpticalPaths, text values the index reads at
   1 KiB, and counts and offsets are checked against the file size (`malformed`
@@ -110,6 +166,9 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   many slides indexes in memory proportional to its headers. Each level reports
   `duplicates` and `holes`; its grid-sized tile map is built only when
   a slide is opened (`DicomWsiSource`) or a manifest is written.
+- `dispose()` (or disposing the slide that owns the source) rejects reads in flight and
+  later with AbortError; the files are the caller's. `attribution` becomes
+  `manifest.attribution` (text fields, `url` only when http(s)).
 - **ICC colour management.** `DicomWsiSource`, `DicomWebWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; disposing the source (or the slide that owns it) cancels the read.
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
@@ -136,9 +195,9 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   Chrome on the main thread (`File.slice`, ~0.1 ms a read whatever its size) took
   0.3-2.9 s for the last six; the page stayed responsive either way (no task over 50 ms).
 
-- Test fixtures: `fixtures/dicom-wsi` (synthetic, about 60 KB, with the generator
-  `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
-  browser check). A `.json` is its `.dcm` as DICOM JSON, for the parity test.
+- Test fixtures: `fixtures/dicom-wsi` (synthetic, about 70 KB, with the generator
+  `make_fixtures.py`; `colors.dcm`, `overview.dcm` and `monosigned.dcm` have real JPEG
+  frames, made by `cjpeg`, for the browser checks; `label.dcm` is native RGB). A `.json` is its `.dcm` as DICOM JSON, for the parity test.
 
 ## DICOM JSON metadata
 
@@ -156,16 +215,22 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 const index = indexDicomWsiMetadata(seriesMetadata) // WADO-RS .../series/{uid}/metadata
 const source = await DicomWebWsiSource.open(index.slides[0], {
   seriesUrl: 'https://host/dicomweb/studies/1.2/series/3.4',
-  headers: () => ({ Authorization: getToken() }), // read per request
-})
+  fetch: (url, init) =>
+    fetch(url, { ...init, headers: { ...init?.headers, Authorization: getToken() } }),
+}, signal)
 const slide = NVSlide.fromSource(source)
 ```
 
 - Tiles are fetched by WADO-RS `{seriesUrl}/instances/{sop}/frames/{n}`, with the slide's abort signal. A query on `seriesUrl` (an access token) is kept on each frame URL.
 - A level whose metadata states no transfer syntax costs one frame request in `open` (all levels at once), which reads the syntax from the bytes. A server that refuses it (HTTP 400, 406 or 415) is assumed to serve JPEG Baseline; other errors fail the open.
 - JPEG 2000 and JPEG-LS tiles are requested untranscoded (`transfer-syntax=*`); a tile the server transcoded anyway is refused.
+- `fetch` (a `SlideFetch`) serves every request to `seriesUrl`'s origin, the transfer-syntax
+  sniff included; a URL on another origin uses `globalThis.fetch`, so credentials never leave
+  the series' origin. `headers` (read per request, same origin only) is deprecated in favour
+  of `fetch`. `dispose()` aborts fetches in flight; later reads reject AbortError.
+  `attribution` becomes `manifest.attribution`.
 - Responses are capped at 64 MB, also when streamed without Content-Length. `readFirstPart(response, what)` applies the same cap and returns the first multipart/related part, for a host's own WADO-RS requests.
-- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source) and the URL is on `seriesUrl`'s origin, else (or when it resolves undefined or empty) fetched. `headers`, and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin, so an ICC BulkDataURI on another origin that needs auth is unsupported (it is fetched without credentials). A relative `seriesUrl` resolves against the page.
+- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source) and the URL is on `seriesUrl`'s origin, else (or when it resolves undefined or empty) fetched. `fetch`, `headers` and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin, so an ICC BulkDataURI on another origin that needs auth is unsupported (it is fetched without credentials). A relative `seriesUrl` resolves against the page.
 - One slide per optical path and focal plane, as for local files; a viewer that shows one picks `slides[0]`, the first path and lowest plane, and should say others exist.
 
 ## OME-Zarr
@@ -211,7 +276,7 @@ Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thre
 
 ## Without a bundler
 
-`dist/standalone/` holds `tiff.js`, `dicom.js` and `zarr.js` with geotiff-rs and zarrita-rs (their WASM inlined) bundled in and the Zarr worker inlined. Only `@niivue/niivue` stays a bare import, plus `@niivue/dcm2niix` in `/dicom` and `/tiff`, imported only when a registered decoder first runs. Map them with an import map onto core's standalone build, so the page and the extension share one core (one NVSlide decoder registry, one chunk-timing recorder):
+`dist/standalone/` holds `tiff.js`, `dicom.js`, `zarr.js` and `open.js` with geotiff-rs and zarrita-rs (their WASM inlined) bundled in and the Zarr worker inlined. Only `@niivue/niivue` stays a bare import, plus `@niivue/dcm2niix` in `/dicom` and `/tiff`, imported only when a registered decoder first runs. Map them with an import map onto core's standalone build, so the page and the extension share one core (one NVSlide decoder registry, one chunk-timing recorder):
 
 ```html
 <script type="importmap">
@@ -225,7 +290,7 @@ Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thre
 </script>
 ```
 
-Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-ext-tile/`, and, for JPEG 2000 / JPEG-LS tiles (DICOM and TIFF) and ICC profiles, `@niivue/dcm2niix`'s `dist/` to `dcm2niix/` (its workers and WASM load relative to `index.jpeg.js`). A page using `@niivue/niivue/webgpu` or `/webgl2` maps those entries too; they share core's chunks with `niivue.js`. Without the dcm2niix mapping, tiles that need it fail (the slide counts them in `stats.failures`) and JPEG tiles still decode. `scripts/check-standalone.ts` runs with the build: it rejects any other bare import and any format reaching another's code. `bunx nx e2e nv-ext-tile` checks NIfTI, Zarr, TIFF and DICOM pages built this way under a nested base.
+Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-ext-tile/`, and, for JPEG 2000 / JPEG-LS tiles (DICOM and TIFF) and ICC profiles, `@niivue/dcm2niix`'s `dist/` to `dcm2niix/` (its workers and WASM load relative to `index.jpeg.js`). A page using `@niivue/niivue/webgpu` or `/webgl2` maps those entries too; they share core's chunks with `niivue.js`. Without the dcm2niix mapping, tiles that need it fail (the slide counts them in `stats.failures`) and JPEG tiles still decode. `scripts/check-standalone.ts` runs with the build: it rejects any other bare import, any format reaching another's code, and `open.js` loading any format before it is used. `bunx nx e2e nv-ext-tile` checks NIfTI, Zarr, TIFF and DICOM pages built this way under a nested base.
 
 ## Hosting an indexed slide
 
@@ -240,7 +305,9 @@ Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-e
 
 Reads go through geotiff-rs's 64 KiB block cache: the header and each level's tile offset table cost a few blocks, and a tile costs its compressed size rounded out to block boundaries.
 
-A remote server **must** support HTTP Range (`206 Partial Content`). If it answers `200`, `fromUrl` cancels that response and rejects with "server ignored the HTTP Range request"; there is no fallback to downloading the full slide. Cross-origin servers must send `Access-Control-Allow-Origin` and allow the `Range` request header. Exposing `Content-Range` (`Access-Control-Expose-Headers`) is optional: when visible, each response's start offset is checked against the request. For a server you cannot change, download the file and open it with `fromGeoTIFF(await fromBlob(file))`.
+A remote server **must** support HTTP Range (`206 Partial Content`). If it answers `200`, `fromUrl` cancels that response and rejects with "server ignored the HTTP Range request"; there is no fallback to downloading the full slide. Cross-origin servers must send `Access-Control-Allow-Origin` and allow the `Range` request header. Exposing `Content-Range` (`Access-Control-Expose-Headers`) is optional: when visible, each response's start offset and length are checked against the request (a short or misplaced body, e.g. one Chromium truncated from its cache, is read once more with `cache: 'no-store'`, then refused); without it, a body longer than the range is refused and a shorter one accepted (the last block may run past EOF). A redirect (a signed CDN URL, as Hugging Face's `/resolve/` answers) is followed once and its target reused for later reads, one round trip instead of two (about 133 to 28 ms median per read on Hugging Face); with a custom `fetch` only a same-origin target is reused, and any failed reply from the target (an expired signed URL, a CORS error) sends the read back to the original URL, which resolves it again; after two targets fail in a row, none is reused. For a server you cannot change, download the file and open it with `fromGeoTIFF(await fromBlob(file))`.
+
+A hosted manifest (`ManifestRangeSource` in core) checks each `206`: a body that is not exactly the range, or a visible `Content-Range` at another start, is read once more with `cache: 'no-store'` and then refused. Chromium can return a truncated body for a Range read it serves partly from its HTTP cache; the retry keeps the warm cache for every read it serves whole. A server without Range support gets a whole-file fallback, refused past 64 MiB.
 
 TIFF and Zarr share two modules: `src/channelDisplay.ts` (quantizing non-uint8/16 samples to uint16 and its inverse `storedToValue`, windows, grey plane copy) and `src/rangeFetch.ts` (Range reply checks: both refuse a `200` to a ranged read).
 

@@ -7,9 +7,20 @@
  *   - a DICOM page decodes JPEG 2000 and JPEG-LS tiles through the mapped
  *     @niivue/dcm2niix and applies an ICC profile, with the decoder registered
  *     through '@niivue/niivue' visible from the WebGPU entry (one core),
+ *   - a DICOMweb page opens a series from /metadata through a custom (auth)
+ *     fetch, sniffing its transfer syntax, and reads a signed MONOCHROME2
+ *     JPEG frame as negative data values; a DICOM folder's label and overview
+ *     decode to bitmaps and its index reports progress from the worker,
  *   - a TIFF page streams a JPEG tile through geotiff-rs's WASM by Range, and
  *     a JPEG 2000 tile fails clearly until registerDcm2niixTiffDecoders, then
- *     decodes through the mapped @niivue/dcm2niix.
+ *     decodes through the mapped @niivue/dcm2niix,
+ *   - int16 and float32 raw-gray TIFF and signed MONOCHROME2 DICOM read back
+ *     through the slide fusers on WebGL2 and WebGPU (a WebGPU-capable browser:
+ *     full Chromium on a Mac unless PLAYWRIGHT_CHROMIUM_CHANNEL says otherwise),
+ *   - the native fetch passed as a source option reads tiles and ICC
+ *     (ManifestRangeSource, openSlide), with no "Illegal invocation",
+ *   - an /open page loads no format until it opens a TIFF URL and a DICOM
+ *     folder (every slide listed), and never loads Zarr code for them.
  * Synthetic fixtures (fixtures/standalone, about 4 KB); a few seconds; not in CI.
  *   bunx nx e2e nv-ext-tile      # builds core and this package first
  */
@@ -89,8 +100,53 @@ function tinyTiff(tile, side, compression, photometric) {
   tile.copy(b, bps + 6)
   return b
 }
+// One-tile 16x16 little-endian grey TIFF, BlackIsZero, uncompressed: `bits`
+// per sample of SampleFormat `format` (2 int, 3 float); columns 0-4 hold
+// lo, 5-10 mid, 11-15 hi.
+function greyTiff(bits, format, [lo, mid, hi]) {
+  const side = 16
+  const bytes = bits / 8
+  const tile = Buffer.alloc(side * side * bytes)
+  for (let i = 0; i < side * side; i++) {
+    const x = i % side
+    const v = x < 5 ? lo : x < 11 ? mid : hi
+    if (format === 3) tile.writeFloatLE(v, i * 4)
+    else tile.writeInt16LE(v, i * 2)
+  }
+  const entries = [
+    [256, 3, 1, side],
+    [257, 3, 1, side],
+    [258, 3, 1, bits],
+    [259, 3, 1, 1],
+    [262, 3, 1, 1],
+    [277, 3, 1, 1],
+    [322, 3, 1, side],
+    [323, 3, 1, side],
+    [324, 4, 1, 0],
+    [325, 4, 1, tile.length],
+    [339, 3, 1, format],
+  ]
+  const data = 10 + entries.length * 12 + 4
+  const b = Buffer.alloc(data + tile.length)
+  b.write('II*\0', 0, 'latin1')
+  b.writeUInt32LE(8, 4)
+  b.writeUInt16LE(entries.length, 8)
+  entries.forEach(([tag, type, n, value], i) => {
+    const p = 10 + i * 12
+    b.writeUInt16LE(tag, p)
+    b.writeUInt16LE(type, p + 2)
+    b.writeUInt32LE(n, p + 4)
+    const v = tag === 324 ? data : value
+    if (type === 3) b.writeUInt16LE(v, p + 8)
+    else b.writeUInt32LE(v, p + 8)
+  })
+  tile.copy(b, data)
+  return b
+}
 const b64 = (s) => Buffer.from(s, 'base64')
 const TIFFS = {
+  'i16.tif': greyTiff(16, 2, [-1000, 0, 1000]),
+  'f32.tif': greyTiff(32, 3, [-1, 0, 1]),
   // 64x64 baseline JPEG, YCbCr: left half (200,30,30), right half (30,30,200).
   'jpeg.tif': tinyTiff(
     b64(
@@ -118,6 +174,7 @@ const IMPORTS = {
   '@niivue/nv-ext-tile/tiff': './ext/tiff.js',
   '@niivue/nv-ext-tile/dicom': './ext/dicom.js',
   '@niivue/nv-ext-tile/zarr': './ext/zarr.js',
+  '@niivue/nv-ext-tile/open': './ext/open.js',
   '@niivue/dcm2niix': './dcm2niix/index.jpeg.js',
 }
 const page = (body, imports = IMPORTS) =>
@@ -220,9 +277,18 @@ const PAGES = {
     const files = await Promise.all(['jp2k.dcm', 'jls.dcm'].map(async (n) =>
       new File([await (await fetch('./fixtures/' + n)).arrayBuffer()], n)))
     window.countWorkers = true
-    const index = await indexDicomWsi(files)
+    const progress = []
+    const index = await indexDicomWsi(files, { onProgress: (d, t) => progress.push([d, t]) })
     window.countWorkers = false
     const indexWorkers = [window.madeWorkers, window.liveWorkers, window.workerIndexes]
+    // Aborted while the worker module loads: rejects, starts no worker.
+    const made = window.madeWorkers
+    window.countWorkers = true
+    const early = new AbortController()
+    const aborting = indexDicomWsi(files, { signal: early.signal })
+    early.abort()
+    const earlyAbort = [await aborting.then(() => 'resolved', (e) => e?.name), window.madeWorkers - made, window.liveWorkers]
+    window.countWorkers = false
     const canvas = document.getElementById('gl')
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, preserveDrawingBuffer: true })
     const renderer = new SlideRenderer()
@@ -246,15 +312,48 @@ const PAGES = {
       return out
     }
     const by = (name) => index.slides.find((s) => s.container === name)
+    const { associatedImages, associatedImageBitmap } = await import('@niivue/nv-ext-tile/dicom')
+    const wsi = await Promise.all(['bot.dcm', 'label.dcm', 'overview.dcm'].map(async (n) =>
+      new File([await (await fetch('./wsi/' + n)).arrayBuffer()], n)))
+    const wsiIndex = await indexDicomWsi(wsi)
+    const associated = await Promise.all(associatedImages(wsiIndex, wsiIndex.slides[0]).map(async (a) => {
+      const bitmap = await associatedImageBitmap(a, wsi)
+      const ctx = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')
+      ctx.drawImage(bitmap, 0, 0)
+      return [a.kind, bitmap.width, bitmap.height, [...ctx.getImageData(3, 2, 1, 1).data.slice(0, 3)]]
+    }))
     return {
       shared,
       indexWorkers,
+      earlyAbort,
+      progress,
+      slides: wsiIndex.slides.length,
+      associated,
       skipped: index.skipped,
       jls: await show(by('jls'), true),
       jp2kRaw: await show(by('jp2k'), false),
       jp2kIcc: await show(by('jp2k'), true),
     }`),
 }
+
+// DICOMweb: a series served from /metadata and /frames (dicomweb/ route).
+PAGES['dicomweb.html'] = page(`
+    const { NVSlide } = await import('@niivue/niivue/webgl2')
+    const { DicomWebWsiSource, indexDicomWsiMetadata } = await import('@niivue/nv-ext-tile/dicom')
+    const seriesUrl = new URL('./dicomweb/studies/1.2.3.1/series/S', location.href).href
+    let fetched = 0
+    const fetch2 = (url, init) => {
+      fetched++
+      return fetch(url, { ...init, headers: { ...init?.headers, Authorization: 'Bearer t' } })
+    }
+    const metadata = await (await fetch2(seriesUrl + '/metadata')).json()
+    const index = indexDicomWsiMetadata(metadata)
+    const source = await DicomWebWsiSource.open(index.slides[0], { seriesUrl, fetch: fetch2 })
+    const syntax = source.manifest.levels[0].transferSyntaxUid
+    const slide = NVSlide.fromSource(source)
+    const [s] = await slide.loadSampleAt(5, 5)
+    slide.dispose()
+    return { syntax, sampleType: source.manifest.levels[0].sampleType, fetched, stored: s.stored, value: s.value, exact: s.exact }`)
 
 PAGES['tiff.html'] = page(`
     const { TiffSlideSource, registerDcm2niixTiffDecoders } = await import('@niivue/nv-ext-tile/tiff')
@@ -274,6 +373,106 @@ PAGES['tiff.html'] = page(`
     registerDcm2niixTiffDecoders()
     const j2k = await tile('j2k.tif')
     return { jpeg, j2kUnregistered, j2k, unhandled: window.unhandled ?? null }`)
+
+// The opener loads a format's code only when a slide of it opens.
+PAGES['open.html'] = page(`
+    const { openSlide } = await import('@niivue/nv-ext-tile/open')
+    const loaded = () => performance.getEntriesByType('resource').map((e) => e.name.split('/ext/')[1]).filter(Boolean)
+    const atImport = loaded()
+    const tiff = await openSlide('./tiff/jpeg.tif')
+    const source = await tiff.candidates[0].open()
+    const level = source.manifest.levels[0]
+    const jpeg = [...(await source.fetchTileBytes(level, level.tiles[0], 'open')).slice(0, 4)]
+    source.dispose()
+    const files = await Promise.all(['colors.dcm', 'paths.dcm'].map(async (n) =>
+      new File([await (await fetch('./wsi/' + n)).arrayBuffer()], n)))
+    const dicom = await openSlide(files)
+    return { atImport, jpeg, kinds: [tiff.kind, dicom.kind], dicomCandidates: dicom.candidates.length,
+      slides: dicom.index.slides.length, after: loaded() }`)
+
+// Raw-gray i16/f32 TIFF and signed MONOCHROME2 DICOM through the real fusers,
+// read back on both backends. Run in a WebGPU-capable browser (below).
+const GPU_PAGE = page(`
+    const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('@niivue/niivue')
+    const { TiffSlideSource } = await import('@niivue/nv-ext-tile/tiff')
+    const { DicomWsiSource, indexDicomWsi } = await import('@niivue/nv-ext-tile/dicom')
+    const gpu = !!(navigator.gpu && (await navigator.gpu.requestAdapter().catch(() => null)))
+    // The level-0 RGBA of a slide drawn 1:1, nearest, on one backend.
+    const readback = async (open, window, backend) => {
+      const source = await open()
+      const slide = NVSlide.fromSource(source)
+      const { width: W, height: H, levels } = slide.manifest
+      for (const t of levels[0].tiles) if (t) await slide.loadSampleAt(t.x * levels[0].tileWidth, t.y * levels[0].tileHeight)
+      slide.setChannel(0, window)
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      canvas.style.width = W + 'px'
+      canvas.style.height = H + 'px'
+      document.body.appendChild(canvas)
+      const screen = { widthCss: W, heightCss: H, devicePixelRatio: 1 }
+      slide.setViewport({ centerX: W / 2, centerY: H / 2, scale: 1 })
+      let renderer
+      if (backend === 'webgpu') renderer = await SlideRendererGPU.create(canvas, {})
+      else {
+        renderer = new SlideRenderer()
+        renderer.init(canvas.getContext('webgl2', { preserveDrawingBuffer: true }))
+      }
+      renderer.isNearestInterpolation = true
+      renderer.render([slide], screen)
+      // Read in the draw's task: a WebGPU canvas drops its texture once presented.
+      const c = document.createElement('canvas')
+      c.width = W
+      c.height = H
+      const ctx = c.getContext('2d')
+      ctx.drawImage(canvas, 0, 0)
+      const px = (x, y) => ctx.getImageData(x, y, 1, 1).data[0]
+      const [s] = await slide.loadSampleAt(2, 2)
+      const out = { W, H, px, stored: s.stored, sampleType: slide.manifest.levels[0].sampleType }
+      renderer.destroy()
+      canvas.remove()
+      slide.dispose()
+      return out
+    }
+    const files = [new File([await (await fetch('./wsi/monosigned.dcm')).arrayBuffer()], 'monosigned.dcm')]
+    const index = await indexDicomWsi(files)
+    const cases = {
+      i16: [() => TiffSlideSource.fromUrl('./tiff/i16.tif'), { calMin: -1000, calMax: 1000 }],
+      f32: [() => TiffSlideSource.fromUrl('./tiff/f32.tif'), { calMin: -1, calMax: 1 }],
+      signed: [async () => new DicomWsiSource(index.slides[0], files), { calMin: -128, calMax: 127 }],
+    }
+    const out = { gpu }
+    for (const backend of gpu ? ['webgl2', 'webgpu'] : ['webgl2'])
+      for (const [name, [open, window]] of Object.entries(cases)) {
+        const r = await readback(open, window, backend)
+        out[name + ' ' + backend] = name === 'signed'
+          ? { gray: r.px(Math.floor(r.W / 2), Math.floor(r.H / 2)), stored: r.stored, sampleType: r.sampleType }
+          : { gray: [r.px(2, 8), r.px(7, 8), r.px(13, 8)], stored: r.stored, sampleType: r.sampleType }
+      }
+    return out`)
+
+// The native fetch passed as an option: a source that stores it and calls it
+// as a method gives it the wrong receiver ("Illegal invocation" in Chromium).
+PAGES['nativefetch.html'] = page(`
+    const { ManifestRangeSource } = await import('@niivue/niivue')
+    const { openSlide } = await import('@niivue/nv-ext-tile/open')
+    const host = { resolveUrl: (u) => u, addWireBytes() {}, rangeHit() {}, rangeFallback() {},
+      pushRangeEvent() {}, updateRangeEvent() {}, channelInfoChanged() {} }
+    const read = async (source) => {
+      source.bind(host)
+      const level = source.manifest.levels[0]
+      return [[...(await source.fetchTileBytes(level, level.tiles[0], 't'))], [...(await source.fetchIccProfile())]]
+    }
+    const url = new URL('./manifest.json', location.href).href
+    const manifest = await (await fetch(url)).json()
+    const direct = await read(new ManifestRangeSource(manifest, { fetch, baseUrl: url }))
+    const opened = await openSlide(url, { fetch })
+    const viaOpen = await read(await opened.candidates[0].open())
+    const tiff = await (await openSlide('./tiff/jpeg.tif', { fetch })).candidates[0].open()
+    const tl = tiff.manifest.levels[0]
+    const tile = [...(await tiff.fetchTileBytes(tl, tl.tiles[0], 't')).slice(0, 4)]
+    tiff.dispose()
+    return { direct, viaOpen, tile }`)
 
 // Without a mapping for @niivue/dcm2niix: its tiles fail, JPEG still decodes.
 const { '@niivue/dcm2niix': _, ...noDcm2niix } = IMPORTS
@@ -307,6 +506,20 @@ PAGES['nomap.html'] = page(
   noDcm2niix,
 )
 
+// monosigned's metadata without its TransferSyntaxUID, so open sniffs a frame.
+const WSI = join(PKG, 'fixtures', 'dicom-wsi')
+async function dicomwebMetadata() {
+  const json = JSON.parse(await readFile(join(WSI, 'monosigned.json'), 'utf8'))
+  delete json['00020010']
+  return json
+}
+// Every monosigned frame is the same grey JPEG: serve its first codestream.
+async function dicomwebFrame() {
+  const dcm = await readFile(join(WSI, 'monosigned.dcm'))
+  const start = dcm.indexOf(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))
+  return dcm.subarray(start, dcm.indexOf(Buffer.from([0xff, 0xd9]), start) + 2)
+}
+
 const server = createServer(async (req, res) => {
   let path
   try {
@@ -321,9 +534,56 @@ const server = createServer(async (req, res) => {
     await new Promise((r) => setTimeout(r, 500))
     rest = rest.slice('slow/'.length)
   }
-  if (PAGES[rest])
-    return res.writeHead(200, { 'content-type': 'text/html' }).end(PAGES[rest])
+  const html = rest === 'gpu.html' ? GPU_PAGE : PAGES[rest]
+  if (html) return res.writeHead(200, { 'content-type': 'text/html' }).end(html)
   if (rest === 'tiny.nii') return res.writeHead(200).end(tinyNifti())
+  // A byte-range manifest over tiny.nii: one 2x1 raw-rgba tile, its 8 voxels.
+  if (rest === 'manifest.json')
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(
+      JSON.stringify({
+        id: 'm',
+        width: 2,
+        height: 1,
+        iccProfile: { url: 'tiny.nii', offset: 352, length: 8 },
+        levels: [
+          {
+            index: 0,
+            width: 2,
+            height: 1,
+            tileWidth: 2,
+            tileHeight: 1,
+            columns: 1,
+            rows: 1,
+            codec: 'raw-rgba',
+            fileUrl: 'tiny.nii',
+            tiles: [
+              { x: 0, y: 0, width: 2, height: 1, offset: 352, length: 8 },
+            ],
+          },
+        ],
+      }),
+    )
+  if (rest.startsWith('dicomweb/')) {
+    if (req.headers.authorization !== 'Bearer t')
+      return res.writeHead(401).end()
+    if (rest.endsWith('/metadata'))
+      return res
+        .writeHead(200, { 'content-type': 'application/dicom+json' })
+        .end(JSON.stringify([await dicomwebMetadata()]))
+    if (/\/frames\/\d+$/.test(rest))
+      return res
+        .writeHead(200, {
+          'content-type': 'multipart/related; type="image/jpeg"; boundary=B',
+        })
+        .end(
+          Buffer.concat([
+            Buffer.from('--B\r\nContent-Type: image/jpeg\r\n\r\n'),
+            await dicomwebFrame(),
+            Buffer.from('\r\n--B--\r\n'),
+          ]),
+        )
+    return res.writeHead(404).end()
+  }
   const tiff = TIFFS[rest.slice('tiff/'.length)]
   if (rest.startsWith('tiff/') && tiff) {
     const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
@@ -437,6 +697,79 @@ try {
     !tiff.requests.some((u) => /^ext\/(dicom|zarr)\.js|chunks\/blosc-/.test(u)),
     'tiff: no /dicom or /zarr code',
   )
+  const opened = results['open.html'].result
+  check(
+    opened.atImport?.includes('open.js') &&
+      !opened.atImport.some((u) =>
+        /^(tiff|dicom|zarr)\.js$|(tiff|zarr|lzw|jpeg|lerc|blosc)-/.test(u),
+      ),
+    `open: importing /open loads no format (${JSON.stringify(opened.atImport)})`,
+  )
+  check(
+    near(opened.jpeg ?? [], [200, 30, 30, 255]) &&
+      JSON.stringify(opened.kinds) === '["tiff","dicom"]' &&
+      opened.dicomCandidates === opened.slides &&
+      opened.slides > 1,
+    `open: a TIFF URL and a DICOM folder, every slide listed ${JSON.stringify({ ...opened, atImport: undefined, after: undefined })}`,
+  )
+  check(
+    !opened.after?.some((u) => /zarr|blosc-/.test(u)),
+    `open: TIFF and DICOM opened with no Zarr code (${opened.after?.join(', ')})`,
+  )
+  const gpuBrowser = await chromium.launch({
+    channel:
+      process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ??
+      (process.platform === 'darwin' && !process.env.CI
+        ? 'chromium'
+        : undefined),
+    args: [
+      '--enable-unsafe-webgpu',
+      '--ignore-gpu-blocklist',
+      '--enable-unsafe-swiftshader',
+    ],
+  })
+  try {
+    const tab = await gpuBrowser.newPage()
+    tab.on('pageerror', (e) => check(false, `gpu.html: ${e.message}`))
+    await tab.goto(`${origin}gpu.html`)
+    await tab.waitForFunction(() => window.result, null, { timeout: 30000 })
+    const g = await tab.evaluate(() => window.result)
+    if (g.error) check(false, `gpu.html: ${g.error}`)
+    check(g.gpu, `gpu: a WebGPU adapter (both backends read back) ${g.gpu}`)
+    for (const backend of g.gpu ? ['webgl2', 'webgpu'] : ['webgl2']) {
+      const i16 = g[`i16 ${backend}`]
+      const f32 = g[`f32 ${backend}`]
+      const signed = g[`signed ${backend}`]
+      check(
+        i16?.sampleType === 'i16' &&
+          i16.stored === -1000 &&
+          near(i16.gray, [0, 128, 255], 2),
+        `gpu ${backend}: TIFF int16 raw-gray, window -1000..1000 ${JSON.stringify(i16)}`,
+      )
+      check(
+        f32?.sampleType === 'f32' &&
+          f32.stored === -1 &&
+          near(f32.gray, [0, 128, 255], 2),
+        `gpu ${backend}: TIFF float32 raw-gray, window -1..1 ${JSON.stringify(f32)}`,
+      )
+      check(
+        signed?.sampleType === 'i16' &&
+          signed.stored === -56 &&
+          Math.abs(signed.gray - 72) <= 3,
+        `gpu ${backend}: signed MONOCHROME2 DICOM -56 in -128..127 ${JSON.stringify(signed)}`,
+      )
+    }
+  } finally {
+    await gpuBrowser.close()
+  }
+  const native = results['nativefetch.html'].result
+  const voxels = '[[1,2,3,4,5,6,7,8],[1,2,3,4,5,6,7,8]]'
+  check(
+    JSON.stringify(native.direct) === voxels &&
+      JSON.stringify(native.viaOpen) === voxels &&
+      near(native.tile ?? [], [200, 30, 30, 255]),
+    `native fetch as an option: ManifestRangeSource, openSlide (manifest, TIFF) read tiles and ICC ${JSON.stringify(native)}`,
+  )
   const stream = results['stream.html'].result
   check(
     JSON.stringify(stream.steps?.map((s) => s[0])) === '[1,1,1,0,1,0,0]' &&
@@ -484,6 +817,32 @@ try {
     near(dicom.jp2kIcc?.rgb[0] ?? [], blue) &&
       near(dicom.jp2kIcc.rgb[1], [255, 0, 255]),
     `dicom: ICC profile applied ${JSON.stringify(dicom.jp2kIcc)}`,
+  )
+  check(
+    JSON.stringify(dicom.earlyAbort) === '["AbortError",0,0]',
+    `dicom: an abort while the worker loads rejects and starts no worker ${JSON.stringify(dicom.earlyAbort)}`,
+  )
+  check(
+    dicom.progress?.join(';') === '1,2;2,2',
+    `dicom: the worker reports progress ${JSON.stringify(dicom.progress)}`,
+  )
+  check(
+    dicom.slides === 1 &&
+      JSON.stringify(dicom.associated?.map((a) => a.slice(0, 3))) ===
+        '[["label",16,8],["overview",16,16]]' &&
+      near(dicom.associated[0][3], [48, 64, 7], 0) &&
+      near(dicom.associated[1][3], [10, 120, 200]),
+    `dicom: label and overview are associated, never slides, and decode ${JSON.stringify(dicom.associated)}`,
+  )
+  const web = results['dicomweb.html'].result
+  check(
+    web.syntax === '1.2.840.10008.1.2.4.50' &&
+      web.fetched === 3 &&
+      web.sampleType === 'i16' &&
+      web.stored === -56 &&
+      web.value === -122 &&
+      web.exact,
+    `dicomweb: custom fetch for metadata, sniff and frame; signed JPEG reads -56 stored, -122 value ${JSON.stringify(web)}`,
   )
   check(
     results['dicom.html'].requests.some(

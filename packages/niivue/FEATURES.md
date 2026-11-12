@@ -178,6 +178,7 @@ The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volum
 | Feature | Kind | Notes |
 |---|---|---|
 | `NVSlideOptions.ownsSource` | Option | `slide.dispose()` also disposes the source (default true). `false` for a shared source, which the caller disposes |
+| `ManifestRangeSource(manifest, ManifestRangeSourceOptions)` | Class | A byte-range manifest source; `{ fetch?: SlideFetch, baseUrl? }`: a custom `(url, init?) => Promise<Response>` for reads on `baseUrl`'s origin (elsewhere a plain fetch without credentials) and the base for relative URLs. A 206 that is not exactly its range is read once more with `no-store`, then refused; a whole-file 200 is refused past 64 MiB |
 | `NVSlide.setRendererBudget(renderer, budget \| null)` | Method | A renderer's tile texture and raw pool bytes; tile capacity and its warning use the smallest registered. The slide renderers register through `SlideBudgetRegistration` and unregister slides they stop drawing |
 
 ## 8. Mesh Rendering (global)

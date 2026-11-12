@@ -64,6 +64,7 @@ describe('indexDicomWsiMetadata', () => {
       ['planes'],
       ['mono12'],
       ['noorg'],
+      ['monosigned'],
     ]
     for (const names of groups) {
       const a = await local(names)

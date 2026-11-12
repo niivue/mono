@@ -1,6 +1,25 @@
 // Range-reply checks shared by the TIFF and Zarr fetch paths. Each caller
 // keeps its own policy: which replies it refuses and with what message.
 
+/**
+ * The custom fetch every slide source option takes, e.g. one that adds auth
+ * headers or signs URLs. `globalThis.fetch` satisfies it.
+ */
+export type SlideFetch = (url: string, init?: RequestInit) => Promise<Response>
+
+/**
+ * `f`, else the global fetch, safe to store and call as a method: a native
+ * fetch called with another receiver throws "Illegal invocation".
+ */
+export const slideFetch = (f?: SlideFetch): SlideFetch =>
+  f ? (url, init) => f(url, init) : globalThis.fetch.bind(globalThis)
+
+/** A read's signal: the caller's, if any, plus the source's lifetime. */
+export const linked = (
+  signal: AbortSignal | undefined,
+  closed: AbortSignal,
+): AbortSignal => (signal ? AbortSignal.any([signal, closed]) : closed)
+
 /** Aborts when any given signal does; undefined when none is given. */
 export function anySignal(
   ...signals: (AbortSignal | null | undefined)[]

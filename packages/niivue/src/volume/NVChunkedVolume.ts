@@ -771,7 +771,8 @@ export class NVChunkedVolume {
     const hdr = this.volume.hdr
     const calibrate = (v: number) => v * hdr.scl_slope + hdr.scl_inter
     const raw = this.readout.value(x, y, z)
-    if (!Number.isNaN(raw)) return { value: calibrate(raw), exact: true }
+    // A decoded NaN is data, not a missing brick.
+    if (raw !== undefined) return { value: calibrate(raw), exact: true }
     const floor = this.floorVolume
     const common = this.source.levels[0].shape
     const dims = floor?.hdr.dims
@@ -1939,11 +1940,11 @@ class BrickReadout {
     }
   }
 
-  /** Raw value at common-grid voxel [x, y, z], NaN when no brick holds it. */
-  value(x: number, y: number, z: number): number {
+  /** Raw value at common-grid voxel [x, y, z], undefined when no brick holds it. */
+  value(x: number, y: number, z: number): number | undefined {
     const levels = this.source.levels
     const common = levels[0].shape
-    let best = Number.NaN
+    let best: number | undefined
     let bestLevel = Number.POSITIVE_INFINITY
     for (const { level, origin: o, dims, view } of this.bricks.values()) {
       if (level >= bestLevel) continue

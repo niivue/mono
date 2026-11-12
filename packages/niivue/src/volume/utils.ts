@@ -956,18 +956,10 @@ export function getVoxelValue(
   rz: number,
   frame = 0,
 ): number {
-  if (!volume.img && volume.voxelValue)
-    return volume.voxelValue(rx, ry, rz).value
-  if (
-    !volume.img ||
-    !volume.dimsRAS ||
-    !volume.img2RASstep ||
-    !volume.img2RASstart
-  )
-    return 0
   const dims = volume.dimsRAS
-  // Bounds check in RAS space
+  // Bounds check in RAS space, streamed volumes included
   if (
+    !dims ||
     rx < 0 ||
     rx >= dims[1] ||
     ry < 0 ||
@@ -976,6 +968,9 @@ export function getVoxelValue(
     rz >= dims[3]
   )
     return 0
+  if (!volume.img && volume.voxelValue)
+    return volume.voxelValue(rx, ry, rz).value
+  if (!volume.img || !volume.img2RASstep || !volume.img2RASstart) return 0
   // Compute native flat index from RAS coordinates
   const start = volume.img2RASstart
   const step = volume.img2RASstep

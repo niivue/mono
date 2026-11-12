@@ -628,3 +628,37 @@ test('the readout never holds a brick larger than readoutBytes', async () => {
   expect(held).toBeLessThanOrEqual(1024)
   expect(vol.voxelValue?.(1, 1, 1).exact).toBe(false)
 })
+
+test('getVoxelValue bounds-checks a streamed volume', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadChunkedVolume(source(7, { frames: 1 }), { coarseFloor: false })
+  await brickValue(nv.volumes[0])
+  const { getVoxelValue } = await import('@/volume/utils')
+  expect(getVoxelValue(nv.volumes[0], 0, 0, 0)).toBe(7)
+  expect(getVoxelValue(nv.volumes[0], 8, 0, 0)).toBe(0)
+  expect(getVoxelValue(nv.volumes[0], 0, -1, 0)).toBe(0)
+})
+
+test('a decoded NaN reads as exact NaN, not as a missing brick', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadChunkedVolume(
+    {
+      levels: [
+        { level: 0, shape: SHAPE, spacing: [1, 1, 1] },
+        { level: 1, shape: [4, 4, 4], spacing: [2, 2, 2] },
+      ],
+      datatypeCode: NiiDataType.DT_FLOAT32,
+      async fetchChunk({ texDims, levelIndex }) {
+        const out = new Float32Array(texDims[0] * texDims[1] * texDims[2])
+        out.fill(levelIndex ? 3 : Number.NaN)
+        return new Uint8Array(out.buffer)
+      },
+    },
+    { calMin: 0, calMax: 9 },
+  )
+  const vol = nv.volumes[0]
+  await brickValue(vol, 4)
+  const r = vol.voxelValue?.(1, 1, 1)
+  expect(r?.exact).toBe(true)
+  expect(Number.isNaN(r?.value)).toBe(true)
+})

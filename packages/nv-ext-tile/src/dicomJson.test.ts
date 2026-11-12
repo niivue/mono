@@ -219,6 +219,9 @@ describe('indexDicomWsiMetadata', () => {
     expect(lab({ '00480015': { vr: 'US', Value: [100, 200, 300] } })).toEqual([
       100, 200, 300,
     ])
+    expect(
+      lab({ '00480015': { vr: 'US', Value: [65535, null, 32896] } }),
+    ).toBeUndefined()
     for (const bad of [[1, 2], [1, 2, 70000], [1, 2, 1.5], 'x'])
       expect(lab({ RecommendedAbsentPixelCIELabValue: bad })).toBeUndefined()
     // Per-frame groups left as bulk data are absent: implicit TILED_FULL order.

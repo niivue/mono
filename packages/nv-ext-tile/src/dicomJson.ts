@@ -162,7 +162,8 @@ function readAttributes(o: unknown): WsiAttributes<DicomJsonIccProfile> {
   })
   const lab = text(get(o, 'RecommendedAbsentPixelCIELabValue', T.absentLab))
     .split('\\')
-    .map(Number)
+    // An empty (null) component is not 0.
+    .map((s) => (s.trim() ? Number(s) : NaN))
   if (
     lab.length === 3 &&
     lab.every((v) => Number.isInteger(v) && v >= 0 && v <= 0xffff)

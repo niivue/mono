@@ -6,8 +6,9 @@
  */
 
 /**
- * Ramps to saturated primary and secondary hues, in assignment order. Several
- * channels shown at once stay distinguishable.
+ * Ramps from black to saturated primary and secondary hues, in assignment
+ * order. Several channels shown at once stay distinguishable, and black at
+ * level 0 keeps additive and MAX channel blends from tinting the background.
  */
 export const CHANNEL_COLORMAPS: ReadonlyArray<{
   name: string
@@ -15,9 +16,9 @@ export const CHANNEL_COLORMAPS: ReadonlyArray<{
 }> = [
   { name: 'green', rgb: [0, 255, 0] },
   { name: 'violet', rgb: [255, 0, 255] },
-  { name: 'blue2cyan', rgb: [0, 255, 255] },
+  { name: 'cyan', rgb: [0, 255, 255] },
   { name: 'red', rgb: [255, 0, 0] },
-  { name: 'redyell', rgb: [255, 255, 0] },
+  { name: 'yellow', rgb: [255, 255, 0] },
   { name: 'blue', rgb: [0, 0, 255] },
 ]
 

@@ -39,6 +39,7 @@ import ct_surface from './ct_surface.json'
 import ct_vessels from './ct_vessels.json'
 import ct_w_contrast from './ct_w_contrast.json'
 import cubehelix from './cubehelix.json'
+import cyan from './cyan.json'
 import draw from './draw.json'
 import electric_blue from './electric_blue.json'
 import freesurfer from './freesurfer.json'
@@ -75,6 +76,7 @@ import viridis from './viridis.json'
 import warm from './warm.json'
 import winter from './winter.json'
 import x_rain from './x_rain.json'
+import yellow from './yellow.json'
 
 export const lutModules = {
   './actc.json': actc,
@@ -113,6 +115,7 @@ export const lutModules = {
   './ct_vessels.json': ct_vessels,
   './ct_w_contrast.json': ct_w_contrast,
   './cubehelix.json': cubehelix,
+  './cyan.json': cyan,
   './draw.json': draw,
   './electric_blue.json': electric_blue,
   './freesurfer.json': freesurfer,
@@ -149,4 +152,5 @@ export const lutModules = {
   './warm.json': warm,
   './winter.json': winter,
   './x_rain.json': x_rain,
+  './yellow.json': yellow,
 }

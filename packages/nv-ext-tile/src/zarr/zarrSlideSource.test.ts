@@ -450,7 +450,7 @@ describe('ZarrSlideSource (synthetic)', () => {
       // No omero colour: the next unused channel colormap.
       {
         name: 'Channel 3',
-        colormap: 'blue2cyan',
+        colormap: 'cyan',
         calMin: 2000,
         calMax: 2005,
         visible: true,

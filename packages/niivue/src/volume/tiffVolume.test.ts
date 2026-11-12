@@ -277,13 +277,13 @@ describe('channelColormapsFor', () => {
         [255, 200, 200],
       ]),
     ).not.toContain('gray')
-    // blue2cyan and redyell tie for the second green; palette order decides.
+    // cyan and yellow tie for the second green; palette order decides.
     expect(
       channelColormapsFor([
         [0, 255, 0],
         [10, 250, 10],
       ]),
-    ).toEqual(['green', 'blue2cyan'])
+    ).toEqual(['green', 'cyan'])
   })
 
   test('keeps distinct colours and the uncoloured cycle unchanged', () => {
@@ -296,7 +296,7 @@ describe('channelColormapsFor', () => {
     expect(channelColormapsFor([null, undefined, null])).toEqual([
       'green',
       'violet',
-      'blue2cyan',
+      'cyan',
     ])
   })
 

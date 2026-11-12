@@ -429,11 +429,27 @@ describe('omeZarrLabelColormap', () => {
       expect(Math.max(...I) - Math.min(...I) + 1).toBeLessThanOrEqual(
         256 * 8192,
       )
-      expect(I).toEqual([0, 2])
-      expect(Array.from(makeLabelLut(map).lut.slice(8, 12))).toEqual([
-        255, 0, 0, 255,
-      ])
+      // A clear entry at the span's top, where shaders clamp dropped IDs.
+      expect(I).toEqual([0, 2, 256 * 8192 - 1])
+      const lut = makeLabelLut(map).lut
+      expect(Array.from(lut.slice(8, 12))).toEqual([255, 0, 0, 255])
+      expect(Array.from(lut.slice(-4))).toEqual([0, 0, 0, 0])
       expect(String(warned[0])).toContain('1 colour(s)')
+      // Nothing dropped: the table is exactly the stated colours.
+      const within = omeZarrLabelColormap(
+        parseOmeZarrAttrs({
+          multiscales: [{ datasets: [{ path: '0' }] }],
+          'image-label': {
+            colors: [
+              { 'label-value': 0, rgba: [0, 0, 0, 0] },
+              { 'label-value': 256 * 8192 - 1, rgba: [0, 255, 0, 255] },
+            ],
+          },
+        }),
+      )
+      expect(within?.I).toEqual([0, 256 * 8192 - 1])
+      expect(within?.G).toEqual([0, 255])
+      expect(warned.length).toBe(1)
     } finally {
       console.warn = warn
     }

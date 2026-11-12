@@ -518,17 +518,23 @@ const MAX_LABEL_SPAN = 256 * 8192
  * A label store's `image-label.colors` as a label colormap, for
  * `nv.addColormap(name, map)` and then a volume's `colormap: name`; null when
  * the store states no colours. IDs the table omits show transparent. Colours
- * past addColormap's ID span from the lowest ID are dropped with a warning,
- * so a sparse table still registers.
+ * past addColormap's ID span from the lowest ID are dropped with a warning
+ * and the table ends on a clear entry, so a sparse table still registers and
+ * the dropped IDs (clamped to that entry) show clear.
  */
 export function omeZarrLabelColormap(info: OmeZarrInfo): ColorMap | null {
   if (info.labelColors.length === 0) return null
-  const all = [...info.labelColors].sort((a, b) => a.id - b.id)
-  const sorted = all.filter((c) => c.id - all[0].id < MAX_LABEL_SPAN)
-  if (sorted.length < all.length)
+  let sorted = [...info.labelColors].sort((a, b) => a.id - b.id)
+  const top = sorted[0].id + MAX_LABEL_SPAN - 1
+  if (sorted[sorted.length - 1].id > top) {
+    // The shaders clamp an ID past the table to its last entry, so the cut
+    // table ends on a clear entry at the span's top, where dropped IDs land.
+    const kept = sorted.filter((c) => c.id < top)
     console.warn(
-      `OME-Zarr labels: ${all.length - sorted.length} colour(s) for IDs past ${all[0].id + MAX_LABEL_SPAN - 1} dropped (a label colormap spans at most ${MAX_LABEL_SPAN} IDs); those labels show clear`,
+      `OME-Zarr labels: ${sorted.length - kept.length} colour(s) for IDs ${top} and up dropped (a label colormap spans at most ${MAX_LABEL_SPAN} IDs); those labels show clear`,
     )
+    sorted = [...kept, { id: top, rgba: [0, 0, 0, 0] }]
+  }
   const channel = (i: number) => sorted.map((c) => c.rgba[i])
   return {
     R: channel(0),

@@ -418,6 +418,56 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     const slide = idx.slides[0] as SlideIndexSlide
     expect(slide.levels[0]?.duplicates).toBe(2)
     expect(await tileLabels(slide, [sparse])).toEqual([2, -1, -1, 3])
+    expect(new DicomWsiSource(slide, [sparse]).manifest.backgroundColor).toBe(
+      undefined,
+    )
+    // RecommendedAbsentPixelCIELabValue colours the holes (white here).
+    const white = dicom({
+      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+      absentLab: el(
+        0x0048,
+        0x0015,
+        'US',
+        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2)),
+      ),
+      perFrame: sq(0x5200, 0x9230, [
+        pos(9, 1),
+        pos(0, 1),
+        pos(1, 1),
+        pos(17, 17),
+      ]),
+    })
+    // Through the public entry, whichever module implements it.
+    const { indexDicomWsi: indexViaEntry } = await import('./dicom')
+    const ws = (await indexViaEntry([white])).slides[0] as SlideIndexSlide
+    const { manifest } = new DicomWsiSource(ws, [white])
+    expect(manifest.backgroundColor).toEqual([1, 1, 1, 1])
+    // The tag is VM 3: a fourth component makes it invalid, not white.
+    const four = dicom({
+      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+      absentLab: el(
+        0x0048,
+        0x0015,
+        'US',
+        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2), le(1, 2)),
+      ),
+      perFrame: sq(0x5200, 0x9230, [
+        pos(9, 1),
+        pos(0, 1),
+        pos(1, 1),
+        pos(17, 17),
+      ]),
+    })
+    const fs = (await indexViaEntry([four])).slides[0] as SlideIndexSlide
+    expect(new DicomWsiSource(fs, [four]).manifest.backgroundColor).toBe(
+      undefined,
+    )
+    expect(manifest.levels[0]?.tiles.map((t) => t === null)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ])
   })
   // Per-frame z for a sparse level of 1-px tiles on a 2048 x 2048 grid.
   const planes = (zs: string[]) =>

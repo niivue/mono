@@ -74,7 +74,9 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   In a page it runs in an inlined worker that reads 1 MiB blocks (`FileReaderSync`), so
   an item walk reads each file through; without a worker (Bun, or a CSP that blocks
   `blob:` workers) it reads with `File.slice` on the calling thread.
-- It handles multi-fragment frames, TILED_SPARSE (holes stay empty), and
+- It handles multi-fragment frames, TILED_SPARSE (holes show the slide's
+  `backgroundColor`, from RecommendedAbsentPixelCIELabValue (0048,0015) when
+  stated, local or DICOMweb; the 3D slide plane leaves them empty), and
   concatenations. TILED_FULL frames keep their implicit order; per-frame
   positions, when given, win (items holding only other metadata, such as Frame
   Content, do not change the order). A file with no DimensionOrganizationType is

@@ -262,11 +262,11 @@ describe('pickSlidePixel', () => {
     expect(p?.y).toBeCloseTo(256, 5)
   })
 
-  test('round-trips a known corner (top-left of the plane)', () => {
-    // slide (0,0) -> world/ndc (-1,-1) -> canvas (0,100) (y flipped).
-    const p = pickSlidePixel(state(), 0, 100)
+  test('round-trips a known corner (bottom-left of the plane)', () => {
+    // slide (0,512) -> world/ndc (-1,1) -> canvas (0,0) (y flipped).
+    const p = pickSlidePixel(state(), 0, 0)
     expect(p?.x).toBeCloseTo(0, 4)
-    expect(p?.y).toBeCloseTo(0, 4)
+    expect(p?.y).toBeCloseTo(512, 4)
   })
 
   test('returns null off the plane and when no frame was captured', () => {
@@ -293,6 +293,18 @@ describe('pickSlidePixel', () => {
     expect(pickSlidePixel(s, 25, 50)?.x).toBeCloseTo(128, 4)
     // Outside every tile rect.
     expect(pickSlidePixel(s, 50, 150)).toBeNull()
+  })
+
+  test('a shared tile edge picks with the right tile, as hitTest does', () => {
+    const s = state()
+    s.pickFrames?.push({
+      mvp: IDENTITY,
+      ltwh: [100, 0, 100, 100],
+      bx: 0,
+      by: 0,
+    })
+    // x=100 is the right tile's left edge (slide x 0), not the left's right edge.
+    expect(pickSlidePixel(s, 100, 50)?.x).toBeCloseTo(0, 4)
   })
 
   test('pickSlideWorld returns the hit in world mm', () => {

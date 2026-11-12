@@ -200,7 +200,8 @@ export function pickSlidePixel(
   const frame = state.pickFrames?.find(({ ltwh, bx, by }) => {
     const x = canvasX - bx - ltwh[0]
     const y = canvasY - by - ltwh[1]
-    return x >= 0 && y >= 0 && x <= ltwh[2] && y <= ltwh[3]
+    // Half-open, as hitTest: a shared edge belongs to the right/lower tile.
+    return x >= 0 && y >= 0 && x < ltwh[2] && y < ltwh[3]
   })
   if (!frame) return null
   const w = state.slide.manifest.width

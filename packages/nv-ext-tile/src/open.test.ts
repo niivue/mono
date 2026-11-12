@@ -282,6 +282,11 @@ describe('openSlide', () => {
     expect(two.candidates.map((c) => c.label)).toEqual(['a.tif', 'b.tif'])
     const mixed = await openSlide([a, ...(await dcm('paths.dcm'))])
     expect(mixed.kind).toBe('dicom')
+    // Input order: the TIFF given first is listed first, and last when given last.
+    expect(mixed.candidates[0]?.label).toBe('a.tif')
+    const after = await openSlide([...(await dcm('paths.dcm')), a])
+    expect(after.candidates.at(-1)?.label).toBe('a.tif')
+    expect(after.candidates[0]?.kind).toBe('dicom')
     expect(mixed.candidates.filter((c) => c.kind === 'tiff').length).toBe(1)
     expect(mixed.candidates.filter((c) => c.kind === 'dicom').length).toBe(
       mixed.index?.slides.length ?? -1,

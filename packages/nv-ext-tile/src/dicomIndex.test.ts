@@ -205,6 +205,17 @@ test('an abort during a file read rejects the index, not a skipped file', async 
   await expect(indexed).rejects.toMatchObject({ name: 'AbortError' })
 })
 
+test("a read's own AbortError, the caller not aborting, skips that file only", async () => {
+  const read = async (): Promise<Uint8Array> => {
+    throw new DOMException('file read interrupted', 'AbortError')
+  }
+  const one = new File([new Uint8Array(256)], 'one.dcm')
+  const idx = await indexDicomWsiOnThread([one], ['one.dcm'], read, {
+    signal: new AbortController().signal,
+  })
+  expect(idx.skipped.map((s) => s.file)).toEqual(['one.dcm'])
+})
+
 describe('DicomWsiSource', () => {
   test('describes the slide for NVSlide', async () => {
     const { idx, files } = await index('bot.dcm', 'bot-l1.dcm')

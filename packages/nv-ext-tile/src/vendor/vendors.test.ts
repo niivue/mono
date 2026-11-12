@@ -123,6 +123,24 @@ describe('Philips', () => {
     expect(philipsLevels('<DataObject ObjectType="DPUfsImport"/>')).toBeNull()
     expect(philipsLevels('<OME/>')).toBeNull()
   })
+
+  test('a hostile description is parsed in linear time', () => {
+    // Each filler was quadratic before (seconds at this size).
+    for (const filler of [
+      '<'.repeat(50000),
+      '<Name="DICOM_PIXEL_SPACING" '.repeat(5000),
+    ]) {
+      const t = performance.now()
+      expect(
+        philipsLevels(
+          xml(
+            `<DataObject ObjectType="PixelDataRepresentation">${filler}</DataObject>`,
+          ),
+        ),
+      ).toBeNull()
+      expect(performance.now() - t).toBeLessThan(500)
+    }
+  })
 })
 
 describe('Argos', () => {

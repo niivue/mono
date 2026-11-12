@@ -11,11 +11,14 @@ import { tileMap } from './dicomIndex'
 import type { DicomJsonSlide } from './dicomJson'
 import { manifestOf } from './dicomWsiSource'
 import { parseMultipartRelated } from './multipart'
-import { anySignal, type SlideFetch, slideFetch } from './rangeFetch'
+import {
+  anySignal,
+  MAX_BODY,
+  readCapped,
+  type SlideFetch,
+  slideFetch,
+} from './rangeFetch'
 
-// 64 MB: far beyond a tile or scanner ICC profile (Leica's is 13 MB); matches
-// ManifestRangeSource's profile cap and the dcm2niix decoder's input cap.
-const MAX_BODY = 64 * 1024 * 1024
 const ANY_SYNTAX =
   'multipart/related; type="application/octet-stream"; transfer-syntax=*'
 
@@ -89,46 +92,6 @@ function sniffSyntax(frame: Uint8Array): string {
   if (sof === 0xf7) return '1.2.840.10008.1.2.4.80'
   if (sof !== undefined) return '1.2.840.10008.1.2.4.50'
   throw new Error('WSI frame is not JPEG, JPEG 2000 or JPEG-LS')
-}
-
-/** A response body, refused past `max` whether or not Content-Length says so. */
-async function readCapped(
-  response: Response,
-  what: string,
-  max: number,
-): Promise<Uint8Array> {
-  const refused = !response.ok
-    ? `${what} HTTP ${response.status}`
-    : Number(response.headers.get('content-length')) > max
-      ? `${what} body too large`
-      : undefined
-  if (refused) {
-    // An unread body keeps its connection downloading.
-    await response.body?.cancel()
-    throw new Error(refused)
-  }
-  const reader = response.body?.getReader()
-  if (!reader) return new Uint8Array(0)
-  const chunks: Uint8Array[] = []
-  let n = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    n += value.length
-    if (n > max) {
-      await reader.cancel()
-      throw new Error(`${what} body too large`)
-    }
-    chunks.push(value)
-  }
-  if (chunks.length === 1) return chunks[0] as Uint8Array
-  const out = new Uint8Array(n)
-  let o = 0
-  for (const c of chunks) {
-    out.set(c, o)
-    o += c.length
-  }
-  return out
 }
 
 /**

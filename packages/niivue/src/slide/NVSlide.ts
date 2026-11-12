@@ -28,8 +28,10 @@ import {
   cropSamples,
   decodeTileBitmap,
   isAbortError,
+  MAX_WHOLE_FILE,
   ManifestRangeSource,
   placeListedTiles,
+  readCapped,
   type SlideTileSource,
   tileDecoders,
 } from './slideSource'
@@ -802,7 +804,10 @@ export class NVSlide extends EventTarget {
       const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
       throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
     }
-    const manifest = (await response.json()) as NVSlideManifest
+    // Untrusted: refused past the whole-file cap, Content-Length or not.
+    const manifest = JSON.parse(
+      new TextDecoder().decode(await readCapped(response, MAX_WHOLE_FILE)),
+    ) as NVSlideManifest
     return new NVSlide(manifest, { ...options, manifestUrl })
   }
 

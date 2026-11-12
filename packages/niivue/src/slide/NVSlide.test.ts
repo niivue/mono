@@ -2059,6 +2059,23 @@ describe('NVSlide.fromManifestUrl', () => {
     expect(signal?.aborted).toBe(true)
   })
 
+  it('refuses a manifest past 64 MiB, Content-Length or not', async () => {
+    let pulled = 0
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            if (++pulled > 100) c.close()
+            else c.enqueue(new Uint8Array(1 << 20))
+          },
+        }),
+      )) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      `Reply over ${64 * 1024 * 1024} bytes`,
+    )
+    expect(pulled).toBeLessThanOrEqual(66)
+  })
+
   it('reads the reason for an uppercase JSON media type', async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ error: 'unsupported syntax' }), {

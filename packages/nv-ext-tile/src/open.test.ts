@@ -163,6 +163,24 @@ describe('openSlide', () => {
     expect(await opened.candidates[0]?.open()).toBeInstanceOf(TiffSlideSource)
   })
 
+  test('a hosted manifest reply is refused past 64 MiB, Content-Length or not', async () => {
+    let pulled = 0
+    const fetch: SlideFetch = async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            if (++pulled > 100) c.close()
+            else c.enqueue(new Uint8Array(1 << 20))
+          },
+        }),
+      )
+    const opened = await openSlide('https://h.test/s/m.json', { fetch })
+    await expect(opened.candidates[0]?.open()).rejects.toThrow(
+      'Slide manifest body too large',
+    )
+    expect(pulled).toBeLessThanOrEqual(66)
+  })
+
   test('a hosted manifest reads through the custom fetch, relative to its URL', async () => {
     const urls: string[] = []
     const manifest = {

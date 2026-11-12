@@ -1332,6 +1332,24 @@ describe('single-channel grey TIFF', () => {
     }
   })
 
+  test('a 4-bit grey image windows 0-15, so its 15 shows white', async () => {
+    const nibbles: Level = {
+      width: 16,
+      height: 16,
+      tile: 16,
+      compression: 1,
+      photometric: 1,
+      samples: 1,
+      bits: 4,
+      tiles: [new Uint8Array(128).fill(0xff)], // every sample 15
+    }
+    const { source } = await open(writeTiff([nibbles]))
+    expect(source.manifest.channelInfo?.[0]?.window).toEqual({
+      calMin: 0,
+      calMax: 15,
+    })
+  })
+
   test('int16 and float32 stay native; int8 widens to int16; wider types quantize', async () => {
     const read = async (dtype: object) => {
       const { source } = await open(writeTiff(grayPyramid(dtype)))
@@ -1699,6 +1717,30 @@ describe('Range replies', () => {
     await expect(
       TiffSlideSource.fromUrl('http://test/slide.tif', { fetch: fetchImpl }),
     ).rejects.toThrow(/reply to bytes=0-65535 is too long/)
+  })
+
+  test('a reply without Content-Length is cut off past its range', async () => {
+    let pulled = 0
+    let cancelled = false
+    const fetchImpl = (async () =>
+      new Response(
+        // 1 MiB, far past the 64 KiB range: a capped read stops early.
+        new ReadableStream({
+          pull(c) {
+            if (++pulled > 64) c.close()
+            else c.enqueue(new Uint8Array(16384))
+          },
+          cancel() {
+            cancelled = true
+          },
+        }),
+        { status: 206 },
+      )) as unknown as typeof fetch
+    await expect(
+      TiffSlideSource.fromUrl('http://test/slide.tif', { fetch: fetchImpl }),
+    ).rejects.toThrow(/reply to bytes=0-65535 body too large/)
+    expect(cancelled).toBe(true)
+    expect(pulled).toBeLessThan(10)
   })
 
   test('an abort mid-body rejects AbortError (T8)', async () => {

@@ -13,7 +13,8 @@ export interface PhilipsLevel {
 }
 
 const attribute = (block: string, name: string) =>
-  elementText(block, `[^>]*Name="${name}"`)
+  // A lookahead: a plain `[^<>]*Name=` prefix backtracks quadratically.
+  elementText(block, `(?=[^<>]*Name="${name}")`)
 
 /** The representations of a Philips XML by number, or null when it states none. */
 export function philipsLevels(xml: string): PhilipsLevel[] | null {

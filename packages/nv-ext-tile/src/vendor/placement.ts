@@ -55,7 +55,7 @@ export function tagsOf(xml: string, name: string): Record<string, string>[] {
 
 /** The text of the first element whose start tag matches `start` (regex source after `<`), up to its next tag. */
 export const elementText = (xml: string, start: string): string | undefined =>
-  new RegExp(`<${start}[^>]*>([^<]*)<`).exec(xml)?.[1]
+  new RegExp(`<${start}[^<>]*>([^<]*)<`).exec(xml)?.[1]
 
 // Merge pieces of one tile that continue each other in source and placement:
 // first along x (same rows), then along y (same columns).

@@ -258,10 +258,10 @@ export interface ManifestRangeSourceOptions {
 
 // A server without Range support sends the whole file: refused past this,
 // far beyond a tile file a range manifest should point at whole.
-const MAX_WHOLE_FILE = 64 * 1024 * 1024
+export const MAX_WHOLE_FILE = 64 * 1024 * 1024
 
 /** A response body, refused past `max` bytes whether or not Content-Length says so. */
-async function readCapped(
+export async function readCapped(
   response: Response,
   max: number,
 ): Promise<Uint8Array> {

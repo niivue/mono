@@ -43,6 +43,7 @@ import {
   anySignal,
   linked,
   rangeReplyError,
+  readCapped,
   refuseReply,
   type SlideFetch,
   slideFetch,
@@ -271,7 +272,16 @@ class RangeClient extends BaseClient {
           response,
           `${this.url}: reply to ${range} is too long`,
         )
-      const data = await response.arrayBuffer()
+      // Streamed: a reply without Content-Length is refused past the range.
+      const body = await readCapped(
+        response,
+        `${this.url}: reply to ${range}`,
+        bound,
+      )
+      const data =
+        body.byteLength === body.buffer.byteLength
+          ? (body.buffer as ArrayBuffer)
+          : body.slice().buffer
       const n = data.byteLength
       this.count(n)
       if (exact !== undefined ? n !== exact : n > bound) {
@@ -698,11 +708,14 @@ async function grayChannels(
       active,
     }
     if (active) {
-      // One u8 grey image keeps its stored look (0-255, as an RGB bitmap
-      // showed it), with no open-time sample reads.
+      // One u8 grey image keeps its stored look (0 to 2^bits-1, as an RGB
+      // bitmap showed it: a 4-bit 15 is white), with no open-time sample reads.
       const display =
         pyramids.length === 1 && kind.bitsStored === 8 && !kind.sampleType
-          ? { window: { calMin: 0, calMax: 255 }, q: null }
+          ? {
+              window: { calMin: 0, calMax: 2 ** img0.getBitsPerSample(0) - 1 },
+              q: null,
+            }
           : await channelDisplay(levels, kind, pool, signal)
       Object.assign(channel, displayPatch(display))
       quantize.push(display.q)

@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import type { NVSlideManifest, NVSlideTileManifest } from '@niivue/niivue'
+import type {
+  NVSlideManifest,
+  NVSlideTileManifest,
+  SlideTileSource,
+} from '@niivue/niivue'
 import { indexDicomWsiOnThread } from './dicomIndex'
 import { DicomPlaneStack, focalStacks } from './dicomPlanes'
 import { DicomWsiSource } from './dicomWsiSource'
@@ -102,4 +106,16 @@ test('dispose disposes every plane source', async () => {
   await expect(source.fetchTileBytes(level, tile, '')).rejects.toMatchObject({
     name: 'AbortError',
   })
+})
+
+test("the ICC profile is the initial plane's", async () => {
+  const plane = (i: number) =>
+    ({
+      manifest: { id: `p${i}`, width: 1, height: 1, levels: [] },
+      bind() {},
+      fetchTileBytes: async () => new Uint8Array(0),
+      fetchIccProfile: async () => new Uint8Array([i]),
+    }) as unknown as SlideTileSource
+  const stack = new DicomPlaneStack([plane(0), plane(1)], { z: 1 })
+  expect(Array.from((await stack.fetchIccProfile()) ?? [])).toEqual([1])
 })

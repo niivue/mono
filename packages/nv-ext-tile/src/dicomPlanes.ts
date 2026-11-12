@@ -90,6 +90,8 @@ const onPlane = (m: NVSlideManifest, z: number): NVSlideManifest => ({
 export class DicomPlaneStack implements SlideTileSource, SlidePlaneCapable {
   readonly manifest: NVSlideManifest
   readonly planes: NVSlidePlaneAxes
+  // The initial plane, whose profile NVSlide applies at init.
+  private readonly z: number
 
   constructor(
     private readonly sources: readonly SlideTileSource[],
@@ -101,6 +103,7 @@ export class DicomPlaneStack implements SlideTileSource, SlidePlaneCapable {
       ...(zPositionsUm?.length === sources.length ? { zPositionsUm } : {}),
     }
     this.manifest = this.manifestOf({ z, t: 0 })
+    this.z = z
   }
 
   private manifestOf({ z, t }: NVSlidePlaneIndex): NVSlideManifest {
@@ -141,7 +144,7 @@ export class DicomPlaneStack implements SlideTileSource, SlidePlaneCapable {
   }
 
   async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
-    return (await this.sources[0]?.fetchIccProfile?.(signal)) ?? null
+    return (await this.sources[this.z]?.fetchIccProfile?.(signal)) ?? null
   }
 
   dispose(): void {

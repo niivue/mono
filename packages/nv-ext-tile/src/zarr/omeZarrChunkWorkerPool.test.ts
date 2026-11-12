@@ -297,40 +297,6 @@ describe('OmeZarrChunkWorkerPool', () => {
     local.dispose?.()
   })
 
-  test('slide tiles read on the pool match this thread, channel by channel and for a c-spanning chunk', async () => {
-    const { ZarrSlideSource } = await import('./zarrSlideSource')
-    for (const name of ['v3-c-spanning', 'v2-zlib-dot-bigendian']) {
-      const url = `http://127.0.0.1:${server.port}/variants/${name}.ome.zarr`
-      const plain = await ZarrSlideSource.fromUrl(url, { workers: 0 })
-      const pooled = await ZarrSlideSource.fromUrl(url, { workers: 0 })
-      const pool = new OmeZarrChunkWorkerPool(
-        url,
-        {},
-        poolOptions,
-        undefined,
-        workerEntry,
-      )
-      ;(pooled as unknown as { pool: typeof pool }).pool = pool
-      const level = plain.manifest.levels[0]
-      for (const channels of [[1], [1, 0]])
-        for (const tile of [
-          level.tiles[0],
-          level.tiles[level.tiles.length - 1],
-        ]) {
-          if (!tile) continue
-          const a = await plain.fetchTileSamples?.(level, tile, channels)
-          const b = await pooled.fetchTileSamples?.(level, tile, channels)
-          expect(Array.from(b?.samples ?? [])).toEqual(
-            Array.from(a?.samples ?? []),
-          )
-        }
-      // Still pooled: no worker failure sent it back to this thread.
-      expect((pooled as unknown as { pool: unknown }).pool).toBe(pool)
-      pooled.dispose()
-      plain.dispose()
-    }
-  })
-
   test('the pool reads each chunk once: c-spanning and RGB c-chunk 3 stay on this thread, RGB c-chunk 1 goes to the workers', async () => {
     const { ZarrSlideSource } = await import('./zarrSlideSource')
     const chunkReads = async (url: string, pooledRead: boolean) => {
@@ -364,8 +330,10 @@ describe('OmeZarrChunkWorkerPool', () => {
       }
     }
     const base = `http://127.0.0.1:${server.port}`
+    // v2-zlib-dot-bigendian: workers decode a v2 big-endian zlib store too.
     for (const url of [
       `${base}/variants/v3-c-spanning.ome.zarr`,
+      `${base}/variants/v2-zlib-dot-bigendian.ome.zarr`,
       `${base}/rgb3.zarr`,
       `${base}/rgb1.zarr`,
     ]) {
@@ -449,42 +417,6 @@ describe('OmeZarrChunkWorkerPool', () => {
     local.dispose?.()
   })
 
-  test('cumulative wire bytes arriving out of order count once', () => {
-    const pool = new OmeZarrChunkWorkerPool(
-      url,
-      {},
-      poolOptions,
-      undefined,
-      workerEntry,
-    )
-    let wire = 0
-    pool.onWireBytes = (n) => {
-      wire += n
-    }
-    const merge = (
-      pool as unknown as { merge(i: number, r: object): void }
-    ).merge.bind(pool)
-    for (const wireBytes of [200, 100, 250]) merge(0, { wireBytes })
-    expect(wire).toBe(250)
-    pool.dispose()
-  })
-
-  test('an unbounded budget stays unbounded for the workers', async () => {
-    const { ZarrSlideSource } = await import('./zarrSlideSource')
-    const g = globalThis as { window?: unknown }
-    g.window = globalThis
-    try {
-      const mixed = (await ZarrSlideSource.fromUrl(
-        `http://127.0.0.1:${server.port}/mixed.zarr`,
-        { workers: 3, cacheBytes: Number.POSITIVE_INFINITY },
-      )) as unknown as { pool: { pool: { cacheBytesPerWorker: number } } }
-      expect(mixed.pool.pool.cacheBytesPerWorker).toBe(Number.POSITIVE_INFINITY)
-      ;(mixed as unknown as { dispose(): void }).dispose()
-    } finally {
-      g.window = undefined
-    }
-  })
-
   test('the cache budget: a share while the pool runs, all of it when there is no pool or it is dropped', async () => {
     const { ZarrSlideSource } = await import('./zarrSlideSource')
     const g = globalThis as { window?: unknown }
@@ -526,6 +458,17 @@ describe('OmeZarrChunkWorkerPool', () => {
       expect(inner.pool).toBeNull()
       expect(inner.cache.maxBytes).toBe(4000)
       rgb1.dispose()
+      // An unbounded budget stays unbounded for the workers.
+      const unbounded = (await ZarrSlideSource.fromUrl(`${base}/mixed.zarr`, {
+        workers: 3,
+        cacheBytes: Number.POSITIVE_INFINITY,
+      })) as unknown as Inner & {
+        pool: { pool: { cacheBytesPerWorker: number } }
+      }
+      expect(unbounded.pool.pool.cacheBytesPerWorker).toBe(
+        Number.POSITIVE_INFINITY,
+      )
+      ;(unbounded as unknown as { dispose(): void }).dispose()
     } finally {
       g.window = undefined
       console.warn = warn

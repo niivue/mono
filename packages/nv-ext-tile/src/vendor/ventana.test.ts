@@ -1,6 +1,4 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { existsSync } from 'node:fs'
-import { fromFile } from '@niivue/geotiff-rs'
 import type { StorageLevel } from './placement'
 import { isVentanaXmp, ventanaPlacement } from './ventana'
 
@@ -275,43 +273,5 @@ describe('ventanaPlacement', () => {
         ),
       ),
     ).toBe(true)
-  })
-})
-
-// Advisory: the real Ventana-1.bif (CC0, OpenSlide test data), when present.
-const BIF = '/Users/chris/src/mono/scratch/ventana/Ventana-1.bif'
-describe.skipIf(!existsSync(BIF))('Ventana-1.bif (advisory)', () => {
-  test('V7-V10 and PL4/PL5 from the file XMP', async () => {
-    const tiff = await fromFile(BIF)
-    const l0 = await tiff.getImage(2)
-    const text = await l0.fileDirectory.loadValue(700)
-    const x =
-      typeof text === 'string'
-        ? text
-        : new TextDecoder().decode(Uint8Array.from(text as ArrayLike<number>))
-    const levels = levelsOf(24576, 21504, 1024, 8)
-    const p = placed(ventanaPlacement(x, levels))
-    // V10 / PL5: 23·1024 − 5·24 wide; column 23 never placed.
-    expect([p.width, p.height]).toEqual([23432, 21504])
-    expect(p.levels[0]?.pieces.length).toBe(23 * 21)
-    expect(p.levels[0]?.pieces.some((q) => q.tile % 24 === 23)).toBe(false)
-    expect(p.levels[4]?.width).toBe(1464.5)
-    // V8: L3 storage tile (0, r) and (1, r).
-    const l3 = p.levels[3]?.pieces ?? []
-    const row0 = l3.filter((q) => q.tile === 0)
-    expect(row0.map(({ sx, sw, dx }) => [sx, sw, dx])).toEqual([
-      [0, 510.5, 0],
-      [513.5, 509, 510.5],
-    ])
-    expect(l3.find((q) => q.tile === 1)).toMatchObject({ sx: 1.5, dx: 1019.5 })
-    // L1 storage tile 11 keeps sx 0-512 (frame 22 only).
-    expect(
-      p.levels[1]?.pieces.filter((q) => q.tile === 11).map((q) => [q.sx, q.sw]),
-    ).toEqual([[0, 512]])
-    // V7: L3 seams at 512·s hold 3 px overlaps (1.5 px each side).
-    const at = (tile: number) =>
-      (p.levels[3]?.pieces ?? []).filter((q) => q.tile === tile)
-    expect(at(1).map((q) => q.sx)).toEqual([1.5, 513.5])
-    await tiff.close()
   })
 })

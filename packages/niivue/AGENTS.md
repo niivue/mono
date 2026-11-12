@@ -1040,8 +1040,7 @@ changes, and never draws under another source generation (a frame switch), so
 a switch never shows old and new time points side by side. Known limit: no
 per-channel opacity (the brick bakes leave opacity out and the blends have no
 per-layer weight; adding one changes the blend shared with whole-volume
-overlays). `e2e/streamed-stack-switch.spec.ts` with `STACK_FUSE_BENCH=1`
-benches it; the GL blend matches `blendOverlayData` exactly. Depth picks on a stack
+overlays). The GL blend matches `blendOverlayData` exactly. Depth picks on a stack
 skip the base march (`backOpacity` 0 in the pick shaders) and answer from any
 drawn channel; the CPU chunked pick uses `stackPickSampler`. Hidden (or opacity 0) and
 PAQD volumes do not join as channels. Stacked channels keep their colormap's

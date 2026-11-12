@@ -7,17 +7,12 @@ import { test } from './sharedPage'
 // - a lazy-time switch (VOL-01) never draws one time point's floor or bricks
 //   under the other's, nor a blank frame: every frame drawn while it runs is
 //   captured;
-// - the channel-stack fuse (M14-06) cost per chunk, for 4 and 27 channels
-//   (STACK_FUSE_BENCH=1 only; prints its numbers).
+// - the GL channel-stack blend matches its CPU reference.
 
 test.use(webgpuUse)
 
 /** Mount, then a two-frame streamed ball: frame 0 at x=8, frame 1 at x=24. */
-const mount = (
-  backend: string,
-  body: string,
-  limit = 24,
-): string => `(async () => {
+const mount = (backend: string, body: string): string => `(async () => {
   if ('${backend}' === 'webgpu') {
     const adapter = navigator.gpu && (await navigator.gpu.requestAdapter())
     if (!adapter) return { skip: 'no WebGPU adapter' }
@@ -27,7 +22,7 @@ const mount = (
   canvas.width = 128; canvas.height = 128
   canvas.style.cssText = 'position:fixed;top:0;left:0;width:128px;height:128px'
   document.body.appendChild(canvas)
-  const nv = new NiiVue({ backend: '${backend}', sliceType: 0, maxTextureDimension3D: ${limit}, isAntiAlias: false })
+  const nv = new NiiVue({ backend: '${backend}', sliceType: 0, maxTextureDimension3D: 24, isAntiAlias: false })
   await nv.attachToCanvas(canvas)
   if (nv.backend !== '${backend}') return { skip: 'fell back to ' + nv.backend }
   const ball = (cx, n, value) => {
@@ -127,39 +122,6 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       expect(result.before.map(lit)).toEqual(result.settled.map((v) => !lit(v)))
       expect(result.before.filter(lit).length).toBe(1)
     })
-
-  // Opt-in: registered only with STACK_FUSE_BENCH, so the Metal gate sees no skips.
-  if (process.env.STACK_FUSE_BENCH)
-    for (const channels of [4, 27]) {
-      test(`stack fuse cost per chunk, ${channels} channels (${backend})`, async ({
-        page,
-      }) => {
-        test.setTimeout(240_000)
-        const result = (await page.evaluate(
-          mount(
-            backend,
-            `
-        nv.volumeIsChannelStack = true
-        nv.volumeOverlayColorBlend = 3
-        nv.sliceType = 4
-        for (let c = 0; c < ${channels}; c++)
-          await nv.loadChunkedVolume(source([96], 1, 0), { calMin: 0, calMax: 255, colormap: 'red', coarseFloor: false })
-        await nv.whenChunkStreamSettles()
-        const s = nv.view.volumeRenderer.stackFuseStats
-        const brick = nv.volumes[0].chunkPlan.chunks[0].texDims
-        return { chunks: s.chunks, ms: s.ms, brick }
-      `,
-            70,
-          ),
-        )) as { skip?: string; chunks: number; ms: number; brick: number[] }
-        test.skip(!!result.skip, result.skip)
-        console.log(
-          `stack fuse ${backend} ${channels} ch, brick ${result.brick.join('x')}: ` +
-            `${result.chunks} chunks, ${(result.ms / Math.max(1, result.chunks)).toFixed(2)} ms/chunk`,
-        )
-        expect(result.chunks).toBeGreaterThan(0)
-      })
-    }
 }
 
 // The GL GPU fuse (blendOverlaysGL) against the CPU blendOverlayData it
@@ -211,64 +173,3 @@ test('GL GPU blend matches blendOverlayData in every mode', async ({
   )
   expect(result.max).toBeLessThanOrEqual(1)
 })
-
-// The blend alone, GPU work included (a readback / onSubmittedWorkDone). Opt-in.
-if (process.env.STACK_FUSE_BENCH)
-  for (const backend of ['webgl2', 'webgpu'] as const)
-    for (const channels of [4, 27])
-      test(`blend pass ms per 69^3 chunk, ${channels} channels (${backend})`, async ({
-        page,
-      }) => {
-        test.setTimeout(240_000)
-        const result = (await page.evaluate(`(async () => {
-        const dims = [69, 69, 69], n = 69 ** 3 * 4, reps = 5
-        const data = new Uint8Array(n)
-        for (let i = 0; i < n; i++) data[i] = (i * 2654435761) >>> 24
-        if ('${backend}' === 'webgl2') {
-          const { blendOverlaysGL } = await import('/src/gl/blendOverlays.ts')
-          const gl = document.createElement('canvas').getContext('webgl2')
-          const tex = []
-          for (let k = 0; k < ${channels}; k++) {
-            const t = gl.createTexture()
-            gl.bindTexture(gl.TEXTURE_3D, t)
-            gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-            gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, 69, 69, 69, 0, gl.RGBA, gl.UNSIGNED_BYTE, data)
-            tex.push(t)
-          }
-          // A one-pixel readback of each result waits for the GPU (finish does not).
-          const fbo = gl.createFramebuffer()
-          const px = new Uint8Array(4)
-          const sync = (out) => {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
-            gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, out, 0, 68)
-            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
-            gl.deleteTexture(out)
-          }
-          sync(blendOverlaysGL(gl, tex, dims, 0, 3))
-          const t0 = performance.now()
-          for (let r = 0; r < reps; r++) sync(blendOverlaysGL(gl, tex, dims, 0, 3))
-          return { ms: (performance.now() - t0) / reps }
-        }
-        const adapter = navigator.gpu && (await navigator.gpu.requestAdapter())
-        if (!adapter) return { skip: 'no WebGPU adapter' }
-        const device = await adapter.requestDevice()
-        const { blendOverlaysGPU } = await import('/src/wgpu/blendOverlays.ts')
-        const tex = []
-        for (let k = 0; k < ${channels}; k++) {
-          const t = device.createTexture({ size: dims, format: 'rgba8unorm', dimension: '3d', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
-          device.queue.writeTexture({ texture: t }, data, { bytesPerRow: 69 * 4, rowsPerImage: 69 }, dims)
-          tex.push(t)
-        }
-        ;(await blendOverlaysGPU(device, tex, dims, 0, 3)).destroy()
-        await device.queue.onSubmittedWorkDone()
-        const t0 = performance.now()
-        for (let r = 0; r < reps; r++) (await blendOverlaysGPU(device, tex, dims, 0, 3)).destroy()
-        await device.queue.onSubmittedWorkDone()
-        return { ms: (performance.now() - t0) / reps }
-      })()`)) as { skip?: string; ms: number }
-        test.skip(!!result.skip, result.skip)
-        console.log(
-          `blend pass ${backend} ${channels} ch: ${result.ms.toFixed(2)} ms/chunk`,
-        )
-        expect(result.ms).toBeGreaterThan(0)
-      })

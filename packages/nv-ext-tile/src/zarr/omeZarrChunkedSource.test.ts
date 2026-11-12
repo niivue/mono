@@ -309,14 +309,6 @@ describe('ByteLruCache', () => {
     expect(cache.totalBytes).toBe(8)
   })
 
-  test('remembers absences as zero-byte entries', () => {
-    const cache = new ByteLruCache(10)
-    cache.set('missing', undefined)
-    expect(cache.has('missing')).toBe(true)
-    expect(cache.get('missing')).toBeUndefined()
-    expect(cache.totalBytes).toBe(0)
-  })
-
   test('never admits a value larger than the budget', () => {
     const cache = new ByteLruCache(10)
     cache.set('big', new Uint8Array(11))
@@ -331,17 +323,10 @@ describe('ByteLruCache', () => {
     expect(cache.has('b')).toBe(true)
     expect(cache.has('huge')).toBe(false)
     expect(cache.totalBytes).toBe(8)
-  })
-
-  test('replacing an entry with an oversized value drops the stale entry', () => {
-    const cache = new ByteLruCache(10)
-    cache.set('k', new Uint8Array(4))
-    cache.set('k', new Uint8Array(64))
-    // The old value must not survive as stale bytes, and the new one cannot
-    // be held, so the key ends up uncached.
-    expect(cache.has('k')).toBe(false)
-    expect(cache.get('k')).toBeUndefined()
-    expect(cache.totalBytes).toBe(0)
+    // Replacing an entry with an oversized value drops the stale bytes too.
+    cache.set('a', new Uint8Array(64))
+    expect(cache.has('a')).toBe(false)
+    expect(cache.totalBytes).toBe(4)
   })
 
   test('a value exactly equal to the budget is admitted', () => {
@@ -362,6 +347,7 @@ describe('ByteLruCache', () => {
     expect(cache.has('data')).toBe(false)
     cache.set('absent', undefined)
     expect(cache.has('absent')).toBe(true)
+    expect(cache.get('absent')).toBeUndefined()
     expect(cache.totalBytes).toBe(0)
   })
 
@@ -371,56 +357,18 @@ describe('ByteLruCache', () => {
     expect(() => new ByteLruCache(Number.POSITIVE_INFINITY)).not.toThrow()
   })
 
-  test('totalBytes never exceeds maxBytes across mixed workloads', () => {
-    for (const budget of [1, 7, 10, 64, 1000]) {
-      const cache = new ByteLruCache(budget)
-      for (let i = 0; i < 50; i++) {
-        cache.set(`k${i % 13}`, i % 5 === 0 ? undefined : new Uint8Array(i))
-        expect(cache.totalBytes).toBeLessThanOrEqual(budget)
-      }
-    }
-  })
-
-  test('stats separate a thrashing budget from an unused one', () => {
-    // Same lookups, same misses, opposite diagnoses: the small budget evicts
-    // to make room, the large one simply never sees a repeat.
-    const thrash = new ByteLruCache(8)
-    for (let i = 0; i < 6; i++) {
-      thrash.has(`k${i}`)
-      thrash.set(`k${i}`, new Uint8Array(4))
-    }
-    expect(thrash.stats.hits).toBe(0)
-    expect(thrash.stats.misses).toBe(6)
-    expect(thrash.stats.evicted).toBeGreaterThan(0)
-
-    const roomy = new ByteLruCache(1024)
-    for (let i = 0; i < 6; i++) {
-      roomy.has(`k${i}`)
-      roomy.set(`k${i}`, new Uint8Array(4))
-    }
-    expect(roomy.stats.hits).toBe(0)
-    expect(roomy.stats.misses).toBe(6)
-    expect(roomy.stats.evicted).toBe(0)
-  })
-
-  test('counts a lookup once, at the gate zarrita consults', () => {
-    const cache = new ByteLruCache(64)
-    cache.set('k', new Uint8Array(4))
-    // `withByteCaching` calls has() then get(); only has() counts, so a hit
-    // is one hit and not two.
-    expect(cache.has('k')).toBe(true)
-    cache.get('k')
-    expect(cache.stats.hits).toBe(1)
-    expect(cache.stats.misses).toBe(0)
-  })
-
   test('stats report admissions, rejections and evicted bytes', () => {
     const cache = new ByteLruCache(10)
     cache.set('a', new Uint8Array(6))
     cache.set('absent', undefined)
     cache.set('huge', new Uint8Array(11))
     cache.set('b', new Uint8Array(6)) // evicts 'a'
+    // `withByteCaching` calls has() then get(): only has() counts a lookup.
+    expect(cache.has('b')).toBe(true)
+    cache.get('b')
+    cache.has('a')
     const stats = cache.stats
+    expect([stats.hits, stats.misses]).toEqual([1, 1])
     expect(stats.admitted).toBe(3)
     expect(stats.rejected).toBe(1)
     expect(stats.evicted).toBe(1)

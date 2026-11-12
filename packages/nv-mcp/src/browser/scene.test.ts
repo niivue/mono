@@ -2882,12 +2882,11 @@ describe('pick_point', () => {
     expect(near(got.where.crosshair.mm, [10, 0, 0])).toBe(true)
     expect(got.where.description).toBe('Crosshair at 10, 0, 0 mm.')
     expect(moved).toHaveBeenCalledTimes(1)
-  })
-
-  it('answers a miss with a null point', async () => {
-    const view = fakeView({ pickAt: mock(async () => null) })
-    expect(
-      await coreHandlers(host(view)).pick_point({ canvas: [1, 2] }),
-    ).toEqual({ canvas: [1, 2], mm: null })
+    // A miss answers a null point.
+    view.pickAt = mock(async () => null)
+    expect(await pick_point({ canvas: [1, 2] })).toEqual({
+      canvas: [1, 2],
+      mm: null,
+    })
   })
 })

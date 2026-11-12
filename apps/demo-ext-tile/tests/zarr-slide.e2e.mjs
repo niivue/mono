@@ -1,23 +1,20 @@
 /**
  * Browser check of the OME-Zarr slide path in index.html, on the small
  * zarr-python fixtures of packages/nv-ext-tile/fixtures/zarr-variants (no
- * network), both backends: each encoding opens as a 2-channel slide with its
- * attribution, reads exact samples at level 0, draws, and showing a hidden
+ * network), the backends taking turns: each encoding opens as a 2-channel
+ * slide with its attribution, reads exact samples at level 0, draws, and showing a hidden
  * channel again is served by the source's byte cache (no request).
  *
  *   bunx nx e2e demo-ext-tile      # builds first, via Nx
  */
 
-import { readFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
-import { dirname, extname, join, normalize } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
+import { serve } from './serve.mjs'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-const DIST = join(HERE, '..', 'dist')
 const VARIANTS = join(
-  HERE,
+  dirname(fileURLToPath(import.meta.url)),
   '../../../packages/nv-ext-tile/fixtures/zarr-variants',
 )
 const STORES = [
@@ -26,49 +23,15 @@ const STORES = [
   'v2-zlib-dot-bigendian',
   'v2-blosc-lz4-slash',
 ]
-const TYPES = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.wasm': 'application/wasm',
-  '.css': 'text/css',
-  '.json': 'application/json',
-}
 
 /** Store requests, by path. */
 const requests = []
-const server = createServer(async (req, res) => {
-  const path = normalize(new URL(req.url, 'http://x').pathname)
-  const store = path.startsWith('/variants/')
-  const file = store
-    ? join(VARIANTS, path.slice('/variants/'.length))
-    : join(DIST, path === '/' ? 'index.html' : path)
-  if (store) requests.push(path)
-  let body
-  try {
-    body = await readFile(file)
-  } catch {
-    return res.writeHead(404).end()
-  }
-  const headers = {
-    'content-type': TYPES[extname(file)] ?? 'application/octet-stream',
-  }
-  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
-  // zarrita reads a shard index's offset from a HEAD's Content-Length.
-  if (!m)
-    return res
-      .writeHead(200, { ...headers, 'content-length': body.length })
-      .end(req.method === 'HEAD' ? undefined : body)
-  const start = m[1] ? Number(m[1]) : body.length - Number(m[2])
-  const end = m[1] && m[2] ? Number(m[2]) : body.length - 1
-  res.writeHead(206, {
-    ...headers,
-    'content-range': `bytes ${start}-${end}/${body.length}`,
-  })
-  res.end(body.subarray(start, end + 1))
+const server = await serve((path) => {
+  if (!path.startsWith('variants/')) return
+  requests.push(path)
+  return join(VARIANTS, path.slice('variants/'.length))
 })
-await new Promise((r) => server.listen(0, '127.0.0.1', r))
-const { port } = server.address()
-const origin = `http://127.0.0.1:${port}`
+const origin = `http://127.0.0.1:${server.address().port}`
 
 const failed = (msg) => {
   console.error(`FAIL ${msg}`)
@@ -186,9 +149,12 @@ async function check(backend, name) {
   await page.close()
 }
 
+// Opening and sampling are CPU work: each store once, the backends taking
+// turns so each still draws.
+const backends = (process.env.DEMO_E2E_BACKENDS ?? 'webgl2,webgpu').split(',')
 try {
-  for (const backend of ['webgl2', 'webgpu'])
-    for (const name of STORES) await check(backend, name)
+  for (const [i, name] of STORES.entries())
+    await check(backends[i % backends.length], name)
 } finally {
   await browser.close()
   server.close()

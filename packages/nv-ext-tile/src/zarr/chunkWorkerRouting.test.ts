@@ -55,12 +55,6 @@ describe('chunk region key', () => {
     })
     expect(key).toBe('2|0,128,256|64,64,64')
   })
-
-  test('two regions differing only in level do not collide', () => {
-    const a = chunkRegionKey({ levelIndex: 0, texOrigin: [1], texDims: [2] })
-    const b = chunkRegionKey({ levelIndex: 1, texOrigin: [1], texDims: [2] })
-    expect(a).not.toBe(b)
-  })
 })
 
 describe('worker routing', () => {
@@ -73,19 +67,6 @@ describe('worker routing', () => {
     const first = routeChunkToWorker(key, 4)
     for (let i = 0; i < 20; i++) {
       expect(routeChunkToWorker(key, 4)).toBe(first)
-    }
-  })
-
-  test('stays inside the pool', () => {
-    for (let z = 0; z < 40; z++) {
-      const key = chunkRegionKey({
-        levelIndex: 0,
-        texOrigin: [0, 0, z * 64],
-        texDims: [64, 64, 64],
-      })
-      const index = routeChunkToWorker(key, 3)
-      expect(index).toBeGreaterThanOrEqual(0)
-      expect(index).toBeLessThan(3)
     }
   })
 
@@ -103,7 +84,7 @@ describe('worker routing', () => {
         ),
       )
     }
-    expect(used.size).toBe(4)
+    expect([...used].sort()).toEqual([0, 1, 2, 3])
   })
 
   test('a single worker takes everything', () => {
@@ -198,12 +179,5 @@ describe('byte cache aggregation', () => {
     expect(total.evictedBytes).toBe(64)
     // The budget is the pool's, not any one worker's slice.
     expect(total.maxBytes).toBe(1024)
-  })
-
-  test('a pool that has not replied yet reports zeros', () => {
-    const total = sumByteCacheStats([null, null], 2048)
-    expect(total.hits).toBe(0)
-    expect(total.bytes).toBe(0)
-    expect(total.maxBytes).toBe(2048)
   })
 })

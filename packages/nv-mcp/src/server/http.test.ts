@@ -178,7 +178,8 @@ describe('the server, end to end', () => {
       extensions: [light],
       pageUrl: 'http://localhost:8091/',
       instructions: 'The test page serves fake volumes.',
-      bridge: { noTabHint: 'Open the test page.' },
+      // Long enough for a reload over loopback, short enough not to idle.
+      bridge: { noTabHint: 'Open the test page.', returnGraceMs: 1000 },
       log: (line) => logged.push(line),
     })
     client = new Client({ name: 'integration', version: '0' })
@@ -433,8 +434,8 @@ describe('the server, end to end', () => {
 
     await closePage('t1')
     await closePage('t2')
-    // The bridge gives a gone tab a few seconds to come back from a reload
-    // before it says so; that wait is this test's five seconds.
+    // The chosen tab lapses once the reload grace runs out (the default is
+    // timed on fake timers in bridge.test.ts).
     const gone = await call('where_am_i')
     expect(gone.isError).toBe(true)
     expect(text(gone)).toMatch(

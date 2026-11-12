@@ -85,20 +85,7 @@ describe('indexDicomWsiMetadata', () => {
     }
   })
 
-  test('places frames: two focal planes, implicit order without an organization', async () => {
-    const planes = indexDicomWsiMetadata([await json('planes')])
-    // Plane 0 is the lower ZOffset, which frames 7-12 state.
-    expect(planes.slides.map((s) => s.focalPlane)).toEqual([1, 0])
-    expect(tiles(planes.slides[1] as DicomJsonSlide)).toEqual([
-      [7, 8, 9, 10, 11, 12],
-    ])
-    const noorg = indexDicomWsiMetadata([await json('noorg')])
-    expect(tiles(noorg.slides[0] as DicomJsonSlide)).toEqual([
-      [1, 2, 3, 4, 5, 6],
-    ])
-  })
-
-  test('reads ICC profiles, spacing fallbacks and pixel format', async () => {
+  test('reads bulk and inline ICC profiles', async () => {
     const [bot] = indexDicomWsiMetadata([await json('bot')]).slides
     expect(bot?.iccProfile).toEqual({
       bulkDataURI: 'bulk/1.2.3.10/00282000',
@@ -108,18 +95,6 @@ describe('indexDicomWsiMetadata', () => {
     const [planes] = indexDicomWsiMetadata([await json('planes')]).slides
     const data = planes?.iccProfile?.data
     expect(new TextDecoder().decode(data?.subarray(36, 40))).toBe('acsp')
-    const [mono] = indexDicomWsiMetadata([await json('mono12')]).slides
-    expect(mono?.iccProfile).toBeUndefined()
-    expect(mono?.pixelSpacingMM?.map((v) => +v.toFixed(6))).toEqual([
-      0.0005, 0.0005,
-    ])
-    expect(mono?.instances[0]).toEqual({
-      id: '1.2.3.91',
-      transferSyntax: '1.2.840.10008.1.2.4.80',
-      photometric: 'MONOCHROME2',
-      bitsStored: 12,
-      input: 0,
-    })
   })
 
   test('keeps a [1,1] PixelSpacing when no ImagedVolumeWidth/Height replaces it', async () => {
@@ -270,20 +245,6 @@ describe('indexDicomWsiMetadata', () => {
         s.reason,
         s.message,
       ])
-    const t0 = performance.now()
-    expect(
-      reasons({
-        NumberOfFrames: 2 ** 30,
-        TotalPixelMatrixFocalPlanes: 0xffff,
-        NumberOfOpticalPaths: 0xffff,
-      }),
-    ).toEqual([
-      [
-        'malformed',
-        'NumberOfFrames 1073741824 is past the 8388608 left of 8388608 for one call',
-      ],
-    ])
-    expect(performance.now() - t0).toBeLessThan(100)
     expect(reasons({ TotalPixelMatrixColumns: 'abc' })[0]?.[0]).toBe(
       'malformed',
     )

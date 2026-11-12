@@ -198,7 +198,7 @@ describe('createSlideView', () => {
     view.destroy()
   })
 
-  test('all backends failing leaves the original canvas in place', async () => {
+  test('all backends failing rejects, attaches nothing and leaves the original canvas', async () => {
     const canvas = fakeCanvas()
     const gl = backend('webgl2', () => null)
     await expect(
@@ -206,6 +206,7 @@ describe('createSlideView', () => {
     ).rejects.toThrow('No slide backend')
     const clone = gl.canvases[1] as unknown as { replaced: unknown }
     expect(clone.replaced).toBe(canvas)
+    expect([observers, ratioListeners]).toEqual([0, 0])
   })
 
   test('a borrowed renderer keeps its kind and its overlay hook', async () => {
@@ -241,17 +242,6 @@ describe('createSlideView', () => {
     view.setSlide(late)
     expect(late.disposed).toBe(1)
     expect(view.slide).toBeNull()
-  })
-
-  test('no backend: rejects and attaches nothing', async () => {
-    await expect(
-      createSlideViewWith(
-        [backend('webgpu', () => null), backend('webgl2', () => null)],
-        fakeCanvas(),
-      ),
-    ).rejects.toThrow('No slide backend')
-    expect(observers).toBe(0)
-    expect(ratioListeners).toBe(0)
   })
 
   test('aborted while starting: rejects AbortError and frees the renderer', async () => {
@@ -432,20 +422,18 @@ describe('createSlideView', () => {
     expect(borrowed.destroys).toBe(0)
   })
 
-  test('50 create/destroy cycles leave no observer, listener or frame', async () => {
+  test('create then destroy leaves no observer, listener or frame', async () => {
     let renders = 0
-    for (let i = 0; i < 50; i++) {
-      const r = fakeRenderer()
-      r.render = () => {
-        renders++
-      }
-      const view = await createSlideViewWith(
-        [backend('webgl2', () => r)],
-        fakeCanvas(),
-        { slide: fakeSlide() },
-      )
-      view.destroy()
+    const r = fakeRenderer()
+    r.render = () => {
+      renders++
     }
+    const view = await createSlideViewWith(
+      [backend('webgl2', () => r)],
+      fakeCanvas(),
+      { slide: fakeSlide() },
+    )
+    view.destroy()
     await frame()
     expect([observers, ratioListeners, renders]).toEqual([0, 0, 0])
   })

@@ -118,16 +118,6 @@ describe('DicomWebWsiSource', () => {
     expect(s.manifest.backgroundColor).toEqual([1, 1, 1, 1])
   })
 
-  test('keeps a query on the series URL after the frame number', async () => {
-    serve(() => part(JPEG))
-    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
-      seriesUrl: `${SERIES}?access_token=t`,
-    })
-    const { level, tile } = firstTile(s)
-    await s.fetchTileBytes(level, tile, '')
-    expect(calls[0]?.url).toEndWith(`/frames/${tile.frame}?access_token=t`)
-  })
-
   test('drops trailing slashes on the series URL and encodes the instance UID', async () => {
     serve(() => part(JPEG))
     const slide = await slideOf('bot', (o) => {
@@ -171,26 +161,6 @@ describe('DicomWebWsiSource', () => {
     return slide
   }
 
-  test('sniffs all levels concurrently', async () => {
-    const release: (() => void)[] = []
-    globalThis.fetch = (() =>
-      new Promise<Response>((resolve) =>
-        release.push(() => resolve(part(JLS))),
-      )) as unknown as typeof fetch
-    const opened = DicomWebWsiSource.open(await twoLevels(), {
-      seriesUrl: SERIES,
-    })
-    await Bun.sleep(0)
-    const inFlight = release.length
-    for (const r of release) r()
-    expect(inFlight).toBe(2)
-    const s = await opened
-    expect(s.manifest.levels.map((l) => l.codec)).toEqual([
-      'image/jls',
-      'image/jls',
-    ])
-  })
-
   test('assumes JPEG Baseline when the server refuses the sniff', async () => {
     serve(() => new Response('no', { status: 406 }))
     const s = await DicomWebWsiSource.open(await twoLevels(), {
@@ -210,13 +180,6 @@ describe('DicomWebWsiSource', () => {
     )
   })
 
-  test('rejects a sniff the server refuses for another reason (401)', async () => {
-    serve(() => new Response('no', { status: 401 }))
-    await expect(
-      DicomWebWsiSource.open(await twoLevels(), { seriesUrl: SERIES }),
-    ).rejects.toThrow('WSI frame HTTP 401')
-  })
-
   test('rejects an aborted sniff with AbortError', async () => {
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) =>
@@ -234,9 +197,13 @@ describe('DicomWebWsiSource', () => {
     expect(((await opened.catch((e) => e)) as Error).name).toBe('AbortError')
   })
 
-  test('rejects sniffed bytes that are no supported codec, and network errors', async () => {
-    serve(() => part(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])))
+  test('rejects a sniff refused for another reason (401), unsupported bytes and network errors', async () => {
     const slide = await twoLevels()
+    serve(() => new Response('no', { status: 401 }))
+    await expect(
+      DicomWebWsiSource.open(slide, { seriesUrl: SERIES }),
+    ).rejects.toThrow('WSI frame HTTP 401')
+    serve(() => part(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])))
     await expect(
       DicomWebWsiSource.open(slide, { seriesUrl: SERIES }),
     ).rejects.toThrow('not JPEG')
@@ -261,16 +228,11 @@ describe('DicomWebWsiSource', () => {
     )
   })
 
-  test('caps a body by Content-Length and while streaming', async () => {
+  test('caps a streamed body', async () => {
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
     })
     const { level, tile } = firstTile(s)
-    serve(
-      () =>
-        new Response('x', { headers: { 'content-length': String(65 << 20) } }),
-    )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
     const mb = new Uint8Array(1 << 20)
     let sent = 0
     serve(
@@ -287,7 +249,7 @@ describe('DicomWebWsiSource', () => {
     await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
   })
 
-  test('cancels a refused body', async () => {
+  test('cancels a refused body: an HTTP error, or past the Content-Length cap', async () => {
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
     })

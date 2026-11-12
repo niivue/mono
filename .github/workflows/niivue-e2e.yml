@@ -163,11 +163,11 @@ jobs:
             3) specs=$(ls e2e/render-*.spec.ts | grep -vxF $(printf -- '-e %s ' $pinned1 $pinned2) || true) ;;
           esac
           echo "Specs: $specs"
-          # Metal-only scenes: stack-streamed-floor (webgpu) streams 16 bricks
-          # at ~1 s each on SwiftShader's WebGPU and times out at 90 s; the
-          # Metal job runs it.
+          # Metal-only scenes: stack-streamed-floor streams a 16-brick octree
+          # and a refocus plan swap, slow on SwiftShader (its WebGPU variant
+          # timed out at 90 s); stack-streamed keeps the floor, fuse and pick here.
           bunx playwright test $specs --workers=1 --reporter=line \
-            --grep-invert 'stack-streamed-floor \(webgpu\)'
+            --grep-invert 'stack-streamed-floor'
 
   # The full suite on real Metal (issue #199). Free macOS runners expose a
   # paravirtual GPU, but only full Chromium reaches it; the headless shell stays

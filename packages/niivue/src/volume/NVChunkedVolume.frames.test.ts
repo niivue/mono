@@ -39,6 +39,14 @@ function source(
   }
 }
 
+/** Settle every pending promise chain (the synthetic sources resolve at once). */
+const flush = () => new Promise((r) => setImmediate(r))
+
+const until = async (ok: () => boolean): Promise<void> => {
+  for (let i = 0; i < 200 && !ok(); i++) await flush()
+  if (!ok()) throw new Error('timed out')
+}
+
 /** Bytes the scene volume's current chunk source serves for brick 0. */
 async function brickValue(vol: NVImage, bytesPerVoxel = 1): Promise<number> {
   const desc = vol.chunkPlan?.chunks[0]
@@ -61,6 +69,12 @@ test('E1: a frames:3 source reads frame 2 after setFrame', async () => {
   expect(nv.getFrame4D(chunked.id)).toBe(2)
   expect(await brickValue(nv.volumes[0])).toBe(200)
   expect(reads.some((r) => r.frame === 2)).toBe(true)
+  const { buildLocationMessage } = await import('@/control/locationTracking')
+  const msg = buildLocationMessage(
+    nv as unknown as Parameters<typeof buildLocationMessage>[0],
+    0,
+  )
+  expect(msg?.string).toMatch(/×2 = /)
   // Clamped to the frame count.
   await chunked.setFrame(99)
   expect(chunked.frame).toBe(2)
@@ -74,8 +88,9 @@ test('a frame group switches together, after every member has its bricks', async
   })
   const nv = new NiiVue({ backend: 'webgl2' })
   const a = await nv.loadChunkedVolume(source(1), { frameGroup: group })
+  const bReads: Read[] = []
   const b = await nv.loadChunkedVolume(
-    source(2, { gate: (f) => (f === 1 ? gated : undefined) }),
+    source(2, { reads: bReads, gate: (f) => (f === 1 ? gated : undefined) }),
     { frameGroup: group },
   )
   const changes: string[] = []
@@ -84,7 +99,8 @@ test('a frame group switches together, after every member has its bricks', async
   )
   const sources = nv.volumes.map((v) => v.chunkSource)
   const pending = a.setFrame(1)
-  await new Promise((r) => setTimeout(r, 10))
+  await until(() => bReads.some((r) => r.frame === 1))
+  await flush()
   // b is still fetching: nothing committed, a included.
   expect(nv.volumes.map((v) => v.chunkSource)).toEqual(sources)
   expect(a.frame).toBe(0)
@@ -118,7 +134,8 @@ test('the newest request wins and aborts the superseded reads', async () => {
     maxConcurrentLoads: 2,
   })
   const first = chunked.setFrame(1)
-  await new Promise((r) => setTimeout(r, 5))
+  await until(() => reads.some((r) => r.frame === 1))
+  await flush()
   // Bounded: no more than maxConcurrentLoads frame-1 reads ever started.
   expect(reads.filter((r) => r.frame === 1).length).toBeLessThanOrEqual(2)
   await chunked.setFrame(2)
@@ -193,18 +210,6 @@ test('a label channel whose dtype reaches the GPU as float is rejected', async (
   await expect(
     nv.loadChunkedVolume(src, { colormap: 'Random' }),
   ).rejects.toThrow('2^24')
-})
-
-test('the location string carries the lazy frame', async () => {
-  const nv = new NiiVue({ backend: 'webgl2' })
-  const chunked = await nv.loadChunkedVolume(source(0), { coarseFloor: false })
-  await chunked.setFrame(2)
-  const { buildLocationMessage } = await import('@/control/locationTracking')
-  const msg = buildLocationMessage(
-    nv as unknown as Parameters<typeof buildLocationMessage>[0],
-    0,
-  )
-  expect(msg?.string).toMatch(/×2 = /)
 })
 
 test('the view floor follows every switch, back and forth', async () => {
@@ -292,7 +297,7 @@ test('P1: no brick reads the floor, flagged approximate; staged bricks stay out'
   )
   const pending = chunked.setFrame(1)
   gate.open()
-  await new Promise((r) => setTimeout(r, 20))
+  await until(() => (chunked as unknown as { staged: unknown }).staged !== null)
   expect(vol.voxelValue?.(0, 0, 0)).toEqual({ value: 3, exact: true })
   openB()
   await pending
@@ -372,25 +377,28 @@ test('the readout cap is shared by every streamed volume of the viewer', async (
       return new Uint8Array(texDims[0] * texDims[1] * texDims[2]).fill(5)
     },
   })
-  const opts = { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes: 5e6 }
-  const firstExact = async (n: number) => {
-    const nv = new NiiVue({ backend: 'webgl2' })
-    const handles = []
-    for (let k = 0; k < n; k++)
-      handles.push(await nv.loadChunkedVolume(src(), opts))
-    const vol = nv.volumes[0]
-    const plan = handles[0].currentPlan
-    expect(plan.chunks.length).toBe(2)
-    for (const desc of plan.chunks)
-      await vol.chunkSource?.({ desc, bytesPerVoxel: 1 } as Parameters<
+  const readoutBytes = 5e6
+  const opts = { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes }
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const fill = async (handle: NVChunkedVolume) => {
+    const vol = nv.volumes.find((v) => v.id === handle.id)
+    expect(handle.currentPlan.chunks.length).toBe(2)
+    for (const desc of handle.currentPlan.chunks)
+      await vol?.chunkSource?.({ desc, bytesPerVoxel: 1 } as Parameters<
         NonNullable<NVImage['chunkSource']>
       >[0])
-    const c = plan.chunks[0]
-    return vol.voxelValue?.(c.voxelOrigin[0], 1, 1).exact
   }
-  // Alone: both bricks fit. Beside a second volume: half the cap, one brick.
-  expect(await firstExact(1)).toBe(true)
-  expect(await firstExact(2)).toBe(false)
+  const held = (h: NVChunkedVolume) =>
+    (h as unknown as { readout: { bytes: number } }).readout.bytes
+  const a = await nv.loadChunkedVolume(src(), opts)
+  await fill(a)
+  // Alone: both bricks fit.
+  const c = a.currentPlan.chunks[0]
+  expect(nv.volumes[0].voxelValue?.(c.voxelOrigin[0], 1, 1).exact).toBe(true)
+  // A second volume added later shrinks the first one's share.
+  const b = await nv.loadChunkedVolume(src(), opts)
+  await fill(b)
+  expect(held(a) + held(b)).toBeLessThanOrEqual(readoutBytes)
 })
 
 test('staged bricks a refocus leaves out are released', async () => {
@@ -420,39 +428,6 @@ test('staged bricks a refocus leaves out are released', async () => {
   expect(left.every((k) => keys.has(k))).toBe(true)
 })
 
-test('volumes added one after another keep the readouts within readoutBytes', async () => {
-  const src = (): ChunkedVolumeSource => ({
-    levels: [{ level: 0, shape: [256, 128, 128], spacing: [1, 1, 1] }],
-    datatypeCode: NiiDataType.DT_UINT8,
-    async fetchChunk({ texDims }) {
-      return new Uint8Array(texDims[0] * texDims[1] * texDims[2]).fill(5)
-    },
-  })
-  const readoutBytes = 5e6
-  const opts = { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes }
-  const nv = new NiiVue({ backend: 'webgl2' })
-  const fill = async (handle: NVChunkedVolume) => {
-    const vol = nv.volumes.find((v) => v.id === handle.id)
-    for (const desc of handle.currentPlan.chunks)
-      await vol?.chunkSource?.({ desc, bytesPerVoxel: 1 } as Parameters<
-        NonNullable<NVImage['chunkSource']>
-      >[0])
-  }
-  const held = (h: NVChunkedVolume) =>
-    (h as unknown as { readout: { bytes: number } }).readout.bytes
-  const a = await nv.loadChunkedVolume(src(), opts)
-  await fill(a)
-  const b = await nv.loadChunkedVolume(src(), opts)
-  await fill(b)
-  expect(held(a) + held(b)).toBeLessThanOrEqual(readoutBytes)
-})
-
-const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 200 && !ok(); i++)
-    await new Promise((r) => setTimeout(r, 1))
-  if (!ok()) throw new Error('timed out')
-}
-
 test('a switch before the first floor lands shows the target frame floor, never the late frame-0 one', async () => {
   const reads: Read[] = []
   let release: () => void = () => {}
@@ -470,7 +445,7 @@ test('a switch before the first floor lands shows the target frame floor, never 
   await until(() => reads.some((r) => r.level === 1 && r.frame === 0))
   const id = nv.volumes[0].id ?? ''
   const switching = nv.setFrame4D(id, 1)
-  await new Promise((r) => setTimeout(r, 5))
+  await flush()
   release()
   await switching
   const chunked = await loading
@@ -487,6 +462,7 @@ test('an aborted staged frame does not widen the label palette', async () => {
     release = r
   })
   const reads: number[] = []
+  let late = 0
   const src: ChunkedVolumeSource = {
     levels: [{ level: 0, shape: SHAPE, spacing: [1, 1, 1] }],
     datatypeCode: NiiDataType.DT_UINT16,
@@ -494,7 +470,10 @@ test('an aborted staged frame does not widen the label palette', async () => {
     // Ignores its signal: frame 1's bytes arrive after it was superseded.
     async fetchChunk({ texDims, frame = 0 }) {
       reads.push(frame)
-      if (frame === 1) await gated
+      if (frame === 1) {
+        await gated
+        late++
+      }
       return new Uint8Array(
         new Uint16Array(texDims[0] * texDims[1] * texDims[2]).fill(
           frame === 1 ? 1000 : 3,
@@ -513,7 +492,13 @@ test('an aborted staged frame does not widen the label palette', async () => {
   const second = chunked.setFrame(2)
   release()
   await Promise.all([first, second])
-  await new Promise((r) => setTimeout(r, 5))
+  // Late bytes in, and any palette growth they scheduled applied.
+  await until(
+    () =>
+      late === reads.filter((f) => f === 1).length &&
+      (chunked as unknown as { labelGrowHandle: unknown }).labelGrowHandle ===
+        null,
+  )
   expect(chunked.frame).toBe(2)
   expect(nv.volumes[0].colormapLabel?.max).toBe(255)
 })
@@ -537,9 +522,14 @@ test('a switch during the first floor install never draws the frame-0 floor unde
   let viewFloor: NVImage | null = null
   let bricksFrame = 0
   const drawn: string[] = []
+  // The first floor upload lands only when the test releases it.
+  let releaseFirst: (() => void) | null = null
   const view: Record<string, unknown> = {
     setCoarseFloor: async (f: NVImage | null) => {
-      await new Promise((r) => setTimeout(r, 30))
+      if (!viewFloor && f)
+        await new Promise<void>((r) => {
+          releaseFirst = r
+        })
       viewFloor = f
     },
     updateBindGroups: async (opts: { coarseFloor?: NVImage | null }) => {
@@ -559,8 +549,11 @@ test('a switch during the first floor install never draws the frame-0 floor unde
   await until(() => reads.some((r) => r.level === 1 && r.frame === 0))
   const id = nv.volumes[0].id ?? ''
   // The floor upload is in flight: start the switch now.
-  await new Promise((r) => setTimeout(r, 5))
+  await until(() => releaseFirst !== null)
   const switching = nv.setFrame4D(id, 1)
+  await until(() => reads.some((r) => r.frame === 1))
+  await flush()
+  ;(releaseFirst as unknown as () => void)()
   const chunked = await loading
   await switching
   expect(chunked.frame).toBe(1)
@@ -591,15 +584,15 @@ test('the newest frame request wins through a floor install wait', async () => {
   const installA = floor(vol)
   const toFrame1 = nv.setFrame4D(vol.id ?? '', 1)
   await until(() => installs.length === 1)
-  await new Promise((r) => setTimeout(r, 20))
+  await flush()
   const installB = floor(vol)
   const toFrame2 = nv.setFrame4D(vol.id ?? '', 2)
   await until(() => installs.length === 2)
-  await new Promise((r) => setTimeout(r, 20))
+  await flush()
   gated = false
   installs[1]()
   await installB
-  await new Promise((r) => setTimeout(r, 20))
+  await flush()
   installs[0]()
   await Promise.all([installA, toFrame1, toFrame2])
   expect(chunked.frame).toBe(2)

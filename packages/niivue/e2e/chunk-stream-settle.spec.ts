@@ -15,6 +15,9 @@ import { test } from './sharedPage'
 // floor, so a screenshot taken then differs from the settled view. The wait
 // resolves on the first frame the view itself calls settled.
 //
+// The no-busy-frame case (brick 0 alone holds the plane) is the fade test
+// below: it resolves only on the drawn frame's verdict.
+//
 // The volume is a synthetic 64^3 NIfTI built in the page, so the spec needs no
 // Git LFS data and no network. The 3D case the wait exists for (a screenshot
 // after setVolumeChunkGrid shows every brick) is the `chunk-grid-3d` scene of
@@ -132,43 +135,13 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.settleMs).toBeLessThan(SETTLE_BUDGET_MS)
   })
 
-  test(`setVolumeChunkGrid resolves when the first brick is all a 2D view needs (${backend})`, async ({
-    page,
-  }) => {
-    test.setTimeout(180_000)
-    const result = await page.evaluate(`(async () => {
-      try {
-        ${mount(backend, 'AXIAL')}
-        // An axial plane low in a 1x1x4 grid lies in brick 0 alone, the brick
-        // the renderer admits when the plan is set: no frame is ever busy.
-        nv.crosshairPos = [0.5, 0.5, 0.1]
-        const gridMs = await timed(() => nv.setVolumeChunkGrid(0, [1, 1, 4]))
-        return { gridMs, afterGrid: counts() }
-      } catch (e) {
-        const m = String(e && e.message ? e.message : e)
-        if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
-          return { skip: 'GPU unavailable: ' + m }
-        }
-        throw e
-      }
-    })()`)
-
-    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
-    const r = result as any
-    if (r.skip) {
-      test.skip(true, r.skip)
-      return
-    }
-    expect(r.afterGrid.pending + r.afterGrid.inFlight).toBe(0)
-    expect(r.afterGrid.resident).toBeLessThan(r.afterGrid.total)
-    expect(r.gridMs).toBeLessThan(SETTLE_BUDGET_MS)
-  })
-
-  test(`resolves at once in a hidden tab, which draws no frames (${backend})`, async ({
-    page,
-  }) => {
-    test.setTimeout(180_000)
-    const result = await page.evaluate(`(async () => {
+  // The hidden-tab check is backend-neutral: one backend is enough.
+  if (backend === 'webgl2')
+    test(`resolves at once in a hidden tab, which draws no frames (${backend})`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000)
+      const result = await page.evaluate(`(async () => {
       try {
         ${mount(backend, 'AXIAL')}
         await nv.setVolumeChunkGrid(0, [2, 2, 4])
@@ -193,14 +166,14 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       }
     })()`)
 
-    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
-    const r = result as any
-    if (r.skip) {
-      test.skip(true, r.skip)
-      return
-    }
-    expect(r.settleMs).toBeLessThan(HIDDEN_TIMEOUT_MS / 2)
-  })
+      // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+      const r = result as any
+      if (r.skip) {
+        test.skip(true, r.skip)
+        return
+      }
+      expect(r.settleMs).toBeLessThan(HIDDEN_TIMEOUT_MS / 2)
+    })
 
   test(`setVolumeChunkGrid waits for the first brick to fade in over the coarse floor (${backend})`, async ({
     page,

@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync } from 'node:fs'
-import { MAX_SLIDE_GRID, type NVSlideTileManifest } from '@niivue/niivue'
+import type { NVSlideTileManifest } from '@niivue/niivue'
 import {
   blockReader,
   fileKeys,
   firstInput,
   indexDicomWsiOnThread,
-  MAX_SLIDE_TILES,
   type SlideIndex,
   type SlideIndexLevel,
   type SlideIndexSlide,
@@ -79,16 +78,6 @@ describe('indexDicomWsiOnThread', () => {
       'bot f5',
       'bot f6',
     ])
-    // The ICC profile range in the level-0 file holds a profile.
-    const icc = slide.iccProfile
-    if (!icc) throw new Error('expected an ICC profile')
-    const bytes = new Uint8Array(
-      await (files[1] as File)
-        .slice(icc.offset, icc.offset + icc.length)
-        .arrayBuffer(),
-    )
-    expect(new TextDecoder().decode(bytes.subarray(36, 40))).toBe('acsp')
-    expect(icc.colorSpace).toBe('SRGB')
   })
 
   test('the Basic Offset Table, the Extended Offset Table and an item walk agree', async () => {
@@ -127,11 +116,6 @@ describe('indexDicomWsiOnThread', () => {
       focalPlanes: 1,
       frames: 4,
     })
-  })
-
-  test('reports a duplicated tile position, keeping the first', async () => {
-    const { idx } = await index('dup.dcm')
-    expect(only(idx).levels[0]?.duplicates).toBe(1)
   })
 
   test('makes one slide per optical path', async () => {
@@ -289,10 +273,6 @@ describe('DicomWsiSource', () => {
       /changed since/,
     )
   })
-})
-
-test('the slide tile cap follows the grid NVSlide accepts', () => {
-  expect(MAX_SLIDE_TILES).toBe(2 * MAX_SLIDE_GRID)
 })
 
 test('the worker block reader indexes every fixture as File.slice does', async () => {

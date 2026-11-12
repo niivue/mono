@@ -427,12 +427,14 @@ describe('NVSlideController', () => {
     expect(r.captures()).toBe(0)
   })
 
-  test('a zoom box dragged back to its start does not zoom', () => {
+  test('a zoom box dragged back to its start, or a click, does not zoom', () => {
     const r = rig({ primary: DRAG_MODE.roiSelection })
     r.fire('pointerdown', 50, 50)
     r.fire('pointermove', 70, 70)
     r.fire('pointermove', 50, 50)
     r.fire('pointerup', 50, 50)
+    r.fire('pointerdown', 10, 10)
+    r.fire('pointerup', 11, 10)
     expect(r.viewports).toEqual([])
   })
 
@@ -446,13 +448,6 @@ describe('NVSlideController', () => {
     expect(r.captures()).toBe(1)
   })
 
-  test('a roiSelection click does not zoom', () => {
-    const r = rig({ primary: DRAG_MODE.roiSelection })
-    r.fire('pointerdown', 10, 10)
-    r.fire('pointerup', 11, 10)
-    expect(r.viewports).toEqual([])
-  })
-
   test('the middle button pans whatever the drag modes', () => {
     const r = rig({ primary: DRAG_MODE.none, secondary: DRAG_MODE.none })
     r.fire('pointerdown', 10, 10, 1)
@@ -460,16 +455,11 @@ describe('NVSlideController', () => {
     expect(r.pans).toEqual([[10, 5]])
   })
 
-  test('the wheel zooms', () => {
-    const r = rig()
-    r.fire('wheel', 0, 0)
-    expect(r.zooms[0]).toBeGreaterThan(1)
-  })
-
   test('a line-mode wheel notch zooms as far as its pixel equivalent', () => {
     const r = rig()
     r.fire('wheel', 0, 0, 0, { deltaY: -3, deltaMode: 1 })
     r.fire('wheel', 0, 0, 0, { deltaY: -48, deltaMode: 0 })
+    expect(r.zooms[0]).toBeGreaterThan(1)
     expect(r.zooms[0]).toBeCloseTo(r.zooms[1], 10)
   })
 

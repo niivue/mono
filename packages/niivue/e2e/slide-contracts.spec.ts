@@ -5,7 +5,7 @@ import { test } from './sharedPage'
 // P0 contracts (plan-tile-final-contracts section 10) that need pixels.
 // S1: a raw-gray bytes slide with a one-entry channelInfo draws exactly as the
 // same slide without one (grey, windowed the same) on both backends.
-// RN4 (render matches the removed draw) is slide-frame-plan.spec.ts.
+// RN4 (render matches the removed draw) is render-slide-frame.spec.ts.
 
 test.use(webgpuUse)
 

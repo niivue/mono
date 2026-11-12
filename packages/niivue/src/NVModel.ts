@@ -1640,13 +1640,14 @@ export default class NVModel {
    * mixing units across layers (e.g. a um overlay on a mm base) is
    * unsupported and logs a warning.
    */
-  async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {
+  async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<NVImage> {
     const prepared = await NVModel.prepareVolume(volume)
     assignUniqueVolumeIds([prepared], this.volumes)
     warnMixedUnits(this.volumes[0], [prepared])
     this.volumes.push(prepared)
     this._setupPivot3D()
     this.invalidateGraphCache()
+    return prepared
   }
 
   async loadVolume(volume: ImageFromUrlOptions): Promise<void> {

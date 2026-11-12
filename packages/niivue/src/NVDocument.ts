@@ -48,6 +48,7 @@ import type {
   NIFTI2,
   NVConnectomeData,
   NVConnectomeOptions,
+  NVImage,
   NVMeshLayer,
   NVTractData,
   NVTractOptions,
@@ -961,13 +962,14 @@ export function applyDocumentToModel(
 }
 
 /**
- * Reconstruct a volume from a document entry and add it to the model.
+ * Reconstruct a volume from a document entry and add it to the model; returns
+ * the added volume, or undefined when nothing was added.
  */
 export async function reconstructVolume(
   model: NVModel,
   v: NVDocumentVolume,
-): Promise<void> {
-  const before = model.volumes.length
+): Promise<NVImage | undefined> {
+  let vol: NVImage | undefined
   try {
     if (v.data) {
       if (!isEmbeddedImageComplete(v.data.hdr.dims, v.data.img)) {
@@ -1010,21 +1012,17 @@ export async function reconstructVolume(
       if (v.isLegendVisible !== undefined)
         base.isLegendVisible = v.isLegendVisible
       if (v.frame4D !== undefined) base.frame4D = v.frame4D
-      await model.addVolume(base)
+      vol = await model.addVolume(base)
     } else if (v.url) {
       // Load from URL. Forward only the fields the document actually specifies
       // (urlVolumeOptions drops undefined) so an omitted calMin/calMax doesn't
       // clobber the window nii2volume computes at load, mirroring the guarded
       // embedded branch above.
-      await model.addVolume(urlVolumeOptions(v))
+      vol = await model.addVolume(urlVolumeOptions(v))
     }
     // Apply post-load properties to the just-added volume. An entry with
     // neither data nor a URL adds nothing; its id and links must not land on
     // the previous volume.
-    const vol =
-      model.volumes.length > before
-        ? model.volumes[model.volumes.length - 1]
-        : undefined
     if (vol) {
       // Restore the saved id so `modulationImage` / `attachedToId` links keep
       // pointing at the same volume. addVolume derived one from the name, which
@@ -1046,6 +1044,7 @@ export async function reconstructVolume(
   } catch (err) {
     log.warn(`Failed to load volume ${v.name ?? v.url}:`, err)
   }
+  return vol
 }
 
 /**

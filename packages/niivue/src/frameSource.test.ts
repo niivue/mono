@@ -361,3 +361,25 @@ test('removing the starting volume keeps a joined volume switching', async () =>
   expect(nv.getFrame4D('c1.nii')).toBe(1)
   expect(nv.volumes[0].img?.[0]).toBe(101)
 })
+
+test('volumes added concurrently during a fetch each join the switch', async () => {
+  const group = {}
+  const gates = new Map([[1, gate()]])
+  const nv = await load([source(0, group, gates)])
+  const request = nv.setFrame4D('c0.nii', 1)
+  const add = (c: number) =>
+    nv.addVolume({
+      url: channelVolumeFile(
+        DIMS,
+        [1, 1, 1],
+        NiiDataType.DT_UINT16,
+        frameOf(0, c),
+        `c${c}`,
+      ),
+      frameSource: source(c, group),
+    })
+  await Promise.all([add(1), add(2)])
+  gates.get(1)?.resolve()
+  await request
+  expect(nv.volumes.map((v) => v.frameSource?.frame)).toEqual([1, 1, 1])
+})

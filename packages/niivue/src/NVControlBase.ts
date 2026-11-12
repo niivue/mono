@@ -3561,12 +3561,11 @@ export default class NiiVue extends EventTarget {
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
-    await this.model.addVolume(volume)
-    const vols = this.model.getVolumes()
-    const added = vols[vols.length - 1]
+    const added = await this.model.addVolume(volume)
     // Joins its group's pending frame switch; a loadVolumes scene never does.
     const group = added.frameSource?.group
-    if (group) this._frameRequests.get(group)?.members.push(added)
+    const pending = group && this._frameRequests.get(group)
+    if (pending && !pending.members.includes(added)) pending.members.push(added)
     this.emit('volumeLoaded', { volume: added })
     await this._updateGLChanged()
     return this
@@ -7837,18 +7836,13 @@ export default class NiiVue extends EventTarget {
     // addSignal would have: each after its item is in the collection.
     let isBackgroundSkipped = false
     for (const [i, v] of (doc.volumes ?? []).entries()) {
-      const before = this.model.volumes.length
       const entry = resolveLinkedEntry(v, 'volume', resolveUrl)
       if (!entry) {
         if (i === 0) isBackgroundSkipped = true
         continue
       }
-      await NVDocument.reconstructVolume(this.model, entry)
-      if (this.model.volumes.length > before) {
-        this.emit('volumeLoaded', {
-          volume: this.model.volumes[this.model.volumes.length - 1],
-        })
-      }
+      const volume = await NVDocument.reconstructVolume(this.model, entry)
+      if (volume) this.emit('volumeLoaded', { volume })
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
     const meshesBefore = this.model.meshes.length

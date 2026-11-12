@@ -8052,37 +8052,43 @@ export default class NiiVue extends EventTarget {
     if (sp.source) {
       const src = await openSlideSource(restore, sp.source)
       if (signal.aborted) return src?.dispose?.()
-      if (src) slide = NVSlide.fromSource(src)
+      if (src) {
+        try {
+          slide = NVSlide.fromSource(src)
+        } catch (err) {
+          src.dispose?.()
+          throw err
+        }
+      }
       // The embedded manifest of a TIFF, Zarr or DICOM source has no ranges.
       else if (!sp.manifestUrl) return
     }
     slide ??= sp.manifestUrl
       ? await NVSlide.fromManifestUrl(sp.manifestUrl, {}, signal)
       : new NVSlide(sp.manifest)
-    const plane = sp.manifest.levels[0]?.plane ?? { z: 0, t: 0 }
-    const shown = slide.planeIndex
-    if (!signal.aborted && (plane.z !== shown.z || plane.t !== shown.t)) {
-      try {
-        await slide.setPlaneIndex(plane, { signal })
-      } catch (err) {
+    // Untrusted: setPlaneIndex range-checks the plane; a hosted-manifest
+    // document may omit the embedded manifest.
+    const saved = sp.manifest ?? slide.manifest
+    const plane = saved.levels?.[0]?.plane
+    if (plane)
+      await slide.setPlaneIndex(plane, { signal }).catch((err) => {
         if (!signal.aborted)
           log.warn(
             `loadDocument: slide plane z ${plane.z}, t ${plane.t} not restored`,
             err,
           )
-      }
-    }
+      })
     if (signal.aborted) {
       slide.dispose()
       return
     }
     // Annotations are in base pixels: a slide whose size moved cannot take them.
     const sameSize =
-      slide.manifest.width === sp.manifest.width &&
-      slide.manifest.height === sp.manifest.height
+      slide.manifest.width === saved.width &&
+      slide.manifest.height === saved.height
     if (!sameSize)
       log.warn(
-        `loadDocument: slide is ${slide.manifest.width}x${slide.manifest.height}, saved ${sp.manifest.width}x${sp.manifest.height}; annotations not restored`,
+        `loadDocument: slide is ${slide.manifest.width}x${slide.manifest.height}, saved ${saved.width}x${saved.height}; annotations not restored`,
       )
     // Before setSlidePlane primes tiles, so hidden channels are not fetched.
     sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
@@ -8185,9 +8191,11 @@ export default class NiiVue extends EventTarget {
    * to that volume's grid.
    *
    * `options.resolveSource` reopens a lazy or streamed volume's saved source
-   * descriptor, with the host's credentials (see {@link DocumentSourceResolver}).
-   * Without it, or when it yields no source, a lazy volume shows its embedded
-   * frame as a static volume and a streamed one is skipped with a warning. A
+   * descriptor, or the slide plane's (`slide: true`), with the host's
+   * credentials (see {@link DocumentSourceResolver}). Without it, or when it
+   * yields no source, a lazy volume shows its embedded frame as a static volume,
+   * and a streamed volume, or a slide with a saved source and no hosted
+   * manifest, is skipped with a warning. A
    * newer `loadDocument` supersedes this one: its pending source opens are
    * aborted and anything they would add is dropped.
    * Restored slides are viewer-owned: clearing or replacing the plane, or

@@ -263,7 +263,7 @@ export async function attachFrameSource(
   const name = vol.name ?? 'volume'
   const src = await open(restore, s.descriptor, false, name)
   if (!src) return
-  if ('fetchChunk' in src || !('load' in src)) {
+  if (!('load' in src)) {
     log.warn(`loadDocument: source of "${name}" is not a frame source`)
     dispose(src)
     return
@@ -360,8 +360,13 @@ export async function openSlideSource(
   descriptor: VolumeSourceDescriptor,
 ): Promise<SlideTileSource | null> {
   // Untrusted document data, handed to host code.
-  if (typeof descriptor.kind !== 'string' || typeof descriptor.url !== 'string')
+  if (
+    typeof descriptor.kind !== 'string' ||
+    typeof descriptor.url !== 'string'
+  ) {
+    log.warn('loadDocument: slide plane has a malformed source; ignored')
     return null
+  }
   const src = await open(restore, descriptor, false, descriptor.url, true)
   if (src && 'fetchTileBytes' in src) return src
   dispose(src)

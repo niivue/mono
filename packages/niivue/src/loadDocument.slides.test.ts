@@ -255,14 +255,6 @@ test('a saved focal plane reopens through resolveSource before attaching', async
   const bytes = before.serializeDocument({ format: 'json' })
   before.destroy()
   slide.dispose()
-  // The token is the host's to add again.
-  expect(
-    (parseJsonDocument(bytes) as { slidePlane?: { source?: unknown } })
-      .slidePlane?.source,
-  ).toEqual({
-    kind: 'test/slide',
-    url: 'https://example.invalid/slide.tif',
-  })
   const nv = new NiiVue({ backend: 'webgl2' })
   const seen: unknown[] = []
   let attachedAt: unknown

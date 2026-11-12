@@ -75,6 +75,28 @@ const noFetch: SlideFetch = () => {
   throw new Error('fetched')
 }
 
+/** A one-level 4x4 hosted range manifest. */
+const rangeManifest = (tiles: object[] = []) => ({
+  id: 'm',
+  format: 'dicom-wsi-range-v1',
+  width: 4,
+  height: 4,
+  levels: [
+    {
+      index: 0,
+      width: 4,
+      height: 4,
+      tileWidth: 4,
+      tileHeight: 4,
+      columns: 1,
+      rows: 1,
+      codec: 'image/jpeg',
+      fileUrl: 'l0.dcm',
+      tiles,
+    },
+  ],
+})
+
 describe('sniffSlide', () => {
   test('names a URL by its path without a read', async () => {
     const cases: [string, string][] = [
@@ -304,25 +326,10 @@ describe('openSlide', () => {
   test('a hosted manifest reads through the custom fetch, relative to its URL', async () => {
     const urls: string[] = []
     const manifest = {
-      id: 'm',
-      format: 'dicom-wsi-range-v1',
+      ...rangeManifest([
+        { x: 0, y: 0, width: 4, height: 4, offset: 10, length: 4 },
+      ]),
       attribution: { credit: 'm', url: 'javascript:alert(1)' },
-      width: 4,
-      height: 4,
-      levels: [
-        {
-          index: 0,
-          width: 4,
-          height: 4,
-          tileWidth: 4,
-          tileHeight: 4,
-          columns: 1,
-          rows: 1,
-          codec: 'image/jpeg',
-          fileUrl: 'l0.dcm',
-          tiles: [{ x: 0, y: 0, width: 4, height: 4, offset: 10, length: 4 }],
-        },
-      ],
     }
     const fetch: SlideFetch = async (url) => {
       urls.push(url)
@@ -359,26 +366,7 @@ describe('openSlide', () => {
   })
 
   test('a document reopens a URL slide by its descriptor, never a local one', async () => {
-    const manifest = {
-      id: 'm',
-      format: 'dicom-wsi-range-v1',
-      width: 4,
-      height: 4,
-      levels: [
-        {
-          index: 0,
-          width: 4,
-          height: 4,
-          tileWidth: 4,
-          tileHeight: 4,
-          columns: 1,
-          rows: 1,
-          codec: 'image/jpeg',
-          fileUrl: 'l0.dcm',
-          tiles: [],
-        },
-      ],
-    }
+    const manifest = rangeManifest()
     const urls: string[] = []
     const fetch: SlideFetch = async (url) => {
       urls.push(url)

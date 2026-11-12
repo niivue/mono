@@ -62,7 +62,13 @@ export interface OpenedSlides {
 /** `VolumeSourceDescriptor.kind` of the slides `openSlide` opens. */
 export const SLIDE_SOURCE_KIND = 'nv-ext-tile/slide'
 
-const URL_KINDS: readonly string[] = ['tiff', 'zarr', 'dzi', 'manifest']
+const URL_KINDS: readonly string[] = [
+  'tiff',
+  'dicom-tiff',
+  'zarr',
+  'dzi',
+  'manifest',
+]
 
 // A local file's descriptor names it, so a host can offer it again; the
 // default resolver cannot reopen it.
@@ -98,10 +104,7 @@ export function resolveSlideSource(
       !URL_KINDS.includes(format)
     )
       return null
-    const kind = format as SlideKind
-    return openUrl(kind, d.url, options, signal).then((src) =>
-      described(src, d.url, kind),
-    )
+    return openUrl(format as SlideKind, d.url, options, signal)
   }
 }
 
@@ -200,8 +203,7 @@ export async function openSlide(
         {
           kind,
           label: fileName(url),
-          open: async (s) =>
-            described(await openUrl(kind, url, options, s), url, kind),
+          open: (s) => openUrl(kind, url, options, s),
         },
       ],
     }
@@ -295,6 +297,15 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
 }
 
 async function openUrl(
+  kind: SlideKind,
+  url: string,
+  options: OpenSlideOptions,
+  s?: AbortSignal,
+): Promise<SlideTileSource> {
+  return described(await openSource(kind, url, options, s), url, kind)
+}
+
+async function openSource(
   kind: SlideKind,
   url: string,
   {

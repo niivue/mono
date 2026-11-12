@@ -2149,6 +2149,26 @@ describe('NVSlide.sampleAt', () => {
     slide.dispose()
   })
 
+  it('reports a channel hidden after its tile loaded as hidden', async () => {
+    const { slide } = codedSlide()
+    await slide.loadSampleAt(2, 1)
+    slide.setChannel(1, { visible: false })
+    expect(missing(slide.sampleAt(2, 1))).toEqual([
+      undefined,
+      'hidden',
+      'hidden',
+    ])
+    slide.dispose()
+  })
+
+  it('loadSampleAt after dispose fetches nothing', async () => {
+    const { slide, source } = codedSlide()
+    slide.dispose()
+    expect(missing(await slide.loadSampleAt(2, 1))[0]).toBe('uncached')
+    expect(source.requested).toEqual([])
+    expect(slide.stats.cacheBytes).toBe(0)
+  })
+
   it('serves the finest resident level; opts.level pins one', async () => {
     const { slide } = codedSlide()
     // Level 2 is 8 x 4: (floor(29 * 8 / 30), floor(13 * 4 / 14)) = (7, 3).

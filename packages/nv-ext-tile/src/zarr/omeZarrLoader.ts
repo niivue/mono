@@ -511,14 +511,24 @@ function channelDisplay(
   }
 }
 
+/** addColormap's limit on a label table's ID span (a dense LUT). */
+const MAX_LABEL_SPAN = 256 * 8192
+
 /**
  * A label store's `image-label.colors` as a label colormap, for
  * `nv.addColormap(name, map)` and then a volume's `colormap: name`; null when
- * the store states no colours. IDs the table omits show transparent.
+ * the store states no colours. IDs the table omits show transparent. Colours
+ * past addColormap's ID span from the lowest ID are dropped with a warning,
+ * so a sparse table still registers.
  */
 export function omeZarrLabelColormap(info: OmeZarrInfo): ColorMap | null {
   if (info.labelColors.length === 0) return null
-  const sorted = [...info.labelColors].sort((a, b) => a.id - b.id)
+  const all = [...info.labelColors].sort((a, b) => a.id - b.id)
+  const sorted = all.filter((c) => c.id - all[0].id < MAX_LABEL_SPAN)
+  if (sorted.length < all.length)
+    console.warn(
+      `OME-Zarr labels: ${all.length - sorted.length} colour(s) for IDs past ${all[0].id + MAX_LABEL_SPAN - 1} dropped (a label colormap spans at most ${MAX_LABEL_SPAN} IDs); those labels show clear`,
+    )
   const channel = (i: number) => sorted.map((c) => c.rgba[i])
   return {
     R: channel(0),

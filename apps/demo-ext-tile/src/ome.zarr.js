@@ -3,9 +3,9 @@ import {
   defaultOmeZarrLevel,
   fetchOmeZarr,
   omeZarrChannelName,
-  omeZarrLabelColormap,
   omeZarrVolumesFrom,
 } from '@niivue/nv-ext-tile/zarr'
+import { segmentationColormap } from './segColormap'
 
 // OME-Zarr is the fourth of the microscopy containers this package reads (see
 // packages/nv-ext-tile/docs/ome-zarr-format.md). A store is a resolution pyramid over up to five
@@ -417,9 +417,8 @@ addSegButton.onclick = async () => {
     const match = seg.levels.findIndex((l) =>
       l.dims.every((d, i) => d === dims[i]),
     )
-    const colors = omeZarrLabelColormap(seg.info)
-    const cmapName = colors ? `${seg.info.name ?? 'segmentation'} labels` : ''
-    if (colors) nv1.addColormap(cmapName, colors)
+    const colors = segmentationColormap(seg.info, segId)
+    if (colors) nv1.addColormap(colors.name, colors.map)
     // Read and prepare (the NIfTI parse on the volume worker) before the
     // checks, so nothing awaits between the last check and the attach.
     let shown
@@ -437,7 +436,7 @@ addSegButton.onclick = async () => {
       prepared = await nv1.prepareVolume({
         ...volume,
         id: segId,
-        ...(colors ? { colormap: cmapName } : {}),
+        ...(colors ? { colormap: colors.name } : {}),
         opacity: 0.5,
       })
       if (superseded()) {

@@ -404,4 +404,38 @@ describe('omeZarrLabelColormap', () => {
       ),
     ).toBeNull()
   })
+
+  test('a sparse table past the label span keeps what fits and warns, so it registers', async () => {
+    const { makeLabelLut } = await import('@niivue/niivue')
+    const { omeZarrLabelColormap } = await import('./omeZarrLoader')
+    const info = parseOmeZarrAttrs({
+      multiscales: [{ datasets: [{ path: '0' }] }],
+      'image-label': {
+        colors: [
+          { 'label-value': 16777216, rgba: [0, 255, 0, 255] },
+          { 'label-value': 0, rgba: [0, 0, 0, 0] },
+          { 'label-value': 2, rgba: [255, 0, 0, 255] },
+        ],
+      },
+    })
+    const warn = console.warn
+    const warned: unknown[] = []
+    console.warn = (...a: unknown[]) => warned.push(a[0])
+    try {
+      const map = omeZarrLabelColormap(info)
+      if (!map) throw new Error('no colormap')
+      // addColormap's limit: label IDs span at most 256 * 8192.
+      const I = map.I ?? []
+      expect(Math.max(...I) - Math.min(...I) + 1).toBeLessThanOrEqual(
+        256 * 8192,
+      )
+      expect(I).toEqual([0, 2])
+      expect(Array.from(makeLabelLut(map).lut.slice(8, 12))).toEqual([
+        255, 0, 0, 255,
+      ])
+      expect(String(warned[0])).toContain('1 colour(s)')
+    } finally {
+      console.warn = warn
+    }
+  })
 })

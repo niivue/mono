@@ -7,6 +7,7 @@ import {
   type MeasurementResult,
   type ScreenRuler,
 } from '@/view/NVMeasurement'
+import { chooseRulerSize, scaleBarLines } from '@/view/NVRuler'
 import type { NVSlide, NVSlideScreen } from './NVSlide'
 import type { NVSlideController, NVSlidePoint } from './slideController'
 
@@ -14,9 +15,11 @@ import type { NVSlideController, NVSlidePoint } from './slideController'
 export const SLIDE_OVERLAY_MAX_LINES = 1024
 export const SLIDE_OVERLAY_MAX_GLYPHS = 2048
 
-/** NiiVue's ruler and selection-box styling. */
+/** NiiVue's ruler, scale bar (`isRulerVisible`) and selection-box styling. */
 export type SlideOverlayStyle = Pick<
   UIConfig,
+  | 'isRulerVisible'
+  | 'fontColor'
   | 'measureLineColor'
   | 'measureTextColor'
   | 'rulerWidth'
@@ -34,14 +37,43 @@ export type SlideOverlaySource = Pick<
 export interface SlideOverlayContent {
   rulers: ScreenRuler[]
   box: { x0: number; y0: number; x1: number; y1: number } | null
+  scaleBar: {
+    x: number
+    y: number
+    lengthPx: number
+    thickness: number
+    label: string
+  } | null
   style: SlideOverlayStyle
+}
+
+/**
+ * A nice scale-bar length (1/2/5 x 10^n, as the volume ruler) in device pixels
+ * and its label ("100 um" below 1 mm), at most ~a quarter of `maxDevicePx`.
+ * Null without spacing or when the field outgrows the 10 cm top step.
+ */
+export function slideScaleBar(
+  spacingMM: number | undefined,
+  devicePxPerBase: number,
+  maxDevicePx: number,
+): { lengthPx: number; label: string } | null {
+  if (!spacingMM || !(devicePxPerBase > 0)) return null
+  const mmPerPx = spacingMM / devicePxPerBase
+  // chooseRulerSize caps the bar at 65% of its field: 0.4 keeps it near 26%.
+  const ruler = chooseRulerSize(maxDevicePx * mmPerPx * 0.4)
+  const lengthPx = ruler ? ruler.lengthMM / mmPerPx : 0
+  // The ladder tops out at 10 cm; a field far wider leaves a sliver, so skip it.
+  return ruler && lengthPx >= maxDevicePx / 50
+    ? { lengthPx, label: ruler.label }
+    : null
 }
 
 /**
  * Rulers and the contrast selection box, placed for the slide's current view.
  * Lengths use the slide's `pixelSpacingMM` (a sub-millimetre span reads in
  * micrometres, "180.0 um"); without it a ruler has no ticks and reads in base
- * pixels.
+ * pixels. `style.isRulerVisible` adds a bottom-left scale bar (horizontal
+ * spacing; none without it).
  */
 export function slideOverlayContent(
   slide: NVSlide,
@@ -78,7 +110,24 @@ export function slideOverlayContent(
     const [x1, y1] = toDevice(source.selection.end)
     box = { x0, y0, x1, y1 }
   }
-  return { rulers, box, style: { ...UI_DEFAULTS, ...style } }
+  const fullStyle = { ...UI_DEFAULTS, ...style }
+  const bar =
+    fullStyle.isRulerVisible &&
+    slideScaleBar(
+      spacing?.[0],
+      slide.viewport.scale * dpr,
+      screen.widthCss * dpr,
+    )
+  const inset = 12 * dpr
+  const scaleBar = bar
+    ? {
+        ...bar,
+        x: inset,
+        y: screen.heightCss * dpr - inset,
+        thickness: 4 * dpr,
+      }
+    : null
+  return { rulers, box, scaleBar, style: fullStyle }
 }
 
 /** The overlay as line and glyph batches, for either backend's renderers. */
@@ -109,6 +158,44 @@ export function buildSlideOverlay(
         content.style.selectionBoxColor,
       ),
     )
+  }
+  const bar = content.scaleBar
+  if (bar) {
+    const color = content.style.fontColor
+    // A translucent backing keeps the grey bar legible over bright tissue.
+    // The label is 0.8 x fontPx tall, ~2 x numberPx (half fontPx) with leading.
+    const pad = bar.thickness
+    const top = bar.y - bar.thickness - 2 * numberPx - pad / 2
+    const bottom = bar.y + bar.thickness / 2 + pad
+    out.lines.push(
+      buildLine(
+        bar.x - pad,
+        (top + bottom) / 2,
+        bar.x + bar.lengthPx + pad,
+        (top + bottom) / 2,
+        bottom - top,
+        [0, 0, 0, 0.75],
+      ),
+      ...scaleBarLines(
+        bar.x,
+        bar.y,
+        bar.lengthPx,
+        bar.thickness,
+        bar.thickness / 4,
+        buildLine,
+        color,
+      ),
+    )
+    const label = buildText(
+      bar.label,
+      bar.x + bar.lengthPx / 2,
+      bar.y - bar.thickness,
+      0.8,
+      color,
+      0.5,
+      1,
+    )
+    if (label.count > 0) out.labels.push(label)
   }
   return out
 }

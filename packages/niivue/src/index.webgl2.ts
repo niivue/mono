@@ -205,6 +205,7 @@ export type {
   NVSlideOptions,
   NVSlideRangeEvent,
   NVSlideRangeStatus,
+  NVSlideSample,
   NVSlideSampleArray,
   NVSlideScreen,
   NVSlideScreenRect,

@@ -1548,6 +1548,12 @@ export default class NVGlview {
           md.ui.fontColor,
           md.scene.pan2Dxyzmm,
           sceneUnit(md).mm,
+          this.slidePlane
+            ? {
+                furthestFromPivot: md.furthestFromPivot,
+                scaleMultiplier: md.scene.scaleMultiplier,
+              }
+            : undefined,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)

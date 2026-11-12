@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVSlide } from './NVSlide'
-import { slideOverlayContent } from './slideOverlay'
+import { slideOverlayContent, slideScaleBar } from './slideOverlay'
 
 const slide = (pixelSpacingMM?: [number, number]) =>
   ({
     manifest: { pixelSpacingMM },
     slideToScreen: (x: number, y: number) => ({ xCss: x, yCss: y }),
+    viewport: { scale: 1 },
   }) as unknown as NVSlide
 
 const source = {
@@ -36,5 +37,61 @@ describe('slideOverlayContent', () => {
     const [r] = slideOverlayContent(slide(), screen, source).rulers
     expect(r.distance).toBe(0)
     expect(r.label).toBe('50 px')
+  })
+})
+
+describe('slideScaleBar', () => {
+  test('picks a nice length that fits a quarter of the view', () => {
+    // 0.5 um/px at 1 device px per base pixel, 1000 px wide: 100 um = 200 px.
+    expect(slideScaleBar(0.0005, 1, 1000)).toEqual({
+      lengthPx: 200,
+      label: '100 um',
+    })
+  })
+
+  test('switches to mm at 1 mm and tracks zoom', () => {
+    expect(slideScaleBar(0.0005, 0.05, 1000)).toEqual({
+      lengthPx: 200,
+      label: '2 mm',
+    })
+    expect(slideScaleBar(0.0005, 0.1, 1000)?.label).toBe('1 mm')
+    expect(slideScaleBar(0.0005, 0.2, 1000)?.label).toBe('500 um')
+  })
+
+  test('nothing without spacing', () => {
+    expect(slideScaleBar(undefined, 1, 1000)).toBeNull()
+    // 10 mm/px: 10 cm would be 10 px of a 1000 px view.
+    expect(slideScaleBar(10, 1, 1000)).toBeNull()
+  })
+})
+
+describe('slideOverlayContent scale bar', () => {
+  test('isRulerVisible places it bottom-left in device pixels', () => {
+    const { scaleBar } = slideOverlayContent(
+      slide([0.01, 0.01]),
+      screen,
+      source,
+      {
+        isRulerVisible: true,
+      },
+    )
+    // 0.005 mm per device px, 200 px wide: 0.26 mm fits, so 200 um = 40 px.
+    expect(scaleBar).toEqual({
+      x: 24,
+      y: 176,
+      lengthPx: 40,
+      thickness: 8,
+      label: '200 um',
+    })
+  })
+
+  test('off by default and without spacing', () => {
+    expect(
+      slideOverlayContent(slide([0.01, 0.01]), screen, source).scaleBar,
+    ).toBeNull()
+    expect(
+      slideOverlayContent(slide(), screen, source, { isRulerVisible: true })
+        .scaleBar,
+    ).toBeNull()
   })
 })

@@ -1,6 +1,7 @@
 // Index a local folder of DICOM-WSI instances for tile playback (plan D17/D18).
-// Reads only headers and item tags with File.slice, never pixel data, and
-// records each frame's byte span, so DicomWsiSource can read one tile at a time.
+// Parses only headers and item tags, never pixel data (blockReader reads it
+// through), and records each frame's byte span, so DicomWsiSource can read one
+// tile at a time.
 // Explicit VR little endian only, which covers every WSI transfer syntax.
 // Files are untrusted: every size taken from a header is checked against the
 // file before it sizes an allocation or a read.
@@ -495,7 +496,48 @@ export interface InstanceInfo<
   length: Uint32Array
 }
 
-type ReadAt = (offset: number, length: number) => Promise<Uint8Array>
+type ReadAt = (
+  offset: number,
+  length: number,
+) => Uint8Array | Promise<Uint8Array>
+
+/** Reads `length` bytes of `file` at `offset`. */
+export type ReadFile = (
+  file: File,
+  offset: number,
+  length: number,
+) => Uint8Array | Promise<Uint8Array>
+
+const readSlice: ReadFile = async (file, offset, length) =>
+  new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
+
+/**
+ * A {@link ReadFile} over synchronous reads (FileReaderSync, in a worker) that
+ * reads `blockBytes` blocks and serves the reads inside one from them. A Chrome
+ * blob read costs ~0.1 ms at any size up to 1 MiB, so reading an item-walked
+ * file through (one read per frame otherwise) is 5-20x faster.
+ */
+export function blockReader(
+  readSync: (file: File, offset: number, length: number) => Uint8Array,
+  blockBytes = 1 << 20,
+): ReadFile {
+  let file: File | undefined
+  let start = 0
+  let block: Uint8Array = new Uint8Array(0)
+  return (f, offset, length) => {
+    if (length > blockBytes) return readSync(f, offset, length)
+    if (
+      f !== file ||
+      offset < start ||
+      offset + length > start + block.length
+    ) {
+      file = f
+      start = offset
+      block = readSync(f, offset, blockBytes)
+    }
+    return block.subarray(offset - start, offset - start + length)
+  }
+}
 
 function refuseSyntax(b: Uint8Array, top: Map<number, Element>): void {
   // The file meta group is always explicit VR little endian, so its transfer
@@ -848,16 +890,19 @@ export function instanceGeometry<C>(
   return info
 }
 
-async function indexInstance(file: File): Promise<InstanceInfo> {
+async function indexInstance(
+  file: File,
+  key: string,
+  read: ReadFile,
+): Promise<InstanceInfo> {
   const size = file.size
-  const readAt: ReadAt = async (offset, length) =>
-    new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
+  const readAt: ReadAt = (offset, length) => read(file, offset, length)
   const { b, pixel, top, attributes } = await readHeader(readAt, size)
   // Each frame needs at least its 8-byte item header after Pixel Data.
   const g = instanceGeometry(attributes, Math.floor((size - pixel) / 8))
   const instance = {
     ...g.instance,
-    file: fileKey(file),
+    file: key,
     size,
     version: String(file.lastModified),
   }
@@ -1018,24 +1063,26 @@ async function frameSpans(
 }
 
 /**
- * Index the DICOM-WSI instances among `files` (e.g. an `<input webkitdirectory>`
- * selection). Files that are not tiled, compressed, explicit-VR DICOM, or that
- * fail to parse, are listed in `skipped`; they never cost the other files their
- * slides. Only VOLUME instances make levels; each optical path and focal plane
- * is its own slide.
- * ponytail: main thread with async File.slice reads; move to a worker if a
- * folder without offset tables takes over ~1 s to walk.
+ * Index the DICOM-WSI instances among `files` on this thread; the public
+ * `indexDicomWsi` runs it in a worker when it can. Files that are not tiled,
+ * compressed, explicit-VR DICOM, or that fail to parse, are listed in
+ * `skipped`; they never cost the other files their slides. Only VOLUME
+ * instances make levels; each optical path and focal plane is its own slide.
+ * `keys` name the files (default {@link fileKey}).
  */
-export async function indexDicomWsi(
+export async function indexDicomWsiOnThread(
   files: readonly File[],
+  keys: readonly string[] = files.map(fileKey),
+  read: ReadFile = readSlice,
 ): Promise<SlideIndex> {
   const infos: InstanceInfo[] = []
   const skipped: SlideIndexSkipped[] = []
-  for (const file of files) {
+  for (const [i, file] of files.entries()) {
+    const key = keys[i] as string
     try {
-      infos.push(await indexInstance(file))
+      infos.push(await indexInstance(file, key, read))
     } catch (err) {
-      skipped.push(skipOf(fileKey(file), err))
+      skipped.push(skipOf(key, err))
     }
   }
   return {

@@ -272,3 +272,32 @@ test('loadVolumes replacing the scene aborts a pending frame fetch', async () =>
   gates.get(1)?.resolve()
   await request
 })
+
+test('a class source with private fields loads through its own receiver', async () => {
+  class Source implements VolumeFrameSource {
+    readonly #base = 0
+    readonly count = 3
+    frame = 0
+    readonly group = {}
+    async load(t: number) {
+      return frameOf(t, this.#base)
+    }
+  }
+  const nv = await load([new Source()])
+  await nv.setFrame4D('c0.nii', 2)
+  expect(nv.volumes[0].img?.[0]).toBe(200)
+})
+
+test('frameChange fires once the whole group is on the new frame', async () => {
+  const group = {}
+  const nv = await load([source(0, group), source(1, group)])
+  const seen: number[][] = []
+  nv.addEventListener('frameChange', () =>
+    seen.push([nv.getFrame4D('c0.nii'), nv.getFrame4D('c1.nii')]),
+  )
+  await nv.setFrame4D('c0.nii', 1)
+  expect(seen).toEqual([
+    [1, 1],
+    [1, 1],
+  ])
+})

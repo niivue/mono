@@ -48,16 +48,24 @@ import { assignUniqueVolumeIds } from '@/volume/volumeIds'
 
 /**
  * The shown frame is per volume: one source loaded into two viewers is shared,
- * so each volume inherits it with its own `frame`.
+ * so each volume wraps it with its own `frame`. The source itself is never
+ * cloned or written, and `load` runs on it (a class may read private fields).
  */
-function ownFrameSource(frameSource: VolumeFrameSource | undefined): {
+function ownFrameSource(source: VolumeFrameSource | undefined): {
   frameSource?: VolumeFrameSource
 } {
-  return frameSource
+  return source
     ? {
-        frameSource: Object.assign(Object.create(frameSource), {
-          frame: frameSource.frame,
-        }),
+        frameSource: {
+          frame: source.frame,
+          get count() {
+            return source.count
+          },
+          get group() {
+            return source.group
+          },
+          load: (frame, signal) => source.load(frame, signal),
+        },
       }
     : {}
 }

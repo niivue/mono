@@ -5172,6 +5172,7 @@ export default class NiiVue extends EventTarget {
     }
     if (request.signal.aborted) return
     const shown = [...frames.keys()].filter((v) => this.volumes.includes(v))
+    const switched: NVImage[] = []
     for (const vol of shown) {
       const img = frames.get(vol)
       if (!vol.img || !vol.frameSource || !img) continue
@@ -5179,8 +5180,11 @@ export default class NiiVue extends EventTarget {
       vol.frameSource.frame = t
       markVolumeDataChanged(vol)
       NVModel.growLabelRange(vol)
-      this.emit('frameChange', { volume: vol, frame: t })
+      switched.push(vol)
     }
+    // Emit once the whole group is on t, so a listener never sees it half-switched.
+    for (const volume of switched)
+      this.emit('frameChange', { volume, frame: t })
     await this._updateGL('none', shown)
     this.createOnLocationChange()
   }

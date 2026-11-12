@@ -102,7 +102,9 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     // Kept while null (tiles evicted or not yet loaded): the old one stays drawn.
     if (!bitmap || bitmap === this.drawnBitmap) return
     this.thumbnail ??= new OffscreenCanvas(bitmap.width, bitmap.height)
-    const ctx = this.thumbnail.getContext('2d')
+    // CPU-backed: SwiftShader WebGPU's copyExternalImageToTexture of a
+    // GPU-backed 2D canvas fails validation ("[Invalid Texture]").
+    const ctx = this.thumbnail.getContext('2d', { willReadFrequently: true })
     if (!ctx) return
     const { width, height } = this.thumbnail
     ctx.clearRect(0, 0, width, height)

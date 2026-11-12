@@ -10,7 +10,7 @@ import { test } from './sharedPage'
 // max) must show (200, 100, 0) in the minimap, and (200, 0, 0) once green is
 // hidden. The main view looks away from the slide, so only the minimap draws
 // it. Requires `nx build uikit` (see uikit-overlay-hook.spec.ts). WebGPU is
-// skipped without an adapter and on SwiftShader (see below).
+// skipped without an adapter.
 
 const uikitDist = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -28,11 +28,6 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         if (!navigator.gpu) return { skip: 'no navigator.gpu' }
         const adapter = await navigator.gpu.requestAdapter().catch(() => null)
         if (!adapter) return { skip: 'no WebGPU adapter' }
-        // The UIKit image overlay's copyExternalImageToTexture of an
-        // OffscreenCanvas draws nothing there, whatever the slide holds.
-        const { vendor, architecture, description } = adapter.info ?? {}
-        if (/swiftshader/i.test([vendor, architecture, description].join(' ')))
-          return { skip: 'UIKit image overlay does not draw on SwiftShader WebGPU' }
       }
       const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('/src/index.ts')
       const { UIKitSlideMinimapOverlay } = await import('/@fs${uikitDist}')

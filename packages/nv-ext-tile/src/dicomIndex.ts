@@ -657,7 +657,7 @@ function attributeReader(b: Uint8Array) {
       if (v && colorSpaces[i]) v.colorSpace = colorSpaces[i]
     })
     const lab = top.get(T.absentLab)
-    if (lab?.vr === 'US' && lab.length >= 6)
+    if (lab?.vr === 'US' && lab.length === 6)
       a.absentLab = [0, 2, 4].map((k) => view.getUint16(lab.offset + k, true))
     const topSpacing = top.get(T.spacing)
     if (topSpacing) spacings[2] = text(b, topSpacing)

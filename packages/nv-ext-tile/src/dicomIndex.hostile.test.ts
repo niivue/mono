@@ -442,6 +442,26 @@ describe('indexDicomWsi on hostile input', () => {
     const ws = (await indexViaEntry([white])).slides[0] as SlideIndexSlide
     const { manifest } = new DicomWsiSource(ws, [white])
     expect(manifest.backgroundColor).toEqual([1, 1, 1, 1])
+    // The tag is VM 3: a fourth component makes it invalid, not white.
+    const four = dicom({
+      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+      absentLab: el(
+        0x0048,
+        0x0015,
+        'US',
+        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2), le(1, 2)),
+      ),
+      perFrame: sq(0x5200, 0x9230, [
+        pos(9, 1),
+        pos(0, 1),
+        pos(1, 1),
+        pos(17, 17),
+      ]),
+    })
+    const fs = (await indexViaEntry([four])).slides[0] as SlideIndexSlide
+    expect(new DicomWsiSource(fs, [four]).manifest.backgroundColor).toBe(
+      undefined,
+    )
     expect(manifest.levels[0]?.tiles.map((t) => t === null)).toEqual([
       false,
       true,

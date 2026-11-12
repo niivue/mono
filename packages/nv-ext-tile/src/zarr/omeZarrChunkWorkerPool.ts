@@ -9,16 +9,17 @@
  * that draws. This pool moves that work; the upload and the gradient pass stay
  * where they must be, next to the GPU context.
  *
- * Each worker opens the store itself and keeps its own byte LRU, so a request
- * is routed by hashing its region rather than by picking the idlest worker --
- * see {@link routeChunkToWorker} for why that matters.
+ * Each worker opens the store from the metadata the main thread already read
+ * (sent with its first request; a worker without it reads it itself) and
+ * keeps its own byte LRU, so a request is routed by hashing its region rather
+ * than by picking the idlest worker -- see {@link routeChunkToWorker} for why
+ * that matters.
  *
  * A worker failure is not automatically fatal: the caller still holds a
  * main-thread source and can read there. Only failures a re-run would repeat
  * (a missing store, a region that will not decode) come back marked final.
  */
 
-import type { ChunkedVolumeFetch } from '@niivue/niivue'
 import {
   type ChunkTimingSnapshot,
   mergeOffThreadChunkTiming,
@@ -35,6 +36,7 @@ import OmeZarrChunkWorker from './omeZarrChunk.worker?worker&inline'
 import type {
   ByteCacheStats,
   FetchOmeZarrChunkedSourceOptions,
+  OmeZarrChunkFetch,
 } from './omeZarrChunkedSource'
 import type {
   PersistentCacheOptions,
@@ -47,6 +49,7 @@ interface ChunkReply {
   timing: ChunkTimingSnapshot
   cache: ByteCacheStats | null
   persist: PersistentCacheStats | null
+  wireBytes?: number
 }
 
 /** Options for {@link OmeZarrChunkWorkerPool}. */
@@ -70,6 +73,12 @@ export class OmeZarrChunkWorkerPool {
   private readonly lastCache: (ByteCacheStats | null)[]
   private readonly lastPersist: (PersistentCacheStats | null)[]
   private readonly workerOptions: FetchOmeZarrChunkedSourceOptions[]
+  /** Response bytes each worker had read at its last reply. */
+  private readonly lastWire: number[]
+  /** Called with the response bytes each reply's worker read since its last one. */
+  onWireBytes: ((bytes: number) => void) | null = null
+  /** Workers already sent {@link metadata}. */
+  private readonly seeded: boolean[]
   private nextTaskId = 0
   private disposed = false
 
@@ -77,17 +86,22 @@ export class OmeZarrChunkWorkerPool {
     private readonly url: string,
     options: FetchOmeZarrChunkedSourceOptions,
     private readonly pool: OmeZarrChunkPoolOptions,
+    /** The store's metadata reads, by key, as the main thread's open made them. */
+    private readonly metadata?: Map<string, Uint8Array | undefined>,
+    createWorker: () => Worker = () => new OmeZarrChunkWorker(),
   ) {
     const size = Math.max(1, Math.floor(pool.size) || 1)
     this.workers = Array.from(
       { length: size },
-      () => new NVWorker(() => new OmeZarrChunkWorker()),
+      () => new NVWorker(createWorker),
     )
+    this.seeded = new Array(size).fill(false)
+    this.lastWire = new Array(size).fill(0)
     this.lastTiming = new Array(size).fill(null)
     this.lastCache = new Array(size).fill(null)
     this.lastPersist = new Array(size).fill(null)
     // Rebuild the options the worker needs rather than forwarding whatever
-    // came in: `fetchImpl` is a function and would not survive the clone (the
+    // came in: `fetch` is a function and would not survive the clone (the
     // caller declines the pool when one is set), and the worker must not build
     // a pool of its own.
     //
@@ -124,15 +138,17 @@ export class OmeZarrChunkWorkerPool {
    * fires, and with the worker's own error otherwise; the caller decides
    * whether that error is worth a main-thread retry.
    */
-  async fetchChunk(req: ChunkedVolumeFetch): Promise<Uint8Array> {
+  async fetchChunk(req: OmeZarrChunkFetch): Promise<Uint8Array> {
     // A read that arrives after dispose belongs to a volume being torn down.
     // Reporting it as an abort keeps the caller from "recovering" by reading
     // the same bytes on the main thread for a view that no longer wants them.
     if (this.disposed) throw abortError('OME-Zarr chunk pool: already disposed')
-    const { levelIndex, texOrigin, texDims, bytesPerVoxel, signal } = req
+    const { levelIndex, texOrigin, texDims, bytesPerVoxel, frame, channel } =
+      req
+    const { signal } = req
     signal?.throwIfAborted()
     const index = routeChunkToWorker(
-      chunkRegionKey({ levelIndex, texOrigin, texDims }),
+      chunkRegionKey({ levelIndex, texOrigin, texDims, frame }),
       this.workers.length,
     )
     const worker = this.workers[index]
@@ -146,11 +162,16 @@ export class OmeZarrChunkWorkerPool {
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     try {
+      // Metadata goes once per worker, outside `options` (the worker keys its
+      // opened sources by those).
+      const metadata = this.seeded[index] ? undefined : this.metadata
+      this.seeded[index] = true
       const reply = await worker.execute<ChunkReply>({
         taskId,
         url: this.url,
         options: this.workerOptions[index],
-        req: { levelIndex, texOrigin, texDims, bytesPerVoxel },
+        req: { levelIndex, texOrigin, texDims, bytesPerVoxel, frame, channel },
+        ...(metadata ? { metadata } : {}),
       })
       this.merge(index, reply)
       return reply.bytes
@@ -205,6 +226,11 @@ export class OmeZarrChunkWorkerPool {
     }
     if (reply.cache) this.lastCache[index] = reply.cache
     if (reply.persist) this.lastPersist[index] = reply.persist
+    if (reply.wireBytes !== undefined) {
+      const delta = reply.wireBytes - this.lastWire[index]
+      this.lastWire[index] = reply.wireBytes
+      if (delta > 0) this.onWireBytes?.(delta)
+    }
   }
 }
 

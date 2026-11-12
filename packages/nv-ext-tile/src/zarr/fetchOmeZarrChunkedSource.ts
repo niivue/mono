@@ -14,12 +14,14 @@
  */
 
 import type { ChunkedVolumeFetch } from '@niivue/niivue'
+import { resolveChunkWorkerCount } from './chunkWorkerRouting'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_CACHE_BYTES,
   OME_ZARR_CHUNK_ERROR,
   type OmeZarrChunkedSource,
   openOmeZarrChunkedSource,
+  persistable,
 } from './omeZarrChunkedSource'
 import type { OmeZarrChunkWorkerPool } from './omeZarrChunkWorkerPool'
 import {
@@ -41,33 +43,46 @@ export async function fetchOmeZarrChunkedSource(
 ): Promise<OmeZarrChunkedSource> {
   const cacheBytes = options.cacheBytes ?? OME_ZARR_CHUNK_CACHE_BYTES
   const poolSize = resolveChunkWorkerCount(options)
-  // With a pool running the workers hold the caches, and a duplicate here
-  // would only cache what the workers already declined to send twice. The
-  // persistent tier follows the byte cache for the same reason. It would also
-  // need a scope of its own over the shared backing, and nothing routed here
-  // would ever find what the workers wrote.
-  const local = await openOmeZarrChunkedSource(url, {
-    ...options,
-    cacheBytes: poolSize > 0 ? 0 : cacheBytes,
-    persist: poolSize > 0 ? false : options.persist,
-  })
+  // With a pool, the workers hold the byte and persist caches (this thread
+  // only falls back) and get the metadata this open reads.
+  const metadata = new Map<string, Uint8Array | undefined>()
+  const local = await openOmeZarrChunkedSource(
+    url,
+    {
+      ...options,
+      cacheBytes: poolSize > 0 ? 0 : cacheBytes,
+      persist: poolSize > 0 ? false : options.persist,
+    },
+    poolSize > 0 ? metadata : undefined,
+  )
   if (poolSize === 0) return local
-  const persistPerWorker = splitPersistBudget(options.persist, poolSize)
+  const persistPerWorker = splitPersistBudget(
+    persistable(url, options) && options.persist,
+    poolSize,
+  )
   // Imported on demand, not at the top. The pool carries an inlined worker
   // that bundles zarrita and its codecs -- megabytes that only a caller who
   // actually streams chunks should ever download.
   const { OmeZarrChunkWorkerPool } = await import('./omeZarrChunkWorkerPool')
-  const pool = new OmeZarrChunkWorkerPool(url, options, {
-    size: poolSize,
-    cacheBytesPerWorker: Math.floor(cacheBytes / poolSize),
-    persistPerWorker,
-  })
+  const pool = new OmeZarrChunkWorkerPool(
+    url,
+    options,
+    {
+      size: poolSize,
+      cacheBytesPerWorker: Math.floor(cacheBytes / poolSize),
+      persistPerWorker,
+    },
+    metadata,
+  )
   return {
     ...local,
     fetchChunk: (req) => readViaPool(pool, local, req),
     byteCacheStats: () => pool.byteCacheStats(),
     ...(persistPerWorker ? { persistStats: () => pool.persistStats() } : {}),
-    dispose: () => pool.dispose(),
+    dispose: () => {
+      pool.dispose()
+      local.dispose?.()
+    },
   }
 }
 
@@ -85,37 +100,6 @@ function splitPersistBudget(
   const options = persist === true ? {} : persist
   const total = options.maxBytes ?? OME_ZARR_PERSIST_BYTES
   return { maxBytes: Math.floor(total / poolSize), name: options.name }
-}
-
-/**
- * How many workers this call should get: the caller's number when they gave
- * one, otherwise the default, and zero wherever a pool cannot run.
- */
-function resolveChunkWorkerCount(
-  options: FetchOmeZarrChunkedSourceOptions,
-): number {
-  // A custom fetch is a function, and a function does not survive structured
-  // cloning. Honour it on this thread rather than dropping it.
-  if (options.fetchImpl) return 0
-  // A pool exists to keep a render thread free, so it belongs in a document.
-  // Off one -- a test runner, a server -- there is nothing to protect and the
-  // worker entry may not even resolve.
-  if (typeof window === 'undefined' || typeof Worker === 'undefined') return 0
-  const asked = options.workers
-  if (asked === undefined) return defaultChunkWorkerCount()
-  return Number.isFinite(asked) ? Math.max(0, Math.floor(asked)) : 0
-}
-
-/**
- * How many chunk workers to run when the caller does not say: half the
- * reported cores, at least one and at most four. The ceiling is deliberate.
- * These reads are dominated by network wait rather than CPU, several are
- * already outstanding inside each worker, and every extra worker costs another
- * store open and another slice of the byte budget.
- */
-function defaultChunkWorkerCount(): number {
-  const cores = navigator?.hardwareConcurrency ?? 4
-  return Math.max(1, Math.min(4, Math.floor(cores / 2)))
 }
 
 /**

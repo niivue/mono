@@ -30,8 +30,21 @@ export function chunkRegionKey(req: {
   levelIndex: number
   texOrigin: readonly number[]
   texDims: readonly number[]
+  frame?: number
 }): string {
-  return `${req.levelIndex}|${req.texOrigin.join(',')}|${req.texDims.join(',')}`
+  // Frame 0 keeps the pre-time key, so routing (and persisted scopes) hold.
+  const frame = req.frame ? `|t${req.frame}` : ''
+  return `${req.levelIndex}|${req.texOrigin.join(',')}|${req.texDims.join(',')}${frame}`
+}
+
+/** FNV-1a, 32 bit signed: cheap, and it spreads keys that differ in one digit. */
+export function fnv1a(key: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash
 }
 
 /**
@@ -42,14 +55,7 @@ export function chunkRegionKey(req: {
  */
 export function routeChunkToWorker(key: string, size: number): number {
   if (size <= 1) return 0
-  // FNV-1a, 32 bit. Cheap, and it spreads keys that differ in a single digit
-  // (adjacent bricks) rather than clumping them on one worker.
-  let hash = 0x811c9dc5
-  for (let i = 0; i < key.length; i++) {
-    hash ^= key.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return Math.abs(hash) % size
+  return Math.abs(fnv1a(key)) % size
 }
 
 /**
@@ -154,4 +160,36 @@ export function sumPersistStats(
     total.bytes += part.bytes
   }
   return total
+}
+
+/**
+ * How many workers this call should get: the caller's number when they gave
+ * one, otherwise the default, and zero wherever a pool cannot run.
+ */
+export function resolveChunkWorkerCount(options: {
+  fetch?: unknown
+  workers?: number
+}): number {
+  // A custom fetch is a function, and a function does not survive structured
+  // cloning. Honour it on this thread rather than dropping it.
+  if (options.fetch) return 0
+  // A pool exists to keep a render thread free, so it belongs in a document.
+  // Off one -- a test runner, a server -- there is nothing to protect and the
+  // worker entry may not even resolve.
+  if (typeof window === 'undefined' || typeof Worker === 'undefined') return 0
+  const asked = options.workers
+  if (asked === undefined) return defaultChunkWorkerCount()
+  return Number.isFinite(asked) ? Math.max(0, Math.floor(asked)) : 0
+}
+
+/**
+ * How many chunk workers to run when the caller does not say: half the
+ * reported cores, at least one and at most four. The ceiling is deliberate.
+ * These reads are dominated by network wait rather than CPU, several are
+ * already outstanding inside each worker, and every extra worker costs another
+ * store open and another slice of the byte budget.
+ */
+function defaultChunkWorkerCount(): number {
+  const cores = navigator?.hardwareConcurrency ?? 4
+  return Math.max(1, Math.min(4, Math.floor(cores / 2)))
 }

@@ -3,6 +3,7 @@ import {
   defaultOmeZarrLevel,
   fetchOmeZarr,
   omeZarrChannelName,
+  omeZarrLabelColormap,
   omeZarrVolumesFrom,
 } from '@niivue/nv-ext-tile/zarr'
 
@@ -13,9 +14,11 @@ import {
 // coloured and windowed by the store's omero display block when it has one.
 //
 // Timepoints load on demand (`lazyTime`): the slider and Play switch every
-// channel through `setFrame4D`, which fetches the frame (cached afterwards).
-// Play waits for each frame to show before scheduling the next, so a slow
-// store plays slower instead of piling up requests.
+// channel through `setFrame4D`, which fetches the frame (cached afterwards,
+// and the next one prefetched). Play waits for each frame to show before
+// scheduling the next, so a slow store plays slower instead of piling up
+// requests. A segmentation store added beside the channels shares their time
+// group, so it switches frames with them, coloured by its image-label table.
 //
 // The streaming demo (range.html) is the other OME-Zarr consumer: it reads
 // bricks of very large stores on demand. This loader reads whole (budgeted)
@@ -35,6 +38,9 @@ const channelsBox = document.getElementById('channels')
 const loadButton = document.getElementById('load')
 const opacityInput = document.getElementById('opacity')
 const statusLine = document.getElementById('status')
+const segUrlInput = document.getElementById('segUrl')
+const addSegButton = document.getElementById('addSeg')
+const timestamp = document.getElementById('timestamp')
 // id="location" shadows window.location, so this one element is looked up.
 const footer = document.getElementById('location')
 
@@ -129,6 +135,22 @@ window.nv1 = nv1
 nv1.addEventListener('locationChange', (e) => {
   footer.textContent = e.detail.string
 })
+nv1.addEventListener('frameChange', () => showTimestamp())
+
+const TIME_SECONDS = { second: 1, millisecond: 1e-3, minute: 60, hour: 3600 }
+/** The shown timepoint over the canvas, in seconds when the t axis has a unit. */
+function showTimestamp() {
+  const vol = nv1.volumes[0]
+  const count = vol?.frameSource?.count ?? 1
+  timestamp.hidden = !shownSource || count <= 1
+  if (timestamp.hidden) return
+  const t = nv1.getFrame4D(vol.id)
+  const axis = shownSource.indices.time
+  const unit = TIME_SECONDS[shownSource.axes[axis]?.unit]
+  const scale = shownSource.info.datasets[0]?.scale?.[axis]
+  const seconds = unit && scale ? ` (${(t * scale * unit).toFixed(1)} s)` : ''
+  timestamp.textContent = `t ${t} / ${count - 1}${seconds}`
+}
 await nv1.attachToCanvas(gl1)
 
 // textContent (not innerHTML): messages include data-derived channel names.
@@ -304,6 +326,12 @@ viewSelect.onchange = () => {
 
 /** The load options of the volumes on screen, for re-applying opacity. */
 let lastLoaded = null
+// The time group of the volumes on screen: a segmentation joins it.
+let timeGroup = {}
+// Bumped whenever the channels on screen are replaced, so a segmentation
+// still opening for the old ones is dropped instead of attached.
+let scene = 0
+let segAdds = 0
 
 loadButton.onclick = async () => {
   if (!source) {
@@ -322,16 +350,21 @@ loadButton.onclick = async () => {
   // Another store may be opened while this one loads: its result is then stale.
   const loading = source
   try {
+    const group = {}
     const volumes = await omeZarrVolumesFrom(loading, {
       channels,
       level,
       timepoint,
-      lazyTime: true,
+      lazyTime: group,
     })
     if (source !== loading) return
     shownSource = null
+    scene += 1
     await nv1.loadVolumes(volumes)
     shownSource = loading
+    timeGroup = group
+    addSegButton.disabled = false
+    showTimestamp()
     if (source !== loading) return
     lastLoaded = volumes
     applyDisplay(volumes)
@@ -356,6 +389,84 @@ loadButton.onclick = async () => {
     fail('Could not load the channels', err)
   } finally {
     loadButton.disabled = false
+  }
+}
+
+/**
+ * Add a segmentation store over the shown channels: the level whose grid
+ * matches theirs, at the shown timepoint, in their time group, coloured by
+ * its image-label colours when it states them. Playback pauses; if the
+ * channels are replaced while it opens it is dropped, and if their frame
+ * moves it is read again at the new frame, so it attaches in step.
+ */
+addSegButton.onclick = async () => {
+  const url = segUrlInput.value.trim()
+  const raw = nv1.volumes[0]
+  if (!url || !raw) return
+  addSegButton.disabled = true
+  stopPlayback()
+  const token = scene
+  const group = timeGroup
+  // This addition's own id: what the cleanup below acts on, never a guess.
+  const segId = `segmentation-${token}-${++segAdds}`
+  const superseded = () => scene !== token || !nv1.volumes.includes(raw)
+  say(`Opening segmentation ${url}...`)
+  try {
+    const seg = await fetchOmeZarr(url)
+    const dims = raw.dimsRAS.slice(1, 4)
+    const match = seg.levels.findIndex((l) =>
+      l.dims.every((d, i) => d === dims[i]),
+    )
+    const colors = omeZarrLabelColormap(seg.info)
+    const cmapName = colors ? `${seg.info.name ?? 'segmentation'} labels` : ''
+    if (colors) nv1.addColormap(cmapName, colors)
+    // Read and prepare (the NIfTI parse on the volume worker) before the
+    // checks, so nothing awaits between the last check and the attach.
+    let shown
+    let volume
+    let prepared
+    do {
+      shown = nv1.getFrame4D(raw.id)
+      ;[volume] = await omeZarrVolumesFrom(seg, {
+        channels: [0],
+        level: match >= 0 ? match : defaultOmeZarrLevel(seg),
+        timepoint: Math.min(shown, seg.timepointCount - 1),
+        lazyTime: group,
+        labels: true,
+      })
+      prepared = await nv1.prepareVolume({
+        ...volume,
+        id: segId,
+        ...(colors ? { colormap: cmapName } : {}),
+        opacity: 0.5,
+      })
+      if (superseded()) {
+        say(`Dropped segmentation ${volume.name}: the channels changed`)
+        return
+      }
+    } while (nv1.getFrame4D(raw.id) !== shown)
+    await nv1.addVolume(prepared)
+    // addVolume still awaits (its GPU update): undo or catch up, acting only
+    // on this segmentation (addVolume adds a copy of `prepared`, under its
+    // id) and only while it is still shown; a replacement may have dropped it.
+    const shownSeg = () => nv1.volumes.find((v) => v.id === segId)
+    if (superseded()) {
+      const stale = shownSeg()
+      if (stale) await nv1.removeVolume(nv1.volumes.indexOf(stale))
+      say(`Dropped segmentation ${volume.name}: the channels changed`)
+      return
+    }
+    const added = shownSeg()
+    if (added && nv1.getFrame4D(added.id) !== nv1.getFrame4D(raw.id))
+      await nv1.setFrame4D(added.id, nv1.getFrame4D(raw.id))
+    say(
+      `Added segmentation ${volume.name}` +
+        (match >= 0 ? '' : ' (no level matches the channels grid)'),
+    )
+  } catch (err) {
+    fail('Could not add that segmentation', err)
+  } finally {
+    addSegButton.disabled = false
   }
 }
 

@@ -353,3 +353,46 @@ describe('omeZarrSpatialScaleUm', () => {
     ).toEqual([0.5, 0.5, 2])
   })
 })
+
+describe('attribution and image-label colours', () => {
+  const multiscales = [{ datasets: [{ path: '0' }] }]
+  const attribution = {
+    title: 'Tonsil IMC',
+    url: 'https://idr.openmicroscopy.org',
+    license: 'CC BY 4.0',
+    extra: 5,
+  }
+  test('A1: v2 (.zattrs) and v3 (zarr.json attributes) read alike', () => {
+    const v2 = parseOmeZarrAttrs({ multiscales, attribution })
+    const v3 = parseOmeZarrAttrs({ ome: { multiscales }, attribution })
+    expect(v2.attribution).toEqual({
+      title: 'Tonsil IMC',
+      url: 'https://idr.openmicroscopy.org',
+      license: 'CC BY 4.0',
+    })
+    expect(v3.attribution).toEqual(v2.attribution)
+    expect(parseOmeZarrAttrs({ multiscales }).attribution).toBeNull()
+  })
+  test('A2: a javascript: url is dropped', () => {
+    const info = parseOmeZarrAttrs({
+      multiscales,
+      attribution: { title: 'x', url: 'javascript:alert(1)' },
+    })
+    expect(info.attribution).toEqual({ title: 'x' })
+  })
+  test('image-label colours keep well-formed entries', () => {
+    const info = parseOmeZarrAttrs({
+      multiscales,
+      'image-label': {
+        colors: [
+          { 'label-value': 1, rgba: [255, 0, 0, 255] },
+          { 'label-value': 2, rgba: [0, 0, 300, 255] },
+          { 'label-value': 1.5, rgba: [0, 0, 0, 255] },
+          { rgba: [0, 0, 0, 255] },
+        ],
+      },
+    })
+    expect(info.isLabel).toBe(true)
+    expect(info.labelColors).toEqual([{ id: 1, rgba: [255, 0, 0, 255] }])
+  })
+})

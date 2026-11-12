@@ -194,6 +194,43 @@ describe('fuseUniforms', () => {
     }
   })
 
+  it('stays within a level of the CPU for windows past float32 range', () => {
+    const M = Number.MAX_VALUE
+    for (const [lo, hi] of [
+      [-1e80, 1e80],
+      [-1e300, 1e300],
+      [1e300, 1.5e300],
+      [-M, M],
+    ] as const) {
+      const u = Float32Array.from(
+        fuseUniforms(
+          { plane: 0, colormap: 'gray', calMin: lo, calMax: hi },
+          0,
+          false,
+        ),
+      )
+      expect(u.every(Number.isFinite)).toBe(true)
+      const v = [0, 3e38, -3e38, 1e30]
+      const cpu = fuseSamples(Float32Array.from(v), v.length, {
+        layers: [{ plane: 0, colormap: 'gray', calMin: lo, calMax: hi }],
+        additive: false,
+        invert: false,
+      }).filter((_, i) => i % 4 === 0)
+      v.forEach((x, i) => {
+        expect(
+          Math.abs(level(lo, hi, x) - (cpu[i] as number)),
+        ).toBeLessThanOrEqual(1)
+      })
+    }
+    // The CPU reference keeps -max..max a real window, not NaN level 0.
+    const mid = fuseSamples(Float32Array.of(0), 1, {
+      layers: [{ plane: 0, colormap: 'gray', calMin: -M, calMax: M }],
+      additive: false,
+      invert: false,
+    })
+    expect(mid[0]).toBe(128)
+  })
+
   it('matches the CPU levels for windows float32 alone would lose', () => {
     // Rounding calMin and calMax to float32 first gives 255 here.
     expect(level(1e8 + 3.2, 1e8 + 9.6, 1e8 + 8)).toBe(191)

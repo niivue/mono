@@ -144,9 +144,15 @@ export function fuseSamples(
     const width = calMax - calMin
     const base = plane * pixels
     // Multiply before dividing, so a midpoint like 127.5 is exact and rounds
-    // up; NaN (a float sample) falls through to 0.
+    // up; NaN (a float sample) falls through to 0. A window near the float64
+    // max would overflow that: halve and divide first instead.
+    const half = calMax / 2 - calMin / 2
+    const level: (v: number) => number =
+      Math.abs(calMin) < 1e305 && Number.isFinite(width)
+        ? (v) => ((v - calMin) * 255) / width
+        : (v) => ((v / 2 - calMin / 2) / half) * 255
     const at = (i: number): number => {
-      const x = (((samples[base + i] as number) - calMin) * 255) / width
+      const x = level(samples[base + i] as number)
       return (x > 0 ? (x < 255 ? Math.round(x) : 255) : 0) * 4
     }
     // One loop per blend, no per-pixel branch on it.
@@ -177,8 +183,8 @@ const exponent = (x: number): number => Math.ceil(Math.log2(Math.abs(x)))
  * A layer's fuse-shader uniforms: calMin as a float32 head and its remainder,
  * calMax - calMin, LUT row, invert, and the scale s they are all multiplied by.
  * The shaders compute (v * s - head - rest) / width. s is a power of two that
- * brings the width near 1, so no window overflows or underflows float32 and
- * every ratio stays exact; a head/rest split, as rounding calMin to float32
+ * brings the width near 1, so a window neither overflows nor underflows float32
+ * and every ratio stays exact; a head/rest split, as rounding calMin to float32
  * alone shifts a narrow window at large values (float32 ulp at 1e8 is 8).
  */
 export function fuseUniforms(
@@ -194,7 +200,21 @@ export function fuseUniforms(
   )
   const s = 2 ** -k
   const head = Math.fround(calMin * s)
-  return [head, width * s, row, invert ? 1 : 0, calMin * s - head, s]
+  const u: [number, number, number, number, number, number] = [
+    head,
+    width * s,
+    row,
+    invert ? 1 : 0,
+    calMin * s - head,
+    s,
+  ]
+  if (u.every((x) => Number.isFinite(Math.fround(x)))) return u
+  // Past float32 even scaled (-1e80..1e80): the normalised form, (v / W -
+  // calMin / W) / 1, halved so W itself cannot overflow float64. 1 / W may
+  // round to 0: a float32 sample then moves the level by under 1.
+  const half = calMax / 2 - calMin / 2
+  const start = Math.min(1e6, Math.max(-1e6, calMin / 2 / half))
+  return [Math.fround(start), 1, row, invert ? 1 : 0, 0, 0.5 / half]
 }
 
 /** Colormap rows of a renderer's 256-wide RGBA8 LUT texture, added on first use. */

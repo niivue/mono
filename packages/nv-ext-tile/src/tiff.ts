@@ -23,6 +23,7 @@ import type {
   SlideTileSource,
 } from '@niivue/niivue'
 import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
+import { sampleLevel } from './levelSample'
 
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
@@ -61,8 +62,6 @@ const MAX_IMAGES = 64
 const MAX_PLANE_IFD = 4096
 // As ZarrSlideSource: each visible channel costs a sample plane per tile.
 const MAX_DEFAULT_VISIBLE = 4
-// Channel windows: the data range of this square at the coarsest level's centre.
-const RANGE_SPAN = 1024
 
 class RangeResponse extends BaseResponse {
   constructor(
@@ -405,35 +404,37 @@ async function openTiff(
   const bits = img0.getBitsPerSample(0)
   const raw = img0.getSampleFormat(0) === 1 && (bits === 8 || bits === 16)
   const bitsStored = raw && bits === 8 ? 8 : 16
-  // As ZarrSlideSource: uint8 shows 0-255; uint16 the sampled data range;
-  // other types are quantized to uint16 over it.
-  const displays = await Promise.all(
-    planes.map(async (levels) => {
-      let window: NVSlideWindow = { calMin: 0, calMax: 2 ** bitsStored - 1 }
-      let q: Quantize | null = null
-      const coarse = levels.at(-1)
-      if (bitsStored === 16 && coarse) {
-        let [lo, hi] = await dataRange(coarse, pool, signal)
-        if (raw) {
-          if (hi > lo) window = { calMin: lo, calMax: hi }
-        } else {
-          // A flat or empty sample: a window centred on it (one step per unit,
-          // half its magnitude for float) keeps other values distinct.
-          if (!(hi > lo)) {
-            const mid = Number.isFinite(lo) ? lo : 0
-            const half =
-              img0.getSampleFormat(0) === 3
-                ? Math.max(Math.abs(mid) / 2, 1)
-                : 32767.5
-            ;[lo, hi] = [mid - half, mid + half]
-          }
-          q = { lo, scale: 65535 / (hi - lo) }
+  // As ZarrSlideSource: the 2-98% range of a coarsest-level sample;
+  // non-uint8/16 types are quantized to uint16 over its min..max.
+  // One channel at a time bounds open's reads in flight and sample memory.
+  const displays: { window: NVSlideWindow; q: Quantize | null }[] = []
+  for (const levels of planes) {
+    let window: NVSlideWindow = { calMin: 0, calMax: 2 ** bitsStored - 1 }
+    let q: Quantize | null = null
+    const coarse = levels.at(-1)
+    if (coarse) {
+      const [p2, p98, min, max] = await dataRange(coarse, pool, signal)
+      let [calMin, calMax] = [p2, p98]
+      if (!raw) {
+        let [lo, hi] = [min, max]
+        // A flat or empty sample: a window centred on it (one step per unit,
+        // half its magnitude for float) keeps other values distinct.
+        if (!(hi > lo)) {
+          const mid = Number.isFinite(lo) ? lo : 0
+          const half =
+            img0.getSampleFormat(0) === 3
+              ? Math.max(Math.abs(mid) / 2, 1)
+              : 32767.5
+          ;[lo, hi] = [mid - half, mid + half]
         }
+        q = { lo, scale: 65535 / (hi - lo) }
+        ;[calMin, calMax] = [(p2 - lo) * q.scale, (p98 - lo) * q.scale]
       }
-      return { window, q }
-    }),
-  )
-  const info = displays.map(({ window }, c): NVSlideChannelInfo => {
+      if (calMax > calMin) window = { calMin, calMax }
+    }
+    displays.push({ window, q })
+  }
+  const info = displays.map(({ window, q }, c): NVSlideChannelInfo => {
     const { name, rgb } = ome.channels[c] ?? {}
     return {
       name: name ?? `Channel ${c + 1}`,
@@ -441,36 +442,35 @@ async function openTiff(
       window,
       // OME-XML has no omero `active`: every channel is, the first few visible.
       active: c < MAX_DEFAULT_VISIBLE,
+      // Inverse of quantizeInto.
+      ...(q ? { storedToValue: { scale: 1 / q.scale, offset: q.lo } } : {}),
     }
   })
   const quantize = displays.map((d) => d.q)
   return { planes, channels: { bitsStored, info, quantize } }
 }
 
-// Finite min/max of up to RANGE_SPAN^2 samples at the centre of `level`.
-async function dataRange(
+// The sample grid of `level` (levelSample.ts).
+function dataRange(
   level: TiffLevel,
   pool: Pool | undefined,
   signal?: AbortSignal,
-): Promise<[number, number]> {
-  const w = Math.min(level.width, RANGE_SPAN)
-  const h = Math.min(level.height, RANGE_SPAN)
-  const x0 = (level.width - w) >> 1
-  const y0 = (level.height - h) >> 1
-  const [data] = await level.img.readRasters({
-    window: [x0, y0, x0 + w, y0 + h],
-    samples: [0],
-    pool,
-    signal,
-  })
-  let lo = Number.POSITIVE_INFINITY
-  let hi = Number.NEGATIVE_INFINITY
-  for (const v of data as ArrayLike<number> & Iterable<number>) {
-    if (!Number.isFinite(v)) continue
-    if (v < lo) lo = v
-    if (v > hi) hi = v
-  }
-  return [lo, hi]
+): Promise<[number, number, number, number]> {
+  return sampleLevel(
+    level.width,
+    level.height,
+    level.img.getTileWidth(),
+    level.img.getTileHeight(),
+    async ([y0, y1], [x0, x1]) => {
+      const [data] = await level.img.readRasters({
+        window: [x0, y0, x1, y1],
+        samples: [0],
+        pool,
+        signal,
+      })
+      return data as ArrayLike<number>
+    },
+  )
 }
 
 // A pyramid level: its image and the slide area it holds, which is smaller

@@ -469,6 +469,7 @@ export {
   getBitsPerVoxel,
   getImageDataRAS,
   NIFTI_UNITS_MICRON,
+  robustMinMax,
   withSpatialUnits,
 } from './volume/utils'
 // Volume writer options: the third argument to writeVolume

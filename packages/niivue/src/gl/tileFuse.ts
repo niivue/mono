@@ -40,8 +40,12 @@ out vec4 color;
 void main() {
   float v = float(texelFetch(raw, ivec2(gl_FragCoord.xy) - 1, 0).r);
   // max() keeps the compiler from folding the two uniforms into one float32 calMin.
-  float n = (max(v - window.x, -3.4e38) - calMinRest) * 255.0;
-  float w = window.y;
+  float d = max(v - window.x, -3.4e38) - calMinRest;
+  // Scale by an exact power of two so d * 255 cannot overflow; the ratio is
+  // unchanged. max() keeps the compiler from cancelling s out of n / w.
+  float s = max(abs(d), window.y) > 1e36 ? 0.00390625 : 1.0;
+  float n = max(d * s, -3.4e38) * 255.0;
+  float w = max(window.y * s, 0.0);
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   float g = floor(n / w + 0.5);
   if ((g - 0.5) * w > n) g -= 1.0;

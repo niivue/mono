@@ -690,7 +690,7 @@ All overlay volumes are resliced to match the background volume's grid, so `tex2
 
 ### 2D slice picking
 
-Each `SliceTile` caches `mvpMatrix`, `planeNormal`, and `planePoint` during render. `screenSlicePick` uses these for fast ray-plane intersection. For mosaic tiles with `sliceMM`, uses `getSliceTexFracAtMM()` instead of crosshair. Depth picking (double-click on 3D tiles) reads back depth buffer and unprojects to mm-space.
+Each `SliceTile` caches `mvpMatrix`, `planeNormal`, and `planePoint` during render. `screenSlicePick` uses these for fast ray-plane intersection. For mosaic tiles with `sliceMM`, uses `getSliceTexFracAtMM()` instead of crosshair. Depth picking (double-click on 3D tiles) reads back depth buffer and unprojects to mm-space; when it misses (e.g. no volume) and a slide plane is set, the crosshair goes to the plane hit (`pickSlideWorld`).
 
 ### 2D pan/zoom (`pan2Dxyzmm`) — external dependency
 

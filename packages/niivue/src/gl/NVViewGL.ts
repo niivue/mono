@@ -846,6 +846,8 @@ export default class NVGlview {
     const crossLinesList: ReturnType<typeof buildLine>[] = []
     const boxEdges = packBoxEdges(md)
     const boxTiles: BoxTile[] = []
+    // Render tiles that draw the slide plane push their camera for picking.
+    if (this.slidePlane) this.slidePlane.pickFrames = []
     // Render each tile
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
@@ -1369,12 +1371,12 @@ export default class NVGlview {
           )
         }
         // Capture this frame's camera for screen->slide picking (drawing).
-        this.slidePlane.pickFrame = {
+        this.slidePlane.pickFrames?.push({
           mvp: new Float32Array(mvpMatrix as Float32Array),
           ltwh: [ltwh[0], ltwh[1], ltwh[2], ltwh[3]],
           bx,
           by,
-        }
+        })
       }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (

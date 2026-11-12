@@ -5,6 +5,7 @@ import {
   axialPlaneTransform,
   cornerQuad,
   pickSlidePixel,
+  pickSlideWorld,
   resolveSlidePlaneTiles,
   type SlidePlaneState,
   selectSlidePlaneLevel,
@@ -251,7 +252,7 @@ describe('pickSlidePixel', () => {
     pixelToWorld: unitTransform(512, 512),
     tilesByLevel: new Map(),
     // IDENTITY mvp + 100x100 viewport: slide center -> canvas (50,50).
-    pickFrame: { mvp: IDENTITY, ltwh: [0, 0, 100, 100], bx: 0, by: 0 },
+    pickFrames: [{ mvp: IDENTITY, ltwh: [0, 0, 100, 100], bx: 0, by: 0 }],
   })
 
   test('maps the canvas center to the slide center', () => {
@@ -261,18 +262,58 @@ describe('pickSlidePixel', () => {
     expect(p?.y).toBeCloseTo(256, 5)
   })
 
-  test('round-trips a known corner (top-left of the plane)', () => {
-    // slide (0,0) -> world/ndc (-1,-1) -> canvas (0,100) (y flipped).
-    const p = pickSlidePixel(state(), 0, 100)
+  test('round-trips a known corner (bottom-left of the plane)', () => {
+    // slide (0,512) -> world/ndc (-1,1) -> canvas (0,0) (y flipped).
+    const p = pickSlidePixel(state(), 0, 0)
     expect(p?.x).toBeCloseTo(0, 4)
-    expect(p?.y).toBeCloseTo(0, 4)
+    expect(p?.y).toBeCloseTo(512, 4)
   })
 
   test('returns null off the plane and when no frame was captured', () => {
     expect(pickSlidePixel(state(), 200, 200)).toBeNull()
     const noFrame = state()
-    noFrame.pickFrame = null
+    noFrame.pickFrames = []
     expect(pickSlidePixel(noFrame, 50, 50)).toBeNull()
+  })
+
+  test('picks with the camera of the render tile under the point', () => {
+    // Two side-by-side tiles; the right one shows the plane at half scale.
+    const s = state()
+    const half = [...IDENTITY]
+    half[0] = half[5] = 0.5
+    s.pickFrames?.push({
+      mvp: new Float32Array(half),
+      ltwh: [100, 0, 100, 100],
+      bx: 0,
+      by: 0,
+    })
+    // Right tile: centre -> slide centre, a quarter tile right -> right edge.
+    expect(pickSlidePixel(s, 150, 50)?.x).toBeCloseTo(256, 4)
+    expect(pickSlidePixel(s, 175, 50)?.x).toBeCloseTo(512, 4)
+    expect(pickSlidePixel(s, 25, 50)?.x).toBeCloseTo(128, 4)
+    // Outside every tile rect.
+    expect(pickSlidePixel(s, 50, 150)).toBeNull()
+  })
+
+  test('a shared tile edge picks with the right tile, as hitTest does', () => {
+    const s = state()
+    s.pickFrames?.push({
+      mvp: IDENTITY,
+      ltwh: [100, 0, 100, 100],
+      bx: 0,
+      by: 0,
+    })
+    // x=100 is the right tile's left edge (slide x 0), not the left's right edge.
+    expect(pickSlidePixel(s, 100, 50)?.x).toBeCloseTo(0, 4)
+  })
+
+  test('pickSlideWorld returns the hit in world mm', () => {
+    // canvas (75,25) -> ndc (0.5, 0.5) == world under IDENTITY.
+    const mm = pickSlideWorld(state(), 75, 25)
+    expect(mm?.[0]).toBeCloseTo(0.5, 5)
+    expect(mm?.[1]).toBeCloseTo(0.5, 5)
+    expect(mm?.[2]).toBeCloseTo(0, 5)
+    expect(pickSlideWorld(state(), 200, 200)).toBeNull()
   })
 })
 

@@ -39,6 +39,7 @@ import type {
   VectorAnnotation,
   ViewHitTest,
 } from '@/NVTypes'
+import { pickSlideWorld } from '@/slide/slidePlane'
 import { computeTolerance } from '@/view/NVAnnotation'
 import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import {
@@ -2692,7 +2693,16 @@ export function initInteraction(ctrl: NiiVue): void {
       ctrl.drawScene()
       return
     }
-    const mm = (await ctrl.view?.depthPick(px, py)) ?? null
+    // The depth pick sees volumes and meshes only; on a miss, fall back to the
+    // slide plane (drawn on render tiles only), e.g. a slide with no volume.
+    const mm =
+      (await ctrl.view?.depthPick(px, py)) ??
+      (ctrl.view?.slidePlane && ctrl.view.hitTest(px, py)?.isRender
+        ? pickSlideWorld(
+            ctrl.view.slidePlane,
+            ...clientToCanvasPixel(ctrl, evt.clientX, evt.clientY),
+          )
+        : null)
     if (mm) {
       ctrl._setCrosshairPos(mm, NVConstants.SLICE_TYPE.RENDER)
     } else {

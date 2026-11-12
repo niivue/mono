@@ -130,7 +130,7 @@ export interface SlidePlaneAnnotation {
   version: number
 }
 
-/** Camera state captured during the last render, used for screen->slide picking. */
+/** One render tile's camera from the last render, used for screen->slide picking. */
 interface SlidePlanePickFrame {
   mvp: Float32Array
   /** Render-tile rect within the canvas (device px): left, top, width, height. */
@@ -147,7 +147,8 @@ export interface SlidePlaneState {
   levelIndex?: number
   tilesByLevel: Map<number, SlidePlaneTile[]>
   annotation?: SlidePlaneAnnotation | null
-  pickFrame?: SlidePlanePickFrame | null
+  /** One per render tile that drew the plane in the last frame. */
+  pickFrames?: SlidePlanePickFrame[]
 }
 
 /** World-mm quad (TL, TR, BL, BR) spanning the whole slide extent. */
@@ -189,14 +190,19 @@ function projectToCanvas(
  * Map a canvas device pixel to slide base-pixel (u, v), or null if the ray
  * misses the slide. The 3D render is orthographic and the plane affine in slide
  * coords, so slide->canvas is a 2D affine — invert it from three projected
- * reference points. Requires a `pickFrame` captured during render.
+ * reference points, using the camera of the render tile under the point.
  */
 export function pickSlidePixel(
   state: SlidePlaneState,
   canvasX: number,
   canvasY: number,
 ): { x: number; y: number } | null {
-  const frame = state.pickFrame
+  const frame = state.pickFrames?.find(({ ltwh, bx, by }) => {
+    const x = canvasX - bx - ltwh[0]
+    const y = canvasY - by - ltwh[1]
+    // Half-open, as hitTest: a shared edge belongs to the right/lower tile.
+    return x >= 0 && y >= 0 && x < ltwh[2] && y < ltwh[3]
+  })
   if (!frame) return null
   const w = state.slide.manifest.width
   const h = state.slide.manifest.height
@@ -215,6 +221,16 @@ export function pickSlidePixel(
   const b = (e1x * ry - rx * e1y) / det
   if (a < 0 || a > 1 || b < 0 || b > 1) return null
   return { x: a * w, y: b * h }
+}
+
+/** As {@link pickSlidePixel}, returning the hit in world mm. */
+export function pickSlideWorld(
+  state: SlidePlaneState,
+  canvasX: number,
+  canvasY: number,
+): Vec3 | null {
+  const hit = pickSlidePixel(state, canvasX, canvasY)
+  return hit ? apply(state.pixelToWorld, hit.x, hit.y) : null
 }
 
 /**

@@ -494,6 +494,9 @@ export class SlideRendererGPU {
       this._placeholderTexture.destroy()
       this._placeholderTexture = null
     }
+    // create() requested this device, so free it: leaked devices pile up and
+    // stall later GPU readbacks (mapAsync) on the page.
+    this._device.destroy()
   }
 
   private acquireUniformBuffer(): GPUBuffer {

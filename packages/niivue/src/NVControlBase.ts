@@ -4182,6 +4182,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
+    this._abortOrphanedFrameRequests(vols)
     this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
@@ -4202,6 +4203,7 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
+    this._abortOrphanedFrameRequests([volume])
     // Removing the background changes the geometry a half-drawn shape used.
     if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
@@ -5107,6 +5109,15 @@ export default class NiiVue extends EventTarget {
   /** The pending frame request per frame-source group, aborted by the next. */
   private _frameRequests = new WeakMap<object, AbortController>()
 
+  /** Abort the frame fetch of each group the removed volumes leave empty. */
+  private _abortOrphanedFrameRequests(removed: NVImage[]): void {
+    for (const { frameSource } of removed) {
+      const group = frameSource?.group
+      if (group && !this.volumes.some((v) => v.frameSource?.group === group))
+        this._frameRequests.get(group)?.abort()
+    }
+  }
+
   /**
    * Switch every volume sharing `source.group` to `frame` (see
    * {@link VolumeFrameSource}): fetch all, then commit together in one upload.
@@ -5129,11 +5140,29 @@ export default class NiiVue extends EventTarget {
     if (members.every((v) => v.frameSource?.frame === t)) return
     const request = new AbortController()
     this._frameRequests.set(source.group, request)
-    let frames: ArrayLike<number>[]
+    const frames: ArrayLike<number>[] = []
     try {
-      frames = await Promise.all(
-        members.map((v) => v.frameSource?.load(t, request.signal) ?? []),
+      frames.push(
+        ...(await Promise.all(
+          members.map((v) => v.frameSource?.load(t, request.signal) ?? []),
+        )),
       )
+      // A volume joining the group during the fetch switches with it.
+      for (;;) {
+        const joined = this.volumes.filter(
+          (v) =>
+            v.frameSource?.group === source.group &&
+            !members.includes(v) &&
+            v.frameSource.count > t,
+        )
+        if (!joined.length || request.signal.aborted) break
+        members.push(...joined)
+        frames.push(
+          ...(await Promise.all(
+            joined.map((v) => v.frameSource?.load(t, request.signal) ?? []),
+          )),
+        )
+      }
     } catch (err) {
       if (request.signal.aborted) return
       log.warn(`setFrame4D: frame ${t} could not be loaded`, err)

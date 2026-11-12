@@ -189,3 +189,35 @@ test('two viewers loading one source keep their own frame', async () => {
   expect(b.volumes[0].img?.[0]).toBe(300)
   expect(b.getFrame4D('c0.nii')).toBe(3)
 })
+
+test('removing the last volume of a group aborts its pending fetch', async () => {
+  const gates = new Map([[1, gate()]])
+  const aborted: number[] = []
+  const nv = await load([source(0, {}, gates, aborted)])
+  const request = nv.setFrame4D('c0.nii', 1)
+  await nv.removeVolume(0)
+  expect(aborted).toEqual([1])
+  gates.get(1)?.resolve()
+  await request
+})
+
+test('a volume joining the group during a fetch switches with it', async () => {
+  const group = {}
+  const gates = new Map([[2, gate()]])
+  const nv = await load([source(0, group, gates)])
+  const request = nv.setFrame4D('c0.nii', 2)
+  await nv.addVolume({
+    url: channelVolumeFile(
+      DIMS,
+      [1, 1, 1],
+      NiiDataType.DT_UINT16,
+      frameOf(0, 1),
+      'c1',
+    ),
+    frameSource: source(1, group),
+  })
+  gates.get(2)?.resolve()
+  await request
+  expect(nv.getFrame4D('c1.nii')).toBe(2)
+  expect(nv.volumes[1].img?.[0]).toBe(201)
+})

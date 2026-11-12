@@ -246,3 +246,17 @@ test('a shared frame read is aborted once every caller aborts', async () => {
   b.abort()
   expect(seen?.aborted).toBe(true)
 })
+
+test('a caller already aborted does not keep a shared read alive', async () => {
+  let seen: AbortSignal | undefined
+  const cache = omeZarrFrameCache(1 << 20, (_c, _t, signal) => {
+    seen = signal
+    return new Promise(() => {})
+  })
+  const live = new AbortController()
+  cache.load(0, 1, live.signal)
+  const late = cache.load(0, 1, AbortSignal.abort())
+  late.catch(() => {})
+  live.abort()
+  expect(seen?.aborted).toBe(true)
+})

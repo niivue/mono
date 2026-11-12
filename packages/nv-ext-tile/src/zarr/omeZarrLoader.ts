@@ -658,6 +658,8 @@ export function omeZarrFrameCache(
       return bytes
     },
     load(channel, t, signal) {
+      // An aborted caller would hold the shared read open: its abort already fired.
+      if (signal?.aborted) return Promise.reject(signal.reason)
       const key = `${channel}:${t}`
       let pending = entries.get(key)
       if (pending) {

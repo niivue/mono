@@ -3598,7 +3598,7 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
-    this._abortOrphanedFrameRequests(previous)
+    this._abortOrphanedFrameRequests()
     // A half-drawn shape's points belong to the old background (#470).
     this._abandonForNewScene()
     this.model._setupPivot3D()
@@ -4183,7 +4183,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
-    this._abortOrphanedFrameRequests(vols)
+    this._abortOrphanedFrameRequests()
     this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
@@ -4204,7 +4204,7 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
-    this._abortOrphanedFrameRequests([volume])
+    this._abortOrphanedFrameRequests()
     // Removing the background changes the geometry a half-drawn shape used.
     if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
@@ -5107,15 +5107,22 @@ export default class NiiVue extends EventTarget {
     this.createOnLocationChange()
   }
 
-  /** The pending frame request per frame-source group, aborted by the next. */
-  private _frameRequests = new WeakMap<object, AbortController>()
+  /**
+   * The pending frame request per frame-source group, aborted by the next, and
+   * the volumes it switches: it belongs to them, not to the group object, which
+   * a replacement scene may reuse.
+   */
+  private _frameRequests = new Map<
+    object,
+    { ctl: AbortController; members: NVImage[] }
+  >()
 
-  /** Abort the frame fetch of each group the removed volumes leave empty. */
-  private _abortOrphanedFrameRequests(removed: NVImage[]): void {
-    for (const { frameSource } of removed) {
-      const group = frameSource?.group
-      if (group && !this.volumes.some((v) => v.frameSource?.group === group))
-        this._frameRequests.get(group)?.abort()
+  /** Abort every frame fetch none of whose volumes is still loaded. */
+  private _abortOrphanedFrameRequests(): void {
+    for (const [group, request] of this._frameRequests) {
+      if (request.members.some((v) => this.volumes.includes(v))) continue
+      request.ctl.abort()
+      this._frameRequests.delete(group)
     }
   }
 
@@ -5140,10 +5147,11 @@ export default class NiiVue extends EventTarget {
     }
     let members = groupMembers()
     let t = clampFrame(members)
-    this._frameRequests.get(source.group)?.abort()
+    this._frameRequests.get(source.group)?.ctl.abort()
     if (members.every((v) => v.frameSource?.frame === t)) return
     const request = new AbortController()
-    this._frameRequests.set(source.group, request)
+    const pending = { ctl: request, members }
+    this._frameRequests.set(source.group, pending)
     const frames = new Map<NVImage, ArrayLike<number>>()
     try {
       // A volume joining the group during the fetch switches with it; a
@@ -5156,6 +5164,7 @@ export default class NiiVue extends EventTarget {
         )
         for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
         members = groupMembers()
+        pending.members = members
         const clamped = clampFrame(members)
         if (clamped !== t) {
           t = clamped
@@ -5167,7 +5176,7 @@ export default class NiiVue extends EventTarget {
       log.warn(`setFrame4D: frame ${t} could not be loaded`, err)
       throw err
     } finally {
-      if (this._frameRequests.get(source.group) === request)
+      if (this._frameRequests.get(source.group) === pending)
         this._frameRequests.delete(source.group)
     }
     if (request.signal.aborted) return
@@ -7331,6 +7340,8 @@ export default class NiiVue extends EventTarget {
     this._destroyed = true
     this._releasePageWorkers()
     this._animation?.stop('destroyed')
+    for (const { ctl } of this._frameRequests.values()) ctl.abort()
+    this._frameRequests.clear()
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
     this.cancelPendingFrame()

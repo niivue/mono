@@ -301,3 +301,39 @@ test('frameChange fires once the whole group is on the new frame', async () => {
     [1, 1],
   ])
 })
+
+test('a new scene reusing the group object is not switched by the old fetch', async () => {
+  const group = {}
+  const gates = new Map([[1, gate()]])
+  const aborted: number[] = []
+  const nv = await load([source(0, group, gates, aborted)])
+  const request = nv.setFrame4D('c0.nii', 1)
+  await nv.loadVolumes([
+    {
+      url: channelVolumeFile(
+        DIMS,
+        [1, 1, 1],
+        NiiDataType.DT_UINT16,
+        frameOf(0, 9),
+        'b',
+      ),
+      frameSource: source(9, group),
+    },
+  ])
+  expect(aborted).toEqual([1])
+  gates.get(1)?.resolve()
+  await request
+  expect(nv.volumes[0].img?.[0]).toBe(9)
+  expect(nv.getFrame4D('b.nii')).toBe(0)
+})
+
+test('destroy aborts a pending frame fetch', async () => {
+  const gates = new Map([[1, gate()]])
+  const aborted: number[] = []
+  const nv = await load([source(0, {}, gates, aborted)])
+  const request = nv.setFrame4D('c0.nii', 1)
+  nv.destroy()
+  expect(aborted).toEqual([1])
+  gates.get(1)?.resolve()
+  await request
+})

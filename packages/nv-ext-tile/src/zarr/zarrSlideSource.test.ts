@@ -1591,6 +1591,84 @@ describe('ZarrSlideSource lane B', () => {
     expect(changed).toEqual([])
   })
 
+  test("an aborted tile stops waiting for a hidden channel's range read", async () => {
+    const image = await writeImage(
+      { multiscales: multiscale(['c', 'y', 'x'], 1) },
+      [
+        {
+          shape: [5, 2, 2],
+          chunks: [1, 2, 2],
+          data: ramp(20, (i) => 100 * Math.floor(i / 4) + (i % 4)),
+        },
+      ],
+      'uint16',
+    )
+    let release = (): void => {}
+    const hold = new Promise<void>((r) => {
+      release = r
+    })
+    let held = false
+    const source = await ZarrSlideSource.fromStore({
+      get: async (key: string) => {
+        if (key.startsWith('/0/c/4/')) {
+          held = true
+          await hold
+        }
+        return image.get(key)
+      },
+    })
+    const [l0] = source.manifest.levels
+    const ac = new AbortController()
+    const read = source.fetchTileSamples?.(l0, tileAt(l0, 0), [4], ac.signal)
+    while (!held) await Bun.sleep(1)
+    ac.abort()
+    const first = await Promise.race([
+      read?.then(
+        () => 'resolved',
+        (e: Error) => e.name,
+      ),
+      Bun.sleep(50).then(() => 'still waiting'),
+    ])
+    release()
+    expect(first).toBe('AbortError')
+    // The shared range read still completes for the next tile.
+    const s = await source.fetchTileSamples?.(l0, tileAt(l0, 0), [4])
+    expect(Array.from(s?.samples ?? [])).toEqual([400, 401, 402, 403])
+  })
+
+  test('preparePlane rejects AbortError when disposed during a hidden channel read', async () => {
+    const image = await writeImage(
+      { multiscales: multiscale(['c', 'y', 'x'], 1) },
+      [
+        {
+          shape: [5, 1, 2],
+          chunks: [1, 1, 2],
+          data: Float64Array.from({ length: 10 }, (_, i) => i * 10),
+        },
+      ],
+      'float64',
+    )
+    let release = (): void => {}
+    const hold = new Promise<void>((r) => {
+      release = r
+    })
+    let held = false
+    const source = await ZarrSlideSource.fromStore({
+      get: async (key: string) => {
+        if (key.startsWith('/0/c/4/')) {
+          held = true
+          await hold
+        }
+        return image.get(key)
+      },
+    })
+    const next = source.preparePlane({ z: 0, t: 0 })
+    while (!held) await Bun.sleep(1)
+    source.dispose()
+    release()
+    await expect(next).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   test('a hidden channel whose range read fails does not fail preparePlane; it resolves when shown', async () => {
     const image = await writeImage(
       { multiscales: multiscale(['c', 'y', 'x'], 1) },

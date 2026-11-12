@@ -218,18 +218,21 @@ export class OmeZarrChunkWorkerPool {
   }
 
   private merge(index: number, reply: ChunkReply): void {
-    if (reply.timing) {
-      mergeOffThreadChunkTiming(
-        chunkTimingDelta(reply.timing, this.lastTiming[index]),
-      )
+    const timing =
+      reply.timing && chunkTimingDelta(reply.timing, this.lastTiming[index])
+    if (reply.timing && timing) {
+      mergeOffThreadChunkTiming(timing)
       this.lastTiming[index] = reply.timing
     }
     if (reply.cache) this.lastCache[index] = reply.cache
     if (reply.persist) this.lastPersist[index] = reply.persist
     if (reply.wireBytes !== undefined) {
+      // Cumulative: a snapshot behind the last one merged adds nothing.
       const delta = reply.wireBytes - this.lastWire[index]
-      this.lastWire[index] = reply.wireBytes
-      if (delta > 0) this.onWireBytes?.(delta)
+      if (delta > 0) {
+        this.lastWire[index] = reply.wireBytes
+        this.onWireBytes?.(delta)
+      }
     }
   }
 }

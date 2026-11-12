@@ -218,7 +218,10 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
       const mine = Math.floor(
         budget * Math.max(1 / (workers + 1), spanning / source.arrays.length),
       )
-      const share = Math.floor((budget - mine) / workers)
+      // Infinity - Infinity is NaN: an unbounded budget stays unbounded.
+      const share = Number.isFinite(budget)
+        ? Math.floor((budget - mine) / workers)
+        : budget
       source.cache?.resize(mine)
       source.pool = new mod.OmeZarrChunkWorkerPool(
         url,
@@ -687,6 +690,8 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
           )
     }
     signal?.throwIfAborted()
+    // allSettled swallowed a dispose's abort; a closed source has no plane.
+    this.closed.signal.throwIfAborted()
     return {
       ...this.manifest,
       levels: this.levelsAt({ z: p.z, t: p.t }),
@@ -703,7 +708,7 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const c = this.channel
-    if (!this.rgb) await this.ready(c)
+    if (!this.rgb) await untilAborted(this.ready(c), signal)
     const { data, stride } = await this.read(
       level,
       tile,
@@ -737,7 +742,7 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     channels: readonly number[],
     signal?: AbortSignal,
   ): Promise<NVSlideTileSamples> {
-    await Promise.all(channels.map((c) => this.ready(c)))
+    await Promise.all(channels.map((c) => untilAborted(this.ready(c), signal)))
     const { width: w, height: h } = tile
     const n = w * h
     const out = newPlane(level, n * channels.length)
@@ -1070,4 +1075,23 @@ function nativeWindow(start: number, end: number): NVSlideWindow {
 
 function asBytes(a: Samples): Uint8Array {
   return new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
+}
+
+/**
+ * `run`, or the abort as soon as `signal` fires. A channel's range read is
+ * shared, so an aborted tile stops waiting rather than cancelling it.
+ */
+function untilAborted(
+  run: Promise<void> | undefined,
+  signal?: AbortSignal,
+): Promise<void> | undefined {
+  if (!run || !signal) return run
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+    run
+      .finally(() => signal.removeEventListener('abort', onAbort))
+      .then(resolve, reject)
+  })
 }

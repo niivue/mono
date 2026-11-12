@@ -449,6 +449,42 @@ describe('OmeZarrChunkWorkerPool', () => {
     local.dispose?.()
   })
 
+  test('cumulative wire bytes arriving out of order count once', () => {
+    const pool = new OmeZarrChunkWorkerPool(
+      url,
+      {},
+      poolOptions,
+      undefined,
+      workerEntry,
+    )
+    let wire = 0
+    pool.onWireBytes = (n) => {
+      wire += n
+    }
+    const merge = (
+      pool as unknown as { merge(i: number, r: object): void }
+    ).merge.bind(pool)
+    for (const wireBytes of [200, 100, 250]) merge(0, { wireBytes })
+    expect(wire).toBe(250)
+    pool.dispose()
+  })
+
+  test('an unbounded budget stays unbounded for the workers', async () => {
+    const { ZarrSlideSource } = await import('./zarrSlideSource')
+    const g = globalThis as { window?: unknown }
+    g.window = globalThis
+    try {
+      const mixed = (await ZarrSlideSource.fromUrl(
+        `http://127.0.0.1:${server.port}/mixed.zarr`,
+        { workers: 3, cacheBytes: Number.POSITIVE_INFINITY },
+      )) as unknown as { pool: { pool: { cacheBytesPerWorker: number } } }
+      expect(mixed.pool.pool.cacheBytesPerWorker).toBe(Number.POSITIVE_INFINITY)
+      ;(mixed as unknown as { dispose(): void }).dispose()
+    } finally {
+      g.window = undefined
+    }
+  })
+
   test('the cache budget: a share while the pool runs, all of it when there is no pool or it is dropped', async () => {
     const { ZarrSlideSource } = await import('./zarrSlideSource')
     const g = globalThis as { window?: unknown }

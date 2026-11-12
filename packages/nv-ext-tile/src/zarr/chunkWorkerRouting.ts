@@ -66,12 +66,20 @@ export function routeChunkToWorker(key: string, size: number): number {
  *
  * `maxMs` is passed through rather than differenced: a maximum cannot be
  * subtracted, and the merge folds it with `Math.max`, so handing over the
- * running maximum is both correct and idempotent.
+ * running maximum is both correct and idempotent. Null for a snapshot behind
+ * `before`, so the caller keeps the newer baseline.
  */
 export function chunkTimingDelta(
   now: ChunkTimingSnapshot,
   before: ChunkTimingSnapshot | null,
-): OffThreadChunkTiming {
+): OffThreadChunkTiming | null {
+  // Cumulative snapshots only grow; one behind `before` adds nothing.
+  if (
+    before &&
+    (now.netBusyMs < before.netBusyMs ||
+      PHASES.some((p) => now.phases[p].count < before.phases[p].count))
+  )
+    return null
   const phases: OffThreadChunkTiming['phases'] = {}
   for (const phase of PHASES) {
     const current = now.phases[phase]

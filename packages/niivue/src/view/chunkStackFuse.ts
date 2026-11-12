@@ -77,6 +77,29 @@ export class ChunkStackFuse<T> {
   }
 
   /**
+   * How many chunks `stale` would return (no `max`), without changing
+   * anything: work still owed before the frame shows every drawn channel.
+   */
+  pending(
+    regions: readonly string[],
+    gen: string,
+    modes: string,
+    inputsOf: (i: number) => T[] | null,
+  ): number {
+    const byRegion = new Map(
+      this.fused.filter((f) => f?.gen === gen).map((f) => [f?.region, f]),
+    )
+    let n = 0
+    regions.forEach((r, i) => {
+      const inputs = inputsOf(i)
+      if (!inputs?.length) return
+      const have = byRegion.get(r)
+      if (!have || have.key !== modes || !same(have.inputs, inputs)) n++
+    })
+    return n
+  }
+
+  /**
    * Fuse the stale chunks until `deadline` (at least one), with `blend`
    * returning the fused texture (null: skip). Stops, dropping its result,
    * once `alive` turns false or the fuse is cleared. Whether any chunk changed.

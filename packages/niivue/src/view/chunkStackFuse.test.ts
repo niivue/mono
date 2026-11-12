@@ -51,6 +51,21 @@ test('a new source generation (a frame switch) never draws the old fused chunks'
   expect(gone).toEqual(['old'])
 })
 
+test('pending counts what stale would fuse, without changing anything', () => {
+  const { fuse, gone, changed } = setup()
+  const of = (i: number) => [['a'], ['b'], null][i]
+  fuse.set(0, 'r0', 'old', M, ['a'], 'f0')
+  fuse.set(2, 'r1', 'g', M, ['b'], 'f1')
+  changed.length = 0
+  // r0 is fused under another generation; r1 moved index; r2 still loading.
+  expect(fuse.pending(['r0', 'r1', 'r2'], 'g', M, of)).toBe(1)
+  expect(fuse.pending(['r0', 'r1', 'r2'], 'g', '2/2', of)).toBe(2)
+  expect(gone).toEqual([])
+  expect(changed).toEqual([])
+  expect(fuse.get(0, 'r0', 'old')).toBe('f0')
+  expect(fuse.stale(['r0', 'r1', 'r2'], 'g', M, of, 8)).toEqual([0])
+})
+
 test('a blend mode change re-fuses every chunk', () => {
   const { fuse } = setup()
   fuse.set(0, 'r0', 'g', '0/3', ['a'], 'f')

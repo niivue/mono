@@ -2594,7 +2594,23 @@ export class VolumeRenderer extends NVRenderer {
       inFlight += entry.manager.inFlightUploadCount
       total += entry.manager.chunkCount
     }
+    // Stack chunks still owed a fuse count as pending: the frame does not yet
+    // show every drawn channel.
+    pending += this._stackFusePending()
     return { resident, pending, inFlight, total }
+  }
+
+  private _stackFusePending(): number {
+    const fuse = this._stackFuse
+    const base = this._activeChunked
+    if (!fuse || !base) return 0
+    const entries = this._stackEntries()
+    return fuse.pending(
+      chunkRegions(base.plan),
+      stackGeneration(entries),
+      `${this.overlayAlphaBlend}/${this.overlayColorBlend}`,
+      (i) => stackInputs(entries, i),
+    )
   }
 
   /**
@@ -2648,7 +2664,7 @@ export class VolumeRenderer extends NVRenderer {
     }
     return {
       resident,
-      pending,
+      pending: pending + this._stackFusePending(),
       inFlight,
       total,
       staleDropped,

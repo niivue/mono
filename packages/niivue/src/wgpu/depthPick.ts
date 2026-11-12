@@ -505,7 +505,13 @@ export async function pick(
   device.queue.submit([commandEncoder.finish()])
 
   // Read back
-  await readbackBuffer.mapAsync(GPUMapMode.READ)
+  try {
+    await readbackBuffer.mapAsync(GPUMapMode.READ)
+  } catch (err) {
+    // destroy() (the view torn down) aborts the mapping: no pick, no error.
+    if (_deviceCache.get(device) !== _resources) return null
+    throw err
+  }
   const data = new Uint8Array(readbackBuffer.getMappedRange(0, 4))
   const r = data[0]
   const g = data[1]

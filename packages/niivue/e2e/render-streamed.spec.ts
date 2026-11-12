@@ -209,6 +209,7 @@ const SCENES: Scene[] = [
     // plan swaps (which re-key chunk indices under the fuse), plus the CPU
     // pick on a streamed stack with volumes[0] hidden (#370).
     name: 'stack-streamed-floor',
+    // WebGPU is Metal-only in CI (niivue-e2e.yml): SwiftShader takes ~1 s a brick.
     slow: true,
     size: [STACK_PX, STACK_PX],
     options: { sliceType: RENDER, maxTextureDimension3D: 24 },

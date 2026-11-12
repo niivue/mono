@@ -1961,26 +1961,32 @@ export class NVSlide extends EventTarget {
     const { width, height } = this.manifest
     if (!(x >= 0 && y >= 0 && x < width && y < height))
       return this._missingSamples('outside')
-    let reason: 'hole' | 'uncached' = 'hole'
+    let uncachedLevel: number | null = null
     for (const level of this.manifest.levels) {
       if (opts.level !== undefined && level.index !== opts.level) continue
       const hit = this._tileUnder(level, x, y)
       if (!hit) continue
-      reason = 'uncached'
+      uncachedLevel ??= level.index
       const entry = this._cache.peek(this.tileKey(level, hit.tile))
       // A decoded frame smaller than its tile is cached as is.
       const decoded = entry?.samples ?? entry?.bitmap
       if (entry && decoded && hit.px < decoded.width && hit.py < decoded.height)
         return this._residentSamples(entry, hit.px, hit.py)
     }
-    return this._missingSamples(reason)
+    if (uncachedLevel === null) return this._missingSamples('hole')
+    // Visibility decides 'hidden' before any tile is cached, too.
+    return this._channels.map(({ visible }, c) =>
+      visible
+        ? this._missingSample(c, 'uncached')
+        : this._missingSample(c, 'hidden', uncachedLevel),
+    )
   }
 
   /**
    * {@link sampleAt} at level `index` `opts.level` (default 0), fetching its
    * covering tile first when it is not resident. Hidden channels are not
    * fetched and stay `missing: 'hidden'`. `signal` stops the wait, not the load;
-   * a failed load resolves `uncached`.
+   * an abort or a failed load resolves `uncached`.
    */
   async loadSampleAt(
     x: number,
@@ -1997,11 +2003,11 @@ export class NVSlide extends EventTarget {
     const { signal } = opts
     this.requestTile(level, hit.tile)
     // Not pending after requestTile: cached, or held back after a failure.
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       const settle = () => {
-        if (signal?.aborted) reject(signal.reason)
-        else if (this._cache.has(key) || !this._pending.has(key)) resolve()
-        else return
+        if (!signal?.aborted && this._pending.has(key) && !this._cache.has(key))
+          return
+        resolve()
         this.removeEventListener('change', settle)
         signal?.removeEventListener('abort', settle)
       }

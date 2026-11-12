@@ -355,7 +355,7 @@ export const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
 /**
  * `inner` (the global fetch when unset), telling `count` each response's byte
- * count; a HEAD (zarrita's shard-index probe) states the whole file's, so it
+ * count (its Content-Length, else the body read); a HEAD (zarrita's shard-index probe) states the whole file's, so it
  * is not counted.
  */
 export function countingFetch(
@@ -364,9 +364,17 @@ export function countingFetch(
 ): ZarrFetch {
   return async (url, init) => {
     const response = await (inner ?? fetch)(url, init)
-    if (init?.method !== 'HEAD')
-      count(Number(response.headers.get('content-length')) || 0)
-    return response
+    if (init?.method === 'HEAD') return response
+    const length = response.headers.get('content-length')
+    if (length !== null || !response.body) {
+      count(Number(length) || 0)
+      return response
+    }
+    // No Content-Length (chunked transfer): count the body itself.
+    const body = await response.arrayBuffer()
+    count(body.byteLength)
+    const { status, statusText, headers } = response
+    return new Response(body, { status, statusText, headers })
   }
 }
 

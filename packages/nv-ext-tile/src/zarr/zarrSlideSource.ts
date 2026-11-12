@@ -828,6 +828,8 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     if (!run) {
       run = this.display(c, this.closed.signal).then(
         ({ quantize, window }) => {
+          // A read that settles after dispose must not reach the host.
+          this.closed.signal.throwIfAborted()
           this.quantize[c] = quantize
           const patch = {
             window,

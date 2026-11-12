@@ -1669,6 +1669,44 @@ describe('ZarrSlideSource lane B', () => {
     await expect(next).rejects.toMatchObject({ name: 'AbortError' })
   })
 
+  test('a hidden channel read that settles after dispose does not reach the host', async () => {
+    const image = await writeImage(
+      { multiscales: multiscale(['c', 'y', 'x'], 1) },
+      [
+        {
+          shape: [5, 2, 2],
+          chunks: [1, 2, 2],
+          data: ramp(20, (i) => 100 * Math.floor(i / 4) + (i % 4)),
+        },
+      ],
+      'uint16',
+    )
+    let release = (): void => {}
+    const hold = new Promise<void>((r) => {
+      release = r
+    })
+    let held = false
+    const source = await ZarrSlideSource.fromStore({
+      get: async (key: string) => {
+        if (key.startsWith('/0/c/4/')) {
+          held = true
+          await hold
+        }
+        return image.get(key)
+      },
+    })
+    const { host, changed } = recordingHost()
+    source.bind(host)
+    const [l0] = source.manifest.levels
+    const read = source.fetchTileSamples?.(l0, tileAt(l0, 0), [4])
+    while (!held) await Bun.sleep(1)
+    source.dispose()
+    release()
+    await expect(read).rejects.toMatchObject({ name: 'AbortError' })
+    expect(changed).toEqual([])
+    expect(source.manifest.channelInfo?.[4]?.window).toBeUndefined()
+  })
+
   test('a hidden channel whose range read fails does not fail preparePlane; it resolves when shown', async () => {
     const image = await writeImage(
       { multiscales: multiscale(['c', 'y', 'x'], 1) },

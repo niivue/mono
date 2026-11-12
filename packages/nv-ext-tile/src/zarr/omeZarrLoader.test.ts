@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { channelColormapsFor } from '@niivue/niivue'
 import {
+  countingFetch,
   defaultOmeZarrLevel,
   fetchOmeZarr,
   omeZarrBlockToDisplay,
@@ -587,5 +588,29 @@ describe('omeZarrBlockToDisplay', () => {
     })
     expect(img).toBe(data)
     expect(dims).toEqual([3, 2, 1])
+  })
+})
+
+describe('countingFetch', () => {
+  test('counts the body when there is no Content-Length, and keeps it readable', async () => {
+    const counted: number[] = []
+    const f = countingFetch(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(Uint8Array.from([1, 2, 3]))
+              c.close()
+            },
+          }),
+          { status: 206 },
+        ),
+      (n) => counted.push(n),
+    )
+    const r = await f('http://x/s/0/c/0')
+    expect(r.headers.get('content-length')).toBeNull()
+    expect(counted).toEqual([3])
+    expect(r.status).toBe(206)
+    expect(Array.from(new Uint8Array(await r.arrayBuffer()))).toEqual([1, 2, 3])
   })
 })

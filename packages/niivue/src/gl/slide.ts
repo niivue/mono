@@ -1,11 +1,18 @@
 import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
+  NVSlideCachedTile,
   NVSlideColor,
   NVSlideScreen,
   NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
+import {
+  DEFAULT_RAW_POOL_BYTES,
+  isFuseTile,
+  type SlideRendererOptions,
+  tileTextureBudget,
+} from '@/slide/slideFuse'
 import {
   buildSlideOverlay,
   SLIDE_OVERLAY_MAX_GLYPHS,
@@ -13,9 +20,9 @@ import {
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
+import { type GutterAt, visibleTileAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
-  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
@@ -28,6 +35,7 @@ import { setTexParams } from './glUtil'
 import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
+import { TileFuserGL } from './tileFuse'
 import { TileGutterGL, type TileTextureGL } from './tileGutter'
 
 export class SlideRenderer extends NVRenderer {
@@ -41,11 +49,9 @@ export class SlideRenderer extends NVRenderer {
   private readonly _luts = new ColorLutTexturesGL()
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer.
-  private readonly _textures = new TileTextureCache<TileTextureGL>(
-    DEFAULT_TILE_TEXTURE_BYTES,
-    (entry) => this._gl?.deleteTexture(entry.texture),
-  )
+  private readonly _textures: TileTextureCache<TileTextureGL>
   private readonly _gutter = new TileGutterGL()
+  private readonly _fuser: TileFuserGL
   /**
    * UIKit overlay hook: invoked at the end of every frame (after the slide tiles,
    * before GL state is restored) so a widget can draw over the slide in screen
@@ -66,6 +72,17 @@ export class SlideRenderer extends NVRenderer {
   private _nearestSampler: WebGLSampler | null = null
   private readonly _lines = new LineRenderer()
   private readonly _font = new FontRenderer()
+
+  constructor({
+    maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES,
+  }: SlideRendererOptions = {}) {
+    super()
+    this._fuser = new TileFuserGL(maxRawPoolBytes)
+    this._textures = new TileTextureCache<TileTextureGL>(
+      DEFAULT_TILE_TEXTURE_BYTES,
+      (entry) => this._gl?.deleteTexture(entry.texture),
+    )
+  }
 
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
@@ -150,7 +167,9 @@ export class SlideRenderer extends NVRenderer {
 
     // Evict BEFORE beginFrame so the previous frame's working set (still
     // marked with the current frame stamp) is exempt; see TileTextureCache.
-    this._textures.evictToBudget()
+    // The raw pool takes its bytes from the texture budget only while it holds
+    // layers (scalar tiles), so RGB slides keep the whole budget.
+    this._textures.evictToBudget(tileTextureBudget(this._fuser.poolBytes))
     this._textures.beginFrame()
 
     // Self-contained: own the full canvas viewport and clear it each frame so
@@ -192,11 +211,18 @@ export class SlideRenderer extends NVRenderer {
         NVSlideScreenRect,
         boolean,
       ][] = []
-      forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
-        const texture = bitmap ? this.textureForBitmap(gl, item, bitmap) : null
+      forEachSlideTile(slide, screen, (item, cached, rect, isFallback) => {
+        const texture = cached ? this.textureFor(gl, item, cached) : null
         if (!isFallback || texture)
           quads.push([item, texture, rect, isFallback])
       })
+      // Nearest needs no gutter (the shader clamps); resync fills it.
+      this._fuser.flush(
+        gl,
+        this._gutter,
+        this._textures,
+        !this.isNearestInterpolation,
+      )
       for (const [item, texture, rect, isFallback] of quads)
         this.drawTile(
           gl,
@@ -240,6 +266,7 @@ export class SlideRenderer extends NVRenderer {
   // (textures are keyed by slide, see slideTileKey).
   clearTextures(): void {
     this._textures.clear()
+    this._fuser.clear()
     this._luts.clear(this._gl)
   }
 
@@ -256,6 +283,7 @@ export class SlideRenderer extends NVRenderer {
 
   destroy(): void {
     this._textures.clear()
+    this._fuser.destroy(this._gl)
     this._luts.clear(this._gl)
     this._lines.destroy()
     this._font.destroy()
@@ -301,14 +329,31 @@ export class SlideRenderer extends NVRenderer {
     gl.disable(gl.CULL_FACE)
   }
 
-  private textureForBitmap(
+  private textureFor(
     gl: WebGL2RenderingContext,
     item: NVSlideVisibleTile,
+    cached: NVSlideCachedTile,
+  ): TileTextureGL | null {
+    const at = visibleTileAt(item)
+    if (isFuseTile(cached))
+      return this._fuser.textureFor(
+        gl,
+        this._gutter,
+        this._textures,
+        at,
+        item.slide,
+        cached,
+      )
+    return cached.bitmap ? this.textureForBitmap(gl, at, cached.bitmap) : null
+  }
+
+  private textureForBitmap(
+    gl: WebGL2RenderingContext,
+    at: GutterAt,
     bitmap: ImageBitmap,
   ): TileTextureGL | null {
-    // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
-    const key = slideTileKey(item.slide, item.key)
-    const existing = this._textures.get(key, bitmap)
+    // Keyed by the bitmap too: a refetched tile is a new bitmap (set() replaces).
+    const existing = this._textures.get(at.key, bitmap)
     if (existing) return existing
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile
     // and a volume brick are two consumers of the same streamed source, and
@@ -319,13 +364,7 @@ export class SlideRenderer extends NVRenderer {
         this._gutter.upload(
           gl,
           bitmap,
-          {
-            slide: item.slide,
-            key,
-            level: item.level.index,
-            col: item.tile.x,
-            row: item.tile.y,
-          },
+          at,
           this._textures,
           // Nearest needs no gutter (the shader clamps); resync fills it.
           !this.isNearestInterpolation,

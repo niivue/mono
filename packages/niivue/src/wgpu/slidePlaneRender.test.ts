@@ -78,7 +78,7 @@ const tiles = (n: number): SlidePlaneTile[] =>
 
 const slide = {
   displayColorLut: null,
-  cachedTileBitmap: () => null,
+  cachedTile: () => null,
 } as unknown as NVSlide
 
 describe('SlidePlaneRendererGPU', () => {

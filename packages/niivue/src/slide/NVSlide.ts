@@ -1,6 +1,13 @@
-import { colormapKey, lookupColorMap, lutrgba8 } from '@/cmap/NVCmaps'
+import { lookupColorMap } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import { channelColormapsFor } from '@/volume/channelColormaps'
+import {
+  fusePlan,
+  fuseSamples,
+  isFuseTile,
+  tileTextureBudget,
+} from './slideFuse'
+import { gutterTextureBytes } from './tileGutter'
 export type NVSlideTileCodec =
   | 'raw-rgba'
   | 'raw-gray'
@@ -8,14 +15,22 @@ export type NVSlideTileCodec =
   | 'image/jp2'
   | 'image/jls'
 
+/** Sample types a tile may hold: unsigned 8 or 16 bit, int16, float32. */
+export type NVSlideSampleArray =
+  | Uint8Array
+  | Uint16Array
+  | Int16Array
+  | Float32Array
+
 /**
  * Samples a tile decoder (or {@link SlideTileSource.fetchTileSamples}) may return
- * instead of a bitmap. NVSlide renders them through its {@link NVSlide.channels}
- * and keeps them, so a channel change re-renders cached tiles without re-decoding (D16).
+ * instead of a bitmap. NVSlide keeps them and the renderers fuse them on the GPU
+ * through its {@link NVSlide.channels}, so a channel change re-renders cached
+ * tiles without re-decoding (D16, #159).
  */
 export interface NVSlideTileSamples {
   /** `planes` planes of `width * height` samples, one after another. */
-  samples: Uint8Array | Uint16Array
+  samples: NVSlideSampleArray
   width: number
   height: number
   /** The codestream's precision; the level's DICOM `bitsStored` wins when set. */
@@ -52,6 +67,8 @@ export interface NVSlideChannelInfo {
   name: string
   /** Stated colour, 0-255; snapped to the nearest channel colormap. */
   rgb?: readonly [number, number, number]
+  /** A NiiVue colormap name; wins over `rgb`. */
+  colormap?: string
   /** A usable display window; omitted, the channel shows its stored range. */
   window?: NVSlideWindow
   /** Inactive channels start hidden and are not fetched. */
@@ -331,18 +348,27 @@ export interface NVSlideStats {
   lastRequests: NVSlideRangeEvent[]
 }
 
-type TileBitmap = {
-  bitmap: ImageBitmap
-  bytes: number
-  level: NVSlideLevelManifest
-  /** Kept for sample tiles, so a channel change re-renders them. */
-  samples?: NVSlideTileSamples
+/**
+ * A cached tile ({@link NVSlide.cachedTile}): a decoded `bitmap` (RGB, JPEG),
+ * drawn as is, or scalar `samples`, which the renderers fuse through the
+ * slide's channels on the GPU (#159).
+ */
+export interface NVSlideCachedTile {
+  readonly bitmap?: ImageBitmap
+  readonly samples?: NVSlideTileSamples
   /** The channel each sample plane holds; absent, plane p is channel p. */
-  channels?: readonly number[]
+  readonly channels?: readonly number[]
+  readonly level: NVSlideLevelManifest
 }
+// id: a load serial, so a memo can tell entries apart without holding them.
+type TileBitmap = NVSlideCachedTile & { bytes: number; id: number }
 type SampleTile = TileBitmap & { samples: NVSlideTileSamples }
 
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
+const DEFAULT_THUMBNAIL_PX = 1024
+// Thumbnails kept: the minimap's and the wand's, which ask for different levels.
+const MAX_THUMBNAILS = 2
+let tileSerial = 0
 const DEFAULT_TARGET_SCREEN_PIXELS_PER_TILE_PIXEL = 0.75
 const DEFAULT_RANGE_LOG_LENGTH = 24
 // Cap simultaneous fetch+decode work. Without it a zoom/pan burst fires one
@@ -387,112 +413,6 @@ function freshStats(): NVSlideStats {
   }
 }
 
-/** Monochrome samples to RGBA8 through `window`; MONOCHROME1 inverts after windowing. */
-// One table per window: setChannel re-windows every cached tile with the same one.
-let lastLut: { key: string; lut: Uint8Array } | null = null
-
-function windowLut(
-  size: number,
-  { calMin, calMax }: NVSlideWindow,
-  invert: boolean,
-): Uint8Array {
-  const key = `${size},${calMin},${calMax},${invert}`
-  if (lastLut?.key === key) return lastLut.lut
-  const lut = new Uint8Array(size)
-  const width = calMax - calMin
-  for (let v = 0; v < size; v++) {
-    // Multiply before dividing, so a midpoint like 127.5 is exact and rounds up.
-    const g = Math.round(clamp(((v - calMin) * 255) / width, 0, 255))
-    lut[v] = invert ? 255 - g : g
-  }
-  lastLut = { key, lut }
-  return lut
-}
-
-export function windowSamples(
-  samples: Uint8Array | Uint16Array,
-  window: NVSlideWindow,
-  invert: boolean,
-): Uint8ClampedArray<ArrayBuffer> {
-  // One lookup per pixel: the table holds every possible sample value.
-  const lut = windowLut(
-    samples instanceof Uint8Array ? 256 : 65536,
-    window,
-    invert,
-  )
-  const out = new Uint8ClampedArray(samples.length * 4)
-  for (let i = 0, o = 0; i < samples.length; i++, o += 4) {
-    const g = lut[samples[i]]
-    out[o] = g
-    out[o + 1] = g
-    out[o + 2] = g
-    out[o + 3] = 255
-  }
-  return out
-}
-
-/** One channel's table: sample value to RGB (4 bytes each, the 4th unused), window then colormap. */
-function channelLut(
-  size: number,
-  window: NVSlideWindow,
-  invert: boolean,
-  colormap: string,
-): Uint8Array {
-  const grey = windowLut(size, window, invert)
-  const rgba = lutrgba8(colormap)
-  const lut = new Uint8Array(size * 4)
-  for (let v = 0, o = 0; v < size; v++, o += 4) {
-    const g = grey[v] * 4
-    lut[o] = rgba[g]
-    lut[o + 1] = rgba[g + 1]
-    lut[o + 2] = rgba[g + 2]
-  }
-  return lut
-}
-
-/**
- * Planar samples to opaque RGBA8: each listed plane through its channel table
- * ({@link channelLut}), combined by per-component max or saturating sum.
- */
-export function compositeSamples(
-  samples: Uint8Array | Uint16Array,
-  pixels: number,
-  layers: ReadonlyArray<{ plane: number; lut: Uint8Array }>,
-  additive: boolean,
-): Uint8ClampedArray<ArrayBuffer> {
-  const out = new Uint8ClampedArray(pixels * 4)
-  if (layers.length === 0) for (let o = 3; o < out.length; o += 4) out[o] = 255
-  // The first layer writes, later ones combine: one loop per case, no per-pixel branch on blend.
-  layers.forEach(({ plane, lut }, k) => {
-    const base = plane * pixels
-    if (k === 0) {
-      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
-        const j = samples[base + i] * 4
-        out[o] = lut[j]
-        out[o + 1] = lut[j + 1]
-        out[o + 2] = lut[j + 2]
-        out[o + 3] = 255
-      }
-    } else if (additive) {
-      // Uint8ClampedArray saturates the sum at 255.
-      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
-        const j = samples[base + i] * 4
-        out[o] += lut[j]
-        out[o + 1] += lut[j + 1]
-        out[o + 2] += lut[j + 2]
-      }
-    } else {
-      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
-        const j = samples[base + i] * 4
-        out[o] = Math.max(out[o], lut[j])
-        out[o + 1] = Math.max(out[o + 1], lut[j + 1])
-        out[o + 2] = Math.max(out[o + 2], lut[j + 2])
-      }
-    }
-  })
-  return out
-}
-
 // raw-gray tiles are samples whatever the (optional, DICOM) photometric says.
 const isMonochrome = (level: NVSlideLevelManifest): boolean =>
   level.codec === 'raw-gray' ||
@@ -515,7 +435,11 @@ export function defaultSlideChannels(manifest: NVSlideManifest): NVChannel[] {
     const colormaps = channelColormapsFor(info.map((c) => c.rgb))
     return info.map((c, i) => ({
       name: c.name,
-      colormap: colormaps[i] as string,
+      // An unknown name would make every later setChannel throw.
+      colormap:
+        c.colormap && lookupColorMap(c.colormap)
+          ? c.colormap
+          : (colormaps[i] as string),
       calMin: usableWindow(c.window) ? c.window.calMin : Number.NaN,
       calMax: usableWindow(c.window) ? c.window.calMax : Number.NaN,
       visible: c.active,
@@ -648,7 +572,7 @@ class NVSlideTileCache {
   set(key: string, entry: TileBitmap): void {
     const existing = this.entries.get(key)
     if (existing) {
-      existing.bitmap.close()
+      existing.bitmap?.close()
       this.bytes -= existing.bytes
       this.entries.delete(key)
     }
@@ -664,7 +588,7 @@ class NVSlideTileCache {
   delete(key: string): void {
     const entry = this.entries.get(key)
     if (!entry) return
-    entry.bitmap.close()
+    entry.bitmap?.close()
     this.bytes -= entry.bytes
     this.entries.delete(key)
   }
@@ -680,9 +604,7 @@ class NVSlideTileCache {
   }
 
   clear(): void {
-    for (const entry of this.entries.values()) {
-      entry.bitmap.close()
-    }
+    for (const entry of this.entries.values()) entry.bitmap?.close()
     this.entries.clear()
     this.bytes = 0
   }
@@ -693,7 +615,7 @@ class NVSlideTileCache {
       if (typeof firstKey !== 'string') return
       const entry = this.entries.get(firstKey)
       if (!entry) return
-      entry.bitmap.close()
+      entry.bitmap?.close()
       this.entries.delete(firstKey)
       this.bytes -= entry.bytes
     }
@@ -980,10 +902,10 @@ function cropSamples(
   const w = Math.min(frame.width, width)
   const h = Math.min(frame.height, height)
   const planes = frame.planes ?? 1
-  const samples =
-    frame.samples instanceof Uint16Array
-      ? new Uint16Array(w * h * planes)
-      : new Uint8Array(w * h * planes)
+  const Samples = frame.samples.constructor as new (
+    n: number,
+  ) => NVSlideSampleArray
+  const samples = new Samples(w * h * planes)
   for (let p = 0; p < planes; p++)
     for (let y = 0; y < h; y++) {
       const from = (p * frame.height + y) * frame.width
@@ -1053,10 +975,11 @@ export class NVSlide extends EventTarget {
   private _channels: readonly NVChannel[]
   private _channelBlend: NVSlideChannelBlend = 'max'
   private readonly _rgb: boolean
-  // Channel tables for the current channel state, shared by every tile it renders.
-  private readonly _luts = new Map<string, Uint8Array>()
-  private _windowGen = 0
-  private _rewindowing = false
+  private _displayGen = 0
+  private readonly _thumbs = new Map<
+    string,
+    { gen: number; ids: number[]; bitmap: ImageBitmap }
+  >()
   private _colorManagement: boolean
   private _colorLut: NVSlideColorLut | null = null
   private readonly _colorAbort = new AbortController()
@@ -1226,9 +1149,10 @@ export class NVSlide extends EventTarget {
   }
 
   /**
-   * Update channel `c`. Cached sample tiles re-render from their kept planes;
-   * showing a channel they were fetched without refetches them. Tiles a decoder
-   * returned as bitmaps (JPEG, RGBA) are drawn as decoded.
+   * Update channel `c`. Renderers re-fuse cached sample tiles from their kept
+   * planes on the next frame; showing a channel they were fetched without
+   * refetches them. Tiles a decoder returned as bitmaps (JPEG, RGBA) are drawn
+   * as decoded.
    */
   setChannel(c: number, update: Partial<NVChannel>): void {
     const old = this._channels[c]
@@ -1313,132 +1237,16 @@ export class NVSlide extends EventTarget {
         this.loadTile(coarsest, tile)
   }
 
+  // Renderers compare displayGeneration with the one each fused texture was
+  // made for, so a W/L drag re-fuses once per frame, not once per call.
   private _rerender(): void {
-    this._luts.clear()
-    this._windowGen++
-    void this._rewindowCached()
+    this._displayGen++
     this._emitChange()
   }
 
-  // One pass at a time, one tile per step (each awaits createImageBitmap, so
-  // input runs between tiles), newest first: the LRU keeps the tiles drawn
-  // last, the visible ones, at its end. A window set mid-pass restarts it, so
-  // a W/L drag re-windows each tile once for the latest window, not per call.
-  private async _rewindowCached(): Promise<void> {
-    if (this._rewindowing) return
-    this._rewindowing = true
-    try {
-      let gen = -1
-      while (gen !== this._windowGen) {
-        gen = this._windowGen
-        const entries = [...this._cache.sampleEntries()].reverse()
-        for (const [key, entry] of entries) {
-          if (gen !== this._windowGen) break
-          if (this._cache.peek(key) !== entry) continue // evicted meanwhile
-          let bitmap: ImageBitmap
-          try {
-            bitmap = await this.windowedBitmap(
-              entry.samples,
-              entry.level,
-              entry.channels,
-            )
-          } catch (err) {
-            log.warn(`NVSlide ${this.id}: re-window failed`, err)
-            continue
-          }
-          // Superseded by a later window, or evicted/disposed meanwhile.
-          if (gen !== this._windowGen || this._cache.peek(key) !== entry) {
-            bitmap.close()
-            continue
-          }
-          entry.bitmap.close()
-          entry.bitmap = bitmap
-          this._emitChange()
-        }
-      }
-    } finally {
-      this._rewindowing = false
-    }
-  }
-
-  private windowedBitmap(
-    s: NVSlideTileSamples,
-    level: NVSlideLevelManifest,
-    held?: readonly number[],
-  ): Promise<ImageBitmap> {
-    const max = 2 ** (level.bitsStored ?? s.bitsStored) - 1
-    const invert = level.photometric === 'MONOCHROME1'
-    const pixels = s.width * s.height
-    const shown: Array<{ plane: number; ch: NVChannel }> = []
-    for (let plane = 0; plane < (s.planes ?? 1); plane++) {
-      const ch = this._channels[held ? (held[plane] as number) : plane]
-      if (ch?.visible) shown.push({ plane, ch })
-    }
-    // A stored-range end never crosses the bound set (calMin 5000 on u8 is black, not inverted).
-    const window = ({ calMin, calMax }: NVChannel): NVSlideWindow => {
-      const lo = Number.isFinite(calMin)
-        ? calMin
-        : Number.isFinite(calMax)
-          ? Math.min(0, calMax - 1)
-          : 0
-      return {
-        calMin: lo,
-        calMax: Number.isFinite(calMax) ? calMax : Math.max(max, lo + 1),
-      }
-    }
-    const one = shown[0]
-    // One grey channel (any monochrome slide by default): the grey-only loop.
-    const rgba =
-      shown.length === 1 && one && one.ch.colormap === 'gray'
-        ? windowSamples(
-            s.samples.subarray(one.plane * pixels, (one.plane + 1) * pixels),
-            window(one.ch),
-            invert,
-          )
-        : compositeSamples(
-            s.samples,
-            pixels,
-            shown.map(({ plane, ch }) => ({
-              plane,
-              lut: this._channelLut(
-                s.samples instanceof Uint8Array ? 256 : 65536,
-                window(ch),
-                invert,
-                ch.colormap,
-              ),
-            })),
-            this.channelBlend === 'additive',
-          )
-    return createImageBitmap(new ImageData(rgba, s.width, s.height))
-  }
-
-  // Re-render if the channels changed while this one rendered.
-  private async _renderCurrent(
-    samples: NVSlideTileSamples,
-    level: NVSlideLevelManifest,
-    held?: readonly number[],
-  ): Promise<ImageBitmap> {
-    for (;;) {
-      const gen = this._windowGen
-      const bitmap = await this.windowedBitmap(samples, level, held)
-      if (gen === this._windowGen) return bitmap
-      bitmap.close()
-    }
-  }
-
-  private _channelLut(
-    size: number,
-    window: NVSlideWindow,
-    invert: boolean,
-    colormap: string,
-  ): Uint8Array {
-    const key = `${size},${window.calMin},${window.calMax},${invert},${colormapKey(colormap)}`
-    let lut = this._luts.get(key)
-    if (!lut) {
-      lut = channelLut(size, window, invert, colormap)
-      this._luts.set(key, lut)
-    }
-    return lut
+  /** Bumped by every channel or blend change: a fused tile older than it is stale. */
+  get displayGeneration(): number {
+    return this._displayGen
   }
 
   setViewport(viewport: NVSlideViewport): void {
@@ -1661,7 +1469,7 @@ export class NVSlide extends EventTarget {
       level === requested && fits ? '' : `${requested.index}>${level.index}`
     if (budget && budget !== this._budgetWarned)
       log.warn(
-        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so only the ${capacity} tiles nearest the centre load`}. Zoom in or raise maxCacheBytes.`,
+        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes), the renderers' tile texture budget (96 MiB for scalar slides, 128 for RGB) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so only the ${capacity} tiles nearest the centre load`}. Zoom in, or raise maxCacheBytes if the tile cache is the limit.`,
       )
     this._budgetWarned = budget
     const tiles = this.tilesForLevel(level, screen, capacity)
@@ -1687,22 +1495,29 @@ export class NVSlide extends EventTarget {
   private tileCapacity(level: NVSlideLevelManifest): number {
     // Full tiles, not clipped edge extents: an upper bound, since a padded
     // edge frame is held whole until decodeTileBitmap crops it.
-    // Sample tiles also keep their samples (1 or 2 bytes each), one plane per
-    // fetched channel. Without bitsStored, JPEG 2000 and JPEG-LS may decode 16-bit samples.
+    // Sample tiles keep only their samples (1, 2 or 4 bytes each), one plane
+    // per fetched channel; bitmap tiles 4 bytes of RGBA. Without bitsStored,
+    // JPEG 2000 and JPEG-LS may decode 16-bit samples.
     const bits = level.bitsStored ?? (level.codec === 'image/jpeg' ? 8 : 16)
+    // A grey JPEG stays an RGBA bitmap without OffscreenCanvas (decodeTileBitmap).
+    const greyBitmap =
+      level.codec === 'image/jpeg' && typeof OffscreenCanvas === 'undefined'
     const planes = this._source.fetchTileSamples
       ? this._visibleChannels().length
-      : isMonochrome(level)
+      : isMonochrome(level) && !greyBitmap
         ? 1
         : 0
-    const sampleBytes = planes * (bits > 8 ? 2 : 1)
-    const tileBytes =
-      this.levelTileWidth(level) *
-      this.levelTileHeight(level) *
-      (4 + sampleBytes)
+    const pixelBytes = planes ? planes * (bits > 16 ? 4 : bits > 8 ? 2 : 1) : 4
+    const tw = this.levelTileWidth(level)
+    const th = this.levelTileHeight(level)
+    // Every tile in view is also an RGBA8 texture its renderer cannot evict:
+    // cap by the texture budget too, less the default raw pool for scalar
+    // tiles (NVSlide sees no renderer's pool size).
+    const textureBytes = planes ? tileTextureBudget() : tileTextureBudget(0)
     return Math.min(
       MAX_VISIBLE_TILES,
-      Math.floor((0.75 * this._cache.maxBytes) / tileBytes),
+      Math.floor((0.75 * this._cache.maxBytes) / (tw * th * pixelBytes)),
+      Math.floor((0.75 * textureBytes) / gutterTextureBytes(tw, th)),
     )
   }
 
@@ -1893,11 +1708,102 @@ export class NVSlide extends EventTarget {
     this.loadTile(level, tile)
   }
 
-  cachedTileBitmap(key: string): ImageBitmap | null {
+  /** A resident tile, bitmap or samples (see {@link NVSlideCachedTile}); refreshes its LRU place. */
+  cachedTile(key: string): NVSlideCachedTile | null {
     const entry = this._cache.get(key)
     if (!entry) return null
     this.stats.cacheHits++
-    return entry.bitmap
+    return entry
+  }
+
+  /**
+   * Level `level` (default the coarsest) composited on the CPU from its
+   * resident tiles, rows as stored, scaled to fit `maxPx` a side, for a minimap
+   * or a colour reference. Missing tiles are requested and left black. The
+   * same bitmap is returned until a tile arrives or leaves or the channels
+   * change; the slide closes it then and on dispose, so draw it at once. Null
+   * without OffscreenCanvas or before any tile is resident.
+   */
+  thumbnailBitmap(
+    level = this.manifest.levels.at(-1),
+    maxPx = DEFAULT_THUMBNAIL_PX,
+  ): ImageBitmap | null {
+    if (!level || typeof OffscreenCanvas === 'undefined') return null
+    // get, not peek: a thumbnail drawn each frame keeps its tiles from eviction.
+    const entries = level.tiles.map((tile) => {
+      if (!tile) return undefined
+      const entry = this._cache.get(this.tileKey(level, tile))
+      if (!entry) this.requestTile(level, tile)
+      return entry
+    })
+    const ids = entries.map((e) => e?.id ?? 0)
+    const key = `${level.index}/${maxPx}`
+    const memo = this._thumbs.get(key)
+    if (
+      memo?.gen === this._displayGen &&
+      ids.every((id, i) => id === memo.ids[i])
+    )
+      return memo.bitmap
+    if (!entries.some(Boolean)) return null
+    const k = Math.min(1, maxPx / Math.max(level.width, level.height))
+    const canvas = new OffscreenCanvas(
+      Math.max(1, Math.round(level.width * k)),
+      Math.max(1, Math.round(level.height * k)),
+    )
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    const tw = this.levelTileWidth(level)
+    const th = this.levelTileHeight(level)
+    // Rounded edges: fractional ones would leave seams between tiles.
+    const draw = (
+      src: CanvasImageSource,
+      w: number,
+      h: number,
+      x: number,
+      y: number,
+    ) => {
+      const x0 = Math.round(x * k)
+      const y0 = Math.round(y * k)
+      ctx.drawImage(
+        src,
+        0,
+        0,
+        w,
+        h,
+        x0,
+        y0,
+        Math.round((x + w) * k) - x0,
+        Math.round((y + h) * k) - y0,
+      )
+    }
+    let scratch: OffscreenCanvasRenderingContext2D | null = null
+    level.tiles.forEach((tile, i) => {
+      const entry = entries[i]
+      if (!tile || !entry) return
+      if (isFuseTile(entry)) {
+        const { samples, width, height } = entry.samples
+        const plan = fusePlan(this._channels, this.channelBlend, entry)
+        const rgba = fuseSamples(samples, width * height, plan)
+        // putImageData does not scale: through a tile-sized canvas.
+        scratch ??= new OffscreenCanvas(tw, th).getContext('2d')
+        if (!scratch) return
+        scratch.putImageData(new ImageData(rgba, width, height), 0, 0)
+        draw(scratch.canvas, width, height, tile.x * tw, tile.y * th)
+      } else if (entry.bitmap) {
+        const { width, height } = entry.bitmap
+        draw(entry.bitmap, width, height, tile.x * tw, tile.y * th)
+      }
+    })
+    const bitmap = canvas.transferToImageBitmap()
+    memo?.bitmap.close()
+    this._thumbs.delete(key)
+    this._thumbs.set(key, { gen: this._displayGen, ids, bitmap })
+    for (const [old, { bitmap: b }] of this._thumbs) {
+      if (this._thumbs.size <= MAX_THUMBNAILS) break
+      b.close()
+      this._thumbs.delete(old)
+    }
+    return bitmap
   }
 
   clearCache(): void {
@@ -1909,7 +1815,8 @@ export class NVSlide extends EventTarget {
   dispose(): void {
     this._colorAbort.abort()
     this.clearCache()
-    this._luts.clear()
+    for (const { bitmap } of this._thumbs.values()) bitmap.close()
+    this._thumbs.clear()
     this._loadQueue.length = 0
     this._wanted.clear()
     this._viewportKeys.clear()
@@ -1938,7 +1845,7 @@ export class NVSlide extends EventTarget {
     return level.tiles[y * level.columns + x] ?? null
   }
 
-  /** The cache key {@link cachedTileBitmap} takes for a tile of a level. */
+  /** The cache key {@link cachedTile} takes for a tile of a level. */
   tileKey(level: NVSlideLevelManifest, tile: NVSlideTileManifest): string {
     return `L${level.index}/${tile.x}/${tile.y}`
   }
@@ -2062,7 +1969,7 @@ export class NVSlide extends EventTarget {
     const { signal } = controller
     this._inflight.set(key, controller)
     try {
-      let bitmap: ImageBitmap
+      let bitmap: ImageBitmap | undefined
       let samples: NVSlideTileSamples | undefined
       let held: number[] | undefined
       if (this._source.fetchTileSamples) {
@@ -2086,10 +1993,8 @@ export class NVSlide extends EventTarget {
             )
           if (samples.width > tile.width || samples.height > tile.height)
             samples = cropSamples(samples, tile.width, tile.height)
-          bitmap = await this._renderCurrent(samples, level, channels)
           // A channel shown while this loaded: load again, never cache a tile without it.
           if (this._visibleChannels().every((c) => channels.includes(c))) break
-          bitmap.close()
         }
       } else {
         const tileBytes = await this._source.fetchTileBytes(
@@ -2107,30 +2012,34 @@ export class NVSlide extends EventTarget {
           tileBytes,
           signal,
         )
-        if ('samples' in decoded) {
-          samples = decoded
-          bitmap = await this._renderCurrent(samples, level)
-        } else bitmap = decoded
+        if ('samples' in decoded) samples = decoded
+        else bitmap = decoded
       }
       if (signal.aborted) {
         // Disposed (or dropped) while decoding. Caching now would leave a
         // bitmap in a cache that was already cleared, with nobody to close it.
-        bitmap.close()
+        bitmap?.close()
         signal.throwIfAborted()
       }
-      // Account the cache in DECODED bytes (RGBA), not encoded/wire bytes: the
-      // cached resource is the ImageBitmap (often GPU-backed), which is 10-20x
-      // the JPEG size — encoded accounting silently blew maxCacheBytes.
-      const decodedBytes =
-        bitmap.width * bitmap.height * 4 + (samples?.samples.byteLength ?? 0)
+      // Account the cache in DECODED bytes, not encoded/wire bytes: a bitmap
+      // (often GPU-backed) is RGBA, 10-20x the JPEG size; a scalar tile keeps
+      // only its samples (the renderers fuse them, #159).
+      const decodedBytes = bitmap
+        ? bitmap.width * bitmap.height * 4
+        : (samples?.samples.byteLength ?? 0)
       this.stats.decodedBytes += decodedBytes
-      this._cache.set(key, {
-        bitmap,
-        bytes: decodedBytes,
-        samples,
-        level,
-        channels: held,
-      })
+      this._cache.set(
+        key,
+        bitmap
+          ? { bitmap, bytes: decodedBytes, level, id: ++tileSerial }
+          : {
+              samples,
+              bytes: decodedBytes,
+              level,
+              channels: held,
+              id: ++tileSerial,
+            },
+      )
       this.stats.cacheBytes = this._cache.bytes
       this.stats.completed++
       this._failed.delete(key)

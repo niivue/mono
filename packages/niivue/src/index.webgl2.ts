@@ -197,6 +197,7 @@ export {
   parseDziDescriptor,
 } from './slide/dziSource'
 export type {
+  NVSlideCachedTile,
   NVSlideColor,
   NVSlideLevelChoice,
   NVSlideLevelManifest,
@@ -204,6 +205,7 @@ export type {
   NVSlideOptions,
   NVSlideRangeEvent,
   NVSlideRangeStatus,
+  NVSlideSampleArray,
   NVSlideScreen,
   NVSlideScreenRect,
   NVSlideSpatialTransform,
@@ -234,6 +236,7 @@ export {
   NVSlide,
 } from './slide/NVSlide'
 export { SlideDrawing } from './slide/slideDrawing'
+export type { SlideRendererOptions } from './slide/slideFuse'
 export type {
   AxialPlaneOptions,
   SlidePlaneTile,

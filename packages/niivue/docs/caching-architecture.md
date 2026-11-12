@@ -97,8 +97,9 @@ A deep-zoom slide is a different resource, so it has its own stack.
 
 | Tier | Holds | Budget | Code |
 |---|---|---|---|
-| Tile textures | Per-tile GPU textures, with a 1-texel gutter | 128 MB per renderer, gutter counted | `slide/tileTextureCache.ts` |
-| Decoded tiles | `ImageBitmap` per tile | 96 MB, counted as RGBA | `slide/NVSlide.ts` |
+| Tile textures | Per-tile RGBA8 GPU textures, with a 1-texel gutter | 96 MB per renderer, gutter counted | `slide/tileTextureCache.ts` |
+| Raw layers | Scalar tiles' visible channels, R8UI/R16UI/R16I/R32F, LRU | 32 MB per renderer (`maxRawPoolBytes`); shares the 128 MB tile texture budget only while it holds layers, so RGB slides keep all 128 | `slide/slideFuse.ts` |
+| Decoded tiles | `ImageBitmap` per RGB tile; samples per scalar tile | 96 MB, in decoded bytes | `slide/NVSlide.ts` |
 | HTTP cache | Range responses | Browser policy | not ours |
 
 Tile textures are evicted once per frame, before `beginFrame()`, so the
@@ -120,8 +121,16 @@ neighbour is always from the same slide.
 Under nearest filtering the shaders clamp to the edge texels and uploads skip
 the copies; the first linear frame after refills every resident border once.
 
-The decoded-tile cache counts RGBA bytes rather than the JPEG size, because
-encoded accounting silently blew the budget. Above it sits the coarse fallback
+Scalar tiles (fluorescence, monochrome, `raw-gray`, sample sources) keep only
+their samples on the CPU. A fuse pass (`gl/` and `wgpu/tileFuse.ts`) renders
+them into the tile texture, one draw per visible channel (window, colormap row,
+MAX or clamped sum), when a tile arrives or a channel or the blend changes; the
+draw shaders are unchanged. Raw layers stay in the pool so a W/L drag re-fuses
+the tiles in view without uploads; the pool fuses tiles whose layers are
+resident first, so a view larger than the pool re-uploads only the excess.
+
+The decoded-tile cache counts decoded bytes (RGBA or samples) rather than the
+JPEG size, because encoded accounting silently blew the budget. Above it sits the coarse fallback
 layer: when the target level's tiles are not resident, the visible set is
 returned with a layer of ALREADY-cached coarser tiles covering the same
 viewport, ordered coarsest first, painted under the target tiles. It never

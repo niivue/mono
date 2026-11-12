@@ -47,7 +47,9 @@ function fakeVolume(
       const view =
         datatypeCode === DT_UINT16
           ? new Uint16Array(bytes.buffer)
-          : new Uint8Array(bytes.buffer)
+          : datatypeCode === 8 // DT_INT32
+            ? new Int32Array(bytes.buffer)
+            : new Uint8Array(bytes.buffer)
       let i = 0
       for (let z = 0; z < nz; z++) {
         for (let y = 0; y < ny; y++) {
@@ -100,6 +102,17 @@ function levelOf(
   }
 }
 
+const samplesOf = (
+  source: VolumeSliceSource,
+  index: number,
+  tile: NVSlideTileManifest,
+) =>
+  source.fetchTileSamples(
+    source.manifest.levels[index] as NVSlideLevelManifest,
+    tile,
+    [0],
+  )
+
 describe('VolumeSliceSource manifest', () => {
   test('mirrors the pyramid, finest first, and stops at one tile', () => {
     const source = new VolumeSliceSource(
@@ -114,8 +127,15 @@ describe('VolumeSliceSource manifest', () => {
     const { manifest } = source
     expect(manifest.width).toBe(16)
     expect(manifest.height).toBe(16)
-    expect(manifest.dtype).toBe('uint8')
-    expect(manifest.channels).toBe('rgba')
+    expect(manifest.channels).toBe('gray')
+    expect(manifest.channelInfo).toEqual([
+      {
+        name: 'volume-slice',
+        colormap: 'gray',
+        window: { calMin: 0, calMax: 255 },
+        active: true,
+      },
+    ])
     expect(manifest.displayYAxis).toBe('up')
     // 16 -> 2x2 tiles, 8 -> one tile and the walk stops there.
     expect(manifest.levels.length).toBe(2)
@@ -123,7 +143,7 @@ describe('VolumeSliceSource manifest', () => {
     expect(manifest.levels.map((l) => l.downsample)).toEqual([1, 2])
     expect(manifest.levels.map((l) => l.columns)).toEqual([2, 1])
     expect(manifest.levels[0].tiles.length).toBe(4)
-    expect(manifest.levels[0].codec).toBe('raw-rgba')
+    expect(manifest.levels.map((l) => l.bitsStored)).toEqual([8, 8])
   })
 
   test('clips the tiles that run past a ragged level', () => {
@@ -163,14 +183,19 @@ describe('VolumeSliceSource manifest', () => {
     ).toThrow(/out of range/)
   })
 
-  test('rejects a volume with no levels, a bad LUT and a bad tile size', () => {
+  test('seeds channel 0 from window and colormap; a flat window is one unit', () => {
+    const source = new VolumeSliceSource(fakeVolume([[4, 4, 4]]), {
+      window: [7, 7],
+      colormap: 'hot',
+    })
+    expect(source.manifest.channelInfo?.[0]).toMatchObject({
+      colormap: 'hot',
+      window: { calMin: 7, calMax: 8 },
+    })
+  })
+
+  test('rejects a volume with no levels and a bad tile size', () => {
     expect(() => new VolumeSliceSource(fakeVolume([]))).toThrow(/no levels/)
-    expect(
-      () =>
-        new VolumeSliceSource(fakeVolume([[4, 4, 4]]), {
-          lut: new Uint8Array(16),
-        }),
-    ).toThrow(/256 RGBA entries/)
     expect(
       () => new VolumeSliceSource(fakeVolume([[4, 4, 4]]), { tileSize: 0 }),
     ).toThrow(/positive integer/)
@@ -193,7 +218,7 @@ describe('VolumeSliceSource manifest', () => {
 })
 
 describe('VolumeSliceSource tiles', () => {
-  test('reads the requested plane and windows it to RGBA', async () => {
+  test('reads the requested plane as samples of the volume type', async () => {
     const calls: ChunkedVolumeFetch[] = []
     const source = new VolumeSliceSource(
       fakeVolume(
@@ -206,17 +231,14 @@ describe('VolumeSliceSource tiles', () => {
       { tileSize: 4, index: 2, window: [0, 15] },
     )
     const tile = levelOf(source, 0).tiles[0]
-    const rgba = await source.fetchTileBytes(levelOf(source, 0), tile, 'a')
+    const out = await samplesOf(source, 0, tile)
 
     expect(calls[0].texOrigin).toEqual([0, 0, 2])
     expect(calls[0].texDims).toEqual([4, 4, 1])
     expect(calls[0].bytesPerVoxel).toBe(1)
-    expect(rgba.byteLength).toBe(4 * 4 * 4)
-    // Value 0 is black, value 15 is white, and the ramp is grayscale.
-    expect([...rgba.slice(0, 4)]).toEqual([0, 0, 0, 255])
-    expect([...rgba.slice(60, 64)]).toEqual([255, 255, 255, 255])
-    // Pixel (u=1, v=0) holds value 1 of 15.
-    expect(rgba[4]).toBe(17)
+    expect(out).toMatchObject({ width: 4, height: 4, bitsStored: 8, planes: 1 })
+    expect(out.samples).toBeInstanceOf(Uint8Array)
+    expect([...out.samples]).toEqual(Array.from({ length: 16 }, (_, i) => i))
   })
 
   test('maps in-plane axes the same way for a sagittal plane', async () => {
@@ -230,7 +252,7 @@ describe('VolumeSliceSource tiles', () => {
     // The second tile column steps the FIRST in-plane axis, which is y here.
     const tile = level.tiles.find((t) => t.x === 1 && t.y === 1)
     if (!tile) throw new Error('expected a tile at (1, 1)')
-    await source.fetchTileBytes(level, tile, 'a')
+    await samplesOf(source, 0, tile)
     expect(calls[0].texOrigin).toEqual([3, 4, 4])
     expect(calls[0].texDims).toEqual([1, 2, 4])
   })
@@ -247,59 +269,40 @@ describe('VolumeSliceSource tiles', () => {
       ),
       { tileSize: 8, index: 15 },
     )
-    await source.fetchTileBytes(
-      levelOf(source, 1),
-      levelOf(source, 1).tiles[0],
-      'a',
-    )
+    await samplesOf(source, 1, levelOf(source, 1).tiles[0])
     expect(calls[0].levelIndex).toBe(1)
     // The last plane of 16 stays the last plane of 8, not plane 15.
     expect(calls[0].texOrigin[2]).toBe(7)
   })
 
-  test('clamps the window and honours a colormap LUT', async () => {
-    const lut = new Uint8Array(1024)
-    for (let i = 0; i < 256; i++) {
-      lut[i * 4] = 255 - i
-      lut[i * 4 + 1] = i
-      lut[i * 4 + 2] = 7
-      lut[i * 4 + 3] = 128
-    }
-    const source = new VolumeSliceSource(
-      fakeVolume([[2, 2, 1]], {
-        datatypeCode: DT_UINT16,
-        value: (x, y) => [0, 1000, 4000, 60000][x + y * 2],
-      }),
-      { tileSize: 2, window: [1000, 4000], lut },
-    )
-    const rgba = await source.fetchTileBytes(
-      levelOf(source, 0),
-      levelOf(source, 0).tiles[0],
-      'a',
-    )
-    // Below the window and at its floor both land on LUT entry 0.
-    expect([...rgba.slice(0, 4)]).toEqual([255, 0, 7, 128])
-    expect([...rgba.slice(4, 8)]).toEqual([255, 0, 7, 128])
-    // At and above the ceiling both saturate to entry 255.
-    expect([...rgba.slice(8, 12)]).toEqual([0, 255, 7, 128])
-    expect([...rgba.slice(12, 16)]).toEqual([0, 255, 7, 128])
-  })
-
-  test('reads 16-bit voxels at the right stride', async () => {
+  test('reads 16-bit voxels at the right stride, as uint16', async () => {
     const source = new VolumeSliceSource(
       fakeVolume([[2, 1, 1]], {
         datatypeCode: DT_UINT16,
-        value: (x) => (x === 0 ? 300 : 600),
+        value: (x) => (x === 0 ? 300 : 60000),
       }),
       { tileSize: 2, window: [300, 600] },
     )
-    const rgba = await source.fetchTileBytes(
-      levelOf(source, 0),
-      levelOf(source, 0).tiles[0],
-      'a',
+    const out = await samplesOf(source, 0, levelOf(source, 0).tiles[0])
+    expect(out.samples).toBeInstanceOf(Uint16Array)
+    expect([...out.samples]).toEqual([300, 60000])
+    expect(out.bitsStored).toBe(16)
+    expect(source.manifest.levels[0]?.bitsStored).toBe(16)
+  })
+
+  test('serves types a tile cannot hold as float32, budgeted at 32 bits', async () => {
+    const DT_INT32 = 8
+    const source = new VolumeSliceSource(
+      fakeVolume([[2, 1, 1]], {
+        datatypeCode: DT_INT32,
+        value: (x) => (x === 0 ? -70000 : 70000),
+      }),
+      { tileSize: 2 },
     )
-    expect(rgba[0]).toBe(0)
-    expect(rgba[4]).toBe(255)
+    expect(source.manifest.levels[0]?.bitsStored).toBe(32)
+    const out = await samplesOf(source, 0, levelOf(source, 0).tiles[0])
+    expect(out.samples).toBeInstanceOf(Float32Array)
+    expect([...out.samples]).toEqual([-70000, 70000])
   })
 
   test('reports a tile to the host as pending then hit', async () => {
@@ -309,14 +312,10 @@ describe('VolumeSliceSource tiles', () => {
       tileSize: 4,
     })
     source.bind(host)
-    await source.fetchTileBytes(
-      levelOf(source, 0),
-      levelOf(source, 0).tiles[0],
-      'tile-a',
-    )
+    await samplesOf(source, 0, levelOf(source, 0).tiles[0])
     expect(events).toEqual([
-      { label: 'tile-a', status: 'pending' },
-      { label: 'tile-a', status: 'hit' },
+      { label: 'L0/0/0', status: 'pending' },
+      { label: 'L0/0/0', status: 'hit' },
     ])
     expect(host.wireBytes).toBe(16)
   })
@@ -330,11 +329,7 @@ describe('VolumeSliceSource tiles', () => {
     )
     source.bind(host)
     await expect(
-      source.fetchTileBytes(
-        levelOf(source, 0),
-        levelOf(source, 0).tiles[0],
-        'tile-a',
-      ),
+      samplesOf(source, 0, levelOf(source, 0).tiles[0]),
     ).rejects.toThrow('boom')
     expect(events.map((e) => e.status)).toEqual(['pending', 'failed'])
   })

@@ -6161,26 +6161,12 @@ export default class NiiVue extends EventTarget {
       if (lv.width <= dr.width && lv.width > level.width) level = lv
     }
     if (!level) return null
-    const tw = level.tileWidth ?? sp.slide.manifest.tileSize ?? 256
-    const th = level.tileHeight ?? sp.slide.manifest.tileSize ?? 256
-    const sx = dr.width / level.width
-    const sy = dr.height / level.height
     const oc = new OffscreenCanvas(dr.width, dr.height)
     const ctx = oc.getContext('2d')
     if (!ctx) return null
-    for (const t of level.tiles) {
-      if (!t) continue // a sparse slide's hole
-      sp.slide.requestTile(level, t)
-      const bmp = sp.slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
-      if (bmp)
-        ctx.drawImage(
-          bmp,
-          t.x * tw * sx,
-          t.y * th * sy,
-          t.width * sx,
-          t.height * sy,
-        )
-    }
+    // Requests the level's missing tiles; scalar tiles are composited on the CPU.
+    const bmp = sp.slide.thumbnailBitmap(level, Math.max(dr.width, dr.height))
+    if (bmp) ctx.drawImage(bmp, 0, 0, dr.width, dr.height)
     return ctx.getImageData(0, 0, dr.width, dr.height).data
   }
 

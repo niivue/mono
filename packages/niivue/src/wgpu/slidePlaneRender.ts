@@ -1,5 +1,6 @@
 import { colorLutWgsl } from '@/slide/colorLutShader'
-import type { NVSlide } from '@/slide/NVSlide'
+import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
+import { isFuseTile, tileTextureBudget } from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
@@ -13,6 +14,7 @@ import {
 import { NVRenderer } from '@/view/NVRenderer'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { alphaPipelineDesc, linearSampler, uniformBuffer } from './pipeline'
+import { TileFuserGPU } from './tileFuse'
 import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
 // WebGPU mirror of gl/slidePlaneRender.ts. Draws an NVSlide as a textured plane
@@ -90,6 +92,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     TileTextureGPU & { group?: GPUBindGroup }
   >(DEFAULT_TILE_TEXTURE_BYTES, (entry) => entry.texture.destroy())
   private readonly _gutter = new TileGutterGPU()
+  private readonly _fuser = new TileFuserGPU()
   private readonly _scratch = new Float32Array(20) // mat4 (16) + opacity vec4 (4)
   // Annotation overlay (slide-space drawing).
   private _annTexture: GPUTexture | null = null
@@ -170,7 +173,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       this._slotsUsed = 0
       for (const buffer of this._retired) buffer.destroy()
       this._retired = []
-      this._textures.evictToBudget()
+      this._textures.evictToBudget(tileTextureBudget(this._fuser.poolBytes))
       this._textures.beginFrame()
     }
     let slot = this._slots[this._slotsUsed]
@@ -228,21 +231,26 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     device: GPUDevice,
     slide: NVSlide,
     tile: SlidePlaneTile,
-    bitmap: ImageBitmap,
+    cached: NVSlideCachedTile,
   ): (TileTextureGPU & { group: GPUBindGroup }) | null {
-    const key = slideTileKey(slide, tile.key)
-    const existing = this._textures.get(key, bitmap)
-    if (existing?.group)
-      return existing as TileTextureGPU & { group: GPUBindGroup }
     if (!this._textureBGL) return null
-    const entry: (TileTextureGPU & { group?: GPUBindGroup }) | null =
-      this._gutter.upload(
+    const at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
+    let entry: (TileTextureGPU & { group?: GPUBindGroup }) | null = null
+    if (isFuseTile(cached))
+      entry = this._fuser.textureFor(
         device,
-        bitmap,
-        { ...tile, slide, key },
+        this._gutter,
         this._textures,
+        at,
+        slide,
+        cached,
       )
+    else if (cached.bitmap)
+      entry =
+        this._textures.get(at.key, cached.bitmap) ??
+        this._gutter.upload(device, cached.bitmap, at, this._textures)
     if (!entry) return null
+    if (entry.group) return entry as TileTextureGPU & { group: GPUBindGroup }
     const group = device.createBindGroup({
       layout: this._textureBGL,
       entries: [{ binding: 0, resource: entry.texture.createView() }],
@@ -273,9 +281,9 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass.setBindGroup(0, slot.group)
     pass.setVertexBuffer(0, vertex)
     for (const entry of slot.entries) {
-      const bitmap = slide.cachedTileBitmap(entry.tile.key)
-      if (!bitmap) continue
-      const tex = this._textureFor(device, slide, entry.tile, bitmap)
+      const cached = slide.cachedTile(entry.tile.key)
+      if (!cached) continue
+      const tex = this._textureFor(device, slide, entry.tile, cached)
       if (!tex) continue
       // A decoded or fitted tile can differ from its manifest size: inset the
       // UVs by the texture actually uploaded (lands before this frame submits).
@@ -290,6 +298,8 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       pass.setBindGroup(1, tex.group)
       pass.draw(4, 1, entry.firstVertex)
     }
+    // Submitted now, ahead of the frame's pass that draws the tiles.
+    this._fuser.flush(device, this._gutter, this._textures, true)
   }
 
   /** Draw the slide-space annotation raster as one quad over the whole slide. */
@@ -354,6 +364,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
 
   destroy(): void {
     this._textures.clear()
+    this._fuser.destroy()
     this._gutter.destroy()
     this._luts?.clear()
     this._luts = null

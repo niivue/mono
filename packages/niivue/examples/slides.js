@@ -525,21 +525,13 @@ function buildWandReference() {
   for (const lv of levels) {
     if (lv.width <= drawing.width && lv.width > level.width) level = lv
   }
-  const tw = level.tileWidth ?? slide.manifest.tileSize ?? 256
-  const th = level.tileHeight ?? slide.manifest.tileSize ?? 256
-  const sx = drawing.width / level.width
-  const sy = drawing.height / level.height
   const c = document.createElement('canvas')
   c.width = drawing.width
   c.height = drawing.height
   const cx = c.getContext('2d')
-  for (const t of level.tiles) {
-    if (!t) continue // a sparse slide's hole
-    slide.requestTile(level, t) // prime for a sharper re-click
-    const bmp = slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
-    if (!bmp) continue
-    cx.drawImage(bmp, t.x * tw * sx, t.y * th * sy, t.width * sx, t.height * sy)
-  }
+  // Requests missing tiles (a sharper re-click); scalar tiles composite on the CPU.
+  const bmp = slide.thumbnailBitmap(level, Math.max(c.width, c.height))
+  if (bmp) cx.drawImage(bmp, 0, 0, c.width, c.height)
   return cx.getImageData(0, 0, c.width, c.height).data
 }
 

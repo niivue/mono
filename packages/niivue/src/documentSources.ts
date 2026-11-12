@@ -271,11 +271,12 @@ export async function attachFrameSource(
       vol.img.set(await src.load(frame, restore.signal))
       markVolumeDataChanged(vol)
     } catch (err) {
-      if (restore.signal.aborted) return
-      log.warn(`loadDocument: "${name}" keeps its saved frame`, err)
+      if (!restore.signal.aborted)
+        log.warn(`loadDocument: "${name}" keeps its saved frame`, err)
     }
   }
-  if (restore.signal.aborted) return
+  // Superseded: nothing holds the source now.
+  if (restore.signal.aborted) return dispose(src)
   const group = groupOf(restore, s)
   vol.frameSource = {
     frame,

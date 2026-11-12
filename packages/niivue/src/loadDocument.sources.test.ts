@@ -538,3 +538,23 @@ test('a source of the wrong kind is disposed', async () => {
   })
   expect(disposed).toEqual(['lazy', 'streamed'])
 })
+
+test('a lazy restore superseded during its revision refresh disposes its source', async () => {
+  const bytes = await savedLazy()
+  let disposed = 0
+  const nv = new NiiVue({ backend: 'webgl2' })
+  let next: Promise<unknown> = Promise.resolve()
+  const first = nv.loadDocument(documentFile(bytes), {
+    resolveSource: () => ({
+      ...frameSource(DESCRIPTOR, 'r2'),
+      load: async () => {
+        next = nv.loadDocument(documentFile(bytes))
+        return new Uint8Array(N)
+      },
+      dispose: () => disposed++,
+    }),
+  })
+  await first
+  await next
+  expect(disposed).toBe(1)
+})

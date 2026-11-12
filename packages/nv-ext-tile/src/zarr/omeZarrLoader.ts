@@ -517,24 +517,28 @@ const MAX_LABEL_SPAN = 256 * 8192
 /**
  * A label store's `image-label.colors` as a label colormap, for
  * `nv.addColormap(name, map)` and then a volume's `colormap: name`; null when
- * the store states no colours. IDs the table omits show transparent. Colours
- * past addColormap's ID span from the lowest ID are dropped with a warning
- * and the table ends on a clear entry, so a sparse table still registers and
- * the dropped IDs (clamped to that entry) show clear.
+ * the store states no colours. IDs the table omits show transparent, as do
+ * IDs below or above it: the shaders clamp those to the first or last entry,
+ * so the table starts and ends on a clear one. Colours past addColormap's ID
+ * span are dropped with a warning, so a sparse table still registers.
  */
 export function omeZarrLabelColormap(info: OmeZarrInfo): ColorMap | null {
   if (info.labelColors.length === 0) return null
+  const clear = (id: number): OmeZarrInfo['labelColors'][number] => ({
+    id,
+    rgba: [0, 0, 0, 0],
+  })
   let sorted = [...info.labelColors].sort((a, b) => a.id - b.id)
+  if (sorted[0].rgba[3] !== 0) sorted.unshift(clear(sorted[0].id - 1))
+  // Below top, so a clear last entry always fits in the span.
   const top = sorted[0].id + MAX_LABEL_SPAN - 1
-  if (sorted[sorted.length - 1].id > top) {
-    // The shaders clamp an ID past the table to its last entry, so the cut
-    // table ends on a clear entry at the span's top, where dropped IDs land.
-    const kept = sorted.filter((c) => c.id < top)
+  const kept = sorted.filter((c) => c.id < top)
+  if (kept.length < sorted.length)
     console.warn(
       `OME-Zarr labels: ${sorted.length - kept.length} colour(s) for IDs ${top} and up dropped (a label colormap spans at most ${MAX_LABEL_SPAN} IDs); those labels show clear`,
     )
-    sorted = [...kept, { id: top, rgba: [0, 0, 0, 0] }]
-  }
+  const last = kept[kept.length - 1]
+  sorted = last.rgba[3] === 0 ? kept : [...kept, clear(last.id + 1)]
   const channel = (i: number) => sorted.map((c) => c.rgba[i])
   return {
     R: channel(0),

@@ -394,9 +394,10 @@ describe('omeZarrLabelColormap', () => {
     const map = omeZarrLabelColormap(info)
     if (!map) throw new Error('no colormap')
     const lut = makeLabelLut(map)
-    expect([lut.min, lut.max]).toEqual([1, 3])
+    // Clear entries at 0 and 4 bound the stated 1 and 3.
+    expect([lut.min, lut.max]).toEqual([0, 4])
     expect(Array.from(lut.lut)).toEqual([
-      255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 255, 128,
+      0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 255, 128, 0, 0, 0, 0,
     ])
     expect(
       omeZarrLabelColormap(
@@ -429,26 +430,41 @@ describe('omeZarrLabelColormap', () => {
       expect(Math.max(...I) - Math.min(...I) + 1).toBeLessThanOrEqual(
         256 * 8192,
       )
-      // A clear entry at the span's top, where shaders clamp dropped IDs.
-      expect(I).toEqual([0, 2, 256 * 8192 - 1])
+      // A clear entry after the last kept colour: dropped IDs clamp to it.
+      expect(I).toEqual([0, 2, 3])
       const lut = makeLabelLut(map).lut
       expect(Array.from(lut.slice(8, 12))).toEqual([255, 0, 0, 255])
+      expect(Array.from(lut.slice(0, 4))).toEqual([0, 0, 0, 0])
       expect(Array.from(lut.slice(-4))).toEqual([0, 0, 0, 0])
       expect(String(warned[0])).toContain('1 colour(s)')
-      // Nothing dropped: the table is exactly the stated colours.
-      const within = omeZarrLabelColormap(
-        parseOmeZarrAttrs({
-          multiscales: [{ datasets: [{ path: '0' }] }],
-          'image-label': {
-            colors: [
-              { 'label-value': 0, rgba: [0, 0, 0, 0] },
-              { 'label-value': 256 * 8192 - 1, rgba: [0, 255, 0, 255] },
-            ],
-          },
-        }),
-      )
-      expect(within?.I).toEqual([0, 256 * 8192 - 1])
-      expect(within?.G).toEqual([0, 255])
+      const of = (colors: { id: number; rgba: number[] }[]) =>
+        omeZarrLabelColormap(
+          parseOmeZarrAttrs({
+            multiscales: [{ datasets: [{ path: '0' }] }],
+            'image-label': {
+              colors: colors.map((c) => ({
+                'label-value': c.id,
+                rgba: c.rgba,
+              })),
+            },
+          }),
+        )
+      // Only ID 3: background 0 (below) and 9 (above) clamp to clear ends.
+      const only3 = of([{ id: 3, rgba: [255, 0, 0, 255] }])
+      if (!only3) throw new Error('no colormap')
+      expect(only3.I).toEqual([2, 3, 4])
+      const lut3 = makeLabelLut(only3).lut
+      expect(Array.from(lut3.slice(0, 4))).toEqual([0, 0, 0, 0])
+      expect(Array.from(lut3.slice(4, 8))).toEqual([255, 0, 0, 255])
+      expect(Array.from(lut3.slice(-4))).toEqual([0, 0, 0, 0])
+      // Clear at both ends already: the table is exactly the stated colours.
+      const ends = of([
+        { id: 0, rgba: [0, 0, 0, 0] },
+        { id: 5, rgba: [0, 255, 0, 255] },
+        { id: 6, rgba: [0, 0, 0, 0] },
+      ])
+      expect(ends?.I).toEqual([0, 5, 6])
+      expect(ends?.G).toEqual([0, 255, 0])
       expect(warned.length).toBe(1)
     } finally {
       console.warn = warn

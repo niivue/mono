@@ -156,6 +156,15 @@ bunx nx test <project>               # Run a project's tests via Nx
 cd packages/niivue && bun test       # Run niivue tests directly with coverage
 ```
 
+## PR autonomy
+
+Within the requested scope, implement, validate, review, commit, push and open or
+update PRs without asking for owner sign-off. Use `/audit` or `/ponytail-audit`
+when useful. After each push, check CI on the current head, fix failures and push
+corrections autonomously; run local Metal when required below. Do not stop at a
+successful push or report pending checks as passed. Human review is the merge
+gate; merging and releases still require explicit authorization.
+
 ## GitHub issues
 
 Agents do not create GitHub issues in this repo unless the user asks for one

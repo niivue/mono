@@ -226,3 +226,90 @@ test('destroy releases an owned slide without invoking the renderer', async () =
     nv.destroy()
   }
 })
+
+// A source with three focal planes; documents reopen it by its descriptor.
+function planeSource(url = 'https://example.invalid/slide.tif') {
+  const at = (z: number): NVSlideManifest => ({
+    ...manifest,
+    levels: manifest.levels.map((l) => ({ ...l, plane: { z, t: 0 } })),
+  })
+  return {
+    manifest: at(0),
+    descriptor: { kind: 'test/slide', url: `${url}?token=secret` },
+    planes: { z: 3, t: 1 },
+    disposed: false,
+    bind() {},
+    fetchTileBytes: () => Promise.reject(new Error('no tiles')),
+    preparePlane: async (p: { z: number }) => at(p.z),
+    dispose() {
+      this.disposed = true
+    },
+  }
+}
+
+test('a saved focal plane reopens through resolveSource before attaching', async () => {
+  const before = new NiiVue({ backend: 'webgl2' })
+  const slide = NVSlide.fromSource(planeSource())
+  before.setSlidePlane(slide, { pixelToWorld: transform })
+  await slide.setPlaneIndex({ z: 2, t: 0 })
+  const bytes = before.serializeDocument({ format: 'json' })
+  before.destroy()
+  slide.dispose()
+  // The token is the host's to add again.
+  expect(
+    (parseJsonDocument(bytes) as { slidePlane?: { source?: unknown } })
+      .slidePlane?.source,
+  ).toEqual({
+    kind: 'test/slide',
+    url: 'https://example.invalid/slide.tif',
+  })
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const seen: unknown[] = []
+  let attachedAt: unknown
+  const attach = spyOn(nv, 'setSlidePlane').mockImplementation(function (
+    this: NiiVue,
+    s,
+    o,
+  ) {
+    attachedAt = s.planeIndex
+    attach.mockRestore()
+    return this.setSlidePlane(s, o)
+  })
+  try {
+    await nv.loadDocument(documentFile(bytes), {
+      resolveSource: (d, ctx) => {
+        seen.push({ d, slide: ctx.slide })
+        return planeSource()
+      },
+    })
+    expect(seen).toEqual([
+      {
+        d: { kind: 'test/slide', url: 'https://example.invalid/slide.tif' },
+        slide: true,
+      },
+    ])
+    expect(attachedAt).toEqual({ z: 2, t: 0 })
+    expect(nv.slidePlaneIndex).toEqual({ z: 2, t: 0 })
+  } finally {
+    nv.destroy()
+  }
+})
+
+test('an unavailable saved source is skipped, not shown as broken tiles', async () => {
+  const before = new NiiVue({ backend: 'webgl2' })
+  const slide = NVSlide.fromSource(planeSource())
+  before.setSlidePlane(slide, { pixelToWorld: transform })
+  const bytes = before.serializeDocument({ format: 'json' })
+  before.destroy()
+  slide.dispose()
+  const warnings = captureWarnings()
+  const nv = new NiiVue({ backend: 'webgl2' })
+  try {
+    await nv.loadDocument(documentFile(bytes), { resolveSource: () => null })
+    expect(nv.slidePlaneIndex).toBeNull()
+    expect(warnings.messages.join('\n')).toContain('unavailable')
+  } finally {
+    warnings.restore()
+    nv.destroy()
+  }
+})

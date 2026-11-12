@@ -1,3 +1,4 @@
+import type { VolumeSourceDescriptor } from '@/NVTypes'
 import type {
   NVSlideChannelInfo,
   NVSlideLevelManifest,
@@ -170,6 +171,8 @@ export interface SlideSourceHost {
  */
 export interface SlideTileSource {
   readonly manifest: NVSlideManifest
+  /** How a document reopens this source (see `DocumentSourceResolver`); unsaved when absent. */
+  descriptor?: VolumeSourceDescriptor
   /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
   bind(host: SlideSourceHost): void
   /**

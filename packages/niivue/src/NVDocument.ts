@@ -57,6 +57,7 @@ import type {
   UIConfig,
   VectorAnnotation,
   VolumeRenderConfig,
+  VolumeSourceDescriptor,
 } from '@/NVTypes'
 import {
   reconstructSignal,
@@ -249,6 +250,8 @@ export type NVDocumentMesh = {
 export type NVDocumentSlidePlane = {
   manifest: NVSlideManifest
   manifestUrl?: string
+  /** The slide source, reopened through `loadDocument`'s `resolveSource` (`slide: true`). */
+  source?: VolumeSourceDescriptor
   /** Column-major 4x4 slide base-pixel -> world mm. */
   pixelToWorld: number[]
   /** Pinned level (camera LOD off) or undefined for automatic LOD. */

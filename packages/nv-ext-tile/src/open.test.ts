@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { ManifestRangeSource } from '@niivue/niivue'
 import { DicomWsiSource } from './dicomWsiSource'
-import { openSlide, sniffSlide } from './open'
+import {
+  openSlide,
+  resolveSlideSource,
+  SLIDE_SOURCE_KIND,
+  sniffSlide,
+} from './open'
 import type { SlideFetch } from './rangeFetch'
 import { TiffSlideSource } from './tiff'
 
@@ -351,6 +356,65 @@ describe('openSlide', () => {
     if (!source || !level) throw new Error('no level')
     await source.fetchTileBytes(level, level.tiles[0] as never, 'L0')
     expect(urls).toEqual(['https://h.test/s/m.json', 'https://h.test/s/l0.dcm'])
+  })
+
+  test('a document reopens a URL slide by its descriptor, never a local one', async () => {
+    const manifest = {
+      id: 'm',
+      format: 'dicom-wsi-range-v1',
+      width: 4,
+      height: 4,
+      levels: [
+        {
+          index: 0,
+          width: 4,
+          height: 4,
+          tileWidth: 4,
+          tileHeight: 4,
+          columns: 1,
+          rows: 1,
+          codec: 'image/jpeg',
+          fileUrl: 'l0.dcm',
+          tiles: [],
+        },
+      ],
+    }
+    const urls: string[] = []
+    const fetch: SlideFetch = async (url) => {
+      urls.push(url)
+      return Response.json(manifest)
+    }
+    const url = 'https://h.test/s/m.json'
+    const opened = await (await openSlide(url, { fetch })).candidates[0]?.open()
+    const descriptor = opened?.descriptor
+    expect(descriptor).toEqual({
+      kind: SLIDE_SOURCE_KIND,
+      url,
+      params: { format: 'manifest' },
+    })
+    if (!descriptor) throw new Error('no descriptor')
+    const resolve = resolveSlideSource({ fetch })
+    const signal = new AbortController().signal
+    urls.length = 0
+    const again = await resolve(descriptor, {
+      signal,
+      streamed: false,
+      slide: true,
+    })
+    expect(again).toBeInstanceOf(ManifestRangeSource)
+    expect((again as { descriptor?: unknown }).descriptor).toEqual(descriptor)
+    expect(urls).toEqual([url])
+    // A volume restore, or a file this page cannot reach again, is not ours.
+    expect(resolve(descriptor, { signal, streamed: false })).toBeNull()
+    const local = await (
+      await openSlide(new File([tinyTiff()], 'one.tif'))
+    ).candidates[0]?.open()
+    expect(local?.descriptor?.params).toEqual({ format: 'tiff', local: true })
+    if (!local?.descriptor) throw new Error('no descriptor')
+    expect(
+      resolve(local.descriptor, { signal, streamed: false, slide: true }),
+    ).toBeNull()
+    local.dispose?.()
   })
 
   test('a custom fetch reaches a Zarr store; DZI refuses one', async () => {

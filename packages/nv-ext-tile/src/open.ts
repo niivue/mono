@@ -3,6 +3,7 @@
 // costs a DICOM-only page no TIFF or Zarr payload.
 import type { Pool } from '@niivue/geotiff-rs'
 import {
+  type DocumentSourceResolver,
   DziSource,
   ManifestRangeSource,
   type NVSlideAttribution,
@@ -56,6 +57,52 @@ export interface OpenedSlides {
   candidates: SlideCandidate[]
   /** DICOM: the index, with skipped files and associated images. */
   index?: SlideIndex
+}
+
+/** `VolumeSourceDescriptor.kind` of the slides `openSlide` opens. */
+export const SLIDE_SOURCE_KIND = 'nv-ext-tile/slide'
+
+const URL_KINDS: readonly string[] = ['tiff', 'zarr', 'dzi', 'manifest']
+
+// A local file's descriptor names it, so a host can offer it again; the
+// default resolver cannot reopen it.
+function described<T extends SlideTileSource>(
+  src: T,
+  url: string,
+  format: SlideKind,
+  local = false,
+): T {
+  src.descriptor = {
+    kind: SLIDE_SOURCE_KIND,
+    url,
+    params: local ? { format, local } : { format },
+  }
+  return src
+}
+
+/**
+ * A `loadDocument` `resolveSource` that reopens slides `openSlide` opened by
+ * URL, reading through `options` (the host's fetch and credentials). Anything
+ * else, local files included, resolves null; compose it with the host's own.
+ */
+export function resolveSlideSource(
+  options: OpenSlideOptions = {},
+): DocumentSourceResolver {
+  return (d, { signal, slide }) => {
+    const format = d.params?.format
+    if (
+      !slide ||
+      d.kind !== SLIDE_SOURCE_KIND ||
+      d.params?.local ||
+      typeof format !== 'string' ||
+      !URL_KINDS.includes(format)
+    )
+      return null
+    const kind = format as SlideKind
+    return openUrl(kind, d.url, options, signal).then((src) =>
+      described(src, d.url, kind),
+    )
+  }
 }
 
 const isTiffMagic = (b: Uint8Array) =>
@@ -153,7 +200,8 @@ export async function openSlide(
         {
           kind,
           label: fileName(url),
-          open: (s) => openUrl(kind, url, options, s),
+          open: async (s) =>
+            described(await openUrl(kind, url, options, s), url, kind),
         },
       ],
     }
@@ -185,9 +233,14 @@ export async function openSlide(
       label: `${slide.container ?? slide.series} path ${slide.opticalPath} z ${slide.focalPlane}`,
       open: async (s) => {
         anySignal(options.signal, s)?.throwIfAborted()
-        return new DicomWsiSource(slide, dicom, {
-          attribution: options.attribution,
-        })
+        return described(
+          new DicomWsiSource(slide, dicom, {
+            attribution: options.attribution,
+          }),
+          slide.container ?? slide.series,
+          'dicom',
+          true,
+        )
       },
     }),
   )
@@ -220,13 +273,18 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
       signal?.throwIfAborted()
       const tiff = await fromBlob(file)
       try {
-        return await TiffSlideSource.fromGeoTIFF(tiff, {
-          id: file.name,
-          ...options.tiff,
-          pool: options.pool,
-          attribution: options.attribution,
-          signal,
-        })
+        return described(
+          await TiffSlideSource.fromGeoTIFF(tiff, {
+            id: file.name,
+            ...options.tiff,
+            pool: options.pool,
+            attribution: options.attribution,
+            signal,
+          }),
+          file.webkitRelativePath || file.name,
+          'tiff',
+          true,
+        )
       } catch (err) {
         // Not adopted by a source: closed here.
         Promise.resolve(tiff.close()).catch(() => {})

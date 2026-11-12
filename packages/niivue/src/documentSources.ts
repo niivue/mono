@@ -6,25 +6,29 @@ import type {
   VolumeFrameSource,
   VolumeSourceDescriptor,
 } from '@/NVTypes'
+import type { SlideTileSource } from '@/slide/slideSource'
 import type { ChunkedVolumeSource } from '@/volume/ChunkedVolumeSource'
 import { markVolumeDataChanged } from '@/volume/dataVersion'
 
 /**
  * Reopens a saved {@link VolumeSourceDescriptor} for `loadDocument`. `streamed`
  * asks for a `ChunkedVolumeSource` (the document holds no voxels), otherwise a
- * `VolumeFrameSource` for a volume whose shown frame is embedded. The host adds
- * its credentials here. Return null when the source is unavailable; a superseded
- * restore (`signal` aborted) disposes what it was handed.
+ * `VolumeFrameSource` for a volume whose shown frame is embedded; `slide` asks
+ * for the slide plane's `SlideTileSource` (`resolveSlideSource` in
+ * `@niivue/nv-ext-tile/open` opens its own). The host adds its credentials here.
+ * Return null when the source is unavailable; a superseded restore (`signal`
+ * aborted) disposes what it was handed.
  */
 export type DocumentSourceResolver = (
   descriptor: VolumeSourceDescriptor,
-  context: { signal: AbortSignal; streamed: boolean },
+  context: { signal: AbortSignal; streamed: boolean; slide?: boolean },
 ) =>
-  | Promise<ChunkedVolumeSource | VolumeFrameSource | null | undefined>
-  | ChunkedVolumeSource
-  | VolumeFrameSource
+  | Promise<DocumentSource | null | undefined>
+  | DocumentSource
   | null
   | undefined
+
+type DocumentSource = ChunkedVolumeSource | VolumeFrameSource | SlideTileSource
 
 /** Saved lazy-time state of one volume. */
 export type NVDocumentSource = {
@@ -171,15 +175,16 @@ export interface SourceRestore {
 
 async function open(
   restore: SourceRestore,
-  s: NVDocumentSource,
+  descriptor: VolumeSourceDescriptor,
   streamed: boolean,
   name: string,
-): Promise<ChunkedVolumeSource | VolumeFrameSource | null> {
+  slide = false,
+): Promise<DocumentSource | null> {
   if (!restore.resolve) return null
   const { signal } = restore
   try {
     const opening = Promise.resolve(
-      restore.resolve(s.descriptor, { signal, streamed }),
+      restore.resolve(descriptor, { signal, streamed, slide }),
     )
     // A resolver that ignores the signal cannot hold a superseded load, even
     // one that aborted it synchronously.
@@ -202,9 +207,7 @@ async function open(
   }
 }
 
-function dispose(
-  src: ChunkedVolumeSource | VolumeFrameSource | null | undefined,
-) {
+function dispose(src: DocumentSource | null | undefined) {
   if (src && 'dispose' in src) src.dispose?.()
 }
 
@@ -258,10 +261,10 @@ export async function attachFrameSource(
   restore: SourceRestore,
 ): Promise<void> {
   const name = vol.name ?? 'volume'
-  const src = await open(restore, s, false, name)
+  const src = await open(restore, s.descriptor, false, name)
   if (!src) return
-  if ('fetchChunk' in src) {
-    log.warn(`loadDocument: source of "${name}" is streamed, expected frames`)
+  if ('fetchChunk' in src || !('load' in src)) {
+    log.warn(`loadDocument: source of "${name}" is not a frame source`)
     dispose(src)
     return
   }
@@ -303,7 +306,7 @@ export async function restoreStreamedVolume(
   restore: SourceRestore,
 ): Promise<NVImage | null> {
   const name = v.name ?? v.source.descriptor.url
-  const src = await open(restore, v.source, true, name)
+  const src = await open(restore, v.source.descriptor, true, name)
   if (!src || !('fetchChunk' in src)) {
     dispose(src)
     log.warn(`loadDocument: streamed volume "${name}" not restored: no source`)
@@ -346,4 +349,23 @@ export async function restoreStreamedVolume(
       await nv.setVolume(nv.volumes.indexOf(vol), display)
   }
   return vol
+}
+
+/**
+ * Reopen a slide plane's saved source through the resolver; null (warned)
+ * when unavailable or not a slide source.
+ */
+export async function openSlideSource(
+  restore: SourceRestore,
+  descriptor: VolumeSourceDescriptor,
+): Promise<SlideTileSource | null> {
+  // Untrusted document data, handed to host code.
+  if (typeof descriptor.kind !== 'string' || typeof descriptor.url !== 'string')
+    return null
+  const src = await open(restore, descriptor, false, descriptor.url, true)
+  if (src && 'fetchTileBytes' in src) return src
+  dispose(src)
+  if (!restore.signal.aborted)
+    log.warn(`loadDocument: slide source ${descriptor.url} unavailable`)
+  return null
 }

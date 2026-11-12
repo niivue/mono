@@ -51,8 +51,10 @@ import {
   attachFrameSource,
   checkedSource,
   type DocumentSourceResolver,
+  openSlideSource,
   restoreStreamedVolume,
   type SourceRestore,
+  savedDescriptor,
 } from '@/documentSources'
 import {
   addUndoBitmap,
@@ -8017,6 +8019,9 @@ export default class NiiVue extends EventTarget {
       colorManagement: slide.colorManagement ? undefined : false,
       manifest: sp.slide.manifest,
       manifestUrl: sp.slide.manifestUrl || undefined,
+      source: slide.sourceDescriptor
+        ? savedDescriptor(slide.sourceDescriptor)
+        : undefined,
       pixelToWorld: [...sp.pixelToWorld],
       levelIndex: sp.levelIndex,
       drawingRLE: dr ? encodeRLE(dr.img) : undefined,
@@ -8034,20 +8039,51 @@ export default class NiiVue extends EventTarget {
     }
   }
 
-  // Rebuild the slide plane (and its drawing) from a document. Reconstructs the
-  // NVSlide from its manifest (tiles refetch via byte ranges); custom sources
-  // need their decoders re-registered by the app for tiles to load.
+  // Rebuild the slide plane (and its drawing) from a document: a saved source
+  // through the host's resolver, else the hosted manifest, else the embedded one
+  // (tiles refetch via byte ranges). The saved focal plane / time point is
+  // selected before the slide attaches.
   private async _restoreSlidePlaneFromDoc(
     sp: NVDocument.NVDocumentSlidePlane,
-    signal: AbortSignal,
+    restore: SourceRestore,
   ): Promise<void> {
-    const slide = sp.manifestUrl
+    const { signal } = restore
+    let slide: NVSlide | undefined
+    if (sp.source) {
+      const src = await openSlideSource(restore, sp.source)
+      if (signal.aborted) return src?.dispose?.()
+      if (src) slide = NVSlide.fromSource(src)
+      // The embedded manifest of a TIFF, Zarr or DICOM source has no ranges.
+      else if (!sp.manifestUrl) return
+    }
+    slide ??= sp.manifestUrl
       ? await NVSlide.fromManifestUrl(sp.manifestUrl, {}, signal)
       : new NVSlide(sp.manifest)
+    const plane = sp.manifest.levels[0]?.plane ?? { z: 0, t: 0 }
+    const shown = slide.planeIndex
+    if (!signal.aborted && (plane.z !== shown.z || plane.t !== shown.t)) {
+      try {
+        await slide.setPlaneIndex(plane, { signal })
+      } catch (err) {
+        if (!signal.aborted)
+          log.warn(
+            `loadDocument: slide plane z ${plane.z}, t ${plane.t} not restored`,
+            err,
+          )
+      }
+    }
     if (signal.aborted) {
       slide.dispose()
       return
     }
+    // Annotations are in base pixels: a slide whose size moved cannot take them.
+    const sameSize =
+      slide.manifest.width === sp.manifest.width &&
+      slide.manifest.height === sp.manifest.height
+    if (!sameSize)
+      log.warn(
+        `loadDocument: slide is ${slide.manifest.width}x${slide.manifest.height}, saved ${sp.manifest.width}x${sp.manifest.height}; annotations not restored`,
+      )
     // Before setSlidePlane primes tiles, so hidden channels are not fetched.
     sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
       try {
@@ -8074,7 +8110,7 @@ export default class NiiVue extends EventTarget {
       return
     }
     this._ownsSlidePlane = true
-    if (signal.aborted) return
+    if (signal.aborted || !sameSize) return
     if (
       sp.drawingRLE &&
       sp.drawingWidth &&
@@ -8348,7 +8384,7 @@ export default class NiiVue extends EventTarget {
     // Restore a registered slide plane + its slide-space drawing (v8+).
     if (doc.slidePlane) {
       try {
-        await this._restoreSlidePlaneFromDoc(doc.slidePlane, load.signal)
+        await this._restoreSlidePlaneFromDoc(doc.slidePlane, restore)
         if (load.signal.aborted) return
       } catch (err) {
         if (load.signal.aborted) return

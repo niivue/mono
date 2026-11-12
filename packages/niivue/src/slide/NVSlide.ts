@@ -1,5 +1,6 @@
 import { lookupColorMap } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
+import type { VolumeSourceDescriptor } from '@/NVTypes'
 import {
   checkChannelInfo,
   defaultSlideChannels,
@@ -1160,6 +1161,11 @@ export class NVSlide extends EventTarget {
   /** The committed plane's manifest. */
   get manifest(): NVSlideManifest {
     return this._manifest
+  }
+
+  /** How a document reopens this slide's source, when it says. */
+  get sourceDescriptor(): VolumeSourceDescriptor | undefined {
+    return this._source.descriptor
   }
 
   /** The source's focal planes and time points; {z: 1, t: 1} for a fixed source. */

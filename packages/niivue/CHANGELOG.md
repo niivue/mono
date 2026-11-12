@@ -1,3 +1,18 @@
+## 1.0.0-rc.180 (2026-11-12)
+
+### Fixes
+
+- **niivue:** a shared render-tile edge picks with the tile hitTest chose ([4029500b](https://github.com/niivue/mono/commit/4029500b))
+- **niivue:** SlideRendererGPU.destroy frees the device it requested ([6bcf0dab](https://github.com/niivue/mono/commit/6bcf0dab))
+- **niivue:** pick a slide plane with the render tile under the point ([#739](https://github.com/niivue/mono/issues/739))
+- **niivue:** double-click on a slide plane places the crosshair ([1573183e](https://github.com/niivue/mono/commit/1573183e))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.179 (2026-11-12)
 
 ### Features

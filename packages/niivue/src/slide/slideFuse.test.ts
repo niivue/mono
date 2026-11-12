@@ -169,10 +169,45 @@ describe('fuseUniforms', () => {
     const [head, width, , , rest, s] = Float32Array.from(
       fuseUniforms(layer, 0, false),
     ) as unknown as number[]
-    const n = f(f(f(f(f(v) * s) - head) - rest) * 255)
-    const g = Math.round(n / width)
+    const n = f(f(Math.max(f(f(v) * s) - head, -3.4e38) - rest) * 255)
+    let g = Math.floor(f(f(n / width) + 0.5))
+    if (f(f(g - 0.5) * width) > n) g -= 1
+    else if (f(f(g + 0.5) * width) <= n) g += 1
     return n > 0 ? Math.min(g, 255) : 0
   }
+
+  it('matches the CPU within a level across centres, widths and samples', () => {
+    const M = Number.MAX_VALUE
+    const windows: [number, number][] = [[-M, M]]
+    for (const c of [0, 1, 1e-30, 1e30, 1e200, 1e-200, 3e38, 1e8])
+      for (const sign of [1, -1])
+        for (let k = -1000; k <= 1020; k += 25) {
+          const h = 2 ** (k - 1)
+          windows.push([sign * c - h, sign * c + h])
+        }
+    const bad: string[] = []
+    for (const [calMin, calMax] of windows) {
+      if (!(calMin < calMax)) continue
+      const c = calMin / 2 + calMax / 2
+      const q = calMax / 4 - calMin / 4
+      const v = Float32Array.from(
+        [0, 2 ** -149, 1e-30, 1, 1e30, 3e38].flatMap((x) => [x, -x]),
+      )
+      const all = Float32Array.from([...v, f(c), f(c - q), f(c + q)])
+      const layer = { plane: 0, colormap: 'gray', calMin, calMax }
+      const cpu = fuseSamples(all, all.length, {
+        layers: [layer],
+        additive: false,
+        invert: false,
+      })
+      all.forEach((x, i) => {
+        const gpu = level(calMin, calMax, x)
+        if (Math.abs(gpu - (cpu[i * 4] as number)) > 1)
+          bad.push(`${calMin}..${calMax} at ${x}: ${gpu} vs ${cpu[i * 4]}`)
+      })
+    }
+    expect(bad).toEqual([])
+  })
 
   it('keeps every uniform a finite, nonzero float32', () => {
     for (const [lo, hi] of [

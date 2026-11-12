@@ -186,6 +186,7 @@ const exponent = (x: number): number => Math.ceil(Math.log2(Math.abs(x)))
  * brings the width near 1, so a window neither overflows nor underflows float32
  * and every ratio stays exact; a head/rest split, as rounding calMin to float32
  * alone shifts a narrow window at large values (float32 ulp at 1e8 is 8).
+ * Windows past what s can scale take the two branches below.
  */
 export function fuseUniforms(
   { calMin, calMax }: FuseLayer,
@@ -193,28 +194,37 @@ export function fuseUniforms(
   invert: boolean,
 ): [number, number, number, number, number, number] {
   const width = calMax - calMin
-  // s stays a normal float32 and keeps calMin * s finite.
-  const k = Math.min(
-    126,
-    Math.max(-126, exponent(width), exponent(calMin) - 126),
-  )
-  const s = 2 ** -k
+  const inv = invert ? 1 : 0
+  // Ideal k: width * s near 1, |calMin * s| at most 2^126.
+  const ideal = Math.max(exponent(width), exponent(calMin) - 126)
+  if (ideal > 126) {
+    // s would leave float32 normals (-1e75..1e75): the window normalised,
+    // level = (v * s / W - calMin / width) * 255 with W = width * s, capped
+    // where float32 samples move it by under 2^-80. Halved so width cannot
+    // overflow float64; calMin / width clamped as the level then saturates.
+    const half = calMax / 2 - calMin / 2
+    const w = Math.min(2 ** 90, half * 2 ** -125)
+    const start = Math.min(1e6, Math.max(-1e6, calMin / 2 / half)) * w
+    const head = Math.fround(start)
+    return [head, w, row, inv, start - head, 2 ** -126]
+  }
+  const s = 2 ** -Math.max(-126, ideal)
+  if (ideal < -126 && width < 2 ** -149) {
+    // Under float32 spacing (-1e-200..1e-200): at most one float32 p in the
+    // window, so a step. v below p is 0, above 255, and p gets its level
+    // through rest, against a width far under p's neighbours' 2^-23 * s.
+    const p =
+      [Math.fround(calMin), Math.fround(calMax)].find(
+        (x) => x >= calMin && x <= calMax,
+      ) ?? Math.fround(calMax)
+    const level = Math.min(
+      255,
+      Math.max(0, Math.round(((p - calMin) * 255) / width)),
+    )
+    return [p * s, 2 ** -100, row, inv, (-level * 2 ** -100) / 255, s]
+  }
   const head = Math.fround(calMin * s)
-  const u: [number, number, number, number, number, number] = [
-    head,
-    width * s,
-    row,
-    invert ? 1 : 0,
-    calMin * s - head,
-    s,
-  ]
-  if (u.every((x) => Number.isFinite(Math.fround(x)))) return u
-  // Past float32 even scaled (-1e80..1e80): the normalised form, (v / W -
-  // calMin / W) / 1, halved so W itself cannot overflow float64. 1 / W may
-  // round to 0: a float32 sample then moves the level by under 1.
-  const half = calMax / 2 - calMin / 2
-  const start = Math.min(1e6, Math.max(-1e6, calMin / 2 / half))
-  return [Math.fround(start), 1, row, invert ? 1 : 0, 0, 0.5 / half]
+  return [head, width * s, row, inv, calMin * s - head, s]
 }
 
 /** Colormap rows of a renderer's 256-wide RGBA8 LUT texture, added on first use. */

@@ -30,21 +30,24 @@ export const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
-/** The slide's files in `slide.instances` order; `files` as indexed, in the same order. */
-export function filesFor(
-  slide: SlideIndexSlide,
+/** Looks up an instance's file among the indexed `files` (by its index key), checking it is unchanged. */
+export function fileFor(
   files: readonly File[],
-): File[] {
+): (inst: { file: string; size: number; version: string }) => File {
   const keys = fileKeys(files)
   const byKey = new Map(files.map((f, i) => [keys[i], f]))
-  return slide.instances.map((inst) => {
+  return (inst) => {
     const file = byKey.get(inst.file)
     if (!file) throw new Error(`${inst.file} is not among the files`)
     if (file.size !== inst.size || String(file.lastModified) !== inst.version)
       throw new Error(`${inst.file} changed since it was indexed`)
     return file
-  })
+  }
 }
+
+/** The slide's files in `slide.instances` order; `files` as indexed, in the same order. */
+export const filesFor = (slide: SlideIndexSlide, files: readonly File[]) =>
+  slide.instances.map(fileFor(files))
 
 /**
  * The fragments of a frame's item-led span (as read from `offset - 8`): each
@@ -78,11 +81,25 @@ export function fragmentsOf(
   return fragments
 }
 
+/** A frame's payload from its item-led span: its one fragment, or its fragments joined. */
+export function joinFragments(span: Uint8Array, what: string): Uint8Array {
+  const parts = fragmentsOf(span, what)
+  if (parts.length === 1) return span.subarray(8) // one fragment: no copy
+  const out = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0))
+  let o = 0
+  for (const p of parts) {
+    out.set(span.subarray(p.offset, p.offset + p.length), o)
+    o += p.length
+  }
+  return out
+}
+
 /** `read`, rejecting with the signal's reason as soon as it aborts (File.slice reads take none). */
 export function abortable<T>(
   read: Promise<T>,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<T> {
+  if (!signal) return read
   if (signal.aborted) return Promise.reject(signal.reason)
   let onAbort = () => {}
   return Promise.race([
@@ -170,15 +187,7 @@ export class DicomWsiSource implements SlideTileSource {
     // Read the item header too: its tag proves the index still matches the file.
     const span = await this.read(file, offset - 8, offset + length, signal)
     this.host?.addWireBytes(span.byteLength)
-    const parts = fragmentsOf(span, `${file.name} frame ${frames.frame[slot]}`)
-    if (parts.length === 1) return span.subarray(8) // one fragment: no copy
-    const out = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0))
-    let o = 0
-    for (const p of parts) {
-      out.set(span.subarray(p.offset, p.offset + p.length), o)
-      o += p.length
-    }
-    return out
+    return joinFragments(span, `${file.name} frame ${frames.frame[slot]}`)
   }
 
   /** Later reads, and reads in flight, reject AbortError. The files are the caller's. Idempotent. */

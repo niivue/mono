@@ -1,3 +1,26 @@
+## 1.0.0-rc.178 (2026-11-12)
+
+### Features
+
+- lazy OME-Zarr time (VolumeFrameSource) and label stores ([5d13803f](https://github.com/niivue/mono/commit/5d13803f))
+
+### Fixes
+
+- **niivue:** join the volume addVolume produced, not the last one ([e5cdfd79](https://github.com/niivue/mono/commit/e5cdfd79))
+- **niivue:** a volume added mid-fetch keeps the frame switch alive ([84708e9e](https://github.com/niivue/mono/commit/84708e9e))
+- **niivue:** tie a pending frame fetch to its volumes, not the group key ([70700d3a](https://github.com/niivue/mono/commit/70700d3a))
+- **niivue:** PR 737 r7 wrap frame sources and emit after the group commits ([393eeac7](https://github.com/niivue/mono/commit/393eeac7))
+- **niivue:** PR 737 r6 frame-source image ownership and scene replacement ([85a9b25d](https://github.com/niivue/mono/commit/85a9b25d))
+- **niivue:** PR 737 r5 an NVImage loaded directly gets its own frame state ([2a9fc03f](https://github.com/niivue/mono/commit/2a9fc03f))
+- **niivue:** PR 737 r4 a shorter volume joining a frame fetch re-clamps the group ([2117a9ff](https://github.com/niivue/mono/commit/2117a9ff))
+- **niivue,nv-ext-tile:** PR 737 review fixes for lazy OME-Zarr frames ([8eb4bf79](https://github.com/niivue/mono/commit/8eb4bf79))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.177 (2026-11-12)
 
 ### Features

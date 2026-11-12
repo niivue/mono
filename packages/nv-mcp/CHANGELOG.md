@@ -1,3 +1,18 @@
+## 1.0.0-rc.173 (2026-11-12)
+
+### Features
+
+- lazy OME-Zarr time (VolumeFrameSource) and label stores ([5d13803f](https://github.com/niivue/mono/commit/5d13803f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.178
+- Updated uikit to 1.0.0-rc.176
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.172 (2026-11-12)
 
 ### Updated Dependencies

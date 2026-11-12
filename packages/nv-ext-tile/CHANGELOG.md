@@ -1,3 +1,25 @@
+## 1.0.0-rc.84 (2026-11-12)
+
+### Features
+
+- lazy OME-Zarr time (VolumeFrameSource) and label stores ([5d13803f](https://github.com/niivue/mono/commit/5d13803f))
+
+### Fixes
+
+- **nv-ext-tile,demo-ext-tile:** PR 737 r3 review fixes ([f268bc47](https://github.com/niivue/mono/commit/f268bc47))
+- **nv-ext-tile:** PR 737 r2 frame cache fixes ([4d887fc5](https://github.com/niivue/mono/commit/4d887fc5))
+- **niivue,nv-ext-tile:** PR 737 review fixes for lazy OME-Zarr frames ([8eb4bf79](https://github.com/niivue/mono/commit/8eb4bf79))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.178
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.83 (2026-11-12)
 
 ### Updated Dependencies

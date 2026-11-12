@@ -94,11 +94,69 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.expected).not.toBeNull()
     expect(r.pos).not.toEqual(r.before)
     for (let i = 0; i < 3; i++) expect(r.mm[i]).toBeCloseTo(r.expected[i], 3)
-    // locationChange has no payload without a volume or mesh until #739 adds
-    // the slide readout; any event fires once, after the crosshair moved.
-    // ponytail: tighten to exactly one event once #739 lands.
-    expect(r.events.length).toBeLessThanOrEqual(1)
-    for (const e of r.events)
-      expect(e).toEqual({ axCorSag: r.render, pos: r.pos })
+    // One locationChange, after the crosshair moved.
+    expect(r.events).toEqual([{ axCorSag: r.render, pos: r.pos }])
+  })
+
+  // Each render tile has its own camera: the same tile-relative point in two
+  // identical render tiles must pick the same slide pixel. A mosaic needs a
+  // volume for its tiles; the pick is the one the double-click fallback uses.
+  test(`slide pick uses the render tile under the point (${backend})`, async ({
+    page,
+  }) => {
+    const r = await page.evaluate(`(async () => {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        const adapter = await navigator.gpu.requestAdapter().catch(() => null)
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const { default: NiiVue, NVSlide, SLICE_TYPE, axialPlaneTransform } =
+        await import('/src/index.ts')
+      const n = 16
+      const slide = NVSlide.fromSource({
+        manifest: {
+          id: 'p', name: 'p', width: n, height: n, dtype: 'uint8', channels: 'rgba',
+          levels: [{ index: 0, width: n, height: n, downsample: 1, tileWidth: n, tileHeight: n,
+            columns: 1, rows: 1, codec: 'raw-rgba', tiles: [{ x: 0, y: 0, width: n, height: n }] }],
+        },
+        bind() {},
+        fetchTileBytes: async () => new Uint8Array(n * n * 4).fill(255),
+      })
+      const c = document.createElement('canvas')
+      c.style.cssText = 'position:fixed;left:0;top:0;width:600px;height:300px'
+      document.body.appendChild(c)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        devicePixelRatio: 1,
+        sliceType: SLICE_TYPE.RENDER,
+      })
+      await nv.attachToCanvas(c)
+      await nv.loadVolumes([{ url: '/volumes/sphere.nii.gz' }])
+      nv.mosaicString = 'R 0 R 0'
+      nv.azimuth = 0
+      nv.elevation = 90
+      nv.setSlidePlane(slide, {
+        pixelToWorld: axialPlaneTransform(n, n, {
+          xmin: -50, xmax: 50, ymin: -50, ymax: 50, z: 0,
+        }),
+      })
+      let frames = []
+      for (let i = 0; i < 100 && frames.length < 2; i++) {
+        await new Promise((res) => requestAnimationFrame(res))
+        frames = nv.view.slidePlane?.pickFrames ?? []
+      }
+      if (frames.length !== 2) return { frames: frames.length }
+      const hits = frames.map(({ ltwh }) =>
+        nv.slidePlanePick(ltwh[0] + 0.6 * ltwh[2], ltwh[1] + 0.4 * ltwh[3]))
+      return { frames: frames.length, hits }
+    })()`)
+    if ('skip' in r) {
+      test.skip(true, r.skip)
+      return
+    }
+    expect(r.frames).toBe(2)
+    expect(r.hits[0]).not.toBeNull()
+    expect(r.hits[1]?.x).toBeCloseTo(r.hits[0].x, 3)
+    expect(r.hits[1]?.y).toBeCloseTo(r.hits[0].y, 3)
   })
 }

@@ -1119,6 +1119,8 @@ export default class NVView {
     const crossLinesList: ReturnType<typeof buildLine>[] = []
     const boxEdges = packBoxEdges(md)
     const boxTiles: BoxTile[] = []
+    // Render tiles that draw the slide plane push their camera for picking.
+    if (this.slidePlane) this.slidePlane.pickFrames = []
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
       const ltwh = tile.leftTopWidthHeight as number[]
@@ -1712,12 +1714,12 @@ export default class NVView {
           )
         }
         // Capture this frame's camera for screen->slide picking (drawing).
-        this.slidePlane.pickFrame = {
+        this.slidePlane.pickFrames?.push({
           mvp: new Float32Array(mvpMatrix as Float32Array),
           ltwh: [ltwh[0], ltwh[1], ltwh[2], ltwh[3]],
           bx: this._boundsOffsetX,
           by: this._boundsOffsetY,
-        }
+        })
       }
       // Layer 2c: Orientation cube (RENDER tiles only, skip mosaic renders and global3d)
       if (

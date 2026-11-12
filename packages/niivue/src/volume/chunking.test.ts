@@ -1265,8 +1265,9 @@ describe('chunkVolumeMultiLOD — budget pass cost', () => {
     // detail pass used to build sixteen of them before the floor climb threw
     // them all away (236 s end to end). The octree lower bound now rules those
     // candidates out without balancing them, so the whole plan takes ~0.4 s
-    // (~0.55 s under coverage on an M-series Mac). The 2 s bound below is the
-    // regression guard: over 3x headroom, but a multi-second slowdown fails.
+    // (~1 s under coverage on an M-series Mac, ~1.4 s on CI's 4 vCPUs, 2.6 s
+    // seen under heavy contention). The 6 s bound stays under one 7 s balance
+    // pass, so the regression still fails; 2 s flaked on CI.
     const levels: Vec3i[] = []
     let d: Vec3i = [8192, 4096, 1024]
     for (let i = 0; i < 7; i++) {
@@ -1280,7 +1281,7 @@ describe('chunkVolumeMultiLOD — budget pass cost', () => {
       2048,
       { cellEdge: 128, maxBricks: 240 },
     )
-    expect(performance.now() - t0).toBeLessThan(2000)
+    expect(performance.now() - t0).toBeLessThan(6000)
     expect(plan.chunks.length).toBeLessThanOrEqual(240)
     // Multi-LOD bricks place in the common grid but fetch from their own
     // level, so the single-level tex/voxel identity does not apply; check the

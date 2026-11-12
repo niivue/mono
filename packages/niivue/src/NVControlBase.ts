@@ -5338,9 +5338,25 @@ export default class NiiVue extends EventTarget {
         mm = [snapped[0], snapped[1], snapped[2]]
       }
     }
-    const frac = this.model.mm2scene(mm)
-    for (let i = 0; i < 3; i++) {
-      frac[i] = Math.max(0, Math.min(1, frac[i]))
+    const sp = this._slidePlane
+    let frac: vec3
+    if (sp) {
+      // The slide can reach past the scene extents (a slide-only scene has
+      // only placeholder ones, stored inverted): clamp in mm to their union
+      // and keep the fraction unclamped.
+      const { width, height } = sp.slide.manifest
+      const corners = slideExtentCorners(sp.pixelToWorld, width, height)
+      const { extentsMin, extentsMax } = this.model
+      const clamped = mm.map((v, i) => {
+        const axis = [...corners.map((c) => c[i]), extentsMin[i], extentsMax[i]]
+        return Math.max(Math.min(...axis), Math.min(Math.max(...axis), v))
+      })
+      frac = this.model.mm2scene(clamped)
+    } else {
+      frac = this.model.mm2scene(mm)
+      for (let i = 0; i < 3; i++) {
+        frac[i] = Math.max(0, Math.min(1, frac[i]))
+      }
     }
     this.model.scene.crosshairPos = frac
     applyPanFollowsCrosshair(this)

@@ -163,6 +163,24 @@ describe('slide plane readout', () => {
     two.dispose()
   })
 
+  test('the crosshair reaches slide pixels past the default scene extents', () => {
+    const { slide } = gatedSlide()
+    const nv = new NiiVue({ backend: 'webgl2' })
+    spyOn(nv, 'drawScene').mockImplementation(() => {})
+    // 50 mm pixels: the 8 px slide spans 0..400 mm, past the empty scene's 100.
+    const scale = [50, 0, 0, 0, 0, 50, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    nv.setSlidePlane(slide, { pixelToWorld: scale })
+    nv.setCrosshairPos([250, 100, 0])
+    expect(nv.slideSampleAt()).toMatchObject({ x: 5, y: 2 })
+    // Still clamped, to the slide's far edge.
+    nv.setCrosshairPos([1000, 100, 0])
+    expect(nv.model.scene2mm(nv.model.scene.crosshairPos)[0]).toBeCloseTo(
+      400,
+      6,
+    )
+    slide.dispose()
+  })
+
   test('renaming a channel re-emits the readout', () => {
     const { slide } = gatedSlide()
     const nv = new NiiVue({ backend: 'webgl2' })

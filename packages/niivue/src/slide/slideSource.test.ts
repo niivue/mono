@@ -255,6 +255,40 @@ describe('ManifestRangeSource transport', () => {
       s.fetchTileBytes(level, level.tiles[0] as never, 'L0'),
     ).rejects.toMatchObject({ name: 'AbortError' })
   })
+
+  test('after dispose an ICC read, ranged or whole, never reaches fetch', async () => {
+    for (const icc of [
+      { url: 'icc.icm' },
+      { url: 'icc.icm', offset: 0, length: 4 },
+    ]) {
+      let calls = 0
+      const s = new ManifestRangeSource(
+        { ...manifest(), iccProfile: icc } as NVSlideManifest,
+        {
+          // Ignores the signal, as a custom fetch may.
+          fetch: async () => {
+            calls++
+            return new Response(new Uint8Array(4))
+          },
+          baseUrl: 'https://h.test/',
+        },
+      )
+      s.bind({
+        resolveUrl: (u) => u,
+        addWireBytes() {},
+        rangeHit() {},
+        rangeFallback() {},
+        pushRangeEvent() {},
+        updateRangeEvent() {},
+        channelInfoChanged() {},
+      })
+      s.dispose()
+      await expect(s.fetchIccProfile()).rejects.toMatchObject({
+        name: 'AbortError',
+      })
+      expect(calls).toBe(0)
+    }
+  })
 })
 
 describe('tile decoders', () => {

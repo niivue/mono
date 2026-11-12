@@ -467,6 +467,8 @@ export class ManifestRangeSource implements SlideTileSource {
       throw new Error(`ICC profile of ${length} bytes`)
     if (offset !== undefined && length !== undefined)
       return this.fetchFragment(url, { offset, length }, 'icc', signal)
+    // As fetchFragment: a disposed source never reaches fetch (a custom one may ignore the signal).
+    this.closed.signal.throwIfAborted()
     const response = await this.fetch(url, {
       signal: signal
         ? AbortSignal.any([signal, this.closed.signal])

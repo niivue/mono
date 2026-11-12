@@ -319,16 +319,20 @@ loadButton.onclick = async () => {
   const level = Number(levelSelect.value)
   const timepoint = Number(timepointInput.value) || 0
   say(`Reading ${channels.length} channel(s) at level ${level}...`)
+  // Another store may be opened while this one loads: its result is then stale.
+  const loading = source
   try {
-    const volumes = await omeZarrVolumesFrom(source, {
+    const volumes = await omeZarrVolumesFrom(loading, {
       channels,
       level,
       timepoint,
       lazyTime: true,
     })
+    if (source !== loading) return
     shownSource = null
     await nv1.loadVolumes(volumes)
-    shownSource = source
+    shownSource = loading
+    if (source !== loading) return
     lastLoaded = volumes
     applyDisplay(volumes)
     const vol = nv1.volumes[0]

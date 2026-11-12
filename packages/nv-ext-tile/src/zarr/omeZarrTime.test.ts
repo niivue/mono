@@ -280,3 +280,25 @@ test('an aborted caller of a shared read rejects at once', async () => {
     ),
   ).toBe('stop')
 })
+
+test('a settled read leaves no listener on the caller signal', async () => {
+  const cache = omeZarrFrameCache(1 << 20, async (_c, t) =>
+    new Uint8Array(1).fill(t),
+  )
+  const signal = new AbortController().signal
+  let listeners = 0
+  const add = signal.addEventListener.bind(signal)
+  const remove = signal.removeEventListener.bind(signal)
+  Object.assign(signal, {
+    addEventListener: (...a: Parameters<typeof add>) => {
+      listeners++
+      add(...a)
+    },
+    removeEventListener: (...a: Parameters<typeof remove>) => {
+      listeners--
+      remove(...a)
+    },
+  })
+  for (let t = 0; t < 3; t++) await cache.load(0, t, signal)
+  expect(listeners).toBe(0)
+})

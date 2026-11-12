@@ -700,18 +700,18 @@ export function omeZarrFrameCache(
       const shared = pending
       // Each caller's abort rejects its own promise at once, whatever the others do.
       return new Promise((resolve, reject) => {
-        shared.then(resolve, reject)
-        signal.addEventListener(
-          'abort',
-          () => {
-            reject(signal.reason)
-            if (--run.waiting === 0 && reads.get(key) === run) {
-              run.ctl.abort()
-              drop(key)
-            }
-          },
-          { once: true },
-        )
+        const onAbort = () => {
+          reject(signal.reason)
+          if (--run.waiting === 0 && reads.get(key) === run) {
+            run.ctl.abort()
+            drop(key)
+          }
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        // A long-lived signal must not collect a listener per settled read.
+        shared
+          .finally(() => signal.removeEventListener('abort', onAbort))
+          .then(resolve, reject)
       })
     },
   }

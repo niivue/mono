@@ -47,6 +47,7 @@ const iccToggle = document.getElementById('icc') as HTMLInputElement
 const hud = document.getElementById('hud') as HTMLDivElement
 const hudToggle = document.getElementById('hudToggle') as HTMLInputElement
 const gridToggle = document.getElementById('grid') as HTMLInputElement
+const scaleBarToggle = document.getElementById('scaleBar') as HTMLInputElement
 const backendSelect = document.getElementById('backend') as HTMLSelectElement
 const aaToggle = document.getElementById('aa') as HTMLInputElement
 const hidpiToggle = document.getElementById('hidpi') as HTMLInputElement
@@ -116,6 +117,7 @@ function watchPixelRatio(): void {
 }
 watchPixelRatio()
 hidpiToggle.addEventListener('change', () => requestRender())
+scaleBarToggle.addEventListener('change', () => requestRender())
 // Outlines each drawn tile; fires 'change', which redraws.
 gridToggle.addEventListener('change', () =>
   slide?.setTileGridVisible(gridToggle.checked),
@@ -176,7 +178,9 @@ function render(): void {
   if (needsFit) slide.fitToScreen(s)
   needsFit = false
   slide.clampViewport(s)
-  renderer.overlay = slideOverlayContent(slide, s, gestures)
+  renderer.overlay = slideOverlayContent(slide, s, gestures, {
+    isRulerVisible: scaleBarToggle.checked,
+  })
   if (renderer instanceof SlideRendererGPU) renderer.render([slide], s)
   else if (gl) renderer.draw(gl, [slide], s)
   updateHud(s)

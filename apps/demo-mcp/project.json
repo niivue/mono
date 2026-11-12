@@ -32,6 +32,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
+        "bundledDeps",
         "{projectRoot}/vite.config.ts",
         "{projectRoot}/src/**/*",
         "{projectRoot}/*.html"

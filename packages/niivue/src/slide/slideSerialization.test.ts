@@ -3,6 +3,7 @@ import { decode, encode } from 'cbor-x'
 
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import NiiVue from '@/index'
+import { log } from '@/logger'
 import { documentFile, parseJsonDocument } from '@/testing/headless'
 
 // Guards the wire contract NVDocument uses to round-trip a slide plane + its
@@ -157,6 +158,40 @@ describe('slide channels in a document', () => {
   test('restores and saves colour management turned off', async () => {
     const sp = await roundTrip(slidePlane({ colorManagement: false }))
     expect(sp.colorManagement).toBe(false)
+  })
+
+  // The manifest alone, as a VolumeSliceSource plane saves it (levels state no
+  // codec): the plane, its channels and its drawing restore, with one warning.
+  test('restores a codec-less channelInfo plane and its drawing', async () => {
+    const img = new Uint8Array(tile * tile).fill(3)
+    const rle = encodeRLE(img)
+    const channels = [
+      { name: 'a', colormap: 'gray', calMin: 10, calMax: 90, visible: true },
+      { name: 'b', colormap: 'blue', calMin: 1, calMax: 2, visible: false },
+    ]
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    try {
+      const sp = await roundTrip(
+        slidePlane({
+          channels,
+          drawingRLE: {
+            $ta: 'Uint8Array',
+            b64: Buffer.from(rle).toString('base64'),
+          },
+          drawingWidth: tile,
+          drawingHeight: tile,
+        }),
+      )
+      expect(sp.channels).toEqual(channels)
+      // The saved JSON keeps the drawing tagged, as it was loaded.
+      const { b64 } = sp.drawingRLE as { b64: string }
+      expect(decodeRLE(Buffer.from(b64, 'base64'), tile * tile)).toEqual(img)
+      expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+        expect.stringMatching(/without its sample source/),
+      ])
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test('omits the blend an RGB slide is fixed to', async () => {

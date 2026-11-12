@@ -10,6 +10,7 @@ import type {
 import {
   isFuseTile,
   rawPoolBytes,
+  SlideBudgetRegistration,
   type SlideRendererOptions,
   tileTextureBudget,
 } from '@/slide/slideFuse'
@@ -52,6 +53,7 @@ export class SlideRenderer extends NVRenderer {
   private readonly _textures: TileTextureCache<TileTextureGL>
   private readonly _gutter = new TileGutterGL()
   private readonly _fuser: TileFuserGL
+  private readonly _budget: SlideBudgetRegistration
   /**
    * UIKit overlay hook: invoked at the end of every frame (after the slide tiles,
    * before GL state is restored) so a widget can draw over the slide in screen
@@ -75,7 +77,9 @@ export class SlideRenderer extends NVRenderer {
 
   constructor({ maxRawPoolBytes }: SlideRendererOptions = {}) {
     super()
-    this._fuser = new TileFuserGL(rawPoolBytes(maxRawPoolBytes))
+    const poolBytes = rawPoolBytes(maxRawPoolBytes)
+    this._fuser = new TileFuserGL(poolBytes)
+    this._budget = new SlideBudgetRegistration(this, poolBytes)
     this._textures = new TileTextureCache<TileTextureGL>(
       DEFAULT_TILE_TEXTURE_BYTES,
       (entry) => this._gl?.deleteTexture(entry.texture),
@@ -139,11 +143,18 @@ export class SlideRenderer extends NVRenderer {
     this.isReady = true
   }
 
+  /** Draw `slides` with the context given to `init`; no-op before it. */
+  render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
+    if (this._gl) this.draw(this._gl, slides, screen)
+  }
+
+  /** @deprecated Use {@link render}; `draw` is removed with the frame plan. */
   draw(
     gl: WebGL2RenderingContext,
     slides: readonly NVSlide[],
     screen: NVSlideScreen,
   ): void {
+    this._budget.sync(slides)
     if (
       !this.isReady ||
       !this._shader ||
@@ -280,6 +291,7 @@ export class SlideRenderer extends NVRenderer {
   }
 
   destroy(): void {
+    this._budget.clear()
     this._textures.clear()
     this._fuser.destroy(this._gl)
     this._luts.clear(this._gl)

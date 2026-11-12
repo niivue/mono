@@ -58,7 +58,7 @@ for (const backend of ['webgl2', 'webgpu', 'webgpu-aa'] as const) {
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
         const r = new SlideRenderer()
         r.init(gl)
-        draw = () => r.draw(gl, [slide], screen)
+        draw = () => r.render([slide], screen)
       }
       // Read in the same task as the draw: a WebGPU canvas drops its texture once presented.
       const centre = async () => {
@@ -233,7 +233,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
         renderer = new SlideRenderer()
         renderer.init(gl)
-        draw = () => renderer.draw(gl, slides, screen)
+        draw = () => renderer.render(slides, screen)
         glError = () => gl.getError()
       }
       for (let i = 0; i < 100 && slides.some((s, k) => !s.cachedTile('L' + k + '/0/0') || !s.colorLut); i++) {

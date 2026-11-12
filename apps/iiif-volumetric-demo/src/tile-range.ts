@@ -179,11 +179,7 @@ async function createView(): Promise<SlideView> {
 function drawView(screen: NVSlideScreen): void {
   if (!view || !slide) return
   const slides = [slide]
-  if (view.kind === 'gpu') {
-    view.renderer.render(slides, screen)
-  } else {
-    view.renderer.draw(view.gl, slides, screen)
-  }
+  view.renderer.render(slides, screen)
 }
 
 function requestRender(): void {

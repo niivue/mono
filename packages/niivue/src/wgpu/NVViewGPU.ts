@@ -209,7 +209,16 @@ export default class NVView {
   private _cinematicScheduled = false
   private _cinematicOverlayVersion = 0
   /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
-  slidePlane: SlidePlaneState | null = null
+  private _slidePlane: SlidePlaneState | null = null
+  get slidePlane(): SlidePlaneState | null {
+    return this._slidePlane
+  }
+  set slidePlane(state: SlidePlaneState | null) {
+    // The renderer registers its budget only in draw: a removed slide must not keep it.
+    if (state?.slide !== this._slidePlane?.slide)
+      this.slidePlaneRenderer.clearBudget()
+    this._slidePlane = state
+  }
   // Bounds: pixel rect for sub-canvas rendering
   private _boundsWidth = 0
   private _boundsHeight = 0
@@ -3338,6 +3347,7 @@ export default class NVView {
     this.thumbnailRenderer.destroy()
     this.cinematicRenderer.destroy()
     this.sliceRenderer.destroy()
+    this.slidePlaneRenderer.destroy()
     this.volumeRenderer.destroy()
     if (this.device) {
       depthPick.destroy(this.device)

@@ -11,6 +11,7 @@ import type {
 import {
   isFuseTile,
   rawPoolBytes,
+  SlideBudgetRegistration,
   type SlideRendererOptions,
   tileTextureBudget,
 } from '@/slide/slideFuse'
@@ -156,6 +157,7 @@ export class SlideRendererGPU {
   private readonly _textures: TileTextureCache<TileTextureGPU>
   private readonly _gutter = new TileGutterGPU()
   private readonly _fuser: TileFuserGPU
+  private readonly _budget: SlideBudgetRegistration
   private readonly _uniformPool: GPUBuffer[] = []
   private _uniformCursor = 0
   /**
@@ -192,6 +194,7 @@ export class SlideRendererGPU {
     maxRawPoolBytes: number,
   ) {
     this._fuser = new TileFuserGPU(maxRawPoolBytes)
+    this._budget = new SlideBudgetRegistration(this, maxRawPoolBytes)
     this._textures = new TileTextureCache<TileTextureGPU>(
       DEFAULT_TILE_TEXTURE_BYTES,
       (entry) => entry.texture.destroy(),
@@ -349,6 +352,7 @@ export class SlideRendererGPU {
   }
 
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
+    this._budget.sync(slides)
     const placeholder = this._placeholderTexture
     if (!placeholder) return
     const dpr = screen.devicePixelRatio ?? 1
@@ -476,6 +480,7 @@ export class SlideRendererGPU {
   }
 
   destroy(): void {
+    this._budget.clear()
     this._msaaTexture?.destroy()
     this._msaaTexture = null
     this._textures.clear()

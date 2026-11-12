@@ -213,6 +213,7 @@ function fakeHost() {
       host.hits++
     },
     rangeFallback() {},
+    channelInfoChanged() {},
     pushRangeEvent(e: NVSlideRangeEvent) {
       events.set(e.label, e.status)
     },
@@ -1089,7 +1090,8 @@ describe('multi-channel OME-TIFF', () => {
     })
     expect(f32.manifest.dtype).toBe('uint16')
     // Quantized over the sample's min..max 100..134, windowed to its 2-98%.
-    const stored = (v: number) => ((v - 100) * 65535) / 34
+    // Divide before scaling (channelDisplay.ts), as Zarr.
+    const stored = (v: number) => ((v - 100) / 34) * 65535
     expect(f32.manifest.channelInfo?.[0]).toMatchObject({
       window: {
         calMin: stored(bin(59, 100, 134)),

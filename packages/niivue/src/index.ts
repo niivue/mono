@@ -260,18 +260,28 @@ export type {
   NVSlideChannelBlend,
   NVSlideChannelInfo,
   NVSlidePlaneIndex,
-  SlideSourceHost,
+  NVSlidePlaneAxes,
+  NVSlidePlacedPiece,
+  NVSlideLevelPlacement,
+  NVSlideRequestClass,
+  NVSlideRequestOwner,
+  NVSlideAttribution,
   SlideTileDecoder,
   SlideIccTransform,
+} from './slide/NVSlide'
+export { NVSlide } from './slide/NVSlide'
+export { toStored, toValue } from './slide/slideChannels'
+export type {
+  SlidePlaneCapable,
+  SlideSourceHost,
   SlideTileSource,
-} from './slide/NVSlide'
-export {
-  MAX_SLIDE_GRID,
-  ManifestRangeSource,
-  NVSlide,
-} from './slide/NVSlide'
+} from './slide/slideSource'
+export { MAX_SLIDE_GRID, ManifestRangeSource } from './slide/slideSource'
 export { SlideDrawing } from './slide/slideDrawing'
-export type { SlideRendererOptions } from './slide/slideFuse'
+export type {
+  SlideRendererBudget,
+  SlideRendererOptions,
+} from './slide/slideFuse'
 export type {
   AxialPlaneOptions,
   SlidePlaneTile,

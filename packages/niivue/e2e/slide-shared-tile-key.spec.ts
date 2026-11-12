@@ -56,7 +56,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
         renderer = new SlideRenderer()
         renderer.init(gl)
-        draw = () => renderer.draw(gl, slides, screen)
+        draw = () => renderer.render(slides, screen)
       }
       for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile('L0/0/0')); i++) {
         for (const s of slides) s.requestVisibleTiles(screen)

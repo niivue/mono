@@ -228,7 +228,7 @@ export function mountWsiSlideView(
     // Set the ruler geometry BEFORE the frame draws it (the renderer invokes the
     // overlay hook at the end of its own draw).
     updateRuler(screen)
-    renderer.draw(gl, [slide], screen)
+    renderer.render([slide], screen)
     const { level, requestedLevel } =
       slide.lastVisibleTiles ?? slide.visibleTiles(screen)
     const limit =

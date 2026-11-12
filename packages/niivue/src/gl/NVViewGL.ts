@@ -138,7 +138,16 @@ export default class NVGlview {
   sliceRenderer: SliceRenderer
   slidePlaneRenderer: SlidePlaneRenderer
   /** Optional WSI slide registered into volume mm space, drawn in the 3D render tile. */
-  slidePlane: SlidePlaneState | null = null
+  private _slidePlane: SlidePlaneState | null = null
+  get slidePlane(): SlidePlaneState | null {
+    return this._slidePlane
+  }
+  set slidePlane(state: SlidePlaneState | null) {
+    // The renderer registers its budget only in draw: a removed slide must not keep it.
+    if (state?.slide !== this._slidePlane?.slide)
+      this.slidePlaneRenderer.clearBudget()
+    this._slidePlane = state
+  }
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGLMeshGPU | null
   // Bounds: pixel rect for sub-canvas rendering
@@ -2386,6 +2395,7 @@ export default class NVGlview {
     this.thumbnailRenderer.destroy()
     this.cinematicRenderer.destroy()
     this.sliceRenderer.destroy()
+    this.slidePlaneRenderer.destroy()
     mesh.destroy(gl)
 
     this.gl = null

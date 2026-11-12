@@ -10,7 +10,18 @@ import type {
 } from '@niivue/niivue'
 import { omeLengthToMicrons } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
+import {
+  grayInto,
+  MAX_DEFAULT_VISIBLE,
+  MAX_TILE_SIZE,
+  MAX_TILES,
+  type Quantize,
+  quantizeRange,
+  storedToValue,
+  storedWindow,
+} from '../channelDisplay'
 import { sampleLevel } from '../levelSample'
+import { anySignal } from '../rangeFetch'
 import {
   checkOmeZarrIndex,
   omeroActiveChannels,
@@ -45,22 +56,9 @@ export interface ZarrSlideUrlOptions extends ZarrSlideOptions {
   signal?: AbortSignal
 }
 
-// As TiffSlideSource: one decoded tile stays under 64 MiB of RGBA.
-const MAX_TILE_SIZE = 4096
-// As TiffSlideSource: bounds the manifest's tile list.
-const MAX_TILES = 1 << 21
-// Each visible channel is a sample plane per tile in NVSlide's tile budget
-// (tileCapacity): 27 u16 planes of 512² fit 4 tiles in the default cache. Caps a
-// store that marks no channel inactive (many exports mark all active); a chosen
-// subset is honoured. The rest stay listed, hidden, for the caller to show.
-const MAX_DEFAULT_VISIBLE = 4
 // Zarr metadata stays HTTP-cacheable; chunk reads do not (see fromUrl).
 const METADATA_KEY = /(zarr\.json|\.zarray|\.zattrs|\.zgroup)$/
 
-// Stored = (v * k - lo) / span * 65535, with k = 1/2 when hi - lo overflows;
-// dividing before scaling keeps a subnormal span finite.
-// scale = 65535 / span, Infinity only for a subnormal span.
-type Quantize = { k: number; lo: number; span: number; scale: number }
 type Select = (
   y: zarr.Slice,
   x: zarr.Slice,
@@ -124,10 +122,7 @@ export class ZarrSlideSource implements SlideTileSource {
       // identical Range reads of a v3 shard (plan-tile punch list #10).
       const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
       // While opening, the open signal cancels metadata and data-range reads.
-      const signal =
-        !source && options.signal
-          ? AbortSignal.any([request.signal, options.signal])
-          : request.signal
+      const signal = anySignal(request.signal, source ? null : options.signal)
       const response = await fetchImpl(
         new Request(request, {
           signal,
@@ -288,41 +283,18 @@ export class ZarrSlideSource implements SlideTileSource {
               xs,
             )
           : null
-      let quantize: Quantize | null = null
-      let noData = false
-      if (quantized) {
-        let [lo, hi] = omeroRange ?? sample?.slice(2) ?? []
-        // A flat or empty sample says nothing of the rest: centre a window on
-        // it (one step per unit, or half its magnitude for a flat float) so
-        // values outside it stay distinct.
-        if (!(hi > lo)) {
-          noData = !Number.isFinite(lo)
-          const mid = noData ? 0 : lo
-          const half =
-            !noData && dtype.startsWith('float')
-              ? Math.max(Math.abs(mid) / 2, 1)
-              : 32767.5
-          ;[lo, hi] = [mid - half, mid + half]
-        }
-        const k = Number.isFinite(hi - lo) ? 1 : 0.5
-        const span = hi * k - lo * k
-        quantize = { k, lo: lo * k, span, scale: 65535 / span }
-      }
-      const toStored = (v: number) =>
-        quantize ? ((v * quantize.k - quantize.lo) / quantize.span) * 65535 : v
+      const [lo, hi] = omeroRange ?? sample?.slice(2) ?? []
+      const { quantize = null, noData = false } = quantized
+        ? quantizeRange(lo, hi, dtype.startsWith('float'))
+        : {}
       // Without a usable omero window: the 2-98% range of the sample, as for
       // volumes (calMinMax).
-      const [calMin, calMax] =
+      const window =
         omero && !noData
-          ? [toStored(omero.start), toStored(omero.end)]
+          ? storedWindow(quantize, omero.start, omero.end, bitsStored)
           : sample
-            ? [toStored(sample[0]), toStored(sample[1])]
-            : [0, 2 ** bitsStored - 1]
-      // Degenerate (constant or all-NaN data): setChannel would refuse it.
-      const window: NVSlideWindow =
-        calMax > calMin
-          ? { calMin, calMax }
-          : { calMin: 0, calMax: 2 ** bitsStored - 1 }
+            ? storedWindow(quantize, sample[0], sample[1], bitsStored)
+            : storedWindow(null, 0, 2 ** bitsStored - 1, bitsStored)
       return { quantize, window }
     }
     const shown = rgb
@@ -350,15 +322,7 @@ export class ZarrSlideSource implements SlideTileSource {
             ...(omero?.color ? { rgb: omero.color } : {}),
             window,
             active: visible.includes(c),
-            // Inverse of grayInto's quantization.
-            ...(q
-              ? {
-                  storedToValue: {
-                    scale: q.span / (65535 * q.k),
-                    offset: q.lo / q.k,
-                  },
-                }
-              : {}),
+            ...(q ? { storedToValue: storedToValue(q) } : {}),
           }
         })
       : undefined
@@ -549,44 +513,6 @@ function rgba(
       out[o + 3] = 255
     }
   return out
-}
-
-/** One grey plane into `out` from sample `o0`, quantized when `q` is set. */
-function grayInto(
-  out: Uint8Array | Uint16Array,
-  o0: number,
-  data: ArrayLike<number>,
-  sy: number,
-  sx: number,
-  w: number,
-  h: number,
-  q: Quantize | null,
-): void {
-  if (q) {
-    // Clamp: a Uint16Array store wraps out-of-range values; NaN stores 0.
-    // Multiply per pixel; divide only when a subnormal span overflows scale.
-    const { k, lo, span, scale } = q
-    if (Number.isFinite(scale)) {
-      for (let y = 0, o = o0; y < h; y++)
-        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
-          out[o] = Math.min(
-            65535,
-            Math.max(0, (data[i] * k - lo) * scale + 0.5),
-          )
-    } else {
-      for (let y = 0, o = o0; y < h; y++)
-        for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
-          out[o] = Math.min(
-            65535,
-            Math.max(0, ((data[i] * k - lo) / span) * 65535 + 0.5),
-          )
-    }
-  } else if (sx === 1 && sy === w) {
-    out.set(data, o0)
-  } else {
-    for (let y = 0, o = o0; y < h; y++)
-      for (let x = 0, i = y * sy; x < w; x++, i += sx, o++) out[o] = data[i]
-  }
 }
 
 function asBytes(a: Uint8Array | Uint16Array): Uint8Array {

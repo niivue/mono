@@ -307,11 +307,7 @@ function drawView(screen) {
   view.renderer.overlay = slideOverlayContent(slide, screen, gestures, {
     isRulerVisible: els.scaleBar.checked,
   })
-  if (view.kind === 'gpu') {
-    view.renderer.render(slides, screen)
-  } else {
-    view.renderer.draw(view.gl, slides, screen)
-  }
+  view.renderer.render(slides, screen)
 }
 
 function requestRender() {

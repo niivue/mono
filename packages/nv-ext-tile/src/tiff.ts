@@ -22,8 +22,19 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
+import {
+  grayInto,
+  MAX_DEFAULT_VISIBLE,
+  MAX_TILE_SIZE,
+  MAX_TILES,
+  type Quantize,
+  quantizeRange,
+  storedToValue,
+  storedWindow,
+} from './channelDisplay'
 import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
 import { sampleLevel } from './levelSample'
+import { anySignal, rangeReplyError, refuseReply } from './rangeFetch'
 
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
@@ -51,17 +62,12 @@ const SOURCE_OPTIONS: RemoteSourceOptions & BlockedSourceOptions = {
   blockSize: 65536,
 }
 
-// Hostile-file bounds. Real slides use 256-1024 px tiles; 4096 caps one
-// decoded RGBA tile at 64 MiB. A self-referencing IFD chain or a 2^32-pixel
-// level must fail fast instead of looping or allocating per-tile objects.
-const MAX_TILE_SIZE = 4096
-// Across all levels: a 200k x 200k slide at 256 px is ~815k tiles incl. pyramid.
-const MAX_TILES = 1 << 21
+// Hostile-file bounds (with MAX_TILE_SIZE, MAX_TILES): a self-referencing
+// IFD chain or a 2^32-pixel level must fail fast instead of looping or
+// allocating per-tile objects.
 const MAX_IMAGES = 64
 // geotiff walks the IFD chain up to a plane, a read per IFD.
 const MAX_PLANE_IFD = 4096
-// As ZarrSlideSource: each visible channel costs a sample plane per tile.
-const MAX_DEFAULT_VISIBLE = 4
 
 class RangeResponse extends BaseResponse {
   constructor(
@@ -118,37 +124,29 @@ class RangeClient extends BaseClient {
     }
   }
   private async rangeRequest(options: RequestInit): Promise<BaseResponse> {
-    const signals = [options.signal, this.openSignal].filter(
-      (x): x is AbortSignal => !!x,
-    )
     const response = await this.fetchImpl(this.url, {
       headers: options.headers,
-      signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+      signal: anySignal(options.signal, this.openSignal),
     })
-    if (response.status === 200) {
-      await response.body?.cancel()
-      throw new Error(
+    // Strict: every geotiff read is ranged, so any 200 is refused.
+    const bad = rangeReplyError(
+      response,
+      new Headers(options.headers).get('Range') ?? '',
+      true,
+    )
+    if (bad?.kind === 'whole-file')
+      await refuseReply(
+        response,
         `${this.url}: server ignored the HTTP Range request (200, not 206). ` +
           'nv-ext-tile/tiff needs Range support (and CORS allowing Range) to stream a slide. Open a local copy with TiffSlideSource.fromGeoTIFF(await fromBlob(file)).',
       )
-    }
-    if (!response.ok) {
-      await response.body?.cancel()
-      throw new Error(`${this.url}: HTTP ${response.status}`)
-    }
-    // Absent cross-origin unless the server exposes it; then trust the length.
-    const got = /^bytes (\d+)-/.exec(
-      response.headers.get('Content-Range') ?? '',
-    )
-    const want = /^bytes=(\d+)-/.exec(
-      new Headers(options.headers).get('Range') ?? '',
-    )
-    if (got && want && got[1] !== want[1]) {
-      await response.body?.cancel()
-      throw new Error(
-        `${this.url}: server sent Content-Range starting at ${got[1]}, requested ${want[1]}`,
+    if (!response.ok)
+      await refuseReply(response, `${this.url}: HTTP ${response.status}`)
+    if (bad?.kind === 'misplaced')
+      await refuseReply(
+        response,
+        `${this.url}: server sent Content-Range starting at ${bad.got}, requested ${bad.want}`,
       )
-    }
     if (this.host) this.host.rangeHit()
     else this.unboundHits++
     return new RangeResponse(response, (n) => {
@@ -329,9 +327,6 @@ const checkIndex = (what: string, value: number, count: number) => {
     throw new Error(`TIFF: ${what} ${value} is not in 0-${count - 1}`)
 }
 
-// Stored = (v - lo) * scale, clamped to uint16 (as ZarrSlideSource).
-type Quantize = { lo: number; scale: number }
-
 // Multi-channel OME-TIFF: one sample per channel plane, served as raw-gray.
 interface TiffChannels {
   bitsStored: 8 | 16
@@ -414,23 +409,9 @@ async function openTiff(
     const coarse = levels.at(-1)
     if (coarse) {
       const [p2, p98, min, max] = await dataRange(coarse, pool, signal)
-      let [calMin, calMax] = [p2, p98]
-      if (!raw) {
-        let [lo, hi] = [min, max]
-        // A flat or empty sample: a window centred on it (one step per unit,
-        // half its magnitude for float) keeps other values distinct.
-        if (!(hi > lo)) {
-          const mid = Number.isFinite(lo) ? lo : 0
-          const half =
-            img0.getSampleFormat(0) === 3
-              ? Math.max(Math.abs(mid) / 2, 1)
-              : 32767.5
-          ;[lo, hi] = [mid - half, mid + half]
-        }
-        q = { lo, scale: 65535 / (hi - lo) }
-        ;[calMin, calMax] = [(p2 - lo) * q.scale, (p98 - lo) * q.scale]
-      }
-      if (calMax > calMin) window = { calMin, calMax }
+      if (!raw)
+        q = quantizeRange(min, max, img0.getSampleFormat(0) === 3).quantize
+      window = storedWindow(q, p2, p98, bitsStored)
     }
     displays.push({ window, q })
   }
@@ -442,8 +423,7 @@ async function openTiff(
       window,
       // OME-XML has no omero `active`: every channel is, the first few visible.
       active: c < MAX_DEFAULT_VISIBLE,
-      // Inverse of quantizeInto.
-      ...(q ? { storedToValue: { scale: 1 / q.scale, offset: q.lo } } : {}),
+      ...(q ? { storedToValue: storedToValue(q) } : {}),
     }
   })
   const quantize = displays.map((d) => d.q)
@@ -742,17 +722,6 @@ export function registerDcm2niixTiffDecoders(): void {
   )
 }
 
-// Clamp: a Uint16Array wraps out-of-range values; NaN stores 0.
-function quantizeInto(
-  out: Uint8Array | Uint16Array,
-  o0: number,
-  data: ArrayLike<number>,
-  { lo, scale }: Quantize,
-): void {
-  for (let i = 0; i < data.length; i++)
-    out[o0 + i] = Math.min(65535, Math.max(0, (data[i] - lo) * scale + 0.5))
-}
-
 function fileName(url: string): string {
   const last = url.replace(/[?#].*$/, '').replace(/^.*\//, '')
   try {
@@ -771,7 +740,8 @@ function fileName(url: string): string {
  * A multi-channel OME-TIFF instead states `manifest.channelInfo` and serves
  * each visible channel's samples through `fetchTileSamples`, as ZarrSlideSource.
  *
- * NVSlide.dispose() does not reach the source: call {@link dispose} too.
+ * NVSlide.dispose() disposes a source it owns (the default); a slide made with
+ * `{ ownsSource: false }` leaves {@link dispose} to the caller.
  */
 export class TiffSlideSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
@@ -977,7 +947,17 @@ export class TiffSlideSource implements SlideTileSource {
           })
           abort.throwIfAborted()
           const q = this.channels?.quantize[c]
-          if (q) quantizeInto(out, plane * w * h, data as ArrayLike<number>, q)
+          if (q)
+            grayInto(
+              out,
+              plane * w * h,
+              data as ArrayLike<number>,
+              w,
+              1,
+              w,
+              h,
+              q,
+            )
           else out.set(data as ArrayLike<number>, plane * w * h)
           this.host?.updateRangeEvent(label, 'hit')
         } catch (error) {

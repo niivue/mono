@@ -237,10 +237,10 @@ const PAGES = {
       const slide = NVSlide.fromSource(new DicomWsiSource(s, files), { colorManagement })
       slide.fitToScreen(screen)
       for (let i = 0; i < 100 && (slide.stats.completed < 2 || (s.iccProfile && colorManagement && !slide.colorLut)); i++) {
-        renderer.draw(gl, [slide], screen)
+        renderer.render([slide], screen)
         await new Promise((r) => setTimeout(r, 50))
       }
-      renderer.draw(gl, [slide], screen)
+      renderer.render([slide], screen)
       const out = { tiles: slide.stats.completed, failed: slide.stats.failures, rgb: centres() }
       slide.dispose()
       return out
@@ -293,7 +293,7 @@ PAGES['nomap.html'] = page(
       const slide = NVSlide.fromSource(new DicomWsiSource(index.slides.find((s) => s.container === name), files))
       slide.fitToScreen(screen)
       for (let i = 0; i < 60 && slide.stats.completed + slide.stats.failures < slide.manifest.levels[0].tiles.length; i++) {
-        renderer.draw(gl, [slide], screen)
+        renderer.render([slide], screen)
         await new Promise((r) => setTimeout(r, 50))
       }
       const { completed, failures } = slide.stats

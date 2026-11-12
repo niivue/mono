@@ -130,7 +130,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
           const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
           renderer = new SlideRenderer(options)
           renderer.init(gl)
-          draw = () => renderer.draw(gl, [slide], screen)
+          draw = () => renderer.render([slide], screen)
         }
         // One screen pixel per texel centre.
         renderer.isNearestInterpolation = true

@@ -39,9 +39,9 @@ const source = await TiffSlideSource.fromUrl('https://example.org/slide.svs', { 
 const slide = NVSlide.fromSource(source)
 // draw with SlideRenderer (WebGL2) / SlideRendererGPU, or nv.setSlidePlane(slide, ...)
 
-// When done (NVSlide.dispose() does not reach the source):
+// When done: the slide disposes the source it owns. Pass { ownsSource: false }
+// to fromSource to keep a shared source, and call source.dispose() yourself.
 slide.dispose()
-source.dispose()
 pool.destroy()
 ```
 
@@ -110,7 +110,7 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
   many slides indexes in memory proportional to its headers. Each level reports
   `duplicates` and `holes`; its grid-sized tile map is built only when
   a slide is opened (`DicomWsiSource`) or a manifest is written.
-- **ICC colour management.** `DicomWsiSource`, `DicomWebWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; `source.dispose()` cancels the read.
+- **ICC colour management.** `DicomWsiSource`, `DicomWebWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; disposing the source (or the slide that owns it) cancels the read.
 - `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
 - Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
@@ -192,7 +192,7 @@ await nv.loadVolumes([
 await nv.setFrame4D(nv.volumes[0].id, 5) // raw and seg both show t = 5
 ```
 
-To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done: dropping the reference leaves its workers running. `omeZarrChannelOptions(source.zarr, c)` gives a streamed channel the loader's `name`, `colormap`, `calMin`/`calMax` and `visible`.
+To share one source (a volume and a slide), open it with `fetchOmeZarrChunkedSource`, pass it to `nv.loadChunkedVolume`, and call `source.dispose()` when done (a slide over it through `VolumeSliceSource` never disposes it): dropping the reference leaves its workers running. `omeZarrChannelOptions(source.zarr, c)` gives a streamed channel the loader's `name`, `colormap`, `calMin`/`calMax` and `visible`.
 
 For a 2D image (one y/x plane per level), `ZarrSlideSource` streams chunks into `NVSlide` as tiles instead:
 
@@ -241,6 +241,8 @@ Copy `@niivue/niivue`'s `dist/standalone/` to `niivue/`, this package's to `nv-e
 Reads go through geotiff-rs's 64 KiB block cache: the header and each level's tile offset table cost a few blocks, and a tile costs its compressed size rounded out to block boundaries.
 
 A remote server **must** support HTTP Range (`206 Partial Content`). If it answers `200`, `fromUrl` cancels that response and rejects with "server ignored the HTTP Range request"; there is no fallback to downloading the full slide. Cross-origin servers must send `Access-Control-Allow-Origin` and allow the `Range` request header. Exposing `Content-Range` (`Access-Control-Expose-Headers`) is optional: when visible, each response's start offset is checked against the request. For a server you cannot change, download the file and open it with `fromGeoTIFF(await fromBlob(file))`.
+
+TIFF and Zarr share two modules: `src/channelDisplay.ts` (quantizing non-uint8/16 samples to uint16 and its inverse `storedToValue`, windows, grey plane copy) and `src/rangeFetch.ts` (Range reply checks: both refuse a `200` to a ranged read).
 
 ## Demo
 

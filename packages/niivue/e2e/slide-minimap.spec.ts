@@ -76,7 +76,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
         renderer = new SlideRenderer()
         renderer.init(gl)
-        draw = () => renderer.draw(gl, [slide], screen)
+        draw = () => renderer.render([slide], screen)
       }
       renderer.overlayDraw = (frame) => minimap.drawOverlay(frame)
       const { image } = minimap.layoutFor(W, H, 1)

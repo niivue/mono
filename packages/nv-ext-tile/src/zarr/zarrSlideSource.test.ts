@@ -956,6 +956,7 @@ test('an aborted tile is reported aborted, not failed', async () => {
     addWireBytes() {},
     rangeHit() {},
     rangeFallback() {},
+    channelInfoChanged() {},
     pushRangeEvent: (e) => status.push(e.status),
     updateRangeEvent: (_, s) => status.push(s),
   })

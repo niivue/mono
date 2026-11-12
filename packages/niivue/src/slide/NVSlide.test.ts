@@ -11,10 +11,14 @@ import type {
   NVSlideTileManifest,
   NVSlideTileSamples,
   SlideTileDecoder,
-  SlideTileSource,
 } from './NVSlide'
-import { assertSingleSlidePlane, ManifestRangeSource, NVSlide } from './NVSlide'
+import { NVSlide } from './NVSlide'
 import { type FuseTile, fusePlan, fuseSamples } from './slideFuse'
+import {
+  assertSingleSlidePlane,
+  ManifestRangeSource,
+  type SlideTileSource,
+} from './slideSource'
 
 const TILE_W = 8
 const TILE_H = 4
@@ -656,6 +660,7 @@ describe('ManifestRangeSource range telemetry', () => {
       addWireBytes() {},
       rangeHit() {},
       rangeFallback() {},
+      channelInfoChanged() {},
       pushRangeEvent: (event) => {
         events.push(event)
       },
@@ -724,6 +729,7 @@ describe('ManifestRangeSource per-tile file', () => {
       addWireBytes() {},
       rangeHit() {},
       rangeFallback() {},
+      channelInfoChanged() {},
       pushRangeEvent() {},
       updateRangeEvent() {},
     })
@@ -1948,6 +1954,7 @@ describe('NVSlide colour management', () => {
       addWireBytes() {},
       rangeHit() {},
       rangeFallback() {},
+      channelInfoChanged() {},
       pushRangeEvent() {},
       updateRangeEvent() {},
     })
@@ -1988,6 +1995,7 @@ describe('NVSlide colour management', () => {
       addWireBytes() {},
       rangeHit() {},
       rangeFallback() {},
+      channelInfoChanged() {},
       pushRangeEvent() {},
       updateRangeEvent() {},
     })

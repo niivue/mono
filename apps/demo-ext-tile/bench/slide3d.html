@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>slide3d bench</title>
+    <style>
+      html, body, canvas { margin: 0; width: 100%; height: 100%; display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <!-- bench/run.mjs: CMU-1 as a slide plane in a 3D render, set up as
+         packages/niivue/examples/slide3d.js does (no MNI volume). -->
+    <script type="module">
+      import { Pool } from '@niivue/geotiff-rs'
+      import NiiVue, { axialPlaneTransform, NVSlide, SLICE_TYPE } from '@niivue/niivue'
+      import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
+
+      const params = new URLSearchParams(location.search)
+      const nv = new NiiVue({
+        backend: params.get('backend') ?? 'webgpu',
+        sliceType: SLICE_TYPE.RENDER,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(document.getElementById('gl'))
+      const source = await TiffSlideSource.fromUrl(params.get('url'), { pool: new Pool() })
+      const slide = NVSlide.fromSource(source)
+      const { width, height } = slide.manifest
+      const half = 90
+      nv.setSlidePlane(slide, {
+        pixelToWorld: axialPlaneTransform(width, height, {
+          xmin: -half, xmax: half, ymin: (-half * height) / width, ymax: (half * height) / width, z: 0,
+        }),
+      })
+      nv.azimuth = 120
+      nv.elevation = 35
+      window.bench3d = { nv, slide }
+    </script>
+  </body>
+</html>

@@ -112,8 +112,7 @@
         return { kind: 'gl', gl, renderer }
       }
       const drawView = (screen) => {
-        if (view.kind === 'gpu') view.renderer.render([slide], screen)
-        else view.renderer.draw(view.gl, [slide], screen)
+        view.renderer.render([slide], screen)
       }
 
       let frame = 0

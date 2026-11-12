@@ -1,13 +1,42 @@
 import { lookupColorMap } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
-import { channelColormapsFor } from '@/volume/channelColormaps'
 import {
-  fusePlan,
-  fuseSamples,
-  isFuseTile,
-  tileTextureBudget,
-} from './slideFuse'
-import { gutterTextureBytes } from './tileGutter'
+  checkChannelInfo,
+  defaultSlideChannels,
+  isMonochrome,
+  isRgbSlide,
+  readbackContext,
+  readPixels,
+  toValue,
+  usableWindow,
+} from './slideChannels'
+import { DEFAULT_RAW_POOL_BYTES, type SlideRendererBudget } from './slideFuse'
+import {
+  clamp,
+  fallbackTiles,
+  levelTileHeight,
+  levelTileWidth,
+  MAX_VISIBLE_TILES,
+  selectLevel,
+  tileAt,
+  tileCapacity,
+  tileSpan,
+  tilesForLevel,
+} from './slideLod'
+import {
+  assertSingleSlidePlane,
+  cropSamples,
+  decodeTileBitmap,
+  isAbortError,
+  ManifestRangeSource,
+  placeListedTiles,
+  type SlideTileSource,
+  tileDecoders,
+} from './slideSource'
+import { composeThumbnail } from './slideThumbnail'
+import { NVSlideTileCache, type TileBitmap } from './tileLru'
+import { DEFAULT_TILE_TEXTURE_BYTES } from './tileTextureCache'
+
 export type NVSlideTileCodec =
   | 'raw-rgba'
   | 'raw-gray'
@@ -73,8 +102,21 @@ export interface NVSlideChannelInfo {
   window?: NVSlideWindow
   /** Inactive channels start hidden and are not fetched. */
   active: boolean
-  /** A quantized channel's map to data units: value = stored * scale + offset. */
-  storedToValue?: { scale: number; offset: number }
+  /** 'label': samples are integer IDs, never quantized or windowed, read back exactly. */
+  kind?: 'intensity' | 'label'
+  /**
+   * Map to data units: value = stored * scale + offset. `quantized` (default
+   * true): readout is not exact and is clipped at the stored range ends.
+   * false: an exact rescale (DICOM Rescale), exact at level 0.
+   */
+  storedToValue?: { scale: number; offset: number; quantized?: boolean }
+  /** Data unit of `value`, e.g. 'HU'. */
+  unit?: string
+  /** Label colours by ID; absent, a deterministic default per ID. */
+  labelColors?: ReadonlyArray<{
+    id: number
+    rgba: readonly [number, number, number, number]
+  }>
 }
 
 /** One channel's value under a slide point ({@link NVSlide.sampleAt}). */
@@ -88,10 +130,10 @@ export interface NVSlideSample {
   stored: number | null
   /** The pyramid level `index` that served it; set for `hidden`. */
   level: number | null
-  /** Level 0 and not quantized. Lossy codecs are not tracked. */
+  /** Level 0 and not quantized (`storedToValue.quantized`). Lossy codecs are not tracked. */
   exact: boolean
   missing?: 'outside' | 'hole' | 'uncached' | 'hidden'
-  /** Quantized and stored at 0 or 65535 (NaN is stored as 0): `value` is a bound. */
+  /** Quantized and stored at a stored range end (0 or 65535; int16 -32768 or 32767; NaN is stored as 0): `value` is a bound. */
   clipped?: true
 }
 
@@ -99,6 +141,69 @@ export interface NVSlideSample {
 export interface NVSlidePlaneIndex {
   z: number
   t: number
+}
+
+/** A source's focal planes and time points (`SlidePlaneCapable`). */
+export interface NVSlidePlaneAxes {
+  /** Focal planes in level-0 terms; the source maps z per level. */
+  z: number
+  t: number
+  /** Physical z per plane (DICOM ZOffset rank order, OME physical z). */
+  zPositionsUm?: readonly number[]
+  tSeconds?: readonly number[]
+}
+
+/**
+ * One placed piece of a storage tile: a crop in tile pixels drawn at an origin
+ * in placed level pixels, unscaled. Fractions allowed.
+ */
+export interface NVSlidePlacedPiece {
+  /** Row-major slot in `level.tiles` (the storage grid); fetch and cache key unchanged. */
+  tile: number
+  sx: number
+  sy: number
+  sw: number
+  sh: number
+  dx: number
+  dy: number
+}
+
+/** Irregular tile placement of one level (vendor joints, overlaps, offsets). */
+export interface NVSlideLevelPlacement {
+  /** Placed extent in level pixels; may be fractional. */
+  width: number
+  height: number
+  pieces: NVSlidePlacedPiece[]
+}
+
+/** Who wants a tile load; rank 0 (readout) is served first. */
+export type NVSlideRequestClass =
+  | 'readout'
+  | 'view'
+  | 'plane3d'
+  | 'thumbnail'
+  | 'prefetch'
+
+/** One consumer's set of wanted tiles; cancelling it never cancels a read another owner wants. */
+export interface NVSlideRequestOwner {
+  readonly kind: NVSlideRequestClass
+  /** Replaces this owner's wanted set. `focus` (base px) orders its loads centre-out. */
+  want(
+    tiles: Iterable<{ level: NVSlideLevelManifest; tile: NVSlideTileManifest }>,
+    focus?: { x: number; y: number },
+  ): void
+  /** Idempotent. */
+  release(): void
+}
+
+/** Credit for a slide; rendered as text, `url` only when http(s). */
+export interface NVSlideAttribution {
+  title?: string
+  url?: string
+  license?: string
+  credit?: string
+  citation?: string
+  modified?: string
 }
 
 /**
@@ -157,6 +262,15 @@ export interface NVSlideLevelManifest {
   photometric?: string
   /** DICOM BitsStored (0028,0101); sets the default monochrome window. */
   bitsStored?: number
+  /** raw-gray signed or float samples; absent, unsigned per bitsStored (u8 when <= 8, else u16). */
+  sampleType?: 'i16' | 'f32'
+  /** The plane a `SlidePlaneCapable` source's prepared level reads; absent {z: 0, t: 0}. */
+  plane?: NVSlidePlaneIndex
+  /**
+   * Irregular placement. width/height/columns/rows stay the storage grid;
+   * placed level pixels map to base by manifest.width / placement.width.
+   */
+  placement?: NVSlideLevelPlacement
   /**
    * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
    * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when
@@ -241,6 +355,7 @@ export interface NVSlideManifest {
    * and blue, added.
    */
   channelInfo?: NVSlideChannelInfo[]
+  attribution?: NVSlideAttribution
 }
 
 export interface NVSlideViewport {
@@ -286,6 +401,11 @@ export interface NVSlideOptions {
   /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
    * adapters supply their own. See {@link SlideTileSource}. */
   source?: SlideTileSource
+  /**
+   * dispose() also disposes `source` (default true). Ownership passes when the
+   * constructor returns; a constructor that throws leaves it with the caller.
+   */
+  ownsSource?: boolean
   /** Apply the slide's ICC profile when one is known and a transform is registered (default true). */
   colorManagement?: boolean
 }
@@ -306,6 +426,8 @@ export interface NVSlideVisibleTile {
   screenWidth: number
   screenHeight: number
   flipY: boolean
+  /** Crop in tile pixels (placement); absent, the whole tile. */
+  src?: { x: number; y: number; w: number; h: number }
 }
 
 export interface NVSlideVisibleTiles {
@@ -382,11 +504,14 @@ export interface NVSlideCachedTile {
   readonly channels?: readonly number[]
   readonly level: NVSlideLevelManifest
 }
-// id: a load serial, so a memo can tell entries apart without holding them.
-type TileBitmap = NVSlideCachedTile & { bytes: number; id: number }
-type SampleTile = TileBitmap & { samples: NVSlideTileSamples }
 
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
+// What capacity assumes before any renderer registers its budget.
+const DEFAULT_RENDERER_BUDGET: SlideRendererBudget = {
+  tileBytes: DEFAULT_TILE_TEXTURE_BYTES,
+  rawPoolBytes: DEFAULT_RAW_POOL_BYTES,
+}
+const MiB = 1024 * 1024
 const DEFAULT_THUMBNAIL_PX = 1024
 // Thumbnails kept: the minimap's and the wand's, which ask for different levels.
 const MAX_THUMBNAILS = 2
@@ -414,10 +539,14 @@ function clampTileLoadCap(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_MAX_CONCURRENT_TILE_LOADS
   return Math.max(1, Math.floor(value) || 1)
 }
-// Safety valve for pathological manifests (e.g. a missing tileSize defaulting
-// to 1px tiles): never enumerate more visible tiles than this per frame. A
-// sane pyramid level never exceeds a few hundred on screen.
-const MAX_VISIBLE_TILES = 4096
+
+// A quantized sample at its stored range's end is a bound; float has none.
+function atStoredEnd(stored: number, samples?: NVSlideSampleArray): boolean {
+  if (samples instanceof Int16Array)
+    return stored === -32768 || stored === 32767
+  if (samples instanceof Float32Array) return false
+  return stored === 0 || stored === 65535
+}
 
 function freshStats(): NVSlideStats {
   return {
@@ -435,530 +564,7 @@ function freshStats(): NVSlideStats {
   }
 }
 
-// raw-gray tiles are samples whatever the (optional, DICOM) photometric says.
-const isMonochrome = (level: NVSlideLevelManifest): boolean =>
-  level.codec === 'raw-gray' ||
-  (level.photometric?.startsWith('MONOCHROME') ?? false)
-
-/** RGB samples (no channelInfo, not monochrome) only make sense added. */
-export const isRgbSlide = (manifest: NVSlideManifest): boolean =>
-  !manifest.channelInfo && !manifest.levels.some(isMonochrome)
-
-const usableWindow = (w?: NVSlideWindow): w is NVSlideWindow =>
-  !!w &&
-  Number.isFinite(w.calMin) &&
-  Number.isFinite(w.calMax) &&
-  w.calMax > w.calMin
-
-/** The channels a slide opens with: its manifest's `channelInfo`, else grey or RGB. */
-export function defaultSlideChannels(manifest: NVSlideManifest): NVChannel[] {
-  const info = manifest.channelInfo
-  if (info) {
-    const colormaps = channelColormapsFor(info.map((c) => c.rgb))
-    return info.map((c, i) => ({
-      name: c.name,
-      // An unknown name would make every later setChannel throw.
-      colormap:
-        c.colormap && lookupColorMap(c.colormap)
-          ? c.colormap
-          : (colormaps[i] as string),
-      calMin: usableWindow(c.window) ? c.window.calMin : Number.NaN,
-      calMax: usableWindow(c.window) ? c.window.calMax : Number.NaN,
-      visible: c.active,
-    }))
-  }
-  const names = manifest.levels.some(isMonochrome)
-    ? ['gray']
-    : ['red', 'green', 'blue']
-  return names.map((name) => ({
-    name,
-    colormap: name,
-    calMin: Number.NaN,
-    calMax: Number.NaN,
-    visible: true,
-  }))
-}
-
-/** A CPU-backed 2D context to read pixels from; null without OffscreenCanvas. */
-function readbackContext(
-  width: number,
-  height: number,
-): OffscreenCanvasRenderingContext2D | null {
-  if (typeof OffscreenCanvas === 'undefined') return null
-  // Skip a GPU-backed canvas and its readback.
-  const ctx = new OffscreenCanvas(width, height).getContext('2d', {
-    willReadFrequently: true,
-  })
-  // A reused context: a translucent pixel must not blend with the last one.
-  if (ctx) ctx.globalCompositeOperation = 'copy'
-  return ctx
-}
-
-/** A bitmap region's decoded RGBA. */
-function readPixels(
-  ctx: OffscreenCanvasRenderingContext2D,
-  bitmap: ImageBitmap,
-  sx: number,
-  sy: number,
-  width: number,
-  height: number,
-): Uint8ClampedArray {
-  ctx.drawImage(bitmap, sx, sy, width, height, 0, 0, width, height)
-  return ctx.getImageData(0, 0, width, height).data
-}
-
-/** A grey bitmap's red channel as 8-bit samples; closes the bitmap. */
-function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
-  const { width, height } = bitmap
-  try {
-    const ctx = readbackContext(width, height)
-    if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
-    const rgba = readPixels(ctx, bitmap, 0, 0, width, height)
-    const samples = new Uint8Array(width * height)
-    for (let i = 0; i < samples.length; i++) samples[i] = rgba[i * 4] as number
-    return { samples, width, height, bitsStored: 8 }
-  } finally {
-    bitmap.close()
-  }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function copyUint8(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  return copy
-}
-
-function copyClamped(bytes: Uint8Array): Uint8ClampedArray<ArrayBuffer> {
-  const copy = new Uint8ClampedArray(bytes.byteLength)
-  copy.set(bytes)
-  return copy
-}
-
-function concatBytes(parts: Uint8Array[]): Uint8Array {
-  const length = parts.reduce((sum, part) => sum + part.byteLength, 0)
-  const out = new Uint8Array(length)
-  let ptr = 0
-  for (const part of parts) {
-    out.set(part, ptr)
-    ptr += part.byteLength
-  }
-  return out
-}
-
 let iccTransform: SlideIccTransform | null = null
-
-// Tile-codec registry. Built-ins cover the browser-native paths; additional
-// codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
-// consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
-const tileDecoders = new Map<string, SlideTileDecoder>([
-  [
-    'image/jpeg',
-    // No browser colour conversion: a slide's profile is the source's
-    // (NVSlide.colorLut), not an APP2 segment inside a tile.
-    (bytes) =>
-      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' }), {
-        colorSpaceConversion: 'none',
-      }),
-  ],
-  [
-    'raw-rgba',
-    (bytes, { width, height }) => {
-      const expected = width * height * 4
-      if (bytes.byteLength !== expected) {
-        throw new Error(
-          `Expected ${expected} RGBA bytes, received ${bytes.byteLength}`,
-        )
-      }
-      return createImageBitmap(new ImageData(copyClamped(bytes), width, height))
-    },
-  ],
-  [
-    'raw-gray',
-    // Monochrome samples in platform byte order: 8-bit when the level's
-    // bitsStored is 8 or less, else 16-bit (the default). Windowed by NVSlide
-    // like decoded DICOM monochrome tiles.
-    async (bytes, { width, height, level }) => {
-      const bitsStored = level.bitsStored ?? 16
-      if (bitsStored > 16) {
-        throw new Error(
-          `raw-gray supports bitsStored up to 16, received ${bitsStored}`,
-        )
-      }
-      const wide = bitsStored > 8
-      if (bytes.byteLength !== width * height * (wide ? 2 : 1)) {
-        throw new Error(
-          `Expected ${width}x${height} ${wide ? 16 : 8}-bit samples, received ${bytes.byteLength} bytes`,
-        )
-      }
-      const own = copyUint8(bytes)
-      const samples = wide ? new Uint16Array(own.buffer) : own
-      return { samples, width, height, bitsStored }
-    },
-  ],
-])
-
-class NVSlideTileCache {
-  private readonly entries = new Map<string, TileBitmap>()
-  bytes = 0
-
-  constructor(readonly maxBytes: number) {}
-
-  get(key: string): TileBitmap | undefined {
-    const entry = this.entries.get(key)
-    if (!entry) return undefined
-    this.entries.delete(key)
-    this.entries.set(key, entry)
-    return entry
-  }
-
-  set(key: string, entry: TileBitmap): void {
-    const existing = this.entries.get(key)
-    if (existing) {
-      existing.bitmap?.close()
-      this.bytes -= existing.bytes
-      this.entries.delete(key)
-    }
-    this.entries.set(key, entry)
-    this.bytes += entry.bytes
-    this.evict()
-  }
-
-  has(key: string): boolean {
-    return this.entries.has(key)
-  }
-
-  delete(key: string): void {
-    const entry = this.entries.get(key)
-    if (!entry) return
-    entry.bitmap?.close()
-    this.bytes -= entry.bytes
-    this.entries.delete(key)
-  }
-
-  /** Like get, without refreshing LRU order. */
-  peek(key: string): TileBitmap | undefined {
-    return this.entries.get(key)
-  }
-
-  *sampleEntries(): Generator<[string, SampleTile]> {
-    for (const pair of this.entries)
-      if (pair[1].samples) yield pair as [string, SampleTile]
-  }
-
-  clear(): void {
-    for (const entry of this.entries.values()) entry.bitmap?.close()
-    this.entries.clear()
-    this.bytes = 0
-  }
-
-  private evict(): void {
-    while (this.bytes > this.maxBytes && this.entries.size > 1) {
-      const firstKey = this.entries.keys().next().value
-      if (typeof firstKey !== 'string') return
-      const entry = this.entries.get(firstKey)
-      if (!entry) return
-      entry.bitmap?.close()
-      this.entries.delete(firstKey)
-      this.bytes -= entry.bytes
-    }
-  }
-}
-
-/**
- * Telemetry + URL hooks a {@link SlideTileSource} uses. NVSlide implements this
- * so a source can resolve relative URLs and record wire bytes / range-request
- * status into the slide's stats + recent-request log without owning them.
- */
-export interface SlideSourceHost {
-  resolveUrl(url: string): string
-  addWireBytes(bytes: number): void
-  rangeHit(): void
-  rangeFallback(): void
-  pushRangeEvent(event: NVSlideRangeEvent): void
-  updateRangeEvent(label: string, status: NVSlideRangeStatus): void
-}
-
-/**
- * A pluggable slide source: owns the pyramid manifest and fetches the bytes for
- * one tile in its level's `codec`: compressed (e.g. `image/jpeg`) or raw samples
- * (`raw-rgba` or `raw-gray`, as TIFF and Zarr return). NVSlide owns decoding, caching, stats
- * and the viewport; a source varies by FORMAT. {@link ManifestRangeSource} (the
- * default) addresses tiles as byte ranges in a per-level file (dicom-wsi-range-v1
- * and the synthetic pyramid); `DziSource` (per-tile URLs) and
- * `TiffSlideSource` in `@niivue/nv-ext-tile/tiff` (geotiff) implement the same contract.
- */
-export interface SlideTileSource {
-  readonly manifest: NVSlideManifest
-  /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
-  bind(host: SlideSourceHost): void
-  /**
-   * Fetch one tile's bytes in `level.codec` (compressed or raw samples); NVSlide
-   * decodes them per that codec.
-   *
-   * `signal` fires when NVSlide no longer wants the tile -- the view moved on,
-   * or the slide was disposed. A source that reads over the network should
-   * pass it to `fetch()` so the read is abandoned on the wire rather than
-   * discarded on arrival, and reject with an `AbortError`. Optional: a source
-   * that ignores it stays correct, only wasteful, and NVSlide drops whatever
-   * it resolves after the abort.
-   */
-  fetchTileBytes(
-    level: NVSlideLevelManifest,
-    tile: NVSlideTileManifest,
-    label: string,
-    signal?: AbortSignal,
-  ): Promise<Uint8Array>
-  /**
-   * Decoded samples for one tile, one plane per entry of `channels` (indices
-   * into {@link NVSlide.channels}, in that order): the visible ones, possibly
-   * none (return `planes: 0`). When present NVSlide calls it instead of
-   * `fetchTileBytes` and composites the planes itself. Such a source states
-   * its channels in `manifest.channelInfo`; without it NVSlide assumes RGB
-   * and asks for 3 planes. Optional.
-   */
-  fetchTileSamples?(
-    level: NVSlideLevelManifest,
-    tile: NVSlideTileManifest,
-    channels: readonly number[],
-    signal?: AbortSignal,
-  ): Promise<NVSlideTileSamples>
-  /** The slide's ICC profile bytes, or null when it has none. Optional. */
-  fetchIccProfile?(signal?: AbortSignal): Promise<Uint8Array | null>
-}
-
-function isAbortError(err: unknown): boolean {
-  // Structural check: fetch() aborts reject with a DOMException named
-  // 'AbortError', which is not an Error instance in every runtime.
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { name?: unknown }).name === 'AbortError'
-  )
-}
-
-/**
- * Default source: a byte-range manifest (dicom-wsi-range-v1 / synthetic pyramid).
- * Each tile is one or more byte fragments addressed into a per-level file (or the
- * manifest `dataUrl`), fetched with an HTTP Range request (206) and a full-file
- * fallback for servers without range support.
- */
-export class ManifestRangeSource implements SlideTileSource {
-  readonly manifest: NVSlideManifest
-  private host: SlideSourceHost | null = null
-
-  constructor(manifest: NVSlideManifest) {
-    this.manifest = manifest
-  }
-
-  bind(host: SlideSourceHost): void {
-    this.host = host
-  }
-
-  private requireHost(): SlideSourceHost {
-    if (!this.host) {
-      throw new Error('ManifestRangeSource is not bound to an NVSlide host')
-    }
-    return this.host
-  }
-
-  private tileSourceUrl(level: NVSlideLevelManifest): string {
-    const host = this.requireHost()
-    if (level.fileUrl) return host.resolveUrl(level.fileUrl)
-    if (this.manifest.dataUrl) return host.resolveUrl(this.manifest.dataUrl)
-    throw new Error(`No byte source for slide L${level.index}`)
-  }
-
-  private tileFragments(tile: NVSlideTileManifest): NVSlideTileFragment[] {
-    if (typeof tile.offset === 'number' && typeof tile.length === 'number') {
-      return [{ offset: tile.offset, length: tile.length }]
-    }
-    if (tile.fragments && tile.fragments.length > 0) return tile.fragments
-    throw new Error(`Tile ${tile.x}/${tile.y} has no byte ranges`)
-  }
-
-  private async fetchFragment(
-    sourceUrl: string,
-    fragment: NVSlideTileFragment,
-    label: string,
-    signal?: AbortSignal,
-  ): Promise<Uint8Array> {
-    const host = this.requireHost()
-    const start = fragment.offset
-    const end = fragment.offset + fragment.length - 1
-    const rangeLabel = `${label} ${start}-${end}`
-    host.pushRangeEvent({ label: rangeLabel, status: 'pending' })
-    let response: Response
-    let wireBytes: Uint8Array
-    try {
-      response = await fetch(sourceUrl, {
-        headers: { Range: `bytes=${start}-${end}` },
-        signal,
-      })
-      if (!response.ok && response.status !== 206) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-      wireBytes = new Uint8Array(await response.arrayBuffer())
-    } catch (error) {
-      // The 'pending' entry must not outlive the request: a rejected fetch
-      // (the load's signal firing, a network failure, an HTTP error) would
-      // otherwise leave a stale 'pending' row in stats.lastRequests forever
-      // (_runLoad's catch updates the TILE label, not this fragment's).
-      host.updateRangeEvent(
-        rangeLabel,
-        signal?.aborted || isAbortError(error) ? 'aborted' : 'failed',
-      )
-      throw error
-    }
-    host.addWireBytes(wireBytes.byteLength)
-    if (response.status === 206) {
-      host.rangeHit()
-      host.updateRangeEvent(rangeLabel, 'hit')
-      if (wireBytes.byteLength !== fragment.length) {
-        throw new Error(
-          `Expected ${fragment.length} bytes, received ${wireBytes.byteLength}`,
-        )
-      }
-      return wireBytes
-    }
-    host.rangeFallback()
-    host.updateRangeEvent(rangeLabel, 'fallback')
-    return wireBytes.slice(start, end + 1)
-  }
-
-  async fetchTileBytes(
-    level: NVSlideLevelManifest,
-    tile: NVSlideTileManifest,
-    label: string,
-    signal?: AbortSignal,
-  ): Promise<Uint8Array> {
-    const sourceUrl = tile.fileUrl
-      ? this.requireHost().resolveUrl(tile.fileUrl)
-      : this.tileSourceUrl(level)
-    const fragments = this.tileFragments(tile)
-    const parts = await Promise.all(
-      fragments.map((fragment) =>
-        this.fetchFragment(sourceUrl, fragment, label, signal),
-      ),
-    )
-    return parts.length === 1 ? (parts[0] as Uint8Array) : concatBytes(parts)
-  }
-
-  async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
-    const icc = this.manifest.iccProfile
-    if (!icc) return null
-    const url = this.requireHost().resolveUrl(icc.url)
-    const { offset, length } = icc
-    if ((offset === undefined) !== (length === undefined))
-      throw new Error('ICC profile states only one of offset and length')
-    // 64 MB: far beyond a scanner profile (Leica's is 13 MB), as dcm2niix caps it.
-    if (length !== undefined && length > 64 * 1024 * 1024)
-      throw new Error(`ICC profile of ${length} bytes`)
-    if (offset !== undefined && length !== undefined)
-      return this.fetchFragment(url, { offset, length }, 'icc', signal)
-    const response = await fetch(url, { signal })
-    if (!response.ok) throw new Error(`ICC profile HTTP ${response.status}`)
-    return new Uint8Array(await response.arrayBuffer())
-  }
-}
-
-/**
- * Refuse a DICOM-WSI manifest whose levels are not known to hold a single optical
- * path and focal plane: their frames would otherwise be laid out as one tile grid,
- * putting tiles from other channels or depths in the wrong places. Other formats
- * (DZI, TIFF, synthetic) have no such dimensions.
- *
- * A TILED_FULL level's frames cover the grid once per path and plane, so the frame
- * count confirms the tags and, when one is absent, proves it is 1 only if the
- * frames equal the grid. With no frame count (NumberOfFrames is Type 1, but a
- * server may still omit it), tags stating one of each are taken as given.
- */
-export function assertSingleSlidePlane(manifest: NVSlideManifest): void {
-  if (!manifest.format?.startsWith('dicom-wsi')) return
-  for (const level of manifest.levels) {
-    if (level.sparse) {
-      if (level.opticalPaths === 1 && level.focalPlanes === 1) continue
-      throw new Error(
-        `Slide level ${level.index} is sparse but does not state one optical path and one focal plane`,
-      )
-    }
-    const { frames } = level
-    if (
-      frames === undefined &&
-      level.opticalPaths === 1 &&
-      level.focalPlanes === 1
-    )
-      continue
-    const grid = level.columns * level.rows
-    const paths = level.opticalPaths ?? (frames === grid ? 1 : undefined)
-    const planes = level.focalPlanes ?? (frames === grid ? 1 : undefined)
-    const known =
-      paths !== undefined &&
-      planes !== undefined &&
-      frames === grid * paths * planes
-    if (known && paths === 1 && planes === 1) continue
-    const what = known
-      ? `holds ${paths} optical paths and ${planes} focal planes; only one of each is supported`
-      : 'has optical paths or focal planes that are unknown or disagree with its frame count'
-    throw new Error(`Slide level ${level.index} ${what}`)
-  }
-}
-
-// The same bound as nv-ext-tile's DICOM-WSI index: the largest real level
-// grid is 379k tiles, so a hosted manifest past this is broken or hostile.
-export const MAX_SLIDE_GRID = 1 << 22
-
-export function assertSlideGrid(tiles: number, levelIndex: number): void {
-  if (tiles > MAX_SLIDE_GRID)
-    throw new Error(
-      `Slide level ${levelIndex} has ${tiles} tiles, over the ${MAX_SLIDE_GRID} a level may hold`,
-    )
-}
-
-/**
- * A level that lists only its present tiles, or is sparse, becomes the dense
- * row-major grid with null holes, placed by each tile's x/y (a listing's order
- * is not trusted). Off-grid tiles and second tiles for a cell are dropped.
- * Returns a new level; the caller's manifest is not changed.
- */
-function placeListedTiles(level: NVSlideLevelManifest): NVSlideLevelManifest {
-  const n = level.columns * level.rows
-  assertSlideGrid(n, level.index)
-  if (!level.sparse && level.tiles.length === n) return level
-  const grid: Array<NVSlideTileManifest | null> = new Array(n).fill(null)
-  for (const tile of level.tiles) {
-    if (!tile) continue
-    const { x, y } = tile
-    if (!Number.isInteger(x) || !Number.isInteger(y)) continue
-    if (x < 0 || y < 0 || x >= level.columns || y >= level.rows) continue
-    grid[y * level.columns + x] ??= tile
-  }
-  return { ...level, tiles: grid }
-}
-
-/** The top-left `width` x `height` of each plane of a padded sample frame. */
-function cropSamples(
-  frame: NVSlideTileSamples,
-  width: number,
-  height: number,
-): NVSlideTileSamples {
-  const w = Math.min(frame.width, width)
-  const h = Math.min(frame.height, height)
-  const planes = frame.planes ?? 1
-  const Samples = frame.samples.constructor as new (
-    n: number,
-  ) => NVSlideSampleArray
-  const samples = new Samples(w * h * planes)
-  for (let p = 0; p < planes; p++)
-    for (let y = 0; y < h; y++) {
-      const from = (p * frame.height + y) * frame.width
-      samples.set(frame.samples.subarray(from, from + w), (p * h + y) * w)
-    }
-  return { ...frame, samples, width: w, height: h }
-}
 
 export class NVSlide extends EventTarget {
   readonly id: string
@@ -992,6 +598,11 @@ export class NVSlide extends EventTarget {
     ReturnType<typeof setTimeout>
   >()
   private readonly _source: SlideTileSource
+  private readonly _ownsSource: boolean
+  private readonly _rendererBudgets = new Map<object, SlideRendererBudget>()
+  private _budget = DEFAULT_RENDERER_BUDGET
+  // Channels whose window the user set: a source's later window leaves them.
+  private readonly _userWindows = new Set<number>()
   private readonly _maxConcurrentLoads: number
   private _activeLoads = 0
   private readonly _loadQueue: Array<{
@@ -1037,9 +648,12 @@ export class NVSlide extends EventTarget {
     super()
     assertSingleSlidePlane(manifest)
     const levels = manifest.levels.map(placeListedTiles)
-    this.manifest = levels.every((l, i) => l === manifest.levels[i])
-      ? manifest
-      : { ...manifest, levels }
+    // channelInfo is copied: channelInfoChanged patches the slide's, not the source's.
+    const channelInfo = manifest.channelInfo?.map((c) => ({ ...c }))
+    this.manifest =
+      !channelInfo && levels.every((l, i) => l === manifest.levels[i])
+        ? manifest
+        : { ...manifest, levels, ...(channelInfo && { channelInfo }) }
     this.manifestUrl = options.manifestUrl ?? ''
     this.id = options.id ?? manifest.id
     this.name = options.name ?? manifest.name
@@ -1072,6 +686,12 @@ export class NVSlide extends EventTarget {
     this._channels = defaultSlideChannels(this.manifest)
     this._rgb = isRgbSlide(this.manifest)
     this._source = options.source ?? new ManifestRangeSource(manifest)
+    checkChannelInfo(
+      this.manifest,
+      !!this._source.fetchTileSamples,
+      !options.source,
+    )
+    this._ownsSource = options.ownsSource ?? true
     this._source.bind({
       resolveUrl: (url) => this.resolveUrl(url),
       addWireBytes: (n) => {
@@ -1085,6 +705,8 @@ export class NVSlide extends EventTarget {
       },
       pushRangeEvent: (event) => this.pushRangeEvent(event),
       updateRangeEvent: (label, status) => this.updateRangeEvent(label, status),
+      channelInfoChanged: (index, patch) =>
+        this._channelInfoChanged(index, patch),
     })
     void this._loadColorLut()
   }
@@ -1233,8 +855,34 @@ export class NVSlide extends EventTarget {
     const channels = [...this._channels]
     channels[c] = next
     this._channels = channels
+    if ('calMin' in update || 'calMax' in update) {
+      if (Number.isFinite(next.calMin) || Number.isFinite(next.calMax))
+        this._userWindows.add(c)
+      else this._userWindows.delete(c)
+    }
     if (next.visible && !old.visible && this._source.fetchTileSamples)
       this._refetchWithout(c)
+    this._rerender()
+  }
+
+  // SlideSourceHost.channelInfoChanged: the slide's channelInfo copy takes the
+  // patch; its window shows unless the user set one.
+  private _channelInfoChanged(
+    c: number,
+    patch: Pick<Partial<NVSlideChannelInfo>, 'window' | 'storedToValue'>,
+  ): void {
+    const info = this.manifest.channelInfo
+    const entry = info?.[c]
+    const channel = this._channels[c]
+    if (!info || !entry || !channel)
+      throw new RangeError(`NVSlide has no channel ${c}`)
+    info[c] = { ...entry, ...patch }
+    const { window } = patch
+    if (usableWindow(window) && !this._userWindows.has(c)) {
+      const channels = [...this._channels]
+      channels[c] = { ...channel, ...window }
+      this._channels = channels
+    }
     this._rerender()
   }
 
@@ -1433,31 +1081,8 @@ export class NVSlide extends EventTarget {
     this._emitChange()
   }
 
-  /**
-   * The pinned level, or for 'auto' the finest level giving at least
-   * `targetScreenPixelsPerTilePixel` device pixels per tile pixel. Pass the
-   * `screen` drawn: `viewport.scale` is CSS pixels per slide pixel, so without
-   * its devicePixelRatio a 2x display gets half the detail it can show.
-   */
   selectLevel(screen?: NVSlideScreen): NVSlideLevelManifest | null {
-    if (typeof this.levelChoice === 'number') {
-      return (
-        this.manifest.levels.find(
-          (level) => level.index === this.levelChoice,
-        ) ?? null
-      )
-    }
-    const devicePixelsPerSlidePixel =
-      this.viewport.scale * (screen?.devicePixelRatio ?? 1)
-    for (const level of this.manifest.levels) {
-      if (
-        devicePixelsPerSlidePixel * level.downsample >=
-        this.targetScreenPixelsPerTilePixel
-      ) {
-        return level
-      }
-    }
-    return this.manifest.levels[this.manifest.levels.length - 1] ?? null
+    return selectLevel(this, screen)
   }
 
   sourceLabelForLevel(level: NVSlideLevelManifest): string {
@@ -1515,11 +1140,14 @@ export class NVSlide extends EventTarget {
     // Warn once per change of outcome; this runs every frame.
     const capacity = this.tileCapacity(level)
     const fits = this.tileSpan(level, screen).count <= capacity
+    // Keyed by the budget too, so a budget that flaps back between frames stays quiet.
     const budget =
-      level === requested && fits ? '' : `${requested.index}>${level.index}`
+      level === requested && fits
+        ? ''
+        : `${requested.index}>${level.index}@${this._budget.tileBytes}/${this._budget.rawPoolBytes}`
     if (budget && budget !== this._budgetWarned)
       log.warn(
-        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes), the renderers' tile texture budget (96 MiB for scalar slides, 128 for RGB) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so only the ${capacity} tiles nearest the centre load`}. Zoom in, or raise maxCacheBytes if the tile cache is the limit.`,
+        `NVSlide ${this.id}: L${requested.index} needs ${this.tileSpan(requested, screen).count} tiles in view, more than the tile cache (maxCacheBytes), the renderers' tile texture budget (${(this._budget.tileBytes - this._budget.rawPoolBytes) / MiB} MiB for scalar slides, ${this._budget.tileBytes / MiB} for RGB) or the ${MAX_VISIBLE_TILES}-tile cap holds; ${fits ? `showing L${level.index}` : `even L${level.index} does not fit, so only the ${capacity} tiles nearest the centre load`}. Zoom in, or raise maxCacheBytes if the tile cache is the limit.`,
       )
     this._budgetWarned = budget
     const tiles = this.tilesForLevel(level, screen, capacity)
@@ -1539,185 +1167,69 @@ export class NVSlide extends EventTarget {
     return this.tileSpan(level, screen).count <= this.tileCapacity(level)
   }
 
-  // Tiles of `level` that can stay decoded at once. A quarter of the cache
-  // stays free for the coarse fallback layer and for requestTile() users (the
-  // wand, the 3D slide plane).
   private tileCapacity(level: NVSlideLevelManifest): number {
-    // Full tiles, not clipped edge extents: an upper bound, since a padded
-    // edge frame is held whole until decodeTileBitmap crops it.
-    // Sample tiles keep only their samples (1, 2 or 4 bytes each), one plane
-    // per fetched channel; bitmap tiles 4 bytes of RGBA. Without bitsStored,
-    // JPEG 2000 and JPEG-LS may decode 16-bit samples.
-    const bits = level.bitsStored ?? (level.codec === 'image/jpeg' ? 8 : 16)
-    // A grey JPEG stays an RGBA bitmap without OffscreenCanvas (decodeTileBitmap).
-    const greyBitmap =
-      level.codec === 'image/jpeg' && typeof OffscreenCanvas === 'undefined'
-    const planes = this._source.fetchTileSamples
-      ? this._visibleChannels().length
-      : isMonochrome(level) && !greyBitmap
-        ? 1
-        : 0
-    const pixelBytes = planes ? planes * (bits > 16 ? 4 : bits > 8 ? 2 : 1) : 4
-    const tw = this.levelTileWidth(level)
-    const th = this.levelTileHeight(level)
-    // Every tile in view is also an RGBA8 texture its renderer cannot evict:
-    // cap by the texture budget too, less the default raw pool for scalar
-    // tiles (NVSlide sees no renderer's pool size).
-    const textureBytes = planes ? tileTextureBudget() : tileTextureBudget(0)
-    return Math.min(
-      MAX_VISIBLE_TILES,
-      Math.floor((0.75 * this._cache.maxBytes) / (tw * th * pixelBytes)),
-      Math.floor((0.75 * textureBytes) / gutterTextureBytes(tw, th)),
+    return tileCapacity(
+      this.manifest,
+      level,
+      this._cache.maxBytes,
+      this._source.fetchTileSamples
+        ? this._visibleChannels().length
+        : undefined,
+      this._budget,
     )
   }
 
   /**
-   * Cached tiles from every level coarser than `target` that covers the
-   * viewport, coarsest first. Empty when every target tile is already cached
-   * (the steady state) or when `target` is the coarsest level.
+   * A renderer states the tile texture and raw pool bytes it draws this slide
+   * with (null: it no longer does). Capacity and its warning use the smallest
+   * registered, so a HUD calling visibleTiles agrees with the renderer;
+   * unregistered, 128 MiB of tile textures with a 32 MiB raw pool.
    */
+  setRendererBudget(
+    renderer: object,
+    budget: SlideRendererBudget | null,
+  ): void {
+    const map = this._rendererBudgets
+    if (budget ? map.get(renderer) === budget : !map.has(renderer)) return
+    if (budget) map.set(renderer, budget)
+    else map.delete(renderer)
+    // The smallest of each: RGB tiles get tileBytes, scalar tiles less the pool.
+    let tileBytes = DEFAULT_RENDERER_BUDGET.tileBytes
+    let scalarBytes = tileBytes - DEFAULT_RENDERER_BUDGET.rawPoolBytes
+    if (map.size) {
+      tileBytes = scalarBytes = Number.POSITIVE_INFINITY
+      for (const b of map.values()) {
+        tileBytes = Math.min(tileBytes, b.tileBytes)
+        scalarBytes = Math.min(scalarBytes, b.tileBytes - b.rawPoolBytes)
+      }
+    }
+    const old = this._budget
+    if (
+      old.tileBytes === tileBytes &&
+      old.tileBytes - old.rawPoolBytes === scalarBytes
+    )
+      return
+    this._budget = { tileBytes, rawPoolBytes: tileBytes - scalarBytes }
+  }
+
   private fallbackTiles(
     target: NVSlideLevelManifest,
     tiles: readonly NVSlideVisibleTile[],
     screen: NVSlideScreen,
   ): NVSlideVisibleTile[] {
-    let missing = false
-    for (const item of tiles) {
-      if (!this._cache.has(item.key)) {
-        missing = true
-        break
-      }
-    }
-    if (!missing) return []
-    const levels = this.manifest.levels
-    // Position in the array, not `level.index`: `selectLevel` walks the array
-    // finest-to-coarsest and a manifest may number its levels however it likes.
-    const targetPos = levels.indexOf(target)
-    if (targetPos < 0) return []
-    const out: NVSlideVisibleTile[] = []
-    for (let pos = levels.length - 1; pos > targetPos; pos--) {
-      const coarse = levels[pos]
-      if (!coarse) continue
-      for (const item of this.tilesForLevel(coarse, screen)) {
-        // Only what is ALREADY decoded: the fallback layer never issues a
-        // fetch, so it cannot compete with the target level for the load slots
-        // that will actually retire it.
-        if (this._cache.has(item.key)) out.push(item)
-      }
-    }
-    return out
+    return fallbackTiles(this, target, tiles, screen, this._cache)
   }
 
-  /** The tile columns/rows of one level covering the viewport, and the view geometry. */
   private tileSpan(level: NVSlideLevelManifest, screen: NVSlideScreen) {
-    const viewLeft =
-      this.viewport.centerX - screen.widthCss / (2 * this.viewport.scale)
-    const viewTop =
-      this.viewport.centerY - screen.heightCss / (2 * this.viewport.scale)
-    const viewRight =
-      this.viewport.centerX + screen.widthCss / (2 * this.viewport.scale)
-    const viewBottom =
-      this.viewport.centerY + screen.heightCss / (2 * this.viewport.scale)
-    // Map level pixels <-> base pixels by each level's ACTUAL per-axis scale
-    // (base / level dims), not the nominal `downsample`. When a pyramid level's
-    // dimensions are not an exact `base / 2^L` (rounding), `level.width *
-    // downsample != base width`, so a downsample-based mapping places the level's
-    // tiles over a slightly different base extent than the true [0, base] the
-    // drawing overlay (screenToSlide/slideToCss) uses — and the offset changes at
-    // each LOD boundary, so annotations appear to jump when zooming across a
-    // level. Using the exact scale makes every level cover exactly [0, base], so
-    // tiles register with each other and with slide-space drawings across zoom.
-    // It is also what lets a coarse fallback tile sit exactly under the target
-    // tiles it stands in for.
-    const dsX =
-      level.width > 0 ? this.manifest.width / level.width : level.downsample
-    const dsY =
-      level.height > 0 ? this.manifest.height / level.height : level.downsample
-    const levelLeft = Math.floor(viewLeft / dsX)
-    const levelTop = Math.floor(viewTop / dsY)
-    const levelRight = Math.ceil(viewRight / dsX)
-    const levelBottom = Math.ceil(viewBottom / dsY)
-    const tileWidth = this.levelTileWidth(level)
-    const tileHeight = this.levelTileHeight(level)
-    const firstX = clamp(
-      Math.floor(levelLeft / tileWidth),
-      0,
-      level.columns - 1,
-    )
-    const firstY = clamp(Math.floor(levelTop / tileHeight), 0, level.rows - 1)
-    const lastX = clamp(
-      Math.floor((levelRight - 1) / tileWidth),
-      0,
-      level.columns - 1,
-    )
-    const lastY = clamp(
-      Math.floor((levelBottom - 1) / tileHeight),
-      0,
-      level.rows - 1,
-    )
-    const count = (lastX - firstX + 1) * (lastY - firstY + 1)
-    return {
-      ...{ firstX, lastX, firstY, lastY, count },
-      ...{ dsX, dsY, tileWidth, tileHeight, viewLeft, viewTop, viewBottom },
-    }
+    return tileSpan(this.manifest, this.viewport, level, screen)
   }
 
-  /**
-   * The tiles of one pyramid level covering the current viewport, or when more
-   * than `limit` do, the centred block of at most `limit` shaped like the view.
-   */
   private tilesForLevel(
     level: NVSlideLevelManifest,
     screen: NVSlideScreen,
     limit = MAX_VISIBLE_TILES,
   ): NVSlideVisibleTile[] {
-    const dpr = screen.devicePixelRatio ?? 1
-    const span = this.tileSpan(level, screen)
-    let { firstX, lastX, firstY, lastY } = span
-    if (span.count > limit) {
-      const spanW = lastX - firstX + 1
-      const spanH = lastY - firstY + 1
-      // w <= limit keeps w * h <= limit when the span is a single row (#666).
-      const w = clamp(
-        Math.floor(Math.sqrt((limit * spanW) / spanH)),
-        1,
-        Math.min(spanW, limit),
-      )
-      const h = clamp(Math.floor(limit / w), 1, spanH)
-      firstX += Math.floor((spanW - w) / 2)
-      firstY += Math.floor((spanH - h) / 2)
-      lastX = firstX + w - 1
-      lastY = firstY + h - 1
-    }
-    const { dsX, dsY } = span
-    const { tileWidth, tileHeight, viewLeft, viewTop, viewBottom } = span
-    const screenScale = this.viewport.scale * dpr
-    const tiles: NVSlideVisibleTile[] = []
-    for (let y = firstY; y <= lastY; y++) {
-      for (let x = firstX; x <= lastX; x++) {
-        const tile = this.tileAt(level, x, y)
-        if (!tile) continue
-        const baseX = tile.x * tileWidth * dsX
-        const baseY = tile.y * tileHeight * dsY
-        const baseWidth = tile.width * dsX
-        const baseHeight = tile.height * dsY
-        const screenY = this.isYAxisUp()
-          ? (viewBottom - (baseY + baseHeight)) * screenScale
-          : (baseY - viewTop) * screenScale
-        tiles.push({
-          slide: this,
-          level,
-          tile,
-          key: this.tileKey(level, tile),
-          screenX: (baseX - viewLeft) * screenScale,
-          screenY,
-          screenWidth: baseWidth * screenScale,
-          screenHeight: baseHeight * screenScale,
-          flipY: this.isYAxisUp(),
-        })
-      }
-    }
-    return tiles
+    return tilesForLevel(this, level, screen, limit)
   }
 
   /** The tiles the last draw asked for (null before the first), to save a second walk. */
@@ -1795,56 +1307,16 @@ export class NVSlide extends EventTarget {
     )
       return memo.bitmap
     if (!entries.some(Boolean)) return null
-    const k = Math.min(1, maxPx / Math.max(level.width, level.height))
-    const canvas = new OffscreenCanvas(
-      Math.max(1, Math.round(level.width * k)),
-      Math.max(1, Math.round(level.height * k)),
+    const bitmap = composeThumbnail(
+      level,
+      entries,
+      maxPx,
+      this.levelTileWidth(level),
+      this.levelTileHeight(level),
+      this._channels,
+      this.channelBlend,
     )
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    const tw = this.levelTileWidth(level)
-    const th = this.levelTileHeight(level)
-    // Rounded edges: fractional ones would leave seams between tiles.
-    const draw = (
-      src: CanvasImageSource,
-      w: number,
-      h: number,
-      x: number,
-      y: number,
-    ) => {
-      const x0 = Math.round(x * k)
-      const y0 = Math.round(y * k)
-      ctx.drawImage(
-        src,
-        0,
-        0,
-        w,
-        h,
-        x0,
-        y0,
-        Math.round((x + w) * k) - x0,
-        Math.round((y + h) * k) - y0,
-      )
-    }
-    let scratch: OffscreenCanvasRenderingContext2D | null = null
-    level.tiles.forEach((tile, i) => {
-      const entry = entries[i]
-      if (!tile || !entry) return
-      if (isFuseTile(entry)) {
-        const { samples, width, height } = entry.samples
-        const plan = fusePlan(this._channels, this.channelBlend, entry)
-        const rgba = fuseSamples(samples, width * height, plan)
-        // putImageData does not scale: through a tile-sized canvas.
-        scratch ??= new OffscreenCanvas(tw, th).getContext('2d')
-        if (!scratch) return
-        scratch.putImageData(new ImageData(rgba, width, height), 0, 0)
-        draw(scratch.canvas, width, height, tile.x * tw, tile.y * th)
-      } else if (entry.bitmap) {
-        const { width, height } = entry.bitmap
-        draw(entry.bitmap, width, height, tile.x * tw, tile.y * th)
-      }
-    })
-    const bitmap = canvas.transferToImageBitmap()
+    if (!bitmap) return null
     memo?.bitmap.close()
     this._thumbs.delete(key)
     this._thumbs.set(key, { gen: this._displayGen, ids, bitmap })
@@ -1952,26 +1424,30 @@ export class NVSlide extends EventTarget {
     if (!s && !(reader && bitmap)) return this._missingSamples('uncached')
     const rgba = reader && bitmap && readPixels(reader, bitmap, px, py, 1, 1)
     const offset = s ? py * s.width + px : 0
+    const planes = s ? (s.planes ?? 1) : 4
     const info = this.manifest.channelInfo
     return this._channels.map(({ name }, channel) => {
       const plane = held ? held.indexOf(channel) : channel
       // A tile can outlive a hide or predate a show: visibility decides 'hidden'.
       if (!this._channels[channel]?.visible)
         return this._missingSample(channel, 'hidden', level)
-      if (plane < 0) return this._missingSample(channel, 'uncached', level)
+      // A bytes tile holds channel 0 alone (several channelInfo entries).
+      if (plane < 0 || plane >= planes)
+        return this._missingSample(channel, 'uncached', level)
       const stored = (
         s ? s.samples[plane * s.width * s.height + offset] : rgba?.[plane]
       ) as number
       const map = info?.[channel]?.storedToValue
+      const quantized = !!map && map.quantized !== false
       const sample: NVSlideSample = {
         channel,
         name,
-        value: map ? stored * map.scale + map.offset : stored,
+        value: toValue(stored, map),
         stored,
         level,
-        exact: level === 0 && !map,
+        exact: level === 0 && !quantized,
       }
-      if (map && (stored === 0 || stored === 65535)) sample.clipped = true
+      if (quantized && atStoredEnd(stored, s?.samples)) sample.clipped = true
       return sample
     })
   }
@@ -2005,7 +1481,12 @@ export class NVSlide extends EventTarget {
     this._emitChange()
   }
 
+  /**
+   * Abort loads, release the source when owned ({@link NVSlideOptions.ownsSource}),
+   * then clear the cache, which settles waiting loadSampleAt calls. Idempotent.
+   */
   dispose(): void {
+    if (this._disposed) return
     this._disposed = true
     this._colorAbort.abort()
     for (const { bitmap } of this._thumbs.values()) bitmap.close()
@@ -2019,25 +1500,25 @@ export class NVSlide extends EventTarget {
     for (const timer of this._retryTimers.values()) clearTimeout(timer)
     this._retryTimers.clear()
     this._failed.clear()
-    // Last: its change event finds nothing pending, so waiting loadSampleAt calls settle.
-    this.clearCache()
+    this._rendererBudgets.clear()
+    try {
+      if (this._ownsSource) this._source.dispose?.()
+    } finally {
+      // Last: its change event finds nothing pending, so waiting loadSampleAt calls settle.
+      this.clearCache()
+    }
   }
 
   private levelTileWidth(level: NVSlideLevelManifest): number {
-    return level.tileWidth ?? this.manifest.tileSize ?? 1
+    return levelTileWidth(this.manifest, level)
   }
 
   private levelTileHeight(level: NVSlideLevelManifest): number {
-    return level.tileHeight ?? this.manifest.tileSize ?? 1
+    return levelTileHeight(this.manifest, level)
   }
 
-  private tileAt(
-    level: NVSlideLevelManifest,
-    x: number,
-    y: number,
-  ): NVSlideTileManifest | null {
-    if (x < 0 || y < 0 || x >= level.columns || y >= level.rows) return null
-    return level.tiles[y * level.columns + x] ?? null
+  private tileAt(level: NVSlideLevelManifest, x: number, y: number) {
+    return tileAt(level, x, y)
   }
 
   /** The cache key {@link cachedTile} takes for a tile of a level. */
@@ -2080,57 +1561,6 @@ export class NVSlide extends EventTarget {
   /** The decoder registered for a codec, or undefined. */
   static tileDecoder(codec: string): SlideTileDecoder | undefined {
     return tileDecoders.get(codec)
-  }
-
-  private async decodeTileBitmap(
-    level: NVSlideLevelManifest,
-    tile: NVSlideTileManifest,
-    tileBytes: Uint8Array,
-    signal: AbortSignal,
-  ): Promise<ImageBitmap | NVSlideTileSamples> {
-    const codec = level.codec ?? 'raw-rgba'
-    const decoder = tileDecoders.get(codec)
-    if (!decoder) {
-      throw new Error(
-        `No decoder for tile codec "${codec}". ` +
-          'Register one with NVSlide.registerTileDecoder() ' +
-          '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
-      )
-    }
-    let decoded = await decoder(tileBytes, {
-      width: tile.width,
-      height: tile.height,
-      level,
-      signal,
-    })
-    // A decoder that returns only a bitmap (the browser's JPEG) still windows:
-    // a monochrome tile's grey level comes back as 8-bit samples.
-    // Without a 2D OffscreenCanvas (Safari < 16.4) such a tile shows unwindowed.
-    if (
-      isMonochrome(level) &&
-      !('samples' in decoded) &&
-      typeof OffscreenCanvas !== 'undefined'
-    )
-      decoded = greySamples(decoded)
-    // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
-    // a level smaller than one tile, at the right and bottom. Padding is not
-    // slide: crop it, or the level's image shrinks into one corner.
-    if (decoded.width <= tile.width && decoded.height <= tile.height)
-      return decoded
-    if ('samples' in decoded)
-      return cropSamples(decoded, tile.width, tile.height)
-    const bitmap = decoded
-    try {
-      return await createImageBitmap(
-        bitmap,
-        0,
-        0,
-        Math.min(bitmap.width, tile.width),
-        Math.min(bitmap.height, tile.height),
-      )
-    } finally {
-      bitmap.close()
-    }
   }
 
   private loadTile(
@@ -2201,12 +1631,7 @@ export class NVSlide extends EventTarget {
         // A source that cannot stop a read in progress may still resolve after
         // the abort; the tile is no longer wanted either way.
         signal.throwIfAborted()
-        const decoded = await this.decodeTileBitmap(
-          level,
-          tile,
-          tileBytes,
-          signal,
-        )
+        const decoded = await decodeTileBitmap(level, tile, tileBytes, signal)
         if ('samples' in decoded) samples = decoded
         else bitmap = decoded
       }

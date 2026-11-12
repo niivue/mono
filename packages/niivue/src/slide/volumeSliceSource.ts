@@ -42,9 +42,8 @@ import type {
   NVSlideTileManifest,
   NVSlideTileSamples,
   NVSlideYAxis,
-  SlideSourceHost,
-  SlideTileSource,
 } from './NVSlide'
+import type { SlideSourceHost, SlideTileSource } from './slideSource'
 
 /** The display axis held FIXED by the plane (its normal). */
 export type VolumeSliceAxis = 'x' | 'y' | 'z'

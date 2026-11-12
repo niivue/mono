@@ -8,8 +8,8 @@ import type {
   NVSlideRangeEvent,
   NVSlideRangeStatus,
   NVSlideTileManifest,
-  SlideSourceHost,
 } from './NVSlide'
+import type { SlideSourceHost } from './slideSource'
 import { VolumeSliceSource } from './volumeSliceSource'
 
 const DT_UINT8 = 2
@@ -79,6 +79,7 @@ function recordingHost(events: NVSlideRangeEvent[]): SlideSourceHost & {
     },
     rangeHit() {},
     rangeFallback() {},
+    channelInfoChanged() {},
     pushRangeEvent(event: NVSlideRangeEvent) {
       events.push({ ...event })
     },

@@ -37,12 +37,17 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "e2e": {
-      "command": "node tests/folder.e2e.mjs && node tests/omezarr-time.e2e.mjs",
+      "command": "node tests/folder.e2e.mjs && node tests/omezarr-time.e2e.mjs && node tests/zarr-slide.e2e.mjs",
       "options": {
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["build"],
-      "inputs": ["typescript", "^typescript", "{projectRoot}/tests/**/*"]
+      "inputs": [
+        "typescript",
+        "^typescript",
+        "{projectRoot}/tests/**/*",
+        "{workspaceRoot}/packages/nv-ext-tile/fixtures/zarr-variants/**/*"
+      ]
     },
     "bench": {
       "command": "node bench/run.mjs",

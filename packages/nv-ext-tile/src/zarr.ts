@@ -4,6 +4,7 @@
 // biome-ignore lint/performance/noBarrelFile: package entry point
 export { fetchOmeZarrChunkedSource } from './zarr/fetchOmeZarrChunkedSource'
 export {
+  type OmeZarrAttribution,
   type OmeZarrAxis,
   type OmeZarrAxisIndices,
   type OmeZarrChannel,
@@ -47,9 +48,11 @@ export {
   omeZarrChannelFile,
   omeZarrChannelName,
   omeZarrChannelOptions,
+  omeZarrLabelColormap,
   omeZarrNiftiDatatype,
   omeZarrVolumesFrom,
   openOmeZarr,
+  type ZarrFetch,
 } from './zarr/omeZarrLoader'
 export {
   clearPersistentByteCaches,
@@ -65,6 +68,7 @@ export {
 } from './zarr/persistentByteCache'
 export { type StreamOmeZarrOptions, streamOmeZarr } from './zarr/streamOmeZarr'
 export {
+  ZARR_SLIDE_CACHE_BYTES,
   type ZarrSlideOptions,
   ZarrSlideSource,
   type ZarrSlideUrlOptions,

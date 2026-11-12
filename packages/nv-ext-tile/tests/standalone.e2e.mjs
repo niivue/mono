@@ -3,7 +3,8 @@
  * joined by one import map, served under a nested base (/a/b/). Checks that
  *   - a NIfTI page loads no extension code,
  *   - a Zarr page loads /zarr (whole level and streamed) and nothing of /tiff
- *     or /dicom,
+ *     or /dicom; a Zarr slide reads tiles on the chunk workers, or on the
+ *     page when CSP blocks workers,
  *   - a DICOM page decodes JPEG 2000 and JPEG-LS tiles through the mapped
  *     @niivue/dcm2niix and applies an ICC profile, with the decoder registered
  *     through '@niivue/niivue' visible from the WebGPU entry (one core),
@@ -214,6 +215,34 @@ const PAGES = {
     const bytes = await source.fetchChunk({ levelIndex: 0, texOrigin: [0, 0, 0], texDims: level.shape, bytesPerVoxel: 1 })
     source.dispose?.()
     return { whole, streamed: [...bytes] }`),
+  // A Zarr slide reads its tiles on the chunk workers; switching to z 1
+  // reads that plane; dispose ends the workers.
+  'zarr-slide.html': page(`
+    const { ZarrSlideSource } = await import('@niivue/nv-ext-tile/zarr')
+    const url = new URL('./fixtures/tiny.ome.zarr', location.href).href
+    window.countWorkers = true
+    const source = await ZarrSlideSource.fromUrl(url)
+    const read = async (m) => [...(await source.fetchTileBytes(m.levels[0], m.levels[0].tiles[0], 'x'))]
+    const z0 = await read(source.manifest)
+    const z1 = await read(await source.preparePlane({ z: 1, t: 0 }))
+    const made = window.madeWorkers
+    source.dispose()
+    return { planes: source.planes, z0, z1, made, live: window.liveWorkers }`),
+  // Workers blocked by CSP: the same tiles, read on this thread.
+  'zarr-slide-csp.html': page(`
+    const { ZarrSlideSource } = await import('@niivue/nv-ext-tile/zarr')
+    const url = new URL('./fixtures/tiny.ome.zarr', location.href).href
+    window.countWorkers = true
+    const source = await ZarrSlideSource.fromUrl(url)
+    const read = async (m) => [...(await source.fetchTileBytes(m.levels[0], m.levels[0].tiles[0], 'x'))]
+    const z0 = await read(source.manifest)
+    const z1 = await read(await source.preparePlane({ z: 1, t: 0 }))
+    const made = window.madeWorkers
+    source.dispose()
+    return { planes: source.planes, z0, z1, made, live: window.liveWorkers }`).replace(
+    '<meta charset="utf-8">',
+    `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="worker-src 'none'">`,
+  ),
   // streamOmeZarr owns its manager and workers: replacing the volume or
   // destroying the viewer releases both (managers, live workers per step).
   'stream.html': page(`
@@ -629,13 +658,16 @@ try {
   for (const name of Object.keys(PAGES)) {
     const tab = await browser.newPage()
     const requests = []
+    const logs = []
     tab.on('request', (r) => requests.push(r.url().slice(origin.length)))
+    tab.on('console', (m) => logs.push(m.text()))
     tab.on('pageerror', (e) => check(false, `${name}: ${e.message}`))
     await tab.goto(origin + name)
     await tab.waitForFunction(() => window.result, null, { timeout: 30000 })
     results[name] = {
       result: await tab.evaluate(() => window.result),
       requests,
+      logs,
     }
     if (results[name].result.error)
       check(false, `${name}: ${results[name].result.error}`)
@@ -770,6 +802,26 @@ try {
       near(native.tile ?? [], [200, 30, 30, 255]),
     `native fetch as an option: ManifestRangeSource, openSlide (manifest, TIFF) read tiles and ICC ${JSON.stringify(native)}`,
   )
+  const z0 = Array.from({ length: 12 }, (_, i) => i)
+  const z1 = z0.map((v) => v + 12)
+  for (const [name, workers] of [
+    ['zarr-slide.html', true],
+    ['zarr-slide-csp.html', false],
+  ]) {
+    const r = results[name].result
+    const fellBack = results[name].logs.some((t) =>
+      t.includes('chunk worker failed, reading on the main thread'),
+    )
+    check(
+      r.planes?.z === 2 &&
+        r.planes.t === 1 &&
+        r.z0?.join() === z0.join() &&
+        r.z1?.join() === z1.join() &&
+        (workers ? r.made > 0 && !fellBack : fellBack) &&
+        r.live === 0,
+      `${name}: z 0 and z 1 tiles ${workers ? 'on the chunk workers' : 'on this thread (CSP blocks workers)'}, none left after dispose ${JSON.stringify(r)}`,
+    )
+  }
   const stream = results['stream.html'].result
   check(
     JSON.stringify(stream.steps?.map((s) => s[0])) === '[1,1,1,0,1,0,0]' &&

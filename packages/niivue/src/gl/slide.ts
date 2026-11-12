@@ -2,9 +2,7 @@ import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
   NVSlideCachedTile,
-  NVSlideColor,
   NVSlideScreen,
-  NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
@@ -12,7 +10,6 @@ import {
   rawPoolBytes,
   SlideBudgetRegistration,
   type SlideRendererOptions,
-  tileTextureBudget,
 } from '@/slide/slideFuse'
 import {
   buildSlideOverlay,
@@ -20,15 +17,20 @@ import {
   SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
-import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
-import { type GutterAt, visibleTileAt } from '@/slide/tileGutter'
+import {
+  frameTextureBudget,
+  planTextures,
+  SlideFramePlan,
+  writeRectNdc,
+  writeTileUv,
+} from '@/slide/slideTiles'
+import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
-import { NVRenderer } from '@/view/NVRenderer'
 import { timeChunkPhase } from '@/volume/chunkTiming'
 import { ColorLutTexturesGL } from './colorLut'
 import { FontRenderer } from './font'
@@ -39,8 +41,10 @@ import { slideFragShader, slideVertShader } from './slideShader'
 import { TileFuserGL } from './tileFuse'
 import { TileGutterGL, type TileTextureGL } from './tileGutter'
 
-export class SlideRenderer extends NVRenderer {
-  private _shader: Shader | null = null // the variant in use
+// Not an NVRenderer: `render(slides, screen)` draws with the context given to
+// `init`, so it has no `draw(gl, ...)`.
+export class SlideRenderer {
+  private _isReady = false
   private _plainShader: Shader | null = null
   private _lutShader: Shader | null = null
   private _vao: WebGLVertexArrayObject | null = null
@@ -75,19 +79,32 @@ export class SlideRenderer extends NVRenderer {
   private readonly _lines = new LineRenderer()
   private readonly _font = new FontRenderer()
 
+  private readonly _maxPoolBytes: number
+  private readonly _plan = new SlideFramePlan()
+  private readonly _planTextures: (TileTextureGL | null)[] = []
+  private readonly _ndc = new Float32Array(4)
+  private readonly _uv = new Float32Array(4)
+
   constructor({ maxRawPoolBytes }: SlideRendererOptions = {}) {
-    super()
     const poolBytes = rawPoolBytes(maxRawPoolBytes)
+    this._maxPoolBytes = poolBytes
     this._fuser = new TileFuserGL(poolBytes)
     this._budget = new SlideBudgetRegistration(this, poolBytes)
     this._textures = new TileTextureCache<TileTextureGL>(
       DEFAULT_TILE_TEXTURE_BYTES,
-      (entry) => this._gl?.deleteTexture(entry.texture),
+      (entry) => {
+        this._gl?.deleteTexture(entry.texture)
+        if (entry.labels) this._gl?.deleteTexture(entry.labels)
+      },
     )
   }
 
+  get isReady(): boolean {
+    return this._isReady
+  }
+
   init(gl: WebGL2RenderingContext): void {
-    if (this.isReady) return
+    if (this._isReady) return
 
     this._gl = gl
     this._nearestSampler = gl.createSampler()
@@ -105,8 +122,8 @@ export class SlideRenderer extends NVRenderer {
       shader.use(gl)
       gl.uniform1i(shader.uniforms.slideTexture, 0)
       gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+      gl.uniform1i(shader.uniforms.labelTexture ?? null, 2)
     }
-    this._shader = this._plainShader
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
     this._vertexBuffer = gl.createBuffer()
@@ -114,11 +131,14 @@ export class SlideRenderer extends NVRenderer {
 
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, 16 * 4, gl.DYNAMIC_DRAW)
+    // The unit quad's corners in triangle-strip order TL, TR, BL, BR.
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+      gl.STATIC_DRAW,
+    )
     gl.enableVertexAttribArray(0)
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 16, 0)
-    gl.enableVertexAttribArray(1)
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 16, 8)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
     gl.bindVertexArray(null)
 
     this._placeholderTexture = gl.createTexture()
@@ -140,117 +160,145 @@ export class SlideRenderer extends NVRenderer {
     )
     gl.bindTexture(gl.TEXTURE_2D, null)
 
-    this.isReady = true
+    this._isReady = true
   }
 
-  /** Draw `slides` with the context given to `init`; no-op before it. */
+  /**
+   * Draw `slides` with the context given to `init` (no-op before it): per
+   * slide its background, fallback tiles, then target tiles (SlideFramePlan),
+   * every upload and fuse done before the first draw.
+   */
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
-    if (this._gl) this.draw(this._gl, slides, screen)
-  }
-
-  /** @deprecated Use {@link render}; `draw` is removed with the frame plan. */
-  draw(
-    gl: WebGL2RenderingContext,
-    slides: readonly NVSlide[],
-    screen: NVSlideScreen,
-  ): void {
     this._budget.sync(slides)
-    if (
-      !this.isReady ||
-      !this._shader ||
-      !this._vao ||
-      !this._vertexBuffer ||
-      !this._placeholderTexture
-    ) {
-      return
-    }
+    const gl = this._gl
     const placeholder = this._placeholderTexture
-    const width = Math.max(
-      1,
-      Math.floor(screen.widthCss * (screen.devicePixelRatio ?? 1)),
-    )
-    const height = Math.max(
-      1,
-      Math.floor(screen.heightCss * (screen.devicePixelRatio ?? 1)),
-    )
+    if (!gl || !this._plainShader || !this._vao || !placeholder) return
+    this._fuser.retainLabelTables(gl, slides)
+    const dpr = screen.devicePixelRatio ?? 1
+    const width = Math.max(1, Math.floor(screen.widthCss * dpr))
+    const height = Math.max(1, Math.floor(screen.heightCss * dpr))
+    const nearest = this.isNearestInterpolation
+    const plan = this._plan
+    plan.build(slides, screen)
 
     // Evict BEFORE beginFrame so the previous frame's working set (still
     // marked with the current frame stamp) is exempt; see TileTextureCache.
-    // The raw pool takes its bytes from the texture budget only while it holds
-    // layers (scalar tiles), so RGB slides keep the whole budget.
-    this._textures.evictToBudget(tileTextureBudget(this._fuser.poolBytes))
+    this._textures.evictToBudget(
+      frameTextureBudget(plan.fuses, this._fuser.poolBytes, this._maxPoolBytes),
+    )
     this._textures.beginFrame()
+    gl.activeTexture(gl.TEXTURE0)
+    if (!nearest) this._gutter.resync(gl, this._textures)
+    const textures = this._planTextures
+    planTextures(
+      this._textures,
+      plan.uploadAt,
+      plan.uploadCached,
+      (i) =>
+        this.textureFor(
+          gl,
+          plan.uploadAt[i] as GutterAt,
+          plan.uploads[i] as NVSlideVisibleTile,
+          plan.uploadCached[i] as NVSlideCachedTile,
+        ),
+      textures,
+    )
+    // Nearest needs no gutter (the shader clamps); resync fills it.
+    this._fuser.flush(gl, this._gutter, this._textures, !nearest)
 
     // Self-contained: own the full canvas viewport and clear it each frame so
-    // the demo just calls draw() once per frame.
+    // the demo just calls render() once per frame.
     gl.viewport(0, 0, width, height)
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
-
     gl.bindVertexArray(this._vao)
-    gl.bindBuffer(gl.ARRAY_BUFFER, this._vertexBuffer)
-    gl.activeTexture(gl.TEXTURE0)
-    if (!this.isNearestInterpolation) this._gutter.resync(gl, this._textures)
-    gl.bindSampler(0, this.isNearestInterpolation ? this._nearestSampler : null)
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-
-    for (const slide of slides) {
-      if (!slide.visible || slide.opacity <= 0) continue
-      this.useShader(gl, slide)
-      const bounds = slide.screenRectForSlide(screen)
-      this.drawRect(
-        gl,
-        width,
-        height,
-        bounds,
-        this._placeholderTexture,
-        slide.backgroundColor,
-        slide.opacity,
-        false,
-      )
-      // Upload every tile before drawing any: an upload refreshes resident
-      // neighbours' gutters, which must land before those are drawn (WebGPU
-      // submits its gutter copies ahead of the frame).
-      const quads: [
-        NVSlideVisibleTile,
-        TileTextureGL | null,
-        NVSlideScreenRect,
-        boolean,
-      ][] = []
-      forEachSlideTile(slide, screen, (item, cached, rect, isFallback) => {
-        const texture = cached ? this.textureFor(gl, item, cached) : null
-        if (!isFallback || texture)
-          quads.push([item, texture, rect, isFallback])
-      })
-      // Nearest needs no gutter (the shader clamps); resync fills it.
-      this._fuser.flush(
-        gl,
-        this._gutter,
-        this._textures,
-        !this.isNearestInterpolation,
-      )
-      for (const [item, texture, rect, isFallback] of quads)
-        this.drawTile(
-          gl,
-          width,
-          height,
-          rect,
-          texture?.texture ?? placeholder,
-          slide.placeholderColor,
-          slide.gridColor,
-          slide.opacity,
-          item,
-          !texture,
-          !isFallback && slide.showTileGrid,
+    // Alpha as WebGPU's ALPHA_BLEND: the canvas stays opaque, so a translucent
+    // quad never lets the page show through.
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+    )
+    const ndc = this._ndc
+    const uv = this._uv
+    for (let s = 0; s < plan.slides.length; s++) {
+      const slide = plan.slides[s] as NVSlide
+      const shader = this.useShader(gl, slide)
+      const u = shader.uniforms
+      gl.uniform1f(u.opacity, slide.opacity)
+      const b = slide.screenRectForSlide(screen)
+      if (writeRectNdc(b.x, b.y, b.width, b.height, width, height, ndc, 0)) {
+        gl.uniform4fv(u.rect, ndc)
+        gl.uniform4f(u.uvRect, 0, 0, 1, 1)
+        gl.uniform4fv(u.placeholderColor, slide.backgroundColor)
+        gl.uniform1i(u.isPlaceholder, 1)
+        gl.uniform1i(u.showGrid, 0)
+        gl.bindTexture(gl.TEXTURE_2D, placeholder)
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      }
+      gl.uniform4fv(u.placeholderColor, slide.placeholderColor)
+      gl.uniform4fv(u.gridColor, slide.gridColor)
+      const sum = slide.channelBlend === 'additive' ? 2 : 1
+      let quadNearest: boolean | null = null
+      let quadLabels = -1
+      for (
+        let q = plan.slideStart[s] as number;
+        q < (plan.slideEnd[s] as number);
+        q++
+      ) {
+        const upload = plan.quadUpload[q] as number
+        const texture = upload < 0 ? null : textures[upload]
+        const isFallback = plan.quadFallback[q] as boolean
+        // A deferred (or failed) upload draws nothing, so its fallback shows.
+        if (!texture && (isFallback || upload >= 0)) continue
+        const tile = plan.quads[q] as NVSlideVisibleTile
+        if (
+          !writeRectNdc(
+            tile.screenX,
+            tile.screenY,
+            tile.screenWidth,
+            tile.screenHeight,
+            width,
+            height,
+            ndc,
+            0,
+          )
         )
+          continue
+        writeTileUv(tile, uv, 0)
+        const labels = texture?.labels ? sum : 0
+        if (labels !== quadLabels) {
+          quadLabels = labels
+          gl.uniform1i(u.labelBlend, labels)
+        }
+        if (texture?.labels) {
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, texture.labels)
+          gl.activeTexture(gl.TEXTURE0)
+        }
+        // A fused tile of label channels samples nearest whatever the mode.
+        const n = nearest || texture?.nearest === true
+        if (n !== quadNearest) {
+          quadNearest = n
+          gl.uniform1i(u.isNearest, n ? 1 : 0)
+          gl.bindSampler(0, n ? this._nearestSampler : null)
+        }
+        gl.uniform4fv(u.rect, ndc)
+        gl.uniform4fv(u.uvRect, uv)
+        gl.uniform1i(u.isPlaceholder, texture ? 0 : 1)
+        gl.uniform1i(u.showGrid, !isFallback && slide.showTileGrid ? 1 : 0)
+        gl.bindTexture(gl.TEXTURE_2D, texture ? texture.texture : placeholder)
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      }
     }
 
     // The overlay's font atlas keeps its own (linear) filtering.
     gl.bindSampler(0, null)
-    this._drawOverlay(gl, width, height, screen.devicePixelRatio ?? 1)
+    this._drawOverlay(gl, width, height, dpr)
 
     // UIKit overlay hook: last screen-space draw of the frame, with blend on and
     // depth/cull off (the widget sets and restores its own state as needed).
@@ -258,7 +306,7 @@ export class SlideRenderer extends NVRenderer {
       this.overlayDraw({
         handle: { backend: 'webgl2', gl },
         bounds: { x: 0, y: 0, width, height },
-        dpr: screen.devicePixelRatio ?? 1,
+        dpr,
         settled: true,
       })
     }
@@ -280,14 +328,12 @@ export class SlideRenderer extends NVRenderer {
   }
 
   // The plain shader unless the slide has a colour table to apply.
-  private useShader(gl: WebGL2RenderingContext, slide: NVSlide): void {
+  private useShader(gl: WebGL2RenderingContext, slide: NVSlide): Shader {
     const lut = slide.displayColorLut
-    const shader = lut ? this._lutShader : this._plainShader
-    if (!shader) return
-    this._shader = shader
+    const shader = (lut && this._lutShader) || (this._plainShader as Shader)
     shader.use(gl)
-    gl.uniform1i(shader.uniforms.isNearest, this.isNearestInterpolation ? 1 : 0)
     if (lut) this._luts.bind(gl, lut)
+    return shader
   }
 
   destroy(): void {
@@ -309,11 +355,10 @@ export class SlideRenderer extends NVRenderer {
     this._placeholderTexture = null
     this._vertexBuffer = null
     this._vao = null
-    this._shader = null
     this._plainShader = null
     this._lutShader = null
     this._gl = null
-    this.isReady = false
+    this._isReady = false
   }
 
   private _drawOverlay(
@@ -341,10 +386,10 @@ export class SlideRenderer extends NVRenderer {
 
   private textureFor(
     gl: WebGL2RenderingContext,
+    at: GutterAt,
     item: NVSlideVisibleTile,
     cached: NVSlideCachedTile,
   ): TileTextureGL | null {
-    const at = visibleTileAt(item)
     if (isFuseTile(cached))
       return this._fuser.textureFor(
         gl,
@@ -381,105 +426,5 @@ export class SlideRenderer extends NVRenderer {
         ),
       bitmap.width * bitmap.height * 4,
     )
-  }
-
-  private drawRect(
-    gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
-    rect: NVSlideScreenRect,
-    texture: WebGLTexture,
-    color: NVSlideColor,
-    opacity: number,
-    showGrid: boolean,
-  ): void {
-    this.drawQuad(gl, width, height, rect, texture, color, color, opacity, {
-      uvTop: 0,
-      uvBottom: 1,
-      isPlaceholder: true,
-      showGrid,
-    })
-  }
-
-  private drawTile(
-    gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
-    rect: NVSlideScreenRect,
-    texture: WebGLTexture,
-    placeholderColor: NVSlideColor,
-    gridColor: NVSlideColor,
-    opacity: number,
-    item: NVSlideVisibleTile,
-    isPlaceholder: boolean,
-    showGrid: boolean,
-  ): void {
-    this.drawQuad(
-      gl,
-      width,
-      height,
-      rect,
-      texture,
-      placeholderColor,
-      gridColor,
-      opacity,
-      {
-        uvTop: item.flipY ? 1 : 0,
-        uvBottom: item.flipY ? 0 : 1,
-        isPlaceholder,
-        showGrid,
-      },
-    )
-  }
-
-  private drawQuad(
-    gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
-    rect: NVSlideScreenRect,
-    texture: WebGLTexture,
-    placeholderColor: NVSlideColor,
-    gridColor: NVSlideColor,
-    opacity: number,
-    options: {
-      uvTop: number
-      uvBottom: number
-      isPlaceholder: boolean
-      showGrid: boolean
-    },
-  ): void {
-    if (!this._shader) return
-    const ndc = slideRectNdc(rect, width, height)
-    if (!ndc) return
-    const [x0, y0, x1, y1] = ndc
-    const vertices = new Float32Array([
-      x0,
-      y0,
-      0,
-      options.uvTop,
-      x1,
-      y0,
-      1,
-      options.uvTop,
-      x0,
-      y1,
-      0,
-      options.uvBottom,
-      x1,
-      y1,
-      1,
-      options.uvBottom,
-    ])
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertices)
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.uniform1f(this._shader.uniforms.opacity, opacity)
-    gl.uniform1i(
-      this._shader.uniforms.isPlaceholder,
-      options.isPlaceholder ? 1 : 0,
-    )
-    gl.uniform1i(this._shader.uniforms.showGrid, options.showGrid ? 1 : 0)
-    gl.uniform4fv(this._shader.uniforms.placeholderColor, placeholderColor)
-    gl.uniform4fv(this._shader.uniforms.gridColor, gridColor)
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
   }
 }

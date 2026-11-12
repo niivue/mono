@@ -1895,9 +1895,36 @@ and its volumes alive."""
         Parameters
         ----------
         slide : NVSlide
-        opts : { pixelToWorld: readonly number[]; levelIndex?: number | undefined; }
+        opts : { pixelToWorld: readonly number[]; levelIndex?: number | undefined; isNearestInterpolation?: boolean | undefined; }
         """
         self.send({"cmd": "setSlidePlane", "args": _make_args(slide, opts)})
+
+    async def set_slide_plane_index(self, index: Any) -> Any:
+        """Show focal plane `z`, time point `t` of the slide plane (`NVSlide.setPlaneIndex`): the old plane stays on screen until the new one is ready.
+
+        Resolves false
+        when a newer call superseded it or there is no plane; rejects on failure.
+
+        Parameters
+        ----------
+        index : NVSlidePlaneIndex
+
+        Returns
+        -------
+        Promise<boolean>
+        """
+        return await self._request("setSlidePlaneIndex", _make_args(index))
+
+    def set_slide_plane_interpolation(self, is_nearest: Any) -> None:
+        """Sample the slide plane nearest-neighbour (true) or linear.
+
+        No-op without a plane.
+
+        Parameters
+        ----------
+        is_nearest : boolean
+        """
+        self.send({"cmd": "setSlidePlaneInterpolation", "args": _make_args(is_nearest)})
 
     def set_slide_plane_level(self, level_index: Any = _UNSET) -> None:
         """Pin the slide plane's pyramid level (0 = finest), or return to the camera-driven choice with undefined.

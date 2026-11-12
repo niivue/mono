@@ -148,6 +148,30 @@ describe('map_point', () => {
   })
 })
 
+describe('set_slide plane and interpolation', () => {
+  it('switches the focal plane and sets nearest through NiiVue', async () => {
+    const view = {
+      drawScene: mock(),
+      slideChannels: [],
+      slidePlaneIndex: { z: 1, t: 0 },
+      slidePlanes: { z: 3, t: 1 },
+      setSlidePlaneIndex: mock(async () => true),
+      setSlidePlaneInterpolation: mock(),
+    } as unknown as View
+    const { set_slide } = viewportHandlers(hostOf(view))
+    expect(set_slide({ nearest: true })).toMatchObject({})
+    expect(view.setSlidePlaneInterpolation).toHaveBeenCalledWith(true)
+    const out = await set_slide({ plane: { z: 1, t: 0 } })
+    expect(view.setSlidePlaneIndex).toHaveBeenCalledWith({ z: 1, t: 0 })
+    expect(out).toMatchObject({
+      planeCommitted: true,
+      planeIndex: { z: 1, t: 0 },
+      planes: { z: 3, t: 1 },
+    })
+    expect(() => set_slide({ plane: { z: -1, t: 0 } })).toThrow()
+  })
+})
+
 describe('set_slide', () => {
   it('sets or clears the slide plane level and works the slide drawing', () => {
     const view = baseView({
@@ -178,7 +202,7 @@ describe('set_slide', () => {
     expect(view.slideDrawEnd).toHaveBeenCalledTimes(1)
     expect(view.clearSlideDrawing).toHaveBeenCalledTimes(1)
     expect(() => set_slide({})).toThrow(
-      'set_slide needs something to do: level, clear_plane, drawing, channel, channel_blend or color_management.',
+      'set_slide needs something to do: level, plane, nearest, clear_plane, drawing, channel, channel_blend or color_management.',
     )
     expect(() => set_slide({ drawing: 'paint' })).toThrow(
       'Unknown drawing "paint". One of: create, clear, undo, end.',

@@ -64,7 +64,8 @@ const rampSlide = `(NVSlide, scalar = false) => {
       },
     } : {}),
   })
-  const cached = (keys) => keys.every((k) => slide.cachedTile(k))
+  // Tiles as [x, y] of level 0.
+  const cached = (tiles) => tiles.every(([x, y]) => slide.cachedTile(slide.tileKey(slide.manifest.levels[0], { x, y })))
   return { slide, release, cached }
 }`
 
@@ -140,11 +141,11 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
             await new Promise((res) => setTimeout(res, 20))
           }
         }
-        await until(['L0/0/0', 'L0/1/0', 'L0/0/1'], true)
+        await until([[0, 0], [1, 0], [0, 1]], true)
         draw()
         release()
         // No draw until it is cached: read() below is the first frame with it.
-        await until(['L0/1/1'], false)
+        await until([[1, 1]], false)
         // Read in the same task as the draw: a WebGPU canvas drops its texture once presented.
         const read = () => {
           draw()
@@ -221,7 +222,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         draw = () => renderer.render([slide], screen)
       }
       renderer.isNearestInterpolation = true
-      const keys = ['L0/0/0', 'L0/1/0', 'L0/0/1', 'L0/1/1']
+      const keys = [[0, 0], [1, 0], [0, 1], [1, 1]]
       for (let i = 0; i < 100 && !cached(keys); i++) {
         draw()
         await new Promise((res) => setTimeout(res, 20))
@@ -295,10 +296,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           await new Promise((res) => setTimeout(res, 20))
         }
       }
-      await until(['L0/0/0', 'L0/1/0', 'L0/0/1'])
+      await until([[0, 0], [1, 0], [0, 1]])
       nv.getCanvasImage()
       release()
-      await until(['L0/1/1'])
+      await until([[1, 1]])
       const img = nv.getCanvasImage()
       nv.destroy()
       canvas.remove()

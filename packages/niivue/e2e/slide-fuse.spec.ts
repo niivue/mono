@@ -134,7 +134,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         }
         // One screen pixel per texel centre.
         renderer.isNearestInterpolation = true
-        const keys = tiles.map((t) => 'L0/' + t.x + '/' + t.y)
+        const keys = tiles.map((t) => slide.tileKey(slide.manifest.levels[0], t))
         for (let i = 0; i < 100 && keys.some((k) => !slide.cachedTile(k)); i++) {
           slide.requestVisibleTiles(screen)
           await new Promise((res) => setTimeout(res, 20))
@@ -144,7 +144,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         const expected = () => {
           const out = new Uint8ClampedArray(W * H * 4)
           for (const t of tiles) {
-            const entry = slide.cachedTile('L0/' + t.x + '/' + t.y)
+            const entry = slide.cachedTile(slide.tileKey(slide.manifest.levels[0], t))
             const s = entry.samples
             const plan = fusePlan(slide.channels, slide.channelBlend, entry)
             const rgba = fuseSamples(s.samples, s.width * s.height, plan)

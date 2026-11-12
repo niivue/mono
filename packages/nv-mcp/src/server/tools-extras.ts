@@ -61,6 +61,18 @@ export const EXTRA_SCHEMAS = {
         'The resolution level of the slide plane to show; null lets NiiVue choose.',
       ),
     clear_plane: z.boolean().optional().describe('Take the slide plane away.'),
+    plane: z
+      .object({ z: z.number().int().min(0), t: z.number().int().min(0) })
+      .optional()
+      .describe(
+        'The focal plane z and time point t to show (both from 0); the reported planes give the counts and planeIndex the current one. The old plane stays on screen until the new one is ready.',
+      ),
+    nearest: z
+      .boolean()
+      .optional()
+      .describe(
+        'Sample the slide plane nearest-neighbour (true, crisp pixels) or linear (false).',
+      ),
     drawing: z
       .enum(['create', 'clear', 'undo', 'end'])
       .optional()
@@ -217,7 +229,8 @@ export function registerExtraTools(
   registerSimple(server, context, 'set_slide', {
     title: 'Work the slide plane',
     description:
-      'For a whole-slide image: picks the resolution level of the slide plane, clears the plane, ' +
+      'For a whole-slide image: picks the resolution level, focal plane / time point and ' +
+      'interpolation of the slide plane, clears the plane, ' +
       'works on the slide drawing, or sets a channel (visible, colormap, window) and how the ' +
       "channels blend, and turns colour management (the slide's ICC profile) on or off. Reports " +
       'the channels, blend and colour management afterwards when a slide plane is set; ' +

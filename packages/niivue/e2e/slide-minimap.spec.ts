@@ -92,7 +92,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         return [...ctx.getImageData(x, y, 1, 1).data.slice(0, 3)]
       }
       // The minimap requests the coarsest tile itself.
-      for (let i = 0; i < 100 && !slide.cachedTile('L1/0/0'); i++) {
+      for (let i = 0; i < 100 && !slide.cachedTile(slide.tileKey(slide.manifest.levels[1], { x: 0, y: 0 })); i++) {
         draw()
         await new Promise((res) => setTimeout(res, 20))
       }

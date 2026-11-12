@@ -13,6 +13,7 @@ import type {
   NVSlide,
   NVSlideCachedTile,
   NVSlideChannelBlend,
+  NVSlideChannelInfo,
   NVSlideSampleArray,
   NVSlideTileSamples,
   NVSlideWindow,
@@ -44,16 +45,30 @@ export interface SlideRendererBudget {
  * A renderer's budget, registered on the slides it draws
  * (NVSlide.setRendererBudget) and removed from those it stops drawing and on
  * destroy, so a dead renderer leaves no budget behind and holds no slide.
+ * Each of n slides gets 1/n of it, as their tiles in view share one texture
+ * cache; a slide of label and intensity channels half that, as its tiles take
+ * two textures each (fuseTarget).
  */
 export class SlideBudgetRegistration {
   private readonly _slides = new Set<NVSlide>()
-  readonly budget: SlideRendererBudget
+  private _shares = 1
+  // New objects per share count: setRendererBudget skips the one it holds.
+  private _budget: SlideRendererBudget
+  private _mixedBudget: SlideRendererBudget
 
   constructor(
     private readonly _renderer: object,
-    rawPoolBytes: number,
+    private readonly _rawPoolBytes: number,
   ) {
-    this.budget = { tileBytes: DEFAULT_TILE_TEXTURE_BYTES, rawPoolBytes }
+    this._budget = this._share(1)
+    this._mixedBudget = this._share(2)
+  }
+
+  private _share(n: number): SlideRendererBudget {
+    return {
+      tileBytes: DEFAULT_TILE_TEXTURE_BYTES / n,
+      rawPoolBytes: this._rawPoolBytes / n,
+    }
   }
 
   /** Register on `slides`, unregister from the rest. */
@@ -63,8 +78,21 @@ export class SlideBudgetRegistration {
         slide.setRendererBudget(this._renderer, null)
         this._slides.delete(slide)
       }
+    const n = Math.max(1, slides.length)
+    if (n !== this._shares) {
+      this._shares = n
+      this._budget = this._share(n)
+      this._mixedBudget = this._share(2 * n)
+    }
     for (const slide of slides) {
-      slide.setRendererBudget(this._renderer, this.budget)
+      const info = slide.manifest.channelInfo
+      const mixed =
+        info?.some((c) => c.kind === 'label') &&
+        info.some((c) => c.kind !== 'label')
+      slide.setRendererBudget(
+        this._renderer,
+        mixed ? this._mixedBudget : this._budget,
+      )
       this._slides.add(slide)
     }
   }
@@ -101,8 +129,29 @@ export interface FuseLayer {
   colormap: string
 }
 
+/**
+ * Label colours of one channel as packed 0xAABBGGRR (little-endian RGBA8
+ * bytes, the layout every WebGL2/WebGPU platform uploads), alpha folded into
+ * RGB. IDs at or past `size` take `labelColor`.
+ */
+export interface LabelTable {
+  colors: Uint32Array
+  size: number
+  /** Texture width; colors.length is width * rows. */
+  width: number
+}
+
+/** One visible label channel of a tile: integer IDs through its table, never windowed. */
+export interface FuseLabelLayer {
+  plane: number
+  table: LabelTable
+  /** The highlighted ID (others dim by LABEL_DIM / 256), or null. */
+  selected: number | null
+}
+
 export interface FusePlan {
   layers: FuseLayer[]
+  labels: readonly FuseLabelLayer[]
   additive: boolean
   /** MONOCHROME1: the windowed level is inverted before the colormap. */
   invert: boolean
@@ -146,21 +195,114 @@ export function resolveWindow(
   }
 }
 
-/** The visible channels of `tile` under the slide's channel state. */
+/** Non-highlighted IDs of a highlighted label channel: colour * 77 >> 8 (0.3x). */
+export const LABEL_DIM = 77
+
+/**
+ * The default colour of label `id` as 0xFFBBGGRR: a lowbias32 hash, each byte
+ * mapped to 64..255 so no label reads as background. The shaders (gl|wgpu
+ * tileFuse.ts) compute the same in uint arithmetic.
+ */
+export function labelColor(id: number): number {
+  let h = id >>> 0
+  h ^= h >>> 16
+  h = Math.imul(h, 0x7feb352d)
+  h ^= h >>> 15
+  h = Math.imul(h, 0x846ca68b)
+  h ^= h >>> 16
+  const byte = (shift: number) => 64 + ((((h >>> shift) & 255) * 3) >>> 2)
+  return (0xff000000 | (byte(16) << 16) | (byte(8) << 8) | byte(0)) >>> 0
+}
+
+const LABEL_TABLE_WIDTH = 4096
+type LabelColors = NonNullable<NVSlideChannelInfo['labelColors']>
+const NO_COLORS: LabelColors = []
+/** The label tables of `slides`' label channels (memoised per labelColors). */
+export function liveLabelTables(slides: readonly NVSlide[]): Set<LabelTable> {
+  const live = new Set<LabelTable>()
+  for (const slide of slides)
+    for (const c of slide.manifest.channelInfo ?? [])
+      if (c.kind === 'label') live.add(labelTable(c.labelColors))
+  return live
+}
+
+/** Free the entries of `tables` (and their textures) not in `used`. */
+export function pruneLabelTables<T>(
+  tables: Map<LabelTable, T>,
+  used: ReadonlySet<LabelTable>,
+  free: (texture: T) => void,
+): void {
+  for (const [table, texture] of tables)
+    if (!used.has(table)) {
+      free(texture)
+      tables.delete(table)
+    }
+}
+
+const labelTables = new WeakMap<LabelColors, LabelTable>()
+
+/**
+ * The table of `labelColors`: dense to the largest stated ID (ID 0 black
+ * unless stated), defaults filled in. Memoized by array identity.
+ * ponytail: dense, 4 B per ID up to the largest override (IDs < 2^24 -> 64 MiB,
+ * 4096 rows); go sparse (sorted IDs, binary search) if sources state huge sparse IDs.
+ */
+export function labelTable(labelColors: LabelColors = NO_COLORS): LabelTable {
+  let table = labelTables.get(labelColors)
+  if (!table) {
+    const size = 1 + labelColors.reduce((m, c) => Math.max(m, c.id), 0)
+    const width = Math.min(size, LABEL_TABLE_WIDTH)
+    const colors = new Uint32Array(width * Math.ceil(size / width))
+    for (let id = 1; id < size; id++) colors[id] = labelColor(id)
+    for (const {
+      id,
+      rgba: [r, g, b, a],
+    } of labelColors) {
+      const k = (c: number) => Math.round((c * a) / 255)
+      colors[id] = (0xff000000 | (k(b) << 16) | (k(g) << 8) | k(r)) >>> 0
+    }
+    table = { colors, size, width }
+    labelTables.set(labelColors, table)
+  }
+  return table
+}
+
+const NO_LABELS: FuseLabelLayer[] = []
+
+/**
+ * The visible channels of `tile` under the slide's channel state. Channels of
+ * kind 'label' in `info` go to `labels`, `selected` (NVSlide.selectedLabel)
+ * highlighting one ID of one of them.
+ */
 export function fusePlan(
   channels: readonly NVChannel[],
   blend: NVSlideChannelBlend,
   { samples: s, channels: held, level }: FuseTile,
+  info?: readonly NVSlideChannelInfo[],
+  selected?: { channel: number; id: number } | null,
 ): FusePlan {
   const range = storedRange(s.samples, level.bitsStored ?? s.bitsStored)
   const layers: FuseLayer[] = []
+  // Shared empty until a label channel shows: intensity-only plans allocate nothing more.
+  let labels: FuseLabelLayer[] = NO_LABELS
   for (let plane = 0; plane < (s.planes ?? 1); plane++) {
-    const ch = channels[held ? (held[plane] as number) : plane]
-    if (ch?.visible)
+    const c = held ? (held[plane] as number) : plane
+    const ch = channels[c]
+    if (!ch?.visible) continue
+    const ci = info?.[c]
+    if (ci?.kind === 'label') {
+      if (labels === NO_LABELS) labels = []
+      labels.push({
+        plane,
+        table: labelTable(ci.labelColors),
+        selected: selected?.channel === c ? selected.id : null,
+      })
+    } else
       layers.push({ plane, colormap: ch.colormap, ...resolveWindow(ch, range) })
   }
   return {
     layers,
+    labels,
     additive: blend === 'additive',
     invert: level.photometric === 'MONOCHROME1',
   }
@@ -213,8 +355,57 @@ export function fuseSamples(
       }
     }
   }
+  for (const l of plan.labels) {
+    const { colors } = l.table
+    const base = l.plane * pixels
+    const [sel, other, size] = labelUniforms(l)
+    // Packed 0xBBGGRR, the highlight applied: (byte * m) >> 8, m 256 or LABEL_DIM.
+    const at = (i: number): number => {
+      const id = labelId(samples[base + i] as number)
+      const c = id < size ? (colors[id] as number) : labelColor(id)
+      const m = id === sel ? 256 : other
+      return (
+        (((c & 255) * m) >>> 8) |
+        (((((c >>> 8) & 255) * m) >>> 8) << 8) |
+        (((((c >>> 16) & 255) * m) >>> 8) << 16)
+      )
+    }
+    if (plan.additive) {
+      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
+        const c = at(i)
+        out[o] += c & 255
+        out[o + 1] += (c >>> 8) & 255
+        out[o + 2] += c >>> 16
+      }
+    } else {
+      for (let i = 0, o = 0; i < pixels; i++, o += 4) {
+        const c = at(i)
+        out[o] = Math.max(out[o] as number, c & 255)
+        out[o + 1] = Math.max(out[o + 1] as number, (c >>> 8) & 255)
+        out[o + 2] = Math.max(out[o + 2] as number, c >>> 16)
+      }
+    }
+  }
   return out
 }
+
+/** A sample as a label ID, as the shaders: truncated; NaN and <= 0 are 0. */
+const labelId = (v: number): number => (v > 0 ? v >>> 0 : 0)
+
+/**
+ * A label layer's shader uniforms (and fuseSamples'): the selected ID, the
+ * colour scale in 256ths of every other ID (256 without a selection), the
+ * table size and width.
+ */
+export const labelUniforms = ({
+  table,
+  selected,
+}: FuseLabelLayer): [number, number, number, number] => [
+  selected === null ? 0 : labelId(selected),
+  selected === null ? 256 : LABEL_DIM,
+  table.size,
+  table.width,
+]
 
 /** ceil(log2 |x|): -Infinity for 0. */
 const exponent = (x: number): number => Math.ceil(Math.log2(Math.abs(x)))
@@ -306,33 +497,52 @@ export interface FuseJob<T> {
 
 /**
  * The tile texture for scalar tile `at` of `slide`, made by `create` and kept in
- * `cache` on first use; queued in `jobs` when new or its channels changed. Null
- * when the padded tile exceeds `maxTexture`: samples are not scaled to fit as
- * bitmaps are (fitGutterSource), so the tile draws as its placeholder.
+ * `cache` on first use; queued in `jobs` when new or its channels changed. A
+ * tile showing label and intensity channels gets a second texture for the
+ * labels (`create`'s `labels`), drawn nearest over the linear intensity; a
+ * change between that and one texture remakes the entry. Null when the padded
+ * tile exceeds `maxTexture` (samples are not scaled to fit as bitmaps are,
+ * fitGutterSource) or the frame's texture budget: the tile is not drawn.
  */
-export function fuseTarget<T extends { fused?: number }>(
+export function fuseTarget<
+  T extends { fused?: number; nearest?: boolean; labels?: unknown },
+>(
   jobs: FuseJob<T>[],
   cache: TileTextureCache<T>,
   at: GutterAt,
   slide: NVSlide,
   tile: FuseTile,
   maxTexture: number,
-  create: (width: number, height: number) => T,
+  create: (width: number, height: number, labels: boolean) => T,
 ): T | null {
   const { width, height } = tile.samples
   let target = cache.get(at.key, tile.samples)
-  if (!target) {
-    if (Math.max(width, height) + 2 > maxTexture) return null
-    target = create(width, height)
-    cache.set(at.key, target, gutterTextureBytes(width, height), tile.samples)
+  if (target?.fused === slide.displayGeneration) return target
+  const plan = fusePlan(
+    slide.channels,
+    slide.channelBlend,
+    tile,
+    slide.manifest.channelInfo,
+    slide.selectedLabel,
+  )
+  const mixed = plan.layers.length > 0 && plan.labels.length > 0
+  if (!target || (target.labels !== undefined) !== mixed) {
+    const bytes = gutterTextureBytes(width, height) * (mixed ? 2 : 1)
+    // Over the size limit, or the frame's texture budget (ENG-11): not drawn.
+    if (Math.max(width, height) + 2 > maxTexture || !cache.reserve(bytes))
+      return null
+    target = create(width, height, mixed)
+    cache.set(at.key, target, bytes, tile.samples)
   }
-  if (target.fused !== slide.displayGeneration) {
-    target.fused = slide.displayGeneration
-    const plan = fusePlan(slide.channels, slide.channelBlend, tile)
-    jobs.push({ target, key: at.key, tile, plan })
-  }
+  target.fused = slide.displayGeneration
+  // Labels only: drawn nearest, so magnified edges blend no colour.
+  target.nearest = plan.layers.length === 0 && plan.labels.length > 0
+  jobs.push({ target, key: at.key, tile, plan })
   return target
 }
+
+// Shared, so a slide without labels allocates nothing per tile.
+const NONE: readonly [] = []
 
 const layerKey = (key: string, plane: number): string => `${key}#${plane}`
 
@@ -347,29 +557,42 @@ export function fuseTiles<T, R>(
   jobs: readonly FuseJob<T>[],
   pool: TileTextureCache<R>,
   upload: (samples: NVSlideTileSamples, plane: number) => R,
-  draw: (job: FuseJob<T>, layers: readonly [FuseLayer, R][]) => void,
+  draw: (
+    job: FuseJob<T>,
+    layers: readonly [FuseLayer, R][],
+    labels: readonly [FuseLabelLayer, R][],
+  ) => void,
 ): void {
-  const pooled = (job: FuseJob<T>): boolean =>
-    job.plan.layers.every(
-      (l) =>
-        pool.get(layerKey(job.key, l.plane), job.tile.samples) !== undefined,
-    )
+  const pooled = ({ key, tile, plan }: FuseJob<T>): boolean => {
+    const hit = (l: { plane: number }) =>
+      pool.get(layerKey(key, l.plane), tile.samples) !== undefined
+    return plan.layers.every(hit) && plan.labels.every(hit)
+  }
   const hits: FuseJob<T>[] = []
   const misses: FuseJob<T>[] = []
   for (const job of jobs) (pooled(job) ? hits : misses).push(job)
   for (const job of [...hits, ...misses]) {
     const s = job.tile.samples
     const bytes = s.samples.byteLength / (s.planes ?? 1)
-    const layers = job.plan.layers.map((l): [FuseLayer, R] => {
-      const key = layerKey(job.key, l.plane)
-      let raw = pool.get(key, s)
-      if (raw === undefined) {
-        raw = upload(s, l.plane)
-        pool.set(key, raw, bytes, s)
+    const raw = (plane: number): R => {
+      const key = layerKey(job.key, plane)
+      let r = pool.get(key, s)
+      if (r === undefined) {
+        // Evict earlier tiles' layers first; this tile's own always upload
+        // (ponytail: a pool smaller than one tile overshoots by that tile).
+        pool.reserve(bytes)
+        r = upload(s, plane)
+        pool.set(key, r, bytes, s)
       }
-      return [l, raw]
-    })
-    draw(job, layers)
+      return r
+    }
+    draw(
+      job,
+      job.plan.layers.map((l): [FuseLayer, R] => [l, raw(l.plane)]),
+      job.plan.labels.length
+        ? job.plan.labels.map((l): [FuseLabelLayer, R] => [l, raw(l.plane)])
+        : NONE,
+    )
     // A new pool frame: every layer, this tile's too, is evictable now.
     pool.beginFrame()
     pool.evictToBudget()

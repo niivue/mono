@@ -61,6 +61,8 @@ export function slideState(view: View) {
         channels,
         channelBlend: view.slideChannelBlend,
         colorManagement: view.slideColorManagement,
+        ...(view.slidePlaneIndex ? { planeIndex: view.slidePlaneIndex } : {}),
+        ...(view.slidePlanes ? { planes: view.slidePlanes } : {}),
       }
     : {}
 }
@@ -210,6 +212,19 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         level === undefined || level === null
           ? undefined
           : integer(params, 'level')
+      const planeArg = params?.plane as { z?: unknown; t?: unknown } | undefined
+      const planeIndex =
+        planeArg === undefined
+          ? undefined
+          : {
+              z: integer(planeArg as Params, 'z', 0) ?? 0,
+              t: integer(planeArg as Params, 't', 0) ?? 0,
+            }
+      const nearest = flag(params, 'nearest')
+      if (planeIndex && !view.setSlidePlaneIndex)
+        throw new Error("This page's NiiVue cannot switch slide planes.")
+      if (nearest !== undefined && !view.setSlidePlaneInterpolation)
+        throw new Error("This page's NiiVue has no slide plane.")
       const drawing = choice(params, 'drawing', SLIDE_DRAWING)
       const maxRaster = integer(params, 'max_raster', 1)
       // Every requested op is checked before the first change, so a missing
@@ -264,6 +279,11 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         view.setSlidePlaneLevel?.(levelIndex)
         changed = true
       }
+      if (nearest !== undefined) {
+        view.setSlidePlaneInterpolation?.(nearest)
+        changed = true
+      }
+      if (planeIndex) changed = true
       if (flag(params, 'clear_plane')) {
         view.clearSlidePlane?.()
         changed = true
@@ -274,14 +294,21 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed)
         throw new Error(
-          'set_slide needs something to do: level, clear_plane, drawing, channel, channel_blend or color_management.',
+          'set_slide needs something to do: level, plane, nearest, clear_plane, drawing, channel, channel_blend or color_management.',
         )
       view.drawScene()
-      return {
+      const result = {
         ...(level === undefined ? {} : { level }),
         ...(drawing ? { drawing } : {}),
-        ...slideState(view),
       }
+      // The switch is async; false when a newer switch superseded it.
+      return planeIndex && view.setSlidePlaneIndex
+        ? view.setSlidePlaneIndex(planeIndex).then((planeCommitted) => ({
+            ...result,
+            planeCommitted,
+            ...slideState(view),
+          }))
+        : { ...result, ...slideState(view) }
     },
 
     async sample_slide(params: Params) {

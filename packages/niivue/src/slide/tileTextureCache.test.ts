@@ -108,4 +108,25 @@ describe('TileTextureCache', () => {
     expect(cache.bytes).toBe(0)
     expect(cache.size).toBe(0)
   })
+
+  it('reserve evicts entries not drawn this frame, and refuses past the budget', () => {
+    const { cache, destroyed } = makeCache(100)
+    cache.set('old', 'texOld', 50)
+    cache.beginFrame()
+    cache.set('a', 'texA', 40) // drawn this frame
+    expect(cache.reserve(50)).toBe(true) // the old entry goes
+    expect(destroyed).toEqual(['texOld'])
+    cache.set('b', 'texB', 50)
+    expect(cache.reserve(20)).toBe(false) // both drawn this frame: defer
+    expect(cache.bytes).toBe(90)
+  })
+
+  it('reserve keeps the frame budget evictToBudget set', () => {
+    const { cache } = makeCache(100)
+    cache.evictToBudget(60)
+    cache.beginFrame()
+    cache.set('a', 'texA', 40)
+    expect(cache.reserve(30)).toBe(false)
+    expect(cache.reserve(20)).toBe(true)
+  })
 })

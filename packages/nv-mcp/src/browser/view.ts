@@ -805,6 +805,12 @@ export interface View {
 
   // The slide plane, for a whole-slide image.
   setSlidePlaneLevel?(level?: number): unknown
+  /** Null without a slide plane. */
+  readonly slidePlaneIndex?: { z: number; t: number } | null
+  /** Focal plane and time point counts; null without a slide plane. */
+  readonly slidePlanes?: { z: number; t: number } | null
+  setSlidePlaneIndex?(index: { z: number; t: number }): Promise<boolean>
+  setSlidePlaneInterpolation?(isNearest: boolean): unknown
   clearSlidePlane?(): unknown
   createSlideDrawing?(options?: { maxRaster?: number }): unknown
   clearSlideDrawing?(): unknown

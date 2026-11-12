@@ -27,9 +27,14 @@ function fakeDevice() {
     createBindGroup: (d: { entries: { resource: unknown }[] }) => ({
       buffer: (d.entries[0].resource as { buffer: FakeBuffer }).buffer,
     }),
-    queue: { writeBuffer: () => {} },
+    queue: {
+      writeBuffer: (b: FakeBuffer) => {
+        writes.push(b)
+      },
+    },
   }
-  return { device: device as unknown as GPUDevice, buffers }
+  const writes: FakeBuffer[] = []
+  return { device: device as unknown as GPUDevice, buffers, writes }
 }
 
 function fakePass() {
@@ -52,9 +57,10 @@ function readyRenderer(): SlidePlaneRendererGPU {
   const r = new SlidePlaneRendererGPU()
   Object.assign(r, {
     _isReady: true,
-    _pipeline: {},
+    _pipelineFor: () => ({}),
     _uniformBGL: {},
     _sampler: {},
+    _nearestSampler: {},
   })
   return r
 }
@@ -77,6 +83,7 @@ const tiles = (n: number): SlidePlaneTile[] =>
   )
 
 const slide = {
+  manifest: {},
   displayColorLut: null,
   cachedTile: () => null,
   setRendererBudget: () => {},
@@ -100,14 +107,31 @@ describe('SlidePlaneRendererGPU', () => {
     }
   })
 
-  test('buffers replaced in a pass are destroyed on the next pass', () => {
+  test('a vertex buffer outgrown in a pass is destroyed on the next pass', () => {
     const { device, buffers } = fakeDevice()
     const r = readyRenderer()
     const mvp = new Float32Array(16)
     r.draw(device, fakePass().pass, mvp, tiles(1), slide)
+    // Fits the first buffer (room for twice the first set): reused.
     r.draw(device, fakePass().pass, mvp, tiles(2), slide)
+    expect(buffers).toHaveLength(2) // uniform + vertex
+    r.draw(device, fakePass().pass, mvp, tiles(8), slide)
     expect(buffers.filter((b) => b.destroyed)).toHaveLength(0)
-    r.draw(device, fakePass().pass, mvp, tiles(2), slide)
+    r.draw(device, fakePass().pass, mvp, tiles(8), slide)
     expect(buffers.filter((b) => b.destroyed)).toHaveLength(1)
+  })
+
+  test('the same tiles in a new array do not rewrite the vertex buffer', () => {
+    const { device, buffers, writes } = fakeDevice()
+    const r = readyRenderer()
+    const mvp = new Float32Array(16)
+    const set = tiles(3)
+    r.draw(device, fakePass().pass, mvp, set, slide)
+    const vertex = buffers[1]
+    const before = writes.filter((b) => b === vertex).length
+    r.draw(device, fakePass().pass, mvp, [...set], slide)
+    expect(writes.filter((b) => b === vertex).length).toBe(before)
+    r.draw(device, fakePass().pass, mvp, set.slice(1), slide)
+    expect(writes.filter((b) => b === vertex).length).toBe(before + 1)
   })
 })

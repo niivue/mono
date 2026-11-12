@@ -452,6 +452,7 @@ export const UI_DEFAULTS: UIConfig = {
   measureLineColor: [1, 0, 0, 1],
   measureTextColor: [1, 0, 0, 1],
   rulerWidth: 2,
+  rulerUnits: 'auto',
   graph: {
     normalizeValues: false,
     isRangeCalMinMax: false,

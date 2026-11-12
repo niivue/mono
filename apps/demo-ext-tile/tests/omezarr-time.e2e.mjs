@@ -452,7 +452,7 @@ async function check(backend) {
   let g = await segState()
   if (
     g.n !== C + 1 ||
-    !g.colormap.endsWith('labels') ||
+    !/ labels \(.+\)$/.test(g.colormap) ||
     g.label !== (g.frame % 2) + 1
   )
     fail(`segmentation added: ${JSON.stringify(g)}`)
@@ -514,7 +514,12 @@ async function check(backend) {
 }
 
 try {
-  for (const backend of ['webgl2', 'webgpu']) await check(backend)
+  // CI's Ubuntu runners lose the SwiftShader WebGPU device mid-run
+  // (niivue-e2e.yml header), so the job there asks for WebGL2 only.
+  for (const backend of (
+    process.env.DEMO_E2E_BACKENDS ?? 'webgl2,webgpu'
+  ).split(','))
+    await check(backend)
 } finally {
   await browser.close()
   server.close()

@@ -1,3 +1,5 @@
+import { addColormap, lookupColorMap } from '@/cmap/NVCmaps'
+
 /**
  * Colormap assignment for the channels of a multi-channel acquisition.
  *
@@ -141,4 +143,24 @@ export function channelColormapsFor(
     taken.add(name)
     return name
   })
+}
+
+/**
+ * Register a black-to-`rgb` ramp (0-255 per component) and return its name,
+ * `#rrggbb`, for a channel's `colormap`: an exact colour such as an omero
+ * channel's hex, where {@link channelColormapFor} snaps to the nearest of
+ * seven ramps. Registering the same colour again reuses the entry. Page-wide,
+ * like every colormap; documents embed it (`documentColormaps`).
+ */
+export function addChannelColormap(
+  rgb: readonly [number, number, number],
+): string {
+  const [r, g, b] = rgb.map((v) =>
+    Math.max(0, Math.min(255, Math.round(v))),
+  ) as [number, number, number]
+  const name = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+  if (!lookupColorMap(name))
+    // Alpha as the bundled channel ramps (green, red, ...) have it.
+    addColormap(name, { R: [0, r], G: [0, g], B: [0, b], A: [0, 128] })
+  return name
 }

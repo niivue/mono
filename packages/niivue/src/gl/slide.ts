@@ -304,6 +304,8 @@ export class SlideRenderer extends NVRenderer {
       if (this._vertexBuffer) gl.deleteBuffer(this._vertexBuffer)
       if (this._vao) gl.deleteVertexArray(this._vao)
       gl.deleteSampler(this._nearestSampler)
+      for (const shader of [this._plainShader, this._lutShader])
+        if (shader) gl.deleteProgram(shader.program)
     }
     this._nearestSampler = null
     this._placeholderTexture = null

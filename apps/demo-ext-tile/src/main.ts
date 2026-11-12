@@ -1,13 +1,17 @@
-import { fromBlob, Pool } from '@niivue/geotiff-rs'
-import type { NVSlideScreen, SlideTileSource } from '@niivue/niivue'
+import { Pool } from '@niivue/geotiff-rs'
+import type {
+  NVSlideAttribution,
+  NVSlidePoint,
+  SlideView,
+} from '@niivue/niivue'
 import {
+  attachSlideLens,
+  createSlideView,
   DRAG_MODE,
-  DziSource,
+  formatSlideSample,
+  linkSlideViews,
   NVSlide,
-  NVSlideController,
-  SlideRenderer,
-  SlideRendererGPU,
-  slideOverlayContent,
+  slideStatsSummary,
 } from '@niivue/niivue'
 import {
   DicomWsiSource,
@@ -15,16 +19,19 @@ import {
   registerDcm2niixDecoders,
   type SlideIndex,
 } from '@niivue/nv-ext-tile/dicom'
-import {
-  registerDcm2niixTiffDecoders,
-  TiffSlideSource,
-} from '@niivue/nv-ext-tile/tiff'
+import { registerDcm2niixTiffDecoders } from '@niivue/nv-ext-tile/tiff'
 import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
+// Optional: drop these calls and the @niivue/uikit dependency to lose the
+// minimap, the HUD and the channel panel.
+import {
+  attachSlideChannelPanel,
+  attachSlideHud,
+  attachSlideMinimap,
+  attachSlidePlaneControl,
+} from '@niivue/uikit'
 import { droppedFiles } from './drop'
-// Optional: remove this import, its call and the @niivue/uikit dependency to drop the minimap.
-import { attachMinimap } from './minimap'
+import { openTiffFile, openUrlSource, type Source, sniffFile } from './open'
 
-let canvas = document.getElementById('canvas') as HTMLCanvasElement
 const filesInput = document.getElementById('files') as HTMLInputElement
 const slideSelect = document.getElementById('slides') as HTMLSelectElement
 const seriesLabel = document.getElementById('series') as HTMLLabelElement
@@ -54,6 +61,13 @@ const aaToggle = document.getElementById('aa') as HTMLInputElement
 const hidpiToggle = document.getElementById('hidpi') as HTMLInputElement
 const filterSelect = document.getElementById('filter') as HTMLSelectElement
 const credit = document.getElementById('credit') as HTMLDivElement
+const readout = document.getElementById('readout') as HTMLOutputElement
+const dragSelect = document.getElementById('drag') as HTMLSelectElement
+const channelsPanel = document.getElementById('channels') as HTMLElement
+const minimapToggle = document.getElementById('minimap') as HTMLInputElement
+const compareSelect = document.getElementById('compare') as HTMLSelectElement
+let compareCanvas = document.getElementById('canvas2') as HTMLCanvasElement
+const compareChannels = document.getElementById('channels2') as HTMLElement
 
 // Backend and AA are fixed when the canvas context is made, so changing them
 // reloads the page with ?backend= / ?aa=.
@@ -79,142 +93,103 @@ function reloadWith(name: string, value: string): void {
 backendSelect.onchange = () => reloadWith('backend', backendSelect.value)
 aaToggle.onchange = () => reloadWith('aa', aaToggle.checked ? 'on' : 'off')
 
-// WebGPU unless ?backend=webgl2 or no adapter.
-const gpu =
-  params.get('backend') === 'webgl2'
-    ? null
-    : await SlideRendererGPU.create(canvas, { antialias }).catch((err) => {
-        console.warn('WebGPU unavailable, using WebGL2', err)
-        return null
-      })
-const webgl2 = () => canvas.getContext('webgl2', { alpha: false, antialias })
-let gl = gpu ? null : webgl2()
-if (!gpu && !gl) {
-  // A WebGPU failure after getContext('webgpu') leaves this canvas unusable for WebGL2.
-  const fresh = canvas.cloneNode() as HTMLCanvasElement
-  canvas.replaceWith(fresh)
-  canvas = fresh
-  gl = webgl2()
-}
-const renderer = gpu ?? new SlideRenderer()
-if (renderer instanceof SlideRenderer) {
-  if (!gl) throw new Error('Neither WebGPU nor WebGL2 is available')
-  renderer.init(gl)
-}
-backendSelect.value = gpu ? 'webgpu' : 'webgl2'
-aaToggle.checked = antialias
-// HiDPI draws at the display's pixel ratio; it is disabled on a 1x display and
-// re-checked when the ratio changes (another monitor, browser zoom).
-function watchPixelRatio(): void {
-  hidpiToggle.disabled = window.devicePixelRatio <= 1
-  matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
-    'change',
-    () => {
-      watchPixelRatio()
-      requestRender()
+// One view for every slide: WebGPU unless ?backend=webgl2 or no adapter.
+let hover: NVSlidePoint | null = null
+const view = await createSlideView(
+  document.getElementById('canvas') as HTMLCanvasElement,
+  {
+    backend: params.get('backend') === 'webgl2' ? 'webgl2' : 'webgpu',
+    antialias,
+    hidpi: hidpiToggle.checked,
+    overlayStyle: { isRulerVisible: scaleBarToggle.checked },
+    // Left and middle drag pan, right drag zooms to a box, the wheel zooms.
+    controller: {
+      primaryDragMode: DRAG_MODE.pan,
+      secondaryDragMode: DRAG_MODE.roiSelection,
+      onHover: (point) => {
+        hover = point
+        showReadout()
+      },
     },
-    { once: true },
-  )
-}
-watchPixelRatio()
-hidpiToggle.addEventListener('change', () => requestRender())
-scaleBarToggle.addEventListener('change', () => requestRender())
-// Outlines each drawn tile; fires 'change', which redraws.
-gridToggle.addEventListener('change', () =>
-  slide?.setTileGridVisible(gridToggle.checked),
+    onRender: afterRender,
+  },
 )
+const { renderer } = view
+const requestRender = view.requestRender
+backendSelect.value = view.backend
+aaToggle.checked = antialias
+// The toggles below reach the compare pane too.
+const views = (): SlideView[] => (compare ? [view, compare.view] : [view])
+hidpiToggle.addEventListener('change', () => {
+  for (const v of views()) v.hidpi = hidpiToggle.checked
+})
+scaleBarToggle.addEventListener('change', () => {
+  view.overlayStyle = { isRulerVisible: scaleBarToggle.checked }
+  // The lens shows through the main view's bar.
+  if (compare && compareSelect.value !== 'lens')
+    compare.view.overlayStyle = { isRulerVisible: scaleBarToggle.checked }
+})
+// Outlines each drawn tile; fires 'change', which redraws.
+gridToggle.addEventListener('change', () => {
+  for (const v of views()) v.slide?.setTileGridVisible(gridToggle.checked)
+})
 filterSelect.addEventListener('change', () => {
-  renderer.isNearestInterpolation = filterSelect.value === 'nearest'
-  requestRender()
-})
-// Decode tiles in web workers rather than on the main thread.
-const pool = new Pool()
-
-let slide: NVSlide | null = null
-const slideOptions = () => ({
-  colorManagement: iccToggle.checked,
-  showTileGrid: gridToggle.checked,
-})
-// TIFF sources hold geotiff state; DICOM-WSI sources only hold Files.
-// An OME-Zarr store may carry an `attribution` attribute (the demo stores do).
-type Attribution = Partial<
-  Record<
-    'title' | 'url' | 'license' | 'credit' | 'citation' | 'modified',
-    string
-  >
->
-type Source = SlideTileSource & {
-  dispose?(): void
-  attribution?: Attribution
-}
-let source: Source | null = null
-let frame = 0
-let needsFit = false
-
-function screen(): NVSlideScreen {
-  const rect = canvas.getBoundingClientRect()
-  return {
-    widthCss: rect.width,
-    heightCss: rect.height,
-    // Never below 1: browser zoom-out would otherwise draw a blurry canvas.
-    devicePixelRatio: hidpiToggle.checked
-      ? Math.max(1, window.devicePixelRatio || 1)
-      : 1,
+  for (const v of views()) {
+    v.renderer.isNearestInterpolation = filterSelect.value === 'nearest'
+    v.requestRender()
   }
+})
+// Windowing and contrast set the channel the panel's radio picks.
+dragSelect.addEventListener('change', () => {
+  if (view.controller)
+    view.controller.primaryDragMode = Number(dragSelect.value) as DRAG_MODE
+})
+let detachMinimap: (() => void) | null = null
+const syncMinimap = () => {
+  detachMinimap?.()
+  detachMinimap = minimapToggle.checked
+    ? attachSlideMinimap(view, { corner: 'top-right' })
+    : null
+}
+minimapToggle.addEventListener('change', syncMinimap)
+syncMinimap()
+attachSlideHud(view, hud, (slide, s) => [
+  [
+    'backend',
+    `${view.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'}${antialias ? ' AA' : ''}, ${filterSelect.value}, ${s.devicePixelRatio}x`,
+  ],
+  ...slideStatsSummary(slide, s),
+])
+attachSlideChannelPanel(view, channelsPanel)
+attachSlidePlaneControl(view, document.getElementById('planes') as HTMLElement)
+
+// The values under the pointer, from resident tiles (refined as tiles land).
+function showReadout(): void {
+  const slide = view.slide
+  readout.value =
+    slide && hover
+      ? formatSlideSample(hover.x, hover.y, slide.sampleAt(hover.x, hover.y))
+      : ''
 }
 
-function render(): void {
-  frame = 0
-  if (!slide) return
-  const s = screen()
-  const dpr = s.devicePixelRatio ?? 1
-  const width = Math.max(1, Math.floor(s.widthCss * dpr))
-  const height = Math.max(1, Math.floor(s.heightCss * dpr))
-  // Resizing resets the canvas, so only when the size changed.
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-  // Fit after the canvas is sized, so the first frame is centred.
-  if (needsFit) slide.fitToScreen(s)
-  needsFit = false
-  slide.clampViewport(s)
-  renderer.overlay = slideOverlayContent(slide, s, gestures, {
-    isRulerVisible: scaleBarToggle.checked,
-  })
-  renderer.render([slide], s)
-  updateHud(s)
+function afterRender(): void {
+  // HiDPI is offered only on a HiDPI display (another monitor, browser zoom).
+  hidpiToggle.disabled = window.devicePixelRatio <= 1
+  if (hover) showReadout()
   // Failures stay visible with the HUD off; an open in progress owns the status.
-  const { failures } = slide.stats
+  const failures = view.slide?.stats.failures
   if (!opening && failures)
     status.textContent = `${indexNote}${failures} tiles failed`
 }
 
-function updateHud(s: NVSlideScreen): void {
-  if (!slide || !hudToggle.checked) return
-  const { level, tiles, requestedLevel, capped } = slide.visibleTiles(s)
-  const st = slide.stats
-  const scale = slide.viewport.scale
-  const mode = capped
-    ? '(no level fits the tile cache: centre only, zoom in)'
-    : requestedLevel
-      ? `(L${requestedLevel.index} exceeds the tile cache)`
-      : slide.levelChoice === 'auto'
-        ? 'auto'
-        : 'fixed'
-  hud.textContent = [
-    `${slide.name}: ${slide.manifest.levels.length} levels${slide.colorLut ? `, ICC profile${slide.colorManagement ? '' : ' (off)'}` : ''}`,
-    `backend   ${gpu ? 'WebGPU' : 'WebGL2'}${antialias ? ' AA' : ''}, ${filterSelect.value}, ${s.devicePixelRatio}x`,
-    `level     ${level ? `L${level.index} ${mode} ${level.width}x${level.height}` : '-'}`,
-    `codec     ${level?.codec ?? '-'}`,
-    `zoom      ${scale >= 1 ? `${scale.toFixed(2)}x` : `1:${(1 / scale).toFixed(1)}`}`,
-    `tiles     ${tiles.length} visible, ${slide.pendingCount} pending`,
-    `requests  ${st.completed}/${st.requested} done, ${st.rangeHits} HTTP 206, ${st.fullFileFallbacks} HTTP 200`,
-    `wire      ${(st.wireBytes / 1e6).toFixed(2)} MB`,
-    `cache     ${(st.cacheBytes / 1e6).toFixed(2)} MB, ${st.cacheHits} hits`,
-    `failures  ${st.failures}`,
-  ].join('\n')
-}
+// Decode tiles in web workers rather than on the main thread.
+const pool = new Pool()
+
+const slideOptions = () => ({
+  colorManagement: iccToggle.checked,
+  showTileGrid: gridToggle.checked,
+})
+
 hudToggle.addEventListener('change', () => {
   hud.hidden = !hudToggle.checked
   requestRender()
@@ -237,10 +212,6 @@ addEventListener('keydown', (e) => {
     return
   hudToggle.click()
 })
-
-function requestRender(): void {
-  if (!frame) frame = requestAnimationFrame(render)
-}
 
 // Opens can overlap (a slow URL, then a local file); only the latest wins.
 // `opening` is non-null from a pick until its slide is shown; after a failure
@@ -278,10 +249,120 @@ function restoreMenu(): void {
   slideSelect.value = s.seriesValue
 }
 
+type Load = (signal: AbortSignal) => Promise<Source | NVSlide>
+// The loader of the slide on show: the compare view opens its own copy (a
+// source serves one slide).
+let shownLoad: Load | null = null
+
+// A slide for a loaded source; a source NVSlide rejects is disposed.
+function slideFor(next: Source | NVSlide): NVSlide {
+  let slide: NVSlide
+  try {
+    slide =
+      next instanceof NVSlide ? next : NVSlide.fromSource(next, slideOptions())
+  } catch (err) {
+    next.dispose?.()
+    throw err
+  }
+  // ponytail: until the Zarr source states channelInfo[0].window (lane B).
+  if (next instanceof ZarrSlideSource && next.window)
+    slide.setChannel(0, next.window)
+  return slide
+}
+
+// Side by side or lens (Avivator): a second, linked view of the same slide
+// with its own channels, synced in physical units.
+let compare: { view: SlideView; detach: () => void } | null = null
+let compareCount = 0
+let compareAbort: AbortController | null = null
+// Runs one at a time: two starts on one canvas would share its context.
+let compareChain = Promise.resolve()
+function syncCompare(): Promise<void> {
+  const id = ++compareCount
+  compareAbort?.abort()
+  const abort = new AbortController()
+  compareAbort = abort
+  compareChain = compareChain
+    .then(() => runCompare(id, abort.signal))
+    .catch((err) => console.error(err))
+  return compareChain
+}
+async function runCompare(id: number, signal: AbortSignal): Promise<void> {
+  if (id !== compareCount) return
+  compare?.detach()
+  compare?.view.destroy()
+  compare = null
+  const mode = compareSelect.value
+  const main = document.querySelector('main') as HTMLElement
+  // Shown only once attached: an unclipped lens canvas would cover the view
+  // and take its input, a failed side pane would sit dead.
+  const hide = (): void => {
+    main.dataset.compare = 'single'
+    compareCanvas.hidden = true
+    compareChannels.hidden = true
+  }
+  hide()
+  if (mode === 'single' || !shownLoad) return
+  const load = shownLoad
+  const second = await createSlideView(compareCanvas, {
+    backend: view.backend,
+    antialias,
+    hidpi: hidpiToggle.checked,
+    // The lens shows through the main view's scale bar, not its own.
+    overlayStyle: { isRulerVisible: mode !== 'lens' && scaleBarToggle.checked },
+    controller:
+      mode === 'lens'
+        ? false
+        : {
+            primaryDragMode: DRAG_MODE.pan,
+            secondaryDragMode: DRAG_MODE.roiSelection,
+          },
+  }).catch((err) => {
+    console.error(err)
+    return null
+  })
+  if (!second) return hide()
+  // A failed WebGPU start can hand back a fresh canvas.
+  compareCanvas = second.canvas
+  if (id !== compareCount) {
+    second.destroy()
+    return hide()
+  }
+  try {
+    const slide = slideFor(await load(signal))
+    slide.setLevelChoice(levelChoice())
+    second.renderer.isNearestInterpolation = filterSelect.value === 'nearest'
+    // No fit: the link puts it where the main view is.
+    second.setSlide(slide, { fit: false })
+    if (id !== compareCount) throw new Error('superseded')
+  } catch (err) {
+    second.destroy()
+    if (id === compareCount) {
+      console.error(err)
+      status.textContent = `Compare view: ${err instanceof Error ? err.message : String(err)}`
+    }
+    return hide()
+  }
+  const unlink =
+    mode === 'lens'
+      ? attachSlideLens(view, second)
+      : linkSlideViews([view, second])
+  main.dataset.compare = mode
+  compareCanvas.hidden = false
+  second.requestRender()
+  const removePanel = attachSlideChannelPanel(second, compareChannels)
+  compare = {
+    view: second,
+    detach: () => {
+      unlink()
+      removePanel()
+    },
+  }
+}
+compareSelect.addEventListener('change', () => void syncCompare())
+
 // A loader returns a tile source, or a slide it built itself (a hosted manifest).
-async function open(
-  load: (signal: AbortSignal) => Promise<Source | NVSlide>,
-): Promise<void> {
+async function open(load: Load): Promise<void> {
   const id = ++openCount
   opening?.abort()
   opening = new AbortController()
@@ -294,40 +375,28 @@ async function open(
       return
     }
     // Build the replacement before releasing the slide on screen, so a source
-    // NVSlide rejects leaves the current slide showing.
-    let nextSlide: NVSlide
-    try {
-      nextSlide =
-        next instanceof NVSlide
-          ? next
-          : NVSlide.fromSource(next, slideOptions())
-    } catch (err) {
-      next.dispose?.()
-      throw err
-    }
-    slide?.removeEventListener('change', requestRender)
-    slide?.dispose()
-    source?.dispose?.()
-    renderer.clearTextures()
-    source = next instanceof NVSlide ? null : next
-    slide = nextSlide
-    if (next instanceof ZarrSlideSource && next.window)
-      slide.setChannel(0, next.window)
-    showCredit(source?.attribution ?? credits.get(current))
-    slide.addEventListener('change', requestRender)
+    // NVSlide rejects leaves the current slide showing. The slide owns (and
+    // disposes) its source; the view owns the slide.
+    const nextSlide = slideFor(next)
+    view.setSlide(nextSlide)
+    shownLoad = load
+    if (compareSelect.value !== 'single') void syncCompare()
+    showCredit(
+      nextSlide.manifest.attribution ??
+        (next instanceof NVSlide ? undefined : (next as Source).attribution) ??
+        credits.get(current),
+    )
     opening = null
     spin(false)
     shown = snapshot()
     status.textContent = indexNote // slide stats are in the HUD
     levelSelect.replaceChildren(
       new Option('auto LOD', 'auto'),
-      ...slide.manifest.levels.map(
+      ...nextSlide.manifest.levels.map(
         (l) =>
           new Option(`L${l.index} ${l.width}x${l.height}`, String(l.index)),
       ),
     )
-    needsFit = true
-    requestRender()
   } catch (err) {
     if (id !== openCount) return
     console.error(err)
@@ -357,18 +426,6 @@ function openIndexed(i: number): void {
 }
 
 // Custom files: one tiled TIFF, or the files of a DICOM-WSI slide (or several).
-const sniff = async (file: File) => {
-  const b = new Uint8Array(await file.slice(0, 132).arrayBuffer())
-  // II*. / MM.* (TIFF) and II+. / MM.+ (BigTIFF)
-  const tiff =
-    (b[0] === 0x49 && b[1] === 0x49 && b[3] === 0) ||
-    (b[0] === 0x4d && b[1] === 0x4d && b[2] === 0)
-  // TIFF magic plus DICM at 128 is a dual-personality DICOM-TIFF, or a TIFF
-  // whose padding holds those bytes: try DICOM, fall back to TIFF.
-  const dicm = new TextDecoder().decode(b.subarray(128, 132)) === 'DICM'
-  return tiff ? (dicm ? 'dual' : 'tiff') : 'dicom'
-}
-
 async function openFiles(files: File[]): Promise<void> {
   const first = files[0]
   if (!first) return
@@ -382,15 +439,9 @@ async function openFiles(files: File[]): Promise<void> {
   opening?.abort()
   opening = new AbortController()
   spin(true)
-  const openTiff = () =>
-    void open(async () =>
-      TiffSlideSource.fromGeoTIFF(await fromBlob(first), {
-        id: first.name,
-        pool,
-      }),
-    )
+  const openTiff = () => void open(() => openTiffFile(first, pool))
   try {
-    const kind = files.length === 1 ? await sniff(first) : 'dicom'
+    const kind = files.length === 1 ? await sniffFile(first) : 'dicom'
     if (id !== openCount) return
     if (kind === 'tiff') return openTiff()
     status.textContent = `Indexing ${files.length} files...`
@@ -473,13 +524,15 @@ document.addEventListener('drop', async (e) => {
   void openFiles(files)
 })
 iccToggle.addEventListener('change', () => {
-  if (slide) slide.colorManagement = iccToggle.checked // fires 'change', which redraws
+  // Fires 'change', which redraws.
+  for (const v of views())
+    if (v.slide) v.slide.colorManagement = iccToggle.checked
 })
-levelSelect.addEventListener('change', () =>
-  slide?.setLevelChoice(
-    levelSelect.value === 'auto' ? 'auto' : Number(levelSelect.value),
-  ),
-)
+const levelChoice = () =>
+  levelSelect.value === 'auto' ? ('auto' as const) : Number(levelSelect.value)
+levelSelect.addEventListener('change', () => {
+  for (const v of views()) v.slide?.setLevelChoice(levelChoice())
+})
 slideSelect.addEventListener('change', () =>
   openIndexed(Number(slideSelect.value)),
 )
@@ -492,14 +545,14 @@ const HF =
 // Credits for the listed non-Zarr slides, keyed by menu value; shown like a
 // Zarr store's `attribution`. OpenSlide licences and credits are from
 // openslide-testdata/index.json (CC0-1.0 unless noted).
-const credits = new Map<string, Attribution>()
+const credits = new Map<string, NVSlideAttribution>()
 const OPENSLIDE = 'https://openslide.cs.cmu.edu/download/openslide-testdata/'
 const FREE = 'Free to use and distribute, with or without modification'
 const RADBOUD = {
   credit: 'Computational Pathology Group, Radboud University Medical Center',
 }
 const HURON = { credit: 'Huron Digital Pathology' }
-const OPENSLIDE_CREDITS: Record<string, Attribution> = {
+const OPENSLIDE_CREDITS: Record<string, NVSlideAttribution> = {
   'Aperio/JP2K-33003-1.svs': { license: FREE },
   'Aperio/JP2K-33003-2.svs': { license: FREE },
   'Huron/Huron-1.tif': HURON,
@@ -525,7 +578,7 @@ const openslideCredit = (
   license: 'CC0-1.0',
   ...OPENSLIDE_CREDITS[file],
 })
-const credited = (option: HTMLOptionElement, a: Attribution) => {
+const credited = (option: HTMLOptionElement, a: NVSlideAttribution) => {
   credits.set(option.value, a)
   return option
 }
@@ -545,13 +598,16 @@ const LUMINANCE = openslideCredit(
   'DICOM/3DHISTECH-1.zip',
   'Luminance of OpenSlide test data DICOM/3DHISTECH-1.zip',
 )
-const DICOM_CREDITS: Record<string, Attribution> = {
+const DICOM_CREDITS: Record<string, NVSlideAttribution> = {
   '3dhistech-1': openslideCredit('DICOM/3DHISTECH-1.zip'),
   '3dhistech-2': openslideCredit('DICOM/3DHISTECH-2.zip'),
-  // ponytail: source only; its licence is not recorded here.
+  // TCIA's collection page: CC BY 4.0, citation (with DOI) required.
   'cptac-brca': {
-    title: 'CPTAC-BRCA, NCI Imaging Data Commons',
-    url: 'https://portal.imaging.datacommons.cancer.gov/',
+    title: 'CPTAC-BRCA, The Cancer Imaging Archive',
+    url: 'https://www.cancerimagingarchive.net/collection/cptac-brca/',
+    citation:
+      'National Cancer Institute Clinical Proteomic Tumor Analysis Consortium (CPTAC) (2020). The Clinical Proteomic Tumor Analysis Consortium Breast Invasive Carcinoma Collection (CPTAC-BRCA) (Version 1). The Cancer Imaging Archive. https://doi.org/10.7937/TCIA.CAEM-YS80',
+    license: 'CC BY 4.0',
   },
   'hamamatsu-2': openslideCredit('DICOM/Hamamatsu-2.zip'),
   'leica-4': openslideCredit('DICOM/Leica-4.zip'),
@@ -637,10 +693,11 @@ sourceSelect.replaceChildren(
         'OpenSeadragon highsmith (web)',
         'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
       ),
-      // ponytail: OpenSeadragon gives no credit or licence for this image.
+      // OpenSeadragon states no credit or licence for this image (owner, 2026-11-12).
       {
-        title: 'OpenSeadragon example image',
-        url: 'https://openseadragon.github.io/examples/tilesource-dzi/',
+        title: "OpenSeadragon's home-page demo image",
+        url: 'https://openseadragon.github.io/',
+        license: 'No licence stated',
       },
     ),
   ]),
@@ -665,7 +722,7 @@ function showCurrent(value: string, label: string): void {
   status.title = ''
 }
 
-function showCredit(a: Attribution | undefined): void {
+function showCredit(a: NVSlideAttribution | undefined): void {
   credit.replaceChildren()
   if (typeof a?.title !== 'string') return
   // Remote metadata: a link only for http(s), so a javascript: URL stays text.
@@ -687,49 +744,25 @@ function showCredit(a: Attribution | undefined): void {
   credit.title = str(a.modified) ? `Modified: ${a.modified}` : ''
 }
 
-// zarr.json is OME-Zarr 0.5 (v3); a v2 store (.zattrs) shows no credit.
-const fetchAttribution = (href: string, signal: AbortSignal) => {
-  const u = new URL(href)
-  u.pathname = u.pathname.replace(/\/*$/, '/zarr.json')
-  return fetch(u, { signal })
-    .then((r) => r.json())
-    .then((j) => j.attributes?.attribution as Attribution | undefined)
-    .catch(() => undefined)
-}
-
 const openUrl = (url: string) => {
   showCurrent(url, url.replace(/\/+$/, '').split('/').pop() || url)
-  return open(async (signal) => {
+  return open((signal) =>
     // Inside the loader, so a malformed URL is reported in the status line.
-    const href = new URL(url, location.href).href
-    const path = new URL(href).pathname
-    // A .zarr path or a directory (trailing /) is OME-Zarr; it must name the
-    // store's group root, so a path to an array inside a store is refused.
-    if (/\.zarr(\/|$)|\/$/.test(path)) {
-      const [zarr, attribution] = await Promise.all([
-        ZarrSlideSource.fromUrl(href, { signal }),
-        fetchAttribution(href, signal),
-      ])
-      return Object.assign(zarr, { attribution })
-    }
-    if (/\.dzi$/i.test(path)) return DziSource.fromUrl(href, undefined, signal)
-    // ponytail: a .json path is a hosted DICOM-WSI manifest; sniff if names lie.
-    if (!path.endsWith('.json'))
-      return TiffSlideSource.fromUrl(href, { pool, signal })
-    const response = await fetch(href, { signal })
-    if (!response.ok) throw new Error(`Slide manifest HTTP ${response.status}`)
-    // GitHub raw serves LFS pointers, so the listed manifests' relative .dcm
-    // paths resolve against its media endpoint, which serves the LFS files.
-    return new NVSlide(await response.json(), {
-      ...slideOptions(),
-      manifestUrl: href.startsWith(DICOM)
-        ? href.replace(
-            'https://raw.githubusercontent.com/',
-            'https://media.githubusercontent.com/media/',
-          )
-        : href,
-    })
-  })
+    openUrlSource(new URL(url, location.href).href, {
+      pool,
+      signal,
+      slideOptions: slideOptions(),
+      // GitHub raw serves LFS pointers, so the listed manifests' relative .dcm
+      // paths resolve against its media endpoint, which serves the LFS files.
+      manifestBase: (href) =>
+        href.startsWith(DICOM)
+          ? href.replace(
+              'https://raw.githubusercontent.com/',
+              'https://media.githubusercontent.com/media/',
+            )
+          : href,
+    }),
+  )
 }
 sourceSelect.addEventListener('change', () => {
   const value = sourceSelect.value
@@ -753,21 +786,17 @@ customDialog.addEventListener('close', () => {
   else sourceSelect.value = current // cancelled: show what is open
 })
 
-// Left and middle drag pan, right drag zooms to a box, the wheel zooms.
-const gestures = new NVSlideController(canvas, {
-  slide: () => slide,
-  screen,
-  primaryDragMode: DRAG_MODE.pan,
-  secondaryDragMode: DRAG_MODE.roiSelection,
-  onChange: requestRender,
-})
-window.addEventListener('resize', requestRender)
-attachMinimap(canvas, renderer, () => slide, requestRender)
-
 // ?bench exposes the view to bench/run.mjs (apps/demo-ext-tile/README.md).
 if (params.has('bench'))
   Object.assign(window, {
-    nvBench: { slide: () => slide, renderer, screen, openUrl, requestRender },
+    nvBench: {
+      slide: () => view.slide,
+      renderer,
+      screen: view.screen,
+      openUrl,
+      requestRender,
+      compare: () => compare?.view.slide ?? null,
+    },
   })
 // Default slide so the Pages demo is not empty; ?url= (empty) starts blank.
 const startUrl = params.get('url') ?? sourceSelect.options[0]?.value ?? ''

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { RulerSpec } from '@niivue/uikit'
-import { createRulerSync } from './wsiSlideView'
+import { createRulerSync, rulerSpecFor } from './wsiSlideView'
 
 function spec(
   a: [number, number],
@@ -63,5 +63,37 @@ describe('createRulerSync', () => {
     sync(spec([0, 0], [10, 0]), '2.50 mm')
     expect(calls).toEqual(['set 0,0 10,0 28', 'clear', 'set 0,0 10,0 28'])
     expect(reports).toEqual(['2.50 mm', null, '2.50 mm'])
+  })
+})
+
+describe('rulerSpecFor', () => {
+  const slide = (spacing?: [number, number]) =>
+    ({
+      manifest: { pixelSpacingMM: spacing },
+      slideToScreen: (x: number, y: number) => ({ xCss: x / 10, yCss: y / 10 }),
+    }) as unknown as Parameters<typeof rulerSpecFor>[0]
+  const at = (x: number, y = 0) => ({
+    start: { x: 0, y: 0 },
+    end: { x, y },
+  })
+  const screen = { widthCss: 100, heightCss: 100, devicePixelRatio: 2 }
+
+  it('measures as before: px, um below 1 mm, mm with ticks', () => {
+    expect(rulerSpecFor(slide(), at(30, 40), screen).text).toBe('50 px')
+    expect(rulerSpecFor(slide([0.00025, 0.00025]), at(400), screen).text).toBe(
+      '100 um',
+    )
+    const mm = rulerSpecFor(slide([0.00025, 0.00025]), at(10000), screen)
+    expect(mm.text).toBe('2.50 mm')
+    expect(mm.spec.showTicks).toBe(true)
+  })
+
+  it('places device-pixel endpoints and sizes at the pixel ratio', () => {
+    const { spec } = rulerSpecFor(slide(), at(100, 50), screen)
+    expect([spec.a, spec.b]).toEqual([
+      [0, 0],
+      [20, 10],
+    ])
+    expect([spec.sizePx, spec.thickness, spec.tickLength]).toEqual([56, 4, 12])
   })
 })

@@ -33,9 +33,14 @@ async function walk(entry: FileSystemEntry): Promise<File[]> {
 
 export async function droppedFiles(dt: DataTransfer): Promise<File[]> {
   // Take every item before the first await: the list empties once the drop
-  // event returns. A script-made DataTransfer has no entries, only files.
+  // event returns. Entries only for folders: a dropped file is read with
+  // getAsFile, which every engine serves (WebKit's entry for a script-made
+  // file never reads).
   const items = [...dt.items].filter((i) => i.kind === 'file')
-  const sources = items.map((i) => i.webkitGetAsEntry() ?? i.getAsFile())
+  const sources = items.map((i) => {
+    const entry = i.webkitGetAsEntry()
+    return entry?.isDirectory ? entry : i.getAsFile()
+  })
   const lists = await Promise.all(
     sources.map((s) => (s instanceof File ? [s] : s ? walk(s) : [])),
   )

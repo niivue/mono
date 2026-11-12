@@ -1565,6 +1565,7 @@ export default class NVGlview {
                 scaleMultiplier: md.scene.scaleMultiplier,
               }
             : undefined,
+          md.ui.rulerUnits,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)

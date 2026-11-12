@@ -133,7 +133,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
 | `orientationTextPosition` | Prop | `'edges'` (default): a letter mid-left and mid-top of each 2D tile; `'corner'`: one combined label (e.g. `RS`) at the tile's top-left corner |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
-| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
+| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown, and on mosaic render tiles; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
+| `rulerUnits` | Prop | `'auto'` (default), `'nm'`, `'um'`, `'mm'`, `'cm'`: the scale bar's unit, volumes and slide panes; no ruler on `global3d` tiles (perspective) |
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |
@@ -171,13 +172,17 @@ TRX, TT, TSF (scalars), VTK lines.
 
 The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volumes[0] as an opaque base under the overlays, which suits neuroimaging; set the first row for fluorescence channel fusion.
 
-**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. On a slide plane, `locationChange` carries `slide: {id, name, x, y, samples}` while the crosshair, projected onto the plane, is on the slide (also in a slide-only scene), and re-emits when a tile lands that changes those samples; `nv.slideSampleAt(x?, y?)` / `nv.loadSlideSampleAt(x?, y?)` read it at a point or the crosshair. Standalone panes: `NVSlideController` `onHover(point | null)`. MCP: `where_am_i.slide`, `sample_slide`.
+**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. On a slide plane, `locationChange` carries `slide: {id, name, x, y, samples}` while the crosshair, projected onto the plane, is on the slide (also in a slide-only scene), and re-emits when a tile lands that changes those samples; `nv.slideSampleAt(x?, y?)` / `nv.loadSlideSampleAt(x?, y?)` read it at a point or the crosshair. Standalone panes: `NVSlideController` `onHover(point | null)`, coalesced to one call per frame (latest point); `null` fires at once on leave. MCP: `where_am_i.slide`, `sample_slide`.
 
 `toValue(stored, map)` / `toStored(value, map)` convert through a channel's `storedToValue` (`stored * scale + offset`; `toStored` rounds unless `quantized: false`, so `toStored(toValue(s))` is `s`). A `raw-gray` level's samples are u8 (`bitsStored` <= 8), u16 (default), or `sampleType` `'i16'` / `'f32'`. Single-channel rules: a bytes source (no `fetchTileSamples`) may state `channelInfo` only on a monochrome level, and its tiles fill channel 0 only (several channels warn); an RGB bytes source with `channelInfo` throws.
 
 | Feature | Kind | Notes |
 |---|---|---|
 | `NVSlideOptions.ownsSource` | Option | `slide.dispose()` also disposes the source (default true). `false` for a shared source, which the caller disposes |
+| `createSlideView(canvas, opts)` | Export | A standalone slide pane: renderer (WebGPU, WebGL2 fallback), frame loop, resize and pixel-ratio watch, fit, controller and overlay, `addOverlay`, `setSlide`, one `destroy`; bound per entry |
+| `linkSlideViews(views)` / `attachSlideLens(main, lens)` | Export | Viewports synced in mm (or slide fractions), echo suppressed, first view leads; the lens shows a linked view through a pointer circle |
+| `formatSlideSample(x, y, samples)` / `slideStatsSummary(slide, screen)` | Export | Readout line and HUD rows |
+| `NVSlideController` defaults | Class | Without `onWindow` / `onContrast`, a windowing drag or contrast box sets `windowChannel`'s window (`windowDragStep`); double-click zoom only while the primary mode is `pan`; pinch zoom (`isPinchZoom`); `otherButtonDragMode`, `isWheelDeltaModeScaled`, `cancelGesture()` |
 | `NVSlide.setRendererBudget(renderer, budget \| null)` | Method | A renderer's tile texture and raw pool bytes; tile capacity and its warning use the smallest registered. The slide renderers register through `SlideBudgetRegistration` and unregister slides they stop drawing |
 
 ## 8. Mesh Rendering (global)
@@ -296,6 +301,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 | `lookupColorMap(name)` | Export | No | Returns `ColorMap \| null`; some built-ins (e.g. `ct_bones`) carry a `min`/`max` display window, applied on load and when `setVolume` changes the colormap |
 | `addColormap(name, ColorMap)` | Method | No | `{ R, G, B, A?, I?, labels? }` |
 | `addColormapFromUrl(url, name?)` | Method | Yes | |
+| `addChannelColormap(rgb)` | Export | No | Registers a black-to-`rgb` ramp named `#rrggbb` (an exact omero colour) and returns the name |
 | `colormapNames(kind?)` | Method | No | `'continuous'` / `'label'` filter |
 | `loadMatcap(nameOrUrl)` | Method | Yes | |
 

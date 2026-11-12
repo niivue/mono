@@ -681,6 +681,8 @@ export function omeZarrFrameCache(
             if (bytes <= budgetBytes) break
             if (old !== key && sizes.has(old)) drop(old)
           }
+          // A frame bigger than the whole budget is returned, not kept.
+          if (bytes > budgetBytes) drop(key)
           return img
         })
         own.catch(() => {
@@ -691,12 +693,18 @@ export function omeZarrFrameCache(
         pending = own
       }
       const run = reads.get(key)
-      if (run) {
-        run.waiting++
-        // A caller without a signal keeps the read alive.
-        signal?.addEventListener(
+      if (!run) return pending
+      run.waiting++
+      // A caller without a signal keeps the read alive.
+      if (!signal) return pending
+      const shared = pending
+      // Each caller's abort rejects its own promise at once, whatever the others do.
+      return new Promise((resolve, reject) => {
+        shared.then(resolve, reject)
+        signal.addEventListener(
           'abort',
           () => {
+            reject(signal.reason)
             if (--run.waiting === 0 && reads.get(key) === run) {
               run.ctl.abort()
               drop(key)
@@ -704,8 +712,7 @@ export function omeZarrFrameCache(
           },
           { once: true },
         )
-      }
-      return pending
+      })
     },
   }
 }

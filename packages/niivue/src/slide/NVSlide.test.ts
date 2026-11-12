@@ -694,7 +694,7 @@ describe('ManifestRangeSource range telemetry', () => {
     const { level, tile } = onlyTile(source)
     await expect(
       source.fetchTileBytes(level, tile, 'L0/0/0', controller.signal),
-    ).rejects.toThrow('fetch aborted')
+    ).rejects.toMatchObject({ name: 'AbortError' })
     // The 'pending' entry must not survive the rejected fetch.
     expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'aborted' }])
   })
@@ -2057,6 +2057,23 @@ describe('NVSlide.fromManifestUrl', () => {
       /^Slide manifest HTTP 502$/,
     )
     expect(signal?.aborted).toBe(true)
+  })
+
+  it('refuses a manifest past 64 MiB, Content-Length or not', async () => {
+    let pulled = 0
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            if (++pulled > 100) c.close()
+            else c.enqueue(new Uint8Array(1 << 20))
+          },
+        }),
+      )) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      `Reply over ${64 * 1024 * 1024} bytes`,
+    )
+    expect(pulled).toBeLessThanOrEqual(66)
   })
 
   it('reads the reason for an uppercase JSON media type', async () => {

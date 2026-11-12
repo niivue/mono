@@ -32,7 +32,7 @@ import {
   NiiDataType,
 } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
-import { rangeReplyError, refuseReply } from '../rangeFetch'
+import { rangeReplyError, refuseReply, slideFetch } from '../rangeFetch'
 import { copyStrided } from './copyStrided'
 import {
   allocTypedArrayLike,
@@ -340,7 +340,10 @@ export async function fetchOmeZarr(
   url: string,
   options: OpenOmeZarrOptions & Pick<OmeZarrLoadOptions, 'fetch'> = {},
 ): Promise<OmeZarrSource> {
-  return openOmeZarr(omeZarrFetchStore(url, options.fetch), options)
+  return openOmeZarr(
+    omeZarrFetchStore(url, options.fetch && slideFetch(options.fetch)),
+    options,
+  )
 }
 
 /**
@@ -363,7 +366,7 @@ export function countingFetch(
   count: (bytes: number) => void,
 ): ZarrFetch {
   return async (url, init) => {
-    const response = await (inner ?? fetch)(url, init)
+    const response = await slideFetch(inner)(url, init)
     if (init?.method === 'HEAD') return response
     const length = response.headers.get('content-length')
     if (length !== null || !response.body) {

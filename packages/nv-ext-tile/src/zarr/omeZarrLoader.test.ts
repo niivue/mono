@@ -613,4 +613,32 @@ describe('countingFetch', () => {
     expect(r.status).toBe(206)
     expect(Array.from(new Uint8Array(await r.arrayBuffer()))).toEqual([1, 2, 3])
   })
+
+  test('an abort while counting a stalled body rejects and cancels it', async () => {
+    let cancelled = false
+    const ac = new AbortController()
+    const f = countingFetch(
+      async () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled = true
+            },
+          }),
+          { status: 206 },
+        ),
+      () => {},
+    )
+    const r = f('http://x/s/0/c/0', { signal: ac.signal })
+    setTimeout(() => ac.abort(), 0)
+    const outcome = await Promise.race([
+      r.then(
+        () => 'resolved',
+        (e: Error) => e.name,
+      ),
+      new Promise((done) => setTimeout(() => done('pending'), 100)),
+    ])
+    expect(outcome).toBe('AbortError')
+    expect(cancelled).toBe(true)
+  })
 })

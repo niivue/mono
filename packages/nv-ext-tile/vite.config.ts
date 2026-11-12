@@ -28,6 +28,7 @@ export const entry = {
   tiff: 'src/tiff.ts',
   dicom: 'src/dicom.ts',
   zarr: 'src/zarr.ts',
+  open: 'src/open.ts',
 }
 
 export default defineConfig({

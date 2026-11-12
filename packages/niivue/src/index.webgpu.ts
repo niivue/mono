@@ -247,6 +247,8 @@ export type {
 export { NVSlide } from './slide/NVSlide'
 export { toStored, toValue } from './slide/slideChannels'
 export type {
+  ManifestRangeSourceOptions,
+  SlideFetch,
   SlidePlaneCapable,
   SlideSourceHost,
   SlideTileSource,

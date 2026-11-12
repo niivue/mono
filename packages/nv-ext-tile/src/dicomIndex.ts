@@ -33,6 +33,10 @@ export interface SlideIndexInstance {
   transferSyntax: string
   photometric: string
   bitsStored: number
+  /** PixelRepresentation 1: two's complement samples. */
+  signed?: true
+  /** Top-level RescaleSlope/Intercept, when stated and not the identity. */
+  rescale?: { slope: number; intercept: number }
   /** RecommendedAbsentPixelCIELabValue (0048,0015), DICOM-encoded L*, a*, b*. */
   absentLab?: number[]
 }
@@ -87,6 +91,10 @@ export interface SlideIndexSlide {
   /** Focal-plane index, not µm: the TILED_FULL plane index, or the rank
    * (0 = lowest) of the stated ZOffsets across the slide's levels. */
   focalPlane: number
+  /** The plane's ZOffset (µm), when stated. */
+  zOffsetUm?: number
+  /** Level 0's ImageOrientationSlide (0048,0102) direction cosines, when stated; not applied. */
+  imageOrientationSlide?: number[]
   /** Level-0 pixel spacing in mm, [column, row]. */
   pixelSpacingMM?: [number, number]
   /** The optical path's ICC profile in the level-0 file. */
@@ -96,21 +104,65 @@ export interface SlideIndexSlide {
   levels: SlideIndexLevel[]
 }
 
+/** A label, overview or thumbnail image: never a slide or level, shown beside one. */
+export interface SlideIndexAssociated {
+  kind: 'label' | 'overview' | 'thumbnail'
+  study: string
+  series: string
+  frameOfReference: string
+  container?: string
+  instance: SlideIndexInstance
+  width: number
+  height: number
+  /** Frame 1: its encapsulated span (as SlideIndexFrames), or its native samples. */
+  offset: number
+  length: number
+  /** Native (uncompressed) 8-bit samples: per pixel, and whether planar. */
+  native?: { samplesPerPixel: 1 | 3; planar: boolean }
+}
+
 export interface SlideIndex {
   version: 1
   producer: string
   slides: SlideIndexSlide[]
   skipped: SlideIndexSkipped[]
+  /** Local files only, when any: label, overview and thumbnail images. */
+  associated?: SlideIndexAssociated[]
 }
 
 /** The key a file is indexed and looked up by: `webkitRelativePath` when set, else `name`. */
 export const fileKey = (f: File): string => f.webkitRelativePath || f.name
+
+/** Each file's {@link fileKey}, a repeat made unique by position: `a.dcm`, `a.dcm (2)`. */
+export function fileKeys(files: readonly File[]): string[] {
+  const used = new Set<string>()
+  return files.map((f) => {
+    const base = fileKey(f)
+    let key = base
+    for (let n = 2; used.has(key); n++) key = `${base} (${n})`
+    used.add(key)
+    return key
+  })
+}
+
+/** The least input position of the slide's files; a loop, as a spread overflows the stack. */
+export function firstInput(
+  slide: SlideIndexSlide,
+  position: ReadonlyMap<string, number>,
+): number {
+  let first = Number.POSITIVE_INFINITY
+  for (const { file } of slide.instances)
+    first = Math.min(first, position.get(file) ?? first)
+  return first
+}
 
 const UNDEFINED_LENGTH = 0xffffffff
 // Hostile-input bounds. No WSI header nests sequences deeper than 4, the
 // largest corpus header is 15 MB, and the largest level grid is 379k tiles.
 const MAX_DEPTH = 8
 const MAX_HEADER = 64 << 20
+// Header bytes read per call while it grows: bounds the transient beside it.
+const HEADER_CHUNK = 4 << 20
 // NiiVue's MAX_SLIDE_GRID, pinned by a test: this parser imports nothing,
 // so the manifest CLI runs without loading NiiVue.
 const MAX_GRID = 1 << 22
@@ -131,16 +183,23 @@ export const T = {
   organization: tagOf(0x0020, 0x9311),
   concatNumber: tagOf(0x0020, 0x9162),
   concatOffset: tagOf(0x0020, 0x9228),
+  samplesPerPixel: tagOf(0x0028, 0x0002),
   photometric: tagOf(0x0028, 0x0004),
+  planar: tagOf(0x0028, 0x0006),
   frames: tagOf(0x0028, 0x0008),
   rows: tagOf(0x0028, 0x0010),
   columns: tagOf(0x0028, 0x0011),
   spacing: tagOf(0x0028, 0x0030),
+  bitsAllocated: tagOf(0x0028, 0x0100),
   bitsStored: tagOf(0x0028, 0x0101),
+  pixelRepresentation: tagOf(0x0028, 0x0103),
+  rescaleIntercept: tagOf(0x0028, 0x1052),
+  rescaleSlope: tagOf(0x0028, 0x1053),
   iccProfile: tagOf(0x0028, 0x2000),
   pixelMeasuresSeq: tagOf(0x0028, 0x9110),
   colorSpace: tagOf(0x0028, 0x2002),
   container: tagOf(0x0040, 0x0512),
+  orientation: tagOf(0x0048, 0x0102),
   zOffset: tagOf(0x0040, 0x074a),
   absentLab: tagOf(0x0048, 0x0015),
   volumeWidth: tagOf(0x0048, 0x0001),
@@ -175,6 +234,7 @@ export const TEXT_KEYWORDS: Record<number, string> = {
   [T.organization]: 'DimensionOrganizationType',
   [T.photometric]: 'PhotometricInterpretation',
   [T.container]: 'ContainerIdentifier',
+  [T.orientation]: 'ImageOrientationSlide',
 }
 export const NUMBER_KEYWORDS: Record<number, string> = {
   [T.concatNumber]: 'InConcatenationNumber',
@@ -183,6 +243,9 @@ export const NUMBER_KEYWORDS: Record<number, string> = {
   [T.rows]: 'Rows',
   [T.columns]: 'Columns',
   [T.bitsStored]: 'BitsStored',
+  [T.pixelRepresentation]: 'PixelRepresentation',
+  [T.rescaleIntercept]: 'RescaleIntercept',
+  [T.rescaleSlope]: 'RescaleSlope',
   [T.volumeWidth]: 'ImagedVolumeWidth',
   [T.volumeHeight]: 'ImagedVolumeHeight',
   [T.totalColumns]: 'TotalPixelMatrixColumns',
@@ -199,6 +262,10 @@ const TOP_TAGS = new Set([
   T.absentLab,
   T.eot,
   T.eotLengths,
+  // Associated images with native pixel data (indexInstance).
+  T.samplesPerPixel,
+  T.planar,
+  T.bitsAllocated,
 ])
 // Each two-letter VR by its bytes, so walk allocates no string per element.
 const VR_NAMES: string[] = []
@@ -484,6 +551,7 @@ export interface InstanceInfo<
   sparse: boolean
   concatNumber: number
   pixelSpacingMM?: [number, number]
+  orientation?: number[]
   /** OpticalPathSequence identifiers, and each path's ICC profile. */
   pathIds: string[]
   icc: (C | undefined)[]
@@ -496,6 +564,8 @@ export interface InstanceInfo<
   zStated: boolean
   /** Per path index, its distinct `z` values (ranked with `z`). */
   planes: Set<number>[]
+  /** Per path index, each plane rank's ZOffset (µm); set by rankStatedPlanes. */
+  planeUm?: Map<number, number>[]
   /** Local files only (zero otherwise): see SlideIndexFrames. */
   offset: Float64Array
   length: Uint32Array
@@ -555,6 +625,8 @@ function refuseSyntax(b: Uint8Array, top: Map<number, Element>): void {
     )
 }
 
+const RESIZABLE = 'resize' in ArrayBuffer.prototype
+
 async function readHeader(
   readAt: ReadAt,
   size: number,
@@ -565,14 +637,21 @@ async function readHeader(
   attributes: WsiAttributes<SlideIndexIccProfile>
 }> {
   let want = Math.min(size, 1 << 20)
-  let b: Uint8Array = new Uint8Array(0)
+  // Grown in place (a resizable buffer, read in chunks), never copied: a
+  // header costs its own bytes plus one chunk, not twice its size.
+  const buffer = new ArrayBuffer(0, {
+    maxByteLength: Math.min(size, MAX_HEADER),
+  })
+  const b = new Uint8Array(buffer)
   for (;;) {
-    // Grow the prefix by reading only the new bytes.
-    const more = await readAt(b.length, want - b.length)
-    const grown = new Uint8Array(want)
-    grown.set(b)
-    grown.set(more, b.length)
-    b = grown
+    while (buffer.byteLength < want) {
+      const at = buffer.byteLength
+      const more = await readAt(at, Math.min(want - at, HEADER_CHUNK))
+      // A file that shrank since its size was read would loop here forever.
+      if (!more.length) throw new Skip('malformed', `no bytes at ${at}`)
+      buffer.resize(at + more.length)
+      b.set(more, at)
+    }
     const reader = attributeReader(b)
     const { top } = reader
     try {
@@ -665,7 +744,14 @@ function attributeReader(b: Uint8Array) {
         keep(shared, e)
     } else if (e.root === T.perFrame) {
       const f = e.item
-      a.perFrame = Math.max(a.perFrame, f + 1)
+      if (f >= a.perFrame) {
+        // NumberOfFrames precedes the sequence (ascending tags): items past it
+        // are refused as they come, not kept by the million.
+        const frames = top.get(T.frames)
+        if (frames && f >= numberOf(b, view, frames))
+          throw new Skip('malformed', `per-frame items past NumberOfFrames`)
+        a.perFrame = f + 1
+      }
       if (e.tag === T.columnPosition) a.column[f] = numberOf(b, view, e)
       else if (e.tag === T.rowPosition) a.row[f] = numberOf(b, view, e)
       else if (e.tag === T.zOffset) a.z[f] = numberOf(b, view, e)
@@ -767,12 +853,22 @@ export function instanceGeometry<C>(
         `frames past ${grid} tiles x ${focalPlaneCount} planes x ${pathCount} paths`,
       )
   }
+  const slope = a.number[T.rescaleSlope] ?? 1
+  const intercept = a.number[T.rescaleIntercept] ?? 0
+  // An empty DS reads 0: no usable slope, so no rescale.
+  const rescale =
+    Number.isFinite(slope) &&
+    slope !== 0 &&
+    Number.isFinite(intercept) &&
+    (slope !== 1 || intercept !== 0)
   const info: InstanceInfo<InstanceCore, C> = {
     instance: {
       id: str(T.sop),
       transferSyntax: str(T.transferSyntax),
       photometric: str(T.photometric),
       bitsStored: int(T.bitsStored, 8, 1, 32),
+      ...(int(T.pixelRepresentation, 0, 0, 1) ? { signed: true as const } : {}),
+      ...(rescale ? { rescale: { slope, intercept } } : {}),
       ...(a.absentLab ? { absentLab: a.absentLab } : {}),
     },
     study: str(T.study),
@@ -805,6 +901,9 @@ export function instanceGeometry<C>(
     length: new Uint32Array(frameCount),
   }
   info.pixelSpacingMM = spacingOf(a, totalColumns, totalRows)
+  const orientation = str(T.orientation).split('\\').map(Number)
+  if (orientation.length === 6 && orientation.every(Number.isFinite))
+    info.orientation = orientation
   const { column, row, path, z } = info
   const { perFrame } = a
   if (sparse && !perFrame)
@@ -899,11 +998,17 @@ export function instanceGeometry<C>(
   return info
 }
 
+const ASSOCIATED: Record<string, SlideIndexAssociated['kind']> = {
+  LABEL: 'label',
+  OVERVIEW: 'overview',
+  THUMBNAIL: 'thumbnail',
+}
+
 async function indexInstance(
   file: File,
   key: string,
   read: ReadFile,
-): Promise<InstanceInfo> {
+): Promise<InstanceInfo | SlideIndexAssociated> {
   const size = file.size
   const readAt: ReadAt = (offset, length) => read(file, offset, length)
   const { b, pixel, top, attributes } = await readHeader(readAt, size)
@@ -916,6 +1021,54 @@ async function indexInstance(
     version: String(file.lastModified),
   }
   const info = { ...g, instance }
+  // ImageType value 3. A tiled (multi-frame) one stays a non-VOLUME instance.
+  const kind =
+    ASSOCIATED[(attributes.text[T.imageType] ?? '').split('\\')[2] ?? '']
+  if (kind && g.frameCount === 1) {
+    const { study, series, frameOfReference, container } = g
+    const image: SlideIndexAssociated = {
+      kind,
+      study,
+      series,
+      frameOfReference,
+      ...(container ? { container } : {}),
+      instance,
+      width: g.tileWidth,
+      height: g.tileHeight,
+      offset: 0,
+      length: 0,
+    }
+    if (u32(b, pixel + 8) === UNDEFINED_LENGTH) {
+      await frameSpans(info, b, pixel, top, readAt)
+      image.offset = info.offset[0] as number
+      image.length = info.length[0] as number
+      return image
+    }
+    // Native: labels often are. 8-bit grey or RGB only.
+    const view = new DataView(b.buffer, b.byteOffset, b.length)
+    const n = (tag: number, fallback: number) => {
+      const e = top.get(tag)
+      return e ? numberOf(b, view, e) : fallback
+    }
+    const spp = n(T.samplesPerPixel, 1)
+    const bits = n(T.bitsAllocated, 8)
+    const rgb = spp === 3 && instance.photometric === 'RGB'
+    const grey = spp === 1 && instance.photometric.startsWith('MONOCHROME')
+    if (bits !== 8 || !(rgb || grey))
+      throw new Skip(
+        'uncompressed',
+        `native ${kind} of ${bits}-bit ${instance.photometric} is not read`,
+      )
+    image.offset = pixel + 12
+    image.length = g.tileWidth * g.tileHeight * spp
+    if (u32(b, pixel + 8) < image.length || image.offset + image.length > size)
+      throw new Skip('malformed', `native ${kind} pixel data is short`)
+    image.native = {
+      samplesPerPixel: spp as 1 | 3,
+      planar: n(T.planar, 0) === 1,
+    }
+    return image
+  }
   await frameSpans(info, b, pixel, top, readAt)
   return info
 }
@@ -1077,29 +1230,48 @@ async function frameSpans(
  * compressed, explicit-VR DICOM, or that fail to parse, are listed in
  * `skipped`; they never cost the other files their slides. Only VOLUME
  * instances make levels; each optical path and focal plane is its own slide.
- * `keys` name the files (default {@link fileKey}).
+ * `keys` name the files (default {@link fileKeys}).
  */
 export async function indexDicomWsiOnThread(
   files: readonly File[],
-  keys: readonly string[] = files.map(fileKey),
+  keys: readonly string[] = fileKeys(files),
   read: ReadFile = readSlice,
+  { signal, onProgress }: IndexOptions = {},
 ): Promise<SlideIndex> {
+  if (!RESIZABLE)
+    throw new Error(
+      'DICOM-WSI indexing needs resizable ArrayBuffers (Chrome 111, Safari 16.4, Firefox 128)',
+    )
   const infos: InstanceInfo[] = []
+  const associated: SlideIndexAssociated[] = []
   const skipped: SlideIndexSkipped[] = []
   for (const [i, file] of files.entries()) {
+    signal?.throwIfAborted()
     const key = keys[i] as string
     try {
-      infos.push(await indexInstance(file, key, read))
+      const got = await indexInstance(file, key, read)
+      if ('kind' in got) associated.push(got)
+      else infos.push(got)
     } catch (err) {
+      if (signal?.aborted) throw signal.reason
       skipped.push(skipOf(key, err))
     }
+    onProgress?.(i + 1, files.length)
   }
   return {
     version: 1,
     producer: 'nv-ext-tile/indexDicomWsi',
     slides: groupSlides(infos, skipped, (i) => i.file),
     skipped,
+    ...(associated.length ? { associated } : {}),
   }
+}
+
+export interface IndexOptions {
+  /** Stops indexing between files; the index rejects with its reason. */
+  signal?: AbortSignal
+  /** After each file: files done, of `total`. */
+  onProgress?: (done: number, total: number) => void
 }
 
 /** A skipped instance, named `file`: why `err` left it out. */
@@ -1240,6 +1412,9 @@ function rankStatedPlanes(infos: Placed[]): void {
     const byPath = info.planes.map(
       (_, p) => ranks.get(slideBase(info, p)) as Map<number, number>,
     )
+    info.planeUm = byPath.map(
+      (rank) => new Map([...rank].map(([um, k]) => [k, um])),
+    )
     const { z, path } = info
     for (let f = 0; f < info.frameCount; f++) {
       const rank = byPath[path[f] as number] as Map<number, number>
@@ -1297,6 +1472,9 @@ export function groupSlides<I, C>(
               container,
               opticalPath,
               focalPlane: plane,
+              ...(info.planeUm?.[pathIndex]?.has(plane)
+                ? { zOffsetUm: info.planeUm[pathIndex]?.get(plane) }
+                : {}),
               instances: [],
               levels: [],
             },
@@ -1351,6 +1529,7 @@ export function groupSlides<I, C>(
     for (const ks of byMatrix.values()) slide.levels.push(buildLevel(ks, own))
     const l0 = own[0] as Member<I, C>
     slide.pixelSpacingMM = l0.info.pixelSpacingMM
+    if (l0.info.orientation) slide.imageOrientationSlide = l0.info.orientation
     slide.iccProfile = l0.info.icc[l0.pathIndex]
     return slide
   })

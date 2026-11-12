@@ -34,7 +34,7 @@ import {
   withSpatialUnits,
 } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
-import { anySignal } from '../rangeFetch'
+import { anySignal, slideFetch } from '../rangeFetch'
 import { fnv1a } from './chunkWorkerRouting'
 import { copyStrided } from './copyStrided'
 import {
@@ -551,7 +551,9 @@ export async function openOmeZarrChunkedSource(
   // Not through `options.fetch`: a custom fetch would decline persistence.
   const fetched = omeZarrFetchStore(
     url,
-    countWire ? countingFetch(options.fetch, countWire) : options.fetch,
+    countWire
+      ? countingFetch(options.fetch, countWire)
+      : options.fetch && slideFetch(options.fetch),
   )
   const base = metadata ? withMetadata(fetched, metadata) : fetched
   // Innermost of the three tiers: below memory, above the network. A read

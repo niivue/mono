@@ -35,10 +35,23 @@ function copyUint8(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return copy
 }
 
-function copyClamped(bytes: Uint8Array): Uint8ClampedArray<ArrayBuffer> {
-  const copy = new Uint8ClampedArray(bytes.byteLength)
-  copy.set(bytes)
-  return copy
+// Blob and ImageData copy what they are given, so a view over a plain
+// ArrayBuffer is passed as is; a SharedArrayBuffer view is not accepted.
+const unshared = (bytes: Uint8Array): Uint8Array<ArrayBuffer> =>
+  bytes.buffer instanceof ArrayBuffer
+    ? (bytes as Uint8Array<ArrayBuffer>)
+    : copyUint8(bytes)
+
+/** Unsigned samples of a signed `bits`-bit type as int16 (two's complement). */
+function signExtend(
+  samples: Uint8Array | Uint16Array,
+  bits: number,
+): Int16Array {
+  const out = new Int16Array(samples.length)
+  const shift = 32 - bits
+  for (let i = 0; i < samples.length; i++)
+    out[i] = ((samples[i] as number) << shift) >> shift
+  return out
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -61,7 +74,7 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
     // No browser colour conversion: a slide's profile is the source's
     // (NVSlide.colorLut), not an APP2 segment inside a tile.
     (bytes) =>
-      createImageBitmap(new Blob([copyUint8(bytes)], { type: 'image/jpeg' }), {
+      createImageBitmap(new Blob([unshared(bytes)], { type: 'image/jpeg' }), {
         colorSpaceConversion: 'none',
       }),
   ],
@@ -74,7 +87,14 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
           `Expected ${expected} RGBA bytes, received ${bytes.byteLength}`,
         )
       }
-      return createImageBitmap(new ImageData(copyClamped(bytes), width, height))
+      const { buffer, byteOffset, byteLength } = unshared(bytes)
+      return createImageBitmap(
+        new ImageData(
+          new Uint8ClampedArray(buffer, byteOffset, byteLength),
+          width,
+          height,
+        ),
+      )
     },
   ],
   [
@@ -226,22 +246,132 @@ export function isAbortError(err: unknown): boolean {
   )
 }
 
+/** A fetch replacement, e.g. one adding auth headers; `globalThis.fetch` is one. */
+export type SlideFetch = (url: string, init?: RequestInit) => Promise<Response>
+
+export interface ManifestRangeSourceOptions {
+  /** Custom fetch (auth headers, signed URLs) for reads on the manifest's origin or `baseUrl`'s. Default globalThis.fetch. */
+  fetch?: SlideFetch
+  /** Resolves relative URLs in the manifest; default the host's (NVSlide `manifestUrl`). */
+  baseUrl?: string
+  /** Where the manifest was read, when not the host's manifest URL: its origin also gets `fetch`. */
+  manifestUrl?: string
+}
+
+// A server without Range support sends the whole file: refused past this,
+// far beyond a tile file a range manifest should point at whole.
+export const MAX_WHOLE_FILE = 64 * 1024 * 1024
+
+/**
+ * `work`, rejecting with the signal's reason as soon as it aborts: a custom
+ * fetch may ignore its signal and settle late, or never. A value that arrives
+ * after the abort goes to `late` (to release it).
+ */
+function settleBy<T>(
+  signal: AbortSignal,
+  work: Promise<T>,
+  late: (value: T) => void = () => {},
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+    work
+      .then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort)
+          if (signal.aborted) late(value)
+          else resolve(value)
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort)
+          reject(error)
+        },
+      )
+      // A throwing `late` must not become an unhandled rejection (Bun exits on one).
+      .catch(() => {})
+  })
+}
+
+/** `fetch`'s reply, unless `signal` fires first; a late reply's body is cancelled. */
+const replyBy = (signal: AbortSignal, reply: Promise<Response>) =>
+  settleBy(signal, reply, (r) => {
+    r.body?.cancel().catch(() => {})
+  })
+
+/**
+ * A response body, refused past `max` bytes whether or not Content-Length says
+ * so. With `signal`, rejects as soon as it aborts, cancelling the body.
+ */
+export async function readCapped(
+  response: Response,
+  max: number,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  if (Number(response.headers.get('content-length')) > max) {
+    await response.body?.cancel()
+    throw new Error(`Reply over ${max} bytes`)
+  }
+  const reader = response.body?.getReader()
+  if (!reader) {
+    const whole = response.arrayBuffer()
+    return new Uint8Array(await (signal ? settleBy(signal, whole) : whole))
+  }
+  const chunks: Uint8Array[] = []
+  let n = 0
+  for (;;) {
+    const read = reader.read()
+    const { done, value } = await (signal
+      ? settleBy(signal, read).catch((error) => {
+          reader.cancel().catch(() => {})
+          throw error
+        })
+      : read)
+    if (done) break
+    n += value.byteLength
+    if (n > max) {
+      await reader.cancel()
+      throw new Error(`Reply over ${max} bytes`)
+    }
+    chunks.push(value)
+  }
+  return chunks.length === 1 ? (chunks[0] as Uint8Array) : concatBytes(chunks)
+}
+
 /**
  * Default source: a byte-range manifest (dicom-wsi-range-v1 / synthetic pyramid).
  * Each tile is one or more byte fragments addressed into a per-level file (or the
- * manifest `dataUrl`), fetched with an HTTP Range request (206) and a full-file
- * fallback for servers without range support.
+ * manifest `dataUrl`), fetched with an HTTP Range request (206). A server
+ * without Range support gets a whole-file fallback, refused past 64 MiB.
  */
 export class ManifestRangeSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
   private host: SlideSourceHost | null = null
+  private readonly customFetch?: SlideFetch
+  private readonly baseUrl?: string
+  private readonly manifestUrl?: string
+  private readonly closed = new AbortController()
 
-  constructor(manifest: NVSlideManifest) {
+  constructor(
+    manifest: NVSlideManifest,
+    options: ManifestRangeSourceOptions = {},
+  ) {
     this.manifest = manifest
+    // Kept as a plain call: a stored native fetch called as this.customFetch()
+    // would get the source as its receiver ("Illegal invocation").
+    const f = options.fetch
+    this.customFetch = f && ((url, init) => f(url, init))
+    this.baseUrl = options.baseUrl
+    this.manifestUrl = options.manifestUrl
   }
 
   bind(host: SlideSourceHost): void {
     this.host = host
+  }
+
+  /** Abort in-flight reads; later reads reject AbortError. Idempotent. */
+  dispose(): void {
+    this.closed.abort()
   }
 
   private requireHost(): SlideSourceHost {
@@ -251,10 +381,30 @@ export class ManifestRangeSource implements SlideTileSource {
     return this.host
   }
 
+  // Looked up per read, so a fetch replaced after construction (tests) is used.
+  // The caller's (authenticated) fetch reads only the manifest's origin and
+  // baseUrl's; a file elsewhere gets a plain fetch without credentials.
+  private fetch(url: string, init: RequestInit): Promise<Response> {
+    if (!this.customFetch) return fetch(url, init)
+    const { origin } = new URL(url)
+    // resolve('') is baseUrl, else the host's manifest URL.
+    const own = [this.resolve(''), this.manifestUrl].some(
+      (u) => u !== undefined && new URL(u).origin === origin,
+    )
+    return own
+      ? this.customFetch(url, init)
+      : fetch(url, { ...init, credentials: 'omit' })
+  }
+
+  private resolve(url: string): string {
+    return this.baseUrl
+      ? new URL(url, this.baseUrl).href
+      : this.requireHost().resolveUrl(url)
+  }
+
   private tileSourceUrl(level: NVSlideLevelManifest): string {
-    const host = this.requireHost()
-    if (level.fileUrl) return host.resolveUrl(level.fileUrl)
-    if (this.manifest.dataUrl) return host.resolveUrl(this.manifest.dataUrl)
+    if (level.fileUrl) return this.resolve(level.fileUrl)
+    if (this.manifest.dataUrl) return this.resolve(this.manifest.dataUrl)
     throw new Error(`No byte source for slide L${level.index}`)
   }
 
@@ -276,18 +426,64 @@ export class ManifestRangeSource implements SlideTileSource {
     const start = fragment.offset
     const end = fragment.offset + fragment.length - 1
     const rangeLabel = `${label} ${start}-${end}`
+    const abort = signal
+      ? AbortSignal.any([signal, this.closed.signal])
+      : this.closed.signal
     host.pushRangeEvent({ label: rangeLabel, status: 'pending' })
-    let response: Response
-    let wireBytes: Uint8Array
     try {
-      response = await fetch(sourceUrl, {
-        headers: { Range: `bytes=${start}-${end}` },
-        signal,
-      })
-      if (!response.ok && response.status !== 206) {
-        throw new Error(`HTTP ${response.status}`)
+      // Chromium can return a truncated body for a Range read it serves
+      // partly from its cache: a reply that is not exactly the range is
+      // read once more past the cache, then refused.
+      for (let attempt = 0; ; attempt++) {
+        // A disposed source never reaches fetch; a caller's abort does (fetch rejects).
+        const gate = attempt ? abort : this.closed.signal
+        gate.throwIfAborted()
+        const response = await replyBy(
+          abort,
+          this.fetch(sourceUrl, {
+            headers: { Range: `bytes=${start}-${end}` },
+            signal: abort,
+            ...(attempt ? { cache: 'no-store' as const } : {}),
+          }),
+        )
+        if (!response.ok) {
+          await response.body?.cancel()
+          throw new Error(`HTTP ${response.status}`)
+        }
+        if (response.status !== 206) {
+          const whole = await readCapped(response, MAX_WHOLE_FILE, abort)
+          host.addWireBytes(whole.byteLength)
+          if (whole.byteLength <= end)
+            throw new Error(
+              `Whole-file reply of ${whole.byteLength} bytes ends before byte ${end}`,
+            )
+          host.rangeFallback()
+          host.updateRangeEvent(rangeLabel, 'fallback')
+          return whole.slice(start, end + 1)
+        }
+        // A reply past the range is never buffered whole.
+        const bytes = await readCapped(response, fragment.length, abort)
+        host.addWireBytes(bytes.byteLength)
+        // Content-Range is hidden cross-origin unless exposed; then it is checked.
+        const [, at, to] =
+          /^bytes (\d+)-(\d+)/.exec(
+            response.headers.get('Content-Range') ?? '',
+          ) ?? []
+        const why =
+          at !== undefined && Number(at) !== start
+            ? `Content-Range starts at ${at}, requested ${start}`
+            : bytes.byteLength !== fragment.length
+              ? `Expected ${fragment.length} bytes, received ${bytes.byteLength}`
+              : to !== undefined && Number(to) !== end
+                ? `Content-Range ends at ${to}, requested ${end}`
+                : null
+        if (!why) {
+          host.rangeHit()
+          host.updateRangeEvent(rangeLabel, 'hit')
+          return bytes
+        }
+        if (attempt) throw new Error(why)
       }
-      wireBytes = new Uint8Array(await response.arrayBuffer())
     } catch (error) {
       // The 'pending' entry must not outlive the request: a rejected fetch
       // (the load's signal firing, a network failure, an HTTP error) would
@@ -295,24 +491,10 @@ export class ManifestRangeSource implements SlideTileSource {
       // (_runLoad's catch updates the TILE label, not this fragment's).
       host.updateRangeEvent(
         rangeLabel,
-        signal?.aborted || isAbortError(error) ? 'aborted' : 'failed',
+        abort.aborted || isAbortError(error) ? 'aborted' : 'failed',
       )
       throw error
     }
-    host.addWireBytes(wireBytes.byteLength)
-    if (response.status === 206) {
-      host.rangeHit()
-      host.updateRangeEvent(rangeLabel, 'hit')
-      if (wireBytes.byteLength !== fragment.length) {
-        throw new Error(
-          `Expected ${fragment.length} bytes, received ${wireBytes.byteLength}`,
-        )
-      }
-      return wireBytes
-    }
-    host.rangeFallback()
-    host.updateRangeEvent(rangeLabel, 'fallback')
-    return wireBytes.slice(start, end + 1)
   }
 
   async fetchTileBytes(
@@ -322,7 +504,7 @@ export class ManifestRangeSource implements SlideTileSource {
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
     const sourceUrl = tile.fileUrl
-      ? this.requireHost().resolveUrl(tile.fileUrl)
+      ? this.resolve(tile.fileUrl)
       : this.tileSourceUrl(level)
     const fragments = this.tileFragments(tile)
     const parts = await Promise.all(
@@ -336,7 +518,7 @@ export class ManifestRangeSource implements SlideTileSource {
   async fetchIccProfile(signal?: AbortSignal): Promise<Uint8Array | null> {
     const icc = this.manifest.iccProfile
     if (!icc) return null
-    const url = this.requireHost().resolveUrl(icc.url)
+    const url = this.resolve(icc.url)
     const { offset, length } = icc
     if ((offset === undefined) !== (length === undefined))
       throw new Error('ICC profile states only one of offset and length')
@@ -345,9 +527,17 @@ export class ManifestRangeSource implements SlideTileSource {
       throw new Error(`ICC profile of ${length} bytes`)
     if (offset !== undefined && length !== undefined)
       return this.fetchFragment(url, { offset, length }, 'icc', signal)
-    const response = await fetch(url, { signal })
-    if (!response.ok) throw new Error(`ICC profile HTTP ${response.status}`)
-    return new Uint8Array(await response.arrayBuffer())
+    // As fetchFragment: a disposed source never reaches fetch (a custom one may ignore the signal).
+    this.closed.signal.throwIfAborted()
+    const abort = signal
+      ? AbortSignal.any([signal, this.closed.signal])
+      : this.closed.signal
+    const response = await replyBy(abort, this.fetch(url, { signal: abort }))
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error(`ICC profile HTTP ${response.status}`)
+    }
+    return readCapped(response, 64 * 1024 * 1024, abort)
   }
 }
 
@@ -478,6 +668,21 @@ export async function decodeTileBitmap(
     typeof OffscreenCanvas !== 'undefined'
   )
     decoded = greySamples(decoded)
+  // Signed monochrome (DICOM PixelRepresentation 1) decodes as unsigned.
+  if (
+    level.sampleType === 'i16' &&
+    'samples' in decoded &&
+    (decoded.samples instanceof Uint8Array ||
+      decoded.samples instanceof Uint16Array)
+  ) {
+    const bits =
+      level.bitsStored ?? (decoded.samples instanceof Uint8Array ? 8 : 16)
+    decoded = {
+      ...decoded,
+      samples: signExtend(decoded.samples, bits),
+      bitsStored: bits,
+    }
+  }
   // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
   // a level smaller than one tile, at the right and bottom. Padding is not
   // slide: crop it, or the level's image shrinks into one corner.

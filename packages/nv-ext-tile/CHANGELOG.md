@@ -1,3 +1,72 @@
+## 1.0.0-rc.80 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** 2-98% slide windows and storedToValue for quantized channels ([685750ee](https://github.com/niivue/mono/commit/685750ee))
+
+### Fixes
+
+- **nv-ext-tile:** jitter the window sample within each stride ([f0092091](https://github.com/niivue/mono/commit/f0092091))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.79 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.173
+
+## 1.0.0-rc.78 (2026-11-12)
+
+### Performance
+
+- **nv-ext-tile:** index local DICOM-WSI folders in a worker, in 1 MiB blocks ([181696f0](https://github.com/niivue/mono/commit/181696f0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.77 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.172
+
+## 1.0.0-rc.76 (2026-11-11)
+
+### Features
+
+- **nv-ext-tile:** multi-channel OME-TIFF slides ([dd46acda](https://github.com/niivue/mono/commit/dd46acda))
+
+### Fixes
+
+- **nv-ext-tile:** reject OME-TIFF channels with mixed PhotometricInterpretation; Codex 728-r2 ([b4efc5b9](https://github.com/niivue/mono/commit/b4efc5b9))
+- **nv-ext-tile:** keep multi-channel WhiteIsZero TIFF planes white at 0; Codex 728-r1 ([bb2f0e11](https://github.com/niivue/mono/commit/bb2f0e11))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.171
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.75 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.170
+
 ## 1.0.0-rc.74 (2026-11-11)
 
 ### Fixes

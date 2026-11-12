@@ -1,3 +1,49 @@
+## 1.0.0-rc.198 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+- Updated nv-ext-tile to 1.0.0-rc.80
+- Updated uikit to 1.0.0-rc.172
+
+## 1.0.0-rc.197 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.173
+- Updated nv-ext-tile to 1.0.0-rc.79
+- Updated uikit to 1.0.0-rc.171
+
+## 1.0.0-rc.196 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.78
+
+## 1.0.0-rc.195 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.172
+- Updated nv-ext-tile to 1.0.0-rc.77
+- Updated uikit to 1.0.0-rc.170
+
+## 1.0.0-rc.194 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.171
+- Updated nv-ext-tile to 1.0.0-rc.76
+- Updated uikit to 1.0.0-rc.169
+
+## 1.0.0-rc.193 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.170
+- Updated nv-ext-tile to 1.0.0-rc.75
+- Updated uikit to 1.0.0-rc.168
+
 ## 1.0.0-rc.192 (2026-11-11)
 
 ### Updated Dependencies

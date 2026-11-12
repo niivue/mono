@@ -18,6 +18,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
+        "^typescript",
         "{projectRoot}/vite.config.js",
         "{projectRoot}/src/**/*",
         "{projectRoot}/scripts/**/*",
@@ -41,7 +42,14 @@
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["build"],
-      "inputs": ["typescript", "{projectRoot}/tests/**/*"]
+      "inputs": ["typescript", "^typescript", "{projectRoot}/tests/**/*"]
+    },
+    "test": {
+      "command": "bun test",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",

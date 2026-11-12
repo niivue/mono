@@ -13,19 +13,27 @@ import {
   GeoTIFFImage,
 } from '@niivue/geotiff-rs'
 import type {
+  NVSlideChannelInfo,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
+  NVSlideTileSamples,
+  NVSlideWindow,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
 import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
+import { sampleLevel } from './levelSample'
 
 export interface TiffSlideOptions {
   /** Manifest id; defaults to the file name. */
   id?: string
   /** geotiff decoder pool (web workers). Owned by the caller; omit to decode on the main thread. */
   pool?: Pool
+  /** OME-TIFF focal plane; default 0. */
+  z?: number
+  /** OME-TIFF timepoint; default 0. */
+  t?: number
 }
 
 export interface TiffSlideUrlOptions extends TiffSlideOptions {
@@ -50,6 +58,10 @@ const MAX_TILE_SIZE = 4096
 // Across all levels: a 200k x 200k slide at 256 px is ~815k tiles incl. pyramid.
 const MAX_TILES = 1 << 21
 const MAX_IMAGES = 64
+// geotiff walks the IFD chain up to a plane, a read per IFD.
+const MAX_PLANE_IFD = 4096
+// As ZarrSlideSource: each visible channel costs a sample plane per tile.
+const MAX_DEFAULT_VISIBLE = 4
 
 class RangeResponse extends BaseResponse {
   constructor(
@@ -146,11 +158,13 @@ class RangeClient extends BaseClient {
   }
 }
 
-async function pyramidImages(tiff: GeoTIFF): Promise<TiffLevel[]> {
-  const first = await tiff.getImage(0)
+async function pyramidImages(
+  tiff: GeoTIFF,
+  first: GeoTIFFImage,
+  chain: boolean,
+): Promise<TiffLevel[]> {
   // OME-TIFF (bioformats 6+) keeps the pyramid of each plane in SubIFDs; the
   // main IFD chain then holds channels/z/t planes, not levels.
-  // ponytail: first plane only (channel 0, z 0, t 0); plane selection is a follow-up.
   const subIfds = (await first.fileDirectory.loadValue('SubIFDs')) as
     | ArrayLike<number | bigint>
     | undefined
@@ -170,6 +184,7 @@ async function pyramidImages(tiff: GeoTIFF): Promise<TiffLevel[]> {
     )
     return pyramidLevels([first, ...subs])
   }
+  if (!chain) return pyramidLevels([first])
   // SVS / plain pyramidal TIFF: levels are the tiled images of the main chain.
   // The stripped ones (SVS thumbnail, label, macro) are not levels.
   // Walk the chain ourselves: geotiff's getImageCount loops forever on a cycle.
@@ -180,6 +195,282 @@ async function pyramidImages(tiff: GeoTIFF): Promise<TiffLevel[]> {
     images.push(last)
   }
   return pyramidLevels(images)
+}
+
+type Dim = 'C' | 'Z' | 'T'
+
+// The first Image's Pixels in OME-XML: plane counts, order and channels.
+interface OmePixels {
+  sizes: Record<Dim, number>
+  /** DimensionOrder after XY, fastest first, e.g. 'CZT'. */
+  order: Dim[]
+  channels: { name?: string; rgb?: readonly [number, number, number] }[]
+  /** Attributes, plus `elsewhere` (a file name) when another file holds them. */
+  tiffData: Record<string, string>[]
+}
+
+// Regex, not DOMParser (absent in Bun and workers): only attributes are read.
+// ponytail: XML entities in names stay escaped (&amp;).
+function omePixels(xml: string, samplesPerPixel: number): OmePixels | null {
+  const pixels =
+    /<(?:\w+:)?Pixels\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?Pixels>)/.exec(
+      xml,
+    )?.[0]
+  if (!pixels) return null
+  const attrs = (tag: string) =>
+    Object.fromEntries(
+      Array.from(
+        tag.matchAll(/([\w:]+)\s*=\s*(["'])(.*?)\2/g),
+        ([, k, , v]) => [k, v],
+      ),
+    ) as Record<string, string>
+  const tags = (name: string, xml = pixels) =>
+    Array.from(
+      xml.matchAll(new RegExp(`<(?:\\w+:)?${name}\\b[^>]*>`, 'g')),
+      ([tag]) => attrs(tag),
+    )
+  // Multi-file sets: a TiffData whose UUID is not this file's (the root
+  // OME UUID) numbers IFDs of another file.
+  const self = tags('OME', xml)[0]?.UUID
+  const tiffData = Array.from(
+    pixels.matchAll(
+      /<(?:\w+:)?TiffData\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?TiffData>)/g,
+    ),
+    ([block]) => {
+      const uuid = /<(?:\w+:)?UUID\b([^>]*)>([^<]*)</.exec(block)
+      const other = uuid && self && uuid[2]?.trim() !== self
+      return {
+        ...attrs(/^[^>]*>/.exec(block)?.[0] ?? ''),
+        ...(other
+          ? { elsewhere: attrs(uuid[1] ?? '').FileName ?? uuid[2] ?? '' }
+          : {}),
+      }
+    },
+  )
+  const p = tags('Pixels')[0] ?? {}
+  const order = [...(p.DimensionOrder ?? '').slice(2)] as Dim[]
+  if (
+    !/^XY/.test(p.DimensionOrder ?? '') ||
+    [...order].sort().join() !== 'C,T,Z'
+  )
+    return null // read as a plain TIFF, first plane
+  const size = (v?: string) => Math.max(1, Number.parseInt(v ?? '', 10) || 1)
+  const channels = tags('Channel').map(({ Name, Color }) => {
+    // Color is RGBA as a signed 32-bit int.
+    const v = Number(Color)
+    return {
+      ...(Name ? { name: Name } : {}),
+      ...(Color && Number.isInteger(v)
+        ? {
+            rgb: [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255] as const,
+          }
+        : {}),
+    }
+  })
+  return {
+    // SizeC counts samples: an RGB plane is one Channel of 3.
+    sizes: {
+      C: channels.length || Math.ceil(size(p.SizeC) / samplesPerPixel),
+      Z: size(p.SizeZ),
+      T: size(p.SizeT),
+    },
+    order,
+    channels,
+    tiffData,
+  }
+}
+
+// The main-chain IFD of plane `at`: by DimensionOrder, through TiffData when
+// listed (IFD + offset from its First C/Z/T over PlaneCount planes).
+function planeIfd(ome: OmePixels, at: Record<Dim, number>): number {
+  const linear = (pos: Record<Dim, number>) => {
+    let index = 0
+    let stride = 1
+    for (const d of ome.order) {
+      index += pos[d] * stride
+      stride *= ome.sizes[d]
+    }
+    return index
+  }
+  const plane = linear(at)
+  let ifd = ome.tiffData.length ? Number.NaN : plane
+  for (const td of ome.tiffData) {
+    const num = (v?: string) => Number(v ?? 0)
+    const start = linear({
+      C: num(td.FirstC),
+      Z: num(td.FirstZ),
+      T: num(td.FirstT),
+    })
+    // OME schema: PlaneCount defaults to 1 with an IFD, else to every plane.
+    const count =
+      td.PlaneCount !== undefined
+        ? num(td.PlaneCount)
+        : td.IFD !== undefined
+          ? 1
+          : Number.POSITIVE_INFINITY
+    if (plane >= start && plane < start + count) {
+      if (td.elsewhere !== undefined)
+        throw new Error(
+          `OME-TIFF: plane C${at.C} Z${at.Z} T${at.T} is in ${td.elsewhere || 'another file'}; open that file (multi-file sets are not supported)`,
+        )
+      ifd = num(td.IFD) + plane - start
+      break
+    }
+  }
+  if (!(Number.isInteger(ifd) && ifd >= 0 && ifd < MAX_PLANE_IFD))
+    throw new Error(
+      `OME-TIFF: plane C${at.C} Z${at.Z} T${at.T} maps to IFD ${ifd}, not in 0-${MAX_PLANE_IFD - 1}`,
+    )
+  return ifd
+}
+
+const checkIndex = (what: string, value: number, count: number) => {
+  if (!(Number.isInteger(value) && value >= 0 && value < count))
+    throw new Error(`TIFF: ${what} ${value} is not in 0-${count - 1}`)
+}
+
+// Stored = (v - lo) * scale, clamped to uint16 (as ZarrSlideSource).
+type Quantize = { lo: number; scale: number }
+
+// Multi-channel OME-TIFF: one sample per channel plane, served as raw-gray.
+interface TiffChannels {
+  bitsStored: 8 | 16
+  info: NVSlideChannelInfo[]
+  /** Per channel; null passes uint8/uint16 samples through. */
+  quantize: (Quantize | null)[]
+}
+
+interface TiffPlanes {
+  /** One pyramid per channel plane; a single one unless multi-channel. */
+  planes: TiffLevel[][]
+  channels: TiffChannels | null
+}
+
+async function openTiff(
+  tiff: GeoTIFF,
+  { z = 0, t = 0, pool }: TiffSlideOptions,
+  signal?: AbortSignal,
+): Promise<TiffPlanes> {
+  const first = await tiff.getImage(0)
+  const dir = first.fileDirectory
+  const xml = dir.hasTag(270) ? await dir.loadValue('ImageDescription') : null
+  const ome =
+    typeof xml === 'string' && /<(?:\w+:)?OME\b/.test(xml)
+      ? omePixels(xml, first.getSamplesPerPixel())
+      : null
+  const sizes = ome?.sizes ?? { C: 1, Z: 1, T: 1 }
+  checkIndex('z', z, sizes.Z)
+  checkIndex('t', t, sizes.T)
+  // One plane at IFD 0 keeps the IFD-chain walk (pyramids that chain their
+  // levels); TiffData may map the plane past unused IFDs.
+  if (
+    !ome ||
+    (sizes.C * sizes.Z * sizes.T === 1 &&
+      planeIfd(ome, { C: 0, Z: 0, T: 0 }) === 0)
+  )
+    return { planes: [await pyramidImages(tiff, first, true)], channels: null }
+  // Several RGB channels: the first, in colour.
+  const multi = sizes.C > 1 && first.getSamplesPerPixel() === 1
+  const planes = await Promise.all(
+    Array.from({ length: multi ? sizes.C : 1 }, async (_, c) => {
+      const img = await tiff.getImage(planeIfd(ome, { C: c, Z: z, T: t }))
+      return pyramidImages(tiff, img, false)
+    }),
+  )
+  if (!multi) return { planes, channels: null }
+  const shape = (levels: TiffLevel[]) =>
+    levels
+      .map(
+        ({ img: i, width, height }) =>
+          `${width}x${height} ${i.getTileWidth()}x${i.getTileHeight()} ${i.getSamplesPerPixel()} ${i.getBitsPerSample(0)} ${i.getSampleFormat(0)}`,
+      )
+      .join()
+  const base = planes[0] ?? []
+  for (const [c, levels] of planes.entries())
+    if (shape(levels) !== shape(base))
+      throw new Error(
+        `OME-TIFF: channel ${c}'s pyramid differs from channel 0's`,
+      )
+  const img0 = base[0]?.img
+  if (!img0) throw new Error('TIFF has no tiled pyramid levels')
+  // The level manifest has one photometric for every channel plane.
+  const photometric = (i: TiffLevel['img']) =>
+    i.fileDirectory.getValue('PhotometricInterpretation')
+  for (const [c, levels] of planes.entries())
+    if (levels.some(({ img }) => photometric(img) !== photometric(img0)))
+      throw new Error(
+        `OME-TIFF: channel ${c}'s PhotometricInterpretation differs from channel 0's`,
+      )
+  const bits = img0.getBitsPerSample(0)
+  const raw = img0.getSampleFormat(0) === 1 && (bits === 8 || bits === 16)
+  const bitsStored = raw && bits === 8 ? 8 : 16
+  // As ZarrSlideSource: the 2-98% range of a coarsest-level sample;
+  // non-uint8/16 types are quantized to uint16 over its min..max.
+  // One channel at a time bounds open's reads in flight and sample memory.
+  const displays: { window: NVSlideWindow; q: Quantize | null }[] = []
+  for (const levels of planes) {
+    let window: NVSlideWindow = { calMin: 0, calMax: 2 ** bitsStored - 1 }
+    let q: Quantize | null = null
+    const coarse = levels.at(-1)
+    if (coarse) {
+      const [p2, p98, min, max] = await dataRange(coarse, pool, signal)
+      let [calMin, calMax] = [p2, p98]
+      if (!raw) {
+        let [lo, hi] = [min, max]
+        // A flat or empty sample: a window centred on it (one step per unit,
+        // half its magnitude for float) keeps other values distinct.
+        if (!(hi > lo)) {
+          const mid = Number.isFinite(lo) ? lo : 0
+          const half =
+            img0.getSampleFormat(0) === 3
+              ? Math.max(Math.abs(mid) / 2, 1)
+              : 32767.5
+          ;[lo, hi] = [mid - half, mid + half]
+        }
+        q = { lo, scale: 65535 / (hi - lo) }
+        ;[calMin, calMax] = [(p2 - lo) * q.scale, (p98 - lo) * q.scale]
+      }
+      if (calMax > calMin) window = { calMin, calMax }
+    }
+    displays.push({ window, q })
+  }
+  const info = displays.map(({ window, q }, c): NVSlideChannelInfo => {
+    const { name, rgb } = ome.channels[c] ?? {}
+    return {
+      name: name ?? `Channel ${c + 1}`,
+      ...(rgb ? { rgb } : {}),
+      window,
+      // OME-XML has no omero `active`: every channel is, the first few visible.
+      active: c < MAX_DEFAULT_VISIBLE,
+      // Inverse of quantizeInto.
+      ...(q ? { storedToValue: { scale: 1 / q.scale, offset: q.lo } } : {}),
+    }
+  })
+  const quantize = displays.map((d) => d.q)
+  return { planes, channels: { bitsStored, info, quantize } }
+}
+
+// The sample grid of `level` (levelSample.ts).
+function dataRange(
+  level: TiffLevel,
+  pool: Pool | undefined,
+  signal?: AbortSignal,
+): Promise<[number, number, number, number]> {
+  return sampleLevel(
+    level.width,
+    level.height,
+    level.img.getTileWidth(),
+    level.img.getTileHeight(),
+    async ([y0, y1], [x0, x1]) => {
+      const [data] = await level.img.readRasters({
+        window: [x0, y0, x1, y1],
+        samples: [0],
+        pool,
+        signal,
+      })
+      return data as ArrayLike<number>
+    },
+  )
 }
 
 // A pyramid level: its image and the slide area it holds, which is smaller
@@ -260,7 +551,11 @@ function pyramidLevels(images: GeoTIFFImage[]): TiffLevel[] {
   return [...byDownsample.values()].sort((a, b) => a.downsample - b.downsample)
 }
 
-function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
+function buildTiffManifest(
+  images: TiffLevel[],
+  id: string,
+  gray: TiffChannels | null,
+): NVSlideManifest {
   const base = images[0]?.img
   if (!base) throw new Error('TIFF has no tiled pyramid levels')
   let totalTiles = 0
@@ -268,10 +563,13 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
     const { img, width, height } = level
     const tileWidth = img.getTileWidth()
     const tileHeight = img.getTileHeight()
-    // TIFF 6.0: tile width and length must be multiples of 16.
-    const tileOk = (n: number) =>
-      Number.isInteger(n) && n >= 16 && n <= MAX_TILE_SIZE && n % 16 === 0
-    if (!tileOk(tileWidth) || !tileOk(tileHeight)) {
+    // TIFF 6.0: tile width and length must be multiples of 16. Bioformats
+    // writes a one-tile coarsest level at its exact size (e.g. 219x256).
+    const tileOk = (n: number, size: number) =>
+      Number.isInteger(n) &&
+      n <= MAX_TILE_SIZE &&
+      ((n >= 16 && n % 16 === 0) || (n >= 1 && n === size))
+    if (!tileOk(tileWidth, width) || !tileOk(tileHeight, height)) {
       throw new Error(
         `TIFF level ${index}: tile ${tileWidth}x${tileHeight} is not a multiple of 16 in 16-${MAX_TILE_SIZE}`,
       )
@@ -283,7 +581,7 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
       throw new Error(`TIFF has more than ${MAX_TILES} tiles`)
     }
     // Unsigned integers only: geotiff renders float gray black and signed wraps.
-    if (img.getSampleFormat(0) !== 1) {
+    if (!gray && img.getSampleFormat(0) !== 1) {
       throw new Error(
         `TIFF level ${index}: SampleFormat ${img.getSampleFormat(0)} is not supported (unsigned integer only)`,
       )
@@ -291,7 +589,7 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
     // readRGB returns RGB samples unscaled; only 8-bit fits the Uint8 tiles.
     // Gray and palette are scaled to 8-bit by geotiff-rs.
     const photometric = img.fileDirectory.getValue('PhotometricInterpretation')
-    if (photometric === 2 && img.getBitsPerSample(0) !== 8) {
+    if (!gray && photometric === 2 && img.getBitsPerSample(0) !== 8) {
       throw new Error(
         `TIFF level ${index}: ${img.getBitsPerSample(0)}-bit RGB is not supported (8-bit only)`,
       )
@@ -327,7 +625,14 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
       tileHeight,
       columns,
       rows,
-      codec: 'raw-rgba',
+      ...(gray
+        ? {
+            codec: 'raw-gray',
+            // WhiteIsZero, as the single-channel readRGB path shows it.
+            photometric: photometric === 0 ? 'MONOCHROME1' : 'MONOCHROME2',
+            bitsStored: gray.bitsStored,
+          }
+        : { codec: 'raw-rgba' }),
       tiles,
     }
   })
@@ -338,10 +643,11 @@ function buildTiffManifest(images: TiffLevel[], id: string): NVSlideManifest {
     width: base.getWidth(),
     height: base.getHeight(),
     tileSize: base.getTileWidth(),
-    dtype: 'uint8',
-    channels: 'rgba',
+    dtype: gray?.bitsStored === 16 ? 'uint16' : 'uint8',
+    channels: gray ? 'gray' : 'rgba',
     displayYAxis: 'down',
     levels,
+    ...(gray ? { channelInfo: gray.info } : {}),
   }
 }
 
@@ -436,6 +742,17 @@ export function registerDcm2niixTiffDecoders(): void {
   )
 }
 
+// Clamp: a Uint16Array wraps out-of-range values; NaN stores 0.
+function quantizeInto(
+  out: Uint8Array | Uint16Array,
+  o0: number,
+  data: ArrayLike<number>,
+  { lo, scale }: Quantize,
+): void {
+  for (let i = 0; i < data.length; i++)
+    out[o0 + i] = Math.min(65535, Math.max(0, (data[i] - lo) * scale + 0.5))
+}
+
 function fileName(url: string): string {
   const last = url.replace(/[?#].*$/, '').replace(/^.*\//, '')
   try {
@@ -451,22 +768,33 @@ function fileName(url: string): string {
  * decodes it (JPEG incl. JPEGTables, LZW, Deflate, PackBits, ZSTD, WebP, LERC;
  * JPEG 2000 after {@link registerDcm2niixTiffDecoders}) and converts its
  * photometric interpretation (YCbCr, palette, gray, CMYK) to RGB. Tiles reach NVSlide as raw RGBA, cropped at the right/bottom edge.
+ * A multi-channel OME-TIFF instead states `manifest.channelInfo` and serves
+ * each visible channel's samples through `fetchTileSamples`, as ZarrSlideSource.
  *
  * NVSlide.dispose() does not reach the source: call {@link dispose} too.
  */
 export class TiffSlideSource implements SlideTileSource {
   readonly manifest: NVSlideManifest
+  /** Set only for a multi-channel OME-TIFF: NVSlide composites its channels. */
+  readonly fetchTileSamples?: SlideTileSource['fetchTileSamples']
   private host: SlideSourceHost | null = null
   private readonly closed = new AbortController()
+  private readonly images: TiffLevel[]
+  private readonly planes: TiffLevel[][]
+  private readonly channels: TiffChannels | null
 
   private constructor(
     private readonly tiff: GeoTIFF,
-    private readonly images: TiffLevel[],
+    opened: TiffPlanes,
     id: string,
     private readonly pool: Pool | undefined,
     private readonly client: RangeClient | null,
   ) {
-    this.manifest = buildTiffManifest(images, id)
+    this.planes = opened.planes
+    this.images = opened.planes[0] ?? []
+    this.channels = opened.channels
+    this.manifest = buildTiffManifest(this.images, id, this.channels)
+    if (this.channels) this.fetchTileSamples = this.tileSamples.bind(this)
   }
 
   /** Stream a remote TIFF by HTTP Range. Rejects if the server ignores Range. */
@@ -485,14 +813,14 @@ export class TiffSlideSource implements SlideTileSource {
     }
     client.openSignal = options.signal ?? null
     let tiff: GeoTIFF
-    let images: TiffLevel[]
+    let opened: TiffPlanes
     try {
       tiff = await fromCustomClient(
         client,
         SOURCE_OPTIONS,
         options.signal,
       ).catch(fail)
-      images = await pyramidImages(tiff).catch(fail)
+      opened = await openTiff(tiff, options, options.signal).catch(fail)
     } finally {
       // Until the source exists; then its lifetime (below).
       client.openSignal = null
@@ -500,7 +828,7 @@ export class TiffSlideSource implements SlideTileSource {
     options.signal?.throwIfAborted()
     const source = new TiffSlideSource(
       tiff,
-      images,
+      opened,
       options.id ?? fileName(url),
       options.pool,
       client,
@@ -516,7 +844,7 @@ export class TiffSlideSource implements SlideTileSource {
   ): Promise<TiffSlideSource> {
     return new TiffSlideSource(
       tiff,
-      await pyramidImages(tiff),
+      await openTiff(tiff, options),
       options.id ?? 'tiff',
       options.pool,
       null,
@@ -558,6 +886,11 @@ export class TiffSlideSource implements SlideTileSource {
     label: string,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
+    // NVSlide calls fetchTileSamples instead when the source has it.
+    if (this.channels)
+      throw new Error(
+        'Multi-channel OME-TIFF: read tiles with fetchTileSamples',
+      )
     const img = this.images[level.index]?.img
     if (!img) throw new Error(`No TIFF level ${level.index}`)
     const abort = signal
@@ -608,6 +941,60 @@ export class TiffSlideSource implements SlideTileSource {
     } catch (error) {
       this.host?.updateRangeEvent(label, abort.aborted ? 'aborted' : 'failed')
       throw error
+    }
+  }
+
+  /** Planar samples of `channels`, one plane read each. */
+  private async tileSamples(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    channels: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<NVSlideTileSamples> {
+    const { width: w, height: h } = tile
+    const bitsStored = this.channels?.bitsStored ?? 8
+    const n = w * h * channels.length
+    const out = bitsStored === 8 ? new Uint8Array(n) : new Uint16Array(n)
+    const abort = signal
+      ? AbortSignal.any([signal, this.closed.signal])
+      : this.closed.signal
+    const x0 = tile.x * (level.tileWidth ?? 0)
+    const y0 = tile.y * (level.tileHeight ?? 0)
+    await Promise.all(
+      channels.map(async (c, plane) => {
+        const label = `${level.index}/${tile.x}/${tile.y} c${c}`
+        this.host?.pushRangeEvent({ label, status: 'pending' })
+        try {
+          const img = this.planes[c]?.[level.index]?.img
+          if (!img) throw new Error(`No TIFF channel ${c} level ${level.index}`)
+          abort.throwIfAborted()
+          // A zero-byte (absent) tile reads as zeros: black in a channel.
+          const [data] = await img.readRasters({
+            window: [x0, y0, x0 + w, y0 + h],
+            samples: [0],
+            pool: this.pool,
+            signal: abort,
+          })
+          abort.throwIfAborted()
+          const q = this.channels?.quantize[c]
+          if (q) quantizeInto(out, plane * w * h, data as ArrayLike<number>, q)
+          else out.set(data as ArrayLike<number>, plane * w * h)
+          this.host?.updateRangeEvent(label, 'hit')
+        } catch (error) {
+          this.host?.updateRangeEvent(
+            label,
+            abort.aborted ? 'aborted' : 'failed',
+          )
+          throw error
+        }
+      }),
+    )
+    return {
+      samples: out,
+      width: w,
+      height: h,
+      bitsStored,
+      planes: channels.length,
     }
   }
 

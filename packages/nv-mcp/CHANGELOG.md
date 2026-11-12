@@ -1,3 +1,66 @@
+## 1.0.0-rc.169 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+- Updated uikit to 1.0.0-rc.172
+
+## 1.0.0-rc.168 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.173
+- Updated uikit to 1.0.0-rc.171
+
+## 1.0.0-rc.167 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.172
+- Updated uikit to 1.0.0-rc.170
+
+## 1.0.0-rc.166 (2026-11-11)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.171
+- Updated uikit to 1.0.0-rc.169
+
+## 1.0.0-rc.165 (2026-11-11)
+
+### Fixes
+
+- **nv-mcp:** return the screenshot crop size so a scaled bounded capture maps back ([69a638c8](https://github.com/niivue/mono/commit/69a638c8))
+- **nv-mcp:** report the screenshot's crop origin for map_point ([7b1c73e8](https://github.com/niivue/mono/commit/7b1c73e8))
+- **nv-mcp:** take screenshots through NiiVue's getCanvasImage ([#594](https://github.com/niivue/mono/issues/594))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.164 (2026-11-11)
+
+### Features
+
+- **niivue:** slide plane colour management setter; nv-mcp set_slide color_management ([4512a1fd](https://github.com/niivue/mono/commit/4512a1fd))
+
+### Fixes
+
+- **nv-mcp:** set_slide checks every setter before a change; Codex 727-r1 ([5aded1e8](https://github.com/niivue/mono/commit/5aded1e8))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.170
+- Updated uikit to 1.0.0-rc.168
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.163 (2026-11-11)
 
 ### Fixes

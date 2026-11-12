@@ -185,11 +185,10 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       }
       const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('/src/index.ts')
       const n = 4, count = ${TABLES}, cell = 16, width = cell * count
-      // Level index k: tile textures are cached by tile key, shared across a
-      // renderer's slides, so each slide needs its own key (L{k}/0/0).
+      // Every slide has tile L0/0/0: tile textures are keyed per slide.
       const manifest = (k) => ({
         id: 'lut' + k, name: 'lut', width: n, height: n, dtype: 'uint8', channels: 'rgba',
-        levels: [{ index: k, width: n, height: n, downsample: 1, tileWidth: n, tileHeight: n,
+        levels: [{ index: 0, width: n, height: n, downsample: 1, tileWidth: n, tileHeight: n,
           columns: 1, rows: 1, codec: 'raw-rgba', tiles: [{ x: 0, y: 0, width: n, height: n }] }],
       })
       const red = new Uint8Array(n * n * 4)

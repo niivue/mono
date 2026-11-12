@@ -45,17 +45,18 @@ source.dispose()
 pool.destroy()
 ```
 
-`fromUrl` accepts `fetch` to supply your own fetch (e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name.
+`fromUrl` accepts `fetch` to supply your own fetch (e.g. to add auth headers) and `signal` to abort a superseded open. The manifest id defaults to the decoded file name. Both open methods take `z` / `t` to pick an OME-TIFF plane (default 0).
 
 ### What it reads
 
-- **Levels:** OME-TIFF pyramids in `SubIFDs` (first plane only), else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a power-of-two downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area.
+- **Levels:** OME-TIFF pyramids in each plane's `SubIFDs`, else every tiled image in the IFD chain, one per downsample, finest first. Stripped images (SVS thumbnail, label, macro) and tiled images off the base aspect ratio (an SVS macro) are skipped, except a whole-tile image that a power-of-two downsample of the base, padded to tiles, explains (Philips TIFF); its level covers the unpadded area.
 - **Pixels:** geotiff-rs's `readRGB` converts RGB, YCbCr, gray (incl. WhiteIsZero), palette and CMYK to 8-bit RGB. Tiles reach `NVSlide` as `raw-rgba`, cropped at the right/bottom edge.
+- **OME-TIFF channels:** the OME-XML (first IFD's ImageDescription) maps channel, `z` and `t` to a main-chain IFD by `DimensionOrder` and `TiffData` (`IFD`, `First*`, `PlaneCount`). With more than one 1-sample channel, as for the ZarrSlideSource: `manifest.channelInfo` gets each `Channel`'s `Name` and `Color` (snapped to a colormap); OME-XML has no `active`, so the first 4 start visible and the rest hidden (not fetched); `fetchTileSamples` serves the visible channels' samples as `raw-gray` for `NVSlide` to composite. Default windows are the 2-98% range (the volume rule) of a sample of the coarsest level, as for the ZarrSlideSource; non-uint8/16 types are quantized to uint16 over the sample's min..max, with `channelInfo[c].storedToValue` mapping samples back (`NVSlide.sampleAt` reports approximate data values). RGB OME-TIFF stays `raw-rgba`; with several RGB channels, the first shows. Limits: a plane that another file of a multi-file set holds (`TiffData` `UUID` not this file's) is refused, the first `Image` only, plane IFDs below 4096, every channel's pyramid must match the first's. geotiff walks the IFD chain to a plane, so a deep `z` costs a read per IFD before it (z 977 of the 3910-plane Avivator brain: ~6 s).
 - **Compression:** none, LZW, JPEG, Deflate, PackBits (Rust/WASM), LERC, ZSTD, WebP (JS). JPEG 2000 (Aperio 33003 and 33005, TIFF 34712) after `registerDcm2niixTiffDecoders()`, which decodes in @niivue/dcm2niix's OpenJPEG workers (loaded on the first such tile, one pool shared with `/dicom`'s `registerDcm2niixDecoders`) rather than the geotiff `Pool`; colour matches OpenSlide within 1. Without it those tiles fail with geotiff-rs's "has no built-in decoder" error. Not supported: old-style JPEG (6), 12-bit and lossless JPEG.
-- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires), at most 2^21 tiles across all levels, unsigned integer samples, RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
+- **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires; a one-tile level may be its exact size, as bioformats writes), at most 2^21 tiles across all levels, unsigned integer samples (any type for OME-TIFF channels), RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
 - **JS decoders trust the compressed stream.** The Rust codecs and dcm2niix bound a tile's decoded size, but LERC, ZSTD and WebP do not: a hostile tile can exhaust memory. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
-Not supported yet: 16-bit and multichannel fluorescence planes (only 8-bit RGB/gray displays correctly), choosing an OME plane other than the first, TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
+Not supported yet: 16-bit single-channel planes (shown scaled to 8-bit), TIFF z-stacks as streamed volumes (`VolumeChunkSource`), pixel spacing.
 
 ## Local DICOM-WSI folders
 
@@ -68,8 +69,11 @@ const index = await indexDicomWsi(files)
 const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 ```
 
-- `indexDicomWsi` reads only headers and item tags (`File.slice`), never pixel data.
+- `indexDicomWsi` parses only headers and item tags, never pixel data.
   It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
+  In a page it runs in an inlined worker that reads 1 MiB blocks (`FileReaderSync`), so
+  an item walk reads each file through; without a worker (Bun, or a CSP that blocks
+  `blob:` workers) it reads with `File.slice` on the calling thread.
 - It handles multi-fragment frames, TILED_SPARSE (holes show the slide's
   `backgroundColor`, from RecommendedAbsentPixelCIELabValue (0048,0015) when
   stated, local or DICOMweb; the 3D slide plane leaves them empty), and
@@ -116,21 +120,21 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files))
 - Slides are shown with row 0 of the total pixel matrix at the top (`displayYAxis: 'down'`),
   as OpenSlide shows them.
 - Index speed for the 8 OpenSlide DICOM-WSI test sets (local SSD; Chrome reads through
-  a `webkitdirectory` input):
+  a `webkitdirectory` input, in the worker; Bun on the calling thread):
 
   | Set | Frames | Holes | Bun | Chrome |
   |---|---|---|---|---|
-  | Hamamatsu-2 (EOT) | 6,199 | 0 | 2 ms | 12 ms |
-  | 3DHISTECH-2 (BOT, sparse, split L0) | 56,233 | 449,040 | 65 ms | 102 ms |
-  | Leica-4 (sparse) | 8,546 | 0 | 73 ms | 323 ms |
-  | 3DHISTECH-1 | 4,434 | 0 | 100 ms | 643 ms |
-  | JP2K-33003-1 (item walk) | 4,569 | 0 | 93 ms | 600 ms |
-  | CMU-1-JP2K-ICT (item walk) | 24,813 | 0 | 159 ms | 952 ms |
-  | CMU-1-JP2K-33005 (item walk) | 28,284 | 0 | 280 ms | 1.74 s |
-  | CMU-1-JP2K-RCT (item walk) | 24,813 | 0 | 429 ms | 2.78 s |
+  | Hamamatsu-2 (EOT) | 6,199 | 0 | 2 ms | 11 ms |
+  | 3DHISTECH-2 (BOT, sparse, split L0) | 56,233 | 449,040 | 65 ms | 43 ms |
+  | Leica-4 (sparse) | 8,546 | 0 | 73 ms | 72 ms |
+  | 3DHISTECH-1 | 4,434 | 0 | 100 ms | 210 ms |
+  | JP2K-33003-1 (item walk) | 4,569 | 0 | 93 ms | 43 ms |
+  | CMU-1-JP2K-ICT (item walk) | 24,813 | 0 | 159 ms | 206 ms |
+  | CMU-1-JP2K-33005 (item walk) | 28,284 | 0 | 280 ms | 88 ms |
+  | CMU-1-JP2K-RCT (item walk) | 24,813 | 0 | 429 ms | 383 ms |
 
-  Indexing awaits `File.slice` reads, so the page stays responsive; a folder without
-  offset tables just takes longer in the browser.
+  Chrome on the main thread (`File.slice`, ~0.1 ms a read whatever its size) took
+  0.3-2.9 s for the last six; the page stayed responsive either way (no task over 50 ms).
 
 - Test fixtures: `fixtures/dicom-wsi` (synthetic, about 60 KB, with the generator
   `make_fixtures.py`; `colors.dcm` has real JPEG tiles, made by `cjpeg`, for the demo's
@@ -188,7 +192,7 @@ const slide = NVSlide.fromSource(source)
 if (source.window) slide.setChannel(0, source.window) // grey only: NVSlide does not read this window from the source
 ```
 
-Three uint8 channels show as RGB. Other multi-channel stores open as `slide.channels`: omero label, colour (snapped to a colormap), window and `active` (as for volumes; inactive channels start hidden and are not fetched; a store that marks no channel inactive, with no flags or every channel active, shows its first 4 to keep a usable tile budget), composited by `slide.channelBlend` (MAX by default). A single-channel store, or `channel`, shows one channel in grey. Windows come from omero (else the data range of up to 1024 x 1024 samples at the centre of the coarsest level, or the whole level when that sample is flat), with non-uint8/16 dtypes quantized to uint16. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
+Three uint8 channels show as RGB. Other multi-channel stores open as `slide.channels`: omero label, colour (snapped to a colormap), window and `active` (as for volumes; inactive channels start hidden and are not fetched; a store that marks no channel inactive, with no flags or every channel active, shows its first 4 to keep a usable tile budget), composited by `slide.channelBlend` (MAX by default). A single-channel store, or `channel`, shows one channel in grey. Windows come from omero (placeholders such as 0..1 on integer data are ignored), else the 2-98% range (the volume rule) of a sample of the coarsest level: a 4 x 4 grid of chunks spread over it, at most 1024 x 1024 from the middle of each, so a level of up to 4 x 4 chunks is read whole and a background-heavy centre does not collapse the window. Non-uint8/16 dtypes are quantized to uint16 over the omero min..max, else the sample's min..max; a multi-channel store states the inverse as `channelInfo[c].storedToValue`, so `NVSlide.sampleAt` reports approximate data values (`exact: false`, `clipped` at the range ends). A single-channel store has no `channelInfo`, so its readout stays in stored units. A store with z or t > 1 needs `z` / `t`. Tile reads run on the main thread.
 
 Volume reads run in a worker pool (inlined, no asset to deploy) with a main-thread fallback; `@niivue/zarrita-rs` (zarrita.js with Rust/WebAssembly codecs, its `inline` entry) is a dependency. `OmeZarrSource.arrays` are built with `@niivue/zarrita-rs/inline`: read them with that entry's `get`. The default `@niivue/zarrita-rs` entry and zarrita.js both throw on them, since each keys its array context with its own private symbol. The worker carries its own copy of the few core helpers it calls (chunk timing, voxel utilities), built from the core this package was built against, so it can lag the core a page installs within the peer range; the main thread always uses the page's core. Details: [docs/ome-zarr-format.md](docs/ome-zarr-format.md). Demos: `ome.zarr.html`, `range.html` and `vox.block.pick.zarr.html` in `apps/demo-ext-tile`.
 
@@ -237,6 +241,6 @@ bunx nx build nv-ext-tile
 bunx nx typecheck nv-ext-tile
 ```
 
-Tests write small tiled TIFFs in memory (pyramid, SubIFDs, JPEG/YCbCr, JPEG 2000) and serve them through a fake Range server that records every request. With the OpenSlide Aperio samples in `$OPENSLIDE_APERIO` (`JP2K-33003-1.svs`, `CMU-1-JP2K-33005.svs`), they also check JPEG 2000 colour against OpenSlide; otherwise those tests are skipped.
+Tests write small tiled TIFFs in memory (pyramid, SubIFDs, multi-channel OME-TIFF, JPEG/YCbCr, JPEG 2000) and serve them through a fake Range server that records every request. With the OpenSlide Aperio samples in `$OPENSLIDE_APERIO` (`JP2K-33003-1.svs`, `CMU-1-JP2K-33005.svs`), they also check JPEG 2000 colour against OpenSlide; otherwise those tests are skipped.
 
 ## Part of the [NiiVue](https://github.com/niivue) ecosystem

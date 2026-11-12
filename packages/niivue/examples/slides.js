@@ -139,6 +139,7 @@ const els = {
   zoomIn: el('zoomIn'),
   fit: el('fit'),
   showGrid: el('showGrid'),
+  scaleBar: el('scaleBar'),
   canvas: el('tileCanvas'),
   overlay: el('drawOverlay'),
   drawBtn: el('drawBtn'),
@@ -301,7 +302,9 @@ async function createView() {
 function drawView(screen) {
   if (!view || !slide) return
   const slides = [slide]
-  view.renderer.overlay = slideOverlayContent(slide, screen, gestures)
+  view.renderer.overlay = slideOverlayContent(slide, screen, gestures, {
+    isRulerVisible: els.scaleBar.checked,
+  })
   if (view.kind === 'gpu') {
     view.renderer.render(slides, screen)
   } else {
@@ -841,6 +844,7 @@ els.levelMode.addEventListener('change', () => {
 els.showGrid.addEventListener('change', () => {
   slide?.setTileGridVisible(els.showGrid.checked)
 })
+els.scaleBar.addEventListener('change', requestRender)
 els.fit.addEventListener('click', () => slide?.fitToScreen(screenForCanvas()))
 els.zoomIn.addEventListener('click', () => zoomCentered(1.45))
 els.zoomOut.addEventListener('click', () => zoomCentered(1 / 1.45))
@@ -903,9 +907,8 @@ async function loadSlide() {
   els.fallback.setAttribute('aria-hidden', 'true')
   els.fallback.textContent = ''
   // Tear down the outgoing slide before loading the next: drop its render
-  // listener, dispose its bitmap cache + in-flight fetches, and clear the
-  // renderer's per-tile texture cache so the new source cannot inherit stale
-  // tiles keyed by the same L/x/y (ghost tiles).
+  // listener, dispose its bitmap cache + in-flight fetches, and free the
+  // renderer's tile textures for it.
   const prev = slide
   slide = null
   hasFit = false

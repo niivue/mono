@@ -987,7 +987,10 @@ export function registerCoreTools(
       description:
         "Draws the scene and returns NiiVue's canvas as a PNG, scaled down to `max_width` pixels " +
         'wide at most. On a volume tiled into bricks it waits for every brick to arrive first. The ' +
-        "picture is NiiVue's alone: anything the page draws over its canvas is not in it.",
+        "picture is NiiVue's alone: anything the page draws over its canvas is not in it. Where " +
+        'NiiVue draws into part of its canvas, the picture is that part: `region` is its size and ' +
+        '`origin` its top-left, in canvas pixels. For `map_point`, a picture point (x, y) is canvas ' +
+        'point (origin[0] + x * region.width / width, origin[1] + y * region.height / height).',
       inputSchema: strict(CORE_SCHEMAS.screenshot),
       annotations: { readOnlyHint: true },
     },

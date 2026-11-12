@@ -133,7 +133,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
 | `orientationTextPosition` | Prop | `'edges'` (default): a letter mid-left and mid-top of each 2D tile; `'corner'`: one combined label (e.g. `RS`) at the tile's top-left corner |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
-| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | |
+| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |
@@ -170,6 +170,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `'additive'` | `true` | `MAX` (default) | `ADDITIVE` (default) |
 
 The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volumes[0] as an opaque base under the overlays, which suits neuroimaging; set the first row for fluorescence channel fusion.
+
+**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. Not yet in `locationChange`, MCP or ipyniivue (later PRs).
 
 ## 8. Mesh Rendering (global)
 

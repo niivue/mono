@@ -5776,7 +5776,8 @@ export default class NiiVue extends EventTarget {
    * the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
    * zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
    * cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
-   * The built-in scale ruler draws on 2D tiles only, never over this plane.
+   * With `isRulerVisible` and no 2D tile, the scale ruler draws on the render
+   * tile at its (orthographic) world-mm scale.
    */
   setSlidePlane(
     slide: NVSlide,
@@ -5871,6 +5872,16 @@ export default class NiiVue extends EventTarget {
   /** Set {@link slideChannelBlend}; ignored on an RGB slide. No-op without a plane. */
   setSlideChannelBlend(blend: NVSlideChannelBlend): void {
     this._slidePlane?.slide.setChannelBlend(blend)
+  }
+
+  /** Whether the slide plane applies its ICC colour management (see `NVSlide.colorManagement`), or null without a plane. */
+  get slideColorManagement(): boolean | null {
+    return this._slidePlane?.slide.colorManagement ?? null
+  }
+
+  /** Set {@link slideColorManagement}; redraws only. No-op without a plane. */
+  setSlideColorManagement(on: boolean): void {
+    if (this._slidePlane) this._slidePlane.slide.colorManagement = on
   }
 
   /** Remove a slide plane registered with {@link setSlidePlane}. */
@@ -7501,6 +7512,7 @@ export default class NiiVue extends EventTarget {
         slide.channelBlend === 'max' || isRgbSlide(slide.manifest)
           ? undefined
           : slide.channelBlend,
+      colorManagement: slide.colorManagement ? undefined : false,
       manifest: sp.slide.manifest,
       manifestUrl: sp.slide.manifestUrl || undefined,
       pixelToWorld: [...sp.pixelToWorld],
@@ -7538,6 +7550,7 @@ export default class NiiVue extends EventTarget {
       }
     })
     if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
+    if (sp.colorManagement === false) slide.colorManagement = false
     this.setSlidePlane(slide, {
       pixelToWorld: sp.pixelToWorld,
       levelIndex: sp.levelIndex,

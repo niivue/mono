@@ -10,6 +10,7 @@ import type {
 } from '@niivue/niivue'
 import { omeLengthToMicrons } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
+import { sampleLevel } from '../levelSample'
 import {
   checkOmeZarrIndex,
   omeroActiveChannels,
@@ -77,7 +78,10 @@ type Select = (
  * composites them. A single channel (or `channel`) goes to NVSlide as
  * `raw-gray`, windowed like DICOM MONOCHROME. uint8/uint16 pass through; other
  * dtypes are quantized to uint16 per channel over the omero min..max, else an
- * approximate data range sampled from the coarsest level. A store with z or
+ * approximate data range sampled from the coarsest level, and state the
+ * inverse as `channelInfo[c].storedToValue` (multi-channel). Without a usable
+ * omero window, a channel's default window is the 2-98% range of that sample,
+ * as for volumes. A store with z or
  * t > 1 is refused unless {@link ZarrSlideOptions} picks the plane.
  */
 export class ZarrSlideSource implements SlideTileSource {
@@ -88,8 +92,8 @@ export class ZarrSlideSource implements SlideTileSource {
   private constructor(
     readonly manifest: NVSlideManifest,
     /**
-     * The grey channel's default window (omero when usable, else the uint16
-     * data range); null for RGB and multi-channel, whose windows are in
+     * The grey channel's default window (omero when usable, else the 2-98%
+     * sampled range); null for RGB and multi-channel, whose windows are in
      * `manifest.channelInfo`. NVSlide does not read it: apply it with
      * `slide.setChannel(0, window)`.
      */
@@ -262,22 +266,32 @@ export class ZarrSlideSource implements SlideTileSource {
     const pos = sliced.map((d) => kept.indexOf(d)) as [number, number, number]
     const bitsStored = rgb || dtype === 'uint8' ? 8 : 16
     // Quantization and default window of channel c, in stored sample units.
+    const quantized = dtype !== 'uint8' && dtype !== 'uint16'
     const display = async (c: number) => {
       const raw = info.channels[c]?.window
       // A placeholder omero block (0..1 on integer data) is not usable.
       const omero = raw && omeroWindowUsable(raw, dtype) ? raw : null
-      const range = () =>
-        dataRange(src, (y, x, level) => select(y, x, level, c), ys, xs)
+      const omeroRange =
+        omero &&
+        omero.min !== null &&
+        omero.max !== null &&
+        omero.max > omero.min
+          ? [omero.min, omero.max]
+          : null
+      // [p2, p98, min, max]: read unless omero states the window and range.
+      const sample =
+        !omero || (quantized && !omeroRange)
+          ? await dataRange(
+              src,
+              (y, x, level) => select(y, x, level, c),
+              ys,
+              xs,
+            )
+          : null
       let quantize: Quantize | null = null
       let noData = false
-      if (dtype !== 'uint8' && dtype !== 'uint16') {
-        let [lo, hi] =
-          omero &&
-          omero.min !== null &&
-          omero.max !== null &&
-          omero.max > omero.min
-            ? [omero.min, omero.max]
-            : await range()
+      if (quantized) {
+        let [lo, hi] = omeroRange ?? sample?.slice(2) ?? []
         // A flat or empty sample says nothing of the rest: centre a window on
         // it (one step per unit, or half its magnitude for a flat float) so
         // values outside it stay distinct.
@@ -296,13 +310,13 @@ export class ZarrSlideSource implements SlideTileSource {
       }
       const toStored = (v: number) =>
         quantize ? ((v * quantize.k - quantize.lo) / quantize.span) * 65535 : v
-      // uint16 without a window: the sampled data range, so 12-bit data is
-      // not near black. ponytail: milestone 14 may bring a 2-98% auto window.
+      // Without a usable omero window: the 2-98% range of the sample, as for
+      // volumes (calMinMax).
       const [calMin, calMax] =
         omero && !noData
           ? [toStored(omero.start), toStored(omero.end)]
-          : dtype === 'uint16'
-            ? await range()
+          : sample
+            ? [toStored(sample[0]), toStored(sample[1])]
             : [0, 2 ** bitsStored - 1]
       // Degenerate (constant or all-NaN data): setChannel would refuse it.
       const window: NVSlideWindow =
@@ -318,7 +332,7 @@ export class ZarrSlideSource implements SlideTileSource {
         : [channel]
     // ponytail: every channel's range is read on open, inactive ones too, so
     // showing one later has its window. One channel at a time keeps open at
-    // RANGE_READS chunk reads in flight whatever the channel count.
+    // a few chunk reads in flight whatever the channel count.
     const displays: Awaited<ReturnType<typeof display>>[] = []
     for (const c of shown) displays.push(await display(c))
     const quantize: (Quantize | null)[] = []
@@ -329,13 +343,22 @@ export class ZarrSlideSource implements SlideTileSource {
     const chosen = info.channels.some((c) => !c.active)
     const visible = chosen ? active : active.slice(0, MAX_DEFAULT_VISIBLE)
     const channelInfo: NVSlideChannelInfo[] | undefined = multi
-      ? displays.map(({ window }, c) => {
+      ? displays.map(({ window, quantize: q }, c) => {
           const omero = info.channels[c]
           return {
             name: omeZarrChannelName(src, c),
             ...(omero?.color ? { rgb: omero.color } : {}),
             window,
             active: visible.includes(c),
+            // Inverse of grayInto's quantization.
+            ...(q
+              ? {
+                  storedToValue: {
+                    scale: q.span / (65535 * q.k),
+                    offset: q.lo / q.k,
+                  },
+                }
+              : {}),
           }
         })
       : undefined
@@ -570,15 +593,8 @@ function asBytes(a: Uint8Array | Uint16Array): Uint8Array {
   return new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
 }
 
-// An approximate data range: a RANGE_GRID x RANGE_GRID grid of chunks spread
-// over the coarsest level, at most RANGE_SPAN square from the middle of each,
-// so open reads at most RANGE_GRID^2 chunks whatever the store's size. Values
-// outside the sample clamp; a valid omero window is preferred over this.
-const RANGE_GRID = 4
-const RANGE_READS = 4
-const RANGE_SPAN = 1024
-
-async function dataRange(
+// The sample grid of the coarsest level (levelSample.ts) at one channel.
+function dataRange(
   src: OmeZarrSource,
   select: (
     y: zarr.Slice,
@@ -587,49 +603,20 @@ async function dataRange(
   ) => (number | zarr.Slice | null)[],
   ys: number,
   xs: number,
-): Promise<[number, number]> {
+): Promise<[number, number, number, number]> {
   const last = src.arrays.length - 1
   const coarse = src.arrays[last]
-  const spread = (dim: number) => {
-    const [n, c] = [coarse.shape[dim], coarse.chunks[dim]]
-    const count = Math.ceil(n / c)
-    const starts = new Set<number>()
-    for (let i = 0; i < RANGE_GRID; i++)
-      starts.add(
-        Math.max(0, Math.round((i * (count - 1)) / (RANGE_GRID - 1))) * c,
+  return sampleLevel(
+    coarse.shape[xs],
+    coarse.shape[ys],
+    coarse.chunks[xs],
+    coarse.chunks[ys],
+    async (y, x) => {
+      const { data } = await zarr.get(
+        coarse,
+        select(zarr.slice(...y), zarr.slice(...x), last),
       )
-    return [...starts].map((a) => {
-      const len = Math.min(c, n - a)
-      const k = Math.min(len, RANGE_SPAN)
-      const b = a + Math.floor((len - k) / 2)
-      return zarr.slice(b, b + k)
-    })
-  }
-  const cells = spread(ys).flatMap((y) => spread(xs).map((x) => [y, x]))
-  let lo = Number.POSITIVE_INFINITY
-  let hi = Number.NEGATIVE_INFINITY
-  // A few reads at a time: fewer remote round trips, but each result is
-  // scanned and dropped as it lands, and a failure stops new reads.
-  let next = 0
-  let failed = false
-  const worker = async () => {
-    while (!failed && next < cells.length) {
-      const [y, x] = cells[next++]
-      try {
-        const { data } = await zarr.get(coarse, select(y, x, last))
-        for (const v of data as ArrayLike<number> & Iterable<number>) {
-          if (!Number.isFinite(v)) continue
-          if (v < lo) lo = v
-          if (v > hi) hi = v
-        }
-      } catch (e) {
-        failed = true
-        throw e
-      }
-    }
-  }
-  // Reject on the first failure; reads already started (at most 3) finish
-  // unawaited, and a stalled one cannot hold the open.
-  await Promise.all(Array.from({ length: RANGE_READS }, worker))
-  return [lo, hi]
+      return data as ArrayLike<number>
+    },
+  )
 }

@@ -56,6 +56,26 @@ export interface NVSlideChannelInfo {
   window?: NVSlideWindow
   /** Inactive channels start hidden and are not fetched. */
   active: boolean
+  /** A quantized channel's map to data units: value = stored * scale + offset. */
+  storedToValue?: { scale: number; offset: number }
+}
+
+/** One channel's value under a slide point ({@link NVSlide.sampleAt}). */
+export interface NVSlideSample {
+  /** Index into {@link NVSlide.channels}. */
+  channel: number
+  name: string
+  /** Data units via `storedToValue`, else `stored`; null when missing. */
+  value: number | null
+  /** The cached sample as decoded, before window and MONOCHROME1 inversion; RGB bitmaps before ICC. */
+  stored: number | null
+  /** The pyramid level `index` that served it; set for `hidden`. */
+  level: number | null
+  /** Level 0 and not quantized. Lossy codecs are not tracked. */
+  exact: boolean
+  missing?: 'outside' | 'hole' | 'uncached' | 'hidden'
+  /** Quantized and stored at 0 or 65535 (NaN is stored as 0): `value` is a bound. */
+  clipped?: true
 }
 
 /** A slide's focal plane `z` and time point `t`. Only {z: 0, t: 0} exists yet. */
@@ -535,17 +555,41 @@ export function defaultSlideChannels(manifest: NVSlideManifest): NVChannel[] {
   }))
 }
 
+/** A CPU-backed 2D context to read pixels from; null without OffscreenCanvas. */
+function readbackContext(
+  width: number,
+  height: number,
+): OffscreenCanvasRenderingContext2D | null {
+  if (typeof OffscreenCanvas === 'undefined') return null
+  // Skip a GPU-backed canvas and its readback.
+  const ctx = new OffscreenCanvas(width, height).getContext('2d', {
+    willReadFrequently: true,
+  })
+  // A reused context: a translucent pixel must not blend with the last one.
+  if (ctx) ctx.globalCompositeOperation = 'copy'
+  return ctx
+}
+
+/** A bitmap region's decoded RGBA. */
+function readPixels(
+  ctx: OffscreenCanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  sx: number,
+  sy: number,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  ctx.drawImage(bitmap, sx, sy, width, height, 0, 0, width, height)
+  return ctx.getImageData(0, 0, width, height).data
+}
+
 /** A grey bitmap's red channel as 8-bit samples; closes the bitmap. */
 function greySamples(bitmap: ImageBitmap): NVSlideTileSamples {
   const { width, height } = bitmap
   try {
-    // Read once on the CPU: skip a GPU-backed canvas and its readback.
-    const ctx = new OffscreenCanvas(width, height).getContext('2d', {
-      willReadFrequently: true,
-    })
+    const ctx = readbackContext(width, height)
     if (!ctx) throw new Error('OffscreenCanvas 2D context unavailable')
-    ctx.drawImage(bitmap, 0, 0)
-    const rgba = ctx.getImageData(0, 0, width, height).data
+    const rgba = readPixels(ctx, bitmap, 0, 0, width, height)
     const samples = new Uint8Array(width * height)
     for (let i = 0; i < samples.length; i++) samples[i] = rgba[i * 4] as number
     return { samples, width, height, bitsStored: 8 }
@@ -1050,6 +1094,7 @@ export class NVSlide extends EventTarget {
   // a pan/zoom must not cancel it -- it completes and populates the cache.
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
+  private _disposed = false
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
   private _lastVisible: NVSlideVisibleTiles | null = null
   private _channels: readonly NVChannel[]
@@ -1062,6 +1107,8 @@ export class NVSlide extends EventTarget {
   private _colorManagement: boolean
   private _colorLut: NVSlideColorLut | null = null
   private readonly _colorAbort = new AbortController()
+  // One 1x1 readback context, reused by sampleAt on hover.
+  private _pixelReader?: OffscreenCanvasRenderingContext2D | null
 
   constructor(manifest: NVSlideManifest, options: NVSlideOptions = {}) {
     super()
@@ -1903,6 +1950,148 @@ export class NVSlide extends EventTarget {
     return entry.bitmap
   }
 
+  /**
+   * Per-channel samples at base (level-0) pixel `x`, `y`, from the finest
+   * resident tile, or level `index` `opts.level`. Cache only: it never fetches
+   * and leaves the LRU order and `stats.cacheHits` alone, so hover can call it.
+   * One record per channel, in channel order.
+   */
+  sampleAt(
+    x: number,
+    y: number,
+    opts: { level?: number } = {},
+  ): NVSlideSample[] {
+    const { width, height } = this.manifest
+    if (!(x >= 0 && y >= 0 && x < width && y < height))
+      return this._missingSamples('outside')
+    let uncachedLevel: number | null = null
+    for (const level of this.manifest.levels) {
+      if (opts.level !== undefined && level.index !== opts.level) continue
+      const hit = this._tileUnder(level, x, y)
+      if (!hit) continue
+      uncachedLevel ??= level.index
+      const entry = this._cache.peek(this.tileKey(level, hit.tile))
+      // A decoded frame smaller than its tile is cached as is.
+      const decoded = entry?.samples ?? entry?.bitmap
+      if (entry && decoded && hit.px < decoded.width && hit.py < decoded.height)
+        return this._residentSamples(entry, hit.px, hit.py)
+    }
+    if (uncachedLevel === null) return this._missingSamples('hole')
+    // Visibility decides 'hidden' before any tile is cached, too.
+    return this._channels.map(({ visible }, c) =>
+      visible
+        ? this._missingSample(c, 'uncached')
+        : this._missingSample(c, 'hidden', uncachedLevel),
+    )
+  }
+
+  /**
+   * {@link sampleAt} at level `index` `opts.level` (default 0), fetching its
+   * covering tile first when it is not resident. Hidden channels are not
+   * fetched and stay `missing: 'hidden'`. `signal` stops the wait, not the load;
+   * an abort or a failed load resolves `uncached`.
+   */
+  async loadSampleAt(
+    x: number,
+    y: number,
+    opts: { level?: number; signal?: AbortSignal } = {},
+  ): Promise<NVSlideSample[]> {
+    const index = opts.level ?? 0
+    const resident = this.sampleAt(x, y, { level: index })
+    const level = this.manifest.levels.find((l) => l.index === index)
+    const hit = level && this._tileUnder(level, x, y)
+    if (!resident.some((s) => s.missing === 'uncached') || !level || !hit)
+      return resident
+    const key = this.tileKey(level, hit.tile)
+    const { signal } = opts
+    this.requestTile(level, hit.tile)
+    // Not pending after requestTile: cached, or held back after a failure.
+    await new Promise<void>((resolve) => {
+      const settle = () => {
+        if (!signal?.aborted && this._pending.has(key) && !this._cache.has(key))
+          return
+        resolve()
+        this.removeEventListener('change', settle)
+        signal?.removeEventListener('abort', settle)
+      }
+      this.addEventListener('change', settle)
+      signal?.addEventListener('abort', settle)
+      settle()
+    })
+    return this.sampleAt(x, y, { level: index })
+  }
+
+  // The tile of `level` under base pixel x, y and the pixel in it; null for a hole.
+  private _tileUnder(level: NVSlideLevelManifest, x: number, y: number) {
+    const lx = Math.floor((x * level.width) / this.manifest.width)
+    const ly = Math.floor((y * level.height) / this.manifest.height)
+    const tw = this.levelTileWidth(level)
+    const th = this.levelTileHeight(level)
+    const tile = this.tileAt(level, Math.floor(lx / tw), Math.floor(ly / th))
+    return tile && { tile, px: lx - tile.x * tw, py: ly - tile.y * th }
+  }
+
+  // Reads only {samples, channels, level} for sample tiles (#159 drops their
+  // bitmap); a bitmap-only tile (RGB, JPEG) is read back one pixel.
+  private _residentSamples(
+    entry: TileBitmap,
+    px: number,
+    py: number,
+  ): NVSlideSample[] {
+    const { samples: s, channels: held } = entry
+    const level = entry.level.index
+    if (!s) this._pixelReader ??= readbackContext(1, 1)
+    const reader = s ? null : this._pixelReader
+    if (!s && !reader) return this._missingSamples('uncached')
+    const rgba = reader && readPixels(reader, entry.bitmap, px, py, 1, 1)
+    const offset = s ? py * s.width + px : 0
+    const info = this.manifest.channelInfo
+    return this._channels.map(({ name }, channel) => {
+      const plane = held ? held.indexOf(channel) : channel
+      // A tile can outlive a hide or predate a show: visibility decides 'hidden'.
+      if (!this._channels[channel]?.visible)
+        return this._missingSample(channel, 'hidden', level)
+      if (plane < 0) return this._missingSample(channel, 'uncached', level)
+      const stored = (
+        s ? s.samples[plane * s.width * s.height + offset] : rgba?.[plane]
+      ) as number
+      const map = info?.[channel]?.storedToValue
+      const sample: NVSlideSample = {
+        channel,
+        name,
+        value: map ? stored * map.scale + map.offset : stored,
+        stored,
+        level,
+        exact: level === 0 && !map,
+      }
+      if (map && (stored === 0 || stored === 65535)) sample.clipped = true
+      return sample
+    })
+  }
+
+  private _missingSample(
+    channel: number,
+    missing: NonNullable<NVSlideSample['missing']>,
+    level: number | null = null,
+  ): NVSlideSample {
+    const { name } = this._channels[channel] as NVChannel
+    return {
+      channel,
+      name,
+      value: null,
+      stored: null,
+      level,
+      exact: false,
+      missing,
+    }
+  }
+
+  private _missingSamples(
+    missing: NonNullable<NVSlideSample['missing']>,
+  ): NVSlideSample[] {
+    return this._channels.map((_, c) => this._missingSample(c, missing))
+  }
+
   clearCache(): void {
     this._cache.clear()
     this.stats.cacheBytes = 0
@@ -1910,8 +2099,8 @@ export class NVSlide extends EventTarget {
   }
 
   dispose(): void {
+    this._disposed = true
     this._colorAbort.abort()
-    this.clearCache()
     this._luts.clear()
     this._loadQueue.length = 0
     this._wanted.clear()
@@ -1922,6 +2111,8 @@ export class NVSlide extends EventTarget {
     for (const timer of this._retryTimers.values()) clearTimeout(timer)
     this._retryTimers.clear()
     this._failed.clear()
+    // Last: its change event finds nothing pending, so waiting loadSampleAt calls settle.
+    this.clearCache()
   }
 
   private levelTileWidth(level: NVSlideLevelManifest): number {
@@ -2040,7 +2231,7 @@ export class NVSlide extends EventTarget {
     fromViewport = false,
   ): void {
     const key = this.tileKey(level, tile)
-    if (this._cache.has(key) || this._pending.has(key)) return
+    if (this._disposed || this._cache.has(key) || this._pending.has(key)) return
     if ((this._failed.get(key)?.retryAt ?? 0) > performance.now()) return
     if (fromViewport) this._viewportKeys.add(key)
     else this._viewportKeys.delete(key)

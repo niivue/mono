@@ -1,3 +1,63 @@
+## 1.0.0-rc.174 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** 2-98% slide windows and storedToValue for quantized channels ([685750ee](https://github.com/niivue/mono/commit/685750ee))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.173 (2026-11-12)
+
+### Features
+
+- **niivue:** NVSlide pixel readout (sampleAt, loadSampleAt) ([#159](https://github.com/niivue/mono/issues/159))
+
+### Fixes
+
+- **niivue:** loadSampleAt resolves uncached on abort; inactive channel hidden before cache ([4c5480e0](https://github.com/niivue/mono/commit/4c5480e0))
+- **niivue:** sampleAt reports hidden by visibility; no tile loads after dispose ([3efcdf0d](https://github.com/niivue/mono/commit/3efcdf0d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.172 (2026-11-12)
+
+### Features
+
+- **niivue:** slide scale bars (standalone panes and slide planes) ([2040fe8e](https://github.com/niivue/mono/commit/2040fe8e))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.171 (2026-11-11)
+
+### Fixes
+
+- **niivue:** keep WebGPU slide-plane buffers per draw for the whole pass ([1ef0868b](https://github.com/niivue/mono/commit/1ef0868b))
+- **niivue:** key slide tile textures by slide, so two slides draw in one frame ([c8471499](https://github.com/niivue/mono/commit/c8471499))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.170 (2026-11-11)
+
+### Features
+
+- **niivue:** slide plane colour management setter; nv-mcp set_slide color_management ([4512a1fd](https://github.com/niivue/mono/commit/4512a1fd))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.169 (2026-11-11)
 
 ### Performance

@@ -17,6 +17,22 @@
 /** Default per-renderer budget for resident tile textures (RGBA bytes). */
 export const DEFAULT_TILE_TEXTURE_BYTES = 128 * 1024 * 1024
 
+const slideIds = new WeakMap<object, number>()
+let nextSlideId = 0
+
+/**
+ * Cache key of tile `key` (`L<level>/<col>/<row>`) of `slide`: tile keys repeat
+ * across slides, so one renderer drawing two slides must not share entries.
+ */
+export function slideTileKey(slide: object, key: string): string {
+  let id = slideIds.get(slide)
+  if (id === undefined) {
+    id = nextSlideId++
+    slideIds.set(slide, id)
+  }
+  return `${id}:${key}`
+}
+
 interface TileTextureEntry<T> {
   value: T
   bytes: number

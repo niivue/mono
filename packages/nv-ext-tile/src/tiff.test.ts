@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import type { Pool } from '@niivue/geotiff-rs'
 import { fromArrayBuffer, fromFile } from '@niivue/geotiff-rs'
-import type {
-  NVSlideRangeEvent,
-  NVSlideRangeStatus,
-  SlideSourceHost,
+import {
+  NVSlide,
+  type NVSlideRangeEvent,
+  type NVSlideRangeStatus,
+  type SlideSourceHost,
 } from '@niivue/niivue'
 import { registerDcm2niixTiffDecoders, TiffSlideSource } from './tiff'
 
@@ -36,6 +37,7 @@ interface Level {
   bits?: number // per sample, default 8
   sampleFormat?: number // 1 uint (default), 2 int, 3 float
   extraSamples?: number // adds a 4th sample: 1 associated, 2 unassociated alpha
+  samples?: number // per pixel, default 3 (4 with extraSamples)
   edit?: (entries: number[][]) => void // tamper with IFD entries
   icc?: Uint8Array // an ICC profile (tag 34675)
 }
@@ -65,7 +67,12 @@ function rawLevel(index: number, width: number, height: number, tile: number) {
 
 // Minimal little-endian classic TIFF writer: one tiled IFD per level, chained,
 // or (subIfds) level 0 in the main chain with the rest under its SubIFDs tag.
-function writeTiff(levels: Level[], subIfds = false): ArrayBuffer {
+const writeTiff = (levels: Level[], subIfds = false) =>
+  writePlanes(subIfds ? [levels] : levels.map((l) => [l]))
+
+// Each plane's first level in the main chain, the rest under its SubIFDs (as
+// OME-TIFF); `description` is the first IFD's ImageDescription.
+function writePlanes(planes: Level[][], description = ''): ArrayBuffer {
   const out: number[] = [0x49, 0x49, 42, 0, 0, 0, 0, 0]
   const u16 = (p: number, v: number) => {
     out[p] = v & 255
@@ -87,65 +94,71 @@ function writeTiff(levels: Level[], subIfds = false): ArrayBuffer {
     })
     return at
   }
-  const ifdOffsets: number[] = []
+  const chain: number[] = [] // main-chain IFDs
   const nextFields: number[] = []
-  const subIfdFields: number[] = []
-  for (const [i, lv] of levels.entries()) {
-    const offsets = lv.tiles.map(append)
-    const b = lv.bits ?? 8
-    const spp = lv.extraSamples ? 4 : 3
-    const perSample = (v: number) => append(Array(spp).fill([v, 0]).flat())
-    const bps = perSample(b)
-    const n = lv.tiles.length
-    const tileOffsets = n > 1 ? longs(offsets) : (offsets[0] ?? 0)
-    const tileCounts =
-      n > 1 ? longs(lv.tiles.map((t) => t.length)) : (lv.tiles[0]?.length ?? 0)
-    // [tag, type (3 SHORT, 4 LONG), count, value-or-offset]
-    const entries: number[][] = [
-      [256, 4, 1, lv.width],
-      [257, 4, 1, lv.height],
-      [258, 3, spp, bps],
-      [259, 3, 1, lv.compression],
-      [262, 3, 1, lv.photometric],
-      [277, 3, 1, spp],
-      [284, 3, 1, 1],
-      [322, 3, 1, lv.tile],
-      [323, 3, 1, lv.tile],
-      [324, 4, n, tileOffsets],
-      [325, 4, n, tileCounts],
-    ]
-    if (lv.sampleFormat) {
-      const f = lv.sampleFormat
-      entries.push([339, 3, spp, perSample(f)])
+  const subs: Array<{ field: number; ifds: number[] }> = []
+  for (const [pi, plane] of planes.entries())
+    for (const [i, lv] of plane.entries()) {
+      const offsets = lv.tiles.map(append)
+      const b = lv.bits ?? 8
+      const spp = lv.samples ?? (lv.extraSamples ? 4 : 3)
+      const perSample = (v: number) =>
+        spp === 1 ? v : append(Array(spp).fill([v, 0]).flat())
+      const bps = perSample(b)
+      const n = lv.tiles.length
+      const tileOffsets = n > 1 ? longs(offsets) : (offsets[0] ?? 0)
+      const tileCounts =
+        n > 1
+          ? longs(lv.tiles.map((t) => t.length))
+          : (lv.tiles[0]?.length ?? 0)
+      // [tag, type (3 SHORT, 4 LONG), count, value-or-offset]
+      const entries: number[][] = [
+        [256, 4, 1, lv.width],
+        [257, 4, 1, lv.height],
+        [258, 3, spp, bps],
+        [259, 3, 1, lv.compression],
+        [262, 3, 1, lv.photometric],
+        [277, 3, 1, spp],
+        [284, 3, 1, 1],
+        [322, 3, 1, lv.tile],
+        [323, 3, 1, lv.tile],
+        [324, 4, n, tileOffsets],
+        [325, 4, n, tileCounts],
+      ]
+      if (lv.sampleFormat) {
+        const f = lv.sampleFormat
+        entries.push([339, 3, spp, perSample(f)])
+      }
+      if (lv.extraSamples) entries.push([338, 3, 1, lv.extraSamples])
+      if (lv.icc) entries.push([34675, 7, lv.icc.length, append(lv.icc)])
+      if (description && pi === 0 && i === 0) {
+        const text = new TextEncoder().encode(`${description}\0`)
+        entries.push([270, 2, text.length, append(text)])
+      }
+      lv.edit?.(entries)
+      if (i === 0 && plane.length > 1)
+        entries.push([330, 4, plane.length - 1, 0])
+      const at = append(new Uint8Array(2 + entries.length * 12 + 4))
+      u16(at, entries.length)
+      entries.forEach(([tag = 0, type = 0, count = 0, value = 0], e) => {
+        const p = at + 2 + e * 12
+        u16(p, tag)
+        u16(p + 2, type)
+        u32(p + 4, count)
+        if (type === 3 && count === 1) u16(p + 8, value)
+        else u32(p + 8, value)
+        if (tag === 330) subs.push({ field: p + 8, ifds: [] })
+      })
+      if (i === 0) {
+        chain.push(at)
+        nextFields.push(at + 2 + entries.length * 12)
+      } else subs.at(-1)?.ifds.push(at)
     }
-    if (lv.extraSamples) entries.push([338, 3, 1, lv.extraSamples])
-    if (lv.icc) entries.push([34675, 7, lv.icc.length, append(lv.icc)])
-    lv.edit?.(entries)
-    if (subIfds && i === 0) entries.push([330, 4, levels.length - 1, 0])
-    const at = append(new Uint8Array(2 + entries.length * 12 + 4))
-    u16(at, entries.length)
-    entries.forEach(([tag = 0, type = 0, count = 0, value = 0], e) => {
-      const p = at + 2 + e * 12
-      u16(p, tag)
-      u16(p + 2, type)
-      u32(p + 4, count)
-      if (type === 3 && count === 1) u16(p + 8, value)
-      else u32(p + 8, value)
-      if (tag === 330) subIfdFields.push(p + 8)
-    })
-    ifdOffsets.push(at)
-    nextFields.push(at + 2 + entries.length * 12)
-  }
-  u32(4, ifdOffsets[0] ?? 0)
-  if (subIfds) {
-    const subField = subIfdFields[0] ?? 0
-    const subs = ifdOffsets.slice(1)
-    u32(subField, subs.length === 1 ? (subs[0] ?? 0) : longs(subs))
-  } else {
-    for (let i = 0; i + 1 < levels.length; i++) {
-      u32(nextFields[i] ?? 0, ifdOffsets[i + 1] ?? 0)
-    }
-  }
+  u32(4, chain[0] ?? 0)
+  for (const { field, ifds } of subs)
+    u32(field, ifds.length === 1 ? (ifds[0] ?? 0) : longs(ifds))
+  for (let i = 0; i + 1 < chain.length; i++)
+    u32(nextFields[i] ?? 0, chain[i + 1] ?? 0)
   return new Uint8Array(out).buffer
 }
 
@@ -630,6 +643,18 @@ describe('TiffSlideSource', () => {
     )
   })
 
+  test('keeps a one-tile level at its exact size (bioformats)', async () => {
+    const { source } = await open(
+      writeTiff([rawLevel(0, 160, 160, 16), rawLevel(1, 20, 20, 20)], true),
+    )
+    const level = source.manifest.levels[1]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('missing tile')
+    expect([level.tileWidth, level.columns, tile.width]).toEqual([20, 1, 20])
+    const rgba = await source.fetchTileBytes(level, tile, 'one')
+    expect(pixel(rgba, 20, 19, 19)).toEqual([...rgbAt(1, 19, 19), 255])
+  })
+
   test('rejects tiles that are not a multiple of 16', async () => {
     await openRejects(rawLevel(0, 250, 175, 24), /tile 24x24 is not a multiple/)
   })
@@ -760,6 +785,370 @@ describe('TiffSlideSource', () => {
 
 // geotiff's decoder registry is process-wide: these run in order, after every
 // other TIFF test.
+// A grey 1-sample level whose values encode its IFD: id * 1000 + level * 100 + (x + y) % 50.
+function grayLevel(
+  id: number,
+  level: number,
+  width: number,
+  height: number,
+  { bits = 16, sampleFormat = 1, tile = 16, photometric = 1 } = {},
+): Level {
+  const Typed = (
+    {
+      '8,1': Uint8Array,
+      '16,1': Uint16Array,
+      '32,3': Float32Array,
+    } as Record<
+      string,
+      typeof Uint8Array | typeof Uint16Array | typeof Float32Array
+    >
+  )[`${bits},${sampleFormat}`]
+  if (!Typed) throw new Error('unsupported test dtype')
+  const tiles: Uint8Array[] = []
+  for (let ty = 0; ty < Math.ceil(height / tile); ty++) {
+    for (let tx = 0; tx < Math.ceil(width / tile); tx++) {
+      const t = new Typed(tile * tile)
+      for (let y = 0; y < tile; y++)
+        for (let x = 0; x < tile; x++)
+          t[y * tile + x] =
+            (id * 1000 + level * 100 + ((tx * tile + x + ty * tile + y) % 50)) %
+            (bits === 8 ? 256 : 65536)
+      tiles.push(new Uint8Array(t.buffer))
+    }
+  }
+  return {
+    width,
+    height,
+    tile,
+    compression: 1,
+    photometric,
+    tiles,
+    bits,
+    samples: 1,
+    ...(sampleFormat === 1 ? {} : { sampleFormat }),
+  }
+}
+
+// Bin b of the 1001-bin 2-98% histogram over mn..mx (robustMinMax).
+const bin = (b: number, mn: number, mx: number) => b / (1000 / (mx - mn)) + mn
+
+/** Runs `f` with stand-ins for the browser bitmap API NVSlide renders tiles with. */
+async function withFakeBitmaps<T>(f: () => Promise<T>): Promise<T> {
+  const g = globalThis as Record<string, unknown>
+  const saved = [g.ImageData, g.createImageBitmap]
+  g.ImageData = class {
+    constructor(
+      readonly data: Uint8ClampedArray,
+      readonly width: number,
+      readonly height: number,
+    ) {}
+  }
+  g.createImageBitmap = async (img: { width: number; height: number }) => ({
+    width: img.width,
+    height: img.height,
+    close() {},
+  })
+  try {
+    return await f()
+  } finally {
+    ;[g.ImageData, g.createImageBitmap] = saved
+  }
+}
+
+// One plane per IFD id, each a 2-level SubIFD pyramid (40x32, 20x16).
+const grayPlanes = (
+  ids: number[],
+  dtype: object | ((id: number) => object) = {},
+) =>
+  ids.map((id) => {
+    const d = typeof dtype === 'function' ? dtype(id) : dtype
+    return [grayLevel(id, 0, 40, 32, d), grayLevel(id, 1, 20, 16, d)]
+  })
+
+const omeXml = (pixels: string, inner = '') =>
+  `<?xml version="1.0"?><OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06" UUID="urn:uuid:self"><Image ID="Image:0"><Pixels ID="Pixels:0" ${pixels}>${inner}</Pixels></Image></OME>`
+
+// Two channels (red DAPI, green GFP), SizeZ 2.
+const TWO_CHANNELS =
+  '<Channel ID="Channel:0:0" Name="DAPI" Color="-16776961" SamplesPerPixel="1"/>' +
+  '<Channel ID="Channel:0:1" Name="GFP" Color="16711935" SamplesPerPixel="1"/>'
+
+async function openOme(
+  order: string,
+  ids: number[],
+  options: {
+    z?: number
+    t?: number
+    inner?: string
+    dtype?: object | ((id: number) => object)
+    singleQuotes?: boolean
+  } = {},
+) {
+  const doubleQuoted = omeXml(
+    `DimensionOrder="${order}" SizeX="40" SizeY="32" SizeC="2" SizeZ="2" SizeT="1" Type="uint16"`,
+    options.inner ?? `${TWO_CHANNELS}<TiffData/>`,
+  )
+  const xml = options.singleQuotes
+    ? doubleQuoted.replaceAll('"', "'")
+    : doubleQuoted
+  const server = rangeServer(writePlanes(grayPlanes(ids, options.dtype), xml))
+  return TiffSlideSource.fromUrl('http://test/ome.tif', {
+    fetch: server.fetchImpl,
+    z: options.z,
+    t: options.t,
+  })
+}
+
+// Each sample plane's first value, i.e. its IFD id * 1000 + level * 100.
+async function planeIds(
+  source: TiffSlideSource,
+  channels: number[],
+  level = 0,
+) {
+  const lv = source.manifest.levels[level]
+  const tile = lv?.tiles[0]
+  if (!lv || !tile || !source.fetchTileSamples) throw new Error('no samples')
+  const r = await source.fetchTileSamples(lv, tile, channels)
+  expect([r.width, r.height, r.planes]).toEqual([16, 16, channels.length])
+  return channels.map((_, p) => r.samples[p * 256])
+}
+
+describe('multi-channel OME-TIFF', () => {
+  test('states channels and serves each one as samples', async () => {
+    // XYCZT: IFD = c + 2z, so IFD ids 0 and 1 are z 0's channels.
+    const source = await openOme('XYCZT', [0, 1, 2, 3])
+    const m = source.manifest
+    expect([m.dtype, m.channels]).toEqual(['uint16', 'gray'])
+    expect(m.levels.map((l) => [l.width, l.codec, l.bitsStored])).toEqual([
+      [40, 'raw-gray', 16],
+      [20, 'raw-gray', 16],
+    ])
+    // Windows: 2-98% of the coarsest level, id * 1000 + 100 + s, s = x + y in
+    // 0..34 over 20 x 16: 6 of 320 samples per end lie at s <= 2 and s >= 32,
+    // bins 59 and 941 of 1000.
+    expect(m.channelInfo).toEqual([
+      {
+        name: 'DAPI',
+        rgb: [255, 0, 0],
+        window: { calMin: bin(59, 100, 134), calMax: bin(941, 100, 134) },
+        active: true,
+      },
+      {
+        name: 'GFP',
+        rgb: [0, 255, 0],
+        window: {
+          calMin: bin(59, 1100, 1134),
+          calMax: bin(941, 1100, 1134),
+        },
+        active: true,
+      },
+    ])
+    expect(await planeIds(source, [1, 0])).toEqual([1000, 0])
+    expect(await planeIds(source, [1], 1)).toEqual([1100])
+    const lv = m.levels[0]
+    const tile = lv?.tiles[0]
+    if (!lv || !tile) throw new Error('missing tile')
+    await expect(source.fetchTileBytes(lv, tile, 'b')).rejects.toThrow(
+      /fetchTileSamples/,
+    )
+  })
+
+  test('maps planes by DimensionOrder and the z option', async () => {
+    // XYZCT: IFD = z + 2c.
+    expect(
+      await planeIds(await openOme('XYZCT', [0, 1, 2, 3]), [0, 1]),
+    ).toEqual([0, 2000])
+    expect(
+      await planeIds(await openOme('XYZCT', [0, 1, 2, 3], { z: 1 }), [0, 1]),
+    ).toEqual([1000, 3000])
+    expect(
+      await planeIds(await openOme('XYCZT', [0, 1, 2, 3], { z: 1 }), [0, 1]),
+    ).toEqual([2000, 3000])
+    await expect(openOme('XYCZT', [0, 1, 2, 3], { z: 2 })).rejects.toThrow(
+      /z 2 is not in 0-1/,
+    )
+    await expect(openOme('XYCZT', [0, 1, 2, 3], { t: 1 })).rejects.toThrow(
+      /t 1 is not in 0-0/,
+    )
+  })
+
+  test('maps planes through TiffData IFD and First* attributes', async () => {
+    // Channel 1 first in the file: c1 at IFD 0, c0 z0 at IFD 1.
+    const inner = `${TWO_CHANNELS}<TiffData IFD="1" FirstC="0"/><TiffData IFD="0" FirstC="1"/>`
+    expect(
+      await planeIds(await openOme('XYCZT', [0, 1], { inner }), [0, 1]),
+    ).toEqual([1000, 0])
+    // A plane no TiffData holds, or one past the IFD cap, is refused.
+    const far = `${TWO_CHANNELS}<TiffData IFD="9999" FirstC="1"/><TiffData IFD="0"/>`
+    await expect(openOme('XYCZT', [0, 1], { inner: far })).rejects.toThrow(
+      /maps to IFD 9999/,
+    )
+  })
+
+  test('keeps WhiteIsZero planes white at 0', async () => {
+    const source = await openOme('XYCZT', [0, 1, 2, 3], {
+      dtype: { photometric: 0 },
+    })
+    expect(source.manifest.levels.map((l) => l.photometric)).toEqual([
+      'MONOCHROME1',
+      'MONOCHROME1',
+    ])
+  })
+
+  test('rejects channels with different PhotometricInterpretation', async () => {
+    // XYCZT: plane 1 is channel 1; one manifest photometric would invert it.
+    await expect(
+      openOme('XYCZT', [0, 1, 2, 3], {
+        dtype: (id: number) => ({ photometric: id === 1 ? 0 : 1 }),
+      }),
+    ).rejects.toThrow("channel 1's PhotometricInterpretation differs")
+  })
+
+  test('reads single-quoted OME-XML attributes', async () => {
+    const source = await openOme('XYCZT', [0, 1, 2, 3], { singleQuotes: true })
+    expect(source.manifest.channelInfo?.map((c) => [c.name, c.rgb])).toEqual([
+      ['DAPI', [255, 0, 0]],
+      ['GFP', [0, 255, 0]],
+    ])
+    expect(await planeIds(source, [1, 0])).toEqual([1000, 0])
+  })
+
+  test('a single plane at a TiffData IFD past unused IFDs', async () => {
+    const xml = omeXml(
+      'DimensionOrder="XYCZT" SizeX="64" SizeY="64" SizeC="3" SizeZ="1" SizeT="1" Type="uint8"',
+      '<Channel ID="Channel:0:0" SamplesPerPixel="3"/><TiffData IFD="3"/>',
+    )
+    const file = writePlanes(
+      [0, 1, 2, 3].map((id) => [rawLevel(id, 64, 64, 16)]),
+      xml,
+    )
+    const { source } = await open(file)
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('missing tile')
+    expect(source.manifest.levels.length).toBe(1)
+    const rgba = await source.fetchTileBytes(level, tile, 'ifd3')
+    expect(pixel(rgba, 16, 1, 1)).toEqual([157, 5, 240, 255])
+  })
+
+  test('refuses a plane another file of a multi-file set holds', async () => {
+    const td = (c: number, ifd: number, file: string, uuid: string) =>
+      `<TiffData FirstC="${c}" IFD="${ifd}" PlaneCount="1"><UUID FileName="${file}">${uuid}</UUID></TiffData>`
+    // This file's UUID: its IFDs.
+    const own =
+      TWO_CHANNELS +
+      td(0, 1, 'ome.tif', 'urn:uuid:self') +
+      td(1, 0, 'ome.tif', 'urn:uuid:self')
+    expect(
+      await planeIds(await openOme('XYCZT', [0, 1], { inner: own }), [0, 1]),
+    ).toEqual([1000, 0])
+    const split =
+      TWO_CHANNELS +
+      td(0, 0, 'ome.tif', 'urn:uuid:self') +
+      td(1, 0, 'b.ome.tif', 'urn:uuid:b')
+    await expect(openOme('XYCZT', [0, 1], { inner: split })).rejects.toThrow(
+      /plane C1 Z0 T0 is in b\.ome\.tif; open that file/,
+    )
+  })
+
+  test('several RGB channels: SizeC counts samples, channel 0 shows in colour', async () => {
+    // SizeC 6 = 2 Channels of 3 samples; XYCZT, so z 1 is IFD 2.
+    const xml = omeXml(
+      'DimensionOrder="XYCZT" SizeX="64" SizeY="64" SizeC="6" SizeZ="2" SizeT="1" Type="uint8"',
+      '<Channel ID="Channel:0:0" SamplesPerPixel="3"/><Channel ID="Channel:0:1" SamplesPerPixel="3"/><TiffData/>',
+    )
+    const file = writePlanes(
+      [0, 1, 2, 3].map((id) => [rawLevel(id, 64, 64, 16)]),
+      xml,
+    )
+    const server = rangeServer(file)
+    const source = await TiffSlideSource.fromUrl('http://test/rgb.ome.tif', {
+      fetch: server.fetchImpl,
+      z: 1,
+    })
+    expect(source.fetchTileSamples).toBeUndefined()
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('missing tile')
+    expect(level.codec).toBe('raw-rgba')
+    const rgba = await source.fetchTileBytes(level, tile, 'rgb')
+    expect(pixel(rgba, 16, 1, 1)).toEqual([...rgbAt(2, 1, 1), 255])
+  })
+
+  test('uint8 windows are the 2-98% range too; float is quantized to uint16', async () => {
+    const u8 = await openOme('XYCZT', [0, 1, 2, 3], { dtype: { bits: 8 } })
+    expect(u8.manifest.levels[0]?.bitsStored).toBe(8)
+    // Channel 1 holds 1100 % 256 + s = 76..110; u8 is not quantized.
+    expect(u8.manifest.channelInfo?.[1]).toMatchObject({
+      window: { calMin: bin(59, 76, 110), calMax: bin(941, 76, 110) },
+    })
+    expect(u8.manifest.channelInfo?.[1]?.storedToValue).toBeUndefined()
+    expect(await planeIds(u8, [1])).toEqual([1000 % 256])
+    const f32 = await openOme('XYCZT', [0, 1, 2, 3], {
+      dtype: { bits: 32, sampleFormat: 3 },
+    })
+    expect(f32.manifest.dtype).toBe('uint16')
+    // Quantized over the sample's min..max 100..134, windowed to its 2-98%.
+    const stored = (v: number) => ((v - 100) * 65535) / 34
+    expect(f32.manifest.channelInfo?.[0]).toMatchObject({
+      window: {
+        calMin: stored(bin(59, 100, 134)),
+        calMax: stored(bin(941, 100, 134)),
+      },
+      storedToValue: { scale: 34 / 65535, offset: 100 },
+    })
+    // Channel 1's coarse range 1100..1134 spans 0..65535; level 0 holds 1000 (clamps to 0).
+    const lv = f32.manifest.levels[1]
+    const tile = lv?.tiles[0]
+    if (!lv || !tile || !f32.fetchTileSamples) throw new Error('no samples')
+    const r = await f32.fetchTileSamples(lv, tile, [1])
+    expect([r.samples[0], r.samples[17]]).toEqual([
+      0,
+      Math.round((2 / 34) * 65535),
+    ])
+    // NVSlide.sampleAt maps stored samples back through storedToValue.
+    const slide = NVSlide.fromSource(f32)
+    const step = 34 / 65535
+    const [, coarse] = await withFakeBitmaps(() =>
+      slide.loadSampleAt(2, 2, { level: 1 }),
+    )
+    // Level 1 pixel (1, 1): 1100 + 2.
+    expect(Math.abs((coarse?.value ?? 0) - 1102)).toBeLessThan(step / 2)
+    expect([coarse?.exact, coarse?.clipped]).toEqual([false, undefined])
+    // Level 0 holds 1000, below the range: stored 0, value the range's low end.
+    const [, fine] = await withFakeBitmaps(() => slide.loadSampleAt(0, 0))
+    expect(fine).toMatchObject({ value: 1100, exact: false, clipped: true })
+  })
+
+  test('RGB OME-TIFF and plain TIFF stay raw-rgba without channels', async () => {
+    const xml = omeXml(
+      'DimensionOrder="XYCZT" SizeX="1000" SizeY="700" SizeC="3" SizeZ="1" SizeT="1" Type="uint8"',
+      '<Channel ID="Channel:0:0" SamplesPerPixel="3"/><TiffData/>',
+    )
+    // SizeC 3 without Channel elements, pyramid in the main chain.
+    const bare = omeXml(
+      'DimensionOrder="XYCZT" SizeX="1000" SizeY="700" SizeC="3" SizeZ="1" SizeT="1" Type="uint8"',
+    )
+    for (const file of [
+      writePlanes([PYRAMID], xml),
+      writePlanes(
+        PYRAMID.map((l) => [l]),
+        bare,
+      ),
+      writeTiff(PYRAMID),
+    ]) {
+      const { source } = await open(file)
+      expect(source.fetchTileSamples).toBeUndefined()
+      expect(source.manifest.channelInfo).toBeUndefined()
+      expect(source.manifest.levels.map((l) => [l.width, l.codec])).toEqual([
+        [1000, 'raw-rgba'],
+        [500, 'raw-rgba'],
+        [250, 'raw-rgba'],
+      ])
+    }
+  })
+})
+
 describe('JPEG 2000 tiles', () => {
   const tileOf = async (source: TiffSlideSource, x: number, y: number) => {
     const level = source.manifest.levels[0]

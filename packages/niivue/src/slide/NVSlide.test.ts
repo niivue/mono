@@ -2161,6 +2161,20 @@ describe('NVSlide.sampleAt', () => {
     slide.dispose()
   })
 
+  it('reports an inactive channel hidden before its tile is cached', () => {
+    const { slide } = codedSlide()
+    expect(slide.sampleAt(2, 1)[2]).toMatchObject({
+      missing: 'hidden',
+      level: 0,
+    })
+    expect(missing(slide.sampleAt(2, 1, { level: 0 }))).toEqual([
+      'uncached',
+      'uncached',
+      'hidden',
+    ])
+    slide.dispose()
+  })
+
   it('loadSampleAt after dispose fetches nothing', async () => {
     const { slide, source } = codedSlide()
     slide.dispose()
@@ -2177,9 +2191,11 @@ describe('NVSlide.sampleAt', () => {
     expect(slide.sampleAt(29, 13)[1]).toEqual(
       sample(1, 'red', 21000 + 3 * 32 + 7, 2),
     )
-    expect(missing(slide.sampleAt(29, 13, { level: 0 }))).toEqual(
-      Array(3).fill('uncached'),
-    )
+    expect(missing(slide.sampleAt(29, 13, { level: 0 }))).toEqual([
+      'uncached',
+      'uncached',
+      'hidden',
+    ])
     // Level 1, tile (1, 0), pixel (0, 2): global (8, 2).
     expect((await slide.loadSampleAt(17, 5, { level: 1 }))[0]).toEqual(
       sample(0, 'grey', 10000 + 2 * 32 + 8, 1),
@@ -2308,7 +2324,7 @@ describe('NVSlide.sampleAt', () => {
     const stop = new AbortController()
     const aborted = slide.loadSampleAt(8, 4, { signal: stop.signal })
     stop.abort(new Error('stop'))
-    await expect(aborted).rejects.toThrow('stop')
+    expect(missing(await aborted)[0]).toBe('uncached')
     release()
     expect((await panned)[0]?.level).toBe(0)
     expect(slide.stats.aborted).toBe(0)

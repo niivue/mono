@@ -5424,6 +5424,7 @@ export default class NiiVue extends EventTarget {
    * Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
    * Updates the volume's calibration range and triggers a GPU update. A
    * streamed volume reads its histogram sample (see {@link volumeHistogram}).
+   * A frame-source volume holds only its shown frame; another `frame` throws.
    * @param percentiles - [low, high] in percent (default [2, 98]); zeros are
    *   left out of the population, as for the default window.
    */
@@ -5450,7 +5451,12 @@ export default class NiiVue extends EventTarget {
       throw new RangeError(
         `recalculateCalMinMax: percentiles must be 0 <= low < high <= 100, got [${percentiles}]`,
       )
-    // A frame-source volume holds only the frame it shows.
+    // A frame-source volume holds only the frame it shows (as volumeHistogram).
+    const held = vol.frameSource?.frame
+    if (frame !== undefined && held !== undefined && frame !== held)
+      throw new RangeError(
+        `recalculateCalMinMax: ${vol.name} holds only frame ${held}; show frame ${frame} first`,
+      )
     const f = vol.frameSource ? 0 : (frame ?? vol.frame4D ?? 0)
     const image = vol.img ? vol : this._chunkedOf(vol)?.histogramSample?.image
     if (!image) {

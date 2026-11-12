@@ -383,3 +383,13 @@ test('volumes added concurrently during a fetch each join the switch', async () 
   await request
   expect(nv.volumes.map((v) => v.frameSource?.frame)).toEqual([1, 1, 1])
 })
+
+test('recalculateCalMinMax rejects a frame the lazy volume does not hold', async () => {
+  const nv = await load([source(10, {})])
+  expect(await rejectionMessage(nv.recalculateCalMinMax(0, 1))).toContain(
+    'holds only frame 0; show frame 1 first',
+  )
+  await nv.setFrame4D('c0.nii', 1)
+  await nv.recalculateCalMinMax(0, 1)
+  expect(nv.volumes[0].globalMax).toBe(110)
+})

@@ -124,9 +124,11 @@ const page = (body, imports = IMPORTS) =>
   `<!doctype html><meta charset="utf-8"><script type="importmap">${JSON.stringify({ imports })}</script>
 <script>addEventListener('unhandledrejection', (e) => { window.unhandled = String(e.reason) })</script>
 <script>{ const W = Worker; window.liveWorkers = 0; window.madeWorkers = 0
-  // Counts workers created while countWorkers is set (the Zarr pool's).
+  // Counts workers created while countWorkers is set (the Zarr pool's, the DICOM
+  // index's), and indexes a worker answered with (not the main-thread fallback).
   window.Worker = class extends W {
-    constructor(...a) { super(...a); this.counted = window.countWorkers; if (this.counted) { liveWorkers++; madeWorkers++ } }
+    constructor(...a) { super(...a); this.counted = window.countWorkers; if (this.counted) { liveWorkers++; madeWorkers++
+      this.addEventListener('message', (e) => { if (e.data?.index) window.workerIndexes = (window.workerIndexes ?? 0) + 1 }) } }
     terminate() { if (this.counted && !this.ended) { this.ended = true; liveWorkers-- } super.terminate() }
   } }</script>
 <canvas id="gl" width="64" height="32" style="width:64px;height:32px"></canvas>
@@ -217,7 +219,10 @@ const PAGES = {
     const shared = !!NVSlide.tileDecoder('image/jp2') && !!NVSlide.tileDecoder('image/jls') && !!NVSlide.iccTransform()
     const files = await Promise.all(['jp2k.dcm', 'jls.dcm'].map(async (n) =>
       new File([await (await fetch('./fixtures/' + n)).arrayBuffer()], n)))
+    window.countWorkers = true
     const index = await indexDicomWsi(files)
+    window.countWorkers = false
+    const indexWorkers = [window.madeWorkers, window.liveWorkers, window.workerIndexes]
     const canvas = document.getElementById('gl')
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, preserveDrawingBuffer: true })
     const renderer = new SlideRenderer()
@@ -243,6 +248,7 @@ const PAGES = {
     const by = (name) => index.slides.find((s) => s.container === name)
     return {
       shared,
+      indexWorkers,
       skipped: index.skipped,
       jls: await show(by('jls'), true),
       jp2kRaw: await show(by('jp2k'), false),
@@ -451,6 +457,10 @@ try {
     'dicom: decoders registered via @niivue/niivue are visible from the WebGPU entry',
   )
   check(dicom.skipped?.length === 0, 'dicom: both fixtures indexed')
+  check(
+    dicom.indexWorkers?.join() === '1,0,1',
+    `dicom: indexed in one inlined worker, ended after [made, live, answered] ${JSON.stringify(dicom.indexWorkers)}`,
+  )
   const [red, yellow, green, blue] = [
     [255, 0, 0],
     [255, 255, 0],

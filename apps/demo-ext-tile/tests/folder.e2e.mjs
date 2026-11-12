@@ -66,6 +66,20 @@ try {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
+  // Counts indexes a worker answered with: indexDicomWsi falls back to the
+  // main thread silently.
+  await page.addInitScript(() => {
+    const W = Worker
+    window.workerIndexes = 0
+    window.Worker = class extends W {
+      constructor(...a) {
+        super(...a)
+        this.addEventListener('message', (e) => {
+          if (e.data?.index) window.workerIndexes++
+        })
+      }
+    }
+  })
   // No ?url= default slide: the page starts empty.
   await page.goto(`http://127.0.0.1:${port}/index.html?url=`)
   await page.setInputFiles(
@@ -75,6 +89,8 @@ try {
   await page.waitForFunction(() =>
     /Indexed in/.test(document.getElementById('status').textContent),
   )
+  const workerIndexes = await page.evaluate(() => window.workerIndexes)
+  if (workerIndexes !== 1) fail(`${workerIndexes} worker indexes, not 1`)
   const options = await page.locator('#slides option').allTextContents()
   const skipped = await page.locator('#status').getAttribute('title')
   // Six JPEG-labelled series, plus two optical paths and the e2e slide; four refused files.

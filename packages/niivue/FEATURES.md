@@ -133,7 +133,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
 | `orientationTextPosition` | Prop | `'edges'` (default): a letter mid-left and mid-top of each 2D tile; `'corner'`: one combined label (e.g. `RS`) at the tile's top-left corner |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
-| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | |
+| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |

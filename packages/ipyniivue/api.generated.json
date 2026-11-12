@@ -4128,7 +4128,7 @@
         }
       ],
       "returns": "void",
-      "doc": "Register an NVSlide to render as a textured plane in the 3D render view,\nlaid into the loaded volume's world (mm) space. `pixelToWorld` maps slide\nbase pixels -> world mm (build one with `axialPlaneTransform` for an\naxis-aligned plane). By default the pyramid level is chosen per-frame from\nthe camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you\nzoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's\ncache and the view redraws on its `change` event. Call `clearSlidePlane()`.\nThe built-in scale ruler draws on 2D tiles only, never over this plane.",
+      "doc": "Register an NVSlide to render as a textured plane in the 3D render view,\nlaid into the loaded volume's world (mm) space. `pixelToWorld` maps slide\nbase pixels -> world mm (build one with `axialPlaneTransform` for an\naxis-aligned plane). By default the pyramid level is chosen per-frame from\nthe camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you\nzoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's\ncache and the view redraws on its `change` event. Call `clearSlidePlane()`.\nWith `isRulerVisible` and no 2D tile, the scale ruler draws on the render\ntile at its (orthographic) world-mm scale.",
       "returnsDoc": null
     },
     {

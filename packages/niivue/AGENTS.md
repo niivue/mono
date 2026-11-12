@@ -2021,6 +2021,13 @@ and drops pointer events outside, and on WebGPU renders to an offscreen copy.
 The scale ruler (`view/NVRuler.ts`) takes px-per-mm from `mmPerPixel2D` so it
 tracks the 2D zoom (`pan2Dxyzmm` is threaded in by both renderers), and reads
 `screen.fovMM` as tile-local `[u, v, depth]`. Pinned by `view/NVRuler.test.ts`.
+With no 2D tile and a `setSlidePlane` slide, both views pass the render scale
+(`mmPerPixelRender`, orthographic so rotation-independent) and the ruler draws
+on the render tile. Standalone NVSlide panes get the same bar from
+`slideOverlayContent(slide, screen, source, { isRulerVisible: true })`:
+bottom-left, `slideScaleBar` picks the length from `pixelSpacingMM[0]` and
+`viewport.scale` (labels "um" below 1 mm, the font has no µ), none without
+spacing; `scaleBarLines` is shared with `NVRuler`, so no shader change.
 
 **`SliceTile`** key fields: `leftTopWidthHeight`, `axCorSag`, `screen` (ortho mm bounds), `azimuth`/`elevation`, `sliceMM` (mosaic mm position), `renderOrientation`, `crossLines`, `showLabels`. Cached `mvpMatrix`/`planeNormal`/`planePoint` populated during render for picking.
 

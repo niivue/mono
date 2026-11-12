@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { indexDicomWsi, type SlideIndexSlide, tileMap } from './dicomIndex'
+import {
+  indexDicomWsiOnThread,
+  type SlideIndexSlide,
+  tileMap,
+} from './dicomIndex'
 import { type DicomJsonSlide, indexDicomWsiMetadata } from './dicomJson'
 
 // Fixtures from fixtures/dicom-wsi/make_fixtures.py: each .json is its .dcm's
@@ -17,7 +21,7 @@ async function local(names: string[]) {
         new File([await Bun.file(`${DIR}/${n}.dcm`).arrayBuffer()], `${n}.dcm`),
     ),
   )
-  return indexDicomWsi(files)
+  return indexDicomWsiOnThread(files)
 }
 
 /** Tile -> frame number per level, as a manifest lists them (0 for a hole). */

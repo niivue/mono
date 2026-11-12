@@ -1884,7 +1884,8 @@ and its volumes alive."""
         the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
         zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
         cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
-        The built-in scale ruler draws on 2D tiles only, never over this plane.
+        With `isRulerVisible` and no 2D tile, the scale ruler draws on the render
+        tile at its (orthographic) world-mm scale.
 
         Parameters
         ----------

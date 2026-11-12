@@ -1,4 +1,4 @@
-import { mmPerPixel2D } from '@/math/NVTransforms'
+import { mmPerPixel2D, mmPerPixelRender } from '@/math/NVTransforms'
 import { SLICE_TYPE } from '@/NVConstants'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
 import type { BuildLineFn, LineData } from './NVLine'
@@ -41,7 +41,7 @@ function selectRulerTile(tiles: SliceTile[]): SliceTile | null {
  * Choose a ruler length (in mm) and label string.
  * Returns { lengthMM, label } or null if nothing reasonable fits.
  */
-function chooseRulerSize(
+export function chooseRulerSize(
   fovMM: number,
 ): { lengthMM: number; label: string } | null {
   // Ruler should fit within ~65% of tile width
@@ -79,59 +79,22 @@ function chooseRulerSize(
   return null
 }
 
-export type RulerResult = { lines: LineData[]; labels: GlyphBatch[] }
-
 /**
- * Build a checkerboard scale ruler on the best 2D tile.
- * `mmPerUnit` converts scene units to mm (1e-3 for a micrometer volume, see
- * `spatialUnit`). Returns lines and labels in canvas-pixel coordinates, or null
- * if no ruler should be drawn.
+ * The checkerboard bar (5 segments, outlined) from `rulerLeft`, centred on
+ * `rulerY`, in the caller's pixels. Shared with the slide overlay's scale bar.
  */
-export function buildRuler(
-  tiles: SliceTile[],
-  buildText: BuildTextFn,
+export function scaleBarLines(
+  rulerLeft: number,
+  rulerY: number,
+  rulerPx: number,
+  thickness: number,
+  borderThick: number,
   buildLine: BuildLineFn,
   fontColor: number[],
-  pan2Dxyzmm: ArrayLike<number>,
-  mmPerUnit = 1,
-): RulerResult | null {
-  const tile = selectRulerTile(tiles)
-  if (!tile?.screen || !tile.leftTopWidthHeight) return null
-
-  const [tileLeft, tileTop, tileWidth, tileHeight] = tile.leftTopWidthHeight
-
-  // Size against what is on screen: the 2D zoom narrows the ortho window, so
-  // tileWidth / fovMM would mislabel the bar by the zoom factor.
-  const mmPerPx =
-    mmPerPixel2D(
-      tile.screen.mnMM,
-      tile.screen.mxMM,
-      tile.leftTopWidthHeight,
-      slicePanUV(pan2Dxyzmm, tile.axCorSag),
-      tile.clipRot,
-    ) * mmPerUnit
-  if (!(mmPerPx > 0)) return null
-
-  // Cap by the DATA span too: a filled tile is the whole canvas, so sizing on
-  // it alone grows the bar past the image whenever the volume is small. The
-  // bar is horizontal, so a quarter turn caps it by the V span.
-  const dataSpan = tile.screen.fovMM[(tile.clipRot ?? 0) % 180 ? 1 : 0]
-  const ruler = chooseRulerSize(
-    Math.min(tileWidth * mmPerPx, Math.abs(dataSpan) * mmPerUnit),
-  )
-  if (!ruler) return null
-
-  const rulerPx = ruler.lengthMM / mmPerPx
-
+): LineData[] {
   const segments = 5
   const segPx = rulerPx / segments
-  const thickness = 4
-
-  // Position: bottom-right of tile, inset by 8px from edges
-  const inset = 8
-  const rulerRight = tileLeft + tileWidth - inset
-  const rulerLeft = rulerRight - rulerPx
-  const rulerY = tileTop + tileHeight - inset - thickness
+  const rulerRight = rulerLeft + rulerPx
 
   const lines: LineData[] = []
   // Draw checkerboard segments (only odd segments filled)
@@ -143,7 +106,6 @@ export function buildRuler(
     }
   }
   // Top and bottom border lines (thin)
-  const borderThick = 1
   const borderTop = rulerY - thickness / 2
   const borderBot = rulerY + thickness / 2
   lines.push(
@@ -192,12 +154,106 @@ export function buildRuler(
     const x = rulerLeft + i * segPx
     lines.push(buildLine(x, borderTop, x, borderBot, borderThick, fontColor))
   }
+  return lines
+}
 
-  // Label centered below the ruler
+export type RulerResult = { lines: LineData[]; labels: GlyphBatch[] }
+
+/** The 3D render's scale, passed when a slide plane is shown there. */
+export type RenderRulerScale = {
+  furthestFromPivot: number
+  scaleMultiplier: number
+}
+
+/**
+ * Build a checkerboard scale ruler on the best 2D tile, or with `renderScale`
+ * and no 2D tile, on the 3D render tile (an orthographic projection, so one
+ * mm-per-pixel holds at any rotation; this is how a `setSlidePlane` slide gets
+ * a scale bar). `mmPerUnit` converts scene units to mm (1e-3 for a micrometer
+ * volume, see `spatialUnit`). Returns lines and labels in canvas-pixel
+ * coordinates, or null if no ruler should be drawn.
+ */
+export function buildRuler(
+  tiles: SliceTile[],
+  buildText: BuildTextFn,
+  buildLine: BuildLineFn,
+  fontColor: number[],
+  pan2Dxyzmm: ArrayLike<number>,
+  mmPerUnit = 1,
+  renderScale?: RenderRulerScale,
+): RulerResult | null {
+  const tile = selectRulerTile(tiles)
+  let ltwh: number[]
+  let mmPerPx: number
+  let fieldMM: number
+  if (tile?.screen && tile.leftTopWidthHeight) {
+    ltwh = tile.leftTopWidthHeight
+    // Size against what is on screen: the 2D zoom narrows the ortho window, so
+    // tileWidth / fovMM would mislabel the bar by the zoom factor.
+    mmPerPx =
+      mmPerPixel2D(
+        tile.screen.mnMM,
+        tile.screen.mxMM,
+        ltwh,
+        slicePanUV(pan2Dxyzmm, tile.axCorSag),
+        tile.clipRot,
+      ) * mmPerUnit
+    // Cap by the DATA span too: a filled tile is the whole canvas, so sizing on
+    // it alone grows the bar past the image whenever the volume is small. The
+    // bar is horizontal, so a quarter turn caps it by the V span.
+    const dataSpan = tile.screen.fovMM[(tile.clipRot ?? 0) % 180 ? 1 : 0]
+    fieldMM = Math.min(ltwh[2] * mmPerPx, Math.abs(dataSpan) * mmPerUnit)
+  } else {
+    const render =
+      renderScale &&
+      tiles.find(
+        (t) =>
+          t.axCorSag === SLICE_TYPE.RENDER &&
+          t.space !== 'global3d' &&
+          // A mosaic render tile ("A R 0") is projected from its own screen
+          // bounds, not the scene radius and zoom: no ruler there.
+          t.renderOrientation === undefined &&
+          t.leftTopWidthHeight,
+      )
+    if (!render?.leftTopWidthHeight || !renderScale) return null
+    ltwh = render.leftTopWidthHeight
+    mmPerPx =
+      mmPerPixelRender(
+        ltwh,
+        renderScale.furthestFromPivot,
+        renderScale.scaleMultiplier,
+      ) * mmPerUnit
+    fieldMM = ltwh[2] * mmPerPx
+  }
+  if (!(mmPerPx > 0)) return null
+  const [tileLeft, tileTop, tileWidth, tileHeight] = ltwh
+  const ruler = chooseRulerSize(fieldMM)
+  if (!ruler) return null
+
+  const rulerPx = ruler.lengthMM / mmPerPx
+
+  const thickness = 4
+
+  // Position: bottom-right of tile, inset by 8px from edges
+  const inset = 8
+  const rulerRight = tileLeft + tileWidth - inset
+  const rulerLeft = rulerRight - rulerPx
+  const rulerY = tileTop + tileHeight - inset - thickness
+  const lines = scaleBarLines(
+    rulerLeft,
+    rulerY,
+    rulerPx,
+    thickness,
+    1,
+    buildLine,
+    fontColor,
+  )
+
+  // Label centred above the bar: below it ran off a tile at the canvas edge.
   const labelX = rulerLeft + rulerPx / 2
-  const labelY = rulerY + thickness / 2 + 2
+  const labelY = rulerY - thickness
   const labels: GlyphBatch[] = []
-  const label = buildText(ruler.label, labelX, labelY, 0.8, fontColor, 0, 0)
+  const label = buildText(ruler.label, labelX, labelY, 0.8, fontColor, 0.5, 1)
   if (label.count > 0) labels.push(label)
 
   return { lines, labels }

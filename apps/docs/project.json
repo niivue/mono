@@ -18,6 +18,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
+        "bundledDeps",
         "{projectRoot}/**/*",
         "!{projectRoot}/dist/**/*",
         "!{projectRoot}/.docusaurus/**/*",

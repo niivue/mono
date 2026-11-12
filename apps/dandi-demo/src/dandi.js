@@ -559,11 +559,7 @@ function renderSlide() {
         selectionBoxColor: nv.selectionBoxColor,
       },
     )
-    if (slideView.kind === 'gpu') {
-      slideView.renderer.render([slide], screen)
-    } else {
-      slideView.renderer.draw(slideView.gl, [slide], screen)
-    }
+    slideView.renderer.render([slide], screen)
   }
   updateSlideHud(screen)
 }

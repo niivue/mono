@@ -182,8 +182,7 @@ function render(): void {
   renderer.overlay = slideOverlayContent(slide, s, gestures, {
     isRulerVisible: scaleBarToggle.checked,
   })
-  if (renderer instanceof SlideRendererGPU) renderer.render([slide], s)
-  else if (gl) renderer.draw(gl, [slide], s)
+  renderer.render([slide], s)
   updateHud(s)
   // Failures stay visible with the HUD off; an open in progress owns the status.
   const { failures } = slide.stats
@@ -765,6 +764,11 @@ const gestures = new NVSlideController(canvas, {
 window.addEventListener('resize', requestRender)
 attachMinimap(canvas, renderer, () => slide, requestRender)
 
+// ?bench exposes the view to bench/run.mjs (apps/demo-ext-tile/README.md).
+if (params.has('bench'))
+  Object.assign(window, {
+    nvBench: { slide: () => slide, renderer, screen, openUrl, requestRender },
+  })
 // Default slide so the Pages demo is not empty; ?url= (empty) starts blank.
 const startUrl = params.get('url') ?? sourceSelect.options[0]?.value ?? ''
 if (startUrl) void openUrl(startUrl)

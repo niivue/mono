@@ -1,11 +1,13 @@
+import type {
+  NVSlideLevelManifest,
+  NVSlideManifest,
+  NVSlideTileManifest,
+} from './NVSlide'
 import {
   assertSlideGrid,
-  type NVSlideLevelManifest,
-  type NVSlideManifest,
-  type NVSlideTileManifest,
   type SlideSourceHost,
   type SlideTileSource,
-} from './NVSlide'
+} from './slideSource'
 
 // DeepZoom (DZI) descriptor: <Image TileSize Overlap Format><Size Width Height/>.
 export interface DziDescriptor {

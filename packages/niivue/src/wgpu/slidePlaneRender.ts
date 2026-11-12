@@ -1,6 +1,11 @@
 import { colorLutWgsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
-import { isFuseTile, tileTextureBudget } from '@/slide/slideFuse'
+import {
+  DEFAULT_RAW_POOL_BYTES,
+  isFuseTile,
+  SlideBudgetRegistration,
+  tileTextureBudget,
+} from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
@@ -93,6 +98,10 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   >(DEFAULT_TILE_TEXTURE_BYTES, (entry) => entry.texture.destroy())
   private readonly _gutter = new TileGutterGPU()
   private readonly _fuser = new TileFuserGPU()
+  private readonly _budget = new SlideBudgetRegistration(
+    this,
+    DEFAULT_RAW_POOL_BYTES,
+  )
   private readonly _scratch = new Float32Array(20) // mat4 (16) + opacity vec4 (4)
   // Annotation overlay (slide-space drawing).
   private _annTexture: GPUTexture | null = null
@@ -267,6 +276,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     opacity = 1,
   ): void {
     if (!this.isReady || !this._pipeline) return
+    this._budget.sync([slide])
     const slot = this._nextSlot(device, pass, mvpMatrix, opacity)
     if (!slot) return
     if (slot.builtTiles !== tiles || !slot.vertex)
@@ -362,7 +372,13 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass.draw(4)
   }
 
+  /** Unregister from the slide last drawn; the next draw registers again. */
+  clearBudget(): void {
+    this._budget.clear()
+  }
+
   destroy(): void {
+    this._budget.clear()
     this._textures.clear()
     this._fuser.destroy()
     this._gutter.destroy()

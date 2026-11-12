@@ -20,7 +20,8 @@
       "{projectRoot}/**/*.css",
       "{workspaceRoot}/biome.json"
     ],
-    "python": ["{projectRoot}/**/*.py", "{projectRoot}/pyproject.toml"]
+    "python": ["{projectRoot}/**/*.py", "{projectRoot}/pyproject.toml"],
+    "bundledDeps": [{ "dependentTasksOutputFiles": "**/*", "transitive": true }]
   },
   "targetDefaults": {
     "dev": {

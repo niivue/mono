@@ -34,6 +34,46 @@ export const tileTextureBudget = (maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) =>
 export const rawPoolBytes = (maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) =>
   Math.min(Math.max(0, maxRawPoolBytes), DEFAULT_TILE_TEXTURE_BYTES / 2)
 
+/** The tile texture and raw pool bytes a renderer states to its slides. */
+export interface SlideRendererBudget {
+  tileBytes: number
+  rawPoolBytes: number
+}
+
+/**
+ * A renderer's budget, registered on the slides it draws
+ * (NVSlide.setRendererBudget) and removed from those it stops drawing and on
+ * destroy, so a dead renderer leaves no budget behind and holds no slide.
+ */
+export class SlideBudgetRegistration {
+  private readonly _slides = new Set<NVSlide>()
+  readonly budget: SlideRendererBudget
+
+  constructor(
+    private readonly _renderer: object,
+    rawPoolBytes: number,
+  ) {
+    this.budget = { tileBytes: DEFAULT_TILE_TEXTURE_BYTES, rawPoolBytes }
+  }
+
+  /** Register on `slides`, unregister from the rest. */
+  sync(slides: readonly NVSlide[]): void {
+    for (const slide of this._slides)
+      if (!slides.includes(slide)) {
+        slide.setRendererBudget(this._renderer, null)
+        this._slides.delete(slide)
+      }
+    for (const slide of slides) {
+      slide.setRendererBudget(this._renderer, this.budget)
+      this._slides.add(slide)
+    }
+  }
+
+  clear(): void {
+    this.sync([])
+  }
+}
+
 /** Options of `SlideRenderer` and `SlideRendererGPU.create`. */
 export interface SlideRendererOptions {
   /**

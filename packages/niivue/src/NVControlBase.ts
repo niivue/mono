@@ -156,13 +156,12 @@ import * as NVSignal from '@/signal/NVSignal'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { fetchSidecar, parseSidecar, siblingJsonUrl } from '@/signal/sidecar'
 import {
-  defaultSlideChannels,
-  isRgbSlide,
   type NVChannel,
   NVSlide,
   type NVSlideChannelBlend,
   type NVSlideSample,
 } from '@/slide/NVSlide'
+import { defaultSlideChannels, isRgbSlide } from '@/slide/slideChannels'
 import {
   isSlideDrawingSizeValid,
   SlideDrawing,

@@ -18,7 +18,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
-        "^typescript",
+        "bundledDeps",
         "{projectRoot}/vite.config.js",
         "{projectRoot}/src/**/*",
         "{projectRoot}/scripts/**/*",
@@ -43,6 +43,14 @@
       },
       "dependsOn": ["build"],
       "inputs": ["typescript", "^typescript", "{projectRoot}/tests/**/*"]
+    },
+    "bench": {
+      "command": "node bench/run.mjs",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "dependsOn": ["^build"],
+      "cache": false
     },
     "test": {
       "command": "bun test",

@@ -27,6 +27,8 @@ export interface ChunkedVolumeFetch {
    * because a source over an already-resident buffer has nothing to cancel.
    */
   signal?: AbortSignal
+  /** Time point index (default 0); below {@link ChunkedVolumeSource.frames}. */
+  frame?: number
 }
 
 /**
@@ -57,4 +59,16 @@ export interface ChunkedVolumeSource {
    * past the level's array bounds.
    */
   fetchChunk(req: ChunkedVolumeFetch): Promise<Uint8Array>
+  /** Time points (absent: 1). */
+  readonly frames?: number
+  /**
+   * Structure generation (a metadata hash): keys dedup and restore checks; not
+   * a persistence validator.
+   */
+  readonly revision?: string
+  /**
+   * Release what this source owns, as `SlideTileSource.dispose`.
+   * NVChunkedVolume never calls it: the source may be shared.
+   */
+  dispose?(): void
 }

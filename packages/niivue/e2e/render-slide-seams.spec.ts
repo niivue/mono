@@ -131,7 +131,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
           renderer = new SlideRenderer()
           renderer.init(gl)
-          draw = () => renderer.draw(gl, [slide], screen)
+          draw = () => renderer.render([slide], screen)
         }
         renderer.isNearestInterpolation = ${nearestFirst}
         const until = async (keys, drawing) => {
@@ -218,7 +218,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true })
         renderer = new SlideRenderer()
         renderer.init(gl)
-        draw = () => renderer.draw(gl, [slide], screen)
+        draw = () => renderer.render([slide], screen)
       }
       renderer.isNearestInterpolation = true
       const keys = ['L0/0/0', 'L0/1/0', 'L0/0/1', 'L0/1/1']

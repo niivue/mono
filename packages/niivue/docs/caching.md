@@ -57,6 +57,11 @@ hole; the worst case is coarse data.
 | GPU tiles | One RGBA8 texture per tile key, with a 1-texel gutter from its neighbours (`slide/tileGutter.ts`) | `TileTextureCache` (`slide/tileTextureCache.ts`) | 96 MB per renderer, gutter counted |
 | GPU raw layers | Visible channels of scalar tiles, fused into the tile textures (`slide/slideFuse.ts`) | `TileTextureCache` in `gl/`, `wgpu/tileFuse.ts` | 32 MB per renderer (`maxRawPoolBytes`) |
 
+Each renderer registers its two GPU budgets on the slides it draws
+(`SlideBudgetRegistration` in `slide/slideFuse.ts`, `NVSlide.setRendererBudget`)
+and unregisters slides it stops drawing; tile capacity uses the smallest
+registered, so `visibleTiles` (and a HUD) agrees with the renderer.
+
 The slide path already has the queue discipline the volume path lacks: the
 load queue drains LIFO (`pop`, not `shift`) and every dequeued tile is checked
 against the `_wanted` set first, so a tile queued for a viewport the user has

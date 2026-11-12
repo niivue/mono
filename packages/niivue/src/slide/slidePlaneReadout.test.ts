@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 
 import NiiVue, { type NiiVueLocation, NVSlide } from '@/index'
-import type { NVSlideTileSamples, SlideTileSource } from './NVSlide'
+import type { NVSlideTileSamples } from './NVSlide'
 import { worldToSlidePixel } from './slidePlane'
+import type { SlideTileSource } from './slideSource'
 
 const g = globalThis as Record<string, unknown>
 const saved = { ImageData: g.ImageData, createImageBitmap: g.createImageBitmap }

@@ -31,6 +31,8 @@ import {
   NiiDataType,
 } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
+import { rangeReplyError, refuseReply } from '../rangeFetch'
+import { copyStrided } from './copyStrided'
 import {
   allocTypedArrayLike,
   checkOmeZarrIndex,
@@ -360,12 +362,11 @@ export function omeZarrFetchStore(
         return new Response(null, { status: 404 })
       }
       // A server that ignores Range would send the whole file (a shard) per read.
-      if (response.status === 200 && request.headers.has('range')) {
-        await response.body?.cancel()
-        throw new Error(
+      if (rangeReplyError(response, request.headers.get('range')))
+        await refuseReply(
+          response,
           `OME-Zarr: ${request.url} ignored the Range request (200, not 206)`,
         )
-      }
       return response
     },
   })
@@ -498,17 +499,7 @@ export function omeZarrBlockToDisplay(
     return { img: data, dims: [nx, ny, nz] }
   }
   const img = allocTypedArrayLike(data, nx * ny * nz)
-  let out = 0
-  for (let z = 0; z < nz; z++) {
-    for (let y = 0; y < ny; y++) {
-      let src = z * strideZ + y * strideY
-      for (let x = 0; x < nx; x++) {
-        img[out] = data[src]
-        out += 1
-        src += strideX
-      }
-    }
-  }
+  copyStrided(img, data, [nx, ny, nz], [strideX, strideY, strideZ], nx, nx * ny)
   return { img, dims: [nx, ny, nz] }
 }
 

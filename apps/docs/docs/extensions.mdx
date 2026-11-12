@@ -169,7 +169,8 @@ import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
 
 const source = await TiffSlideSource.fromUrl('https://example.org/slide.svs')
 const slide = NVSlide.fromSource(source)
-// when done: slide.dispose() and source.dispose()
+// when done: slide.dispose() also disposes the source it owns;
+// pass { ownsSource: false } to keep a shared source and dispose it yourself
 ```
 
 `TiffSlideSource.fromGeoTIFF(await fromBlob(file))` opens a local file;

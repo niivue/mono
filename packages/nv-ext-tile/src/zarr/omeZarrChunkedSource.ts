@@ -34,6 +34,7 @@ import {
   withSpatialUnits,
 } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
+import { copyStrided } from './copyStrided'
 import {
   allocTypedArrayLike,
   checkOmeZarrIndex,
@@ -342,19 +343,7 @@ async function readLevelRegion(
 
   const out = allocTypedArrayLike(data, sx * sy * sz)
   const assembleStart = performance.now()
-  for (let z = 0; z < rz; z++) {
-    for (let y = 0; y < ry; y++) {
-      const src = z * strideZ + y * strideY
-      const dst = z * sx * sy + y * sx
-      if (strideX === 1) {
-        out.set(data.subarray(src, src + rx), dst)
-      } else {
-        for (let x = 0; x < rx; x++) {
-          out[dst + x] = data[src + x * strideX]
-        }
-      }
-    }
-  }
+  copyStrided(out, data, [rx, ry, rz], [strideX, strideY, strideZ], sx, sx * sy)
   recordChunkPhase('assemble', performance.now() - assembleStart, expectedBytes)
   return new Uint8Array(out.buffer, out.byteOffset, expectedBytes)
 }

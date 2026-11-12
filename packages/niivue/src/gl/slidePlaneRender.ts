@@ -1,6 +1,11 @@
 import { colorLutGlsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
-import { isFuseTile, tileTextureBudget } from '@/slide/slideFuse'
+import {
+  DEFAULT_RAW_POOL_BYTES,
+  isFuseTile,
+  SlideBudgetRegistration,
+  tileTextureBudget,
+} from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
@@ -61,6 +66,10 @@ export class SlidePlaneRenderer extends NVRenderer {
   )
   private readonly _gutter = new TileGutterGL()
   private readonly _fuser = new TileFuserGL()
+  private readonly _budget = new SlideBudgetRegistration(
+    this,
+    DEFAULT_RAW_POOL_BYTES,
+  )
   // Annotation overlay (slide-space drawing) texture + uploaded version.
   private _annTex: WebGLTexture | null = null
   private _annVersion = -1
@@ -148,6 +157,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     opacity = 1,
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
+    this._budget.sync([slide])
     // Evict BEFORE beginFrame so the previous frame's working set is exempt.
     // The raw pool takes its bytes from the texture budget only while it holds
     // layers (scalar tiles), so RGB slides keep the whole budget.
@@ -223,7 +233,13 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl.depthMask(true)
   }
 
+  /** Unregister from the slide last drawn; the next draw registers again. */
+  clearBudget(): void {
+    this._budget.clear()
+  }
+
   destroy(): void {
+    this._budget.clear()
     const gl = this._gl
     if (!gl) return
     this._textures.clear()

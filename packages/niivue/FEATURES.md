@@ -173,6 +173,13 @@ The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volum
 
 **Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. On a slide plane, `locationChange` carries `slide: {id, name, x, y, samples}` while the crosshair, projected onto the plane, is on the slide (also in a slide-only scene), and re-emits when a tile lands that changes those samples; `nv.slideSampleAt(x?, y?)` / `nv.loadSlideSampleAt(x?, y?)` read it at a point or the crosshair. Standalone panes: `NVSlideController` `onHover(point | null)`. MCP: `where_am_i.slide`, `sample_slide`.
 
+`toValue(stored, map)` / `toStored(value, map)` convert through a channel's `storedToValue` (`stored * scale + offset`; `toStored` rounds unless `quantized: false`, so `toStored(toValue(s))` is `s`). A `raw-gray` level's samples are u8 (`bitsStored` <= 8), u16 (default), or `sampleType` `'i16'` / `'f32'`. Single-channel rules: a bytes source (no `fetchTileSamples`) may state `channelInfo` only on a monochrome level, and its tiles fill channel 0 only (several channels warn); an RGB bytes source with `channelInfo` throws.
+
+| Feature | Kind | Notes |
+|---|---|---|
+| `NVSlideOptions.ownsSource` | Option | `slide.dispose()` also disposes the source (default true). `false` for a shared source, which the caller disposes |
+| `NVSlide.setRendererBudget(renderer, budget \| null)` | Method | A renderer's tile texture and raw pool bytes; tile capacity and its warning use the smallest registered. The slide renderers register through `SlideBudgetRegistration` and unregister slides they stop drawing |
+
 ## 8. Mesh Rendering (global)
 
 | Feature | Kind | Notes |

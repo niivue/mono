@@ -168,6 +168,7 @@ import {
   type NVChannel,
   NVSlide,
   type NVSlideChannelBlend,
+  type NVSlidePlaneIndex,
   type NVSlideSample,
 } from '@/slide/NVSlide'
 import { defaultSlideChannels, isRgbSlide } from '@/slide/slideChannels'
@@ -176,9 +177,10 @@ import {
   SlideDrawing,
   slideDrawingSize,
 } from '@/slide/slideDrawing'
-import type { SlidePlaneState } from '@/slide/slidePlane'
 import {
   pickSlidePixel,
+  releaseSlidePlane,
+  type SlidePlaneState,
   slideExtentCorners,
   worldToSlidePixel,
 } from '@/slide/slidePlane'
@@ -6199,7 +6201,11 @@ export default class NiiVue extends EventTarget {
    */
   setSlidePlane(
     slide: NVSlide,
-    opts: { pixelToWorld: readonly number[]; levelIndex?: number },
+    opts: {
+      pixelToWorld: readonly number[]
+      levelIndex?: number
+      isNearestInterpolation?: boolean
+    },
   ): void {
     const levels = slide.manifest.levels
     if (levels.length === 0) return
@@ -6217,15 +6223,10 @@ export default class NiiVue extends EventTarget {
       slide,
       pixelToWorld: [...opts.pixelToWorld],
       levelIndex,
-      tilesByLevel: new Map(),
+      isNearestInterpolation: opts.isNearestInterpolation,
     }
-    // Prime the coarsest level so something shows on the first frame before the
-    // camera-driven level resolves; NVSlide dedupes already-resident keys.
-    const coarsest = levels[levels.length - 1]
-    if (coarsest) {
-      for (const tile of coarsest.tiles)
-        if (tile) slide.requestTile(coarsest, tile)
-    }
+    // The plane's request owners stream its tiles from the first frame.
+    if (this._slidePlane) releaseSlidePlane(this._slidePlane)
     this._slidePlane = state
     // A fresh plane registration drops any prior slide drawing (it was sized
     // and positioned for the old plane); the caller re-runs createSlideDrawing.
@@ -6277,6 +6278,35 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** Sample the slide plane nearest-neighbour (true) or linear. No-op without a plane. */
+  setSlidePlaneInterpolation(isNearest: boolean): void {
+    if (!this._slidePlane) return
+    this._slidePlane.isNearestInterpolation = isNearest
+    this.drawScene()
+  }
+
+  /** The slide plane's focal plane and time point, or null without a plane. */
+  get slidePlaneIndex(): NVSlidePlaneIndex | null {
+    return this._slidePlane?.slide.planeIndex ?? null
+  }
+
+  /** How many focal planes and time points the slide plane has, or null without a plane. */
+  get slidePlanes(): NVSlidePlaneIndex | null {
+    const p = this._slidePlane?.slide.planes
+    return p ? { z: p.z, t: p.t } : null
+  }
+
+  /**
+   * Show focal plane `z`, time point `t` of the slide plane (`NVSlide.setPlaneIndex`):
+   * the old plane stays on screen until the new one is ready. Resolves false
+   * when a newer call superseded it or there is no plane; rejects on failure.
+   */
+  setSlidePlaneIndex(index: NVSlidePlaneIndex): Promise<boolean> {
+    return (
+      this._slidePlane?.slide.setPlaneIndex(index) ?? Promise.resolve(false)
+    )
+  }
+
   /** The slide plane's channels (see `NVSlide.channels`), or null without a plane. */
   get slideChannels(): readonly Readonly<NVChannel>[] | null {
     return this._slidePlane?.slide.channels ?? null
@@ -6321,6 +6351,7 @@ export default class NiiVue extends EventTarget {
     }
     this._slidePlaneSlide = null
     this._slidePlaneOnChange = null
+    if (this._slidePlane) releaseSlidePlane(this._slidePlane)
     this._slidePlane = null
     this._slideDrawing = null
     this._slideVector = null

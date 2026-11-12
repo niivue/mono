@@ -3,9 +3,7 @@ import { colorLutWgsl } from '@/slide/colorLutShader'
 import type {
   NVSlide,
   NVSlideCachedTile,
-  NVSlideColor,
   NVSlideScreen,
-  NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
@@ -13,7 +11,6 @@ import {
   rawPoolBytes,
   SlideBudgetRegistration,
   type SlideRendererOptions,
-  tileTextureBudget,
 } from '@/slide/slideFuse'
 import {
   buildSlideOverlay,
@@ -21,8 +18,14 @@ import {
   SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
-import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
-import { type GutterAt, visibleTileAt } from '@/slide/tileGutter'
+import {
+  frameTextureBudget,
+  planTextures,
+  SlideFramePlan,
+  writeRectNdc,
+  writeTileUv,
+} from '@/slide/slideTiles'
+import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
@@ -33,77 +36,74 @@ import { timeChunkPhase } from '@/volume/chunkTiming'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
-import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
+import { alphaPipelineDesc, linearSampler } from './pipeline'
 import { TileFuserGPU } from './tileFuse'
 import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
-/** The slide shader, with or without the colour table lookup (bind group 1). */
+/** The slide shader, with or without the colour table lookup (bind group 2). */
 const shaderCode = (lut: boolean): string => /* wgsl */ `
 struct SlideUniforms {
-  // Four NDC corners packed as (x, y) pairs in triangle-strip order.
-  corners: array<vec4f, 2>,
-  // uv for the four corners (matches corner order).
-  uvs: array<vec4f, 2>,
+  rect: vec4f, // clip-space x0, y0, x1, y1
+  uvRect: vec4f, // u0, v0 (top), u1, v1 (bottom)
   opacity: f32,
   isPlaceholder: f32,
   showGrid: f32,
   isNearest: f32,
   placeholderColor: vec4f,
   gridColor: vec4f,
+  // A mixed fused tile's label channels (slideFuse.ts fuseTarget), combined
+  // nearest with the intensity: 0 none, 1 max, 2 saturating sum.
+  labelBlend: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> u: SlideUniforms;
-@group(0) @binding(1) var slideTex: texture_2d<f32>;
-@group(0) @binding(2) var slideSampler: sampler;
-${colorLutWgsl(1, lut)}
+@group(0) @binding(1) var linearSampler: sampler;
+@group(0) @binding(2) var nearestSampler: sampler;
+@group(1) @binding(0) var slideTex: texture_2d<f32>;
+@group(1) @binding(1) var labelTex: texture_2d<f32>;
+${colorLutWgsl(2, lut)}
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
+  @location(1) local: vec2f,
 };
 
 @vertex
 fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
-  var ndc = vec2f(0.0);
-  var uv = vec2f(0.0);
-  if (vIdx == 0u) {
-    ndc = u.corners[0].xy;
-    uv = u.uvs[0].xy;
-  } else if (vIdx == 1u) {
-    ndc = u.corners[0].zw;
-    uv = u.uvs[0].zw;
-  } else if (vIdx == 2u) {
-    ndc = u.corners[1].xy;
-    uv = u.uvs[1].xy;
-  } else {
-    ndc = u.corners[1].zw;
-    uv = u.uvs[1].zw;
-  }
+  // The unit quad corner, triangle-strip order TL, TR, BL, BR; select picks
+  // the CPU's corners exactly.
+  let c = vec2<bool>((vIdx & 1u) == 1u, vIdx >= 2u);
   var out: VertexOutput;
-  out.position = vec4f(ndc.x, ndc.y, 0.0, 1.0);
-  out.uv = uv;
+  out.position = vec4f(select(u.rect.xy, u.rect.zw, c), 0.0, 1.0);
+  out.uv = select(u.uvRect.xy, u.uvRect.zw, c);
+  out.local = select(vec2f(0.0), vec2f(1.0), c);
   return out;
 }
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
-  var base = vec4f(0.0);
-  if (u.isPlaceholder == 1.0) {
-    base = u.placeholderColor;
-  } else {
+  var base = u.placeholderColor;
+  if (u.isPlaceholder != 1.0) {
     // Tile textures carry a 1-texel gutter (slide/tileGutter.ts): sample the interior.
     let size = vec2f(textureDimensions(slideTex));
-    var texel = in.uv * (size - 2.0) + 1.0;
-    // Nearest skips the gutter copies, yet an edge sample (uv at 0 or 1, or
-    // past it under MSAA) would read the gutter: clamp to the edge texels.
+    let texel = in.uv * (size - 2.0) + 1.0;
     if (u.isNearest == 1.0) {
-      texel = clamp(texel, vec2f(1.5), size - 1.5);
+      // Nearest skips the gutter copies, yet an edge sample (uv at 0 or 1, or
+      // past it under MSAA) would read the gutter: clamp to the edge texels.
+      base = textureSample(slideTex, nearestSampler, clamp(texel, vec2f(1.5), size - 1.5) / size);
+    } else {
+      base = textureSample(slideTex, linearSampler, texel / size);
     }
-    base = textureSample(slideTex, slideSampler, texel / size);
+    if (u.labelBlend.x != 0.0) {
+      let l = textureLoad(labelTex, clamp(vec2i(texel), vec2i(1), vec2i(size) - 2), 0).rgb;
+      base = vec4f(select(max(base.rgb, l), min(base.rgb + l, vec3f(1.0)), u.labelBlend.x == 2.0), base.a);
+    }
     base = vec4f(applyColorLut(base.rgb), base.a);
   }
   base.a = base.a * u.opacity;
   if (u.showGrid == 1.0) {
-    let edge = min(min(in.uv.x, 1.0 - in.uv.x), min(in.uv.y, 1.0 - in.uv.y));
+    // Quad-local: a cropped or flipped tile's grid still runs along its edges.
+    let edge = min(min(in.local.x, 1.0 - in.local.x), min(in.local.y, 1.0 - in.local.y));
     let border = 1.0 - smoothstep(0.0, 0.018, edge);
     base = mix(
       base,
@@ -115,18 +115,26 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `
 
-// 2 vec4 corners + 2 vec4 uvs + 4 scalar floats + 2 vec4 colors = 16 vec4 lanes.
-const UNIFORM_FLOAT_COUNT = 16 * 4
-const UNIFORM_BYTE_SIZE = UNIFORM_FLOAT_COUNT * 4
+// 6 vec4: rect, uvRect, (opacity, isPlaceholder, showGrid, isNearest), colours, labelBlend.
+const UNIFORM_BYTES = 96
+// Quads the uniform buffer holds at first; it doubles when a frame needs more.
+const INITIAL_QUADS = 64
 
-type QuadOptions = {
-  uvTop: number
-  uvBottom: number
-  opacity: number
-  isPlaceholder: boolean
-  showGrid: boolean
-  placeholderColor: NVSlideColor
-  gridColor: NVSlideColor
+const UNIT_UV = [0, 0, 1, 1]
+
+// The (opacity, isPlaceholder, showGrid, isNearest) lane of a uniform slot.
+function writeQuadParams(
+  data: Float32Array,
+  o: number,
+  opacity: number,
+  isPlaceholder: boolean,
+  showGrid: boolean,
+  isNearest: boolean,
+): void {
+  data[o + 8] = opacity
+  data[o + 9] = isPlaceholder ? 1 : 0
+  data[o + 10] = showGrid ? 1 : 0
+  data[o + 11] = isNearest ? 1 : 0
 }
 
 export class SlideRendererGPU {
@@ -140,7 +148,8 @@ export class SlideRendererGPU {
   private readonly _context: GPUCanvasContext
   private readonly _pipeline: GPURenderPipeline
   private readonly _lutPipeline: GPURenderPipeline
-  private readonly _bindLayout: GPUBindGroupLayout
+  private readonly _uniformLayout: GPUBindGroupLayout
+  private readonly _textureLayout: GPUBindGroupLayout
   private readonly _luts: ColorLutTexturesGPU
   private readonly _sampler: GPUSampler
   private readonly _nearestSampler: GPUSampler
@@ -158,8 +167,17 @@ export class SlideRendererGPU {
   private readonly _gutter = new TileGutterGPU()
   private readonly _fuser: TileFuserGPU
   private readonly _budget: SlideBudgetRegistration
-  private readonly _uniformPool: GPUBuffer[] = []
-  private _uniformCursor = 0
+  private readonly _maxPoolBytes: number
+  private readonly _plan = new SlideFramePlan()
+  private readonly _planTextures: (TileTextureGPU | null)[] = []
+  // Every quad's uniforms, one aligned slot each (dynamic offset), written
+  // with one writeBuffer per frame; grown (with its bind group) on demand.
+  private readonly _uniformStride: number
+  private _uniformBuffer: GPUBuffer | null = null
+  private _uniformData = new Float32Array(0)
+  private _uniformGroup: GPUBindGroup | null = null
+  // One bind group per texture, made the first time it is drawn.
+  private readonly _textureGroups = new WeakMap<GPUTexture, GPUBindGroup>()
   /**
    * UIKit overlay hook: invoked at the end of every frame (appended to the open
    * pass, before pass.end()) so a widget can draw over the slide. The slide pass
@@ -185,7 +203,8 @@ export class SlideRendererGPU {
     context: GPUCanvasContext,
     pipeline: GPURenderPipeline,
     lutPipeline: GPURenderPipeline,
-    bindLayout: GPUBindGroupLayout,
+    uniformLayout: GPUBindGroupLayout,
+    textureLayout: GPUBindGroupLayout,
     lutLayout: GPUBindGroupLayout,
     sampler: GPUSampler,
     placeholderTexture: GPUTexture,
@@ -193,11 +212,15 @@ export class SlideRendererGPU {
     sampleCount: number,
     maxRawPoolBytes: number,
   ) {
+    this._maxPoolBytes = maxRawPoolBytes
     this._fuser = new TileFuserGPU(maxRawPoolBytes)
     this._budget = new SlideBudgetRegistration(this, maxRawPoolBytes)
     this._textures = new TileTextureCache<TileTextureGPU>(
       DEFAULT_TILE_TEXTURE_BYTES,
-      (entry) => entry.texture.destroy(),
+      (entry) => {
+        entry.texture.destroy()
+        entry.labels?.destroy()
+      },
     )
     this._luts = new ColorLutTexturesGPU(device, lutLayout, sampler)
     this._canvas = canvas
@@ -205,7 +228,10 @@ export class SlideRendererGPU {
     this._context = context
     this._pipeline = pipeline
     this._lutPipeline = lutPipeline
-    this._bindLayout = bindLayout
+    this._uniformLayout = uniformLayout
+    this._textureLayout = textureLayout
+    const align = device.limits.minUniformBufferOffsetAlignment
+    this._uniformStride = Math.ceil(UNIFORM_BYTES / align) * align
     this._sampler = sampler
     this._nearestSampler = device.createSampler({
       magFilter: 'nearest',
@@ -216,6 +242,7 @@ export class SlideRendererGPU {
     this._placeholderTexture = placeholderTexture
     this._format = format
     this._sampleCount = sampleCount
+    this._ensureQuads(INITIAL_QUADS)
   }
 
   /**
@@ -242,16 +269,34 @@ export class SlideRendererGPU {
       context.configure({ device, format, alphaMode: 'opaque' })
 
       const sampler = linearSampler(device)
-      const bindLayout = texturedLayout(
-        device,
-        GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-      )
+      const fragment = GPUShaderStage.FRAGMENT
+      const uniformLayout = device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.VERTEX | fragment,
+            buffer: {
+              type: 'uniform',
+              hasDynamicOffset: true,
+              minBindingSize: UNIFORM_BYTES,
+            },
+          },
+          { binding: 1, visibility: fragment, sampler: {} },
+          { binding: 2, visibility: fragment, sampler: {} },
+        ],
+      })
+      const textureLayout = device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: fragment, texture: {} },
+          { binding: 1, visibility: fragment, texture: {} },
+        ],
+      })
       const lutLayout = colorLutLayout(device)
       const msaaCount = options.antialias ? 4 : 1
       const pipeline = device.createRenderPipeline(
         alphaPipelineDesc(device, {
           module: device.createShaderModule({ code: shaderCode(false) }),
-          bindGroupLayouts: [bindLayout],
+          bindGroupLayouts: [uniformLayout, textureLayout],
           format,
           msaaCount,
         }),
@@ -259,7 +304,7 @@ export class SlideRendererGPU {
       const lutPipeline = device.createRenderPipeline(
         alphaPipelineDesc(device, {
           module: device.createShaderModule({ code: shaderCode(true) }),
-          bindGroupLayouts: [bindLayout, lutLayout],
+          bindGroupLayouts: [uniformLayout, textureLayout, lutLayout],
           format,
           msaaCount,
         }),
@@ -286,7 +331,8 @@ export class SlideRendererGPU {
         context,
         pipeline,
         lutPipeline,
-        bindLayout,
+        uniformLayout,
+        textureLayout,
         lutLayout,
         sampler,
         placeholderTexture,
@@ -358,8 +404,14 @@ export class SlideRendererGPU {
     )
   }
 
+  /**
+   * Draw `slides`: per slide its background, fallback tiles, then target tiles
+   * (SlideFramePlan). Uploads and fuses are queued before the frame's pass is
+   * encoded, and the quads' uniforms land in one writeBuffer before submit.
+   */
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
     this._budget.sync(slides)
+    this._fuser.retainLabelTables(slides)
     const placeholder = this._placeholderTexture
     if (!placeholder) return
     const dpr = screen.devicePixelRatio ?? 1
@@ -367,14 +419,38 @@ export class SlideRendererGPU {
     const height = Math.max(1, Math.floor(screen.heightCss * dpr))
     if (this._canvas.width !== width) this._canvas.width = width
     if (this._canvas.height !== height) this._canvas.height = height
+    const nearest = this.isNearestInterpolation
+    const plan = this._plan
+    plan.build(slides, screen)
 
-    this._uniformCursor = 0
-    // The raw pool takes its bytes from the texture budget only while it holds
-    // layers (scalar tiles), so RGB slides keep the whole budget.
-    this._textures.evictToBudget(tileTextureBudget(this._fuser.poolBytes))
+    // Evict before beginFrame (see TileTextureCache).
+    this._textures.evictToBudget(
+      frameTextureBudget(plan.fuses, this._fuser.poolBytes, this._maxPoolBytes),
+    )
     this._textures.beginFrame()
-    if (!this.isNearestInterpolation)
-      this._gutter.resync(this._device, this._textures)
+    if (!nearest) this._gutter.resync(this._device, this._textures)
+    const textures = this._planTextures
+    planTextures(
+      this._textures,
+      plan.uploadAt,
+      plan.uploadCached,
+      (i) =>
+        this.textureFor(
+          plan.uploadAt[i] as GutterAt,
+          plan.uploads[i] as NVSlideVisibleTile,
+          plan.uploadCached[i] as NVSlideCachedTile,
+        ),
+      textures,
+    )
+    // Submitted now, ahead of the frame; nearest needs no gutter (resync fills it).
+    this._fuser.flush(this._device, this._gutter, this._textures, !nearest)
+
+    // A background per slide plus at most every quad.
+    this._ensureQuads(plan.slides.length + plan.quads.length)
+    const data = this._uniformData
+    const slot = this._uniformStride / 4
+    const offsets = [0]
+    let quads = 0
     const encoder = this._device.createCommandEncoder()
     const canvasView = this._context.getCurrentTexture().createView()
     const msaa = this._msaaView(width, height)
@@ -391,53 +467,81 @@ export class SlideRendererGPU {
         },
       ],
     })
-    for (const slide of slides) {
-      if (!slide.visible || slide.opacity <= 0) continue
+    const draw = (texture: GPUTexture, labels?: GPUTexture): void => {
+      offsets[0] = quads * this._uniformStride
+      pass.setBindGroup(0, this._uniformGroup, offsets)
+      pass.setBindGroup(1, this._textureGroup(texture, labels))
+      pass.draw(4)
+      quads++
+    }
+    for (let s = 0; s < plan.slides.length; s++) {
+      const slide = plan.slides[s] as NVSlide
       // The plain pipeline unless the slide has a colour table to apply.
       const lut = slide.displayColorLut
       if (lut) {
         pass.setPipeline(this._lutPipeline)
-        pass.setBindGroup(1, this._luts.group(lut))
+        pass.setBindGroup(2, this._luts.group(lut))
       } else pass.setPipeline(this._pipeline)
-      const bounds = slide.screenRectForSlide(screen)
-      this.drawQuad(pass, width, height, bounds, placeholder, {
-        uvTop: 0,
-        uvBottom: 1,
-        opacity: slide.opacity,
-        isPlaceholder: true,
-        showGrid: false,
-        placeholderColor: slide.backgroundColor,
-        gridColor: slide.gridColor,
-      })
-
-      forEachSlideTile(slide, screen, (item, cached, rect, isFallback) => {
-        const texture = cached ? this.textureFor(item, cached) : null
-        if (isFallback && !texture) return
-        this.drawQuad(
-          pass,
-          width,
-          height,
-          rect,
-          texture?.texture ?? placeholder,
-          {
-            uvTop: item.flipY ? 1 : 0,
-            uvBottom: item.flipY ? 0 : 1,
-            opacity: slide.opacity,
-            isPlaceholder: !texture,
-            showGrid: !isFallback && slide.showTileGrid,
-            placeholderColor: slide.placeholderColor,
-            gridColor: slide.gridColor,
-          },
+      const b = slide.screenRectForSlide(screen)
+      let o = quads * slot
+      if (writeRectNdc(b.x, b.y, b.width, b.height, width, height, data, o)) {
+        data.set(UNIT_UV, o + 4)
+        writeQuadParams(data, o, slide.opacity, true, false, false)
+        data.set(slide.backgroundColor, o + 12)
+        data[o + 20] = 0
+        draw(placeholder)
+      }
+      const sum = slide.channelBlend === 'additive' ? 2 : 1
+      for (
+        let q = plan.slideStart[s] as number;
+        q < (plan.slideEnd[s] as number);
+        q++
+      ) {
+        const upload = plan.quadUpload[q] as number
+        const texture = upload < 0 ? null : textures[upload]
+        const isFallback = plan.quadFallback[q] as boolean
+        // A deferred (or failed) upload draws nothing, so its fallback shows.
+        if (!texture && (isFallback || upload >= 0)) continue
+        const tile = plan.quads[q] as NVSlideVisibleTile
+        o = quads * slot
+        if (
+          !writeRectNdc(
+            tile.screenX,
+            tile.screenY,
+            tile.screenWidth,
+            tile.screenHeight,
+            width,
+            height,
+            data,
+            o,
+          )
         )
-      })
-      // Submitted ahead of the frame; nearest needs no gutter (resync fills it).
-      this._fuser.flush(
-        this._device,
-        this._gutter,
-        this._textures,
-        !this.isNearestInterpolation,
-      )
+          continue
+        writeTileUv(tile, data, o + 4)
+        writeQuadParams(
+          data,
+          o,
+          slide.opacity,
+          !texture,
+          !isFallback && slide.showTileGrid,
+          // A fused tile of label channels samples nearest whatever the mode.
+          nearest || texture?.nearest === true,
+        )
+        data.set(slide.placeholderColor, o + 12)
+        data.set(slide.gridColor, o + 16)
+        data[o + 20] = texture?.labels ? sum : 0
+        if (texture) draw(texture.texture, texture.labels)
+        else draw(placeholder)
+      }
     }
+    if (quads > 0 && this._uniformBuffer)
+      this._device.queue.writeBuffer(
+        this._uniformBuffer,
+        0,
+        data,
+        0,
+        quads * slot,
+      )
 
     this._drawOverlay(pass, width, height, dpr)
 
@@ -498,10 +602,8 @@ export class SlideRendererGPU {
     this._font.destroy()
     this._lineStorage?.destroy()
     this._glyphStorage?.destroy()
-    for (const buffer of this._uniformPool) {
-      buffer.destroy()
-    }
-    this._uniformPool.length = 0
+    this._uniformBuffer?.destroy()
+    this._uniformBuffer = null
     if (this._placeholderTexture) {
       this._placeholderTexture.destroy()
       this._placeholderTexture = null
@@ -511,26 +613,56 @@ export class SlideRendererGPU {
     this._device.destroy()
   }
 
-  private acquireUniformBuffer(): GPUBuffer {
-    const existing = this._uniformPool[this._uniformCursor]
-    if (existing) {
-      this._uniformCursor++
-      return existing
-    }
-    const buffer = this._device.createBuffer({
-      size: UNIFORM_BYTE_SIZE,
+  // Room for `quads` uniform slots; a new buffer means a new bind group.
+  private _ensureQuads(quads: number): void {
+    const have = this._uniformData.length / (this._uniformStride / 4)
+    if (quads <= have && this._uniformBuffer) return
+    const n = Math.max(quads, have * 2)
+    // Destroyed after the submits that used it complete (WebGPU defers it).
+    this._uniformBuffer?.destroy()
+    this._uniformBuffer = this._device.createBuffer({
+      size: n * this._uniformStride,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
-    this._uniformPool.push(buffer)
-    this._uniformCursor++
-    return buffer
+    this._uniformData = new Float32Array((n * this._uniformStride) / 4)
+    this._uniformGroup = this._device.createBindGroup({
+      layout: this._uniformLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: this._uniformBuffer, size: UNIFORM_BYTES },
+        },
+        { binding: 1, resource: this._sampler },
+        { binding: 2, resource: this._nearestSampler },
+      ],
+    })
+  }
+
+  // `labels` is fixed for a texture's life (fuseTarget remakes the entry).
+  private _textureGroup(
+    texture: GPUTexture,
+    labels?: GPUTexture,
+  ): GPUBindGroup {
+    let group = this._textureGroups.get(texture)
+    if (!group) {
+      const view = texture.createView()
+      group = this._device.createBindGroup({
+        layout: this._textureLayout,
+        entries: [
+          { binding: 0, resource: view },
+          { binding: 1, resource: labels ? labels.createView() : view },
+        ],
+      })
+      this._textureGroups.set(texture, group)
+    }
+    return group
   }
 
   private textureFor(
+    at: GutterAt,
     item: NVSlideVisibleTile,
     cached: NVSlideCachedTile,
   ): TileTextureGPU | null {
-    const at = visibleTileAt(item)
     if (isFuseTile(cached))
       return this._fuser.textureFor(
         this._device,
@@ -566,71 +698,5 @@ export class SlideRendererGPU {
         ),
       bitmap.width * bitmap.height * 4,
     )
-  }
-
-  private drawQuad(
-    pass: GPURenderPassEncoder,
-    width: number,
-    height: number,
-    rect: NVSlideScreenRect,
-    texture: GPUTexture,
-    options: QuadOptions,
-  ): void {
-    const ndc = slideRectNdc(rect, width, height)
-    if (!ndc) return
-    const [x0, y0, x1, y1] = ndc
-
-    const data = new Float32Array(UNIFORM_FLOAT_COUNT)
-    // corners[0] = (v0.xy, v1.xy), corners[1] = (v2.xy, v3.xy)
-    data[0] = x0
-    data[1] = y0
-    data[2] = x1
-    data[3] = y0
-    data[4] = x0
-    data[5] = y1
-    data[6] = x1
-    data[7] = y1
-    // uvs[0] = (v0.uv, v1.uv), uvs[1] = (v2.uv, v3.uv)
-    data[8] = 0
-    data[9] = options.uvTop
-    data[10] = 1
-    data[11] = options.uvTop
-    data[12] = 0
-    data[13] = options.uvBottom
-    data[14] = 1
-    data[15] = options.uvBottom
-    // opacity, isPlaceholder, showGrid, isNearest
-    data[16] = options.opacity
-    data[17] = options.isPlaceholder ? 1 : 0
-    data[18] = options.showGrid ? 1 : 0
-    data[19] = this.isNearestInterpolation ? 1 : 0
-    // placeholderColor
-    data[20] = options.placeholderColor[0]
-    data[21] = options.placeholderColor[1]
-    data[22] = options.placeholderColor[2]
-    data[23] = options.placeholderColor[3]
-    // gridColor
-    data[24] = options.gridColor[0]
-    data[25] = options.gridColor[1]
-    data[26] = options.gridColor[2]
-    data[27] = options.gridColor[3]
-
-    const buffer = this.acquireUniformBuffer()
-    this._device.queue.writeBuffer(buffer, 0, data as Float32Array<ArrayBuffer>)
-    const bindGroup = this._device.createBindGroup({
-      layout: this._bindLayout,
-      entries: [
-        { binding: 0, resource: { buffer } },
-        { binding: 1, resource: texture.createView() },
-        {
-          binding: 2,
-          resource: this.isNearestInterpolation
-            ? this._nearestSampler
-            : this._sampler,
-        },
-      ],
-    })
-    pass.setBindGroup(0, bindGroup)
-    pass.draw(4)
   }
 }

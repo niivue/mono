@@ -241,10 +241,13 @@ export type {
   NVSlideRequestClass,
   NVSlideRequestOwner,
   NVSlideAttribution,
+  NVSlideLevelChangeDetail,
+  NVSlideTileErrorDetail,
   SlideTileDecoder,
   SlideIccTransform,
 } from './slide/NVSlide'
 export { NVSlide } from './slide/NVSlide'
+export type { NVSlideCapacityLimit } from './slide/slideLod'
 export { toStored, toValue } from './slide/slideChannels'
 export type {
   ManifestRangeSourceOptions,

@@ -44,46 +44,78 @@ export function tileAt(
   return level.tiles[y * level.columns + x] ?? null
 }
 
+// A level holds until the device px per level px it gives moves this far past
+// the target, so a zoom resting on a boundary does not flip levels each frame.
+export const LOD_HYSTERESIS = 1.1
+
+/**
+ * The finest level of `levels` (finest first) giving at least `target` device
+ * px per level px at `devicePxPerBasePx`, else the coarsest. `current` holds
+ * while it stays within LOD_HYSTERESIS of the target. Shared by the 2D view
+ * and the 3D plane (ENG-05); each projects its own `devicePxPerBasePx`.
+ */
+export function pickLevel(
+  levels: readonly NVSlideLevelManifest[],
+  devicePxPerBasePx: number,
+  target: number,
+  current?: NVSlideLevelManifest | null,
+): NVSlideLevelManifest | null {
+  const finest = (t: number) => {
+    for (const level of levels)
+      if (devicePxPerBasePx * level.downsample >= t) return level
+    return levels[levels.length - 1] ?? null
+  }
+  // By manifest index, not identity: a plane switch replaces the level objects.
+  const pos = current
+    ? levels.findIndex((level) => level.index === current.index)
+    : -1
+  if (
+    pos >= 0 &&
+    pos >=
+      levels.indexOf(finest(target / LOD_HYSTERESIS) as NVSlideLevelManifest) &&
+    pos <=
+      levels.indexOf(finest(target * LOD_HYSTERESIS) as NVSlideLevelManifest)
+  )
+    return levels[pos] ?? null
+  return finest(target)
+}
+
 /**
  * The pinned level, or for 'auto' the finest level giving at least
- * `targetScreenPixelsPerTilePixel` device pixels per tile pixel. Pass the
- * `screen` drawn: `viewport.scale` is CSS pixels per slide pixel, so without
- * its devicePixelRatio a 2x display gets half the detail it can show.
+ * `targetScreenPixelsPerTilePixel` device pixels per tile pixel (with
+ * hysteresis around `current`). Pass the `screen` drawn: `viewport.scale` is
+ * CSS pixels per slide pixel, so without its devicePixelRatio a 2x display
+ * gets half the detail it can show.
  */
 export function selectLevel(
   slide: NVSlide,
   screen?: NVSlideScreen,
+  current?: NVSlideLevelManifest | null,
 ): NVSlideLevelManifest | null {
-  if (typeof slide.levelChoice === 'number') {
-    return (
-      slide.manifest.levels.find(
-        (level) => level.index === slide.levelChoice,
-      ) ?? null
-    )
-  }
-  const devicePixelsPerSlidePixel =
-    slide.viewport.scale * (screen?.devicePixelRatio ?? 1)
-  for (const level of slide.manifest.levels) {
-    if (
-      devicePixelsPerSlidePixel * level.downsample >=
-      slide.targetScreenPixelsPerTilePixel
-    ) {
-      return level
-    }
-  }
-  return slide.manifest.levels[slide.manifest.levels.length - 1] ?? null
+  const { levels } = slide.manifest
+  if (typeof slide.levelChoice === 'number')
+    return levels.find((level) => level.index === slide.levelChoice) ?? null
+  return pickLevel(
+    levels,
+    slide.viewport.scale * (screen?.devicePixelRatio ?? 1),
+    slide.targetScreenPixelsPerTilePixel,
+    current,
+  )
 }
 
-// Tiles of `level` that can stay decoded at once. A quarter of the cache
-// stays free for the coarse fallback layer and for requestTile() users (the
-// wand, the 3D slide plane). `budget`: the smallest its renderers registered.
+/** What bounds a level's visible tiles (NVSlideVisibleTiles.limitedBy). */
+export type NVSlideCapacityLimit = 'cache' | 'texture' | 'tiles'
+
+// Tiles of `level` that can stay decoded at once, and which budget bounds
+// them. A quarter of the cache stays free for the other owners (plane3d,
+// thumbnail, prefetch). `budget`: the smallest its renderers registered.
 export function tileCapacity(
   manifest: NVSlideManifest,
   level: NVSlideLevelManifest,
   maxCacheBytes: number,
   samplePlanes: number | undefined,
   budget: SlideRendererBudget,
-): number {
+): { tiles: number; limitedBy: NVSlideCapacityLimit } {
   // Full tiles, not clipped edge extents: an upper bound, since a padded
   // edge frame is held whole until decodeTileBitmap crops it.
   // Sample tiles keep only their samples (1, 2 or 4 bytes each), one plane
@@ -113,24 +145,29 @@ export function tileCapacity(
     0,
     budget.tileBytes - (planes ? budget.rawPoolBytes : 0),
   )
-  return Math.min(
-    MAX_VISIBLE_TILES,
-    Math.floor((0.75 * maxCacheBytes) / (tw * th * pixelBytes)),
-    Math.floor((0.75 * textureBytes) / gutterTextureBytes(tw, th)),
-  )
+  const cache = Math.floor((0.75 * maxCacheBytes) / (tw * th * pixelBytes))
+  const texture = Math.floor((0.75 * textureBytes) / gutterTextureBytes(tw, th))
+  if (MAX_VISIBLE_TILES <= cache && MAX_VISIBLE_TILES <= texture)
+    return { tiles: MAX_VISIBLE_TILES, limitedBy: 'tiles' }
+  return cache <= texture
+    ? { tiles: cache, limitedBy: 'cache' }
+    : { tiles: texture, limitedBy: 'texture' }
 }
 
 /**
- * Cached tiles from every level coarser than `target` that covers the
- * viewport, coarsest first. Empty when every target tile is already cached
- * (the steady state) or when `target` is the coarsest level.
+ * Cached tiles from the levels coarser than `target` that cover the viewport
+ * (`walk` lists a level's tiles in view),
+ * coarsest first, for the renderer to paint under the target. Empty when
+ * every target tile is resident (the steady state) or `target` is the
+ * coarsest level. Bounded: levels coarser than the first one fully resident
+ * in view are skipped (it hides them), as are levels that cannot be resident.
  */
 export function fallbackTiles(
   slide: NVSlide,
   target: NVSlideLevelManifest,
   tiles: readonly NVSlideVisibleTile[],
-  screen: NVSlideScreen,
   cache: Pick<NVSlideTileCache, 'has'>,
+  walk: (level: NVSlideLevelManifest) => NVSlideVisibleTile[] | null,
 ): NVSlideVisibleTile[] {
   let missing = false
   for (const item of tiles) {
@@ -145,19 +182,21 @@ export function fallbackTiles(
   // finest-to-coarsest and a manifest may number its levels however it likes.
   const targetPos = levels.indexOf(target)
   if (targetPos < 0) return []
-  const out: NVSlideVisibleTile[] = []
-  for (let pos = levels.length - 1; pos > targetPos; pos--) {
-    const coarse = levels[pos]
-    if (!coarse) continue
-    for (const item of tilesForLevel(slide, coarse, screen)) {
-      // Only what is ALREADY decoded: the fallback layer never issues a
-      // fetch, so it cannot compete with the target level for the load slots
-      // that will actually retire it.
-      if (cache.has(item.key)) out.push(item)
-    }
+  const layers: NVSlideVisibleTile[][] = []
+  for (let pos = targetPos + 1; pos < levels.length; pos++) {
+    // null: the level cannot be resident in view (too many tiles).
+    const all = walk(levels[pos] as NVSlideLevelManifest)
+    if (!all) continue
+    // Only what is ALREADY decoded: the fallback layer never issues a fetch.
+    const resident = all.filter((item) => cache.has(item.key))
+    if (resident.length) layers.push(resident)
+    if (resident.length === all.length) break
   }
-  return out
+  return layers.reverse().flat()
 }
+
+/** A level's tile columns/rows covering the viewport, and the view geometry. */
+export type TileSpan = ReturnType<typeof tileSpan>
 
 /** The tile columns/rows of one level covering the viewport, and the view geometry. */
 export function tileSpan(
@@ -218,9 +257,9 @@ export function tilesForLevel(
   level: NVSlideLevelManifest,
   screen: NVSlideScreen,
   limit = MAX_VISIBLE_TILES,
+  span = tileSpan(slide.manifest, slide.viewport, level, screen),
 ): NVSlideVisibleTile[] {
   const dpr = screen.devicePixelRatio ?? 1
-  const span = tileSpan(slide.manifest, slide.viewport, level, screen)
   let { firstX, lastX, firstY, lastY } = span
   if (span.count > limit) {
     const spanW = lastX - firstX + 1

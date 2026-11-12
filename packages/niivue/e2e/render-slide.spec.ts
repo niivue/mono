@@ -12,6 +12,8 @@ type Slide = {
   setChannel(c: number, update: Record<string, unknown>): void
   setChannelBlend(blend: 'max' | 'additive'): void
   cachedTile(key: string): unknown
+  tileKey(level: unknown, tile: { x: number; y: number }): string
+  manifest: { levels: unknown[] }
   addEventListener(type: 'change', listener: () => void): void
   removeEventListener(type: 'change', listener: () => void): void
 }
@@ -109,7 +111,12 @@ const SCENES: Scene[] = [
         levelIndex: 0,
       })
       // Tiles load once the plane is drawn; the slide's change redraws.
-      const keys = ['L0/0/0', 'L0/1/0', 'L0/0/1', 'L0/1/1']
+      const keys = [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ].map(([x, y]) => slide.tileKey(slide.manifest.levels[0], { x, y }))
       await new Promise<void>((resolve) => {
         const loaded = () => {
           if (!keys.every((k) => slide.cachedTile(k))) return
@@ -162,7 +169,12 @@ const SCENES: Scene[] = [
           for (const c of [1, 3, 5]) slide.setChannel(c, { visible: true })
           for (const c of [3, 4, 5]) slide.setChannel(c, { calMax: 2550 })
           // Showing a channel the tiles were fetched without refetches them.
-          const keys = ['L0/0/0', 'L0/1/0', 'L0/0/1', 'L0/1/1']
+          const keys = [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+          ].map(([x, y]) => slide.tileKey(slide.manifest.levels[0], { x, y }))
           await new Promise<void>((resolve) => {
             const loaded = () => {
               if (!keys.every((k) => slide.cachedTile(k))) return

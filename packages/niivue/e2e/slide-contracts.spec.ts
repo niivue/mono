@@ -5,12 +5,12 @@ import { test } from './sharedPage'
 // P0 contracts (plan-tile-final-contracts section 10) that need pixels.
 // S1: a raw-gray bytes slide with a one-entry channelInfo draws exactly as the
 // same slide without one (grey, windowed the same) on both backends.
-// RN4 (WebGL2): SlideRenderer.render draws the same pixels as draw(gl, ...).
+// RN4 (render matches the removed draw) is slide-frame-plan.spec.ts.
 
 test.use(webgpuUse)
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
-  test(`one-entry channelInfo draws as no channelInfo; render matches draw (${backend})`, async ({
+  test(`one-entry channelInfo draws as no channelInfo (${backend})`, async ({
     page,
   }) => {
     const result = await page.evaluate(`(async () => {
@@ -44,17 +44,17 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       canvas.style.height = H + 'px'
       document.body.appendChild(canvas)
       const screen = { widthCss: W, heightCss: H, devicePixelRatio: 1 }
-      let renderer, gl
+      let renderer
       if ('${backend}' === 'webgpu') {
         renderer = await SlideRendererGPU.create(canvas)
         if (!renderer) return { skip: 'SlideRendererGPU unavailable' }
       } else {
-        gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
+        const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
         renderer = new SlideRenderer()
         renderer.init(gl)
       }
       renderer.isNearestInterpolation = true
-      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile('L0/0/0')); i++) {
+      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile(s.tileKey(s.manifest.levels[0], { x: 0, y: 0 }))); i++) {
         for (const s of slides) s.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }
@@ -69,20 +69,18 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         return [...ctx.getImageData(0, 0, W, H).data]
       }
       const [plain, one] = slides.map((s) => frame(() => renderer.render([s], screen)))
-      const drawn = gl ? frame(() => renderer.draw(gl, [slides[0]], screen)) : plain
       const colormaps = slides.map((s) => s.channels[0].colormap)
       renderer.destroy()
       canvas.remove()
       for (const s of slides) s.dispose()
       const grey = plain.every((v, i) => i % 4 === 3 || v === plain[i - (i % 4)])
       const levels = new Set(plain.filter((_, i) => i % 4 === 0)).size
-      return { plain, one, drawn, colormaps, grey, levels }
+      return { plain, one, colormaps, grey, levels }
     })()`)
     const r = result as {
       skip?: string
       plain: number[]
       one: number[]
-      drawn: number[]
       colormaps: string[]
       grey: boolean
       levels: number
@@ -92,6 +90,5 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.grey).toBe(true)
     expect(r.levels).toBeGreaterThan(10)
     expect(r.one).toEqual(r.plain)
-    expect(r.drawn).toEqual(r.plain)
   })
 }

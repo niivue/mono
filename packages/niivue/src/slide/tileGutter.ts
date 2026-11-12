@@ -15,7 +15,7 @@
 // and the first linear frame after refills every resident border once.
 
 import { log } from '@/logger'
-import type { NVSlideVisibleTile } from './NVSlide'
+import type { NVSlideLevelManifest, NVSlideVisibleTile } from './NVSlide'
 import { slideTileKey, type TileTextureCache } from './tileTextureCache'
 
 /** Interior size of a tile texture (the bitmap size). */
@@ -24,22 +24,66 @@ export interface GutterTile {
   height: number
 }
 
+/** Edge-mask bits: the grid neighbour on that side is also the placed neighbour. */
+export const EDGE_LEFT = 1
+export const EDGE_RIGHT = 2
+export const EDGE_TOP = 4
+export const EDGE_BOTTOM = 8
+export const EDGE_ALL = 15
+
+/** The key producer of a slide (NVSlide.tileKey). */
+export interface GutterSlide {
+  tileKey(level: NVSlideLevelManifest, tile: { x: number; y: number }): string
+  /**
+   * EDGE_* bits: the grid neighbour on that side is also the placed neighbour
+   * (slidePlacement). Absent: all set.
+   */
+  tileEdges?(level: NVSlideLevelManifest, col: number, row: number): number
+}
+
 /**
- * Where a tile goes: its cache key (`slideTileKey`), grid position and slide.
+ * Where a tile goes: its cache key (`slideTileKey`), grid position, level and
+ * slide, whose `tileKey` names the neighbours.
  */
 export interface GutterAt {
-  slide: object
+  slide: GutterSlide
   key: string
-  level: number
+  level: NVSlideLevelManifest
   col: number
   row: number
 }
+
+/** The texture-cache key of a grid cell `col`, `row`. */
+export type GutterKeyAt = (col: number, row: number) => string
+
+/** Neighbour keys of a tile at `at`, from its slide's key producer. */
+export const gutterKeyAt =
+  ({ slide, level }: Pick<GutterAt, 'slide' | 'level'>): GutterKeyAt =>
+  (x, y) =>
+    slideTileKey(slide, slide.tileKey(level, { x, y }))
+
+/** Edge bits of grid cell `col`, `row` (GutterSlide.tileEdges). */
+export type GutterEdgesAt = (col: number, row: number) => number
+
+/** Edge bits of the tiles at `at`; undefined (all set) for a grid slide. */
+export function gutterEdgesAt({
+  slide,
+  level,
+}: Pick<GutterAt, 'slide' | 'level'>): GutterEdgesAt | undefined {
+  const { tileEdges } = slide
+  return tileEdges && ((x, y) => tileEdges.call(slide, level, x, y))
+}
+
+// Edge bits of the neighbour at offset (sx, sy); a diagonal needs both sides.
+const edgeBits = (sx: number, sy: number): number =>
+  (sx < 0 ? EDGE_LEFT : sx > 0 ? EDGE_RIGHT : 0) |
+  (sy < 0 ? EDGE_TOP : sy > 0 ? EDGE_BOTTOM : 0)
 
 /** Where visible tile `item` of the 2D view goes. */
 export const visibleTileAt = (item: NVSlideVisibleTile): GutterAt => ({
   slide: item.slide,
   key: slideTileKey(item.slide, item.key),
-  level: item.level.index,
+  level: item.level,
   col: item.tile.x,
   row: item.tile.y,
 })
@@ -126,7 +170,7 @@ function gutterAxis(
  * smaller than its grid cell) is skipped, so no copy reads past its edge.
  */
 function fillSlot<T extends GutterTile>(
-  level: number,
+  keyAt: GutterKeyAt,
   col: number,
   row: number,
   tile: T,
@@ -134,6 +178,7 @@ function fillSlot<T extends GutterTile>(
   dy: number,
   neighbour: (key: string) => T | undefined,
   copy: (src: T | null, dst: T, c: GutterCopy) => void,
+  edges: number,
   only?: T,
 ): void {
   const sources = dx && dy ? [dx, dy, dx, 0, 0, dy, 0, 0] : [dx, dy, 0, 0]
@@ -142,7 +187,10 @@ function fillSlot<T extends GutterTile>(
   for (let i = 0; i < sources.length; i += 2) {
     const sx = sources[i] as number
     const sy = sources[i + 1] as number
-    const src = sx || sy ? neighbour(`L${level}/${col + sx}/${row + sy}`) : tile
+    // Not the placed neighbour (an overlap seam): fall back toward the own edge.
+    const bits = edgeBits(sx, sy)
+    if ((edges & bits) !== bits) continue
+    const src = sx || sy ? neighbour(keyAt(col + sx, row + sy)) : tile
     if (!src) continue
     if (src === pending) pending = undefined
     if (
@@ -166,29 +214,32 @@ function fillSlot<T extends GutterTile>(
   }
 }
 
-/** Looks a tile texture of `slide` up by tile key in `cache`. */
+/** Looks a tile texture up by its cache key, without marking it used. */
 export function slideNeighbour<T>(
   cache: TileTextureCache<T>,
-  slide: object,
 ): (key: string) => T | undefined {
-  return (key) => cache.peek(slideTileKey(slide, key))
+  return (key) => cache.peek(key)
 }
 
 /**
- * Fill the 8 border slots of `tile` (tile `col`, `row` of level `level`) from
- * its resident neighbours. `neighbour` looks a texture up by tile key; `copy`
+ * Fill the 8 border slots of `tile` (grid cell `col`, `row`; `keyAt` names
+ * cells) from its resident neighbours. `neighbour` looks a key up; `copy`
  * records one copy into `dst`, where a null `src` means `dst`'s own edge.
+ * `edgesAt` (gutterEdgesAt) clamps sides whose grid neighbour is not placed
+ * next to the tile.
  */
 export function fillGutter<T extends GutterTile>(
-  level: number,
+  keyAt: GutterKeyAt,
   col: number,
   row: number,
   tile: T,
   neighbour: (key: string) => T | undefined,
   copy: (src: T | null, dst: T, c: GutterCopy) => void,
+  edgesAt?: GutterEdgesAt,
 ): void {
+  const edges = edgesAt ? edgesAt(col, row) : EDGE_ALL
   for (const [dx, dy] of NEIGHBOURS)
-    fillSlot(level, col, row, tile, dx, dy, neighbour, copy)
+    fillSlot(keyAt, col, row, tile, dx, dy, neighbour, copy, edges)
 }
 
 /**
@@ -197,20 +248,33 @@ export function fillGutter<T extends GutterTile>(
  * from it. Arguments as for `fillGutter`.
  */
 export function syncGutters<T extends GutterTile>(
-  level: number,
+  keyAt: GutterKeyAt,
   col: number,
   row: number,
   tile: T,
   neighbour: (key: string) => T | undefined,
   copy: (src: T | null, dst: T, c: GutterCopy) => void,
+  edgesAt?: GutterEdgesAt,
 ): void {
-  fillGutter(level, col, row, tile, neighbour, copy)
+  fillGutter(keyAt, col, row, tile, neighbour, copy, edgesAt)
   for (const [ox, oy] of NEIGHBOURS) {
-    const n = neighbour(`L${level}/${col + ox}/${row + oy}`)
+    const n = neighbour(keyAt(col + ox, row + oy))
     if (!n) continue
+    const edges = edgesAt ? edgesAt(col + ox, row + oy) : EDGE_ALL
     // Slots of n that can read this tile, at offset (-ox, -oy) from n.
     for (const [dx, dy] of NEIGHBOURS)
       if ((dx === -ox && (dy === -oy || oy === 0)) || (ox === 0 && dy === -oy))
-        fillSlot(level, col + ox, row + oy, n, dx, dy, neighbour, copy, tile)
+        fillSlot(
+          keyAt,
+          col + ox,
+          row + oy,
+          n,
+          dx,
+          dy,
+          neighbour,
+          copy,
+          edges,
+          tile,
+        )
   }
 }

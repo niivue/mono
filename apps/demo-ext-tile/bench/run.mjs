@@ -200,8 +200,9 @@ function probe() {
       for (const w of p.waiters.splice(0)) w(frame)
     }
     if (!p.sync) return settle(performance.now() - t)
-    if (name === 'draw') {
-      const gl = args[0]
+    // GL: `draw(gl, ...)` (before ENG-07) or `render` with the stored context.
+    const gl = name === 'draw' ? args[0] : r._gl
+    if (gl) {
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
       settle(performance.now() - t)
     } else

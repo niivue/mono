@@ -43,12 +43,16 @@ interface TileTextureEntry<T> {
 export class TileTextureCache<T> {
   private readonly _entries = new Map<string, TileTextureEntry<T>>()
   private _frame = 0
+  // This frame's budget, set by evictToBudget; reserve() keeps uploads in it.
+  private _budget: number
   bytes = 0
 
   constructor(
     private readonly _maxBytes: number,
     private readonly _destroyEntry: (value: T) => void,
-  ) {}
+  ) {
+    this._budget = _maxBytes
+  }
 
   get size(): number {
     return this._entries.size
@@ -71,6 +75,12 @@ export class TileTextureCache<T> {
     entry.frame = this._frame
     this._entries.set(key, entry)
     return entry.value
+  }
+
+  /** Mark a texture used this frame (eviction-exempt) without reordering the LRU. */
+  touch(key: string, source?: object): void {
+    const entry = this._entries.get(key)
+    if (entry && entry.source === source) entry.frame = this._frame
   }
 
   /** Look up a texture without marking it used (any source). */
@@ -103,9 +113,26 @@ export class TileTextureCache<T> {
    * Destroy least-recently-used entries until within budget. Entries touched
    * in the current frame are never evicted, so call this BEFORE `beginFrame()`
    * (protecting the just-drawn working set) rather than after. `maxBytes`
-   * overrides the constructor budget for this call.
+   * overrides the constructor budget and stays the frame's budget for
+   * {@link reserve}.
    */
   evictToBudget(maxBytes = this._maxBytes): void {
+    this._budget = maxBytes
+    this._evictTo(maxBytes)
+  }
+
+  /**
+   * Make room for an upload of `bytes` within the frame's budget by evicting
+   * entries not used this frame. False when it would still overshoot: the
+   * caller defers the upload (the tile draws its placeholder or fallback and
+   * retries next frame), so resident textures never exceed the budget.
+   */
+  reserve(bytes: number): boolean {
+    this._evictTo(this._budget - bytes)
+    return this.bytes + bytes <= this._budget
+  }
+
+  private _evictTo(maxBytes: number): void {
     if (this.bytes <= maxBytes) return
     for (const [key, entry] of this._entries) {
       if (this.bytes <= maxBytes) return

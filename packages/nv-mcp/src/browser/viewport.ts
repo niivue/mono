@@ -61,6 +61,8 @@ export function slideState(view: View) {
         channels,
         channelBlend: view.slideChannelBlend,
         colorManagement: view.slideColorManagement,
+        ...(view.slidePlaneIndex ? { planeIndex: view.slidePlaneIndex } : {}),
+        ...(view.slidePlanes ? { planes: view.slidePlanes } : {}),
       }
     : {}
 }
@@ -207,10 +209,43 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           'channel needs something to set: visible, colormap, color, cal_min or cal_max.',
         )
-      // Clearing the plane first would drop the channel changes unseen.
-      if ((channel !== undefined || plane) && flag(params, 'clear_plane'))
+      const planeArg = params?.plane as Params | undefined
+      const planeIndex =
+        planeArg === undefined || planeArg === null
+          ? undefined
+          : {
+              z: integer(planeArg, 'z', 0) ?? 0,
+              t: integer(planeArg, 't', 0) ?? 0,
+            }
+      const nearest = flag(params, 'nearest')
+      const planes = view.slidePlanes
+      if (
+        (planeIndex || nearest !== undefined) &&
+        (!planes ||
+          !view.setSlidePlaneIndex ||
+          !view.setSlidePlaneInterpolation)
+      )
+        throw new Error("This page's NiiVue has no slide plane.")
+      // The switch itself is async: an out-of-range plane must fail before
+      // the other changes apply.
+      if (
+        planes &&
+        planeIndex &&
+        !(planeIndex.z < planes.z && planeIndex.t < planes.t)
+      )
+        throw new RangeError(
+          `NVSlide has planes z < ${planes.z}, t < ${planes.t}, got {z: ${planeIndex.z}, t: ${planeIndex.t}}`,
+        )
+      // Clearing the plane first would drop the other plane changes unseen.
+      if (
+        (channel !== undefined ||
+          plane ||
+          planeIndex ||
+          nearest !== undefined) &&
+        flag(params, 'clear_plane')
+      )
         throw new Error(
-          'clear_plane cannot be combined with channel, channel_blend or color_management.',
+          'clear_plane cannot be combined with channel, channel_blend, color_management, plane or nearest.',
         )
       if (channels && channel !== undefined && channel >= channels.length)
         throw new RangeError(`NVSlide has no channel ${channel}`)
@@ -294,6 +329,11 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
         view.setSlidePlaneLevel?.(levelIndex)
         changed = true
       }
+      if (nearest !== undefined) {
+        view.setSlidePlaneInterpolation?.(nearest)
+        changed = true
+      }
+      if (planeIndex) changed = true
       if (flag(params, 'clear_plane')) {
         view.clearSlidePlane?.()
         changed = true
@@ -304,14 +344,21 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
       }
       if (!changed)
         throw new Error(
-          'set_slide needs something to do: level, clear_plane, drawing, channel, channel_blend or color_management.',
+          'set_slide needs something to do: level, plane, nearest, clear_plane, drawing, channel, channel_blend or color_management.',
         )
       view.drawScene()
-      return {
+      const result = {
         ...(level === undefined ? {} : { level }),
         ...(drawing ? { drawing } : {}),
-        ...slideState(view),
       }
+      // The switch is async; false when a newer switch superseded it.
+      return planeIndex && view.setSlidePlaneIndex
+        ? view.setSlidePlaneIndex(planeIndex).then((planeCommitted) => ({
+            ...result,
+            planeCommitted,
+            ...slideState(view),
+          }))
+        : { ...result, ...slideState(view) }
     },
 
     async sample_slide(params: Params) {

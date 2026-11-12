@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  EDGE_ALL,
+  EDGE_LEFT,
+  EDGE_RIGHT,
   fillGutter,
   fitGutterSource,
   type GutterCopy,
+  type GutterEdgesAt,
+  gutterEdgesAt,
   syncGutters,
 } from '@/slide/tileGutter'
 
@@ -18,6 +23,7 @@ interface Tex {
 const COLS = [4, 4, 2]
 const ROWS = [3, 3]
 const value = (x: number, y: number): number => 100 * y + x
+const K = (c: number, r: number): string => `L0/${c}/${r}`
 
 function copyTexels(src: Tex | null, dst: Tex, c: GutterCopy): void {
   const from = src ?? dst
@@ -33,6 +39,7 @@ function uploadAll(
   order: [number, number][],
   textures = new Map<string, Tex>(),
   synced = order.length,
+  edgesAt?: GutterEdgesAt,
 ): Map<string, Tex> {
   for (const [i, [col, row]] of order.entries()) {
     const width = COLS[col] as number
@@ -50,7 +57,15 @@ function uploadAll(
         )
     textures.set(`L0/${col}/${row}`, tex)
     if (i < synced)
-      syncGutters(0, col, row, tex, (key) => textures.get(key), copyTexels)
+      syncGutters(
+        K,
+        col,
+        row,
+        tex,
+        (key) => textures.get(key),
+        copyTexels,
+        edgesAt,
+      )
   }
   return textures
 }
@@ -101,7 +116,7 @@ describe('syncGutters', () => {
     const textures = uploadAll(GRID, new Map(), 3)
     for (const [key, tex] of textures) {
       const [col, row] = key.split('/').slice(1).map(Number) as [number, number]
-      fillGutter(0, col, row, tex, (k) => textures.get(k), copyTexels)
+      fillGutter(K, col, row, tex, (k) => textures.get(k), copyTexels)
     }
     expectSeamless(textures)
   })
@@ -114,13 +129,51 @@ describe('syncGutters', () => {
     expect(tex.texels[6 + 5]).toBe(value(7, 0))
   })
 
+  test('a cleared edge bit clamps to the own edge, in any upload order', () => {
+    // An overlap seam between columns 0 and 1 of row 0 (slidePlacement edge mask).
+    const edgesAt: GutterEdgesAt = (c, r) =>
+      r !== 0
+        ? EDGE_ALL
+        : c === 0
+          ? EDGE_ALL & ~EDGE_RIGHT
+          : c === 1
+            ? EDGE_ALL & ~EDGE_LEFT
+            : EDGE_ALL
+    for (const order of [GRID, [...GRID].reverse()]) {
+      const textures = uploadAll(order, new Map(), order.length, edgesAt)
+      const a = textures.get('L0/0/0') as Tex
+      const b = textures.get('L0/1/0') as Tex
+      // Right border of (0,0) = its own last column; left of (1,0) its first.
+      for (let y = 1; y <= 3; y++) {
+        expect(a.texels[y * 6 + 5]).toBe(value(3, y - 1))
+        expect(b.texels[y * 6]).toBe(value(4, y - 1))
+      }
+      // Bottom-right corner of (0,0): no diagonal or right source, so the tile
+      // below, clamped along x.
+      expect(a.texels[4 * 6 + 5]).toBe(value(3, 3))
+      // Untouched seams still copy: (1,0) right border reads (2,0).
+      expect(b.texels[6 + 5]).toBe(value(8, 0))
+    }
+  })
+
+  test('gutterEdgesAt: absent tileEdges means all edges (grid slide)', () => {
+    const level = { index: 0 } as Parameters<typeof gutterEdgesAt>[0]['level']
+    const tileKey = () => ''
+    expect(gutterEdgesAt({ slide: { tileKey }, level })).toBeUndefined()
+    const edgesAt = gutterEdgesAt({
+      slide: { tileKey, tileEdges: (_l, c, r) => c + 10 * r },
+      level,
+    })
+    expect(edgesAt?.(2, 1)).toBe(12)
+  })
+
   test('copies only the slots that read the new tile', () => {
     const textures = uploadAll(GRID.filter(([c, r]) => c !== 1 || r !== 0))
     const tex = { width: 4, height: 3, texels: new Float32Array(42) }
     textures.set('L0/1/0', tex)
     const copies: string[] = []
     syncGutters(
-      0,
+      K,
       1,
       0,
       tex,
@@ -150,7 +203,7 @@ describe('syncGutters', () => {
     for (const [key, tile] of tiles) {
       const [col, row] = key.split('/').slice(1).map(Number) as [number, number]
       syncGutters(
-        0,
+        K,
         col,
         row,
         tile,
@@ -185,7 +238,7 @@ describe('syncGutters', () => {
     const upload = (key: string, col: number, row: number, t: T): void => {
       tiles.set(key, t)
       syncGutters(
-        0,
+        K,
         col,
         row,
         t,

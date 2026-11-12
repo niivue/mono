@@ -70,7 +70,7 @@ for (const backend of ['webgl2', 'webgpu', 'webgpu-aa'] as const) {
         return [...ctx.getImageData(32, 32, 1, 1).data.slice(0, 3)]
       }
       // Wait for the tile and the table.
-      for (let i = 0; i < 100 && (!slide.cachedTile('L0/0/0') || !slide.colorLut); i++) {
+      for (let i = 0; i < 100 && (!slide.cachedTile(slide.tileKey(slide.manifest.levels[0], { x: 0, y: 0 })) || !slide.colorLut); i++) {
         slide.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }
@@ -141,7 +141,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         xmin: -20, xmax: 20, ymin: -20, ymax: 20, z: 0, flipY: false,
       })
       nv.setSlidePlane(slide, { pixelToWorld: transform, levelIndex: 0 })
-      for (let i = 0; i < 100 && (!slide.cachedTile('L0/0/0') || !slide.colorLut); i++) {
+      for (let i = 0; i < 100 && (!slide.cachedTile(slide.tileKey(slide.manifest.levels[0], { x: 0, y: 0 })) || !slide.colorLut); i++) {
         nv.getCanvasImage()
         await new Promise((res) => setTimeout(res, 20))
       }
@@ -185,7 +185,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       }
       const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('/src/index.ts')
       const n = 4, count = ${TABLES}, cell = 16, width = cell * count
-      // Every slide has tile L0/0/0: tile textures are keyed per slide.
+      // Every slide has tile (0, 0) of level 0: tile textures are keyed per slide.
       const manifest = (k) => ({
         id: 'lut' + k, name: 'lut', width: n, height: n, dtype: 'uint8', channels: 'rgba',
         levels: [{ index: 0, width: n, height: n, downsample: 1, tileWidth: n, tileHeight: n,
@@ -236,7 +236,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         draw = () => renderer.render(slides, screen)
         glError = () => gl.getError()
       }
-      for (let i = 0; i < 100 && slides.some((s, k) => !s.cachedTile('L' + k + '/0/0') || !s.colorLut); i++) {
+      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile(s.tileKey(s.manifest.levels[0], { x: 0, y: 0 })) || !s.colorLut); i++) {
         for (const s of slides) s.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }

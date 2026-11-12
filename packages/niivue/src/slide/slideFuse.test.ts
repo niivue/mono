@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'bun:test'
-import type { NVChannel, NVSlide, NVSlideLevelManifest } from './NVSlide'
+import { describe, expect, it, spyOn } from 'bun:test'
+import { log } from '@/logger'
+import type {
+  NVChannel,
+  NVSlide,
+  NVSlideChannelInfo,
+  NVSlideLevelManifest,
+} from './NVSlide'
 import {
   type FuseJob,
   FuseLutRows,
@@ -9,12 +15,19 @@ import {
   fuseTarget,
   fuseTiles,
   fuseUniforms,
+  labelColor,
+  labelTable,
+  MAX_LABEL_TABLE_IDS,
   rawFormat,
   rawPoolBytes,
   resolveWindow,
+  SlideBudgetRegistration,
   tileTextureBudget,
 } from './slideFuse'
-import { TileTextureCache } from './tileTextureCache'
+import {
+  DEFAULT_TILE_TEXTURE_BYTES,
+  TileTextureCache,
+} from './tileTextureCache'
 
 const level = (extra: Partial<NVSlideLevelManifest> = {}) =>
   ({ index: 0, ...extra }) as NVSlideLevelManifest
@@ -75,6 +88,7 @@ describe('fusePlan', () => {
         { plane: 0, colormap: 'red', calMin: 0, calMax: 255 },
         { plane: 1, colormap: 'blue', calMin: 10, calMax: 20 },
       ],
+      labels: [],
       additive: true,
       invert: false,
     })
@@ -109,6 +123,7 @@ describe('fusePlan', () => {
 describe('fuseSamples', () => {
   const plan = (calMin: number, calMax: number, invert = false) => ({
     layers: [{ plane: 0, calMin, calMax, colormap: 'gray' }],
+    labels: [],
     additive: false,
     invert,
   })
@@ -150,12 +165,24 @@ describe('fuseSamples', () => {
       { plane: 2, calMin: 0, calMax: 255, colormap: 'blue' },
     ]
     const at = (additive: boolean) =>
-      Array.from(fuseSamples(samples, 1, { layers, additive, invert: false }))
+      Array.from(
+        fuseSamples(samples, 1, {
+          layers,
+          labels: [],
+          additive,
+          invert: false,
+        }),
+      )
     expect(at(false)).toEqual([200, 100, 100, 255])
     expect(at(true)).toEqual([255, 100, 130, 255])
     expect(
       Array.from(
-        fuseSamples(samples, 1, { layers: [], additive: false, invert: false }),
+        fuseSamples(samples, 1, {
+          layers: [],
+          labels: [],
+          additive: false,
+          invert: false,
+        }),
       ),
     ).toEqual([0, 0, 0, 255])
   })
@@ -197,6 +224,7 @@ describe('fuseUniforms', () => {
       const layer = { plane: 0, colormap: 'gray', calMin, calMax }
       const cpu = fuseSamples(all, all.length, {
         layers: [layer],
+        labels: [],
         additive: false,
         invert: false,
       })
@@ -248,6 +276,7 @@ describe('fuseUniforms', () => {
       const v = [0, 3e38, -3e38, 1e30]
       const cpu = fuseSamples(Float32Array.from(v), v.length, {
         layers: [{ plane: 0, colormap: 'gray', calMin: lo, calMax: hi }],
+        labels: [],
         additive: false,
         invert: false,
       }).filter((_, i) => i % 4 === 0)
@@ -260,6 +289,7 @@ describe('fuseUniforms', () => {
     // The CPU reference keeps -max..max a real window, not NaN level 0.
     const mid = fuseSamples(Float32Array.of(0), 1, {
       layers: [{ plane: 0, colormap: 'gray', calMin: -M, calMax: M }],
+      labels: [],
       additive: false,
       invert: false,
     })
@@ -374,11 +404,19 @@ describe('fuseTiles', () => {
 })
 
 describe('fuseTarget', () => {
-  const at = { slide: {}, key: 'k', level: 0, col: 0, row: 0 }
+  const at = {
+    slide: { tileKey: () => 'k' },
+    key: 'k',
+    level: { index: 0 } as NVSlideLevelManifest,
+    col: 0,
+    row: 0,
+  }
   const slide = {
     displayGeneration: 1,
     channels: [channel()],
     channelBlend: 'max',
+    manifest: {},
+    selectedLabel: null,
   } as unknown as NVSlide
 
   it('creates the texture once and queues it once per display generation', () => {
@@ -395,15 +433,309 @@ describe('fuseTarget', () => {
     expect([made, jobs.length]).toEqual([1, 1])
   })
 
+  it('defers an upload that would take the frame past its texture budget (ENG-11)', () => {
+    // 4 x 1 tiles: 6 x 3 padded RGBA = 72 B; the budget holds two.
+    const cache = new TileTextureCache<{ fused?: number }>(150, () => {})
+    cache.evictToBudget()
+    cache.beginFrame()
+    const jobs: FuseJob<{ fused?: number }>[] = []
+    const made = ['a', 'b', 'c'].map((key) =>
+      fuseTarget(
+        jobs,
+        cache,
+        { ...at, key },
+        slide,
+        tile(new Uint16Array(4)),
+        4096,
+        () => ({}),
+      ),
+    )
+    expect(made.map((t) => t !== null)).toEqual([true, true, false])
+    expect(cache.bytes).toBeLessThanOrEqual(150)
+    // Next frame the undrawn tiles are evictable, so the deferred one uploads.
+    cache.evictToBudget()
+    cache.beginFrame()
+    expect(
+      fuseTarget(
+        jobs,
+        cache,
+        { ...at, key: 'c' },
+        slide,
+        tile(new Uint16Array(4)),
+        4096,
+        () => ({}),
+      ),
+    ).not.toBeNull()
+    expect(cache.bytes).toBeLessThanOrEqual(150)
+  })
+
   it('refuses a tile whose padded texture exceeds the device limit', () => {
     // WebGPU fails validation (WebGL2 errors) on an oversized texture: the
-    // tile draws as its placeholder instead, on both backends.
+    // tile draws nothing instead (its fallback shows), on both backends.
     const cache = new TileTextureCache<{ fused?: number }>(1 << 20, () => {})
     const jobs: FuseJob<{ fused?: number }>[] = []
     const t = tile(new Uint16Array(4)) // 4 x 1: 6 x 3 padded
     expect(fuseTarget(jobs, cache, at, slide, t, 5, () => ({}))).toBeNull()
     expect([cache.bytes, jobs.length]).toEqual([0, 0])
     expect(fuseTarget(jobs, cache, at, slide, t, 6, () => ({}))).not.toBeNull()
+  })
+})
+
+describe('labels', () => {
+  const rgb = (rgba: Uint8ClampedArray) =>
+    Array.from({ length: rgba.length / 4 }, (_, i) =>
+      Array.from(rgba.subarray(i * 4, i * 4 + 3)),
+    )
+  const LABEL: NVSlideChannelInfo = { name: 'l', active: true, kind: 'label' }
+  // Hand-computed lowbias32 (64 + byte * 3 >> 2 per channel), the shaders' formula.
+  const ID1 = [208, 172, 166]
+  const ID2 = [160, 88, 78]
+  const fused = (
+    samples: FuseTile['samples']['samples'],
+    info: NVSlideChannelInfo[],
+    selected: { channel: number; id: number } | null = null,
+    channels = [channel({ calMin: 0, calMax: 1 })],
+  ) => {
+    const t = tile(samples, {
+      channels: channels.map((_, i) => i),
+    })
+    t.samples.planes = channels.length
+    t.samples.width = samples.length / channels.length
+    return rgb(
+      fuseSamples(
+        samples,
+        t.samples.width,
+        fusePlan(channels, 'max', t, info, selected),
+      ),
+    )
+  }
+
+  it('hashes IDs as the shaders do', () => {
+    expect(
+      [1, 2, 3, 70000, 2 ** 24].map((id) => labelColor(id).toString(16)),
+    ).toEqual(['ffa6acd0', 'ff4e58a0', 'fff4eee5', 'ffaee541', 'ffb84d63'])
+  })
+
+  it('S4: maps IDs 1 and 2 side by side to their exact colours, window ignored', () => {
+    // calMin 0, calMax 1 would draw both white as intensity.
+    expect(fused(new Uint16Array([1, 2, 0, 2]), [LABEL])).toEqual([
+      ID1,
+      ID2,
+      [0, 0, 0],
+      ID2,
+    ])
+    expect(fused(new Uint8Array([2, 1]), [LABEL])).toEqual([ID2, ID1])
+  })
+
+  it('reads f32 IDs up to 2^24 exactly; NaN and negatives are 0', () => {
+    const f32 = Float32Array.of(70000, 2 ** 24, Number.NaN, -3, 1)
+    expect(fused(f32, [LABEL])).toEqual([
+      [65, 229, 174],
+      [99, 77, 184],
+      [0, 0, 0],
+      [0, 0, 0],
+      ID1,
+    ])
+    expect(fused(Int16Array.of(-1, 2), [LABEL])).toEqual([[0, 0, 0], ID2])
+  })
+
+  it('uses labelColors where given, alpha folded in, the default elsewhere', () => {
+    const info = {
+      ...LABEL,
+      labelColors: [
+        { id: 2, rgba: [255, 0, 0, 255] as const },
+        { id: 5, rgba: [0, 255, 0, 128] as const },
+      ],
+    }
+    expect(fused(new Uint16Array([1, 2, 5, 7]), [info])).toEqual([
+      ID1,
+      [255, 0, 0],
+      [0, 128, 0],
+      [
+        labelColor(7) & 255,
+        (labelColor(7) >>> 8) & 255,
+        (labelColor(7) >>> 16) & 255,
+      ],
+    ])
+    expect(labelTable(info.labelColors)).toBe(labelTable(info.labelColors))
+    expect(labelTable().size).toBe(1)
+  })
+
+  it('skips label IDs a 2048 x 2048 table cannot hold, with a warning', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const colors = [
+      { id: 2 ** 31, rgba: [255, 0, 0, 255] as const },
+      { id: MAX_LABEL_TABLE_IDS, rgba: [255, 0, 0, 255] as const },
+      { id: -1, rgba: [255, 0, 0, 255] as const },
+      { id: 1.5, rgba: [255, 0, 0, 255] as const },
+      { id: 3, rgba: [0, 0, 255, 255] as const },
+    ]
+    const table = labelTable(colors)
+    expect([table.size, table.width, table.colors.length]).toEqual([4, 4, 4])
+    expect(table.colors[3]).toBe(0xffff0000)
+    expect(warn).toHaveBeenCalledTimes(1)
+    const edge = labelTable([
+      { id: MAX_LABEL_TABLE_IDS - 1, rgba: [0, 0, 0, 255] as const },
+    ])
+    expect([edge.width, edge.colors.length / edge.width]).toEqual([2048, 2048])
+    warn.mockRestore()
+  })
+
+  it('highlights the selected ID of its channel, dims the others', () => {
+    const dim = ID1.map((c) => (c * 77) >> 8)
+    const ids = new Uint16Array([1, 2, 0])
+    expect(fused(ids, [LABEL], { channel: 0, id: 2 })).toEqual([
+      dim,
+      ID2,
+      [0, 0, 0],
+    ])
+    // A selection on another channel leaves this one at full colour.
+    const two = [channel(), channel()]
+    const both = new Uint16Array([1, 2, 0, 0])
+    expect(fused(both, [LABEL, LABEL], { channel: 1, id: 1 }, two)).toEqual([
+      ID1,
+      ID2,
+    ])
+    expect(fused(both, [LABEL, LABEL], { channel: 0, id: 1 }, two)).toEqual([
+      ID1,
+      ID2.map((c) => (c * 77) >> 8),
+    ])
+  })
+
+  it('blends label and intensity layers by max', () => {
+    // Plane 0 intensity 0..255 grey, plane 1 label IDs.
+    const out = fused(
+      new Uint8Array([255, 0, 1, 2]),
+      [{ name: 'i', active: true }, LABEL],
+      null,
+      [channel({ calMin: 0, calMax: 255 }), channel()],
+    )
+    expect(out).toEqual([[255, 255, 255], ID2])
+  })
+
+  it('draws a tile nearest only when every visible layer is a label', () => {
+    const nearestOf = (info: NVSlideChannelInfo[], visible: boolean[]) => {
+      const cache = new TileTextureCache<{ nearest?: boolean }>(
+        1 << 20,
+        () => {},
+      )
+      const t = tile(new Uint16Array(4), { channels: [0, 1] })
+      t.samples.planes = 2
+      t.samples.width = 2
+      const slide = {
+        displayGeneration: 1,
+        channels: visible.map((v) => channel({ visible: v })),
+        channelBlend: 'max',
+        manifest: { channelInfo: info },
+        selectedLabel: null,
+      } as unknown as NVSlide
+      const at = { slide, key: 'k', level: level(), col: 0, row: 0 }
+      const made: { nearest?: boolean } = {}
+      return fuseTarget([], cache, at, slide, t, 4096, () => made)?.nearest
+    }
+    const I = { name: 'i', active: true }
+    expect(nearestOf([LABEL, LABEL], [true, true])).toBe(true)
+    expect(nearestOf([I, LABEL], [false, true])).toBe(true)
+    expect(nearestOf([I, LABEL], [true, true])).toBe(false)
+    expect(nearestOf([I, I], [true, true])).toBe(false)
+  })
+
+  it('gives a tile of label and intensity channels a label texture, counted; a toggle remakes it', () => {
+    const destroyed: object[] = []
+    const cache = new TileTextureCache<{ labels?: boolean }>(1 << 20, (v) =>
+      destroyed.push(v),
+    )
+    const t = tile(new Uint16Array(4), { channels: [0, 1] })
+    t.samples.planes = 2
+    t.samples.width = 2
+    const slide = {
+      displayGeneration: 1,
+      channels: [channel(), channel()],
+      channelBlend: 'max',
+      manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
+      selectedLabel: null,
+    } as unknown as NVSlide
+    const at = { slide, key: 'k', level: level(), col: 0, row: 0 }
+    const create = (_w: number, _h: number, labels: boolean) =>
+      labels ? { labels } : {}
+    const target = () => fuseTarget([], cache, at, slide, t, 4096, create)
+    const mixed = target()
+    // 2 x 1 interior: 4 x 3 padded RGBA, twice.
+    expect([mixed?.labels, cache.bytes]).toEqual([true, 96])
+    expect(target()).toBe(mixed)
+    Object.assign(slide, {
+      displayGeneration: 2,
+      channels: [channel(), channel({ visible: false })],
+    })
+    const intensity = target()
+    expect([intensity?.labels, cache.bytes]).toEqual([undefined, 48])
+    expect(destroyed).toEqual([mixed as object])
+  })
+
+  it('frees the entry it remakes before reserving, so a touched tile remakes at the budget', () => {
+    const cache = new TileTextureCache<{ labels?: boolean }>(96, () => {})
+    const t = tile(new Uint16Array(4), { channels: [0, 1] })
+    t.samples.planes = 2
+    t.samples.width = 2
+    const slide = {
+      displayGeneration: 1,
+      channels: [channel(), channel()],
+      channelBlend: 'max',
+      manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
+      selectedLabel: null,
+    } as unknown as NVSlide
+    const at = { slide, key: 'k', level: level(), col: 0, row: 0 }
+    const create = (_w: number, _h: number, labels: boolean) =>
+      labels ? { labels } : {}
+    cache.evictToBudget()
+    cache.beginFrame()
+    expect(fuseTarget([], cache, at, slide, t, 4096, create)).not.toBeNull()
+    // Next frame: planTextures touches the drawn tile before it is fused.
+    cache.evictToBudget()
+    cache.beginFrame()
+    cache.touch('k', t.samples)
+    Object.assign(slide, {
+      displayGeneration: 2,
+      channels: [channel(), channel({ visible: false })],
+    })
+    expect(fuseTarget([], cache, at, slide, t, 4096, create)).not.toBeNull()
+    expect(cache.bytes).toBe(48)
+  })
+})
+
+describe('SlideBudgetRegistration', () => {
+  it('splits the budget between the slides; a label and intensity slide takes half a share', () => {
+    type Budget = { tileBytes: number; rawPoolBytes: number } | null
+    const fake = (kinds: ('label' | undefined)[]) => {
+      const slide = {
+        budget: null as Budget,
+        manifest: {
+          channelInfo: kinds.map((kind) => ({ name: 'c', active: true, kind })),
+        },
+        setRendererBudget(_r: object, b: Budget) {
+          slide.budget = b
+        },
+      }
+      return slide
+    }
+    const P = 32 << 20
+    const a = fake([undefined])
+    const b = fake([undefined, 'label'])
+    const c = fake(['label'])
+    const reg = new SlideBudgetRegistration({}, P)
+    const share = (s: { budget: { tileBytes: number } | null }) =>
+      (s.budget?.tileBytes ?? 0) / DEFAULT_TILE_TEXTURE_BYTES
+    reg.sync([a] as unknown as NVSlide[])
+    expect(a.budget).toEqual({
+      tileBytes: DEFAULT_TILE_TEXTURE_BYTES,
+      rawPoolBytes: P,
+    })
+    reg.sync([a, b, c] as unknown as NVSlide[])
+    expect([a, b, c].map(share)).toEqual([1 / 3, 1 / 6, 1 / 3])
+    // The pool splits too, so a share's scalar bytes stay positive.
+    expect(a.budget?.rawPoolBytes).toBe(P / 3)
+    reg.clear()
+    expect(a.budget).toBeNull()
   })
 })
 

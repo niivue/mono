@@ -19,7 +19,10 @@ import type {
   WebGLMeshGPU,
 } from '@/NVTypes'
 import type { SlidePlaneState } from '@/slide/slidePlane'
-import { resolveSlidePlaneTiles } from '@/slide/slidePlane'
+import {
+  beginSlidePlaneFrame,
+  resolveSlidePlaneTiles,
+} from '@/slide/slidePlane'
 import {
   type MeshRebuild,
   type MeshUploadStamp,
@@ -859,7 +862,7 @@ export default class NVGlview {
     const boxEdges = packBoxEdges(md)
     const boxTiles: BoxTile[] = []
     // Render tiles that draw the slide plane push their camera for picking.
-    if (this.slidePlane) this.slidePlane.pickFrames = []
+    if (this.slidePlane) beginSlidePlaneFrame(this.slidePlane)
     // Render each tile
     for (let i = 0; i < screenSlices.length; i++) {
       const tile = screenSlices[i]
@@ -1363,17 +1366,21 @@ export default class NVGlview {
         this.slidePlane &&
         this.slidePlaneRenderer.isReady
       ) {
-        const { tiles } = resolveSlidePlaneTiles(
+        const { drawn } = resolveSlidePlaneTiles(
           this.slidePlane,
           mvpMatrix as Float32Array,
           ltwh[2],
           ltwh[3],
         )
+        this.slidePlaneRenderer.isNearestInterpolation =
+          this.slidePlane.isNearestInterpolation ?? false
         this.slidePlaneRenderer.draw(
           gl,
           mvpMatrix as Float32Array,
-          tiles,
+          drawn,
           this.slidePlane.slide,
+          1,
+          this.slidePlane.pixelToWorld,
         )
         if (this.slidePlane.annotation) {
           this.slidePlaneRenderer.drawAnnotation(

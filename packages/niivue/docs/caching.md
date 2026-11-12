@@ -79,9 +79,10 @@ JPEG 2000 slide is ~1 GB decoded against 96 MB). So `visibleTiles` draws the
 finest level, at or coarser than the selected one (`setLevelChoice` or auto),
 whose visible tiles fit: counted at full tile size (a DICOM edge frame decodes
 padded) x 4 bytes, plus 1 or 2 for a monochrome level's kept samples, against 3/4
-of `maxCacheBytes` (the rest stays free for the coarse fallback and `requestTile`
-users), and at most the 4096-tile cap.
-When it steps down the result carries `requestedLevel`, and `log.warn` fires
+of `maxCacheBytes` (the rest stays free for the other request owners: the 3D
+plane, thumbnails and coarse coverage), and at most the 4096-tile cap.
+When it steps down the result carries `requestedLevel` and `limitedBy`
+(`cache`, `texture` or `tiles`), a `levelchange` event fires, and `log.warn` fires
 once per change of outcome. When even the coarsest level does not fit (a flat
 TIFF viewed whole), `tiles` holds only the centred block, shaped like the view,
 that fits, and the result carries `capped`; the rest of the view stays empty
@@ -657,7 +658,8 @@ the series that no test could have found, which 2.9 records.
 
 - The 3D slide-plane renderer (`gl/slidePlaneRender.ts`,
   `wgpu/slidePlaneRender.ts`) drives its working set from world geometry via
-  `requestTile` and does not use the new coarse fallback layer. Same fix
+  its own request path and did not use the coarse fallback layer (since lane C:
+  plane3d request owner and a 3D fallback layer). Same fix
   applies, different visibility source.
 - The slide fallback layer only walks COARSER levels. Zooming OUT to a level
   whose tiles are not cached still shows placeholders, even when finer tiles

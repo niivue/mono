@@ -162,43 +162,49 @@ describe('fuseSamples', () => {
 })
 
 describe('fuseUniforms', () => {
-  it('keeps a narrow window at large values exact in float32 lanes', () => {
-    const layer = {
-      plane: 0,
-      colormap: 'gray',
-      calMin: 1e8 + 3.2,
-      calMax: 1e8 + 9.6,
+  const f = Math.fround
+  // The shaders' level for sample v, in float32 steps as the GPU takes them.
+  const level = (calMin: number, calMax: number, v: number): number => {
+    const layer = { plane: 0, colormap: 'gray', calMin, calMax }
+    const [head, width, , , rest, s] = Float32Array.from(
+      fuseUniforms(layer, 0, false),
+    ) as unknown as number[]
+    const n = f(f(f(f(f(v) * s) - head) - rest) * 255)
+    const g = Math.round(n / width)
+    return n > 0 ? Math.min(g, 255) : 0
+  }
+
+  it('keeps every uniform a finite, nonzero float32', () => {
+    for (const [lo, hi] of [
+      [1e8 + 3.2, 1e8 + 9.6],
+      [-3e38, 3.2e38],
+      [-1e40, 1e40],
+      [0, 8e-44],
+    ] as const) {
+      const u = Float32Array.from(
+        fuseUniforms(
+          { plane: 0, colormap: 'gray', calMin: lo, calMax: hi },
+          2,
+          true,
+        ),
+      )
+      expect(u.every(Number.isFinite)).toBe(true)
+      expect([u[1] as number, u[5] as number].every((x) => x > 0)).toBe(true)
+      expect([u[2], u[3]]).toEqual([2, 1])
     }
-    const u = Float32Array.from(fuseUniforms(layer, 2, true))
-    const [head, width, row, invert, rest] = u
-    expect([row, invert]).toEqual([2, 1])
-    // The shader's level for sample 1e8 + 8, in float32 steps as the GPU does.
-    const f = Math.fround
-    const n = f(
-      f(f(f(1e8 + 8) * 0.5 - (head as number)) - (rest as number)) *
-        f(255 / 256),
-    )
-    expect(Math.round(n / (width as number))).toBe(191)
-    // Rounding calMin and calMax to float32 first would give level 255.
-    expect(f(1e8 + 3.2)).toBe(1e8)
   })
 
-  it('keeps a window wider than float32 finite', () => {
-    const layer = { plane: 0, colormap: 'gray', calMin: -3e38, calMax: 3.2e38 }
-    const [head, width, , , rest] = Float32Array.from(
-      fuseUniforms(layer, 0, false),
-    )
-    expect(Number.isFinite(width)).toBe(true)
-    const f = Math.fround
-    const level = (v: number) =>
-      Math.round(
-        f(
-          f(f(f(v) * 0.5 - (head as number)) - (rest as number)) * f(255 / 256),
-        ) / (width as number),
-      )
-    expect(level(0)).toBe(123)
-    // v - calMin is 6e38 here, past float32 max unhalved.
-    expect(level(3e38)).toBe(247)
+  it('matches the CPU levels for windows float32 alone would lose', () => {
+    // Rounding calMin and calMax to float32 first gives 255 here.
+    expect(level(1e8 + 3.2, 1e8 + 9.6, 1e8 + 8)).toBe(191)
+    // Widths past float32 max.
+    expect(level(-3e38, 3.2e38, 0)).toBe(123)
+    expect(level(-3e38, 3.2e38, 3e38)).toBe(247)
+    expect(level(-1e40, 1e40, 0)).toBe(128)
+    // A width under float32 min normal.
+    expect([0, 4e-44, 8e-44].map((v) => level(0, 8e-44, v))).toEqual([
+      0, 130, 255,
+    ])
   })
 })
 

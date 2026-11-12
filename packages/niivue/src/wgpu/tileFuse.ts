@@ -38,9 +38,10 @@ const FORMATS: Record<RawFormat, [GPUTextureFormat, number]> = {
 
 const shaderCode = (kind: Kind): string => /* wgsl */ `
 struct Params {
-  // fuseUniforms, halved: calMin head, width / 512, LUT row, invert
+  // fuseUniforms, all times scale: calMin head, width, LUT row, invert
   window: vec4f,
   calMinRest: f32,
+  scale: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var lut: texture_2d<f32>;
@@ -56,10 +57,10 @@ fn vertex_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
 fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let v = f32(textureLoad(raw, vec2i(pos.xy) - 1, 0).r);
   // max() keeps the compiler from folding the two uniforms into one float32 calMin.
-  // Halved, as the uniforms (fuseUniforms): v - calMin cannot overflow.
-  let d = max(v * 0.5 - p.window.x, -3.4e38) - p.calMinRest;
-  // n / w is the level; d * 255 / 256 cannot overflow either.
-  let n = d * 0.99609375;
+  // Scaled as the uniforms (fuseUniforms); a sample far outside the window
+  // may reach +-Infinity, which still lands on level 255 or 0.
+  let d = max(v * p.scale - p.window.x, -3.4e38) - p.calMinRest;
+  let n = d * 255.0;
   let w = p.window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   var g = floor(n / w + 0.5);

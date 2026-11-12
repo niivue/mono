@@ -33,17 +33,18 @@ precision highp float;
 precision highp int;
 uniform highp ${sampler} raw;
 uniform highp sampler2D lut;
-// fuseUniforms, halved: calMin head, width / 512, LUT row, invert; then the calMin remainder
+// fuseUniforms, all times scale: calMin head, width, LUT row, invert; then the calMin remainder
 uniform vec4 window;
 uniform float calMinRest;
+uniform float scale;
 out vec4 color;
 void main() {
   float v = float(texelFetch(raw, ivec2(gl_FragCoord.xy) - 1, 0).r);
   // max() keeps the compiler from folding the two uniforms into one float32 calMin.
-  // Halved, as the uniforms (fuseUniforms): v - calMin cannot overflow.
-  float d = max(v * 0.5 - window.x, -3.4e38) - calMinRest;
-  // n / w is the level; d * 255 / 256 cannot overflow either.
-  float n = d * 0.99609375;
+  // Scaled as the uniforms (fuseUniforms); a sample far outside the window
+  // may reach +-Infinity, which still lands on level 255 or 0.
+  float d = max(v * scale - window.x, -3.4e38) - calMinRest;
+  float n = d * 255.0;
   float w = window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   float g = floor(n / w + 0.5);
@@ -180,6 +181,7 @@ export class TileFuserGL {
           const u = fuseUniforms(l, this._luts.row(l.colormap), plan.invert)
           gl.uniform4f(shader.uniforms.window ?? null, u[0], u[1], u[2], u[3])
           gl.uniform1f(shader.uniforms.calMinRest ?? null, u[4])
+          gl.uniform1f(shader.uniforms.scale ?? null, u[5])
           gl.bindTexture(gl.TEXTURE_2D, raw.texture)
           gl.drawArrays(gl.TRIANGLES, 0, 3)
         }

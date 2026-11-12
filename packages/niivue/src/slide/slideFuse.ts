@@ -170,28 +170,31 @@ export function fuseSamples(
   return out
 }
 
+/** ceil(log2 |x|): -Infinity for 0. */
+const exponent = (x: number): number => Math.ceil(Math.log2(Math.abs(x)))
+
 /**
- * A layer's fuse-shader uniforms, all halved: calMin as a float32 head and its
- * remainder, the width / 512, LUT row, invert. Rounding calMin or calMax to
- * float32 alone shifts a narrow window at large values (float32 ulp at 1e8 is
- * 8). The shaders halve the sample too, so v - calMin and the width stay finite
- * for a window as wide as -3e38..3e38; powers of two keep every ratio exact.
- * shortcut: values or windows under ~1e-37 go subnormal and lose precision,
- * fine for any real data.
+ * A layer's fuse-shader uniforms: calMin as a float32 head and its remainder,
+ * calMax - calMin, LUT row, invert, and the scale s they are all multiplied by.
+ * The shaders compute (v * s - head - rest) / width. s is a power of two that
+ * brings the width near 1, so no window overflows or underflows float32 and
+ * every ratio stays exact; a head/rest split, as rounding calMin to float32
+ * alone shifts a narrow window at large values (float32 ulp at 1e8 is 8).
  */
 export function fuseUniforms(
   { calMin, calMax }: FuseLayer,
   row: number,
   invert: boolean,
-): [number, number, number, number, number] {
-  const head = Math.fround(calMin)
-  return [
-    head / 2,
-    (calMax - calMin) / 512,
-    row,
-    invert ? 1 : 0,
-    (calMin - head) / 2,
-  ]
+): [number, number, number, number, number, number] {
+  const width = calMax - calMin
+  // s stays a normal float32 and keeps calMin * s finite.
+  const k = Math.min(
+    126,
+    Math.max(-126, exponent(width), exponent(calMin) - 126),
+  )
+  const s = 2 ** -k
+  const head = Math.fround(calMin * s)
+  return [head, width * s, row, invert ? 1 : 0, calMin * s - head, s]
 }
 
 /** Colormap rows of a renderer's 256-wide RGBA8 LUT texture, added on first use. */

@@ -530,3 +530,41 @@ test('without a floor, the histogram sample follows the shown frame', async () =
   await nv.recalculateCalMinMax(0)
   expect(nv.volumes[0].calMax).toBe(101)
 })
+
+test('a switch during the first floor install never draws the frame-0 floor under frame t bricks', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  // A stand-in view: the floor lands after a slow upload, bricks on a pass.
+  let viewFloor: NVImage | null = null
+  let bricksFrame = 0
+  const drawn: string[] = []
+  const view: Record<string, unknown> = {
+    setCoarseFloor: async (f: NVImage | null) => {
+      await new Promise((r) => setTimeout(r, 30))
+      viewFloor = f
+    },
+    updateBindGroups: async (opts: { coarseFloor?: NVImage | null }) => {
+      if ('coarseFloor' in opts) viewFloor = opts.coarseFloor ?? null
+      bricksFrame = nv.volumes[0]?.frameSource?.frame ?? 0
+    },
+  }
+  nv.view = new Proxy(view, {
+    get: (t, k) =>
+      k in t ? t[k as string] : k === 'then' ? undefined : () => {},
+  }) as never
+  nv.drawScene = () => {
+    if (viewFloor?.img) drawn.push(`${viewFloor.img[0]}@${bricksFrame}`)
+  }
+  const reads: Read[] = []
+  const loading = nv.loadChunkedVolume(source(1, { reads, frames: 2 }))
+  await until(() => reads.some((r) => r.level === 1 && r.frame === 0))
+  const id = nv.volumes[0].id ?? ''
+  // The floor upload is in flight: start the switch now.
+  await new Promise((r) => setTimeout(r, 5))
+  const switching = nv.setFrame4D(id, 1)
+  const chunked = await loading
+  await switching
+  expect(chunked.frame).toBe(1)
+  expect(drawn.length).toBeGreaterThan(0)
+  for (const d of drawn) expect(['1@0', '101@1']).toContain(d)
+  expect(drawn.at(-1)).toBe('101@1')
+})

@@ -896,7 +896,6 @@ export class NVChunkedVolume {
         bpv,
       )
     this.floorVolume = staged.floor
-    // The first floor is still being installed (applyCoarseFloor re-installs).
     if (!old) return
     // Only the floor this volume owns on the view (or has queued for it);
     // another base keeps its own.
@@ -979,15 +978,11 @@ export class NVChunkedVolume {
       this.floorVolume ??= built
       this.floorPending = null
     }
-    // Re-install when a frame switch replaced the floor during the install.
-    let installed: NVImage | null | undefined
-    while (!this.disposed && installed !== this.floorVolume) {
-      installed = this.floorVolume
-      await this.host._setBaseCoarseFloor(installed, (set, replaced) => {
-        this.floorSet = { set, replaced }
-      })
-    }
     if (this.disposed) return false
+    // A frame switch commits only between installs (see _setSourceFrame).
+    await this.host._setBaseCoarseFloor(this.floorVolume, (set, replaced) => {
+      this.floorSet = { set, replaced }
+    })
     return this.floorVolume !== null
   }
 

@@ -581,6 +581,8 @@ export default class NiiVue extends EventTarget {
   _baseCoarseFloor: NVImage | null = null
   /** @internal Counts floors that reached the view: tells two equal floors (two nulls) apart. */
   _baseCoarseFloorSets = 0
+  /** A {@link _setBaseCoarseFloor} still reaching the view. */
+  private _floorInstall: Promise<void> | null = null
   /** @internal A floor the next update pass installs (see {@link _queueBaseCoarseFloor}). */
   _queuedCoarseFloor: {
     floor: NVImage | null
@@ -5277,8 +5279,10 @@ export default class NiiVue extends EventTarget {
     if (request.signal.aborted) return
     // A pass already running would build the new loaders' bricks before the
     // floor it does not know about: swap only between passes.
-    while (this._updating && !request.signal.aborted)
-      await this.whenUpdatesSettle()
+    // Nor mid floor install: a frame-0 floor landing after the swap would
+    // draw under frame t's bricks.
+    while ((this._updating || this._floorInstall) && !request.signal.aborted)
+      await (this._floorInstall?.catch(() => {}) ?? this.whenUpdatesSettle())
     if (request.signal.aborted) return
     const shown = [...frames.keys()].filter((v) => this.volumes.includes(v))
     const switched: NVImage[] = []
@@ -5948,6 +5952,19 @@ export default class NiiVue extends EventTarget {
    * replaced, so a failed {@link NVChunkedVolume} init can undo exactly its own.
    */
   async _setBaseCoarseFloor(
+    coarseVol: NVImage | null,
+    onInstall?: (set: number, replaced: NVImage | null) => void,
+  ): Promise<void> {
+    const install = this._installCoarseFloor(coarseVol, onInstall)
+    this._floorInstall = install
+    try {
+      await install
+    } finally {
+      if (this._floorInstall === install) this._floorInstall = null
+    }
+  }
+
+  private async _installCoarseFloor(
     coarseVol: NVImage | null,
     onInstall?: (set: number, replaced: NVImage | null) => void,
   ): Promise<void> {

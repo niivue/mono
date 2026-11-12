@@ -10,7 +10,12 @@ import {
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import type { SlideIndex } from './dicomIndex'
-import { anySignal, raceAbort, readCapped, type SlideFetch } from './rangeFetch'
+import {
+  anySignal,
+  readCapped,
+  type SlideFetch,
+  slideFetch,
+} from './rangeFetch'
 import type { TiffSlideOptions } from './tiff'
 
 export type SlideKind =
@@ -94,8 +99,7 @@ export async function sniffSlide(
   if (/\.json$/i.test(path)) return 'manifest'
   if (/\.(svs|tiff?|btf|bif|scn|avs|ndpi|qptiff|ome\.tiff?)$/i.test(path))
     return 'tiff'
-  const fetchImpl = options.fetch ?? fetch
-  const response = await fetchImpl(input, {
+  const response = await slideFetch(options.fetch)(input, {
     headers: { Range: PROBE },
     signal: options.signal,
   })
@@ -260,17 +264,9 @@ async function openUrl(
       if (fetchImpl) throw new Error(`${url}: DZI takes no custom fetch`)
       return DziSource.fromUrl(url, undefined, signal)
     case 'manifest': {
-      const response = await raceAbort(
-        (fetchImpl ?? fetch)(url, { signal }),
-        signal,
-        (late) => {
-          late.body?.cancel().catch(() => {})
-        },
-      )
+      const response = await slideFetch(fetchImpl)(url, { signal })
       const manifest = JSON.parse(
-        new TextDecoder().decode(
-          await readCapped(response, 'Slide manifest', undefined, signal),
-        ),
+        new TextDecoder().decode(await readCapped(response, 'Slide manifest')),
       )
       // A manifest is untrusted: its own attribution is cleaned too.
       const credit = cleanAttribution(attribution ?? manifest.attribution)

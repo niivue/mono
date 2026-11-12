@@ -9,10 +9,37 @@ export type SlideFetch = (url: string, init?: RequestInit) => Promise<Response>
 
 /**
  * `f`, else the global fetch, safe to store and call as a method: a native
- * fetch called with another receiver throws "Illegal invocation".
+ * fetch called with another receiver throws "Illegal invocation". `f` is held
+ * to its signal as a native fetch is, since it may ignore it.
  */
 export const slideFetch = (f?: SlideFetch): SlideFetch =>
-  f ? (url, init) => f(url, init) : globalThis.fetch.bind(globalThis)
+  f
+    ? (url, init) => heldTo(f(url, init), init?.signal)
+    : globalThis.fetch.bind(globalThis)
+
+/**
+ * `reply` held to `signal`: it rejects on abort (a late reply's body is
+ * cancelled), and so does every later read of its body.
+ */
+async function heldTo(
+  reply: Promise<Response>,
+  signal?: AbortSignal | null,
+): Promise<Response> {
+  if (!signal) return reply
+  const response = await raceAbort(reply, signal, (late) => {
+    late.body?.cancel().catch(() => {})
+  })
+  if (!response.body) return response
+  const held = new Response(
+    response.body.pipeThrough(new TransformStream(), { signal }),
+    response,
+  )
+  // A new Response has neither; the TIFF client reads them to follow a redirect.
+  return Object.defineProperties(held, {
+    url: { value: response.url },
+    redirected: { value: response.redirected },
+  })
+}
 
 /** A read's signal: the caller's, if any, plus the source's lifetime. */
 export const linked = (

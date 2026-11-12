@@ -120,6 +120,40 @@ describe('sniffSlide', () => {
     ).rejects.toThrow('not a TIFF')
   })
 
+  test('an unnamed URL probe settles on abort though the fetch ignores it', async () => {
+    const settled = (p: Promise<unknown>) =>
+      Promise.race([
+        p.then(
+          () => 'resolved',
+          (e: Error) => e.name,
+        ),
+        new Promise((r) => setTimeout(() => r('pending'), 100)),
+      ])
+    let cancelled = false
+    const stalled = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancelled = true
+        },
+      }),
+      { status: 206 },
+    )
+    for (const fetch of [
+      () => new Promise<Response>(() => {}),
+      async () => stalled,
+    ]) {
+      const ac = new AbortController()
+      const sniffed = sniffSlide('https://host.test/unknown', {
+        fetch,
+        signal: ac.signal,
+      })
+      await new Promise((r) => setTimeout(r, 0))
+      ac.abort()
+      expect(await settled(sniffed)).toBe('AbortError')
+    }
+    expect(cancelled).toBe(true)
+  })
+
   test('reads files by magic bytes; several files are a DICOM folder', async () => {
     const tiff = new File([tinyTiff()], 'x.dat')
     const dual = new File([tinyTiff(true)], 'y.dat')

@@ -274,17 +274,20 @@ function settleBy<T>(
     const onAbort = () => reject(signal.reason)
     if (signal.aborted) onAbort()
     else signal.addEventListener('abort', onAbort, { once: true })
-    work.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort)
-        if (signal.aborted) late(value)
-        else resolve(value)
-      },
-      (error) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      },
-    )
+    work
+      .then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort)
+          if (signal.aborted) late(value)
+          else resolve(value)
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort)
+          reject(error)
+        },
+      )
+      // A throwing `late` must not become an unhandled rejection (Bun exits on one).
+      .catch(() => {})
   })
 }
 

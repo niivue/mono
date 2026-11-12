@@ -8,8 +8,8 @@ import type {
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
-  DEFAULT_RAW_POOL_BYTES,
   isFuseTile,
+  rawPoolBytes,
   type SlideRendererOptions,
   tileTextureBudget,
 } from '@/slide/slideFuse'
@@ -73,11 +73,9 @@ export class SlideRenderer extends NVRenderer {
   private readonly _lines = new LineRenderer()
   private readonly _font = new FontRenderer()
 
-  constructor({
-    maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES,
-  }: SlideRendererOptions = {}) {
+  constructor({ maxRawPoolBytes }: SlideRendererOptions = {}) {
     super()
-    this._fuser = new TileFuserGL(maxRawPoolBytes)
+    this._fuser = new TileFuserGL(rawPoolBytes(maxRawPoolBytes))
     this._textures = new TileTextureCache<TileTextureGL>(
       DEFAULT_TILE_TEXTURE_BYTES,
       (entry) => this._gl?.deleteTexture(entry.texture),

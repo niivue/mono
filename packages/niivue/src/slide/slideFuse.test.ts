@@ -9,6 +9,7 @@ import {
   fuseTarget,
   fuseTiles,
   rawFormat,
+  rawPoolBytes,
   resolveWindow,
   tileTextureBudget,
 } from './slideFuse'
@@ -283,6 +284,15 @@ describe('fuseTarget', () => {
     expect(fuseTarget(jobs, cache, at, slide, t, 5, () => ({}))).toBeNull()
     expect([cache.bytes, jobs.length]).toEqual([0, 0])
     expect(fuseTarget(jobs, cache, at, slide, t, 6, () => ({}))).not.toBeNull()
+  })
+})
+
+describe('rawPoolBytes', () => {
+  it('clamps so tile textures keep at least 64 MiB', () => {
+    const MiB = 1024 * 1024
+    expect(rawPoolBytes()).toBe(32 * MiB)
+    expect(rawPoolBytes(-1)).toBe(0)
+    expect(tileTextureBudget(rawPoolBytes(256 * MiB))).toBe(64 * MiB)
   })
 })
 

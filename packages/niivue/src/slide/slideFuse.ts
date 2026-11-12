@@ -30,12 +30,16 @@ export const DEFAULT_RAW_POOL_BYTES = 32 * 1024 * 1024
 export const tileTextureBudget = (maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) =>
   Math.max(0, DEFAULT_TILE_TEXTURE_BYTES - maxRawPoolBytes)
 
+/** `maxRawPoolBytes` clamped to [0, 64 MiB] so tile textures keep >= 64 MiB. */
+export const rawPoolBytes = (maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) =>
+  Math.min(Math.max(0, maxRawPoolBytes), DEFAULT_TILE_TEXTURE_BYTES / 2)
+
 /** Options of `SlideRenderer` and `SlideRendererGPU.create`. */
 export interface SlideRendererOptions {
   /**
    * GPU bytes for raw channel layers of scalar tiles (default 32 MiB), carved
    * out of the 128 MiB tile texture budget. 0 keeps raw layers on the CPU
-   * only: every W/L change then re-uploads them.
+   * only: every W/L change then re-uploads them. Clamped to [0, 64 MiB].
    */
   maxRawPoolBytes?: number
 }

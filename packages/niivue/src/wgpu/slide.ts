@@ -9,8 +9,8 @@ import type {
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
-  DEFAULT_RAW_POOL_BYTES,
   isFuseTile,
+  rawPoolBytes,
   type SlideRendererOptions,
   tileTextureBudget,
 } from '@/slide/slideFuse'
@@ -286,7 +286,7 @@ export class SlideRendererGPU {
       placeholderTexture,
       format,
       msaaCount,
-      options.maxRawPoolBytes ?? DEFAULT_RAW_POOL_BYTES,
+      rawPoolBytes(options.maxRawPoolBytes),
     )
     await renderer._initOverlay()
     return renderer

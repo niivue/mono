@@ -98,7 +98,7 @@ A deep-zoom slide is a different resource, so it has its own stack.
 | Tier | Holds | Budget | Code |
 |---|---|---|---|
 | Tile textures | Per-tile RGBA8 GPU textures, with a 1-texel gutter | 96 MB per renderer, gutter counted | `slide/tileTextureCache.ts` |
-| Raw layers | Scalar tiles' visible channels, R8UI/R16UI/R16I/R32F, LRU | 32 MB per renderer (`maxRawPoolBytes`); shares the 128 MB tile texture budget only while it holds layers, so RGB slides keep all 128 | `slide/slideFuse.ts` |
+| Raw layers | Scalar tiles' visible channels, R8UI/R16UI/R16I/R32F, LRU | 32 MB per renderer (`maxRawPoolBytes`, clamped to 0–64 MB); shares the 128 MB tile texture budget only while it holds layers, so RGB slides keep all 128 | `slide/slideFuse.ts` |
 | Decoded tiles | `ImageBitmap` per RGB tile; samples per scalar tile | 96 MB, in decoded bytes | `slide/NVSlide.ts` |
 | HTTP cache | Range responses | Browser policy | not ours |
 

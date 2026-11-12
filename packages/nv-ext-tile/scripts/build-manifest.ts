@@ -4,7 +4,7 @@
 // with tiles read by HTTP Range from `files/<name>`.
 import { readdirSync } from 'node:fs'
 import path from 'node:path'
-import { indexDicomWsi } from '../src/dicomIndex'
+import { indexDicomWsiOnThread } from '../src/dicomIndex'
 import { manifestFromIndex } from '../src/hostedManifest'
 
 const [dir, id] = process.argv.slice(2)
@@ -29,7 +29,7 @@ const files = readdirSync(filesDir)
       slice,
     } as unknown as File
   })
-const index = await indexDicomWsi(files)
+const index = await indexDicomWsiOnThread(files)
 for (const s of index.skipped) console.log(`skipped ${s.file}: ${s.message}`)
 const slide = index.slides[0]
 if (!slide) throw new Error(`no tiled slide in ${filesDir}`)

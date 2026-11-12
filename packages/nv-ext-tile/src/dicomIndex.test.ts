@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { readdirSync } from 'node:fs'
 import { MAX_SLIDE_GRID, type NVSlideTileManifest } from '@niivue/niivue'
 import {
-  indexDicomWsi,
+  blockReader,
+  indexDicomWsiOnThread,
   MAX_SLIDE_TILES,
   type SlideIndex,
   type SlideIndexLevel,
@@ -24,7 +26,7 @@ async function index(
   ...names: string[]
 ): Promise<{ idx: SlideIndex; files: File[] }> {
   const files = await Promise.all(names.map((n) => file(n)))
-  return { idx: await indexDicomWsi(files), files }
+  return { idx: await indexDicomWsiOnThread(files), files }
 }
 
 const label = (bytes: Uint8Array): string => {
@@ -55,7 +57,7 @@ const only = (idx: SlideIndex): SlideIndexSlide => {
   return idx.slides[0] as SlideIndexSlide
 }
 
-describe('indexDicomWsi', () => {
+describe('indexDicomWsiOnThread', () => {
   test('groups a series into levels, finest first, with frame spans that hold each tile', async () => {
     const { idx, files } = await index('bot-l1.dcm', 'bot.dcm')
     const slide = only(idx)
@@ -245,4 +247,32 @@ describe('DicomWsiSource', () => {
 
 test('the slide tile cap follows the grid NVSlide accepts', () => {
   expect(MAX_SLIDE_TILES).toBe(2 * MAX_SLIDE_GRID)
+})
+
+test('the worker block reader indexes every fixture as File.slice does', async () => {
+  const names = readdirSync(DIR).filter((n) => n.endsWith('.dcm'))
+  const files = await Promise.all(names.map((n) => file(n)))
+  const bytes = new Map(
+    await Promise.all(
+      files.map(
+        async (f) => [f, new Uint8Array(await f.arrayBuffer())] as const,
+      ),
+    ),
+  )
+  const readSync = (f: File, offset: number, length: number): Uint8Array =>
+    bytes.get(f)?.slice(offset, offset + length) ?? new Uint8Array(0)
+  const keys = names.map((n) => `dir/${n}`)
+  const want = await indexDicomWsiOnThread(files, keys)
+  expect(want.slides.length).toBeGreaterThan(0)
+  expect(want.slides[0]?.instances[0]?.file).toStartWith('dir/')
+  // 64-byte blocks: many refills and pass-through header reads.
+  for (const blockBytes of [64, 1 << 20]) {
+    expect(
+      await indexDicomWsiOnThread(
+        files,
+        keys,
+        blockReader(readSync, blockBytes),
+      ),
+    ).toEqual(want)
+  }
 })

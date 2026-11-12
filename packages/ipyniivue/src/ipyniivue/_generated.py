@@ -212,6 +212,7 @@ off-window crosshair is brought back."""
     render_pan = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=2, maxlen=2, allow_none=True).tag(sync=True)
     render_pivot_mm = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=3, maxlen=3, allow_none=True).tag(sync=True)
     rotation_2d = traitlets.Float(None, allow_none=True).tag(sync=True)
+    ruler_units = traitlets.Enum(["auto", "nm", "um", "mm", "cm"], None, allow_none=True).tag(sync=True)
     ruler_width = traitlets.Float(None, allow_none=True).tag(sync=True)
     scale_multiplier = traitlets.Float(None, allow_none=True).tag(sync=True)
     secondary_drag_mode = traitlets.Float(None, allow_none=True).tag(sync=True)

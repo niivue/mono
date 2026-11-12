@@ -146,6 +146,7 @@ import type {
   OrientationTextPosition,
   PlaneOutline,
   Rotation2D,
+  RulerUnits,
   SaveVolumeOptions,
   SignalAnnotation,
   SignalSidecar,
@@ -1787,6 +1788,24 @@ export default class NiiVue extends EventTarget {
   set rulerWidth(v: number) {
     this.model.ui.rulerWidth = v
     this.emit('change', { property: 'rulerWidth', value: v })
+    this.drawScene()
+  }
+
+  /**
+   * The scale ruler's unit: 'auto' (cm, mm or um by the field of view), 'nm',
+   * 'um', 'mm' or 'cm'. An unknown value is ignored with a warning.
+   * @example nv1.rulerUnits = 'um'
+   */
+  get rulerUnits(): RulerUnits {
+    return this.model.ui.rulerUnits
+  }
+  set rulerUnits(v: RulerUnits) {
+    if (!['auto', 'nm', 'um', 'mm', 'cm'].includes(v)) {
+      log.warn(`rulerUnits: unknown unit '${v}'`)
+      return
+    }
+    this.model.ui.rulerUnits = v
+    this.emit('change', { property: 'rulerUnits', value: v })
     this.drawScene()
   }
 

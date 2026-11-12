@@ -50,7 +50,7 @@ package-private (see "Conventions for contributors").
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
-| `layoutSlideMinimap` | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter |
+| `layoutSlideMinimap` | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
 | `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
 | `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |
@@ -73,6 +73,17 @@ crosshair.setCrosshair({
   units: 'um',
 })
 ```
+
+For a core `createSlideView` there are four attach helpers, each returning
+its detach function: `attachSlideMinimap(view, options)` (the minimap on its
+own control layer, following the view's slide), `attachSlideHud(view, element,
+rows?)` (pre-formatted rows, default `slideStatsSummary`),
+`attachSlideChannelPanel(view, container)` (visibility, exact colour, window in
+data units, windowing target and blend per channel; no window for label
+channels) and `attachSlidePlaneControl(view, container)` (z/t sliders over the
+slide's `planes` and async `setPlaneIndex`, hidden for a fixed source). The
+panels are DOM form controls, not canvas widgets: canvas widgets take focus
+only by pointer, and these must work from the keyboard.
 
 The exported builders are usable on their own if you want the geometry but not
 UIKit's renderers:

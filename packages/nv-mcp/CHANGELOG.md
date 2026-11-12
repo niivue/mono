@@ -1,3 +1,18 @@
+## 1.0.0-rc.177 (2026-11-12)
+
+### Features
+
+- slide viewer shell (createSlideView) for every NVSlide consumer ([7c86bb87](https://github.com/niivue/mono/commit/7c86bb87))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.182
+- Updated uikit to 1.0.0-rc.180
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.176 (2026-11-12)
 
 ### Updated Dependencies

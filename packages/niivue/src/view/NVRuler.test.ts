@@ -3,7 +3,7 @@ import { vec3 } from 'gl-matrix'
 import type { Rotation2D } from '@/NVTypes'
 import type { GlyphBatch } from './NVFont'
 import type { LineData } from './NVLine'
-import { buildRuler } from './NVRuler'
+import { buildRuler, chooseRulerSize } from './NVRuler'
 import {
   type SliceLayoutConfig,
   type SliceTile,
@@ -250,9 +250,156 @@ describe('ruler cap under a quarter turn', () => {
       barPx: 500,
     })
     // A mosaic render tile ("A R 0") is projected from its own screen bounds,
-    // not the scene radius and zoom, so it gets no ruler.
+    // not the scene radius and zoom: without them it gets no ruler.
     tiles[0].renderOrientation = 0
     expect(run({ furthestFromPivot: 125, scaleMultiplier: 1 }).label).toBe('')
-    expect(run({ furthestFromPivot: 125, scaleMultiplier: 100 }).label).toBe('')
+  })
+})
+
+describe('ruler on mosaic render and global3d tiles', () => {
+  const draw = (tiles: SliceTile[], units?: 'um') => {
+    const xs: number[] = []
+    let label = ''
+    buildRuler(
+      tiles,
+      (s: string) => {
+        label = s
+        return {} as GlyphBatch
+      },
+      (x0: number, _y0: number, x1: number) => {
+        xs.push(x0, x1)
+        return {} as LineData
+      },
+      [1, 1, 1, 1],
+      [0, 0, 0, 1],
+      1,
+      undefined,
+      units,
+    )
+    return { label, barPx: xs.length ? Math.max(...xs) - Math.min(...xs) : 0 }
+  }
+  const screen = {
+    mnMM: [-90, -108, -72],
+    mxMM: [90, 108, 72],
+    fovMM: [180, 216, 144],
+  }
+
+  test('a mosaic render tile is scaled by its screen span over its width', () => {
+    // 180 mm over 360 px: 0.5 mm/px; field 180 mm, so a 10 cm bar of 200 px.
+    // No render scale is needed: a mosaic render tile does not use the camera.
+    const tile = {
+      leftTopWidthHeight: [0, 0, 360, 432],
+      axCorSag: 4,
+      renderOrientation: 0,
+      screen,
+    } as unknown as SliceTile
+    expect(draw([tile])).toEqual({ label: '10 cm', barPx: 200 })
+  })
+
+  test('the widest mosaic render tile carries it; a 2D tile still wins', () => {
+    const tile = (w: number) =>
+      ({
+        leftTopWidthHeight: [0, 0, w, w],
+        axCorSag: 4,
+        renderOrientation: 0,
+        screen,
+      }) as unknown as SliceTile
+    // 180 mm over 720 px: 0.25 mm/px, a 10 cm bar of 400 px.
+    expect(draw([tile(360), tile(720)]).barPx).toBe(400)
+    const [slice] = screenSlicesLayout(cfg())
+    expect(draw([tile(720), slice as SliceTile])).toEqual(
+      draw([slice as SliceTile]),
+    )
+  })
+
+  test('a global3d tile gets none: its camera is perspective', () => {
+    const tile = {
+      leftTopWidthHeight: [0, 0, 360, 432],
+      axCorSag: 4,
+      renderOrientation: 0,
+      space: 'global3d',
+      screen,
+    } as unknown as SliceTile
+    expect(draw([tile]).label).toBe('')
+  })
+
+  test('global3d tiles never get one; ortho render, mosaic and 2D tiles keep it (owner)', () => {
+    const renderScale = { furthestFromPivot: 100, scaleMultiplier: 1 }
+    const ruler = (tiles: SliceTile[]) => {
+      let label = ''
+      buildRuler(
+        tiles,
+        (t: string) => {
+          label = t
+          return {} as GlyphBatch
+        },
+        () => ({}) as LineData,
+        [1, 1, 1, 1],
+        [0, 0, 0, 1],
+        1,
+        renderScale,
+      )
+      return label
+    }
+    const render = (space?: 'global3d') =>
+      ({
+        leftTopWidthHeight: [0, 0, 400, 400],
+        axCorSag: 4,
+        ...(space && { space }),
+        screen,
+      }) as unknown as SliceTile
+    const mosaic = {
+      leftTopWidthHeight: [0, 0, 360, 432],
+      axCorSag: 4,
+      renderOrientation: 0,
+      screen,
+    } as unknown as SliceTile
+    const [slice] = screenSlicesLayout(cfg())
+    // A perspective global3d render tile, even with a render scale: none.
+    expect(ruler([render('global3d')])).toBe('')
+    // The orthographic render tile beside it keeps the bar.
+    expect(ruler([render('global3d'), render()])).not.toBe('')
+    expect(ruler([render('global3d'), mosaic])).not.toBe('')
+    expect(ruler([slice as SliceTile])).not.toBe('')
+    expect(ruler([render('global3d'), slice as SliceTile])).toBe(
+      ruler([slice as SliceTile]),
+    )
+  })
+
+  test('a fixed unit relabels the mosaic bar', () => {
+    const tile = {
+      leftTopWidthHeight: [0, 0, 360, 432],
+      axCorSag: 4,
+      renderOrientation: 0,
+      screen,
+    } as unknown as SliceTile
+    // 0.65 * 180 mm = 117 mm = 117000 um: 100000 um, 200 px.
+    expect(draw([tile], 'um')).toEqual({ label: '100000 um', barPx: 200 })
+  })
+})
+
+describe('chooseRulerSize units', () => {
+  test("'auto' is unchanged", () => {
+    expect(chooseRulerSize(100)).toEqual(chooseRulerSize(100, 'auto'))
+    expect(chooseRulerSize(100)).toEqual({ lengthMM: 50, label: '5 cm' })
+  })
+
+  test('a fixed unit takes the largest 1/2/5 x 10^n that fits 65%', () => {
+    expect(chooseRulerSize(100, 'mm')).toEqual({ lengthMM: 50, label: '50 mm' })
+    expect(chooseRulerSize(100, 'cm')).toEqual({ lengthMM: 50, label: '5 cm' })
+    expect(chooseRulerSize(0.4, 'um')).toEqual({
+      lengthMM: 0.2,
+      label: '200 um',
+    })
+    expect(chooseRulerSize(0.4, 'mm')).toEqual({
+      lengthMM: 0.2,
+      label: '0.2 mm',
+    })
+    expect(chooseRulerSize(0.0004, 'nm')?.label).toBe('200 nm')
+    expect(chooseRulerSize(1, 'cm')).toEqual({
+      lengthMM: 0.5,
+      label: '0.05 cm',
+    })
+    expect(chooseRulerSize(0, 'mm')).toBeNull()
   })
 })

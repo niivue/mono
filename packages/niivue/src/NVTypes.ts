@@ -787,6 +787,12 @@ export type LayoutConfig = {
  */
 export type OrientationTextPosition = 'edges' | 'corner'
 
+/**
+ * The scale ruler's unit: `'auto'` picks cm, mm or um by the field of view;
+ * any other value labels the ruler in that unit.
+ */
+export type RulerUnits = 'auto' | 'nm' | 'um' | 'mm' | 'cm'
+
 /** UI config: visual chrome (colorbars, orient, fonts, crosshair appearance, measurements) */
 export type UIConfig = {
   isColorbarVisible: boolean
@@ -847,6 +853,8 @@ export type UIConfig = {
   measureLineColor: number[]
   measureTextColor: number[]
   rulerWidth: number
+  /** The scale ruler's unit (`isRulerVisible`, the slide scale bar). Default 'auto'. */
+  rulerUnits: RulerUnits
   graph: GraphConfig
 }
 
@@ -1426,6 +1434,7 @@ export type NiiVueOptions = {
   measureLineColor?: number[]
   measureTextColor?: number[]
   rulerWidth?: number
+  rulerUnits?: RulerUnits
   graphNormalizeValues?: boolean
   graphIsRangeCalMinMax?: boolean
   graphShowVolumeTimecourse?: boolean

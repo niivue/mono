@@ -118,13 +118,13 @@ describe('timing delta', () => {
       60,
     )
     const delta = chunkTimingDelta(now, null)
-    expect(delta.phases.read).toEqual({
+    expect(delta?.phases.read).toEqual({
       count: 3,
       totalMs: 90,
       maxMs: 40,
       bytes: 300,
     })
-    expect(delta.netBusyMs).toBe(60)
+    expect(delta?.netBusyMs).toBe(60)
   })
 
   test('later replies report only what is new', () => {
@@ -137,10 +137,10 @@ describe('timing delta', () => {
       95,
     )
     const delta = chunkTimingDelta(now, before)
-    expect(delta.phases.read?.count).toBe(2)
-    expect(delta.phases.read?.totalMs).toBe(40)
-    expect(delta.phases.read?.bytes).toBe(200)
-    expect(delta.netBusyMs).toBe(35)
+    expect(delta?.phases.read?.count).toBe(2)
+    expect(delta?.phases.read?.totalMs).toBe(40)
+    expect(delta?.phases.read?.bytes).toBe(200)
+    expect(delta?.netBusyMs).toBe(35)
   })
 
   test('carries the running max, not a difference of maxima', () => {
@@ -150,14 +150,33 @@ describe('timing delta', () => {
     const now = snapshot({
       net: { count: 2, totalMs: 55, maxMs: 45, bytes: 0 },
     })
-    expect(chunkTimingDelta(now, before).phases.net?.maxMs).toBe(45)
+    expect(chunkTimingDelta(now, before)?.phases.net?.maxMs).toBe(45)
   })
 
   test('an unchanged phase is omitted entirely', () => {
     const same = snapshot({
       upload: { count: 2, totalMs: 8, maxMs: 5, bytes: 0 },
     })
-    expect(chunkTimingDelta(same, same).phases.upload).toBeUndefined()
+    expect(chunkTimingDelta(same, same)?.phases.upload).toBeUndefined()
+  })
+})
+
+describe('timing delta order', () => {
+  test('a snapshot behind the last one merged is skipped (no overcount)', () => {
+    const at = (bytes: number) =>
+      snapshot(
+        { read: { count: bytes / 100, totalMs: bytes, maxMs: 1, bytes } },
+        bytes,
+      )
+    let merged = 0
+    let last: ReturnType<typeof at> | null = null
+    for (const now of [at(200), at(100), at(250)]) {
+      const d = chunkTimingDelta(now, last)
+      if (!d) continue
+      merged += d.phases.read?.bytes ?? 0
+      last = now
+    }
+    expect(merged).toBe(250)
   })
 })
 

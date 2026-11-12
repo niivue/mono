@@ -1016,6 +1016,24 @@
       "doc": null
     },
     {
+      "jsName": "rulerUnits",
+      "pyName": "ruler_units",
+      "tsType": "RulerUnits",
+      "pyTraitlet": {
+        "kind": "Enum",
+        "values": [
+          "auto",
+          "nm",
+          "um",
+          "mm",
+          "cm"
+        ]
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
       "jsName": "rulerWidth",
       "pyName": "ruler_width",
       "tsType": "number",

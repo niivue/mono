@@ -194,8 +194,8 @@ half-drawn contour or bidirectional axis.
 (HU for CT, SUV for PT, unitless otherwise); area is in mm2 and voxel-spacing
 aware. Length and the bidirectional diameters are in-plane mm.
 
-**Rendering.** Shapes and their labels are drawn by the `@niivue/uikit` overlay
-(the same widget set the whole-slide ruler uses), not OHIF's cornerstone canvas.
+**Rendering.** Shapes and their labels are drawn by the `@niivue/uikit` overlay,
+not OHIF's cornerstone canvas.
 A measured line renders as a graduated ruler (end caps, mm ticks, numbered majors,
 rotated length label) in the annotation's stroke color.
 
@@ -290,7 +290,11 @@ Support boundary:
     and why.
   - A slide with no tiled (VOLUME) pyramid levels.
 
-The slide viewport supports pan/zoom and the whole-slide ruler. A NVSlide path for
+The slide viewport is core's `createSlideView` (WebGL2): pan, the Zoom tool's
+drag, the wheel, and one Length ruler (UIKit overlay fed by the controller's
+measurement). `mountWsiSlideView(canvas, slide, options)` returns a Promise of
+the view handle (`setTool`, `resetView`, `zoom`, `fit`, `setWindow`,
+`saveBitmap`, `dispose`, `canvas`). A NVSlide path for
 2-D single-frame images is still a TODO (see `PLAN.md`).
 
 ## Compatibility

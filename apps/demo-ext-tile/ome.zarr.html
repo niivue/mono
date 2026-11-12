@@ -45,6 +45,19 @@
       #status {
         font-size: 0.8rem;
       }
+      #canvas-container {
+        position: relative;
+      }
+      #timestamp {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        padding: 0.1rem 0.4rem;
+        font: 0.8rem monospace;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.6);
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -91,10 +104,16 @@
       <div id="credit"></div>
       <div id="channels"></div>
       <button id="load" type="button" disabled>Load selected channels</button>
+      <span class="pair">
+        <label for="segUrl">Segmentation</label>
+        <input id="segUrl" type="text" placeholder="a label .ome.zarr URL" />
+        <button id="addSeg" type="button" disabled>Add</button>
+      </span>
       <div id="status">&nbsp;</div>
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>
+      <div id="timestamp" hidden></div>
     </main>
     <footer id="location">&nbsp;</footer>
     <script type="module" src="./src/ome.zarr.js"></script>

@@ -1,3 +1,29 @@
+## 1.0.0-rc.89 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.182
+
+## 1.0.0-rc.88 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** Zarr byte cache, worker decode, native types and lazy channels ([5dea525b](https://github.com/niivue/mono/commit/5dea525b))
+
+### Fixes
+
+- **nv-ext-tile:** label colormap starts and ends on a clear entry ([d7263e7d](https://github.com/niivue/mono/commit/d7263e7d))
+- **nv-ext-tile:** a cut label table ends on a clear entry so dropped IDs show clear ([cf67f918](https://github.com/niivue/mono/commit/cf67f918))
+- **nv-ext-tile:** label colormaps that always register, one per added segmentation ([721d63b3](https://github.com/niivue/mono/commit/721d63b3))
+- **nv-ext-tile:** drop hidden-channel results after dispose; count bodies without Content-Length ([7dc87cf9](https://github.com/niivue/mono/commit/7dc87cf9))
+- **nv-ext-tile:** PR 745 review fixes for budget, aborts and worker byte counts ([6ff7f9f8](https://github.com/niivue/mono/commit/6ff7f9f8))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.87 (2026-11-12)
 
 ### Features

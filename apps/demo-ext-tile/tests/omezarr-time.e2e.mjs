@@ -68,19 +68,79 @@ for (let t = 0; t < T; t++)
     store.set(`0/${t}.${c}.0.0.0`, Buffer.from(chunk.buffer))
   }
 
+// A segmentation of the same grid: label (t % 2) + 1, coloured by image-label.
+const seg = new Map([
+  ['.zgroup', json({ zarr_format: 2 })],
+  [
+    '.zattrs',
+    json({
+      multiscales: [
+        {
+          version: '0.4',
+          axes: ['t', 'c', 'z', 'y', 'x'].map((name) => ({ name })),
+          datasets: [{ path: '0' }],
+        },
+      ],
+      'image-label': {
+        colors: [
+          { 'label-value': 1, rgba: [255, 0, 0, 255] },
+          { 'label-value': 2, rgba: [0, 0, 255, 255] },
+        ],
+      },
+    }),
+  ],
+  [
+    '0/.zarray',
+    json({
+      zarr_format: 2,
+      shape: [T, 1, Z, Y, X],
+      chunks: [1, 1, Z, Y, X],
+      dtype: '|u1',
+      compressor: null,
+      fill_value: 0,
+      order: 'C',
+      filters: null,
+    }),
+  ],
+])
+for (let t = 0; t < T; t++)
+  seg.set(`0/${t}.0.0.0.0`, Buffer.alloc(Z * Y * X, (t % 2) + 1))
+
+// Armed, the next segmentation chunk request waits until segRelease().
+let segArmed = false
+let segHeld = false
+let segRelease = () => {}
+
+/** Timepoints whose chunks the page has requested. */
+const requestedT = new Set()
 let inFlight = 0
 let maxInFlight = 0
-let brokenT = -1
+// The last timepoint always fails, so no prefetch can have cached it when the
+// failure check asks for it.
+const brokenT = T - 1
 const server = createServer(async (req, res) => {
   const path =
     normalize(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') ||
     'index.html'
+  if (path.startsWith('seg.zarr/')) {
+    if (segArmed && /^seg\.zarr\/0\/\d/.test(path)) {
+      segArmed = false
+      segHeld = true
+      await new Promise((r) => {
+        segRelease = r
+      })
+      segHeld = false
+    }
+    const body = seg.get(path.slice('seg.zarr/'.length))
+    return body ? res.end(body) : res.writeHead(404).end()
+  }
   if (path.startsWith('store.zarr/')) {
     const key = path.slice('store.zarr/'.length)
     const body = store.get(key)
     const chunkT = /^0\/(\d+)\./.exec(key)?.[1]
     if (chunkT === undefined)
       return body ? res.end(body) : res.writeHead(404).end()
+    requestedT.add(Number(chunkT))
     inFlight += 1
     maxInFlight = Math.max(maxInFlight, inFlight)
     await new Promise((r) => setTimeout(r, DELAY_MS))
@@ -179,6 +239,12 @@ async function check(backend) {
   if (s.first.join() !== '2000,2100') fail(`slider to 2: ${JSON.stringify(s)}`)
   if ((await canvasShot()) === before)
     fail('the canvas did not change with the frame')
+  // Showing 2 prefetched 3, which nothing asked for yet.
+  for (let i = 0; i < 100 && !requestedT.has(3); i++)
+    await new Promise((r) => setTimeout(r, 10))
+  if (!requestedT.has(3)) fail('frame 3 was not prefetched after showing 2')
+  const stamp = await page.locator('#timestamp').textContent()
+  if (stamp !== `t 2 / ${T - 1}`) fail(`timestamp reads "${stamp}"`)
 
   // Rapid requests: the latest wins.
   await page.evaluate(async () => {
@@ -214,8 +280,194 @@ async function check(backend) {
   if ((await page.locator('#play').textContent()) !== 'Play')
     fail('pause did not stop playback')
 
+  // A segmentation still opening when the channels are reloaded is dropped.
+  await page.fill('#segUrl', `http://127.0.0.1:${port}/seg.zarr`)
+  const heldAdd = async () => {
+    segArmed = true
+    await page.click('#addSeg')
+    while (!segHeld) await new Promise((r) => setTimeout(r, 10))
+  }
+  await heldAdd()
+  await page.evaluate(() => document.getElementById('load').onclick())
+  segRelease()
+  await page.waitForFunction(() =>
+    /Dropped segmentation/.test(document.getElementById('status').textContent),
+  )
+  if ((await page.evaluate(() => window.nv1.volumes.length)) !== C)
+    fail('a superseded segmentation was attached')
+  // One still opening when the frame moves attaches at the new frame, in the
+  // channels' group.
+  const from = await page.evaluate(() =>
+    window.nv1.getFrame4D(window.nv1.volumes[0].id),
+  )
+  const to = (from + 1) % (T - 1)
+  await heldAdd()
+  await page.evaluate(async (t) => {
+    const nv = window.nv1
+    await nv.setFrame4D(nv.volumes[0].id, t)
+  }, to)
+  segRelease()
+  await page.waitForFunction(() =>
+    /Added segmentation/.test(document.getElementById('status').textContent),
+  )
+  const raced = await page.evaluate(() => {
+    const nv = window.nv1
+    const [raw] = nv.volumes
+    const v = nv.volumes[nv.volumes.length - 1]
+    return {
+      n: nv.volumes.length,
+      sameGroup: v.frameSource?.group === raw.frameSource?.group,
+      frame: nv.getFrame4D(raw.id),
+      segFrame: nv.getFrame4D(v.id),
+      label: v.img[0],
+    }
+  })
+  if (
+    raced.n !== C + 1 ||
+    !raced.sameGroup ||
+    raced.frame !== to ||
+    raced.segFrame !== to ||
+    raced.label !== (to % 2) + 1
+  )
+    fail(`segmentation attached out of step: ${JSON.stringify(raced)}`)
+  // The same two races while the segmentation's NIfTI is being prepared on
+  // the volume worker (after its data read): its first File message is held.
+  const reload = () =>
+    page.evaluate(async () => {
+      await document.getElementById('load').onclick()
+    })
+  const heldPrepare = async () => {
+    await page.evaluate(() => {
+      window.releasePrepare = null
+      const post = Worker.prototype.postMessage
+      Worker.prototype.postMessage = function (message, ...rest) {
+        if (message?.url instanceof File) {
+          Worker.prototype.postMessage = post
+          window.releasePrepare = () => post.call(this, message, ...rest)
+          return
+        }
+        return post.call(this, message, ...rest)
+      }
+    })
+    await page.click('#addSeg')
+    await page.waitForFunction(() => window.releasePrepare)
+  }
+  await reload()
+  await heldPrepare()
+  await reload()
+  await page.evaluate(() => window.releasePrepare())
+  await page.waitForFunction(() =>
+    /Dropped segmentation/.test(document.getElementById('status').textContent),
+  )
+  if ((await page.evaluate(() => window.nv1.volumes.length)) !== C)
+    fail('a segmentation superseded during its preparation was attached')
+  const from2 = await page.evaluate(() =>
+    window.nv1.getFrame4D(window.nv1.volumes[0].id),
+  )
+  const to2 = (from2 + 1) % (T - 1)
+  await heldPrepare()
+  await page.evaluate(async (t) => {
+    const nv = window.nv1
+    await nv.setFrame4D(nv.volumes[0].id, t)
+  }, to2)
+  await page.evaluate(() => window.releasePrepare())
+  await page.waitForFunction(() =>
+    /Added segmentation/.test(document.getElementById('status').textContent),
+  )
+  const prepRaced = await page.evaluate(() => {
+    const nv = window.nv1
+    const [raw] = nv.volumes
+    const v = nv.volumes[nv.volumes.length - 1]
+    return {
+      n: nv.volumes.length,
+      sameGroup: v.frameSource?.group === raw.frameSource?.group,
+      frame: nv.getFrame4D(raw.id),
+      segFrame: nv.getFrame4D(v.id),
+      label: v.img[0],
+    }
+  })
+  if (
+    prepRaced.n !== C + 1 ||
+    !prepRaced.sameGroup ||
+    prepRaced.frame !== to2 ||
+    prepRaced.segFrame !== to2 ||
+    prepRaced.label !== (to2 % 2) + 1
+  )
+    fail(
+      `segmentation prepared across a frame change is out of step: ${JSON.stringify(prepRaced)}`,
+    )
+  // A reload while addVolume awaits its GPU update: the stale segmentation's
+  // cleanup must not touch the replacement scene's channels.
+  await reload()
+  await page.evaluate(() => {
+    const nv = window.nv1
+    window.beforeRaw = nv.volumes[0]
+    window.releaseGpu = null
+    const original = nv.view.updateBindGroups
+    nv.view.updateBindGroups = async function (...args) {
+      nv.view.updateBindGroups = original
+      await new Promise((r) => {
+        window.releaseGpu = r
+      })
+      return original.apply(this, args)
+    }
+  })
+  await page.click('#addSeg')
+  await page.waitForFunction(() => window.releaseGpu)
+  await page.evaluate(() => {
+    window.reloading = document.getElementById('load').onclick()
+  })
+  await page.waitForFunction(() => window.nv1.volumes[0] !== window.beforeRaw)
+  await page.evaluate(() => window.releaseGpu())
+  await page.evaluate(() => window.reloading)
+  await page.waitForFunction(() => !document.getElementById('addSeg').disabled)
+  const afterGpu = await page.evaluate(() =>
+    window.nv1.volumes.map((v) => `${v.name}:${v.colormap}`),
+  )
+  if (afterGpu.length !== C || afterGpu.some((n) => n.endsWith('labels')))
+    fail(`the replacement scene lost a channel: ${JSON.stringify(afterGpu)}`)
+
+  // Start the plain check from the channels alone.
+  await page.evaluate(() => document.getElementById('load').onclick())
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+
+  // A segmentation joins the time group, coloured by its image-label table.
+  await page.click('#addSeg')
+  await page.waitForFunction(() =>
+    /Added segmentation/.test(document.getElementById('status').textContent),
+  )
+  const segState = () =>
+    page.evaluate(() => {
+      const nv = window.nv1
+      const v = nv.volumes[nv.volumes.length - 1]
+      return {
+        n: nv.volumes.length,
+        colormap: v.colormap,
+        label: v.img[0],
+        frame: nv.getFrame4D(nv.volumes[0].id),
+      }
+    })
+  let g = await segState()
+  if (
+    g.n !== C + 1 ||
+    !/ labels \(.+\)$/.test(g.colormap) ||
+    g.label !== (g.frame % 2) + 1
+  )
+    fail(`segmentation added: ${JSON.stringify(g)}`)
+  await page.evaluate(
+    async (f) => {
+      const nv = window.nv1
+      await nv.setFrame4D(nv.volumes[0].id, f)
+    },
+    (g.frame + 1) % (T - 1),
+  )
+  g = await segState()
+  if (g.label !== (g.frame % 2) + 1)
+    fail(`segmentation did not switch with the channels: ${JSON.stringify(g)}`)
+
   // A failed timepoint keeps the frame shown and says so.
-  brokenT = T - 1
   const shown = (await state()).frame
   await page.evaluate((t) => {
     const slider = document.getElementById('timepoint')
@@ -230,7 +482,6 @@ async function check(backend) {
   s = await state()
   if (s.frame !== shown || s.slider !== String(shown))
     fail(`failed fetch moved the frame: ${JSON.stringify(s)}`)
-  brokenT = -1
 
   if (BENCH) {
     const times = await page.evaluate(async (T) => {
@@ -263,7 +514,12 @@ async function check(backend) {
 }
 
 try {
-  for (const backend of ['webgl2', 'webgpu']) await check(backend)
+  // CI's Ubuntu runners lose the SwiftShader WebGPU device mid-run
+  // (niivue-e2e.yml header), so the job there asks for WebGL2 only.
+  for (const backend of (
+    process.env.DEMO_E2E_BACKENDS ?? 'webgl2,webgpu'
+  ).split(','))
+    await check(backend)
 } finally {
   await browser.close()
   server.close()

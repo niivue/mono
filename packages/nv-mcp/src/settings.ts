@@ -203,6 +203,12 @@ export const SETTINGS: readonly Setting[] = [
     { min: 0 },
   ),
   num('rulerWidth', 'The width of the ruler line, in pixels.', { min: 0 }),
+  setting(
+    'rulerUnits',
+    'choice',
+    "The scale ruler's unit: auto (cm, mm or um by the field of view), or one fixed unit.",
+    { values: ['auto', 'nm', 'um', 'mm', 'cm'] },
+  ),
 
   // Switches for what is drawn
   bool('is3DCrosshairVisible', 'Whether the crosshair is drawn in the render.'),

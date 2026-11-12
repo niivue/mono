@@ -41,6 +41,17 @@ test('percentiles come from a bounded stride; min and max from every sample', as
   expect(Math.abs(p98 - 0.98 * n)).toBeLessThan(n / 1000)
 })
 
+test('a period matching the stride does not phase-lock the percentiles', async () => {
+  // Stride 16 (as above); 200 at every 16th sample, 1 elsewhere. The 2%
+  // point is background: a stride-aligned pick would see only 200s.
+  const cell = Float32Array.from({ length: 1 << 20 }, (_, i) =>
+    i % 16 ? 1 : 200,
+  )
+  const range = await sampleLevel(4096, 4096, 1024, 1024, async () => cell)
+  expect(range[0]).toBe(1)
+  expect(range.slice(2)).toEqual([1, 200])
+})
+
 test('an all-NaN sample has no finite range', async () => {
   const range = await sampleLevel(4, 1, 4, 1, async () =>
     Float32Array.from([Number.NaN, Number.NaN, Number.NaN, Number.NaN]),

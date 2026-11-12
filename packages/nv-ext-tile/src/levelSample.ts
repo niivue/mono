@@ -10,7 +10,8 @@ const SPAN = 1024
 // Reads in flight per channel.
 const READS = 4
 // The 2-98% window is taken from at most this many samples (8 MiB of float64,
-// a fixed stride over every read); min and max from every sample.
+// one at a seeded random offset in each stride, so a periodic image cannot
+// phase-lock it); min and max from every sample.
 const MAX_KEPT = 1 << 20
 
 /** [start, end) ranges along one axis of `n` samples in tiles of `tile`. */
@@ -60,13 +61,19 @@ export async function sampleLevel(
   let failed = false
   const worker = async () => {
     while (!failed && next < cells.length) {
-      const [y, x] = cells[next++]
+      const cell = next++
+      const [y, x] = cells[cell]
       try {
         const data = await read(y, x)
-        // One pass: keep each stride's first sample, min/max over all.
+        // xorshift32 seeded per cell: the same window whatever order reads finish.
+        let seed = Math.imul(cell + 1, 0x9e3779b9)
+        // One pass: keep one sample per stride, min/max over all.
         for (let i = 0; i < data.length; i += stride) {
-          kept[n++] = data[i]
           const end = Math.min(i + stride, data.length)
+          seed ^= seed << 13
+          seed ^= seed >>> 17
+          seed ^= seed << 5
+          kept[n++] = data[i + ((seed >>> 0) % (end - i))]
           for (let j = i; j < end; j++) {
             const v = data[j]
             if (!Number.isFinite(v)) continue

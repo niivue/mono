@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVSlideManifest, NVSlideTileManifest } from '@niivue/niivue'
-import { indexDicomWsi, type SlideIndexLevel, tileMap } from './dicomIndex'
+import {
+  indexDicomWsiOnThread,
+  type SlideIndexLevel,
+  tileMap,
+} from './dicomIndex'
 import { DicomWsiSource } from './dicomWsiSource'
 import { manifestFromIndex } from './hostedManifest'
 
@@ -15,7 +19,7 @@ async function open(...names: string[]) {
         }),
     ),
   )
-  const slide = (await indexDicomWsi(files)).slides[0]
+  const slide = (await indexDicomWsiOnThread(files)).slides[0]
   if (!slide) throw new Error('no slide')
   const manifest = await manifestFromIndex(
     slide,

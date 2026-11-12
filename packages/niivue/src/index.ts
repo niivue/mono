@@ -237,6 +237,7 @@ export type {
   NVSlideOptions,
   NVSlideRangeEvent,
   NVSlideRangeStatus,
+  NVSlideSample,
   NVSlideScreen,
   NVSlideScreenRect,
   NVSlideSpatialTransform,
@@ -466,6 +467,7 @@ export {
   getBitsPerVoxel,
   getImageDataRAS,
   NIFTI_UNITS_MICRON,
+  robustMinMax,
   withSpatialUnits,
 } from './volume/utils'
 // Volume writer options: the third argument to writeVolume

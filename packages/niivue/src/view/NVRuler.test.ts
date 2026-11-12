@@ -208,4 +208,51 @@ describe('ruler cap under a quarter turn', () => {
       '10 cm',
     ])
   })
+
+  test('drawsOnTheRenderTileOnlyWhenGivenARenderScale', () => {
+    // A setSlidePlane slide lives on the render tile; the views pass its
+    // orthographic scale only then, so volume renders keep no ruler.
+    const tiles: SliceTile[] = [
+      { leftTopWidthHeight: [0, 0, 1000, 500], axCorSag: 4 },
+    ]
+    const run = (renderScale?: {
+      furthestFromPivot: number
+      scaleMultiplier: number
+    }) => {
+      const xs: number[] = []
+      let label = ''
+      buildRuler(
+        tiles,
+        (s: string) => {
+          label = s
+          return {} as GlyphBatch
+        },
+        (x0: number, _y0: number, x1: number) => {
+          xs.push(x0, x1)
+          return {} as LineData
+        },
+        [1, 1, 1, 1],
+        [0, 0, 0, 1],
+        1,
+        renderScale,
+      )
+      return { label, barPx: Math.max(...xs) - Math.min(...xs) }
+    }
+    expect(run().label).toBe('')
+    // 2 * 0.8 * 125 mm over the 500 px short side: 0.4 mm/px, 1000 px = 400 mm.
+    expect(run({ furthestFromPivot: 125, scaleMultiplier: 1 })).toEqual({
+      label: '10 cm',
+      barPx: 250,
+    })
+    // Zoom 100x: 4 mm across the tile, a 2 mm bar of 500 px.
+    expect(run({ furthestFromPivot: 125, scaleMultiplier: 100 })).toEqual({
+      label: '2 mm',
+      barPx: 500,
+    })
+    // A mosaic render tile ("A R 0") is projected from its own screen bounds,
+    // not the scene radius and zoom, so it gets no ruler.
+    tiles[0].renderOrientation = 0
+    expect(run({ furthestFromPivot: 125, scaleMultiplier: 1 }).label).toBe('')
+    expect(run({ furthestFromPivot: 125, scaleMultiplier: 100 }).label).toBe('')
+  })
 })

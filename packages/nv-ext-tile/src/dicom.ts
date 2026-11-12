@@ -13,7 +13,6 @@ export type {
   SlideIndexSkipReason,
   SlideIndexSlide,
 } from './dicomIndex'
-export { indexDicomWsi } from './dicomIndex'
 export type {
   DicomJsonIccProfile,
   DicomJsonInstance,
@@ -24,4 +23,5 @@ export type { DicomWebWsiOptions } from './dicomWebWsiSource'
 export { DicomWebWsiSource, readFirstPart } from './dicomWebWsiSource'
 export { DicomWsiSource } from './dicomWsiSource'
 export { manifestFromIndex } from './hostedManifest'
+export { indexDicomWsi } from './indexDicomWsi'
 export { parseMultipartRelated } from './multipart'

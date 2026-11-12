@@ -108,6 +108,32 @@ const multiscale = (axes: string[], n: number, units = false) => [
   },
 ]
 
+/** Runs `f` with stand-ins for the browser bitmap API NVSlide renders tiles with. */
+async function withFakeBitmaps<T>(f: () => Promise<T>): Promise<T> {
+  const g = globalThis as Record<string, unknown>
+  const saved = [g.ImageData, g.createImageBitmap]
+  g.ImageData = class {
+    constructor(
+      readonly data: Uint8ClampedArray,
+      readonly width: number,
+      readonly height: number,
+    ) {}
+  }
+  g.createImageBitmap = async (img: { width: number; height: number }) => ({
+    width: img.width,
+    height: img.height,
+    close() {},
+  })
+  try {
+    return await f()
+  } finally {
+    ;[g.ImageData, g.createImageBitmap] = saved
+  }
+}
+
+// Bin b of the 1001-bin 2-98% histogram over mn..mx (robustMinMax).
+const bin = (b: number, mn: number, mx: number) => b / (1000 / (mx - mn)) + mn
+
 const ramp = (n: number, f: (i: number) => number) =>
   Uint16Array.from({ length: n }, (_, i) => f(i))
 
@@ -508,6 +534,47 @@ describe('ZarrSlideSource (synthetic)', () => {
   })
 })
 
+test('quantized channels state storedToValue; NVSlide.sampleAt reads data values back', async () => {
+  const store = await writeImage(
+    { multiscales: multiscale(['c', 'y', 'x'], 1) },
+    [
+      {
+        shape: [2, 1, 4],
+        chunks: [1, 1, 4],
+        data: Float32Array.from([0, 0.3, 0.7, 1, -50, 0, 25, 100]),
+      },
+    ],
+    'float32',
+  )
+  const source = await ZarrSlideSource.fromStore(store)
+  const maps = source.manifest.channelInfo?.map((c) => c.storedToValue)
+  expect(maps).toEqual([
+    { scale: 1 / 65535, offset: 0 },
+    { scale: 150 / 65535, offset: -50 },
+  ])
+  const slide = await withFakeBitmaps(async () => {
+    const slide = NVSlide.fromSource(source)
+    await slide.loadSampleAt(0, 0)
+    return slide
+  })
+  const values = [
+    [0, 0.3, 0.7, 1],
+    [-50, 0, 25, 100],
+  ]
+  for (let x = 0; x < 4; x++)
+    for (const [c, s] of slide.sampleAt(x, 0).entries()) {
+      const step = maps?.[c]?.scale ?? 0
+      expect(Math.abs((s.value ?? Number.NaN) - values[c][x])).toBeLessThan(
+        step / 2 + 1e-9,
+      )
+      // The range ends are bounds: values beyond them clamp there.
+      expect([s.exact, s.clipped]).toEqual([
+        false,
+        x === 0 || x === 3 ? true : undefined,
+      ])
+    }
+})
+
 test('int16 ignores a placeholder omero block and quantizes over the data range', async () => {
   const store = await writeImage(
     {
@@ -583,8 +650,10 @@ test('the data range samples a bounded grid of chunks, not the whole image', asy
     },
   }
   const source = await ZarrSlideSource.fromStore(spy)
-  // Chunk 0 is 512 wide, under RANGE_SPAN, so it is read whole.
-  expect(source.window).toEqual({ calMin: 50, calMax: 611 })
+  // Chunk 0 is 512 wide, under the span cap, so it is read whole: 2048
+  // samples, 1536 at 50. 2-98%: 41 per end, the top 41 being 571..611; values
+  // snap to 1/1000 of 50..611 (bin 929).
+  expect(source.window).toEqual({ calMin: 50, calMax: bin(929, 50, 611) })
   expect(read.filter((k) => k.includes('/c/')).sort()).toEqual([
     '/0/c/0/0',
     '/0/c/0/10',
@@ -616,7 +685,11 @@ test('the data range reads a few chunks at a time and stops after a failure', as
     },
   })
   const ok = await ZarrSlideSource.fromStore(spy())
-  expect(ok.window).toEqual({ calMin: 0, calMax: 4095 })
+  // 2-98% of 0..4095 (zero excluded): 82 per end, bins 20 and 980 of 1000.
+  expect(ok.window).toEqual({
+    calMin: bin(20, 0, 4095),
+    calMax: bin(980, 0, 4095),
+  })
   expect(reads).toBe(16)
   expect(peak).toBe(4)
   reads = 0
@@ -716,7 +789,7 @@ test('a flat, empty or huge sample still quantizes values outside it to distinct
   }
 })
 
-test('a wide chunk is sampled from its middle, at most RANGE_SPAN wide', async () => {
+test('a wide chunk is sampled from its middle, at most 1024 wide', async () => {
   // One 4096-wide chunk: values outside the middle 1024 are not seen.
   const data = ramp(4096, (i) =>
     i >= 1536 && i < 2560 ? 1000 + i - 1536 : 60000,
@@ -727,7 +800,11 @@ test('a wide chunk is sampled from its middle, at most RANGE_SPAN wide', async (
     'uint16',
   )
   const source = await ZarrSlideSource.fromStore(store)
-  expect(source.window).toEqual({ calMin: 1000, calMax: 2023 })
+  // 2-98% of 1000..2023: 20 per end, bins 19 and 981 of 1000.
+  expect(source.window).toEqual({
+    calMin: bin(19, 1000, 2023),
+    calMax: bin(981, 1000, 2023),
+  })
 })
 
 test('a timepoint missing from a coarser level is refused on open', async () => {

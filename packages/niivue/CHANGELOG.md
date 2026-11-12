@@ -1,3 +1,13 @@
+## 1.0.0-rc.172 (2026-11-12)
+
+### Features
+
+- **niivue:** slide scale bars (standalone panes and slide planes) ([2040fe8e](https://github.com/niivue/mono/commit/2040fe8e))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.171 (2026-11-11)
 
 ### Fixes

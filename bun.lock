@@ -219,7 +219,7 @@
     },
     "packages/niivue": {
       "name": "@niivue/niivue",
-      "version": "1.0.0-rc.171",
+      "version": "1.0.0-rc.172",
       "dependencies": {
         "cbor-x": "^1.6.0",
         "clipper2-ts": "^2.0.1-13",
@@ -261,7 +261,7 @@
     },
     "packages/nv-ext-drawing": {
       "name": "@niivue/nv-ext-drawing",
-      "version": "1.0.0-rc.172",
+      "version": "1.0.0-rc.173",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "^5.9.3",
@@ -274,7 +274,7 @@
     },
     "packages/nv-ext-image-processing": {
       "name": "@niivue/nv-ext-image-processing",
-      "version": "1.0.0-rc.172",
+      "version": "1.0.0-rc.173",
       "dependencies": {
         "gl-matrix": "^3.4.4",
       },
@@ -302,7 +302,7 @@
     },
     "packages/nv-ext-save-html": {
       "name": "@niivue/nv-ext-save-html",
-      "version": "1.0.0-rc.172",
+      "version": "1.0.0-rc.173",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "^5.9.3",
@@ -315,7 +315,7 @@
     },
     "packages/nv-ext-tile": {
       "name": "@niivue/nv-ext-tile",
-      "version": "1.0.0-rc.76",
+      "version": "1.0.0-rc.77",
       "dependencies": {
         "@niivue/geotiff-rs": "3.1.0-rc.0",
         "@niivue/zarrita-rs": "0.7.5-rc.1",
@@ -339,7 +339,7 @@
     },
     "packages/nv-mcp": {
       "name": "@niivue/nv-mcp",
-      "version": "1.0.0-rc.166",
+      "version": "1.0.0-rc.167",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.30.0",
         "zod": "^4.6.5",
@@ -363,7 +363,7 @@
     },
     "packages/nv-ohif": {
       "name": "@niivue/nv-ohif",
-      "version": "1.0.0-rc.194",
+      "version": "1.0.0-rc.195",
       "dependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
         "@niivue/nv-ext-tile": "workspace:^",
@@ -388,7 +388,7 @@
     },
     "packages/nv-react": {
       "name": "@niivue/nvreact",
-      "version": "1.0.0-rc.172",
+      "version": "1.0.0-rc.173",
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.6.1",
         "@niivue/niivue": "workspace:*",
@@ -412,7 +412,7 @@
     },
     "packages/nv-web-component": {
       "name": "@niivue/nv-web-component",
-      "version": "1.0.0-rc.169",
+      "version": "1.0.0-rc.170",
       "dependencies": {
         "lit": "^3.3.2",
       },
@@ -429,7 +429,7 @@
     },
     "packages/uikit": {
       "name": "@niivue/uikit",
-      "version": "1.0.0-rc.169",
+      "version": "1.0.0-rc.170",
       "devDependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",

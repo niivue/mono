@@ -292,18 +292,22 @@ describe('ManifestRangeSource transport', () => {
   })
 })
 
-test('dispose while a signal-ignoring fetch is pending: tile and ICC reads reject', async () => {
-  for (const read of ['tile', 'icc-ranged', 'icc-whole', 'body'] as const) {
-    let release = (_: Response) => {}
-    const body = new ReadableStream<Uint8Array>({
-      start(c) {
-        if (read !== 'body') return
-        release = () => {
-          c.enqueue(Uint8Array.from([1, 2]))
-          c.close()
-        }
-      },
-    })
+describe('dispose with a fetch that ignores its signal', () => {
+  const reads = ['tile', 'icc-ranged', 'icc-whole'] as const
+  // A 206 whose body never ends; `cancelled` once its stream is cancelled.
+  const endless = () => {
+    const state = { cancelled: false }
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          state.cancelled = true
+        },
+      }),
+      { status: 206 },
+    )
+    return { state, response }
+  }
+  function start(read: (typeof reads)[number], fetch: SlideFetch) {
     const s = new ManifestRangeSource(
       {
         ...manifest(),
@@ -312,16 +316,7 @@ test('dispose while a signal-ignoring fetch is pending: tile and ICC reads rejec
             ? { url: 'icc.icm' }
             : { url: 'icc.icm', offset: 0, length: 2 },
       } as NVSlideManifest,
-      {
-        // Ignores the signal, as a custom fetch may.
-        fetch: () =>
-          read === 'body'
-            ? Promise.resolve(new Response(body, { status: 206 }))
-            : new Promise<Response>((r) => {
-                release = r
-              }),
-        baseUrl: 'https://h.test/',
-      },
+      { fetch, baseUrl: 'https://h.test/' },
     )
     s.bind({
       resolveUrl: (u) => u,
@@ -333,23 +328,61 @@ test('dispose while a signal-ignoring fetch is pending: tile and ICC reads rejec
       channelInfoChanged() {},
     })
     const level = s.manifest.levels[0] as NVSlideLevelManifest
+    const tile = {
+      ...(level.tiles?.[0] as NVSlideTileManifest),
+      offset: 0,
+      length: 2,
+    }
     const pending =
-      read === 'tile' || read === 'body'
-        ? s.fetchTileBytes(
-            level,
-            {
-              ...(level.tiles?.[0] as NVSlideTileManifest),
-              offset: 0,
-              length: 2,
-            },
-            't',
-          )
-        : s.fetchIccProfile()
-    await new Promise((r) => setTimeout(r, 0))
-    s.dispose()
-    release(new Response(Uint8Array.from([1, 2]), { status: 206 }))
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+      read === 'tile' ? s.fetchTileBytes(level, tile, 't') : s.fetchIccProfile()
+    return { s, pending }
   }
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const settled = (p: Promise<unknown>) =>
+    Promise.race([
+      p.then(
+        () => 'resolved',
+        (e: Error) => e.name,
+      ),
+      new Promise((r) => setTimeout(() => r('pending'), 100)),
+    ])
+
+  test.each(
+    reads,
+  )('%s: a fetch that never settles rejects on dispose', async (read) => {
+    const { s, pending } = start(read, () => new Promise<Response>(() => {}))
+    await tick()
+    s.dispose()
+    expect(await settled(pending)).toBe('AbortError')
+  })
+
+  test.each(
+    reads,
+  )('%s: a reply after dispose is refused and its body cancelled', async (read) => {
+    let release = (_: Response) => {}
+    const { s, pending } = start(
+      read,
+      () => new Promise<Response>((r) => (release = r)),
+    )
+    await tick()
+    s.dispose()
+    const late = endless()
+    release(late.response)
+    expect(await settled(pending)).toBe('AbortError')
+    await tick()
+    expect(late.state.cancelled).toBe(true)
+  })
+
+  test.each(
+    reads,
+  )('%s: a body that never ends rejects on dispose, cancelled', async (read) => {
+    const reply = endless()
+    const { s, pending } = start(read, async () => reply.response)
+    await tick()
+    s.dispose()
+    expect(await settled(pending)).toBe('AbortError')
+    expect(reply.state.cancelled).toBe(true)
+  })
 })
 
 describe('tile decoders', () => {

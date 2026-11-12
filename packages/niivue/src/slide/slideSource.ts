@@ -260,27 +260,68 @@ export interface ManifestRangeSourceOptions {
 // far beyond a tile file a range manifest should point at whole.
 export const MAX_WHOLE_FILE = 64 * 1024 * 1024
 
-/** `value` once `signal` has not fired: a custom fetch may ignore its signal and settle after an abort or dispose. */
-const live = <T>(signal: AbortSignal, value: T): T => {
-  signal.throwIfAborted()
-  return value
+/**
+ * `work`, rejecting with the signal's reason as soon as it aborts: a custom
+ * fetch may ignore its signal and settle late, or never. A value that arrives
+ * after the abort goes to `late` (to release it).
+ */
+function settleBy<T>(
+  signal: AbortSignal,
+  work: Promise<T>,
+  late: (value: T) => void = () => {},
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        if (signal.aborted) late(value)
+        else resolve(value)
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
 }
 
-/** A response body, refused past `max` bytes whether or not Content-Length says so. */
+/** `fetch`'s reply, unless `signal` fires first; a late reply's body is cancelled. */
+const replyBy = (signal: AbortSignal, reply: Promise<Response>) =>
+  settleBy(signal, reply, (r) => {
+    r.body?.cancel().catch(() => {})
+  })
+
+/**
+ * A response body, refused past `max` bytes whether or not Content-Length says
+ * so. With `signal`, rejects as soon as it aborts, cancelling the body.
+ */
 export async function readCapped(
   response: Response,
   max: number,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   if (Number(response.headers.get('content-length')) > max) {
     await response.body?.cancel()
     throw new Error(`Reply over ${max} bytes`)
   }
   const reader = response.body?.getReader()
-  if (!reader) return new Uint8Array(await response.arrayBuffer())
+  if (!reader) {
+    const whole = response.arrayBuffer()
+    return new Uint8Array(await (signal ? settleBy(signal, whole) : whole))
+  }
   const chunks: Uint8Array[] = []
   let n = 0
   for (;;) {
-    const { done, value } = await reader.read()
+    const read = reader.read()
+    const { done, value } = await (signal
+      ? settleBy(signal, read).catch((error) => {
+          reader.cancel().catch(() => {})
+          throw error
+        })
+      : read)
     if (done) break
     n += value.byteLength
     if (n > max) {
@@ -387,9 +428,9 @@ export class ManifestRangeSource implements SlideTileSource {
         // A disposed source never reaches fetch; a caller's abort does (fetch rejects).
         const gate = attempt ? abort : this.closed.signal
         gate.throwIfAborted()
-        const response = live(
+        const response = await replyBy(
           abort,
-          await this.fetch(sourceUrl, {
+          this.fetch(sourceUrl, {
             headers: { Range: `bytes=${start}-${end}` },
             signal: abort,
             ...(attempt ? { cache: 'no-store' as const } : {}),
@@ -400,7 +441,7 @@ export class ManifestRangeSource implements SlideTileSource {
           throw new Error(`HTTP ${response.status}`)
         }
         if (response.status !== 206) {
-          const whole = live(abort, await readCapped(response, MAX_WHOLE_FILE))
+          const whole = await readCapped(response, MAX_WHOLE_FILE, abort)
           host.addWireBytes(whole.byteLength)
           if (whole.byteLength <= end)
             throw new Error(
@@ -411,7 +452,7 @@ export class ManifestRangeSource implements SlideTileSource {
           return whole.slice(start, end + 1)
         }
         // A reply past the range is never buffered whole.
-        const bytes = live(abort, await readCapped(response, fragment.length))
+        const bytes = await readCapped(response, fragment.length, abort)
         host.addWireBytes(bytes.byteLength)
         // Content-Range is hidden cross-origin unless exposed; then it is checked.
         const [, at, to] =
@@ -481,12 +522,12 @@ export class ManifestRangeSource implements SlideTileSource {
     const abort = signal
       ? AbortSignal.any([signal, this.closed.signal])
       : this.closed.signal
-    const response = live(abort, await this.fetch(url, { signal: abort }))
+    const response = await replyBy(abort, this.fetch(url, { signal: abort }))
     if (!response.ok) {
       await response.body?.cancel()
       throw new Error(`ICC profile HTTP ${response.status}`)
     }
-    return live(abort, await readCapped(response, 64 * 1024 * 1024))
+    return readCapped(response, 64 * 1024 * 1024, abort)
   }
 }
 

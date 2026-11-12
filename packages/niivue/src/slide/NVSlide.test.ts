@@ -694,7 +694,7 @@ describe('ManifestRangeSource range telemetry', () => {
     const { level, tile } = onlyTile(source)
     await expect(
       source.fetchTileBytes(level, tile, 'L0/0/0', controller.signal),
-    ).rejects.toThrow('fetch aborted')
+    ).rejects.toMatchObject({ name: 'AbortError' })
     // The 'pending' entry must not survive the rejected fetch.
     expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'aborted' }])
   })

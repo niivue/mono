@@ -49,6 +49,17 @@ describe('computeAnnotationStats', () => {
     expect(stats?.max).toBe(3)
   })
 
+  test('skips voxels with no data (NaN)', () => {
+    const holed = new Float32Array(img)
+    holed[1] = Number.NaN
+    const stats = computeAnnotationStats(
+      annotation([{ outer: square(0, 0, 4), holes: [] }]),
+      { ...volume, img: holed } as NVImage,
+    )
+    expect(Number.isFinite(stats?.mean)).toBe(true)
+    expect(stats?.max).toBe(3)
+  })
+
   test('covers every piece of a split ROI and skips its holes', () => {
     const stats = computeAnnotationStats(
       annotation([

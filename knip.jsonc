@@ -29,6 +29,7 @@
     "packages/dev-images": { "entry": ["src/**/*.test.ts"] },
     "packages/nv-ext-drawing": { "entry": ["src/**/*.test.ts"] },
     "packages/nv-ext-image-processing": { "entry": ["src/**/*.test.ts"] },
+    "packages/nv-ext-isosurface": { "entry": ["src/**/*.test.ts"] },
     "packages/nv-ext-save-html": { "entry": ["src/**/*.test.ts"] },
     "packages/ipyniivue": {
       // Reaches _widget.template.js, which imports the bundled @niivue/* devDependencies.

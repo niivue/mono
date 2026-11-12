@@ -2770,13 +2770,13 @@
         },
         {
           "name": "options",
-          "tsType": "{ fill?: SettingsFillPolicy | undefined; resolveUrl?: DocumentUrlResolver | undefined; } | undefined",
+          "tsType": "{ fill?: SettingsFillPolicy | undefined; resolveUrl?: DocumentUrlResolver | undefined; resolveSource?: DocumentSourceResolver | undefined; } | undefined",
           "optional": true,
           "doc": null
         }
       ],
       "returns": "Promise<void>",
-      "doc": "`options.resolveUrl` sees every URL the document would load before it is\nfetched: each linked volume and mesh (saved by URL with no embedded data,\nsee `SerializeOptions.linkData`) and the thumbnail. It returns the URL to\nfetch instead, or `null` to skip that item. A caller can resolve links\nagainst where the document lives rather than the page, or refuse some.\nSkipping the document's first volume also skips its drawing, which belongs\nto that volume's grid.",
+      "doc": "`options.resolveUrl` sees every URL the document would load before it is\nfetched: each linked volume and mesh (saved by URL with no embedded data,\nsee `SerializeOptions.linkData`) and the thumbnail. It returns the URL to\nfetch instead, or `null` to skip that item. A caller can resolve links\nagainst where the document lives rather than the page, or refuse some.\nSkipping the document's first volume also skips its drawing, which belongs\nto that volume's grid.\n\n`options.resolveSource` reopens a lazy or streamed volume's saved source\ndescriptor, with the host's credentials (see {@link DocumentSourceResolver}).\nWithout it, or when it yields no source, a lazy volume shows its embedded\nframe as a static volume and a streamed one is skipped with a warning. A\nnewer `loadDocument` supersedes this one: its pending source opens are\naborted and anything they would add is dropped.",
       "returnsDoc": null
     },
     {
@@ -3139,6 +3139,35 @@
       "returnsDoc": null
     },
     {
+      "jsName": "pickAt",
+      "pyName": "pick_at",
+      "isAsync": true,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "options",
+          "tsType": "{ moveCrosshair?: boolean | undefined; }",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<[number, number, number] | null>",
+      "doc": "Depth-pick the canvas pixel `[x, y]` (device pixels, as a double-click\ndoes): the world point of the first drawn volume voxel or mesh under it.\nOn a channel stack (`volumeIsChannelStack`) any drawn channel answers, not\nonly `volumes[0]`. With `moveCrosshair` the crosshair goes there too.\nNull on a miss or with no view.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "pickExplodedBlock",
       "pyName": "pick_exploded_block",
       "isAsync": false,
@@ -3217,10 +3246,16 @@
           "tsType": "number | undefined",
           "optional": true,
           "doc": null
+        },
+        {
+          "name": "percentiles",
+          "tsType": "readonly [number, number] | undefined",
+          "optional": true,
+          "doc": "[low, high] in percent (default [2, 98]); zeros are\nleft out of the population, as for the default window."
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update.",
+      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update. A\nstreamed volume reads its histogram sample (see {@link volumeHistogram}).\nA frame-source volume holds only its shown frame; another `frame` throws.",
       "returnsDoc": null
     },
     {
@@ -4532,6 +4567,29 @@
       ],
       "returns": "Promise<void>",
       "doc": "Replace a loaded volume's voxel values and re-upload them to the GPU —\nthe fast path for animating or live-editing volume data. Only the edited\nvolume is reprocessed (plus any volume it modulates); meshes, colorbars\nand unrelated volume layers are left alone.\n\nThe new voxels are written into the volume's existing textures when it is\nthe background or the only overlay, scalar or RGB/RGBA alike (RGB/RGBA\nvoxels are reordered and padded to RGBA on the CPU first). The same holds\nfor a volume this one modulates: only its weight texture is rewritten,\nas long as the modulator keeps its grid. These cases still allocate: with two or more overlays, every overlay is re-oriented\nand blended into a new overlay texture; in multi-instance mode\n(`instances`) the edited volume's texture is rebuilt; WebGPU background\nmasking writes the masked overlay to a new texture; and the gradient\ntexture is rebuilt when lighting needs one.\n\nPass `data` with either every value of `img` (all frames) or one frame\n(written into the current `frame4D`): `nVox3D` values for scalar volumes,\n`nVox3D * 3` / `nVox3D * 4` bytes for RGB / RGBA. Values are RAW, in the\nvolume's native datatype and voxel order, before `scl_slope`/`scl_inter`\nscaling (the same units as `img`, not as calMin/calMax). They are copied\ninto the existing `img`. Omit `data` after editing `volume.img` in place.\n(The ordinary update path also picks up an in-place edit when the volume's\n`isDirty` is set first: `vol.isDirty = true; await setVolume(...)` or\n`updateGLVolume()`. That re-uploads the same data, but as part of a full\nrebuild; volumes that are not dirty keep their textures either way.)\n\nThe display window (calMin/calMax), robust range and other values derived\nat load are NOT recomputed; call {@link recalculateCalMinMax} if the data's\nrange changed. Volumes streamed in chunks (`chunkPlan`, including volumes\nthe renderer chunked because they exceed the GPU texture limit) are\nrejected with a warning.\n\nNo `volumeUpdated` event is emitted: this is meant to be called every\nframe, and it changes no display option.\n\nCalls that arrive while another GPU update is running are coalesced into a\nsingle follow-up that uploads the latest data. Such a call's promise\nresolves when it has been queued, before that follow-up runs, so awaiting\nit does not guarantee the new voxels are on screen yet.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "volumeHistogram",
+      "pyName": "volume_histogram",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "volumeIndex",
+          "tsType": "number",
+          "optional": false,
+          "doc": "Index into `volumes`"
+        },
+        {
+          "name": "options",
+          "tsType": "{ bins?: number | undefined; frame?: number | undefined; }",
+          "optional": true,
+          "doc": "`bins` (default 256); `frame` (default the one shown):\na frame of a 4D volume, or, for a frame source, the shown frame only"
+        }
+      ],
+      "returns": "VolumeHistogram | null",
+      "doc": "Histogram of a volume's intensities, cached per data generation, so a UI\ncan call it on every redraw but should not call it per hover. `coverage`\nsays what was counted: `'volume'` the whole frame in memory, `'level'` a\nstreamed volume's coarsest pyramid level (its coarse floor), `'sample'` a\ncentred crop of that level (the window probe); `level` and `frame` say\nwhich. Null when nothing is in memory to count (a streamed volume with no\nfloor or probe) or the volume is RGB.",
       "returnsDoc": null
     },
     {

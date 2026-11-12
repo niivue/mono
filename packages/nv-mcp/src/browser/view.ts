@@ -72,7 +72,20 @@ export interface VolumeUpdate {
   isNearestInterpolation?: boolean
   atlasOutline?: number
   hiddenLabels?: number[]
+  selectedLabels?: number[]
   modulateAlpha?: number
+}
+
+/** NiiVue's `VolumeHistogram`. */
+export interface VolumeHistogram {
+  counts: ArrayLike<number>
+  min: number
+  max: number
+  voxels: number
+  coverage: 'volume' | 'level' | 'sample'
+  level?: number
+  frame: number
+  generation: string
 }
 
 /** A volume as NiiVue keeps it once loaded, in the part the tools read. */
@@ -113,6 +126,7 @@ export interface ShownVolume {
   isNearestInterpolation?: boolean
   atlasOutline?: number
   hiddenLabels?: number[]
+  selectedLabels?: number[]
   modulateAlpha?: number
   /** The label table it is drawn with, when it is a label map. */
   colormapLabel?: unknown
@@ -605,7 +619,23 @@ export interface View {
     isDrawingMask?: boolean
     drawPenValues?: number[]
   }): Descriptives | null
-  recalculateCalMinMax?(volumeIndex: number, frame?: number): Promise<unknown>
+  /** `percentiles` is [low, high] in percent; NiiVue's default is [2, 98]. */
+  recalculateCalMinMax?(
+    volumeIndex: number,
+    frame?: number,
+    percentiles?: readonly [number, number],
+  ): Promise<unknown>
+  /** NiiVue's cached intensity histogram; null when nothing is in memory to count, or RGB. */
+  volumeHistogram?(
+    volumeIndex: number,
+    options?: { bins?: number; frame?: number },
+  ): VolumeHistogram | null
+  /** Depth-picks canvas device pixel (x, y) as a double-click does: the world point drawn there, or null. */
+  pickAt?(
+    x: number,
+    y: number,
+    options?: { moveCrosshair?: boolean },
+  ): Promise<Triple | null>
   /** Draw a 3-frame float vector field (or a volume's stored V1) as direction colours; false when it has none. */
   loadImgV1?(
     volumeIndex: number,

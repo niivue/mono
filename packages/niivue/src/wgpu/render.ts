@@ -14,6 +14,12 @@ import {
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
+import {
+  ChunkStackFuse,
+  chunkRegions,
+  stackGeneration,
+  stackInputs,
+} from '@/view/chunkStackFuse'
 import { loadMatcapOrDefault } from '@/view/matcapFallback'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
@@ -80,6 +86,7 @@ import {
   volumeSourceKey,
   wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
+import { blendOverlaysGPU } from './blendOverlays'
 import { MAX_TILES, UNIFORM_ALIGNMENT } from './mesh'
 import * as orient from './orient'
 import {
@@ -604,6 +611,16 @@ export class VolumeRenderer extends NVRenderer {
   // and feeds the base block's overlay slot (binding 5) — so the base
   // ray-march, clip plane, and compositing are reused unchanged.
   private _combinedOverlayEntries: ChunkedTexEntry[] = []
+  // A channel stack over a chunked base: per base chunk, the drawn channels'
+  // bricks (base and combined mirrors) fused into the overlay slot. Null
+  // otherwise. Mirrors gl/render.ts.
+  private _stackFuse: ChunkStackFuse<GPUTexture> | null = null
+  /** The stack fuse's chunks and ms (CPU side), for benches. */
+  get stackFuseStats(): { chunks: number; ms: number } {
+    return this._stackFuse?.stats ?? { chunks: 0, ms: 0 }
+  }
+  /** Set while the stack's mirror list is being rebuilt: no fuse then. */
+  private _stackRebuilding = 0
   // Coarse whole-volume "floor" texture for the active base. On 2D slices it is
   // drawn as one full-coverage quad behind the resident fine chunks, so a deep-
   // zoom slice never blanks while finer chunks stream — coarse detail shows
@@ -1515,6 +1532,11 @@ export class VolumeRenderer extends NVRenderer {
    * not yet resident. Null when no single combined overlay is active.
    */
   private _combinedOverlaySliceChunks(chunkCount: number): GPUTexture[] | null {
+    const fuse = this._stackFuse
+    const empty = this.placeholderOverlay
+    const base = this._activeChunked
+    if (fuse && empty && base)
+      return fuse.textures(chunkRegions(base.plan), this._stackGen(), empty)
     if (this._combinedOverlayEntries.length !== 1 || !this.placeholderOverlay) {
       return null
     }
@@ -2002,10 +2024,59 @@ export class VolumeRenderer extends NVRenderer {
           progressed = true
         }
       }
+      if (await this._fuseStackChunks(start + CHUNK_UPLOAD_BUDGET_MS))
+        admitted = true
     } finally {
       this._pumpInFlight = false
     }
     return admitted
+  }
+
+  /** The stack's channel entries, base first. */
+  private _stackEntries(): ChunkedTexEntry[] {
+    const base = this._activeChunked
+    return base ? [base, ...this._combinedOverlayEntries] : []
+  }
+
+  /** The stack's source generation (see ChunkStackFuse). */
+  private _stackGen(): string {
+    return stackGeneration(this._stackEntries())
+  }
+
+  /**
+   * Re-fuse stack chunks whose bricks or blend modes changed until `deadline`
+   * (at least one per pump), with the overlay blend the whole-volume stack
+   * uses (blendOverlaysGPU). Returns whether any chunk changed. Mirrors
+   * gl/render.ts.
+   */
+  private async _fuseStackChunks(deadline: number): Promise<boolean> {
+    const fuse = this._stackFuse
+    const device = this._device
+    const base = this._activeChunked
+    if (!fuse || !device || !base || this._stackRebuilding) return false
+    const entries = this._stackEntries()
+    const chunks = base.plan.chunks
+    const alpha = this.overlayAlphaBlend
+    const color = this.overlayColorBlend
+    return fuse.pump(
+      chunkRegions(base.plan),
+      stackGeneration(entries),
+      `${alpha}/${color}`,
+      (i) => stackInputs(entries, i),
+      (inputs, i) => {
+        const dims = chunks[i].texDims
+        return blendOverlaysGPU(
+          device,
+          inputs,
+          [dims[0], dims[1], dims[2]],
+          alpha,
+          color,
+        )
+      },
+      deadline,
+      MAX_CHUNK_UPLOADS_PER_FRAME,
+      () => this._stackFuse === fuse && !this._stackRebuilding,
+    )
   }
 
   /** Release the GPU textures backing a single cache entry. */
@@ -2162,16 +2233,27 @@ export class VolumeRenderer extends NVRenderer {
       // Strategy A: a resliced overlay carrying a chunkSource and co-registered
       // at the base grid streams as a base-aligned chunked entry and feeds the
       // base block's overlay slot, instead of being resliced whole in memory.
-      const streamedCombined = reslicedVols.filter(
-        (v) => v.chunkSource && this._dimsMatchBase(v, baseVol),
-      )
-      const wholeReslice = reslicedVols.filter(
-        (v) => !(v.chunkSource && this._dimsMatchBase(v, baseVol)),
-      )
+      // A channel stack lists the base among its overlays: the base's own
+      // entry is a fuse input, never its own mirror.
+      const stack = overlayVols[0] === baseVol
+      const streamable = (v: NVImage): boolean =>
+        !!v.chunkSource && this._dimsMatchBase(v, baseVol)
+      const others = reslicedVols.filter((v) => v !== baseVol)
+      const streamedCombined = others.filter(streamable)
+      const wholeReslice = others.filter((v) => !streamable(v))
       await this._updateCombinedOverlayChunked(device, streamedCombined, [
         baseVol,
         ...overlayVols,
       ])
+      if (stack)
+        this._stackFuse ??= new ChunkStackFuse(
+          (t) => t.destroy(),
+          (i) => {
+            const base = this._activeChunked
+            if (base) base.bindGroups[i] = null
+          },
+        )
+      else this._clearStackFuse()
       await this._updateOverlayChunks(
         device,
         baseVol,
@@ -2258,7 +2340,7 @@ export class VolumeRenderer extends NVRenderer {
         )
       }
       this.destroyNonCachedOverlayTexture()
-      this.overlayTexture = await orient.blendOverlaysGPU(
+      this.overlayTexture = await blendOverlaysGPU(
         device,
         overlayTextures,
         dimsOut,
@@ -2430,44 +2512,56 @@ export class VolumeRenderer extends NVRenderer {
     vols: NVImage[],
     volumes: NVImage[],
   ): Promise<void> {
-    this._combinedOverlayEntries = []
-    if (vols.length === 0) return
-    // Mirrors share the base grid and are asked for the base's indices, so
-    // the base's view is capped by the smallest mirror: split evenly.
-    const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
-    // Mirrors are asked for the base's chunk indices and priced by its plan,
-    // so each streams on the base's grid, not one set on the overlay itself.
-    const basePlan = volumes[0]?.chunkPlan
-    for (const vol of vols) {
-      // Co-registered at the base grid, so resolving against the overlay's
-      // own grid is the base-grid matrix the whole-volume path would use.
-      const entry = await this._ensureChunkedVolumeEntry(
-        device,
-        vol,
-        overlayBudget,
-        buildModulationParams(vol, vol, volumes),
-        (ci) => {
-          const base = this._activeChunked
-          if (base) base.bindGroups[ci] = null
-        },
-        basePlan,
-      )
-      // A base swap during the await could not see this mirror yet (it is
-      // not listed), so bring it to the base's current plan before listing it.
-      if (volumes[0]) {
-        await this._catchUpToPlan(device, vol, entry, volumes[0], false)
+    // No fuse while the mirror list is partial (the pump awaits meanwhile).
+    this._stackRebuilding = (this._stackRebuilding ?? 0) + 1
+    try {
+      this._combinedOverlayEntries = []
+      if (vols.length === 0) return
+      // Mirrors share the base grid and are asked for the base's indices, so
+      // the base's view is capped by the smallest mirror: split evenly.
+      const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
+      // Mirrors are asked for the base's chunk indices and priced by its plan,
+      // so each streams on the base's grid, not one set on the overlay itself.
+      const basePlan = volumes[0]?.chunkPlan
+      for (const vol of vols) {
+        // Co-registered at the base grid, so resolving against the overlay's
+        // own grid is the base-grid matrix the whole-volume path would use.
+        const entry = await this._ensureChunkedVolumeEntry(
+          device,
+          vol,
+          overlayBudget,
+          buildModulationParams(vol, vol, volumes),
+          (ci) => {
+            const base = this._activeChunked
+            if (base) base.bindGroups[ci] = null
+          },
+          basePlan,
+        )
+        // A base swap during the await could not see this mirror yet (it is
+        // not listed), so bring it to the base's current plan before listing it.
+        if (volumes[0]) {
+          await this._catchUpToPlan(device, vol, entry, volumes[0], false)
+        }
+        setChunkBudget(entry, overlayBudget)
+        this._combinedOverlayEntries.push(entry)
       }
-      setChunkBudget(entry, overlayBudget)
-      this._combinedOverlayEntries.push(entry)
+      if (this._activeChunked) {
+        setChunkBudget(this._activeChunked, overlayBudget)
+      }
+      this._invalidateBindGroupCache()
+    } finally {
+      this._stackRebuilding--
     }
-    if (this._activeChunked) {
-      setChunkBudget(this._activeChunked, overlayBudget)
-    }
-    this._invalidateBindGroupCache()
+  }
+
+  private _clearStackFuse(): void {
+    this._stackFuse?.clear()
+    this._stackFuse = null
   }
 
   /** Forget the streamed combined overlays; base reclaims the full budget. */
   private _clearCombinedOverlayChunked(): void {
+    this._clearStackFuse()
     if (this._combinedOverlayEntries.length === 0) return
     this._combinedOverlayEntries = []
     if (this._activeChunked) {
@@ -2500,7 +2594,23 @@ export class VolumeRenderer extends NVRenderer {
       inFlight += entry.manager.inFlightUploadCount
       total += entry.manager.chunkCount
     }
+    // Stack chunks still owed a fuse count as pending: the frame does not yet
+    // show every drawn channel.
+    pending += this._stackFusePending()
     return { resident, pending, inFlight, total }
+  }
+
+  private _stackFusePending(): number {
+    const fuse = this._stackFuse
+    const base = this._activeChunked
+    if (!fuse || !base) return 0
+    const entries = this._stackEntries()
+    return fuse.pending(
+      chunkRegions(base.plan),
+      stackGeneration(entries),
+      `${this.overlayAlphaBlend}/${this.overlayColorBlend}`,
+      (i) => stackInputs(entries, i),
+    )
   }
 
   /**
@@ -2554,7 +2664,7 @@ export class VolumeRenderer extends NVRenderer {
     }
     return {
       resident,
-      pending,
+      pending: pending + this._stackFusePending(),
       inFlight,
       total,
       staleDropped,
@@ -2688,7 +2798,7 @@ export class VolumeRenderer extends NVRenderer {
           )
         }
         finals.push(
-          await orient.blendOverlaysGPU(
+          await blendOverlaysGPU(
             device,
             layers,
             [dims[0], dims[1], dims[2]],
@@ -3324,6 +3434,10 @@ export class VolumeRenderer extends NVRenderer {
     // Streamed combined overlay (strategy A): for the base entry, base block i's
     // overlay slot is the streamed overlay's resident chunk i (placeholder until
     // it streams in). Takes precedence over the whole-reslice overlayChunks.
+    const stackFuse =
+      !overlayMode && entry === this._activeChunked ? this._stackFuse : null
+    const stackRegions = stackFuse ? chunkRegions(entry.plan) : []
+    const stackGen = stackFuse ? this._stackGen() : ''
     const combinedOverlay =
       !overlayMode &&
       entry === this._activeChunked &&
@@ -3584,12 +3698,18 @@ export class VolumeRenderer extends NVRenderer {
             },
             {
               binding: 5,
-              resource: (combinedOverlay
-                ? (combinedOverlay.manager.getChunk(chunkIndex)
-                    ?.volumeTexture ?? this.placeholderOverlay)
-                : overlayChunks
-                  ? overlayChunks[chunkIndex]
-                  : overlayTex
+              resource: (stackFuse
+                ? (stackFuse.get(
+                    chunkIndex,
+                    stackRegions[chunkIndex],
+                    stackGen,
+                  ) ?? this.placeholderOverlay)
+                : combinedOverlay
+                  ? (combinedOverlay.manager.getChunk(chunkIndex)
+                      ?.volumeTexture ?? this.placeholderOverlay)
+                  : overlayChunks
+                    ? overlayChunks[chunkIndex]
+                    : overlayTex
               ).createView(),
             },
             {

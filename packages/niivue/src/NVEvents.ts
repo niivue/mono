@@ -141,6 +141,7 @@ export type VolumeOrderChangedDetail = { volumes: NVImage[] }
  */
 export type ChunkStreamDetail = {
   resident: number
+  /** Bricks queued for upload, plus channel-stack chunks awaiting their fuse. */
   pending: number
   inFlight: number
   total: number

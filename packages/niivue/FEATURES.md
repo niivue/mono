@@ -47,7 +47,10 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 | `setVolume(index, VolumeUpdate)` | Method | Yes | Per-layer props: `calMin`, `calMax`, `colormap`, `opacity`, `colormapNegative`, `modulationImage`, … | Slider/picker bindings |
 | `setModulationImage(targetId, modulatorId)` | Method | Yes | Modulate overlay brightness by another volume | |
 | `loadImgV1(volumeIndex, flipX?, flipY?, flipZ?)` | Method | Yes | Convert to V1 RGB vector | |
-| `recalculateCalMinMax(volumeIndex)` | Method | Yes | Reset window/level from data | "Auto window" button |
+| `recalculateCalMinMax(volumeIndex, frame?, percentiles?)` | Method | Yes | Reset window/level from data; `percentiles` `[low, high]` (default `[2, 98]`) | "Auto window" button |
+| `volumeHistogram(volumeIndex, { bins?, frame? })` | Method | No | Counts with `coverage` (`volume`, a streamed volume's coarsest `level`, or a `sample` crop), cached per generation | Histogram widget |
+| `setVolume(i, { selectedLabels })` | Method | Yes | Highlight label IDs; the other labels draw at a quarter alpha (2D, 3D, cinematic) | |
+| Streamed readout | — | — | A streamed volume reads exact values from its decoded bricks; where none is decoded it reads the coarse floor, flagged `approximate` in `locationChange` values (`~` in the string) | |
 | `volumes` | Prop (get) | No | `readonly NVImage[]` | Observable list for SwiftUI |
 | `useLoader(…)` | Method | No | Register custom format reader | Usually unused from native |
 
@@ -158,7 +161,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `volumeIsV1SliceShader` | Prop | Treat overlay as fiber direction |
 | `volumeOverlayAlphaBlend` | Prop | `OVERLAY_ALPHA_BLEND`: `MAX` (0, default), `ADDITIVE` (1, opacities sum capped at 1; for fractions summing to 1, e.g. tissue maps), `UNION` (2, 1-prod(1-a), order-free). Only with 2+ overlays |
 | `volumeOverlayColorBlend` | Prop | `OVERLAY_COLOR_BLEND`: `ADDITIVE` (0, default, opacity-weighted sum), `MEAN` (1, opacity-weighted average), `OVER` (2, composited in volume order, later overlays on top; with alpha `UNION` this is source-over), `MAX` (3, per-component max of the opacity-weighted colours; with alpha `MAX` this is Vol-E's channel fusion). Only with 2+ overlays |
-| `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Ignored while volumes[0] is chunked |
+| `volumeIsChannelStack` | Prop | Blend volumes[0] with the overlays as an equal channel instead of an opaque base (default false); pair with colour `MAX` for fluorescence fusion. Stacked channels keep their colormap alpha ramp; 3D density follows each channel's opacity. Over a chunked base only when every volume is streamed (per-chunk fuse, no per-channel opacity) |
 | `volumeMatcap` | Prop | Matcap image URL (`loadMatcap` resolves an `opts.matcaps` name to it). An image that fails to load draws the instance default (first `matcaps` entry), then plain white, with a console warning |
 | `volumePaqdUniforms` | Prop | PAQD atlas tuning |
 | `loadMatcap(nameOrUrl)` | Method (async) | Register matcap at runtime |
@@ -253,6 +256,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)`, `crosshairPan(10)` (click sets crosshair, drag past 4 CSS px pans) |
 | `setDragMode(modeOrString)` | Method | Convenience |
 | `isSnapToVoxelCenters` | Prop | |
+| `pickAt(x, y, { moveCrosshair? })` | Method | Depth-pick a canvas pixel as a double-click does; on a channel stack any drawn channel answers |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
 | `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); hidden labels show as a colour outline; name click still moves the crosshair; off by default |
@@ -352,6 +356,7 @@ a drag and `azimuth` updates — Swift state needs to follow).
 | `serializeDocument()` | Method | No | Returns CBOR `Uint8Array` |
 | `saveDocument(filename?)` | Method | No | Triggers browser download (.nvd). A matcap from `opts.matcaps` is saved by its name (`'cortex'`), not its URL |
 | `loadDocument(urlOrFile)` | Method | Yes | Reverse of save. A matcap saved by name is looked up in this instance's `matcaps`; see §7 |
+| `loadDocument(src, { resolveSource })` | Method | Yes | Reopens a lazy or streamed volume from its saved source descriptor (URL without query or credentials) with the host's credentials; a newer `loadDocument`, `loadVolumes` or `loadImage` aborts a pending restore |
 | `volumeWriteExtensions`, `volumeExtensions` | Prop (get) | No | |
 
 For a native shell, prefer `serializeDocument()` + `saveBitmap()` returning the
@@ -405,6 +410,7 @@ ship in `@niivue/nv-ext-drawing` and `@niivue/nv-ext-image-processing`.
 |---|---|---|---|
 | `getFrame4D(id)` | Method | No | Current frame index |
 | `setFrame4D(id, frame)` | Method | Yes | |
+| `NVChunkedVolume` lazy frames | Method | Yes | `loadChunkedVolume(source, { frame, frameGroup })`, `setFrame(t)`: a streamed source with `frames` switches time points, the whole group in one update |
 | `loadDeferred4DVolumes(id)` | Method | Yes | Pull remaining frames |
 | `isGraphVisible`, `graphNormalizeValues`, `graphIsRangeCalMinMax` | Prop | — | 4D graph overlay |
 | `frameChange` event | Event | — | |

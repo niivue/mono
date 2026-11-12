@@ -26,6 +26,10 @@ export type {
   DocumentLinkKind,
   DocumentUrlResolver,
 } from './documentLinks'
+export type {
+  DocumentSourceResolver,
+  NVDocumentSource,
+} from './documentSources'
 // Sparse-document settings policies: which settings saveDocument includes, and
 // how loadDocument fills settings a sparse document omits
 export type {
@@ -170,6 +174,8 @@ export type {
   VolumeChunkSource,
   VolumeChunkSourceRequest,
   VolumeFrameSource,
+  VolumeHistogram,
+  VolumeSourceDescriptor,
   VolumeUpdate,
   OrientationTextPosition,
   RulerUnits,
@@ -403,6 +409,8 @@ export {
   type ChunkedVolumeOptions,
   NVChunkedVolume,
 } from './volume/NVChunkedVolume'
+// Mesh construction for extensions building derived meshes (isosurfaces)
+export { createMesh } from './mesh/NVMesh'
 // Volume construction/serialization for extensions building derived volumes
 // (e.g. wrapping segmentation labels into an overlay NVImage)
 export { nii2volume, writeVolume } from './volume/NVVolume'

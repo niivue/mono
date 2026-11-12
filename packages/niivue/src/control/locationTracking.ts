@@ -30,6 +30,11 @@ export interface LocationContext {
   lastPointerY: number
 }
 
+/** A streamed volume read from its coarse floor at `vox`, not a brick. */
+function isApproximate(vol: NVImage, vox: ArrayLike<number>): boolean {
+  return !vol.img && vol.voxelValue?.(vox[0], vox[1], vox[2]).exact === false
+}
+
 /**
  * Build a NiiVueLocation message from the current crosshair position, with
  * `slide` (the slide plane's samples there) when given.
@@ -56,8 +61,10 @@ export function buildLocationMessage(
     return parseFloat(Number(flt).toFixed(decimals)).toString()
   }
   let str = `${flt2str(mm[0], deci)}\u00D7${flt2str(mm[1], deci)}\u00D7${flt2str(mm[2], deci)}`
-  if (ctx.volumes.length > 0 && (ctx.volumes[0].nFrame4D ?? 1) > 1) {
-    str += `\u00D7${flt2str(ctx.volumes[0].frame4D ?? 0)}`
+  // A lazy (frame source) volume holds one frame of `count`.
+  const back = ctx.volumes[0]
+  if (back && (back.frameSource?.count ?? back.nFrame4D ?? 1) > 1) {
+    str += `\u00D7${flt2str(back.frameSource?.frame ?? back.frame4D ?? 0)}`
   }
   // Voxel-based layer intensity
   if (ctx.volumes.length > 0) {
@@ -68,6 +75,7 @@ export function buildLocationMessage(
       const frame = vol.frame4D ?? 0
       let flt = getVoxelValue(vol, vox[0], vox[1], vox[2], frame)
       deci = 3
+      if (isApproximate(vol, vox)) valStr += '~'
       if (isPaqd(vol.hdr) && vol.colormapLabel) {
         const lut = vol.colormapLabel
         const raw = getVoxelRGBA(vol, vox[0], vox[1], vox[2])
@@ -160,6 +168,7 @@ export function buildLocationMessage(
         mm: [mm[0], mm[1], mm[2]],
         vox: [vvox[0], vvox[1], vvox[2]],
       }
+      if (isApproximate(v, vvox)) entry.approximate = true
       if (isPaqd(v.hdr) && v.colormapLabel) {
         const lut = v.colormapLabel
         const raw = getVoxelRGBA(v, vvox[0], vvox[1], vvox[2])

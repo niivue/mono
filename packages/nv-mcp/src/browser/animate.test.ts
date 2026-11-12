@@ -335,3 +335,23 @@ describe('animate', () => {
     )
   })
 })
+
+describe('animate on a streamed volume', () => {
+  it('tweens the frames of its frame source and refuses one past them', async () => {
+    const { view, calls } = animView({
+      volumes: [
+        {
+          name: 'stream.ome.zarr',
+          id: 's0',
+          chunkPlan: { gridDims: [2, 2, 2] },
+          frameSource: { count: 4, frame: 0 },
+        },
+      ],
+    })
+    await run(view, { volumes: [{ frame: 3 }] })
+    expect(calls[0][0]).toEqual({ volumes: { 0: { frame4D: 3 } } })
+    await expect(run(view, { volumes: [{ frame: 4 }] })).rejects.toThrow(
+      'stream.ome.zarr has 4 frames, numbered from 0; there is no frame 4.',
+    )
+  })
+})

@@ -178,6 +178,7 @@ describe('core tool schemas', () => {
     expect(properties('update_volume_data').sort()).toEqual([
       'auto_window',
       'from_volume',
+      'percentiles',
       'tab',
       'url',
       'values',
@@ -201,6 +202,19 @@ describe('core tool schemas', () => {
     expect(required('edit_measurements')).toEqual(['action'])
     expect(required('save')).toEqual(['what'])
     expect(required('sample_slide')).toEqual(['x', 'y'])
+    expect(required('volume_histogram')).toEqual([])
+    expect(properties('volume_histogram').sort()).toEqual([
+      'bins',
+      'frame',
+      'tab',
+      'volume',
+    ])
+    expect(required('pick_point')).toEqual(['canvas'])
+    expect(properties('pick_point').sort()).toEqual([
+      'canvas',
+      'move_crosshair',
+      'tab',
+    ])
     expect(properties('sample_slide').sort()).toEqual([
       'fetch',
       'tab',
@@ -232,6 +246,7 @@ describe('core tool schemas', () => {
     expect(byName.list_data.annotations?.readOnlyHint).toBe(true)
     for (const name of [
       'describe_volume',
+      'volume_histogram',
       'capabilities',
       'list_meshes',
       'map_point',
@@ -264,7 +279,9 @@ describe('core tool schemas', () => {
       'modulate_alpha',
       'nearest',
       'opacity',
+      'percentiles',
       'reset_affine',
+      'selected_labels',
       'spread',
       'tab',
       'transform',

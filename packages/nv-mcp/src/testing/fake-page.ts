@@ -137,6 +137,21 @@ export function fakePage(options: FakePageOptions): FakePage {
     setVolume: async (index: number, update: VolumeUpdate) => {
       Object.assign(volumes[index], update)
     },
+    volumeHistogram: () => ({
+      counts: new Uint32Array([6, 0, 2]),
+      min: 0,
+      max: 255,
+      voxels: 8,
+      coverage: 'volume',
+      frame: 0,
+      generation: 'g',
+    }),
+    // Every pixel picks the left insula's centroid.
+    pickAt: async (_x, _y, options) => {
+      const mm: [number, number, number] = [-36, 6, 2]
+      if (options?.moveCrosshair) view.crosshairPos = view.model.mm2scene(mm)
+      return mm
+    },
     sliceType: 4,
     multiplanarType: 0,
     mosaicString: '',

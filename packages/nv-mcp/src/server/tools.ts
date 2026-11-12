@@ -444,6 +444,12 @@ export const CORE_SCHEMAS = {
       .describe(
         'For a label map: the label values to hide, replacing the current list; [] shows every label.',
       ),
+    selected_labels: z
+      .array(z.number().int())
+      .optional()
+      .describe(
+        'For a label map: the label values to highlight, every other label drawn at a quarter of its opacity; replaces the current list, [] highlights none.',
+      ),
     modulate_alpha: z
       .number()
       .min(0)
@@ -482,6 +488,13 @@ export const CORE_SCHEMAS = {
       .boolean()
       .optional()
       .describe('Recompute cal_min and cal_max from the intensities.'),
+    percentiles: z
+      .array(z.number().min(0).max(100))
+      .length(2)
+      .optional()
+      .describe(
+        'The window auto_window takes, [low, high] in percent of the non-zero voxels; [2, 98] otherwise. Giving it recomputes the window, auto_window or not.',
+      ),
     affine: z
       .union([
         z.array(z.array(z.number()).length(4)).length(4),

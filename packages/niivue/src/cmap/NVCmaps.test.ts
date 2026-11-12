@@ -589,6 +589,24 @@ describe('shownLabelLut', () => {
     vol.hiddenLabels = [12, 11]
     expect(shownLabelLut(vol)).not.toBe(a)
   })
+
+  test('selectedLabelsDimTheOthersAndHiddenStillWins', () => {
+    const vol = {
+      colormapLabel: lut,
+      selectedLabels: [11, 13],
+      hiddenLabels: [13],
+    }
+    const alpha = Array.from(shownLabelLut(vol)?.lut ?? []).filter(
+      (_, i) => i % 4 === 3,
+    )
+    expect(alpha).toEqual([50, 200, 50, 0])
+    vol.hiddenLabels = []
+    vol.selectedLabels = [12]
+    const next = Array.from(shownLabelLut(vol)?.lut ?? []).filter(
+      (_, i) => i % 4 === 3,
+    )
+    expect(next).toEqual([50, 50, 200, 50])
+  })
 })
 
 describe('addColormap keeps cinematic keys', () => {

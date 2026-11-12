@@ -123,7 +123,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Background/font color | ✅ | Properties |
 | Font scale | ✅ | `fontScale` property |
 | Colorbar visibility | ✅ | `isColorbarVisible` |
-| Ruler visibility | ✅ | `isRulerVisible` |
+| Ruler visibility | ✅ | `isRulerVisible` (2D tiles, mosaic render tiles; not `global3d`, whose camera is perspective); `rulerUnits` fixes the unit |
 | Orient cube visibility | ✅ | `isOrientCubeVisible` |
 | 3D crosshair visibility | ✅ | `is3DCrosshairVisible` |
 | Radiological convention | ✅ | `isRadiological` |

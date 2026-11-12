@@ -2,10 +2,10 @@
 //
 // NVSlide owns the manifest/levels/tiles model, the viewport (pan/zoom), HTTP
 // Range-request tile streaming, the tile cache (bitmaps, plus samples for monochrome) and request stats. This
-// demo just wires DOM controls to it and draws it with a backend-selected
-// renderer: SlideRenderer (WebGL2) or SlideRendererGPU (WebGPU). WebGPU by
-// default; add `?backend=webgl2` for WebGL2, `?aa=on|off` to override the
-// anti-aliasing default. TIFF/SVS slides live in apps/demo-ext-tile.
+// demo just wires DOM controls to it and draws it in a `createSlideView`
+// (renderer, frame loop, gestures, overlay). WebGPU by default; add
+// `?backend=webgl2` for WebGL2, `?aa=on|off` to override the anti-aliasing
+// default. TIFF/SVS slides live in apps/demo-ext-tile.
 //
 // The synthetic pyramid (public/tile-range-poc/) streams one tile's worth of
 // bytes at a time over HTTP 206 range requests, so a multi-gigabyte slide never
@@ -14,19 +14,18 @@
 import { createFrameDecoder } from '@niivue/dcm2niix'
 import {
   buildDrawingLut,
+  createSlideView,
   DRAG_MODE,
   DziSource,
   drawingBitmapToRGBA,
+  formatSlideSample,
   lookupColorMap,
   NVSlide,
-  NVSlideController,
   SlideDrawing,
-  SlideRenderer,
-  SlideRendererGPU,
   SlideVectorLayer,
-  slideOverlayContent,
+  slideStatsSummary,
 } from '../src/index.ts'
-import { backendFromUrl, isAntiAlias, watchRetina } from './displayControls.js'
+import { backendFromUrl, isAntiAlias } from './displayControls.js'
 import { urlParamSelect } from './urlParamSelect.js'
 
 // DZI sources construct via NVSlide.fromSource(DziSource.fromUrl(...)) rather
@@ -158,10 +157,9 @@ const els = {
 urlParamSelect(els.backendSelect, 'backend', backendFromUrl())
 urlParamSelect(els.aaSelect, 'aa', isAntiAlias ? 'on' : 'off')
 
+// The slide view (renderer, frame loop, gestures), made in main().
 let view = null
 let slide = null
-let animationFrame = 0
-let hasFit = false
 // The slide pixel under the pointer, for the HUD's value readout.
 let hoverCss = null // the pointer in canvas CSS px: a pan moves the slide under it
 // Slide-space drawing: a SlideDrawing raster (painted with the shared pen tools,
@@ -256,77 +254,13 @@ function html(value) {
     .replaceAll("'", '&#39;')
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
+const screenForCanvas = () => view.screen()
+const requestRender = () => view?.requestRender()
 
-function screenForCanvas() {
-  const rect = els.canvas.getBoundingClientRect()
-  return {
-    widthCss: rect.width,
-    heightCss: rect.height,
-    // Retina off draws in CSS pixels.
-    devicePixelRatio: els.retina.checked ? window.devicePixelRatio || 1 : 1,
-  }
-}
-
-function resizeCanvas(screen) {
-  const dpr = screen.devicePixelRatio ?? 1
-  const width = Math.max(1, Math.floor(screen.widthCss * dpr))
-  const height = Math.max(1, Math.floor(screen.heightCss * dpr))
-  if (els.canvas.width !== width || els.canvas.height !== height) {
-    els.canvas.width = width
-    els.canvas.height = height
-  }
-}
-
-async function createView() {
-  if (backendFromUrl() === 'webgpu' && 'gpu' in navigator) {
-    // create() resolves null without an adapter but rejects if the device request fails.
-    const renderer = await SlideRendererGPU.create(els.canvas, {
-      antialias: isAntiAlias,
-    }).catch(() => null)
-    if (renderer) return { kind: 'gpu', renderer }
-    console.warn('WebGPU unavailable; falling back to WebGL2')
-  }
-  const gl = els.canvas.getContext('webgl2', {
-    alpha: false,
-    antialias: isAntiAlias,
-  })
-  if (!gl) throw new Error('WebGL2 is not available')
-  const renderer = new SlideRenderer()
-  renderer.init(gl)
-  return { kind: 'gl', gl, renderer }
-}
-
-function drawView(screen) {
-  if (!view || !slide) return
-  const slides = [slide]
-  view.renderer.overlay = slideOverlayContent(slide, screen, gestures, {
-    isRulerVisible: els.scaleBar.checked,
-  })
-  view.renderer.render(slides, screen)
-}
-
-function requestRender() {
-  if (animationFrame !== 0) return
-  animationFrame = window.requestAnimationFrame(() => {
-    animationFrame = 0
-    render()
-  })
-}
-
-function render() {
-  const screen = screenForCanvas()
-  resizeCanvas(screen)
-  if (slide && !hasFit) {
-    slide.fitToScreen(screen)
-    hasFit = true
-  }
-  if (slide) slide.clampViewport(screen)
-  drawView(screen)
+// After each frame: the drawing overlay, HUD, range log and export button.
+function afterRender(screen) {
+  // Retina is offered only on a HiDPI display (another monitor, browser zoom).
+  els.retinaControl.hidden = window.devicePixelRatio <= 1
   drawOverlay(screen)
   updateHud(screen)
   updateRangeLog()
@@ -537,46 +471,25 @@ function buildWandReference() {
 }
 
 function updateHud(screen) {
-  if (!slide) {
-    els.hud.innerHTML = '<div class="title">Loading tile manifest</div>'
-    return
-  }
   // The drawn level: a pinned level too large for the tile cache shows a coarser one.
-  const {
-    level,
-    tiles: visibleTiles,
-    requestedLevel,
-  } = slide.visibleTiles(screen)
-  if (!level) {
+  const level = slide?.lastVisibleTiles?.level
+  if (!slide || !level) {
     els.hud.innerHTML = '<div class="title">Loading tile manifest</div>'
     return
   }
   const s = slide.stats
-  const mode = requestedLevel
-    ? `(L${requestedLevel.index} exceeds the tile cache)`
-    : slide.levelChoice === 'auto'
-      ? 'auto'
-      : 'fixed'
-  const scale = slide.viewport.scale
-  const zoom =
-    scale >= 1 ? `${scale.toFixed(2)}x` : `1:${(1 / scale).toFixed(1)}`
-  const visible = visibleTiles.length
-  const codec = level.codec ?? 'raw-rgba'
-  const backendLabel = view?.kind === 'gpu' ? 'WebGPU' : 'WebGL2'
+  const cls = {
+    requests: s.fullFileFallbacks > 0 ? 'warn' : 'ok',
+    failures: s.failures > 0 ? 'bad' : '',
+  }
+  const rows = [
+    ['backend', view.backend === 'webgpu' ? 'WebGPU' : 'WebGL2'],
+    ['source', slide.sourceLabelForLevel(level)],
+    ...slideStatsSummary(slide, screen).filter(([key]) => key !== 'slide'),
+  ]
   els.hud.innerHTML = `
     <div class="title">${html(slide.manifest.name)}</div>
-    <div class="row"><span class="key">backend</span><span>${backendLabel}</span></div>
-    <div class="row"><span class="key">source</span><span>${html(slide.sourceLabelForLevel(level))}</span></div>
-    <div class="row"><span class="key">codec</span><span>${html(codec)}</span></div>
-    <div class="row"><span class="key">level</span><span>L${level.index} ${mode} ${level.width}x${level.height}</span></div>
-    <div class="row"><span class="key">zoom</span><span>${zoom}</span></div>
-    <div class="row"><span class="key">tiles</span><span>${visible} visible, ${slide.pendingCount} pending</span></div>
-    <div class="row"><span class="key">requests</span><span>${s.completed}/${s.requested} done</span></div>
-    <div class="row"><span class="key">range</span><span class="ok">${s.rangeHits} HTTP 206</span></div>
-    <div class="row"><span class="key">fallback</span><span class="${s.fullFileFallbacks > 0 ? 'warn' : ''}">${s.fullFileFallbacks} HTTP 200</span></div>
-    <div class="row"><span class="key">wire</span><span>${formatBytes(s.wireBytes)}</span></div>
-    <div class="row"><span class="key">cache</span><span>${formatBytes(s.cacheBytes)} / ${s.cacheHits} hits</span></div>
-    <div class="row"><span class="key">failures</span><span class="${s.failures > 0 ? 'bad' : ''}">${s.failures}</span></div>
+    ${rows.map(([key, text]) => `<div class="row"><span class="key">${key}</span><span class="${cls[key] ?? ''}">${html(text)}</span></div>`).join('')}
     ${hoverRow()}
   `
 }
@@ -585,18 +498,11 @@ function updateHud(screen) {
 // again when a tile lands, so a finer level shows up without a new move).
 function hoverRow() {
   if (!hoverCss) return ''
-  const hoverPoint = slide.screenToSlide(
-    hoverCss.xCss,
-    hoverCss.yCss,
-    screenForCanvas(),
-  )
-  const samples = slide.sampleAt(hoverPoint.x, hoverPoint.y)
-  if (samples[0]?.missing === 'outside') return ''
-  const values = samples
-    .map((s) => `${s.name} ${s.value ?? s.missing}`)
-    .join(', ')
-  const at = `${Math.floor(hoverPoint.x)},${Math.floor(hoverPoint.y)}`
-  return `<div class="row"><span class="key">value</span><span>${html(at)} ${html(values)} (L${samples[0]?.level ?? '-'})</span></div>`
+  const p = slide.screenToSlide(hoverCss.xCss, hoverCss.yCss, screenForCanvas())
+  const text = formatSlideSample(p.x, p.y, slide.sampleAt(p.x, p.y))
+  return text
+    ? `<div class="row"><span class="key">value</span><span>${html(text)}</span></div>`
+    : ''
 }
 
 function updateRangeLog() {
@@ -677,11 +583,12 @@ function zoomCentered(factor) {
   slide.zoomBy(factor, screen.widthCss / 2, screen.heightCss / 2, screen)
 }
 
-els.canvas.addEventListener('pointerdown', (event) => {
+// Wired in main() on view.canvas (a failed WebGPU start can replace the canvas).
+function onDrawDown(event) {
   // Draw strokes take no pointer capture: a captured click can swallow the next
-  // click elsewhere (a header link needing two). Pan and zoom go through
-  // `gestures`, which captures only once a press becomes a drag.
-  // Draw mode paints the slide with the left button (gestures leave it free).
+  // click elsewhere (a header link needing two). Pan and zoom go through the
+  // view's controller, which captures only once a press becomes a drag.
+  // Draw mode paints the slide with the left button (the controller leaves it free).
   if (event.button === 0 && drawMode && drawing) {
     // Vector tool draws a freehand polygon in slide coords (not the raster).
     if (drawTool === 'vector') {
@@ -724,9 +631,9 @@ els.canvas.addEventListener('pointerdown', (event) => {
     }
     return
   }
-})
+}
 
-els.canvas.addEventListener('pointermove', (event) => {
+function onDrawMove(event) {
   if (drawStroke && drawStroke.pointerId === event.pointerId) {
     if (drawStroke.tool === 'bucket' || drawStroke.tool === 'wand') return // single click
     if (drawStroke.tool === 'vector') {
@@ -761,7 +668,7 @@ els.canvas.addEventListener('pointermove', (event) => {
     }
     return
   }
-})
+}
 
 // On window (not the canvas) so a release outside the canvas still ends a
 // stroke, which takes no pointer capture.
@@ -793,7 +700,8 @@ window.addEventListener('pointercancel', (event) => {
 
 els.drawBtn.addEventListener('click', () => {
   drawMode = !drawMode
-  gestures.primaryDragMode = drawMode ? DRAG_MODE.none : DRAG_MODE.pan
+  if (view?.controller)
+    view.controller.primaryDragMode = drawMode ? DRAG_MODE.none : DRAG_MODE.pan
   els.drawBtn.textContent = `Draw: ${drawMode ? 'on' : 'off'}`
   els.canvas.style.cursor = drawMode ? 'crosshair' : 'grab'
 })
@@ -835,20 +743,6 @@ els.exportSvg.addEventListener('click', () => {
   URL.revokeObjectURL(url)
 })
 
-// Left drag pans (painted instead in draw mode), middle drag pans, right drag
-// zooms to a box, the wheel zooms about the pointer.
-const gestures = new NVSlideController(els.canvas, {
-  slide: () => slide,
-  screen: screenForCanvas,
-  primaryDragMode: DRAG_MODE.pan,
-  secondaryDragMode: DRAG_MODE.roiSelection,
-  onChange: requestRender,
-  onHover: (point) => {
-    hoverCss = point && slide.slideToScreen(point.x, point.y, screenForCanvas())
-    requestRender()
-  },
-})
-
 els.levelMode.addEventListener('change', () => {
   slide?.setLevelChoice(
     els.levelMode.value === 'auto' ? 'auto' : Number(els.levelMode.value),
@@ -857,16 +751,18 @@ els.levelMode.addEventListener('change', () => {
 els.showGrid.addEventListener('change', () => {
   slide?.setTileGridVisible(els.showGrid.checked)
 })
-els.scaleBar.addEventListener('change', requestRender)
-els.fit.addEventListener('click', () => slide?.fitToScreen(screenForCanvas()))
+els.scaleBar.addEventListener('change', () => {
+  if (view) view.overlayStyle = { isRulerVisible: els.scaleBar.checked }
+})
+els.fit.addEventListener('click', () => view?.fit())
 els.zoomIn.addEventListener('click', () => zoomCentered(1.45))
 els.zoomOut.addEventListener('click', () => zoomCentered(1 / 1.45))
 els.source.addEventListener('change', () => {
   void loadSlide()
 })
-window.addEventListener('resize', requestRender)
-watchRetina(els.retinaControl, requestRender)
-els.retina.addEventListener('change', requestRender)
+els.retina.addEventListener('change', () => {
+  if (view) view.hidpi = els.retina.checked
+})
 
 // Bumped on each load so a slower source (e.g. DZI) that started earlier cannot
 // resolve after a newer selection and desync the visible slide from the dropdown.
@@ -916,18 +812,15 @@ els.window.addEventListener('change', () => {
 })
 
 async function loadSlide() {
+  // A source picked before main() has a view: main() loads the current pick.
+  if (!view) return
   const seq = ++loadSeq
   els.fallback.setAttribute('aria-hidden', 'true')
   els.fallback.textContent = ''
-  // Tear down the outgoing slide before loading the next: drop its render
-  // listener, dispose its bitmap cache + in-flight fetches, and free the
-  // renderer's tile textures for it.
-  const prev = slide
+  // Release the outgoing slide before loading the next: the view disposes it
+  // (its cache and in-flight fetches) and frees the renderer's tile textures.
   slide = null
-  hasFit = false
-  prev?.removeEventListener('change', requestRender)
-  prev?.dispose?.()
-  view?.renderer?.clearTextures?.()
+  view.setSlide(null)
   try {
     const opts = {
       maxCacheBytes: MAX_CACHE_BYTES,
@@ -946,12 +839,11 @@ async function loadSlide() {
       next.dispose?.()
       return
     }
-    next.addEventListener('change', requestRender)
     slide = next
+    view.setSlide(next) // fits it on the first sized frame
     ensureDrawing()
     populateLevels(slide.manifest)
     showWindowControl(slide)
-    requestRender()
   } catch (err) {
     if (seq !== loadSeq) return
     console.error(err)
@@ -964,8 +856,29 @@ async function loadSlide() {
 
 async function main() {
   makeDraggable(els.hud)
-  view = await createView()
-  els.backendSelect.value = view.kind === 'gpu' ? 'webgpu' : 'webgl2'
+  view = await createSlideView(els.canvas, {
+    backend: backendFromUrl(),
+    antialias: isAntiAlias,
+    hidpi: els.retina.checked,
+    overlayStyle: { isRulerVisible: els.scaleBar.checked },
+    // Left drag pans (painted instead in draw mode), middle drag pans, right
+    // drag zooms to a box, the wheel zooms about the pointer.
+    controller: {
+      primaryDragMode: drawMode ? DRAG_MODE.none : DRAG_MODE.pan,
+      secondaryDragMode: DRAG_MODE.roiSelection,
+      onHover: (point) => {
+        hoverCss =
+          point && slide?.slideToScreen(point.x, point.y, screenForCanvas())
+        requestRender()
+      },
+    },
+    onRender: afterRender,
+  })
+  els.canvas = view.canvas
+  // After the view's controller: in draw mode it leaves the left button free.
+  els.canvas.addEventListener('pointerdown', onDrawDown)
+  els.canvas.addEventListener('pointermove', onDrawMove)
+  els.backendSelect.value = view.backend
   const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
     requestRender()

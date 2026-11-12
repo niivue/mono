@@ -263,7 +263,12 @@ async function check(backend) {
 }
 
 try {
-  for (const backend of ['webgl2', 'webgpu']) await check(backend)
+  // CI's Ubuntu runners lose the SwiftShader WebGPU device mid-run
+  // (niivue-e2e.yml header), so the job there asks for WebGL2 only.
+  for (const backend of (
+    process.env.DEMO_E2E_BACKENDS ?? 'webgl2,webgpu'
+  ).split(','))
+    await check(backend)
 } finally {
   await browser.close()
   server.close()

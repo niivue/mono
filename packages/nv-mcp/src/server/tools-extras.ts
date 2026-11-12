@@ -88,6 +88,13 @@ export const EXTRA_SCHEMAS = {
       .describe(
         "The channel's colormap, by its lowercase name, such as gray, red or green.",
       ),
+    color: z
+      .string()
+      .regex(/^#?[0-9a-fA-F]{6}$/)
+      .optional()
+      .describe(
+        'An exact channel colour as hex (#rrggbb), such as an OME-Zarr omero colour: the channel gets a black-to-colour ramp named after it. Instead of colormap.',
+      ),
     cal_min: z
       .number()
       .nullable()
@@ -218,7 +225,7 @@ export function registerExtraTools(
     title: 'Work the slide plane',
     description:
       'For a whole-slide image: picks the resolution level of the slide plane, clears the plane, ' +
-      'works on the slide drawing, or sets a channel (visible, colormap, window) and how the ' +
+      'works on the slide drawing, or sets a channel (visible, colormap or an exact #rrggbb color, window) and how the ' +
       "channels blend, and turns colour management (the slide's ICC profile) on or off. Reports " +
       'the channels, blend and colour management afterwards when a slide plane is set; ' +
       'where_am_i reports them too. A null cal_min or cal_max in the report is the stored range end.',

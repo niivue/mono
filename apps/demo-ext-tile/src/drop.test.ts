@@ -10,6 +10,7 @@ const file = (fullPath: string) => ({
 })
 const dir = (fullPath: string, children: unknown[], batch = 2) => ({
   isFile: false,
+  isDirectory: true,
   fullPath,
   createReader: () => {
     let at = 0
@@ -37,7 +38,8 @@ test('walks folders in batches, keys their files by relative path', async () => 
   const dt = {
     items: [
       item(tree),
-      item(file('/top.dcm')),
+      // A top-level file is read with getAsFile, not through its entry.
+      item(file('/ignored.dcm'), new File(['x'], 'top.dcm')),
       item(null, loose),
       { kind: 'string' },
     ],
@@ -51,6 +53,18 @@ test('walks folders in batches, keys their files by relative path', async () => 
     'one.svs',
   ])
   expect(files[4]).toBe(loose)
+})
+
+test("a top-level file never goes through its entry (WebKit's never reads)", async () => {
+  const loose = new File(['y'], 'one.dcm')
+  const stuck = {
+    isFile: true,
+    isDirectory: false,
+    fullPath: '/one.dcm',
+    file: () => {},
+  }
+  const dt = { items: [item(stuck, loose)] } as unknown as DataTransfer
+  expect(await droppedFiles(dt)).toEqual([loose])
 })
 
 test('an unreadable file is skipped, not the whole drop', async () => {

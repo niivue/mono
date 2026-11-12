@@ -24,17 +24,15 @@
 // store's own chunk grid so neighbouring tiles at least share decodes.
 
 import NiiVue, {
+  createSlideView,
   NVSlide,
-  NVSlideController,
   SLICE_TYPE,
-  SlideRenderer,
-  SlideRendererGPU,
-  slideOverlayContent,
   VolumeSliceSource,
+  windowDragStep,
 } from '@niivue/niivue'
 import { fetchOmeZarrChunkedSource } from '@niivue/nv-ext-tile/zarr'
-// The crosshair marker is a UIKit widget: the slide renderers expose the same
-// `overlayDraw` hook a NiiVue canvas does, so it composes onto the standalone
+// The crosshair marker is a UIKit widget: the slide view takes overlays through
+// the same hook a NiiVue canvas does, so it composes onto the standalone
 // deep-zoom pane exactly as it does there.
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 
@@ -261,6 +259,7 @@ urlParamSelect(els.backendSelect, 'backend', backend)
 urlParamSelect(els.aaSelect, 'aa', isAntiAlias ? 'on' : 'off')
 
 let nv = null
+// The deep-zoom pane: renderer, frame loop and gestures (createSlideView).
 let slideView = null
 // Monotonic: a dataset switch bumps it so a superseded load's async tail is
 // discarded instead of installing itself over the newer scene.
@@ -268,15 +267,12 @@ let loadToken = 0
 let chunkSource = null
 let activeCv = null
 let slide = null
-let slideFrame = 0
-let slideFitted = false
 let planeIndex = 0
 let planeTimer = 0
 // Null until a dataset load resolves one. NVChunkedVolume derives a 2%-98%
 // window from the coarse floor it builds anyway, so the demo reads the window
 // back off the volume instead of paying for a probe fetch of its own.
 let windowRange = null
-let slideInput = null
 // The plane source behind `slide`, for the contrast box's intensity read.
 let sliceSource = null
 let crosshair = null
@@ -459,12 +455,9 @@ function rebuildSlide({ keepViewport = true } = {}) {
   const axis = els.axis.value
   const previous = slide
   const viewport = keepViewport && previous ? { ...previous.viewport } : null
-  previous?.removeEventListener('change', requestSlideRender)
-  previous?.dispose?.()
-  slideView?.renderer?.clearTextures?.()
   // Slide coordinates only mean something within one plane orientation, so a
   // measurement survives a plane step (same axes) but not an axis swap.
-  if (!keepViewport) slideInput?.clearMeasurements()
+  if (!keepViewport) slideView?.controller?.clearMeasurements()
   const [u, v] = PLANE_AXES[axis]
   const spacing = chunkSource.levels[0].spacing
   const source = new VolumeSliceSource(chunkSource, {
@@ -486,82 +479,18 @@ function rebuildSlide({ keepViewport = true } = {}) {
     targetScreenPixelsPerTilePixel: 0.75,
     ...(viewport ? { viewport } : {}),
   })
-  slide.addEventListener('change', requestSlideRender)
-  if (!viewport) slideFitted = false
-  requestSlideRender()
+  // The view disposes the previous slide and frees its textures.
+  slideView?.setSlide(slide, { fit: !viewport })
 }
 
-function slideScreen() {
-  const rect = els.slideCanvas.getBoundingClientRect()
-  return {
-    widthCss: Math.max(1, rect.width),
-    heightCss: Math.max(1, rect.height),
-    devicePixelRatio: els.retina.checked ? window.devicePixelRatio || 1 : 1,
-  }
-}
+const slideScreen = () => slideView.screen()
+const requestSlideRender = () => slideView?.requestRender()
 
-function resizeSlideCanvas(screen) {
-  const dpr = screen.devicePixelRatio ?? 1
-  const width = Math.max(1, Math.floor(screen.widthCss * dpr))
-  const height = Math.max(1, Math.floor(screen.heightCss * dpr))
-  if (els.slideCanvas.width !== width) els.slideCanvas.width = width
-  if (els.slideCanvas.height !== height) els.slideCanvas.height = height
-}
-
-async function createSlideView() {
-  if (backend === 'webgpu' && 'gpu' in navigator) {
-    // A rejected adapter or device request falls back like a null one.
-    const renderer = await SlideRendererGPU.create(els.slideCanvas, {
-      antialias: isAntiAlias,
-    }).catch(() => null)
-    if (renderer) return { kind: 'gpu', renderer }
-    console.warn('WebGPU unavailable for the slide pane; using WebGL2')
-  }
-  const gl = els.slideCanvas.getContext('webgl2', {
-    alpha: false,
-    antialias: isAntiAlias,
-  })
-  if (!gl) throw new Error('WebGL2 is not available')
-  const renderer = new SlideRenderer()
-  renderer.init(gl)
-  return { kind: 'gl', gl, renderer }
-}
-
-function requestSlideRender() {
-  if (slideFrame !== 0) return
-  slideFrame = window.requestAnimationFrame(() => {
-    slideFrame = 0
-    renderSlide()
-  })
-}
-
-function renderSlide() {
-  if (!slideView) return
-  const screen = slideScreen()
-  resizeSlideCanvas(screen)
-  if (slide) {
-    if (!slideFitted) {
-      slide.fitToScreen(screen)
-      slideFitted = true
-    }
-    slide.clampViewport(screen)
-    updateCrosshair(screen)
-    updateFieldOfView(screen)
-    // Rulers and the contrast box, drawn by core in NiiVue's own style.
-    slideView.renderer.overlay = slideOverlayContent(
-      slide,
-      screen,
-      slideInput,
-      {
-        measureLineColor: nv.measureLineColor,
-        measureTextColor: nv.measureTextColor,
-        rulerWidth: nv.rulerWidth,
-        selectionBoxColor: nv.selectionBoxColor,
-      },
-    )
-    slideView.renderer.render([slide], screen)
-  }
-  updateSlideHud(screen)
+// Before each slide frame: the crosshair and the field-of-view outline.
+function beforeSlideRender(screen) {
+  if (!slide) return
+  updateCrosshair(screen)
+  updateFieldOfView(screen)
 }
 
 // -------------------------------------------------------------------- linking
@@ -981,11 +910,9 @@ async function loadDataset() {
   clearFallback()
   setBusy(els.volBusy, els.volBusyLabel, 'opening store', true)
   setBusy(els.slideBusy, els.slideBusyLabel, 'opening store', true)
-  slide?.removeEventListener('change', requestSlideRender)
-  slide?.dispose?.()
   slide = null
-  slideView?.renderer?.clearTextures?.()
-  slideInput?.clearMeasurements()
+  slideView?.setSlide(null)
+  slideView?.controller?.clearMeasurements()
   // A voxel index from the outgoing store means nothing in the incoming one.
   crosshairVox = null
   // Per-brick phase timings are process-wide totals, so a dataset switch starts
@@ -1142,11 +1069,7 @@ let windowDrag = null
 function onSlideWindow(dx, dy, done) {
   if (!windowRange) return
   windowDrag ??= { start: [...windowRange], now: [...windowRange] }
-  const step = (windowDrag.start[1] - windowDrag.start[0]) * 0.005
-  const [lo, hi] = windowDrag.now
-  const width = Math.max(step, hi - lo + dx * step)
-  const centre = (lo + hi) / 2 - dy * step
-  windowDrag.now = [centre - width / 2, centre + width / 2]
+  windowDrag.now = windowDragStep(windowDrag.start, windowDrag.now, dx, dy)
   setWindowText(windowDrag.now)
   if (!done) return
   windowDrag = null
@@ -1173,18 +1096,6 @@ async function onSlideContrast(box) {
   applyWindow()
 }
 
-slideInput = new NVSlideController(els.slideCanvas, {
-  slide: () => slide,
-  screen: slideScreen,
-  primaryDragMode: Number(els.slidePrimary.value),
-  secondaryDragMode: Number(els.slideSecondary.value),
-  onCrosshair: slideCrosshair,
-  onWindow: onSlideWindow,
-  onContrast: (box) => {
-    void onSlideContrast(box)
-  },
-  onChange: requestSlideRender,
-})
 els.volumePrimary.addEventListener('change', () => {
   if (nv) nv.primaryDragMode = Number(els.volumePrimary.value)
 })
@@ -1192,10 +1103,12 @@ els.volumeSecondary.addEventListener('change', () => {
   if (nv) nv.secondaryDragMode = Number(els.volumeSecondary.value)
 })
 els.slidePrimary.addEventListener('change', () => {
-  slideInput.primaryDragMode = Number(els.slidePrimary.value)
+  if (slideView?.controller)
+    slideView.controller.primaryDragMode = Number(els.slidePrimary.value)
 })
 els.slideSecondary.addEventListener('change', () => {
-  slideInput.secondaryDragMode = Number(els.slideSecondary.value)
+  if (slideView?.controller)
+    slideView.controller.secondaryDragMode = Number(els.slideSecondary.value)
 })
 
 // -------------------------------------------------------------- control wiring
@@ -1252,26 +1165,10 @@ els.zoom.addEventListener('input', () => {
 els.crosshair.addEventListener('change', requestSlideRender)
 els.colormap.addEventListener('change', applyColormap)
 els.window.addEventListener('change', applyWindow)
-els.fit.addEventListener('click', () => {
-  slideFitted = false
-  requestSlideRender()
+els.fit.addEventListener('click', () => slideView?.fit())
+els.retina.addEventListener('change', () => {
+  if (slideView) slideView.hidpi = els.retina.checked
 })
-window.addEventListener('resize', requestSlideRender)
-// Retina is offered only on a HiDPI display, re-checked when the window moves
-// to a display with another pixel ratio (or the browser zoom changes).
-function watchPixelRatio() {
-  els.retinaLabel.hidden = window.devicePixelRatio <= 1
-  matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
-    'change',
-    () => {
-      watchPixelRatio()
-      requestSlideRender()
-    },
-    { once: true },
-  )
-}
-watchPixelRatio()
-els.retina.addEventListener('change', requestSlideRender)
 
 async function main() {
   // ?dataset=<key> opens on that Dandiset (e.g. ?dataset=spim), when the menu
@@ -1303,12 +1200,38 @@ async function main() {
   nv.addEventListener('change', onNiivueChange)
   nv.scaleMultiplier = DEFAULT_3D_ZOOM
   syncZoomControl(nv.scaleMultiplier)
-  slideView = await createSlideView()
+  slideView = await createSlideView(els.slideCanvas, {
+    backend,
+    antialias: isAntiAlias,
+    hidpi: els.retina.checked,
+    // Rulers and the contrast box, drawn by core in NiiVue's own style.
+    overlayStyle: {
+      measureLineColor: nv.measureLineColor,
+      measureTextColor: nv.measureTextColor,
+      rulerWidth: nv.rulerWidth,
+      selectionBoxColor: nv.selectionBoxColor,
+    },
+    controller: {
+      primaryDragMode: Number(els.slidePrimary.value),
+      secondaryDragMode: Number(els.slideSecondary.value),
+      onCrosshair: slideCrosshair,
+      onWindow: onSlideWindow,
+      onContrast: (box) => {
+        void onSlideContrast(box)
+      },
+    },
+    onBeforeRender: beforeSlideRender,
+    onRender: (screen) => {
+      // Retina is offered only on a HiDPI display (another monitor, browser zoom).
+      els.retinaLabel.hidden = window.devicePixelRatio <= 1
+      updateSlideHud(screen)
+    },
+  })
   // One font fetch for the pane, shared by both widgets (each still owns its own
   // GPU resources on whichever backend the slide renderer came up on).
   const font = await loadDefaultFont()
   crosshair = new UIKitCrosshairOverlay(font)
-  slideView.renderer.overlayDraw = (frame) => crosshair.drawOverlay(frame)
+  slideView.addOverlay(crosshair)
   slideView.renderer.isNearestInterpolation =
     els.slideFilter.value === 'nearest'
   await loadDataset()

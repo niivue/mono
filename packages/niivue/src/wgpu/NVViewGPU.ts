@@ -1913,6 +1913,7 @@ export default class NVView {
                 scaleMultiplier: md.scene.scaleMultiplier,
               }
             : undefined,
+          md.ui.rulerUnits,
         )
         if (rulerResult) {
           labels.push(...rulerResult.labels)

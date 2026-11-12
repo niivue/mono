@@ -42,6 +42,8 @@ on:
       - 'packages/niivue/**'
       - 'packages/uikit/**'
       - 'packages/dev-images/**'
+      - 'packages/nv-ext-tile/**'
+      - 'apps/demo-ext-tile/**'
       - '.github/workflows/niivue-e2e.yml'
       - '!**/*.md'
   pull_request:
@@ -52,6 +54,8 @@ on:
       - 'packages/niivue/**'
       - 'packages/uikit/**'
       - 'packages/dev-images/**'
+      - 'packages/nv-ext-tile/**'
+      - 'apps/demo-ext-tile/**'
       - '.github/workflows/niivue-e2e.yml'
       - '!**/*.md'
 
@@ -98,6 +102,30 @@ jobs:
             e2e/texcache-kind-change.spec.ts \
             --workers=1 \
             --reporter=line
+
+  # demo-ext-tile's browser checks (folder workflow, viewer shell, lazy
+  # OME-Zarr time) on SwiftShader: synthetic fixtures served from memory or
+  # nv-ext-tile/fixtures, no network, no LFS. WebGL2 only: see the header on
+  # SwiftShader WebGPU here.
+  demo-ext-tile:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        working-directory: apps/demo-ext-tile
+        run: bunx playwright install --only-shell chromium
+
+      - name: demo-ext-tile e2e
+        env:
+          DEMO_E2E_BACKENDS: webgl2
+        run: bunx nx e2e demo-ext-tile
 
   # The render-* reference specs on SwiftShader (see the header). Sharded so
   # the single-worker run stays short; synthetic data, so no LFS pull.

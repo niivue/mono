@@ -58,6 +58,15 @@ describe('slideScaleBar', () => {
     expect(slideScaleBar(0.0005, 0.2, 1000)?.label).toBe('500 um')
   })
 
+  test('a fixed unit labels the bar in it', () => {
+    // 0.5 um/px, 1000 px: as auto's 100 um, written 0.1 mm.
+    expect(slideScaleBar(0.0005, 1, 1000, 'mm')).toEqual({
+      lengthPx: 200,
+      label: '0.1 mm',
+    })
+    expect(slideScaleBar(0.0005, 1, 1000, 'nm')?.label).toBe('100000 nm')
+  })
+
   test('nothing without spacing', () => {
     expect(slideScaleBar(undefined, 1, 1000)).toBeNull()
     // 10 mm/px: 10 cm would be 10 px of a 1000 px view.
@@ -83,6 +92,16 @@ describe('slideOverlayContent scale bar', () => {
       thickness: 8,
       label: '200 um',
     })
+  })
+
+  test('rulerUnits reaches the scale bar', () => {
+    const { scaleBar } = slideOverlayContent(
+      slide([0.01, 0.01]),
+      screen,
+      source,
+      { isRulerVisible: true, rulerUnits: 'mm' },
+    )
+    expect(scaleBar?.label).toBe('0.2 mm')
   })
 
   test('off by default and without spacing', () => {

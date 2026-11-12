@@ -1,6 +1,7 @@
 import type {
   AnnotationChangedDetail,
   NiiVueOptions,
+  SlideTileSource,
   VectorAnnotation,
   VolumeUpdatedDetail,
 } from '@niivue/niivue'
@@ -41,7 +42,7 @@ import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
-import { mountWsiSlideView } from './wsiSlideView'
+import { mountWsiSlideView, type WsiSlideView } from './wsiSlideView'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
@@ -88,7 +89,7 @@ export function NiivueViewport(props: OhifViewportProps) {
   const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVue | null>(null)
-  const slideViewRef = useRef<ReturnType<typeof mountWsiSlideView> | null>(null)
+  const slideViewRef = useRef<WsiSlideView | null>(null)
   const activeOhifToolRef = useRef<string | undefined>(undefined)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -415,7 +416,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       const container = containerRef.current
       if (!container) return
       let slideCanvas: HTMLCanvasElement | null = null
-      let view: ReturnType<typeof mountWsiSlideView> | null = null
+      let view: WsiSlideView | null = null
       let limitTimeout: number | undefined
       let limitNote: Status | null = null
       const cannotShow = (err: unknown) =>
@@ -438,12 +439,17 @@ export function NiivueViewport(props: OhifViewportProps) {
         },
         abort.signal,
       ).then(
-        (source) => {
-          if (cancelled) return
+        async (source) => {
+          // Not shown: the source is ours to release (NVSlide owns it once built).
+          if (cancelled) {
+            ;(source as SlideTileSource).dispose?.()
+            return
+          }
           let slide: NVSlide
           try {
             slide = NVSlide.fromSource(source)
           } catch (err) {
+            ;(source as SlideTileSource).dispose?.()
             cannotShow(err)
             return
           }
@@ -457,7 +463,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             // reflect it into the centered status overlay (that produced a floating
             // duplicate of the reading). The onMeasure hook stays available for a
             // future push into OHIF's MeasurementService.
-            view = mountWsiSlideView(canvas, slide, {
+            const mounted = await mountWsiSlideView(canvas, slide, {
               // A brief note, cleared early when the requested level fits again.
               onLevelLimit: (message) => {
                 window.clearTimeout(limitTimeout)
@@ -473,6 +479,14 @@ export function NiivueViewport(props: OhifViewportProps) {
                 )
               },
             })
+            slideCanvas = mounted.canvas
+            // Cancelled while the renderer started: the cleanup already ran.
+            if (cancelled) {
+              mounted.dispose()
+              slideCanvas.remove()
+              return
+            }
+            view = mounted
             slideViewRef.current = view
             view.setTool(activeOhifToolRef.current)
             updateNiivueViewport(viewportId, { slideView: view })
@@ -481,6 +495,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           } catch (err) {
             slide.dispose()
             canvas.remove()
+            if (cancelled) return
             console.error('[nv-ohif] WSI view failed', err)
             setStatus({
               kind: 'error',

@@ -62,46 +62,115 @@ describe('UIKitSlideMinimapOverlay', () => {
     expect(minimap.pointerMove(image.x, image.y)).toBe(false)
   })
 
-  it('redraws only when the slide hands back a new thumbnail', () => {
+  function thumbnailRig() {
     const drawn: unknown[] = []
     const ctx = {
       clearRect() {},
       drawImage: (b: unknown) => drawn.push(b),
     }
-    const saved = globalThis.OffscreenCanvas
+    const canvases: number[][] = []
     globalThis.OffscreenCanvas = class {
       constructor(
         public width: number,
         public height: number,
-      ) {}
+      ) {
+        canvases.push([width, height])
+      }
       getContext = () => ctx
     } as unknown as typeof OffscreenCanvas
+    const slide = Object.assign(fakeSlide(), { displayGeneration: 0 })
+    let bitmap: object | null = null
+    const maxPx: unknown[] = []
+    slide.thumbnailBitmap = (_level?: unknown, px?: unknown) => {
+      maxPx.push(px)
+      return bitmap
+    }
+    const minimap = new UIKitSlideMinimapOverlay(slide as UIKitMinimapSlide)
+    let redraws = 0
+    minimap.bindLayer({ requestRedraw: () => redraws++ })
+    const peek = minimap as unknown as {
+      updateThumbnail(w: number, h: number): void
+      thumbnailVersion: number
+      composedAt: number
+    }
+    return {
+      drawn,
+      canvases,
+      slide,
+      maxPx,
+      peek,
+      redraws: () => redraws,
+      set: (b: object | null) => {
+        bitmap = b
+      },
+      update: (w = 320, h = 160) => peek.updateThumbnail(w, h),
+    }
+  }
+  const savedCanvas = globalThis.OffscreenCanvas
+
+  it('redraws only when the slide hands back a new thumbnail, at the drawn size', () => {
     try {
-      const slide = fakeSlide()
-      const level = { width: 100, height: 50 }
-      slide.manifest = { ...slide.manifest, levels: [level] } as NVSlideManifest
-      let bitmap: object | null = null
-      const maxPx: unknown[] = []
-      slide.thumbnailBitmap = (_level?: unknown, px?: unknown) => {
-        maxPx.push(px)
-        return bitmap
-      }
-      const minimap = new UIKitSlideMinimapOverlay(slide as UIKitMinimapSlide)
-      const update = () =>
-        (minimap as unknown as { updateThumbnail(): void }).updateThumbnail()
-      update()
-      bitmap = { version: 1 }
-      update()
-      update()
-      bitmap = { version: 2 } // a tile arrived, or setChannel
-      update()
-      bitmap = null // evicted: the drawn thumbnail stays
-      update()
-      expect(drawn).toEqual([{ version: 1 }, { version: 2 }])
-      // NVSlide scales it: a large coarsest level never becomes a large bitmap.
-      expect(new Set(maxPx)).toEqual(new Set([1024]))
+      const r = thumbnailRig()
+      r.update()
+      r.set({ version: 1 })
+      r.update()
+      r.update()
+      r.set({ version: 2 }) // a tile arrived
+      r.update()
+      r.set(null) // evicted, channels unchanged: the drawn thumbnail stays
+      r.update()
+      expect(r.drawn).toEqual([{ version: 1 }, { version: 2 }])
+      expect(r.peek.thumbnailVersion).toBe(2)
+      // Composed near the drawn size, copied at exactly it: no minification.
+      expect(new Set(r.maxPx)).toEqual(new Set([320]))
+      expect(r.canvases).toEqual([[320, 160]])
+      r.update(2000, 1000)
+      expect(r.maxPx.at(-1)).toBe(1024)
     } finally {
-      globalThis.OffscreenCanvas = saved
+      globalThis.OffscreenCanvas = savedCanvas
+    }
+  })
+
+  it('a channel change within the recompose interval waits for a trailing redraw', async () => {
+    try {
+      const r = thumbnailRig()
+      r.set({ version: 1 })
+      r.update()
+      r.slide.displayGeneration = 1 // a W/L step
+      r.set({ version: 2 })
+      r.update()
+      r.update()
+      expect(r.drawn).toEqual([{ version: 1 }])
+      await new Promise((done) => setTimeout(done, 120))
+      expect(r.redraws()).toBe(1)
+      r.update()
+      expect(r.drawn).toEqual([{ version: 1 }, { version: 2 }])
+    } finally {
+      globalThis.OffscreenCanvas = savedCanvas
+    }
+  })
+
+  it('never shows a stale window after the coarse tiles are evicted', () => {
+    try {
+      // A single-tile coarsest level: evict it, change a channel, reload it.
+      const r = thumbnailRig()
+      r.set({ version: 1 })
+      r.update()
+      const peek = r.peek as unknown as { stale: boolean }
+      r.peek.composedAt = Number.NEGATIVE_INFINITY
+      r.slide.displayGeneration = 1
+      r.set(null)
+      r.update()
+      expect(peek.stale).toBe(true)
+      expect(r.peek.thumbnailVersion).toBe(1)
+      r.set({ version: 2 })
+      r.update()
+      // A new version, never the old one again: the upload is not skipped.
+      expect(peek.stale).toBe(false)
+      expect(r.peek.thumbnailVersion).toBe(2)
+      expect(r.drawn).toEqual([{ version: 1 }, { version: 2 }])
+    } finally {
+      globalThis.OffscreenCanvas = savedCanvas
     }
   })
 })

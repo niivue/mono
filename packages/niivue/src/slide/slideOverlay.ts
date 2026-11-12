@@ -1,5 +1,5 @@
 import { UI_DEFAULTS } from '@/NVConstants'
-import type { UIConfig } from '@/NVTypes'
+import type { RulerUnits, UIConfig } from '@/NVTypes'
 import type { BuildTextFn } from '@/view/NVFont'
 import type { BuildLineFn } from '@/view/NVLine'
 import {
@@ -23,6 +23,7 @@ export type SlideOverlayStyle = Pick<
   | 'measureLineColor'
   | 'measureTextColor'
   | 'rulerWidth'
+  | 'rulerUnits'
   | 'isMeasureUnitsVisible'
   | 'selectionBoxColor'
 >
@@ -49,18 +50,20 @@ export interface SlideOverlayContent {
 
 /**
  * A nice scale-bar length (1/2/5 x 10^n, as the volume ruler) in device pixels
- * and its label ("100 um" below 1 mm), at most ~a quarter of `maxDevicePx`.
- * Null without spacing or when the field outgrows the 10 cm top step.
+ * and its label ("100 um" below 1 mm, or in `units`), at most ~a quarter of
+ * `maxDevicePx`. Null without spacing or when the field outgrows the 10 cm top
+ * step (auto units).
  */
 export function slideScaleBar(
   spacingMM: number | undefined,
   devicePxPerBase: number,
   maxDevicePx: number,
+  units: RulerUnits = 'auto',
 ): { lengthPx: number; label: string } | null {
   if (!spacingMM || !(devicePxPerBase > 0)) return null
   const mmPerPx = spacingMM / devicePxPerBase
   // chooseRulerSize caps the bar at 65% of its field: 0.4 keeps it near 26%.
-  const ruler = chooseRulerSize(maxDevicePx * mmPerPx * 0.4)
+  const ruler = chooseRulerSize(maxDevicePx * mmPerPx * 0.4, units)
   const lengthPx = ruler ? ruler.lengthMM / mmPerPx : 0
   // The ladder tops out at 10 cm; a field far wider leaves a sliver, so skip it.
   return ruler && lengthPx >= maxDevicePx / 50
@@ -117,6 +120,7 @@ export function slideOverlayContent(
       spacing?.[0],
       slide.viewport.scale * dpr,
       screen.widthCss * dpr,
+      fullStyle.rulerUnits,
     )
   const inset = 12 * dpr
   const scaleBar = bar

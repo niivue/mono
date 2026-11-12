@@ -3,13 +3,14 @@
 // viewport shows. Pressing or dragging on it recenters the viewport there.
 //
 // NVSlide.thumbnailBitmap composites the coarsest level on the CPU (scalar
-// tiles through their channels, scaled to MAX_THUMBNAIL_PX), copied here into
-// one canvas when it changes,
-// so the GPU side is a single textured quad and nothing leaks when NVSlide's
-// cache evicts a tile.
+// tiles through their channels) at about the size drawn, copied here into one
+// canvas at exactly the drawn size when it changes, so the GPU side is a
+// single 1:1 textured quad (the GPU never minifies it; the CPU composite
+// scales the tiles at 'high' smoothing quality) and nothing
+// leaks when NVSlide's cache evicts a tile.
 
 import type { NVSlide, UIKitOverlayFrame } from '@niivue/niivue'
-import type { UIKitInteractive } from './controls'
+import type { UIKitInteractive, UIKitRedrawSource } from './controls'
 import { buildRect, rectContains } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 import { GlImageRenderer } from './render/glImageRenderer'
@@ -24,7 +25,12 @@ import {
 /** What the minimap uses of an NVSlide. */
 export type UIKitMinimapSlide = Pick<
   NVSlide,
-  'manifest' | 'viewport' | 'isYAxisUp' | 'setViewport' | 'thumbnailBitmap'
+  | 'manifest'
+  | 'viewport'
+  | 'isYAxisUp'
+  | 'setViewport'
+  | 'thumbnailBitmap'
+  | 'displayGeneration'
 >
 
 export interface UIKitSlideMinimapOptions {
@@ -44,9 +50,11 @@ export interface UIKitSlideMinimapOptions {
   viewLineCss?: number
 }
 
-// shortcut: the thumbnail is the coarsest level capped at this side, sampled
-// bilinearly without mipmaps; raise it or add mips if a large minimap aliases.
+// The composite never exceeds this side, however large the minimap.
 const MAX_THUMBNAIL_PX = 1024
+// A window/level drag changes the channels every frame; the CPU composite
+// follows at most this often, with a trailing one when the drag stops.
+const RECOMPOSE_MS = 100
 
 export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   readonly hoverCursor = 'pointer'
@@ -57,9 +65,16 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   private readonly gl = new GlImageRenderer()
   private readonly wgpu = new WgpuImageRenderer()
   private thumbnail: OffscreenCanvas | null = null
+  // Monotonic: the image renderers skip the upload while it is unchanged.
   private thumbnailVersion = 0
+  // Hidden while the drawn picture shows channels that have since changed.
+  private stale = false
   // NVSlide returns the same bitmap until a tile or the channels change.
   private drawnBitmap: ImageBitmap | null = null
+  private drawnGeneration = -1
+  private composedAt = Number.NEGATIVE_INFINITY
+  private trailing: ReturnType<typeof setTimeout> | undefined
+  private layer: UIKitRedrawSource | null = null
   private lastLayout: SlideMinimapLayout | null = null
   private dragging = false
 
@@ -96,28 +111,62 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     return this.lastLayout
   }
 
+  bindLayer(layer: UIKitRedrawSource): void {
+    this.layer = layer
+  }
+
   /** Redraw the thumbnail when the slide's coarsest-level composite changed. */
-  private updateThumbnail(): void {
-    const bitmap = this.slide.thumbnailBitmap(undefined, MAX_THUMBNAIL_PX)
-    // Kept while null (tiles evicted or not yet loaded): the old one stays drawn.
-    if (!bitmap || bitmap === this.drawnBitmap) return
-    this.thumbnail ??= new OffscreenCanvas(bitmap.width, bitmap.height)
+  private updateThumbnail(width: number, height: number): void {
+    const generation = this.slide.displayGeneration
+    if (generation !== this.drawnGeneration) {
+      const wait = this.composedAt + RECOMPOSE_MS - performance.now()
+      if (wait > 0) {
+        this.trailing ??= setTimeout(() => {
+          this.trailing = undefined
+          this.layer?.requestRedraw()
+        }, wait)
+        return
+      }
+    }
+    const w = Math.max(1, Math.round(width))
+    const h = Math.max(1, Math.round(height))
+    const bitmap = this.slide.thumbnailBitmap(
+      undefined,
+      Math.min(MAX_THUMBNAIL_PX, Math.max(w, h)),
+    )
+    if (!bitmap) {
+      // Every coarse tile evicted: the old picture stays only while it still
+      // shows the current channels, never a stale window or colour.
+      if (generation !== this.drawnGeneration) this.stale = true
+      return
+    }
+    if (
+      bitmap === this.drawnBitmap &&
+      this.thumbnail?.width === w &&
+      this.thumbnail.height === h
+    )
+      return
+    this.composedAt = performance.now()
+    if (this.thumbnail?.width !== w || this.thumbnail.height !== h)
+      this.thumbnail = new OffscreenCanvas(w, h)
     // CPU-backed: SwiftShader WebGPU's copyExternalImageToTexture of a
     // GPU-backed 2D canvas fails validation ("[Invalid Texture]").
     const ctx = this.thumbnail.getContext('2d', { willReadFrequently: true })
     if (!ctx) return
-    const { width, height } = this.thumbnail
-    ctx.clearRect(0, 0, width, height)
+    ctx.imageSmoothingQuality = 'high'
+    ctx.clearRect(0, 0, w, h)
     if (this.slide.isYAxisUp()) {
       // y-up rows are stored bottom-up.
       ctx.save()
-      ctx.translate(0, height)
+      ctx.translate(0, h)
       ctx.scale(1, -1)
-      ctx.drawImage(bitmap, 0, 0, width, height)
+      ctx.drawImage(bitmap, 0, 0, w, h)
       ctx.restore()
-    } else ctx.drawImage(bitmap, 0, 0, width, height)
+    } else ctx.drawImage(bitmap, 0, 0, w, h)
     this.drawnBitmap = bitmap
+    this.drawnGeneration = generation
     this.thumbnailVersion++
+    this.stale = false
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -127,7 +176,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
       bounds.height,
       dpr,
     )
-    this.updateThumbnail()
+    this.updateThumbnail(image.width, image.height)
     this.panelRects.setRects([
       buildRect({ ...panel, radius: 3 * dpr, fill: this.options.panelColor }),
     ])
@@ -145,7 +194,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     )
     this.panelRects.drawOverlay(frame)
     const thumb = this.thumbnail
-    if (thumb && this.thumbnailVersion > 0) {
+    if (thumb && this.thumbnailVersion > 0 && !this.stale) {
       if (handle.backend === 'webgl2') {
         this.gl.draw(
           handle.gl,
@@ -225,6 +274,8 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     this.viewRects.destroy()
     this.gl.destroy()
     this.wgpu.destroy()
+    clearTimeout(this.trailing)
+    this.trailing = undefined
     this.thumbnail = null
     this.drawnBitmap = null
   }

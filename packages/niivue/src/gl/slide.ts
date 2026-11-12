@@ -279,9 +279,10 @@ export class SlideRenderer {
         }
         if (texture?.labels) {
           gl.activeTexture(gl.TEXTURE2)
-          unit2 ??= gl.getParameter(
-            gl.TEXTURE_BINDING_2D,
-          ) as WebGLTexture | null
+          if (unit2 === undefined)
+            unit2 = gl.getParameter(
+              gl.TEXTURE_BINDING_2D,
+            ) as WebGLTexture | null
           gl.bindTexture(gl.TEXTURE_2D, texture.labels)
           gl.activeTexture(gl.TEXTURE0)
         }

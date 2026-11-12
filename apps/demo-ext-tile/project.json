@@ -44,6 +44,13 @@
       "dependsOn": ["build"],
       "inputs": ["typescript", "^typescript", "{projectRoot}/tests/**/*"]
     },
+    "test": {
+      "command": "bun test",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"]
+    },
     "typecheck": {
       "command": "bunx tsc --noEmit",
       "options": {

@@ -68,15 +68,44 @@ export async function refuseReply(
   throw new Error(message)
 }
 
+/**
+ * `p`, or the signal's reason when it aborts first (a custom fetch may ignore
+ * its signal). A value `p` yields after the abort goes to `late`, to release it.
+ */
+export async function raceAbort<T>(
+  p: Promise<T>,
+  signal?: AbortSignal,
+  late?: (value: T) => void,
+): Promise<T> {
+  if (!signal) return p
+  // A shared promise may reject after this wait gave up on it.
+  p.then((value) => signal.aborted && late?.(value)).catch(() => {})
+  signal.throwIfAborted()
+  let onAbort = () => {}
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    return await Promise.race([p, aborted])
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
 // 64 MB: far beyond a tile, manifest or scanner ICC profile (Leica's is 13 MB);
 // matches ManifestRangeSource's profile cap and the dcm2niix decoder's input cap.
 export const MAX_BODY = 64 * 1024 * 1024
 
-/** A response body, refused past `max` whether or not Content-Length says so. */
+/**
+ * A response body, refused past `max` whether or not Content-Length says so.
+ * With `signal`, rejects as soon as it aborts, cancelling the body.
+ */
 export async function readCapped(
   response: Response,
   what: string,
   max = MAX_BODY,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   const refused = !response.ok
     ? `${what} HTTP ${response.status}`
@@ -93,7 +122,12 @@ export async function readCapped(
   const chunks: Uint8Array[] = []
   let n = 0
   for (;;) {
-    const { done, value } = await reader.read()
+    const { done, value } = await raceAbort(reader.read(), signal).catch(
+      (error) => {
+        reader.cancel().catch(() => {})
+        throw error
+      },
+    )
     if (done) break
     n += value.length
     if (n > max) {

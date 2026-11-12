@@ -42,6 +42,7 @@ import { sampleLevel } from './levelSample'
 import {
   anySignal,
   linked,
+  raceAbort,
   rangeReplyError,
   readCapped,
   refuseReply,
@@ -787,24 +788,6 @@ function dataRange(
       return data as ArrayLike<number>
     },
   )
-}
-
-/** `p`, or the signal's reason when it aborts first. */
-async function raceAbort<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return p
-  signal.throwIfAborted()
-  // A shared promise may reject after this wait gave up on it.
-  p.catch(() => {})
-  let onAbort = () => {}
-  const aborted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(signal.reason)
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
-  try {
-    return await Promise.race([p, aborted])
-  } finally {
-    signal.removeEventListener('abort', onAbort)
-  }
 }
 
 // A pyramid level: its image and the slide area it holds, which is smaller

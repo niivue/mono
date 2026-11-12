@@ -181,6 +181,87 @@ describe('openSlide', () => {
     expect(pulled).toBeLessThanOrEqual(66)
   })
 
+  describe('a hosted manifest with a fetch that ignores its signal', () => {
+    const manifest = {
+      id: 'm',
+      width: 4,
+      height: 4,
+      levels: [
+        {
+          index: 0,
+          width: 4,
+          height: 4,
+          tileWidth: 4,
+          tileHeight: 4,
+          columns: 1,
+          rows: 1,
+          codec: 'image/jpeg',
+          fileUrl: 'l0.dcm',
+          tiles: [{ x: 0, y: 0, width: 4, height: 4, offset: 0, length: 4 }],
+        },
+      ],
+    }
+    // A reply whose body never ends; `cancelled` once its stream is cancelled.
+    const endless = () => {
+      const state = { cancelled: false }
+      const response = new Response(
+        new ReadableStream<Uint8Array>({
+          cancel() {
+            state.cancelled = true
+          },
+        }),
+      )
+      return { state, response }
+    }
+    const settled = (p: Promise<unknown> | undefined) =>
+      Promise.race([
+        p?.then(
+          () => 'resolved',
+          (e: Error) => e.name,
+        ),
+        new Promise((r) => setTimeout(() => r('pending'), 100)),
+      ])
+    const tick = () => new Promise((r) => setTimeout(r, 0))
+
+    test('an aborted open rejects though the manifest arrives', async () => {
+      const fetch: SlideFetch = async () => Response.json(manifest)
+      const opened = await openSlide('https://h.test/s/m.json', { fetch })
+      expect(
+        await settled(opened.candidates[0]?.open(AbortSignal.abort())),
+      ).toBe('AbortError')
+    })
+
+    test('an abort during a stalled body rejects and cancels it', async () => {
+      const reply = endless()
+      const fetch: SlideFetch = async (url) =>
+        url.endsWith('.json')
+          ? reply.response
+          : new Response(null, { status: 404 })
+      const opened = await openSlide('https://h.test/s/m.json', { fetch })
+      const ac = new AbortController()
+      const pending = opened.candidates[0]?.open(ac.signal)
+      await tick()
+      ac.abort()
+      expect(await settled(pending)).toBe('AbortError')
+      expect(reply.state.cancelled).toBe(true)
+    })
+
+    test('a reply after the abort is refused and its body cancelled', async () => {
+      let release = (_: Response) => {}
+      const fetch: SlideFetch = () => new Promise((r) => (release = r))
+      const opened = await openSlide('https://h.test/s/m.json', { fetch })
+      const ac = new AbortController()
+      const pending = opened.candidates[0]?.open(ac.signal)
+      await tick()
+      ac.abort()
+      const late = endless()
+      release(late.response)
+      expect(await settled(pending)).toBe('AbortError')
+      await tick()
+      expect(late.state.cancelled).toBe(true)
+    })
+  })
+
   test('a hosted manifest reads through the custom fetch, relative to its URL', async () => {
     const urls: string[] = []
     const manifest = {

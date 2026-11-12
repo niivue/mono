@@ -294,6 +294,22 @@ describe('openSlide', () => {
     expect(mixed.index?.skipped).toEqual([])
   })
 
+  test('same-named files stay distinct: the slide opens, and input order holds', async () => {
+    const same = async (n: string) =>
+      new File([await Bun.file(`${DIR}/${n}`).arrayBuffer()], 'same.dcm')
+    const tif = new File([tinyTiff()], 'same.dcm')
+    const opened = await openSlide([
+      tif,
+      await same('bot.dcm'),
+      await same('bot-l1.dcm'),
+    ])
+    expect(opened.candidates.map((c) => c.kind)).toEqual(['tiff', 'dicom'])
+    expect(opened.index?.slides[0]?.instances.length).toBe(2)
+    const source = await opened.candidates[1]?.open()
+    expect(source?.manifest.levels.length).toBe(2)
+    source?.dispose?.()
+  })
+
   test('the open signal and the candidate signal both abort', async () => {
     const ac = new AbortController()
     const opened = await openSlide(new File([tinyTiff()], 'one.tif'), {

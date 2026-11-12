@@ -1,5 +1,5 @@
 import {
-  fileKey,
+  fileKeys,
   type IndexOptions,
   indexDicomWsiOnThread,
   type SlideIndex,
@@ -21,7 +21,7 @@ export async function indexDicomWsi(
 ): Promise<SlideIndex> {
   options.signal?.throwIfAborted()
   // Keys are taken here: a File's webkitRelativePath need not survive the clone.
-  const keys = files.map(fileKey)
+  const keys = fileKeys(files)
   const onThread = () => indexDicomWsiOnThread(files, keys, undefined, options)
   if (typeof window === 'undefined' || typeof Worker === 'undefined')
     return onThread()

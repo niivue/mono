@@ -133,6 +133,29 @@ export interface SlideIndex {
 /** The key a file is indexed and looked up by: `webkitRelativePath` when set, else `name`. */
 export const fileKey = (f: File): string => f.webkitRelativePath || f.name
 
+/** Each file's {@link fileKey}, a repeat made unique by position: `a.dcm`, `a.dcm (2)`. */
+export function fileKeys(files: readonly File[]): string[] {
+  const used = new Set<string>()
+  return files.map((f) => {
+    const base = fileKey(f)
+    let key = base
+    for (let n = 2; used.has(key); n++) key = `${base} (${n})`
+    used.add(key)
+    return key
+  })
+}
+
+/** The least input position of the slide's files; a loop, as a spread overflows the stack. */
+export function firstInput(
+  slide: SlideIndexSlide,
+  position: ReadonlyMap<string, number>,
+): number {
+  let first = Number.POSITIVE_INFINITY
+  for (const { file } of slide.instances)
+    first = Math.min(first, position.get(file) ?? first)
+  return first
+}
+
 const UNDEFINED_LENGTH = 0xffffffff
 // Hostile-input bounds. No WSI header nests sequences deeper than 4, the
 // largest corpus header is 15 MB, and the largest level grid is 379k tiles.
@@ -1207,11 +1230,11 @@ async function frameSpans(
  * compressed, explicit-VR DICOM, or that fail to parse, are listed in
  * `skipped`; they never cost the other files their slides. Only VOLUME
  * instances make levels; each optical path and focal plane is its own slide.
- * `keys` name the files (default {@link fileKey}).
+ * `keys` name the files (default {@link fileKeys}).
  */
 export async function indexDicomWsiOnThread(
   files: readonly File[],
-  keys: readonly string[] = files.map(fileKey),
+  keys: readonly string[] = fileKeys(files),
   read: ReadFile = readSlice,
   { signal, onProgress }: IndexOptions = {},
 ): Promise<SlideIndex> {

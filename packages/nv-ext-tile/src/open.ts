@@ -162,9 +162,10 @@ export async function openSlide(
     kinds[i] === 'tiff' || kinds[i] === 'dicom-tiff' ? [i] : [],
   )
   const tiffs = tiffAt.map((i) => tiffCandidate(files[i] as File, options))
-  const dicom = files.filter((_, i) => kinds[i] !== 'tiff')
+  const dicomAt = files.flatMap((_, i) => (kinds[i] === 'tiff' ? [] : [i]))
+  const dicom = dicomAt.map((i) => files[i] as File)
   if (!dicom.length) return { kind: 'tiff', candidates: tiffs }
-  const [{ indexDicomWsi }, { DicomWsiSource }, { fileKey }] =
+  const [{ indexDicomWsi }, { DicomWsiSource }, { fileKeys, firstInput }] =
     await Promise.all([
       import('./indexDicomWsi'),
       import('./dicomWsiSource'),
@@ -186,16 +187,12 @@ export async function openSlide(
       },
     }),
   )
-  // Input order: a slide ranks by its first file (a duplicate key, its first).
-  const at = new Map(files.map((f, i) => [fileKey(f), i] as const).reverse())
+  // Input order: a slide ranks by its first file.
+  const at = new Map(fileKeys(dicom).map((k, d) => [k, dicomAt[d] as number]))
   const ranked = [
     ...slides.map((c, s) => ({
       c,
-      rank: Math.min(
-        ...(index.slides[s]?.instances ?? []).map(
-          (x) => at.get(x.file) ?? Number.POSITIVE_INFINITY,
-        ),
-      ),
+      rank: firstInput(index.slides[s] as SlideIndex['slides'][number], at),
     })),
     ...tiffs.map((c, t) => ({ c, rank: tiffAt[t] as number })),
   ].sort((a, b) => a.rank - b.rank)

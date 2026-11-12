@@ -10,7 +10,7 @@ import type {
 import { cleanAttribution } from './attribution'
 import { dicomLabToSrgb } from './cielab'
 import {
-  fileKey,
+  fileKeys,
   type InstanceCore,
   type SlideIndexLevel,
   type SlideIndexSlide,
@@ -30,12 +30,13 @@ export const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
-/** The slide's files in `slide.instances` order; each must be the file that was indexed. */
+/** The slide's files in `slide.instances` order; `files` as indexed, in the same order. */
 export function filesFor(
   slide: SlideIndexSlide,
   files: readonly File[],
 ): File[] {
-  const byKey = new Map(files.map((f) => [fileKey(f), f]))
+  const keys = fileKeys(files)
+  const byKey = new Map(files.map((f, i) => [keys[i], f]))
   return slide.instances.map((inst) => {
     const file = byKey.get(inst.file)
     if (!file) throw new Error(`${inst.file} is not among the files`)

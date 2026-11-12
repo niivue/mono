@@ -1,3 +1,23 @@
+## 1.0.0-rc.182 (2026-11-12)
+
+### Features
+
+- slide viewer shell (createSlideView) for every NVSlide consumer ([7c86bb87](https://github.com/niivue/mono/commit/7c86bb87))
+
+### Fixes
+
+- **niivue:** tear down a WebGL2 slide renderer whose init failed ([0377013c](https://github.com/niivue/mono/commit/0377013c))
+- **niivue:** cancelGesture skips the done callback ([acdf83cf](https://github.com/niivue/mono/commit/acdf83cf))
+- **niivue:** retry any backend after a failure on a fresh canvas ([f7448bba](https://github.com/niivue/mono/commit/f7448bba))
+- **niivue, uikit:** PR 744 review round 3 ([f6ffd355](https://github.com/niivue/mono/commit/f6ffd355))
+- **niivue, uikit:** PR 744 review findings ([48c0805f](https://github.com/niivue/mono/commit/48c0805f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.181 (2026-11-12)
 
 ### Features

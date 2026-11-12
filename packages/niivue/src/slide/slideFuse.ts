@@ -170,6 +170,21 @@ export function fuseSamples(
   return out
 }
 
+/**
+ * A layer's fuse-shader uniforms: calMin as a float32 head and its remainder,
+ * calMax - calMin, LUT row, invert. Rounding calMin or calMax to float32 alone
+ * shifts a narrow window at large values (float32 ulp at 1e8 is 8); the shaders
+ * subtract head then remainder, and the width is taken in float64.
+ */
+export function fuseUniforms(
+  { calMin, calMax }: FuseLayer,
+  row: number,
+  invert: boolean,
+): [number, number, number, number, number] {
+  const head = Math.fround(calMin)
+  return [head, calMax - calMin, row, invert ? 1 : 0, calMin - head]
+}
+
 /** Colormap rows of a renderer's 256-wide RGBA8 LUT texture, added on first use. */
 export class FuseLutRows {
   private readonly _rows = new Map<string, number>()
@@ -181,7 +196,7 @@ export class FuseLutRows {
     return this._rows.size
   }
 
-  // ponytail: rows are never freed; a renderer sees a handful of colormaps.
+  // Rows are never freed: a renderer sees a handful of colormaps.
   row(colormap: string): number {
     const key = colormapKey(colormap)
     let row = this._rows.get(key)

@@ -6,6 +6,7 @@ import {
   type FuseTile,
   fuseTarget,
   fuseTiles,
+  fuseUniforms,
   type RawFormat,
   rawFormat,
 } from '@/slide/slideFuse'
@@ -32,13 +33,14 @@ precision highp float;
 precision highp int;
 uniform highp ${sampler} raw;
 uniform highp sampler2D lut;
-// calMin, calMax, LUT row, invert
+// fuseUniforms: calMin head, calMax - calMin, LUT row, invert; then the calMin remainder
 uniform vec4 window;
+uniform float calMinRest;
 out vec4 color;
 void main() {
   float v = float(texelFetch(raw, ivec2(gl_FragCoord.xy) - 1, 0).r);
-  float n = (v - window.x) * 255.0;
-  float w = window.y - window.x;
+  float n = (v - window.x - calMinRest) * 255.0;
+  float w = window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   float g = floor(n / w + 0.5);
   if ((g - 0.5) * w > n) g -= 1.0;
@@ -171,13 +173,9 @@ export class TileFuserGL {
         for (const [l, raw] of layers) {
           const shader = this._shader(gl, raw.format)
           shader.use(gl)
-          gl.uniform4f(
-            shader.uniforms.window ?? null,
-            l.calMin,
-            l.calMax,
-            this._luts.row(l.colormap),
-            plan.invert ? 1 : 0,
-          )
+          const u = fuseUniforms(l, this._luts.row(l.colormap), plan.invert)
+          gl.uniform4f(shader.uniforms.window ?? null, u[0], u[1], u[2], u[3])
+          gl.uniform1f(shader.uniforms.calMinRest ?? null, u[4])
           gl.bindTexture(gl.TEXTURE_2D, raw.texture)
           gl.drawArrays(gl.TRIANGLES, 0, 3)
         }

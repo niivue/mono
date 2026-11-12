@@ -6,6 +6,7 @@ import {
   type FuseTile,
   fuseTarget,
   fuseTiles,
+  fuseUniforms,
   type RawFormat,
   rawFormat,
 } from '@/slide/slideFuse'
@@ -37,8 +38,9 @@ const FORMATS: Record<RawFormat, [GPUTextureFormat, number]> = {
 
 const shaderCode = (kind: Kind): string => /* wgsl */ `
 struct Params {
-  // calMin, calMax, LUT row, invert
+  // fuseUniforms: calMin head, calMax - calMin, LUT row, invert
   window: vec4f,
+  calMinRest: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var lut: texture_2d<f32>;
@@ -53,8 +55,8 @@ fn vertex_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
 @fragment
 fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let v = f32(textureLoad(raw, vec2i(pos.xy) - 1, 0).r);
-  let n = (v - p.window.x) * 255.0;
-  let w = p.window.y - p.window.x;
+  let n = (v - p.window.x - p.calMinRest) * 255.0;
+  let w = p.window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   var g = floor(n / w + 0.5);
   if ((g - 0.5) * w > n) {
@@ -145,12 +147,7 @@ export class TileFuserGPU {
         const params = new Float32Array(Math.max(1, layers.length) * lanes)
         layers.forEach(([l], k) => {
           params.set(
-            [
-              l.calMin,
-              l.calMax,
-              this._luts.row(l.colormap),
-              plan.invert ? 1 : 0,
-            ],
+            fuseUniforms(l, this._luts.row(l.colormap), plan.invert),
             k * lanes,
           )
         })
@@ -224,7 +221,7 @@ export class TileFuserGPU {
     this._group ??= device.createBindGroup({
       layout: this._groupLayout(device),
       entries: [
-        { binding: 0, resource: { buffer: uniform, size: 16 } },
+        { binding: 0, resource: { buffer: uniform, size: 32 } },
         { binding: 1, resource: lut.createView() },
       ],
     })
@@ -241,7 +238,7 @@ export class TileFuserGPU {
           buffer: {
             type: 'uniform',
             hasDynamicOffset: true,
-            minBindingSize: 16,
+            minBindingSize: 32,
           },
         },
         {

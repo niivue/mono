@@ -1140,9 +1140,8 @@ function updateFieldOfView(screen) {
 
 // A windowing drag on the slide steps the window as NiiVue's does (0.5% of the
 // span the drag started from per CSS pixel: x widens, y lowers the centre). The
-// text follows live; both panes apply on release, since a slide rebuild drops
-// its in-flight tiles and a chunked volume's window change re-streams every
-// brick.
+// text follows live; both panes apply on release, since a chunked volume's
+// window change re-streams every brick (the slide only re-fuses loaded tiles).
 let windowDrag = null
 function onSlideWindow(dx, dy, done) {
   if (!windowRange) return

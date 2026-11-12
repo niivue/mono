@@ -8,6 +8,7 @@ import {
   fuseSamples,
   fuseTarget,
   fuseTiles,
+  fuseUniforms,
   rawFormat,
   rawPoolBytes,
   resolveWindow,
@@ -157,6 +158,26 @@ describe('fuseSamples', () => {
         fuseSamples(samples, 1, { layers: [], additive: false, invert: false }),
       ),
     ).toEqual([0, 0, 0, 255])
+  })
+})
+
+describe('fuseUniforms', () => {
+  it('keeps a narrow window at large values exact in float32 lanes', () => {
+    const layer = {
+      plane: 0,
+      colormap: 'gray',
+      calMin: 1e8 + 3.2,
+      calMax: 1e8 + 9.6,
+    }
+    const u = Float32Array.from(fuseUniforms(layer, 2, true))
+    const [head, width, row, invert, rest] = u
+    expect([row, invert]).toEqual([2, 1])
+    // The shader's level for sample 1e8 + 8, in float32 steps as the GPU does.
+    const f = Math.fround
+    const n = f(f(f(f(1e8 + 8) - (head as number)) - (rest as number)) * 255)
+    expect(Math.round(n / (width as number))).toBe(191)
+    // Rounding calMin and calMax to float32 first would give level 255.
+    expect(f(1e8 + 3.2)).toBe(1e8)
   })
 })
 

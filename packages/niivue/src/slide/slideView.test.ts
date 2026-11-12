@@ -483,6 +483,25 @@ describe('linkSlideViews', () => {
     vb.destroy()
   })
 
+  test('a slide swapped for one with other spacing at the same pixels moves the others', async () => {
+    const a = fakeSlide([0.001, 0.001])
+    const b = fakeSlide([0.001, 0.001])
+    const [va, vb] = [await viewOf(a), await viewOf(b)]
+    va.renderNow()
+    vb.renderNow()
+    linkSlideViews([va, vb])
+    a.setViewport({ centerX: 100, centerY: 100, scale: 1 })
+    va.renderNow()
+    vb.renderNow()
+    const c = fakeSlide([0.002, 0.002])
+    c.setViewport({ ...b.viewport })
+    vb.setSlide(c, { fit: false })
+    vb.renderNow()
+    expect(a.viewport.centerX).toBe(200)
+    va.destroy()
+    vb.destroy()
+  })
+
   test('linking moves the others to the first view, not back', async () => {
     const a = fakeSlide([0.001, 0.001])
     const b = fakeSlide([0.001, 0.001])

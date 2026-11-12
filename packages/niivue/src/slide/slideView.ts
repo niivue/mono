@@ -427,9 +427,11 @@ export function linkSlideViews(views: readonly SlideView[]): () => void {
   // The viewport the link set on a view: its next frame, if still showing it,
   // is not echoed back; a gesture before that frame changes it and is pushed.
   const echoes = new Map<SlideView, string>()
+  // Where the view shows, not its pixel numbers: a slide swapped for one with
+  // other spacing at the same pixel viewport has moved.
   const key = (s: NVSlide): string => {
-    const v = s.viewport
-    return `${v.centerX},${v.centerY},${v.scale}`
+    const v = physicalView(s, !!s.manifest.pixelSpacingMM)
+    return `${v.x},${v.y},${v.scale}`
   }
   const push = (source: SlideView): void => {
     const from = source.slide

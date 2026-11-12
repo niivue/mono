@@ -253,6 +253,10 @@ export function attachSlideChannelPanel(
       blend.addEventListener('change', () =>
         slide.setChannelBlend(blend.value as 'max' | 'additive'),
       )
+      // Follows a blend set elsewhere (MCP, a script).
+      syncs.push(() => {
+        blend.value = slide.channelBlend
+      })
       const label = document.createElement('label')
       label.append('Blend ', blend)
       fieldset.append(label)

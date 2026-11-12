@@ -250,7 +250,7 @@ export function isAbortError(err: unknown): boolean {
 export type SlideFetch = (url: string, init?: RequestInit) => Promise<Response>
 
 export interface ManifestRangeSourceOptions {
-  /** Custom fetch (auth headers, signed URLs) for reads on `baseUrl`'s origin (every read without one). Default globalThis.fetch. */
+  /** Custom fetch (auth headers, signed URLs) for reads on `baseUrl`'s origin (else the host manifest URL's). Default globalThis.fetch. */
   fetch?: SlideFetch
   /** Resolves relative URLs in the manifest; default the host's (NVSlide `manifestUrl`). */
   baseUrl?: string
@@ -332,8 +332,8 @@ export class ManifestRangeSource implements SlideTileSource {
   // a file elsewhere gets a plain fetch without credentials.
   private fetch(url: string, init: RequestInit): Promise<Response> {
     if (!this.customFetch) return fetch(url, init)
-    const own =
-      !this.baseUrl || new URL(url).origin === new URL(this.baseUrl).origin
+    // resolve('') is baseUrl, else the host's manifest URL.
+    const own = new URL(url).origin === new URL(this.resolve('')).origin
     return own
       ? this.customFetch(url, init)
       : fetch(url, { ...init, credentials: 'omit' })

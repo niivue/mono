@@ -91,7 +91,10 @@ describe('ManifestRangeSource transport', () => {
     expect(counts).toEqual({ wire: LEN, hits: 1, fallbacks: 0 })
   })
 
-  test("a file on another origin than baseUrl is read without the caller's fetch or credentials", async () => {
+  test.each([
+    'https://h.test/s/',
+    undefined, // the host's manifest URL sets the origin
+  ])("a file on another origin than baseUrl (%p) is read without the caller's fetch or credentials", async (baseUrl) => {
     const m = manifest()
     const l0 = m.levels[0] as NVSlideLevelManifest
     l0.fileUrl = 'https://cdn.other/tiles.bin'
@@ -101,10 +104,10 @@ describe('ManifestRangeSource transport', () => {
         custom.push(url)
         return ranged(LEN)()
       },
-      baseUrl: 'https://h.test/s/',
+      baseUrl,
     })
     s.bind({
-      resolveUrl: (u) => u,
+      resolveUrl: (u) => new URL(u, 'https://h.test/s/m.json').href,
       addWireBytes() {},
       rangeHit() {},
       rangeFallback() {},
@@ -120,11 +123,14 @@ describe('ManifestRangeSource transport', () => {
     }) as typeof globalThis.fetch
     try {
       await s.fetchTileBytes(l0, l0.tiles[0] as never, 'L0')
+      expect(custom).toEqual([])
+      expect(plain.map((i) => i?.credentials)).toEqual(['omit'])
+      l0.fileUrl = 'tiles.bin' // the manifest's own origin: the caller's fetch
+      await s.fetchTileBytes(l0, l0.tiles[0] as never, 'L0')
+      expect(custom).toEqual(['https://h.test/s/tiles.bin'])
     } finally {
       globalThis.fetch = saved
     }
-    expect(custom).toEqual([])
-    expect(plain.map((i) => i?.credentials)).toEqual(['omit'])
   })
 
   test('a truncated cached 206 is read once more with no-store', async () => {

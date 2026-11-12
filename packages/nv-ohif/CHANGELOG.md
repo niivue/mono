@@ -1,3 +1,19 @@
+## 1.0.0-rc.205 (2026-11-12)
+
+### Features
+
+- **niivue, nv-ext-tile:** tiled-image P0 foundation (split, shared helpers, contracts, baseline) ([7d843ee1](https://github.com/niivue/mono/commit/7d843ee1))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.181
+- Updated nv-ext-tile to 1.0.0-rc.87
+- Updated uikit to 1.0.0-rc.179
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.204 (2026-11-12)
 
 ### Updated Dependencies

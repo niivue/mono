@@ -250,6 +250,17 @@ describe('NVSlideController', () => {
     ])
   })
 
+  test('cancelGesture ends a windowing or callbackOnly drag with no done call', () => {
+    for (const primary of [DRAG_MODE.windowing, DRAG_MODE.callbackOnly]) {
+      const r = rig({ primary })
+      r.fire('pointerdown', 10, 10)
+      r.fire('pointermove', 20, 10)
+      r.ctl.cancelGesture()
+      r.fire('pointerup', 20, 10)
+      expect([...r.windows, ...r.drags].map((c) => c.at(-1))).toEqual([false])
+    }
+  })
+
   test('crosshairPan: a click places the crosshair, a drag pans', () => {
     const r = rig()
     r.fire('pointerdown', 10, 10)

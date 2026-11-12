@@ -164,9 +164,13 @@ export class NVSlideController {
     canvas.addEventListener('dblclick', this._onDoubleClick)
   }
 
-  /** End a gesture under way without completing it (no ruler, box or zoom). */
+  /**
+   * End a gesture under way without completing it: no ruler, box or zoom, and
+   * no `done` call to `onWindow` / `onDrag` (what a live drag already applied
+   * stays; the caller resets its own drag state).
+   */
   cancelGesture(): void {
-    if (this._gesture) this._end(this._gesture, false)
+    if (this._gesture) this._end(this._gesture, false, true)
   }
 
   /** Drop every ruler. */
@@ -374,7 +378,7 @@ export class NVSlideController {
     return mode === DRAG_MODE.measurement ? this.activeMeasurement : null
   }
 
-  private _end(g: Gesture, committed: boolean): void {
+  private _end(g: Gesture, committed: boolean, cancelled = false): void {
     this._gesture = null
     if (this._canvas.hasPointerCapture(g.pointerId))
       this._canvas.releasePointerCapture(g.pointerId)
@@ -382,9 +386,9 @@ export class NVSlideController {
       this._crosshairAt(g.startX, g.startY)
     if (g.mode === DRAG_MODE.windowing && g.isDrag) {
       this._windowDrag = null
-      this._options.onWindow?.(0, 0, true)
+      if (!cancelled) this._options.onWindow?.(0, 0, true)
     }
-    if (g.mode === DRAG_MODE.callbackOnly && g.isDrag)
+    if (!cancelled && g.mode === DRAG_MODE.callbackOnly && g.isDrag)
       this._options.onDrag?.(0, 0, g.lastX, g.lastY, true)
     const box = this._boxFor(g.mode)
     if (!box) return

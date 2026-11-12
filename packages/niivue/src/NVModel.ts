@@ -1571,7 +1571,10 @@ export default class NVModel {
       const image = {
         ...NVModel.volumeDefaults,
         ...volume,
-        ...ownFrameSource(volume.frameSource),
+        // A frame switch writes into img: a viewer sharing it would change too.
+        ...(volume.frameSource
+          ? { ...ownFrameSource(volume.frameSource), img: volume.img?.slice() }
+          : {}),
       }
       NVCmaps.resolveDefaultWindow(image)
       return NVModel.applyColormap(image, volume.colormap)

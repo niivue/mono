@@ -3598,6 +3598,7 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
+    this._abortOrphanedFrameRequests(previous)
     // A half-drawn shape's points belong to the old background (#470).
     this._abandonForNewScene()
     this.model._setupPivot3D()

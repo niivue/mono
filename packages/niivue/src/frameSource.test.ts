@@ -243,11 +243,32 @@ test('a shorter volume joining during a fetch lowers the whole group clamp', asy
   expect(nv.volumes.map((v) => v.img?.[0])).toEqual([100, 101])
 })
 
-test('an NVImage loaded into a second viewer keeps its own frame', async () => {
+test('an NVImage loaded into a second viewer keeps its own frame and pixels', async () => {
   const a = await load([source(0, {})])
   const [vol] = a.volumes
   const b = new NiiVue({ backend: 'webgl2' })
-  await b.loadVolumes([{ ...vol, img: vol.img?.slice() ?? null }])
+  await b.loadVolumes([vol])
   await a.setFrame4D('c0.nii', 3)
   expect([b.getFrame4D('c0.nii'), b.volumes[0].img?.[0]]).toEqual([0, 0])
+})
+
+test('loadVolumes replacing the scene aborts a pending frame fetch', async () => {
+  const gates = new Map([[1, gate()]])
+  const aborted: number[] = []
+  const nv = await load([source(0, {}, gates, aborted)])
+  const request = nv.setFrame4D('c0.nii', 1)
+  await nv.loadVolumes([
+    {
+      url: channelVolumeFile(
+        DIMS,
+        [1, 1, 1],
+        NiiDataType.DT_UINT16,
+        frameOf(0, 9),
+        'b',
+      ),
+    },
+  ])
+  expect(aborted).toEqual([1])
+  gates.get(1)?.resolve()
+  await request
 })

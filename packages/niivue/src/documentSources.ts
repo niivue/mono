@@ -55,6 +55,16 @@ const CREDENTIAL_WORDS = new Set([
   'accesskey',
   'session',
   'key',
+  'jwt',
+  'pwd',
+  'pass',
+  'bearer',
+  'cookie',
+  'header',
+  'hdnts',
+  'policy',
+  'jsessionid',
+  'googleaccessid',
 ])
 
 /** Whether a param name looks like it carries a credential. */
@@ -64,24 +74,29 @@ export function isCredentialParam(name: string): boolean {
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-  return words.some((w) => CREDENTIAL_WORDS.has(w))
+  return (
+    CREDENTIAL_WORDS.has(name.toLowerCase()) ||
+    words.some((w) => CREDENTIAL_WORDS.has(w))
+  )
 }
 
-/** `url` without query, fragment or user info. */
+/** `url` without query, fragment, user info or a `;jsessionid=` path param. */
 function bareUrl(url: string): string {
+  let bare: string
   try {
     const u = new URL(url)
     u.username = ''
     u.password = ''
     u.search = ''
     u.hash = ''
-    return u.href
+    bare = u.href
   } catch {
-    // Not absolute: still drop a scheme's user info.
-    return url
+    // Not absolute: still drop user info, protocol-relative (`//u:p@h`) too.
+    bare = url
       .split(/[?#]/)[0]
-      .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1')
+      .replace(/^((?:[a-z][a-z0-9+.-]*:)?\/\/)[^/@]*@/i, '$1')
   }
+  return bare.replace(/;jsessionid=[^/]*/gi, '')
 }
 
 /** A descriptor safe to save: bare URL, primitive non-credential params. */
@@ -93,7 +108,7 @@ export function savedDescriptor(
     ([k, v]) =>
       !isCredentialParam(k) &&
       // A URL-valued param may itself be signed.
-      !(typeof v === 'string' && v.includes('://')) &&
+      !(typeof v === 'string' && (v.includes('://') || /^bearer\s/i.test(v))) &&
       (v === null || ['string', 'number', 'boolean'].includes(typeof v)),
   )
   if (params.length) out.params = Object.fromEntries(params)

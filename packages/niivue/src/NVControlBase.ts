@@ -8166,8 +8166,13 @@ export default class NiiVue extends EventTarget {
       // A streamed entry has neither voxels nor a url (a linked lazy one has a url).
       if (saved && !entry.data && !entry.url) {
         // Added (and announced) through addVolume, like loadChunkedVolume.
-        await restoreStreamedVolume(this, { ...entry, source: saved }, restore)
+        const restored = await restoreStreamedVolume(
+          this,
+          { ...entry, source: saved },
+          restore,
+        )
         if (load.signal.aborted) return
+        if (!restored && i === 0) isBackgroundSkipped = true
         continue
       }
       const volume = await NVDocument.reconstructVolume(this.model, entry)
@@ -8179,6 +8184,7 @@ export default class NiiVue extends EventTarget {
         return
       }
       if (volume) this.emit('volumeLoaded', { volume })
+      else if (i === 0) isBackgroundSkipped = true
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
     const meshesBefore = this.model.meshes.length

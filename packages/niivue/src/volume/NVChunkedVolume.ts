@@ -114,6 +114,8 @@ const FRAME_STAGING_BYTES = 64 * 1024 ** 2
 interface StagedFrame {
   bricks: Map<string, Uint8Array>
   floor: NVImage | null
+  /** The window probe re-read for the frame, when there is no floor. */
+  probe: NVImage | null
 }
 
 /**
@@ -554,6 +556,8 @@ export class NVChunkedVolume {
   // repeat call does not re-fetch the coarse level.
   private floorVolume: NVImage | null = null
   private floorBuilt = false
+  /** The first floor build, while in flight: a frame switch waits for it. */
+  private floorPending: Promise<NVImage | null> | null = null
   // The last floor this manager got onto the view, and the floor it replaced.
   private floorSet: { set: number; replaced: NVImage | null } | null = null
   /**
@@ -667,7 +671,9 @@ export class NVChunkedVolume {
       maxConcurrentLoads: options.maxConcurrentLoads ?? 6,
       retryAttempts: options.retryAttempts ?? 3,
       onChunk: (bytes, req) => {
-        this.growLabelsFromChunk(bytes, req.bytesPerVoxel)
+        // A staged frame grows the palette on commit, never if it is aborted.
+        if (req.frame === this.shownFrame)
+          this.growLabelsFromChunk(bytes, req.bytesPerVoxel)
         this.readout.add(bytes, req)
       },
     })
@@ -815,9 +821,17 @@ export class NVChunkedVolume {
     }
     const chunks = [...this.plan.chunks].sort((a, b) => dist(a) - dist(b))
     const picks: typeof chunks = []
-    // The floor is required (it fills what is not staged), so it counts first.
+    // The first floor may still be building for the old frame: stage frame
+    // t's own instead of letting that one land under t's bricks.
+    const hasFloor = this.floorBuilt
+      ? this.floorVolume !== null
+      : (await this.floorPending) != null
+    signal.throwIfAborted()
+    // The floor (or else the probe) is required, so it counts first.
     const coarse = this.source.levels[this.source.levels.length - 1].shape
-    let bytes = this.floorVolume ? coarse[0] * coarse[1] * coarse[2] * bpv : 0
+    let bytes = hasFloor
+      ? coarse[0] * coarse[1] * coarse[2] * bpv
+      : (this.probe?.image.img?.byteLength ?? 0)
     for (const c of chunks) {
       const n = c.texDims[0] * c.texDims[1] * c.texDims[2] * bpv
       if (picks.length && bytes + n > budgetBytes) break
@@ -837,12 +851,17 @@ export class NVChunkedVolume {
       })
       bricks.set(regionKey(level, c.texOrigin, c.texDims), data)
     })
-    const floor = this.floorVolume
+    const floor = hasFloor
       ? this.buildCoarseFloor(t, signal)
       : Promise.resolve(null)
-    const [built] = await Promise.all([floor, ...reads])
+    // Without a floor the histogram reads the probe: keep it on the frame.
+    const probe =
+      !hasFloor && this.probe
+        ? this.readProbe(t, signal)
+        : Promise.resolve(null)
+    const [built, probed] = await Promise.all([floor, probe, ...reads])
     signal.throwIfAborted()
-    return { bricks, floor: built }
+    return { bricks, floor: built, probe: probed }
   }
 
   /**
@@ -864,9 +883,21 @@ export class NVChunkedVolume {
     this.shownFrame = t
     this.readout.reset(staged.bricks, t)
     if (this.volume.frameSource) this.volume.frameSource.frame = t
+    const bpv = getBitsPerVoxel(this.source.datatypeCode) / 8
+    for (const bytes of staged.bricks.values())
+      this.growLabelsFromChunk(bytes, bpv)
+    if (staged.probe) this.probe = { image: staged.probe, frame: t }
     const old = this.floorVolume
-    if (!staged.floor || !old) return
+    if (!staged.floor) return
+    const img = staged.floor.img
+    if (img)
+      this.growLabelsFromChunk(
+        new Uint8Array(img.buffer, img.byteOffset, img.byteLength),
+        bpv,
+      )
     this.floorVolume = staged.floor
+    // The first floor is still being installed (applyCoarseFloor re-installs).
+    if (!old) return
     // Only the floor this volume owns on the view (or has queued for it);
     // another base keeps its own.
     if (
@@ -941,13 +972,22 @@ export class NVChunkedVolume {
   async applyCoarseFloor(): Promise<boolean> {
     if (!this.o.coarseFloor || this.disposed) return false
     if (!this.floorBuilt) {
-      this.floorVolume = await this.buildCoarseFloor()
+      this.floorPending ??= this.buildCoarseFloor()
+      const built = await this.floorPending
       this.floorBuilt = true
+      // A frame switch committed meanwhile already brought its own floor.
+      this.floorVolume ??= built
+      this.floorPending = null
+    }
+    // Re-install when a frame switch replaced the floor during the install.
+    let installed: NVImage | null | undefined
+    while (!this.disposed && installed !== this.floorVolume) {
+      installed = this.floorVolume
+      await this.host._setBaseCoarseFloor(installed, (set, replaced) => {
+        this.floorSet = { set, replaced }
+      })
     }
     if (this.disposed) return false
-    await this.host._setBaseCoarseFloor(this.floorVolume, (set, replaced) => {
-      this.floorSet = { set, replaced }
-    })
     return this.floorVolume !== null
   }
 
@@ -1694,10 +1734,29 @@ export class NVChunkedVolume {
    * window. Only used when no coarse floor exists to read instead.
    */
   private async probeWindow(): Promise<void> {
+    if (!getTypedArrayConstructor(this.source.datatypeCode) || this.disposed)
+      return
+    const frame = this.shownFrame
+    try {
+      const probe = await this.readProbe(frame)
+      if (this.disposed) return
+      // A switch committed meanwhile: the window still fits, the sample does not.
+      if (frame === this.shownFrame) this.probe = { image: probe, frame }
+      this.applyAutoWindow(probe)
+    } catch (err) {
+      log.warn('NVChunkedVolume: window probe unavailable', err)
+    }
+  }
+
+  /** The window probe's crop of the coarsest level at `frame`. */
+  private async readProbe(
+    frame: number,
+    signal?: AbortSignal,
+  ): Promise<NVImage> {
     const levelIndex = this.source.levels.length - 1
     const level = this.source.levels[levelIndex]
     const Ctor = getTypedArrayConstructor(this.source.datatypeCode)
-    if (!Ctor || this.disposed) return
+    if (!Ctor) throw new TypeError('no typed array for the datatype')
     const texDims: Vec3i = [
       Math.min(level.shape[0], WINDOW_PROBE_MAX_EDGE),
       Math.min(level.shape[1], WINDOW_PROBE_MAX_EDGE),
@@ -1708,37 +1767,32 @@ export class NVChunkedVolume {
       Math.floor((level.shape[1] - texDims[1]) / 2),
       Math.floor((level.shape[2] - texDims[2]) / 2),
     ]
-    try {
-      const bytesPerVoxel = getBitsPerVoxel(this.source.datatypeCode) / 8
-      const bytes = await this.read({
-        levelIndex,
-        texOrigin,
-        texDims,
-        bytesPerVoxel,
-        frame: this.shownFrame,
-      })
-      if (this.disposed) return
-      const probe = createStreamingNVImage({
-        shape: texDims,
-        spacing: level.spacing,
-        datatypeCode: this.source.datatypeCode,
-        xyztUnits: this.source.xyztUnits,
-        calMin: 0,
-        calMax: 1,
-        name: `${this.volume.name} window probe`,
-        id: `${this.volumeId}:window-probe`,
-      })
-      probe.img = toVoxelView(
-        bytes,
-        Ctor,
-        bytesPerVoxel,
-        texDims[0] * texDims[1] * texDims[2],
-      )
-      this.probe = { image: probe, frame: this.shownFrame }
-      this.applyAutoWindow(probe)
-    } catch (err) {
-      log.warn('NVChunkedVolume: window probe unavailable', err)
-    }
+    const bytesPerVoxel = getBitsPerVoxel(this.source.datatypeCode) / 8
+    const bytes = await this.read({
+      levelIndex,
+      texOrigin,
+      texDims,
+      bytesPerVoxel,
+      frame,
+      signal,
+    })
+    const probe = createStreamingNVImage({
+      shape: texDims,
+      spacing: level.spacing,
+      datatypeCode: this.source.datatypeCode,
+      xyztUnits: this.source.xyztUnits,
+      calMin: 0,
+      calMax: 1,
+      name: `${this.volume.name} window probe`,
+      id: `${this.volumeId}:window-probe`,
+    })
+    probe.img = toVoxelView(
+      bytes,
+      Ctor,
+      bytesPerVoxel,
+      texDims[0] * texDims[1] * texDims[2],
+    )
+    return probe
   }
 
   private applyRenderCentering(): void {

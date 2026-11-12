@@ -155,8 +155,9 @@ test('staging is bounded by frameStagingBytes, nearest the focus first', async (
   })
   expect(chunked.currentPlan.chunks.length).toBeGreaterThan(1)
   await chunked.setFrame(1)
-  // One brick at least, never the whole plan when it has more than one.
-  const staged = reads.filter((r) => r.frame === 1).length
+  // One brick at least, never the whole plan when it has more than one
+  // (level 1 is the window probe's re-read).
+  const staged = reads.filter((r) => r.frame === 1 && r.level === 0).length
   expect(staged).toBe(1)
 })
 
@@ -444,4 +445,88 @@ test('volumes added one after another keep the readouts within readoutBytes', as
   const b = await nv.loadChunkedVolume(src(), opts)
   await fill(b)
   expect(held(a) + held(b)).toBeLessThanOrEqual(readoutBytes)
+})
+
+const until = async (ok: () => boolean): Promise<void> => {
+  for (let i = 0; i < 200 && !ok(); i++)
+    await new Promise((r) => setTimeout(r, 1))
+  if (!ok()) throw new Error('timed out')
+}
+
+test('a switch before the first floor lands shows the target frame floor, never the late frame-0 one', async () => {
+  const reads: Read[] = []
+  let release: () => void = () => {}
+  const gated = new Promise<void>((r) => {
+    release = r
+  })
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const loading = nv.loadChunkedVolume(
+    source(1, {
+      reads,
+      frames: 2,
+      gate: (f) => (f === 0 && reads.at(-1)?.level === 1 ? gated : undefined),
+    }),
+  )
+  await until(() => reads.some((r) => r.level === 1 && r.frame === 0))
+  const id = nv.volumes[0].id ?? ''
+  const switching = nv.setFrame4D(id, 1)
+  await new Promise((r) => setTimeout(r, 5))
+  release()
+  await switching
+  const chunked = await loading
+  expect(chunked.frame).toBe(1)
+  const sample = chunked.histogramSample
+  expect([sample?.frame, sample?.image.img?.[0]]).toEqual([1, 101])
+  expect(nv._baseCoarseFloor?.img?.[0]).toBe(101)
+})
+
+test('an aborted staged frame does not widen the label palette', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  let release: () => void = () => {}
+  const gated = new Promise<void>((r) => {
+    release = r
+  })
+  const reads: number[] = []
+  const src: ChunkedVolumeSource = {
+    levels: [{ level: 0, shape: SHAPE, spacing: [1, 1, 1] }],
+    datatypeCode: NiiDataType.DT_UINT16,
+    frames: 3,
+    // Ignores its signal: frame 1's bytes arrive after it was superseded.
+    async fetchChunk({ texDims, frame = 0 }) {
+      reads.push(frame)
+      if (frame === 1) await gated
+      return new Uint8Array(
+        new Uint16Array(texDims[0] * texDims[1] * texDims[2]).fill(
+          frame === 1 ? 1000 : 3,
+        ).buffer,
+      )
+    },
+  }
+  const chunked = await nv.loadChunkedVolume(src, {
+    coarseFloor: false,
+    colormap: 'random',
+    calMin: 0,
+    calMax: 10,
+  })
+  const first = chunked.setFrame(1)
+  await until(() => reads.includes(1))
+  const second = chunked.setFrame(2)
+  release()
+  await Promise.all([first, second])
+  await new Promise((r) => setTimeout(r, 5))
+  expect(chunked.frame).toBe(2)
+  expect(nv.volumes[0].colormapLabel?.max).toBe(255)
+})
+
+test('without a floor, the histogram sample follows the shown frame', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const chunked = await nv.loadChunkedVolume(source(1, { frames: 2 }), {
+    coarseFloor: false,
+  })
+  expect(chunked.histogramSample?.frame).toBe(0)
+  await chunked.setFrame(1)
+  const sample = chunked.histogramSample
+  expect([sample?.frame, sample?.image.img?.[0]]).toEqual([1, 101])
+  await nv.recalculateCalMinMax(0)
+  expect(nv.volumes[0].calMax).toBe(101)
 })

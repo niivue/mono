@@ -316,7 +316,15 @@ describe('channelIsosurfaces', () => {
   test('long CPU work yields so a host abort lands', async () => {
     const { source } = memorySource([40, 40, 40], spacing, sphere)
     const ac = new AbortController()
-    setTimeout(() => ac.abort(), 5)
+    // A host task queued before the work runs at its first yield (same task
+    // source, FIFO). A timer is not deterministic: Bun starves timers behind
+    // a MessageChannel chain for tens of ms.
+    const { port1, port2 } = new MessageChannel()
+    port1.onmessage = () => {
+      port1.close()
+      ac.abort()
+    }
+    port2.postMessage(null)
     const labels = Array.from({ length: 2000 }, (_, i) => i)
     await expect(
       channelIsosurfaces([{ source, labels, level: 0 }], { signal: ac.signal }),

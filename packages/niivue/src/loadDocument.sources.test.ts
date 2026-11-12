@@ -426,3 +426,73 @@ test('a malformed source cannot fail a load after the scene is cleared', async (
   expect(nv.volumes.length).toBe(1)
   expect(nv.getFrame4D(nv.volumes[0].id ?? '')).toBe(0)
 })
+
+test('credential denylist: tokens, cookies, signed-URL params, bearer values, protocol-relative user info', async () => {
+  const { savedDescriptor, isCredentialParam } = await import(
+    '@/documentSources'
+  )
+  for (const bad of [
+    'jwt',
+    'JWT',
+    'pwd',
+    'pass',
+    'bearer',
+    'cookie',
+    'hdnts',
+    'GoogleAccessId',
+    'Policy',
+    'header',
+    'jsessionid',
+  ])
+    expect([bad, isCredentialParam(bad)]).toEqual([bad, true])
+  const d = savedDescriptor({
+    kind: 'k',
+    url: '//user:pw@host/a.zarr;jsessionid=XYZ',
+    params: { channel: 1, note: 'Bearer abc', other: 'bearer\tabc' },
+  })
+  expect(d).toEqual({ kind: 'k', url: '//host/a.zarr', params: { channel: 1 } })
+  expect(
+    savedDescriptor({ kind: 'k', url: 'https://h/a;JSESSIONID=1/b.zarr' }).url,
+  ).toBe('https://h/a/b.zarr')
+})
+
+test('a streamed first volume that is not restored does not hand its drawing to the next volume', async () => {
+  const src = new NiiVue({ backend: 'webgl2' })
+  await src.loadChunkedVolume(chunkedSource({ revision: 'r1' }), {
+    coarseFloor: false,
+    descriptor: DESCRIPTOR,
+    name: 'stream',
+  })
+  await src.addVolume(
+    await (async () => {
+      const other = new NiiVue({ backend: 'webgl2' })
+      await other.loadVolumes([
+        {
+          url: channelVolumeFile(
+            SHAPE,
+            [1, 1, 1],
+            NiiDataType.DT_UINT8,
+            new Uint8Array(512).fill(1),
+            'next',
+          ),
+        },
+      ])
+      return other.volumes[0]
+    })(),
+  )
+  src.createEmptyDrawing()
+  const dv = src.drawingVolume
+  if (!dv?.img) throw new Error('no drawing')
+  dv.img.fill(7)
+  const bytes = await src.serializeDocument()
+  const warn = captureWarnings()
+  const nv = new NiiVue({ backend: 'webgl2' })
+  try {
+    await nv.loadDocument(documentFile(bytes), { resolveSource: () => null })
+  } finally {
+    warn.restore()
+  }
+  expect(nv.volumes.map((v) => v.name)).toEqual(['next.nii'])
+  expect(nv.drawingVolume).toBeNull()
+  expect(warn.messages.join('\n')).toContain('drawing is not loaded')
+})

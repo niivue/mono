@@ -65,38 +65,44 @@ export function calculateCrosshairSegments(
   gap: number,
 ): [vec3, vec3][] {
   const center = vec3.create()
+  const lo = vec3.create()
+  const hi = vec3.create()
+  const halfGap = gap / 2
   for (let i = 0; i < 3; i++) {
     center[i] =
       extentsMin[i] + crosshairPos[i] * (extentsMax[i] - extentsMin[i])
+    // A crosshair past the extents (on a slide plane reaching beyond them)
+    // stretches its arms to reach it; no arm runs backward.
+    lo[i] = Math.min(extentsMin[i], center[i] - halfGap)
+    hi[i] = Math.max(extentsMax[i], center[i] + halfGap)
   }
-  const halfGap = gap / 2
   return [
     // X axis
     [
-      vec3.fromValues(extentsMin[0], center[1], center[2]),
+      vec3.fromValues(lo[0], center[1], center[2]),
       vec3.fromValues(center[0] - halfGap, center[1], center[2]),
     ],
     [
       vec3.fromValues(center[0] + halfGap, center[1], center[2]),
-      vec3.fromValues(extentsMax[0], center[1], center[2]),
+      vec3.fromValues(hi[0], center[1], center[2]),
     ],
     // Y axis
     [
-      vec3.fromValues(center[0], extentsMin[1], center[2]),
+      vec3.fromValues(center[0], lo[1], center[2]),
       vec3.fromValues(center[0], center[1] - halfGap, center[2]),
     ],
     [
       vec3.fromValues(center[0], center[1] + halfGap, center[2]),
-      vec3.fromValues(center[0], extentsMax[1], center[2]),
+      vec3.fromValues(center[0], hi[1], center[2]),
     ],
     // Z axis
     [
-      vec3.fromValues(center[0], center[1], extentsMin[2]),
+      vec3.fromValues(center[0], center[1], lo[2]),
       vec3.fromValues(center[0], center[1], center[2] - halfGap),
     ],
     [
       vec3.fromValues(center[0], center[1], center[2] + halfGap),
-      vec3.fromValues(center[0], center[1], extentsMax[2]),
+      vec3.fromValues(center[0], center[1], hi[2]),
     ],
   ]
 }

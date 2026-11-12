@@ -114,8 +114,13 @@ export function buildLocationMessage(
           const bitmap = getDrawingBitmap(ctx.model.drawingVolume)
           if (bitmap.length === nv) {
             const vox = ctx.model.scene2vox(ctx.model.scene.crosshairPos)
+            // Off the volume (a crosshair out on a slide plane): no label,
+            // rather than a wrapped index into another row.
+            const inside = [0, 1, 2].every(
+              (i) => vox[i] >= 0 && vox[i] < dims[i + 1],
+            )
             const vx = vox[0] + vox[1] * dims[1] + vox[2] * dims[1] * dims[2]
-            const drawVal = bitmap[vx]
+            const drawVal = inside ? bitmap[vx] : 0
             if (drawVal > 0) {
               if (!ctx._drawLut) {
                 const cm = NVCmaps.lookupColorMap(ctx.model.draw.colormap)

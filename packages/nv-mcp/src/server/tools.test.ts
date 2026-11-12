@@ -112,6 +112,8 @@ describe('core tool schemas', () => {
     expect(required('load_ome_zarr')).toEqual(['url'])
     expect(properties('load_ome_zarr').sort()).toEqual([
       'channel',
+      'labels',
+      'lazy_time',
       'level',
       'stream',
       'tab',

@@ -20,7 +20,11 @@
  * are zarrita's. See `docs/ome-zarr-format.md`.
  */
 
-import type { ImageFromUrlOptions, TypedVoxelArray } from '@niivue/niivue'
+import type {
+  ImageFromUrlOptions,
+  TypedVoxelArray,
+  VolumeFrameSource,
+} from '@niivue/niivue'
 import {
   channelColormapsFor,
   channelVolumeFile,
@@ -131,8 +135,24 @@ export interface OmeZarrLoadOptions {
    * Defaults to the active channels (see {@link omeZarrChannelOptions}).
    */
   channels?: number[] | 'all'
-  /** Timepoint to load. Defaults to the first. */
+  /** Timepoint to load (with `lazyTime`, the first shown). Defaults to the first. */
   timepoint?: number
+  /**
+   * Fetch other timepoints on demand: each volume gets a `frameSource`, so
+   * `nv.setFrame4D(volume.id, t)` reads frame `t` (every channel of the store
+   * switches together) and resolves once it is shown. An object is a shared
+   * group key: stores loaded with the same object (raw + segmentation) switch
+   * together too.
+   */
+  lazyTime?: boolean | object
+  /** Decoded-frame cache budget for `lazyTime`, per store. Default 256 MiB. */
+  frameCacheBytes?: number
+  /**
+   * Show the store as a segmentation: a generated label colormap (`Random`,
+   * ID 0 clear) instead of the omero ramp and window. Defaults to whether the
+   * store declares `image-label` metadata.
+   */
+  labels?: boolean
   /**
    * Pyramid level to read (0 = finest). Defaults to the finest level whose
    * per-channel decoded size fits {@link OmeZarrLoadOptions.levelBudgetBytes}.
@@ -521,42 +541,67 @@ export async function omeZarrVolumesFrom(
   const { indices, order } = source
   const array = source.arrays[level]
   const dtype = source.levels[level].dtype
+  const labels = options.labels ?? source.info.isLabel
   const colormaps = channelColormapsFor(
     wanted.map((channel) => source.info.channels[channel]?.color),
   )
-  const volumes: ImageFromUrlOptions[] = []
-  for (const [orderIndex, channel] of wanted.entries()) {
-    // Spatial axes stay whole (null); time and channel pin to one index; any
-    // other axis the file declares is pinned to its first entry.
+  // Spatial axes stay whole (null); time and channel pin to one index; any
+  // other axis the file declares is pinned to its first entry.
+  const readFrame = async (
+    channel: number,
+    t: number,
+    signal?: AbortSignal,
+  ): Promise<TypedVoxelArray> => {
     const selection = array.shape.map((_extent, axis) => {
       if (axis === indices.channel) {
         return channel
       }
       if (axis === indices.time) {
-        return timepoint
+        return t
       }
       return indices.spatial.includes(axis) ? null : 0
     })
-    const block = await zarr.get(array, selection)
+    const block = await zarr.get(array, selection, { signal })
     if (typeof block !== 'object' || block === null || !('data' in block)) {
       throw new Error('OME-Zarr: reading a level returned no block')
     }
-    const { img, dims } = omeZarrBlockToDisplay(
+    return omeZarrBlockToDisplay(
       block.data as TypedVoxelArray,
       block.shape,
       block.stride,
       order,
-    )
+    ).img
+  }
+  const frames = options.lazyTime
+    ? omeZarrFrameCache(
+        options.frameCacheBytes ?? OME_ZARR_FRAME_CACHE_BYTES,
+        readFrame,
+      )
+    : null
+  const group = typeof options.lazyTime === 'object' ? options.lazyTime : {}
+  const volumes: ImageFromUrlOptions[] = []
+  for (const [orderIndex, channel] of wanted.entries()) {
+    const img = frames
+      ? await frames.load(channel, timepoint)
+      : await readFrame(channel, timepoint)
     const display = channelDisplay(
       source,
       channel,
       colormaps[orderIndex],
       dtype,
     )
+    const frameSource: VolumeFrameSource | undefined = frames
+      ? {
+          count: source.timepointCount,
+          frame: timepoint,
+          group,
+          load: (t, signal) => frames.load(channel, t, signal),
+        }
+      : undefined
     volumes.push({
-      ...display,
+      ...(labels ? { name: display.name, colormap: 'Random' } : display),
       url: omeZarrChannelFile(
-        dims,
+        source.levels[level].dims,
         source.levels[level].spacingUm,
         datatypeCode,
         img,
@@ -564,9 +609,112 @@ export async function omeZarrVolumesFrom(
       ),
       // Only 'all' loads inactive channels; requested ones always show.
       visible: options.channels !== 'all' || display.visible,
+      ...(frameSource ? { frameSource } : {}),
     })
   }
   return volumes
+}
+
+/** Default {@link OmeZarrLoadOptions.frameCacheBytes}. */
+export const OME_ZARR_FRAME_CACHE_BYTES = 256 * 2 ** 20
+
+/**
+ * Decoded frames keyed by channel and timepoint, least recently used evicted
+ * first once their bytes pass `budgetBytes`. A frame being read is shared by
+ * every caller asking for it; once all of them abort, the read is aborted and
+ * dropped, so a later request for that frame starts a fresh read instead of joining a cancelled one.
+ */
+export function omeZarrFrameCache(
+  budgetBytes: number,
+  read: (
+    channel: number,
+    t: number,
+    signal?: AbortSignal,
+  ) => Promise<TypedVoxelArray>,
+): {
+  load(
+    channel: number,
+    t: number,
+    signal?: AbortSignal,
+  ): Promise<TypedVoxelArray>
+  /** Bytes of the frames held. */
+  readonly bytes: number
+} {
+  const entries = new Map<string, Promise<TypedVoxelArray>>()
+  const sizes = new Map<string, number>()
+  // An unsettled read and the callers waiting on it: it is aborted only once
+  // every caller that joined it has aborted (one caller's abort must not fail
+  // another's load).
+  const reads = new Map<string, { ctl: AbortController; waiting: number }>()
+  let bytes = 0
+  const drop = (key: string) => {
+    entries.delete(key)
+    reads.delete(key)
+    bytes -= sizes.get(key) ?? 0
+    sizes.delete(key)
+  }
+  return {
+    get bytes() {
+      return bytes
+    },
+    load(channel, t, signal) {
+      // An aborted caller would hold the shared read open: its abort already fired.
+      if (signal?.aborted) return Promise.reject(signal.reason)
+      const key = `${channel}:${t}`
+      let pending = entries.get(key)
+      if (pending) {
+        // Re-insert: Map order is the recency order.
+        entries.delete(key)
+        entries.set(key, pending)
+      } else {
+        const run = { ctl: new AbortController(), waiting: 0 }
+        const own: Promise<TypedVoxelArray> = read(
+          channel,
+          t,
+          run.ctl.signal,
+        ).then((img) => {
+          if (entries.get(key) !== own) return img
+          reads.delete(key)
+          sizes.set(key, img.byteLength)
+          bytes += img.byteLength
+          for (const old of entries.keys()) {
+            if (bytes <= budgetBytes) break
+            if (old !== key && sizes.has(old)) drop(old)
+          }
+          // A frame bigger than the whole budget is returned, not kept.
+          if (bytes > budgetBytes) drop(key)
+          return img
+        })
+        own.catch(() => {
+          if (entries.get(key) === own) drop(key)
+        })
+        entries.set(key, own)
+        reads.set(key, run)
+        pending = own
+      }
+      const run = reads.get(key)
+      if (!run) return pending
+      run.waiting++
+      // A caller without a signal keeps the read alive.
+      if (!signal) return pending
+      const shared = pending
+      // Each caller's abort rejects its own promise at once, whatever the others do.
+      return new Promise((resolve, reject) => {
+        const onAbort = () => {
+          reject(signal.reason)
+          if (--run.waiting === 0 && reads.get(key) === run) {
+            run.ctl.abort()
+            drop(key)
+          }
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        // A long-lived signal must not collect a listener per settled read.
+        shared
+          .finally(() => signal.removeEventListener('abort', onAbort))
+          .then(resolve, reject)
+      })
+    },
+  }
 }
 
 /**

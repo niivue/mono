@@ -146,6 +146,7 @@ import type {
   VectorAnnotation,
   ViewHitTest,
   VolumeChunkExplode,
+  VolumeFrameSource,
   VolumeUpdate,
   WheelZoomAnchor,
 } from '@/NVTypes'
@@ -3586,9 +3587,12 @@ export default class NiiVue extends EventTarget {
   }
 
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
-    await this.model.addVolume(volume)
-    const vols = this.model.getVolumes()
-    this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
+    const added = await this.model.addVolume(volume)
+    // Joins its group's pending frame switch; a loadVolumes scene never does.
+    const group = added.frameSource?.group
+    const pending = group && this._frameRequests.get(group)
+    if (pending && !pending.members.includes(added)) pending.members.push(added)
+    this.emit('volumeLoaded', { volume: added })
     await this._updateGLChanged()
     return this
   }
@@ -3623,6 +3627,7 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
+    this._abortOrphanedFrameRequests()
     // A half-drawn shape's points belong to the old background (#470).
     this._abandonForNewScene()
     this.model._setupPivot3D()
@@ -4207,6 +4212,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
+    this._abortOrphanedFrameRequests()
     this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
@@ -4227,6 +4233,7 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
+    this._abortOrphanedFrameRequests()
     // Removing the background changes the geometry a half-drawn shape used.
     if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
@@ -4400,6 +4407,18 @@ export default class NiiVue extends EventTarget {
   async setVolume(volumeIndex: number, options: VolumeUpdate): Promise<void> {
     const volumes = this.model.getVolumes()
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
+    // A frame-source volume holds one frame: its frame goes through the source.
+    // The other options apply now, so a failed or slow fetch cannot drop them
+    // or land them on a volume that moved into this index meanwhile.
+    const source = volumes[volumeIndex].frameSource
+    if (source && options.frame4D !== undefined) {
+      const { frame4D, ...rest } = options
+      await Promise.all([
+        this._setSourceFrame(source, frame4D),
+        Object.keys(rest).length > 0 && this.setVolume(volumeIndex, rest),
+      ])
+      return
+    }
     // Only a colormap change applies its window: callers that re-send the
     // current colormap with every update keep the user's window (#395).
     if (options.colormap !== volumes[volumeIndex].colormap)
@@ -5076,11 +5095,16 @@ export default class NiiVue extends EventTarget {
    */
   getFrame4D(id: string): number {
     const vol = this.volumes.find((v) => v.id === id)
-    return vol?.frame4D ?? 0
+    return vol?.frameSource?.frame ?? vol?.frame4D ?? 0
   }
 
   /**
    * Set the current 4D frame for a volume.
+   *
+   * A volume with a `frameSource` (frames fetched on demand) loads the frame
+   * for every volume of its source's group and resolves once it is shown; a
+   * newer call supersedes a pending one (which then resolves with no change),
+   * and a failed load rejects, keeping the frame shown.
    * @param id - Volume ID (typically the URL or name)
    * @param frame - Frame index (0-based, clamped to valid range)
    */
@@ -5090,6 +5114,7 @@ export default class NiiVue extends EventTarget {
       log.warn(`setFrame4D: volume with id "${id}" not found`)
       return
     }
+    if (vol.frameSource) return this._setSourceFrame(vol.frameSource, frame)
     const maxFrame = (vol.nFrame4D ?? 1) - 1
     // frame4D is a frame INDEX: round to an integer and clamp. Guard NaN/Infinity
     // from a public caller (Math.min(NaN, max) is NaN, and NaN === frame4D is
@@ -5112,6 +5137,96 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
+   * The pending frame request per frame-source group, aborted by the next, and
+   * the volumes it switches: it belongs to them, not to the group object, which
+   * a replacement scene may reuse.
+   */
+  private _frameRequests = new Map<
+    object,
+    { ctl: AbortController; members: NVImage[] }
+  >()
+
+  /** Abort every frame fetch none of whose volumes is still loaded. */
+  private _abortOrphanedFrameRequests(): void {
+    for (const [group, request] of this._frameRequests) {
+      if (request.members.some((v) => this.volumes.includes(v))) continue
+      request.ctl.abort()
+      this._frameRequests.delete(group)
+    }
+  }
+
+  /**
+   * Switch every volume sharing `source.group` to `frame` (see
+   * {@link VolumeFrameSource}): fetch all, then commit together in one upload.
+   * A newer request aborts this one, which then resolves without a change; a
+   * failed fetch commits nothing and rejects.
+   */
+  private async _setSourceFrame(
+    source: VolumeFrameSource,
+    frame: number,
+  ): Promise<void> {
+    // Grouped stores may differ in length: clamp to the shortest.
+    const clampFrame = (members: NVImage[]) => {
+      const count = Math.min(...members.map((v) => v.frameSource?.count ?? 1))
+      return Number.isFinite(frame)
+        ? Math.max(0, Math.min(Math.round(frame), count - 1))
+        : source.frame
+    }
+    let members = this.volumes.filter(
+      (v) => v.frameSource?.group === source.group,
+    )
+    let t = clampFrame(members)
+    this._frameRequests.get(source.group)?.ctl.abort()
+    if (members.every((v) => v.frameSource?.frame === t)) return
+    const request = new AbortController()
+    const pending = { ctl: request, members }
+    this._frameRequests.set(source.group, pending)
+    const frames = new Map<NVImage, ArrayLike<number>>()
+    try {
+      // A volume added to the group during the fetch switches with it; a
+      // shorter one lowers the clamp, so the frame is fetched again for all.
+      for (;;) {
+        const missing = members.filter((v) => !frames.has(v))
+        if (!missing.length || request.signal.aborted) break
+        const loaded = await Promise.all(
+          missing.map((v) => v.frameSource?.load(t, request.signal) ?? []),
+        )
+        for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
+        members = pending.members.filter((v) => this.volumes.includes(v))
+        const clamped = clampFrame(members)
+        if (clamped !== t) {
+          t = clamped
+          frames.clear()
+        }
+      }
+    } catch (err) {
+      if (request.signal.aborted) return
+      log.warn(`setFrame4D: frame ${t} could not be loaded`, err)
+      throw err
+    } finally {
+      if (this._frameRequests.get(source.group) === pending)
+        this._frameRequests.delete(source.group)
+    }
+    if (request.signal.aborted) return
+    const shown = [...frames.keys()].filter((v) => this.volumes.includes(v))
+    const switched: NVImage[] = []
+    for (const vol of shown) {
+      const img = frames.get(vol)
+      if (!vol.img || !vol.frameSource || !img) continue
+      vol.img.set(img)
+      vol.frameSource.frame = t
+      markVolumeDataChanged(vol)
+      NVModel.growLabelRange(vol)
+      switched.push(vol)
+    }
+    // Emit once the whole group is on t, so a listener never sees it half-switched.
+    for (const volume of switched)
+      this.emit('frameChange', { volume, frame: t })
+    await this._updateGL('none', shown)
+    this.createOnLocationChange()
+  }
+
+  /**
    * Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).
    * Updates the volume's calibration range and triggers a GPU update.
    */
@@ -5126,7 +5241,8 @@ export default class NiiVue extends EventTarget {
       )
       return
     }
-    const f = frame ?? vol.frame4D ?? 0
+    // A frame-source volume holds only the frame it shows.
+    const f = vol.frameSource ? 0 : (frame ?? vol.frame4D ?? 0)
     const [pct2, pct98, mnScale, mxScale] = calMinMaxFrame(vol, f)
     vol.calMin = pct2
     vol.calMax = pct98
@@ -7311,6 +7427,8 @@ export default class NiiVue extends EventTarget {
     this._destroyed = true
     this._releasePageWorkers()
     this._animation?.stop('destroyed')
+    for (const { ctl } of this._frameRequests.values()) ctl.abort()
+    this._frameRequests.clear()
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
     this.cancelPendingFrame()
@@ -7803,18 +7921,13 @@ export default class NiiVue extends EventTarget {
     // addSignal would have: each after its item is in the collection.
     let isBackgroundSkipped = false
     for (const [i, v] of (doc.volumes ?? []).entries()) {
-      const before = this.model.volumes.length
       const entry = resolveLinkedEntry(v, 'volume', resolveUrl)
       if (!entry) {
         if (i === 0) isBackgroundSkipped = true
         continue
       }
-      await NVDocument.reconstructVolume(this.model, entry)
-      if (this.model.volumes.length > before) {
-        this.emit('volumeLoaded', {
-          volume: this.model.volumes[this.model.volumes.length - 1],
-        })
-      }
+      const volume = await NVDocument.reconstructVolume(this.model, entry)
+      if (volume) this.emit('volumeLoaded', { volume })
     }
     // Meshes have no background/overlay ordering role; load them in parallel.
     const meshesBefore = this.model.meshes.length

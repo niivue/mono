@@ -169,6 +169,7 @@ export type {
   VolumeChunkExplode,
   VolumeChunkSource,
   VolumeChunkSourceRequest,
+  VolumeFrameSource,
   VolumeUpdate,
   OrientationTextPosition,
   Rotation2D,

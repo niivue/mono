@@ -36,7 +36,7 @@
         white-space: nowrap;
       }
       #timepoint {
-        width: 4rem;
+        width: 8rem;
       }
       #credit {
         font-size: 0.75rem;
@@ -66,7 +66,9 @@
         </select>
         <span class="pair" id="timepointPair" hidden>
           <label for="timepoint">Timepoint</label>
-          <input id="timepoint" type="number" min="0" value="0" />
+          <input id="timepoint" type="range" min="0" value="0" />
+          <output id="timepointValue" for="timepoint">0</output>
+          <button id="play" type="button">Play</button>
         </span>
         <span class="pair">
           <label for="fuse">Fuse channels</label>

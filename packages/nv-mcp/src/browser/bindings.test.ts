@@ -282,6 +282,25 @@ describe('bindControls: the view and volumes', () => {
     )
   })
 
+  it('binds a lazily fetched time axis through its frame source', () => {
+    const { add_control, memory, view } = setup()
+    Object.assign(loaded(view)[1], {
+      nFrame4D: 1,
+      frame4D: 0,
+      frameSource: { count: 8, frame: 3 },
+    })
+    const got = add_control({
+      id: 't',
+      kind: 'slider',
+      x: 0,
+      y: 0,
+      bind: 'volume.1.frame',
+    }) as Reported
+    expect(got.control).toMatchObject({ value: 3, min: 0, max: 7 })
+    memory.simulate({ id: 't', type: 'change', value: 5 })
+    expect(view.setVolume).toHaveBeenLastCalledWith(1, { frame4D: 5 })
+  })
+
   it('gives a negative window end the same slider range as cal_min', () => {
     const { add_control } = setup()
     const got = add_control({

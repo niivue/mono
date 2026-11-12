@@ -615,6 +615,22 @@ describe('set_volume', () => {
     })
   })
 
+  it('reports and validates the frames of a lazily fetched time axis', async () => {
+    const view = settableView()
+    Object.assign(view.volumes[0], {
+      name: 'raw.ome.zarr',
+      frameSource: { count: 12, frame: 3 },
+    })
+    const handlers = coreHandlers(host(view))
+    expect(await handlers.set_volume({ frame: 11 })).toMatchObject({
+      volume: { frame: 3, frames: 12 },
+    })
+    expect(view.setVolume).toHaveBeenLastCalledWith(0, { frame4D: 11 })
+    await expect(handlers.set_volume({ frame: 12 })).rejects.toThrow(
+      'raw.ome.zarr has 12 frames, numbered 0 to 11',
+    )
+  })
+
   it('finds the volume by index or by name, clamps the opacity, and picks a frame', async () => {
     const view = settableView()
     const handlers = coreHandlers(host(view))
@@ -1759,6 +1775,21 @@ describe('load_ome_zarr', () => {
       { url: 'c1' },
     ])
     expect(result).toMatchObject({ streamed: false })
+  })
+
+  it('forwards lazy_time and labels to the whole-level loader', async () => {
+    const zarr = omeZarr()
+    await coreHandlers(
+      host(fakeView(), { omeZarr: async () => zarr }),
+    ).load_ome_zarr({
+      url: 'https://x/s.ome.zarr',
+      lazy_time: true,
+      labels: true,
+    })
+    expect(zarr.loadOmeZarrVolumes).toHaveBeenCalledWith(
+      'https://x/s.ome.zarr',
+      { lazyTime: true, labels: true },
+    )
   })
 
   it('streams through the page helper, replacing the scene', async () => {

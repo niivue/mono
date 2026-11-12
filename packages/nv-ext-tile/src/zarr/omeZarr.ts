@@ -87,6 +87,8 @@ export interface OmeZarrInfo {
    * `defaultT`), each null when the file states none.
    */
   defaults: { z: number | null; t: number | null }
+  /** Whether the group declares `image-label` metadata (a segmentation). */
+  isLabel: boolean
 }
 
 type JsonObject = Record<string, unknown>
@@ -275,6 +277,7 @@ export function parseOmeZarrAttrs(attrs: unknown): OmeZarrInfo {
     datasets,
     channels,
     defaults,
+    isLabel: asObject(ome?.['image-label']) !== null,
   }
 }
 

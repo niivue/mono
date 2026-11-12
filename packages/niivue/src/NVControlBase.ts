@@ -433,6 +433,7 @@ function sameSlideSamples(
       (s, i) =>
         s.level === b[i].level &&
         s.missing === b[i].missing &&
+        s.name === b[i].name &&
         Object.is(s.stored, b[i].stored),
     )
   )

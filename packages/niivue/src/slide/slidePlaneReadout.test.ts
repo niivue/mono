@@ -162,4 +162,17 @@ describe('slide plane readout', () => {
     one.dispose()
     two.dispose()
   })
+
+  test('renaming a channel re-emits the readout', () => {
+    const { slide } = gatedSlide()
+    const nv = new NiiVue({ backend: 'webgl2' })
+    spyOn(nv, 'drawScene').mockImplementation(() => {})
+    const seen: NiiVueLocation[] = []
+    nv.setSlidePlane(slide, { pixelToWorld: IDENTITY })
+    nv.setCrosshairPos([2, 3, 0])
+    nv.addEventListener('locationChange', (e) => seen.push(e.detail))
+    nv.setSlideChannel(0, { name: 'renamed' })
+    expect(seen.at(-1)?.slide?.samples[0]?.name).toBe('renamed')
+    slide.dispose()
+  })
 })

@@ -221,6 +221,8 @@ export class NVSlideController {
 
   private _onDown = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') {
+      // A third finger is ignored: tracking it would let its lift end the pinch.
+      if (this._pinch) return
       this._touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (
         this.isPinchZoom &&
@@ -234,7 +236,6 @@ export class NVSlideController {
           this._canvas.setPointerCapture(id)
         return
       }
-      if (this._pinch) return
     }
     // A press while a gesture is live but uncaptured (or from the same pointer)
     // means its release fell outside the canvas before capture: drop it. A pen

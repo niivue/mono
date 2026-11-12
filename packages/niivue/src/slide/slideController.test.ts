@@ -147,6 +147,16 @@ describe('NVSlideController', () => {
     expect(r.pans).toEqual([[5, 0]])
   })
 
+  test('a third finger lifting does not end the pinch', () => {
+    const r = rig()
+    r.touch('pointerdown', 40, 50, 1)
+    r.touch('pointerdown', 60, 50, 2)
+    r.touch('pointerdown', 80, 50, 3)
+    r.touch('pointerup', 80, 50, 3)
+    r.touch('pointermove', 70, 50, 2)
+    expect(r.zooms).toEqual([1.5])
+  })
+
   test('a pan then a second finger pinches from where the first finger is', () => {
     const r = rig({ primary: DRAG_MODE.pan })
     r.touch('pointerdown', 20, 50, 1)

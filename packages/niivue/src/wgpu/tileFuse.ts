@@ -55,7 +55,8 @@ fn vertex_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
 @fragment
 fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let v = f32(textureLoad(raw, vec2i(pos.xy) - 1, 0).r);
-  let n = (v - p.window.x - p.calMinRest) * 255.0;
+  // max() keeps the compiler from folding the two uniforms into one float32 calMin.
+  let n = (max(v - p.window.x, -3.4e38) - p.calMinRest) * 255.0;
   let w = p.window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   var g = floor(n / w + 0.5);

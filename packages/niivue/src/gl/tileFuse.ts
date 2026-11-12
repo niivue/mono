@@ -39,7 +39,8 @@ uniform float calMinRest;
 out vec4 color;
 void main() {
   float v = float(texelFetch(raw, ivec2(gl_FragCoord.xy) - 1, 0).r);
-  float n = (v - window.x - calMinRest) * 255.0;
+  // max() keeps the compiler from folding the two uniforms into one float32 calMin.
+  float n = (max(v - window.x, -3.4e38) - calMinRest) * 255.0;
   float w = window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   float g = floor(n / w + 0.5);

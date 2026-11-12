@@ -4,12 +4,14 @@
  * fails when a file in this directory is missing from the registry.
  */
 import * as tck from './tck'
+import * as tract from './tract'
 import * as trk from './trk'
 import * as trx from './trx'
 import * as tt from './tt'
 
 export const tractReaderModules = {
   './tck.ts': tck,
+  './tract.ts': tract,
   './trk.ts': trk,
   './trx.ts': trx,
   './tt.ts': tt,

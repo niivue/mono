@@ -56,7 +56,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Tractography: TCK, TRK, TRX, TT | ✅ | |
 | Tractography: VTK lines | ✅ | |
 | Tractography: TSF scalars | ✅ | |
-| Tractography: AFNI .niml.tract | ❌ | |
+| Tractography: AFNI .niml.tract | Supported | Binary little/big endian; bundle IDs as `dps:tract` |
 
 ## 5. Document Loading/Saving
 
@@ -452,7 +452,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | TCK, TRK, TRX, TT | ✅ |
 | TSF (scalars) | ✅ |
 | VTK lines | ✅ |
-| AFNI .niml.tract | ❌ |
+| AFNI .niml.tract | Supported (binary little/big endian) |
 
 ## 32. Exported Enums/Constants
 
@@ -573,7 +573,6 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 11. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
 12. **Missing/changed events**: no separate `intensityChange`; shader events not present; legacy callback properties not supported
 13. **Enum exports**: `NiiIntentCode`
-14. **AFNI .niml.tract** tractography format
 15. **`watchOptsChanges`** (replaced by `change` / property-change style event)
 16. **Standalone `binarize()`** (functionality partly available through different APIs)
 

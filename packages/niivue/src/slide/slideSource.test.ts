@@ -3,6 +3,7 @@ import type {
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideRangeStatus,
+  NVSlideTileManifest,
 } from './NVSlide'
 import {
   decodeTileBitmap,
@@ -289,6 +290,66 @@ describe('ManifestRangeSource transport', () => {
       expect(calls).toBe(0)
     }
   })
+})
+
+test('dispose while a signal-ignoring fetch is pending: tile and ICC reads reject', async () => {
+  for (const read of ['tile', 'icc-ranged', 'icc-whole', 'body'] as const) {
+    let release = (_: Response) => {}
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        if (read !== 'body') return
+        release = () => {
+          c.enqueue(Uint8Array.from([1, 2]))
+          c.close()
+        }
+      },
+    })
+    const s = new ManifestRangeSource(
+      {
+        ...manifest(),
+        iccProfile:
+          read === 'icc-whole'
+            ? { url: 'icc.icm' }
+            : { url: 'icc.icm', offset: 0, length: 2 },
+      } as NVSlideManifest,
+      {
+        // Ignores the signal, as a custom fetch may.
+        fetch: () =>
+          read === 'body'
+            ? Promise.resolve(new Response(body, { status: 206 }))
+            : new Promise<Response>((r) => {
+                release = r
+              }),
+        baseUrl: 'https://h.test/',
+      },
+    )
+    s.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+      channelInfoChanged() {},
+    })
+    const level = s.manifest.levels[0] as NVSlideLevelManifest
+    const pending =
+      read === 'tile' || read === 'body'
+        ? s.fetchTileBytes(
+            level,
+            {
+              ...(level.tiles?.[0] as NVSlideTileManifest),
+              offset: 0,
+              length: 2,
+            },
+            't',
+          )
+        : s.fetchIccProfile()
+    await new Promise((r) => setTimeout(r, 0))
+    s.dispose()
+    release(new Response(Uint8Array.from([1, 2]), { status: 206 }))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  }
 })
 
 describe('tile decoders', () => {

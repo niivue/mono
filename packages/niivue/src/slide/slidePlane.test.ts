@@ -5,6 +5,7 @@ import {
   axialPlaneTransform,
   cornerQuad,
   pickSlidePixel,
+  pickSlideWorld,
   resolveSlidePlaneTiles,
   type SlidePlaneState,
   selectSlidePlaneLevel,
@@ -273,6 +274,15 @@ describe('pickSlidePixel', () => {
     const noFrame = state()
     noFrame.pickFrame = null
     expect(pickSlidePixel(noFrame, 50, 50)).toBeNull()
+  })
+
+  test('pickSlideWorld returns the hit in world mm', () => {
+    // canvas (75,25) -> ndc (0.5, 0.5) == world under IDENTITY.
+    const mm = pickSlideWorld(state(), 75, 25)
+    expect(mm?.[0]).toBeCloseTo(0.5, 5)
+    expect(mm?.[1]).toBeCloseTo(0.5, 5)
+    expect(mm?.[2]).toBeCloseTo(0, 5)
+    expect(pickSlideWorld(state(), 200, 200)).toBeNull()
   })
 })
 

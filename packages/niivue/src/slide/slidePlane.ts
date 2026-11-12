@@ -217,6 +217,16 @@ export function pickSlidePixel(
   return { x: a * w, y: b * h }
 }
 
+/** As {@link pickSlidePixel}, returning the hit in world mm. */
+export function pickSlideWorld(
+  state: SlidePlaneState,
+  canvasX: number,
+  canvasY: number,
+): Vec3 | null {
+  const hit = pickSlidePixel(state, canvasX, canvasY)
+  return hit ? apply(state.pixelToWorld, hit.x, hit.y) : null
+}
+
 // Project a world-mm point through a column-major mvp (world mm -> clip) to
 // viewport pixels. Returns x,y in [0,w]x[0,h]; w-component sign tells front/back.
 function projectToScreen(

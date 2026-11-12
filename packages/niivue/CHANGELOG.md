@@ -1,3 +1,27 @@
+## 1.0.0-rc.177 (2026-11-12)
+
+### Features
+
+- **niivue:** GPU window/colormap for scalar slide tiles ([#159](https://github.com/niivue/mono/pull/159))
+
+### Fixes
+
+- **slide:** choose the fuse uniform path by the clamped scale ([feac24da](https://github.com/niivue/mono/commit/feac24da))
+- **slide:** normalised fuse uniforms for windows past float32 even scaled ([96d686fa](https://github.com/niivue/mono/commit/96d686fa))
+- **slide:** scale fuse uniforms per window by a power of two ([72faff3e](https://github.com/niivue/mono/commit/72faff3e))
+- **slide:** keep float32 fuse windows wider than the float max finite ([9ebf8cc9](https://github.com/niivue/mono/commit/9ebf8cc9))
+- **niivue:** keep slide fusion finite for float32 windows near the float max ([57fa43c8](https://github.com/niivue/mono/commit/57fa43c8))
+- **slide:** keep the fuse shaders from folding the calMin split ([0e4066a2](https://github.com/niivue/mono/commit/0e4066a2))
+- **slide:** exact float32 fuse windows at large values; PR 740 review fixes ([2095205e](https://github.com/niivue/mono/commit/2095205e))
+- **uikit:** draw the slide minimap on SwiftShader WebGPU ([e0bee49b](https://github.com/niivue/mono/commit/e0bee49b))
+- **niivue:** clamp maxRawPoolBytes to 0-64 MiB ([761da8cd](https://github.com/niivue/mono/commit/761da8cd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.176 (2026-11-12)
 
 ### Features

@@ -22,7 +22,10 @@ async function walk(entry: FileSystemEntry): Promise<File[]> {
   for (;;) {
     const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
       reader.readEntries(resolve, reject),
-    )
+    ).catch((err) => {
+      console.warn(`Skipped the rest of ${entry.fullPath}:`, err)
+      return []
+    })
     if (!batch.length) return out
     for (const files of await Promise.all(batch.map(walk))) out.push(...files)
   }

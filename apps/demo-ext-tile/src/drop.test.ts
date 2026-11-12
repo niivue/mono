@@ -64,3 +64,18 @@ test('an unreadable file is skipped, not the whole drop', async () => {
   const files = await droppedFiles(dt)
   expect(files.map((f) => f.webkitRelativePath)).toEqual(['slide/good.dcm'])
 })
+
+test('an unreadable folder is skipped, not the whole drop', async () => {
+  const locked = {
+    isFile: false,
+    fullPath: '/slide/locked',
+    createReader: () => ({
+      readEntries: (_: unknown, fail: (e: Error) => void) =>
+        fail(new Error('NotReadable')),
+    }),
+  }
+  const tree = dir('/slide', [file('/slide/good.dcm'), locked])
+  const dt = { items: [item(tree)] } as unknown as DataTransfer
+  const files = await droppedFiles(dt)
+  expect(files.map((f) => f.webkitRelativePath)).toEqual(['slide/good.dcm'])
+})

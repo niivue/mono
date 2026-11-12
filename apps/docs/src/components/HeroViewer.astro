@@ -1,0 +1,50 @@
+---
+import { examplesBase } from '../site'
+---
+
+<figure>
+  <nv-hero class="nv-viewer" data-examples-base={examplesBase}>
+    <canvas role="img" aria-label="Live NiiVue viewer: MNI152 template with a motor task map"></canvas>
+  </nv-hero>
+  <figcaption>
+    A live viewer. Click a slice to move the crosshair; drag the 3D view to rotate.
+  </figcaption>
+</figure>
+
+<script>
+  import '../client/nv-hero'
+</script>
+
+<style>
+  figure {
+    margin: 0;
+  }
+
+  nv-hero {
+    aspect-ratio: 1 / 1;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+
+  canvas.ready {
+    opacity: 1;
+  }
+
+  figcaption {
+    margin-top: 0.5rem;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+
+  @media (min-width: 50rem) {
+    nv-hero {
+      aspect-ratio: 7 / 2;
+    }
+  }
+</style>

@@ -4,14 +4,14 @@
   "tags": ["type:app", "lang:typescript"],
   "targets": {
     "dev": {
-      "command": "bunx docusaurus start",
+      "command": "bunx astro dev",
       "options": {
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["^build"]
     },
     "build": {
-      "command": "bunx docusaurus build --out-dir dist",
+      "command": "bunx astro build",
       "options": {
         "cwd": "{projectRoot}"
       },
@@ -21,7 +21,7 @@
         "bundledDeps",
         "{projectRoot}/**/*",
         "!{projectRoot}/dist/**/*",
-        "!{projectRoot}/.docusaurus/**/*",
+        "!{projectRoot}/.astro/**/*",
         "{workspaceRoot}/packages/niivue/examples/**/*",
         "{workspaceRoot}/nx-tools/repo-graph.ts",
         {
@@ -34,20 +34,20 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "typecheck": {
-      "command": "bunx tsc --noEmit",
+      "command": "bunx astro check",
       "options": {
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["^build"],
-      "inputs": ["typescript"]
+      "inputs": ["typescript", "{projectRoot}/**/*.astro"]
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",
-      "inputs": ["lintable"]
+      "inputs": ["lintable", "{projectRoot}/**/*.astro"]
     },
     "format": {
       "command": "bunx biome format {projectRoot} --write",
-      "inputs": ["lintable"]
+      "inputs": ["lintable", "{projectRoot}/**/*.astro"]
     },
     "screenshots": {
       "command": "bun scripts/screenshots.ts",

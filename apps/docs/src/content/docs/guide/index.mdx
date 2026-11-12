@@ -1,0 +1,100 @@
+---
+title: Getting started
+description: "Install NiiVue, show an image on a canvas, choose WebGL2 or WebGPU, change settings, and see what changed from NiiVue 0.x."
+---
+
+import Demo from '../../../components/Demo.astro'
+
+NiiVue shows volumes, meshes, tractography and signals in the browser. It
+renders with WebGPU or WebGL2 and needs no server beyond something that can
+serve your files.
+
+## Install
+
+```bash
+npm install @niivue/niivue@next
+```
+
+## A first viewer
+
+Add a `<canvas>`, attach a viewer to it, and load an image:
+
+```html
+<canvas id="gl1"></canvas>
+<script type="module">
+  import NiiVue from '@niivue/niivue'
+
+  const nv = new NiiVue()
+  await nv.attachToCanvas(document.getElementById('gl1'))
+  await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+</script>
+```
+
+The viewer fills its canvas, so size the canvas (or its parent) with CSS.
+The same few lines run live here:
+
+<Demo name="minimal" />
+
+Every demo on this site is a small module: it receives a canvas and returns
+the viewer, and the code under each one is the code that runs. The
+[Gallery](/gallery/) has every example page from the repository with its
+source.
+
+## WebGPU or WebGL2
+
+`@niivue/niivue` includes both renderers and uses WebGL2 by default. Ask for
+WebGPU with the `backend` option; if the browser has no WebGPU, or it fails
+to start, NiiVue falls back to WebGL2:
+
+```js
+const nv = new NiiVue({ backend: 'webgpu' })
+```
+
+Anti-aliasing (`isAntiAlias`) is on by default. On WebKit (Safari, iOS
+browsers) WebGPU with MSAA is about 4x slower, so the example pages pass
+`isAntiAlias: false` there:
+
+```js
+const isWebKit =
+  /AppleWebKit/.test(navigator.userAgent) &&
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+const nv = new NiiVue({ backend: 'webgpu', isAntiAlias: !isWebKit })
+```
+
+Backend-only builds are smaller:
+
+```js
+import NiiVueWebGPU from '@niivue/niivue/webgpu'
+import NiiVueWebGL2 from '@niivue/niivue/webgl2'
+```
+
+In a backend-only build, asking for the missing backend throws.
+
+## Settings are properties
+
+Viewer settings are plain properties. Set them in the constructor or at any
+time later, and the view redraws:
+
+```js
+const nv = new NiiVue({ isColorbarVisible: true, sliceType: 3 })
+nv.backgroundColor = [0.2, 0.2, 0.2, 1]
+nv.sliceType = 4 // render only
+```
+
+Per-volume and per-mesh settings go through `setVolume` and `setMesh`:
+
+```js
+nv.setVolume(0, { colormap: 'hot', calMin: 2, calMax: 6 })
+```
+
+## Coming from NiiVue 0.x
+
+This package is a rewrite. Most features carry over, but the API is
+different: setter methods such as `setSliceType(v)` became properties such
+as `nv.sliceType = v`. The
+[migration table](https://github.com/niivue/mono/blob/main/packages/niivue/docs/convert.md)
+lists the renames, the
+[API reference](https://github.com/niivue/mono/blob/main/packages/niivue/docs/api.md)
+lists the properties by group, and
+[FEATURE_PARITY.md](https://github.com/niivue/mono/blob/main/packages/niivue/FEATURE_PARITY.md)
+tracks what has not been ported yet.

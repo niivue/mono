@@ -1,0 +1,113 @@
+---
+// The home page's first screen: Starlight's hero text and actions, the install
+// command, and a live NiiVue viewer in place of the hero image. Only the home
+// page sets `hero`.
+import { LinkButton } from '@astrojs/starlight/components'
+import HeroViewer from './HeroViewer.astro'
+
+const INSTALL = 'npm install @niivue/niivue@next'
+
+const { data } = Astro.locals.starlightRoute.entry
+const { title = data.title, tagline, actions = [] } = data.hero ?? {}
+---
+
+<div class="hero">
+  <h1 id="_top" data-page-title set:html={title} />
+  {tagline && <p class="tagline" set:html={tagline} />}
+  <div class="actions">
+    {
+      actions.map(({ link, text, variant }) =>
+        variant === 'primary' ? (
+          <LinkButton href={link}>{text}</LinkButton>
+        ) : (
+          <a class="text-link" href={link}>
+            {text} &rarr;
+          </a>
+        ),
+      )
+    }
+    <nv-copy class="install" data-text={INSTALL}>
+      <code>{INSTALL}</code>
+      <button type="button">Copy</button>
+    </nv-copy>
+  </div>
+  <HeroViewer />
+</div>
+
+<script>
+  import '../client/nv-copy'
+</script>
+
+<style>
+  .hero {
+    padding-block: 2.5rem 1rem;
+  }
+
+  h1 {
+    max-width: 18ch;
+    font-size: clamp(var(--sl-text-3xl), calc(1rem + 3vw), var(--sl-text-5xl));
+    line-height: 1.1;
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  .tagline {
+    max-width: 36rem;
+    margin-top: 1rem;
+    font-size: var(--sl-text-lg);
+    color: var(--sl-color-gray-3);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    align-items: center;
+    margin-block: 1.75rem 2.5rem;
+  }
+
+  .actions :global(.sl-link-button) {
+    margin: 0;
+  }
+
+  .text-link {
+    color: var(--sl-color-text-accent);
+    text-decoration: none;
+  }
+
+  .text-link:hover {
+    text-decoration: underline;
+  }
+
+  .install {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.35rem 0.4rem 0.35rem 0.75rem;
+    font-family: var(--__sl-font-mono);
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-2);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: var(--nv-radius);
+  }
+
+  .install button {
+    font: inherit;
+    font-family: var(--__sl-font);
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .install button:hover {
+    color: var(--sl-color-white);
+  }
+
+  @media (min-width: 50rem) {
+    .install {
+      margin-inline-start: auto;
+    }
+  }
+</style>

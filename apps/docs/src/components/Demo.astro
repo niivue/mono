@@ -1,0 +1,60 @@
+---
+import { Code } from '@astrojs/starlight/components'
+import { demoSource } from '../lib/demos'
+import { examplesBase } from '../site'
+
+type Props = {
+  /** Module in src/demos, e.g. `minimal`. */
+  name: string
+  /** Canvas height in pixels. */
+  height?: number
+  /** Number of side-by-side canvases (for sync demos). */
+  canvases?: number
+  /** Title of the code block. */
+  file?: string
+}
+
+const { name, height = 420, canvases = 1, file } = Astro.props
+const code = demoSource(name)
+---
+
+<nv-demo class="demo not-content" data-name={name} data-examples-base={examplesBase}>
+  <div class="nv-viewer">
+    <div class="nv-viewer-bar"></div>
+    <div class="canvases" style={`height: ${height}px`}>
+      {Array.from({ length: canvases }, () => <canvas />)}
+    </div>
+  </div>
+  <p class="error" hidden></p>
+</nv-demo>
+<Code code={code} lang="ts" title={file} />
+
+<script>
+  import '../client/nv-demo'
+</script>
+
+<style>
+  .demo {
+    display: block;
+    margin-block: 1.5rem 0.75rem;
+  }
+
+  .canvases {
+    display: flex;
+    gap: 1px;
+    background: var(--nv-viewer-line);
+  }
+
+  canvas {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: var(--nv-viewer);
+  }
+
+  .error {
+    color: var(--sl-color-red-high);
+  }
+</style>

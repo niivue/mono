@@ -1,0 +1,260 @@
+---
+import { getCollection } from 'astro:content'
+import { Code } from '@astrojs/starlight/components'
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { repoUrl, withBase } from '../site'
+
+const FIRST_VIEWER = `import NiiVue from '@niivue/niivue'
+
+const nv = new NiiVue()
+await nv.attachToCanvas(document.getElementById('gl1'))
+await nv.loadVolumes([{ url: './mni152.nii.gz' }])`
+
+const FEATURES = [
+  {
+    title: 'Volumes',
+    text: 'NIfTI, MGH, NRRD, OME-Zarr and more, as slices or ray-marched in 3D.',
+    to: 'guide/loading/',
+  },
+  {
+    title: 'Overlays and colormaps',
+    text: 'Statistical maps on anatomy, with thresholds and blending.',
+    to: 'guide/overlays/',
+  },
+  {
+    title: 'Meshes',
+    text: 'Cortical surfaces with per-vertex layers and matcap shaders.',
+    to: 'guide/meshes/',
+  },
+  {
+    title: 'Tracts and connectomes',
+    text: 'Streamlines and node-and-edge graphs in the same scene.',
+    to: 'guide/tracts/',
+  },
+  {
+    title: 'Drawing',
+    text: 'Paint, erase and fill segmentations on the slices, with undo.',
+    to: 'guide/drawing/',
+  },
+  {
+    title: 'Linked viewers',
+    text: 'Share the crosshair, zoom and camera across canvases.',
+    to: 'guide/sync/',
+  },
+  {
+    title: 'React',
+    text: 'Components and hooks from @niivue/nvreact.',
+    to: 'guide/react/',
+  },
+  {
+    title: 'Extensions',
+    text: 'DICOM, image processing and tiled images as separate packages.',
+    to: 'guide/extensions/',
+  },
+]
+
+// Hand-picked for variety; any without a thumbnail drop out.
+const STRIP = [
+  'vox-clip',
+  'mesh-layers',
+  'tract-group',
+  'slide3d',
+  'vox-tissues',
+  'mesh-atlas',
+]
+
+const cards = (await getCollection('gallery')).map((e) => e.data)
+const bySlug = new Map(cards.map((c) => [c.slug, c]))
+const strip = STRIP.flatMap((s) => {
+  const card = bySlug.get(s)
+  return card?.image ? [card] : []
+})
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'NiiVue',
+    description: 'WebGPU and WebGL2 medical image viewer',
+    head: [{ tag: 'title', content: 'NiiVue' }],
+    template: 'splash',
+    hero: {
+      title: 'Medical images in the browser',
+      tagline:
+        'MRI, CT, microscopy, surfaces and tractography, drawn on the GPU. No plugins and no special server: give NiiVue a canvas and a URL.',
+      actions: [
+        { text: 'Get started', link: withBase('guide/'), variant: 'primary' },
+        { text: 'Gallery', link: withBase('gallery/'), variant: 'minimal' },
+      ],
+    },
+  }}
+>
+  <div class="not-content">
+    <section>
+      <h2>What it does</h2>
+      <ul class="features">
+        {
+          FEATURES.map((f) => (
+            <li>
+              <a href={withBase(f.to)}>{f.title}</a>
+              <p>{f.text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <section class="code-row">
+      <div>
+        <h2>A few lines</h2>
+        <p>
+          Attach a viewer to a canvas and hand it the images. Settings are
+          plain properties, and the whole scene saves and restores as one
+          document. NiiVue uses WebGL2 by default and WebGPU when you ask.
+        </p>
+        <a class="text-link" href={withBase('guide/')}>Read the guide &rarr;</a>
+      </div>
+      <Code code={FIRST_VIEWER} lang="ts" title="main.ts" />
+    </section>
+
+    <section>
+      <h2>Examples</h2>
+      <ul class="strip">
+        {
+          strip.map((c) => (
+            <li>
+              <a href={withBase(`gallery/${c.slug}/`)}>
+                <img src={withBase(c.image)} alt="" loading="lazy" />
+                <span>{c.title}</span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <a class="text-link" href={withBase('gallery/')}>
+        All {cards.length} examples &rarr;
+      </a>
+    </section>
+
+    <footer>
+      NiiVue is open source under the BSD-2-Clause license.
+      <a href={repoUrl}>GitHub</a>
+      <a href={`${repoUrl}/issues`}>Issues</a>
+      <a href="https://www.npmjs.com/package/@niivue/niivue">npm</a>
+    </footer>
+  </div>
+</StarlightPage>
+
+<style>
+  section {
+    padding-block: 3rem;
+    border-top: 1px solid var(--sl-color-hairline);
+  }
+
+  h2 {
+    margin-bottom: 1.25rem;
+    font-size: var(--sl-text-xl);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  p {
+    color: var(--sl-color-gray-3);
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 1.5rem 2rem;
+  }
+
+  .features a {
+    font-weight: 500;
+    color: var(--sl-color-white);
+    text-decoration: none;
+  }
+
+  .features a:hover {
+    color: var(--sl-color-text-accent);
+  }
+
+  .features p {
+    margin-top: 0.25rem;
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+
+  .code-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem 3rem;
+    align-items: start;
+  }
+
+  .code-row p {
+    margin-bottom: 1rem;
+  }
+
+  .text-link {
+    color: var(--sl-color-text-accent);
+    text-decoration: none;
+  }
+
+  .text-link:hover {
+    text-decoration: underline;
+  }
+
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .strip a {
+    display: block;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+
+  .strip a:hover {
+    color: var(--sl-color-white);
+  }
+
+  .strip img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    margin-bottom: 0.4rem;
+    background: var(--nv-viewer);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: var(--nv-radius);
+  }
+
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding-block: 2rem 1rem;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+    border-top: 1px solid var(--sl-color-hairline);
+  }
+
+  footer a {
+    color: var(--sl-color-gray-2);
+  }
+
+  @media (min-width: 50rem) {
+    .code-row {
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    }
+  }
+</style>

@@ -1,4 +1,4 @@
-// Captures a thumbnail of every gallery example into static/img/gallery.
+// Captures a thumbnail of every gallery example into public/img/gallery.
 //
 //   bunx nx screenshots docs-site                  # all examples
 //   bunx nx screenshots docs-site -- vox-clip      # only these slugs
@@ -11,7 +11,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Page } from 'playwright'
-import { buildGraph, collectGallery } from '../plugins/gallery'
+import { buildGraph, collectGallery } from '../src/lib/gallery'
 
 const WIDTH = 480
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 2500)
@@ -41,7 +41,7 @@ const SLOW: Record<string, number> = {
 
 const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(siteDir, '../..')
-const outDir = path.join(siteDir, 'static/img/gallery')
+const outDir = path.join(siteDir, 'public/img/gallery')
 const base = process.env.DOCS_EXAMPLES_BASE ?? 'https://niivue.github.io/mono/'
 
 const only = new Set(process.argv.slice(2))

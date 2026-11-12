@@ -15,8 +15,11 @@
       "entry": ["scripts/*.ts"]
     },
     "apps/docs": {
-      // Demos load via MDX `import()` + raw-loader; gallery components via gallery-plugin addRoute.
-      "entry": ["src/demos/*.ts", "src/components/Gallery*.tsx"]
+      // Demo.astro loads the demos by name through import.meta.glob; Starlight
+      // loads routeData.ts from its `routeMiddleware` path.
+      "entry": ["src/demos/*.ts", "src/routeData.ts"],
+      // `astro check` (project.json typecheck) loads it; Knip does not read project.json.
+      "ignoreDependencies": ["@astrojs/check"]
     },
     "apps/iiif-volumetric-demo": {
       "entry": ["src/**/*.test.ts"]

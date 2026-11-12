@@ -1,0 +1,58 @@
+---
+// Starlight's page title, followed on guides by "Copy page" and a link to the
+// Markdown version, for pasting a page into an agent.
+import Default from '@astrojs/starlight/components/PageTitle.astro'
+import { findGuide, guideMarkdown, markdownPath } from '../lib/markdown'
+import { docsUrl, withBase } from '../site'
+
+const { id } = Astro.locals.starlightRoute
+const entry = await findGuide(id)
+const markdown = entry && guideMarkdown(entry, docsUrl(Astro.url))
+---
+
+<Default><slot /></Default>
+{
+  markdown && (
+    <nv-copy class="actions" data-text={markdown}>
+      <button type="button">Copy page</button>
+      <a href={withBase(markdownPath(id))}>View as Markdown</a>
+    </nv-copy>
+  )
+}
+
+<script>
+  import '../client/nv-copy'
+</script>
+
+<style>
+  .actions {
+    display: flex;
+    gap: 1.25rem;
+    align-items: center;
+    font-size: var(--sl-text-sm);
+  }
+
+  button {
+    font: inherit;
+    padding: 0.25rem 0.65rem;
+    color: var(--sl-color-gray-2);
+    background: none;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: var(--nv-radius);
+    cursor: pointer;
+  }
+
+  button:hover {
+    color: var(--sl-color-white);
+    border-color: var(--sl-color-gray-4);
+  }
+
+  a {
+    color: var(--sl-color-gray-3);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--sl-color-white);
+  }
+</style>

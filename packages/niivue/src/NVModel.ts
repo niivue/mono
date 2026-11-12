@@ -28,6 +28,7 @@ import type {
   SceneConfig,
   UIConfig,
   VectorAnnotation,
+  VolumeFrameSource,
   VolumeRenderConfig,
 } from '@/NVTypes'
 import { deriveSeries, type SignalPlot } from '@/signal/processing'
@@ -44,6 +45,22 @@ import {
   warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
+
+/**
+ * The shown frame is per volume: one source loaded into two viewers is shared,
+ * so each volume inherits it with its own `frame`.
+ */
+function ownFrameSource(frameSource: VolumeFrameSource | undefined): {
+  frameSource?: VolumeFrameSource
+} {
+  return frameSource
+    ? {
+        frameSource: Object.assign(Object.create(frameSource), {
+          frame: frameSource.frame,
+        }),
+      }
+    : {}
+}
 
 export default class NVModel {
   // --- Config groups ---
@@ -1551,7 +1568,11 @@ export default class NVModel {
     // An NVImage keeps its own window, CT colormap or not: it always carries
     // calMin/calMax, so there is no unset bound for the map to fill (#395).
     if ('hdr' in volume && volume.hdr) {
-      const image = { ...NVModel.volumeDefaults, ...volume }
+      const image = {
+        ...NVModel.volumeDefaults,
+        ...volume,
+        ...ownFrameSource(volume.frameSource),
+      }
       NVCmaps.resolveDefaultWindow(image)
       return NVModel.applyColormap(image, volume.colormap)
     }
@@ -1592,15 +1613,7 @@ export default class NVModel {
       // the header URL/File. Runtime-only, same allowlist contract as
       // _sourceFile above.
       ...(pairedImage != null ? { _urlImageData: pairedImage } : {}),
-      // The shown frame is per volume: options loaded into two viewers share
-      // the source object, so each volume inherits it with its own `frame`.
-      ...(overrides.frameSource
-        ? {
-            frameSource: Object.assign(Object.create(overrides.frameSource), {
-              frame: overrides.frameSource.frame,
-            }),
-          }
-        : {}),
+      ...ownFrameSource(overrides.frameSource),
     }
     NVCmaps.resolveDefaultWindow(prepared)
     return NVModel.applyColormap(prepared, overrides.colormap)

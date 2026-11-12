@@ -2050,6 +2050,7 @@ and its volumes alive."""
         """The slide plane's samples at base pixel `x`, `y` (cache only, as `NVSlide.sampleAt`), or, with no point given, at the crosshair projected onto the plane.
 
         Null without a plane, or with the crosshair off it.
+        Throws when only one of `x`, `y` is given.
 
         Parameters
         ----------

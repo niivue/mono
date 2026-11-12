@@ -4401,7 +4401,7 @@
         }
       ],
       "returns": "NiiVueLocationSlide | null",
-      "doc": "The slide plane's samples at base pixel `x`, `y` (cache only, as\n`NVSlide.sampleAt`), or, with no point given, at the crosshair projected\nonto the plane. Null without a plane, or with the crosshair off it.",
+      "doc": "The slide plane's samples at base pixel `x`, `y` (cache only, as\n`NVSlide.sampleAt`), or, with no point given, at the crosshair projected\nonto the plane. Null without a plane, or with the crosshair off it.\nThrows when only one of `x`, `y` is given.",
       "returnsDoc": null
     },
     {

@@ -181,6 +181,17 @@ describe('slide plane readout', () => {
     slide.dispose()
   })
 
+  test('one coordinate alone is refused, not swapped for the crosshair', async () => {
+    const { slide } = gatedSlide()
+    const nv = new NiiVue({ backend: 'webgl2' })
+    spyOn(nv, 'drawScene').mockImplementation(() => {})
+    nv.setSlidePlane(slide, { pixelToWorld: IDENTITY })
+    nv.setCrosshairPos([4, 4, 0])
+    expect(() => nv.slideSampleAt(3)).toThrow('both x and y')
+    await expect(nv.loadSlideSampleAt(3)).rejects.toThrow('both x and y')
+    slide.dispose()
+  })
+
   test('renaming a channel re-emits the readout', () => {
     const { slide } = gatedSlide()
     const nv = new NiiVue({ backend: 'webgl2' })

@@ -6017,6 +6017,7 @@ export default class NiiVue extends EventTarget {
    * The slide plane's samples at base pixel `x`, `y` (cache only, as
    * `NVSlide.sampleAt`), or, with no point given, at the crosshair projected
    * onto the plane. Null without a plane, or with the crosshair off it.
+   * Throws when only one of `x`, `y` is given.
    */
   slideSampleAt(x?: number, y?: number): NiiVueLocationSlide | null {
     const p = this._slideSamplePoint(x, y)
@@ -6033,6 +6034,8 @@ export default class NiiVue extends EventTarget {
   }
 
   private _slideSamplePoint(x?: number, y?: number) {
+    if ((x === undefined) !== (y === undefined))
+      throw new Error('slideSampleAt: give both x and y, or neither')
     const sp = this._slidePlane
     if (!sp) return null
     const p =

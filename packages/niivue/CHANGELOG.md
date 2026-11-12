@@ -1,3 +1,20 @@
+## 1.0.0-rc.186 (2026-11-12)
+
+### Features
+
+- **niivue, nv-mcp:** tile lane C slide engine (request owners, LOD, frame plan, memory cap, planes, placement, labels) ([ab973380](https://github.com/niivue/mono/commit/ab973380))
+
+### Fixes
+
+- **niivue:** restore a null unit-2 binding after several label tiles ([3de4c231](https://github.com/niivue/mono/commit/3de4c231))
+- **niivue,nv-mcp:** PR 748 review findings ([a8c8c787](https://github.com/niivue/mono/commit/a8c8c787))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.185 (2026-11-12)
 
 ### Fixes

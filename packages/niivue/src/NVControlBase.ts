@@ -3563,7 +3563,11 @@ export default class NiiVue extends EventTarget {
   async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<this> {
     await this.model.addVolume(volume)
     const vols = this.model.getVolumes()
-    this.emit('volumeLoaded', { volume: vols[vols.length - 1] })
+    const added = vols[vols.length - 1]
+    // Joins its group's pending frame switch; a loadVolumes scene never does.
+    const group = added.frameSource?.group
+    if (group) this._frameRequests.get(group)?.members.push(added)
+    this.emit('volumeLoaded', { volume: added })
     await this._updateGLChanged()
     return this
   }
@@ -5136,8 +5140,6 @@ export default class NiiVue extends EventTarget {
     source: VolumeFrameSource,
     frame: number,
   ): Promise<void> {
-    const groupMembers = () =>
-      this.volumes.filter((v) => v.frameSource?.group === source.group)
     // Grouped stores may differ in length: clamp to the shortest.
     const clampFrame = (members: NVImage[]) => {
       const count = Math.min(...members.map((v) => v.frameSource?.count ?? 1))
@@ -5145,7 +5147,9 @@ export default class NiiVue extends EventTarget {
         ? Math.max(0, Math.min(Math.round(frame), count - 1))
         : source.frame
     }
-    let members = groupMembers()
+    let members = this.volumes.filter(
+      (v) => v.frameSource?.group === source.group,
+    )
     let t = clampFrame(members)
     this._frameRequests.get(source.group)?.ctl.abort()
     if (members.every((v) => v.frameSource?.frame === t)) return
@@ -5154,7 +5158,7 @@ export default class NiiVue extends EventTarget {
     this._frameRequests.set(source.group, pending)
     const frames = new Map<NVImage, ArrayLike<number>>()
     try {
-      // A volume joining the group during the fetch switches with it; a
+      // A volume added to the group during the fetch switches with it; a
       // shorter one lowers the clamp, so the frame is fetched again for all.
       for (;;) {
         const missing = members.filter((v) => !frames.has(v))
@@ -5163,8 +5167,7 @@ export default class NiiVue extends EventTarget {
           missing.map((v) => v.frameSource?.load(t, request.signal) ?? []),
         )
         for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
-        members = groupMembers()
-        pending.members = members
+        members = pending.members.filter((v) => this.volumes.includes(v))
         const clamped = clampFrame(members)
         if (clamped !== t) {
           t = clamped

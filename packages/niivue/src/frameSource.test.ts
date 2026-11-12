@@ -337,3 +337,27 @@ test('destroy aborts a pending frame fetch', async () => {
   gates.get(1)?.resolve()
   await request
 })
+
+test('removing the starting volume keeps a joined volume switching', async () => {
+  const group = {}
+  const gates = new Map([[1, gate()]])
+  const aborted: number[] = []
+  const nv = await load([source(0, group, gates, aborted)])
+  const request = nv.setFrame4D('c0.nii', 1)
+  await nv.addVolume({
+    url: channelVolumeFile(
+      DIMS,
+      [1, 1, 1],
+      NiiDataType.DT_UINT16,
+      frameOf(0, 1),
+      'c1',
+    ),
+    frameSource: source(1, group),
+  })
+  await nv.removeVolume(0)
+  expect(aborted).toEqual([])
+  gates.get(1)?.resolve()
+  await request
+  expect(nv.getFrame4D('c1.nii')).toBe(1)
+  expect(nv.volumes[0].img?.[0]).toBe(101)
+})

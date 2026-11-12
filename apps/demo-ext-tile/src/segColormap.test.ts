@@ -8,7 +8,8 @@ test('two segmentations with one store name get distinct colormap names', () => 
   const red = segmentationColormap(info([255, 0, 0, 255]), 'segmentation-1-1')
   const blue = segmentationColormap(info([0, 0, 255, 255]), 'segmentation-1-2')
   expect(red?.name).not.toBe(blue?.name)
-  expect(red?.map.R).toEqual([255])
+  expect(red?.map.R).toEqual([0, 255, 0])
+  expect(blue?.map.B).toEqual([0, 255, 0])
   expect(segmentationColormap(info([0, 0, 0, 0]), 'x')).not.toBeNull()
   expect(
     segmentationColormap(

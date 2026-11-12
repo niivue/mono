@@ -1092,6 +1092,7 @@ export class NVSlide extends EventTarget {
   // a pan/zoom must not cancel it -- it completes and populates the cache.
   // dispose() still aborts every in-flight load regardless of origin.
   private readonly _viewportKeys = new Set<string>()
+  private _disposed = false
   private _budgetWarned = '' // last budget outcome logged by visibleTiles
   private _lastVisible: NVSlideVisibleTiles | null = null
   private _channels: readonly NVChannel[]
@@ -1960,26 +1961,32 @@ export class NVSlide extends EventTarget {
     const { width, height } = this.manifest
     if (!(x >= 0 && y >= 0 && x < width && y < height))
       return this._missingSamples('outside')
-    let reason: 'hole' | 'uncached' = 'hole'
+    let uncachedLevel: number | null = null
     for (const level of this.manifest.levels) {
       if (opts.level !== undefined && level.index !== opts.level) continue
       const hit = this._tileUnder(level, x, y)
       if (!hit) continue
-      reason = 'uncached'
+      uncachedLevel ??= level.index
       const entry = this._cache.peek(this.tileKey(level, hit.tile))
       // A decoded frame smaller than its tile is cached as is.
       const decoded = entry?.samples ?? entry?.bitmap
       if (entry && decoded && hit.px < decoded.width && hit.py < decoded.height)
         return this._residentSamples(entry, hit.px, hit.py)
     }
-    return this._missingSamples(reason)
+    if (uncachedLevel === null) return this._missingSamples('hole')
+    // Visibility decides 'hidden' before any tile is cached, too.
+    return this._channels.map(({ visible }, c) =>
+      visible
+        ? this._missingSample(c, 'uncached')
+        : this._missingSample(c, 'hidden', uncachedLevel),
+    )
   }
 
   /**
    * {@link sampleAt} at level `index` `opts.level` (default 0), fetching its
    * covering tile first when it is not resident. Hidden channels are not
    * fetched and stay `missing: 'hidden'`. `signal` stops the wait, not the load;
-   * a failed load resolves `uncached`.
+   * an abort or a failed load resolves `uncached`.
    */
   async loadSampleAt(
     x: number,
@@ -1990,16 +1997,17 @@ export class NVSlide extends EventTarget {
     const resident = this.sampleAt(x, y, { level: index })
     const level = this.manifest.levels.find((l) => l.index === index)
     const hit = level && this._tileUnder(level, x, y)
-    if (resident[0]?.missing !== 'uncached' || !level || !hit) return resident
+    if (!resident.some((s) => s.missing === 'uncached') || !level || !hit)
+      return resident
     const key = this.tileKey(level, hit.tile)
     const { signal } = opts
     this.requestTile(level, hit.tile)
     // Not pending after requestTile: cached, or held back after a failure.
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       const settle = () => {
-        if (signal?.aborted) reject(signal.reason)
-        else if (this._cache.has(key) || !this._pending.has(key)) resolve()
-        else return
+        if (!signal?.aborted && this._pending.has(key) && !this._cache.has(key))
+          return
+        resolve()
         this.removeEventListener('change', settle)
         signal?.removeEventListener('abort', settle)
       }
@@ -2037,7 +2045,10 @@ export class NVSlide extends EventTarget {
     const info = this.manifest.channelInfo
     return this._channels.map(({ name }, channel) => {
       const plane = held ? held.indexOf(channel) : channel
-      if (plane < 0) return this._missingSample(channel, 'hidden', level)
+      // A tile can outlive a hide or predate a show: visibility decides 'hidden'.
+      if (!this._channels[channel]?.visible)
+        return this._missingSample(channel, 'hidden', level)
+      if (plane < 0) return this._missingSample(channel, 'uncached', level)
       const stored = (
         s ? s.samples[plane * s.width * s.height + offset] : rgba?.[plane]
       ) as number
@@ -2085,6 +2096,7 @@ export class NVSlide extends EventTarget {
   }
 
   dispose(): void {
+    this._disposed = true
     this._colorAbort.abort()
     this._luts.clear()
     this._loadQueue.length = 0
@@ -2216,7 +2228,7 @@ export class NVSlide extends EventTarget {
     fromViewport = false,
   ): void {
     const key = this.tileKey(level, tile)
-    if (this._cache.has(key) || this._pending.has(key)) return
+    if (this._disposed || this._cache.has(key) || this._pending.has(key)) return
     if ((this._failed.get(key)?.retryAt ?? 0) > performance.now()) return
     if (fromViewport) this._viewportKeys.add(key)
     else this._viewportKeys.delete(key)

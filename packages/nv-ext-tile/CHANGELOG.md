@@ -1,3 +1,31 @@
+## 1.0.0-rc.91 (2026-11-12)
+
+### Features
+
+- **niivue, nv-ext-tile:** tile lane A slide sources (opener, fetch contract, transport checks, grey/signed, vendor layouts) ([fca4aed8](https://github.com/niivue/mono/commit/fca4aed8))
+
+### Fixes
+
+- **niivue:** a manifest's own origin gets the custom fetch with a cross-origin baseUrl ([c43372a7](https://github.com/niivue/mono/commit/c43372a7))
+- **nv-ext-tile:** hold every custom fetch to its signal in slideFetch ([6b12c8d7](https://github.com/niivue/mono/commit/6b12c8d7))
+- **nv-ext-tile:** opening a hosted manifest settles on abort when a custom fetch ignores it ([3243bb3e](https://github.com/niivue/mono/commit/3243bb3e))
+- **nv-ext-tile:** same-named local files keep distinct keys; rank slides without a spread ([06bdc395](https://github.com/niivue/mono/commit/06bdc395))
+- **nv-ext-tile:** only a caller abort rejects indexing; mixed slides list in input order ([def0549f](https://github.com/niivue/mono/commit/def0549f))
+- **nv-ext-tile:** pass a custom fetch straight to the Zarr loader after main's (url, init) ZarrFetch ([58c665f3](https://github.com/niivue/mono/commit/58c665f3))
+- **nv-ext-tile:** a disposed TIFF source refuses its cached ICC profile; an abort mid-read rejects thread-side indexing ([6b32c84e](https://github.com/niivue/mono/commit/6b32c84e))
+- **nv-ext-tile:** DicomPlaneStack ICC profile follows the initial plane ([39a66ba2](https://github.com/niivue/mono/commit/39a66ba2))
+- **nv-ext-tile:** PR 746 review fixes (sub-8-bit grey, Philips regex, capped reads) ([0a9d883f](https://github.com/niivue/mono/commit/0a9d883f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.184
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.90 (2026-11-12)
 
 ### Updated Dependencies

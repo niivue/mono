@@ -207,3 +207,22 @@ test('clearing a slide during attachment disposes it without retaining ownership
     nv.destroy()
   }
 })
+
+test('destroy releases an owned slide without invoking the renderer', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadDocument(documentFile(saved(false)))
+  const dispose = spyOn(NVSlide.prototype, 'dispose')
+  const draw = spyOn(nv, 'drawScene').mockImplementation(() => {
+    throw new Error('simulated render failure')
+  })
+  try {
+    nv.destroy()
+    expect(nv.slidePlaneIndex).toBeNull()
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(draw).not.toHaveBeenCalled()
+  } finally {
+    draw.mockRestore()
+    dispose.mockRestore()
+    nv.destroy()
+  }
+})

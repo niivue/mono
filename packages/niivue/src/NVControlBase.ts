@@ -6366,6 +6366,7 @@ export default class NiiVue extends EventTarget {
     this._slideVector = null
     this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = null
+    if (this._destroyed) return
     // Listeners drop the readout of the removed slide.
     if (this._slideLocationSamples) this.createOnLocationChange()
     this.drawScene()

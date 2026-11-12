@@ -128,16 +128,17 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       expect(result.before.filter(lit).length).toBe(1)
     })
 
-  for (const channels of [4, 27]) {
-    test(`stack fuse cost per chunk, ${channels} channels (${backend})`, async ({
-      page,
-    }) => {
-      test.skip(!process.env.STACK_FUSE_BENCH, 'set STACK_FUSE_BENCH=1')
-      test.setTimeout(240_000)
-      const result = (await page.evaluate(
-        mount(
-          backend,
-          `
+  // Opt-in: registered only with STACK_FUSE_BENCH, so the Metal gate sees no skips.
+  if (process.env.STACK_FUSE_BENCH)
+    for (const channels of [4, 27]) {
+      test(`stack fuse cost per chunk, ${channels} channels (${backend})`, async ({
+        page,
+      }) => {
+        test.setTimeout(240_000)
+        const result = (await page.evaluate(
+          mount(
+            backend,
+            `
         nv.volumeIsChannelStack = true
         nv.volumeOverlayColorBlend = 3
         nv.sliceType = 4
@@ -148,17 +149,17 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         const brick = nv.volumes[0].chunkPlan.chunks[0].texDims
         return { chunks: s.chunks, ms: s.ms, brick }
       `,
-          70,
-        ),
-      )) as { skip?: string; chunks: number; ms: number; brick: number[] }
-      test.skip(!!result.skip, result.skip)
-      console.log(
-        `stack fuse ${backend} ${channels} ch, brick ${result.brick.join('x')}: ` +
-          `${result.chunks} chunks, ${(result.ms / Math.max(1, result.chunks)).toFixed(2)} ms/chunk`,
-      )
-      expect(result.chunks).toBeGreaterThan(0)
-    })
-  }
+            70,
+          ),
+        )) as { skip?: string; chunks: number; ms: number; brick: number[] }
+        test.skip(!!result.skip, result.skip)
+        console.log(
+          `stack fuse ${backend} ${channels} ch, brick ${result.brick.join('x')}: ` +
+            `${result.chunks} chunks, ${(result.ms / Math.max(1, result.chunks)).toFixed(2)} ms/chunk`,
+        )
+        expect(result.chunks).toBeGreaterThan(0)
+      })
+    }
 }
 
 // The GL GPU fuse (blendOverlaysGL) against the CPU blendOverlayData it
@@ -211,15 +212,15 @@ test('GL GPU blend matches blendOverlayData in every mode', async ({
   expect(result.max).toBeLessThanOrEqual(1)
 })
 
-// The blend alone, GPU work included (a readback / onSubmittedWorkDone).
-for (const backend of ['webgl2', 'webgpu'] as const)
-  for (const channels of [4, 27])
-    test(`blend pass ms per 69^3 chunk, ${channels} channels (${backend})`, async ({
-      page,
-    }) => {
-      test.skip(!process.env.STACK_FUSE_BENCH, 'set STACK_FUSE_BENCH=1')
-      test.setTimeout(240_000)
-      const result = (await page.evaluate(`(async () => {
+// The blend alone, GPU work included (a readback / onSubmittedWorkDone). Opt-in.
+if (process.env.STACK_FUSE_BENCH)
+  for (const backend of ['webgl2', 'webgpu'] as const)
+    for (const channels of [4, 27])
+      test(`blend pass ms per 69^3 chunk, ${channels} channels (${backend})`, async ({
+        page,
+      }) => {
+        test.setTimeout(240_000)
+        const result = (await page.evaluate(`(async () => {
         const dims = [69, 69, 69], n = 69 ** 3 * 4, reps = 5
         const data = new Uint8Array(n)
         for (let i = 0; i < n; i++) data[i] = (i * 2654435761) >>> 24
@@ -265,9 +266,9 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         await device.queue.onSubmittedWorkDone()
         return { ms: (performance.now() - t0) / reps }
       })()`)) as { skip?: string; ms: number }
-      test.skip(!!result.skip, result.skip)
-      console.log(
-        `blend pass ${backend} ${channels} ch: ${result.ms.toFixed(2)} ms/chunk`,
-      )
-      expect(result.ms).toBeGreaterThan(0)
-    })
+        test.skip(!!result.skip, result.skip)
+        console.log(
+          `blend pass ${backend} ${channels} ch: ${result.ms.toFixed(2)} ms/chunk`,
+        )
+        expect(result.ms).toBeGreaterThan(0)
+      })

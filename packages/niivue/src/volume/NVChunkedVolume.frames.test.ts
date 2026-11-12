@@ -605,3 +605,26 @@ test('the newest frame request wins through a floor install wait', async () => {
   expect(chunked.frame).toBe(2)
   expect(vol.frameSource?.frame).toBe(2)
 })
+
+test('the readout never holds a brick larger than readoutBytes', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const handle = await nv.loadChunkedVolume(
+    {
+      levels: [{ level: 0, shape: [128, 128, 128], spacing: [1, 1, 1] }],
+      datatypeCode: NiiDataType.DT_UINT8,
+      async fetchChunk({ texDims }) {
+        return new Uint8Array(texDims[0] * texDims[1] * texDims[2]).fill(5)
+      },
+    },
+    { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes: 1024 },
+  )
+  const vol = nv.volumes[0]
+  for (const desc of handle.currentPlan.chunks)
+    await vol.chunkSource?.({ desc, bytesPerVoxel: 1 } as Parameters<
+      NonNullable<NVImage['chunkSource']>
+    >[0])
+  const held = (handle as unknown as { readout: { bytes: number } }).readout
+    .bytes
+  expect(held).toBeLessThanOrEqual(1024)
+  expect(vol.voxelValue?.(1, 1, 1).exact).toBe(false)
+})

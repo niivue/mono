@@ -1922,6 +1922,8 @@ class BrickReadout {
     const old = this.bricks.get(key)
     if (old) this.bytes -= old.view.byteLength
     this.bricks.delete(key)
+    // The cap holds even for one brick: a bigger one reads as approximate.
+    if (voxels * bpv > this.cap()) return
     const view = toVoxelView(bytes, Ctor, bpv, voxels)
     this.bricks.set(key, { level, origin, dims, view })
     this.bytes += view.byteLength
@@ -1931,7 +1933,7 @@ class BrickReadout {
   /** Evict the oldest bricks down to the current share of the cap. */
   trim(): void {
     for (const [k, b] of this.bricks) {
-      if (this.bytes <= this.cap() || this.bricks.size === 1) break
+      if (this.bytes <= this.cap()) break
       this.bricks.delete(k)
       this.bytes -= b.view.byteLength
     }

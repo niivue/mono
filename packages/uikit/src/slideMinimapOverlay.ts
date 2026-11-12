@@ -2,9 +2,11 @@
 // coarsest pyramid level in a canvas corner, with a box marking what the
 // viewport shows. Pressing or dragging on it recenters the viewport there.
 //
-// The coarsest tiles are composited on the CPU into one canvas as they arrive
-// (they are already channel-composited bitmaps), so the GPU side is a single
-// textured quad and nothing leaks when NVSlide's cache evicts a tile.
+// NVSlide.thumbnailBitmap composites the coarsest level on the CPU (scalar
+// tiles through their channels, scaled to MAX_THUMBNAIL_PX), copied here into
+// one canvas when it changes,
+// so the GPU side is a single textured quad and nothing leaks when NVSlide's
+// cache evicts a tile.
 
 import type { NVSlide, UIKitOverlayFrame } from '@niivue/niivue'
 import type { UIKitInteractive } from './controls'
@@ -17,19 +19,12 @@ import {
   type MinimapCorner,
   minimapToSlide,
   type SlideMinimapLayout,
-  thumbnailTileSpan,
 } from './slideMinimap'
 
 /** What the minimap uses of an NVSlide. */
 export type UIKitMinimapSlide = Pick<
   NVSlide,
-  | 'manifest'
-  | 'viewport'
-  | 'isYAxisUp'
-  | 'setViewport'
-  | 'requestTile'
-  | 'cachedTileBitmap'
-  | 'tileKey'
+  'manifest' | 'viewport' | 'isYAxisUp' | 'setViewport' | 'thumbnailBitmap'
 >
 
 export interface UIKitSlideMinimapOptions {
@@ -63,9 +58,8 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   private readonly wgpu = new WgpuImageRenderer()
   private thumbnail: OffscreenCanvas | null = null
   private thumbnailVersion = 0
-  // The bitmap last drawn per tile key: setChannel re-renders a cached tile
-  // under the same key, so a new bitmap there means redraw it.
-  private readonly drawnTiles = new Map<string, ImageBitmap>()
+  // NVSlide returns the same bitmap until a tile or the channels change.
+  private drawnBitmap: ImageBitmap | null = null
   private lastLayout: SlideMinimapLayout | null = null
   private dragging = false
 
@@ -102,54 +96,28 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     return this.lastLayout
   }
 
-  /** Composite new or re-rendered coarsest-level tiles into the thumbnail. */
+  /** Redraw the thumbnail when the slide's coarsest-level composite changed. */
   private updateThumbnail(): void {
-    const { manifest } = this.slide
-    const level = manifest.levels.at(-1)
-    if (!level) return
-    const tileW = level.tileWidth ?? manifest.tileSize ?? 1
-    const tileH = level.tileHeight ?? manifest.tileSize ?? 1
-    const k = Math.min(
-      1,
-      MAX_THUMBNAIL_PX / Math.max(level.width, level.height),
-    )
-    if (!this.thumbnail) {
-      this.thumbnail = new OffscreenCanvas(
-        Math.max(1, Math.round(level.width * k)),
-        Math.max(1, Math.round(level.height * k)),
-      )
-    }
-    const ctx = this.thumbnail.getContext('2d')
+    const bitmap = this.slide.thumbnailBitmap(undefined, MAX_THUMBNAIL_PX)
+    // Kept while null (tiles evicted or not yet loaded): the old one stays drawn.
+    if (!bitmap || bitmap === this.drawnBitmap) return
+    this.thumbnail ??= new OffscreenCanvas(bitmap.width, bitmap.height)
+    // CPU-backed: SwiftShader WebGPU's copyExternalImageToTexture of a
+    // GPU-backed 2D canvas fails validation ("[Invalid Texture]").
+    const ctx = this.thumbnail.getContext('2d', { willReadFrequently: true })
     if (!ctx) return
-    const yUp = this.slide.isYAxisUp()
-    for (const tile of level.tiles) {
-      if (!tile) continue
-      const key = this.slide.tileKey(level, tile)
-      const bitmap = this.slide.cachedTileBitmap(key)
-      if (!bitmap) {
-        // An evicted tile stays drawn; only fetch one never drawn.
-        if (!this.drawnTiles.has(key)) this.slide.requestTile(level, tile)
-        continue
-      }
-      if (this.drawnTiles.get(key) === bitmap) continue
-      const [x, x1] = thumbnailTileSpan(tile.x, tileW, tile.width, k)
-      const [y, y1] = thumbnailTileSpan(tile.y, tileH, tile.height, k)
-      const w = x1 - x
-      const h = y1 - y
-      ctx.clearRect(x, yUp ? this.thumbnail.height - y1 : y, w, h)
-      if (yUp) {
-        // y-up tiles stack from the bottom and their rows are stored bottom-up.
-        ctx.save()
-        ctx.translate(x, this.thumbnail.height - y)
-        ctx.scale(1, -1)
-        ctx.drawImage(bitmap, 0, 0, w, h)
-        ctx.restore()
-      } else {
-        ctx.drawImage(bitmap, x, y, w, h)
-      }
-      this.drawnTiles.set(key, bitmap)
-      this.thumbnailVersion++
-    }
+    const { width, height } = this.thumbnail
+    ctx.clearRect(0, 0, width, height)
+    if (this.slide.isYAxisUp()) {
+      // y-up rows are stored bottom-up.
+      ctx.save()
+      ctx.translate(0, height)
+      ctx.scale(1, -1)
+      ctx.drawImage(bitmap, 0, 0, width, height)
+      ctx.restore()
+    } else ctx.drawImage(bitmap, 0, 0, width, height)
+    this.drawnBitmap = bitmap
+    this.thumbnailVersion++
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -258,6 +226,6 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     this.gl.destroy()
     this.wgpu.destroy()
     this.thumbnail = null
-    this.drawnTiles.clear()
+    this.drawnBitmap = null
   }
 }

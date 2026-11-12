@@ -2,11 +2,18 @@ import { ubuntu } from '@/assets/fonts'
 import { colorLutWgsl } from '@/slide/colorLutShader'
 import type {
   NVSlide,
+  NVSlideCachedTile,
   NVSlideColor,
   NVSlideScreen,
   NVSlideScreenRect,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
+import {
+  isFuseTile,
+  rawPoolBytes,
+  type SlideRendererOptions,
+  tileTextureBudget,
+} from '@/slide/slideFuse'
 import {
   buildSlideOverlay,
   SLIDE_OVERLAY_MAX_GLYPHS,
@@ -14,9 +21,9 @@ import {
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import { forEachSlideTile, slideRectNdc } from '@/slide/slideTiles'
+import { type GutterAt, visibleTileAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
-  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
@@ -26,6 +33,7 @@ import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import { alphaPipelineDesc, linearSampler, texturedLayout } from './pipeline'
+import { TileFuserGPU } from './tileFuse'
 import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
 /** The slide shader, with or without the colour table lookup (bind group 1). */
@@ -145,11 +153,9 @@ export class SlideRendererGPU {
   // frame instead of accumulating for the life of the renderer. Eviction runs
   // before beginFrame (see render), so a texture referenced by the frame just
   // submitted is never destroyed while its commands are in flight.
-  private readonly _textures = new TileTextureCache<TileTextureGPU>(
-    DEFAULT_TILE_TEXTURE_BYTES,
-    (entry) => entry.texture.destroy(),
-  )
+  private readonly _textures: TileTextureCache<TileTextureGPU>
   private readonly _gutter = new TileGutterGPU()
+  private readonly _fuser: TileFuserGPU
   private readonly _uniformPool: GPUBuffer[] = []
   private _uniformCursor = 0
   /**
@@ -183,7 +189,13 @@ export class SlideRendererGPU {
     placeholderTexture: GPUTexture,
     format: GPUTextureFormat,
     sampleCount: number,
+    maxRawPoolBytes: number,
   ) {
+    this._fuser = new TileFuserGPU(maxRawPoolBytes)
+    this._textures = new TileTextureCache<TileTextureGPU>(
+      DEFAULT_TILE_TEXTURE_BYTES,
+      (entry) => entry.texture.destroy(),
+    )
     this._luts = new ColorLutTexturesGPU(device, lutLayout, sampler)
     this._canvas = canvas
     this._device = device
@@ -210,7 +222,7 @@ export class SlideRendererGPU {
    */
   static async create(
     canvas: HTMLCanvasElement,
-    options: { antialias?: boolean } = {},
+    options: { antialias?: boolean } & SlideRendererOptions = {},
   ): Promise<SlideRendererGPU | null> {
     if (!navigator.gpu) return null
     const adapter = await navigator.gpu.requestAdapter()
@@ -274,6 +286,7 @@ export class SlideRendererGPU {
       placeholderTexture,
       format,
       msaaCount,
+      rawPoolBytes(options.maxRawPoolBytes),
     )
     await renderer._initOverlay()
     return renderer
@@ -345,7 +358,9 @@ export class SlideRendererGPU {
     if (this._canvas.height !== height) this._canvas.height = height
 
     this._uniformCursor = 0
-    this._textures.evictToBudget()
+    // The raw pool takes its bytes from the texture budget only while it holds
+    // layers (scalar tiles), so RGB slides keep the whole budget.
+    this._textures.evictToBudget(tileTextureBudget(this._fuser.poolBytes))
     this._textures.beginFrame()
     if (!this.isNearestInterpolation)
       this._gutter.resync(this._device, this._textures)
@@ -384,8 +399,8 @@ export class SlideRendererGPU {
         gridColor: slide.gridColor,
       })
 
-      forEachSlideTile(slide, screen, (item, bitmap, rect, isFallback) => {
-        const texture = bitmap ? this.textureForBitmap(item, bitmap) : null
+      forEachSlideTile(slide, screen, (item, cached, rect, isFallback) => {
+        const texture = cached ? this.textureFor(item, cached) : null
         if (isFallback && !texture) return
         this.drawQuad(
           pass,
@@ -404,6 +419,13 @@ export class SlideRendererGPU {
           },
         )
       })
+      // Submitted ahead of the frame; nearest needs no gutter (resync fills it).
+      this._fuser.flush(
+        this._device,
+        this._gutter,
+        this._textures,
+        !this.isNearestInterpolation,
+      )
     }
 
     this._drawOverlay(pass, width, height, dpr)
@@ -434,6 +456,7 @@ export class SlideRendererGPU {
   // rather than when the byte budget evicts them.
   clearTextures(): void {
     this._textures.clear()
+    this._fuser.clear()
     this._luts.clear()
   }
 
@@ -456,6 +479,7 @@ export class SlideRendererGPU {
     this._msaaTexture?.destroy()
     this._msaaTexture = null
     this._textures.clear()
+    this._fuser.destroy()
     this._gutter.destroy()
     this._luts.clear()
     this._lines.destroy()
@@ -487,13 +511,29 @@ export class SlideRendererGPU {
     return buffer
   }
 
-  private textureForBitmap(
+  private textureFor(
     item: NVSlideVisibleTile,
+    cached: NVSlideCachedTile,
+  ): TileTextureGPU | null {
+    const at = visibleTileAt(item)
+    if (isFuseTile(cached))
+      return this._fuser.textureFor(
+        this._device,
+        this._gutter,
+        this._textures,
+        at,
+        item.slide,
+        cached,
+      )
+    return cached.bitmap ? this.textureForBitmap(at, cached.bitmap) : null
+  }
+
+  private textureForBitmap(
+    at: GutterAt,
     bitmap: ImageBitmap,
   ): TileTextureGPU | null {
-    // Keyed by the bitmap too: a re-windowed tile is a new bitmap (set() replaces).
-    const key = slideTileKey(item.slide, item.key)
-    const existing = this._textures.get(key, bitmap)
+    // Keyed by the bitmap too: a refetched tile is a new bitmap (set() replaces).
+    const existing = this._textures.get(at.key, bitmap)
     if (existing) return existing
     // Timed as `upload` alongside the volume path's brick uploads: a slide tile
     // and a volume brick are two consumers of the same streamed source, and
@@ -504,13 +544,7 @@ export class SlideRendererGPU {
         this._gutter.upload(
           this._device,
           bitmap,
-          {
-            slide: item.slide,
-            key,
-            level: item.level.index,
-            col: item.tile.x,
-            row: item.tile.y,
-          },
+          at,
           this._textures,
           // Nearest needs no gutter (the shader clamps); resync fills it.
           !this.isNearestInterpolation,

@@ -27,6 +27,17 @@ describe('TileTextureCache', () => {
     expect(destroyed).toEqual(['texA'])
   })
 
+  it('evicts to a per-call budget when one is given', () => {
+    const { cache, destroyed } = makeCache(100)
+    cache.set('a', 'texA', 40)
+    cache.set('b', 'texB', 40)
+    cache.beginFrame()
+    cache.evictToBudget()
+    expect(destroyed).toEqual([])
+    cache.evictToBudget(50)
+    expect(destroyed).toEqual(['texA'])
+  })
+
   it('destroys the previous value when a key is replaced', () => {
     const { cache, destroyed } = makeCache(100)
     cache.set('a', 'old', 10)

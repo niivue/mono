@@ -13,7 +13,11 @@ import { syntheticVolume } from './syntheticVolume'
 // drawn last, arrives after the others have been drawn: the first frame after
 // it lands must already show its neighbours' refreshed borders (nothing else
 // asks for a repaint when tiles stream). Tiles uploaded under nearest skip
-// the gutter copies; the first linear frame after must refill them.
+// the gutter copies; the first linear frame after must refill them. The
+// scalar variant serves the ramp as red, green and blue sample channels, fused
+// on the GPU (tileFuse.ts) and re-fused by a channel change between the two
+// reads, so a fused tile's gutter is filled after its fuse and refreshed after
+// a re-fuse (deferred under nearest).
 //
 // WebGPU is skipped when the runner has no adapter.
 
@@ -24,7 +28,7 @@ const SIZE = 32 // slide pixels per axis (2 tiles of 16)
 const CANVAS = 128
 
 // Page source: the ramp slide; `release()` delivers the held bottom-right tile.
-const rampSlide = `(NVSlide) => {
+const rampSlide = `(NVSlide, scalar = false) => {
   const n = ${SIZE}, t = n / 2, step = ${STEP}
   const tiles = []
   for (let y = 0; y < 2; y++)
@@ -47,8 +51,20 @@ const rampSlide = `(NVSlide) => {
           rgba.set([(tile.x * t + i) * step, (tile.y * t + j) * step, 255, 255], 4 * (j * t + i))
       return rgba
     },
+    ...(scalar ? {
+      fetchTileSamples: async (_level, tile, channels) => {
+        if (tile.x === 1 && tile.y === 1) await held
+        const samples = new Uint8Array(t * t * channels.length)
+        for (let j = 0; j < t; j++)
+          for (let i = 0; i < t; i++) {
+            const v = [(tile.x * t + i) * step, (tile.y * t + j) * step, 255]
+            channels.forEach((c, p) => { samples[(p * t + j) * t + i] = v[c] })
+          }
+        return { samples, width: t, height: t, bitsStored: 8, planes: channels.length }
+      },
+    } : {}),
   })
-  const cached = (keys) => keys.every((k) => slide.cachedTileBitmap(k))
+  const cached = (keys) => keys.every((k) => slide.cachedTile(k))
   return { slide, release, cached }
 }`
 
@@ -79,13 +95,15 @@ function expectRamps(
 }
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
-  for (const [scale, nearestFirst] of [
-    [1.5, false],
-    [3, false],
-    [1.5, true],
-    [3, true],
+  for (const [scale, nearestFirst, scalar] of [
+    [1.5, false, false],
+    [3, false, false],
+    [1.5, true, false],
+    [3, true, false],
+    [3, false, true],
+    [3, true, true],
   ] as const) {
-    const loaded = nearestFirst ? ', loaded under nearest' : ''
+    const loaded = `${nearestFirst ? ', loaded under nearest' : ''}${scalar ? ', fused scalar' : ''}`
     test(`slide tiles meet without seams at ${scale}x (${backend}${loaded})`, async ({
       page,
     }) => {
@@ -96,7 +114,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           if (!adapter) return { skip: 'no WebGPU adapter' }
         }
         const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('/src/index.ts')
-        const { slide, release, cached } = (${rampSlide})(NVSlide)
+        const { slide, release, cached } = (${rampSlide})(NVSlide, ${scalar})
         const n = ${SIZE}, size = ${CANVAS}
         const canvas = document.createElement('canvas')
         canvas.width = canvas.height = size
@@ -146,6 +164,8 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
           return { red, green, diagonal }
         }
         const first = read()
+        // The same window again: a new display generation, so every tile re-fuses.
+        if (${scalar}) slide.setChannel(2, { calMin: 0, calMax: 255 })
         renderer.isNearestInterpolation = !${nearestFirst}
         const second = read()
         const [linear, nearest] = ${nearestFirst} ? [second, first] : [first, second]

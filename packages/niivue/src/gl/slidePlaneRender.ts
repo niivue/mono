@@ -1,5 +1,6 @@
 import { colorLutGlsl } from '@/slide/colorLutShader'
-import type { NVSlide } from '@/slide/NVSlide'
+import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
+import { isFuseTile, tileTextureBudget } from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
@@ -14,11 +15,13 @@ import { NVRenderer } from '@/view/NVRenderer'
 import { ColorLutTexturesGL } from './colorLut'
 import { setTexParams } from './glUtil'
 import { Shader } from './shader'
+import { TileFuserGL } from './tileFuse'
 import { TileGutterGL, type TileTextureGL } from './tileGutter'
 
 // Draws an NVSlide as a textured plane in the 3D render tile. Each tile of the
 // chosen slide level is a world-mm quad (computed by `slidePlaneTiles`); this
-// renderer uploads the tile's cached bitmap to a GPU texture and draws the quad
+// renderer uploads the tile's cached bitmap (or fuses its samples, see
+// tileFuse.ts) to a GPU texture and draws the quad
 // with the render tile's MVP (world mm -> clip), so the slide composites with
 // the volume in its own space and depth. Tiles stream in via NVSlide's cache;
 // the controller redraws on the slide's `change` event, and this renderer
@@ -57,6 +60,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     (tile) => this._gl?.deleteTexture(tile.texture),
   )
   private readonly _gutter = new TileGutterGL()
+  private readonly _fuser = new TileFuserGL()
   // Annotation overlay (slide-space drawing) texture + uploaded version.
   private _annTex: WebGLTexture | null = null
   private _annVersion = -1
@@ -93,17 +97,23 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     slide: NVSlide,
     tile: SlidePlaneTile,
-    bitmap: ImageBitmap,
+    cached: NVSlideCachedTile,
   ): TileTextureGL | null {
-    const key = slideTileKey(slide, tile.key)
-    const existing = this._textures.get(key, bitmap)
+    const at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
+    if (isFuseTile(cached))
+      return this._fuser.textureFor(
+        gl,
+        this._gutter,
+        this._textures,
+        at,
+        slide,
+        cached,
+      )
+    const { bitmap } = cached
+    if (!bitmap) return null
+    const existing = this._textures.get(at.key, bitmap)
     if (existing) return existing
-    return this._gutter.upload(
-      gl,
-      bitmap,
-      { ...tile, slide, key },
-      this._textures,
-    )
+    return this._gutter.upload(gl, bitmap, at, this._textures)
   }
 
   /** Bind the program and uniforms, and set the plane's depth/blend state. */
@@ -139,9 +149,20 @@ export class SlidePlaneRenderer extends NVRenderer {
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
     // Evict BEFORE beginFrame so the previous frame's working set is exempt.
-    this._textures.evictToBudget()
+    // The raw pool takes its bytes from the texture budget only while it holds
+    // layers (scalar tiles), so RGB slides keep the whole budget.
+    this._textures.evictToBudget(tileTextureBudget(this._fuser.poolBytes))
     this._textures.beginFrame()
     gl.activeTexture(gl.TEXTURE0)
+    // Upload and fuse every tile before drawing any: an upload refreshes
+    // resident neighbours' gutters, which must land before those are drawn.
+    const drawn: [SlidePlaneTile, TileTextureGL][] = []
+    for (const tile of tiles) {
+      const cached = slide.cachedTile(tile.key)
+      const tex = cached && this._textureFor(gl, slide, tile, cached)
+      if (tex) drawn.push([tile, tex])
+    }
+    this._fuser.flush(gl, this._gutter, this._textures, true)
     const lut = slide.displayColorLut
     let shader = this._shader
     if (lut && this._lutShader) {
@@ -151,14 +172,6 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._begin(gl, shader, mvpMatrix, opacity)
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
-    // Upload every tile before drawing any: an upload refreshes resident
-    // neighbours' gutters, which must land before those are drawn.
-    const drawn: [SlidePlaneTile, TileTextureGL][] = []
-    for (const tile of tiles) {
-      const bitmap = slide.cachedTileBitmap(tile.key)
-      const tex = bitmap && this._textureFor(gl, slide, tile, bitmap)
-      if (tex) drawn.push([tile, tex])
-    }
     for (const [tile, tex] of drawn) {
       gl.bufferData(
         gl.ARRAY_BUFFER,
@@ -214,6 +227,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     const gl = this._gl
     if (!gl) return
     this._textures.clear()
+    this._fuser.destroy(gl)
     this._gutter.destroy(gl)
     this._luts.clear(gl)
     if (this._annTex) gl.deleteTexture(this._annTex)

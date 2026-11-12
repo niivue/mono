@@ -21,9 +21,7 @@ function fakeSlide(yAxisUp = false) {
     setViewport(v: NVSlideViewport) {
       slide.viewport = { ...v }
     },
-    requestTile() {},
-    cachedTileBitmap: () => null,
-    tileKey: () => '',
+    thumbnailBitmap: (): unknown => null,
   }
   return slide
 }
@@ -64,7 +62,7 @@ describe('UIKitSlideMinimapOverlay', () => {
     expect(minimap.pointerMove(image.x, image.y)).toBe(false)
   })
 
-  it('redraws a tile whose cached bitmap was re-rendered under the same key', () => {
+  it('redraws only when the slide hands back a new thumbnail', () => {
     const drawn: unknown[] = []
     const ctx = {
       clearRect() {},
@@ -79,30 +77,29 @@ describe('UIKitSlideMinimapOverlay', () => {
       getContext = () => ctx
     } as unknown as typeof OffscreenCanvas
     try {
-      const tile = { x: 0, y: 0, width: 100, height: 50 }
       const slide = fakeSlide()
-      const level = { width: 100, height: 50, tileWidth: 256, tiles: [tile] }
+      const level = { width: 100, height: 50 }
       slide.manifest = { ...slide.manifest, levels: [level] } as NVSlideManifest
       let bitmap: object | null = null
-      let requests = 0
-      slide.requestTile = () => {
-        requests++
+      const maxPx: unknown[] = []
+      slide.thumbnailBitmap = (_level?: unknown, px?: unknown) => {
+        maxPx.push(px)
+        return bitmap
       }
-      slide.cachedTileBitmap = () => bitmap as never
       const minimap = new UIKitSlideMinimapOverlay(slide as UIKitMinimapSlide)
       const update = () =>
         (minimap as unknown as { updateThumbnail(): void }).updateThumbnail()
       update()
-      expect(requests).toBe(1)
       bitmap = { version: 1 }
       update()
       update()
-      bitmap = { version: 2 } // setChannel re-rendered it
+      bitmap = { version: 2 } // a tile arrived, or setChannel
+      update()
+      bitmap = null // evicted: the drawn thumbnail stays
       update()
       expect(drawn).toEqual([{ version: 1 }, { version: 2 }])
-      bitmap = null // evicted: keep the drawn tile, no refetch
-      update()
-      expect(requests).toBe(1)
+      // NVSlide scales it: a large coarsest level never becomes a large bitmap.
+      expect(new Set(maxPx)).toEqual(new Set([1024]))
     } finally {
       globalThis.OffscreenCanvas = saved
     }

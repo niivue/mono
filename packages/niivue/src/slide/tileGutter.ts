@@ -15,6 +15,7 @@
 // and the first linear frame after refills every resident border once.
 
 import { log } from '@/logger'
+import type { NVSlideVisibleTile } from './NVSlide'
 import { slideTileKey, type TileTextureCache } from './tileTextureCache'
 
 /** Interior size of a tile texture (the bitmap size). */
@@ -33,6 +34,15 @@ export interface GutterAt {
   col: number
   row: number
 }
+
+/** Where visible tile `item` of the 2D view goes. */
+export const visibleTileAt = (item: NVSlideVisibleTile): GutterAt => ({
+  slide: item.slide,
+  key: slideTileKey(item.slide, item.key),
+  level: item.level.index,
+  col: item.tile.x,
+  row: item.tile.y,
+})
 
 /**
  * Copy `width` x `height` texels from (srcX, srcY) of a padded source texture

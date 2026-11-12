@@ -22,6 +22,8 @@ export type TileTextureGL = {
   level: number
   col: number
   row: number
+  /** A fused scalar tile: the slide's displayGeneration it was fused for. */
+  fused?: number
 }
 
 type Copy = [src: TileTextureGL | null, dst: TileTextureGL, c: GutterCopy]
@@ -38,6 +40,28 @@ export class TileGutterGL {
   private _scratchSize = 0
   // An upload skipped its gutter copies since the last resync.
   private _stale = false
+
+  /** An empty `width` x `height` tile texture (plus gutter) for tile `at`. */
+  create(
+    gl: WebGL2RenderingContext,
+    width: number,
+    height: number,
+    { slide, level, col, row }: GutterAt,
+  ): TileTextureGL {
+    const tile = {
+      texture: gl.createTexture(),
+      width,
+      height,
+      slide,
+      level,
+      col,
+      row,
+    }
+    gl.bindTexture(gl.TEXTURE_2D, tile.texture)
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width + 2, height + 2)
+    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
+    return tile
+  }
 
   /**
    * Upload `bitmap` as tile `at` into `cache`, then sync its gutter there
@@ -56,19 +80,7 @@ export class TileGutterGL {
     )
     if (!source) return null
     const { width, height } = source
-    const { slide, level, col, row } = at
-    const tile = {
-      texture: gl.createTexture(),
-      width,
-      height,
-      slide,
-      level,
-      col,
-      row,
-    }
-    gl.bindTexture(gl.TEXTURE_2D, tile.texture)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width + 2, height + 2)
-    setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR)
+    const tile = this.create(gl, width, height, at)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.texSubImage2D(
       gl.TEXTURE_2D,
@@ -82,16 +94,35 @@ export class TileGutterGL {
       source,
     )
     cache.set(at.key, tile, gutterTextureBytes(width, height), bitmap)
+    this.sync(gl, [tile], cache, sync)
+    return tile
+  }
+
+  /**
+   * Fill the gutters of `tiles` (already in `cache`) and refresh the resident
+   * neighbours' slots that read from them; with `sync` false, defer to `resync`.
+   */
+  sync(
+    gl: WebGL2RenderingContext,
+    tiles: readonly TileTextureGL[],
+    cache: TileTextureCache<TileTextureGL>,
+    sync = true,
+  ): void {
     if (!sync) {
-      this._stale = true
-      return tile
+      this._stale ||= tiles.length > 0
+      return
     }
     const copies: Copy[] = []
-    syncGutters(level, col, row, tile, slideNeighbour(cache, slide), (...c) =>
-      copies.push(c),
-    )
-    this._copy(gl, copies)
-    return tile
+    for (const t of tiles)
+      syncGutters(
+        t.level,
+        t.col,
+        t.row,
+        t,
+        slideNeighbour(cache, t.slide),
+        (...c) => copies.push(c),
+      )
+    if (copies.length) this._copy(gl, copies)
   }
 
   /** Refill every resident tile's gutter if an upload skipped its own. */

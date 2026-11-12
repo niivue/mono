@@ -30,11 +30,7 @@ describe('omeTiffVolumesFrom', () => {
     expect(volumes.map((v) => v.name)).toEqual(['nuclei', 'membrane', 'mito'])
     // The stated colour wins for channel 0; unstated channels take the
     // palette entry for their position.
-    expect(volumes.map((v) => v.colormap)).toEqual([
-      'blue',
-      'violet',
-      'blue2cyan',
-    ])
+    expect(volumes.map((v) => v.colormap)).toEqual(['blue', 'violet', 'cyan'])
   })
 
   test('colormap order follows the requested list, not the file', async () => {

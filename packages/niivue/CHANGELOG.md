@@ -1,3 +1,13 @@
+## 1.0.0-rc.175 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** fill DICOM-WSI holes with the recommended absent colour ([454b7a26](https://github.com/niivue/mono/commit/454b7a26))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.174 (2026-11-12)
 
 ### Features

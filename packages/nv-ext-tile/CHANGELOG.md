@@ -1,3 +1,24 @@
+## 1.0.0-rc.81 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** fill DICOM-WSI holes with the recommended absent colour ([454b7a26](https://github.com/niivue/mono/commit/454b7a26))
+
+### Fixes
+
+- **nv-ext-tile:** reject a non-VM-3 binary absent-pixel CIELab value ([7bc18364](https://github.com/niivue/mono/commit/7bc18364))
+- **nv-ext-tile:** an empty CIELab component is not 0 ([6c93e490](https://github.com/niivue/mono/commit/6c93e490))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.175
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.80 (2026-11-12)
 
 ### Features

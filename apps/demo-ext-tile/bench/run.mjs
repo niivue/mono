@@ -119,6 +119,8 @@ const server = createServer(async (req, res) => {
   entry.status = m ? 206 : 200
   headers['content-length'] = end - start + 1
   res.writeHead(entry.status, headers)
+  // HEAD sends no body, so it reads and counts nothing.
+  if (req.method === 'HEAD') return void res.end()
   const stream = createReadStream(file, { start, end })
   stream.on('data', (chunk) => {
     entry.bytes += chunk.length

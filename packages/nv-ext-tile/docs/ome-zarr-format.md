@@ -36,12 +36,18 @@ the whole-level loader does (an `x y z` store is transposed per brick), and
 the time/channel axes are pinned per source, so multi-channel stores stream
 one chosen channel rather than silently dropping the rest.
 
-The convenience fetch wraps the store in `zarr.withByteCaching` with a
-`ByteLruCache` (default 256 MiB): raw store responses are reused across the
-plan rebuilds that crosshair moves trigger, and a 404'd chunk is remembered as
-a zero-byte CONFIRMED ABSENCE: zarr's missing-chunk-means-fill-value
-convention makes sparse stores lean on 404s hard, and a store is immutable for
-the life of a load, so each absence needs discovering exactly once.
+`fetchOmeZarrChunkedSource` reads on a pool of chunk workers wherever one can
+run. The workers hold the byte cache, a `ByteLruCache` behind
+`zarr.withByteCaching` (default 256 MiB, split across the workers, not given
+to each), and the opt-in persistent tier, split the same way; the main thread
+keeps none and reads only when a worker fails. The workers open from the
+metadata the main thread already read (sent with each worker's first request).
+Raw store responses are reused across the plan rebuilds that crosshair moves
+trigger, and a 404'd chunk is remembered as a zero-byte CONFIRMED ABSENCE:
+zarr's missing-chunk-means-fill-value convention makes sparse stores lean on
+404s hard, and a store is immutable for the life of a load, so each absence
+needs discovering exactly once. Without a pool (`workers: 0`, a custom
+`fetch`, no Worker) the cache sits on the calling thread.
 
 `openOmeZarr`/`fetchOmeZarr` accept `levels` (open a subset of the pyramid,
 e.g. a partial local mirror) and `ignoreMissingLevels` (skip a listed level
@@ -51,6 +57,8 @@ to learn the Zarr format version, and every level array is opened
 version-pinned; the version-agnostic probe would cost a 404 per level on
 every v2 store. `zarrVersion: 2 | 3` (also on `fetchOmeZarrChunkedSource`)
 skips that root probe, and the `zarr.json` 404 it logs on a v2 store. A successful `text/html` answer reads as a missing key: Vite's dev server and SPA hosts answer any missing path with their index page and 200, which would otherwise break the v3-to-v2 fallback.
+
+Custom `fetch`, `dispose`, `frames` / `revision` and lazy-time prefetch: [README](../README.md#ome-zarr).
 
 ## What is supported
 

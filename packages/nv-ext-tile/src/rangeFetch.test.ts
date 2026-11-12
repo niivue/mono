@@ -59,7 +59,7 @@ test('anySignal: none, one passed through, several combined', () => {
   expect(both?.aborted).toBe(true)
 })
 
-test('omeZarrFetchStore keeps its policy: no Content-Range start check', async () => {
+test('omeZarrFetchStore refuses a 206 from the wrong offset (SRC-18)', async () => {
   const store = omeZarrFetchStore(
     'http://x/s',
     async () =>
@@ -68,6 +68,7 @@ test('omeZarrFetchStore keeps its policy: no Content-Range start check', async (
         headers: { 'Content-Range': 'bytes 5-12/99' },
       }),
   )
-  const got = await store.getRange('/0/c/0/0', { offset: 0, length: 8 })
-  expect(got?.length).toBe(8)
+  await expect(
+    store.getRange('/0/c/0/0', { offset: 0, length: 8 }),
+  ).rejects.toThrow('answered bytes 5- to bytes=0-7')
 })

@@ -6,19 +6,20 @@
  * left with the one part a worker cannot take, the GPU upload.
  *
  * The worker opens its OWN view of the store, because a zarrita array is not
- * structured-cloneable. Opening costs one metadata round trip per worker,
- * served from the HTTP cache after the first, and it buys the whole pipeline
- * per worker: its own byte LRU, its own timing recorder, no shared state to
+ * structured-cloneable. The pool sends the metadata the main thread read with
+ * the first request, so opening costs no request; a worker without it (one
+ * whose first open failed) reads it itself. It buys the whole pipeline per
+ * worker: its own byte LRU, its own timing recorder, no shared state to
  * synchronise. It is the same code path the main thread takes
  * ({@link openOmeZarrChunkedSource}), not a reimplementation of it.
  *
  * Protocol (NVWorker bridge):
- *   Request:  { _wbId, taskId, url, options, req }
- *   Success:  { _wbId, bytes, timing, cache, persist }  (bytes transferred)
+ *   Request:  { _wbId, taskId, url, options, req, metadata? }
+ *   Success:  { _wbId, bytes, timing, cache, persist, wireBytes }  (bytes transferred)
  *   Error:    { _wbId, _wbError, _wbErrorName }
  *   Cancel:   { cancel: taskId }                (no reply, fire and forget)
  *
- * `timing`, `cache` and `persist` are CUMULATIVE for this worker; the pool
+ * `timing`, `cache`, `persist` and `wireBytes` are CUMULATIVE for this worker; the pool
  * diffs them against what it last saw so nothing is double counted when
  * several reads land out of order.
  */
@@ -47,17 +48,23 @@ const post = (
 /** Opened sources, keyed by URL + open options. One store, many reads. */
 const sources = new Map<string, Promise<OmeZarrChunkedSource>>()
 
+/** Response bytes this worker has read (HEADs excluded), cumulative. */
+let wireBytes = 0
+
 /** In-flight reads that {@link cancel} can still abort, by task id. */
 const inflight = new Map<number, AbortController>()
 
 function sourceFor(
   url: string,
   options: FetchOmeZarrChunkedSourceOptions,
+  metadata?: Map<string, Uint8Array | undefined>,
 ): Promise<OmeZarrChunkedSource> {
   const key = `${url}\u0000${JSON.stringify(options)}`
   let source = sources.get(key)
   if (!source) {
-    source = openOmeZarrChunkedSource(url, options)
+    source = openOmeZarrChunkedSource(url, options, metadata, (bytes) => {
+      wireBytes += bytes
+    })
     // A failed open must not be remembered: the next request re-opens rather
     // than replaying the rejection forever.
     source.catch(() => {
@@ -88,6 +95,7 @@ self.onmessage = async (e: MessageEvent) => {
     url,
     options,
     req,
+    metadata,
     cancel,
   } = e.data as {
     _wbId?: number
@@ -95,6 +103,7 @@ self.onmessage = async (e: MessageEvent) => {
     url?: string
     options?: FetchOmeZarrChunkedSourceOptions
     req?: ChunkedVolumeFetch
+    metadata?: Map<string, Uint8Array | undefined>
     cancel?: number
   }
 
@@ -110,7 +119,7 @@ self.onmessage = async (e: MessageEvent) => {
   const controller = new AbortController()
   if (typeof taskId === 'number') inflight.set(taskId, controller)
   try {
-    const source = await sourceFor(url, options ?? {})
+    const source = await sourceFor(url, options ?? {}, metadata)
     const bytes = await source.fetchChunk({ ...req, signal: controller.signal })
     const out = ownBuffer(bytes)
     post(
@@ -120,6 +129,7 @@ self.onmessage = async (e: MessageEvent) => {
         timing: chunkTimingSnapshot(),
         cache: source.byteCacheStats?.() ?? null,
         persist: source.persistStats?.() ?? null,
+        wireBytes,
       },
       [out.buffer as ArrayBuffer],
     )

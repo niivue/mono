@@ -171,10 +171,13 @@ export function fuseSamples(
 }
 
 /**
- * A layer's fuse-shader uniforms: calMin as a float32 head and its remainder,
- * calMax - calMin, LUT row, invert. Rounding calMin or calMax to float32 alone
- * shifts a narrow window at large values (float32 ulp at 1e8 is 8); the shaders
- * subtract head then remainder, and the width is taken in float64.
+ * A layer's fuse-shader uniforms, all halved: calMin as a float32 head and its
+ * remainder, the width / 512, LUT row, invert. Rounding calMin or calMax to
+ * float32 alone shifts a narrow window at large values (float32 ulp at 1e8 is
+ * 8). The shaders halve the sample too, so v - calMin and the width stay finite
+ * for a window as wide as -3e38..3e38; powers of two keep every ratio exact.
+ * shortcut: values or windows under ~1e-37 go subnormal and lose precision,
+ * fine for any real data.
  */
 export function fuseUniforms(
   { calMin, calMax }: FuseLayer,
@@ -182,7 +185,13 @@ export function fuseUniforms(
   invert: boolean,
 ): [number, number, number, number, number] {
   const head = Math.fround(calMin)
-  return [head, calMax - calMin, row, invert ? 1 : 0, calMin - head]
+  return [
+    head / 2,
+    (calMax - calMin) / 512,
+    row,
+    invert ? 1 : 0,
+    (calMin - head) / 2,
+  ]
 }
 
 /** Colormap rows of a renderer's 256-wide RGBA8 LUT texture, added on first use. */

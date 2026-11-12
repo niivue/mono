@@ -174,10 +174,31 @@ describe('fuseUniforms', () => {
     expect([row, invert]).toEqual([2, 1])
     // The shader's level for sample 1e8 + 8, in float32 steps as the GPU does.
     const f = Math.fround
-    const n = f(f(f(f(1e8 + 8) - (head as number)) - (rest as number)) * 255)
+    const n = f(
+      f(f(f(1e8 + 8) * 0.5 - (head as number)) - (rest as number)) *
+        f(255 / 256),
+    )
     expect(Math.round(n / (width as number))).toBe(191)
     // Rounding calMin and calMax to float32 first would give level 255.
     expect(f(1e8 + 3.2)).toBe(1e8)
+  })
+
+  it('keeps a window wider than float32 finite', () => {
+    const layer = { plane: 0, colormap: 'gray', calMin: -3e38, calMax: 3.2e38 }
+    const [head, width, , , rest] = Float32Array.from(
+      fuseUniforms(layer, 0, false),
+    )
+    expect(Number.isFinite(width)).toBe(true)
+    const f = Math.fround
+    const level = (v: number) =>
+      Math.round(
+        f(
+          f(f(f(v) * 0.5 - (head as number)) - (rest as number)) * f(255 / 256),
+        ) / (width as number),
+      )
+    expect(level(0)).toBe(123)
+    // v - calMin is 6e38 here, past float32 max unhalved.
+    expect(level(3e38)).toBe(247)
   })
 })
 

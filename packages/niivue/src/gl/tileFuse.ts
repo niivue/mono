@@ -33,19 +33,18 @@ precision highp float;
 precision highp int;
 uniform highp ${sampler} raw;
 uniform highp sampler2D lut;
-// fuseUniforms: calMin head, calMax - calMin, LUT row, invert; then the calMin remainder
+// fuseUniforms, halved: calMin head, width / 512, LUT row, invert; then the calMin remainder
 uniform vec4 window;
 uniform float calMinRest;
 out vec4 color;
 void main() {
   float v = float(texelFetch(raw, ivec2(gl_FragCoord.xy) - 1, 0).r);
   // max() keeps the compiler from folding the two uniforms into one float32 calMin.
-  float d = max(v - window.x, -3.4e38) - calMinRest;
-  // Scale by an exact power of two so d * 255 cannot overflow; the ratio is
-  // unchanged. max() keeps the compiler from cancelling s out of n / w.
-  float s = max(abs(d), window.y) > 1e36 ? 0.00390625 : 1.0;
-  float n = max(d * s, -3.4e38) * 255.0;
-  float w = max(window.y * s, 0.0);
+  // Halved, as the uniforms (fuseUniforms): v - calMin cannot overflow.
+  float d = max(v * 0.5 - window.x, -3.4e38) - calMinRest;
+  // n / w is the level; d * 255 / 256 cannot overflow either.
+  float n = d * 0.99609375;
+  float w = window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   float g = floor(n / w + 0.5);
   if ((g - 0.5) * w > n) g -= 1.0;

@@ -38,7 +38,7 @@ const FORMATS: Record<RawFormat, [GPUTextureFormat, number]> = {
 
 const shaderCode = (kind: Kind): string => /* wgsl */ `
 struct Params {
-  // fuseUniforms: calMin head, calMax - calMin, LUT row, invert
+  // fuseUniforms, halved: calMin head, width / 512, LUT row, invert
   window: vec4f,
   calMinRest: f32,
 };
@@ -56,12 +56,11 @@ fn vertex_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
 fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let v = f32(textureLoad(raw, vec2i(pos.xy) - 1, 0).r);
   // max() keeps the compiler from folding the two uniforms into one float32 calMin.
-  let d = max(v - p.window.x, -3.4e38) - p.calMinRest;
-  // Scale by an exact power of two so d * 255 cannot overflow; the ratio is
-  // unchanged. max() keeps the compiler from cancelling s out of n / w.
-  let s = select(1.0, 0.00390625, max(abs(d), p.window.y) > 1e36);
-  let n = max(d * s, -3.4e38) * 255.0;
-  let w = max(p.window.y * s, 0.0);
+  // Halved, as the uniforms (fuseUniforms): v - calMin cannot overflow.
+  let d = max(v * 0.5 - p.window.x, -3.4e38) - p.calMinRest;
+  // n / w is the level; d * 255 / 256 cannot overflow either.
+  let n = d * 0.99609375;
+  let w = p.window.y;
   // Math.round(n / w): floor(x + 0.5), then undo a division rounded across a tie.
   var g = floor(n / w + 0.5);
   if ((g - 0.5) * w > n) {

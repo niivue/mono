@@ -1,3 +1,13 @@
+## 1.0.0-rc.179 (2026-11-12)
+
+### Features
+
+- **niivue:** pure cyan and yellow channel ramps ([66b20d23](https://github.com/niivue/mono/commit/66b20d23))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.178 (2026-11-12)
 
 ### Features

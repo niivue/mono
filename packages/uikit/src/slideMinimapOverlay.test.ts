@@ -150,6 +150,21 @@ describe('UIKitSlideMinimapOverlay', () => {
     }
   })
 
+  it('without a bound layer a channel change composes at once', () => {
+    try {
+      const r = thumbnailRig()
+      ;(r.peek as unknown as { layer: unknown }).layer = null
+      r.set({ version: 1 })
+      r.update()
+      r.slide.displayGeneration = 1
+      r.set({ version: 2 })
+      r.update()
+      expect(r.drawn).toEqual([{ version: 1 }, { version: 2 }])
+    } finally {
+      globalThis.OffscreenCanvas = savedCanvas
+    }
+  })
+
   it('never shows a stale window after the coarse tiles are evicted', () => {
     try {
       // A single-tile coarsest level: evict it, change a channel, reload it.

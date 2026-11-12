@@ -164,12 +164,12 @@ export class NVSlideController {
     canvas.addEventListener('dblclick', this._onDoubleClick)
   }
 
-  /** Drop every ruler. */
   /** End a gesture under way without completing it (no ruler, box or zoom). */
   cancelGesture(): void {
     if (this._gesture) this._end(this._gesture, false)
   }
 
+  /** Drop every ruler. */
   clearMeasurements(): void {
     this.measurements.length = 0
     this.activeMeasurement = null

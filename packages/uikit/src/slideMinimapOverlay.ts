@@ -120,7 +120,8 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     const generation = this.slide.displayGeneration
     if (generation !== this.drawnGeneration) {
       const wait = this.composedAt + RECOMPOSE_MS - performance.now()
-      if (wait > 0) {
+      // Unbound (overlayDraw wired by hand): no redraw source, so compose now.
+      if (wait > 0 && this.layer) {
         this.trailing ??= setTimeout(() => {
           this.trailing = undefined
           this.layer?.requestRedraw()

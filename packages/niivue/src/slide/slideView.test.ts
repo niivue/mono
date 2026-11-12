@@ -203,6 +203,16 @@ describe('createSlideView', () => {
     expect(own).toEqual(['own', 'added', 'own'])
   })
 
+  test("destroy leaves a borrowed renderer's own overlay", async () => {
+    const r = fakeRenderer()
+    const own = {} as SlideRenderBackend['overlay']
+    Object.assign(r, { overlay: own })
+    const view = await createSlideViewWith([], fakeCanvas(), { renderer: r })
+    view.renderNow()
+    view.destroy()
+    expect(r.overlay as unknown).toBe(own)
+  })
+
   test('setSlide after destroy releases an owned slide', async () => {
     const view = await createSlideViewWith(
       [backend('webgl2', () => fakeRenderer())],
@@ -453,6 +463,22 @@ describe('linkSlideViews', () => {
     a.setViewport({ centerX: 1, centerY: 1, scale: 1 })
     va.renderNow()
     expect(b.viewport.centerX).toBe(50)
+    va.destroy()
+    vb.destroy()
+  })
+
+  test('a gesture on a view before its echo frame still moves the others', async () => {
+    const a = fakeSlide([0.001, 0.001])
+    const b = fakeSlide([0.001, 0.001])
+    const [va, vb] = [await viewOf(a), await viewOf(b)]
+    va.renderNow()
+    vb.renderNow()
+    linkSlideViews([va, vb])
+    a.setViewport({ centerX: 10, centerY: 10, scale: 1 })
+    va.renderNow()
+    b.setViewport({ centerX: 30, centerY: 30, scale: 1 }) // before b's frame
+    vb.renderNow()
+    expect(a.viewport).toEqual({ centerX: 30, centerY: 30, scale: 1 })
     va.destroy()
     vb.destroy()
   })

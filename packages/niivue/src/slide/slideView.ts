@@ -263,6 +263,7 @@ export async function createSlideViewWith(
 
   // A borrowed renderer's own hook keeps drawing, first.
   const ownDraw = renderer.overlayDraw
+  const ownOverlay = renderer.overlay
   const syncOverlays = (): void => {
     renderer.overlayDraw = overlays.size
       ? (f) => {
@@ -375,7 +376,7 @@ export async function createSlideViewWith(
       overlays.clear()
       listeners.clear()
       renderer.overlayDraw = ownDraw
-      renderer.overlay = null
+      renderer.overlay = ownOverlay
       if (!borrowed) renderer.destroy()
     },
   }
@@ -423,8 +424,9 @@ function viewportFrom(
  */
 export function linkSlideViews(views: readonly SlideView[]): () => void {
   const seen = new Map<SlideView, string>()
-  // Views whose next frame shows a viewport the link set: not echoed back.
-  const echoes = new Set<SlideView>()
+  // The viewport the link set on a view: its next frame, if still showing it,
+  // is not echoed back; a gesture before that frame changes it and is pushed.
+  const echoes = new Map<SlideView, string>()
   const key = (s: NVSlide): string => {
     const v = s.viewport
     return `${v.centerX},${v.centerY},${v.scale}`
@@ -438,8 +440,10 @@ export function linkSlideViews(views: readonly SlideView[]): () => void {
       if (target === source || !to) continue
       const physical =
         !!from.manifest.pixelSpacingMM && !!to.manifest.pixelSpacingMM
-      echoes.add(target)
       to.setViewport(viewportFrom(to, physicalView(from, physical), physical))
+      // Clamp now, as the frame will: the echo key is what that frame shows.
+      to.clampViewport(target.screen())
+      echoes.set(target, key(to))
     }
   }
   // The first view leads at link time: a view joining (a lens, a compare
@@ -450,7 +454,9 @@ export function linkSlideViews(views: readonly SlideView[]): () => void {
       const from = source.slide
       if (!from) return
       const k = key(from)
-      if (echoes.delete(source) || seen.get(source) === k) {
+      const echo = echoes.get(source)
+      echoes.delete(source)
+      if (echo === k || seen.get(source) === k) {
         seen.set(source, k)
         return
       }

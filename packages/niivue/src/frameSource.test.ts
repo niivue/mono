@@ -221,3 +221,24 @@ test('a volume joining the group during a fetch switches with it', async () => {
   expect(nv.getFrame4D('c1.nii')).toBe(2)
   expect(nv.volumes[1].img?.[0]).toBe(201)
 })
+
+test('a shorter volume joining during a fetch lowers the whole group clamp', async () => {
+  const group = {}
+  const gates = new Map([[4, gate()]])
+  const nv = await load([source(0, group, gates)])
+  const request = nv.setFrame4D('c0.nii', 4)
+  await nv.addVolume({
+    url: channelVolumeFile(
+      DIMS,
+      [1, 1, 1],
+      NiiDataType.DT_UINT16,
+      frameOf(0, 1),
+      'c1',
+    ),
+    frameSource: { ...source(1, group), count: 2 },
+  })
+  gates.get(4)?.resolve()
+  await request
+  expect([nv.getFrame4D('c0.nii'), nv.getFrame4D('c1.nii')]).toEqual([1, 1])
+  expect(nv.volumes.map((v) => v.img?.[0])).toEqual([100, 101])
+})

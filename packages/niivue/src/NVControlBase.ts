@@ -5128,40 +5128,38 @@ export default class NiiVue extends EventTarget {
     source: VolumeFrameSource,
     frame: number,
   ): Promise<void> {
-    const members = this.volumes.filter(
-      (v) => v.frameSource?.group === source.group,
-    )
+    const groupMembers = () =>
+      this.volumes.filter((v) => v.frameSource?.group === source.group)
     // Grouped stores may differ in length: clamp to the shortest.
-    const count = Math.min(...members.map((v) => v.frameSource?.count ?? 1))
-    const t = Number.isFinite(frame)
-      ? Math.max(0, Math.min(Math.round(frame), count - 1))
-      : source.frame
+    const clampFrame = (members: NVImage[]) => {
+      const count = Math.min(...members.map((v) => v.frameSource?.count ?? 1))
+      return Number.isFinite(frame)
+        ? Math.max(0, Math.min(Math.round(frame), count - 1))
+        : source.frame
+    }
+    let members = groupMembers()
+    let t = clampFrame(members)
     this._frameRequests.get(source.group)?.abort()
     if (members.every((v) => v.frameSource?.frame === t)) return
     const request = new AbortController()
     this._frameRequests.set(source.group, request)
-    const frames: ArrayLike<number>[] = []
+    const frames = new Map<NVImage, ArrayLike<number>>()
     try {
-      frames.push(
-        ...(await Promise.all(
-          members.map((v) => v.frameSource?.load(t, request.signal) ?? []),
-        )),
-      )
-      // A volume joining the group during the fetch switches with it.
+      // A volume joining the group during the fetch switches with it; a
+      // shorter one lowers the clamp, so the frame is fetched again for all.
       for (;;) {
-        const joined = this.volumes.filter(
-          (v) =>
-            v.frameSource?.group === source.group &&
-            !members.includes(v) &&
-            v.frameSource.count > t,
+        const missing = members.filter((v) => !frames.has(v))
+        if (!missing.length || request.signal.aborted) break
+        const loaded = await Promise.all(
+          missing.map((v) => v.frameSource?.load(t, request.signal) ?? []),
         )
-        if (!joined.length || request.signal.aborted) break
-        members.push(...joined)
-        frames.push(
-          ...(await Promise.all(
-            joined.map((v) => v.frameSource?.load(t, request.signal) ?? []),
-          )),
-        )
+        for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
+        members = groupMembers()
+        const clamped = clampFrame(members)
+        if (clamped !== t) {
+          t = clamped
+          frames.clear()
+        }
       }
     } catch (err) {
       if (request.signal.aborted) return
@@ -5172,10 +5170,11 @@ export default class NiiVue extends EventTarget {
         this._frameRequests.delete(source.group)
     }
     if (request.signal.aborted) return
-    const shown = members.filter((v) => this.volumes.includes(v))
-    for (const [i, vol] of members.entries()) {
-      if (!vol.img || !vol.frameSource || !shown.includes(vol)) continue
-      vol.img.set(frames[i])
+    const shown = [...frames.keys()].filter((v) => this.volumes.includes(v))
+    for (const vol of shown) {
+      const img = frames.get(vol)
+      if (!vol.img || !vol.frameSource || !img) continue
+      vol.img.set(img)
       vol.frameSource.frame = t
       markVolumeDataChanged(vol)
       NVModel.growLabelRange(vol)

@@ -1,3 +1,13 @@
+## 1.0.0-rc.78 (2026-11-12)
+
+### Performance
+
+- **nv-ext-tile:** index local DICOM-WSI folders in a worker, in 1 MiB blocks ([181696f0](https://github.com/niivue/mono/commit/181696f0))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.77 (2026-11-12)
 
 ### Updated Dependencies

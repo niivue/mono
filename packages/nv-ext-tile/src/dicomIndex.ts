@@ -1230,6 +1230,7 @@ export async function indexDicomWsiOnThread(
       if ('kind' in got) associated.push(got)
       else infos.push(got)
     } catch (err) {
+      if (signal?.aborted || (err as Error)?.name === 'AbortError') throw err
       skipped.push(skipOf(key, err))
     }
     onProgress?.(i + 1, files.length)

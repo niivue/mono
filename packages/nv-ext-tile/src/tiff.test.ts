@@ -303,6 +303,17 @@ describe('TiffSlideSource', () => {
     expect(await plain.source.fetchIccProfile()).toBeNull()
   })
 
+  test('a disposed source refuses its cached ICC profile', async () => {
+    const icc = Uint8Array.from({ length: 300 }, (_, i) => i & 255)
+    const [l0, ...rest] = PYRAMID as [Level, ...Level[]]
+    const { source } = await open(writeTiff([{ ...l0, icc }, ...rest]))
+    expect(await source.fetchIccProfile()).toEqual(icc)
+    source.dispose()
+    await expect(source.fetchIccProfile()).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+  })
+
   test('dispose cancels a deferred ICC profile read; abort stops the wait', async () => {
     // 200 KB: past geotiff's first block, so the profile needs its own Range read.
     const icc = new Uint8Array(200_000).fill(42)

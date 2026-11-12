@@ -192,6 +192,19 @@ describe('indexDicomWsiOnThread', () => {
   })
 })
 
+test('an abort during a file read rejects the index, not a skipped file', async () => {
+  const stop = new AbortController()
+  const read = async (): Promise<Uint8Array> => {
+    stop.abort()
+    throw stop.signal.reason
+  }
+  const one = new File([new Uint8Array(256)], 'one.dcm')
+  const indexed = indexDicomWsiOnThread([one], ['one.dcm'], read, {
+    signal: stop.signal,
+  })
+  await expect(indexed).rejects.toMatchObject({ name: 'AbortError' })
+})
+
 describe('DicomWsiSource', () => {
   test('describes the slide for NVSlide', async () => {
     const { idx, files } = await index('bot.dcm', 'bot-l1.dcm')

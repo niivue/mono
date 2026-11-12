@@ -1612,6 +1612,8 @@ export class TiffSlideSource implements SlideTileSource {
     const dir = this.opened.pyramids[0]?.[0]?.img.fileDirectory
     // By number: geotiff 3's name lookup does not resolve 'ICCProfile'.
     if (!dir?.hasTag(34675)) return null
+    // geotiff caches the value: a disposed source must not serve it.
+    this.closed.signal.throwIfAborted()
     signal?.throwIfAborted()
     // geotiff's loadValue takes no signal: an abort stops the wait here, and
     // dispose() cancels the read itself (RangeClient.openSignal).

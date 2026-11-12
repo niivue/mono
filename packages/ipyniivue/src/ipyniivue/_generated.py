@@ -1143,6 +1143,20 @@ and its volumes alive."""
         """
         self.send({"cmd": "loadSignals", "args": _make_args(signals)})
 
+    async def load_slide_sample_at(self, x: Any = _UNSET, y: Any = _UNSET) -> Any:
+        """{@link slideSampleAt}, fetching the level-0 tile first (`NVSlide.loadSampleAt`).
+
+        Parameters
+        ----------
+        x : number | undefined
+        y : number | undefined
+
+        Returns
+        -------
+        Promise<NiiVueLocationSlide | null>
+        """
+        return await self._request("loadSlideSampleAt", _make_args(x, y))
+
     def load_volumes(self, volumes: Any) -> None:
         self.send({"cmd": "loadVolumes", "args": _make_args(volumes)})
 
@@ -1675,6 +1689,11 @@ and its volumes alive."""
     def set_frame_4d(self, id: Any, frame: Any) -> None:
         """Set the current 4D frame for a volume.
 
+        A volume with a `frameSource` (frames fetched on demand) loads the frame
+        for every volume of its source's group and resolves once it is shown; a
+        newer call supersedes a pending one (which then resolves with no change),
+        and a failed load rejects, keeping the frame shown.
+
         Parameters
         ----------
         id : string
@@ -1870,7 +1889,8 @@ and its volumes alive."""
         the camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you
         zoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's
         cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
-        The built-in scale ruler draws on 2D tiles only, never over this plane.
+        With `isRulerVisible` and no 2D tile, the scale ruler draws on the render
+        tile at its (orthographic) world-mm scale.
 
         Parameters
         ----------
@@ -2030,6 +2050,23 @@ and its volumes alive."""
         { x: number; y: number; } | null
         """
         return await self._request("slidePlanePick", _make_args(css_x, css_y))
+
+    async def slide_sample_at(self, x: Any = _UNSET, y: Any = _UNSET) -> Any:
+        """The slide plane's samples at base pixel `x`, `y` (cache only, as `NVSlide.sampleAt`), or, with no point given, at the crosshair projected onto the plane.
+
+        Null without a plane, or with the crosshair off it.
+        Throws when only one of `x`, `y` is given.
+
+        Parameters
+        ----------
+        x : number | undefined
+        y : number | undefined
+
+        Returns
+        -------
+        NiiVueLocationSlide | null
+        """
+        return await self._request("slideSampleAt", _make_args(x, y))
 
     def step_signal_cursor(self, direction: Any) -> None:
         """Step the signal cursor along the x-axis by one wheel tick (fraction of the visible window).

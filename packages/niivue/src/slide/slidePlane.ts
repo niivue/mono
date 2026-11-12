@@ -227,6 +227,31 @@ export function pickSlideWorld(
   return hit ? apply(state.pixelToWorld, hit.x, hit.y) : null
 }
 
+/**
+ * The slide base pixel under world-mm point `mm`, projected orthogonally onto
+ * the plane, or null when that lands off the slide.
+ */
+export function worldToSlidePixel(
+  state: SlidePlaneState,
+  mm: ArrayLike<number>,
+): { x: number; y: number } | null {
+  const m = state.pixelToWorld
+  // Least squares on the plane's two axes, so a zero third column still works.
+  const d = [mm[0] - m[12], mm[1] - m[13], mm[2] - m[14]]
+  const uu = m[0] * m[0] + m[1] * m[1] + m[2] * m[2]
+  const uv = m[0] * m[4] + m[1] * m[5] + m[2] * m[6]
+  const vv = m[4] * m[4] + m[5] * m[5] + m[6] * m[6]
+  const du = m[0] * d[0] + m[1] * d[1] + m[2] * d[2]
+  const dv = m[4] * d[0] + m[5] * d[1] + m[6] * d[2]
+  const det = uu * vv - uv * uv
+  // Relative to the axis lengths: micrometre pixels give a tiny absolute det.
+  if (!(det > 1e-12 * uu * vv)) return null
+  const x = (du * vv - dv * uv) / det
+  const y = (dv * uu - du * uv) / det
+  const { width, height } = state.slide.manifest
+  return x >= 0 && y >= 0 && x < width && y < height ? { x, y } : null
+}
+
 // Project a world-mm point through a column-major mvp (world mm -> clip) to
 // viewport pixels. Returns x,y in [0,w]x[0,h]; w-component sign tells front/back.
 function projectToScreen(

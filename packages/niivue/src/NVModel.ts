@@ -28,6 +28,7 @@ import type {
   SceneConfig,
   UIConfig,
   VectorAnnotation,
+  VolumeFrameSource,
   VolumeRenderConfig,
 } from '@/NVTypes'
 import { deriveSeries, type SignalPlot } from '@/signal/processing'
@@ -44,6 +45,30 @@ import {
   warnMixedUnits,
 } from '@/volume/utils'
 import { assignUniqueVolumeIds } from '@/volume/volumeIds'
+
+/**
+ * The shown frame is per volume: one source loaded into two viewers is shared,
+ * so each volume wraps it with its own `frame`. The source itself is never
+ * cloned or written, and `load` runs on it (a class may read private fields).
+ */
+function ownFrameSource(source: VolumeFrameSource | undefined): {
+  frameSource?: VolumeFrameSource
+} {
+  return source
+    ? {
+        frameSource: {
+          frame: source.frame,
+          get count() {
+            return source.count
+          },
+          get group() {
+            return source.group
+          },
+          load: (frame, signal) => source.load(frame, signal),
+        },
+      }
+    : {}
+}
 
 export default class NVModel {
   // --- Config groups ---
@@ -1551,7 +1576,14 @@ export default class NVModel {
     // An NVImage keeps its own window, CT colormap or not: it always carries
     // calMin/calMax, so there is no unset bound for the map to fill (#395).
     if ('hdr' in volume && volume.hdr) {
-      const image = { ...NVModel.volumeDefaults, ...volume }
+      const image = {
+        ...NVModel.volumeDefaults,
+        ...volume,
+        // A frame switch writes into img: a viewer sharing it would change too.
+        ...(volume.frameSource
+          ? { ...ownFrameSource(volume.frameSource), img: volume.img?.slice() }
+          : {}),
+      }
       NVCmaps.resolveDefaultWindow(image)
       return NVModel.applyColormap(image, volume.colormap)
     }
@@ -1592,6 +1624,7 @@ export default class NVModel {
       // the header URL/File. Runtime-only, same allowlist contract as
       // _sourceFile above.
       ...(pairedImage != null ? { _urlImageData: pairedImage } : {}),
+      ...ownFrameSource(overrides.frameSource),
     }
     NVCmaps.resolveDefaultWindow(prepared)
     return NVModel.applyColormap(prepared, overrides.colormap)
@@ -1607,13 +1640,14 @@ export default class NVModel {
    * mixing units across layers (e.g. a um overlay on a mm base) is
    * unsupported and logs a warning.
    */
-  async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<void> {
+  async addVolume(volume: ImageFromUrlOptions | NVImage): Promise<NVImage> {
     const prepared = await NVModel.prepareVolume(volume)
     assignUniqueVolumeIds([prepared], this.volumes)
     warnMixedUnits(this.volumes[0], [prepared])
     this.volumes.push(prepared)
     this._setupPivot3D()
     this.invalidateGraphCache()
+    return prepared
   }
 
   async loadVolume(volume: ImageFromUrlOptions): Promise<void> {

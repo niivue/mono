@@ -24,7 +24,6 @@
 // store's own chunk grid so neighbouring tiles at least share decodes.
 
 import NiiVue, {
-  lookupColorMap,
   NVSlide,
   NVSlideController,
   SLICE_TYPE,
@@ -312,39 +311,6 @@ function clearFallback() {
   els.fallback.setAttribute('aria-hidden', 'true')
 }
 
-// A 256-entry opaque RGBA ramp for the slide tiles, built from the same named
-// colormap the volumetric pane uses so the two panes agree on colour. The core
-// LUT builder is not part of the public surface, so this is the demo's own
-// (equivalent) interpolation; alpha is forced opaque because a slide tile is
-// the whole image, not an overlay.
-function slideLut(name) {
-  const lut = new Uint8Array(1024)
-  const cmap = lookupColorMap(name)
-  if (!cmap?.I || cmap.I.length < 2) {
-    for (let i = 0; i < 256; i++) {
-      lut[i * 4] = i
-      lut[i * 4 + 1] = i
-      lut[i * 4 + 2] = i
-      lut[i * 4 + 3] = 255
-    }
-    return lut
-  }
-  const { R, G, B, I } = cmap
-  for (let k = 0; k < I.length - 1; k++) {
-    const lo = I[k]
-    const hi = I[k + 1]
-    const span = hi - lo || 1
-    for (let j = lo; j <= hi && j < 256; j++) {
-      const f = (j - lo) / span
-      lut[j * 4] = Math.round(R[k] + f * (R[k + 1] - R[k]))
-      lut[j * 4 + 1] = Math.round(G[k] + f * (G[k + 1] - G[k]))
-      lut[j * 4 + 2] = Math.round(B[k] + f * (B[k + 1] - B[k]))
-      lut[j * 4 + 3] = 255
-    }
-  }
-  return lut
-}
-
 function parseWindow(text, fallback) {
   const parts = String(text)
     .split(',')
@@ -505,7 +471,7 @@ function rebuildSlide({ keepViewport = true } = {}) {
     axis,
     index: planeIndex,
     window: windowRange,
-    lut: slideLut(els.colormap.value),
+    colormap: els.colormap.value,
     tileSize: tileSizeForAxis(axis),
     id: els.dataset.value,
     name: `${DATASETS[els.dataset.value].label} (${axis} ${planeIndex})`,
@@ -1106,7 +1072,9 @@ function applyWindow() {
   if (index >= 0) {
     nv.setVolume(index, { calMin: windowRange[0], calMax: windowRange[1] })
   }
-  rebuildSlide()
+  // Re-fused on the GPU from the tiles already loaded: no refetch. The next
+  // rebuildSlide seeds channel 0 from windowRange again.
+  slide?.setChannel(0, { calMin: windowRange[0], calMax: windowRange[1] })
 }
 
 // The wheel over the 3D tile writes `scene.scaleMultiplier` directly and clamps
@@ -1131,7 +1099,7 @@ function applyColormap() {
   if (index >= 0) {
     nv.setVolume(index, { colormap: els.colormap.value })
   }
-  rebuildSlide()
+  slide?.setChannel(0, { colormap: els.colormap.value })
 }
 
 // The slide pane's field of view, outlined on the volume pane: the pane's four
@@ -1172,9 +1140,8 @@ function updateFieldOfView(screen) {
 
 // A windowing drag on the slide steps the window as NiiVue's does (0.5% of the
 // span the drag started from per CSS pixel: x widens, y lowers the centre). The
-// text follows live; both panes apply on release, since a slide rebuild drops
-// its in-flight tiles and a chunked volume's window change re-streams every
-// brick.
+// text follows live; both panes apply on release, since a chunked volume's
+// window change re-streams every brick (the slide only re-fuses loaded tiles).
 let windowDrag = null
 function onSlideWindow(dx, dy, done) {
   if (!windowRange) return

@@ -58,7 +58,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         renderer.init(gl)
         draw = () => renderer.draw(gl, slides, screen)
       }
-      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTileBitmap('L0/0/0')); i++) {
+      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile('L0/0/0')); i++) {
         for (const s of slides) s.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }

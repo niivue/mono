@@ -1,3 +1,45 @@
+## 1.0.0-rc.179 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.178
+
+## 1.0.0-rc.178 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.177
+
+## 1.0.0-rc.177 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.176
+
+## 1.0.0-rc.176 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.175
+
+## 1.0.0-rc.175 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+
+## 1.0.0-rc.174 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.173
+
+## 1.0.0-rc.173 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.172
+
 ## 1.0.0-rc.172 (2026-11-11)
 
 ### Updated Dependencies

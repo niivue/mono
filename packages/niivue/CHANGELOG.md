@@ -1,3 +1,117 @@
+## 1.0.0-rc.178 (2026-11-12)
+
+### Features
+
+- lazy OME-Zarr time (VolumeFrameSource) and label stores ([5d13803f](https://github.com/niivue/mono/commit/5d13803f))
+
+### Fixes
+
+- **niivue:** join the volume addVolume produced, not the last one ([e5cdfd79](https://github.com/niivue/mono/commit/e5cdfd79))
+- **niivue:** a volume added mid-fetch keeps the frame switch alive ([84708e9e](https://github.com/niivue/mono/commit/84708e9e))
+- **niivue:** tie a pending frame fetch to its volumes, not the group key ([70700d3a](https://github.com/niivue/mono/commit/70700d3a))
+- **niivue:** PR 737 r7 wrap frame sources and emit after the group commits ([393eeac7](https://github.com/niivue/mono/commit/393eeac7))
+- **niivue:** PR 737 r6 frame-source image ownership and scene replacement ([85a9b25d](https://github.com/niivue/mono/commit/85a9b25d))
+- **niivue:** PR 737 r5 an NVImage loaded directly gets its own frame state ([2a9fc03f](https://github.com/niivue/mono/commit/2a9fc03f))
+- **niivue:** PR 737 r4 a shorter volume joining a frame fetch re-clamps the group ([2117a9ff](https://github.com/niivue/mono/commit/2117a9ff))
+- **niivue,nv-ext-tile:** PR 737 review fixes for lazy OME-Zarr frames ([8eb4bf79](https://github.com/niivue/mono/commit/8eb4bf79))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.177 (2026-11-12)
+
+### Features
+
+- **niivue:** GPU window/colormap for scalar slide tiles ([#159](https://github.com/niivue/mono/pull/159))
+
+### Fixes
+
+- **slide:** choose the fuse uniform path by the clamped scale ([feac24da](https://github.com/niivue/mono/commit/feac24da))
+- **slide:** normalised fuse uniforms for windows past float32 even scaled ([96d686fa](https://github.com/niivue/mono/commit/96d686fa))
+- **slide:** scale fuse uniforms per window by a power of two ([72faff3e](https://github.com/niivue/mono/commit/72faff3e))
+- **slide:** keep float32 fuse windows wider than the float max finite ([9ebf8cc9](https://github.com/niivue/mono/commit/9ebf8cc9))
+- **niivue:** keep slide fusion finite for float32 windows near the float max ([57fa43c8](https://github.com/niivue/mono/commit/57fa43c8))
+- **slide:** keep the fuse shaders from folding the calMin split ([0e4066a2](https://github.com/niivue/mono/commit/0e4066a2))
+- **slide:** exact float32 fuse windows at large values; PR 740 review fixes ([2095205e](https://github.com/niivue/mono/commit/2095205e))
+- **uikit:** draw the slide minimap on SwiftShader WebGPU ([e0bee49b](https://github.com/niivue/mono/commit/e0bee49b))
+- **niivue:** clamp maxRawPoolBytes to 0-64 MiB ([761da8cd](https://github.com/niivue/mono/commit/761da8cd))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.176 (2026-11-12)
+
+### Features
+
+- slide readout in locationChange, slide panes and MCP ([d0bcff89](https://github.com/niivue/mono/commit/d0bcff89))
+
+### Fixes
+
+- **niivue:** slideSampleAt refuses a lone coordinate ([67c382a2](https://github.com/niivue/mono/commit/67c382a2))
+- **niivue:** crosshair arms reach a crosshair past the scene extents ([65389ecf](https://github.com/niivue/mono/commit/65389ecf))
+- **niivue:** crosshair clamp includes the slide plane ([74d7b46d](https://github.com/niivue/mono/commit/74d7b46d))
+- **niivue:** re-emit the slide readout when a channel is renamed ([2366dbb7](https://github.com/niivue/mono/commit/2366dbb7))
+- **niivue:** emit locationChange when the slide readout changes or goes away ([0157e440](https://github.com/niivue/mono/commit/0157e440))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.175 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** fill DICOM-WSI holes with the recommended absent colour ([454b7a26](https://github.com/niivue/mono/commit/454b7a26))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.174 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** 2-98% slide windows and storedToValue for quantized channels ([685750ee](https://github.com/niivue/mono/commit/685750ee))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.173 (2026-11-12)
+
+### Features
+
+- **niivue:** NVSlide pixel readout (sampleAt, loadSampleAt) ([#159](https://github.com/niivue/mono/issues/159))
+
+### Fixes
+
+- **niivue:** loadSampleAt resolves uncached on abort; inactive channel hidden before cache ([4c5480e0](https://github.com/niivue/mono/commit/4c5480e0))
+- **niivue:** sampleAt reports hidden by visibility; no tile loads after dispose ([3efcdf0d](https://github.com/niivue/mono/commit/3efcdf0d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.172 (2026-11-12)
+
+### Features
+
+- **niivue:** slide scale bars (standalone panes and slide planes) ([2040fe8e](https://github.com/niivue/mono/commit/2040fe8e))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.171 (2026-11-11)
 
 ### Fixes

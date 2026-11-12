@@ -133,7 +133,7 @@ TRX, TT, TSF (scalars), VTK lines.
 | `isColorbarVisible`, `isOrientCubeVisible`, `isOrientationTextVisible` | Prop | Toggles |
 | `orientationTextPosition` | Prop | `'edges'` (default): a letter mid-left and mid-top of each 2D tile; `'corner'`: one combined label (e.g. `RS`) at the tile's top-left corner |
 | `is3DCrosshairVisible`, `isCrossLinesVisible` | Prop | |
-| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | |
+| `isGraphVisible` (4D), `isRulerVisible`, `isLegendVisible` | Prop | `isRulerVisible` also draws over a `setSlidePlane` render when no 2D tile is shown; NVSlide panes take it as a `slideOverlayContent` style option (scale bar from `pixelSpacingMM`) |
 | `isMeasureUnitsVisible` | Prop | |
 | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` | Prop | Load-time preview |
 | `crosshairColor`, `crosshairGap`, `crosshairWidth` | Prop | |
@@ -170,6 +170,8 @@ TRX, TT, TSF (scalars), VTK lines.
 | `'additive'` | `true` | `MAX` (default) | `ADDITIVE` (default) |
 
 The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volumes[0] as an opaque base under the overlays, which suits neuroimaging; set the first row for fluorescence channel fusion.
+
+**Slide pixel readout.** `NVSlide.sampleAt(x, y, {level?})` returns one `NVSlideSample` per channel at a base-level pixel, from the tile cache only (sync, never fetches; safe on hover). `NVSlide.loadSampleAt(x, y, {level?, signal?})` (async) fetches the covering tile at `level` (default 0) first. A sample's `value` is in data units when the source supplies `storedToValue`, else the stored sample; `exact` is true only at level 0 and unquantized; `missing` (`outside`, `hole`, `uncached`, `hidden`) nulls `value`/`stored`. On a slide plane, `locationChange` carries `slide: {id, name, x, y, samples}` while the crosshair, projected onto the plane, is on the slide (also in a slide-only scene), and re-emits when a tile lands that changes those samples; `nv.slideSampleAt(x?, y?)` / `nv.loadSlideSampleAt(x?, y?)` read it at a point or the crosshair. Standalone panes: `NVSlideController` `onHover(point | null)`. MCP: `where_am_i.slide`, `sample_slide`.
 
 ## 8. Mesh Rendering (global)
 

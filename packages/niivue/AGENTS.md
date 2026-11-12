@@ -1180,6 +1180,10 @@ a rebuild.
   event (`volumeUpdated`/`meshUpdated` are for display-option changes, and these
   run per frame). A coalesced `updateVolumeData` settles when its follow-up
   upload finishes (#447).
+- **Frame sources (lazy time).** A volume with `frameSource` (set by
+  `@niivue/nv-ext-tile`'s `lazyTime`) stays one frame (`nFrame4D` 1: every img
+  reader indexes `frame4D * nVox3D`); its time axis lives on the source, and
+  frame changes go through `_setSourceFrame` (see its JSDoc; `src/frameSource.test.ts`).
 - **`isDirty` reports an in-place edit to the ordinary path.** A caller that
   rewrote `img` in place sets `vol.isDirty = true`; `commitDirtyVolumes`
   (`volume/dataVersion.ts`) runs synchronously at the start of every GPU update
@@ -1992,6 +1996,8 @@ Public enum exports from the package root (alongside `DRAG_MODE`): `SLICE_TYPE` 
 
 **NVSlide panes** use `NVSlideController` (`src/slide/slideController.ts`) with the same primary/secondary modes (`pan`, `crosshair`, `crosshairPan`, `windowing`, `contrast`, `measurement`, `roiSelection`, `none`). There `roiSelection` is a zoom box, fit on release and capped at native resolution (one base pixel per device pixel); the middle button always pans and the wheel zooms about the pointer.
 
+**NVSlide pixel readout.** `slide.sampleAt(x, y, {level?})` (base-level pixels, as `screenToSlide` returns) is synchronous and cache-only: it reads the finest resident tile (or level `index` `level`) through `_cache.peek`, never fetches, and leaves the LRU order and `cacheHits` alone, so hover can call it. `loadSampleAt(x, y, {level?, signal?})` fetches that level's covering tile (default 0) first; `signal` stops the wait, not the load. Both return one `NVSlideSample` per channel: `stored` is the cached sample (before window, MONOCHROME1 inversion and ICC; bitmap-only RGB tiles are read back 1x1), `value` maps it through `NVSlideChannelInfo.storedToValue` when the source quantized it, and `exact` means level 0 and not quantized. `missing` is `outside`, `hole`, `uncached` or `hidden` (hidden channels are never fetched). Scalar tiles are read from `samples` only, so the readout survives dropping their RGBA bitmaps (#159). On a slide plane, `createOnLocationChange` passes `nv.slideSampleAt()` (the crosshair projected orthogonally onto the plane by `worldToSlidePixel`, so a crosshair off the plane's depth still reads the pixel under it) to `buildLocationMessage` as `NiiVueLocation.slide`; a scene with only a slide plane emits too. The plane's `change` listener re-emits only when those samples (level, stored, missing) differ from the last emitted ones, about once per level, never per tile. `NVSlideController.onHover(point | null)` fires on a gesture-less `pointermove` and with null on `pointerleave` (no rAF coalescing: browsers align `pointermove` to frames); the app calls `sampleAt`. nv-mcp reads it through `View.slideSampleAt` / `loadSlideSampleAt` (`where_am_i.slide`, `sample_slide`).
+
 **Overlay rendering:** Selection boxes use GlyphBatch panels (`_dragOverlay.rect`). Measurement/angle lines use line renderer (`_dragOverlay.lines`). Overlay state lives on `model._dragOverlay` (transient, not serialized).
 
 **Drawing priority:** When `draw.isEnabled && drawingVolume`, drawing intercepts left-button before drag mode dispatch.
@@ -2019,6 +2025,13 @@ and drops pointer events outside, and on WebGPU renders to an offscreen copy.
 The scale ruler (`view/NVRuler.ts`) takes px-per-mm from `mmPerPixel2D` so it
 tracks the 2D zoom (`pan2Dxyzmm` is threaded in by both renderers), and reads
 `screen.fovMM` as tile-local `[u, v, depth]`. Pinned by `view/NVRuler.test.ts`.
+With no 2D tile and a `setSlidePlane` slide, both views pass the render scale
+(`mmPerPixelRender`, orthographic so rotation-independent) and the ruler draws
+on the render tile. Standalone NVSlide panes get the same bar from
+`slideOverlayContent(slide, screen, source, { isRulerVisible: true })`:
+bottom-left, `slideScaleBar` picks the length from `pixelSpacingMM[0]` and
+`viewport.scale` (labels "um" below 1 mm, the font has no µ), none without
+spacing; `scaleBarLines` is shared with `NVRuler`, so no shader change.
 
 **`SliceTile`** key fields: `leftTopWidthHeight`, `axCorSag`, `screen` (ortho mm bounds), `azimuth`/`elevation`, `sliceMM` (mosaic mm position), `renderOrientation`, `crossLines`, `showLabels`. Cached `mvpMatrix`/`planeNormal`/`planePoint` populated during render for picking.
 

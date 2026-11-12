@@ -17,18 +17,18 @@ function fakeSlide(
   tiles: NVSlideVisibleTile[],
   cached: string[],
 ): NVSlide {
-  const bitmap = {} as ImageBitmap
+  const entry = { level: {} }
   return {
     requestVisibleTiles: () => ({ fallback, tiles }),
-    cachedTileBitmap: (key: string) => (cached.includes(key) ? bitmap : null),
+    cachedTile: (key: string) => (cached.includes(key) ? entry : null),
   } as unknown as NVSlide
 }
 
 function visits(slide: NVSlide) {
   const seen: string[] = []
-  forEachSlideTile(slide, {} as NVSlideScreen, (t, bitmap, _rect, isFallback) =>
+  forEachSlideTile(slide, {} as NVSlideScreen, (t, entry, _rect, isFallback) =>
     seen.push(
-      `${isFallback ? 'fallback' : 'tile'}:${t.key}:${bitmap ? 'cached' : 'missing'}`,
+      `${isFallback ? 'fallback' : 'tile'}:${t.key}:${entry ? 'cached' : 'missing'}`,
     ),
   )
   return seen

@@ -3,6 +3,7 @@
 
 import type {
   NVSlide,
+  NVSlideCachedTile,
   NVSlideScreen,
   NVSlideScreenRect,
   NVSlideVisibleTile,
@@ -22,20 +23,20 @@ export function forEachSlideTile(
   screen: NVSlideScreen,
   visit: (
     tile: NVSlideVisibleTile,
-    bitmap: ImageBitmap | null,
+    cached: NVSlideCachedTile | null,
     rect: NVSlideScreenRect,
     isFallback: boolean,
   ) => void,
 ): void {
   const visible = slide.requestVisibleTiles(screen)
   for (const tile of visible.fallback) {
-    const bitmap = slide.cachedTileBitmap(tile.key)
-    if (bitmap) visit(tile, bitmap, tileRect(tile), true)
+    const cached = slide.cachedTile(tile.key)
+    if (cached) visit(tile, cached, tileRect(tile), true)
   }
   for (const tile of visible.tiles) {
-    const bitmap = slide.cachedTileBitmap(tile.key)
-    if (!bitmap && visible.fallback.length > 0) continue
-    visit(tile, bitmap, tileRect(tile), false)
+    const cached = slide.cachedTile(tile.key)
+    if (!cached && visible.fallback.length > 0) continue
+    visit(tile, cached, tileRect(tile), false)
   }
 }
 

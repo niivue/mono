@@ -103,6 +103,8 @@ export interface ShownVolume {
   frame4D?: number
   nFrame4D?: number
   nTotalFrame4D?: number
+  /** Frames fetched on demand (lazy OME-Zarr time): the frame shown and how many there are. */
+  frameSource?: { count: number; frame: number }
   isColormapInverted?: boolean
   colormapType?: number
   isTransparentBelowCalMin?: boolean
@@ -815,6 +817,10 @@ export interface View {
   setSlideChannelBlend?(blend: SlideChannelBlend): unknown
   readonly slideColorManagement?: boolean | null
   setSlideColorManagement?(on: boolean): unknown
+  /** Cache only; at the crosshair without a point. Null without a plane (or the crosshair off it). */
+  slideSampleAt?(x?: number, y?: number): SlideLocation | null
+  /** slideSampleAt, fetching the level-0 tile first. */
+  loadSlideSampleAt?(x?: number, y?: number): Promise<SlideLocation | null>
 
   // Chunked volumes.
   /** Tile a volume into a grid of bricks (or `null` to make it one texture again). */
@@ -935,6 +941,29 @@ export interface SlideChannel {
   visible: boolean
 }
 
+/** One channel's value at a slide pixel, as NiiVue's `NVSlideSample`. */
+export interface SlideSample {
+  channel: number
+  name: string
+  /** Null when missing; NaN (null in JSON) for a stored NaN. */
+  value: number | null
+  stored: number | null
+  level: number | null
+  /** Level 0 and not quantized. */
+  exact: boolean
+  missing?: 'outside' | 'hole' | 'uncached' | 'hidden'
+  clipped?: true
+}
+
+/** A slide plane's samples at a base-level pixel, as NiiVue's `NiiVueLocationSlide`. */
+export interface SlideLocation {
+  id: string
+  name: string
+  x: number
+  y: number
+  samples: SlideSample[]
+}
+
 /** How a slide's visible channels combine. */
 export type SlideChannelBlend = 'max' | 'additive'
 
@@ -943,7 +972,13 @@ export interface OmeZarrLoaders {
   /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level. */
   loadOmeZarrVolumes(
     url: string,
-    options?: { level?: number; channels?: number[]; timepoint?: number },
+    options?: {
+      level?: number
+      channels?: number[]
+      timepoint?: number
+      lazyTime?: boolean
+      labels?: boolean
+    },
   ): Promise<unknown[]>
   /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
   streamOmeZarr(

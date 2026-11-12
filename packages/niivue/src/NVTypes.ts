@@ -5,6 +5,7 @@ import type {
   OVERLAY_COLOR_BLEND,
   PEN_SHAPE,
 } from '@/NVConstants'
+import type { NVSlideSample } from '@/slide/NVSlide'
 import type { FontMetrics } from '@/view/NVFont'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 
@@ -200,6 +201,8 @@ export type NVImage = {
   nFrame4D?: number
   /** Total number of 4D frames in the source file (may exceed nFrame4D when limitFrames4D was used) */
   nTotalFrame4D?: number
+  /** Frames fetched on demand (see {@link VolumeFrameSource}); `img` holds only the shown one. */
+  frameSource?: VolumeFrameSource
   /**
    * Unique identifier for this volume within its NiiVue instance. Defaults to
    * `name` (the URL); a repeat gets a `-2`, `-3`, ... suffix when the volume is
@@ -1610,6 +1613,23 @@ export type CompletedAngle = {
 // ============================================================
 
 /**
+ * A time axis fetched one frame at a time (e.g. a lazily loaded OME-Zarr
+ * store). The volume stays a single-frame image (`nFrame4D` 1, `frame4D` 0)
+ * whose `img` holds frame `frame`; `setFrame4D` / `getFrame4D` address frames
+ * through the source. Runtime only: documents save the shown frame's voxels.
+ */
+export interface VolumeFrameSource {
+  /** Frames available. */
+  readonly count: number
+  /** The frame `img` holds. Set by NiiVue when a switch commits. */
+  frame: number
+  /** Volumes whose sources share a group switch frames together. */
+  readonly group: object
+  /** Fetch frame `frame`: `nVox3D` values in the volume's datatype. */
+  load(frame: number, signal: AbortSignal): Promise<ArrayLike<number>>
+}
+
+/**
  * Options for loading a volume from a URL or File.
  * Supports any NVImage display properties as optional overrides.
  */
@@ -1689,6 +1709,8 @@ export type ImageFromUrlOptions = {
    * scene-wide `volumeIsNearestInterpolation` forces nearest for every volume.
    */
   isNearestInterpolation?: boolean
+  /** Fetch frames on demand through this source (see {@link VolumeFrameSource}). */
+  frameSource?: VolumeFrameSource
 }
 
 /**
@@ -1768,7 +1790,7 @@ export type MeshFromUrlOptions = {
  */
 export type VolumeUpdate = Omit<
   ImageFromUrlOptions,
-  'url' | 'urlImageData' | 'limitFrames4D'
+  'url' | 'urlImageData' | 'limitFrames4D' | 'frameSource'
 > & {
   /** Set the current 4D frame index (0-based, clamped to valid range) */
   frame4D?: number
@@ -1893,7 +1915,19 @@ export type NiiVueLocation = {
   frac: number[]
   xy: [number, number]
   values: NiiVueLocationValue[]
+  /** The slide plane under the crosshair (projected onto it); absent off the plane. */
+  slide?: NiiVueLocationSlide
   string: string
+}
+
+/** Slide-plane samples at a base (level-0) pixel, from the tile cache. */
+export type NiiVueLocationSlide = {
+  id: string
+  name: string
+  x: number
+  y: number
+  /** One per channel; `value` null when missing (see `NVSlideSample.missing`). */
+  samples: NVSlideSample[]
 }
 
 export type NVFontData = {

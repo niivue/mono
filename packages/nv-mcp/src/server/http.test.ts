@@ -75,6 +75,7 @@ const CORE_TOOLS = [
   'set_viewport',
   'map_point',
   'set_slide',
+  'sample_slide',
   'chunk_stats',
   'save',
   'load_document',

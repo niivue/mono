@@ -21,6 +21,8 @@ export type TileTextureGPU = {
   level: number
   col: number
   row: number
+  /** A fused scalar tile: the slide's displayGeneration it was fused for. */
+  fused?: number
 }
 
 type Copy = [src: TileTextureGPU | null, dst: TileTextureGPU, c: GutterCopy]
@@ -39,22 +41,14 @@ export class TileGutterGPU {
   // An upload skipped its gutter copies since the last resync.
   private _stale = false
 
-  /**
-   * Upload `bitmap` as tile `at` into `cache`, then sync its gutter there
-   * unless `sync` is false (nearest filtering: `resync` before linear).
-   */
-  upload(
+  /** An empty `width` x `height` tile texture (plus gutter) for tile `at`. */
+  create(
     device: GPUDevice,
-    bitmap: ImageBitmap,
-    at: GutterAt,
-    cache: TileTextureCache<TileTextureGPU>,
-    sync = true,
-  ): TileTextureGPU | null {
-    const source = fitGutterSource(bitmap, device.limits.maxTextureDimension2D)
-    if (!source) return null
-    const { width, height } = source
-    const { slide, level, col, row } = at
-    const tile = {
+    width: number,
+    height: number,
+    { slide, level, col, row }: GutterAt,
+  ): TileTextureGPU {
+    return {
       texture: device.createTexture({
         size: [width + 2, height + 2],
         format: 'rgba8unorm',
@@ -71,22 +65,58 @@ export class TileGutterGPU {
       col,
       row,
     }
+  }
+
+  /**
+   * Upload `bitmap` as tile `at` into `cache`, then sync its gutter there
+   * unless `sync` is false (nearest filtering: `resync` before linear).
+   */
+  upload(
+    device: GPUDevice,
+    bitmap: ImageBitmap,
+    at: GutterAt,
+    cache: TileTextureCache<TileTextureGPU>,
+    sync = true,
+  ): TileTextureGPU | null {
+    const source = fitGutterSource(bitmap, device.limits.maxTextureDimension2D)
+    if (!source) return null
+    const { width, height } = source
+    const tile = this.create(device, width, height, at)
     device.queue.copyExternalImageToTexture(
       { source },
       { texture: tile.texture, origin: [1, 1] },
       [width, height],
     )
     cache.set(at.key, tile, gutterTextureBytes(width, height), bitmap)
+    this.sync(device, [tile], cache, sync)
+    return tile
+  }
+
+  /**
+   * Fill the gutters of `tiles` (already in `cache`) and refresh the resident
+   * neighbours' slots that read from them; with `sync` false, defer to `resync`.
+   */
+  sync(
+    device: GPUDevice,
+    tiles: readonly TileTextureGPU[],
+    cache: TileTextureCache<TileTextureGPU>,
+    sync = true,
+  ): void {
     if (!sync) {
-      this._stale = true
-      return tile
+      this._stale ||= tiles.length > 0
+      return
     }
     const copies: Copy[] = []
-    syncGutters(level, col, row, tile, slideNeighbour(cache, slide), (...c) =>
-      copies.push(c),
-    )
-    this._copy(device, copies)
-    return tile
+    for (const t of tiles)
+      syncGutters(
+        t.level,
+        t.col,
+        t.row,
+        t,
+        slideNeighbour(cache, t.slide),
+        (...c) => copies.push(c),
+      )
+    if (copies.length) this._copy(device, copies)
   }
 
   /** Refill every resident tile's gutter if an upload skipped its own. */

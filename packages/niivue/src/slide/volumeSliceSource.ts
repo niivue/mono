@@ -16,11 +16,13 @@
  * )
  * ```
  *
- * Tiles are emitted as `raw-rgba`: this adapter owns the intensity window (and
- * an optional colormap LUT), because voxels are scalars and a slide tile is
- * RGBA. The plane is FIXED for the life of a source; step through the volume
- * with {@link VolumeSliceSource.withIndex}, which shares the underlying volume
- * source (and therefore its cache).
+ * Tiles are scalar samples ({@link VolumeSliceSource.fetchTileSamples}) in the
+ * volume's own type (uint8, uint16, int16 or float32; other types as float32),
+ * one channel whose window and colormap the options seed. Change them with
+ * `slide.setChannel(0, { calMin, calMax, colormap })`, which re-fuses tiles on
+ * the GPU without refetching. The plane is FIXED for the life of a source; step
+ * through the volume with {@link VolumeSliceSource.withIndex}, which shares the
+ * underlying volume source (and therefore its cache).
  *
  * A caveat worth knowing before pointing this at a big store: a volumetric
  * pyramid is usually chunked CUBICALLY (64^3, 128^3), so reading one plane
@@ -36,7 +38,9 @@ import { getBitsPerVoxel, getTypedArrayConstructor } from '@/volume/utils'
 import type {
   NVSlideLevelManifest,
   NVSlideManifest,
+  NVSlideSampleArray,
   NVSlideTileManifest,
+  NVSlideTileSamples,
   NVSlideYAxis,
   SlideSourceHost,
   SlideTileSource,
@@ -52,16 +56,13 @@ export interface VolumeSliceSourceOptions {
   /** Plane position along `axis`, in FINEST-level voxels. Default: the middle. */
   index?: number
   /**
-   * Intensity window mapped onto the 0-255 ramp, in RAW voxel values. Default
-   * `[0, 255]`, which is only right for uint8 data -- pass a real window (the
-   * same one the volumetric view uses) for anything else.
+   * Channel 0's initial window, in RAW voxel values. Default `[0, 255]`, which
+   * is only right for uint8 data -- pass a real window (the same one the
+   * volumetric view uses) for anything else.
    */
   window?: readonly [number, number]
-  /**
-   * 256-entry RGBA colormap (1024 bytes, `[r,g,b,a, r,g,b,a, ...]`) applied to
-   * the windowed value. Default: opaque grayscale.
-   */
-  lut?: Uint8Array | null
+  /** Channel 0's initial NiiVue colormap name. Default `'gray'`. */
+  colormap?: string
   /** Tile edge in level pixels. Default 256. */
   tileSize?: number
   /** Manifest id. Default `'volume-slice'`. */
@@ -91,17 +92,6 @@ const AXIS_OF: Record<VolumeSliceAxis, number> = { x: 0, y: 1, z: 2 }
 
 const DEFAULT_TILE_SIZE = 256
 
-function grayLut(): Uint8Array {
-  const lut = new Uint8Array(1024)
-  for (let i = 0; i < 256; i++) {
-    lut[i * 4] = i
-    lut[i * 4 + 1] = i
-    lut[i * 4 + 2] = i
-    lut[i * 4 + 3] = 255
-  }
-  return lut
-}
-
 /**
  * One plane of a {@link ChunkedVolumeSource}, served as slide tiles.
  *
@@ -124,9 +114,6 @@ export class VolumeSliceSource implements SlideTileSource {
 
   private readonly options: VolumeSliceSourceOptions
   private readonly bytesPerVoxel: number
-  private readonly windowMin: number
-  private readonly windowSpan: number
-  private readonly lut: Uint8Array
   /** Plane position in EACH level's own voxel grid, by manifest level index. */
   private readonly planeForLevel: number[]
   private host: SlideSourceHost | null = null
@@ -140,7 +127,8 @@ export class VolumeSliceSource implements SlideTileSource {
       throw new Error('VolumeSliceSource: the volume source has no levels')
     }
     const bits = getBitsPerVoxel(volume.datatypeCode)
-    if (!getTypedArrayConstructor(volume.datatypeCode) || bits === 0) {
+    const Ctor = getTypedArrayConstructor(volume.datatypeCode)
+    if (!Ctor || bits === 0) {
       throw new Error(
         `VolumeSliceSource: datatype ${volume.datatypeCode} has no scalar voxels`,
       )
@@ -148,6 +136,14 @@ export class VolumeSliceSource implements SlideTileSource {
     this.volume = volume
     this.options = options
     this.bytesPerVoxel = bits / 8
+    // Samples are the volume's type, or float32 for one a tile cannot hold:
+    // the levels say so, for NVSlide's cache budget.
+    const sampleBits =
+      Ctor === Uint8Array
+        ? 8
+        : Ctor === Uint16Array || Ctor === Int16Array
+          ? 16
+          : 32
     this.axis = options.axis ?? 'z'
     this.planeAxes = PLANE_AXES[this.axis]
     const normal = AXIS_OF[this.axis]
@@ -165,17 +161,6 @@ export class VolumeSliceSource implements SlideTileSource {
     if (!Number.isFinite(min) || !Number.isFinite(max)) {
       throw new Error('VolumeSliceSource: the window must be finite')
     }
-    this.windowMin = min
-    // A degenerate window would divide by zero; treat it as a 1-unit ramp so a
-    // flat region renders black instead of NaN.
-    this.windowSpan = max > min ? max - min : 1
-    const lut = options.lut ?? null
-    if (lut && lut.length !== 1024) {
-      throw new Error(
-        `VolumeSliceSource: the LUT must hold 256 RGBA entries (1024 bytes), got ${lut.length}`,
-      )
-    }
-    this.lut = lut ?? grayLut()
 
     const tileSize = options.tileSize ?? DEFAULT_TILE_SIZE
     if (!Number.isInteger(tileSize) || tileSize < 1) {
@@ -220,7 +205,7 @@ export class VolumeSliceSource implements SlideTileSource {
         tileHeight: tileSize,
         columns,
         rows,
-        codec: 'raw-rgba',
+        bitsStored: sampleBits,
         tiles,
       })
       // Keep the plane at the same physical position as the level coarsens.
@@ -242,10 +227,19 @@ export class VolumeSliceSource implements SlideTileSource {
       width: baseWidth,
       height: baseHeight,
       tileSize,
-      dtype: 'uint8',
-      channels: 'rgba',
+      dtype: 'scalar',
+      channels: 'gray',
       displayYAxis: options.yAxis ?? 'up',
       levels: manifestLevels,
+      channelInfo: [
+        {
+          name: id,
+          colormap: options.colormap ?? 'gray',
+          // A degenerate window would divide by zero: a 1-unit ramp instead.
+          window: { calMin: min, calMax: max > min ? max : min + 1 },
+          active: true,
+        },
+      ],
       ...(options.pixelSpacingMM
         ? { pixelSpacingMM: [...options.pixelSpacingMM] as [number, number] }
         : {}),
@@ -307,12 +301,18 @@ export class VolumeSliceSource implements SlideTileSource {
     this.host = host
   }
 
-  async fetchTileBytes(
+  /** Not used: NVSlide asks a sample source for {@link fetchTileSamples}. */
+  async fetchTileBytes(): Promise<Uint8Array> {
+    throw new Error('VolumeSliceSource serves samples (fetchTileSamples)')
+  }
+
+  /** The tile's voxels as one sample plane (`channels` is `[0]`). */
+  async fetchTileSamples(
     level: NVSlideLevelManifest,
     tile: NVSlideTileManifest,
-    label: string,
+    _channels: readonly number[],
     signal?: AbortSignal,
-  ): Promise<Uint8Array> {
+  ): Promise<NVSlideTileSamples> {
     const plane = this.planeForLevel[level.index]
     if (plane === undefined) {
       throw new Error(`VolumeSliceSource: no level ${level.index}`)
@@ -327,6 +327,8 @@ export class VolumeSliceSource implements SlideTileSource {
     texDims[uAxis] = tile.width
     texDims[vAxis] = tile.height
 
+    // NVSlide's label for the tile, so its abort lands on this event.
+    const label = `L${level.index}/${tile.x}/${tile.y}`
     this.host?.pushRangeEvent({ label, status: 'pending' })
     let voxels: Uint8Array
     try {
@@ -354,7 +356,25 @@ export class VolumeSliceSource implements SlideTileSource {
     // owns the transport (and may serve this region from its own cache).
     this.host?.addWireBytes(voxels.byteLength)
     this.host?.updateRangeEvent(label, 'hit')
-    return this.toRgba(voxels, tile.width * tile.height)
+    // The region is laid out x-fastest then y then z with a single voxel along
+    // the plane normal, so the pixel at (u, v) is at `v * width + u` whichever
+    // axis is fixed.
+    const values = this.scalars(voxels, tile.width * tile.height)
+    const samples: NVSlideSampleArray =
+      values instanceof Uint8Array ||
+      values instanceof Uint16Array ||
+      values instanceof Int16Array ||
+      values instanceof Float32Array
+        ? // Own the bytes: the cache keeps them, not the source's buffer.
+          values.slice()
+        : Float32Array.from(values as ArrayLike<number>)
+    return {
+      samples,
+      width: tile.width,
+      height: tile.height,
+      bitsStored: samples.BYTES_PER_ELEMENT * 8,
+      planes: 1,
+    }
   }
 
   /** The region's bytes as the volume's own scalar type. */
@@ -381,30 +401,5 @@ export class VolumeSliceSource implements SlideTileSource {
       count,
     )
     return values
-  }
-
-  /**
-   * Window the region's scalar voxels through the LUT. The region is laid out
-   * x-fastest then y then z with a single voxel along the plane normal, so the
-   * pixel at (u, v) is always at `v * width + u` whichever axis is fixed.
-   */
-  private toRgba(voxels: Uint8Array, count: number): Uint8Array {
-    const values = this.scalars(voxels, count)
-    const out = new Uint8Array(count * 4)
-    const lut = this.lut
-    const windowMin = this.windowMin
-    const windowSpan = this.windowSpan
-    for (let i = 0; i < count; i++) {
-      const t = (values[i] - windowMin) / windowSpan
-      // NaN fails both comparisons and falls through to 0.
-      const shade = t >= 1 ? 255 : t > 0 ? (t * 255 + 0.5) | 0 : 0
-      const entry = shade * 4
-      const o = i * 4
-      out[o] = lut[entry]
-      out[o + 1] = lut[entry + 1]
-      out[o + 2] = lut[entry + 2]
-      out[o + 3] = lut[entry + 3]
-    }
-    return out
   }
 }

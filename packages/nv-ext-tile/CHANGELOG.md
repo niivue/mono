@@ -1,3 +1,100 @@
+## 1.0.0-rc.84 (2026-11-12)
+
+### Features
+
+- lazy OME-Zarr time (VolumeFrameSource) and label stores ([5d13803f](https://github.com/niivue/mono/commit/5d13803f))
+
+### Fixes
+
+- **nv-ext-tile,demo-ext-tile:** PR 737 r3 review fixes ([f268bc47](https://github.com/niivue/mono/commit/f268bc47))
+- **nv-ext-tile:** PR 737 r2 frame cache fixes ([4d887fc5](https://github.com/niivue/mono/commit/4d887fc5))
+- **niivue,nv-ext-tile:** PR 737 review fixes for lazy OME-Zarr frames ([8eb4bf79](https://github.com/niivue/mono/commit/8eb4bf79))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.178
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.83 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.177
+
+## 1.0.0-rc.82 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.176
+
+## 1.0.0-rc.81 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** fill DICOM-WSI holes with the recommended absent colour ([454b7a26](https://github.com/niivue/mono/commit/454b7a26))
+
+### Fixes
+
+- **nv-ext-tile:** reject a non-VM-3 binary absent-pixel CIELab value ([7bc18364](https://github.com/niivue/mono/commit/7bc18364))
+- **nv-ext-tile:** an empty CIELab component is not 0 ([6c93e490](https://github.com/niivue/mono/commit/6c93e490))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.175
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.80 (2026-11-12)
+
+### Features
+
+- **nv-ext-tile:** 2-98% slide windows and storedToValue for quantized channels ([685750ee](https://github.com/niivue/mono/commit/685750ee))
+
+### Fixes
+
+- **nv-ext-tile:** jitter the window sample within each stride ([f0092091](https://github.com/niivue/mono/commit/f0092091))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.79 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.173
+
+## 1.0.0-rc.78 (2026-11-12)
+
+### Performance
+
+- **nv-ext-tile:** index local DICOM-WSI folders in a worker, in 1 MiB blocks ([181696f0](https://github.com/niivue/mono/commit/181696f0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.77 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.172
+
 ## 1.0.0-rc.76 (2026-11-11)
 
 ### Features

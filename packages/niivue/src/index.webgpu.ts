@@ -130,6 +130,7 @@ export type {
   NIFTI2,
   NIFTIHeader,
   NiiVueLocation,
+  NiiVueLocationSlide,
   NiiVueLocationValue,
   NiiVueOptions,
   NVBounds,
@@ -168,6 +169,7 @@ export type {
   VolumeChunkExplode,
   VolumeChunkSource,
   VolumeChunkSourceRequest,
+  VolumeFrameSource,
   VolumeUpdate,
   OrientationTextPosition,
   Rotation2D,
@@ -197,6 +199,7 @@ export {
   parseDziDescriptor,
 } from './slide/dziSource'
 export type {
+  NVSlideCachedTile,
   NVSlideColor,
   NVSlideLevelChoice,
   NVSlideLevelManifest,
@@ -204,6 +207,8 @@ export type {
   NVSlideOptions,
   NVSlideRangeEvent,
   NVSlideRangeStatus,
+  NVSlideSample,
+  NVSlideSampleArray,
   NVSlideScreen,
   NVSlideScreenRect,
   NVSlideSpatialTransform,
@@ -234,6 +239,7 @@ export {
   NVSlide,
 } from './slide/NVSlide'
 export { SlideDrawing } from './slide/slideDrawing'
+export type { SlideRendererOptions } from './slide/slideFuse'
 export type {
   AxialPlaneOptions,
   SlidePlaneTile,
@@ -435,6 +441,7 @@ export {
   getBitsPerVoxel,
   getImageDataRAS,
   NIFTI_UNITS_MICRON,
+  robustMinMax,
   withSpatialUnits,
 } from './volume/utils'
 // Volume writer options: the third argument to writeVolume

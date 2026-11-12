@@ -27,6 +27,11 @@ export interface NVSlideControllerOptions {
   /** A crosshair placed at a slide point. */
   onCrosshair?: (point: NVSlidePoint) => void
   /**
+   * The pointer moved over the pane with no gesture under way (null when it
+   * leaves), e.g. for `slide.sampleAt(point.x, point.y)`.
+   */
+  onHover?: (point: NVSlidePoint | null) => void
+  /**
    * A windowing drag moved by (dx, dy) CSS pixels since the last call; `done`
    * on release (a click without a drag reports nothing). As NiiVue's windowing:
    * x widens the window, y lowers its centre.
@@ -171,7 +176,15 @@ export class NVSlideController {
 
   private _onMove = (event: PointerEvent): void => {
     const g = this._gesture
-    if (!g || g.pointerId !== event.pointerId) return
+    // ponytail: no rAF coalescing; browsers already align pointermove to frames.
+    if (!g) {
+      if (this._options.onHover) {
+        const [x, y] = this._local(event)
+        this._options.onHover(this._slidePoint(x, y))
+      }
+      return
+    }
+    if (g.pointerId !== event.pointerId) return
     // Released outside the canvas before capture: the pointerup never came.
     if (event.buttons === 0) {
       this._end(g, false)
@@ -226,6 +239,7 @@ export class NVSlideController {
   // Leaving before capture: the release may land outside the canvas, and a
   // gesture left live would resume as a drag when a held button comes back.
   private _onLeave = (event: PointerEvent): void => {
+    this._options.onHover?.(null)
     const g = this._gesture
     if (
       g &&

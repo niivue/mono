@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { indexDicomWsi, type SlideIndexSlide, tileMap } from './dicomIndex'
+import {
+  indexDicomWsiOnThread,
+  type SlideIndexSlide,
+  tileMap,
+} from './dicomIndex'
 import { type DicomJsonSlide, indexDicomWsiMetadata } from './dicomJson'
 
 // Fixtures from fixtures/dicom-wsi/make_fixtures.py: each .json is its .dcm's
@@ -17,7 +21,7 @@ async function local(names: string[]) {
         new File([await Bun.file(`${DIR}/${n}.dcm`).arrayBuffer()], `${n}.dcm`),
     ),
   )
-  return indexDicomWsi(files)
+  return indexDicomWsiOnThread(files)
 }
 
 /** Tile -> frame number per level, as a manifest lists them (0 for a hole). */
@@ -208,6 +212,22 @@ describe('indexDicomWsiMetadata', () => {
     })
     expect(tiles(slide)).toEqual([[0, 0, 1, 0, 2, 0]])
     expect(slide.levels[0]).toMatchObject({ holes: 4, sparse: true })
+    expect(slide.instances[0]?.absentLab).toBeUndefined()
+    // RecommendedAbsentPixelCIELabValue, naturalized and PS3.18; bad values are dropped.
+    const lab = (v: unknown) =>
+      indexDicomWsiMetadata([{ ...instance, ...(v as object) }]).slides[0]
+        ?.instances[0]?.absentLab
+    expect(
+      lab({ RecommendedAbsentPixelCIELabValue: [0xffff, 0x8080, 0x8080] }),
+    ).toEqual([0xffff, 0x8080, 0x8080])
+    expect(lab({ '00480015': { vr: 'US', Value: [100, 200, 300] } })).toEqual([
+      100, 200, 300,
+    ])
+    expect(
+      lab({ '00480015': { vr: 'US', Value: [65535, null, 32896] } }),
+    ).toBeUndefined()
+    for (const bad of [[1, 2], [1, 2, 70000], [1, 2, 1.5], 'x'])
+      expect(lab({ RecommendedAbsentPixelCIELabValue: bad })).toBeUndefined()
     // Per-frame groups left as bulk data are absent: implicit TILED_FULL order.
     const bulk = {
       ...instance,

@@ -104,6 +104,20 @@ describe('DicomWebWsiSource', () => {
     ])
   })
 
+  test('colours holes with RecommendedAbsentPixelCIELabValue', async () => {
+    const plain = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+    })
+    expect(plain.manifest.backgroundColor).toBeUndefined()
+    const s = await DicomWebWsiSource.open(
+      await slideOf('bot', (o) => {
+        o['00480015'] = { vr: 'US', Value: [0xffff, 0x8080, 0x8080] }
+      }),
+      { seriesUrl: SERIES },
+    )
+    expect(s.manifest.backgroundColor).toEqual([1, 1, 1, 1])
+  })
+
   test('keeps a query on the series URL after the frame number', async () => {
     serve(() => part(JPEG))
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {

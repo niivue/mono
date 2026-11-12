@@ -165,7 +165,7 @@ const VOLUME_PROPS: Record<
     shape: 'number',
     range: (v) => ({
       min: 0,
-      max: Math.max(0, (v.nFrame4D ?? 1) - 1),
+      max: Math.max(0, (v.frameSource?.count ?? v.nFrame4D ?? 1) - 1),
       step: 1,
     }),
   },
@@ -584,7 +584,12 @@ export function resolveBinding(
       ...(range ? range(volume) : {}),
       read: () => {
         // A volume gone from under the bind reads as nothing, not as the one there now.
-        const value = bound.current()?.[field]
+        const now = bound.current()
+        // A lazily fetched time axis keeps its frame on the source.
+        const value =
+          field === 'frame4D'
+            ? (now?.frameSource?.frame ?? now?.frame4D)
+            : now?.[field]
         return value === undefined ? undefined : (value as ControlValue)
       },
       write: (value) => {

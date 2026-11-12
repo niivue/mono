@@ -1,3 +1,68 @@
+## 1.0.0-rc.173 (2026-11-12)
+
+### Features
+
+- lazy OME-Zarr time (VolumeFrameSource) and label stores ([5d13803f](https://github.com/niivue/mono/commit/5d13803f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.178
+- Updated uikit to 1.0.0-rc.176
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.172 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.177
+- Updated uikit to 1.0.0-rc.175
+
+## 1.0.0-rc.171 (2026-11-12)
+
+### Features
+
+- slide readout in locationChange, slide panes and MCP ([d0bcff89](https://github.com/niivue/mono/commit/d0bcff89))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.176
+- Updated uikit to 1.0.0-rc.174
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.170 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.175
+- Updated uikit to 1.0.0-rc.173
+
+## 1.0.0-rc.169 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.174
+- Updated uikit to 1.0.0-rc.172
+
+## 1.0.0-rc.168 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.173
+- Updated uikit to 1.0.0-rc.171
+
+## 1.0.0-rc.167 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.172
+- Updated uikit to 1.0.0-rc.170
+
 ## 1.0.0-rc.166 (2026-11-11)
 
 ### Updated Dependencies

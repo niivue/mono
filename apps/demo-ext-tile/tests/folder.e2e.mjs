@@ -11,6 +11,7 @@
  * Then opens a missing manifest by Custom URL and checks that the failure keeps
  * the Slide and Series menus and that the Series menu still opens a slide.
  * The minimap must draw top right, and a click on it must move the view.
+ * Last, dropped loose files and a (fake-entry) folder must open as Custom files.
  */
 
 import { readdirSync } from 'node:fs'
@@ -66,6 +67,20 @@ try {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
+  // Counts indexes a worker answered with: indexDicomWsi falls back to the
+  // main thread silently.
+  await page.addInitScript(() => {
+    const W = Worker
+    window.workerIndexes = 0
+    window.Worker = class extends W {
+      constructor(...a) {
+        super(...a)
+        this.addEventListener('message', (e) => {
+          if (e.data?.index) window.workerIndexes++
+        })
+      }
+    }
+  })
   // No ?url= default slide: the page starts empty.
   await page.goto(`http://127.0.0.1:${port}/index.html?url=`)
   await page.setInputFiles(
@@ -75,6 +90,8 @@ try {
   await page.waitForFunction(() =>
     /Indexed in/.test(document.getElementById('status').textContent),
   )
+  const workerIndexes = await page.evaluate(() => window.workerIndexes)
+  if (workerIndexes !== 1) fail(`${workerIndexes} worker indexes, not 1`)
   const options = await page.locator('#slides option').allTextContents()
   const skipped = await page.locator('#status').getAttribute('title')
   // Six JPEG-labelled series, plus two optical paths and the e2e slide; four refused files.
@@ -238,6 +255,157 @@ try {
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.startsWith('Indexed in'),
   )
+
+  // Loose files dropped on the canvas open like Custom files.
+  const dropped = await Promise.all(
+    ['colors.dcm', 'not-dicom.dcm'].map(async (name) => [
+      name,
+      (await readFile(join(FIXTURES, name))).toString('base64'),
+    ]),
+  )
+  await page.check('#hudToggle')
+  const highlighted = await page.evaluate((dropped) => {
+    const dt = new DataTransfer()
+    for (const [name, b64] of dropped)
+      dt.items.add(
+        new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], name),
+      )
+    const canvas = document.getElementById('canvas')
+    const fire = (type) =>
+      canvas.dispatchEvent(
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt,
+        }),
+      )
+    fire('dragenter')
+    fire('dragover')
+    const on = document.querySelector('main').classList.contains('drop')
+    fire('drop')
+    return on
+  }, dropped)
+  if (!highlighted) fail('dragover did not highlight the drop zone')
+  await page.waitForFunction(
+    () => document.querySelectorAll('#slides option').length === 1,
+  )
+  await page.waitForFunction(() =>
+    /^colors: 1 levels.*requests +4\/4 done/s.test(
+      document.getElementById('hud').textContent,
+    ),
+  )
+  if (await page.locator('main.drop').count())
+    fail('drop left the highlight on')
+  if (
+    !(await page.locator('#status').getAttribute('title'))?.includes(
+      'not-dicom.dcm',
+    )
+  )
+    fail('dropped not-dicom.dcm not in the skipped list')
+
+  // A dropped folder: a script-made DataTransfer has no entries, so fake one
+  // (types, items) holding real Files. Opening proves the synthesized keys
+  // (slide/sub/colors.dcm) index and look up in Chromium.
+  await page.evaluate((dropped) => {
+    const entry = (fullPath, rest) => ({ fullPath, ...rest })
+    const fileEntry = ([name, b64], dir) =>
+      entry(`${dir}/${name}`, {
+        isFile: true,
+        file: (ok) =>
+          ok(
+            new File(
+              [Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))],
+              name,
+            ),
+          ),
+      })
+    const dirEntry = (fullPath, children) =>
+      entry(fullPath, {
+        isFile: false,
+        createReader: () => {
+          let left = children
+          return {
+            readEntries: (ok) => {
+              ok(left)
+              left = []
+            },
+          }
+        },
+      })
+    const tree = dirEntry('/slide', [
+      dirEntry('/slide/sub', [fileEntry(dropped[0], '/slide/sub')]),
+      fileEntry(dropped[1], '/slide'),
+    ])
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    drop.dataTransfer = {
+      types: ['Files'],
+      items: [{ kind: 'file', webkitGetAsEntry: () => tree }],
+    }
+    document.getElementById('canvas').dispatchEvent(drop)
+  }, dropped)
+  await page.waitForFunction(() =>
+    document.getElementById('status').title.includes('slide/not-dicom.dcm'),
+  )
+  await page.waitForFunction(() =>
+    /^colors: 1 levels.*requests +4\/4 done.*failures +0/s.test(
+      document.getElementById('hud').textContent,
+    ),
+  )
+  await page.waitForTimeout(300)
+  if (!(await page.textContent('#status')).startsWith('Indexed in'))
+    fail(`folder drop: ${await page.textContent('#status')}`)
+  // A slow folder walk must not replace an open started after it: hold the
+  // walk's file callback, finish a newer loose drop, then release the walk.
+  await page.evaluate((dropped) => {
+    const file = ([name, b64]) =>
+      new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], name)
+    const tree = {
+      fullPath: '/old',
+      isFile: false,
+      createReader: () => {
+        let left = [
+          {
+            fullPath: '/old/not-dicom.dcm',
+            isFile: true,
+            file: (ok) => {
+              globalThis.releaseOldWalk = () => ok(file(dropped[1]))
+            },
+          },
+        ]
+        return {
+          readEntries: (ok) => {
+            ok(left)
+            left = []
+          },
+        }
+      },
+    }
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    drop.dataTransfer = {
+      types: ['Files'],
+      items: [{ kind: 'file', webkitGetAsEntry: () => tree }],
+    }
+    document.getElementById('canvas').dispatchEvent(drop)
+    const dt = new DataTransfer()
+    dt.items.add(file(dropped[0]))
+    document.getElementById('canvas').dispatchEvent(
+      new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt,
+      }),
+    )
+  }, dropped)
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Indexed in'),
+  )
+  await page.evaluate(() => globalThis.releaseOldWalk())
+  await page.waitForTimeout(300)
+  if (!(await page.textContent('#status')).startsWith('Indexed in'))
+    fail(
+      `stale folder walk replaced a newer open: ${await page.textContent('#status')}`,
+    )
+
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
 } finally {
   await browser.close()

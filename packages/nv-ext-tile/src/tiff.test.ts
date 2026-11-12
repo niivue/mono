@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import type { Pool } from '@niivue/geotiff-rs'
 import { fromArrayBuffer, fromFile } from '@niivue/geotiff-rs'
-import type {
-  NVSlideRangeEvent,
-  NVSlideRangeStatus,
-  SlideSourceHost,
+import {
+  NVSlide,
+  type NVSlideRangeEvent,
+  type NVSlideRangeStatus,
+  type SlideSourceHost,
 } from '@niivue/niivue'
 import { registerDcm2niixTiffDecoders, TiffSlideSource } from './tiff'
 
@@ -828,6 +829,32 @@ function grayLevel(
   }
 }
 
+// Bin b of the 1001-bin 2-98% histogram over mn..mx (robustMinMax).
+const bin = (b: number, mn: number, mx: number) => b / (1000 / (mx - mn)) + mn
+
+/** Runs `f` with stand-ins for the browser bitmap API NVSlide renders tiles with. */
+async function withFakeBitmaps<T>(f: () => Promise<T>): Promise<T> {
+  const g = globalThis as Record<string, unknown>
+  const saved = [g.ImageData, g.createImageBitmap]
+  g.ImageData = class {
+    constructor(
+      readonly data: Uint8ClampedArray,
+      readonly width: number,
+      readonly height: number,
+    ) {}
+  }
+  g.createImageBitmap = async (img: { width: number; height: number }) => ({
+    width: img.width,
+    height: img.height,
+    close() {},
+  })
+  try {
+    return await f()
+  } finally {
+    ;[g.ImageData, g.createImageBitmap] = saved
+  }
+}
+
 // One plane per IFD id, each a 2-level SubIFD pyramid (40x32, 20x16).
 const grayPlanes = (
   ids: number[],
@@ -896,18 +923,23 @@ describe('multi-channel OME-TIFF', () => {
       [40, 'raw-gray', 16],
       [20, 'raw-gray', 16],
     ])
-    // Windows: the coarsest level's range, id * 1000 + 100 + (0..34).
+    // Windows: 2-98% of the coarsest level, id * 1000 + 100 + s, s = x + y in
+    // 0..34 over 20 x 16: 6 of 320 samples per end lie at s <= 2 and s >= 32,
+    // bins 59 and 941 of 1000.
     expect(m.channelInfo).toEqual([
       {
         name: 'DAPI',
         rgb: [255, 0, 0],
-        window: { calMin: 100, calMax: 134 },
+        window: { calMin: bin(59, 100, 134), calMax: bin(941, 100, 134) },
         active: true,
       },
       {
         name: 'GFP',
         rgb: [0, 255, 0],
-        window: { calMin: 1100, calMax: 1134 },
+        window: {
+          calMin: bin(59, 1100, 1134),
+          calMax: bin(941, 1100, 1134),
+        },
         active: true,
       },
     ])
@@ -1043,21 +1075,27 @@ describe('multi-channel OME-TIFF', () => {
     expect(pixel(rgba, 16, 1, 1)).toEqual([...rgbAt(2, 1, 1), 255])
   })
 
-  test('uint8 windows span 0-255; float is quantized to uint16', async () => {
+  test('uint8 windows are the 2-98% range too; float is quantized to uint16', async () => {
     const u8 = await openOme('XYCZT', [0, 1, 2, 3], { dtype: { bits: 8 } })
     expect(u8.manifest.levels[0]?.bitsStored).toBe(8)
-    expect(u8.manifest.channelInfo?.[1]?.window).toEqual({
-      calMin: 0,
-      calMax: 255,
+    // Channel 1 holds 1100 % 256 + s = 76..110; u8 is not quantized.
+    expect(u8.manifest.channelInfo?.[1]).toMatchObject({
+      window: { calMin: bin(59, 76, 110), calMax: bin(941, 76, 110) },
     })
+    expect(u8.manifest.channelInfo?.[1]?.storedToValue).toBeUndefined()
     expect(await planeIds(u8, [1])).toEqual([1000 % 256])
     const f32 = await openOme('XYCZT', [0, 1, 2, 3], {
       dtype: { bits: 32, sampleFormat: 3 },
     })
     expect(f32.manifest.dtype).toBe('uint16')
-    expect(f32.manifest.channelInfo?.[0]?.window).toEqual({
-      calMin: 0,
-      calMax: 65535,
+    // Quantized over the sample's min..max 100..134, windowed to its 2-98%.
+    const stored = (v: number) => ((v - 100) * 65535) / 34
+    expect(f32.manifest.channelInfo?.[0]).toMatchObject({
+      window: {
+        calMin: stored(bin(59, 100, 134)),
+        calMax: stored(bin(941, 100, 134)),
+      },
+      storedToValue: { scale: 34 / 65535, offset: 100 },
     })
     // Channel 1's coarse range 1100..1134 spans 0..65535; level 0 holds 1000 (clamps to 0).
     const lv = f32.manifest.levels[1]
@@ -1068,6 +1106,18 @@ describe('multi-channel OME-TIFF', () => {
       0,
       Math.round((2 / 34) * 65535),
     ])
+    // NVSlide.sampleAt maps stored samples back through storedToValue.
+    const slide = NVSlide.fromSource(f32)
+    const step = 34 / 65535
+    const [, coarse] = await withFakeBitmaps(() =>
+      slide.loadSampleAt(2, 2, { level: 1 }),
+    )
+    // Level 1 pixel (1, 1): 1100 + 2.
+    expect(Math.abs((coarse?.value ?? 0) - 1102)).toBeLessThan(step / 2)
+    expect([coarse?.exact, coarse?.clipped]).toEqual([false, undefined])
+    // Level 0 holds 1000, below the range: stored 0, value the range's low end.
+    const [, fine] = await withFakeBitmaps(() => slide.loadSampleAt(0, 0))
+    expect(fine).toMatchObject({ value: 1100, exact: false, clipped: true })
   })
 
   test('RGB OME-TIFF and plain TIFF stay raw-rgba without channels', async () => {

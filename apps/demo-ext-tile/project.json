@@ -18,6 +18,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "typescript",
+        "^typescript",
         "{projectRoot}/vite.config.js",
         "{projectRoot}/src/**/*",
         "{projectRoot}/scripts/**/*",
@@ -36,12 +37,19 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "e2e": {
-      "command": "node tests/folder.e2e.mjs",
+      "command": "node tests/folder.e2e.mjs && node tests/omezarr-time.e2e.mjs",
       "options": {
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["build"],
-      "inputs": ["typescript", "{projectRoot}/tests/**/*"]
+      "inputs": ["typescript", "^typescript", "{projectRoot}/tests/**/*"]
+    },
+    "test": {
+      "command": "bun test",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["typescript"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",

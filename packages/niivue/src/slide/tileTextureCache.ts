@@ -102,12 +102,13 @@ export class TileTextureCache<T> {
   /**
    * Destroy least-recently-used entries until within budget. Entries touched
    * in the current frame are never evicted, so call this BEFORE `beginFrame()`
-   * (protecting the just-drawn working set) rather than after.
+   * (protecting the just-drawn working set) rather than after. `maxBytes`
+   * overrides the constructor budget for this call.
    */
-  evictToBudget(): void {
-    if (this.bytes <= this._maxBytes) return
+  evictToBudget(maxBytes = this._maxBytes): void {
+    if (this.bytes <= maxBytes) return
     for (const [key, entry] of this._entries) {
-      if (this.bytes <= this._maxBytes) return
+      if (this.bytes <= maxBytes) return
       if (entry.frame === this._frame) continue
       this._destroyEntry(entry.value)
       this._entries.delete(key)

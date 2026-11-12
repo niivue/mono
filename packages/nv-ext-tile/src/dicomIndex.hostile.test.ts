@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  indexDicomWsi,
+  indexDicomWsiOnThread,
   type SlideIndexLevel,
   type SlideIndexSlide,
   tileMap,
@@ -111,14 +111,14 @@ const zSeq = (...zs: string[]) =>
     0x021a,
     zs.map((z) => item(el(0x0040, 0x074a, 'DS', str(z)))),
   )
-const planesOf = (idx: Awaited<ReturnType<typeof indexDicomWsi>>) =>
+const planesOf = (idx: Awaited<ReturnType<typeof indexDicomWsiOnThread>>) =>
   idx.slides.map((s) => [
     s.focalPlane,
     s.levels.map((l) => [l.width, l.frames.offset.length, l.duplicates]),
   ])
 
 const reasons = async (file: File) =>
-  (await indexDicomWsi([file])).skipped.map((s) => s.reason)
+  (await indexDicomWsiOnThread([file])).skipped.map((s) => s.reason)
 
 /** Each present tile's payload label, row-major, -1 for a hole. */
 async function tileLabels(slide: SlideIndexSlide, files: File[]) {
@@ -132,10 +132,10 @@ async function tileLabels(slide: SlideIndexSlide, files: File[]) {
   )
 }
 
-describe('indexDicomWsi on hostile input', () => {
+describe('indexDicomWsiOnThread on hostile input', () => {
   test('a well-formed file indexes (the builder is sound)', async () => {
     const good = dicom()
-    const idx = await indexDicomWsi([good])
+    const idx = await indexDicomWsiOnThread([good])
     expect(idx.skipped).toEqual([])
     expect(await tileLabels(idx.slides[0] as SlideIndexSlide, [good])).toEqual([
       0, 1, 2, 3,
@@ -145,7 +145,7 @@ describe('indexDicomWsi on hostile input', () => {
   test('one bad file never costs the others their slides', async () => {
     const good = dicom()
     const bad = dicom({ rows: el(0x0028, 0x0010, 'US', new Uint8Array(0)) }) // an empty US
-    const idx = await indexDicomWsi([bad, good])
+    const idx = await indexDicomWsiOnThread([bad, good])
     expect(idx.slides).toHaveLength(1)
     expect(idx.skipped.map((s) => [s.file, s.reason])).toEqual([
       ['rows.dcm', 'malformed'],
@@ -191,7 +191,7 @@ describe('indexDicomWsi on hostile input', () => {
 
   test('a level past the tile cap says it is too large, with its sizes', async () => {
     // About 1 TB of RGB at 256-px tiles: 2344 x 2344 tiles, over 2^22.
-    const idx = await indexDicomWsi([
+    const idx = await indexDicomWsiOnThread([
       dicom({
         rows: el(0x0028, 0x0010, 'US', le(256, 2)),
         columns: el(0x0028, 0x0011, 'US', le(256, 2)),
@@ -234,7 +234,7 @@ describe('indexDicomWsi on hostile input', () => {
     const f = dicom({
       photometric: cat(el(0x0028, 0x0004, 'CS', str('YBR_FULL_422')), un),
     })
-    const idx = await indexDicomWsi([f])
+    const idx = await indexDicomWsiOnThread([f])
     expect(idx.skipped).toEqual([])
     expect(await tileLabels(idx.slides[0] as SlideIndexSlide, [f])).toEqual([
       0, 1, 2, 3,
@@ -286,7 +286,7 @@ describe('indexDicomWsi on hostile input', () => {
     const f = dicom({
       study: el(0x0020, 0x000d, 'UT', new Uint8Array(16 << 20).fill(0x31)),
     })
-    expect((await indexDicomWsi([f])).skipped[0]?.message).toBe(
+    expect((await indexDicomWsiOnThread([f])).skipped[0]?.message).toBe(
       '16777216-byte UT at byte 226',
     )
   })
@@ -296,7 +296,7 @@ describe('indexDicomWsi on hostile input', () => {
     const f = dicom({
       opticalPathSeq: sq(0x0048, 0x0105, Array(4097).fill(item(id))),
     })
-    expect((await indexDicomWsi([f])).skipped[0]?.message).toBe(
+    expect((await indexDicomWsiOnThread([f])).skipped[0]?.message).toBe(
       'over 4096 optical paths',
     )
   })
@@ -306,7 +306,7 @@ describe('indexDicomWsi on hostile input', () => {
     // top-level elements, then one per-frame item repeating a ZOffset. Each
     // element took about 200 bytes of heap before (940 MB here, now 85).
     const script = `
-      const { indexDicomWsi } = await import(${JSON.stringify(`${import.meta.dir}/dicomIndex.ts`)})
+      const { indexDicomWsiOnThread } = await import(${JSON.stringify(`${import.meta.dir}/dicomIndex.ts`)})
       const half = 8 << 20
       const b = new Uint8Array(2 * half + 1024)
       const v = new DataView(b.buffer)
@@ -322,7 +322,7 @@ describe('indexDicomWsi on hostile input', () => {
       put([0xe0, 0x7f, 0x10, 0, 79, 66, 0, 0, 255, 255, 255, 255, 254, 255, 0, 224, 0, 0, 0, 0, 254, 255, 221, 224, 0, 0, 0, 0])
       const file = new File([b.subarray(0, o)], 'h.dcm')
       const r0 = process.resourceUsage().maxRSS
-      const idx = await indexDicomWsi([file])
+      const idx = await indexDicomWsiOnThread([file])
       // ru_maxrss is bytes on macOS, KiB on Linux: scale by what rss says.
       const unit = process.memoryUsage().rss / r0 > 100 ? 1024 : 1
       const mb = ((process.resourceUsage().maxRSS - r0) * unit) / 2 ** 20
@@ -338,7 +338,7 @@ describe('indexDicomWsi on hostile input', () => {
     const lying = dicom({
       note: el(0x0009, 0x1010, 'UT', str('x'), 0xfffffff0),
     })
-    const idx = await indexDicomWsi([lying])
+    const idx = await indexDicomWsiOnThread([lying])
     expect(idx.skipped[0]?.reason).toBe('malformed')
     expect(idx.skipped[0]?.message).toMatch(/runs past the file/)
   })
@@ -353,7 +353,7 @@ describe('indexDicomWsi on hostile input', () => {
     // length runs past the first read.
     for (let k = 1; k < 8; k++) {
       const file = dicom({ pad: pad((1 << 20) - k - head), next })
-      const idx = await indexDicomWsi([file])
+      const idx = await indexDicomWsiOnThread([file])
       expect(idx.skipped).toEqual([])
       expect(
         await tileLabels(idx.slides[0] as SlideIndexSlide, [file]),
@@ -377,7 +377,7 @@ describe('indexDicomWsi on hostile input', () => {
       {},
       pixelData([0, 1, 2, 3].map(payload), [step, 0, 3 * step, 2 * step]),
     )
-    const idx = await indexDicomWsi([shuffled])
+    const idx = await indexDicomWsiOnThread([shuffled])
     expect(idx.skipped).toEqual([])
     expect(
       await tileLabels(idx.slides[0] as SlideIndexSlide, [shuffled]),
@@ -386,7 +386,7 @@ describe('indexDicomWsi on hostile input', () => {
       {},
       pixelData([0, 1, 2, 3].map(payload), [0, step, 2 * step, 1e9]),
     )
-    const idx2 = await indexDicomWsi([pastEnd])
+    const idx2 = await indexDicomWsiOnThread([pastEnd])
     expect(
       await tileLabels(idx2.slides[0] as SlideIndexSlide, [pastEnd]),
     ).toEqual([0, 1, 2, 3])
@@ -414,10 +414,60 @@ describe('indexDicomWsi on hostile input', () => {
         pos(17, 17),
       ]),
     })
-    const idx = await indexDicomWsi([sparse])
+    const idx = await indexDicomWsiOnThread([sparse])
     const slide = idx.slides[0] as SlideIndexSlide
     expect(slide.levels[0]?.duplicates).toBe(2)
     expect(await tileLabels(slide, [sparse])).toEqual([2, -1, -1, 3])
+    expect(new DicomWsiSource(slide, [sparse]).manifest.backgroundColor).toBe(
+      undefined,
+    )
+    // RecommendedAbsentPixelCIELabValue colours the holes (white here).
+    const white = dicom({
+      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+      absentLab: el(
+        0x0048,
+        0x0015,
+        'US',
+        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2)),
+      ),
+      perFrame: sq(0x5200, 0x9230, [
+        pos(9, 1),
+        pos(0, 1),
+        pos(1, 1),
+        pos(17, 17),
+      ]),
+    })
+    // Through the public entry, whichever module implements it.
+    const { indexDicomWsi: indexViaEntry } = await import('./dicom')
+    const ws = (await indexViaEntry([white])).slides[0] as SlideIndexSlide
+    const { manifest } = new DicomWsiSource(ws, [white])
+    expect(manifest.backgroundColor).toEqual([1, 1, 1, 1])
+    // The tag is VM 3: a fourth component makes it invalid, not white.
+    const four = dicom({
+      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+      absentLab: el(
+        0x0048,
+        0x0015,
+        'US',
+        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2), le(1, 2)),
+      ),
+      perFrame: sq(0x5200, 0x9230, [
+        pos(9, 1),
+        pos(0, 1),
+        pos(1, 1),
+        pos(17, 17),
+      ]),
+    })
+    const fs = (await indexViaEntry([four])).slides[0] as SlideIndexSlide
+    expect(new DicomWsiSource(fs, [four]).manifest.backgroundColor).toBe(
+      undefined,
+    )
+    expect(manifest.levels[0]?.tiles.map((t) => t === null)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ])
   })
   // Per-frame z for a sparse level of 1-px tiles on a 2048 x 2048 grid.
   const planes = (zs: string[]) =>
@@ -450,7 +500,7 @@ describe('indexDicomWsi on hostile input', () => {
 
   test('thousands of focal planes are refused, not made into slides', async () => {
     const t0 = performance.now()
-    const idx = await indexDicomWsi([
+    const idx = await indexDicomWsiOnThread([
       planes(Array.from({ length: 5000 }, (_, k) => String(k))),
     ])
     expect(idx.slides).toEqual([])
@@ -468,7 +518,7 @@ describe('indexDicomWsi on hostile input', () => {
       {},
       pixelData([0, 1, 2, 3].map(payload), [0, step, 2 * step, 3 * step + 2]),
     )
-    const idx = await indexDicomWsi([f])
+    const idx = await indexDicomWsiOnThread([f])
     expect(idx.skipped).toEqual([])
     const lengths = [...(idx.slides[0]?.levels[0]?.frames.length ?? [])]
     expect(lengths).toEqual([6, 6, 6, 6])
@@ -481,7 +531,7 @@ describe('indexDicomWsi on hostile input', () => {
     const content = (k: number) =>
       item(sq(0x0020, 0x9111, [item(el(0x0020, 0x9156, 'US', le(k, 2)))]))
     const f = dicom({ perFrame: sq(0x5200, 0x9230, [0, 1, 2, 3].map(content)) })
-    const idx = await indexDicomWsi([f])
+    const idx = await indexDicomWsiOnThread([f])
     expect(idx.skipped).toEqual([])
     const slide = idx.slides[0] as SlideIndexSlide
     expect(slide.levels[0]?.duplicates).toBe(0)
@@ -501,7 +551,7 @@ describe('indexDicomWsi on hostile input', () => {
       },
       pixelData([payload(9)]),
     )
-    const idx = await indexDicomWsi([l0, l1])
+    const idx = await indexDicomWsiOnThread([l0, l1])
     expect(idx.skipped).toEqual([])
     expect(idx.slides.map((s) => s.levels.length)).toEqual([2])
   })
@@ -533,7 +583,7 @@ describe('indexDicomWsi on hostile input', () => {
         },
         pixelData(frames.map(payload)),
       )
-    const idx = await indexDicomWsi([
+    const idx = await indexDicomWsiOnThread([
       part(1, 0, [0, 1, 2, 3]),
       part(2, 4, [4, 5]),
     ])
@@ -581,7 +631,7 @@ describe('indexDicomWsi on hostile input', () => {
       },
       pixelData([payload(9)]),
     )
-    const idx = await indexDicomWsi([l0, l1])
+    const idx = await indexDicomWsiOnThread([l0, l1])
     expect(idx.skipped).toEqual([])
     expect(planesOf(idx)).toEqual([
       [0, [[32, 2, 0]]],
@@ -603,7 +653,10 @@ describe('indexDicomWsi on hostile input', () => {
       })
     expect(
       planesOf(
-        await indexDicomWsi([plane('1.2.9.50', '1'), plane('1.2.9.51', '2')]),
+        await indexDicomWsiOnThread([
+          plane('1.2.9.50', '1'),
+          plane('1.2.9.51', '2'),
+        ]),
       ),
     ).toEqual([
       [0, [[32, 4, 0]]],
@@ -625,7 +678,7 @@ describe('indexDicomWsi on hostile input', () => {
       focalPlanes: el(0x0048, 0x0303, 'UL', le(2, 4)),
       shared: sq(0x5200, 0x9229, [item(zSeq('5'))]),
     })
-    expect(planesOf(await indexDicomWsi([f]))).toEqual([
+    expect(planesOf(await indexDicomWsiOnThread([f]))).toEqual([
       [0, [[32, 2, 0]]],
       [1, [[32, 2, 0]]],
     ])
@@ -656,7 +709,7 @@ describe('indexDicomWsi on hostile input', () => {
         },
         pixelData([payload(k)]),
       )
-    const idx = await indexDicomWsi(
+    const idx = await indexDicomWsiOnThread(
       Array.from({ length: 20 }, (_, k) => plane(k)),
     )
     expect(idx.skipped).toEqual([])
@@ -679,7 +732,7 @@ describe('indexDicomWsi on hostile input', () => {
         },
         pixelData(Array.from({ length: frames }, (_, k) => payload(k))),
       )
-    const idx = await indexDicomWsi([
+    const idx = await indexDicomWsiOnThread([
       level('1.2.9.95', '0.5'),
       level('1.2.9.96', '0.5000001', 1, 16),
     ])
@@ -718,9 +771,9 @@ describe('indexDicomWsi on hostile input', () => {
       pixelData(Array.from({ length: N }, (_, k) => payload(k & 255))),
     )
     const t0 = performance.now()
-    expect((await indexDicomWsi([f])).skipped.map((k) => k.message)).toEqual([
-      'over 4096 (optical path, focal plane) pairs',
-    ])
+    expect(
+      (await indexDicomWsiOnThread([f])).skipped.map((k) => k.message),
+    ).toEqual(['over 4096 (optical path, focal plane) pairs'])
     expect(performance.now() - t0).toBeLessThan(1000)
   })
   test('TILED_FULL frames past tiles x planes x paths are malformed, quickly', async () => {
@@ -769,7 +822,7 @@ describe('indexDicomWsi on hostile input', () => {
       { length: 20 },
       (_, k) => new File([level(k)], `L${k}.dcm`, { lastModified: 1 }),
     )
-    const idx = await indexDicomWsi(files)
+    const idx = await indexDicomWsiOnThread(files)
     expect(idx.slides.map((s) => s.levels.map((l) => l.width))).toEqual([
       [2048, 2047],
     ])
@@ -811,7 +864,7 @@ describe('indexDicomWsi on hostile input', () => {
       },
       pixelData(Array.from({ length: 8 }, (_, k) => payload(k))),
     )
-    const idx = await indexDicomWsi([f])
+    const idx = await indexDicomWsiOnThread([f])
     expect(idx.skipped).toEqual([])
     expect(idx.slides.map((s) => [s.opticalPath, s.focalPlane])).toEqual([
       ['0', 0],
@@ -847,7 +900,8 @@ describe('indexDicomWsi on hostile input', () => {
       },
       pixelData(Array.from({ length: 5 }, (_, k) => payload(k))),
     )
-    const slide = (await indexDicomWsi([f])).slides[0] as SlideIndexSlide
+    const slide = (await indexDicomWsiOnThread([f]))
+      .slides[0] as SlideIndexSlide
     const l0 = slide.levels[0]
     expect([l0?.holes, l0?.duplicates, l0?.sparse]).toEqual([0, 1, true])
     // What NVSlide's assertSingleSlidePlane passes: 5 frames on 4 tiles are not a dense grid.
@@ -860,7 +914,7 @@ describe('indexDicomWsi on hostile input', () => {
   })
 
   test('no ImageType: a stated multi-tile matrix is a level, a single-tile macro is not', async () => {
-    const volume = await indexDicomWsi([dicom({ imageType: null })])
+    const volume = await indexDicomWsiOnThread([dicom({ imageType: null })])
     expect(volume.slides.map((s) => s.levels.map((l) => l.width))).toEqual([
       [32],
     ])
@@ -874,7 +928,7 @@ describe('indexDicomWsi on hostile input', () => {
       }),
       macro({ totalColumns: null, totalRows: null }),
     ])
-      expect((await indexDicomWsi([f])).slides).toEqual([])
+      expect((await indexDicomWsiOnThread([f])).slides).toEqual([])
     // A stated type without VOLUME stays out, whatever its geometry.
     const label = dicom({
       imageType: el(
@@ -884,7 +938,7 @@ describe('indexDicomWsi on hostile input', () => {
         str('ORIGINAL\\PRIMARY\\LABEL\\NONE'),
       ),
     })
-    expect((await indexDicomWsi([label])).slides).toEqual([])
+    expect((await indexDicomWsiOnThread([label])).slides).toEqual([])
   })
 
   test('a TILED_SPARSE file with an empty NumberOfOpticalPaths still indexes', async () => {
@@ -907,7 +961,7 @@ describe('indexDicomWsi on hostile input', () => {
         pos(17, 17),
       ]),
     })
-    const idx = await indexDicomWsi([f])
+    const idx = await indexDicomWsiOnThread([f])
     expect(idx.skipped).toEqual([])
     expect(idx.slides).toHaveLength(1)
   })
@@ -918,12 +972,12 @@ describe('indexDicomWsi on hostile input', () => {
         item(el(0x0028, 0x2000, 'OB', icc), el(0x0048, 0x0106, 'SH', str('1'))),
       ]),
     })
-    const idx = await indexDicomWsi([f])
+    const idx = await indexDicomWsiOnThread([f])
     const slide = idx.slides[0] as SlideIndexSlide
     expect(slide.iccProfile?.length).toBe(200)
     expect(await new DicomWsiSource(slide, [f]).fetchIccProfile()).toEqual(icc)
     const plain = dicom()
-    const plainSlide = (await indexDicomWsi([plain]))
+    const plainSlide = (await indexDicomWsiOnThread([plain]))
       .slides[0] as SlideIndexSlide
     expect(
       await new DicomWsiSource(plainSlide, [plain]).fetchIccProfile(),

@@ -139,6 +139,7 @@ const els = {
   zoomIn: el('zoomIn'),
   fit: el('fit'),
   showGrid: el('showGrid'),
+  scaleBar: el('scaleBar'),
   canvas: el('tileCanvas'),
   overlay: el('drawOverlay'),
   drawBtn: el('drawBtn'),
@@ -161,6 +162,8 @@ let view = null
 let slide = null
 let animationFrame = 0
 let hasFit = false
+// The slide pixel under the pointer, for the HUD's value readout.
+let hoverCss = null // the pointer in canvas CSS px: a pan moves the slide under it
 // Slide-space drawing: a SlideDrawing raster (painted with the shared pen tools,
 // in slide pixels) shown via a stacked Canvas2D overlay mapped through NVSlide's
 // screen<->slide transform, so the annotation stays registered under pan/zoom.
@@ -301,7 +304,9 @@ async function createView() {
 function drawView(screen) {
   if (!view || !slide) return
   const slides = [slide]
-  view.renderer.overlay = slideOverlayContent(slide, screen, gestures)
+  view.renderer.overlay = slideOverlayContent(slide, screen, gestures, {
+    isRulerVisible: els.scaleBar.checked,
+  })
   if (view.kind === 'gpu') {
     view.renderer.render(slides, screen)
   } else {
@@ -525,21 +530,13 @@ function buildWandReference() {
   for (const lv of levels) {
     if (lv.width <= drawing.width && lv.width > level.width) level = lv
   }
-  const tw = level.tileWidth ?? slide.manifest.tileSize ?? 256
-  const th = level.tileHeight ?? slide.manifest.tileSize ?? 256
-  const sx = drawing.width / level.width
-  const sy = drawing.height / level.height
   const c = document.createElement('canvas')
   c.width = drawing.width
   c.height = drawing.height
   const cx = c.getContext('2d')
-  for (const t of level.tiles) {
-    if (!t) continue // a sparse slide's hole
-    slide.requestTile(level, t) // prime for a sharper re-click
-    const bmp = slide.cachedTileBitmap(`L${level.index}/${t.x}/${t.y}`)
-    if (!bmp) continue
-    cx.drawImage(bmp, t.x * tw * sx, t.y * th * sy, t.width * sx, t.height * sy)
-  }
+  // Requests missing tiles (a sharper re-click); scalar tiles composite on the CPU.
+  const bmp = slide.thumbnailBitmap(level, Math.max(c.width, c.height))
+  if (bmp) cx.drawImage(bmp, 0, 0, c.width, c.height)
   return cx.getImageData(0, 0, c.width, c.height).data
 }
 
@@ -584,7 +581,26 @@ function updateHud(screen) {
     <div class="row"><span class="key">wire</span><span>${formatBytes(s.wireBytes)}</span></div>
     <div class="row"><span class="key">cache</span><span>${formatBytes(s.cacheBytes)} / ${s.cacheHits} hits</span></div>
     <div class="row"><span class="key">failures</span><span class="${s.failures > 0 ? 'bad' : ''}">${s.failures}</span></div>
+    ${hoverRow()}
   `
+}
+
+// Per-channel values under the pointer, from cached tiles only (render runs
+// again when a tile lands, so a finer level shows up without a new move).
+function hoverRow() {
+  if (!hoverCss) return ''
+  const hoverPoint = slide.screenToSlide(
+    hoverCss.xCss,
+    hoverCss.yCss,
+    screenForCanvas(),
+  )
+  const samples = slide.sampleAt(hoverPoint.x, hoverPoint.y)
+  if (samples[0]?.missing === 'outside') return ''
+  const values = samples
+    .map((s) => `${s.name} ${s.value ?? s.missing}`)
+    .join(', ')
+  const at = `${Math.floor(hoverPoint.x)},${Math.floor(hoverPoint.y)}`
+  return `<div class="row"><span class="key">value</span><span>${html(at)} ${html(values)} (L${samples[0]?.level ?? '-'})</span></div>`
 }
 
 function updateRangeLog() {
@@ -831,6 +847,10 @@ const gestures = new NVSlideController(els.canvas, {
   primaryDragMode: DRAG_MODE.pan,
   secondaryDragMode: DRAG_MODE.roiSelection,
   onChange: requestRender,
+  onHover: (point) => {
+    hoverCss = point && slide.slideToScreen(point.x, point.y, screenForCanvas())
+    requestRender()
+  },
 })
 
 els.levelMode.addEventListener('change', () => {
@@ -841,6 +861,7 @@ els.levelMode.addEventListener('change', () => {
 els.showGrid.addEventListener('change', () => {
   slide?.setTileGridVisible(els.showGrid.checked)
 })
+els.scaleBar.addEventListener('change', requestRender)
 els.fit.addEventListener('click', () => slide?.fitToScreen(screenForCanvas()))
 els.zoomIn.addEventListener('click', () => zoomCentered(1.45))
 els.zoomOut.addEventListener('click', () => zoomCentered(1 / 1.45))

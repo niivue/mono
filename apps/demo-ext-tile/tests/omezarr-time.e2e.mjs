@@ -452,7 +452,7 @@ async function check(backend) {
   let g = await segState()
   if (
     g.n !== C + 1 ||
-    !g.colormap.endsWith('labels') ||
+    !/ labels \(.+\)$/.test(g.colormap) ||
     g.label !== (g.frame % 2) + 1
   )
     fail(`segmentation added: ${JSON.stringify(g)}`)

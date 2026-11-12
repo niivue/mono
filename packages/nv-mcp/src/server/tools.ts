@@ -92,6 +92,48 @@ export const CORE_SCHEMAS = {
         'Whether the volume is in MNI space, so an atlas applies. Guessed from the name otherwise.',
       ),
   },
+  add_isosurface: {
+    ...TAB_ARG,
+    url: z
+      .string()
+      .min(1)
+      .describe(
+        'Where the OME-Zarr store is: an http(s) address the page can fetch.',
+      ),
+    channel: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe('The channel to surface; the first otherwise.'),
+    threshold: z
+      .number()
+      .optional()
+      .describe(
+        'Surface where the stored value is at least this, in raw stored units. Give this or labels.',
+      ),
+    labels: z
+      .array(z.number().int())
+      .min(1)
+      .optional()
+      .describe(
+        'Label IDs of a segmentation: one surface per ID, merged into one mesh. Give this or threshold.',
+      ),
+    level: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'Pyramid level, 0 the finest; the finest within 256^3 voxels otherwise.',
+      ),
+    color: z
+      .array(z.number().min(0).max(1))
+      .length(4)
+      .optional()
+      .describe('RGBA, each 0..1; white otherwise.'),
+    name: z.string().optional().describe('The mesh name.'),
+  },
   load_ome_zarr: {
     ...TAB_ARG,
     url: z
@@ -777,6 +819,25 @@ export function registerCoreTools(
       context.answer('load_ome_zarr', params, {
         tab,
         lead: (r) => `Loaded ${(r as { name?: string })?.name ?? 'the store'}.`,
+      }),
+  )
+
+  server.registerTool(
+    'add_isosurface',
+    {
+      title: 'Add an isosurface',
+      description:
+        'Builds an isosurface mesh from one channel of an OME-Zarr store and adds it to the scene, ' +
+        'keeping what is shown: the surface where values reach `threshold`, or one surface per ' +
+        'segmentation ID in `labels`. The mesh overlays a streamed volume of the same store. ' +
+        'A page without the OME-Zarr and isosurface loaders declines.',
+      inputSchema: strict(CORE_SCHEMAS.add_isosurface),
+    },
+    async ({ tab, ...params }) =>
+      context.answer('add_isosurface', params, {
+        tab,
+        lead: (r) =>
+          `Added ${(r as { name?: string })?.name ?? 'the isosurface'}.`,
       }),
   )
 

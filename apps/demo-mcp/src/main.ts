@@ -184,6 +184,7 @@ const host: NiiVueHost = {
   data: dataPalette(CATALOG),
   // load_ome_zarr: the extension is fetched on first use, not with the page.
   omeZarr: () => import('@niivue/nv-ext-tile/zarr'),
+  isosurface: () => import('@niivue/nv-ext-isosurface'),
   atlas: requireAtlas,
   labels: showLabels,
   atlasApplies: () => isMni && worldUnit(nv) === 'mm',

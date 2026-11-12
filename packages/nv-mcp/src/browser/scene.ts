@@ -78,6 +78,7 @@ import type {
   AtlasLike,
   Handlers,
   LabelTable,
+  MeshToLoad,
   NiiVueHost,
   PointLabel,
   ShownVolume,
@@ -583,14 +584,22 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           })
         } else {
           const channels = channel === undefined ? undefined : [channel]
-          const volumes = await zarr.loadOmeZarrVolumes(url, {
+          const source = await zarr.fetchOmeZarr(url)
+          const volumes = (await zarr.omeZarrVolumesFrom(source, {
             level,
             channels,
             timepoint,
             lazyTime,
             labels,
-          })
-          await view.loadVolumes(volumes as VolumeToLoad[])
+          })) as VolumeToLoad[]
+          // The store's own label colours, as the demo shows them.
+          const map = zarr.omeZarrLabelColormap(source.info)
+          if (map && view.addColormap) {
+            const colormap = view.addColormap(`${url} labels`, map)
+            for (const v of volumes)
+              if (v.colormap === 'Random') v.colormap = colormap
+          }
+          await view.loadVolumes(volumes)
         }
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error)
@@ -609,6 +618,55 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         streamed: stream,
         volumes: view.volumes.length,
         bounds: { mm: { min, max }, unit: worldUnit(view) },
+      }
+    },
+
+    async add_isosurface(params) {
+      const url = text(params, 'url')
+      if (!url) throw new Error('add_isosurface needs a url.')
+      const threshold = number(params, 'threshold')
+      const labels = numbers(params, 'labels')
+      if ((threshold === undefined) === (labels === undefined))
+        throw new Error(
+          'add_isosurface needs exactly one of threshold or labels.',
+        )
+      const color = numbers(params, 'color', 4) as
+        | [number, number, number, number]
+        | undefined
+      const [zarr, iso] = await Promise.all([
+        host.omeZarr?.(),
+        host.isosurface?.(),
+      ])
+      if (!zarr || !iso || !view.addMesh)
+        throw new Error(
+          'This page cannot build isosurfaces: it did not provide the nv-ext-tile and nv-ext-isosurface loaders.',
+        )
+      const source = await zarr.fetchOmeZarrChunkedSource(
+        new URL(url, globalThis.location?.href).href,
+        { channel: integer(params, 'channel') },
+      )
+      let mesh: unknown
+      try {
+        ;[mesh] = await iso.channelIsosurfaces([
+          {
+            source,
+            threshold,
+            labels,
+            level: integer(params, 'level'),
+            color,
+            name: text(params, 'name'),
+          },
+        ])
+      } finally {
+        source.dispose?.()
+      }
+      // addMesh takes a built NVMesh as well as load options.
+      await view.addMesh(mesh as MeshToLoad)
+      host.beforeAnswer?.()
+      view.drawScene()
+      return {
+        name: (mesh as { name?: string }).name,
+        meshes: view.meshes?.length ?? 0,
       }
     },
 

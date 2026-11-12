@@ -130,19 +130,21 @@ async function startBackend(
       log.warn(`${factory.kind} slide renderer failed to start`, err)
       return null
     })
-  let triedWebGPU = false
+  let failedBefore = false
   for (const factory of ordered) {
     const renderer = await create(factory, canvas)
     if (renderer) return { canvas, renderer, kind: factory.kind }
-    if (factory.kind === 'webgpu') triedWebGPU = true
-    // getContext('webgpu') before a failure locks the canvas to WebGPU, and
-    // WebGL2 then gets null on it: retry on a clone, put back if that fails too.
-    if (factory.kind !== 'webgl2' || !triedWebGPU || !canvas.parentNode)
+    // A backend that took a context before failing locks the canvas to that
+    // context type, and the next one gets null on it (either order): retry on
+    // a clone, put back if that fails too.
+    if (!failedBefore || !canvas.parentNode) {
+      failedBefore = true
       continue
+    }
     const fresh = canvas.cloneNode() as HTMLCanvasElement
     canvas.replaceWith(fresh)
     const retried = await create(factory, fresh)
-    if (retried) return { canvas: fresh, renderer: retried, kind: 'webgl2' }
+    if (retried) return { canvas: fresh, renderer: retried, kind: factory.kind }
     fresh.replaceWith(canvas)
   }
   throw new Error(
@@ -172,7 +174,7 @@ export async function createSlideViewWith(
     : await startBackend(canvasIn, backends, options)
   if (options.signal?.aborted) {
     if (!borrowed) started.renderer.destroy()
-    // A clone swapped in for the WebGL2 retry goes; the caller's canvas returns.
+    // A clone swapped in for a retry goes; the caller's canvas returns.
     if (started.canvas !== canvasIn) started.canvas.replaceWith(canvasIn)
     throw abortError()
   }

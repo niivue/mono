@@ -180,6 +180,24 @@ describe('createSlideView', () => {
     view.destroy()
   })
 
+  test('WebGPU refused on a canvas a failed WebGL2 locked: retried on a clone', async () => {
+    const canvas = fakeCanvas()
+    const gpu = backend('webgpu', (c) => (c === canvas ? null : fakeRenderer()))
+    const view = await createSlideViewWith(
+      [
+        gpu,
+        backend('webgl2', () => {
+          throw new Error('init failed after getContext')
+        }),
+      ],
+      canvas,
+      { backend: 'webgl2' },
+    )
+    expect(view.backend).toBe('webgpu')
+    expect(gpu.canvases).toEqual([canvas, view.canvas])
+    view.destroy()
+  })
+
   test('all backends failing leaves the original canvas in place', async () => {
     const canvas = fakeCanvas()
     const gl = backend('webgl2', () => null)

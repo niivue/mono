@@ -16,6 +16,7 @@ import type {
 } from './chunking'
 import {
   createSourceChunkLoader,
+  createSourceRegionReader,
   focusCenterBiased,
   mmToVolumeFraction,
   NVChunkedVolume,
@@ -2000,4 +2001,33 @@ describe('NVChunkedVolume failed init', () => {
     expect(floors[0]).not.toBeNull()
     expect(floors.at(-1)).toBeNull()
   })
+})
+
+test('a request for a region whose sole reader aborted fetches it again', async () => {
+  const source = {
+    levels: [{ level: 0, shape: [2, 2, 2], spacing: [1, 1, 1] }],
+    datatypeCode: 2,
+    fetchChunk: async ({ signal }: { signal?: AbortSignal }) => {
+      await new Promise((r) => setTimeout(r, 5))
+      signal?.throwIfAborted()
+      return new Uint8Array([7])
+    },
+  } as unknown as ChunkedVolumeSource
+  const read = createSourceRegionReader(source, {
+    maxConcurrentLoads: 4,
+    retryAttempts: 1,
+  })
+  const req = {
+    levelIndex: 0,
+    texOrigin: [0, 0, 0] as Vec3i,
+    texDims: [1, 1, 1] as Vec3i,
+    bytesPerVoxel: 1,
+    frame: 0,
+  }
+  const ac = new AbortController()
+  const first = read({ ...req, signal: ac.signal })
+  ac.abort()
+  const second = read(req)
+  await expect(first).rejects.toBeDefined()
+  expect([...new Uint8Array((await second) as Uint8Array)]).toEqual([7])
 })

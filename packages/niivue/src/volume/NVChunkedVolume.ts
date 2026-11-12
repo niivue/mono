@@ -369,7 +369,8 @@ export function createSourceRegionReader(
     // the chunk INDEX changes but the fetched region does not.
     const key = `${frame}|${levelIndex}|${texOrigin.join(',')}|${texDims.join(',')}`
     const cached = inflight.get(key)
-    if (cached) {
+    // An aborted read only settles to its AbortError: start a fresh one.
+    if (cached && !cached.controller.signal.aborted) {
       cached.waiters++
       joinRead(cached, signal)
       return cached.promise

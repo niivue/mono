@@ -181,9 +181,12 @@ async function open(
     const opening = Promise.resolve(
       restore.resolve(s.descriptor, { signal, streamed }),
     )
-    // A resolver that ignores the signal cannot hold a superseded load.
+    // A resolver that ignores the signal cannot hold a superseded load, even
+    // one that aborted it synchronously.
     const aborted = new Promise<null>((r) =>
-      signal.addEventListener('abort', () => r(null), { once: true }),
+      signal.aborted
+        ? r(null)
+        : signal.addEventListener('abort', () => r(null), { once: true }),
     )
     const src = await Promise.race([opening, aborted])
     if (signal.aborted) {
@@ -259,6 +262,7 @@ export async function attachFrameSource(
   if (!src) return
   if ('fetchChunk' in src) {
     log.warn(`loadDocument: source of "${name}" is streamed, expected frames`)
+    dispose(src)
     return
   }
   const frame = Math.min(Math.max(0, s.frame), Math.max(1, src.count) - 1)
@@ -300,6 +304,7 @@ export async function restoreStreamedVolume(
   const name = v.name ?? v.source.descriptor.url
   const src = await open(restore, v.source, true, name)
   if (!src || !('fetchChunk' in src)) {
+    dispose(src)
     log.warn(`loadDocument: streamed volume "${name}" not restored: no source`)
     return null
   }

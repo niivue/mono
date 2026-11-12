@@ -502,3 +502,39 @@ test('a streamed first volume that is not restored does not hand its drawing to 
   expect(nv.drawingVolume).toBeNull()
   expect(warn.messages.join('\n')).toContain('drawing is not loaded')
 })
+
+test('a resolver that supersedes its document synchronously does not hold the old restore', async () => {
+  const streamed = await savedStreamed()
+  const nv = new NiiVue({ backend: 'webgl2' })
+  let next: Promise<unknown> = Promise.resolve()
+  const first = nv.loadDocument(documentFile(streamed), {
+    resolveSource: () => {
+      next = nv.loadDocument(documentFile(streamed), {
+        resolveSource: () => chunkedSource({ revision: 'r1' }),
+      })
+      return new Promise<null>(() => {})
+    },
+  })
+  const settled = await Promise.race([
+    first.then(() => true),
+    new Promise((r) => setTimeout(() => r(false), 200)),
+  ])
+  await next
+  expect(settled).toBe(true)
+})
+
+test('a source of the wrong kind is disposed', async () => {
+  const disposed: string[] = []
+  const lazy = new NiiVue({ backend: 'webgl2' })
+  await lazy.loadDocument(documentFile(await savedLazy()), {
+    resolveSource: () => chunkedSource({ revision: 'lazy', disposed }),
+  })
+  const streamed = new NiiVue({ backend: 'webgl2' })
+  await streamed.loadDocument(documentFile(await savedStreamed()), {
+    resolveSource: () => ({
+      ...frameSource(),
+      dispose: () => disposed.push('streamed'),
+    }),
+  })
+  expect(disposed).toEqual(['lazy', 'streamed'])
+})

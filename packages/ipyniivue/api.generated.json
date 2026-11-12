@@ -3255,7 +3255,7 @@
         }
       ],
       "returns": "Promise<void>",
-      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update. A\nstreamed volume reads its histogram sample (see {@link volumeHistogram}).",
+      "doc": "Recalculate robust cal_min/cal_max for a specific 4D frame (or the current frame).\nUpdates the volume's calibration range and triggers a GPU update. A\nstreamed volume reads its histogram sample (see {@link volumeHistogram}).\nA frame-source volume holds only its shown frame; another `frame` throws.",
       "returnsDoc": null
     },
     {

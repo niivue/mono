@@ -1400,6 +1400,7 @@ and its volumes alive."""
 
         Updates the volume's calibration range and triggers a GPU update. A
         streamed volume reads its histogram sample (see {@link volumeHistogram}).
+        A frame-source volume holds only its shown frame; another `frame` throws.
 
         Parameters
         ----------

@@ -250,10 +250,12 @@ export function isAbortError(err: unknown): boolean {
 export type SlideFetch = (url: string, init?: RequestInit) => Promise<Response>
 
 export interface ManifestRangeSourceOptions {
-  /** Custom fetch (auth headers, signed URLs) for reads on `baseUrl`'s origin (else the host manifest URL's). Default globalThis.fetch. */
+  /** Custom fetch (auth headers, signed URLs) for reads on the manifest's origin or `baseUrl`'s. Default globalThis.fetch. */
   fetch?: SlideFetch
   /** Resolves relative URLs in the manifest; default the host's (NVSlide `manifestUrl`). */
   baseUrl?: string
+  /** Where the manifest was read, when not the host's manifest URL: its origin also gets `fetch`. */
+  manifestUrl?: string
 }
 
 // A server without Range support sends the whole file: refused past this,
@@ -347,6 +349,7 @@ export class ManifestRangeSource implements SlideTileSource {
   private host: SlideSourceHost | null = null
   private readonly customFetch?: SlideFetch
   private readonly baseUrl?: string
+  private readonly manifestUrl?: string
   private readonly closed = new AbortController()
 
   constructor(
@@ -359,6 +362,7 @@ export class ManifestRangeSource implements SlideTileSource {
     const f = options.fetch
     this.customFetch = f && ((url, init) => f(url, init))
     this.baseUrl = options.baseUrl
+    this.manifestUrl = options.manifestUrl
   }
 
   bind(host: SlideSourceHost): void {
@@ -378,12 +382,15 @@ export class ManifestRangeSource implements SlideTileSource {
   }
 
   // Looked up per read, so a fetch replaced after construction (tests) is used.
-  // The caller's (authenticated) fetch reads only the manifest's own origin;
-  // a file elsewhere gets a plain fetch without credentials.
+  // The caller's (authenticated) fetch reads only the manifest's origin and
+  // baseUrl's; a file elsewhere gets a plain fetch without credentials.
   private fetch(url: string, init: RequestInit): Promise<Response> {
     if (!this.customFetch) return fetch(url, init)
+    const { origin } = new URL(url)
     // resolve('') is baseUrl, else the host's manifest URL.
-    const own = new URL(url).origin === new URL(this.resolve('')).origin
+    const own = [this.resolve(''), this.manifestUrl].some(
+      (u) => u !== undefined && new URL(u).origin === origin,
+    )
     return own
       ? this.customFetch(url, init)
       : fetch(url, { ...init, credentials: 'omit' })

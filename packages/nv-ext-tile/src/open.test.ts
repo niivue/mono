@@ -506,6 +506,56 @@ describe('openSlide', () => {
     ])
   })
 
+  test("a tile on the manifest's origin gets the caller's fetch with a cross-origin baseUrl", async () => {
+    const manifest = {
+      id: 'm',
+      width: 4,
+      height: 4,
+      levels: [
+        {
+          index: 0,
+          width: 4,
+          height: 4,
+          tileWidth: 4,
+          tileHeight: 4,
+          columns: 1,
+          rows: 1,
+          codec: 'image/jpeg',
+          fileUrl: 'https://auth.test/tile.bin',
+          tiles: [{ x: 0, y: 0, width: 4, height: 4, offset: 10, length: 4 }],
+        },
+      ],
+    }
+    const authed: string[] = []
+    const fetch: SlideFetch = async (url) => {
+      authed.push(url)
+      return url.endsWith('.json')
+        ? Response.json(manifest)
+        : new Response(new Uint8Array(4), { status: 206 })
+    }
+    const opened = await openSlide('https://auth.test/m.json', {
+      fetch,
+      baseUrl: 'https://cdn.test/tiles/',
+    })
+    const source = await opened.candidates[0]?.open()
+    source?.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+      channelInfoChanged() {},
+    })
+    const level = source?.manifest.levels[0]
+    if (!source || !level) throw new Error('no level')
+    await source.fetchTileBytes(level, level.tiles[0] as never, 'L0')
+    expect(authed).toEqual([
+      'https://auth.test/m.json',
+      'https://auth.test/tile.bin',
+    ])
+  })
+
   test('TIFF options pass through', async () => {
     const opened = await openSlide(new File([tinyTiff()], 'one.tif'), {
       tiff: { id: 'named' },

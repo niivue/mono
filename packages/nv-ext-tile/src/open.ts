@@ -272,17 +272,7 @@ async function openUrl(
       const credit = cleanAttribution(attribution ?? manifest.attribution)
       return new ManifestRangeSource(
         { ...manifest, attribution: credit },
-        {
-          // The caller's fetch only on the manifest's own origin (as DICOMweb
-          // ICC): a tile file elsewhere is read without credentials.
-          fetch:
-            fetchImpl &&
-            ((u, init) =>
-              new URL(u).origin === new URL(url).origin
-                ? fetchImpl(u, init)
-                : fetch(u, { ...init, credentials: 'omit' })),
-          baseUrl: baseUrl ?? url,
-        },
+        { fetch: fetchImpl, manifestUrl: url, baseUrl: baseUrl ?? url },
       )
     }
     default: {

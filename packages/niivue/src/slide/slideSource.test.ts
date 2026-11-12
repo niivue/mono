@@ -134,6 +134,37 @@ describe('ManifestRangeSource transport', () => {
     }
   })
 
+  test("a file on the manifest's origin gets the caller's fetch though baseUrl is elsewhere", async () => {
+    const m = manifest()
+    const l0 = m.levels[0] as NVSlideLevelManifest
+    const custom: string[] = []
+    const s = new ManifestRangeSource(m, {
+      fetch: async (url) => {
+        custom.push(url)
+        return ranged(LEN)()
+      },
+      baseUrl: 'https://cdn.test/tiles/',
+      manifestUrl: 'https://auth.test/m.json',
+    })
+    s.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+      channelInfoChanged() {},
+    })
+    for (const url of ['https://auth.test/tile.bin', 'tile.bin']) {
+      l0.fileUrl = url
+      await s.fetchTileBytes(l0, l0.tiles[0] as never, 'L0')
+    }
+    expect(custom).toEqual([
+      'https://auth.test/tile.bin',
+      'https://cdn.test/tiles/tile.bin',
+    ])
+  })
+
   test('a truncated cached 206 is read once more with no-store', async () => {
     const { calls, read, counts } = source([ranged(3), ranged(LEN)])
     expect((await read()).byteLength).toBe(LEN)

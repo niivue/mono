@@ -30,14 +30,23 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.locator('#fontSlide').fill('20')
     return { x: 260, y: 0, width: 480, height: 360 }
   },
+  // A short renderer-only run; it ends on the opaque brain mesh.
   benchmark: async (page) => {
+    await page.fill('#frameCount', '30')
+    await page.uncheck('#runCompute')
     await page.click('#runBtn')
-    return undefined
+    await page.waitForFunction(() => '__benchDone' in window, null, {
+      timeout: 180000,
+    })
+    // The canvas is a wide strip; frame a 4:3 area around its centre to fit the card.
+    const r = await page.locator('canvas').first().boundingBox()
+    if (!r) return undefined
+    const width = Math.min(r.width, (r.height * 4) / 3)
+    return { x: r.x + (r.width - width) / 2, y: r.y, width, height: r.height }
   },
 }
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
-  benchmark: 12000,
   'vox-block-pick': 8000,
 }
 

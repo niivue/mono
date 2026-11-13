@@ -1701,6 +1701,12 @@ export interface VolumeFrameSource {
    * passes, then runs one GPU update for the group.
    */
   commit?(frame: number, volume: NVImage): void
+  /**
+   * Stop background work started for this volume, such as frame prefetch.
+   * NiiVue calls it when the volume leaves the viewer. Cancel only: the source
+   * may still back a volume in another viewer and must stay loadable.
+   */
+  cancel?(): void
   /** Saved in documents so `loadDocument` can reattach the source. */
   readonly descriptor?: VolumeSourceDescriptor
   /** Structure generation (a metadata hash), as `ChunkedVolumeSource.revision`. */

@@ -1,9 +1,5 @@
-import NiiVue from '@niivue/niivue'
-import {
-  ByteLruCache,
-  omeZarrChunkedSource,
-  openOmeZarr,
-} from '@niivue/nv-ext-tile/zarr'
+import NiiVue, { ByteLru } from '@niivue/niivue'
+import { omeZarrChunkedSource, openOmeZarr } from '@niivue/nv-ext-tile/zarr'
 import * as zarr from '@niivue/zarrita-rs/inline'
 
 // Pick one brick out of an exploded STREAMED volume and open that brick, on its
@@ -250,7 +246,7 @@ function makeBadge(root, nv) {
 async function openHeart() {
   if (heart) return heart
   const store = zarr.withByteCaching(new zarr.FetchStore(HOA_BASE + STORE_ID), {
-    cache: new ByteLruCache(ZARR_CACHE_BYTES),
+    cache: new ByteLru(ZARR_CACHE_BYTES),
   })
   // ignoreMissingLevels guards a level that is absent upstream.
   const zsrc = await openOmeZarr(store, {

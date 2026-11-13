@@ -306,6 +306,10 @@ const nv = new NiiVue({
 })
 ```
 
+### Migration (rc)
+
+`DecodedChunkStats` (`ChunkStreamDetail.decoded`) is now `ByteLruStats`, which adds `evictedBytes`. `ByteLru<K, V>`, the byte-bounded LRU behind the decoded-chunk tier and the slide tile cache, is exported, and replaces nv-ext-tile's `ByteLruCache`.
+
 ### Testing
 
 The package includes a unit test suite for non-rendering logic, including a headless controller (loading, documents, events), using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`. Rendering, Workers and pointer input are covered by Playwright specs in `e2e/` (see `AGENTS.md`).

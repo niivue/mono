@@ -21,6 +21,7 @@
  */
 
 import {
+  type ByteLruStats,
   type ChunkTimingSnapshot,
   mergeOffThreadChunkTiming,
   NVWorker,
@@ -34,7 +35,6 @@ import {
 } from './chunkWorkerRouting'
 import OmeZarrChunkWorker from './omeZarrChunk.worker?worker&inline'
 import type {
-  ByteCacheStats,
   FetchOmeZarrChunkedSourceOptions,
   OmeZarrChunkFetch,
 } from './omeZarrChunkedSource'
@@ -47,7 +47,7 @@ import type {
 interface ChunkReply {
   bytes: Uint8Array
   timing: ChunkTimingSnapshot
-  cache: ByteCacheStats | null
+  cache: ByteLruStats | null
   persist: PersistentCacheStats | null
   wireBytes?: number
 }
@@ -70,7 +70,7 @@ export interface OmeZarrChunkPoolOptions {
 export class OmeZarrChunkWorkerPool {
   private readonly workers: NVWorker[]
   private readonly lastTiming: (ChunkTimingSnapshot | null)[]
-  private readonly lastCache: (ByteCacheStats | null)[]
+  private readonly lastCache: (ByteLruStats | null)[]
   private readonly lastPersist: (PersistentCacheStats | null)[]
   private readonly workerOptions: FetchOmeZarrChunkedSourceOptions[]
   /** Response bytes each worker had read at its last reply. */
@@ -190,7 +190,7 @@ export class OmeZarrChunkWorkerPool {
    * The pool's byte caches, summed. The numbers are as of each worker's last
    * reply, so an idle pool reports its last known state rather than nothing.
    */
-  byteCacheStats(): ByteCacheStats {
+  byteCacheStats(): ByteLruStats {
     return sumByteCacheStats(
       this.lastCache,
       this.pool.cacheBytesPerWorker * this.workers.length,

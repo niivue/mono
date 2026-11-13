@@ -34,7 +34,7 @@ different resources. Both are byte-budgeted LRUs; neither is persistent.
 
 | Tier | Holds | Where | Default budget |
 |---|---|---|---|
-| Store bytes | RAW compressed store responses, keyed by store path | `ByteLruCache` behind zarrita's `withByteCaching` (`packages/nv-ext-tile/src/zarr/omeZarrChunkedSource.ts`) | 256 MB (`OME_ZARR_CHUNK_CACHE_BYTES`); dandi-demo raises it to 512 MB |
+| Store bytes | RAW compressed store responses, keyed by store path | core `ByteLru` (`src/byteLru.ts`) behind zarrita's `withByteCaching` | 256 MB (`OME_ZARR_CHUNK_CACHE_BYTES`); dandi-demo raises it to 512 MB |
 | GPU bricks | Uploaded 3D brick textures | `ChunkResidencyManager` (`volume/ChunkResidency.ts`) | 1.5 GB (`DEFAULT_CHUNK_RESIDENCY_BYTES`) |
 | Coarse floor | The coarsest pyramid level as ONE whole-volume texture | `gl/render.ts`, `wgpu/render.ts` | always resident |
 
@@ -53,7 +53,7 @@ hole; the worst case is coarse data.
 
 | Tier | Holds | Where | Default budget |
 |---|---|---|---|
-| Decoded tiles | `ImageBitmap` per RGB tile, samples per scalar tile, accounted in decoded bytes | `NVSlideTileCache` (`slide/NVSlide.ts`) | 96 MB; dandi-demo raises it to 192 MB |
+| Decoded tiles | `ImageBitmap` per RGB tile, samples per scalar tile, accounted in decoded bytes | `ByteLru` (`slide/NVSlide.ts`) | 96 MB; dandi-demo raises it to 192 MB |
 | GPU tiles | One RGBA8 texture per tile key, with a 1-texel gutter from its neighbours (`slide/tileGutter.ts`) | `TileTextureCache` (`slide/tileTextureCache.ts`) | 96 MB per renderer, gutter counted |
 | GPU raw layers | Visible channels of scalar tiles, fused into the tile textures (`slide/slideFuse.ts`) | `TileTextureCache` in `gl/`, `wgpu/tileFuse.ts` | 32 MB per renderer (`maxRawPoolBytes`) |
 
@@ -422,7 +422,7 @@ is too small to hold the working set, or because this access pattern never
 revisits a chunk? Both look identical from outside, both read as a low hit rate,
 and they want opposite fixes.
 
-Evictions tell them apart, so `ByteLruCache` now counts them, along with hits,
+Evictions tell them apart, so `ByteLru` now counts them, along with hits,
 misses, admissions and oversize rejections. The counters are exposed as
 `source.byteCache.stats` and the demo prints them as a `byte cache` HUD row.
 Counting happens in `has`, which is the single gate `withByteCaching` consults
@@ -516,7 +516,7 @@ representation), it is keyed by something already unique and stable (the store
 key), and it is the smallest form a chunk has. Decoding again is cheap next to
 the round trip, and the round trip is what is being bought back.
 
-**Absences are not persisted.** The in-memory `ByteLruCache` remembers a
+**Absences are not persisted.** The in-memory `ByteLru` remembers a
 missing chunk, because within one load a missing chunk means fill value and
 that answer cannot change. Across days it can: a store still being written
 would otherwise carry its holes forever in a cache the user cannot see. Bytes
@@ -623,7 +623,7 @@ Two places we can be BETTER than Neuroglancer rather than catching up:
 |---|---|---|---|
 | A | DONE (`1a9d525d`) Stale-drop + per-frame reprioritization in `ChunkResidencyManager` | small | Pure CPU, shared by both backends, testable without a GPU, fixes a felt problem |
 | B | DONE Per-phase timing (`chunkTimingStats`) plus a main-thread stall monitor in the demo | small | Turned stage C from a guess into a measurement |
-| G | DONE Hit / miss / eviction counters on `ByteLruCache`, exposed as `source.byteCache.stats` | small | Measured (2.6): zero evictions on a 1 TB store, so no budget or policy change was needed |
+| G | DONE Hit / miss / eviction counters on `ByteLru`, exposed as `source.byteCache.stats` | small | Measured (2.6): zero evictions on a 1 TB store, so no budget or policy change was needed |
 | C | DONE Worker pool for chunk fetch + decode (`omeZarrChunkWorkerPool.ts`, `packages/nv-ext-tile/src/zarr/omeZarrChunk.worker.ts`) | medium | Measured (2.7): the 8.6 s of lost frame time is gone, 100% of streaming work is off-thread |
 | D | DONE (`1281a74b`) Directional prefetch: travel of the working-set centroid, extrapolated and fetched ahead (`chunkPrediction.ts`) | small | One mechanism covers scrub and pan, no camera plumbing, identical on both backends |
 | E | DONE Decoded-chunk demotion tier under GPU eviction (`decodedChunkCache.ts`) | medium | Makes eviction cheap to undo; sized off the GPU budget and the source datatype |

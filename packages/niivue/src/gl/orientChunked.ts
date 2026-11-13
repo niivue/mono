@@ -14,13 +14,13 @@
 //     Non-identity sources are reoriented to RAS order during the per-chunk CPU
 //     extraction, so the orient pass runs with an identity matrix.
 
+import type { ByteLru } from '@/byteLru'
 import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
 import { bytesPerSourceVoxel } from '@/volume/chunkBudget'
 import { createChunkFetcher } from '@/volume/chunkFetch'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 import { timeChunkPhase } from '@/volume/chunkTiming'
-import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
 import {
   type ModulationTextureParams,
   modulationFitsTextureLimit,
@@ -145,7 +145,7 @@ export function createChunkUploaderGL(
   // holds) and can be re-keyed through a plan swap. Never populated for an
   // in-memory volume, whose chunks are a cheap copy out of a buffer we are
   // already holding -- shadowing those would only duplicate the image.
-  decoded: DecodedChunkCache | null = null,
+  decoded: ByteLru<number, Uint8Array> | null = null,
   // Resolved modulation for this volume (buildModulationParams against its
   // OWN grid), or null. Baked into every chunk texture like the colormap is,
   // so the renderer's display key must cover it (chunkedDisplayKey).

@@ -11,7 +11,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { omeLengthToMicrons } from '@niivue/niivue'
+import { ByteLru, omeLengthToMicrons } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
 import {
   grayInto,
@@ -32,11 +32,7 @@ import {
   omeroActiveChannels,
   omeroWindowUsable,
 } from './omeZarr'
-import {
-  ByteLruCache,
-  OME_ZARR_CHUNK_ERROR,
-  withMetadata,
-} from './omeZarrChunkedSource'
+import { OME_ZARR_CHUNK_ERROR, withMetadata } from './omeZarrChunkedSource'
 import type { OmeZarrChunkWorkerPool } from './omeZarrChunkWorkerPool'
 import {
   countingFetch,
@@ -134,7 +130,7 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     readonly manifest: NVSlideManifest,
     readonly planes: NVSlidePlaneAxes,
     private readonly arrays: zarr.Array<zarr.DataType, zarr.Readable>[],
-    private readonly cache: ByteLruCache | null,
+    private readonly cache: ByteLru<string, Uint8Array | undefined> | null,
     private readonly select: (
       y: zarr.Slice,
       x: zarr.Slice,
@@ -241,7 +237,10 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     options: ZarrSlideOptions = {},
   ): Promise<ZarrSlideSource> {
     const cacheBytes = options.cacheBytes ?? ZARR_SLIDE_CACHE_BYTES
-    const cache = cacheBytes > 0 ? new ByteLruCache(cacheBytes) : null
+    const cache =
+      cacheBytes > 0
+        ? new ByteLru<string, Uint8Array | undefined>(cacheBytes)
+        : null
     // A sync store (a Map) is awaited like an async one.
     const store = cache
       ? zarr.withByteCaching(base as zarr.AsyncReadable, { cache })

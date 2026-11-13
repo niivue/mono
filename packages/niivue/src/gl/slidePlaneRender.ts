@@ -220,7 +220,14 @@ export class SlidePlaneRenderer extends NVRenderer {
     // The plane is two-sided — show it from either face.
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    // Alpha as WebGPU's ALPHA_BLEND: translucent tiles or annotations must not
+    // leave canvas alpha < 1, which lets the page show through.
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+    )
   }
 
   // One vertex buffer for the tile set: the extent quad, then every tile.

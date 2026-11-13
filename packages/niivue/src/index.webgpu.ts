@@ -256,7 +256,12 @@ export type {
   SlideSourceHost,
   SlideTileSource,
 } from './slide/slideSource'
-export { MAX_SLIDE_GRID, ManifestRangeSource } from './slide/slideSource'
+export {
+  MAX_SLIDE_GRID,
+  ManifestRangeSource,
+  readCapped,
+  settleBy,
+} from './slide/slideSource'
 export { SlideDrawing } from './slide/slideDrawing'
 export type {
   SlideRendererBudget,

@@ -1,3 +1,27 @@
+## 1.0.0-rc.198 (2026-11-13)
+
+### Fixes
+
+- **niivue:** freeze slide channels so liveChannels cannot be mutated ([886d5ba8](https://github.com/niivue/mono/commit/886d5ba8))
+- **niivue:** keep WebGL2 per-volume cache textures on the single-volume path ([36ddae84](https://github.com/niivue/mono/commit/36ddae84))
+- **niivue:** keep WebGPU per-volume cache textures and drop stale chunked aliases ([88acae06](https://github.com/niivue/mono/commit/88acae06))
+- **niivue:** drop the whole-volume bind group when the WebGPU base becomes chunked ([ab92b687](https://github.com/niivue/mono/commit/ab92b687))
+- **niivue:** keep a chunked volume's chunk 0 alive when a plain volume becomes the background (WebGPU) ([8f4886f9](https://github.com/niivue/mono/commit/8f4886f9))
+
+### Performance
+
+- **niivue:** drop in-bounds ?? 0 in chunkRGBA and hoist isYAxisUp ([abe4cd18](https://github.com/niivue/mono/commit/abe4cd18))
+- **niivue:** fuse slide tiles from the live channel state ([a1a3e0cf](https://github.com/niivue/mono/commit/a1a3e0cf))
+- **niivue:** reuse slide tile keys and gutter positions across frames ([9d0540db](https://github.com/niivue/mono/commit/9d0540db))
+- **niivue:** drop the frustum explode offset and per-corner allocations ([b3934f13](https://github.com/niivue/mono/commit/b3934f13))
+- **niivue:** memoise the unexploded chunk draw order per plan ([d27f2df1](https://github.com/niivue/mono/commit/d27f2df1))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.197 (2026-11-13)
 
 ### Fixes

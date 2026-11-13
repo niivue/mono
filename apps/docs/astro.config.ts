@@ -78,6 +78,22 @@ export default defineConfig({
       },
     }),
     checkLinks(base),
+    {
+      // The Packages section lists packages/*/docs when the config loads, so
+      // in dev a page added or removed there reloads the config.
+      name: 'package-docs-reload',
+      hooks: {
+        'astro:server:setup': ({ server }) => {
+          const configFile = fileURLToPath(import.meta.url)
+          const reload = (file: string) => {
+            if (/[\\/]packages[\\/][^\\/]+[\\/]docs[\\/].*\.mdx?$/.test(file))
+              server.watcher.emit('change', configFile)
+          }
+          server.watcher.on('add', reload)
+          server.watcher.on('unlink', reload)
+        },
+      },
+    },
   ],
   vite: {
     resolve: {

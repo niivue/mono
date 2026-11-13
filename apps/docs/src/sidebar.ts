@@ -28,7 +28,6 @@ const guideGroups = [
       'guide/fonts',
     ],
   },
-  { label: 'Integrations', items: ['guide/react', 'guide/extensions'] },
   { label: 'Reference', items: ['reference/events', 'reference/migrating'] },
 ] satisfies Sidebar
 

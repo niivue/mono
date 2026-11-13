@@ -99,9 +99,44 @@ Meshes: GIfTI, FreeSurfer, PLY, STL, OBJ, VTK, MZ3, OFF, GEO/BYU, BrainSuite
 DFS, ICO/TRI, BrainNet NV, BrainVoyager SRF, X3D, ASC, WRL and IWM.
 Tractography: TCK, TRK, TRX, TT, TSF and VTK lines.
 
-DICOM is not built in. Convert it in the browser with
-`@niivue/dcm2niix` (see [Extensions](/guide/extensions/)). The
-MINC and VOX loader plugins from NiiVue 0.x have not been ported.
+DICOM is not built in: see [DICOM files](#dicom-files) below. The MINC
+and VOX loader plugins from NiiVue 0.x have not been ported.
+
+## DICOM files
+
+NiiVue does not read DICOM directly. The `@niivue/dcm2niix` package runs
+dcm2niix (compiled to WebAssembly) in the browser and returns NIfTI series
+you can load:
+
+```bash
+npm install @niivue/dcm2niix
+```
+
+```js
+import { convert } from '@niivue/dcm2niix'
+
+// <input id="dicomFolder" type="file" webkitdirectory multiple />
+input.addEventListener('change', async () => {
+  // A nonzero exit still returns the series that converted.
+  const { series } = await convert(input.files)
+  await nv.loadVolumes([{ url: series[0].image }])
+})
+```
+
+Each series also carries its `json` sidecar and any `bval`/`bvec`. For a
+dropped folder, `filesFromDataTransfer(e.dataTransfer.items)` collects the
+files first; `listSeries` lists series without converting them. The
+`Dcm2niix` class gives full control over the dcm2niix flags:
+
+```js
+import { Dcm2niix } from '@niivue/dcm2niix'
+
+const dcm2niix = new Dcm2niix()
+await dcm2niix.init()
+const result = await dcm2niix.input(files).compressionLevel(9).bids('n').run()
+```
+
+[Live demo](https://niivue.github.io/mono/demo-ext-dcm2niix/)
 
 ## Large data
 

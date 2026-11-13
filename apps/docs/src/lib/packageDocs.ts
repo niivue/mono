@@ -70,7 +70,10 @@ export function packagesSection(packagesDir: string): SidebarItem {
     if (isPackage && !listed.has(dir) && !UNLISTED_PACKAGES.includes(dir))
       problems.push(`packages/${dir} is not in PACKAGES (src/sidebar.ts)`)
   }
-  const items: SidebarItem[] = [{ label: 'NiiVue', link: '/guide/' }]
+  const items: SidebarItem[] = [
+    { label: 'All packages', link: '/packages/' },
+    { label: 'NiiVue', link: '/guide/' },
+  ]
   for (const { dir, label } of PACKAGES) {
     const docsDir = path.join(packagesDir, dir, 'docs')
     const hasIndex = ['index.md', 'index.mdx'].some((f) =>

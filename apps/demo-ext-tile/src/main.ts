@@ -58,7 +58,10 @@ const filterSelect = document.getElementById('filter') as HTMLSelectElement
 const credit = document.getElementById('credit') as HTMLDivElement
 const readout = document.getElementById('readout') as HTMLOutputElement
 const dragSelect = document.getElementById('drag') as HTMLSelectElement
-const contrastBox = document.getElementById('contrastBox') as HTMLOptionElement
+// Drag modes that set a channel window.
+const channelDragModes = ['windowLevel', 'contrastBox'].map(
+  (id) => document.getElementById(id) as HTMLOptionElement,
+)
 const channelsPanel = document.getElementById('channels') as HTMLElement
 const minimapToggle = document.getElementById('minimap') as HTMLInputElement
 const compareSelect = document.getElementById('compare') as HTMLSelectElement
@@ -174,6 +177,7 @@ function showReadout(): void {
 }
 
 // RGB samples have no channel to window (core's isRgbSlide, not exported).
+// Switch to core's export once #770 lands.
 const isRgb = (slide: NVSlide): boolean =>
   !slide.manifest.channelInfo &&
   !slide.manifest.levels.some(
@@ -181,10 +185,11 @@ const isRgb = (slide: NVSlide): boolean =>
       l.codec === 'raw-gray' ||
       (l.photometric?.startsWith('MONOCHROME') ?? false),
   )
-// Contrast box sets a channel window, so RGB slides get navigation instead.
-function syncContrastBox(slide: NVSlide): void {
-  contrastBox.disabled = isRgb(slide)
-  if (!contrastBox.disabled || dragSelect.value !== contrastBox.value) return
+// RGB slides have no channel window, so they get navigation instead.
+function syncDragModes(slide: NVSlide): void {
+  const rgb = isRgb(slide)
+  for (const option of channelDragModes) option.disabled = rgb
+  if (!dragSelect.selectedOptions[0]?.disabled) return
   dragSelect.value = String(DRAG_MODE.pan)
   if (view.controller) {
     view.controller.primaryDragMode = DRAG_MODE.pan
@@ -393,7 +398,7 @@ async function open(load: Load): Promise<void> {
     // disposes) its source; the view owns the slide.
     const nextSlide = slideFor(next)
     view.setSlide(nextSlide)
-    syncContrastBox(nextSlide)
+    syncDragModes(nextSlide)
     shownLoad = load
     if (compareSelect.value !== 'single') void syncCompare()
     showCredit(nextSlide.manifest.attribution ?? credits.get(current))

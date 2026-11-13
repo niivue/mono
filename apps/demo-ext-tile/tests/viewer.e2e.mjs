@@ -413,7 +413,7 @@ async function check(backend) {
   if (!(await page.locator('#canvas2').isHidden()))
     fail('compare canvas still shown')
 
-  // Contrast box: off for RGB (which falls back to pan), back for scalar.
+  // Window/level and contrast box: off for RGB (which falls back to pan), back for scalar.
   const openStore = async (name, rgb) => {
     await page.evaluate(
       (url) => nvBench.openUrl(url),
@@ -425,10 +425,19 @@ async function check(backend) {
     )
   }
   const contrastOff = () =>
-    page.evaluate(() => document.getElementById('contrastBox').disabled)
-  await page.selectOption('#drag', '1')
+    page.evaluate(
+      () =>
+        document.getElementById('contrastBox').disabled &&
+        document.getElementById('windowLevel').disabled,
+    )
+  await page.selectOption('#drag', '9')
   await openStore('rgb.zarr', true)
   if (!(await contrastOff()) || (await page.inputValue('#drag')) !== '3')
+    fail('RGB slide kept window/level')
+  await openStore('s.zarr', false)
+  await page.selectOption('#drag', '1')
+  await openStore('rgb.zarr', true)
+  if ((await page.inputValue('#drag')) !== '3')
     fail('RGB slide kept the contrast box')
   const centre = () => page.evaluate(() => nvBench.slide().viewport.centerX)
   const c0 = await centre()
@@ -438,7 +447,14 @@ async function check(backend) {
   await page.mouse.up()
   if ((await centre()) === c0) fail('RGB slide: a left drag does not pan')
   await openStore('s.zarr', false)
-  if (await contrastOff()) fail('scalar slide: contrast box still disabled')
+  if (
+    await page.evaluate(
+      () =>
+        document.getElementById('contrastBox').disabled ||
+        document.getElementById('windowLevel').disabled,
+    )
+  )
+    fail('scalar slide: window/level or contrast box still disabled')
 
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
   await page.close()

@@ -20,7 +20,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const DIST = join(HERE, '..', 'dist')
 const [C, Y, X] = [2, 48, 64]
 const json = (v) => Buffer.from(JSON.stringify(v))
-const CREDIT = 'Synthetic test store'
+// Long enough to truncate at 360 px.
+const CREDIT = `Synthetic test store ${'with a long credit '.repeat(4)}`.trim()
 // C channels: two show composited, three uint8 show as RGB.
 const makeStore = (C) =>
   new Map([
@@ -192,11 +193,17 @@ async function check(backend) {
   await hoverKeepsLayout(cx, cy)
   // Narrow: nothing scrolls sideways, the view keeps its room.
   await page.setViewportSize({ width: 360, height: 700 })
-  const narrow = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    view: document.querySelector('main').getBoundingClientRect().height,
-  }))
-  if (narrow.scroll > 360 || narrow.view < 200)
+  const narrow = await page.evaluate(() => {
+    const credit = document.getElementById('credit')
+    return {
+      scroll: document.documentElement.scrollWidth,
+      view: document.querySelector('main').getBoundingClientRect().height,
+      cut: credit.scrollWidth > credit.clientWidth,
+      tooltip: credit.title,
+    }
+  })
+  if (narrow.tooltip !== CREDIT) fail(`credit tooltip ${narrow.tooltip}`)
+  if (narrow.scroll > 360 || narrow.view < 200 || !narrow.cut)
     fail(`narrow layout ${JSON.stringify(narrow)}`)
   const nbox = await page.locator('#canvas').boundingBox()
   // Clear of the overlaid panels: bottom left.

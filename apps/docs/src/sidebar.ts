@@ -41,24 +41,25 @@ export const sidebar = [...guideGroups, resourcesGroup] satisfies Sidebar
 
 /**
  * The Packages section, in this order. `dir` is the folder under packages/;
- * its docs/ folder becomes /packages/<dir>/. niivue is the main content
- * above, and dev-images is test data for this repository.
+ * its docs/ folder becomes /packages/<dir>/. `label` is the package's name
+ * without the @niivue/ scope. niivue is the main content above, and
+ * dev-images is test data for this repository.
  */
 export const PACKAGES = [
-  { dir: 'nv-react', label: 'React' },
-  { dir: 'nv-web-component', label: 'Web component' },
-  { dir: 'uikit', label: 'UIKit' },
+  { dir: 'nv-react', label: 'nvreact' },
+  { dir: 'nv-web-component', label: 'nv-web-component' },
+  { dir: 'uikit', label: 'uikit' },
   { dir: 'ipyniivue', label: 'ipyniivue' },
-  { dir: 'niivue-swift', label: 'Swift' },
-  { dir: 'niivue-web-bridge', label: 'Web bridge' },
-  { dir: 'nv-ext-tile', label: 'Slides and OME-Zarr' },
-  { dir: 'nv-ext-niimath', label: 'Image filters' },
-  { dir: 'nv-ext-image-processing', label: 'Image processing' },
-  { dir: 'nv-ext-drawing', label: 'Drawing tools' },
-  { dir: 'nv-ext-isosurface', label: 'Isosurfaces' },
-  { dir: 'nv-ext-save-html', label: 'HTML export' },
-  { dir: 'nv-mcp', label: 'AI agents (MCP)' },
-  { dir: 'nv-ohif', label: 'OHIF viewer' },
+  { dir: 'niivue-swift', label: 'NiiVueKit' },
+  { dir: 'niivue-web-bridge', label: 'web-bridge' },
+  { dir: 'nv-ext-tile', label: 'nv-ext-tile' },
+  { dir: 'nv-ext-niimath', label: 'nv-ext-niimath' },
+  { dir: 'nv-ext-image-processing', label: 'nv-ext-image-processing' },
+  { dir: 'nv-ext-drawing', label: 'nv-ext-drawing' },
+  { dir: 'nv-ext-isosurface', label: 'nv-ext-isosurface' },
+  { dir: 'nv-ext-save-html', label: 'nv-ext-save-html' },
+  { dir: 'nv-mcp', label: 'nv-mcp' },
+  { dir: 'nv-ohif', label: 'nv-ohif' },
 ]
 
 export const UNLISTED_PACKAGES = ['niivue', 'dev-images']

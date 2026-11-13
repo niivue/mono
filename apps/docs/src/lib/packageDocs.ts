@@ -72,7 +72,7 @@ export function packagesSection(packagesDir: string): SidebarItem {
   }
   const items: SidebarItem[] = [
     { label: 'All packages', link: '/packages/' },
-    { label: 'NiiVue', link: '/guide/' },
+    { label: 'niivue', link: '/guide/' },
   ]
   for (const { dir, label } of PACKAGES) {
     const docsDir = path.join(packagesDir, dir, 'docs')

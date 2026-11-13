@@ -53,6 +53,15 @@ describe('ByteLru', () => {
     cache.set('exact', bytes(10))
     expect(cache.has('exact')).toBe(true)
     expect(cache.totalBytes).toBe(10)
+    // keepOversize (the slide tile cache) holds it alone instead.
+    const tiles = new ByteLru<string, Uint8Array>(
+      10,
+      undefined,
+      undefined,
+      true,
+    )
+    for (const k of ['a', 'huge']) tiles.set(k, bytes(k === 'a' ? 4 : 11))
+    expect([tiles.has('a'), tiles.has('huge')]).toEqual([false, true])
   })
 
   test('replacing a key drops the stale value, even when the new one is refused', () => {

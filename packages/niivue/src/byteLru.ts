@@ -44,6 +44,10 @@ const byteLengthOf = (value: unknown): number =>
  * `sizeOf` defaults to `byteLength` (0 for `undefined`). `dispose` runs on
  * every value the cache lets go of: replaced, evicted, refused, cleared or
  * dropped by `remap`.
+ *
+ * `keepOversize` admits a value larger than the budget as the only entry
+ * instead (the slide tile cache: a refused tile would be re-fetched on every
+ * request), so `totalBytes` may then exceed `maxBytes`.
  */
 export class ByteLru<K, V> {
   private map = new Map<K, V>()
@@ -62,6 +66,7 @@ export class ByteLru<K, V> {
     maxBytes: number,
     private readonly sizeOf: (value: V) => number = byteLengthOf,
     private readonly dispose?: (value: V) => void,
+    private readonly keepOversize = false,
   ) {
     this.budget = ByteLru.checked(maxBytes)
   }
@@ -141,7 +146,7 @@ export class ByteLru<K, V> {
     }
     this.version++
     const bytes = this.sizeOf(value)
-    if (bytes > this.budget) {
+    if (bytes > this.budget && !this.keepOversize) {
       // Holding it would evict everything and still not fit.
       this.rejected++
       this.dispose?.(value)
@@ -182,10 +187,15 @@ export class ByteLru<K, V> {
     this.version++
   }
 
-  // Every resident entry fits the budget alone, so this ends within budget.
+  // Every resident entry fits the budget alone (unless keepOversize, which
+  // stops at one), so this ends within budget.
   private evictToFit(): void {
     for (const [key, value] of this.map) {
-      if (this.total <= this.budget) return
+      if (
+        this.total <= this.budget ||
+        (this.keepOversize && this.map.size === 1)
+      )
+        return
       const bytes = this.sizeOf(value)
       this.map.delete(key)
       this.total -= bytes

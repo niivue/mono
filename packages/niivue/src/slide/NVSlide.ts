@@ -807,6 +807,7 @@ export class NVSlide extends EventTarget {
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
       (tile) => tile.bytes,
       (tile) => tile.bitmap?.close(),
+      true, // keep an oversize tile alone: refusing it re-fetches it every frame
     )
     this._maxConcurrentLoads = clampTileLoadCap(
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,

@@ -1530,6 +1530,18 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       { description: philips('Element="0x0030" Name="DICOM_PIXEL_SPACING"') },
       [0.226907, 0.226891],
     ],
+    [
+      'Philips representation 0 though listed after 1',
+      {
+        description: `<DataObject ObjectType="DPUfsImport">${[1, 0]
+          .map(
+            (n) =>
+              `<DataObject ObjectType="PixelDataRepresentation"><Attribute Name="DICOM_PIXEL_SPACING">&quot;${n ? '0.001' : '0.00025'}&quot; &quot;${n ? '0.001' : '0.0005'}&quot;</Attribute><Attribute Name="PIIM_PIXEL_DATA_REPRESENTATION_NUMBER">${n}</Attribute></DataObject>`,
+          )
+          .join('')}</DataObject>`,
+      },
+      [0.5, 0.25],
+    ],
     ['Leica main image, not the macro', { description: leica }, [0.5, 0.5]],
     [
       'Leica regions that disagree',

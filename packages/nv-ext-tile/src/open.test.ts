@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { ManifestRangeSource } from '@niivue/niivue'
 import { DicomWsiSource } from './dicomWsiSource'
 import {
@@ -403,6 +403,49 @@ describe('openSlide', () => {
       resolve(local.descriptor, { signal, streamed: false, slide: true }),
     ).toBeNull()
     local.dispose?.()
+  })
+
+  test('the resolver reopens a DZI with the global fetch and a TIFF with its saved placement', async () => {
+    const signal = new AbortController().signal
+    const ctx = { signal, streamed: false, slide: true }
+    const resolve = resolveSlideSource({ fetch: () => Promise.reject() })
+    const dziUrl = 'https://h.test/a.dzi'
+    const globalFetch = spyOn(globalThis, 'fetch').mockImplementation(((
+      _u: string,
+    ) => Promise.resolve(new Response('', { status: 404 }))) as typeof fetch)
+    const fromUrl = spyOn(TiffSlideSource, 'fromUrl').mockImplementation(() =>
+      Promise.reject(new Error('stub')),
+    )
+    try {
+      const dzi = {
+        kind: SLIDE_SOURCE_KIND,
+        url: dziUrl,
+        params: { format: 'dzi' },
+      }
+      await expect(resolve(dzi, ctx)).rejects.not.toThrow('no custom fetch')
+      expect(globalFetch.mock.calls[0]?.[0]).toBe(dziUrl)
+      const local = await (
+        await openSlide(new File([tinyTiff()], 'one.tif'), {
+          tiff: { placement: true },
+        })
+      ).candidates[0]?.open()
+      expect(local?.descriptor?.params).toEqual({
+        format: 'tiff',
+        local: true,
+        placement: true,
+      })
+      local?.dispose?.()
+      const tif = {
+        kind: SLIDE_SOURCE_KIND,
+        url: 'https://h.test/a.tif',
+        params: { format: 'tiff', placement: true },
+      }
+      await expect(resolve(tif, ctx)).rejects.toThrow('stub')
+      expect(fromUrl.mock.calls[0]?.[1]?.placement).toBe(true)
+    } finally {
+      globalFetch.mockRestore()
+      fromUrl.mockRestore()
+    }
   })
 
   test('a custom fetch reaches a Zarr store; DZI refuses one', async () => {

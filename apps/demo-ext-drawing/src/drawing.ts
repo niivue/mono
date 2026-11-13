@@ -155,7 +155,10 @@ function getInterpolationParams() {
   if (useIntensity && bg) {
     // Use RAS-ordered intensity data — no rasMap needed
     imageData = bg.imgRAS
-    maxVal = bg.globalMax || 1
+    // imgRAS is raw; globalMin/globalMax are scaled by scl_slope and scl_inter.
+    const { scl_slope, scl_inter } = bg.hdr
+    const toRaw = (v: number) => (v - scl_inter) / scl_slope
+    maxVal = Math.max(toRaw(bg.globalMin), toRaw(bg.globalMax)) || 1
   }
 
   const options = {

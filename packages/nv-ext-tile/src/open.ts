@@ -3,6 +3,7 @@
 // costs a DICOM-only page no TIFF or Zarr payload.
 import type { Pool } from '@niivue/geotiff-rs'
 import {
+  type DocumentSourceResolver,
   DziSource,
   ManifestRangeSource,
   type NVSlideAttribution,
@@ -54,6 +55,68 @@ export interface OpenedSlides {
   candidates: SlideCandidate[]
   /** DICOM: the index, with skipped files and associated images (read them against the input files). */
   index?: SlideIndex
+}
+
+/** `VolumeSourceDescriptor.kind` of the slides `openSlide` opens. */
+export const SLIDE_SOURCE_KIND = 'nv-ext-tile/slide'
+
+const URL_KINDS: readonly string[] = [
+  'tiff',
+  'dicom-tiff',
+  'zarr',
+  'dzi',
+  'manifest',
+]
+
+// `extra` holds what the reopen cannot recover from the saved manifest: `local`
+// (a file the default resolver cannot reopen; the name lets a host offer it
+// again), a non-default TIFF `placement`, a manifest's custom `baseUrl` (as
+// its path; see `basePath`).
+function described<T extends SlideTileSource>(
+  src: T,
+  url: string,
+  format: SlideKind,
+  extra: { local?: true; placement?: false; baseUrl?: string } = {},
+): T {
+  src.descriptor = {
+    kind: SLIDE_SOURCE_KIND,
+    url,
+    params: { format, ...extra },
+  }
+  return src
+}
+
+/**
+ * A `loadDocument` `resolveSource` that reopens slides `openSlide` opened by
+ * URL, reading through `options` (the host's fetch and credentials). Anything
+ * else, local files included, resolves null; compose it with the host's own.
+ */
+export function resolveSlideSource(
+  options: OpenSlideOptions = {},
+): DocumentSourceResolver {
+  return (d, { signal, slide }) => {
+    const format = d.params?.format
+    if (
+      !slide ||
+      d.kind !== SLIDE_SOURCE_KIND ||
+      d.params?.local ||
+      typeof format !== 'string' ||
+      !URL_KINDS.includes(format)
+    )
+      return null
+    const reopen: OpenSlideOptions = { ...options }
+    // DZI reads tiles with the global fetch and refuses a custom one.
+    if (format === 'dzi') reopen.fetch = undefined
+    if (d.params?.placement === false)
+      reopen.tiff = { ...options.tiff, placement: false }
+    const base = d.params?.baseUrl
+    if (typeof base === 'string') {
+      // Untrusted: only a path on the manifest's origin, as saved.
+      const b = parseUrl(base, d.url)
+      if (b && b.origin === parseUrl(d.url)?.origin) reopen.baseUrl = b.href
+    }
+    return openUrl(format as SlideKind, d.url, reopen, signal)
+  }
 }
 
 const isTiffMagic = (b: Uint8Array) =>
@@ -191,9 +254,14 @@ export async function openSlide(
       slide,
       open: async (s) => {
         anySignal(options.signal, s)?.throwIfAborted()
-        return new DicomWsiSource(slide, files, {
-          attribution: options.attribution,
-        })
+        return described(
+          new DicomWsiSource(slide, files, {
+            attribution: options.attribution,
+          }),
+          slide.container ?? slide.series,
+          'dicom',
+          { local: true },
+        )
       },
     }),
   )
@@ -226,13 +294,20 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
       signal?.throwIfAborted()
       const tiff = await fromBlob(file)
       try {
-        return await TiffSlideSource.fromGeoTIFF(tiff, {
-          id: file.name,
-          ...options.tiff,
-          pool: options.pool,
-          attribution: options.attribution,
-          signal,
-        })
+        return described(
+          await TiffSlideSource.fromGeoTIFF(tiff, {
+            id: file.name,
+            ...options.tiff,
+            pool: options.pool,
+            attribution: options.attribution,
+            signal,
+          }),
+          file.webkitRelativePath || file.name,
+          'tiff',
+          options.tiff?.placement === false
+            ? { local: true, placement: false }
+            : { local: true },
+        )
       } catch (err) {
         // Not adopted by a source: closed here.
         Promise.resolve(tiff.close()).catch(() => {})
@@ -242,7 +317,53 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
   }
 }
 
+/** `URL.parse` (Chrome 126, Safari 18) for the browsers NiiVue supports. */
+function parseUrl(url: string, base?: string): URL | null {
+  try {
+    return new URL(url, base)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * `baseUrl` as a path on the manifest's origin. A saved document drops
+ * URL-valued params (they may be signed), and a path carries no host,
+ * query or credentials. A cross-origin base is not saved: the reopen falls
+ * back to the manifest URL.
+ */
+function basePath(baseUrl: string, manifestUrl: string): string | undefined {
+  const b = parseUrl(baseUrl, manifestUrl)
+  // `//x` would read as a host on reopen.
+  if (
+    !b ||
+    b.origin !== parseUrl(manifestUrl)?.origin ||
+    b.pathname.startsWith('//')
+  )
+    return undefined
+  return b.pathname
+}
+
 async function openUrl(
+  kind: SlideKind,
+  url: string,
+  options: OpenSlideOptions,
+  s?: AbortSignal,
+): Promise<SlideTileSource> {
+  const extra: Parameters<typeof described>[3] = {}
+  if (
+    (kind === 'tiff' || kind === 'dicom-tiff') &&
+    options.tiff?.placement === false
+  )
+    extra.placement = false
+  if (kind === 'manifest' && options.baseUrl) {
+    const path = basePath(options.baseUrl, url)
+    if (path) extra.baseUrl = path
+  }
+  return described(await openSource(kind, url, options, s), url, kind, extra)
+}
+
+async function openSource(
   kind: SlideKind,
   url: string,
   {

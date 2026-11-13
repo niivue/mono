@@ -1207,7 +1207,8 @@ a rebuild.
   loader, so `volumeSourceKey` drops the old frame's bricks;
   `src/volume/NVChunkedVolume.frames.test.ts`). A source `descriptor` is saved
   in documents and reopened by `loadDocument`'s `resolveSource`
-  (`src/documentSources.ts`, `src/loadDocument.sources.test.ts`); a newer
+  (`src/documentSources.ts`, `src/loadDocument.sources.test.ts`), as is a
+  `SlideTileSource.descriptor` (`slide: true`, `src/loadDocument.slides.test.ts`); a newer
   `loadDocument`, `loadVolumes` or `loadImage` aborts a restore still pending.
   A switch is two-phase: every member's `load` stages first, then the group
   swaps in one synchronous `commit` between GPU passes, and the coarse floor is

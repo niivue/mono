@@ -1,6 +1,7 @@
 import { ByteLru } from '@/byteLru'
 import { lookupColorMap } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
+import type { VolumeSourceDescriptor } from '@/NVTypes'
 import {
   checkChannelInfo,
   defaultSlideChannels,
@@ -1017,7 +1018,13 @@ export class NVSlide extends EventTarget {
     source: SlideTileSource,
     options: NVSlideOptions = {},
   ): NVSlide {
-    return new NVSlide(source.manifest, { ...options, source })
+    // A document saves the URL, so an embedded manifest's relative URLs
+    // resolve against it on a restore without the source.
+    return new NVSlide(source.manifest, {
+      manifestUrl: source.manifestUrl,
+      ...options,
+      source,
+    })
   }
 
   static async fromManifestUrl(
@@ -1205,6 +1212,11 @@ export class NVSlide extends EventTarget {
   /** The committed plane's manifest. */
   get manifest(): NVSlideManifest {
     return this._manifest
+  }
+
+  /** How a document reopens this slide's source, when it says. */
+  get sourceDescriptor(): VolumeSourceDescriptor | undefined {
+    return this._source.descriptor
   }
 
   /** The source's focal planes and time points; {z: 1, t: 1} for a fixed source. */

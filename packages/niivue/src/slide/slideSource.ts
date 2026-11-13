@@ -1,3 +1,4 @@
+import type { VolumeSourceDescriptor } from '@/NVTypes'
 import type {
   NVSlideChannelInfo,
   NVSlideLevelManifest,
@@ -178,6 +179,10 @@ export interface SlideSourceHost {
  */
 export interface SlideTileSource {
   readonly manifest: NVSlideManifest
+  /** How a document reopens this source (see `DocumentSourceResolver`); unsaved when absent. */
+  descriptor?: VolumeSourceDescriptor
+  /** Where a hosted manifest was read: `NVSlide.fromSource` takes it as the slide's `manifestUrl`. */
+  readonly manifestUrl?: string
   /** Adopted by an NVSlide before any fetch; wires up telemetry + URL resolution. */
   bind(host: SlideSourceHost): void
   /**
@@ -356,7 +361,7 @@ export class ManifestRangeSource implements SlideTileSource {
   private host: SlideSourceHost | null = null
   private readonly customFetch?: SlideFetch
   private readonly baseUrl?: string
-  private readonly manifestUrl?: string
+  readonly manifestUrl?: string
   private readonly closed = new AbortController()
 
   constructor(

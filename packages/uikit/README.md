@@ -56,6 +56,8 @@ package-private (see "Conventions for contributors").
 | `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |
 | | `UIKitControls` | The control layer: one owner of the pointer, wheel and keyboard for every widget above |
 
+**Migration (rc).** The slide minimap's model is package-private now: `layoutSlideMinimap`, `minimapToSlide`, `MinimapViewport` and `SlideMinimapSpec` are no longer exported (`UIKitSlideMinimapOverlay.layoutFor` still returns the layout). `UIKitSlideMinimapOptions` lost `panelColor`, `viewColor` and `viewLineCss`; the panel is translucent black and the viewport box amber, 1.5 CSS px.
+
 ```ts
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
 

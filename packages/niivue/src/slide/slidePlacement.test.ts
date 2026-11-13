@@ -293,6 +293,20 @@ describe('placed pieces', () => {
     expect(up[0]?.screenY).toBe(320 - 160)
   })
 
+  test('limit counts tiles: every piece of a kept tile draws', () => {
+    // 16 pieces of one tile, as a coarse iScan level's few-px frames.
+    const level = storageLevel(16, 16, 16)
+    const pieces = Array.from({ length: 16 }, (_, i) => {
+      const [x, y] = [(i % 4) * 4, Math.floor(i / 4) * 4]
+      return { tile: 0, sx: x, sy: y, sw: 4, sh: 4, dx: x, dy: y }
+    })
+    level.placement = { width: 16, height: 16, pieces }
+    const slide = new NVSlide(manifestOf(level, 16, 16))
+    slide.viewport = { centerX: 8, centerY: 8, scale: 1 }
+    const screen = { widthCss: 16, heightCss: 16 }
+    expect(placedTiles(slide, indexOf(level), screen, 1)).toHaveLength(16)
+  })
+
   test('3D: one quad per piece through pixelToWorld, src set', () => {
     const level = produce({ ...VENTANA, k: 3 })
     const manifest = manifestOf(level, 23432, 21504)

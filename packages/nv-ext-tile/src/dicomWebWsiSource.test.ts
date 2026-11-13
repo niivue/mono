@@ -66,6 +66,12 @@ function serve(respond: (url: string) => Response) {
     return respond(url)
   }) as typeof fetch
 }
+/** A caller's fetch adding `Authorization: Bearer {token()}`, read per request. */
+const authed = (token: () => string) => (url: string, init?: RequestInit) =>
+  globalThis.fetch(url, {
+    ...init,
+    headers: { ...init?.headers, Authorization: `Bearer ${token()}` },
+  })
 const part = (bytes: Uint8Array) =>
   new Response(multipart(bytes), {
     headers: { 'content-type': 'multipart/related; boundary=B0UND' },
@@ -79,12 +85,12 @@ const firstTile = (s: DicomWebWsiSource) => {
 }
 
 describe('DicomWebWsiSource', () => {
-  test('fetches each tile by WADO-RS frame URL with headers read per request', async () => {
+  test('fetches each tile by WADO-RS frame URL with auth read per request', async () => {
     serve(() => part(JPEG))
     let token = 'a'
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
-      headers: () => ({ Authorization: `Bearer ${token}` }),
+      fetch: authed(() => token),
     })
     expect(calls).toEqual([]) // the syntax is indexed: no probe
     expect(s.manifest.levels[0]?.codec).toBe('image/jpeg')
@@ -333,31 +339,16 @@ describe('DicomWebWsiSource', () => {
     expect(calls).toEqual([])
   })
 
-  test('fetches bulk ICC data relative to the series, with auth only on its origin', async () => {
+  test('fetches bulk ICC data relative to the series, with its auth', async () => {
     const icc = new Uint8Array([1, 2, 3])
     serve(() => part(icc))
-    const headers = () => ({ Authorization: 'Bearer a' })
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
-      headers,
+      fetch: authed(() => 'a'),
     })
     expect(await s.fetchIccProfile()).toEqual(icc)
     expect(calls[0]?.url).toBe(`${SERIES}/bulk/1.2.3.10/00282000`)
     expect(calls[0]?.headers.Authorization).toBe('Bearer a')
-
-    const elsewhere = await DicomWebWsiSource.open(
-      await slideOf('bot', (o) => {
-        const paths = (o['00480105'] as { Value: Json[] }).Value
-        ;(paths[0] as Json)['00282000'] = {
-          vr: 'OB',
-          BulkDataURI: 'https://cdn.test/icc',
-        }
-      }),
-      { seriesUrl: SERIES, headers },
-    )
-    expect(await elsewhere.fetchIccProfile()).toEqual(icc)
-    expect(calls[1]?.url).toBe('https://cdn.test/icc')
-    expect(calls[1]?.headers.Authorization).toBeUndefined()
   })
 
   test('carries a series query to same-origin bulk ICC data only', async () => {
@@ -387,7 +378,7 @@ describe('DicomWebWsiSource', () => {
     try {
       const s = await DicomWebWsiSource.open(await slideOf('bot'), {
         seriesUrl: '/dicomweb/s?t=1',
-        headers: () => ({ Authorization: 'Bearer a' }),
+        fetch: authed(() => 'a'),
       })
       const { level, tile } = firstTile(s)
       await s.fetchTileBytes(level, tile, '')
@@ -430,7 +421,7 @@ describe('DicomWebWsiSource', () => {
       }),
       {
         seriesUrl: SERIES,
-        headers: () => ({ Authorization: 'Bearer a' }),
+        fetch: authed(() => 'a'),
         retrieveBulkData: async (url) => {
           asked.push(url)
           return new Uint8Array([7]).buffer

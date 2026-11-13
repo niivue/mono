@@ -281,6 +281,26 @@ describe('openOmeZarr level selection', () => {
     ).rejects.toThrow('ignored the Range request')
     expect(methods).toContain('HEAD')
   })
+
+  test('a page-relative URL resolves against the page', async () => {
+    const urls: string[] = []
+    const page = Object.getOwnPropertyDescriptor(globalThis, 'location')
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'http://x/app/index.html' },
+      configurable: true,
+    })
+    try {
+      const store = omeZarrFetchStore('./s.zarr', async (url) => {
+        urls.push(url)
+        return new Response(new Uint8Array(4))
+      })
+      await store.get('/zarr.json')
+    } finally {
+      if (page) Object.defineProperty(globalThis, 'location', page)
+      else Reflect.deleteProperty(globalThis, 'location')
+    }
+    expect(urls).toEqual(['http://x/app/s.zarr/zarr.json'])
+  })
 })
 
 describe('omeZarrVolumesFrom', () => {

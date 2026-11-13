@@ -396,35 +396,39 @@ export function omeZarrFetchStore(
 ): zarr.AsyncReadable & {
   getRange: NonNullable<zarr.AsyncReadable['getRange']>
 } {
-  const store = new zarr.FetchStore(url, {
-    async fetch(request) {
-      const range = request.headers.get('range')
-      const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
-      const response = await (fetchImpl ?? fetch)(request.url, {
-        method: request.method,
-        // A plain object, so a custom fetch can spread it.
-        headers: Object.fromEntries(request.headers),
-        signal: request.signal,
-        ...(chunk && range ? { cache: 'no-store' } : {}),
-      })
-      // Only a success: an HTML error page (502, 429, 403) must still throw.
-      const type = response.headers.get('content-type')?.toLowerCase()
-      if (response.ok && type?.startsWith('text/html')) {
-        await response.body?.cancel()
-        return new Response(null, { status: 404 })
-      }
-      // A server that ignores Range would send the whole file (a shard) per read.
-      const refused = rangeReplyError(response, range, true)
-      if (refused)
-        await refuseReply(
-          response,
-          refused.kind === 'whole-file'
-            ? `OME-Zarr: ${request.url} ignored the Range request (200, not 206)`
-            : `OME-Zarr: ${request.url} answered bytes ${refused.got}- to ${range}`,
-        )
-      return response
+  // zarrita needs an absolute URL; a page-relative one resolves against the page.
+  const store = new zarr.FetchStore(
+    new URL(url, globalThis.location?.href).href,
+    {
+      async fetch(request) {
+        const range = request.headers.get('range')
+        const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
+        const response = await (fetchImpl ?? fetch)(request.url, {
+          method: request.method,
+          // A plain object, so a custom fetch can spread it.
+          headers: Object.fromEntries(request.headers),
+          signal: request.signal,
+          ...(chunk && range ? { cache: 'no-store' } : {}),
+        })
+        // Only a success: an HTML error page (502, 429, 403) must still throw.
+        const type = response.headers.get('content-type')?.toLowerCase()
+        if (response.ok && type?.startsWith('text/html')) {
+          await response.body?.cancel()
+          return new Response(null, { status: 404 })
+        }
+        // A server that ignores Range would send the whole file (a shard) per read.
+        const refused = rangeReplyError(response, range, true)
+        if (refused)
+          await refuseReply(
+            response,
+            refused.kind === 'whole-file'
+              ? `OME-Zarr: ${request.url} ignored the Range request (200, not 206)`
+              : `OME-Zarr: ${request.url} answered bytes ${refused.got}- to ${range}`,
+          )
+        return response
+      },
     },
-  })
+  )
   return {
     get: (key, opts) => store.get(key, opts),
     // zarrita's ranges lie inside the file (a shard index or a HEAD gave

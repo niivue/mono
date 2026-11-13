@@ -45,8 +45,6 @@ src/                    # Library source (published as @niivue/nvreact)
   happydom.ts           # Test preload — registers happy-dom globals
   testing-library.ts    # Test preload — @testing-library/jest-dom matchers
   __mocks__/            # Test mocks
-e2e/                    # Playwright end-to-end tests (scaffolding)
-scripts/                # Package scripts
 ```
 
 ## Key APIs
@@ -156,10 +154,8 @@ Always verify UI changes with a browser or Chrome DevTools (MCP). After modifyin
 
 ## Build & publish
 
-```sh
-bun run build:package
-bun publish --access public
-```
+`bun run build:package` builds the package. Releases go through Nx Release
+(root AGENTS.md); do not `bun publish` by hand.
 
 ## Peer dependencies
 

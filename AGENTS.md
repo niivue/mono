@@ -22,7 +22,7 @@ nx-tools/       # Custom Nx plugins and scripts (boundary checks, release, repo 
 Every project has two tags in its `project.json`:
 
 - **`type:app`** or **`type:lib`** — apps live in `apps/`, libs live in `packages/`.
-- **`lang:typescript`** or **`lang:python`** — all current projects are `lang:typescript`.
+- **`lang:typescript`** or **`lang:python`** — `ipyniivue` is the one `lang:python` project.
 
 ### Workspace links
 
@@ -95,7 +95,7 @@ not treat the graph as a substitute for current code. See `KNOWLEDGE_GRAPH.md`.
    - `targets` — at minimum `build`, `lint`, `format`, `typecheck`
 5. Run `bun install` from the repo root.
 
-This repo does **not** use Nx generators. Projects are created manually.
+This repo does **not** use Nx generators. Projects are created manually, and Nx runs through `bunx`, whatever the generated Nx section at the end of this file suggests.
 
 ## Module boundaries
 
@@ -277,7 +277,7 @@ Managed via Nx Release with conventional commits (config in root `nx.json`):
 
 - **No barrel files.** Biome enforces `noBarrelFile: "error"`. Auto-generated asset index files in `packages/niivue/src/assets/` are the sole exception.
 - **ipyniivue bindings are checked in.** A change to a public NiiVue property (a new enum value, a removed setter) must also update `packages/ipyniivue/api.generated.json`, `src/ipyniivue/_generated.py` and `src/ipyniivue/static/_widget.template.js`. Run `bunx nx codegen ipyniivue` and commit the result; the PR gate fails if the regenerated bindings differ from the committed ones.
-- **`niivue` build requires codegen first.** The Nx target handles this automatically (`npm run codegen:assets && vite build`), but if you run Vite manually, run `node scripts/generate-assets.js` first.
+- **`niivue` build requires codegen first.** The Nx target and `bun run build` handle this (`bun run codegen:assets` first), but if you run Vite manually in `packages/niivue`, run `bun run codegen:assets` first.
 - **`workspace:*` peer dependencies.** Extensions that use NiiVue (all but `nv-ext-niimath`) and `nv-react` declare `@niivue/niivue` as a peer dep — the local copy is used in dev, but consumers must install it themselves.
 - **GitHub Pages deployment.** Pushing to `main` builds all examples and demo apps and deploys to GitHub Pages via `.github/workflows/niivue-ghpages.yml`. The build script is `.github/build-pages.sh` — run it locally with `--serve` to preview. Vite configs read the `VITE_BASE` env var to set the base path and rewrite absolute `/volumes/` and `/meshes/` URLs in bundled JS. The rewrite covers page script only: not HTML attributes (such as an `<option value>`) and not Worker bundles, so keep those URLs in page script (a worker should receive them in a message). Locally, the niivue dev server (`packages/niivue/vite.config.js`, port 8080) lays itself out like the Pages site: `/` serves `.github/pages/index.html` and `/<app>/...` serves the demo apps in `SITE_APPS` (keep it in step with `APPS` in `build-pages.sh`); `/docs/` explains how to run the docs site. `build-pages.sh --serve` serves the real build.
 - **CI workflows.** `.github/workflows/pr_gate.yml` runs lint, typecheck, and test across all projects (`nx run-many`) on every push and PR to `main`, plus the niivue demo build (`build:examples`, after the steps that use `dist`, which it empties) and `check:demos`. `codespell.yml` spell-checks `packages/niivue` (ignore list lives in the workflow file). `niivue-e2e.yml` runs 3 browser-contract specs and the `render-*` reference specs (3 sharded jobs) on Ubuntu SwiftShader (pinned `ubuntu-26.04`: a new Ubuntu image needs a Playwright release that ships Chromium for it, so bump Playwright before moving the pin), and the full Playwright suite on macos-15 real Metal (`PLAYWRIGHT_CHROMIUM_CHANNEL=chromium`); Metal-only exclusions, when any are needed, go in the `test:e2e:metal` script in `packages/niivue/package.json` (none at present). `.github/scripts/local-metal.ts` (see "Before finishing a task") runs that suite on a local Mac at the PR head, posts a `local-metal` commit status, and removes then re-adds the `skip-metal` label (`--no-label` skips the label). The `metal-gate` job skips Metal only when the PR has the label and its head commit has a successful `local-metal` status, so a later push runs it again; pushes to `main` always run it. Adding or removing any label on a PR restarts its e2e run. The script runs the PR's code on your machine as you: it strips GitHub and npm tokens from the environment, but the code can still read your files and keychain, so read the diff. It refuses a fork PR unless `--reviewed=<sha>` names the head commit you read. Only the niivue package emits lcov coverage; `.github/scripts/lcov-to-summary.ts` (run with Bun, as `coverage:check`) parses it and appends a markdown table to `$GITHUB_STEP_SUMMARY`. The Metal job also merges unit and browser coverage (`coverage:merge`, `.github/scripts/coverage-merge.ts`). CI helper scripts live in `.github/scripts/` and are written in TypeScript, executed with `bun`.
@@ -288,6 +288,7 @@ Managed via Nx Release with conventional commits (config in root `nx.json`):
 - **No shared `tsconfig.base.json`.** Each project has its own `tsconfig.json`. Copy from an existing project when creating a new one.
 - **Git LFS required for test images.** `packages/dev-images/images/` uses LFS. Run `git lfs pull` if files are pointers.
 - **Feature parity tracking.** `packages/niivue/FEATURE_PARITY.md` tracks which features from the old NiiVue exist in the rewrite. Consult before implementing features.
+- **"Your AI agent configuration is outdated."** Nx prints this after a task when an agent counts as configured (Copilot does on any machine with VS Code and Nx Console, given this `AGENTS.md`) and its generator would still write files. Those are the gitignored per-checkout `.github/{agents,prompts,skills}` (Codex: `.codex/`, `.agents/`), so every fresh clone or worktree warns; `AGENTS.md` itself is current. Run `NX_AI_FILES_USE_LOCAL=true bunx nx configure-ai-agents --agents copilot --no-interactive` once per checkout: it writes only ignored files. If it fails with `generateFiles: No files found`, macOS has purged its `$TMPDIR` cache: `rm -rf "$TMPDIR/nx-ai-agents-config"` and rerun. If the warning stays, `bunx nx daemon --stop`: the daemon caches the status. Without the variable the command downloads `nx@latest`; the daemon always judges against `nx@latest`, so a later Nx release can make a checkout outdated again. Do not commit those files or edit this file to silence it. Agents: if Nx prints this warning, tell the user and point to this note; do not run the generator yourself.
 
 
 <!-- nx configuration start-->

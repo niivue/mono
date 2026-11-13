@@ -5,27 +5,22 @@ import { withBase } from '../site'
 
 const STILLS = [
   {
-    label: 'MRI',
     image: 'mri',
     alt: 'A T1-weighted MRI of a head, cut down the middle',
   },
   {
-    label: 'CT',
     image: 'ct',
     alt: 'A 3D rendering of a skull from a CT scan',
   },
   {
-    label: 'Microscopy',
     image: 'microscopy',
     alt: 'Stained skin tissue in a whole-slide microscope image',
   },
   {
-    label: 'Surfaces',
     image: 'surfaces',
     alt: 'A brain surface with motor activity mapped onto it',
   },
   {
-    label: 'Tractography',
     image: 'tractography',
     alt: 'White matter fibers colored by direction',
   },
@@ -34,18 +29,15 @@ const STILLS = [
 
 <ul class="strip" aria-label="Some of what NiiVue shows">
   {
-    STILLS.map(({ label, image, alt }) => (
+    STILLS.map(({ image, alt }) => (
       <li>
-        <figure>
-          <img
-            src={withBase(`img/home/${image}.webp`)}
-            alt={alt}
-            width="640"
-            height="640"
-            decoding="async"
-          />
-          <figcaption>{label}</figcaption>
-        </figure>
+        <img
+          src={withBase(`img/home/${image}.webp`)}
+          alt={alt}
+          width="640"
+          height="640"
+          decoding="async"
+        />
       </li>
     ))
   }
@@ -69,11 +61,6 @@ const STILLS = [
   li {
     flex: 0 0
       calc((100% - (var(--per-row) - 1) * var(--gap)) / var(--per-row));
-  }
-
-  figure {
-    position: relative;
-    margin: 0;
     aspect-ratio: 1;
     overflow: hidden;
     background: var(--nv-viewer);
@@ -88,19 +75,6 @@ const STILLS = [
     object-fit: cover;
   }
 
-  /* The label sits on a soft shade, so it reads on bright images too. */
-  figcaption {
-    position: absolute;
-    inset: auto 0 0;
-    padding: 1.75rem 0.6rem 0.5rem;
-    font-size: var(--sl-text-xs);
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-    color: #fff;
-    background: linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0));
-  }
-
   @media (max-width: 22.5rem) {
     .strip {
       --per-row: 2;
@@ -111,11 +85,6 @@ const STILLS = [
     .strip {
       --gap: 1rem;
       --per-row: 5;
-    }
-
-    figcaption {
-      padding: 2.25rem 0.85rem 0.7rem;
-      font-size: var(--sl-text-sm);
     }
   }
 </style>

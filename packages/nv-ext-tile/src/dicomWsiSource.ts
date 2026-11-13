@@ -18,6 +18,7 @@ import {
 import type { DicomJsonSlide } from './dicomJson'
 import {
   flipPlacement,
+  levelCosines,
   levelMaps,
   orientGrid,
   slideOrientation,
@@ -217,14 +218,19 @@ export function manifestOf<I extends InstanceCore>(
   if (!l0) throw new Error('the slide has no levels')
   // The index puts each level's first instance in slide.instances.
   const inst0 = slide.instances[l0.instances[0] as number] as I
-  const turn = slideOrientation(slide.imageOrientationSlide)
-  if (turn === null)
-    console.warn(
-      `ImageOrientationSlide ${slide.imageOrientationSlide?.join('\\')} is oblique; the slide is shown as stored`,
-    )
-  const o = turn ?? undefined
-  const g0 = orientGrid(l0, o)
+  // Each level turns by its own ImageOrientationSlide, so all share one displayed frame.
+  const turns = slide.levels.map((level, index) => {
+    const cosines = levelCosines(slide, level)
+    const turn = slideOrientation(cosines)
+    if (turn === null)
+      console.warn(
+        `level ${index} ImageOrientationSlide ${cosines?.join('\\')} is oblique; it is shown as stored`,
+      )
+    return turn ?? undefined
+  })
+  const g0 = orientGrid(l0, turns[0])
   const levels = slide.levels.map((level, index): NVSlideLevelManifest => {
+    const o = turns[index]
     const inst = slide.instances[level.instances[0] as number] as I
     const codec = CODEC_BY_TRANSFER_SYNTAX[inst.transferSyntax]
     if (!codec)
@@ -309,7 +315,7 @@ export function manifestOf<I extends InstanceCore>(
       : {}),
     ...(slide.pixelSpacingMM
       ? {
-          pixelSpacingMM: o?.transpose
+          pixelSpacingMM: turns[0]?.transpose
             ? [slide.pixelSpacingMM[1], slide.pixelSpacingMM[0]]
             : slide.pixelSpacingMM,
         }

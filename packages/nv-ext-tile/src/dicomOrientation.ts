@@ -61,16 +61,25 @@ export function orientGrid<G extends Grid>(
   }
 }
 
+/** `level`'s ImageOrientationSlide, else the slide's (level 0's). */
+export function levelCosines(
+  slide: { imageOrientationSlide?: number[] },
+  level: { imageOrientationSlide?: number[] },
+): number[] | undefined {
+  return level.imageOrientationSlide ?? slide.imageOrientationSlide
+}
+
 /**
  * Each level's {@link tileMap}, laid out over the displayed grid: entry
  * y * columns + x is the frame slot of displayed tile (x, y).
  */
 export function levelMaps(slide: {
   imageOrientationSlide?: number[]
-  levels: (Grid & Parameters<typeof tileMap>[0])[]
+  levels: (Grid &
+    Parameters<typeof tileMap>[0] & { imageOrientationSlide?: number[] })[]
 }): Int32Array[] {
-  const o = slideOrientation(slide.imageOrientationSlide) ?? undefined
   return slide.levels.map((level) => {
+    const o = slideOrientation(levelCosines(slide, level)) ?? undefined
     const map = tileMap(level)
     if (!o) return map
     const g = orientGrid(level, o)

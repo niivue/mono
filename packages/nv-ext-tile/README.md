@@ -135,8 +135,9 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files, { at
   Reference Slide Orientation turned so the label edge is on the left. The
   usual `0\-1\0\-1\0\0` is shown as stored. Any other right-angle turn or flip
   turns the manifest (size, tile grid, `pixelSpacingMM`), and the level's
-  `tileOrientation` turns each decoded tile. An oblique orientation is warned
-  and shown as stored. TotalPixelMatrixOriginSequence is not used.
+  `tileOrientation` turns each decoded tile. Each level turns by its own
+  orientation (level 0's when it states none). An oblique orientation is
+  warned and that level is shown as stored. TotalPixelMatrixOriginSequence is not used.
 - **Focal planes as one source.** `focalStacks(index.slides)` groups the slides of
   one study, series, container and optical path, planes in rank order;
   `new DicomPlaneStack(stack.map((s) => new DicomWsiSource(s, files)), { zPositionsUm })`

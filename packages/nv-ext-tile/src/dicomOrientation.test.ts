@@ -135,4 +135,20 @@ describe('ImageOrientationSlide', () => {
     expect(oblique.manifest.levels[0]?.tileOrientation).toBeUndefined()
     expect([oblique.manifest.width, oblique.manifest.height]).toEqual([W, H])
   })
+
+  test('a level with its own ImageOrientationSlide turns by it, not by level 0', () => {
+    const slide = slideWith([0, -1, 0, -1, 0, 0])
+    const l0 = slide.levels[0] as SlideIndexSlide['levels'][number]
+    slide.levels.push({ ...l0, imageOrientationSlide: [0, 1, 0, -1, 0, 0] })
+    const maps = levelMaps(slide)
+    const { levels } = manifestOf(slide, maps, { fileUrl: () => 'a.dcm' })
+    expect(levels[0]?.tileOrientation).toBeUndefined()
+    expect(levels[1]?.tileOrientation).toEqual({
+      transpose: false,
+      flipX: true,
+      flipY: false,
+    })
+    // The 2x2 stored grid mirrored left to right.
+    expect(Array.from(maps[1] as Int32Array)).toEqual([1, 0, 3, 2])
+  })
 })

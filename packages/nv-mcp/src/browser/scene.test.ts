@@ -1873,7 +1873,7 @@ describe('add_isosurface', () => {
     })
     expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenCalledWith(
       'https://x/s.ome.zarr',
-      { channel: 1 },
+      { channel: 1, timepoint: undefined },
     )
     expect(iso.channelIsosurfaces).toHaveBeenCalledWith([
       expect.objectContaining({ source, labels: [1, 7], color: [1, 0, 0, 1] }),
@@ -1884,6 +1884,68 @@ describe('add_isosurface', () => {
     await expect(
       handlers.add_isosurface({ url: 'https://x/s.ome.zarr' }),
     ).rejects.toThrow('exactly one of threshold or labels')
+  })
+  it('names the requested channel and surfaces the frame shown', async () => {
+    const source = { frames: 4, dispose: mock() }
+    const zarr = { fetchOmeZarrChunkedSource: mock(async () => source) }
+    const iso = {
+      channelIsosurfaces: mock(async (_channels: unknown[]) => [{ name: 'm' }]),
+    }
+    const view = fakeView({
+      addMesh: mock(async () => {}),
+      volumes: [{ name: 's', frameSource: { count: 4, frame: 2 } }],
+    })
+    const handlers = coreHandlers(
+      host(view, {
+        omeZarr: async () => zarr as never,
+        isosurface: async () => iso,
+      }),
+    )
+    const surfaced = () => iso.channelIsosurfaces.mock.calls.at(-1)?.[0]
+    await handlers.add_isosurface({
+      url: 'https://x/s.ome.zarr',
+      channel: 2,
+      threshold: 100,
+    })
+    expect(surfaced()).toEqual([
+      expect.objectContaining({ frame: 2, name: 'channel 2' }),
+    ])
+    await handlers.add_isosurface({
+      url: 'https://x/s.ome.zarr',
+      timepoint: 1,
+      threshold: 100,
+    })
+    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenLastCalledWith(
+      'https://x/s.ome.zarr',
+      { channel: undefined, timepoint: 1 },
+    )
+    expect(surfaced()).toEqual([expect.objectContaining({ frame: 1 })])
+    // A shown frame beyond the store's belongs to another image.
+    source.frames = 1
+    await handlers.add_isosurface({ url: 'https://x/s.ome.zarr', threshold: 1 })
+    expect(surfaced()).toEqual([expect.objectContaining({ frame: undefined })])
+  })
+
+  it('rejects a bad url and names the store when it fails', async () => {
+    const zarr = {
+      fetchOmeZarrChunkedSource: mock(async () => {
+        throw new Error('404 Not Found')
+      }),
+    }
+    const handlers = coreHandlers(
+      host(fakeView({ addMesh: mock(async () => {}) }), {
+        omeZarr: async () => zarr as never,
+        isosurface: async () => ({ channelIsosurfaces: mock(async () => []) }),
+      }),
+    )
+    await expect(
+      handlers.add_isosurface({ url: 'http://a b/x', threshold: 1 }),
+    ).rejects.toThrow('The OME-Zarr store at http://a b/x could not be loaded')
+    await expect(
+      handlers.add_isosurface({ url: 'https://x/s.ome.zarr', threshold: 1 }),
+    ).rejects.toThrow(
+      'The OME-Zarr store at https://x/s.ome.zarr could not be loaded: 404 Not Found',
+    )
   })
 })
 

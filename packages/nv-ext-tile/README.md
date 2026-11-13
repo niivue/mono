@@ -242,7 +242,7 @@ await nv.loadVolumes(await loadOmeZarrVolumes(storeUrl, { level: 2 })) // one wh
 await streamOmeZarr(nv, storeUrl) // or stream bricks; its workers stop once the volume is removed
 ```
 
-World placement, both paths: micrometres, level 0 voxel `i` centred at `i * spacing` (affine `diag(spacing)`, as `createStreamingNVImage`). A coarser whole level covers the same box: its voxel size is level 0 extent / level shape. OME-NGFF `translation`s are ignored. Migration: whole levels were centred on the origin before this release, so positions saved in documents with whole-level loads (crosshair, annotations, meshes) shift by half the volume extent.
+World placement, both paths: micrometres, level 0 voxel `i` centred at `i * spacing` (affine `diag(spacing)`, as `createStreamingNVImage`). A coarser whole level covers the same box: its voxel size is level 0 extent / level shape. OME-NGFF `translation`s are ignored. Migration: whole levels were centred on the origin before this release. A saved document reopens unchanged, as it embeds each volume's header; only world coordinates saved against an older whole-level load (crosshair, annotations, meshes) and reapplied to a fresh load shift, by half the volume extent.
 
 `loadOmeZarrVolumes` loads the channels omero marks active (a missing flag counts as active; all marked inactive loads channel 0). `channels: [i, ...]` loads exactly those, visible; `channels: 'all'` loads every one, inactive ones hidden.
 

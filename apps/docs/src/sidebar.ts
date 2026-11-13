@@ -48,7 +48,7 @@ export const PACKAGES = [
   { dir: 'nv-react', label: 'React' },
   { dir: 'nv-web-component', label: 'Web component' },
   { dir: 'uikit', label: 'UIKit' },
-  { dir: 'ipyniivue', label: 'Jupyter' },
+  { dir: 'ipyniivue', label: 'ipyniivue' },
   { dir: 'niivue-swift', label: 'Swift' },
   { dir: 'niivue-web-bridge', label: 'Web bridge' },
   { dir: 'nv-ext-tile', label: 'Slides and OME-Zarr' },

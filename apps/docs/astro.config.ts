@@ -79,10 +79,15 @@ export default defineConfig({
     }),
     checkLinks(base),
     {
-      // The Packages section lists packages/*/docs when the config loads, so
-      // in dev a page added or removed there reloads the config.
+      // The sidebar is built when the config loads, from src/sidebar.ts and
+      // the pages in packages/*/docs. In dev, editing those two files, or
+      // adding or removing a page, reloads the config.
       name: 'package-docs-reload',
       hooks: {
+        'astro:config:setup': ({ addWatchFile }) => {
+          addWatchFile(new URL('./src/sidebar.ts', import.meta.url))
+          addWatchFile(new URL('./src/lib/packageDocs.ts', import.meta.url))
+        },
         'astro:server:setup': ({ server }) => {
           const configFile = fileURLToPath(import.meta.url)
           const reload = (file: string) => {

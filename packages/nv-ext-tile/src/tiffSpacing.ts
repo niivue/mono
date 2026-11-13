@@ -41,9 +41,19 @@ export function tiffPixelSpacingMM(
     const p = attrs(/<(?:\w+:)?Pixels\b[^>]*>/.exec(d)?.[0] ?? '')
     // An absent unit is OME's default (um).
     const unit = (u?: string) => u && decodeXmlEntities(u)
+    const x = omeLengthToMicrons(
+      Number(p.PhysicalSizeX),
+      unit(p.PhysicalSizeXUnit),
+    )
+    // An absent Y is square pixels (OME's convention); a malformed one is not.
     return um(
-      omeLengthToMicrons(Number(p.PhysicalSizeX), unit(p.PhysicalSizeXUnit)),
-      omeLengthToMicrons(Number(p.PhysicalSizeY), unit(p.PhysicalSizeYUnit)),
+      x,
+      p.PhysicalSizeY === undefined
+        ? x
+        : omeLengthToMicrons(
+            Number(p.PhysicalSizeY),
+            unit(p.PhysicalSizeYUnit),
+          ),
     )
   }
   if (d.includes('DPUfsImport')) return philipsSpacingMM(d)

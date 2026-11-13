@@ -1542,6 +1542,20 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       [0.25, 0.5],
     ],
     [
+      'OME without PhysicalSizeY: square pixels',
+      {
+        description: omeXml('PhysicalSizeX="0.25" PhysicalSizeXUnit="µm"'),
+      },
+      [0.25, 0.25],
+    ],
+    [
+      'OME with a malformed PhysicalSizeY',
+      {
+        description: omeXml('PhysicalSizeX="0.25" PhysicalSizeY="abc"'),
+      },
+      undefined,
+    ],
+    [
       'Philips row\\col',
       { description: philips('Name="DICOM_PIXEL_SPACING" Group="0x0028"') },
       [0.226907, 0.226891],

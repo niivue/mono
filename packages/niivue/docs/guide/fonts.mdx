@@ -15,20 +15,17 @@ and a JSON file with their metrics.
 
 Text settings are viewer properties:
 
-- `fontScale` sets the text size relative to the canvas (default 0.4).
-- `fontMinSize` is the smallest size in pixels (default 13), so labels stay
-  readable on a small canvas.
+- `fontMinSize` is the text size in pixels (default 13).
+- `fontScale` makes text grow on canvases larger than 800 by 600 pixels:
+  0 keeps it at `fontMinSize`, and higher values grow it faster (default
+  0.4). It has no effect on smaller canvases.
 - `fontColor` is RGBA in the 0 to 1 range.
 - `placeholderText` is shown while the viewer has nothing loaded.
 
 ```js
-const nv = new NiiVue({ fontScale: 0.6, fontColor: [1, 1, 0, 1] })
+const nv = new NiiVue({ fontMinSize: 16, fontColor: [1, 1, 0, 1] })
 nv.placeholderText = 'Drop an image here'
 ```
-
-The text size is worked out when the view is laid out, so after changing
-`fontScale` or `fontMinSize` on a running viewer, call `nv.resize()` to
-apply it.
 
 Other settings turn text elements on and off: `isOrientationTextVisible`
 for the orientation labels, `isColorbarVisible`, `isLegendVisible` and

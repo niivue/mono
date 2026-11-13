@@ -10,6 +10,7 @@ import {
   createSlideView,
   DRAG_MODE,
   formatSlideSample,
+  isRgbSlide,
   linkSlideViews,
   NVSlide,
   slideStatsSummary,
@@ -176,18 +177,9 @@ function showReadout(): void {
   credit.hidden = !readout.hidden
 }
 
-// RGB samples have no channel to window (core's isRgbSlide, not exported).
-// Switch to core's export once #770 lands.
-const isRgb = (slide: NVSlide): boolean =>
-  !slide.manifest.channelInfo &&
-  !slide.manifest.levels.some(
-    (l) =>
-      l.codec === 'raw-gray' ||
-      (l.photometric?.startsWith('MONOCHROME') ?? false),
-  )
 // RGB slides have no channel window, so they get navigation instead.
 function syncDragModes(slide: NVSlide): void {
-  const rgb = isRgb(slide)
+  const rgb = isRgbSlide(slide.manifest)
   for (const option of channelDragModes) option.disabled = rgb
   if (!dragSelect.selectedOptions[0]?.disabled) return
   dragSelect.value = String(DRAG_MODE.pan)

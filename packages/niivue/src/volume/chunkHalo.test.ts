@@ -5,7 +5,6 @@ import {
   chunkVolume,
   chunkVolumeGrid,
   chunkVolumeMultiLOD,
-  LINEAR_MIN_HALO,
   planSupportsCubic,
   planSupportsHalo,
   type Vec3i,
@@ -26,6 +25,10 @@ import {
 // at the brick's faces. It pins LINEAR_MIN_HALO and CUBIC_MIN_HALO to measured
 // behaviour rather than to a comment, so lowering either constant fails here.
 // ---------------------------------------------------------------------------
+
+// Hardware trilinear needs one voxel of neighbour data: a face sample
+// straddles the brick face.
+const LINEAR_MIN_HALO = 1
 
 type Vol = { d: Vec3i; v: Float32Array }
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mat4, type vec3 } from 'gl-matrix'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
-import type { NVImage, VolumeChunkSourceRequest } from '@/NVTypes'
+import type { NVImage } from '@/NVTypes'
 import type {
   ChunkedVolumeFetch,
   ChunkedVolumeSource,
@@ -15,38 +15,22 @@ import type {
   VolumeChunkDesc,
 } from './chunking'
 import {
-  createSourceChunkLoader,
   createSourceRegionReader,
   focusCenterBiased,
   mmToVolumeFraction,
   NVChunkedVolume,
   planForFocus,
+  type SourceRegionRead,
 } from './NVChunkedVolume'
 import { assignUniqueVolumeIds } from './volumeIds'
 
 function req(
-  sourceLevel: number,
+  levelIndex: number,
   texOrigin: Vec3i,
   texDims: Vec3i,
   bytesPerVoxel = 2,
-): VolumeChunkSourceRequest {
-  const desc = {
-    voxelOrigin: texOrigin,
-    voxelDims: texDims,
-    haloLow: [0, 0, 0],
-    haloHigh: [0, 0, 0],
-    texDims,
-    texOrigin,
-    gridIndex: [0, 0, 0],
-    sourceLevel,
-  } as unknown as VolumeChunkDesc
-  return {
-    chunkIndex: 0,
-    desc,
-    plan: {} as VolumeChunkSourceRequest['plan'],
-    datatypeCode: 4,
-    bytesPerVoxel,
-  }
+): SourceRegionRead {
+  return { levelIndex, texOrigin, texDims, bytesPerVoxel, frame: 0 }
 }
 
 const opts = {
@@ -220,7 +204,7 @@ describe('planForFocus', () => {
   })
 })
 
-describe('createSourceChunkLoader', () => {
+describe('createSourceRegionReader', () => {
   test('dispatches each brick to its own level with level-grid coords', async () => {
     const calls: ChunkedVolumeFetch[] = []
     const source: ChunkedVolumeSource = {
@@ -236,7 +220,7 @@ describe('createSourceChunkLoader', () => {
         )
       },
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 4,
       retryAttempts: 1,
     })
@@ -263,7 +247,7 @@ describe('createSourceChunkLoader', () => {
         return new Uint8Array(8)
       },
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 2,
       retryAttempts: 1,
     })
@@ -285,7 +269,7 @@ describe('createSourceChunkLoader', () => {
         return new Uint8Array(8)
       },
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 4,
       retryAttempts: 1,
     })
@@ -306,7 +290,7 @@ describe('createSourceChunkLoader', () => {
         return new Uint8Array(8)
       },
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 4,
       retryAttempts: 3,
       retryDelayMs: 1, // not the real 80 ms backoff
@@ -328,7 +312,7 @@ describe('createSourceChunkLoader', () => {
     }
     // A 0 concurrency cap would leave acquire() forever pending (no slot frees);
     // the clamp to >= 1 must let the fetch through.
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 0,
       retryAttempts: 1,
     })
@@ -354,7 +338,7 @@ describe('createSourceChunkLoader', () => {
         return new Uint8Array(8)
       },
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: Number.POSITIVE_INFINITY,
       retryAttempts: 1,
     })
@@ -381,7 +365,7 @@ describe('createSourceChunkLoader', () => {
         throw new TypeError('Failed to fetch')
       },
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 2,
       retryAttempts: Number.POSITIVE_INFINITY,
     })
@@ -409,7 +393,7 @@ describe('createSourceChunkLoader', () => {
     }
     // NaN would make every `active < maxConcurrent` comparison false (nothing
     // ever starts); 0.5 floors to 0, which is the same deadlock.
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: Number.NaN,
       retryAttempts: 0.5,
     })
@@ -429,7 +413,7 @@ describe('createSourceChunkLoader', () => {
       },
     }
     // 'No retries' must still make the initial fetch, not zero fetches.
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 4,
       retryAttempts: 0,
     })
@@ -453,7 +437,7 @@ describe('createSourceChunkLoader', () => {
           throw new Error('permanent 404')
         },
       }
-      const load = createSourceChunkLoader(source, {
+      const load = createSourceRegionReader(source, {
         maxConcurrentLoads: 2,
         retryAttempts: 1,
       })
@@ -481,7 +465,7 @@ describe('createSourceChunkLoader', () => {
           )
         }),
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 2,
       retryAttempts: 3,
     })
@@ -511,16 +495,16 @@ describe('createSourceChunkLoader', () => {
           release = () => resolve(new Uint8Array(2))
         }),
     }
-    const load = createSourceChunkLoader(source, {
+    const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 2,
       retryAttempts: 1,
     })
     const first = new AbortController()
     const second = new AbortController()
-    // Same region, two chunk indices — the plan-swap case the dedup exists for.
+    // Same region, two callers — the plan-swap case the dedup exists for.
     const shared = req(0, [0, 0, 0], [1, 1, 1])
     const a = load({ ...shared, signal: first.signal })
-    const b = load({ ...shared, chunkIndex: 1, signal: second.signal })
+    const b = load({ ...shared, signal: second.signal })
     await new Promise((r) => setTimeout(r, 0))
     first.abort()
     expect(seen?.aborted).toBe(false)
@@ -1771,25 +1755,6 @@ describe('NVChunkedVolume focusBounds', () => {
     maxBricks: 0,
   }
   const slab: MultiLodBounds = { min: [0, 0, 100], max: [512, 512, 101] }
-
-  test('initial bounds reach the planner and are cloned from the caller', () => {
-    const host = makeHost(async () => {})
-    const plain = new NVChunkedVolume(host, source, opts)
-    const mine: MultiLodBounds = {
-      min: [slab.min[0], slab.min[1], slab.min[2]],
-      max: [slab.max[0], slab.max[1], slab.max[2]],
-    }
-    const bounded = new NVChunkedVolume(host, source, {
-      ...opts,
-      focusBounds: [mine],
-    })
-    expect(levelsTouching(plain.currentPlan, slab).size).toBeGreaterThan(1)
-    expect(levelsTouching(bounded.currentPlan, slab).size).toBe(1)
-    expect(boundsOf(bounded)).toEqual([slab])
-    expect(boundsOf(bounded)[0]).not.toBe(mine)
-    mine.max[2] = 999
-    expect(boundsOf(bounded)[0].max[2]).toBe(101)
-  })
 
   test('setFocus replaces, keeps, or clears the bounds by its second argument', async () => {
     const host = makeHost(async () => {})

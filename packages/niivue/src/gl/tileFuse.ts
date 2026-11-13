@@ -9,7 +9,6 @@ import {
   fuseUniforms,
   type LabelTable,
   labelUniforms,
-  liveLabelTables,
   pruneLabelTables,
   type RawFormat,
   rawFormat,
@@ -402,9 +401,7 @@ export class TileFuserGL {
    */
   retainLabelTables(slides: readonly NVSlide[]): void {
     if (this._tables.size === 0) return
-    pruneLabelTables(this._tables, liveLabelTables(slides), (t) =>
-      this.gl?.deleteTexture(t),
-    )
+    pruneLabelTables(this._tables, slides, (t) => this.gl?.deleteTexture(t))
   }
 
   /** Drop the pooled raw layers and label tables (tile textures belong to the caller's cache). */

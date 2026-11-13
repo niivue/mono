@@ -133,6 +133,18 @@ export function planTextures<T>(
   for (let i = 0; i < at.length; i++) out.push(cached[i] ? textureFor(i) : null)
 }
 
+/** `screen`'s device pixel ratio and canvas size in device pixels (at least 1). */
+export function screenPixels(
+  screen: NVSlideScreen,
+): [dpr: number, width: number, height: number] {
+  const dpr = screen.devicePixelRatio ?? 1
+  return [
+    dpr,
+    Math.max(1, Math.floor(screen.widthCss * dpr)),
+    Math.max(1, Math.floor(screen.heightCss * dpr)),
+  ]
+}
+
 /** What `tileTexture` needs of a backend's gutter (gl/, wgpu/ tileGutter.ts). */
 export interface SlideTileGutter<T> {
   upload(

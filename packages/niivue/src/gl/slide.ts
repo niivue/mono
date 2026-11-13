@@ -18,6 +18,7 @@ import {
 import {
   beginSlideFrame,
   SlideFramePlan,
+  screenPixels,
   writeRectNdc,
   writeTileUv,
 } from '@/slide/slideTiles'
@@ -170,9 +171,7 @@ export class SlideRenderer {
     const gl = this._gl
     const placeholder = this._placeholderTexture
     if (!gl || !this._plainShader || !this._vao || !placeholder) return
-    const dpr = screen.devicePixelRatio ?? 1
-    const width = Math.max(1, Math.floor(screen.widthCss * dpr))
-    const height = Math.max(1, Math.floor(screen.heightCss * dpr))
+    const [dpr, width, height] = screenPixels(screen)
     const nearest = this.isNearestInterpolation
     const plan = this._plan
     const textures = this._planTextures

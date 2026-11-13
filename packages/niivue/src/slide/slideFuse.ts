@@ -221,21 +221,19 @@ const LABEL_TABLE_WIDTH = 2048
 export const MAX_LABEL_TABLE_IDS = LABEL_TABLE_WIDTH * LABEL_TABLE_WIDTH
 type LabelColors = NonNullable<NVSlideChannelInfo['labelColors']>
 const NO_COLORS: LabelColors = []
-/** The label tables of `slides`' label channels (memoised per labelColors). */
-export function liveLabelTables(slides: readonly NVSlide[]): Set<LabelTable> {
-  const live = new Set<LabelTable>()
-  for (const slide of slides)
-    for (const c of slide.manifest.channelInfo ?? [])
-      if (c.kind === 'label') live.add(labelTable(c.labelColors))
-  return live
-}
-
-/** Free the entries of `tables` (and their textures) not in `used`. */
+/**
+ * Free the entries of `tables` (and their textures) no label channel of
+ * `slides` uses (tables are memoised per labelColors).
+ */
 export function pruneLabelTables<T>(
   tables: Map<LabelTable, T>,
-  used: ReadonlySet<LabelTable>,
+  slides: readonly NVSlide[],
   free: (texture: T) => void,
 ): void {
+  const used = new Set<LabelTable>()
+  for (const slide of slides)
+    for (const c of slide.manifest.channelInfo ?? [])
+      if (c.kind === 'label') used.add(labelTable(c.labelColors))
   for (const [table, texture] of tables)
     if (!used.has(table)) {
       free(texture)

@@ -194,6 +194,35 @@ describe('ByteLru', () => {
     expect(cache.peek(3)?.id).toBe(2)
   })
 
+  test('remap keeps a key mapped to undefined', () => {
+    const cache = new ByteLru<string | undefined, Uint8Array>(100)
+    const value = bytes(4)
+    cache.set('a', value)
+    cache.remap(new Map([['a', undefined]]))
+    expect(cache.peek(undefined)).toBe(value)
+    expect(cache.totalBytes).toBe(4)
+  })
+
+  test('remap frees a displaced absence entry', () => {
+    const disposed: Array<Uint8Array | undefined> = []
+    const cache = new ByteLru<string, Uint8Array | undefined>(
+      100,
+      undefined,
+      (v) => disposed.push(v),
+    )
+    const value = bytes(4)
+    cache.set('a', undefined)
+    cache.set('b', value)
+    cache.remap(
+      new Map([
+        ['a', 'c'],
+        ['b', 'c'],
+      ]),
+    )
+    expect(disposed).toStrictEqual([undefined])
+    expect(cache.peek('c')).toBe(value)
+  })
+
   test('disposes every value it lets go of and bumps version', () => {
     const disposed: string[] = []
     const cache = new ByteLru<string, { id: string; bytes: number }>(

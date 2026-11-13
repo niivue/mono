@@ -166,14 +166,14 @@ export class ByteLru<K, V> {
     const next = new Map<K, V>()
     let total = 0
     for (const [key, value] of this.map) {
-      const mapped = oldToNew.get(key)
-      if (mapped === undefined) {
+      if (!oldToNew.has(key)) {
         this.dispose?.(value)
         continue
       }
+      const mapped = oldToNew.get(key) as K
       // Two keys mapped to one: the later (more recent) wins, the other is dropped.
-      const displaced = next.get(mapped)
-      if (displaced !== undefined) {
+      if (next.has(mapped)) {
+        const displaced = next.get(mapped) as V
         next.delete(mapped)
         total -= this.sizeOf(displaced)
         this.dispose?.(displaced)

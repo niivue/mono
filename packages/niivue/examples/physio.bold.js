@@ -52,9 +52,9 @@ await nv1.loadSignals([
   },
 ])
 // The whole run squeezes ~50k cardiac samples into the plot width; open on the
-// first 30 s (15 frames). The window follows the frame marker, and the graph's
-// - button zooms back out.
-nv1.setGraphRange([0, 30])
+// first 15 s. The window follows the frame marker, and the graph's - button
+// zooms back out.
+nv1.setGraphRange([0, 15])
 // Signals load in order: [respiratory, cardiac]. Toggle a physio trace by
 // showing column 0 or no column (selectedColumns []); toggle the fMRI/BOLD
 // trace via the association graph's volume-timecourse flag; hide the whole

@@ -1,3 +1,13 @@
+## 1.0.0-rc.191 (2026-11-13)
+
+### Fixes
+
+- **niivue:** one header panel colour on both backends ([9f130f21](https://github.com/niivue/mono/commit/9f130f21))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.190 (2026-11-13)
 
 ### Fixes

@@ -55,10 +55,23 @@ function pageIds(dir: string, docsDir: string): string[] {
     .map((page) => page.id)
 }
 
+/** A package's collapsed sidebar group: its overview first, then its pages. */
+function packageGroup(
+  label: string,
+  overview: string,
+  pages: string[] = [],
+): SidebarItem {
+  return {
+    label,
+    collapsed: true,
+    items: [{ label: 'Overview', slug: overview }, ...pages],
+  }
+}
+
 /**
- * The sidebar's Packages section: a link for a one-page package, a collapsed
- * group for a larger one. Fails when a package folder is missing from
- * PACKAGES, or a listed package has no docs/index page.
+ * The sidebar's Packages section: one collapsed group per package, however
+ * many pages it has. Fails when a package folder is missing from PACKAGES,
+ * or a listed package has no docs/index page.
  */
 export function packagesSection(packagesDir: string): SidebarItem {
   const listed = new Set(PACKAGES.map((p) => p.dir))
@@ -72,7 +85,7 @@ export function packagesSection(packagesDir: string): SidebarItem {
   }
   const items: SidebarItem[] = [
     { label: 'All packages', link: '/packages/' },
-    { label: 'niivue', link: '/guide/' },
+    packageGroup('niivue', 'guide'),
   ]
   for (const { dir, label } of PACKAGES) {
     const docsDir = path.join(packagesDir, dir, 'docs')
@@ -83,12 +96,8 @@ export function packagesSection(packagesDir: string): SidebarItem {
       problems.push(`packages/${dir}/docs/index.mdx is missing`)
       continue
     }
-    const pages = pageIds(dir, docsDir)
-    items.push(
-      pages.length > 1
-        ? { label, collapsed: true, items: pages }
-        : { label, link: `/packages/${dir}/` },
-    )
+    const [overview, ...pages] = pageIds(dir, docsDir)
+    items.push(packageGroup(label, overview, pages))
   }
   if (problems.length > 0)
     throw new Error(`Package docs:\n  ${problems.join('\n  ')}`)

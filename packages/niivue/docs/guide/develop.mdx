@@ -85,12 +85,12 @@ the sidebar, built from `packages/<name>/docs`:
 
 - `docs/index.mdx` is required. It becomes `/packages/<name>/`; another
   page, `docs/hosts.mdx` say, becomes `/packages/<name>/hosts/`.
-- Each page needs a `title` and a `description` in its frontmatter. With
-  more than one page, `sidebar: { order: N }` sets their order, and the
-  index usually sets `sidebar: { label: Overview, order: 0 }`.
-- A package with one page is a single sidebar link; with more, a group
-  named in `PACKAGES` in `apps/docs/src/sidebar.ts`. A new package must be
-  added there, or the build fails.
+- Each page needs a `title` and a `description` in its frontmatter; the
+  index's title is the package name. `sidebar: { order: N }` sets the order
+  of the other pages.
+- Each package is a collapsed sidebar group, named in `PACKAGES` in
+  `apps/docs/src/sidebar.ts`: its index first, as Overview, then its other
+  pages. A new package must be added there, or the build fails.
 - Files starting with `_` are skipped. Notes that are not for the site,
   such as design docs and TODO lists, go in the package's `notes` folder.
 

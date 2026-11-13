@@ -284,6 +284,7 @@ export function tilesForLevel(
   const { dsX, dsY } = span
   const { tileWidth, tileHeight, viewLeft, viewTop, viewBottom } = span
   const screenScale = slide.viewport.scale * dpr
+  const flipY = slide.isYAxisUp()
   const tiles: NVSlideVisibleTile[] = []
   for (let y = firstY; y <= lastY; y++) {
     for (let x = firstX; x <= lastX; x++) {
@@ -293,7 +294,7 @@ export function tilesForLevel(
       const baseY = tile.y * tileHeight * dsY
       const baseWidth = tile.width * dsX
       const baseHeight = tile.height * dsY
-      const screenY = slide.isYAxisUp()
+      const screenY = flipY
         ? (viewBottom - (baseY + baseHeight)) * screenScale
         : (baseY - viewTop) * screenScale
       tiles.push({
@@ -305,7 +306,7 @@ export function tilesForLevel(
         screenY,
         screenWidth: baseWidth * screenScale,
         screenHeight: baseHeight * screenScale,
-        flipY: slide.isYAxisUp(),
+        flipY,
       })
     }
   }

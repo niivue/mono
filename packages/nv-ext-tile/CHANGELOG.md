@@ -1,3 +1,42 @@
+## 1.0.0-rc.109 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** read TIFF pixel spacing into the slide manifest ([36e3aa19](https://github.com/niivue/mono/commit/36e3aa19))
+
+### Fixes
+
+- **nv-ext-tile:** an unreadable spacing source only voids its own branch ([493c2fd8](https://github.com/niivue/mono/commit/493c2fd8))
+- **nv-ext-tile:** parse slide base URLs without URL.parse ([8979629e](https://github.com/niivue/mono/commit/8979629e))
+- **nv-ext-tile:** a failed XMP read gives no spacing, not the resolution tags ([5c0aaf08](https://github.com/niivue/mono/commit/5c0aaf08))
+- **nv-ext-tile:** Ventana spacing comes from ScanRes or not at all ([3af7d913](https://github.com/niivue/mono/commit/3af7d913))
+- **niivue:** a source-backed slide keeps its manifest URL in a document ([47a00b18](https://github.com/niivue/mono/commit/47a00b18))
+- **nv-ext-tile:** OME PhysicalSizeX alone gives square pixels ([ac8d51c5](https://github.com/niivue/mono/commit/ac8d51c5))
+- **nv-ext-tile:** save a hosted manifest's same-origin baseUrl as a path ([ce12a702](https://github.com/niivue/mono/commit/ce12a702))
+- **nv-ext-tile:** decode XML entities in OME spacing units ([c048186b](https://github.com/niivue/mono/commit/c048186b))
+- **nv-ext-tile:** keep a hosted manifest's custom baseUrl in its saved descriptor ([4e03f5f0](https://github.com/niivue/mono/commit/4e03f5f0))
+- **nv-ext-tile:** Leica spacing from the opened region, not a size match ([445d8162](https://github.com/niivue/mono/commit/445d8162))
+- **nv-ext-tile:** Leica spacing from the region level 0 shows ([588efd69](https://github.com/niivue/mono/commit/588efd69))
+- **nv-ext-tile:** save and restore placement: false now that vendor TIFF placement is the default ([5ef2efe0](https://github.com/niivue/mono/commit/5ef2efe0))
+- **nv-ext-tile:** Leica spacing from displayed brightfield regions only ([84c626d0](https://github.com/niivue/mono/commit/84c626d0))
+- **nv-ext-tile:** Philips spacing from representation 0, not the first listed ([196adafe](https://github.com/niivue/mono/commit/196adafe))
+- **nv-ext-tile:** resolveSlideSource reopens DZI without the custom fetch and keeps TIFF placement ([a4690fa2](https://github.com/niivue/mono/commit/a4690fa2))
+- **nv-ext-tile:** Leica spacing needs the regions to agree on Y too ([1458c292](https://github.com/niivue/mono/commit/1458c292))
+- **nv-ext-tile:** an unreadable TIFF resolution tag no longer blocks opening ([912188e0](https://github.com/niivue/mono/commit/912188e0))
+- **nv-ext-tile:** a DICOM 1\1 PixelSpacing placeholder is no spacing ([00769f01](https://github.com/niivue/mono/commit/00769f01))
+- **niivue, nv-ext-tile:** address audit of slide source restore ([4701d00a](https://github.com/niivue/mono/commit/4701d00a))
+- **niivue, nv-ext-tile:** restore a saved slide's source and focal plane ([1f6b8f4f](https://github.com/niivue/mono/commit/1f6b8f4f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.200
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.108 (2026-11-13)
 
 ### Updated Dependencies

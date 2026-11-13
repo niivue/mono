@@ -1,3 +1,22 @@
+## 1.0.0-rc.200 (2026-11-13)
+
+### Features
+
+- **niivue:** metre and kilometre steps for the auto ruler ([b767242f](https://github.com/niivue/mono/commit/b767242f))
+
+### Fixes
+
+- **niivue:** a source-backed slide keeps its manifest URL in a document ([47a00b18](https://github.com/niivue/mono/commit/47a00b18))
+- **niivue:** a bad saved channel blend keeps the slide plane; no-resolver slide restore uses the embedded manifest ([fe634ace](https://github.com/niivue/mono/commit/fe634ace))
+- **niivue, nv-ext-tile:** address audit of slide source restore ([4701d00a](https://github.com/niivue/mono/commit/4701d00a))
+- **niivue, nv-ext-tile:** restore a saved slide's source and focal plane ([1f6b8f4f](https://github.com/niivue/mono/commit/1f6b8f4f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.199 (2026-11-13)
 
 ### Features

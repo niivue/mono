@@ -37,8 +37,9 @@ export async function findGuide(id: string): Promise<Guide | undefined> {
 
 /**
  * The guide's MDX as plain Markdown: imports dropped, each `<Demo>` replaced
- * by the code it runs, and site links made absolute against `site` (the docs
- * root URL). Any other component would pass through as written.
+ * by the code it runs, `<Tabs>` unwrapped into labelled panels, and site
+ * links made absolute against `site` (the docs root URL). Any other component
+ * would pass through as written.
  */
 export function guideMarkdown(entry: Guide, site: URL): string {
   const out: string[] = []
@@ -53,9 +54,13 @@ export function guideMarkdown(entry: Guide, site: URL): string {
       out.push(line)
     } else if (/^import .+ from '[^']+'$/.test(line)) {
       // MDX imports mean nothing outside the site.
+    } else if (/^\s*<(\/?Tabs|\/TabItem)\b[^>]*>\s*$/.test(line)) {
+      // Tab panels read in order, each under its label.
     } else {
+      const tab = /^\s*<TabItem label="([^"]+)"/.exec(line)
       const demo = /^<Demo name="([\w-]+)"[^>]*\/>$/.exec(line)
-      if (demo) out.push('```ts', DEMO_NOTE, demoSource(demo[1]), '```')
+      if (tab) out.push(`**${tab[1]}**`)
+      else if (demo) out.push('```ts', DEMO_NOTE, demoSource(demo[1]), '```')
       else out.push(line.replace(/\]\(\/(?!\/)/g, `](${site.href}`))
     }
   }

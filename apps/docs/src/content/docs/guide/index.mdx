@@ -3,21 +3,47 @@ title: Getting started
 description: "Install NiiVue, show an image on a canvas, choose WebGL2 or WebGPU, change settings, and see what changed from NiiVue 0.x."
 ---
 
-import Demo from '../../../components/Demo.astro'
-
-NiiVue shows volumes, meshes, tractography and signals in the browser. It
-renders with WebGPU or WebGL2 and needs no server beyond something that can
-serve your files.
+import { TabItem, Tabs } from '@astrojs/starlight/components'
 
 ## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
 
 ```bash
 npm install @niivue/niivue@next
 ```
 
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
 ## A first viewer
 
 Add a `<canvas>`, attach a viewer to it, and load an image:
+
+<Tabs syncKey="framework">
+  <TabItem label="HTML" icon="seti:html">
 
 ```html
 <canvas id="gl1"></canvas>
@@ -30,15 +56,38 @@ Add a `<canvas>`, attach a viewer to it, and load an image:
 </script>
 ```
 
-The viewer fills its canvas, so size the canvas (or its parent) with CSS.
-The same few lines run live here:
+  </TabItem>
+  <TabItem label="React" icon="seti:react">
 
-<Demo name="minimal" />
+```tsx
+import NiiVue from '@niivue/niivue'
+import { useEffect, useRef } from 'react'
 
-Every demo on this site is a small module: it receives a canvas and returns
-the viewer, and the code under each one is the code that runs. The
-[Gallery](/gallery/) has every example page from the repository with its
-source.
+export function Viewer({ url }: { url: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const nvRef = useRef<NiiVue>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const nv = new NiiVue()
+    nvRef.current = nv
+    const attached = nv.attachToCanvas(canvas)
+    return () => {
+      attached.then(() => nv.destroy())
+    }
+  }, [])
+
+  useEffect(() => {
+    nvRef.current?.loadVolumes([{ url }])
+  }, [url])
+
+  return <canvas ref={canvasRef} />
+}
+```
+
+  </TabItem>
+</Tabs>
 
 ## WebGPU or WebGL2
 

@@ -29,12 +29,15 @@ const guideGroups = [
       'guide/fonts',
     ],
   },
-  { label: 'Reference', items: ['reference/migrating'] },
 ] satisfies Sidebar
 
 const resourcesGroup = {
   label: 'Resources',
-  items: [{ label: 'Gallery', link: '/gallery/' }, 'guide/develop'],
+  items: [
+    { label: 'Gallery', link: '/gallery/' },
+    'reference/migrating',
+    'guide/develop',
+  ],
 } satisfies Sidebar[number]
 
 /** Every NiiVue page in reading order, without the Packages section. */

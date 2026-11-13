@@ -305,3 +305,86 @@ test('an unavailable saved source is skipped, not shown as broken tiles', async 
     nv.destroy()
   }
 })
+
+for (const call of ['set', 'clear'] as const) {
+  test(`a caller's ${call}SlidePlane supersedes a pending document slide restore`, async () => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    const bytes = saved()
+    const mine = new NVSlide(manifest)
+    const entered = Promise.withResolvers<void>()
+    const pending = Promise.withResolvers<Response>()
+    const originalFetch = globalThis.fetch
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(((
+      input,
+      init,
+    ) => {
+      if (input !== manifestUrl) return originalFetch(input, init)
+      entered.resolve()
+      return pending.promise
+    }) as typeof fetch)
+    const dispose = spyOn(NVSlide.prototype, 'dispose')
+    try {
+      const load = nv.loadDocument(documentFile(bytes))
+      await entered.promise
+      if (call === 'set') nv.setSlidePlane(mine, { pixelToWorld: transform })
+      else nv.clearSlidePlane()
+      const set = spyOn(nv, 'setSlidePlane')
+      pending.resolve(Response.json(manifest))
+      await load
+      expect(set).not.toHaveBeenCalled()
+      set.mockRestore()
+      expect(nv.slidePlaneIndex).toEqual(call === 'set' ? { z: 0, t: 0 } : null)
+      // The restored slide is disposed, the caller's is not.
+      expect(dispose).toHaveBeenCalledTimes(1)
+      expect(dispose.mock.contexts[0]).not.toBe(mine)
+    } finally {
+      dispose.mockRestore()
+      fetchMock.mockRestore()
+      nv.destroy()
+      mine.dispose()
+    }
+  })
+}
+
+function sourceDoc(): Record<string, unknown> & {
+  slidePlane: Record<string, unknown>
+} {
+  const before = new NiiVue({ backend: 'webgl2' })
+  const slide = NVSlide.fromSource(planeSource())
+  before.setSlidePlane(slide, { pixelToWorld: transform })
+  const bytes = before.serializeDocument({ format: 'json' })
+  before.destroy()
+  slide.dispose()
+  return parseJsonDocument(bytes) as ReturnType<typeof sourceDoc>
+}
+
+test('an invalid saved channel blend keeps the plane and its reopened source', async () => {
+  const doc = sourceDoc()
+  doc.slidePlane.channelBlend = 'bogus'
+  const src = planeSource()
+  const warnings = captureWarnings()
+  const nv = new NiiVue({ backend: 'webgl2' })
+  try {
+    await nv.loadDocument(documentFile(JSON.stringify(doc)), {
+      resolveSource: () => src,
+    })
+    expect(nv.slidePlaneIndex).toEqual({ z: 0, t: 0 })
+    expect(warnings.messages.join('\n')).toContain('channel blend')
+    expect(src.disposed).toBe(false)
+    nv.destroy()
+    expect(src.disposed).toBe(true)
+  } finally {
+    warnings.restore()
+    nv.destroy()
+  }
+})
+
+test('a saved source falls back to the embedded manifest without a resolver', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  try {
+    await nv.loadDocument(documentFile(JSON.stringify(sourceDoc())))
+    expect(nv.slidePlaneIndex).toEqual({ z: 0, t: 0 })
+  } finally {
+    nv.destroy()
+  }
+})

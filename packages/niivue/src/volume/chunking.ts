@@ -13,6 +13,7 @@
  */
 
 import { log } from '@/logger'
+import { residentBytesForChunkDesc } from './chunkBudget'
 
 export type Vec3i = [number, number, number]
 
@@ -638,10 +639,8 @@ export function chunksToKeepResident(
   const litNew = new Set<number>()
   for (const [oi, ni] of oldToNew) if (hasGradient(oi)) litNew.add(ni)
   let bytes = 0
-  for (let i = 0; i < newPlan.chunks.length; i++) {
-    const [tx, ty, tz] = newPlan.chunks[i].texDims
-    bytes += tx * ty * tz * (litNew.has(i) ? 8 : 4)
-  }
+  for (let i = 0; i < newPlan.chunks.length; i++)
+    bytes += residentBytesForChunkDesc(newPlan.chunks[i], litNew.has(i))
   if (bytes <= budgetBytes) return keep
   for (const ci of oldToNew.keys()) if (hasGradient(ci)) keep.delete(ci)
   return keep

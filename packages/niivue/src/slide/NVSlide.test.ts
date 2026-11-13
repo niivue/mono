@@ -1130,8 +1130,9 @@ describe('NVSlide padded frames', () => {
     const crops: number[][] = []
     globalThis.createImageBitmap = (async (
       _src: unknown,
-      ...rect: number[]
+      ...args: unknown[]
     ) => {
+      const rect = args.slice(0, 4) as number[]
       crops.push(rect)
       const [, , width, height] = rect
       return { width, height, close() {} }

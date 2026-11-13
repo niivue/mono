@@ -29,7 +29,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       }
       const lib = await import('/src/index.ts')
       const n = 8, t = 4
-      const slideWith = (backgroundColor) => {
+      const slideWith = (backgroundColor, alpha = 255) => {
         const tiles = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }]
           .map((p) => ({ ...p, width: t, height: t }))
         return lib.NVSlide.fromSource({
@@ -42,7 +42,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
             const rgba = new Uint8Array(t * t * 4)
             for (let j = 0; j < t; j++)
               for (let i = 0; i < t; i++)
-                rgba.set((tile.x * t + i + tile.y * t + j) & 1 ? [0, 0, 255, 255] : [255, 0, 0, 255],
+                rgba.set((tile.x * t + i + tile.y * t + j) & 1 ? [0, 0, 255, alpha] : [255, 0, 0, alpha],
                   4 * (j * t + i))
             return rgba
           },
@@ -127,6 +127,17 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         if (g > 118 && g < 138) out.annotation.half++
         else if (g > 5 || (r > 5 && r < 250) || (b > 5 && b < 250)) out.annotation.other++
       }
+      // Half-alpha tiles over black: brightest red is 255 x 0.5, not x 0.25.
+      const half = slideWith(null, 128)
+      const halfKeys = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => half.tileKey(half.manifest.levels[0], { x, y }))
+      nv.setSlidePlane(half, { pixelToWorld, levelIndex: 0 })
+      for (let i = 0; i < 100 && !halfKeys.every((k) => half.cachedTile(k)); i++) {
+        nv.getCanvasImage()
+        await new Promise((res) => setTimeout(res, 20))
+      }
+      const halfImg = nv.getCanvasImage().data
+      out.halfRed = 0
+      for (let i = 0; i < halfImg.length; i += 4) out.halfRed = Math.max(out.halfRed, halfImg[i])
       nv.destroy()
       canvas.remove()
       return out
@@ -139,6 +150,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       label: { nearest: Census; linear: Census }
       mixed: { nearest: Census; linear: Census }
       annotation: { half: number; other: number; translucent: number }
+      halfRed: number
     }
     test.skip(Boolean(r.skip), r.skip)
     const { absent, none } = r
@@ -163,6 +175,8 @@ for (const backend of ['webgl2', 'webgpu'] as const)
     expect(r.annotation.translucent).toBe(0)
     expect(r.annotation.half).toBeGreaterThan(2500)
     expect(r.annotation.other).toBeLessThan(r.annotation.half / 50)
+    // WebGL2 once uploaded tile bitmaps premultiplied: 64, not 128.
+    expect(Math.abs(r.halfRed - 128)).toBeLessThan(4)
   })
 
 // PL9 pixels: a placed slide (e2e/slide-placement.spec.ts: 3 frames of 16 px,

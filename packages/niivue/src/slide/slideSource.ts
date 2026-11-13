@@ -68,6 +68,11 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 // Tile-codec registry. Built-ins cover the browser-native paths; additional
 // codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
 // consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
+// Bitmaps keep straight alpha: WebGL2 uploads a default (premultiplied in
+// Chrome) bitmap as is, ignoring UNPACK_PREMULTIPLY_ALPHA, so a translucent
+// tile drew colour x alpha^2 there while WebGPU drew colour x alpha.
+const STRAIGHT: ImageBitmapOptions = { premultiplyAlpha: 'none' }
+
 export const tileDecoders = new Map<string, SlideTileDecoder>([
   [
     'image/jpeg',
@@ -75,6 +80,7 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
     // (NVSlide.colorLut), not an APP2 segment inside a tile.
     (bytes) =>
       createImageBitmap(new Blob([unshared(bytes)], { type: 'image/jpeg' }), {
+        ...STRAIGHT,
         colorSpaceConversion: 'none',
       }),
   ],
@@ -94,6 +100,7 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
           width,
           height,
         ),
+        STRAIGHT,
       )
     },
   ],
@@ -697,6 +704,7 @@ export async function decodeTileBitmap(
       0,
       Math.min(bitmap.width, tile.width),
       Math.min(bitmap.height, tile.height),
+      STRAIGHT,
     )
   } finally {
     bitmap.close()

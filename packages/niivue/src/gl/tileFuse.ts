@@ -9,7 +9,6 @@ import {
   fuseUniforms,
   type LabelTable,
   labelUniforms,
-  liveLabelTables,
   pruneLabelTables,
   type RawFormat,
   rawFormat,
@@ -95,7 +94,8 @@ const SAMPLERS: Record<RawFormat, string> = {
 }
 
 export class TileFuserGL {
-  private _gl: WebGL2RenderingContext | null = null
+  /** The context tiles are fused in; the renderer sets it in `init`. */
+  gl: WebGL2RenderingContext | null = null
   private readonly _pool: TileTextureCache<RawGL>
   private readonly _luts = new FuseLutRows()
   private _lutTexture: WebGLTexture | null = null
@@ -110,7 +110,7 @@ export class TileFuserGL {
 
   constructor(maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) {
     this._pool = new TileTextureCache<RawGL>(maxRawPoolBytes, (raw) =>
-      this._gl?.deleteTexture(raw.texture),
+      this.gl?.deleteTexture(raw.texture),
     )
   }
 
@@ -121,13 +121,13 @@ export class TileFuserGL {
 
   /** The tile texture of scalar `tile`, queued for `flush` (see `fuseTarget`). */
   textureFor(
-    gl: WebGL2RenderingContext,
     gutter: TileGutterGL,
     cache: TileTextureCache<TileTextureGL>,
     at: GutterAt,
     slide: NVSlide,
     tile: FuseTile,
   ): TileTextureGL | null {
+    const gl = this.gl as WebGL2RenderingContext
     this._maxTexture ||= gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
     return fuseTarget(
       this._jobs,
@@ -137,9 +137,9 @@ export class TileFuserGL {
       tile,
       this._maxTexture,
       (width, height, labels) => {
-        const t = gutter.create(gl, width, height, at)
+        const t = gutter.create(width, height, at)
         // Read with texelFetch (nearest), so it needs no gutter of its own.
-        if (labels) t.labels = gutter.create(gl, width, height, at).texture
+        if (labels) t.labels = gutter.create(width, height, at).texture
         return t
       },
     )
@@ -147,7 +147,6 @@ export class TileFuserGL {
 
   /** Fuse the queued tiles, then refresh their gutters (`sync` false: defer). */
   flush(
-    gl: WebGL2RenderingContext,
     gutter: TileGutterGL,
     cache: TileTextureCache<TileTextureGL>,
     sync: boolean,
@@ -155,7 +154,7 @@ export class TileFuserGL {
     const jobs = this._jobs
     if (jobs.length === 0) return
     this._jobs = []
-    this._gl = gl
+    const gl = this.gl as WebGL2RenderingContext
     for (const job of jobs)
       for (const l of job.plan.layers) this._luts.row(l.colormap)
     // The callers draw mid-frame (NVViewGL's slide plane): keep their state.
@@ -283,7 +282,6 @@ export class TileFuserGL {
     gl.activeTexture(saved.active)
 
     gutter.sync(
-      gl,
       jobs.map((j) => j.target),
       cache,
       sync,
@@ -401,27 +399,21 @@ export class TileFuserGL {
    * Free the label tables (CPU and GPU) no slide in `slides` uses: a replaced
    * label slide's tables go on the next frame. No-op without tables.
    */
-  retainLabelTables(
-    gl: WebGL2RenderingContext,
-    slides: readonly NVSlide[],
-  ): void {
+  retainLabelTables(slides: readonly NVSlide[]): void {
     if (this._tables.size === 0) return
-    pruneLabelTables(this._tables, liveLabelTables(slides), (t) =>
-      gl.deleteTexture(t),
-    )
+    pruneLabelTables(this._tables, slides, (t) => this.gl?.deleteTexture(t))
   }
 
   /** Drop the pooled raw layers and label tables (tile textures belong to the caller's cache). */
   clear(): void {
     this._pool.clear()
     this._jobs = []
-    for (const texture of this._tables.values())
-      this._gl?.deleteTexture(texture)
+    for (const texture of this._tables.values()) this.gl?.deleteTexture(texture)
     this._tables.clear()
   }
 
-  destroy(gl: WebGL2RenderingContext | null): void {
-    this._gl = gl
+  destroy(): void {
+    const gl = this.gl
     this.clear()
     for (const shader of this._shaders.values())
       gl?.deleteProgram(shader.program)

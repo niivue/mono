@@ -248,6 +248,25 @@ export function tileSpan(
   }
 }
 
+/** The centred block of at most `limit` cells of inclusive cell range `span`, shaped like it. */
+export function centredBlock(
+  span: { firstX: number; lastX: number; firstY: number; lastY: number },
+  limit: number,
+) {
+  const spanW = span.lastX - span.firstX + 1
+  const spanH = span.lastY - span.firstY + 1
+  // w <= limit keeps w * h <= limit when the span is a single row (#666).
+  const w = clamp(
+    Math.floor(Math.sqrt((limit * spanW) / spanH)),
+    1,
+    Math.min(spanW, limit),
+  )
+  const h = clamp(Math.floor(limit / w), 1, spanH)
+  const firstX = span.firstX + Math.floor((spanW - w) / 2)
+  const firstY = span.firstY + Math.floor((spanH - h) / 2)
+  return { firstX, lastX: firstX + w - 1, firstY, lastY: firstY + h - 1 }
+}
+
 /**
  * The tiles of one pyramid level covering the current viewport, or when more
  * than `limit` do, the centred block of at most `limit` shaped like the view.
@@ -260,25 +279,12 @@ export function tilesForLevel(
   span = tileSpan(slide.manifest, slide.viewport, level, screen),
 ): NVSlideVisibleTile[] {
   const dpr = screen.devicePixelRatio ?? 1
-  let { firstX, lastX, firstY, lastY } = span
-  if (span.count > limit) {
-    const spanW = lastX - firstX + 1
-    const spanH = lastY - firstY + 1
-    // w <= limit keeps w * h <= limit when the span is a single row (#666).
-    const w = clamp(
-      Math.floor(Math.sqrt((limit * spanW) / spanH)),
-      1,
-      Math.min(spanW, limit),
-    )
-    const h = clamp(Math.floor(limit / w), 1, spanH)
-    firstX += Math.floor((spanW - w) / 2)
-    firstY += Math.floor((spanH - h) / 2)
-    lastX = firstX + w - 1
-    lastY = firstY + h - 1
-  }
+  const { firstX, lastX, firstY, lastY } =
+    span.count > limit ? centredBlock(span, limit) : span
   const { dsX, dsY } = span
   const { tileWidth, tileHeight, viewLeft, viewTop, viewBottom } = span
   const screenScale = slide.viewport.scale * dpr
+  const flipY = slide.isYAxisUp()
   const tiles: NVSlideVisibleTile[] = []
   for (let y = firstY; y <= lastY; y++) {
     for (let x = firstX; x <= lastX; x++) {
@@ -288,7 +294,7 @@ export function tilesForLevel(
       const baseY = tile.y * tileHeight * dsY
       const baseWidth = tile.width * dsX
       const baseHeight = tile.height * dsY
-      const screenY = slide.isYAxisUp()
+      const screenY = flipY
         ? (viewBottom - (baseY + baseHeight)) * screenScale
         : (baseY - viewTop) * screenScale
       tiles.push({
@@ -300,7 +306,7 @@ export function tilesForLevel(
         screenY,
         screenWidth: baseWidth * screenScale,
         screenHeight: baseHeight * screenScale,
-        flipY: slide.isYAxisUp(),
+        flipY,
       })
     }
   }

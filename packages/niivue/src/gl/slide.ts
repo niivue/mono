@@ -1,12 +1,10 @@
 import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
-  NVSlideCachedTile,
   NVSlideScreen,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
-  isFuseTile,
   rawPoolBytes,
   SlideBudgetRegistration,
   type SlideRendererOptions,
@@ -18,20 +16,18 @@ import {
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import {
-  frameTextureBudget,
-  planTextures,
+  beginSlideFrame,
   SlideFramePlan,
+  screenPixels,
   writeRectNdc,
   writeTileUv,
 } from '@/slide/slideTiles'
-import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
-import { timeChunkPhase } from '@/volume/chunkTiming'
 import { ColorLutTexturesGL } from './colorLut'
 import { FontRenderer } from './font'
 import { setTexParams } from './glUtil'
@@ -107,6 +103,8 @@ export class SlideRenderer {
     if (this._isReady) return
 
     this._gl = gl
+    this._gutter.gl = gl
+    this._fuser.gl = gl
     this._nearestSampler = gl.createSampler()
     for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER])
       gl.samplerParameteri(this._nearestSampler, p, gl.NEAREST)
@@ -173,38 +171,22 @@ export class SlideRenderer {
     const gl = this._gl
     const placeholder = this._placeholderTexture
     if (!gl || !this._plainShader || !this._vao || !placeholder) return
-    this._fuser.retainLabelTables(gl, slides)
-    const dpr = screen.devicePixelRatio ?? 1
-    const width = Math.max(1, Math.floor(screen.widthCss * dpr))
-    const height = Math.max(1, Math.floor(screen.heightCss * dpr))
+    const [dpr, width, height] = screenPixels(screen)
     const nearest = this.isNearestInterpolation
     const plan = this._plan
-    plan.build(slides, screen)
-
-    // Evict BEFORE beginFrame so the previous frame's working set (still
-    // marked with the current frame stamp) is exempt; see TileTextureCache.
-    this._textures.evictToBudget(
-      frameTextureBudget(plan.fuses, this._fuser.poolBytes, this._maxPoolBytes),
-    )
-    this._textures.beginFrame()
-    gl.activeTexture(gl.TEXTURE0)
-    if (!nearest) this._gutter.resync(gl, this._textures)
     const textures = this._planTextures
-    planTextures(
+    gl.activeTexture(gl.TEXTURE0)
+    beginSlideFrame(
+      plan,
+      slides,
+      screen,
       this._textures,
-      plan.uploadAt,
-      plan.uploadCached,
-      (i) =>
-        this.textureFor(
-          gl,
-          plan.uploadAt[i] as GutterAt,
-          plan.uploads[i] as NVSlideVisibleTile,
-          plan.uploadCached[i] as NVSlideCachedTile,
-        ),
+      this._fuser,
+      this._gutter,
+      this._maxPoolBytes,
+      nearest,
       textures,
     )
-    // Nearest needs no gutter (the shader clamps); resync fills it.
-    this._fuser.flush(gl, this._gutter, this._textures, !nearest)
 
     // Self-contained: own the full canvas viewport and clear it each frame so
     // the demo just calls render() once per frame.
@@ -350,11 +332,11 @@ export class SlideRenderer {
   destroy(): void {
     this._budget.clear()
     this._textures.clear()
-    this._fuser.destroy(this._gl)
+    this._fuser.destroy()
     this._luts.clear(this._gl)
     this._lines.destroy()
     this._font.destroy()
-    this._gutter.destroy(this._gl)
+    this._gutter.destroy()
     const gl = this._gl
     if (gl) {
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
@@ -395,49 +377,5 @@ export class SlideRenderer {
     // expects both off.
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
-  }
-
-  private textureFor(
-    gl: WebGL2RenderingContext,
-    at: GutterAt,
-    item: NVSlideVisibleTile,
-    cached: NVSlideCachedTile,
-  ): TileTextureGL | null {
-    if (isFuseTile(cached))
-      return this._fuser.textureFor(
-        gl,
-        this._gutter,
-        this._textures,
-        at,
-        item.slide,
-        cached,
-      )
-    return cached.bitmap ? this.textureForBitmap(gl, at, cached.bitmap) : null
-  }
-
-  private textureForBitmap(
-    gl: WebGL2RenderingContext,
-    at: GutterAt,
-    bitmap: ImageBitmap,
-  ): TileTextureGL | null {
-    // Keyed by the bitmap too: a refetched tile is a new bitmap (set() replaces).
-    const existing = this._textures.get(at.key, bitmap)
-    if (existing) return existing
-    // Timed as `upload` alongside the volume path's brick uploads: a slide tile
-    // and a volume brick are two consumers of the same streamed source, and
-    // both pay their texture cost on this thread.
-    return timeChunkPhase(
-      'upload',
-      () =>
-        this._gutter.upload(
-          gl,
-          bitmap,
-          at,
-          this._textures,
-          // Nearest needs no gutter (the shader clamps); resync fills it.
-          !this.isNearestInterpolation,
-        ),
-      bitmap.width * bitmap.height * 4,
-    )
   }
 }

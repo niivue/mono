@@ -270,12 +270,11 @@ export function destroyRGBATextureCache(cache: RGBATextureCache | null): void {
   cache?.texture.destroy()
 }
 
-function getTextureFormat(nvimage: NVImage): {
+export function getTextureFormat(dt: number): {
   format: GPUTextureFormat
   pipelineType: string
   bytesPerVoxel: number
 } {
-  const dt = nvimage.hdr.datatypeCode
   if (dt === 2)
     return { format: 'r8uint', pipelineType: 'uint', bytesPerVoxel: 1 }
   if (dt === 4)
@@ -301,7 +300,12 @@ function orientColormapKey(nvimage: NVImage, isLabelVol: boolean): string {
   return `${NVCmaps.colormapKey(nvimage.colormap)}:${NVCmaps.colormapKey(nvimage.colormapNegative)}:${nvimage.isColormapInverted ? 1 : 0}`
 }
 
-function writeOrientUniforms(
+/**
+ * `outline` false turns atlasOutline off: it probes neighbours in the source
+ * texture, and a chunk's texture is a tile of the volume, so probes at a seam
+ * would read the neighbouring chunk's edge and draw a spurious border.
+ */
+export function writeOrientUniforms(
   device: GPUDevice,
   uniformBuffer: GPUBuffer,
   nvimage: NVImage,
@@ -309,6 +313,7 @@ function writeOrientUniforms(
   overlayOpacity: number,
   mod: ModulationTextureParams | null = null,
   keepColormapAlpha = false,
+  outline = true,
 ): void {
   const ab = new ArrayBuffer(ORIENT_UNIFORM_SIZE)
   const dv = new DataView(ab)
@@ -330,7 +335,7 @@ function writeOrientUniforms(
   const modMtx = mod ? mod.mtx : IDENTITY_MTX
   for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, modMtx[i], true)
   dv.setFloat32(176, mod ? mod.mode : 0, true)
-  dv.setFloat32(180, u.atlasOutline, true)
+  dv.setFloat32(180, outline ? u.atlasOutline : 0, true)
   dv.setFloat32(184, keepColormapAlpha ? 1 : 0, true)
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
@@ -394,7 +399,9 @@ export async function prepareOrientTextureCache(
   if (!nvimage.dimsRAS || !nvimageTarget.dimsRAS)
     throw new Error('overlay2Texture: missing dimsRAS')
   if (!nvimage.img) throw new Error('overlay2Texture: missing image data')
-  const { format, pipelineType, bytesPerVoxel } = getTextureFormat(nvimage)
+  const { format, pipelineType, bytesPerVoxel } = getTextureFormat(
+    nvimage.hdr.datatypeCode,
+  )
   const dimsIn = [nvimage.dims[1], nvimage.dims[2], nvimage.dims[3]]
   const dimsOut = [
     nvimageTarget.dimsRAS[1],

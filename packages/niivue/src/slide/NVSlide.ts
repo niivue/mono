@@ -95,6 +95,12 @@ export interface NVSlideWindow {
  * slides read alike. A non-finite calMin or calMax means the stored range's
  * end (0 or 2^bitsStored - 1), as a volume's means its default window.
  */
+// Frozen at each (rare) write so liveChannels can hand out the array uncopied.
+function frozenChannels(channels: NVChannel[]): readonly NVChannel[] {
+  for (const ch of channels) Object.freeze(ch)
+  return Object.freeze(channels)
+}
+
 export interface NVChannel {
   name: string
   /** A NiiVue colormap name ('gray', 'red', ...). */
@@ -214,9 +220,16 @@ export type NVSlideRequestClass =
 /** One consumer's set of wanted tiles; cancelling it never cancels a read another owner wants. */
 export interface NVSlideRequestOwner {
   readonly kind: NVSlideRequestClass
-  /** Replaces this owner's wanted set. `focus` (base px) orders its loads centre-out. */
+  /**
+   * Replaces this owner's wanted set. `focus` (base px) orders its loads
+   * centre-out. A tile's `key`, when given, must be its {@link NVSlide.tileKey}.
+   */
   want(
-    tiles: Iterable<{ level: NVSlideLevelManifest; tile: NVSlideTileManifest }>,
+    tiles: Iterable<{
+      level: NVSlideLevelManifest
+      tile: NVSlideTileManifest
+      key?: string
+    }>,
     focus?: { x: number; y: number },
   ): void
   /** Idempotent. */
@@ -824,7 +837,7 @@ export class NVSlide extends EventTarget {
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
     )
     this._colorManagement = options.colorManagement ?? true
-    this._channels = defaultSlideChannels(this.manifest)
+    this._channels = frozenChannels(defaultSlideChannels(this.manifest))
     this._setShown(this._channels)
     this._rgb = isRgbSlide(this.manifest)
     this._source = options.source ?? new ManifestRangeSource(manifest)
@@ -1080,6 +1093,16 @@ export class NVSlide extends EventTarget {
   }
 
   /**
+   * The channels uncopied, for the per-tile fuse: a W/L drag re-fuses every
+   * tile each frame. setChannel replaces, never mutates, this array; it and
+   * its channels are frozen, so a JS caller cannot write past setChannel.
+   * @internal
+   */
+  get liveChannels(): readonly Readonly<NVChannel>[] {
+    return this._channels
+  }
+
+  /**
    * Update channel `c`. Renderers re-fuse cached sample tiles from their kept
    * planes on the next frame; showing a channel they were fetched without
    * refetches them. Tiles a decoder returned as bitmaps (JPEG, RGBA) are drawn
@@ -1113,7 +1136,7 @@ export class NVSlide extends EventTarget {
       throw new RangeError(`Unknown colormap "${next.colormap}"`)
     const channels = [...this._channels]
     channels[c] = next
-    this._channels = channels
+    this._channels = frozenChannels(channels)
     if ('calMin' in update || 'calMax' in update) {
       if (Number.isFinite(next.calMin) || Number.isFinite(next.calMax))
         this._userWindows.add(c)
@@ -1141,7 +1164,7 @@ export class NVSlide extends EventTarget {
     if (usableWindow(window) && !this._userWindows.has(c)) {
       const channels = [...this._channels]
       channels[c] = { ...channel, ...window }
-      this._channels = channels
+      this._channels = frozenChannels(channels)
     }
     this._rerender()
   }
@@ -1910,7 +1933,11 @@ export class NVSlide extends EventTarget {
   // longer wants, cancelling those nobody else wants.
   private _want(
     o: OwnerState,
-    tiles: Iterable<{ level: NVSlideLevelManifest; tile: NVSlideTileManifest }>,
+    tiles: Iterable<{
+      level: NVSlideLevelManifest
+      tile: NVSlideTileManifest
+      key?: string
+    }>,
     focus?: { x: number; y: number },
   ): void {
     if (this._disposed) return
@@ -1921,7 +1948,7 @@ export class NVSlide extends EventTarget {
     let started = false
     for (const wanted of tiles) {
       const { level, tile } = wanted
-      const key = this.tileKey(level, tile)
+      const key = wanted.key ?? this.tileKey(level, tile)
       if (next.has(key)) continue
       next.set(key, wanted)
       const fresh = !o.keys.has(key)

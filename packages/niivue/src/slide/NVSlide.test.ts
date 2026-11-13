@@ -1654,6 +1654,21 @@ describe('NVSlide channels', () => {
     slide.dispose()
   })
 
+  it('hands out live channels frozen: a JS caller cannot bypass setChannel', () => {
+    const { slide } = planarSlide(threeChannels())
+    const live = slide.liveChannels as NVChannel[]
+    expect(() => {
+      ;(live[0] as NVChannel).visible = false
+    }).toThrow(TypeError)
+    expect(() => live.push(live[0] as NVChannel)).toThrow(TypeError)
+    slide.setChannel(0, { visible: false })
+    expect(() => {
+      ;(slide.liveChannels[0] as NVChannel).visible = true
+    }).toThrow(TypeError)
+    expect(slide.channels[0]?.visible).toBe(false)
+    slide.dispose()
+  })
+
   it('keeps only the known channel fields', () => {
     const { slide } = planarSlide(threeChannels())
     slide.setChannel(0, { extra: 7 } as Partial<NVChannel>)

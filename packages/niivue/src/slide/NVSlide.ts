@@ -45,6 +45,7 @@ import {
   readCapped,
   type SlidePlaneCapable,
   type SlideTileSource,
+  settleBy,
   tileDecoders,
 } from './slideSource'
 import { composeThumbnail } from './slideThumbnail'
@@ -992,35 +993,58 @@ export class NVSlide extends EventTarget {
   static async fromManifestUrl(
     manifestUrl: string,
     options: NVSlideOptions = {},
+    signal?: AbortSignal,
   ): Promise<NVSlide> {
+    signal?.throwIfAborted()
     const controller = new AbortController()
-    const response = await fetch(manifestUrl, { signal: controller.signal })
-    if (!response.ok) {
-      // A server may explain a refusal as JSON `{ error }`; keep its reason, but
-      // never let an error body that does not finish hold back the status.
-      const isJson = response.headers
-        .get('content-type')
-        ?.toLowerCase()
-        .includes('json')
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const body = isJson
-        ? ((await Promise.race([
-            response.json().catch(() => null),
-            new Promise((resolve) => {
-              timer = setTimeout(resolve, 1000, null)
-            }),
-          ])) as { error?: unknown } | null)
-        : null
-      clearTimeout(timer)
-      controller.abort() // releases a body read still pending, or never started
-      const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
-      throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
+    const readSignal = signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal
+    try {
+      const response = await settleBy(
+        readSignal,
+        fetch(manifestUrl, { signal: readSignal }),
+        (late) => {
+          late.body?.cancel().catch(() => {})
+        },
+      )
+      if (!response.ok) {
+        // Keep a server's JSON reason without waiting forever for its error body.
+        const isJson = response.headers
+          .get('content-type')
+          ?.toLowerCase()
+          .includes('json')
+        let timer: ReturnType<typeof setTimeout> | undefined
+        let body: { error?: unknown } | null = null
+        try {
+          if (isJson)
+            body = await settleBy(
+              readSignal,
+              Promise.race([
+                readCapped(response, MAX_WHOLE_FILE, readSignal)
+                  .then((bytes) => JSON.parse(new TextDecoder().decode(bytes)))
+                  .catch(() => null),
+                new Promise<null>((resolve) => {
+                  timer = setTimeout(resolve, 1000, null)
+                }),
+              ]),
+            )
+        } finally {
+          clearTimeout(timer)
+        }
+        const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
+        throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
+      }
+      const manifest = JSON.parse(
+        new TextDecoder().decode(
+          await readCapped(response, MAX_WHOLE_FILE, readSignal),
+        ),
+      ) as NVSlideManifest
+      readSignal.throwIfAborted()
+      return new NVSlide(manifest, { ...options, manifestUrl })
+    } finally {
+      controller.abort()
     }
-    // Untrusted: refused past the whole-file cap, Content-Length or not.
-    const manifest = JSON.parse(
-      new TextDecoder().decode(await readCapped(response, MAX_WHOLE_FILE)),
-    ) as NVSlideManifest
-    return new NVSlide(manifest, { ...options, manifestUrl })
   }
 
   /** Tile loads queued or in flight. */

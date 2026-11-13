@@ -275,7 +275,7 @@ export const MAX_WHOLE_FILE = 64 * 1024 * 1024
  * fetch may ignore its signal and settle late, or never. A value that arrives
  * after the abort goes to `late` (to release it).
  */
-function settleBy<T>(
+export function settleBy<T>(
   signal: AbortSignal,
   work: Promise<T>,
   late: (value: T) => void = () => {},

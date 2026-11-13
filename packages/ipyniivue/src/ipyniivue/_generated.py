@@ -1099,6 +1099,8 @@ and its volumes alive."""
         frame as a static volume and a streamed one is skipped with a warning. A
         newer `loadDocument` supersedes this one: its pending source opens are
         aborted and anything they would add is dropped.
+        Restored slides are viewer-owned: clearing or replacing the plane, or
+        destroying the viewer, disposes them. Reopen the document to reuse them.
 
         Parameters
         ----------
@@ -1923,6 +1925,8 @@ and its volumes alive."""
         cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
         With `isRulerVisible` and no 2D tile, the scale ruler draws on the render
         tile at its (orthographic) world-mm scale.
+        Caller-supplied slides remain caller-owned. Slides created by
+        `loadDocument` are viewer-owned and disposed when cleared or replaced.
 
         Parameters
         ----------

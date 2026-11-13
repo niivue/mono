@@ -1,12 +1,14 @@
 // Builds the gallery from packages/niivue/examples: the section cards in
 // examples/index.html give the order, grouping and link text, and the
 // repository knowledge graph (nx-tools/repo-graph.ts) gives each page's
-// summary and the scripts it loads.
+// summary and the scripts it loads. The demo apps listed on the Pages site's
+// own index (.github/pages/index.html) follow, under that page's headings.
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 export const EXAMPLES_DIR = 'packages/niivue/examples'
+export const PAGES_INDEX = '.github/pages/index.html'
 
 // Pages left out of the gallery.
 const HIDDEN = new Set<string>()
@@ -20,6 +22,8 @@ export type GalleryExample = {
   summary: string
   /** Page path relative to the examples site, e.g. `examples/vox.clip.html`. */
   page: string
+  /** The page's HTML file in the repository. */
+  source: string
   files: GalleryFile[]
 }
 
@@ -91,7 +95,7 @@ function dedent(code: string): string {
 
 // Page titles mostly read "NiiVue - Basic"; keep only what adds to the link text.
 function cleanSummary(summary: string | undefined, title: string): string {
-  const s = (summary ?? '').replace(/^NiiVue\s*[-:]?\s*/i, '').trim()
+  const s = (summary ?? '').replace(/^NiiVue\s*[-:\u2014]?\s*/i, '').trim()
   return s && s.toLowerCase() !== title.toLowerCase() ? s : ''
 }
 
@@ -135,8 +139,71 @@ export function collectGallery(
       section,
       summary: cleanSummary(node?.summary, title),
       page: `examples/${page}`,
+      source: `${EXAMPLES_DIR}/${page}`,
       files,
     })
   }
-  return examples
+  return [...examples, ...collectApps(repoRoot, nodes)]
+}
+
+// Pages-index headings as gallery sections; DANDI joins the examples'
+// own Streaming section.
+const APP_SECTIONS: Record<string, string> = {
+  'Streaming Demos': 'Streaming',
+  'Web Component Demos': 'Web Components',
+  'Extension Demos': 'Extensions',
+}
+
+// Demo apps from the Pages index: each <h1> heads a list of links to built
+// app pages (`<app>/<page>.html`, built from apps/<app>/<page>.html). Links
+// into examples/ are already in the gallery.
+function collectApps(
+  repoRoot: string,
+  nodes: Map<string, GraphNode>,
+): GalleryExample[] {
+  const html = readFileSync(path.join(repoRoot, PAGES_INDEX), 'utf8')
+  const apps: GalleryExample[] = []
+  for (const block of html.split(/<h1>/).slice(1)) {
+    const heading = block.slice(0, block.indexOf('</h1>')).trim()
+    const section = APP_SECTIONS[heading] ?? heading
+    for (const li of block.matchAll(
+      /<a\s+href="\.\/([^"]+\.html)"[^>]*>([\s\S]*?)<\/a\s*>([\s\S]*?)<\/li>/g,
+    )) {
+      const page = li[1]
+      if (page.startsWith('examples/')) continue
+      const source = `apps/${page}`
+      const pageHtml = readFileSync(path.join(repoRoot, source), 'utf8')
+      const script = pageHtml.match(
+        /<script\b[^>]*\bsrc="\/?([^"]+\.[jt]s)"/,
+      )?.[1]
+      const scriptPath = script && path.join(path.dirname(source), script)
+      const text = (t: string) =>
+        t
+          .replace(/<[^>]+>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      const title = text(li[2])
+      apps.push({
+        slug: page
+          .replace(/(\/index)?\.html$/, '')
+          .replace(/[^a-zA-Z0-9-]+/g, '-'),
+        title,
+        section,
+        summary:
+          text(li[3]).replace(/^\u2014\s*/, '') ||
+          cleanSummary(nodes.get(`file:${source}`)?.summary, title),
+        page,
+        source,
+        files: scriptPath
+          ? [
+              {
+                name: path.basename(scriptPath),
+                code: readFileSync(path.join(repoRoot, scriptPath), 'utf8'),
+              },
+            ]
+          : [],
+      })
+    }
+  }
+  return apps
 }

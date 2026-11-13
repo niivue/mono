@@ -30,6 +30,17 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.locator('#fontSlide').fill('20')
     return { x: 260, y: 0, width: 480, height: 360 }
   },
+  'demo-ext-dcm2niix': async (page) => {
+    await page.click('#loadManifestBtn')
+    return undefined
+  },
+  'demo-nv-web-component': async (page) => {
+    await page.click('#loadViewerBtn')
+    await page.click('#loadSceneBtn')
+    // Its canvases are in shadow roots, so the whole page is captured.
+    await page.evaluate(() => window.scrollTo(0, 0))
+    return undefined
+  },
   // Just the slide: no stats panels, range log or tile grid.
   slides: async (page) => {
     await page.click('#hudToggle')
@@ -53,6 +64,8 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
 }
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
+  // Fetches a DICOM series and converts it in WASM.
+  'demo-ext-dcm2niix': 15000,
   // The DICOM-WSI slide streams its tiles from the network.
   slides: 8000,
   'vox-block-pick': 8000,

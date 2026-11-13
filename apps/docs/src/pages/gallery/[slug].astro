@@ -16,7 +16,7 @@ type Props = { example: CollectionEntry<'gallery'>['data'] }
 
 const { example } = Astro.props
 const live = new URL(example.page, examplesBase).href
-const source = `${repoUrl}/blob/main/packages/niivue/${example.page}`
+const source = `${repoUrl}/blob/main/${example.source}`
 ---
 
 <StarlightPage

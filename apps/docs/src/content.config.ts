@@ -5,11 +5,17 @@ import { fileURLToPath } from 'node:url'
 import { docsSchema } from '@astrojs/starlight/schema'
 import { glob } from 'astro/loaders'
 import { z } from 'astro/zod'
-import { buildGraph, collectGallery, EXAMPLES_DIR } from './lib/gallery'
+import {
+  buildGraph,
+  collectGallery,
+  EXAMPLES_DIR,
+  PAGES_INDEX,
+} from './lib/gallery'
 import { docsId } from './lib/packageDocs'
 
-// One entry per page in packages/niivue/examples, rebuilt in dev whenever an
-// example or a thumbnail is added, changed or removed.
+// One entry per page in packages/niivue/examples and per demo app on the
+// Pages index, rebuilt in dev whenever an example, the Pages index or a
+// thumbnail is added, changed or removed.
 const gallery = defineCollection({
   loader: {
     name: 'niivue-gallery',
@@ -17,6 +23,7 @@ const gallery = defineCollection({
       const siteDir = fileURLToPath(config.root)
       const repoRoot = path.resolve(siteDir, '../..')
       const examplesDir = path.join(repoRoot, EXAMPLES_DIR)
+      const pagesIndex = path.join(repoRoot, PAGES_INDEX)
       const thumbsDir = path.join(siteDir, 'public/img/gallery')
       const sync = async () => {
         const examples = collectGallery(repoRoot, buildGraph(repoRoot))
@@ -41,9 +48,13 @@ const gallery = defineCollection({
       // A failure here fails the build; in dev a later reload only logs, so
       // a half-written example does not stop the server.
       await sync()
-      watcher?.add([examplesDir, thumbsDir])
+      watcher?.add([examplesDir, pagesIndex, thumbsDir])
       watcher?.on('all', async (_event, changed) => {
-        if (!changed.startsWith(examplesDir) && !changed.startsWith(thumbsDir))
+        if (
+          !changed.startsWith(examplesDir) &&
+          changed !== pagesIndex &&
+          !changed.startsWith(thumbsDir)
+        )
           return
         logger.info('Reloading gallery')
         try {
@@ -60,6 +71,7 @@ const gallery = defineCollection({
     section: z.string(),
     summary: z.string(),
     page: z.string(),
+    source: z.string(),
     files: z.array(z.object({ name: z.string(), code: z.string() })),
     order: z.number(),
     image: z.string(),

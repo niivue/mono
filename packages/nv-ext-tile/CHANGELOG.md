@@ -1,3 +1,13 @@
+## 1.0.0-rc.97 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** route sharded OME-Zarr reads by shard so each shard is probed once ([6b295f94](https://github.com/niivue/mono/commit/6b295f94))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.96 (2026-11-13)
 
 ### Features

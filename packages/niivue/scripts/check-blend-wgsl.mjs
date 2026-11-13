@@ -128,6 +128,14 @@ const r = await p.evaluate(
           size: 512,
           usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         })
+        // Unit weight: the per-overlay alpha scale blendOverlaysGPU binds.
+        const wb = d.createBuffer({
+          size: 16,
+          usage: GPUBufferUsage.UNIFORM,
+          mappedAtCreation: true,
+        })
+        new Float32Array(wb.getMappedRange()).set([1])
+        wb.unmap()
         const e = d.createCommandEncoder()
         for (let z0 = 0; z0 < 2; z0++) {
           const sb = d.createBuffer({
@@ -156,7 +164,10 @@ const r = await p.evaluate(
               1,
               d.createBindGroup({
                 layout: ap.getBindGroupLayout(1),
-                entries: [{ binding: 0, resource: t.createView() }],
+                entries: [
+                  { binding: 0, resource: t.createView() },
+                  { binding: 1, resource: { buffer: wb } },
+                ],
               }),
             )
             pass.dispatchWorkgroups(1, 1, 1)

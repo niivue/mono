@@ -1037,10 +1037,11 @@ overlay slot (`e2e/render-streamed.spec.ts`). A chunk fuses once all its drawn
 channels' bricks are resident, keeps its old fused texture until the new one
 lands, follows its brick region across plan swaps, re-fuses when a blend mode
 changes, and never draws under another source generation (a frame switch), so
-a switch never shows old and new time points side by side. Known limit: no
-per-channel opacity (the brick bakes leave opacity out and the blends have no
-per-layer weight; adding one changes the blend shared with whole-volume
-overlays). `e2e/streamed-stack-switch.spec.ts` with `STACK_FUSE_BENCH=1`
+a switch never shows old and new time points side by side. Bricks leave
+opacity out; the fuse weights each channel's alpha by it (`stackWeights`, a
+per-overlay weight in both GPU blends, `weightAlpha` before the CPU one) and
+keys on it, so an opacity change re-fuses without re-uploading bricks.
+`e2e/streamed-stack-switch.spec.ts` with `STACK_FUSE_BENCH=1`
 benches it; the GL blend matches `blendOverlayData` exactly. Depth picks on a stack
 skip the base march (`backOpacity` 0 in the pick shaders) and answer from any
 drawn channel; the CPU chunked pick uses `stackPickSampler`. Hidden (or opacity 0) and

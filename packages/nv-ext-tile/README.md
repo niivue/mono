@@ -80,7 +80,7 @@ pool.destroy()
 - **Limits:** tiles 16-4096 px per side in multiples of 16 (as TIFF 6.0 requires; a one-tile level may be its exact size, as bioformats writes), at most 2^21 tiles across all levels, unsigned integer samples for RGB and palette (any type for grey), RGB 8 bits per sample; other files are rejected. dcm2niix decodes JPEG 2000 tiles up to 2048 px per side. Only the first 64 IFDs (main chain or SubIFDs) are examined.
 - **JS decoders trust the compressed stream.** The Rust codecs and dcm2niix bound a tile's decoded size, but LERC, ZSTD and WebP do not: a hostile tile can exhaust memory. Only open files you trust, or decode in workers with a `Pool`, so the damage stays in a worker rather than the tab.
 
-**Migration (rc), other sources.** `openSlide` (and any `DziSource`) rejects a custom `fetch` for a DZI: its tiles use the global fetch. DICOM-WSI indexing needs resizable `ArrayBuffer`s (Chrome 111, Firefox 128, Safari 16.4) and rejects with that message without them. Label, overview and thumbnail instances moved from `index.skipped` to `index.associated`. DICOMweb `headers` is deprecated for `fetch`.
+**Migration (rc), other sources.** `openSlide` (and any `DziSource`) rejects a custom `fetch` for a DZI: its tiles use the global fetch. DICOM-WSI indexing needs resizable `ArrayBuffer`s (Chrome 111, Firefox 128, Safari 16.4) and rejects with that message without them. Label, overview and thumbnail instances moved from `index.skipped` to `index.associated`. DICOMweb `headers` is removed: pass `fetch` (it adds auth per request, as `headers` did).
 
 **Migration (rc).** Single-channel grey TIFF is now `raw-gray` with a channel, not an 8-bit RGB bitmap: it is windowed, and 16-bit data keeps its 16 bits. int16 and float32 samples (single and multi-channel) are native, no longer quantized to uint16, so their windows and `NVSlide.sampleAt` `stored` values are data values and `storedToValue` is gone. A saved document's stored-unit window for such a slide changes meaning: convert it with the old map, `value = stored * scale + offset` (from the saved `storedToValue`), or reset it.
 
@@ -228,11 +228,10 @@ const slide = NVSlide.fromSource(source)
 - JPEG 2000 and JPEG-LS tiles are requested untranscoded (`transfer-syntax=*`); a tile the server transcoded anyway is refused.
 - `fetch` (a `SlideFetch`) serves every request to `seriesUrl`'s origin, the transfer-syntax
   sniff included; a URL on another origin uses `globalThis.fetch`, so credentials never leave
-  the series' origin. `headers` (read per request, same origin only) is deprecated in favour
-  of `fetch`. `dispose()` aborts fetches in flight; later reads reject AbortError.
+  the series' origin. `dispose()` aborts fetches in flight; later reads reject AbortError.
   `attribution` becomes `manifest.attribution`.
 - Responses are capped at 64 MB, also when streamed without Content-Length. `readFirstPart(response, what)` applies the same cap and returns the first multipart/related part, for a host's own WADO-RS requests.
-- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source) and the URL is on `seriesUrl`'s origin, else (or when it resolves undefined or empty) fetched. `fetch`, `headers` and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin, so an ICC BulkDataURI on another origin that needs auth is unsupported (it is fetched without credentials). A relative `seriesUrl` resolves against the page.
+- ICC profile: the inline value, else the BulkDataURI resolved against `seriesUrl`, through `retrieveBulkData(url, signal)` when given (e.g. OHIF's data source) and the URL is on `seriesUrl`'s origin, else (or when it resolves undefined or empty) fetched. `fetch` and the `seriesUrl` query when the URI has none, go only to `seriesUrl`'s origin, so an ICC BulkDataURI on another origin that needs auth is unsupported (it is fetched without credentials). A relative `seriesUrl` resolves against the page.
 - One slide per optical path and focal plane, as for local files; a viewer that shows one picks `slides[0]`, the first path and lowest plane, and should say others exist.
 
 ## OME-Zarr

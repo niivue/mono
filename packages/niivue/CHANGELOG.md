@@ -1,3 +1,15 @@
+## 1.0.0-rc.187 (2026-11-13)
+
+### Fixes
+
+- **niivue:** resolve uikit's @niivue/niivue import in the e2e bundle server ([118af83e](https://github.com/niivue/mono/commit/118af83e))
+- **niivue,nv-ext-tile:** cancel lazy-frame prefetch when its volume leaves ([cc9a8884](https://github.com/niivue/mono/commit/cc9a8884))
+- **niivue:** weight streamed channel-stack fuse by channel opacity ([5e40e43e](https://github.com/niivue/mono/commit/5e40e43e))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.186 (2026-11-12)
 
 ### Features

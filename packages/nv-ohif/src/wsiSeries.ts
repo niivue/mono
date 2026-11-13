@@ -3,7 +3,8 @@ import {
   indexDicomWsiMetadata,
 } from '@niivue/nv-ext-tile/dicom'
 import { seriesUrlFromImageId } from './dicomWadoRs'
-import type { OhifDisplaySet } from './ohif-types'
+import { authHeaders } from './niivueRegistry'
+import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
 
 /** The one slide an SM display set shows and its WADO-RS series URL, or a note saying why there is none. */
 export function wsiSeriesSlide(
@@ -81,3 +82,12 @@ export function wsiRetrieveBulkData(
     })
   }
 }
+
+/** DicomWebWsiSource's `fetch` adding OHIF's Authorization header, read per request so a refreshed token is used. */
+export const wsiFetch =
+  (servicesManager: OhifServicesManager | undefined) =>
+  (url: string, init?: RequestInit): Promise<Response> =>
+    fetch(url, {
+      ...init,
+      headers: { ...init?.headers, ...authHeaders(servicesManager) },
+    })

@@ -884,7 +884,7 @@ export type VolumeRenderConfig = {
    * OVERLAY_COLOR_BLEND.MAX for Vol-E style fusion. volumes[0] still sets the
    * render grid. Over a chunked base it applies only when every volume is
    * streamed (a `chunkSource` on the base grid): each base chunk then fuses
-   * the drawn channels' bricks (per-channel opacity is not applied there). An
+   * the drawn channels' bricks, each weighted by its opacity. An
    * oversized in-memory base ignores it.
    * Stacked channels keep their colormap's alpha ramp; in 3D each channel's
    * opacity sets how dense it looks.
@@ -1701,6 +1701,12 @@ export interface VolumeFrameSource {
    * passes, then runs one GPU update for the group.
    */
   commit?(frame: number, volume: NVImage): void
+  /**
+   * Stop background work started for this volume, such as frame prefetch.
+   * NiiVue calls it when the volume leaves the viewer. Cancel only: the source
+   * may still back a volume in another viewer and must stay loadable.
+   */
+  cancel?(): void
   /** Saved in documents so `loadDocument` can reattach the source. */
   readonly descriptor?: VolumeSourceDescriptor
   /** Structure generation (a metadata hash), as `ChunkedVolumeSource.revision`. */

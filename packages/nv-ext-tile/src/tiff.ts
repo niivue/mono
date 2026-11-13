@@ -26,7 +26,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { parseOmeXml } from '@niivue/niivue'
+import { decodeXmlEntities, parseOmeXml } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import {
   grayInto,
@@ -61,7 +61,7 @@ import {
   ndpiTileJpeg,
 } from './vendor/ndpi'
 import { type PhilipsLevel, philipsLevels } from './vendor/philips'
-import { attrs, type VendorPlacement } from './vendor/placement'
+import { attrs as rawAttrs, type VendorPlacement } from './vendor/placement'
 import { trestleOverlaps, trestlePlacement } from './vendor/trestle'
 import {
   isVentanaXmp,
@@ -365,6 +365,10 @@ interface OmePixels {
 
 // Core's parseOmeXml reads sizes, order and channels; only the TiffData IFD map
 // is read here (regex, not DOMParser: absent in Bun and workers).
+const attrs = (tag: string) =>
+  Object.fromEntries(
+    Object.entries(rawAttrs(tag)).map(([k, v]) => [k, decodeXmlEntities(v)]),
+  )
 function omePixels(xml: string, samplesPerPixel: number): OmePixels | null {
   const info = parseOmeXml(xml)
   const pixels =

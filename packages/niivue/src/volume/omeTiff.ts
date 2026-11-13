@@ -183,7 +183,7 @@ const XML_ENTITIES: Record<string, string> = {
 // Unknown names and code points outside the XML 1.0 Char production (NUL and
 // other controls, surrogates, U+FFFE/U+FFFF, beyond U+10FFFF) stay as written,
 // so a name never holds a lone surrogate.
-function decodeXmlEntities(value: string): string {
+export function decodeXmlEntities(value: string): string {
   return value.replace(
     /&(?:#x([\da-f]+)|#(\d+)|(\w+));/gi,
     (ref, hex, dec, name) => {

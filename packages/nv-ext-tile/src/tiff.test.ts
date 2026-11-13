@@ -1080,6 +1080,17 @@ describe('multi-channel OME-TIFF', () => {
     )
   })
 
+  test('decodes character references in TiffData and UUID attributes', async () => {
+    const inner = `${TWO_CHANNELS}<TiffData IFD="&#49;" FirstC="&#x30;" PlaneCount="&#49;"/><TiffData IFD="0" FirstC="1"/>`
+    expect(
+      await planeIds(await openOme('XYCZT', [0, 1], { inner }), [0, 1]),
+    ).toEqual([1000, 0])
+    const split = `${TWO_CHANNELS}<TiffData FirstC="0" IFD="0"><UUID FileName="ome.tif">urn:uuid:self</UUID></TiffData><TiffData FirstC="1" IFD="0"><UUID FileName="b&amp;c.ome.tif">urn:uuid:b</UUID></TiffData>`
+    await expect(openOme('XYCZT', [0, 1], { inner: split })).rejects.toThrow(
+      /is in b&c\.ome\.tif; open that file/,
+    )
+  })
+
   test('keeps WhiteIsZero planes white at 0', async () => {
     const source = await openOme('XYCZT', [0, 1, 2, 3], {
       dtype: { photometric: 0 },

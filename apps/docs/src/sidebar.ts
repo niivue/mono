@@ -11,6 +11,7 @@ const guideGroups = [
     label: 'Displaying images',
     items: [
       'guide/colormaps',
+      'guide/ct',
       'guide/overlays',
       'guide/atlases',
       'guide/clip-planes',

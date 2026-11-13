@@ -182,6 +182,17 @@ export interface NVSlidePlacedPiece {
   dy: number
 }
 
+/**
+ * How a stored tile maps onto the displayed one: displayed column u comes from
+ * stored row u when `transpose`, and `flipX`/`flipY` then mirror the displayed
+ * columns/rows.
+ */
+export interface NVSlideTileOrientation {
+  transpose: boolean
+  flipX: boolean
+  flipY: boolean
+}
+
 /** Irregular tile placement of one level (vendor joints, overlaps, offsets). */
 export interface NVSlideLevelPlacement {
   /** Placed extent in level pixels; may be fractional. */
@@ -285,6 +296,12 @@ export interface NVSlideLevelManifest {
    * placed level pixels map to base by manifest.width / placement.width.
    */
   placement?: NVSlideLevelPlacement
+  /**
+   * Each decoded tile is reoriented to the displayed grid after its padding
+   * is cropped (DICOM-WSI ImageOrientationSlide). The level's grid and tiles
+   * are already stated in displayed px; absent, tiles show as stored.
+   */
+  tileOrientation?: NVSlideTileOrientation
   /**
    * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
    * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when

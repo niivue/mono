@@ -93,7 +93,7 @@ export interface SlideIndexSlide {
   focalPlane: number
   /** The plane's ZOffset (µm), when stated. */
   zOffsetUm?: number
-  /** Level 0's ImageOrientationSlide (0048,0102) direction cosines, when stated; not applied. */
+  /** Level 0's ImageOrientationSlide (0048,0102) direction cosines, when stated; applied to every level (dicomOrientation.ts). */
   imageOrientationSlide?: number[]
   /** Level-0 pixel spacing in mm, [column, row]. */
   pixelSpacingMM?: [number, number]

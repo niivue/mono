@@ -7,7 +7,7 @@ import type {
   SlideTileSource,
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
-import { tileMap } from './dicomIndex'
+import { levelMaps } from './dicomOrientation'
 import type { DicomJsonSlide } from './dicomJson'
 import { manifestOf } from './dicomWsiSource'
 import { parseMultipartRelated } from './multipart'
@@ -153,7 +153,7 @@ export class DicomWebWsiSource implements SlideTileSource {
     readonly slide: DicomJsonSlide,
     private readonly options: DicomWebWsiOptions,
   ) {
-    this.maps = slide.levels.map(tileMap)
+    this.maps = levelMaps(slide)
     this.series = seriesOf(options.seriesUrl)
     const icc = slide.iccProfile
     this.manifest = manifestOf(

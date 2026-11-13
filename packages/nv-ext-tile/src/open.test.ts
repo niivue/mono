@@ -428,22 +428,22 @@ describe('openSlide', () => {
       expect(globalFetch.mock.calls[0]?.[0]).toBe(dziUrl)
       const local = await (
         await openSlide(new File([tinyTiff()], 'one.tif'), {
-          tiff: { placement: true },
+          tiff: { placement: false },
         })
       ).candidates[0]?.open()
       expect(local?.descriptor?.params).toEqual({
         format: 'tiff',
         local: true,
-        placement: true,
+        placement: false,
       })
       local?.dispose?.()
       const tif = {
         kind: SLIDE_SOURCE_KIND,
         url: 'https://h.test/a.tif',
-        params: { format: 'tiff', placement: true },
+        params: { format: 'tiff', placement: false },
       }
       await expect(resolve(tif, ctx)).rejects.toThrow('stub')
-      expect(fromUrl.mock.calls[0]?.[1]?.placement).toBe(true)
+      expect(fromUrl.mock.calls[0]?.[1]?.placement).toBe(false)
     } finally {
       globalFetch.mockRestore()
       fromUrl.mockRestore()

@@ -95,10 +95,12 @@ package's pages are built from `packages/<folder>/docs`:
 - Files starting with `_` are skipped. Notes that are not for the site,
   such as design docs and TODO lists, go in the package's `notes` folder.
 
-Write for someone using the package for the first time: say what it is for,
-how to install it and the smallest thing that works, then one page or
-section per task, named for what the reader wants to do. Keep code samples
-short, and check every fact against the package's source.
+Write the docs the way you would explain the package to a colleague who
+has never used it. Start with what it does and how to install it, show a
+small example that works, then add a section for each thing people
+commonly do with it. Give sections names like "Loading a slide" rather
+than the name of a function. Keep code examples short, and make sure
+everything you write matches the code.
 
 Each live demo is a small module in `apps/docs/src/demos`. It receives a
 canvas, a helper for the control bar, and an `asset()` function that

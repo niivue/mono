@@ -2,6 +2,8 @@
 
 Lightweight React bindings for [Niivue](https://github.com/niivue/niivue) with multi-instance scene management, declarative hooks, and a standalone viewer component.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-react/
+
 ## Install
 
 ```bash

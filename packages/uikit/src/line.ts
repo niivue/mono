@@ -2,7 +2,7 @@
 // (`view/NVLine.ts`) on purpose: during the UIKit bake-in phase, UIKit carries its
 // own rendering so core stays untouched and unbroken. After UIKit is proven,
 // core's overlays cut over onto this and core's copy is removed. The terminated-
-// line builder lives only here. See docs/ruler-port.md in @niivue/niivue.
+// line builder lives only here. See notes/ruler-port.md in @niivue/niivue.
 
 // A drawable line record: [sx, sy, ex, ey, thickness, 0, 0, 0, r, g, b, a] in
 // canvas-pixel coordinates. The extra zeros mirror the core layout so the UIKit

@@ -9,7 +9,7 @@
  * (which dimension is channel? which spatial axis is display x?). It never
  * touches the network, so the Bun unit tests exercise it directly; store
  * access and chunk decoding live in `omeZarrLoader.ts`.
- * See `docs/ome-zarr-format.md`.
+ * See `notes/ome-zarr-format.md`.
  */
 
 import type { TypedVoxelArray } from '@niivue/niivue'

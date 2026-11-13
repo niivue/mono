@@ -2,6 +2,8 @@
 
 Lit-based Web Components for NiiVue. The package registers standard custom elements that work with plain HTML, Vite, Lit, React, Vue, Svelte, or any other browser environment that supports Web Components.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-web-component/
+
 The API is DOM-first: configure elements with properties, call methods on the element instance, and listen for `CustomEvent`s.
 
 ## Install

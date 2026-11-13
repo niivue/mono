@@ -17,7 +17,7 @@
  * chunked volume), and the declared spatial axis order is honoured: bricks
  * from an `x y z`-ordered store (the Human Organ Atlas) are transposed to the
  * x-fastest layout the contract requires, so the anatomy presents identically
- * to a conventional `z y x` store. See `docs/ome-zarr-format.md`.
+ * to a conventional `z y x` store. See `notes/ome-zarr-format.md`.
  */
 
 import type {

@@ -2,6 +2,8 @@
 
 NiiVue is a tool for visualizing volumes, meshes, and tractography streamlines commonly used in neuroimaging. The original NiiVue project evolved organically, resulting in tightly coupled model, view, and controller components. This repository refactors the codebase to improve maintainability and to support emerging technologies such as WebGPU.
 
+Documentation: https://niivue.github.io/mono/docs/guide/
+
 ## Getting Started
 
 ### Prerequisites

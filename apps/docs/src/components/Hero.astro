@@ -1,0 +1,92 @@
+---
+// The home page's first screen: Starlight's hero text and actions on a black
+// panel, above a row of NiiVue stills. Only the home page sets `hero`.
+import { LinkButton } from '@astrojs/starlight/components'
+import HeroStills from './HeroStills.astro'
+
+const { data } = Astro.locals.starlightRoute.entry
+const { title = data.title, tagline, actions = [] } = data.hero ?? {}
+---
+
+<div class="hero">
+  <HeroStills />
+  <div class="copy">
+    <h1 id="_top" data-page-title set:html={title} />
+    {tagline && <p class="tagline" set:html={tagline} />}
+    <div class="actions">
+      {
+        actions.map(({ link, text, variant }) =>
+          variant === 'primary' ? (
+            <LinkButton href={link}>{text}</LinkButton>
+          ) : (
+            <a class="text-link" href={link}>
+              {text} &rarr;
+            </a>
+          ),
+        )
+      }
+    </div>
+  </div>
+</div>
+
+<style>
+  /* The panel is black in both themes, so it uses the dark theme's text and
+     accent colors (the primary button reads them too). */
+  .hero {
+    --sl-color-white: #fafafa;
+    --sl-color-black: #0a0a0a;
+    --sl-color-gray-3: #c8c8c8;
+    --sl-color-text-accent: #e07a84;
+
+    position: relative;
+    overflow: hidden;
+    margin-block: 1.5rem 1rem;
+    /* The bottom leaves room for the row of stills, each a fifth of the
+       panel's width (a percentage padding is of the width too). */
+    padding: clamp(1.75rem, 5vw, 3.5rem) clamp(1.25rem, 4vw, 3rem)
+      calc(20% + 1.5rem);
+    background: var(--nv-viewer);
+    border-radius: var(--nv-radius);
+  }
+
+  .copy {
+    position: relative;
+    max-width: 34rem;
+  }
+
+  h1 {
+    max-width: 18ch;
+    font-size: clamp(var(--sl-text-3xl), calc(1rem + 3vw), var(--sl-text-5xl));
+    line-height: 1.1;
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  .tagline {
+    max-width: 36rem;
+    margin-top: 1rem;
+    font-size: var(--sl-text-lg);
+    color: var(--sl-color-gray-3);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    align-items: center;
+    margin-top: 1.75rem;
+  }
+
+  .actions :global(.sl-link-button) {
+    margin: 0;
+  }
+
+  .text-link {
+    color: var(--sl-color-text-accent);
+    text-decoration: none;
+  }
+
+  .text-link:hover {
+    text-decoration: underline;
+  }
+</style>

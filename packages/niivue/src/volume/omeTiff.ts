@@ -14,7 +14,7 @@
  * block that routinely rides in `ImageDescription`, and it is the only way to
  * recover z-spacing from an ImageJ-written stack.
  *
- * See `docs/ome-tiff-format.md`.
+ * See `notes/ome-tiff-format.md`.
  */
 
 import { log } from '@/logger'

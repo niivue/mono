@@ -1,0 +1,140 @@
+---
+title: The viewer page
+description: "Choose where the NiiVue web page comes from, reload it live while you work on it, and fix a viewer that stays blank."
+sidebar:
+  order: 1
+---
+
+NiiVueKit does not draw anything itself. It loads a web page that runs
+NiiVue, and talks to it. You choose where that page comes from:
+
+- **The ready-made page** that ships inside NiiVueKit. There is nothing to
+  set up in Xcode, but you get medgfx's page as it is.
+- **Your own page**, copied into your app when it builds. It takes a little
+  more setup, and you decide what the page does.
+
+## Using the ready-made page
+
+Build it once from the repository root:
+
+```bash
+packages/niivue-swift/scripts/build-web.sh
+```
+
+The script builds medgfx's web app and copies it into the package, under
+`Sources/NiiVueKit/Resources/WebApp`. Then point the bridge at it:
+
+```swift
+let bridge = Bridge(config: .niiVueKitBundled)
+```
+
+The copy is kept out of git, because every build has new file names and
+would grow the history. Run the script once per clone, and again when
+NiiVue, Web bridge or medgfx's web app change. `swift build` and
+`swift test` work without it.
+
+## Shipping your own page
+
+**1. Write the page.** It creates a NiiVue viewer, hands it to a bridge and
+sends `ready` when it is set up. [Web bridge](/packages/niivue-web-bridge/)
+shows the smallest page that works. Web bridge is not on npm either, so the
+page lives in this repository too, like medgfx's page in
+[apps/medgfx/web](https://github.com/niivue/mono/tree/main/apps/medgfx/web).
+
+**2. Copy the built page into your app** as a folder named `WebApp`. medgfx
+does this with a Run Script build phase:
+
+```bash
+DEST="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WebApp"
+mkdir -p "$DEST"
+rsync -a --delete "$SRCROOT/web/dist/" "$DEST/"
+```
+
+Copy the whole folder rather than adding the files to Xcode one by one: the
+build gives them new names every time. medgfx's phase also builds the page
+first, with `bunx nx build medgfx-web`. Xcode runs build scripts with a
+short `PATH`, so a script that calls `bunx` has to add `~/.bun/bin` to it.
+medgfx also turns off **User Script Sandboxing**, which would otherwise stop
+the script from reading `~/.bun`.
+
+**3. Use the default settings**, which look for `WebApp/index.html` in your
+app:
+
+```swift
+let bridge = Bridge(config: .default)
+```
+
+## Reloading the page live while you work
+
+Point Debug builds at your web dev server, and changes to the page show up
+without rebuilding the app:
+
+```swift
+let bridge = Bridge(config: BridgeConfig.default.withDevServer(port: 8083))
+```
+
+Debug builds now load `http://localhost:8083/`. Release builds ignore it
+and always use the bundled page. Start the dev server before the app;
+medgfx's page runs with `bunx nx dev medgfx-web`.
+
+A few things have to be in place for this to work:
+
+- The dev server must send the two headers described in the next section.
+  medgfx's [Vite config](https://github.com/niivue/mono/blob/main/apps/medgfx/web/vite.config.ts)
+  shows how.
+- A sandboxed Mac app needs the **Outgoing Connections (Client)**
+  capability (`com.apple.security.network.client`) to reach the server.
+- The app's `Info.plist` needs an App Transport Security exception for
+  `localhost`, because the dev server uses plain `http`.
+
+## Why the page is not loaded as a file
+
+The bundled page loads from `niivue-app://app/index.html` rather than from a
+file. A file cannot carry response headers, and the page needs two of them,
+`Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`, before the
+browser lets it use `SharedArrayBuffer`. That is how NiiVue and its
+extensions share memory with workers. NiiVueKit serves every file of the
+page with those headers.
+
+## Changing names and folders
+
+`BridgeConfig` holds the names both sides must agree on. By default the
+message handler is called `niivue`, the URL scheme is `niivue-app`, and the
+page is `index.html` in a `WebApp` folder of your app bundle. You can change
+any of them:
+
+```swift
+let config = BridgeConfig(handlerName: "viewer", bundleSubdir: "Viewer")
+```
+
+If you change the handler name, the page must use the same one:
+`createBridge({ handlerName: 'viewer' })`.
+
+To load the page from somewhere else entirely, such as a small HTTP server
+inside your app, give the view a URL. It skips both the dev server and the
+bundled page:
+
+```swift
+NiiVueWebView(bridge: bridge, overrideURL: pageURL)
+```
+
+## Showing more than one viewer
+
+A bridge talks to one web view, so give each viewer its own `Bridge` and
+`NiiVueModel`. They can all use the same `BridgeConfig`.
+
+## When the viewer stays blank
+
+- **With the ready-made page:** run `build-web.sh`. Until you do, every
+  request for the page fails with "not found" and the view stays empty.
+- **With your own page:** check that the built app contains
+  `WebApp/index.html`.
+- **In Debug, with a dev server:** check that the server is running, and
+  the sandbox and App Transport Security settings above.
+- **The page shows, but nothing you send arrives,** and `model.lastStatus`
+  still reads "Waiting for webview…": the page never sent `ready`, or its
+  handler name does not match yours.
+
+In Debug builds you can inspect the web view with Safari's Web Inspector:
+open Safari's **Develop** menu and pick the web view to see the page's
+console and network requests.

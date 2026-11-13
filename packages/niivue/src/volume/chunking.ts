@@ -9,7 +9,7 @@
  * Pure metadata only — no GPU resources, no typed-array slicing. Renderer
  * code (Phase 2) consumes `ChunkPlan` to drive per-chunk uploads and draws.
  *
- * See `docs/tiled-volumes.md` for the broader design.
+ * See `notes/tiled-volumes.md` for the broader design.
  */
 
 import { log } from '@/logger'

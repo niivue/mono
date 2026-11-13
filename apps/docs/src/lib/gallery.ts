@@ -50,9 +50,11 @@ function readSections(
   )) {
     const section = card[1].match(/<h1>([^<]+)<\/h1>/)?.[1].trim() ?? ''
     for (const link of card[1].matchAll(
-      /<a href="\.\/([^"]+\.html)"[^>]*>([^<]+)<\/a>/g,
+      /<a href="\.\/([^"]+\.html)"[^>]*>([\s\S]*?)<\/a>/g,
     )) {
-      out.push({ section, page: link[1], title: link[2].trim() })
+      // Link text may hold markup, e.g. <code>perfFrame</code>.
+      const title = link[2].replace(/<[^>]+>/g, '').trim()
+      out.push({ section, page: link[1], title })
     }
   }
   return out

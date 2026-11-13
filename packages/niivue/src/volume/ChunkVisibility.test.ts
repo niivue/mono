@@ -7,7 +7,12 @@ import {
   chunksOverlappingVoxelBox,
   orderByViewCenter,
 } from './ChunkVisibility'
-import { type ChunkPlan, chunkVolume, type Vec3i } from './chunking'
+import {
+  type ChunkPlan,
+  chunkVolume,
+  chunkVolumeMultiLOD,
+  type Vec3i,
+} from './chunking'
 
 /** Column-major 4x4 identity. */
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -150,6 +155,38 @@ describe('chunksBackToFront', () => {
       [1, 0.1, 1],
     )
     expect(scaledOrder.indexOf(1)).toBeLessThan(scaledOrder.indexOf(2))
+  })
+
+  test('a memoised order matches a fresh one for every ray', () => {
+    const plan = chunkVolumeMultiLOD(
+      [
+        [256, 256, 256],
+        [128, 128, 128],
+        [64, 64, 64],
+      ],
+      { center: [100, 140, 60], radius: 60 },
+      64,
+      { cellEdge: 32 },
+    )
+    let seed = 7
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647
+      return seed / 2147483647 - 0.5
+    }
+    const rays = [
+      [1, 0, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [1, -1, 0],
+      [1, 1, 1],
+    ]
+    for (let i = 0; i < 200; i++) rays.push([rnd(), rnd(), rnd()])
+    for (const ray of rays) {
+      chunksBackToFront(plan, ray)
+      expect(chunksBackToFront(plan, ray)).toEqual(
+        chunksBackToFront({ ...plan }, ray),
+      )
+    }
   })
 
   test('keeps plan order when the ray direction is degenerate', () => {
@@ -382,7 +419,7 @@ describe('chunkDrawOrder', () => {
     const ray = [1, 0.1, 0.2]
     expect(
       chunkDrawOrder(newPlan, [], () => false, ray).map((it) => it.index),
-    ).toEqual(chunksBackToFront(newPlan, ray))
+    ).toEqual([...chunksBackToFront(newPlan, ray)])
   })
 
   test('a retiring brick replaces the bricks it covers, in depth order', () => {

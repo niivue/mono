@@ -38,6 +38,28 @@ export function chunksBackToFront(
   rayDir: ArrayLike<number>,
   chunkOffsetFor?: ChunkOffsetFor,
   volScale?: ArrayLike<number>,
+): readonly number[] {
+  return backToFront(plan, rayDir, chunkOffsetFor, volScale, !chunkOffsetFor)
+}
+
+// Unexploded orders per plan, keyed by `orderKey`. Plans are never mutated.
+const ORDER_CACHE = new WeakMap<ChunkPlan, Map<number, number[]>>()
+
+// Without the comparator fallback the BSP order reads only each axis's class
+// (|d| < EPS, positive, negative) and the |d| ranking: one of 27 * 6 keys.
+function orderKey(d: Vec3f, axes: number[], eps: number): number {
+  let key = (axes[0] * 3 + axes[1]) * 3 + axes[2]
+  for (let k = 0; k < 3; k++)
+    key = key * 3 + (Math.abs(d[k]) < eps ? 0 : d[k] > 0 ? 1 : 2)
+  return key
+}
+
+function backToFront(
+  plan: ChunkPlan,
+  rayDir: ArrayLike<number>,
+  chunkOffsetFor: ChunkOffsetFor | undefined,
+  volScale: ArrayLike<number> | undefined,
+  memo: boolean,
 ): number[] {
   const rx = finiteRayComponent(rayDir, 0)
   const ry = finiteRayComponent(rayDir, 1)
@@ -54,6 +76,12 @@ export function chunksBackToFront(
     finiteScaleComponent(volScale, 1) * ry,
     finiteScaleComponent(volScale, 2) * rz,
   ]
+  const EPS = 1e-9
+  const axes = [0, 1, 2].sort((a, b) => Math.abs(d[b]) - Math.abs(d[a]))
+  const key = orderKey(d, axes, EPS)
+  let cache = memo ? ORDER_CACHE.get(plan) : undefined
+  const hit = cache?.get(key)
+  if (hit) return hit
   // Each chunk's AABB in normalized [0,1] object space (+ explode offset).
   const lo: Vec3f[] = []
   const hi: Vec3f[] = []
@@ -74,7 +102,6 @@ export function chunksBackToFront(
       (c.voxelOrigin[2] + c.voxelDims[2]) / vz + oz,
     ])
   }
-  const EPS = 1e-9
   // Far AABB corner projected on d — the fallback key when two boxes are not
   // separated along a view-aligned axis (they overlap in projection and so do
   // not occlude one another; any consistent order is fine).
@@ -112,12 +139,13 @@ export function chunksBackToFront(
   // sub-group that somehow has none on a view-aligned axis. This drives ordering
   // violations to zero (validated by ray-march ground truth) at any view angle.
   const order: number[] = []
+  let usedFallback = false
   const emit = (idx: number[]): void => {
     if (idx.length <= 1) {
       if (idx.length === 1) order.push(idx[0])
       return
     }
-    for (const k of [0, 1, 2].sort((a, b) => Math.abs(d[b]) - Math.abs(d[a]))) {
+    for (const k of axes) {
       if (Math.abs(d[k]) < EPS) continue
       // Pick the most balanced clean split coord (a brick face no brick crosses).
       let bestC = Number.NaN
@@ -151,9 +179,17 @@ export function chunksBackToFront(
       }
     }
     // No clean split on any view-aligned axis: fall back to the comparator.
+    usedFallback = true
     order.push(...[...idx].sort(compare))
   }
   emit(plan.chunks.map((_, i) => i))
+  if (memo && !usedFallback) {
+    if (!cache) {
+      cache = new Map()
+      ORDER_CACHE.set(plan, cache)
+    }
+    cache.set(key, order)
+  }
   return order
 }
 
@@ -520,7 +556,8 @@ export function chunkDrawOrder<
         return it.retiring ? [0, 0, 0] : chunkOffsetFor(it.index)
       }
     : undefined
-  return chunksBackToFront(union, rayDir, offsetFor, volScale).map(
+  // The union plan is new each frame: not memoised.
+  return backToFront(union, rayDir, offsetFor, volScale, false).map(
     (u) => items[u],
   )
 }

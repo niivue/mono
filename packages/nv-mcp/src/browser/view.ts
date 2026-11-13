@@ -1046,7 +1046,12 @@ export interface OmeZarrLoaders {
   streamOmeZarr(
     view: unknown,
     url: string,
-    options?: { channel?: number; timepoint?: number; replace?: boolean },
+    options?: {
+      channel?: number
+      timepoint?: number
+      labels?: boolean
+      replace?: boolean
+    },
   ): Promise<unknown>
 }
 

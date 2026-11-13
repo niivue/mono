@@ -44,20 +44,23 @@ const source = `${repoUrl}/blob/main/packages/niivue/${example.page}`
       allow="fullscreen; clipboard-write"
       loading="lazy"></iframe>
   </div>
-  <h2>Code</h2>
-  {
-    example.files.length === 1 ? (
-      <Code code={example.files[0].code} lang="js" title={example.files[0].name} />
-    ) : (
-      <Tabs>
-        {example.files.map((f) => (
-          <TabItem label={f.name}>
-            <Code code={f.code} lang="js" title={f.name} />
-          </TabItem>
-        ))}
-      </Tabs>
-    )
-  }
+  <!-- Left out of search: the code would match nearly every query. -->
+  <h2 data-pagefind-ignore>Code</h2>
+  <div data-pagefind-ignore>
+    {
+      example.files.length === 1 ? (
+        <Code code={example.files[0].code} lang="js" title={example.files[0].name} />
+      ) : (
+        <Tabs>
+          {example.files.map((f) => (
+            <TabItem label={f.name}>
+              <Code code={f.code} lang="js" title={f.name} />
+            </TabItem>
+          ))}
+        </Tabs>
+      )
+    }
+  </div>
 </StarlightPage>
 
 <style>

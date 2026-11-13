@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { ManifestRangeSource } from '@niivue/niivue'
+import NiiVue, { ManifestRangeSource, NVSlide } from '@niivue/niivue'
 import { readAssociatedImage } from './dicomAssociated'
 import { DicomWsiSource } from './dicomWsiSource'
 import {
@@ -407,10 +407,20 @@ describe('openSlide', () => {
     local.dispose?.()
   })
 
-  test("a hosted manifest's custom baseUrl survives a document reopen", async () => {
-    const manifest = rangeManifest([
+  test("a hosted manifest's same-origin baseUrl survives a saved document", async () => {
+    const base = rangeManifest([
       { x: 0, y: 0, width: 4, height: 4, offset: 10, length: 4 },
     ])
+    // NVSlide needs one plane per DICOM-WSI level.
+    const manifest = {
+      ...base,
+      levels: base.levels.map((l) => ({
+        ...l,
+        plane: { z: 0, t: 0 },
+        opticalPaths: 1,
+        focalPlanes: 1,
+      })),
+    }
     const urls: string[] = []
     const fetch: SlideFetch = async (url) => {
       urls.push(url)
@@ -418,36 +428,58 @@ describe('openSlide', () => {
         ? Response.json(manifest)
         : new Response(new Uint8Array(4), { status: 206 })
     }
-    const baseUrl = 'https://h.test/data/'
-    const opened = await (
-      await openSlide('https://h.test/s/m.json', { fetch, baseUrl })
-    ).candidates[0]?.open()
-    const descriptor = opened?.descriptor
-    if (!descriptor) throw new Error('no descriptor')
-    expect(descriptor.params).toEqual({ format: 'manifest', baseUrl })
-    opened?.dispose?.()
-    urls.length = 0
-    const again = (await resolveSlideSource({ fetch })(descriptor, {
-      signal: new AbortController().signal,
-      streamed: false,
-      slide: true,
-    })) as ManifestRangeSource | null
-    again?.bind({
-      resolveUrl: (u) => u,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-      channelInfoChanged() {},
-    })
-    const level = again?.manifest.levels[0]
-    if (!again || !level) throw new Error('no level')
-    await again.fetchTileBytes(level, level.tiles[0] as never, 'L0')
-    expect(urls).toEqual([
-      'https://h.test/s/m.json',
-      'https://h.test/data/l0.dcm',
-    ])
+    // NiiVue schedules renders with requestAnimationFrame, absent under bun.
+    const g = globalThis as Record<string, unknown>
+    const had = { raf: g.requestAnimationFrame, cancel: g.cancelAnimationFrame }
+    g.requestAnimationFrame = (cb: FrameRequestCallback) =>
+      setTimeout(() => cb(0), 0)
+    g.cancelAnimationFrame = clearTimeout
+    const save = async (baseUrl: string) => {
+      const nv = new NiiVue({ backend: 'webgl2' })
+      const src = await (
+        await openSlide('https://h.test/s/m.json', { fetch, baseUrl })
+      ).candidates[0]?.open()
+      if (!src) throw new Error('no source')
+      nv.setSlidePlane(NVSlide.fromSource(src), {
+        pixelToWorld: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      })
+      const bytes = nv.serializeDocument({ format: 'json' })
+      nv.destroy()
+      return bytes
+    }
+    const reopen = async (bytes: Uint8Array) => {
+      const nv = new NiiVue({ backend: 'webgl2' })
+      const resolve = resolveSlideSource({ fetch })
+      let reopened: unknown = null
+      await nv.loadDocument(new File([new Uint8Array(bytes)], 'doc.nvd'), {
+        resolveSource: (d, ctx) => {
+          const r = resolve(d, ctx)
+          reopened = r
+          return r
+        },
+      })
+      const again = (await reopened) as ManifestRangeSource | null
+      const level = again?.manifest.levels[0]
+      if (!again || !level) throw new Error('no level')
+      urls.length = 0
+      await again.fetchTileBytes(level, level.tiles[0] as never, 'L0')
+      nv.destroy()
+      return urls[0]
+    }
+    try {
+      const same = await save('https://h.test/data/?sig=secret')
+      // Saved as a path: no host, query or credentials.
+      expect(new TextDecoder().decode(same)).toContain('"baseUrl":"/data/"')
+      expect(new TextDecoder().decode(same)).not.toContain('secret')
+      expect(await reopen(same)).toBe('https://h.test/data/l0.dcm')
+      // A cross-origin base is not saved: tiles resolve against the manifest.
+      const cross = await save('https://cdn.test/data/')
+      expect(new TextDecoder().decode(cross)).not.toContain('cdn.test')
+      expect(await reopen(cross)).toBe('https://h.test/s/l0.dcm')
+    } finally {
+      g.requestAnimationFrame = had.raf
+      g.cancelAnimationFrame = had.cancel
+    }
   })
 
   test('the resolver reopens a DZI with the global fetch and a TIFF with its saved placement', async () => {

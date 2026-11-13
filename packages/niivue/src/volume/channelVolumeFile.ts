@@ -2,10 +2,10 @@
  * Wrap one assembled microscopy channel as a NIfTI `File` ready for
  * `loadVolumes`.
  *
- * The volume is centred on the origin so every channel (and every pyramid
- * level) of a dataset shares one world position regardless of which subset
- * was loaded. Shared by the Allen atlas, OME-TIFF and OME-Zarr channel
- * loaders so the three cannot drift on the affine convention.
+ * By default the volume is centred on the origin so every channel (and every
+ * pyramid level) of a dataset shares one world position regardless of which
+ * subset was loaded (Allen atlas, OME-TIFF). OME-Zarr passes its own affine to
+ * match its streamed volumes.
  */
 
 import type { TypedVoxelArray } from '@/NVTypes'

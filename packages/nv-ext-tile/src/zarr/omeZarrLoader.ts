@@ -574,8 +574,9 @@ export function defaultOmeZarrLevel(
  * as `createStreamingNVImage` places the streamed volume: level 0 voxel i
  * centred at i * spacing (affine diag(spacing)). A coarser level covers the
  * same box, [-0.5, n0 - 0.5] * s0 per axis, so its voxel size is the level-0
- * extent over its shape. Pass `level0` for a coarser level. OME-NGFF
- * translations are ignored, as on the streamed path.
+ * extent over its shape. Pass `level0` for a coarser level; without it the
+ * level is its own level 0 and `spacingUm` is its spacing (otherwise unused).
+ * OME-NGFF translations are ignored, as on the streamed path.
  */
 export function omeZarrChannelFile(
   dims: readonly [number, number, number],

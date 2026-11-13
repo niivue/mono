@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { channelColormapsFor, createStreamingNVImage } from '@niivue/niivue'
+import { omeZarrChunkedSource } from './omeZarrChunkedSource'
 import {
   countingFetch,
   defaultOmeZarrLevel,
@@ -468,15 +469,15 @@ describe('omeZarrVolumesFrom', () => {
     expect(voxels).toHaveLength(2 * 2)
     // Every whole level covers the streamed volume's box (diag(s0), voxel 0
     // centred on the origin).
-    const { dims, spacingUm } = source.levels[0]
+    const { shape, spacing } = omeZarrChunkedSource(source).levels[0]
     const streamed = createStreamingNVImage({
-      shape: dims,
-      spacing: spacingUm,
+      shape,
+      spacing,
       datatypeCode: 512,
       calMin: 0,
       calMax: 1,
     }).hdr.affine
-    const box = dims.map((n, a) => [
+    const box = shape.map((n, a) => [
       streamed[a][3] - 0.5 * streamed[a][a],
       streamed[a][3] + (n - 0.5) * streamed[a][a],
     ])

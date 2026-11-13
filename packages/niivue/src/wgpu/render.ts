@@ -1557,13 +1557,11 @@ export class VolumeRenderer extends NVRenderer {
       }
       return
     }
-    const offset = chunkOffsetFor(entry.plan, entry.volume.chunkExplode)
     const visible = chunksInFrustum(
       entry.plan,
       mvp,
       CLIP_SPACE_ZERO_TO_ONE,
       matRAS,
-      offset,
     )
     // Drop chunks a clip plane removes entirely from the cutaway, so we never
     // stream blocks the 3D render hides.
@@ -1572,17 +1570,10 @@ export class VolumeRenderer extends NVRenderer {
       visible,
       clipPlanes,
       isCutaway,
-      offset,
     )
     // Stream the centre of the view first, then spiral outward. Streamed
     // combined overlays share the base grid, so the same indices apply.
-    const ordered = orderByViewCenter(
-      entry.plan,
-      unclipped,
-      mvp,
-      matRAS,
-      offset,
-    )
+    const ordered = orderByViewCenter(entry.plan, unclipped, mvp, matRAS)
     // Cap the working set to what the residency budget can hold. A full-volume
     // render makes every visible chunk needed-this-frame, so eviction can't drop
     // any of them; without a cap the resident set grows to the entire visible
@@ -1665,14 +1656,13 @@ export class VolumeRenderer extends NVRenderer {
       }
       return
     }
-    const offset = chunkOffsetFor(entry.plan, entry.volume.chunkExplode)
     const inView = new Set(
-      chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE, matRAS, offset),
+      chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE, matRAS),
     )
     const visible = crossing.filter((ci) => inView.has(ci))
     // Stream the centre of the view first, then spiral outward, capped to what
     // the residency budget can hold (see _requestChunksInFrustum).
-    const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS, offset)
+    const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS)
     // Fits the base and every mirror; see _requestChunksInFrustum.
     const capped = chunkIndicesForAllBudgets(
       entry.plan,

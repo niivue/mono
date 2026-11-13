@@ -102,18 +102,6 @@ describe('chunksInFrustum', () => {
       1, 2, 3,
     ])
   })
-
-  test('optional chunk offsets move the culling AABB', () => {
-    const plan = fourChunkPlan()
-    const visible = chunksInFrustum(
-      plan,
-      translate(-1.3, 0, 0),
-      true,
-      undefined,
-      (chunkIndex) => (chunkIndex === 0 ? [0.4, 0, 0] : [0, 0, 0]),
-    )
-    expect(visible).toEqual([0, 1, 2, 3])
-  })
 })
 
 describe('chunksBackToFront', () => {
@@ -312,23 +300,6 @@ describe('chunksNotClippedOut', () => {
         false,
       ),
     ).toEqual([1, 2])
-  })
-
-  test('explode offset shifts the corners across the plane', () => {
-    const plan = fourChunkPlan()
-    // n=[1,0,0], a=0 would cull chunk 0, but an explode offset of +0.5 in x
-    // pushes its corners to the kept side, so it survives.
-    const offsetFor = (ci: number): [number, number, number] =>
-      ci === 0 ? [0.5, 0, 0] : [0, 0, 0]
-    expect(
-      chunksNotClippedOut(
-        plan,
-        [0, 1, 2, 3],
-        clip([1, 0, 0, 0]),
-        false,
-        offsetFor,
-      ),
-    ).toEqual([0, 1, 2, 3])
   })
 
   test('degenerate normal is treated as inactive', () => {

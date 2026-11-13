@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import NiiVue from '@/index'
 import { loadMesh, meshExtensions } from '@/mesh/NVMesh'
 import { getFileExt } from '@/NVLoader'
+import { documentFile } from '@/testing/headless'
 import { nimlTract } from '@/testing/nimlTract'
 import { read } from './tract'
 
@@ -29,6 +31,35 @@ describe('AFNI NIML tracts', () => {
       expect(Array.from(data.dps.tract)).toEqual([21, 21, 47])
     })
   }
+
+  test('keeps distinct int32 bundle tags above 2^24, across a document round-trip', async () => {
+    const bytes = Buffer.from(
+      replaceHeader('Bundle_Tag="21"', 'Bundle_Tag="16777216"'),
+    )
+    const at = bytes.indexOf('Bundle_Tag="47"')
+    const tagged = Buffer.concat([
+      bytes.subarray(0, at),
+      Buffer.from('Bundle_Tag="16777217"'),
+      bytes.subarray(at + 'Bundle_Tag="47"'.length),
+    ])
+    const expected = [16777216, 16777216, 16777217]
+    const data = await read(Uint8Array.from(tagged).buffer)
+    expect(Array.from(data.dps.tract)).toEqual(expected)
+
+    const nv = new NiiVue({ backend: 'webgl2' })
+    await nv.loadMeshes([{ url: new File([tagged], 'big.niml.tract') }])
+    const nv2 = new NiiVue({ backend: 'webgl2' })
+    await nv2.loadDocument(documentFile(nv.serializeDocument(), 'big.nvd'))
+    const tract = nv2.meshes[0]?.trx?.dps.tract
+    expect(tract).toBeInstanceOf(Int32Array)
+    expect(Array.from(tract ?? [])).toEqual(expected)
+  })
+
+  test('rejects a bundle tag outside int32', async () => {
+    await expect(
+      read(replaceHeader('Bundle_Tag="21"', 'Bundle_Tag="2147483648"')),
+    ).rejects.toThrow('NIML tract bundle')
+  })
 
   test('routes a local .niml.tract through the shared mesh loader', async () => {
     const file = new File([nimlTract()], 'bundles.niml.tract')

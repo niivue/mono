@@ -36,7 +36,8 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
   // Bound storage by the input, not the untrusted point counts in each record.
   const vertices = new Float32Array(Math.floor(bytes.length / 4))
   const offsets = new Uint32Array(count + 1)
-  const bundleTags = new Float32Array(count)
+  // AFNI bundle tags are C ints; Float32 would merge tags above 2^24.
+  const bundleTags = new Int32Array(count)
   let nValues = 0
   let nTracts = 0
   while (nTracts < count) {
@@ -55,7 +56,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
       !Number.isSafeInteger(nBundle) ||
       nBundle < 0 ||
       nBundle > count - nTracts ||
-      !Number.isSafeInteger(bundleTag)
+      bundleTag !== (bundleTag | 0) // int32 only; also rejects NaN and fractions
     )
       throw new Error('Invalid NIML tract bundle')
 

@@ -2,7 +2,7 @@ import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import type { Demo } from './types'
 
 const demo: Demo = async (canvas, { ui, asset }) => {
-  const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
+  const nv = new NiiVue()
   await nv.attachToCanvas(canvas)
   nv.sliceType = SLICE_TYPE.RENDER
   // A TCK file with a per-vertex (.tsf) and a per-streamline (.txt) scalar.

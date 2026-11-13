@@ -680,6 +680,13 @@ export class VolumeRenderer extends ChunkStreamRenderer<
 
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
     const modParams = buildModulationParams(vol, vol, allVolumes)
+    // Leaving a chunked volume: the aliases name chunk 0's textures, which the
+    // chunked cache entry still owns, and the single-volume path below destroys
+    // whatever they hold. Drop them first, as gl/render.ts does.
+    if (this._activeChunked) {
+      this.volumeTexture = null
+      this.volumeGradientTexture = null
+    }
     this._activeChunked = null
     this._cubicVolumeSafe = !vol.colormapLabel
 

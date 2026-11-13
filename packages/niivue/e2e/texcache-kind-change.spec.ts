@@ -205,3 +205,103 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     expect(r.removed).toBe(0)
   })
 }
+
+// A chunked base's `volumeTexture` / `volumeGradientTexture` alias its chunk 0.
+// Handing the background to a plain volume ran the single-volume path's
+// "destroy the old volume texture" on that alias, so a chunked volume still
+// loaded (now an overlay) lost the textures of a brick its residency manager
+// still holds. WebGL2 drops the alias first; WebGPU did not.
+for (const backend of ['webgl2', 'webgpu'] as const) {
+  test(`a new plain background leaves the chunked volume's bricks alive (${backend})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    const result = await page.evaluate(`(async () => {
+     try {
+      if ('${backend}' === 'webgpu') {
+        if (!navigator.gpu) return { skip: 'no navigator.gpu' }
+        let adapter = null
+        try {
+          adapter = await navigator.gpu.requestAdapter()
+        } catch (e) {
+          return { skip: 'requestAdapter threw: ' + e }
+        }
+        if (!adapter) return { skip: 'no WebGPU adapter' }
+      }
+      const destroyed = new WeakSet()
+      if ('${backend}' === 'webgpu') {
+        const destroy = GPUTexture.prototype.destroy
+        GPUTexture.prototype.destroy = function () {
+          destroyed.add(this)
+          return destroy.call(this)
+        }
+      }
+      const { default: NiiVue, SLICE_TYPE, chunkVolumeGrid } =
+        await import('/src/index.ts')
+      const nextFrame = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(r)))
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      document.body.appendChild(canvas)
+      const nv = new NiiVue({
+        backend: '${backend}',
+        sliceType: SLICE_TYPE.RENDER,
+      })
+      await nv.attachToCanvas(canvas)
+      if ('${backend}' === 'webgpu' && nv.backend !== 'webgpu') {
+        return { skip: 'WebGPU init fell back to ' + nv.backend }
+      }
+      const synth = ${syntheticVolume}
+      await nv.loadVolumes([
+        { url: synth({ name: 'chunked.nii' }) },
+        { url: synth({ name: 'plain.nii' }) },
+      ])
+      const vol = nv.volumes[0]
+      const d = vol.dimsRAS
+      vol.chunkPlan = chunkVolumeGrid(
+        [d[1], d[2], d[3]],
+        [${GRID}, ${GRID}, ${GRID}],
+        4096,
+        [3, 3, 3],
+      )
+      await nv.updateGLVolume()
+      await nextFrame()
+      const vr = nv.view.volumeRenderer
+      const entry = vr._activeChunked
+      const chunk0 = entry.manager.getChunk(0)
+      await nv.moveVolumeToTop(0)
+      await nextFrame()
+      const alive = (t) =>
+        '${backend}' === 'webgpu' ? !destroyed.has(t) : vr._gl.isTexture(t)
+      return {
+        cached: [...vr._texCache.values()].includes(entry),
+        resident: entry.manager.getChunk(0) === chunk0,
+        colorAlive: alive(chunk0.volumeTexture),
+        gradientAlive: alive(chunk0.volumeGradientTexture),
+      }
+     } catch (e) {
+      const m = String(e && e.message ? e.message : e)
+      if (/no longer exists|device (is )?lost|adapter/i.test(m)) {
+        return { skip: 'GPU unavailable: ' + m }
+      }
+      throw e
+     }
+    })()`)
+
+    // biome-ignore lint/suspicious/noExplicitAny: page.evaluate returns unknown
+    const r = result as any
+    if (r.skip) {
+      test.skip(true, r.skip)
+      return
+    }
+
+    // Guard the guard: the entry and its brick must still be live for the
+    // texture check to mean anything.
+    expect(r.cached).toBe(true)
+    expect(r.resident).toBe(true)
+    expect(r.colorAlive).toBe(true)
+    expect(r.gradientAlive).toBe(true)
+  })
+}

@@ -37,13 +37,13 @@ function chunkedSource(
 
 const DESCRIPTOR = {
   kind: 'test-zarr',
-  url: 'https://user:pw@example.org/store.zarr?X-Amz-Signature=abc#frag',
+  url: 'https://user:pw@example.org/store.zarr?X-Amz-Signature=sigq#frag',
   params: {
     channel: 1,
     token: 'secret',
     level: 0,
     keyframe: 2,
-    next: 'https://example.org/x?X-Amz-Signature=abc',
+    next: 'https://example.org/x?X-Amz-Signature=sigq',
   },
 }
 
@@ -62,7 +62,7 @@ async function savedStreamed(revision = 'r1'): Promise<Uint8Array> {
 
 test('a streamed volume saves its descriptor, frame and window, never credentials', async () => {
   const text = new TextDecoder().decode(await savedStreamed())
-  for (const secret of ['abc', 'secret', 'X-Amz', 'pw@', 'frag', 'token'])
+  for (const secret of ['sigq', 'secret', 'X-Amz', 'pw@', 'frag', 'token'])
     expect(text).not.toContain(secret)
   const doc = JSON.parse(text)
   expect(doc.volumes[0].source).toEqual({

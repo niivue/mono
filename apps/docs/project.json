@@ -55,6 +55,12 @@
       "options": {
         "cwd": "{projectRoot}"
       }
+    },
+    "home-stills": {
+      "command": "bun scripts/home-stills.ts",
+      "options": {
+        "cwd": "{projectRoot}"
+      }
     }
   }
 }

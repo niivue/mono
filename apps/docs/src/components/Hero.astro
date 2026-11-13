@@ -1,8 +1,8 @@
 ---
-// The home page's first screen: Starlight's hero text and actions, and a live
-// NiiVue viewer in place of the hero image. Only the home page sets `hero`.
+// The home page's first screen: Starlight's hero text and actions, and a strip
+// of NiiVue stills in place of the hero image. Only the home page sets `hero`.
 import { LinkButton } from '@astrojs/starlight/components'
-import HeroViewer from './HeroViewer.astro'
+import HeroStrip from './HeroStrip.astro'
 
 const { data } = Astro.locals.starlightRoute.entry
 const { title = data.title, tagline, actions = [] } = data.hero ?? {}
@@ -24,7 +24,7 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {}
       )
     }
   </div>
-  <HeroViewer />
+  <HeroStrip />
 </div>
 
 <style>

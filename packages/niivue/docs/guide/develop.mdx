@@ -126,6 +126,11 @@ script plus those files, with the library imports rewritten to
 `@niivue/niivue`. A new example appears in the Gallery once it is linked
 from `examples/index.html`; there is nothing else to register.
 
+The images at the top of the home page are stills that NiiVue draws itself.
+`bunx nx home-stills docs-site` draws them again on your computer's GPU and
+saves them to `apps/docs/public/img/home`; the scenes are in
+`apps/docs/scripts/home-stills.scenes.js`.
+
 For agents, every page is also served as Markdown at its URL plus
 `index.md` (`/guide/meshes/index.md`), which the Copy page button copies.
 `/llms.txt` lists those files and `/llms-full.txt` joins them: the guides

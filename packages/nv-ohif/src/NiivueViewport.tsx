@@ -459,10 +459,8 @@ export function NiivueViewport(props: OhifViewportProps) {
             'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
           container.appendChild(canvas)
           try {
-            // The ruler draws its length label on the slide itself, so we do NOT
-            // reflect it into the centered status overlay (that produced a floating
-            // duplicate of the reading). The onMeasure hook stays available for a
-            // future push into OHIF's MeasurementService.
+            // The ruler draws its length label on the slide itself, so the
+            // status overlay does not repeat the reading.
             const mounted = await mountWsiSlideView(canvas, slide, {
               // A brief note, cleared early when the requested level fits again.
               onLevelLimit: (message) => {

@@ -21,6 +21,7 @@ import { log } from '@/logger'
 
 /** One channel of an OME image. */
 export interface OmeChannel {
+  /** `Name` as written, '' when absent; `omeChannelName` labels it for display. */
   name: string
   /** Display colour from the `Color` attribute, or null when unset. */
   color: [number, number, number] | null
@@ -171,16 +172,34 @@ function parseAttributes(source: string): Record<string, string> {
   return attrs
 }
 
-function decodeXmlEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_all, code: string) =>
-      String.fromCodePoint(Number(code)),
-    )
-    .replace(/&amp;/g, '&')
+const XML_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+// Unknown names and code points outside the XML 1.0 Char production (NUL and
+// other controls, surrogates, U+FFFE/U+FFFF, beyond U+10FFFF) stay as written,
+// so a name never holds a lone surrogate.
+export function decodeXmlEntities(value: string): string {
+  return value.replace(
+    /&(?:#x([\da-f]+)|#(\d+)|(\w+));/gi,
+    (ref, hex, dec, name) => {
+      if (name)
+        return Object.hasOwn(XML_ENTITIES, name) ? XML_ENTITIES[name] : ref
+      const code = hex ? Number.parseInt(hex, 16) : Number(dec)
+      const isXmlChar =
+        code === 0x9 ||
+        code === 0xa ||
+        code === 0xd ||
+        (code >= 0x20 && code <= 0xd7ff) ||
+        (code >= 0xe000 && code <= 0xfffd) ||
+        (code >= 0x10000 && code <= 0x10ffff)
+      return isXmlChar ? String.fromCodePoint(code) : ref
+    },
+  )
 }
 
 /** Attributes of the first `<tag ...>` in `xml`, namespace prefix tolerated. */
@@ -253,8 +272,7 @@ export function parseOmeXml(xml: string | undefined): OmeTiffInfo | null {
   while (channelMatch !== null) {
     const channelAttrs = parseAttributes(channelMatch[1])
     channels.push({
-      name:
-        channelAttrs.Name ?? channelAttrs.ID ?? `Channel ${channels.length}`,
+      name: channelAttrs.Name ?? '',
       color: parseOmeColor(channelAttrs.Color),
       samplesPerPixel: positiveInt(channelAttrs.SamplesPerPixel, 1),
     })

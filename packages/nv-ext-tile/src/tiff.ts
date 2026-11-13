@@ -27,7 +27,12 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { readCapped, settleBy } from '@niivue/niivue'
+import {
+  decodeXmlEntities,
+  parseOmeXml,
+  readCapped,
+  settleBy,
+} from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import {
   grayInto,
@@ -58,7 +63,7 @@ import {
   ndpiTileJpeg,
 } from './vendor/ndpi'
 import { type PhilipsLevel, philipsLevels } from './vendor/philips'
-import type { VendorPlacement } from './vendor/placement'
+import { attrs as rawAttrs, type VendorPlacement } from './vendor/placement'
 import { trestleOverlaps, trestlePlacement } from './vendor/trestle'
 import {
   isVentanaXmp,
@@ -362,50 +367,26 @@ interface OmePixels {
   channels: { name?: string; rgb?: readonly [number, number, number] }[]
   /** Attributes, plus `elsewhere` (a file name) when another file holds them. */
   tiffData: Record<string, string>[]
-  /** PhysicalSizeZ in µm, when stated in µm. */
+  /** PhysicalSizeZ in µm, when stated. */
   zStepUm?: number
 }
 
-// XML's five named entities and character references, as attribute values hold them.
-const ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-}
-const unescapeXml = (v: string) =>
-  v.replace(/&(#x[\da-f]+|#\d+|\w+);/gi, (ref, name: string) => {
-    if (name[0] !== '#') return ENTITIES[name] ?? ref
-    const code = Number.parseInt(
-      name.slice(name[1] === 'x' || name[1] === 'X' ? 2 : 1),
-      name[1] === 'x' || name[1] === 'X' ? 16 : 10,
-    )
-    return code <= 0x10ffff ? String.fromCodePoint(code) : ref
-  })
-
-// Regex, not DOMParser (absent in Bun and workers): only attributes are read.
+// Core's parseOmeXml reads sizes, order and channels; only the TiffData IFD map
+// is read here (regex, not DOMParser: absent in Bun and workers).
+const attrs = (tag: string) =>
+  Object.fromEntries(
+    Object.entries(rawAttrs(tag)).map(([k, v]) => [k, decodeXmlEntities(v)]),
+  )
 function omePixels(xml: string, samplesPerPixel: number): OmePixels | null {
+  const info = parseOmeXml(xml)
   const pixels =
     /<(?:\w+:)?Pixels\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?Pixels>)/.exec(
       xml,
     )?.[0]
-  if (!pixels) return null
-  const attrs = (tag: string) =>
-    Object.fromEntries(
-      Array.from(
-        tag.matchAll(/([\w:]+)\s*=\s*(["'])(.*?)\2/g),
-        ([, k, , v]) => [k, unescapeXml(v ?? '')],
-      ),
-    ) as Record<string, string>
-  const tags = (name: string, xml = pixels) =>
-    Array.from(
-      xml.matchAll(new RegExp(`<(?:\\w+:)?${name}\\b[^>]*>`, 'g')),
-      ([tag]) => attrs(tag),
-    )
+  if (!info || !pixels) return null
   // Multi-file sets: a TiffData whose UUID is not this file's (the root
   // OME UUID) numbers IFDs of another file.
-  const self = tags('OME', xml)[0]?.UUID
+  const self = attrs(/<(?:\w+:)?OME\b[^>]*>/.exec(xml)?.[0] ?? '').UUID
   const tiffData = Array.from(
     pixels.matchAll(
       /<(?:\w+:)?TiffData\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?TiffData>)/g,
@@ -421,39 +402,20 @@ function omePixels(xml: string, samplesPerPixel: number): OmePixels | null {
       }
     },
   )
-  const p = tags('Pixels')[0] ?? {}
-  const order = [...(p.DimensionOrder ?? '').slice(2)] as Dim[]
-  if (
-    !/^XY/.test(p.DimensionOrder ?? '') ||
-    [...order].sort().join() !== 'C,T,Z'
-  )
-    return null // read as a plain TIFF, first plane
-  const size = (v?: string) => Math.max(1, Number.parseInt(v ?? '', 10) || 1)
-  const channels = tags('Channel').map(({ Name, Color }) => {
-    // Color is RGBA as a signed 32-bit int.
-    const v = Number(Color)
-    return {
-      ...(Name ? { name: Name } : {}),
-      ...(Color && Number.isInteger(v)
-        ? {
-            rgb: [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255] as const,
-          }
-        : {}),
-    }
-  })
-  const zStep = Number(p.PhysicalSizeZ)
-  const zUnit = p.PhysicalSizeZUnit ?? 'µm'
+  const channels = info.channels.map(({ name, color }) => ({
+    ...(name ? { name } : {}),
+    ...(color ? { rgb: color } : {}),
+  }))
+  const zStepUm = info.spacingUm[2]
   return {
-    ...(zStep > 0 && (zUnit === 'µm' || zUnit === 'um')
-      ? { zStepUm: zStep }
-      : {}),
+    ...(zStepUm > 0 ? { zStepUm } : {}),
     // SizeC counts samples: an RGB plane is one Channel of 3.
     sizes: {
-      C: channels.length || Math.ceil(size(p.SizeC) / samplesPerPixel),
-      Z: size(p.SizeZ),
-      T: size(p.SizeT),
+      C: channels.length || Math.ceil(info.sizeC / samplesPerPixel),
+      Z: info.sizeZ,
+      T: info.sizeT,
     },
-    order,
+    order: [...info.dimensionOrder.slice(2)] as Dim[],
     channels,
     tiffData,
   }

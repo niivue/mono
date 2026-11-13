@@ -144,8 +144,9 @@ WebGL2 and WebGPU where rendering is involved.
 
 ### Layer and transform model
 
-- [ ] Promote `NVSlideSpatialTransform` into a first-class transform object with
-  `pixelToWorld`, `worldToPixel`, units, and validation helpers.
+- [ ] Add a first-class slide transform object with `pixelToWorld`,
+  `worldToPixel`, units, and validation helpers (the unused
+  `NVSlideSpatialTransform` placeholder was removed).
 - [ ] Define a small layer model inspired by Napari:
   volume, slide, labels/annotations, mesh/surface, with visibility, opacity,
   blending, transforms, and metadata.

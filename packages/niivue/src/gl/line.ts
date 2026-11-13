@@ -1,6 +1,6 @@
 import { FLOATS_PER_LINE, type LineData } from '@/view/NVLine'
 import { NVRenderer } from '@/view/NVRenderer'
-import { deleteGLObjects } from './glUtil'
+import { blendOver, deleteGLObjects } from './glUtil'
 import { lineFragShader, lineVertShader } from './lineShader'
 import { Shader } from './shader'
 
@@ -109,7 +109,7 @@ export class LineRenderer extends NVRenderer {
     gl.disable(gl.DEPTH_TEST)
     // Enable blending
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     // Draw instanced quads (4 vertices per line, lineCount instances)
     gl.bindVertexArray(this._vao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, lineCount)

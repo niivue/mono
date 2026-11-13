@@ -287,21 +287,10 @@ export function chunkVolumeGrid(
 }
 
 /**
- * Minimum per-face halo a brick needs for HARDWARE TRILINEAR reconstruction.
- *
- * `chunkTexCoord` maps a brick's owned world cube onto texture coordinates
- * `[haloLow, haloLow + data]`, i.e. continuous voxel index
- * `[haloLow - 0.5, haloLow + data - 0.5]`: a ray sample can land half a voxel
- * PAST the outermost owned voxel centre, right on the brick face. A trilinear
- * fetch there straddles the face, so it needs one voxel of neighbour data.
- */
-export const LINEAR_MIN_HALO = 1
-
-/**
  * Minimum per-face halo a brick needs for TRICUBIC B-spline reconstruction.
  *
  * `sampleTricubic` reads texels `floor(x) - 1 .. floor(x) + 2`. At the face
- * sample above (`x = haloLow - 0.5`) that reaches `haloLow - 2`, so two voxels
+ * face sample (`x = haloLow - 0.5`, where `chunkTexCoord` can land) that reaches `haloLow - 2`, so two voxels
  * of neighbour data are required. Measured on chris_t1 with a 48-voxel brick:
  * halo 1 leaves up to 0.42% of the intensity range of clamp-to-edge error in a
  * half-voxel sheet on every internal face (1.8% on a binary worst case); halo 2

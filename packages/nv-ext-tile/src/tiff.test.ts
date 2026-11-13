@@ -976,10 +976,11 @@ async function openOme(
     inner?: string
     dtype?: object | ((id: number) => object)
     singleQuotes?: boolean
+    pixels?: string
   } = {},
 ) {
   const doubleQuoted = omeXml(
-    `DimensionOrder="${order}" SizeX="40" SizeY="32" SizeC="2" SizeZ="2" SizeT="1" Type="uint16"`,
+    `DimensionOrder="${order}" SizeX="40" SizeY="32" SizeC="2" SizeZ="2" SizeT="1" Type="uint16" ${options.pixels ?? ''}`,
     options.inner ?? `${TWO_CHANNELS}<TiffData/>`,
   )
   const xml = options.singleQuotes
@@ -1076,6 +1077,17 @@ describe('multi-channel OME-TIFF', () => {
     const far = `${TWO_CHANNELS}<TiffData IFD="9999" FirstC="1"/><TiffData IFD="0"/>`
     await expect(openOme('XYCZT', [0, 1], { inner: far })).rejects.toThrow(
       /maps to IFD 9999/,
+    )
+  })
+
+  test('decodes character references in TiffData and UUID attributes', async () => {
+    const inner = `${TWO_CHANNELS}<TiffData IFD="&#49;" FirstC="&#x30;" PlaneCount="&#49;"/><TiffData IFD="0" FirstC="1"/>`
+    expect(
+      await planeIds(await openOme('XYCZT', [0, 1], { inner }), [0, 1]),
+    ).toEqual([1000, 0])
+    const split = `${TWO_CHANNELS}<TiffData FirstC="0" IFD="0"><UUID FileName="ome.tif">urn:uuid:self</UUID></TiffData><TiffData FirstC="1" IFD="0"><UUID FileName="b&amp;c.ome.tif">urn:uuid:b</UUID></TiffData>`
+    await expect(openOme('XYCZT', [0, 1], { inner: split })).rejects.toThrow(
+      /is in b&c\.ome\.tif; open that file/,
     )
   })
 
@@ -1482,15 +1494,48 @@ describe('single-channel grey TIFF', () => {
 })
 
 describe('OME-TIFF channel names', () => {
-  test('decodes XML entities and character references', async () => {
+  test('names, colours, plane order and z step units (entities: core omeTiff.test)', async () => {
     const inner =
-      '<Channel ID="Channel:0:0" Name="A &amp; B &lt;1&gt; &quot;q&quot; &apos;s&apos;" SamplesPerPixel="1"/>' +
-      '<Channel ID="Channel:0:1" Name="&#945;-&#x3B2; &bogus;" SamplesPerPixel="1"/><TiffData/>'
-    const source = await openOme('XYCZT', [0, 1, 2, 3], { inner })
-    expect(source.manifest.channelInfo?.map((c) => c.name)).toEqual([
-      `A & B <1> "q" 's'`,
-      'α-β &bogus;',
+      '<Channel ID="Channel:0:0" Name="A" Color="-1" SamplesPerPixel="1"/>' +
+      '<Channel ID="Channel:0:1" Name="B" Color="65535" SamplesPerPixel="1"/>' +
+      '<Channel ID="Channel:0:2" SamplesPerPixel="1"/><Channel Color="bad" SamplesPerPixel="1"/><TiffData/>'
+    const source = await openOme('XYCZT', [0, 1, 2, 3, 4, 5, 6, 7], { inner })
+    expect(source.manifest.channelInfo?.map((c) => [c.name, c.rgb])).toEqual([
+      ['A', [255, 255, 255]],
+      ['B', [0, 0, 255]],
+      ['Channel 3', undefined],
+      ['Channel 4', undefined],
     ])
+    const { source: one } = await open(
+      writePlanes(
+        [grayPyramid()],
+        omeXml(
+          'DimensionOrder="XYCZT" SizeX="40" SizeY="32" SizeC="1" SizeZ="1" SizeT="1" Type="uint16"',
+          '<Channel ID="Channel:0:0" SamplesPerPixel="1"/><TiffData/>',
+        ),
+      ),
+    )
+    // A bad DimensionOrder reads as XYZCT (core parseOmeXml's fallback).
+    const bad = await openOme('XYCZQ', [0, 1, 2, 3])
+    expect([
+      one.manifest.channelInfo?.map((c) => c.name),
+      bad.planes,
+      await planeIds(bad, [0, 1]),
+    ]).toEqual([['gray'], { z: 2, t: 1 }, [0, 2000]])
+    const zStep = async (pixels: string) =>
+      (await openOme('XYCZT', [0, 1, 2, 3], { pixels })).planes?.zPositionsUm
+    expect(
+      await Promise.all(
+        [
+          'PhysicalSizeZ="2.5"',
+          'PhysicalSizeZ="2.5" PhysicalSizeZUnit="&#181;m"',
+          'PhysicalSizeZ="2.5" PhysicalSizeZUnit="um"',
+          'PhysicalSizeZ="500" PhysicalSizeZUnit="nm"',
+          'PhysicalSizeZ="0.002" PhysicalSizeZUnit="mm"',
+          'PhysicalSizeZ="2.5" PhysicalSizeZUnit="parsnip"',
+        ].map(zStep),
+      ),
+    ).toEqual([[0, 2.5], [0, 2.5], [0, 2.5], [0, 0.5], [0, 2], undefined])
   })
 })
 

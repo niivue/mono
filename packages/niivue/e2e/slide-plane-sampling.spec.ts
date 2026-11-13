@@ -11,7 +11,9 @@ import { syntheticVolume } from './syntheticVolume'
 // The checkerboard as fused label samples stays nearest under linear, also
 // beside an intensity channel (all 0, so only label colours show). Drawn
 // through NiiVue (setSlidePlane, setSlidePlaneInterpolation, getCanvasImage),
-// so the views' own draw call is what passes pixelToWorld.
+// so the views' own draw call is what passes pixelToWorld. A half-alpha green
+// annotation over the left half keeps the canvas opaque and magnifies nearest
+// on both backends.
 
 test.use(webgpuUse)
 
@@ -27,7 +29,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       }
       const lib = await import('/src/index.ts')
       const n = 8, t = 4
-      const slideWith = (backgroundColor) => {
+      const slideWith = (backgroundColor, alpha = 255) => {
         const tiles = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }]
           .map((p) => ({ ...p, width: t, height: t }))
         return lib.NVSlide.fromSource({
@@ -40,7 +42,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
             const rgba = new Uint8Array(t * t * 4)
             for (let j = 0; j < t; j++)
               for (let i = 0; i < t; i++)
-                rgba.set((tile.x * t + i + tile.y * t + j) & 1 ? [0, 0, 255, 255] : [255, 0, 0, 255],
+                rgba.set((tile.x * t + i + tile.y * t + j) & 1 ? [0, 0, 255, alpha] : [255, 0, 0, alpha],
                   4 * (j * t + i))
             return rgba
           },
@@ -80,6 +82,14 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       })
       await nv.attachToCanvas(canvas)
       if (nv.backend !== '${backend}') return { skip: 'fell back to ' + nv.backend }
+      // The "No image loaded" header's backing: HEADER_BACK_COLOR at 0.8 over
+      // black, compared premultiplied (a WebGL2 canvas may hold alpha < 1).
+      const empty = nv.getCanvasImage().data
+      let headerPx = 0
+      for (let i = 0; i < empty.length; i += 4) {
+        const k = empty[i + 3] / 255
+        if (Math.abs(empty[i] * k - 102) + Math.abs(empty[i + 1] * k - 41) + Math.abs(empty[i + 2] * k - 122) < 8) headerPx++
+      }
       nv.sliceType = lib.SLICE_TYPE.RENDER
       await nv.loadVolumes([{ url: (${syntheticVolume})({ n: 16 }), opacity: 0 }])
       const pixelToWorld = lib.axialPlaneTransform(n, n, {
@@ -99,7 +109,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         }
         return c
       }
-      const out = {}
+      const out = { headerPx }
       for (const [name, color] of [['absent', [0, 1, 0, 1]], ['none', null], ['label', null], ['mixed', null]]) {
         const slide = name === 'label' || name === 'mixed' ? labelSlide(name === 'mixed') : slideWith(color)
         const keys = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => slide.tileKey(slide.manifest.levels[0], { x, y }))
@@ -110,6 +120,32 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         }
         out[name] = { nearest: census(true), linear: census(false) }
       }
+      // Annotation over the last slide's left half (the hole stays transparent).
+      nv.createSlideDrawing({ maxRaster: n })
+      const ann = nv._slidePlane.annotation
+      for (let y = 0; y < ann.height; y++)
+        for (let x = 0; x < ann.width / 2; x++) ann.rgba.set([0, 255, 0, 128], 4 * (y * ann.width + x))
+      ann.version++
+      nv.setSlidePlaneInterpolation(true)
+      const img = nv.getCanvasImage()
+      out.annotation = { half: 0, other: 0, translucent: 0 }
+      for (let i = 0; i < img.data.length; i += 4) {
+        const [r, g, b, a] = img.data.slice(i, i + 4)
+        if (a < 255) out.annotation.translucent++
+        if (g > 118 && g < 138) out.annotation.half++
+        else if (g > 5 || (r > 5 && r < 250) || (b > 5 && b < 250)) out.annotation.other++
+      }
+      // Half-alpha tiles over black: brightest red is 255 x 0.5, not x 0.25.
+      const half = slideWith(null, 128)
+      const halfKeys = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => half.tileKey(half.manifest.levels[0], { x, y }))
+      nv.setSlidePlane(half, { pixelToWorld, levelIndex: 0 })
+      for (let i = 0; i < 100 && !halfKeys.every((k) => half.cachedTile(k)); i++) {
+        nv.getCanvasImage()
+        await new Promise((res) => setTimeout(res, 20))
+      }
+      const halfImg = nv.getCanvasImage().data
+      out.halfRed = 0
+      for (let i = 0; i < halfImg.length; i += 4) out.halfRed = Math.max(out.halfRed, halfImg[i])
       nv.destroy()
       canvas.remove()
       return out
@@ -121,6 +157,9 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       none: { nearest: Census; linear: Census }
       label: { nearest: Census; linear: Census }
       mixed: { nearest: Census; linear: Census }
+      headerPx: number
+      annotation: { half: number; other: number; translucent: number }
+      halfRed: number
     }
     test.skip(Boolean(r.skip), r.skip)
     const { absent, none } = r
@@ -134,12 +173,21 @@ for (const backend of ['webgl2', 'webgpu'] as const)
     expect(absent.linear.green).toBe(absent.nearest.green)
     expect(none.nearest.green).toBe(0)
     expect(none.nearest.black - absent.nearest.black).toBe(absent.nearest.green)
+    // The header backing is one colour on both backends (WebGL2 drew bluer).
+    expect(r.headerPx).toBeGreaterThan(100)
     // Label-only fused tiles stay nearest under linear filtering.
     expect(r.label.linear.pure).toBeGreaterThan(4000)
     expect(r.label.linear.blend).toBeLessThan(r.label.linear.pure / 50)
     // So do labels beside an intensity channel (their own nearest texture).
     expect(r.mixed.linear.pure).toBeGreaterThan(4000)
     expect(r.mixed.linear.blend).toBeLessThan(r.mixed.linear.pure / 50)
+    // Annotation: WebGL2 once left canvas alpha 0.75 under it and WebGPU
+    // magnified it linearly, blending a band at its edge.
+    expect(r.annotation.translucent).toBe(0)
+    expect(r.annotation.half).toBeGreaterThan(2500)
+    expect(r.annotation.other).toBeLessThan(r.annotation.half / 50)
+    // WebGL2 once uploaded tile bitmaps premultiplied: 64, not 128.
+    expect(Math.abs(r.halfRed - 128)).toBeLessThan(4)
   })
 
 // PL9 pixels: a placed slide (e2e/slide-placement.spec.ts: 3 frames of 16 px,

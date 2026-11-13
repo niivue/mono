@@ -23,8 +23,7 @@ const NOTES = `This documentation covers the rewritten NiiVue, published on npm 
 - Per-image options use the same keys at load time and afterwards: \`loadVolumes([{ url, colormap: 'hot' }])\`, then \`nv.setVolume(0, { calMin: 2 })\`. Meshes work the same way with \`loadMeshes\` and \`setMesh\`.
 - WebGL2 is the default renderer. \`new NiiVue({ backend: 'webgpu' })\` uses WebGPU and falls back to WebGL2 when WebGPU is unavailable.
 - A viewer is an \`EventTarget\`: \`nv.addEventListener('locationChange', (e) => e.detail)\`.
-- DICOM is not built in: convert it in the browser with \`@niivue/dcm2niix\`. OME-Zarr, TIFF and tiled slides load through \`@niivue/nv-ext-tile@next\`. React components are in \`@niivue/nvreact@next\`.
-- Each guide below is Markdown with its live demos' code inline. A demo is a module \`async (canvas, { ui, asset, canvases })\`: \`asset(path)\` resolves a sample file under https://niivue.github.io/mono/ and \`ui\` builds its controls; neither is part of NiiVue.`
+- DICOM is not built in: convert it in the browser with \`@niivue/dcm2niix\`. OME-Zarr, TIFF and tiled slides load through \`@niivue/nv-ext-tile@next\`. React components are in \`@niivue/nvreact@next\`.`
 
 export const GET: APIRoute = async ({ url }) => {
   const site = docsUrl(url)

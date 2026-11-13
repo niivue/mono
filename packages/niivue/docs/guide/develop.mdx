@@ -105,8 +105,9 @@ everything you write matches the code.
 Each live demo is a small module in `apps/docs/src/demos`. It receives a
 canvas, a helper for the control bar, and an `asset()` function that
 resolves sample file paths, and it returns the viewer it made.
-`src/components/Demo.astro` shows the module's source under the canvas and
-runs it in the browser. A guide embeds one by its file name:
+`src/components/Demo.astro` runs it in the browser. The page does not show
+the module's code; the Gallery has the full code of every example. A guide
+embeds a demo by its file name:
 
 ```mdx
 import Demo from '@site/components/Demo.astro'
@@ -128,12 +129,12 @@ from `examples/index.html`; there is nothing else to register.
 For agents, every page is also served as Markdown at its URL plus
 `index.md` (`/guide/meshes/index.md`), which the Copy page button copies.
 `/llms.txt` lists those files and `/llms-full.txt` joins them: the guides
-in the sidebar order set in `src/sidebar.ts`, then each package's pages. `src/lib/markdown.ts` drops the
-imports, writes each `<Demo>` out as its code and each `<Tabs>` panel
-under its label; any other component would reach the Markdown as written,
-so keep pages to Markdown plus `<Demo>` and `<Tabs>`. A new NiiVue guide
-needs a `description` in its frontmatter (llms.txt shows it) and an entry
-in `src/sidebar.ts`.
+in the sidebar order set in `src/sidebar.ts`, then each package's pages.
+`src/lib/markdown.ts` drops the imports and the live demos, and writes each
+`<Tabs>` panel under its label; any other component would reach the
+Markdown as written, so keep pages to Markdown plus `<Demo>` and `<Tabs>`.
+A new NiiVue guide needs a `description` in its frontmatter (llms.txt shows
+it) and an entry in `src/sidebar.ts`.
 
 ## Running the site
 

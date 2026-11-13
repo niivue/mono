@@ -1,6 +1,4 @@
 ---
-import { Code } from '@astrojs/starlight/components'
-import { demoSource } from '../lib/demos'
 import { examplesBase } from '../site'
 
 type Props = {
@@ -10,12 +8,9 @@ type Props = {
   height?: number
   /** Number of side-by-side canvases (for sync demos). */
   canvases?: number
-  /** Title of the code block. */
-  file?: string
 }
 
-const { name, height = 420, canvases = 1, file } = Astro.props
-const code = demoSource(name)
+const { name, height = 420, canvases = 1 } = Astro.props
 ---
 
 <nv-demo class="demo not-content" data-name={name} data-examples-base={examplesBase}>
@@ -27,7 +22,6 @@ const code = demoSource(name)
   </div>
   <p class="error" hidden></p>
 </nv-demo>
-<Code code={code} lang="ts" title={file} />
 
 <script>
   import '../client/nv-demo'
@@ -36,7 +30,7 @@ const code = demoSource(name)
 <style>
   .demo {
     display: block;
-    margin-block: 1.5rem 0.75rem;
+    margin-block: 1.5rem;
   }
 
   .canvases {

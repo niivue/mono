@@ -1,3 +1,19 @@
+## 1.0.0-rc.190 (2026-11-13)
+
+### Fixes
+
+- **niivue:** keep reoriented slide tiles straight-alpha ([9cb0dd3e](https://github.com/niivue/mono/commit/9cb0dd3e))
+- **nv-ext-tile:** tie the placement test to the chunked source; doc touch-ups ([5eb4c2b0](https://github.com/niivue/mono/commit/5eb4c2b0))
+- **nv-ext-tile:** place whole OME-Zarr levels like streamed ones ([f609ad8b](https://github.com/niivue/mono/commit/f609ad8b))
+- **niivue:** blend WebGL2 alpha as WebGPU does ([98b7246b](https://github.com/niivue/mono/commit/98b7246b))
+- **niivue:** keep straight alpha in slide tile bitmaps ([103505ee](https://github.com/niivue/mono/commit/103505ee))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.189 (2026-11-13)
 
 ### Fixes

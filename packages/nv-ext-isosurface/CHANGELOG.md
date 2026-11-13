@@ -1,3 +1,17 @@
+## 1.0.0-rc.8 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** place whole OME-Zarr levels like streamed ones ([f609ad8b](https://github.com/niivue/mono/commit/f609ad8b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.190
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.7 (2026-11-13)
 
 ### Updated Dependencies

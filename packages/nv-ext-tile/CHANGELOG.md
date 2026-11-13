@@ -1,3 +1,18 @@
+## 1.0.0-rc.99 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** tie the placement test to the chunked source; doc touch-ups ([5eb4c2b0](https://github.com/niivue/mono/commit/5eb4c2b0))
+- **nv-ext-tile:** place whole OME-Zarr levels like streamed ones ([f609ad8b](https://github.com/niivue/mono/commit/f609ad8b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.190
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.98 (2026-11-13)
 
 ### Refactors

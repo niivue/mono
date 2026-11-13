@@ -1542,6 +1542,16 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       undefined,
     ],
     [
+      'Leica regions that disagree on Y only',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="1000" sizeY="1000"/><view sizeX="500000" sizeY="1000000" offsetX="9" offsetY="9"/></image></collection>',
+        ),
+      },
+      undefined,
+    ],
+    [
       'Ventana iScan',
       {
         ...res(472.44, 3),
@@ -1572,6 +1582,21 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
     fetch: server.fetchImpl,
   })
   expect(source.manifest.pixelSpacingMM).toEqual([0.00025, 0.00025])
+})
+
+test('an unreadable resolution tag gives no spacing, never a failed open', async () => {
+  const lv = {
+    ...rawLevel(0, 16, 16, 16),
+    // XResolution (RATIONAL) pointing past the end of the file.
+    edit: (entries: number[][]) => {
+      entries.push([282, 5, 1, 0x7ffffff0], [283, 5, 1, 0x7ffffff0])
+    },
+  }
+  const source = await TiffSlideSource.fromGeoTIFF(
+    await fromArrayBuffer(writeTiff([lv])),
+  )
+  expect(source.manifest.width).toBe(16)
+  expect(source.manifest.pixelSpacingMM).toBeUndefined()
 })
 
 describe('OME-TIFF channel names', () => {

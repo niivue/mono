@@ -47,12 +47,19 @@ export function tiffPixelSpacingMM(
     // View in nm over pixels. Regions that disagree (beyond leicaComposition's
     // 0.1%) leave level 0's size unknown.
     const regions = leicaRegions(d) ?? []
-    const nmX = (r: (typeof regions)[number]) => r.view.width / r.width
+    const nm = (r: (typeof regions)[number]): [number, number] => [
+      r.view.width / r.width,
+      r.view.height / r.height,
+    ]
     const r = regions[0]
     if (!r) return undefined
-    const x = nmX(r)
-    return regions.every((q) => Math.abs(nmX(q) - x) <= x * 1e-3)
-      ? um(x / 1000, r.view.height / r.height / 1000)
+    const [x, y] = nm(r)
+    const near = (a: number, b: number) => Math.abs(a - b) <= b * 1e-3
+    return regions.every((q) => {
+      const [qx, qy] = nm(q)
+      return near(qx, x) && near(qy, y)
+    })
+      ? um(x / 1000, y / 1000)
       : undefined
   }
   const scanRes = t.xmp && /<iScan\b[^>]*\bScanRes="([\d.]+)"/.exec(t.xmp)

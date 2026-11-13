@@ -225,6 +225,9 @@ export interface NVSlideAttribution {
  * handles `raw-rgba`, `raw-gray` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
  * decoder, so a consumer must register one (e.g. @niivue/dcm2niix createFrameDecoder) via
  * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
+ * A returned bitmap must hold straight (unpremultiplied) alpha, e.g. made with
+ * `createImageBitmap(src, { premultiplyAlpha: 'none' })`; a premultiplied one
+ * draws translucent pixels too dark on WebGL2.
  */
 export type SlideTileDecoder = (
   bytes: Uint8Array,

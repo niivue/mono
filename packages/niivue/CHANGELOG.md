@@ -1,3 +1,26 @@
+## 1.0.0-rc.196 (2026-11-13)
+
+### Features
+
+- **docs-site:** move the docs site to Astro Starlight ([0dc43a4e](https://github.com/niivue/mono/commit/0dc43a4e))
+
+### Fixes
+
+- **docs-site:** address the branch audit ([54864282](https://github.com/niivue/mono/commit/54864282))
+- **examples:** show the statistical overlay's colorbar in vox.atlas.stat ([de225e5e](https://github.com/niivue/mono/commit/de225e5e))
+- **examples:** open the tract group pages on a group selection ([17a34191](https://github.com/niivue/mono/commit/17a34191))
+- **examples:** keep the slide3d HUD off its toolbar ([139d0a60](https://github.com/niivue/mono/commit/139d0a60))
+- **examples:** open the slides page on the DICOM-WSI slide ([e9402f4a](https://github.com/niivue/mono/commit/e9402f4a))
+- **examples:** end the benchmark on an opaque mesh ([d350a0fc](https://github.com/niivue/mono/commit/d350a0fc))
+- **examples:** report the real platform in the benchmark ([ff16685b](https://github.com/niivue/mono/commit/ff16685b))
+- **examples:** open the physio graphs on 15 s from the scan start ([133d5b62](https://github.com/niivue/mono/commit/133d5b62))
+- **examples:** open the physio graphs on a 30 s window ([c38ad6e0](https://github.com/niivue/mono/commit/c38ad6e0))
+
+### Thank You
+
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.195 (2026-11-13)
 
 ### Features

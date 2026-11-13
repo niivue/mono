@@ -16,6 +16,7 @@ export const DATA_LOADERS = [
   'load_signal',
   'load_document',
   'load_ome_zarr',
+  'add_isosurface',
 ] as const
 
 export type DataLoader = (typeof DATA_LOADERS)[number]

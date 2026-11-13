@@ -482,6 +482,77 @@ describe('openSlide', () => {
     }
   })
 
+  test("a hosted manifest's tiles resolve against it when a document reopens without a resolver", async () => {
+    const base = rangeManifest([
+      { x: 0, y: 0, width: 4, height: 4, offset: 10, length: 4 },
+    ])
+    const manifest = {
+      ...base,
+      levels: base.levels.map((l) => ({
+        ...l,
+        plane: { z: 0, t: 0 },
+        opticalPaths: 1,
+        focalPlanes: 1,
+      })),
+    }
+    const urls: string[] = []
+    const fetchImpl = async (input: string | URL | Request) => {
+      const url = String(input)
+      urls.push(url)
+      return url.includes('.json')
+        ? Response.json(manifest)
+        : new Response(new Uint8Array(4), { status: 206 })
+    }
+    const g = globalThis as Record<string, unknown>
+    const had = { raf: g.requestAnimationFrame, cancel: g.cancelAnimationFrame }
+    g.requestAnimationFrame = (cb: FrameRequestCallback) =>
+      setTimeout(() => cb(0), 0)
+    g.cancelAnimationFrame = clearTimeout
+    const globalFetch = spyOn(globalThis, 'fetch').mockImplementation(
+      fetchImpl as typeof fetch,
+    )
+    const fromManifestUrl = NVSlide.fromManifestUrl
+    let restored: NVSlide | null = null
+    const spy = spyOn(NVSlide, 'fromManifestUrl').mockImplementation(
+      async (...args) => {
+        restored = await fromManifestUrl.apply(NVSlide, args)
+        return restored
+      },
+    )
+    try {
+      const nv = new NiiVue({ backend: 'webgl2' })
+      const src = await (
+        await openSlide('https://h.test/s/m.json?sig=secret', {
+          fetch: fetchImpl,
+        })
+      ).candidates[0]?.open()
+      if (!src) throw new Error('no source')
+      nv.setSlidePlane(NVSlide.fromSource(src), {
+        pixelToWorld: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      })
+      const bytes = nv.serializeDocument({ format: 'json' })
+      nv.destroy()
+      expect(new TextDecoder().decode(bytes)).not.toContain('secret')
+      const again = new NiiVue({ backend: 'webgl2' })
+      await again.loadDocument(new File([new Uint8Array(bytes)], 'doc.nvd'))
+      expect(spy).toHaveBeenCalledTimes(1)
+      const slide = restored as NVSlide | null
+      const level = slide?.manifest.levels[0]
+      if (!slide || !level) throw new Error('no slide')
+      urls.length = 0
+      const source = (slide as unknown as { _source: ManifestRangeSource })
+        ._source
+      await source.fetchTileBytes(level, level.tiles[0] as never, 'L0')
+      again.destroy()
+      expect(urls[0]).toBe('https://h.test/s/l0.dcm')
+    } finally {
+      spy.mockRestore()
+      globalFetch.mockRestore()
+      g.requestAnimationFrame = had.raf
+      g.cancelAnimationFrame = had.cancel
+    }
+  })
+
   test('the resolver reopens a DZI with the global fetch and a TIFF with its saved placement', async () => {
     const signal = new AbortController().signal
     const ctx = { signal, streamed: false, slide: true }

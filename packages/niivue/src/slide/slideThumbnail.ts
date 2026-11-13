@@ -2,15 +2,17 @@ import type {
   NVChannel,
   NVSlideChannelBlend,
   NVSlideChannelInfo,
+  NVSlideColorLut,
   NVSlideLevelManifest,
+  TileBitmap,
 } from './NVSlide'
 import { fusePlan, fuseSamples, isFuseTile } from './slideFuse'
-import type { TileBitmap } from './tileLru'
 
 /**
  * Composite `level` from its resident tile `entries` (one per `level.tiles`
  * slot) on the CPU, scaled to fit `maxPx` a side. Null without a 2D context.
- * `info` and `selected` (channelInfo, selectedLabel) colour label channels.
+ * `info` and `selected` (channelInfo, selectedLabel) colour label channels;
+ * `lut` (displayColorLut) maps the result to sRGB as the renderers do.
  */
 export function composeThumbnail(
   level: NVSlideLevelManifest,
@@ -22,6 +24,7 @@ export function composeThumbnail(
   blend: NVSlideChannelBlend,
   info?: readonly NVSlideChannelInfo[],
   selected?: { channel: number; id: number } | null,
+  lut?: NVSlideColorLut | null,
 ): ImageBitmap | null {
   // Placed (SRC-20): the placed extent, each piece's crop at its origin.
   const placement = level.placement
@@ -95,6 +98,61 @@ export function composeThumbnail(
       const src = tile && source(i)
       if (src) draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th)
     })
-  const bitmap = canvas.transferToImageBitmap()
-  return bitmap
+  if (lut) {
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    applyColorLut(img.data, lut)
+    ctx.putImageData(img, 0, 0)
+  }
+  return canvas.transferToImageBitmap()
+}
+
+/**
+ * `rgba` through `lut` in place: trilinear between nodes, as the shaders'
+ * linear 3D texture fetch at node centres (slide/colorLutShader.ts). Alpha kept.
+ */
+export function applyColorLut(
+  rgba: Uint8ClampedArray,
+  lut: NVSlideColorLut,
+): void {
+  const { size: n, data } = lut
+  const dR = 4
+  const dG = 4 * n
+  const dB = 4 * n * n
+  // Per 8-bit value: lower node (stride-scaled, red fastest) and weight. The
+  // lower node stops at n - 2, so its upper neighbour always exists.
+  const loR = new Int32Array(256)
+  const loG = new Int32Array(256)
+  const loB = new Int32Array(256)
+  const frac = new Float32Array(256)
+  for (let v = 0; v < 256; v++) {
+    const t = (v * (n - 1)) / 255
+    const i = Math.min(Math.floor(t), n - 2)
+    frac[v] = t - i
+    loR[v] = i * dR
+    loG[v] = i * dG
+    loB[v] = i * dB
+  }
+  for (let p = 0; p < rgba.length; p += 4) {
+    const r = rgba[p]
+    const g = rgba[p + 1]
+    const b = rgba[p + 2]
+    const fr = frac[r]
+    const fg = frac[g]
+    const fb = frac[b]
+    const o000 = loR[r] + loG[g] + loB[b]
+    const o100 = o000 + dR
+    const o010 = o000 + dG
+    const o110 = o010 + dR
+    for (let c = 0; c < 3; c++) {
+      const x00 = data[o000 + c] + (data[o100 + c] - data[o000 + c]) * fr
+      const x10 = data[o010 + c] + (data[o110 + c] - data[o010 + c]) * fr
+      const x01 =
+        data[o000 + dB + c] + (data[o100 + dB + c] - data[o000 + dB + c]) * fr
+      const x11 =
+        data[o010 + dB + c] + (data[o110 + dB + c] - data[o010 + dB + c]) * fr
+      const y0 = x00 + (x10 - x00) * fg
+      const y1 = x01 + (x11 - x01) * fg
+      rgba[p + c] = y0 + (y1 - y0) * fb
+    }
+  }
 }

@@ -2,20 +2,16 @@ import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import type { Demo } from './types'
 
 const demo: Demo = async (canvas, { ui, asset }) => {
-  const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
+  const nv = new NiiVue()
   await nv.attachToCanvas(canvas)
   nv.sliceType = SLICE_TYPE.RENDER
-  // A TCK file with a per-vertex (.tsf) and a per-streamline (.txt) scalar.
-  // Each scalar is named after its file, without the extension.
+  // A TRX file carrying a per-vertex scalar (dpv/z, each vertex's height)
+  // and a per-streamline one (dps/DataSetID, which of six source datasets).
   await nv.loadMeshes([
     {
-      url: asset('meshes/tract.SLF1_R.tck'),
-      layers: [
-        { url: asset('meshes/mni152.SLF1_R.tsf') },
-        { url: asset('meshes/mni152.SLF1_R.txt') },
-      ],
+      url: asset('meshes/dpsv.trx'),
       color: [0, 0.8, 1, 1], // used when colorBy is 'fixed'
-      tractOptions: { fiberRadius: 0.5, colormap: 'inferno' },
+      tractOptions: { fiberRadius: 0.5, colormap: 'plasma' },
     },
   ])
 
@@ -25,8 +21,8 @@ const demo: Demo = async (canvas, { ui, asset }) => {
       ['Local direction', ''],
       ['Global direction', 'global'],
       ['Fixed', 'fixed'],
-      ['Per-vertex scalar', 'dpv:mni152.SLF1_R'],
-      ['Per-streamline scalar', 'dps:mni152.SLF1_R'],
+      ['Per-vertex scalar', 'dpv:z'],
+      ['Per-streamline scalar', 'dps:DataSetID'],
     ],
     '',
     (colorBy) => {

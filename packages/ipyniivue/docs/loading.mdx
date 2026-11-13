@@ -1,0 +1,123 @@
+---
+title: Loading images
+description: "Load volumes and meshes into the notebook viewer from a URL, a local file, raw bytes or a NumPy array, and show overlays and 4D images."
+sidebar:
+  order: 1
+---
+
+There are four ways to get an image into the viewer: from a URL, from a file
+the kernel can read, from bytes, or from a NumPy array. Every one of them
+can be called straight after `display(nv)`.
+
+## From a URL
+
+```python
+nv.add_volume_from_url(
+    "https://niivue.github.io/mono/volumes/mni152.nii.gz",
+    colormap="gray",
+    cal_min=30,
+    cal_max=80,
+)
+```
+
+The browser fetches the file itself, which makes this the fastest way to
+load a large image. The keyword arguments are NiiVue's volume options in
+snake case: `cal_min` and `cal_max` set the display range, and `colormap`
+and `opacity` do what their names say. See
+[Loading images](/guide/loading/) in the NiiVue guide for the others.
+
+The example notebooks load their sample images from
+`https://niivue.github.io/mono/volumes/` and
+`https://niivue.github.io/mono/meshes/`, and you can use them to try
+things out.
+
+## From a file on disk
+
+```python
+nv.add_volume_from_path("scans/t1.nii.gz", colormap="gray")
+```
+
+Python reads the file and sends its bytes to the browser, so it works for
+any file the kernel can read, even when the browser cannot reach it. NiiVue
+picks the reader from the file extension. If the file name does not end in
+the right one, pass the name to use, such as `name="t1.nii.gz"`.
+
+For very large files a URL is faster, because the bytes do not have to pass
+through Python.
+
+## From a NumPy array
+
+```python
+import nibabel as nib
+
+img = nib.load("scans/t1.nii.gz")
+data = img.get_fdata().astype("float32")
+nv.add_volume_from_array(data, affine=img.affine, colormap="gray")
+```
+
+ipyniivue wraps the array in a NIfTI image with nibabel and sends that.
+Without `affine` it uses the identity matrix. The array's data type is kept
+as it is, so if an image does not appear, cast it to `float32` first. This
+needs NumPy and nibabel, which the `examples` extra installs.
+
+If you already hold the bytes of an image file, for example from a download
+that needs a login, send them as they are. The name tells NiiVue the format:
+
+```python
+nv.add_volume_from_bytes("t1.nii.gz", file_bytes)
+```
+
+## An overlay on top of a background
+
+Each `add_volume_from_...` call replaces the images already loaded. To show
+an overlay over a background, load them together with `load_volumes`. It
+takes a list of NiiVue's volume options as dictionaries, with camelCase
+keys, and the first image is the background:
+
+```python
+base = "https://niivue.github.io/mono/volumes"
+nv.load_volumes([
+    {"url": f"{base}/mni152.nii.gz"},
+    {"url": f"{base}/spmMotor.nii.gz", "colormap": "warm", "calMin": 3, "calMax": 6},
+])
+```
+
+To add one more image without replacing the others, use
+`nv.add_volume({"url": ...})`. `nv.remove_volume(1)` takes the second image
+away and `nv.remove_all_volumes()` clears them all. See
+[Overlays and thresholds](/guide/overlays/) for thresholds and colormap
+types.
+
+## Stepping through a 4D image
+
+```python
+nv.load_volumes([{"url": f"{base}/mpld_asl.nii.gz", "id": "asl"}])
+nv.set_frame_4d("asl", 2)
+```
+
+Frames are numbered from 0. `set_frame_4d` finds the image by its id, which
+is its URL unless you choose one when loading, as here. For a large series,
+`"limitFrames4D": 5` loads only the first five frames.
+
+## Meshes
+
+```python
+nv.add_mesh_from_url(
+    "https://niivue.github.io/mono/meshes/BrainMesh_ICBM152.lh.mz3",
+    color=[1, 0.7, 0.6, 1],
+)
+```
+
+`add_mesh_from_path` and `add_mesh_from_bytes` work like their volume
+versions, and `load_meshes` loads a list. Meshes and volumes are kept
+apart: loading a mesh replaces the other meshes but leaves the images, so a
+brain surface can sit inside a scan.
+
+To change a mesh after it loads, pass its number and the options to change:
+
+```python
+nv.set_mesh(0, {"shaderType": "toon", "opacity": 0.8})
+```
+
+`nv.mesh_shaders` lists the shader names. See [Meshes](/guide/meshes/) for
+file formats and mesh layers.

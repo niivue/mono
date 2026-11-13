@@ -1,0 +1,142 @@
+---
+title: One viewer
+description: "Show images with the niivue-viewer tag, change them, adjust the view, and respond when the user clicks."
+sidebar:
+  order: 1
+---
+
+`<niivue-viewer>` is a single viewer. You give it a list of images, and it
+keeps the viewer in step with that list.
+
+## Showing images
+
+Set `volumes` to a list. The first image is the background and the rest
+are drawn on top of it, in order:
+
+```js
+import { SLICE_TYPE } from '@niivue/nv-web-component'
+
+viewer.volumes = [
+  { url: '/volumes/mni152.nii.gz' },
+  { url: '/volumes/spmMotor.nii.gz', colormap: 'warm', calMin: 3, calMax: 6 },
+]
+viewer.sliceType = SLICE_TYPE.MULTIPLANAR
+```
+
+Each entry takes the same settings as NiiVue's
+[loading options](/guide/loading/#volume-options). Without `sliceType` the viewer shows a
+single axial slice. In HTML, the `slice-type` attribute takes the same
+number, for example `slice-type="3"` for multiplanar.
+
+## Changing images
+
+Assign a new list and the viewer follows. Images are matched by URL: new
+ones are loaded, missing ones are removed, and the order is updated to
+match the list.
+
+```js
+viewer.volumes = [{ url: '/volumes/mni152.nii.gz', colormap: 'hot' }]
+```
+
+A change to `colormap`, `calMin`, `calMax` or `opacity` is applied without
+loading the image again. Other settings are only read when an image is
+first loaded. Always assign a new list: changing the old one in place is
+not noticed.
+
+`viewer.volumes = []` clears the viewer.
+
+## Opening a file from the user's computer
+
+A `File` works in place of a URL, for example one picked with a file
+input:
+
+```js
+const input = document.querySelector('input[type="file"]')
+input.addEventListener('change', () => {
+  const file = input.files?.[0]
+  if (file) viewer.volumes = [{ url: file }]
+})
+```
+
+The viewer then matches that image by its file name.
+
+## Settings for when the viewer starts
+
+`options` takes the same settings as `new NiiVue(options)`. The viewer
+reads them once, when it starts, so set them before the element goes on the
+page. Building the element in code makes that easy:
+
+```js
+const viewer = document.createElement('niivue-viewer')
+viewer.options = { backgroundColor: [1, 1, 1, 1], isColorbarVisible: true }
+viewer.style.height = '500px'
+document.body.append(viewer)
+```
+
+Changing `options` later does nothing.
+
+## Adjusting the view
+
+The viewer has methods for the common changes. The first number is the
+image's position in the list, starting at 0:
+
+```js
+await viewer.setColormap(0, 'hot')
+await viewer.setOpacity(1, 0.5)
+await viewer.setCalMinMax(0, 20, 120)
+```
+
+These do nothing until that image has loaded. Other methods change the
+whole viewer:
+
+```js
+import { DRAG_MODE } from '@niivue/nv-web-component'
+
+viewer.setColorbarVisible(true)
+viewer.setCrosshairVisible(false)
+viewer.setPrimaryDragMode(DRAG_MODE.pan)
+```
+
+`setPrimaryDragMode` sets what a left-button drag does and
+`setSecondaryDragMode` the right button. Out of the box, the left button
+moves the crosshair and the right one pans.
+[Mouse, touch and events](/guide/interaction/#drag-modes) lists every drag
+mode.
+
+## Responding to the user
+
+The viewer sends ordinary DOM events, with the useful part in
+`event.detail`:
+
+```js
+viewer.addEventListener('location-change', (event) => {
+  console.log(event.detail.string)
+})
+viewer.addEventListener('image-loaded', (event) => {
+  console.log('loaded', event.detail.name)
+})
+viewer.addEventListener('niivue-error', (event) => {
+  console.error(event.detail)
+})
+```
+
+`location-change` fires when the crosshair moves. Its `detail` holds the
+position in millimeters and voxels, each image's value there, and a
+ready-made text readout in `string`. [Events](/reference/events/) lists
+every field. The events bubble, so a listener on a parent element hears
+them too.
+
+## Using NiiVue directly
+
+For everything else, such as drawing, meshes or saving the scene, use the
+NiiVue instance behind the viewer. It is `viewer.nv`:
+
+```js
+viewer.addEventListener('image-loaded', () => {
+  viewer.nv.isRadiological = true
+})
+```
+
+`viewer.nv` is `null` until the element has first rendered, so the
+`image-loaded` event is a safe place to start using it. All of the
+[NiiVue guides](/guide/) apply to it.

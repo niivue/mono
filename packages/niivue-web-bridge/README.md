@@ -2,6 +2,8 @@
 
 JS/TS half of the typed two-way bridge between a [NiiVue](../niivue) web view and a native WKWebView host.
 
+Documentation: https://niivue.github.io/mono/docs/packages/niivue-web-bridge/
+
 Pairs with the Swift package `packages/niivue-swift/` (products `BridgeCore` + `NiiVueKit`). Together they let a SwiftUI app drive a NiiVue instance running inside `WKWebView` via a single JSON envelope protocol, with no app-specific plumbing.
 
 ## Wire format

@@ -1,3 +1,4 @@
+import type { ByteLruStats } from '@/byteLru'
 import type {
   AffineMatrix,
   BackendType,
@@ -13,7 +14,6 @@ import type {
   VolumeUpdate,
 } from '@/NVTypes'
 import type { FrameReport } from '@/view/NVPerfMarks'
-import type { DecodedChunkStats } from '@/volume/decodedChunkCache'
 
 // ============================================================
 // Event detail types
@@ -150,7 +150,7 @@ export type ChunkStreamDetail = {
   /** Replaced bricks still drawn by a `keepUntilCovered` swap, and their GPU bytes. */
   retiring: number
   retiringBytes: number
-  decoded: DecodedChunkStats
+  decoded: ByteLruStats
 }
 
 /**

@@ -501,11 +501,15 @@ export class VolumeRenderer extends ChunkStreamRenderer<
 
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
     const modParams = buildModulationParams(vol, vol, allVolumes)
-    // Leaving a chunked volume: the aliases below name textures the chunked
-    // cache entry still owns, and the single-volume paths that follow delete
-    // whatever they find in them. Drop the pointers first so a later switch
-    // back to the chunked volume doesn't bind a freed texture.
-    if (this._activeChunked) {
+    // Leaving a cached volume (chunked, or a per-volume single bound by
+    // bindCachedVolume): the aliases name textures a `_texCache` entry still
+    // owns, and the single-volume paths that follow delete whatever they find
+    // in them. Drop the pointers first so a later switch back to that volume
+    // doesn't bind a freed texture.
+    const cacheOwned = [...this._texCache.values()].some(
+      (e) => e.kind === 'single' && e.volumeTexture === this.volumeTexture,
+    )
+    if (this._activeChunked || cacheOwned) {
       this.volumeTexture = null
       this.volumeGradientTexture = null
     }

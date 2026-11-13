@@ -191,12 +191,32 @@ function captureWebGLRenderer() {
   }
 }
 
+// navigator.platform is frozen at 'MacIntel' on every Mac, Apple Silicon
+// included. Chromium reports the real OS and CPU architecture through
+// userAgentData; other browsers keep the frozen value (the GPU line still
+// names the chip there).
+async function capturePlatform() {
+  /** @type {any} userAgentData is Chromium-only and missing from the DOM lib */
+  const uaData = /** @type {any} */ (navigator).userAgentData
+  try {
+    const v = await uaData?.getHighEntropyValues([
+      'architecture',
+      'bitness',
+      'platformVersion',
+    ])
+    if (v?.architecture) {
+      return `${v.platform} ${v.platformVersion} (${v.architecture}, ${v.bitness}-bit)`
+    }
+  } catch {}
+  return navigator.platform
+}
+
 async function captureEnv() {
   const urlParams = new URLSearchParams(window.location.search)
   const env = {
     timestamp: new Date().toISOString(),
     userAgent: navigator.userAgent,
-    platform: navigator.platform,
+    platform: await capturePlatform(),
     hardwareConcurrency: navigator.hardwareConcurrency,
     paced: urlParams.get('paced') === '1',
     backend: _activeBackend,

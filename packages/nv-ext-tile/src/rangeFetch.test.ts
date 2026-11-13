@@ -21,23 +21,20 @@ describe('rangeReplyError', () => {
     expect(rangeReplyError(reply(200), null)).toBeNull()
     expect(rangeReplyError(reply(206), 'bytes=0-3')).toBeNull()
     // Not a range verdict: the caller decides on 404 / 5xx.
-    expect(rangeReplyError(reply(404), 'bytes=0-3', true)).toBeNull()
+    expect(rangeReplyError(reply(404), 'bytes=0-3')).toBeNull()
   })
 
-  test('checkStart compares the Content-Range start when stated', () => {
+  test('a stated Content-Range start must match the request', () => {
     const bad = reply(206, 'bytes 1-4/9')
-    expect(rangeReplyError(bad, 'bytes=0-3')).toBeNull()
-    expect(rangeReplyError(bad, 'bytes=0-3', true)).toEqual({
+    expect(rangeReplyError(bad, 'bytes=0-3')).toEqual({
       kind: 'misplaced',
       got: '1',
       want: '0',
     })
-    expect(
-      rangeReplyError(reply(206, 'bytes 0-3/9'), 'bytes=0-3', true),
-    ).toBeNull()
+    expect(rangeReplyError(reply(206, 'bytes 0-3/9'), 'bytes=0-3')).toBeNull()
     // Hidden cross-origin, or a suffix range: trusted.
-    expect(rangeReplyError(reply(206), 'bytes=0-3', true)).toBeNull()
-    expect(rangeReplyError(bad, 'bytes=-4', true)).toBeNull()
+    expect(rangeReplyError(reply(206), 'bytes=0-3')).toBeNull()
+    expect(rangeReplyError(bad, 'bytes=-4')).toBeNull()
   })
 })
 

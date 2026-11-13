@@ -272,10 +272,12 @@ describe('DicomWebWsiSource', () => {
           }),
         ),
     )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
+      'Reply over',
+    )
   })
 
-  test('cancels a refused body: an HTTP error, or past the Content-Length cap', async () => {
+  test('cancels a body refused for its status', async () => {
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
     })
@@ -290,14 +292,7 @@ describe('DicomWebWsiSource', () => {
       })
     serve(() => new Response(body(), { status: 503 }))
     await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('HTTP 503')
-    serve(
-      () =>
-        new Response(body(), {
-          headers: { 'content-length': String(65 << 20) },
-        }),
-    )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
-    expect(cancelled).toBe(2)
+    expect(cancelled).toBe(1)
   })
 
   test('passes the abort signal to fetch', async () => {

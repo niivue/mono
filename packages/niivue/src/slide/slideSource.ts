@@ -278,13 +278,14 @@ export const MAX_WHOLE_FILE = 64 * 1024 * 1024
 /**
  * `work`, rejecting with the signal's reason as soon as it aborts: a custom
  * fetch may ignore its signal and settle late, or never. A value that arrives
- * after the abort goes to `late` (to release it).
+ * after the abort goes to `late` (to release it). No signal: `work` itself.
  */
 export function settleBy<T>(
-  signal: AbortSignal,
+  signal: AbortSignal | undefined,
   work: Promise<T>,
   late: (value: T) => void = () => {},
 ): Promise<T> {
+  if (!signal) return work
   return new Promise((resolve, reject) => {
     const onAbort = () => reject(signal.reason)
     if (signal.aborted) onAbort()
@@ -327,19 +328,17 @@ export async function readCapped(
   }
   const reader = response.body?.getReader()
   if (!reader) {
-    const whole = response.arrayBuffer()
-    return new Uint8Array(await (signal ? settleBy(signal, whole) : whole))
+    return new Uint8Array(await settleBy(signal, response.arrayBuffer()))
   }
   const chunks: Uint8Array[] = []
   let n = 0
   for (;;) {
-    const read = reader.read()
-    const { done, value } = await (signal
-      ? settleBy(signal, read).catch((error) => {
-          reader.cancel().catch(() => {})
-          throw error
-        })
-      : read)
+    const { done, value } = await settleBy(signal, reader.read()).catch(
+      (error) => {
+        reader.cancel().catch(() => {})
+        throw error
+      },
+    )
     if (done) break
     n += value.byteLength
     if (n > max) {

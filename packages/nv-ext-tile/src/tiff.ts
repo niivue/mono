@@ -1271,8 +1271,13 @@ async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
     ifd0.hasTag(tag)
       ? tagText(await loadCapped(tiff, ifd0, tag, MAX_XMP).catch(() => ''))
       : ''
+  // An unreadable resolution tag is no spacing, never a failed open.
+  const optional = async (tag: number) =>
+    base?.hasTag(tag)
+      ? await base.loadValue(tag).catch(() => undefined)
+      : undefined
   const rational = async (tag: number) => {
-    const v = base?.hasTag(tag) ? await base.loadValue(tag) : undefined
+    const v = await optional(tag)
     return v ? Number(v[0]) / Number(v[1]) : undefined
   }
   const description = await text(270)
@@ -1284,7 +1289,7 @@ async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
       xmp: await text(700),
       xResolution: await rational(282),
       yResolution: await rational(283),
-      resolutionUnit: base?.hasTag(296) ? await base.loadValue(296) : undefined,
+      resolutionUnit: await optional(296),
     })
   )
 }

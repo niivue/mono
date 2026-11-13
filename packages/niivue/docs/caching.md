@@ -131,7 +131,7 @@ workers:
   only what still blocks the render loop and a new `offThreadMs` reports what was
   moved. `netBusyMs` is a union per recorder, so the merged figure is an upper
   bound with a pool running and exact with one worker or none.
-- `createSourceChunkLoader` still presents the residency manager with one
+- `createSourceRegionReader` still presents the residency manager with one
   `VolumeChunkSource` contract and the same concurrency, retry and dedup wrapper,
   and it now carries the in-flight cancellation stage A left open. A chunk the
   working set stops asking for is dropped from the queue, and that drop reaches

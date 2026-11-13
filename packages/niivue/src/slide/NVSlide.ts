@@ -397,20 +397,6 @@ export interface NVSlideViewport {
   scale: number
 }
 
-export interface NVSlideSpatialTransform {
-  /**
-   * Column-major 4x4 transform from slide pixel coordinates into the base
-   * image/world space. The initial renderer uses standalone slide viewports;
-   * this is the registration hook for mapped slides.
-   */
-  pixelToWorld?: readonly number[]
-  /**
-   * Optional inverse of pixelToWorld. Callers can provide it to avoid repeated
-   * inversion when registering a slide against a base volume.
-   */
-  worldToPixel?: readonly number[]
-}
-
 export interface NVSlideOptions {
   id?: string
   name?: string
@@ -430,7 +416,6 @@ export interface NVSlideOptions {
   backgroundColor?: NVSlideColor
   placeholderColor?: NVSlideColor
   gridColor?: NVSlideColor
-  spatialTransform?: NVSlideSpatialTransform
   /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
    * adapters supply their own. See {@link SlideTileSource}. */
   source?: SlideTileSource
@@ -683,7 +668,6 @@ export class NVSlide extends EventTarget {
   readonly stats: NVSlideStats
   viewport: NVSlideViewport
   maxScale: number
-  spatialTransform: NVSlideSpatialTransform | null
   private _opacity!: number
   private _visible!: boolean
   private _levelChoice!: NVSlideLevelChoice
@@ -811,7 +795,6 @@ export class NVSlide extends EventTarget {
       manifest.backgroundColor ?? [0.027, 0.063, 0.051, 1]
     this._placeholderColor = options.placeholderColor ?? [0.067, 0.098, 0.09, 1]
     this._gridColor = options.gridColor ?? [0.455, 0.831, 0.812, 0.24]
-    this.spatialTransform = options.spatialTransform ?? null
     this.stats = freshStats()
     this._cache = new NVSlideTileCache(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
@@ -1397,11 +1380,6 @@ export class NVSlide extends EventTarget {
 
   setLevelChoice(levelChoice: NVSlideLevelChoice): void {
     this.levelChoice = levelChoice
-  }
-
-  setSpatialTransform(transform: NVSlideSpatialTransform | null): void {
-    this.spatialTransform = transform
-    this._emitChange()
   }
 
   setTileGridVisible(visible: boolean): void {

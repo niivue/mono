@@ -218,7 +218,6 @@ export type {
   NVSlideSampleArray,
   NVSlideScreen,
   NVSlideScreenRect,
-  NVSlideSpatialTransform,
   NVSlideStats,
   NVSlideTileCodec,
   NVSlideTileFragment,

@@ -466,6 +466,15 @@ async function checkSampleSwitch(backend) {
     fail(
       `the colony segmentation attached to the other sample: ${ids.join(', ')}`,
     )
+  // An uninterrupted colony load must still attach its segmentation.
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await page
+    .waitForFunction(
+      () => window.nv1.volumes.some((v) => v.id.startsWith('segmentation-')),
+      null,
+      { timeout: 30000 },
+    )
+    .catch(() => fail('the colony load never attached its segmentation'))
   await page.close()
 }
 

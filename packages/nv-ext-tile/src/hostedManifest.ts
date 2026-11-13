@@ -8,7 +8,7 @@ import type {
   SlideIndexLevel,
   SlideIndexSlide,
 } from './dicomIndex'
-import { tileMap } from './dicomIndex'
+import { levelMaps } from './dicomOrientation'
 import { filesFor, fragmentsOf, manifestOf } from './dicomWsiSource'
 
 /**
@@ -24,7 +24,7 @@ export async function manifestFromIndex(
   fileUrlFor: (instance: SlideIndexInstance) => string,
 ): Promise<NVSlideManifest> {
   const byInstance = filesFor(slide, files)
-  const maps = slide.levels.map(tileMap)
+  const maps = levelMaps(slide)
   const manifest = manifestOf(slide, maps, {
     format: 'dicom-wsi-range-v1',
     fileUrl: fileUrlFor,

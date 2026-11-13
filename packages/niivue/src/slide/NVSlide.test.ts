@@ -1130,8 +1130,9 @@ describe('NVSlide padded frames', () => {
     const crops: number[][] = []
     globalThis.createImageBitmap = (async (
       _src: unknown,
-      ...rect: number[]
+      ...args: unknown[]
     ) => {
+      const rect = args.slice(0, 4) as number[]
       crops.push(rect)
       const [, , width, height] = rect
       return { width, height, close() {} }
@@ -1143,6 +1144,43 @@ describe('NVSlide padded frames', () => {
     expect(closedPadded).toBe(true)
     expect(slide.stats.cacheBytes).toBe(3 * 2 * 4) // the crop, not the 8 x 4 frame
     slide.dispose()
+  })
+
+  it('reorients a bitmap tile into a straight-alpha bitmap', async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    level.tileOrientation = { transpose: false, flipX: true, flipY: false }
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const g = globalThis as { OffscreenCanvas?: unknown }
+    const originalCanvas = g.OffscreenCanvas
+    g.OffscreenCanvas = class {
+      constructor(
+        readonly width: number,
+        readonly height: number,
+      ) {}
+      getContext() {
+        return { setTransform() {}, drawImage() {} }
+      }
+      transferToImageBitmap() {
+        return { width: TILE_W, height: TILE_H, close() {} }
+      }
+    }
+    const made: unknown[] = []
+    globalThis.createImageBitmap = (async (...args: unknown[]) => {
+      made.push(args[1])
+      return { width: TILE_W, height: TILE_H, close() {} }
+    }) as unknown as typeof createImageBitmap
+    try {
+      const slide = NVSlide.fromSource(new CountingSource(manifest))
+      slide.createRequestOwner('plane3d').want([{ level, tile }])
+      await waitFor(() => slide.stats.completed === 1)
+      expect(made).toEqual([{ premultiplyAlpha: 'none' }])
+      slide.dispose()
+    } finally {
+      g.OffscreenCanvas = originalCanvas
+    }
   })
 
   it('leaves a frame that fits its tile alone', async () => {
@@ -1779,6 +1817,31 @@ describe('NVSlide channels', () => {
         drawn(slide, k(slide, 2, 0, 0))?.subarray(last, last + 4) ?? [],
       ),
     ).toEqual([255, 100, 130, 255])
+    slide.dispose()
+  })
+
+  it('reorients a sample tile, cropped as stored', async () => {
+    const { slide, source } = planarSlide([
+      { name: 'grey', rgb: [255, 255, 255], active: true },
+    ])
+    const level = slide.manifest.levels[2] as NVSlideLevelManifest
+    level.tileOrientation = { transpose: true, flipX: true, flipY: false }
+    // Stored TILE_H x TILE_W, plus a padding column and row; pixel (x, y) = y * TILE_H + x.
+    source.fetchTileSamples = async () => {
+      const width = TILE_H + 1
+      const samples = new Uint8Array(width * (TILE_W + 1)).fill(255)
+      for (let y = 0; y < TILE_W; y++)
+        for (let x = 0; x < TILE_H; x++) samples[y * width + x] = y * TILE_H + x
+      return { samples, width, height: TILE_W + 1, bitsStored: 8, planes: 1 }
+    }
+    await loadLevel(slide, 2)
+    const s = slide.cachedTile(k(slide, 2, 0, 0))?.samples
+    expect([s?.width, s?.height]).toEqual([TILE_W, TILE_H])
+    // Displayed (u, v) is stored (v, TILE_W - 1 - u).
+    const want: number[] = []
+    for (let v = 0; v < TILE_H; v++)
+      for (let u = 0; u < TILE_W; u++) want.push((TILE_W - 1 - u) * TILE_H + v)
+    expect(Array.from(s?.samples ?? [])).toEqual(want)
     slide.dispose()
   })
 

@@ -4,7 +4,7 @@ import type { NVFontData } from '@/NVTypes'
 import { FLOATS_PER_PANEL, type GlyphBatch, packPanels } from '@/view/NVFont'
 import { NVFontRenderer } from '@/view/NVFontRenderer'
 import { fontFragShader, fontVertShader } from './fontShader'
-import { setTexParams } from './glUtil'
+import { blendOver, setTexParams } from './glUtil'
 import { panelFragShader, panelVertShader } from './panelShader'
 import { Shader } from './shader'
 
@@ -200,7 +200,7 @@ export class FontRenderer extends NVFontRenderer {
         gl.disable(gl.DEPTH_TEST)
         gl.disable(gl.CULL_FACE)
         gl.enable(gl.BLEND)
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+        blendOver(gl)
         gl.bindVertexArray(this._panelVao)
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, panelCount)
         gl.bindVertexArray(null)
@@ -243,7 +243,7 @@ export class FontRenderer extends NVFontRenderer {
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     // Draw instanced quads
     gl.bindVertexArray(this._vao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, totalChars)

@@ -73,7 +73,7 @@ export interface TiffSlideOptions {
   id?: string
   /** geotiff decoder pool (web workers). Owned by the caller; omit to decode on the main thread. */
   pool?: Pool
-  /** OME-TIFF focal plane; default 0. */
+  /** Focal plane: OME-TIFF default 0, Argos stack default the middle. */
   z?: number
   /** OME-TIFF timepoint; default 0. */
   t?: number
@@ -81,8 +81,8 @@ export interface TiffSlideOptions {
   attribution?: NVSlideAttribution
   /**
    * Vendor tile placement (`level.placement`): Ventana BIF joints, Trestle
-   * overlaps, Leica SCN regions side by side. Off by default until NVSlide
-   * draws placed tiles; off, these files open as their storage grid.
+   * overlaps, Leica SCN regions side by side. Default true; false opens
+   * these files as their storage grid.
    */
   placement?: boolean
 }
@@ -312,6 +312,21 @@ async function chainImages(
     last = await tiff.getImage(images.length)
     images.push(last)
   }
+  const base = images
+    .filter((img) => img.isTiled)
+    .reduce<GeoTIFFImage | null>(
+      (a, b) => (a && a.getWidth() >= b.getWidth() ? a : b),
+      null,
+    )
+  // Only padded images pay the read: an ordinary pyramid opens as before.
+  await Promise.all(
+    images.map(async (img) => {
+      if (!base || !img.isTiled || !paddedDownsample(base, img)) return
+      const desc = await img.fileDirectory.loadValue('ImageDescription')
+      if (typeof desc === 'string' && desc.startsWith('level='))
+        iscanLevels.add(img)
+    }),
+  )
   return images
 }
 
@@ -558,7 +573,7 @@ interface TiffOpened {
   placementReport?: TiffPlacementReport
 }
 
-/** What `placement: true` resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
+/** What placement resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
 export interface TiffPlacementReport {
   warning?: string
   notice?: string
@@ -614,9 +629,10 @@ async function openTiff(
     (sizes.C * sizes.Z * sizes.T === 1 &&
       planeIfd(ome, { C: 0, Z: 0, T: 0 }) === 0)
   ) {
-    const placed = options.placement
-      ? await placedPyramid(tiff, first, description)
-      : null
+    const placed =
+      options.placement !== false
+        ? await placedPyramid(tiff, first, description)
+        : null
     const pyramids = [
       placed?.levels ??
         (await pyramidImages(tiff, first, true, philipsLevels(description))),
@@ -831,6 +847,25 @@ function regionTile(level: TiffLevel, x: number, y: number) {
 const padToTiles = (n: number, downsample: number, tile: number) =>
   Math.ceil(Math.ceil(n / downsample) / tile) * tile
 
+// Ventana iScan pads each level to whole 8 px JPEG blocks (82960 / 4 = 20740
+// rows stored as 20744): the power-of-two downsample of a padded `img`, else 0.
+function paddedDownsample(base: GeoTIFFImage, img: GeoTIFFImage): number {
+  const [bw, bh] = [base.getWidth(), base.getHeight()]
+  const [w, h] = [img.getWidth(), img.getHeight()]
+  const d = 2 ** Math.round(Math.log2(bw / w))
+  const padded = w !== Math.ceil(bw / d) || h !== Math.ceil(bh / d)
+  return d > 1 &&
+    padded &&
+    padToTiles(bw, d, 8) === w &&
+    padToTiles(bh, d, 8) === h
+    ? d
+    : 0
+}
+
+// Padded images an iScan ImageDescription names a level ("level=2 mag=10
+// quality=90"): an unmarked tiled macro can fit the padding too.
+const iscanLevels = new WeakSet<GeoTIFFImage>()
+
 // `img` as a level of `base`, or null when it is not one: a tiled image off
 // the base aspect ratio (SVS macro between levels) would be stretched over the
 // slide. The tolerance is the height error of rounding the width to pixels.
@@ -854,6 +889,14 @@ function levelOf(
   const width = img.getWidth()
   const height = img.getHeight()
   const aspect = baseHeight / baseWidth
+  const d = iscanLevels.has(img) ? paddedDownsample(base, img) : 0
+  if (d)
+    return {
+      img,
+      width: Math.ceil(baseWidth / d),
+      height: Math.ceil(baseHeight / d),
+      downsample: d,
+    }
   if (Math.abs(height - aspect * width) <= 1 + aspect) {
     return { img, width, height, downsample: baseWidth / width }
   }
@@ -1395,7 +1438,7 @@ export class TiffSlideSource implements SlideTileSource {
   /** An OME-TIFF z/t stack's planes (`SlidePlaneCapable`); unset otherwise. */
   readonly planes?: NVSlidePlaneAxes
   readonly preparePlane?: SlidePlaneCapable['preparePlane']
-  /** With `placement: true`: a grid fallback's warning, or the per-seam residuals. */
+  /** A vendor layout's grid fallback warning, or the per-seam residuals. */
   readonly placementReport?: TiffPlacementReport
   private host: SlideSourceHost | null = null
   private readonly closed = new AbortController()

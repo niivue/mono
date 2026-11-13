@@ -37,6 +37,7 @@
         "typescript",
         "{projectRoot}/tests/**/*",
         "{projectRoot}/fixtures/standalone/**/*",
+        "{projectRoot}/fixtures/dicom-wsi/**/*",
         "{workspaceRoot}/packages/niivue/src/**/*"
       ]
     },

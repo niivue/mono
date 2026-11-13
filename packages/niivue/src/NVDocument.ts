@@ -173,6 +173,7 @@ type NVDocumentTractData = {
   offsets: Uint8Array // Uint32Array as bytes
   dpv: Record<string, Uint8Array> // per-vertex Float32Arrays as bytes
   dps: Record<string, Uint8Array> // per-streamline Float32Arrays as bytes
+  dpsInt32?: string[] // dps names stored as Int32Array bytes (absent = all Float32)
   groups: Record<string, Uint8Array> // group Uint32Arrays as bytes
   dpvMeta: Record<string, { globalMin: number; globalMax: number }>
   dpsMeta: Record<string, { globalMin: number; globalMax: number }>
@@ -575,6 +576,10 @@ export function serialize(
           ]),
         ),
       }
+      const dpsInt32 = Object.keys(m.trx.dps).filter(
+        (k) => m.trx?.dps[k] instanceof Int32Array,
+      )
+      if (dpsInt32.length > 0) mesh.tractData.dpsInt32 = dpsInt32
       if (m.tractOptions) mesh.tractOptions = { ...m.tractOptions }
     }
 
@@ -1162,7 +1167,9 @@ export async function reconstructMesh(
           dps: Object.fromEntries(
             Object.entries(td.dps).map(([k, v]) => [
               k,
-              new Float32Array(copyDocumentBytes(v)),
+              td.dpsInt32?.includes(k)
+                ? new Int32Array(copyDocumentBytes(v))
+                : new Float32Array(copyDocumentBytes(v)),
             ]),
           ),
           groups: Object.fromEntries(

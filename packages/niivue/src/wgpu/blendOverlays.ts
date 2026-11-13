@@ -27,13 +27,14 @@ struct Slab { z0: u32, zCount: u32 }
 @group(0) @binding(0) var<storage, read_write> accum: array<f32>;
 @group(0) @binding(1) var<uniform> slab: Slab;
 @group(1) @binding(0) var overlay: texture_3d<f32>;
+@group(1) @binding(1) var<uniform> weight: f32;
 
 @compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
     let dims = textureDimensions(overlay);
     if (gid.x >= dims.x || gid.y >= dims.y || gid.z >= slab.zCount) { return; }
     let rgba = textureLoad(overlay, vec3i(vec3u(gid.xy, gid.z + slab.z0)), 0);
-    let a = rgba.a;
+    let a = rgba.a * weight;
     if (a <= 0.0) { return; }
     let k = (gid.x + gid.y * dims.x + gid.z * dims.x * dims.y) * 6u;
     if (COLOR_BLEND == 3u) {
@@ -135,6 +136,7 @@ function ensureBlendPipelines(
             visibility,
             texture: { sampleType: 'float', viewDimension: '3d' },
           },
+          { binding: 1, visibility, buffer: { type: 'uniform' } },
         ],
       }),
       layoutOutput: device.createBindGroupLayout({
@@ -188,7 +190,8 @@ function ensureBlendPipelines(
 /**
  * Blend multiple pre-colormapped RGBA8 overlay textures into one on the GPU.
  * Same formulas as CPU blendOverlayData (see there); only colour OVER depends
- * on overlay order.
+ * on overlay order. Each overlay's alpha is scaled by its `weights` entry
+ * (default 1).
  * Eliminates the GPU→CPU readback stall of the legacy path.
  */
 export async function blendOverlaysGPU(
@@ -197,6 +200,7 @@ export async function blendOverlaysGPU(
   dimsOut: number[],
   alphaBlend: number,
   colorBlend: number,
+  weights: readonly number[] = [],
 ): Promise<GPUTexture> {
   const [w, h, d] = dimsOut
   const cache = ensureBlendPipelines(device, alphaBlend, colorBlend)
@@ -213,10 +217,27 @@ export async function blendOverlaysGPU(
     layout: cache.layoutOutput,
     entries: [{ binding: 0, resource: outputTex.createView() }],
   })
-  const overlayBGs = overlayTextures.map((tex) =>
+  // One weight per overlay, each at its own uniform-offset-aligned slot.
+  const stride = device.limits.minUniformBufferOffsetAlignment
+  const weightBuffer = device.createBuffer({
+    size: stride * Math.max(1, overlayTextures.length),
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  const weightData = new Float32Array((stride / 4) * overlayTextures.length)
+  overlayTextures.forEach((_t, k) => {
+    weightData[(k * stride) / 4] = weights[k] ?? 1
+  })
+  device.queue.writeBuffer(weightBuffer, 0, weightData)
+  const overlayBGs = overlayTextures.map((tex, k) =>
     device.createBindGroup({
       layout: cache.layoutOverlay,
-      entries: [{ binding: 0, resource: tex.createView() }],
+      entries: [
+        { binding: 0, resource: tex.createView() },
+        {
+          binding: 1,
+          resource: { buffer: weightBuffer, offset: k * stride, size: 16 },
+        },
+      ],
     }),
   )
   // Blend in z-slabs sized to the device buffer limits; typical volumes and
@@ -272,6 +293,7 @@ export async function blendOverlaysGPU(
   // submit since the GPU retains internal references
   accumBuffer.destroy()
   slabBuffer.destroy()
+  weightBuffer.destroy()
   return outputTex
 }
 

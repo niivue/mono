@@ -226,3 +226,43 @@ test('destroy releases an owned slide without invoking the renderer', async () =
     nv.destroy()
   }
 })
+
+for (const call of ['set', 'clear'] as const) {
+  test(`a caller's ${call}SlidePlane supersedes a pending document slide restore`, async () => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    const bytes = saved()
+    const mine = new NVSlide(manifest)
+    const entered = Promise.withResolvers<void>()
+    const pending = Promise.withResolvers<Response>()
+    const originalFetch = globalThis.fetch
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(((
+      input,
+      init,
+    ) => {
+      if (input !== manifestUrl) return originalFetch(input, init)
+      entered.resolve()
+      return pending.promise
+    }) as typeof fetch)
+    const dispose = spyOn(NVSlide.prototype, 'dispose')
+    try {
+      const load = nv.loadDocument(documentFile(bytes))
+      await entered.promise
+      if (call === 'set') nv.setSlidePlane(mine, { pixelToWorld: transform })
+      else nv.clearSlidePlane()
+      const set = spyOn(nv, 'setSlidePlane')
+      pending.resolve(Response.json(manifest))
+      await load
+      expect(set).not.toHaveBeenCalled()
+      set.mockRestore()
+      expect(nv.slidePlaneIndex).toEqual(call === 'set' ? { z: 0, t: 0 } : null)
+      // The restored slide is disposed, the caller's is not.
+      expect(dispose).toHaveBeenCalledTimes(1)
+      expect(dispose.mock.contexts[0]).not.toBe(mine)
+    } finally {
+      dispose.mockRestore()
+      fetchMock.mockRestore()
+      nv.destroy()
+      mine.dispose()
+    }
+  })
+}

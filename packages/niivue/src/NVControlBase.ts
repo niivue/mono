@@ -5229,6 +5229,8 @@ export default class NiiVue extends EventTarget {
    */
   /** The running loadDocument, aborted by the next. */
   private _documentLoad: AbortController | null = null
+  // Bumped by setSlidePlane/clearSlidePlane so a pending document restore yields.
+  private _slidePlaneGen = 0
 
   private _frameRequests = new Map<
     object,
@@ -6210,6 +6212,7 @@ export default class NiiVue extends EventTarget {
       isNearestInterpolation?: boolean
     },
   ): void {
+    this._slidePlaneGen++
     const levels = slide.manifest.levels
     if (levels.length === 0) return
     const pinnedLevel = opts.levelIndex
@@ -6350,6 +6353,7 @@ export default class NiiVue extends EventTarget {
 
   /** Remove a slide plane registered with {@link setSlidePlane}. */
   clearSlidePlane(): void {
+    this._slidePlaneGen++
     if (this._slidePlaneSlide && this._slidePlaneOnChange) {
       this._slidePlaneSlide.removeEventListener(
         'change',
@@ -8040,11 +8044,13 @@ export default class NiiVue extends EventTarget {
   private async _restoreSlidePlaneFromDoc(
     sp: NVDocument.NVDocumentSlidePlane,
     signal: AbortSignal,
+    slideGen: number,
   ): Promise<void> {
     const slide = sp.manifestUrl
       ? await NVSlide.fromManifestUrl(sp.manifestUrl, {}, signal)
       : new NVSlide(sp.manifest)
-    if (signal.aborted) {
+    // A caller's setSlidePlane/clearSlidePlane since the load began wins.
+    if (signal.aborted || this._slidePlaneGen !== slideGen) {
       slide.dispose()
       return
     }
@@ -8194,6 +8200,7 @@ export default class NiiVue extends EventTarget {
     // Clear existing data (releases GPU resources)
     this.closeDrawing()
     this.clearSlidePlane()
+    const slideGen = this._slidePlaneGen
     await this.removeAllVolumes()
     await this.removeAllMeshes()
     if (load.signal.aborted) return
@@ -8348,7 +8355,11 @@ export default class NiiVue extends EventTarget {
     // Restore a registered slide plane + its slide-space drawing (v8+).
     if (doc.slidePlane) {
       try {
-        await this._restoreSlidePlaneFromDoc(doc.slidePlane, load.signal)
+        await this._restoreSlidePlaneFromDoc(
+          doc.slidePlane,
+          load.signal,
+          slideGen,
+        )
         if (load.signal.aborted) return
       } catch (err) {
         if (load.signal.aborted) return

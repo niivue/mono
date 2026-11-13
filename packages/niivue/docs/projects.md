@@ -43,6 +43,7 @@ project, open a pull request that edits this page.
 - [JHUdemo](https://josephreggy23-coder.github.io/JHUdemo/) CT scan and per-voxel segmentation viewer for JHU BodyMaps ([source](https://github.com/josephreggy23-coder/JHUdemo))
 - [LAMBADA (OpenBrainAtlas)](https://lambada.icm-institute.org/) [atlas](https://lambada.icm-institute.org/atlases/5) of the developing postnatal mouse brain from the Paris Brain Institute
 - [LINC Gallery](https://gallery.lincbrain.org) showcases data from [LINC](https://connects.mgh.harvard.edu), an [NIH BRAIN CONNECTS](https://www.brain-connects.org) center
+- [MRI Brain Atlas](https://mribrainatlas.com/) interactive neuroanatomy teaching atlas on a T1-weighted MRI with FastSurfer and FreeSurfer labels
 - [MuscleMap](https://musclemap.neurodesk.org/) whole-body muscle MRI segmentation in your browser
 - [neurodesk](https://www.neurodesk.org/) browser-based [QSMxT quantitative susceptibility mapping](https://github.com/QSMxT/QSMxT-UI)
 - [Neurodesk WebApps](https://webapps.neurodesk.org/) browser-based neuroimaging applications

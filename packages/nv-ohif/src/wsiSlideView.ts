@@ -40,8 +40,8 @@ const dragModeFor = (tool: string | undefined): DRAG_MODE =>
  * caller uses it for DICOM-WSI (SM) display sets.
  *
  * The active tool runs on every button. With `Length` a drag draws one ruler
- * (core's slide overlay; the previous one hides while it is dragged; a click
- * without a drag clears it), endpoints in slide coordinates, measured in
+ * (core's slide overlay; the previous one clears once a new one is dragged;
+ * a click without a drag clears it), endpoints in slide coordinates, measured in
  * physical units from the slide's DICOM pixel spacing. `Zoom` drags zoom
  * about the pointer; any other tool pans. The wheel zooms.
  *

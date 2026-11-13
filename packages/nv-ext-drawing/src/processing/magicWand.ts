@@ -54,8 +54,9 @@ export interface MagicWandOptions {
    */
   thresholdMode?: ThresholdMode
   /**
-   * Percentage threshold (0–1) used when `thresholdMode` is `"percent"` or
-   * `"auto"`. Range becomes `[seed * (1-pct), seed * (1+pct)]`.
+   * Percentage threshold (0–1) used when `thresholdMode` is `"percent"`
+   * (range `[seed * (1-pct), seed * (1+pct)]`), or `"bright"`, `"dark"` or
+   * `"auto"` (one side only: `[seed, seed + |seed|*pct]` or `[seed - |seed|*pct, seed]`).
    * Equivalent to `clickToSegmentPercent` in the old niivue API.
    */
   percent?: number
@@ -176,6 +177,11 @@ function getNeighbourOffsets(
 // Public: magicWand
 // ---------------------------------------------------------------------------
 
+/** One-sided percent band width; a zero seed uses 0.01 as the percent mode does. */
+function percentSpan(seed: number, percent: number): number {
+  return Math.abs(seed === 0 ? 0.01 : seed) * percent
+}
+
 /**
  * Flood-fill (magic wand / click-to-segment) starting from a **RAS-voxel**
  * seed coordinate.
@@ -261,9 +267,8 @@ export function magicWand(
       case 'bright':
         // Only voxels at or above the seed
         if (percent > 0) {
-          const eff = seedIntensity === 0 ? 0.01 : seedIntensity
-          lo = eff * (1 - percent)
-          hi = eff * (1 + percent)
+          lo = seedIntensity
+          hi = seedIntensity + percentSpan(seedIntensity, percent)
         } else if (tolerance > 0) {
           lo = seedIntensity
           hi = seedIntensity + tolerance
@@ -275,9 +280,8 @@ export function magicWand(
       case 'dark':
         // Only voxels at or below the seed
         if (percent > 0) {
-          const eff = seedIntensity === 0 ? 0.01 : seedIntensity
-          lo = eff * (1 - percent)
-          hi = eff * (1 + percent)
+          lo = seedIntensity - percentSpan(seedIntensity, percent)
+          hi = seedIntensity
         } else if (tolerance > 0) {
           lo = seedIntensity - tolerance
           hi = seedIntensity

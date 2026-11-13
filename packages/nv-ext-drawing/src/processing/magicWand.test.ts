@@ -17,3 +17,29 @@ test('auto picks the calibrated side when scl_slope is negative', () => {
   // isBright is in raw units, where the order flips.
   expect(r.isBright).toBe(true)
 })
+
+test('bright and dark take a one-sided percent band', () => {
+  const raw = [36, 40, 44]
+  const run = (thresholdMode: 'bright' | 'dark') => {
+    const bmp = new Uint8Array(3)
+    magicWand([1, 0, 0], bmp, { dimX: 3, dimY: 1, dimZ: 1 }, raw, {
+      thresholdMode,
+      percent: 0.1,
+    })
+    return [...bmp]
+  }
+  expect(run('bright')).toEqual([0, 1, 1])
+  expect(run('dark')).toEqual([1, 1, 0])
+})
+
+test('auto with percent and a negative scl_slope fills the calibrated dark side', () => {
+  // slope -2, intercept 100: calibrated 28 20 12; raw range for cal 0..100 is 50..0
+  const bmp = new Uint8Array(3)
+  magicWand([1, 0, 0], bmp, { dimX: 3, dimY: 1, dimZ: 1 }, [36, 40, 44], {
+    thresholdMode: 'auto',
+    calMin: 50,
+    calMax: 0,
+    percent: 0.1,
+  })
+  expect([...bmp]).toEqual([0, 1, 1])
+})

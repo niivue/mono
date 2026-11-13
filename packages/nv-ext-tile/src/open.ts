@@ -112,8 +112,8 @@ export function resolveSlideSource(
     const base = d.params?.baseUrl
     if (typeof base === 'string') {
       // Untrusted: only a path on the manifest's origin, as saved.
-      const b = URL.parse(base, d.url)
-      if (b && b.origin === URL.parse(d.url)?.origin) reopen.baseUrl = b.href
+      const b = parseUrl(base, d.url)
+      if (b && b.origin === parseUrl(d.url)?.origin) reopen.baseUrl = b.href
     }
     return openUrl(format as SlideKind, d.url, reopen, signal)
   }
@@ -317,6 +317,15 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
   }
 }
 
+/** `URL.parse` (Chrome 126, Safari 18) for the browsers NiiVue supports. */
+function parseUrl(url: string, base?: string): URL | null {
+  try {
+    return new URL(url, base)
+  } catch {
+    return null
+  }
+}
+
 /**
  * `baseUrl` as a path on the manifest's origin. A saved document drops
  * URL-valued params (they may be signed), and a path carries no host,
@@ -324,11 +333,11 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
  * back to the manifest URL.
  */
 function basePath(baseUrl: string, manifestUrl: string): string | undefined {
-  const b = URL.parse(baseUrl, manifestUrl)
+  const b = parseUrl(baseUrl, manifestUrl)
   // `//x` would read as a host on reopen.
   if (
     !b ||
-    b.origin !== URL.parse(manifestUrl)?.origin ||
+    b.origin !== parseUrl(manifestUrl)?.origin ||
     b.pathname.startsWith('//')
   )
     return undefined

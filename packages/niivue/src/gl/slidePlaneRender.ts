@@ -2,18 +2,19 @@ import { colorLutGlsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
 import {
   DEFAULT_RAW_POOL_BYTES,
-  isFuseTile,
   SlideBudgetRegistration,
 } from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
   type SlidePlaneTile,
-  slideExtentCorners,
 } from '@/slide/slidePlane'
 import {
   frameTextureBudget,
+  gatherPlaneTiles,
+  PLANE_QUAD_FLOATS,
   planeQuad,
+  planeVertices,
   planTextures,
   sameTiles,
   tileTexture,
@@ -21,7 +22,6 @@ import {
 import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
-  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -76,9 +76,6 @@ void main(){
   }
   outColor = vec4(applyColorLut(c.rgb), c.a * opacity);
 }`
-
-// Interleaved [pos.xyz, uv.xy]: 5 floats a vertex, 20 a quad.
-const QUAD_FLOATS = 20
 
 function quadVao(
   gl: WebGL2RenderingContext,
@@ -169,15 +166,6 @@ export class SlidePlaneRenderer extends NVRenderer {
     this.isReady = true
   }
 
-  private _atOf(slide: NVSlide, tile: SlidePlaneTile): GutterAt {
-    let at = this._at.get(tile)
-    if (!at) {
-      at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
-      this._at.set(tile, at)
-    }
-    return at
-  }
-
   /** Bind the program and uniforms, and set the plane's depth/blend state. */
   private _begin(
     gl: WebGL2RenderingContext,
@@ -213,17 +201,11 @@ export class SlidePlaneRenderer extends NVRenderer {
     slide: NVSlide,
     pixelToWorld?: readonly number[],
   ): void {
-    const data = new Float32Array((tiles.length + 1) * QUAD_FLOATS)
-    if (pixelToWorld) {
-      const { width, height } = slide.manifest
-      data.set(cornerQuad(slideExtentCorners(pixelToWorld, width, height)))
-    }
-    this._insets.length = 0
-    tiles.forEach((tile, i) => {
-      data.set(planeQuad(tile, tile), (i + 1) * QUAD_FLOATS)
-      this._insets.push(tile)
-    })
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      planeVertices(tiles, slide, pixelToWorld, this._insets),
+      gl.STATIC_DRAW,
+    )
     this._built = tiles
     this._builtFor = { slide, pixelToWorld }
   }
@@ -247,14 +229,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._fuser.retainLabelTables([slide])
     const cached = this._cached
     const ats = this._ats
-    cached.length = ats.length = 0
-    let fuses = false
-    for (const tile of tiles) {
-      const c = slide.cachedTile(tile.key)
-      if (c && isFuseTile(c)) fuses = true
-      cached.push(c)
-      ats.push(this._atOf(slide, tile))
-    }
+    const fuses = gatherPlaneTiles(slide, tiles, this._at, cached, ats)
     // Evict BEFORE beginFrame so the previous frame's working set is exempt.
     this._textures.evictToBudget(
       frameTextureBudget(fuses, this._fuser.poolBytes, DEFAULT_RAW_POOL_BYTES),
@@ -316,7 +291,7 @@ export class SlidePlaneRenderer extends NVRenderer {
         const tile = tiles[i] as SlidePlaneTile
         gl.bufferSubData(
           gl.ARRAY_BUFFER,
-          (i + 1) * QUAD_FLOATS * 4,
+          (i + 1) * PLANE_QUAD_FLOATS * 4,
           planeQuad(tile, tex),
         )
       }

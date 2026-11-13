@@ -2,18 +2,18 @@ import { colorLutWgsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
 import {
   DEFAULT_RAW_POOL_BYTES,
-  isFuseTile,
   SlideBudgetRegistration,
 } from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
   type SlidePlaneTile,
-  slideExtentCorners,
 } from '@/slide/slidePlane'
 import {
   frameTextureBudget,
+  gatherPlaneTiles,
   planeQuad,
+  planeVertices,
   planTextures,
   sameTiles,
   tileTexture,
@@ -21,7 +21,6 @@ import {
 import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
-  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -306,16 +305,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     slide: NVSlide,
     pixelToWorld?: readonly number[],
   ): void {
-    const data = new Float32Array((tiles.length + 1) * 20)
-    if (pixelToWorld) {
-      const { width, height } = slide.manifest
-      data.set(cornerQuad(slideExtentCorners(pixelToWorld, width, height)))
-    }
-    slot.insets.length = 0
-    tiles.forEach((tile, i) => {
-      data.set(planeQuad(tile, tile), (i + 1) * 20)
-      slot.insets.push(tile)
-    })
+    const data = planeVertices(tiles, slide, pixelToWorld, slot.insets)
     if (!slot.vertex || slot.vertexBytes < data.byteLength) {
       // An earlier pass may still be in flight with it.
       if (slot.vertex) this._retired.push(slot.vertex)
@@ -328,15 +318,6 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     device.queue.writeBuffer(slot.vertex, 0, data)
     slot.builtTiles = tiles
     slot.builtFor = { slide, pixelToWorld }
-  }
-
-  private _atOf(slide: NVSlide, tile: SlidePlaneTile): GutterAt {
-    let at = this._at.get(tile)
-    if (!at) {
-      at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
-      this._at.set(tile, at)
-    }
-    return at
   }
 
   private _textureFor(
@@ -433,14 +414,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._fuser.retainLabelTables([slide])
     const cached = this._cached
     const ats = this._ats
-    cached.length = ats.length = 0
-    let fuses = false
-    for (const tile of tiles) {
-      const c = slide.cachedTile(tile.key)
-      if (c && isFuseTile(c)) fuses = true
-      cached.push(c)
-      ats.push(this._atOf(slide, tile))
-    }
+    const fuses = gatherPlaneTiles(slide, tiles, this._at, cached, ats)
     const slot = this._nextSlot(device, pass, mvpMatrix, opacity, fuses)
     if (!slot) return
     // Upload and fuse every tile before drawing any.

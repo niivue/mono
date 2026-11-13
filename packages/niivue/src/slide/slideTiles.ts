@@ -9,10 +9,15 @@ import type {
   NVSlideVisibleTile,
 } from './NVSlide'
 import { type FuseTile, isFuseTile, tileTextureBudget } from './slideFuse'
-import { cornerQuad, type SlidePlaneTile } from './slidePlane'
+import {
+  cornerQuad,
+  type SlidePlaneTile,
+  slideExtentCorners,
+} from './slidePlane'
 import { type GutterAt, visibleTileAt } from './tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
+  slideTileKey,
   type TileTextureCache,
 } from './tileTextureCache'
 
@@ -310,3 +315,58 @@ export const planeQuad = (
   gutter?: { width: number; height: number },
 ): Float32Array<ArrayBuffer> =>
   cornerQuad(tile.corners, gutter, cropUv(tile, tile.src))
+
+/**
+ * The cache entry and gutter position of each plane tile of `slide` into
+ * `cached` and `ats` (positions memoized per tile in `atOf`); true when any
+ * tile fuses.
+ */
+export function gatherPlaneTiles(
+  slide: NVSlide,
+  tiles: readonly SlidePlaneTile[],
+  atOf: WeakMap<SlidePlaneTile, GutterAt>,
+  cached: (NVSlideCachedTile | null)[],
+  ats: GutterAt[],
+): boolean {
+  cached.length = ats.length = 0
+  let fuses = false
+  for (const tile of tiles) {
+    const c = slide.cachedTile(tile.key)
+    if (c && isFuseTile(c)) fuses = true
+    cached.push(c)
+    let at = atOf.get(tile)
+    if (!at) {
+      at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
+      atOf.set(tile, at)
+    }
+    ats.push(at)
+  }
+  return fuses
+}
+
+// Interleaved [pos.xyz, uv.xy]: 5 floats a vertex, 20 a quad.
+export const PLANE_QUAD_FLOATS = 20
+
+/**
+ * One vertex buffer's data for a plane tile set: the slide extent quad (with
+ * `pixelToWorld`; zeros otherwise), then every tile. `insets` gets the size
+ * each tile's UVs were inset for.
+ */
+export function planeVertices(
+  tiles: readonly SlidePlaneTile[],
+  slide: NVSlide,
+  pixelToWorld: readonly number[] | undefined,
+  insets: { width: number; height: number }[],
+): Float32Array<ArrayBuffer> {
+  const data = new Float32Array((tiles.length + 1) * PLANE_QUAD_FLOATS)
+  if (pixelToWorld) {
+    const { width, height } = slide.manifest
+    data.set(cornerQuad(slideExtentCorners(pixelToWorld, width, height)))
+  }
+  insets.length = 0
+  tiles.forEach((tile, i) => {
+    data.set(planeQuad(tile, tile), (i + 1) * PLANE_QUAD_FLOATS)
+    insets.push(tile)
+  })
+  return data
+}

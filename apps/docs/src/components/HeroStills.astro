@@ -1,6 +1,6 @@
 ---
-// The home page hero's backdrop: stills of each kind of data NiiVue shows,
-// drawn by NiiVue itself (scripts/home-stills.ts), in one row on black. The
+// The row of stills along the bottom of the home page hero: each kind of
+// data NiiVue shows, drawn by NiiVue itself (scripts/home-stills.ts). The
 // tagline names them, so the images are decorative here.
 import { withBase } from '../site'
 
@@ -14,7 +14,7 @@ const STILLS = [
 ]
 ---
 
-<div class="backdrop" aria-hidden="true">
+<div class="stills" aria-hidden="true">
   {
     STILLS.map(({ image, fade }) => (
       <img
@@ -30,11 +30,11 @@ const STILLS = [
 </div>
 
 <style>
-  .backdrop {
+  .stills {
     position: absolute;
     inset: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
   }
 
   img {
@@ -49,12 +49,5 @@ const STILLS = [
       linear-gradient(to right, transparent 5%, #000 22%, #000 78%, transparent 95%),
       linear-gradient(to bottom, transparent 5%, #000 22%, #000 78%, transparent 95%);
     mask-composite: intersect;
-  }
-
-  /* Narrow screens: the row sits along the bottom, below the text. */
-  @media (max-width: 50rem) {
-    .backdrop {
-      align-items: flex-end;
-    }
   }
 </style>

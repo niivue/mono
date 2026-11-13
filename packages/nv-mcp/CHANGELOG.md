@@ -1,3 +1,22 @@
+## 1.0.0-rc.188 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** add a labels option to streamOmeZarr ([f8467f4f](https://github.com/niivue/mono/commit/f8467f4f))
+
+### Fixes
+
+- **nv-ext-tile:** stream a segmentation in its image-label colours ([dea03573](https://github.com/niivue/mono/commit/dea03573))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.193
+- Updated uikit to 1.0.0-rc.191
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.187 (2026-11-13)
 
 ### Features

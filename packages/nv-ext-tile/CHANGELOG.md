@@ -1,3 +1,25 @@
+## 1.0.0-rc.102 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** add a labels option to streamOmeZarr ([f8467f4f](https://github.com/niivue/mono/commit/f8467f4f))
+
+### Fixes
+
+- **nv-ext-tile:** limit the 64-bit label fallback to float64 ([281942d2](https://github.com/niivue/mono/commit/281942d2))
+- **nv-ext-tile:** decode XML character references in OME TiffData attributes ([#49](https://github.com/niivue/mono/issues/49))
+- **nv-ext-tile:** stream a segmentation in its image-label colours ([dea03573](https://github.com/niivue/mono/commit/dea03573))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.193
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.101 (2026-11-13)
 
 ### Fixes

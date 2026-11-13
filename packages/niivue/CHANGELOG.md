@@ -1,3 +1,16 @@
+## 1.0.0-rc.193 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** decode XML character references in OME TiffData attributes ([#49](https://github.com/niivue/mono/issues/49))
+- **niivue:** parseOmeXml keeps inherited entity names and XML noncharacters as written ([77feadcb](https://github.com/niivue/mono/commit/77feadcb))
+- **niivue:** parseOmeXml keeps references to XML-forbidden characters as written ([#0](https://github.com/niivue/mono/issues/0))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.192 (2026-11-13)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

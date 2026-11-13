@@ -1,3 +1,13 @@
+## 1.0.0-rc.197 (2026-11-13)
+
+### Fixes
+
+- **niivue:** apply the slide ICC table to the CPU thumbnail ([23f9bc6f](https://github.com/niivue/mono/commit/23f9bc6f))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.196 (2026-11-13)
 
 ### Features

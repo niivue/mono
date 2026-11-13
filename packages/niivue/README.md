@@ -328,7 +328,7 @@ Unused slide and streaming options were removed:
 
 ### Testing
 
-The package includes a unit test suite for non-rendering logic, including a headless controller (loading, documents, events), using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`. Rendering, Workers and pointer input are covered by Playwright specs in `e2e/` (see `AGENTS.md`).
+The package includes a unit test suite for non-rendering logic, including a headless controller (loading, documents, events), using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`. Rendering, Workers and pointer input are covered by Playwright specs in `e2e/` (see `notes/agents/testing.md`).
 
 ```bash
 bun test                # Run all tests with coverage
@@ -353,7 +353,7 @@ bunx nx test niivue
 
 ### Architecture
 
-The codebase is written in **TypeScript** and follows an MVC pattern with dual rendering backends (WebGPU and WebGL2). See [AGENTS.md](AGENTS.md) for detailed architecture documentation, directory structure, code style, and module naming conventions.
+The codebase is written in **TypeScript** and follows an MVC pattern with dual rendering backends (WebGPU and WebGL2). See [AGENTS.md](AGENTS.md) for the package's rules and code style, and [notes/agents/](notes/agents/) for architecture and the other areas in detail.
 
 ### Dependencies
 

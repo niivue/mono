@@ -393,10 +393,9 @@ Known, deliberate, and not blocking. Each is a decision, not an oversight.
   clamp (not shown exploitable).
 - **The bound must never be waived on a PREDICTION about the browser.** An
   attempt to skip it when a NIfTI header looked like it would be partial-loaded
-  was withdrawn: NiiVue does not partial-load from `loadVolumes` at all (the
-  worker full-decodes and `loadBridge.ts:60` drops the frame limit), and even if
-  it did, its eligibility is chosen by FILENAME while the native gate reads
-  CONTENT — so gzip content named `.nii` passed the gate and was fully inflated.
+  was withdrawn: NiiVue's partial 4D load (`limitFrames4D`, forwarded by
+  `loadBridge.ts` and the volume worker) chooses eligibility by FILENAME while
+  the native gate reads CONTENT — so gzip content named `.nii` passed the gate and was fully inflated.
   Native code must not mirror loader policy; the component that decodes owns it.
 - **A name-based gate must never sit in front of a content-based defence.**
   `GzipPeek` used to run only when the *filename* ended in `.gz`/`.mgz`, while
@@ -439,7 +438,7 @@ bunx nx build medgfx-web      # Production build -> apps/medgfx/web/dist/
 bunx nx typecheck medgfx-web
 bunx nx lint medgfx-web
 bunx nx format medgfx-web
-bunx nx e2e medgfx-web        # 88 Quick Look page checks (needs a browser, see below)
+bunx nx e2e medgfx-web        # Quick Look page checks (needs a browser, see below)
 
 # Native app About metadata — run from the repo root
 bun apps/medgfx/scripts/generate-about-authors.ts

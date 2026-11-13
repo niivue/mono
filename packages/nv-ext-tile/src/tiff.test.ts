@@ -1637,6 +1637,20 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       },
       [0.25, 0.25],
     ],
+    [
+      'Ventana iScan, single-quoted',
+      { description: 'Label_Image', xmp: "<iScan ScanRes='0.25'/>" },
+      [0.25, 0.25],
+    ],
+    [
+      'Ventana with a bad ScanRes ignores tags',
+      {
+        ...res(25000, 3),
+        description: 'Label_Image',
+        xmp: '<iScan ScanRes="bad"/><EncodeInfo/><TileJointInfo/>',
+      },
+      undefined,
+    ],
     ['Huron-1 (cm)', res(25000, 3), [0.4, 0.4]],
     ['Argos-1 (cm)', res(26109.381, 3), [0.383004]],
     ['Generic-TIFF 10 px/cm placeholder', res(10, 3), undefined],

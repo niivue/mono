@@ -1767,7 +1767,7 @@ describe('load_ome_zarr', () => {
       ],
     ),
     omeZarrLabelColormap: mock(() => labelMap),
-    fetchOmeZarrChunkedSource: mock(async () => ({})),
+    fetchOmeZarrChunkedSource: mock(async () => ({ channel: 0 })),
     streamOmeZarr: mock(async () => ({})),
   })
 
@@ -1853,7 +1853,7 @@ describe('load_ome_zarr', () => {
 
 describe('add_isosurface', () => {
   it('surfaces one channel through the page loaders and frees the source', async () => {
-    const source = { dispose: mock() }
+    const source = { channel: 1, dispose: mock() }
     const zarr = { fetchOmeZarrChunkedSource: mock(async () => source) }
     const mesh = { name: 'cells (level 2)' }
     const iso = { channelIsosurfaces: mock(async () => [mesh]) }
@@ -1885,15 +1885,17 @@ describe('add_isosurface', () => {
       handlers.add_isosurface({ url: 'https://x/s.ome.zarr' }),
     ).rejects.toThrow('exactly one of threshold or labels')
   })
-  it('names the requested channel and surfaces the frame shown', async () => {
-    const source = { frames: 4, dispose: mock() }
+  it('names the channel the source chose and leaves the timepoint to the store', async () => {
+    // Channels 0 and 1 inactive: the source picks channel 2.
+    const source = { channel: 2, dispose: mock() }
     const zarr = { fetchOmeZarrChunkedSource: mock(async () => source) }
     const iso = {
       channelIsosurfaces: mock(async (_channels: unknown[]) => [{ name: 'm' }]),
     }
+    // An unrelated volume shown at frame 2 does not pick the timepoint.
     const view = fakeView({
       addMesh: mock(async () => {}),
-      volumes: [{ name: 's', frameSource: { count: 4, frame: 2 } }],
+      volumes: [{ name: 'other', frameSource: { count: 4, frame: 2 } }],
     })
     const handlers = coreHandlers(
       host(view, {
@@ -1901,29 +1903,23 @@ describe('add_isosurface', () => {
         isosurface: async () => iso,
       }),
     )
-    const surfaced = () => iso.channelIsosurfaces.mock.calls.at(-1)?.[0]
-    await handlers.add_isosurface({
-      url: 'https://x/s.ome.zarr',
-      channel: 2,
-      threshold: 100,
-    })
-    expect(surfaced()).toEqual([
-      expect.objectContaining({ frame: 2, name: 'channel 2' }),
-    ])
+    await handlers.add_isosurface({ url: 'https://x/s.ome.zarr', threshold: 1 })
+    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenLastCalledWith(
+      'https://x/s.ome.zarr',
+      { channel: undefined, timepoint: undefined },
+    )
+    const [[surface]] = iso.channelIsosurfaces.mock.calls.at(-1) ?? [[]]
+    expect(surface).toMatchObject({ name: 'channel 2' })
+    expect(surface).not.toHaveProperty('frame')
     await handlers.add_isosurface({
       url: 'https://x/s.ome.zarr',
       timepoint: 1,
-      threshold: 100,
+      threshold: 1,
     })
     expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenLastCalledWith(
       'https://x/s.ome.zarr',
       { channel: undefined, timepoint: 1 },
     )
-    expect(surfaced()).toEqual([expect.objectContaining({ frame: 1 })])
-    // A shown frame beyond the store's belongs to another image.
-    source.frames = 1
-    await handlers.add_isosurface({ url: 'https://x/s.ome.zarr', threshold: 1 })
-    expect(surfaced()).toEqual([expect.objectContaining({ frame: undefined })])
   })
 
   it('rejects a bad url and names the store when it fails', async () => {

@@ -270,6 +270,8 @@ function structureRevision(source: OmeZarrSource): string {
 export interface OmeZarrChunkedSource extends ChunkedVolumeSource {
   /** The opened store behind the adapter (levels, omero channels, axes). */
   readonly zarr: OmeZarrSource
+  /** The channel streamed: the one asked for, else the first active. */
+  readonly channel: number
   /**
    * The store-level byte cache, when one was built for this source. Present
    * on {@link fetchOmeZarrChunkedSource} results with a non-zero budget, so a
@@ -424,6 +426,7 @@ export function omeZarrChunkedSource(
 
   return {
     zarr: source,
+    channel,
     frames: source.timepointCount,
     revision: structureRevision(source),
     datatypeCode,

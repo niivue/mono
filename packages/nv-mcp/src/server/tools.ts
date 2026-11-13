@@ -111,9 +111,7 @@ export const CORE_SCHEMAS = {
       .int()
       .min(0)
       .optional()
-      .describe(
-        'The timepoint to surface; the frame shown otherwise, so the mesh matches the volume drawn.',
-      ),
+      .describe('The timepoint to surface; the first otherwise.'),
     threshold: z
       .number()
       .optional()

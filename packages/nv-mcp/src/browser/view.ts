@@ -979,8 +979,6 @@ export interface IsosurfaceLoader {
       threshold?: number
       labels?: number[]
       level?: number
-      /** The timepoint to surface. */
-      frame?: number
       color?: [number, number, number, number]
       name?: string
     }[],
@@ -1039,11 +1037,11 @@ export interface OmeZarrLoaders {
   ): Promise<unknown[]>
   /** The store's own label colours, or null when it states none. */
   omeZarrLabelColormap(info: unknown): ColormapToAdd | null
-  /** A chunked source over one channel, for `add_isosurface`; `dispose` stops its workers. */
+  /** A chunked source over one channel (`channel`, the one it chose), for `add_isosurface`; `dispose` stops its workers. */
   fetchOmeZarrChunkedSource(
     url: string,
     options?: { channel?: number; timepoint?: number },
-  ): Promise<{ frames?: number; dispose?(): void }>
+  ): Promise<{ channel: number; dispose?(): void }>
   /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
   streamOmeZarr(
     view: unknown,

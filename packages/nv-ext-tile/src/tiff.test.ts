@@ -1690,6 +1690,30 @@ test('an unreadable resolution tag gives no spacing, never a failed open', async
   expect(source.manifest.pixelSpacingMM).toBeUndefined()
 })
 
+test('an unreadable XMP or ResolutionUnit gives no spacing, not the tags', async () => {
+  // 25000 px/cm, which alone reads as 0.4 um.
+  const tagged = (bad?: number[]) => ({
+    ...rawLevel(0, 16, 16, 16),
+    longs: { 282: [25000, 1], 283: [25000, 1] },
+    edit: (entries: number[][]) => {
+      for (const e of entries)
+        if (e[0] === 282 || e[0] === 283) e.splice(1, 2, 5, 1)
+      if (bad?.[0] !== 296) entries.push([296, 3, 1, 3])
+      // Pointing past the end of the file.
+      if (bad) entries.push([...bad, 0x7ffffff0])
+    },
+  })
+  const spacing = async (bad?: number[]) =>
+    (
+      await TiffSlideSource.fromGeoTIFF(
+        await fromArrayBuffer(writeTiff([tagged(bad)])),
+      )
+    ).manifest.pixelSpacingMM
+  expect(await spacing()).toEqual([0.0004, 0.0004])
+  expect(await spacing([700, 1, 64])).toBeUndefined()
+  expect(await spacing([296, 3, 4])).toBeUndefined()
+})
+
 describe('OME-TIFF channel names', () => {
   test('names, colours, plane order and z step units (entities: core omeTiff.test)', async () => {
     const inner =

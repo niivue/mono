@@ -1264,24 +1264,42 @@ async function loadCapped(
   }
 }
 
-// Level 0's physical pixel size (tiffSpacing.ts). An unreadable XMP is no spacing.
-async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
+// geotiff-rs drops a deferred tag whose load failed (hasTag turns false), so
+// the first XMP read, failure included, is kept for later readers. null: absent.
+const xmpReads = new WeakMap<object, Promise<string> | null>()
+function readXmp(
+  tiff: GeoTIFF,
+  dir: GeoTIFFImage['fileDirectory'],
+): Promise<string> | null {
+  let read = xmpReads.get(dir)
+  if (read === undefined) {
+    read = dir.hasTag(700)
+      ? loadCapped(tiff, dir, 700, MAX_XMP).then(tagText)
+      : null
+    xmpReads.set(dir, read)
+  }
+  return read
+}
+
+// Level 0's physical pixel size (tiffSpacing.ts). Any unreadable tag it reads
+// is no spacing, never a failed open; an absent one is just not a source.
+async function pixelSpacingOf(
+  tiff: GeoTIFF,
+  opened: TiffOpened,
+): Promise<[number, number] | undefined> {
   const ifd0 = (await tiff.getImage(0)).fileDirectory
   const base = opened.pyramids[0]?.[0]?.img.fileDirectory
-  const text = async (tag: number) =>
-    ifd0.hasTag(tag)
-      ? tagText(await loadCapped(tiff, ifd0, tag, MAX_XMP).catch(() => ''))
-      : ''
-  // An unreadable resolution tag is no spacing, never a failed open.
+  // null: present but unreadable.
   const optional = async (tag: number) =>
-    base?.hasTag(tag)
-      ? await base.loadValue(tag).catch(() => undefined)
-      : undefined
+    base?.hasTag(tag) ? base.loadValue(tag).catch(() => null) : undefined
   const rational = async (tag: number) => {
     const v = await optional(tag)
-    return v ? Number(v[0]) / Number(v[1]) : undefined
+    return v ? Number(v[0]) / Number(v[1]) : v
   }
-  const description = await text(270)
+  const description = ifd0.hasTag(270)
+    ? await loadCapped(tiff, ifd0, 270, MAX_XMP).then(tagText, () => null)
+    : ''
+  if (description === null) return undefined
   // The Leica region whose image is level 0; a composed level has none.
   const level0 = opened.pyramids[0]?.[0]
   const regions = level0?.regions ? null : leicaRegions(description)
@@ -1295,17 +1313,27 @@ async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
   )
   const opened0 = at < 0 ? {} : { leicaRegion: at }
   // Tags are read only when the description does not settle it.
-  return (
-    tiffPixelSpacingMM({ description, ...opened0 }) ??
-    tiffPixelSpacingMM({
-      description,
-      ...opened0,
-      xmp: await text(700),
-      xResolution: await rational(282),
-      yResolution: await rational(283),
-      resolutionUnit: await optional(296),
-    })
+  const settled = tiffPixelSpacingMM({ description, ...opened0 })
+  if (settled) return settled
+  const xmp = await (readXmp(tiff, ifd0)?.catch(() => null) ?? '')
+  const xResolution = await rational(282)
+  const yResolution = await rational(283)
+  const resolutionUnit = await optional(296)
+  if (
+    xmp === null ||
+    xResolution === null ||
+    yResolution === null ||
+    resolutionUnit === null
   )
+    return undefined
+  return tiffPixelSpacingMM({
+    description,
+    ...opened0,
+    xmp,
+    xResolution,
+    yResolution,
+    resolutionUnit,
+  })
 }
 
 async function placedPyramid(
@@ -1383,10 +1411,11 @@ async function placedPyramid(
   }
   const levels = pyramidLevels(images)
   const dir = levels[0]?.img.fileDirectory
-  if (!dir?.hasTag(700)) return null
+  const read = dir && readXmp(tiff, dir)
+  if (!read) return null
   let xmp: string
   try {
-    xmp = tagText(await loadCapped(tiff, dir, 700, MAX_XMP))
+    xmp = await read
   } catch (err) {
     const warning = `XMP not read: ${err instanceof Error ? err.message : err}`
     console.warn(warning)

@@ -28,6 +28,7 @@ const sections = Map.groupBy(cards, (c) => c.section)
         placeholder="Search examples"
         aria-label="Search examples"
       />
+      <div class="filters">
       <fieldset class="chips">
         <legend class="sr-only">Section</legend>
         {
@@ -38,6 +39,11 @@ const sections = Map.groupBy(cards, (c) => c.section)
           ))
         }
       </fieldset>
+      <div class="chips view" role="group" aria-label="View">
+        <button type="button" data-view="grid" aria-pressed="true">Grid</button>
+        <button type="button" data-view="list" aria-pressed="false">List</button>
+      </div>
+      </div>
       <p class="count" aria-live="polite"></p>
     </div>
     {
@@ -128,6 +134,19 @@ const sections = Map.groupBy(cards, (c) => c.section)
     border-bottom-color: var(--sl-color-text-accent);
   }
 
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem 2rem;
+  }
+
+  /* Right-aligned, even when it wraps, so it does not read as a section. */
+  .view {
+    margin-left: auto;
+  }
+
   .count {
     color: var(--sl-color-gray-3);
     font-size: var(--sl-text-sm);
@@ -211,6 +230,40 @@ const sections = Map.groupBy(cards, (c) => c.section)
     font-size: var(--sl-text-sm);
     line-height: 1.5;
     color: var(--sl-color-gray-3);
+  }
+
+  /* List view: one row per example, no thumbnails (lazy images then never load). */
+  nv-gallery[data-view='list'] section {
+    margin-bottom: 2rem;
+  }
+
+  nv-gallery[data-view='list'] .grid {
+    display: block;
+  }
+
+  nv-gallery[data-view='list'] .thumb {
+    display: none;
+  }
+
+  nv-gallery[data-view='list'] .card {
+    padding-block: 0.45rem;
+    border-bottom: 1px solid var(--sl-color-hairline);
+  }
+
+  nv-gallery[data-view='list'] .card:hover strong {
+    color: var(--sl-color-text-accent);
+  }
+
+  @media (min-width: 50rem) {
+    nv-gallery[data-view='list'] .body {
+      flex-direction: row;
+      align-items: baseline;
+      gap: 1.5rem;
+    }
+
+    nv-gallery[data-view='list'] .card strong {
+      flex: 0 0 18rem;
+    }
   }
 
   .empty {

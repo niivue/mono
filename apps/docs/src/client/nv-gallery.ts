@@ -1,10 +1,13 @@
 // <nv-gallery>: filters the server-rendered gallery cards by search text and
-// section, and keeps each section's count in step with what is shown.
+// section, keeps each section's count in step with what is shown, and
+// switches between the card grid and a text list (remembered per browser).
+const VIEW_KEY = 'nv-gallery-view'
+
 class NvGallery extends HTMLElement {
   connectedCallback() {
     const search = this.querySelector<HTMLInputElement>('.search')
     const chips = Array.from(
-      this.querySelectorAll<HTMLButtonElement>('.chips button'),
+      this.querySelectorAll<HTMLButtonElement>('fieldset.chips button'),
     )
     const groups = Array.from(this.querySelectorAll<HTMLElement>('section'))
     const count = this.querySelector<HTMLElement>('.count')
@@ -36,6 +39,27 @@ class NvGallery extends HTMLElement {
           terms.length || active ? `${shown} of ${total} examples` : ''
       }
       if (empty) empty.hidden = shown > 0
+    }
+    const views = Array.from(
+      this.querySelectorAll<HTMLButtonElement>('.view button'),
+    )
+    const setView = (view: string) => {
+      this.dataset.view = view
+      for (const v of views) {
+        v.setAttribute('aria-pressed', String(v.dataset.view === view))
+      }
+    }
+    try {
+      if (localStorage.getItem(VIEW_KEY) === 'list') setView('list')
+    } catch {}
+    for (const v of views) {
+      v.addEventListener('click', () => {
+        const view = v.dataset.view ?? 'grid'
+        setView(view)
+        try {
+          localStorage.setItem(VIEW_KEY, view)
+        } catch {}
+      })
     }
     search?.addEventListener('input', update)
     for (const chip of chips) {

@@ -11,7 +11,8 @@ export const ARGOS_TAG = 65000
 export interface ArgosStack {
   /**
    * Main-chain image indices of each plane's pyramid, plane 0 first. Plane i
-   * is focal step MinZ + i (units unstated); plane -MinZ is step 0.
+   * is taken as focal step MinZ + i (the file does not say which end is
+   * MinZ; units unstated).
    */
   planes: number[][]
   /** The plane opened by default (owner): the middle, usually the sharpest. */

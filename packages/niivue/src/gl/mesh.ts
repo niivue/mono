@@ -16,6 +16,7 @@ import {
   meshDepthPickFragmentShader,
   meshDepthPickVertexShader,
 } from './depthPickShader'
+import { blendOver } from './glUtil'
 import {
   fragmentShaders,
   meshVertCrosscut2,
@@ -392,7 +393,7 @@ function drawCrosscut2(
   gl.disable(gl.DEPTH_TEST)
   gl.disable(gl.CULL_FACE)
   gl.enable(gl.BLEND)
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+  blendOver(gl)
   gl.bindVertexArray(cc.vao)
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, entries.length * CLUSTER_SIZE)
   gl.bindVertexArray(null)
@@ -484,7 +485,7 @@ export function drawWithGpu(
   }
   if (xray) gl.depthMask(false)
   gl.enable(gl.BLEND)
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+  blendOver(gl)
   gl.bindVertexArray(gpu.vao)
   gl.drawElements(gl.TRIANGLES, gpu.indexCount, gl.UNSIGNED_INT, 0)
   gl.bindVertexArray(null)

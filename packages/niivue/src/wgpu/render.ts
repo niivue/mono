@@ -19,6 +19,8 @@ import {
   chunkRegions,
   stackGeneration,
   stackInputs,
+  stackModes,
+  stackWeights,
 } from '@/view/chunkStackFuse'
 import { loadMatcapOrDefault } from '@/view/matcapFallback'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -2058,10 +2060,11 @@ export class VolumeRenderer extends NVRenderer {
     const chunks = base.plan.chunks
     const alpha = this.overlayAlphaBlend
     const color = this.overlayColorBlend
+    const weights = stackWeights(entries)
     return fuse.pump(
       chunkRegions(base.plan),
       stackGeneration(entries),
-      `${alpha}/${color}`,
+      stackModes(entries, alpha, color),
       (i) => stackInputs(entries, i),
       (inputs, i) => {
         const dims = chunks[i].texDims
@@ -2071,6 +2074,7 @@ export class VolumeRenderer extends NVRenderer {
           [dims[0], dims[1], dims[2]],
           alpha,
           color,
+          weights,
         )
       },
       deadline,
@@ -2608,7 +2612,7 @@ export class VolumeRenderer extends NVRenderer {
     return fuse.pending(
       chunkRegions(base.plan),
       stackGeneration(entries),
-      `${this.overlayAlphaBlend}/${this.overlayColorBlend}`,
+      stackModes(entries, this.overlayAlphaBlend, this.overlayColorBlend),
       (i) => stackInputs(entries, i),
     )
   }

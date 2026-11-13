@@ -10,7 +10,7 @@ import {
   type SlideTileSource,
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
-import type { SlideIndex } from './dicomIndex'
+import type { SlideIndex, SlideIndexSlide } from './dicomIndex'
 import {
   anySignal,
   readCapped,
@@ -48,6 +48,8 @@ export interface OpenSlideOptions {
 export interface SlideCandidate {
   kind: SlideKind
   label: string
+  /** DICOM: the indexed slide it opens (levels, frames, transfer syntax). */
+  slide?: SlideIndexSlide
   open(signal?: AbortSignal): Promise<SlideTileSource>
 }
 
@@ -55,7 +57,7 @@ export interface OpenedSlides {
   kind: SlideKind
   /** Every slide found, in input order; never chosen among here. */
   candidates: SlideCandidate[]
-  /** DICOM: the index, with skipped files and associated images. */
+  /** DICOM: the index, with skipped files and associated images (read them against the input files). */
   index?: SlideIndex
 }
 
@@ -227,24 +229,32 @@ export async function openSlide(
   const dicomAt = files.flatMap((_, i) => (kinds[i] === 'tiff' ? [] : [i]))
   const dicom = dicomAt.map((i) => files[i] as File)
   if (!dicom.length) return { kind: 'tiff', candidates: tiffs }
-  const [{ indexDicomWsi }, { DicomWsiSource }, { fileKeys, firstInput }] =
+  const [{ indexDicomWsiKeyed }, { DicomWsiSource }, { fileKeys, firstInput }] =
     await Promise.all([
       import('./indexDicomWsi'),
       import('./dicomWsiSource'),
       import('./dicomIndex'),
     ])
-  const index = await indexDicomWsi(dicom, {
-    signal: options.signal,
-    onProgress: options.onProgress,
-  })
+  // Keyed over the whole input, so the caller reads associated images and
+  // opens slides against the files it passed, TIFFs among them.
+  const keys = fileKeys(files)
+  const index = await indexDicomWsiKeyed(
+    dicom,
+    dicomAt.map((i) => keys[i] as string),
+    {
+      signal: options.signal,
+      onProgress: options.onProgress,
+    },
+  )
   const slides = index.slides.map(
     (slide): SlideCandidate => ({
       kind: 'dicom',
       label: `${slide.container ?? slide.series} path ${slide.opticalPath} z ${slide.focalPlane}`,
+      slide,
       open: async (s) => {
         anySignal(options.signal, s)?.throwIfAborted()
         return described(
-          new DicomWsiSource(slide, dicom, {
+          new DicomWsiSource(slide, files, {
             attribution: options.attribution,
           }),
           slide.container ?? slide.series,
@@ -255,7 +265,7 @@ export async function openSlide(
     }),
   )
   // Input order: a slide ranks by its first file.
-  const at = new Map(fileKeys(dicom).map((k, d) => [k, dicomAt[d] as number]))
+  const at = new Map(keys.map((k, i) => [k, i]))
   const ranked = [
     ...slides.map((c, s) => ({
       c,

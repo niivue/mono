@@ -104,6 +104,8 @@ interface DrawSlot {
   insets: { width: number; height: number }[]
   // Per slot, so two slides drawn in one pass keep their own absent colour.
   bg: { texture: GPUTexture; group: GPUBindGroup; source: Float64Array } | null
+  // The uniform with the annotation's sampler, made on first annotation draw.
+  annGroup?: GPUBindGroup
 }
 
 type PlaneTexture = TileTextureGPU & { group?: GPUBindGroup }
@@ -564,8 +566,23 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     device.queue.writeBuffer(this._annVertexBuffer, 0, data)
     const slot = this._nextSlot(device, pass, mvpMatrix, opacity, false)
     if (!slot) return
+    // Magnify nearest, as WebGL2 does, so label edges stay crisp when zoomed.
+    slot.annGroup ??= device.createBindGroup({
+      layout: this._uniformBGL as GPUBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: slot.uniform } },
+        {
+          binding: 1,
+          resource: device.createSampler({
+            magFilter: 'nearest',
+            minFilter: 'linear',
+          }),
+        },
+        { binding: 2, resource: this._nearestSampler as GPUSampler },
+      ],
+    })
     pass.setPipeline(pipeline)
-    pass.setBindGroup(0, slot.group)
+    pass.setBindGroup(0, slot.annGroup)
     pass.setBindGroup(1, this._annGroup)
     pass.setVertexBuffer(0, this._annVertexBuffer)
     pass.draw(4)

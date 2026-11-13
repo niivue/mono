@@ -1,3 +1,85 @@
+## 1.0.0-rc.98 (2026-11-13)
+
+### Refactors
+
+- ⚠️  **nv-ext-tile:** drop 14 consumer-less /zarr entry exports ([e5842397](https://github.com/niivue/mono/commit/e5842397))
+
+### Breaking Changes
+
+- **nv-ext-tile:** drop 14 consumer-less /zarr entry exports  ([e5842397](https://github.com/niivue/mono/commit/e5842397))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.189
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.97 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** route sharded OME-Zarr reads by shard so each shard is probed once ([6b295f94](https://github.com/niivue/mono/commit/6b295f94))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.96 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** vendor placement on by default; open Ventana iScan padded levels ([9e9c2be7](https://github.com/niivue/mono/commit/9e9c2be7))
+- **nv-ext-tile:** apply DICOM ImageOrientationSlide to WSI slides ([46aef03a](https://github.com/niivue/mono/commit/46aef03a))
+
+### Fixes
+
+- **nv-ext-tile:** keep the persistent tier for a page-relative OME-Zarr URL ([7a926cb2](https://github.com/niivue/mono/commit/7a926cb2))
+- **nv-ext-tile:** take a padded level only when iScan names it a level ([3d00255d](https://github.com/niivue/mono/commit/3d00255d))
+- **nv-ext-tile:** turn each DICOM-WSI level by its own ImageOrientationSlide ([04967704](https://github.com/niivue/mono/commit/04967704))
+- **nv-ext-tile:** key openSlide's DICOM index over the whole input ([ccf9df25](https://github.com/niivue/mono/commit/ccf9df25))
+- **nv-ext-tile:** resolve a page-relative OME-Zarr URL against the page ([b06ed42a](https://github.com/niivue/mono/commit/b06ed42a))
+- **nv-ext-tile:** look up an associated image's file by its index key ([e496ec8d](https://github.com/niivue/mono/commit/e496ec8d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.188
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.95 (2026-11-13)
+
+### Features
+
+- ⚠️  **nv-ext-tile:** remove deprecated DicomWebWsiOptions.headers ([9a1611de](https://github.com/niivue/mono/commit/9a1611de))
+
+### Breaking Changes
+
+- **nv-ext-tile:** remove deprecated DicomWebWsiOptions.headers  ([9a1611de](https://github.com/niivue/mono/commit/9a1611de))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.94 (2026-11-13)
+
+### Fixes
+
+- **niivue,nv-ext-tile:** cancel lazy-frame prefetch when its volume leaves ([cc9a8884](https://github.com/niivue/mono/commit/cc9a8884))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.187
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.93 (2026-11-12)
 
 ### Updated Dependencies

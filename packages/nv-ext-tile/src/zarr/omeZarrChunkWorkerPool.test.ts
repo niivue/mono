@@ -1,9 +1,14 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
 import * as zarr from '@niivue/zarrita-rs/inline'
-import { chunkRegionKey, routeChunkToWorker } from './chunkWorkerRouting'
+import {
+  chunkRegionKey,
+  routeChunkToWorker,
+  shardExtents,
+} from './chunkWorkerRouting'
 import {
   OME_ZARR_CHUNK_ERROR,
   openOmeZarrChunkedSource,
+  persistable,
 } from './omeZarrChunkedSource'
 
 // Bun cannot resolve Vite's inline-worker import; the tests pass real Bun
@@ -121,6 +126,7 @@ async function makeRgbStore(
 
 const hits: string[] = []
 const variantHits: string[] = []
+const variantHeads: string[] = []
 const rgbStores = new Map<string, Map<string, Uint8Array>>()
 const aborted: string[] = []
 let hold: Promise<void> | null = null
@@ -138,6 +144,7 @@ beforeAll(async () => {
       // The zarr-python fixtures, for the slide tests.
       if (pathname.startsWith('/variants/')) {
         variantHits.push(pathname)
+        if (req.method === 'HEAD') variantHeads.push(pathname)
         const file = Bun.file(VARIANTS + pathname.slice('/variants'.length))
         if (!(await file.exists())) return new Response(null, { status: 404 })
         const m = /^bytes=(\d+)-(\d+)$/.exec(req.headers.get('range') ?? '')
@@ -297,6 +304,40 @@ describe('OmeZarrChunkWorkerPool', () => {
     local.dispose?.()
   })
 
+  test('reads of one shard on two workers probe it once', async () => {
+    const url = `http://127.0.0.1:${server.port}/variants/v3-shard-64.ome.zarr`
+    const metadata = new Map<string, Uint8Array | undefined>()
+    const local = await openOmeZarrChunkedSource(url, {}, metadata)
+    const shards = shardExtents(local.zarr, metadata)
+    // 64 x 64 shards of 32 x 32 chunks: these four tiles share shard 0/0/0.
+    const reads = [0, 32].flatMap((x) =>
+      [0, 32].map((y) => ({
+        levelIndex: 0,
+        texOrigin: [x, y, 0] as [number, number, number],
+        texDims: [32, 32, 1] as [number, number, number],
+        bytesPerVoxel: 2,
+        channel: 0,
+      })),
+    )
+    // By region alone they would spread over both workers.
+    expect(
+      new Set(reads.map((r) => routeChunkToWorker(chunkRegionKey(r), 2))).size,
+    ).toBe(2)
+    const pool = new OmeZarrChunkWorkerPool(
+      url,
+      {},
+      { ...poolOptions, shards },
+      metadata,
+      workerEntry,
+    )
+    variantHeads.length = 0
+    variantHits.length = 0
+    await Promise.all(reads.map((r) => pool.fetchChunk(r)))
+    expect(variantHeads).toEqual(['/variants/v3-shard-64.ome.zarr/0/c/0/0/0'])
+    pool.dispose()
+    local.dispose?.()
+  })
+
   test('the pool reads each chunk once: c-spanning and RGB c-chunk 3 stay on this thread, RGB c-chunk 1 goes to the workers', async () => {
     const { ZarrSlideSource } = await import('./zarrSlideSource')
     const chunkReads = async (url: string, pooledRead: boolean) => {
@@ -415,6 +456,38 @@ describe('OmeZarrChunkWorkerPool', () => {
     expect(wire).toBe(16)
     pool.dispose()
     local.dispose?.()
+  })
+
+  test('a page-relative store keeps its persistent tier', async () => {
+    const globals = ['location', 'caches'] as const
+    const saved = globals.map((key) =>
+      Object.getOwnPropertyDescriptor(globalThis, key),
+    )
+    const set = (key: string, value: unknown) =>
+      Object.defineProperty(globalThis, key, { value, configurable: true })
+    const cache = {
+      keys: async () => [],
+      match: async () => undefined,
+      put: async () => {},
+      delete: async () => true,
+    }
+    set('location', { href: url.replace('/s.zarr', '/app/index.html') })
+    set('caches', { open: async () => cache, keys: async () => [] })
+    try {
+      // fetchOmeZarrChunkedSource asks this before handing workers a tier.
+      expect(persistable('../s.zarr', { persist: true })).toBe(true)
+      const opened = await openOmeZarrChunkedSource('../s.zarr', {
+        persist: true,
+      })
+      expect(opened.persistStats).toBeDefined()
+      opened.dispose?.()
+    } finally {
+      globals.forEach((key, i) => {
+        const descriptor = saved[i]
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+        else Reflect.deleteProperty(globalThis, key)
+      })
+    }
   })
 
   test('cumulative wire bytes arriving out of order count once', () => {

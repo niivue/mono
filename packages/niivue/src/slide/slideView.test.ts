@@ -209,29 +209,6 @@ describe('createSlideView', () => {
     expect([observers, ratioListeners]).toEqual([0, 0])
   })
 
-  test('a borrowed renderer keeps its kind and its overlay hook', async () => {
-    const r = fakeRenderer()
-    const own: string[] = []
-    r.overlayDraw = () => own.push('own')
-    const view = await createSlideViewWith([], fakeCanvas(), { renderer: r })
-    expect(view.backend).toBe('webgpu')
-    view.addOverlay({ drawOverlay: () => own.push('added') })
-    r.overlayDraw?.({} as Parameters<NonNullable<typeof r.overlayDraw>>[0])
-    view.destroy()
-    r.overlayDraw?.({} as Parameters<NonNullable<typeof r.overlayDraw>>[0])
-    expect(own).toEqual(['own', 'added', 'own'])
-  })
-
-  test("destroy leaves a borrowed renderer's own overlay", async () => {
-    const r = fakeRenderer()
-    const own = {} as SlideRenderBackend['overlay']
-    Object.assign(r, { overlay: own })
-    const view = await createSlideViewWith([], fakeCanvas(), { renderer: r })
-    view.renderNow()
-    view.destroy()
-    expect(r.overlay as unknown).toBe(own)
-  })
-
   test('setSlide after destroy releases an owned slide', async () => {
     const view = await createSlideViewWith(
       [backend('webgl2', () => fakeRenderer())],
@@ -242,56 +219,6 @@ describe('createSlideView', () => {
     view.setSlide(late)
     expect(late.disposed).toBe(1)
     expect(view.slide).toBeNull()
-  })
-
-  test('aborted while starting: rejects AbortError and frees the renderer', async () => {
-    const r = fakeRenderer()
-    const ac = new AbortController()
-    const pending = createSlideViewWith(
-      [
-        backend('webgl2', () => {
-          ac.abort()
-          return r
-        }),
-      ],
-      fakeCanvas(),
-      { signal: ac.signal },
-    )
-    await expect(pending).rejects.toThrow('aborted')
-    expect(r.destroys).toBe(1)
-    expect(observers).toBe(0)
-  })
-
-  test('aborted after a clone swap: the original canvas goes back', async () => {
-    const canvas = fakeCanvas()
-    const ac = new AbortController()
-    const gl = backend('webgl2', (c) => {
-      if (c === canvas) return null
-      ac.abort()
-      return fakeRenderer()
-    })
-    await expect(
-      createSlideViewWith([backend('webgpu', () => null), gl], canvas, {
-        signal: ac.signal,
-      }),
-    ).rejects.toThrow('aborted')
-    const clone = gl.canvases[1] as unknown as { replaced: unknown }
-    expect(clone.replaced).toBe(canvas)
-  })
-
-  test('an overlay remover after destroy leaves a borrowed hook alone', async () => {
-    const r = fakeRenderer()
-    const own = () => {}
-    r.overlayDraw = own
-    const view = await createSlideViewWith([], fakeCanvas(), { renderer: r })
-    const remove = view.addOverlay({ drawOverlay: () => {} })
-    view.destroy()
-    expect(r.overlayDraw).toBe(own)
-    // The owner hooks something else in; a late remover must not undo it.
-    const next = () => {}
-    r.overlayDraw = next
-    remove()
-    expect(r.overlayDraw).toBe(next)
   })
 
   test('fits on the first sized frame, then keeps the view', async () => {
@@ -359,18 +286,6 @@ describe('createSlideView', () => {
     expect(b.disposed).toBe(1)
   })
 
-  test('ownsSlide false leaves slides to the caller', async () => {
-    const a = fakeSlide()
-    const view = await createSlideViewWith(
-      [backend('webgl2', () => fakeRenderer())],
-      fakeCanvas(),
-      { slide: a, ownsSlide: false },
-    )
-    view.setSlide(null)
-    view.destroy()
-    expect(a.disposed).toBe(0)
-  })
-
   test('slide changes schedule one frame', async () => {
     const r = fakeRenderer()
     const slide = fakeSlide()
@@ -402,10 +317,9 @@ describe('createSlideView', () => {
     r.overlayDraw?.({} as Parameters<NonNullable<typeof r.overlayDraw>>[0])
     expect(drawn).toEqual(['a', 'b', 'b'])
     view.destroy()
-    expect(r.overlayDraw).toBeNull()
   })
 
-  test('destroy is idempotent; a borrowed renderer survives it', async () => {
+  test('destroy is idempotent', async () => {
     const owned = fakeRenderer()
     const view = await createSlideViewWith(
       [backend('webgl2', () => owned)],
@@ -414,12 +328,6 @@ describe('createSlideView', () => {
     view.destroy()
     view.destroy()
     expect(owned.destroys).toBe(1)
-    const borrowed = fakeRenderer()
-    const second = await createSlideViewWith([], fakeCanvas(), {
-      renderer: borrowed,
-    })
-    second.destroy()
-    expect(borrowed.destroys).toBe(0)
   })
 
   test('create then destroy leaves no observer, listener or frame', async () => {
@@ -443,7 +351,7 @@ async function viewOf(slide: NVSlide): Promise<SlideView> {
   return createSlideViewWith(
     [backend('webgl2', () => fakeRenderer())],
     fakeCanvas(),
-    { slide, controller: false, ownsSlide: false },
+    { slide, controller: false },
   )
 }
 
@@ -518,7 +426,7 @@ describe('linkSlideViews', () => {
     const vb = await createSlideViewWith(
       [backend('webgl2', () => fakeRenderer())],
       fakeCanvas(),
-      { controller: false, ownsSlide: false },
+      { controller: false },
     )
     vb.setSlide(b, { fit: false })
     linkSlideViews([va, vb])

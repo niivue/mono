@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { channelColormapsFor } from '@niivue/niivue'
+import { channelColormapsFor, createStreamingNVImage } from '@niivue/niivue'
+import { omeZarrChunkedSource } from './omeZarrChunkedSource'
 import {
   countingFetch,
   defaultOmeZarrLevel,
@@ -153,6 +154,17 @@ function makeXyzStore(): Map<string, Uint8Array> {
   return store
 }
 
+/** World box [min, max] per axis of an axis-aligned NIfTI `File` (srow_x/y/z). */
+async function fileWorldBox(file: File): Promise<number[][]> {
+  const view = new DataView(await file.arrayBuffer())
+  return [0, 1, 2].map((a) => {
+    const n = view.getInt16(42 + 2 * a, true)
+    const s = view.getFloat32(280 + 16 * a + 4 * a, true)
+    const o = view.getFloat32(280 + 16 * a + 12, true)
+    return [o - 0.5 * s, o + (n - 0.5) * s]
+  })
+}
+
 /** The voxel payload of a produced NIfTI `File` (352-byte header assumed). */
 async function fileVoxels(file: File): Promise<Uint16Array> {
   const buffer = await file.arrayBuffer()
@@ -280,6 +292,26 @@ describe('openOmeZarr level selection', () => {
       store.getRange('/0/c/0/0', { suffixLength: 8 }),
     ).rejects.toThrow('ignored the Range request')
     expect(methods).toContain('HEAD')
+  })
+
+  test('a page-relative URL resolves against the page', async () => {
+    const urls: string[] = []
+    const page = Object.getOwnPropertyDescriptor(globalThis, 'location')
+    Object.defineProperty(globalThis, 'location', {
+      value: { href: 'http://x/app/index.html' },
+      configurable: true,
+    })
+    try {
+      const store = omeZarrFetchStore('./s.zarr', async (url) => {
+        urls.push(url)
+        return new Response(new Uint8Array(4))
+      })
+      await store.get('/zarr.json')
+    } finally {
+      if (page) Object.defineProperty(globalThis, 'location', page)
+      else Reflect.deleteProperty(globalThis, 'location')
+    }
+    expect(urls).toEqual(['http://x/app/s.zarr/zarr.json'])
   })
 })
 
@@ -457,6 +489,23 @@ describe('omeZarrVolumesFrom', () => {
     const volumes = await omeZarrVolumesFrom(source, { level: 1 })
     const voxels = await fileVoxels(volumes[0].url as File)
     expect(voxels).toHaveLength(2 * 2)
+    // Every whole level covers the streamed volume's box (diag(s0), voxel 0
+    // centred on the origin).
+    const { shape, spacing } = omeZarrChunkedSource(source).levels[0]
+    const streamed = createStreamingNVImage({
+      shape,
+      spacing,
+      datatypeCode: 512,
+      calMin: 0,
+      calMax: 1,
+    }).hdr.affine
+    const box = shape.map((n, a) => [
+      streamed[a][3] - 0.5 * streamed[a][a],
+      streamed[a][3] + (n - 0.5) * streamed[a][a],
+    ])
+    const level0 = await omeZarrVolumesFrom(source, { level: 0 })
+    expect(await fileWorldBox(level0[0].url as File)).toEqual(box)
+    expect(await fileWorldBox(volumes[0].url as File)).toEqual(box)
   })
 
   test('skips levels with an unknown decoded size', async () => {

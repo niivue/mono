@@ -26,7 +26,7 @@ import {
   cinematicMarchShader,
   cinematicVertexShader,
 } from './cinematicShader'
-import { setTexParams } from './glUtil'
+import { blendOver, setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 /** Per-tile accumulation, keyed by tile index. */
@@ -350,7 +350,7 @@ export class CinematicRenderer extends NVRenderer {
     toggle(gl.CULL_FACE, s.cull)
     gl.depthMask(s.depthMask)
     gl.depthFunc(s.depthFunc)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     gl.activeTexture(s.activeTexture)
   }
 

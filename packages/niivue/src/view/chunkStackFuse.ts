@@ -222,6 +222,13 @@ export function stackGeneration<T>(entries: readonly StackEntry<T>[]): string {
 
 const _regions = new WeakMap<object, string[]>()
 
+/** A brick region's key: source level, texture origin and size. */
+export const regionKey = (
+  level: number,
+  origin: readonly number[],
+  dims: readonly number[],
+): string => `${level}|${origin.join(',')}|${dims.join(',')}`
+
 /** Each chunk's brick region of a plan (level, origin, size), memoized per plan. */
 export function chunkRegions(plan: {
   chunks: readonly {
@@ -232,9 +239,8 @@ export function chunkRegions(plan: {
 }): string[] {
   let out = _regions.get(plan)
   if (!out) {
-    out = plan.chunks.map(
-      (c) =>
-        `${c.sourceLevel ?? 0}|${c.texOrigin.join(',')}|${c.texDims.join(',')}`,
+    out = plan.chunks.map((c) =>
+      regionKey(c.sourceLevel ?? 0, c.texOrigin, c.texDims),
     )
     _regions.set(plan, out)
   }

@@ -38,6 +38,28 @@ export function chunksBackToFront(
   rayDir: ArrayLike<number>,
   chunkOffsetFor?: ChunkOffsetFor,
   volScale?: ArrayLike<number>,
+): readonly number[] {
+  return backToFront(plan, rayDir, chunkOffsetFor, volScale, !chunkOffsetFor)
+}
+
+// Unexploded orders per plan, keyed by `orderKey`. Plans are never mutated.
+const ORDER_CACHE = new WeakMap<ChunkPlan, Map<number, number[]>>()
+
+// Without the comparator fallback the BSP order reads only each axis's class
+// (|d| < EPS, positive, negative) and the |d| ranking: one of 27 * 6 keys.
+function orderKey(d: Vec3f, axes: number[], eps: number): number {
+  let key = (axes[0] * 3 + axes[1]) * 3 + axes[2]
+  for (let k = 0; k < 3; k++)
+    key = key * 3 + (Math.abs(d[k]) < eps ? 0 : d[k] > 0 ? 1 : 2)
+  return key
+}
+
+function backToFront(
+  plan: ChunkPlan,
+  rayDir: ArrayLike<number>,
+  chunkOffsetFor: ChunkOffsetFor | undefined,
+  volScale: ArrayLike<number> | undefined,
+  memo: boolean,
 ): number[] {
   const rx = finiteRayComponent(rayDir, 0)
   const ry = finiteRayComponent(rayDir, 1)
@@ -54,6 +76,12 @@ export function chunksBackToFront(
     finiteScaleComponent(volScale, 1) * ry,
     finiteScaleComponent(volScale, 2) * rz,
   ]
+  const EPS = 1e-9
+  const axes = [0, 1, 2].sort((a, b) => Math.abs(d[b]) - Math.abs(d[a]))
+  const key = orderKey(d, axes, EPS)
+  let cache = memo ? ORDER_CACHE.get(plan) : undefined
+  const hit = cache?.get(key)
+  if (hit) return hit
   // Each chunk's AABB in normalized [0,1] object space (+ explode offset).
   const lo: Vec3f[] = []
   const hi: Vec3f[] = []
@@ -74,7 +102,6 @@ export function chunksBackToFront(
       (c.voxelOrigin[2] + c.voxelDims[2]) / vz + oz,
     ])
   }
-  const EPS = 1e-9
   // Far AABB corner projected on d — the fallback key when two boxes are not
   // separated along a view-aligned axis (they overlap in projection and so do
   // not occlude one another; any consistent order is fine).
@@ -112,12 +139,13 @@ export function chunksBackToFront(
   // sub-group that somehow has none on a view-aligned axis. This drives ordering
   // violations to zero (validated by ray-march ground truth) at any view angle.
   const order: number[] = []
+  let usedFallback = false
   const emit = (idx: number[]): void => {
     if (idx.length <= 1) {
       if (idx.length === 1) order.push(idx[0])
       return
     }
-    for (const k of [0, 1, 2].sort((a, b) => Math.abs(d[b]) - Math.abs(d[a]))) {
+    for (const k of axes) {
       if (Math.abs(d[k]) < EPS) continue
       // Pick the most balanced clean split coord (a brick face no brick crosses).
       let bestC = Number.NaN
@@ -151,9 +179,17 @@ export function chunksBackToFront(
       }
     }
     // No clean split on any view-aligned axis: fall back to the comparator.
+    usedFallback = true
     order.push(...[...idx].sort(compare))
   }
   emit(plan.chunks.map((_, i) => i))
+  if (memo && !usedFallback) {
+    if (!cache) {
+      cache = new Map()
+      ORDER_CACHE.set(plan, cache)
+    }
+    cache.set(key, order)
+  }
   return order
 }
 
@@ -196,11 +232,11 @@ export function chunksInFrustum(
   mvp: Float32Array | number[],
   clipSpaceZeroToOne: boolean,
   matRAS?: Float32Array | number[],
-  chunkOffsetFor?: ChunkOffsetFor,
 ): number[] {
   const [vx, vy, vz] = plan.volumeDims
   const nearLimit = clipSpaceZeroToOne ? 0 : -1
   const out: number[] = []
+  const model = MODEL
   for (let ci = 0; ci < plan.chunks.length; ci++) {
     const desc = plan.chunks[ci]
     const x0 = desc.voxelOrigin[0] / vx
@@ -209,7 +245,6 @@ export function chunksInFrustum(
     const x1 = (desc.voxelOrigin[0] + desc.voxelDims[0]) / vx
     const y1 = (desc.voxelOrigin[1] + desc.voxelDims[1]) / vy
     const z1 = (desc.voxelOrigin[2] + desc.voxelDims[2]) / vz
-    const offset = chunkOffsetFor?.(ci)
     // "All 8 corners outside" accumulators, one per frustum plane. A plane
     // culls the chunk only if its flag survives all 8 corners as true.
     let outL = true
@@ -225,22 +260,13 @@ export function chunksInFrustum(
       const px = c & 1 ? x1 : x0
       const py = c & 2 ? y1 : y0
       const pz = c & 4 ? z1 : z0
-      const model = matRAS
-        ? chunkCornerToModel(
-            px + (offset?.[0] ?? 0),
-            py + (offset?.[1] ?? 0),
-            pz + (offset?.[2] ?? 0),
-            vx,
-            vy,
-            vz,
-            matRAS,
-          )
-        : [
-            px + (offset?.[0] ?? 0),
-            py + (offset?.[1] ?? 0),
-            pz + (offset?.[2] ?? 0),
-            1,
-          ]
+      if (matRAS) chunkCornerToModel(px, py, pz, vx, vy, vz, matRAS, model)
+      else {
+        model[0] = px
+        model[1] = py
+        model[2] = pz
+        model[3] = 1
+      }
       const cx = clipRow(mvp, model, 0)
       const cy = clipRow(mvp, model, 1)
       const cz = clipRow(mvp, model, 2)
@@ -262,6 +288,9 @@ export function chunksInFrustum(
   }
   return out
 }
+
+// Scratch homogeneous corner shared by the (synchronous) frustum helpers.
+const MODEL = new Float64Array(4)
 
 // Row `row` of column-major `mvp` applied to homogeneous `model`: one clip coord.
 function clipRow(
@@ -285,16 +314,15 @@ function chunkCornerToModel(
   vy: number,
   vz: number,
   matRAS: Float32Array | number[],
-): [number, number, number, number] {
+  out: Float64Array,
+): void {
   const x = xFrac * vx - 0.5
   const y = yFrac * vy - 0.5
   const z = zFrac * vz - 0.5
-  return [
-    x * matRAS[0] + y * matRAS[1] + z * matRAS[2] + matRAS[3],
-    x * matRAS[4] + y * matRAS[5] + z * matRAS[6] + matRAS[7],
-    x * matRAS[8] + y * matRAS[9] + z * matRAS[10] + matRAS[11],
-    x * matRAS[12] + y * matRAS[13] + z * matRAS[14] + matRAS[15],
-  ]
+  out[0] = x * matRAS[0] + y * matRAS[1] + z * matRAS[2] + matRAS[3]
+  out[1] = x * matRAS[4] + y * matRAS[5] + z * matRAS[6] + matRAS[7]
+  out[2] = x * matRAS[8] + y * matRAS[9] + z * matRAS[10] + matRAS[11]
+  out[3] = x * matRAS[12] + y * matRAS[13] + z * matRAS[14] + matRAS[15]
 }
 
 /**
@@ -313,37 +341,39 @@ export function orderByViewCenter(
   indices: readonly number[],
   mvp: Float32Array | number[],
   matRAS?: Float32Array | number[],
-  chunkOffsetFor?: ChunkOffsetFor,
 ): number[] {
   const [vx, vy, vz] = plan.volumeDims
-  const score = new Map<number, number>()
+  const score = new Float64Array(indices.length)
+  const model = MODEL
   for (let k = 0; k < indices.length; k++) {
-    const ci = indices[k]
-    const desc = plan.chunks[ci]
+    const desc = plan.chunks[indices[k]]
     if (!desc) {
-      score.set(ci, Number.POSITIVE_INFINITY)
+      score[k] = Number.POSITIVE_INFINITY
       continue
     }
-    const offset = chunkOffsetFor?.(ci)
-    const cx =
-      (desc.voxelOrigin[0] + desc.voxelDims[0] / 2) / vx + (offset?.[0] ?? 0)
-    const cy =
-      (desc.voxelOrigin[1] + desc.voxelDims[1] / 2) / vy + (offset?.[1] ?? 0)
-    const cz =
-      (desc.voxelOrigin[2] + desc.voxelDims[2] / 2) / vz + (offset?.[2] ?? 0)
-    const model = matRAS
-      ? chunkCornerToModel(cx, cy, cz, vx, vy, vz, matRAS)
-      : [cx, cy, cz, 1]
+    const cx = (desc.voxelOrigin[0] + desc.voxelDims[0] / 2) / vx
+    const cy = (desc.voxelOrigin[1] + desc.voxelDims[1] / 2) / vy
+    const cz = (desc.voxelOrigin[2] + desc.voxelDims[2] / 2) / vz
+    if (matRAS) chunkCornerToModel(cx, cy, cz, vx, vy, vz, matRAS, model)
+    else {
+      model[0] = cx
+      model[1] = cy
+      model[2] = cz
+      model[3] = 1
+    }
     const cw = clipRow(mvp, model, 3)
     if (cw <= 1e-6) {
-      score.set(ci, Number.POSITIVE_INFINITY)
+      score[k] = Number.POSITIVE_INFINITY
       continue
     }
     const ndcX = clipRow(mvp, model, 0) / cw
     const ndcY = clipRow(mvp, model, 1) / cw
-    score.set(ci, ndcX * ndcX + ndcY * ndcY)
+    score[k] = ndcX * ndcX + ndcY * ndcY
   }
-  return [...indices].sort((a, b) => (score.get(a) ?? 0) - (score.get(b) ?? 0))
+  const order = Array.from(indices, (_, k) => k)
+  order.sort((a, b) => score[a] - score[b])
+  for (let k = 0; k < order.length; k++) order[k] = indices[order[k]]
+  return order
 }
 
 // Parse clip planes into active half-spaces [nx,ny,nz,a] in [0,1]^3 object space
@@ -390,14 +420,13 @@ export function activeClipPlanes(
  * `isCutaway` (scene.isClipPlaneCutaway) carves an interior slab rather than a
  * half-space, so culling is unsafe there — return the input unchanged. Clip
  * planes are a 3D-render feature; 2D slices ignore them, so only the 3D frustum
- * path calls this. `chunkOffsetFor` matches the frustum path's explode offset.
+ * path calls this. Exploded views skip culling, so boxes are unexploded.
  */
 export function chunksNotClippedOut(
   plan: ChunkPlan,
   indices: readonly number[],
   clipPlanes: ArrayLike<number>,
   isCutaway: boolean,
-  chunkOffsetFor?: ChunkOffsetFor,
 ): number[] {
   const planes = activeClipPlanes(clipPlanes, isCutaway)
   if (planes.length === 0) return [...indices]
@@ -410,16 +439,12 @@ export function chunksNotClippedOut(
       out.push(ci) // unknown chunk: keep conservatively
       continue
     }
-    const offset = chunkOffsetFor?.(ci)
-    const ox = offset?.[0] ?? 0
-    const oy = offset?.[1] ?? 0
-    const oz = offset?.[2] ?? 0
-    const x0 = desc.voxelOrigin[0] / vx + ox
-    const y0 = desc.voxelOrigin[1] / vy + oy
-    const z0 = desc.voxelOrigin[2] / vz + oz
-    const x1 = (desc.voxelOrigin[0] + desc.voxelDims[0]) / vx + ox
-    const y1 = (desc.voxelOrigin[1] + desc.voxelDims[1]) / vy + oy
-    const z1 = (desc.voxelOrigin[2] + desc.voxelDims[2]) / vz + oz
+    const x0 = desc.voxelOrigin[0] / vx
+    const y0 = desc.voxelOrigin[1] / vy
+    const z0 = desc.voxelOrigin[2] / vz
+    const x1 = (desc.voxelOrigin[0] + desc.voxelDims[0]) / vx
+    const y1 = (desc.voxelOrigin[1] + desc.voxelDims[1]) / vy
+    const z1 = (desc.voxelOrigin[2] + desc.voxelDims[2]) / vz
     let clippedOut = false
     for (const [nx, ny, nz, a] of planes) {
       let allRemoved = true
@@ -520,7 +545,8 @@ export function chunkDrawOrder<
         return it.retiring ? [0, 0, 0] : chunkOffsetFor(it.index)
       }
     : undefined
-  return chunksBackToFront(union, rayDir, offsetFor, volScale).map(
+  // The union plan is new each frame: not memoised.
+  return backToFront(union, rayDir, offsetFor, volScale, false).map(
     (u) => items[u],
   )
 }

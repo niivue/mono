@@ -17,6 +17,7 @@ import type {
 } from './NVSlide'
 // slideLod imports this module: use its values inside functions only.
 import {
+  centredBlock,
   clamp,
   levelTileHeight,
   levelTileWidth,
@@ -370,19 +371,7 @@ export function placedTiles(
   let { x0, y0, x1, y1 } = view
   if (count > limit) {
     // The grid's centred block of `limit` cells.
-    let { firstX, lastX, firstY, lastY } = span
-    const spanW = lastX - firstX + 1
-    const spanH = lastY - firstY + 1
-    const w = clamp(
-      Math.floor(Math.sqrt((limit * spanW) / spanH)),
-      1,
-      Math.min(spanW, limit),
-    )
-    const h = clamp(Math.floor(limit / w), 1, spanH)
-    firstX += Math.floor((spanW - w) / 2)
-    firstY += Math.floor((spanH - h) / 2)
-    lastX = firstX + w - 1
-    lastY = firstY + h - 1
+    const { firstX, lastX, firstY, lastY } = centredBlock(span, limit)
     x0 = Math.max(x0, firstX * cellWidth)
     y0 = Math.max(y0, firstY * cellHeight)
     x1 = Math.min(x1, (lastX + 1) * cellWidth)

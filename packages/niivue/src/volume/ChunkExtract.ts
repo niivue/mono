@@ -34,6 +34,7 @@
 
 import { NiiDataType } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
+import { translatedAffine } from './ChunkExplode'
 import type { Vec3f, Vec3i } from './chunking'
 import { createNiftiArray, getImageDataRAS } from './utils'
 
@@ -74,16 +75,7 @@ export function subVolumeAffine(
   matRAS: ArrayLike<number>,
   voxelOrigin: readonly [number, number, number],
 ): number[] {
-  const out: number[] = []
-  for (let i = 0; i < 16; i++) out.push(matRAS[i] ?? 0)
-  const [ox, oy, oz] = voxelOrigin
-  out[3] +=
-    ox * (matRAS[0] ?? 0) + oy * (matRAS[1] ?? 0) + oz * (matRAS[2] ?? 0)
-  out[7] +=
-    ox * (matRAS[4] ?? 0) + oy * (matRAS[5] ?? 0) + oz * (matRAS[6] ?? 0)
-  out[11] +=
-    ox * (matRAS[8] ?? 0) + oy * (matRAS[9] ?? 0) + oz * (matRAS[10] ?? 0)
-  return out
+  return translatedAffine([], matRAS, voxelOrigin)
 }
 
 /** Apply a row-major 4x4 to a point. */

@@ -9,8 +9,9 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 - ✅ = Present (API may differ)
 - ❌ = Missing
 - ⚠️ = Partial
+- ⏳ = Implemented in an open PR (named), not yet on `main`
 
-*Updated: 2026-06-18*
+*Updated: 2026-11-13*
 
 ---
 
@@ -56,7 +57,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Tractography: TCK, TRK, TRX, TT | ✅ | |
 | Tractography: VTK lines | ✅ | |
 | Tractography: TSF scalars | ✅ | |
-| Tractography: AFNI .niml.tract | ❌ | |
+| Tractography: AFNI .niml.tract | ✅ | Binary little/big endian; bundle IDs as `dps:tract` |
 
 ## 5. Document Loading/Saving
 
@@ -452,7 +453,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | TCK, TRK, TRX, TT | ✅ |
 | TSF (scalars) | ✅ |
 | VTK lines | ✅ |
-| AFNI .niml.tract | ❌ |
+| AFNI .niml.tract | ✅ |
 
 ## 32. Exported Enums/Constants
 
@@ -463,7 +464,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `MULTIPLANAR_TYPE` | ✅ | |
 | `SHOW_RENDER` | ✅ | |
 | `NiiDataType` | ✅ | |
-| `OVERLAY_ALPHA_BLEND`, `OVERLAY_COLOR_BLEND` | ✅ | New in the rewrite; `volumeOverlayAlphaBlend` / `volumeOverlayColorBlend` (old NiiVue: MAX alpha + additive colour only); alpha `UNION` + colour `OVER` gives ordered source-over stacking; alpha `MAX` + colour `MAX` gives fluorescence channel fusion, and `volumeIsChannelStack` fuses volumes[0] too |
+| `OVERLAY_ALPHA_BLEND`, `OVERLAY_COLOR_BLEND` | ✅ | New in the rewrite; `volumeOverlayAlphaBlend` / `volumeOverlayColorBlend` (old NiiVue: MAX alpha + additive colour only); alpha `UNION` + colour `OVER` gives ordered source-over stacking; alpha `MAX` + colour `MAX` gives fluorescence channel fusion, and `volumeIsChannelStack` fuses volumes[0] too (streamed stacks fuse per brick, weighted by each channel's opacity) |
 | `NiiIntentCode` | ❌ | In NVConstants (not exported from index) |
 
 ## 33. Miscellaneous
@@ -552,6 +553,25 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 | In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch. `swapPolicy: 'keepUntilCovered'` draws replaced bricks until their replacements are resident (3D render only; drawn without overlay/drawing/PAQD layers, like the coarse floor); see `docs/budget-plans.md` |
 | Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
 | Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |
+| Streamed channel-stack opacity | ⏳ pending PR #761 | Per-channel `opacity` on a chunked channel stack, matching whole volumes (both backends). On main it has no effect |
+| Lazy-frame prefetch lifetime | ⏳ pending PR #761 | `VolumeFrameSource.cancel()` stops an OME-Zarr `lazyTime` prefetch when its volume leaves the viewer |
+
+## 37. Whole-slide images (`NVSlide`, new in the rewrite)
+
+No old-package equivalent. Formats via `@niivue/nv-ext-tile` (`/tiff`, `/dicom`, `/zarr`, `/open`); demo `apps/demo-ext-tile`. Close-out PRs that change no feature (tests, CI, demo UI, refactors: #756, #763-#766, #768, #769) are not listed.
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Pyramidal TIFF/SVS/OME-TIFF, DICOM-WSI (files, hosted manifest, DICOMweb), 2D OME-Zarr, DZI | ✅ | Both backends; per-channel colour, window and visibility, slide-wide channel blend; ICC; label colormaps |
+| One opener (`@niivue/nv-ext-tile/open`) in the demo | ⏳ pending PR #759 | Also fixes associated images from repeated file names |
+| Vendor tile placement on by default (Ventana, Trestle, Leica; iScan padded levels) | ⏳ pending PR #762 | On main `placement` is opt-in |
+| DICOM `ImageOrientationSlide` | ⏳ pending PR #760 | On main it is recorded, not applied |
+| DICOMweb auth through `fetch` (no `headers`) | ⏳ pending PR #758 | nv-ohif migrates; `headers` removed |
+| TIFF scale bars (vendor/OME/resolution-tag spacing), metre/km ruler steps | ⏳ pending PR #770 | On main TIFF slides show no scale bar |
+| Superseded slide document restore cancelled; viewer owns restored slides | ⏳ pending PR #753 | |
+| Saved slide reopens its own source and focal/time plane | ⏳ pending PR #755 | On main a TIFF/Zarr/DICOM slide restores as a range source at the default plane |
+| MCP: OME-Zarr label colours, `add_isosurface` | ⏳ pending PR #757 | |
+| One core `ByteLru` for byte, decoded-chunk and tile caches | ⏳ pending PR #767 | Public `ByteLru` export |
 
 ---
 
@@ -573,9 +593,8 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 11. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
 12. **Missing/changed events**: no separate `intensityChange`; shader events not present; legacy callback properties not supported
 13. **Enum exports**: `NiiIntentCode`
-14. **AFNI .niml.tract** tractography format
-15. **`watchOptsChanges`** (replaced by `change` / property-change style event)
-16. **Standalone `binarize()`** (functionality partly available through different APIs)
+14. **`watchOptsChanges`** (replaced by `change` / property-change style event)
+15. **Standalone `binarize()`** (functionality partly available through different APIs)
 
 ### Covered by New Extensions / Different APIs
 - **DICOM loading**: `@niivue/dcm2niix`

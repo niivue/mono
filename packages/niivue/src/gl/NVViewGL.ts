@@ -41,7 +41,7 @@ import {
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
-import { resolveHeaderLabel } from '@/view/NVFont'
+import { HEADER_BACK_COLOR, resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
@@ -86,6 +86,7 @@ import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
+import { blendOver } from './glUtil'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
 import { PolygonRenderer } from './polygon'
@@ -361,7 +362,7 @@ export default class NVGlview {
     gl.frontFace(gl.CCW)
     // Enable blending
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     // Enable backface culling
     gl.enable(gl.CULL_FACE)
     gl.cullFace(gl.BACK)
@@ -1504,7 +1505,7 @@ export default class NVGlview {
             [0, 0, 0, 1],
             0.5,
             -0.2,
-            [0.3, 0.2, 0.8, 0.8],
+            HEADER_BACK_COLOR,
           ),
         )
       }

@@ -270,6 +270,8 @@ function structureRevision(source: OmeZarrSource): string {
 export interface OmeZarrChunkedSource extends ChunkedVolumeSource {
   /** The opened store behind the adapter (levels, omero channels, axes). */
   readonly zarr: OmeZarrSource
+  /** The channel streamed: the one asked for, else the first active. */
+  readonly channel: number
   /**
    * The store-level byte cache, when one was built for this source. Present
    * on {@link fetchOmeZarrChunkedSource} results with a non-zero budget, so a
@@ -424,6 +426,7 @@ export function omeZarrChunkedSource(
 
   return {
     zarr: source,
+    channel,
     frames: source.timepointCount,
     revision: structureRevision(source),
     datatypeCode,
@@ -547,10 +550,12 @@ export async function openOmeZarrChunkedSource(
   /** Told each response's byte count (HEADs excluded); the chunk workers report it. */
   countWire?: (bytes: number) => void,
 ): Promise<OmeZarrChunkedSource> {
+  // Page-relative URLs resolve here, so persisted keys are absolute.
+  const href = new URL(url, globalThis.location?.href).href
   const cacheBytes = options.cacheBytes ?? OME_ZARR_CHUNK_CACHE_BYTES
   // Not through `options.fetch`: a custom fetch would decline persistence.
   const fetched = omeZarrFetchStore(
-    url,
+    href,
     countWire
       ? countingFetch(options.fetch, countWire)
       : options.fetch && slideFetch(options.fetch),
@@ -560,10 +565,10 @@ export async function openOmeZarrChunkedSource(
   // reaches it only when the byte LRU could not answer, and what it hands back
   // is what the network would have -- raw, still-compressed store bytes.
   const persistCache = await openPersistTier(
-    persistable(url, options) && options.persist,
+    persistable(href, options) && options.persist,
   )
   const persisted = persistCache
-    ? withPersistentBytes(base, persistCache, url)
+    ? withPersistentBytes(base, persistCache, href)
     : base
   const byteCache = cacheBytes > 0 ? new ByteLruCache(cacheBytes) : undefined
   const cached = byteCache
@@ -628,11 +633,14 @@ export function persistable(
   url: string,
   options: Pick<FetchOmeZarrChunkedSourceOptions, 'fetch' | 'persist'>,
 ): boolean {
+  // A page-relative URL is judged as the absolute one it fetches.
+  const base = globalThis.location?.href
+  const href = URL.canParse(url, base) ? new URL(url, base).href : url
   const ok =
     !options.fetch &&
-    /^https?:\/\//i.test(url) &&
-    !/[?#]/.test(url) &&
-    !/\/\/[^/]*@/.test(url)
+    /^https?:\/\//i.test(href) &&
+    !/[?#]/.test(href) &&
+    !/\/\/[^/]*@/.test(href)
   if (!ok && options.persist && !declinedWarned) {
     declinedWarned = true
     console.warn(

@@ -149,6 +149,20 @@ describe('lazyTime', () => {
       expect(aborted).toEqual(['/0/2.0.0.0.0'])
       release()
     }
+    // Removing the volume (NiiVue calls cancel) aborts its running prefetch.
+    {
+      const { store, held, aborted } = makeStore()
+      held.set(2, new Promise(() => {}))
+      const [v] = await omeZarrVolumesFrom(await openOmeZarr(store), {
+        channels: [0],
+        lazyTime: true,
+      })
+      await v.frameSource?.load(1, new AbortController().signal)
+      await settle()
+      v.frameSource?.cancel?.()
+      await settle()
+      expect(aborted).toEqual(['/0/2.0.0.0.0'])
+    }
     // A request whose signal was aborted (superseded) starts no prefetch.
     const stale = await open()
     const ac = new AbortController()

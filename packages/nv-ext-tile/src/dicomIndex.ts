@@ -73,6 +73,8 @@ export interface SlideIndexLevel {
   holes: number
   /** True when tiles are placed by per-frame position (TILED_SPARSE). */
   sparse: boolean
+  /** This level's ImageOrientationSlide (0048,0102), when stated; absent, the slide's. */
+  imageOrientationSlide?: number[]
 }
 
 export interface SlideIndexIccProfile {
@@ -93,7 +95,7 @@ export interface SlideIndexSlide {
   focalPlane: number
   /** The plane's ZOffset (µm), when stated. */
   zOffsetUm?: number
-  /** Level 0's ImageOrientationSlide (0048,0102) direction cosines, when stated; not applied. */
+  /** Level 0's ImageOrientationSlide (0048,0102) direction cosines, when stated; a level without its own uses it (dicomOrientation.ts). */
   imageOrientationSlide?: number[]
   /** Level-0 pixel spacing in mm, [column, row]. */
   pixelSpacingMM?: [number, number]
@@ -1585,6 +1587,7 @@ function buildLevel(ks: number[], own: Member[]): SlideIndexLevel {
       holes > 0 ||
       total > placed ||
       ks.some((k) => (own[k] as Member).info.sparse),
+    ...(i0.orientation ? { imageOrientationSlide: i0.orientation } : {}),
   }
 }
 

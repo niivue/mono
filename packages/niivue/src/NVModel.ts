@@ -75,6 +75,7 @@ function ownFrameSource(source: VolumeFrameSource | undefined): {
             commit: (frame: number, volume: NVImage) =>
               source.commit?.(frame, volume),
           }),
+          ...(source.cancel && { cancel: () => source.cancel?.() }),
         },
       }
     : {}

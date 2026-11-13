@@ -1,3 +1,100 @@
+## 1.0.0-rc.193 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** decode XML character references in OME TiffData attributes ([#49](https://github.com/niivue/mono/issues/49))
+- **niivue:** parseOmeXml keeps inherited entity names and XML noncharacters as written ([77feadcb](https://github.com/niivue/mono/commit/77feadcb))
+- **niivue:** parseOmeXml keeps references to XML-forbidden characters as written ([#0](https://github.com/niivue/mono/issues/0))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.192 (2026-11-13)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.191 (2026-11-13)
+
+### Fixes
+
+- **niivue:** one header panel colour on both backends ([9f130f21](https://github.com/niivue/mono/commit/9f130f21))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.190 (2026-11-13)
+
+### Fixes
+
+- **niivue:** keep reoriented slide tiles straight-alpha ([9cb0dd3e](https://github.com/niivue/mono/commit/9cb0dd3e))
+- **nv-ext-tile:** tie the placement test to the chunked source; doc touch-ups ([5eb4c2b0](https://github.com/niivue/mono/commit/5eb4c2b0))
+- **nv-ext-tile:** place whole OME-Zarr levels like streamed ones ([f609ad8b](https://github.com/niivue/mono/commit/f609ad8b))
+- **niivue:** blend WebGL2 alpha as WebGPU does ([98b7246b](https://github.com/niivue/mono/commit/98b7246b))
+- **niivue:** keep straight alpha in slide tile bitmaps ([103505ee](https://github.com/niivue/mono/commit/103505ee))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.189 (2026-11-13)
+
+### Fixes
+
+- **niivue:** match the 3D slide-plane annotation across backends ([a07ef397](https://github.com/niivue/mono/commit/a07ef397))
+
+### Refactors
+
+- ⚠️  **niivue:** remove unused slide and streaming options ([e2dafbb3](https://github.com/niivue/mono/commit/e2dafbb3))
+
+### Breaking Changes
+
+- **niivue:** remove unused slide and streaming options  ([e2dafbb3](https://github.com/niivue/mono/commit/e2dafbb3))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.188 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** apply DICOM ImageOrientationSlide to WSI slides ([46aef03a](https://github.com/niivue/mono/commit/46aef03a))
+- support AFNI binary NIML tractography ([22e2152c](https://github.com/niivue/mono/commit/22e2152c))
+
+### Fixes
+
+- **nv-ext-tile:** keep the persistent tier for a page-relative OME-Zarr URL ([7a926cb2](https://github.com/niivue/mono/commit/7a926cb2))
+- **niivue:** keep AFNI bundle tags exact as Int32Array dps ([8d5496e7](https://github.com/niivue/mono/commit/8d5496e7))
+- **niivue:** reorient fetchTileSamples tiles per tileOrientation ([70c52c2b](https://github.com/niivue/mono/commit/70c52c2b))
+- **niivue:** cap placed tiles by texture, not by piece ([1da61b3b](https://github.com/niivue/mono/commit/1da61b3b))
+
+### Performance
+
+- **niivue:** track kept placed tiles with a stamp array, not a Set ([0a794e39](https://github.com/niivue/mono/commit/0a794e39))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.187 (2026-11-13)
+
+### Fixes
+
+- **niivue:** resolve uikit's @niivue/niivue import in the e2e bundle server ([118af83e](https://github.com/niivue/mono/commit/118af83e))
+- **niivue,nv-ext-tile:** cancel lazy-frame prefetch when its volume leaves ([cc9a8884](https://github.com/niivue/mono/commit/cc9a8884))
+- **niivue:** weight streamed channel-stack fuse by channel opacity ([5e40e43e](https://github.com/niivue/mono/commit/5e40e43e))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.186 (2026-11-12)
 
 ### Features

@@ -120,6 +120,18 @@ describe('core tool schemas', () => {
       'timepoint',
       'url',
     ])
+    expect(required('add_isosurface')).toEqual(['url'])
+    expect(properties('add_isosurface').sort()).toEqual([
+      'channel',
+      'color',
+      'labels',
+      'level',
+      'name',
+      'tab',
+      'threshold',
+      'timepoint',
+      'url',
+    ])
     // Every tool a page answers takes the tab to ask; the others do not.
     for (const name of Object.keys(CORE_SCHEMAS)) {
       const asksAPage = !['list_tabs', 'use_tab', 'new_tab'].includes(name)

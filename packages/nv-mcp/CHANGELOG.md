@@ -1,3 +1,79 @@
+## 1.0.0-rc.188 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** add a labels option to streamOmeZarr ([f8467f4f](https://github.com/niivue/mono/commit/f8467f4f))
+
+### Fixes
+
+- **nv-ext-tile:** stream a segmentation in its image-label colours ([dea03573](https://github.com/niivue/mono/commit/dea03573))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.193
+- Updated uikit to 1.0.0-rc.191
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.187 (2026-11-13)
+
+### Features
+
+- **nv-mcp:** show OME-Zarr label colours and add an isosurface tool ([e97ddd45](https://github.com/niivue/mono/commit/e97ddd45))
+
+### Fixes
+
+- **nv-mcp:** add_isosurface leaves the timepoint to the store, names the chosen channel ([aed19aa6](https://github.com/niivue/mono/commit/aed19aa6))
+- **nv-mcp:** add_isosurface surfaces the frame shown and names its channel ([8a13500e](https://github.com/niivue/mono/commit/8a13500e))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.192
+- Updated uikit to 1.0.0-rc.190
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.186 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.191
+- Updated uikit to 1.0.0-rc.189
+
+## 1.0.0-rc.185 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.190
+- Updated uikit to 1.0.0-rc.188
+
+## 1.0.0-rc.184 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.189
+- Updated uikit to 1.0.0-rc.187
+
+## 1.0.0-rc.183 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.188
+- Updated uikit to 1.0.0-rc.186
+
+## 1.0.0-rc.182 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.187
+- Updated uikit to 1.0.0-rc.185
+
 ## 1.0.0-rc.181 (2026-11-12)
 
 ### Features

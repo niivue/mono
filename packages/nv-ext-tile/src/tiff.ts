@@ -26,6 +26,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
+import { decodeXmlEntities, parseOmeXml } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import {
   grayInto,
@@ -61,7 +62,7 @@ import {
   ndpiTileJpeg,
 } from './vendor/ndpi'
 import { type PhilipsLevel, philipsLevels } from './vendor/philips'
-import type { VendorPlacement } from './vendor/placement'
+import { attrs as rawAttrs, type VendorPlacement } from './vendor/placement'
 import { trestleOverlaps, trestlePlacement } from './vendor/trestle'
 import {
   isVentanaXmp,
@@ -74,7 +75,7 @@ export interface TiffSlideOptions {
   id?: string
   /** geotiff decoder pool (web workers). Owned by the caller; omit to decode on the main thread. */
   pool?: Pool
-  /** OME-TIFF focal plane; default 0. */
+  /** Focal plane: OME-TIFF default 0, Argos stack default the middle. */
   z?: number
   /** OME-TIFF timepoint; default 0. */
   t?: number
@@ -82,8 +83,8 @@ export interface TiffSlideOptions {
   attribution?: NVSlideAttribution
   /**
    * Vendor tile placement (`level.placement`): Ventana BIF joints, Trestle
-   * overlaps, Leica SCN regions side by side. Off by default until NVSlide
-   * draws placed tiles; off, these files open as their storage grid.
+   * overlaps, Leica SCN regions side by side. Default true; false opens
+   * these files as their storage grid.
    */
   placement?: boolean
 }
@@ -313,6 +314,21 @@ async function chainImages(
     last = await tiff.getImage(images.length)
     images.push(last)
   }
+  const base = images
+    .filter((img) => img.isTiled)
+    .reduce<GeoTIFFImage | null>(
+      (a, b) => (a && a.getWidth() >= b.getWidth() ? a : b),
+      null,
+    )
+  // Only padded images pay the read: an ordinary pyramid opens as before.
+  await Promise.all(
+    images.map(async (img) => {
+      if (!base || !img.isTiled || !paddedDownsample(base, img)) return
+      const desc = await img.fileDirectory.loadValue('ImageDescription')
+      if (typeof desc === 'string' && desc.startsWith('level='))
+        iscanLevels.add(img)
+    }),
+  )
   return images
 }
 
@@ -359,50 +375,26 @@ interface OmePixels {
   channels: { name?: string; rgb?: readonly [number, number, number] }[]
   /** Attributes, plus `elsewhere` (a file name) when another file holds them. */
   tiffData: Record<string, string>[]
-  /** PhysicalSizeZ in µm, when stated in µm. */
+  /** PhysicalSizeZ in µm, when stated. */
   zStepUm?: number
 }
 
-// XML's five named entities and character references, as attribute values hold them.
-const ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-}
-const unescapeXml = (v: string) =>
-  v.replace(/&(#x[\da-f]+|#\d+|\w+);/gi, (ref, name: string) => {
-    if (name[0] !== '#') return ENTITIES[name] ?? ref
-    const code = Number.parseInt(
-      name.slice(name[1] === 'x' || name[1] === 'X' ? 2 : 1),
-      name[1] === 'x' || name[1] === 'X' ? 16 : 10,
-    )
-    return code <= 0x10ffff ? String.fromCodePoint(code) : ref
-  })
-
-// Regex, not DOMParser (absent in Bun and workers): only attributes are read.
+// Core's parseOmeXml reads sizes, order and channels; only the TiffData IFD map
+// is read here (regex, not DOMParser: absent in Bun and workers).
+const attrs = (tag: string) =>
+  Object.fromEntries(
+    Object.entries(rawAttrs(tag)).map(([k, v]) => [k, decodeXmlEntities(v)]),
+  )
 function omePixels(xml: string, samplesPerPixel: number): OmePixels | null {
+  const info = parseOmeXml(xml)
   const pixels =
     /<(?:\w+:)?Pixels\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?Pixels>)/.exec(
       xml,
     )?.[0]
-  if (!pixels) return null
-  const attrs = (tag: string) =>
-    Object.fromEntries(
-      Array.from(
-        tag.matchAll(/([\w:]+)\s*=\s*(["'])(.*?)\2/g),
-        ([, k, , v]) => [k, unescapeXml(v ?? '')],
-      ),
-    ) as Record<string, string>
-  const tags = (name: string, xml = pixels) =>
-    Array.from(
-      xml.matchAll(new RegExp(`<(?:\\w+:)?${name}\\b[^>]*>`, 'g')),
-      ([tag]) => attrs(tag),
-    )
+  if (!info || !pixels) return null
   // Multi-file sets: a TiffData whose UUID is not this file's (the root
   // OME UUID) numbers IFDs of another file.
-  const self = tags('OME', xml)[0]?.UUID
+  const self = attrs(/<(?:\w+:)?OME\b[^>]*>/.exec(xml)?.[0] ?? '').UUID
   const tiffData = Array.from(
     pixels.matchAll(
       /<(?:\w+:)?TiffData\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?TiffData>)/g,
@@ -418,39 +410,20 @@ function omePixels(xml: string, samplesPerPixel: number): OmePixels | null {
       }
     },
   )
-  const p = tags('Pixels')[0] ?? {}
-  const order = [...(p.DimensionOrder ?? '').slice(2)] as Dim[]
-  if (
-    !/^XY/.test(p.DimensionOrder ?? '') ||
-    [...order].sort().join() !== 'C,T,Z'
-  )
-    return null // read as a plain TIFF, first plane
-  const size = (v?: string) => Math.max(1, Number.parseInt(v ?? '', 10) || 1)
-  const channels = tags('Channel').map(({ Name, Color }) => {
-    // Color is RGBA as a signed 32-bit int.
-    const v = Number(Color)
-    return {
-      ...(Name ? { name: Name } : {}),
-      ...(Color && Number.isInteger(v)
-        ? {
-            rgb: [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255] as const,
-          }
-        : {}),
-    }
-  })
-  const zStep = Number(p.PhysicalSizeZ)
-  const zUnit = p.PhysicalSizeZUnit ?? 'µm'
+  const channels = info.channels.map(({ name, color }) => ({
+    ...(name ? { name } : {}),
+    ...(color ? { rgb: color } : {}),
+  }))
+  const zStepUm = info.spacingUm[2]
   return {
-    ...(zStep > 0 && (zUnit === 'µm' || zUnit === 'um')
-      ? { zStepUm: zStep }
-      : {}),
+    ...(zStepUm > 0 ? { zStepUm } : {}),
     // SizeC counts samples: an RGB plane is one Channel of 3.
     sizes: {
-      C: channels.length || Math.ceil(size(p.SizeC) / samplesPerPixel),
-      Z: size(p.SizeZ),
-      T: size(p.SizeT),
+      C: channels.length || Math.ceil(info.sizeC / samplesPerPixel),
+      Z: info.sizeZ,
+      T: info.sizeT,
     },
-    order,
+    order: [...info.dimensionOrder.slice(2)] as Dim[],
     channels,
     tiffData,
   }
@@ -560,7 +533,7 @@ interface TiffOpened {
   pixelSpacingMM?: [number, number]
 }
 
-/** What `placement: true` resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
+/** What placement resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
 export interface TiffPlacementReport {
   warning?: string
   notice?: string
@@ -616,9 +589,10 @@ async function openTiff(
     (sizes.C * sizes.Z * sizes.T === 1 &&
       planeIfd(ome, { C: 0, Z: 0, T: 0 }) === 0)
   ) {
-    const placed = options.placement
-      ? await placedPyramid(tiff, first, description)
-      : null
+    const placed =
+      options.placement !== false
+        ? await placedPyramid(tiff, first, description)
+        : null
     const pyramids = [
       placed?.levels ??
         (await pyramidImages(tiff, first, true, philipsLevels(description))),
@@ -833,6 +807,25 @@ function regionTile(level: TiffLevel, x: number, y: number) {
 const padToTiles = (n: number, downsample: number, tile: number) =>
   Math.ceil(Math.ceil(n / downsample) / tile) * tile
 
+// Ventana iScan pads each level to whole 8 px JPEG blocks (82960 / 4 = 20740
+// rows stored as 20744): the power-of-two downsample of a padded `img`, else 0.
+function paddedDownsample(base: GeoTIFFImage, img: GeoTIFFImage): number {
+  const [bw, bh] = [base.getWidth(), base.getHeight()]
+  const [w, h] = [img.getWidth(), img.getHeight()]
+  const d = 2 ** Math.round(Math.log2(bw / w))
+  const padded = w !== Math.ceil(bw / d) || h !== Math.ceil(bh / d)
+  return d > 1 &&
+    padded &&
+    padToTiles(bw, d, 8) === w &&
+    padToTiles(bh, d, 8) === h
+    ? d
+    : 0
+}
+
+// Padded images an iScan ImageDescription names a level ("level=2 mag=10
+// quality=90"): an unmarked tiled macro can fit the padding too.
+const iscanLevels = new WeakSet<GeoTIFFImage>()
+
 // `img` as a level of `base`, or null when it is not one: a tiled image off
 // the base aspect ratio (SVS macro between levels) would be stretched over the
 // slide. The tolerance is the height error of rounding the width to pixels.
@@ -856,6 +849,14 @@ function levelOf(
   const width = img.getWidth()
   const height = img.getHeight()
   const aspect = baseHeight / baseWidth
+  const d = iscanLevels.has(img) ? paddedDownsample(base, img) : 0
+  if (d)
+    return {
+      img,
+      width: Math.ceil(baseWidth / d),
+      height: Math.ceil(baseHeight / d),
+      downsample: d,
+    }
   if (Math.abs(height - aspect * width) <= 1 + aspect) {
     return { img, width, height, downsample: baseWidth / width }
   }
@@ -1441,7 +1442,7 @@ export class TiffSlideSource implements SlideTileSource {
   /** An OME-TIFF z/t stack's planes (`SlidePlaneCapable`); unset otherwise. */
   readonly planes?: NVSlidePlaneAxes
   readonly preparePlane?: SlidePlaneCapable['preparePlane']
-  /** With `placement: true`: a grid fallback's warning, or the per-seam residuals. */
+  /** A vendor layout's grid fallback warning, or the per-seam residuals. */
   readonly placementReport?: TiffPlacementReport
   private host: SlideSourceHost | null = null
   private readonly closed = new AbortController()

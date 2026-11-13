@@ -70,6 +70,11 @@ export function emptyBatch(): GlyphBatch {
  *   (as a developer hint); otherwise return '' and the caller should skip
  *   drawing. Keeps the NVViewGL and NVViewGPU paths in sync.
  */
+/** Backing of the header (placeholder text, debug backend name); both views. */
+export const HEADER_BACK_COLOR: [number, number, number, number] = [
+  0.5, 0.2, 0.6, 0.8,
+]
+
 export function resolveHeaderLabel(
   placeholderText: string,
   hasContent: boolean,

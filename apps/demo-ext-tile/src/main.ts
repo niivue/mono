@@ -2,6 +2,7 @@ import { Pool } from '@niivue/geotiff-rs'
 import type {
   NVSlideAttribution,
   NVSlidePoint,
+  SlideTileSource,
   SlideView,
 } from '@niivue/niivue'
 import {
@@ -13,14 +14,9 @@ import {
   NVSlide,
   slideStatsSummary,
 } from '@niivue/niivue'
-import {
-  DicomWsiSource,
-  indexDicomWsi,
-  registerDcm2niixDecoders,
-  type SlideIndex,
-} from '@niivue/nv-ext-tile/dicom'
+import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
+import { openSlide, type SlideCandidate } from '@niivue/nv-ext-tile/open'
 import { registerDcm2niixTiffDecoders } from '@niivue/nv-ext-tile/tiff'
-import { ZarrSlideSource } from '@niivue/nv-ext-tile/zarr'
 // Optional: drop these calls and the @niivue/uikit dependency to lose the
 // minimap, the HUD and the channel panel.
 import {
@@ -30,7 +26,6 @@ import {
   attachSlidePlaneControl,
 } from '@niivue/uikit'
 import { droppedFiles } from './drop'
-import { openTiffFile, openUrlSource, type Source, sniffFile } from './open'
 
 const filesInput = document.getElementById('files') as HTMLInputElement
 const slideSelect = document.getElementById('slides') as HTMLSelectElement
@@ -63,6 +58,10 @@ const filterSelect = document.getElementById('filter') as HTMLSelectElement
 const credit = document.getElementById('credit') as HTMLDivElement
 const readout = document.getElementById('readout') as HTMLOutputElement
 const dragSelect = document.getElementById('drag') as HTMLSelectElement
+// Drag modes that set a channel window.
+const channelDragModes = ['windowLevel', 'contrastBox'].map(
+  (id) => document.getElementById(id) as HTMLOptionElement,
+)
 const channelsPanel = document.getElementById('channels') as HTMLElement
 const minimapToggle = document.getElementById('minimap') as HTMLInputElement
 const compareSelect = document.getElementById('compare') as HTMLSelectElement
@@ -80,7 +79,8 @@ const antialias = params.get('aa') ? params.get('aa') === 'on' : !isWebKit
 // Menu state: set on a pick, restored from `shown` if the pick fails.
 let current = '' // the menu value of what is open or opening
 let currentLabel = ''
-let indexed: { index: SlideIndex; files: File[] } | null = null
+// The slides of the local files, as listed in the Series menu.
+let indexed: SlideCandidate[] | null = null
 let indexNote = '' // kept in the status line while an indexed slide is open
 let lastFiles: File[] = []
 function reloadWith(name: string, value: string): void {
@@ -163,13 +163,39 @@ attachSlideHud(view, hud, (slide, s) => [
 attachSlideChannelPanel(view, channelsPanel)
 attachSlidePlaneControl(view, document.getElementById('planes') as HTMLElement)
 
-// The values under the pointer, from resident tiles (refined as tiles land).
+// The values under the pointer, from resident tiles (refined as tiles land),
+// in place of the credit while hovering.
 function showReadout(): void {
   const slide = view.slide
   readout.value =
     slide && hover
       ? formatSlideSample(hover.x, hover.y, slide.sampleAt(hover.x, hover.y))
       : ''
+  readout.title = readout.value
+  readout.hidden = !readout.value
+  credit.hidden = !readout.hidden
+}
+
+// RGB samples have no channel to window (core's isRgbSlide, not exported).
+// Switch to core's export once #770 lands.
+const isRgb = (slide: NVSlide): boolean =>
+  !slide.manifest.channelInfo &&
+  !slide.manifest.levels.some(
+    (l) =>
+      l.codec === 'raw-gray' ||
+      (l.photometric?.startsWith('MONOCHROME') ?? false),
+  )
+// RGB slides have no channel window, so they get navigation instead.
+function syncDragModes(slide: NVSlide): void {
+  const rgb = isRgb(slide)
+  for (const option of channelDragModes) option.disabled = rgb
+  if (!dragSelect.selectedOptions[0]?.disabled) return
+  dragSelect.value = String(DRAG_MODE.pan)
+  if (view.controller) {
+    view.controller.primaryDragMode = DRAG_MODE.pan
+    view.controller.selection = null
+  }
+  requestRender()
 }
 
 function afterRender(): void {
@@ -249,25 +275,19 @@ function restoreMenu(): void {
   slideSelect.value = s.seriesValue
 }
 
-type Load = (signal: AbortSignal) => Promise<Source | NVSlide>
+type Load = (signal: AbortSignal) => Promise<SlideTileSource>
 // The loader of the slide on show: the compare view opens its own copy (a
 // source serves one slide).
 let shownLoad: Load | null = null
 
 // A slide for a loaded source; a source NVSlide rejects is disposed.
-function slideFor(next: Source | NVSlide): NVSlide {
-  let slide: NVSlide
+function slideFor(next: SlideTileSource): NVSlide {
   try {
-    slide =
-      next instanceof NVSlide ? next : NVSlide.fromSource(next, slideOptions())
+    return NVSlide.fromSource(next, slideOptions())
   } catch (err) {
     next.dispose?.()
     throw err
   }
-  // ponytail: until the Zarr source states channelInfo[0].window (lane B).
-  if (next instanceof ZarrSlideSource && next.window)
-    slide.setChannel(0, next.window)
-  return slide
 }
 
 // Side by side or lens (Avivator): a second, linked view of the same slide
@@ -361,7 +381,6 @@ async function runCompare(id: number, signal: AbortSignal): Promise<void> {
 }
 compareSelect.addEventListener('change', () => void syncCompare())
 
-// A loader returns a tile source, or a slide it built itself (a hosted manifest).
 async function open(load: Load): Promise<void> {
   const id = ++openCount
   opening?.abort()
@@ -379,13 +398,10 @@ async function open(load: Load): Promise<void> {
     // disposes) its source; the view owns the slide.
     const nextSlide = slideFor(next)
     view.setSlide(nextSlide)
+    syncDragModes(nextSlide)
     shownLoad = load
     if (compareSelect.value !== 'single') void syncCompare()
-    showCredit(
-      nextSlide.manifest.attribution ??
-        (next instanceof NVSlide ? undefined : (next as Source).attribution) ??
-        credits.get(current),
-    )
+    showCredit(nextSlide.manifest.attribution ?? credits.get(current))
     opening = null
     spin(false)
     shown = snapshot()
@@ -419,13 +435,18 @@ const SYNTAX: Record<string, string> = {
   '1.2.840.10008.1.2.4.91': 'JPEG 2000',
 }
 function openIndexed(i: number): void {
-  const slide = indexed?.index.slides[i]
-  if (!indexed || !slide) return
-  const files = indexed.files
-  void open(async () => new DicomWsiSource(slide, files))
+  const candidate = indexed?.[i]
+  if (candidate) void open((signal) => candidate.open(signal))
+}
+const describe = (s: NonNullable<SlideCandidate['slide']>) => {
+  const l0 = s.levels[0]
+  const frames = s.levels.reduce((n, l) => n + l.frames.offset.length, 0)
+  const holes = s.levels.reduce((n, l) => n + l.holes, 0)
+  const syntax = s.instances[0]?.transferSyntax ?? ''
+  return `${s.container ?? s.series.slice(-12)} path ${s.opticalPath} z ${s.focalPlane}: ${s.levels.length} levels, ${l0?.width}x${l0?.height}, ${SYNTAX[syntax] ?? syntax}, ${l0?.sparse ? 'sparse' : 'full'}, ${frames} frames, ${holes} holes`
 }
 
-// Custom files: one tiled TIFF, or the files of a DICOM-WSI slide (or several).
+// Custom files: tiled TIFFs and the files of DICOM-WSI slides, listed together.
 async function openFiles(files: File[]): Promise<void> {
   const first = files[0]
   if (!first) return
@@ -433,46 +454,44 @@ async function openFiles(files: File[]): Promise<void> {
     'local',
     files.length === 1 ? first.name : `${files.length} files`,
   )
-  // Take an open generation (and own the status) before sniffing, so a newer
-  // pick wins the await.
+  // Take an open generation (and own the status) before listing, so a newer
+  // pick wins the await and aborts the indexing.
   const id = ++openCount
   opening?.abort()
   opening = new AbortController()
+  status.textContent = 'Opening...'
   spin(true)
-  const openTiff = () => void open(() => openTiffFile(first, pool))
   try {
-    const kind = files.length === 1 ? await sniffFile(first) : 'dicom'
-    if (id !== openCount) return
-    if (kind === 'tiff') return openTiff()
-    status.textContent = `Indexing ${files.length} files...`
     const t0 = performance.now()
-    const index = await indexDicomWsi(files)
+    const { candidates, index } = await openSlide(files, {
+      pool,
+      signal: opening.signal,
+      onProgress: (done, total) => {
+        if (id === openCount)
+          status.textContent = `Indexing ${done}/${total} files...`
+      },
+    })
     if (id !== openCount) return
     const ms = performance.now() - t0
-    const skipped = index.skipped.map((k) => `${k.file}: ${k.reason}`)
-    if (!index.slides.length) {
-      if (kind === 'dual') return openTiff()
+    const skipped = (index?.skipped ?? []).map((k) => `${k.file}: ${k.reason}`)
+    if (!candidates.length) {
       restoreMenu()
       status.title = skipped.join('\n')
       status.textContent = `No tiled DICOM-WSI slide in ${files.length} files (${skipped.length} skipped).`
       return
     }
-    indexed = { index, files }
+    indexed = candidates
     slideSelect.replaceChildren(
-      ...index.slides.map((s, i) => {
-        const l0 = s.levels[0]
-        const frames = s.levels.reduce((n, l) => n + l.frames.offset.length, 0)
-        const holes = s.levels.reduce((n, l) => n + l.holes, 0)
-        const syntax = s.instances[0]?.transferSyntax ?? ''
-        const option = document.createElement('option')
-        option.value = String(i)
-        option.textContent = `${s.container ?? s.series.slice(-12)} path ${s.opticalPath} z ${s.focalPlane}: ${s.levels.length} levels, ${l0?.width}x${l0?.height}, ${SYNTAX[syntax] ?? syntax}, ${l0?.sparse ? 'sparse' : 'full'}, ${frames} frames, ${holes} holes`
-        return option
-      }),
+      ...candidates.map(
+        (c, i) => new Option(c.slide ? describe(c.slide) : c.label, String(i)),
+      ),
     )
-    seriesLabel.hidden = false
+    seriesLabel.hidden = !index && candidates.length === 1
     status.title = skipped.join('\n')
-    indexNote = `Indexed in ${ms.toFixed(0)} ms (${skipped.length} files skipped). `
+    if (index)
+      indexNote = `Indexed in ${ms.toFixed(0)} ms (${skipped.length} files skipped). `
+    // Every candidate keeps the listing signal, so it is never aborted from here.
+    opening = null
     openIndexed(0)
   } catch (err) {
     if (id !== openCount) return
@@ -655,8 +674,8 @@ sourceSelect.replaceChildren(
     tiffOption('Philips-TIFF/Philips-1.tiff', '327 MB'),
     tiffOption('Philips-TIFF/Philips-2.tiff', '914 MB, largest'),
     tiffOption('Philips-TIFF/Philips-4.tiff', '291 MB, sparse'),
-    tiffOption('Leica/Leica-1.scn', '292 MB, offsets not applied'),
-    tiffOption('Ventana/Ventana-1.bif', '227 MB, tile joints not applied'),
+    tiffOption('Leica/Leica-1.scn', '292 MB'),
+    tiffOption('Ventana/Ventana-1.bif', '227 MB, tile joints placed'),
   ]),
   group('DICOM-WSI', [
     dicomOption('3dhistech-1', '3DHISTECH-1'),
@@ -724,6 +743,7 @@ function showCurrent(value: string, label: string): void {
 
 function showCredit(a: NVSlideAttribution | undefined): void {
   credit.replaceChildren()
+  credit.title = ''
   if (typeof a?.title !== 'string') return
   // Remote metadata: a link only for http(s), so a javascript: URL stays text.
   const url = typeof a.url === 'string' ? URL.parse(a.url) : null
@@ -741,28 +761,36 @@ function showCredit(a: NVSlideAttribution | undefined): void {
     .filter(str)
     .map((t) => `. ${t.replace(/\.$/, '')}`)
   credit.append(title, ...rest)
-  credit.title = str(a.modified) ? `Modified: ${a.modified}` : ''
+  // The bar truncates it: the tooltip has it all.
+  credit.title = [
+    credit.textContent,
+    str(a.modified) && `Modified: ${a.modified}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 const openUrl = (url: string) => {
   showCurrent(url, url.replace(/\/+$/, '').split('/').pop() || url)
-  return open((signal) =>
-    // Inside the loader, so a malformed URL is reported in the status line.
-    openUrlSource(new URL(url, location.href).href, {
-      pool,
-      signal,
-      slideOptions: slideOptions(),
-      // GitHub raw serves LFS pointers, so the listed manifests' relative .dcm
-      // paths resolve against its media endpoint, which serves the LFS files.
-      manifestBase: (href) =>
-        href.startsWith(DICOM)
-          ? href.replace(
+  // Inside the loader, so a malformed URL is reported in the status line.
+  return open(async (signal) => {
+    const [candidate] = (
+      await openSlide(url, {
+        pool,
+        signal,
+        // GitHub raw serves LFS pointers, so the listed manifests' relative .dcm
+        // paths resolve against its media endpoint, which serves the LFS files.
+        baseUrl: url.startsWith(DICOM)
+          ? url.replace(
               'https://raw.githubusercontent.com/',
               'https://media.githubusercontent.com/media/',
             )
-          : href,
-    }),
-  )
+          : undefined,
+      })
+    ).candidates
+    // A URL is one slide.
+    return (candidate as SlideCandidate).open(signal)
+  })
 }
 sourceSelect.addEventListener('change', () => {
   const value = sourceSelect.value

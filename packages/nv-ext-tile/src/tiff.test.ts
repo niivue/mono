@@ -1533,6 +1533,15 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       [0.4, 0.5],
     ],
     [
+      'OME units as XML entities',
+      {
+        description: omeXml(
+          'PhysicalSizeX="0.25" PhysicalSizeXUnit="&#xB5;m" PhysicalSizeY="0.5" PhysicalSizeYUnit="&#181;m"',
+        ),
+      },
+      [0.25, 0.5],
+    ],
+    [
       'Philips row\\col',
       { description: philips('Name="DICOM_PIXEL_SPACING" Group="0x0028"') },
       [0.226907, 0.226891],

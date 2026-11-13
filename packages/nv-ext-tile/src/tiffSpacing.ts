@@ -1,7 +1,7 @@
 // A TIFF slide's level-0 pixel size, from the first source that states it:
 // vendor metadata, OME-XML, then the resolution tags. A recognised vendor
 // never falls through to the tags, which slide writers fill with defaults.
-import { omeLengthToMicrons } from '@niivue/niivue'
+import { decodeXmlEntities, omeLengthToMicrons } from '@niivue/niivue'
 import { leicaRegions } from './vendor/leica'
 import { philipsSpacingMM } from './vendor/philips'
 import { attrs } from './vendor/placement'
@@ -39,9 +39,11 @@ export function tiffPixelSpacingMM(
     return um(Number(/\|\s*MPP\s*=\s*([\d.]+)/.exec(d)?.[1]))
   if (/<(?:\w+:)?OME\b/.test(d)) {
     const p = attrs(/<(?:\w+:)?Pixels\b[^>]*>/.exec(d)?.[0] ?? '')
+    // An absent unit is OME's default (um).
+    const unit = (u?: string) => u && decodeXmlEntities(u)
     return um(
-      omeLengthToMicrons(Number(p.PhysicalSizeX), p.PhysicalSizeXUnit),
-      omeLengthToMicrons(Number(p.PhysicalSizeY), p.PhysicalSizeYUnit),
+      omeLengthToMicrons(Number(p.PhysicalSizeX), unit(p.PhysicalSizeXUnit)),
+      omeLengthToMicrons(Number(p.PhysicalSizeY), unit(p.PhysicalSizeYUnit)),
     )
   }
   if (d.includes('DPUfsImport')) return philipsSpacingMM(d)

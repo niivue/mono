@@ -712,23 +712,32 @@ function orientTile(
   decoded: ImageBitmap | NVSlideTileSamples,
   o: NVSlideTileOrientation,
 ): ImageBitmap | NVSlideTileSamples {
+  if ('samples' in decoded) return orientSamples(decoded, o)
   const [w, h] = o.transpose
     ? [decoded.height, decoded.width]
     : [decoded.width, decoded.height]
-  if (!('samples' in decoded)) {
-    const canvas = new OffscreenCanvas(w, h)
-    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D
-    // Stored px -> displayed px.
-    const sx = o.flipX ? -1 : 1
-    const sy = o.flipY ? -1 : 1
-    const e = o.flipX ? w : 0
-    const f = o.flipY ? h : 0
-    if (o.transpose) ctx.setTransform(0, sy, sx, 0, e, f)
-    else ctx.setTransform(sx, 0, 0, sy, e, f)
-    ctx.drawImage(decoded, 0, 0)
-    decoded.close()
-    return canvas.transferToImageBitmap()
-  }
+  const canvas = new OffscreenCanvas(w, h)
+  const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D
+  // Stored px -> displayed px.
+  const sx = o.flipX ? -1 : 1
+  const sy = o.flipY ? -1 : 1
+  const e = o.flipX ? w : 0
+  const f = o.flipY ? h : 0
+  if (o.transpose) ctx.setTransform(0, sy, sx, 0, e, f)
+  else ctx.setTransform(sx, 0, 0, sy, e, f)
+  ctx.drawImage(decoded, 0, 0)
+  decoded.close()
+  return canvas.transferToImageBitmap()
+}
+
+/** Samples turned per `o` (see {@link NVSlideTileOrientation}). */
+export function orientSamples(
+  decoded: NVSlideTileSamples,
+  o: NVSlideTileOrientation,
+): NVSlideTileSamples {
+  const [w, h] = o.transpose
+    ? [decoded.height, decoded.width]
+    : [decoded.width, decoded.height]
   // Displayed (u, v) reads stored index ix + iy + u du + v dv.
   const stride = decoded.width
   const along = (flip: boolean, n: number, step: number) =>

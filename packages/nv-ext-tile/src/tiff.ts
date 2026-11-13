@@ -33,6 +33,7 @@ import {
   MAX_DEFAULT_VISIBLE,
   MAX_TILE_SIZE,
   MAX_TILES,
+  planeArray,
   type Quantize,
   quantizeRange,
   storedToValue,
@@ -499,15 +500,6 @@ function sampleKind(img: GeoTIFFImage): SampleKind {
     return { bitsStored: bits <= 8 ? 8 : 16, quantize: false, float }
   return { bitsStored: 16, quantize: true, float }
 }
-
-const sampleArray = (kind: SampleKind) =>
-  kind.sampleType === 'f32'
-    ? Float32Array
-    : kind.sampleType === 'i16'
-      ? Int16Array
-      : kind.bitsStored === 8
-        ? Uint8Array
-        : Uint16Array
 
 // Grey samples: one channel served as raw-gray tiles, or several (multi-channel
 // OME-TIFF) served as sample planes through fetchTileSamples.
@@ -1650,7 +1642,7 @@ export class TiffSlideSource implements SlideTileSource {
         }
         this.host?.updateRangeEvent(label, 'hit')
         const bytes = this.channels
-          ? sampleArray(this.channels.kind).BYTES_PER_ELEMENT
+          ? planeArray(this.channels.kind).BYTES_PER_ELEMENT
           : 4
         return new Uint8Array(tile.width * tile.height * bytes)
       }
@@ -1686,7 +1678,7 @@ export class TiffSlideSource implements SlideTileSource {
       const window = [x0, y0, x0 + tile.width, y0 + tile.height]
       let bytes: Uint8Array
       if (gray) {
-        const Samples = sampleArray(gray.kind)
+        const Samples = planeArray(gray.kind)
         if (absent) bytes = new Uint8Array(pixels * Samples.BYTES_PER_ELEMENT)
         else {
           const [data] = await img.readRasters({
@@ -1812,7 +1804,7 @@ export class TiffSlideSource implements SlideTileSource {
   ): Promise<NVSlideTileSamples> {
     const { width: w, height: h } = tile
     const gray = this.channels as TiffChannels
-    const out = new (sampleArray(gray.kind))(w * h * channels.length)
+    const out = new (planeArray(gray.kind))(w * h * channels.length)
     const abort = linked(signal, this.closed.signal)
     const pyramids = this.pyramidsOf(level)
     // Hidden channels shown for the first time: their windows first.
@@ -1880,7 +1872,7 @@ export class TiffSlideSource implements SlideTileSource {
 // widened or quantized into the level's sample type.
 function grayBytes(
   data: ArrayLike<number>,
-  Samples: ReturnType<typeof sampleArray>,
+  Samples: ReturnType<typeof planeArray>,
   q: Quantize | null,
   w: number,
   h: number,

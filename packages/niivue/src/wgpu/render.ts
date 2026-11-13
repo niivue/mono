@@ -14,7 +14,7 @@ import {
   VOLUME_RENDER_MODE,
 } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
-import type { NVImage, VolumeChunkExplode } from '@/NVTypes'
+import type { NVImage } from '@/NVTypes'
 import {
   ChunkStackFuse,
   chunkRegions,
@@ -35,11 +35,7 @@ import {
 } from '@/view/NVRenderVolumeData'
 import { isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import type { RgbaGrid } from '@/view/planeVisibility'
-import {
-  chunkExplodedMatRAS,
-  chunkExplodeEnabled,
-  chunkExplodeOffsetFrac,
-} from '@/volume/ChunkExplode'
+import { chunkExplodedMatRAS, chunkExplodeEnabled } from '@/volume/ChunkExplode'
 import {
   ChunkResidencyManager,
   type RetiringChunk,
@@ -53,11 +49,10 @@ import {
 import {
   bytesPerSourceVoxel,
   chunkIndicesForAllBudgets,
+  residentBytesForChunkDesc,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
-  chunkLodDownsample,
-  chunkOwnedTexBox,
   chunksToKeepResident,
   chunkVolume,
   dimsDownsample,
@@ -69,6 +64,12 @@ import {
 } from '@/volume/chunking'
 import { chunkPlanMessage } from '@/volume/chunkPlanMessage'
 import { ChunkTravelPredictor } from '@/volume/chunkPrediction'
+import {
+  type ChunkUniforms,
+  chunkOffsetFor,
+  chunkUniformsFor,
+  setChunkBudget,
+} from '@/volume/chunkRender'
 import { decodedTierBudgetBytes } from '@/volume/decodedChunkCache'
 import {
   buildModulationParams,
@@ -172,49 +173,6 @@ const OVERLAY_RESIDENCY_FRACTION = 0.4
  */
 const CLIP_SPACE_ZERO_TO_ONE = true
 
-type Vec3f = [number, number, number]
-
-/**
- * Per-chunk uniform values for one cube draw of a chunked volume. The renderer
- * computes these from the ChunkPlan; the shader uses them to scale the unit
- * cube into the chunk's sub-region and remap sample positions into the chunk
- * texture (including halo). Non-chunked draws use identity pass-through values.
- */
-interface ChunkUniforms {
-  /** Full volume RAS dims in the COMMON grid (vertex placement + frac2ndc). */
-  volumeTexDimsFull: Vec3f
-  /** Chunk's sub-cube origin in the full-volume [0,1] cube. */
-  chunkSubOrigin: Vec3f
-  /** Chunk's sub-cube size in the full-volume [0,1] cube. */
-  chunkSubSize: Vec3f
-  /** Halo offset in the chunk's local texture (skips low-side halo). */
-  dataOriginTexFrac: Vec3f
-  /** Data extent in the chunk's local texture (excludes halo on both sides). */
-  dataSizeTexFrac: Vec3f
-  /**
-   * Full-volume voxel dims at THIS brick's source pyramid level, used solely for
-   * the ray-march step density (one step ≈ one source-level voxel across the
-   * full cube). Equals `volumeTexDimsFull` for single-level/non-chunked draws;
-   * coarser for multi-LOD bricks so they step (and sample) at their own
-   * resolution instead of being oversampled at the finest density.
-   */
-  rayStepTexVox: Vec3f
-  /**
-   * False when this draw reads a brick whose halo is too thin for the tricubic
-   * kernel (see planSupportsCubic). The filter is forced off for that draw so
-   * it cannot reconstruct from clamp-to-edge data at an internal brick face,
-   * which would show as a seam. Defaults to true (non-chunked draws, and the
-   * coarse floor, which is one whole-volume texture).
-   */
-  cubicSafe?: boolean
-  /**
-   * Linear downsample factor of this brick's source pyramid level relative to
-   * the finest grid (see chunkLodDownsample). 1 for single-level plans and
-   * non-chunked draws; drives the per-level brightness compensation.
-   */
-  lodDownsample?: number
-}
-
 /** Single-texture volume: fits within maxTextureDimension3D on all axes. */
 interface SingleTexEntry {
   kind: 'single'
@@ -298,16 +256,6 @@ interface ChunkedTexEntry {
   swapTail?: Promise<void>
 }
 
-/**
- * Set a chunked entry's GPU residency budget, keeping its decoded tier sized
- * against it. The two move together by construction: the tier exists to shadow
- * the resident set, so a share change that shrinks one must shrink the other.
- */
-function setChunkBudget(entry: ChunkedTexEntry, bytes: number): void {
-  entry.manager.setBudgetBytes(bytes)
-  entry.decoded.resize(decodedTierBudgetBytes(bytes, entry.sourceBytesPerVoxel))
-}
-
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 
 // 512 bytes of data = 128 floats:
@@ -355,65 +303,6 @@ const FLOOR_CHUNK_PARAMS_BASE =
  * it never reads as lag on a settled view.
  */
 const DEFAULT_CHUNK_FADE_MS = 120
-
-/**
- * Steady-state GPU bytes one resident chunk occupies. The scalar source
- * texture is destroyed after the orient pass, so only the RGBA color texture
- * and the gradient texture persist — both rgba8unorm (4 bytes/voxel) over the
- * chunk's padded `texDims`. A chunk uploaded without a gradient
- * (`hasGradient === false`: the volume was unlit at upload) holds a 1x1x1
- * placeholder instead, so it costs 4 bytes/voxel; a chunk uploaded lit keeps
- * its 8-byte accounting even if lighting is later toggled off, until it
- * re-streams. Must agree with
- * `residentBytesForChunkDesc` so the working-set cap and this eviction
- * accounting measure the same currency.
- */
-function chunkResidentBytes(chunk: VolumeChunkGPU): number {
-  const [tx, ty, tz] = chunk.desc.texDims
-  return tx * ty * tz * (chunk.hasGradient ? 8 : 4)
-}
-
-/** Per-chunk uniform values derived from a chunk descriptor and its plan. */
-function chunkUniformsFor(plan: ChunkPlan, chunkIndex: number): ChunkUniforms {
-  const desc = plan.chunks[chunkIndex]
-  const [vx, vy, vz] = plan.volumeDims
-  // Ray-step density comes from this brick's source level (full-volume dims);
-  // for single-level plans levelDims is absent so it falls back to volumeDims.
-  const rayStep = plan.levelDims?.[desc.sourceLevel ?? 0] ?? plan.volumeDims
-  // The brick's OWNED box inside its own texture. A multi-LOD brick fetches a
-  // box snapped out to whole level voxels, so the fetched box is NOT the owned
-  // box and using it here would misregister the brick. See `chunkOwnedTexBox`.
-  const owned = chunkOwnedTexBox(plan, desc)
-  return {
-    // World placement uses the COMMON grid (voxelOrigin/voxelDims are common-grid
-    // for multi-LOD bricks; identical to the level grid for single-level plans).
-    volumeTexDimsFull: [vx, vy, vz],
-    chunkSubOrigin: [
-      desc.voxelOrigin[0] / vx,
-      desc.voxelOrigin[1] / vy,
-      desc.voxelOrigin[2] / vz,
-    ],
-    chunkSubSize: [
-      desc.voxelDims[0] / vx,
-      desc.voxelDims[1] / vy,
-      desc.voxelDims[2] / vz,
-    ],
-    // Texture-space remap uses the brick's OWN level grid.
-    dataOriginTexFrac: owned.origin,
-    dataSizeTexFrac: owned.size,
-    rayStepTexVox: [rayStep[0], rayStep[1], rayStep[2]],
-    lodDownsample: chunkLodDownsample(plan, desc),
-  }
-}
-
-function chunkOffsetFor(
-  plan: ChunkPlan,
-  explode: VolumeChunkExplode | undefined,
-): ((chunkIndex: number) => Vec3f) | undefined {
-  if (!chunkExplodeEnabled(explode)) return undefined
-  return (chunkIndex: number) =>
-    chunkExplodeOffsetFrac(plan, chunkIndex, explode)
-}
 
 // Chunk plans already explained in the log (see chunkPlanMessage): the same
 // plan is re-bound on every update.
@@ -1241,7 +1130,7 @@ export class VolumeRenderer extends NVRenderer {
       plan.chunks.length,
       budgetBytes,
       {
-        bytesOf: chunkResidentBytes,
+        bytesOf: (c) => residentBytesForChunkDesc(c.desc, c.hasGradient),
         destroy: (c) => destroyVolumeChunksGPU([c]),
         onEvict: (ci) => {
           entry.bindGroups[ci] = null

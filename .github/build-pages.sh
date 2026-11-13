@@ -95,6 +95,8 @@ done
 # Documentation site
 mkdir -p _site/docs
 cp -r apps/docs/dist/* _site/docs/
+# Agents look for llms.txt at the project root too; its links are absolute.
+cp apps/docs/dist/llms.txt _site/llms.txt
 
 echo "==> Done. Site is in _site/ ($(du -sh _site | cut -f1))"
 

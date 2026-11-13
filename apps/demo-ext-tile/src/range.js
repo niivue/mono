@@ -12,12 +12,12 @@
 //                0.5 (zarr v3) or 0.4 (zarr v2) form -- see fetchStoreRoot
 
 import NiiVue, {
+  ByteLru,
   chunkVolumeGrid,
   createStreamingNVImage,
   SLICE_TYPE,
 } from '@niivue/niivue'
 import {
-  ByteLruCache,
   omeZarrChunkedSource,
   openOmeZarr,
   parseOmeZarrAttrs,
@@ -462,10 +462,10 @@ const MANIFEST_URL = demoAssetUrl('range-poc/synthetic-volume.json')
 
 // --- byte cache for zarrita -------------------------------------------------
 
-// The library ByteLruCache (byte-bounded LRU over raw store responses, absences
+// The core ByteLru (byte-bounded LRU over raw store responses, absences
 // remembered as zero-byte entries) with the demo's serial-gated HUD counters
 // layered on top.
-class TrackedByteCache extends ByteLruCache {
+class TrackedByteCache extends ByteLru {
   constructor(maxBytes, serial) {
     super(maxBytes)
     // Source serial this cache belongs to; its stats writes no-op once superseded.

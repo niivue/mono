@@ -4,8 +4,11 @@ import { test } from './sharedPage'
 import { syntheticVolume } from './syntheticVolume'
 
 // P5: a slide's ICC lookup table is applied once, in the slide shader, on both
-// backends. A pure-red tile with a table that swaps red and blue must draw blue;
-// turning colour management off must draw red again, without re-decoding.
+// backends. An orange tile (255, 128, 0) with a table that swaps red and blue
+// must draw (0, 128, 255); turning colour management off must draw orange
+// again, without re-decoding. The CPU thumbnail (minimap) must match the drawn
+// colour either way, while the readout stays the stored, pre-ICC colour.
+// Green 128 sits between table nodes, so CPU and GPU interpolation must agree.
 //
 // WebGPU is skipped when the runner has no adapter. webgpu-aa also checks that
 // the 4x multisample target validates and resolves to the same colour.
@@ -30,7 +33,7 @@ for (const backend of ['webgl2', 'webgpu', 'webgpu-aa'] as const) {
           columns: 1, rows: 1, codec: 'raw-rgba', tiles: [{ x: 0, y: 0, width: n, height: n }] }],
       }
       const red = new Uint8Array(n * n * 4)
-      for (let i = 0; i < n * n; i++) red.set([255, 0, 0, 255], 4 * i)
+      for (let i = 0; i < n * n; i++) red.set([255, 128, 0, 255], 4 * i)
       // 2^3 table, red fastest: entry (r, g, b) holds (b, g, r).
       const swap = new Uint8Array(32)
       for (let e = 0; e < 8; e++)
@@ -69,24 +72,42 @@ for (const backend of ['webgl2', 'webgpu', 'webgpu-aa'] as const) {
         ctx.drawImage(canvas, 0, 0)
         return [...ctx.getImageData(32, 32, 1, 1).data.slice(0, 3)]
       }
+      const thumb = () => {
+        const bmp = slide.thumbnailBitmap()
+        const ctx = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d')
+        ctx.drawImage(bmp, 0, 0)
+        return [...ctx.getImageData(1, 1, 1, 1).data.slice(0, 3)]
+      }
+      const readout = () => slide.sampleAt(1, 1).map((s) => s.stored).slice(0, 3)
       // Wait for the tile and the table.
       for (let i = 0; i < 100 && (!slide.cachedTile(slide.tileKey(slide.manifest.levels[0], { x: 0, y: 0 })) || !slide.colorLut); i++) {
         slide.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }
       const managed = await centre()
+      const managedThumb = thumb()
+      const managedReadout = readout()
       slide.colorManagement = false
       const unmanaged = await centre()
-      return { managed, unmanaged }
+      const unmanagedThumb = thumb()
+      return { managed, unmanaged, managedThumb, unmanagedThumb, managedReadout }
     })()`)
     const r = result as {
       skip?: string
-      managed?: number[]
-      unmanaged?: number[]
+      managed: number[]
+      unmanaged: number[]
+      managedThumb: number[]
+      unmanagedThumb: number[]
+      managedReadout: number[]
     }
     test.skip(Boolean(r.skip), r.skip)
-    expect(r.managed).toEqual([0, 0, 255])
-    expect(r.unmanaged).toEqual([255, 0, 0])
+    const diff = (a: number[], b: number[]) =>
+      Math.max(...a.map((v, i) => Math.abs(v - b[i])))
+    expect(diff(r.managed, [0, 128, 255])).toBeLessThanOrEqual(1)
+    expect(r.unmanaged).toEqual([255, 128, 0])
+    expect(diff(r.managedThumb, r.managed)).toBeLessThanOrEqual(1)
+    expect(r.unmanagedThumb).toEqual(r.unmanaged)
+    expect(r.managedReadout).toEqual([255, 128, 0])
   })
 }
 

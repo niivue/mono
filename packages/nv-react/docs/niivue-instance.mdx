@@ -1,0 +1,57 @@
+---
+title: Using NiiVue directly
+description: "Reach the NiiVue instance behind a viewer, listen for what the user does, and share a scene with any component."
+sidebar:
+  order: 3
+---
+
+The components cover showing images. For everything else, such as drawing,
+meshes or saving the scene, use the NiiVue instance behind a viewer. All of
+the [NiiVue guides](/guide/) apply to it.
+
+## Getting the instance
+
+```tsx
+const nv = useNiivue(scene, 0)
+
+useEffect(() => {
+  if (nv) nv.isColorbarVisible = true
+}, [nv])
+```
+
+`useNiivue` returns `undefined` until the viewer exists, so check for it
+before using it.
+
+## Listening for events
+
+```tsx
+useSceneEvent(scene, 'locationChange', (viewerIndex, location) => {
+  console.log(viewerIndex, location)
+})
+```
+
+The hook unsubscribes when the component unmounts. Other events include
+`viewerCreated`, `viewerRemoved`, `imageLoaded`, `volumeAdded`,
+`volumeRemoved` and `error`.
+
+## Sharing a scene between components
+
+Wrap your components in `NvSceneProvider`, and any of them can reach the
+scene with `useSceneContext`, without passing it down as a prop:
+
+```tsx
+function AddButton() {
+  const scene = useSceneContext()
+  return <button onClick={() => scene.addViewer()}>Add viewer</button>
+}
+
+export function App() {
+  const { scene } = useScene()
+  return (
+    <NvSceneProvider scene={scene}>
+      <AddButton />
+      <NvScene scene={scene} initialLayout="2x2" style={{ height: 600 }} />
+    </NvSceneProvider>
+  )
+}
+```

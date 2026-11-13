@@ -3,7 +3,6 @@ import type { Demo } from './types'
 
 const demo: Demo = async (canvas, { ui, asset }) => {
   const nv = new NiiVue({
-    backgroundColor: [0.2, 0.2, 0.2, 1],
     sliceType: SLICE_TYPE.MULTIPLANAR,
   })
   await nv.attachToCanvas(canvas)

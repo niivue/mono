@@ -44,7 +44,7 @@ Browser demo for the IIIF Volumetric Server, built on `@niivue/niivue`.
   subvolume read), scale-matched so only the detail sharpens. Needs a
   `dicom-wsi` fixture — run
   `bunx nx run iiif-volumetric-server:fetch-dicom-wsi` and restart the
-  server. See `packages/niivue/docs/dicom-wsi.md`.
+  server. See `packages/niivue/notes/dicom-wsi.md`.
 - `microscopy.html` — the microscopy index. Groups the server's
   per-channel registry entries back into datasets (on the `dataset` key
   the `/api` listing exposes) and offers a dataset picker plus a channel

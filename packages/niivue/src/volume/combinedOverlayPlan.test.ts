@@ -25,7 +25,7 @@ for (const [name, Renderer] of [
     const entry = {
       plan: basePlan,
       manager: { setBudgetBytes() {} },
-      decoded: { setMaxBytes() {} },
+      decoded: { resize() {} },
       sourceBytesPerVoxel: 1,
     }
     const self = {
@@ -95,7 +95,7 @@ for (const [name, Renderer] of [
     const entry = {
       plan: oldPlan as unknown,
       manager: { setBudgetBytes() {} },
-      decoded: { setMaxBytes() {} },
+      decoded: { resize() {} },
       sourceBytesPerVoxel: 1,
     }
     const self = {

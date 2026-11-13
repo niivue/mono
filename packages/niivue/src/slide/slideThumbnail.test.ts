@@ -3,9 +3,9 @@ import type {
   NVChannel,
   NVSlideChannelInfo,
   NVSlideLevelManifest,
+  TileBitmap,
 } from './NVSlide'
 import { composeThumbnail } from './slideThumbnail'
-import type { TileBitmap } from './tileLru'
 
 // Bun has no OffscreenCanvas: record the smoothing each drawImage ran with.
 const smoothing: boolean[] = []

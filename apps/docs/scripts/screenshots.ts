@@ -30,6 +30,12 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.locator('#fontSlide').fill('20')
     return { x: 260, y: 0, width: 480, height: 360 }
   },
+  // Just the slide: no stats panels, range log or tile grid.
+  slides: async (page) => {
+    await page.click('#hudToggle')
+    await page.uncheck('#showGrid')
+    return undefined
+  },
   // A short renderer-only run; it ends on the opaque brain mesh.
   benchmark: async (page) => {
     await page.fill('#frameCount', '30')
@@ -47,6 +53,8 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
 }
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
+  // The DICOM-WSI slide streams its tiles from the network.
+  slides: 8000,
   'vox-block-pick': 8000,
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { channelColormapsFor } from '@niivue/niivue'
+import { channelColormapsFor, createStreamingNVImage } from '@niivue/niivue'
+import { omeZarrChunkedSource } from './omeZarrChunkedSource'
 import {
   countingFetch,
   defaultOmeZarrLevel,
@@ -151,6 +152,17 @@ function makeXyzStore(): Map<string, Uint8Array> {
   store.set('/0/.zarray', zarray([2, 3, 4], '<u2'))
   store.set('/0/0.0.0', new Uint8Array(data.buffer))
   return store
+}
+
+/** World box [min, max] per axis of an axis-aligned NIfTI `File` (srow_x/y/z). */
+async function fileWorldBox(file: File): Promise<number[][]> {
+  const view = new DataView(await file.arrayBuffer())
+  return [0, 1, 2].map((a) => {
+    const n = view.getInt16(42 + 2 * a, true)
+    const s = view.getFloat32(280 + 16 * a + 4 * a, true)
+    const o = view.getFloat32(280 + 16 * a + 12, true)
+    return [o - 0.5 * s, o + (n - 0.5) * s]
+  })
 }
 
 /** The voxel payload of a produced NIfTI `File` (352-byte header assumed). */
@@ -475,6 +487,23 @@ describe('omeZarrVolumesFrom', () => {
     const volumes = await omeZarrVolumesFrom(source, { level: 1 })
     const voxels = await fileVoxels(volumes[0].url as File)
     expect(voxels).toHaveLength(2 * 2)
+    // Every whole level covers the streamed volume's box (diag(s0), voxel 0
+    // centred on the origin).
+    const { shape, spacing } = omeZarrChunkedSource(source).levels[0]
+    const streamed = createStreamingNVImage({
+      shape,
+      spacing,
+      datatypeCode: 512,
+      calMin: 0,
+      calMax: 1,
+    }).hdr.affine
+    const box = shape.map((n, a) => [
+      streamed[a][3] - 0.5 * streamed[a][a],
+      streamed[a][3] + (n - 0.5) * streamed[a][a],
+    ])
+    const level0 = await omeZarrVolumesFrom(source, { level: 0 })
+    expect(await fileWorldBox(level0[0].url as File)).toEqual(box)
+    expect(await fileWorldBox(volumes[0].url as File)).toEqual(box)
   })
 
   test('falls back to the coarsest level when nothing fits the budget', async () => {

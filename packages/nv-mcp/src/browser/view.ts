@@ -966,6 +966,23 @@ export interface NiiVueHost {
   data?: DataPalette
   /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
   omeZarr?: () => Promise<OmeZarrLoaders>
+  /** `@niivue/nv-ext-isosurface`, typically `() => import('@niivue/nv-ext-isosurface')`; with `omeZarr`, a page without it declines `add_isosurface`. */
+  isosurface?: () => Promise<IsosurfaceLoader>
+}
+
+/** The `@niivue/nv-ext-isosurface` function `add_isosurface` drives. */
+export interface IsosurfaceLoader {
+  /** One mesh per channel; a `source` is what `fetchOmeZarrChunkedSource` opened. */
+  channelIsosurfaces(
+    channels: {
+      source: unknown
+      threshold?: number
+      labels?: number[]
+      level?: number
+      color?: [number, number, number, number]
+      name?: string
+    }[],
+  ): Promise<unknown[]>
 }
 
 /** A slide plane channel, as NiiVue's `NVChannel`; a default bound is NaN. */
@@ -1003,11 +1020,13 @@ export interface SlideLocation {
 /** How a slide's visible channels combine. */
 export type SlideChannelBlend = 'max' | 'additive'
 
-/** The two `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives. */
+/** The `@niivue/nv-ext-tile/zarr` functions `load_ome_zarr` drives. */
 export interface OmeZarrLoaders {
-  /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level. */
-  loadOmeZarrVolumes(
-    url: string,
+  /** Opens the store's metadata once. */
+  fetchOmeZarr(url: string): Promise<{ info: unknown }>
+  /** Volume options for `loadVolumes`, one per channel, from one whole pyramid level of an opened store. */
+  omeZarrVolumesFrom(
+    source: { info: unknown },
     options?: {
       level?: number
       channels?: number[]
@@ -1016,11 +1035,23 @@ export interface OmeZarrLoaders {
       labels?: boolean
     },
   ): Promise<unknown[]>
+  /** The store's own label colours, or null when it states none. */
+  omeZarrLabelColormap(info: unknown): ColormapToAdd | null
+  /** A chunked source over one channel (`channel`, the one it chose), for `add_isosurface`; `dispose` stops its workers. */
+  fetchOmeZarrChunkedSource(
+    url: string,
+    options?: { channel?: number; timepoint?: number },
+  ): Promise<{ channel: number; dispose?(): void }>
   /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
   streamOmeZarr(
     view: unknown,
     url: string,
-    options?: { channel?: number; timepoint?: number; replace?: boolean },
+    options?: {
+      channel?: number
+      timepoint?: number
+      labels?: boolean
+      replace?: boolean
+    },
   ): Promise<unknown>
 }
 

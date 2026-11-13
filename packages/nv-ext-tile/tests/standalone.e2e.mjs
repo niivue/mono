@@ -22,7 +22,8 @@
  *     (ManifestRangeSource, openSlide), with no "Illegal invocation",
  *   - an /open page loads no format until it opens a TIFF URL and a DICOM
  *     folder (every slide listed), and never loads Zarr code for them.
- * Synthetic fixtures (fixtures/standalone, about 4 KB); a few seconds; not in CI.
+ * Synthetic fixtures (fixtures/standalone, dicom-wsi); a few seconds; CI runs it
+ * on SwiftShader (niivue-e2e.yml, demo-ext-tile job).
  *   bunx nx e2e nv-ext-tile      # builds core and this package first
  */
 import { readFile } from 'node:fs/promises'
@@ -748,16 +749,27 @@ try {
     !opened.after?.some((u) => /zarr|blosc-/.test(u)),
     `open: TIFF and DICOM opened with no Zarr code (${opened.after?.join(', ')})`,
   )
+  const channel =
+    process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ??
+    (process.platform === 'darwin' && !process.env.CI ? 'chromium' : undefined)
+  // The headless shell's WebGPU canvas presents only on Vulkan SwiftShader
+  // (niivue e2e/launchOptions.ts), so CI's Linux job needs these flags. Every
+  // page above has reported; close its browser first, since two Chromiums on
+  // one software GPU lost the device on CI's Ubuntu runner (niivue-e2e.yml).
+  await browser.close()
   const gpuBrowser = await chromium.launch({
-    channel:
-      process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ??
-      (process.platform === 'darwin' && !process.env.CI
-        ? 'chromium'
-        : undefined),
+    channel,
     args: [
       '--enable-unsafe-webgpu',
       '--ignore-gpu-blocklist',
       '--enable-unsafe-swiftshader',
+      ...(channel
+        ? []
+        : [
+            '--use-angle=swiftshader',
+            '--enable-features=Vulkan',
+            '--use-vulkan=swiftshader',
+          ]),
     ],
   })
   try {

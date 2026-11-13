@@ -318,6 +318,12 @@ const nv = new NiiVue({
 
 `DecodedChunkStats` (`ChunkStreamDetail.decoded`) is now `ByteLruStats`, which adds `evictedBytes`. `ByteLru<K, V>`, the byte-bounded LRU behind the decoded-chunk tier and the slide tile cache, is exported, and replaces nv-ext-tile's `ByteLruCache`.
 
+Unused slide and streaming options were removed:
+
+- `NVSlideSpatialTransform`, `NVSlideOptions.spatialTransform`, `NVSlide.spatialTransform` and `setSpatialTransform` are gone. Nothing read them; place a slide in world space with `setSlidePlane`'s `pixelToWorld`.
+- `createSlideView` no longer takes `renderer`, `ownsSlide` or `signal`. The view makes and destroys its own renderer and always disposes the slide it releases (`setSlide`, `destroy`). To cancel a start, destroy the view once it resolves.
+- `loadChunkedVolume` no longer takes `focusBounds` (pass them to `NVChunkedVolume.setFocus(frac, bounds)`), `retryAttempts` (always 3), `frameStagingBytes` (64 MiB) or `readoutBytes` (384 MiB).
+
 ### Testing
 
 The package includes a unit test suite for non-rendering logic, including a headless controller (loading, documents, events), using the [Bun test runner](https://bun.sh/docs/cli/test). Tests are co-located with source files as `*.test.ts`. Rendering, Workers and pointer input are covered by Playwright specs in `e2e/` (see `AGENTS.md`).

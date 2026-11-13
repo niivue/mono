@@ -98,9 +98,27 @@ describe('parseOmeXml', () => {
   test('decodes XML entities in attribute values', () => {
     const xml = omeXml(
       '',
-      '<Channel Name="Alexa &amp; Cy5 &lt;far red&gt;" Color="-1"/>',
+      '<Channel Name="Alexa &amp; Cy5 &lt;far red&gt;" Color="-1"/><Channel Name="&#945;-&#x3B2; &amp;lt; &bogus; &#99999999;"/><Channel ID="Channel:0:2"/>',
     )
-    expect(parseOmeXml(xml)?.channels[0].name).toBe('Alexa & Cy5 <far red>')
+    expect(parseOmeXml(xml)?.channels.map((c) => c.name)).toEqual([
+      'Alexa & Cy5 <far red>',
+      'α-β &lt; &bogus; &#99999999;',
+      '',
+    ])
+  })
+
+  test('keeps references to characters XML forbids as written', () => {
+    const xml = omeXml('', '<Channel Name="a&#0;b&#xD800;c&#x10FFFF;"/>')
+    expect(parseOmeXml(xml)?.channels[0].name).toBe('a&#0;b&#xD800;c\u{10FFFF}')
+    const nonChars = omeXml('', '<Channel Name="&#xFFFE;&#xFFFF;&#1;&#9;"/>')
+    expect(parseOmeXml(nonChars)?.channels[0].name).toBe(
+      '&#xFFFE;&#xFFFF;&#1;\t',
+    )
+  })
+
+  test('keeps entity names inherited from Object.prototype as written', () => {
+    const xml = omeXml('', '<Channel Name="&constructor;&toString;&amp;"/>')
+    expect(parseOmeXml(xml)?.channels[0].name).toBe('&constructor;&toString;&')
   })
 
   test('returns null for text that is not OME-XML', () => {

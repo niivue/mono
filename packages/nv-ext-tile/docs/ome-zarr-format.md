@@ -82,8 +82,10 @@ Custom `fetch`, `dispose`, `frames` / `revision` and lazy-time prefetch: [README
 - Dtypes: (u)int8, (u)int16, (u)int32, float32, float64.
 - Voxel spacing from each dataset's `scale` transform, converted to
   MICROMETRES via the axis `unit` (shared `omeLengthToMicrons`; an unstated
-  unit is already micrometres, OME's default). Volumes are centred on the
-  origin, so every channel and level of a dataset shares one world position.
+  unit is already micrometres, OME's default). Placement matches the streamed
+  volume: level 0 voxel i centred at i * spacing; a coarser level covers the
+  same box (voxel size = level 0 extent / level shape), so every channel and
+  level of a dataset shares one world position. `translation` is ignored.
 
 ## What throws
 

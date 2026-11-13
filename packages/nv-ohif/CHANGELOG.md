@@ -1,3 +1,61 @@
+## 1.0.0-rc.220 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.193
+- Updated nv-ext-tile to 1.0.0-rc.102
+- Updated uikit to 1.0.0-rc.191
+
+## 1.0.0-rc.219 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.192
+- Updated nv-ext-tile to 1.0.0-rc.101
+- Updated uikit to 1.0.0-rc.190
+
+## 1.0.0-rc.218 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.191
+- Updated nv-ext-tile to 1.0.0-rc.100
+- Updated uikit to 1.0.0-rc.189
+
+## 1.0.0-rc.217 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.190
+- Updated nv-ext-tile to 1.0.0-rc.99
+- Updated uikit to 1.0.0-rc.188
+
+## 1.0.0-rc.216 (2026-11-13)
+
+### Refactors
+
+- ⚠️  **nv-ohif:** draw the WSI ruler with core's slide overlay ([0be54e98](https://github.com/niivue/mono/commit/0be54e98))
+
+### Breaking Changes
+
+- **nv-ohif:** draw the WSI ruler with core's slide overlay  ([0be54e98](https://github.com/niivue/mono/commit/0be54e98))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.189
+- Updated nv-ext-tile to 1.0.0-rc.98
+- Updated uikit to 1.0.0-rc.187
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.215 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated nv-ext-tile to 1.0.0-rc.97
+
 ## 1.0.0-rc.214 (2026-11-13)
 
 ### Updated Dependencies

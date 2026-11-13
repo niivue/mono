@@ -6,7 +6,7 @@ import {
   NVColorbarRenderer,
 } from '@/view/NVColorbarRenderer'
 import { colorbarFragShader, colorbarVertShader } from './colorbarShader'
-import { setTexParams } from './glUtil'
+import { blendOver, setTexParams } from './glUtil'
 import { Shader } from './shader'
 
 export class ColorbarRenderer extends NVColorbarRenderer {
@@ -128,7 +128,7 @@ export class ColorbarRenderer extends NVColorbarRenderer {
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
 
     for (let i = 0; i < this._colorbars.length; i++) {
       const r = rects[i]

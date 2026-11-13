@@ -42,13 +42,12 @@ export interface UIKitSlideMinimapOptions {
   marginCss?: number
   /** Panel border around the thumbnail, CSS px. Default 3. */
   paddingCss?: number
-  /** Panel color, RGBA 0..1. Default translucent black. */
-  panelColor?: readonly number[]
-  /** Viewport box color, RGBA 0..1. Default amber. */
-  viewColor?: readonly number[]
-  /** Viewport box line width, CSS px. Default 1.5. */
-  viewLineCss?: number
 }
+
+const PANEL_COLOR = [0, 0, 0, 0.55]
+// Amber viewport box, line width in CSS px.
+const VIEW_COLOR = [1, 0.8, 0.2, 1]
+const VIEW_LINE_CSS = 1.5
 
 // The composite never exceeds this side, however large the minimap.
 const MAX_THUMBNAIL_PX = 1024
@@ -88,9 +87,6 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
       sizeCss: 160,
       marginCss: 12,
       paddingCss: 3,
-      panelColor: [0, 0, 0, 0.55],
-      viewColor: [1, 0.8, 0.2, 1],
-      viewLineCss: 1.5,
       ...options,
     }
   }
@@ -179,16 +175,16 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     )
     this.updateThumbnail(image.width, image.height)
     this.panelRects.setRects([
-      buildRect({ ...panel, radius: 3 * dpr, fill: this.options.panelColor }),
+      buildRect({ ...panel, radius: 3 * dpr, fill: PANEL_COLOR }),
     ])
     this.viewRects.setRects(
       view
         ? [
             buildRect({
               ...view,
-              borderWidth: this.options.viewLineCss * dpr,
+              borderWidth: VIEW_LINE_CSS * dpr,
               fill: [0, 0, 0, 0],
-              border: this.options.viewColor,
+              border: VIEW_COLOR,
             }),
           ]
         : [],

@@ -53,13 +53,14 @@ project, open a pull request that edits this page.
 - [niftier](https://github.com/jan-scholz/niftier) small viewer with interactive intensity thresholding
 - [niimath](https://niivue.github.io/niimath/) fast image processing
 - [NiiNav](https://niivue.github.io/niinav/) brain stimulation navigation
-- [nilearn](https://nilearn.github.io/stable/index.html) extends [ipyniivue](https://github.com/niivue/ipyniivue)
-- [niivue-vscode](https://github.com/niivue/niivue-vscode) VSCode extension for displaying images
 - [NiiVue Desktop](https://github.com/niivue/desktop) crossplatform Electron app
 - [NiiVue iOS](https://github.com/niivue/ios) Swift app [on the Apple App Store for macOS and iOS](https://apps.apple.com/kw/app/niivue/id6497066801)
 - [NiiVue Neglect](https://niivue.github.io/niivue-neglect/) stroke lesion data in a spatial neglect severity prediction tool
+- [niivue-vscode](https://github.com/niivue/niivue-vscode) VSCode extension for displaying images
+- [nilearn](https://nilearn.github.io/stable/index.html) extends [ipyniivue](https://github.com/niivue/ipyniivue)
 - [nltools](https://nltools.org/quickstart/) Python neuroimaging analysis toolbox built on nilearn
 - [nmrview](https://nmrview.fly.dev/) MRI and 1D NMR spectroscopy workstation for research and education ([source](https://github.com/thepacket/nmrview))
+- [nnInteractive agent](https://github.com/MIC-DKFZ/nninteractive-agent) lets AI agents (Claude Code, Codex, any MCP client) segment images with nnInteractive from a text prompt
 - [OpenMedView](https://github.com/erosmontin/OpenMedView) validates [image registration](https://link.springer.com/article/10.1007/s11517-019-02109-4)
 - [OpenMRI](https://github.com/lev1nson/OpenMRI) local viewer for personal MRI and CT studies with rigid registration across dates
 - [OpenNeuro.org](https://openneuro.org) visualizes shared datasets

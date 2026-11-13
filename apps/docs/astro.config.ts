@@ -41,9 +41,8 @@ export default defineConfig({
     starlight({
       title: 'NiiVue',
       description: 'WebGPU and WebGL2 medical image viewer',
-      logo: { src: './src/assets/niivue-icon.png' },
       favicon: '/img/favicon.ico',
-      // The logo is too small for Starlight's default large-image card.
+      // The icon is too small for Starlight's default large-image card.
       head: [
         {
           tag: 'meta',

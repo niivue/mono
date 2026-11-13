@@ -43,9 +43,10 @@ the tubes:
 
 Per-vertex and per-streamline values color streamlines through a colormap.
 Load MRtrix TSF files (one value per vertex) and plain text files (one value
-per streamline) as `layers` of the tract. TRX files can carry both kinds
-inside. Each scalar is named after its file without the extension, and you
-select it with `colorBy: 'dpv:<name>'` (per vertex) or `'dps:<name>'` (per
+per streamline) as `layers` of the tract; each is named after its file
+without the extension. TRX files carry both kinds inside, under the names
+stored in the file (the demo's `dpsv.trx` has `z` and `DataSetID`). Select a
+scalar with `colorBy: 'dpv:<name>'` (per vertex) or `'dps:<name>'` (per
 streamline). `colormap`, `colormapNegative`, `calMin` and `calMax` then map
 the values to colors; when you switch scalars, the range resets to fit the
 new data.

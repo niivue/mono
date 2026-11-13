@@ -469,6 +469,10 @@ describe('openSlide', () => {
       nv.destroy()
       return urls[0]
     }
+    // URL.parse is Chrome 126 / Safari 18, newer than NiiVue's floor.
+    const url = URL as { parse?: unknown }
+    const parse = url.parse
+    url.parse = undefined
     try {
       const same = await save('https://h.test/data/?sig=secret')
       // Saved as a path: no host, query or credentials.
@@ -480,6 +484,7 @@ describe('openSlide', () => {
       expect(new TextDecoder().decode(cross)).not.toContain('cdn.test')
       expect(await reopen(cross)).toBe('https://h.test/s/l0.dcm')
     } finally {
+      url.parse = parse
       g.requestAnimationFrame = had.raf
       g.cancelAnimationFrame = had.cancel
     }

@@ -9,8 +9,7 @@ const STILLS = [
   {
     image: 'microscopy',
     alt: 'Stained skin tissue in a whole-slide microscope image',
-    // The tissue fills its frame; a round fade, like a microscope's field
-    // of view, lets it meet the black band without an edge.
+    // The tissue fills its frame, so its edges fade into the black band.
     fade: true,
   },
   {
@@ -66,7 +65,10 @@ const STILLS = [
   }
 
   .fade {
-    mask-image: radial-gradient(closest-side, #000 52%, transparent 82%);
+    mask-image:
+      linear-gradient(to right, transparent 5%, #000 22%, #000 78%, transparent 95%),
+      linear-gradient(to bottom, transparent 5%, #000 22%, #000 78%, transparent 95%);
+    mask-composite: intersect;
   }
 
   @media (max-width: 22.5rem) {

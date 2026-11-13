@@ -180,14 +180,17 @@ const XML_ENTITIES: Record<string, string> = {
   apos: "'",
 }
 
-// Unknown names and out-of-range code points stay as written.
+// Unknown names and code points XML forbids (NUL, surrogates, beyond U+10FFFF)
+// stay as written, so a name never holds a lone surrogate.
 function decodeXmlEntities(value: string): string {
   return value.replace(
     /&(?:#x([\da-f]+)|#(\d+)|(\w+));/gi,
     (ref, hex, dec, name) => {
       if (name) return XML_ENTITIES[name] ?? ref
       const code = hex ? Number.parseInt(hex, 16) : Number(dec)
-      return code <= 0x10ffff ? String.fromCodePoint(code) : ref
+      const isXmlChar =
+        code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+      return isXmlChar ? String.fromCodePoint(code) : ref
     },
   )
 }

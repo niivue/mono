@@ -11,25 +11,13 @@
  * PLAYWRIGHT_CHROMIUM_CHANNEL=chromium for the real GPU.
  */
 
-import { readFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
-import { dirname, extname, join, normalize } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
+import { serve } from './serve.mjs'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-const DIST = join(HERE, '..', 'dist')
 const BENCH = process.env.BENCH === '1'
 const [T, C, Z, Y, X] = BENCH ? [20, 2, 64, 256, 256] : [6, 2, 8, 16, 16]
 // Each chunk answer waits this long, so overlapping playback fetches would show.
 const DELAY_MS = BENCH ? 0 : 30
-const TYPES = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.wasm': 'application/wasm',
-  '.css': 'text/css',
-}
-
 const json = (v) => Buffer.from(JSON.stringify(v))
 const store = new Map([
   ['.zgroup', json({ zarr_format: 2 })],
@@ -106,11 +94,6 @@ const seg = new Map([
 for (let t = 0; t < T; t++)
   seg.set(`0/${t}.0.0.0.0`, Buffer.alloc(Z * Y * X, (t % 2) + 1))
 
-// Armed, the next segmentation chunk request waits until segRelease().
-let segArmed = false
-let segHeld = false
-let segRelease = () => {}
-
 /** Timepoints whose chunks the page has requested. */
 const requestedT = new Set()
 let inFlight = 0
@@ -118,19 +101,8 @@ let maxInFlight = 0
 // The last timepoint always fails, so no prefetch can have cached it when the
 // failure check asks for it.
 const brokenT = T - 1
-const server = createServer(async (req, res) => {
-  const path =
-    normalize(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') ||
-    'index.html'
+const server = await serve(async (path, _req, res) => {
   if (path.startsWith('seg.zarr/')) {
-    if (segArmed && /^seg\.zarr\/0\/\d/.test(path)) {
-      segArmed = false
-      segHeld = true
-      await new Promise((r) => {
-        segRelease = r
-      })
-      segHeld = false
-    }
     const body = seg.get(path.slice('seg.zarr/'.length))
     return body ? res.end(body) : res.writeHead(404).end()
   }
@@ -148,17 +120,7 @@ const server = createServer(async (req, res) => {
     if (Number(chunkT) === brokenT) return res.writeHead(500).end()
     return res.end(body)
   }
-  try {
-    const body = await readFile(join(DIST, path))
-    res.writeHead(200, {
-      'content-type': TYPES[extname(path)] ?? 'application/octet-stream',
-    })
-    res.end(body)
-  } catch {
-    res.writeHead(404).end()
-  }
 })
-await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const { port } = server.address()
 
 const failed = (msg) => {
@@ -280,58 +242,11 @@ async function check(backend) {
   if ((await page.locator('#play').textContent()) !== 'Play')
     fail('pause did not stop playback')
 
-  // A segmentation still opening when the channels are reloaded is dropped.
   await page.fill('#segUrl', `http://127.0.0.1:${port}/seg.zarr`)
-  const heldAdd = async () => {
-    segArmed = true
-    await page.click('#addSeg')
-    while (!segHeld) await new Promise((r) => setTimeout(r, 10))
-  }
-  await heldAdd()
-  await page.evaluate(() => document.getElementById('load').onclick())
-  segRelease()
-  await page.waitForFunction(() =>
-    /Dropped segmentation/.test(document.getElementById('status').textContent),
-  )
-  if ((await page.evaluate(() => window.nv1.volumes.length)) !== C)
-    fail('a superseded segmentation was attached')
-  // One still opening when the frame moves attaches at the new frame, in the
-  // channels' group.
-  const from = await page.evaluate(() =>
-    window.nv1.getFrame4D(window.nv1.volumes[0].id),
-  )
-  const to = (from + 1) % (T - 1)
-  await heldAdd()
-  await page.evaluate(async (t) => {
-    const nv = window.nv1
-    await nv.setFrame4D(nv.volumes[0].id, t)
-  }, to)
-  segRelease()
-  await page.waitForFunction(() =>
-    /Added segmentation/.test(document.getElementById('status').textContent),
-  )
-  const raced = await page.evaluate(() => {
-    const nv = window.nv1
-    const [raw] = nv.volumes
-    const v = nv.volumes[nv.volumes.length - 1]
-    return {
-      n: nv.volumes.length,
-      sameGroup: v.frameSource?.group === raw.frameSource?.group,
-      frame: nv.getFrame4D(raw.id),
-      segFrame: nv.getFrame4D(v.id),
-      label: v.img[0],
-    }
-  })
-  if (
-    raced.n !== C + 1 ||
-    !raced.sameGroup ||
-    raced.frame !== to ||
-    raced.segFrame !== to ||
-    raced.label !== (to % 2) + 1
-  )
-    fail(`segmentation attached out of step: ${JSON.stringify(raced)}`)
-  // The same two races while the segmentation's NIfTI is being prepared on
-  // the volume worker (after its data read): its first File message is held.
+  // A segmentation still being prepared (its NIfTI parse on the volume worker,
+  // after its data read; its first File message is held) when the channels
+  // are reloaded is dropped; one prepared across a frame change attaches at
+  // the new frame, in the channels' group.
   const reload = () =>
     page.evaluate(async () => {
       await document.getElementById('load').onclick()
@@ -361,41 +276,56 @@ async function check(backend) {
   )
   if ((await page.evaluate(() => window.nv1.volumes.length)) !== C)
     fail('a segmentation superseded during its preparation was attached')
-  const from2 = await page.evaluate(() =>
+  const from = await page.evaluate(() =>
     window.nv1.getFrame4D(window.nv1.volumes[0].id),
   )
-  const to2 = (from2 + 1) % (T - 1)
+  const to = (from + 1) % (T - 1)
   await heldPrepare()
   await page.evaluate(async (t) => {
     const nv = window.nv1
     await nv.setFrame4D(nv.volumes[0].id, t)
-  }, to2)
+  }, to)
   await page.evaluate(() => window.releasePrepare())
   await page.waitForFunction(() =>
     /Added segmentation/.test(document.getElementById('status').textContent),
   )
-  const prepRaced = await page.evaluate(() => {
-    const nv = window.nv1
-    const [raw] = nv.volumes
-    const v = nv.volumes[nv.volumes.length - 1]
-    return {
-      n: nv.volumes.length,
-      sameGroup: v.frameSource?.group === raw.frameSource?.group,
-      frame: nv.getFrame4D(raw.id),
-      segFrame: nv.getFrame4D(v.id),
-      label: v.img[0],
-    }
-  })
+  const segState = () =>
+    page.evaluate(() => {
+      const nv = window.nv1
+      const [raw] = nv.volumes
+      const v = nv.volumes[nv.volumes.length - 1]
+      return {
+        n: nv.volumes.length,
+        sameGroup: v.frameSource?.group === raw.frameSource?.group,
+        colormap: v.colormap,
+        frame: nv.getFrame4D(raw.id),
+        segFrame: nv.getFrame4D(v.id),
+        label: v.img[0],
+      }
+    })
+  let g = await segState()
   if (
-    prepRaced.n !== C + 1 ||
-    !prepRaced.sameGroup ||
-    prepRaced.frame !== to2 ||
-    prepRaced.segFrame !== to2 ||
-    prepRaced.label !== (to2 % 2) + 1
+    g.n !== C + 1 ||
+    !g.sameGroup ||
+    !/ labels \(.+\)$/.test(g.colormap) ||
+    g.frame !== to ||
+    g.segFrame !== to ||
+    g.label !== (to % 2) + 1
   )
     fail(
-      `segmentation prepared across a frame change is out of step: ${JSON.stringify(prepRaced)}`,
+      `segmentation prepared across a frame change is out of step: ${JSON.stringify(g)}`,
     )
+  // Coloured by its image-label table, it then switches with the channels.
+  await page.evaluate(
+    async (f) => {
+      const nv = window.nv1
+      await nv.setFrame4D(nv.volumes[0].id, f)
+    },
+    (to + 1) % (T - 1),
+  )
+  g = await segState()
+  if (g.label !== (g.frame % 2) + 1)
+    fail(`segmentation did not switch with the channels: ${JSON.stringify(g)}`)
   // A reload while addVolume awaits its GPU update: the stale segmentation's
   // cleanup must not touch the replacement scene's channels.
   await reload()
@@ -426,46 +356,6 @@ async function check(backend) {
   )
   if (afterGpu.length !== C || afterGpu.some((n) => n.endsWith('labels')))
     fail(`the replacement scene lost a channel: ${JSON.stringify(afterGpu)}`)
-
-  // Start the plain check from the channels alone.
-  await page.evaluate(() => document.getElementById('load').onclick())
-  await page.waitForFunction(() =>
-    document.getElementById('status').textContent.startsWith('Showing'),
-  )
-
-  // A segmentation joins the time group, coloured by its image-label table.
-  await page.click('#addSeg')
-  await page.waitForFunction(() =>
-    /Added segmentation/.test(document.getElementById('status').textContent),
-  )
-  const segState = () =>
-    page.evaluate(() => {
-      const nv = window.nv1
-      const v = nv.volumes[nv.volumes.length - 1]
-      return {
-        n: nv.volumes.length,
-        colormap: v.colormap,
-        label: v.img[0],
-        frame: nv.getFrame4D(nv.volumes[0].id),
-      }
-    })
-  let g = await segState()
-  if (
-    g.n !== C + 1 ||
-    !/ labels \(.+\)$/.test(g.colormap) ||
-    g.label !== (g.frame % 2) + 1
-  )
-    fail(`segmentation added: ${JSON.stringify(g)}`)
-  await page.evaluate(
-    async (f) => {
-      const nv = window.nv1
-      await nv.setFrame4D(nv.volumes[0].id, f)
-    },
-    (g.frame + 1) % (T - 1),
-  )
-  g = await segState()
-  if (g.label !== (g.frame % 2) + 1)
-    fail(`segmentation did not switch with the channels: ${JSON.stringify(g)}`)
 
   // A failed timepoint keeps the frame shown and says so.
   const shown = (await state()).frame

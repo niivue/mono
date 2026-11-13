@@ -16,45 +16,16 @@
 
 import { readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
-import { dirname, extname, join, normalize } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, firefox, webkit } from '@playwright/test'
+import { serve } from './serve.mjs'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-const DIST = join(HERE, '..', 'dist')
 const FIXTURES = join(
-  HERE,
-  '..',
-  '..',
-  '..',
-  'packages',
-  'nv-ext-tile',
-  'fixtures',
-  'dicom-wsi',
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../packages/nv-ext-tile/fixtures/dicom-wsi',
 )
-const TYPES = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.wasm': 'application/wasm',
-  '.css': 'text/css',
-}
-
-const server = createServer(async (req, res) => {
-  const path =
-    normalize(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') ||
-    'index.html'
-  try {
-    const body = await readFile(join(DIST, path))
-    res.writeHead(200, {
-      'content-type': TYPES[extname(path)] ?? 'application/octet-stream',
-    })
-    res.end(body)
-  } catch {
-    res.writeHead(404).end()
-  }
-})
-await new Promise((r) => server.listen(0, '127.0.0.1', r))
+const server = await serve()
 const { port } = server.address()
 
 const fail = (msg) => {

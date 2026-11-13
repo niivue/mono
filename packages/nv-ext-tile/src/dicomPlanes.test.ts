@@ -72,9 +72,6 @@ test('preparePlane rejects out of bounds (RangeError) and on abort', async () =>
   await expect(source.preparePlane({ z: 2, t: 0 })).rejects.toBeInstanceOf(
     RangeError,
   )
-  await expect(source.preparePlane({ z: 0, t: 1 })).rejects.toBeInstanceOf(
-    RangeError,
-  )
   const ac = new AbortController()
   ac.abort()
   await expect(

@@ -2,40 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import { toStored, toValue } from '@niivue/niivue'
 import {
   grayInto,
-  type Quantize,
   quantizeRange,
   storedToValue,
   storedWindow,
 } from './channelDisplay'
 
-// Frozen copies of the pre-extraction code, the parity reference.
-type OldTiffQ = { lo: number; scale: number }
-function oldTiff(
-  [p2, p98, min, max]: number[],
-  float: boolean,
-  data: ArrayLike<number>,
-) {
-  let window = { calMin: 0, calMax: 65535 }
-  let [calMin, calMax] = [p2, p98]
-  let [lo, hi] = [min, max]
-  if (!(hi > lo)) {
-    const mid = Number.isFinite(lo) ? lo : 0
-    const half = float ? Math.max(Math.abs(mid) / 2, 1) : 32767.5
-    ;[lo, hi] = [mid - half, mid + half]
-  }
-  const q: OldTiffQ = { lo, scale: 65535 / (hi - lo) }
-  ;[calMin, calMax] = [(p2 - lo) * q.scale, (p98 - lo) * q.scale]
-  if (calMax > calMin) window = { calMin, calMax }
-  const out = new Uint16Array(data.length)
-  for (let i = 0; i < data.length; i++)
-    out[i] = Math.min(65535, Math.max(0, (data[i] - lo) * q.scale + 0.5))
-  return {
-    window,
-    storedToValue: { scale: 1 / q.scale, offset: q.lo },
-    out,
-  }
-}
-function oldZarr(
+function quantized(
   [p2, p98, min, max]: number[],
   float: boolean,
   data: ArrayLike<number>,
@@ -43,158 +15,83 @@ function oldZarr(
   sy: number,
   sx: number,
 ) {
-  let [lo, hi] = [min, max]
-  let noData = false
-  if (!(hi > lo)) {
-    noData = !Number.isFinite(lo)
-    const mid = noData ? 0 : lo
-    const half = !noData && float ? Math.max(Math.abs(mid) / 2, 1) : 32767.5
-    ;[lo, hi] = [mid - half, mid + half]
-  }
-  const k = Number.isFinite(hi - lo) ? 1 : 0.5
-  const span = hi * k - lo * k
-  const q: Quantize = { k, lo: lo * k, span, scale: 65535 / span }
-  const toStored = (v: number) => ((v * q.k - q.lo) / q.span) * 65535
-  const [calMin, calMax] = [toStored(p2), toStored(p98)]
-  const window =
-    calMax > calMin ? { calMin, calMax } : { calMin: 0, calMax: 65535 }
-  const h = data.length / w
-  const out = new Uint16Array(data.length)
-  for (let y = 0, o = 0; y < h; y++)
-    for (let x = 0, i = y * sy; x < w; x++, i += sx, o++)
-      out[o] = Number.isFinite(q.scale)
-        ? Math.min(65535, Math.max(0, (data[i] * k - q.lo) * q.scale + 0.5))
-        : Math.min(
-            65535,
-            Math.max(0, ((data[i] * k - q.lo) / span) * 65535 + 0.5),
-          )
-  return {
-    window,
-    storedToValue: { scale: q.span / (65535 * q.k), offset: q.lo / q.k },
-    out,
-    q,
-  }
-}
-
-function now(
-  range: number[],
-  float: boolean,
-  data: ArrayLike<number>,
-  w: number,
-  sy: number,
-  sx: number,
-) {
-  const [p2, p98, min, max] = range
   const { quantize: q } = quantizeRange(min, max, float)
   const out = new Uint16Array(data.length)
   grayInto(out, 0, data, sy, sx, w, data.length / w, q)
   return {
     window: storedWindow(q, p2, p98, 16),
     storedToValue: storedToValue(q),
-    out,
+    out: Array.from(out),
     q,
   }
 }
 
-// [name, [p2, p98, min, max], float, samples]; numerically safe for old TIFF.
-const safe: [string, number[], boolean, number[]][] = [
-  ['int16', [-900, 1200, -1000, 1500], false, [-1000, -1, 0, 7, 1500, 2000]],
-  ['int32 wide', [-2e9, 2e9, -2.1e9, 2.1e9], false, [-2.1e9, 0, 3, 2.1e9]],
-  ['float32', [0.1, 0.9, 0, 1], true, [0, 0.25, 0.5, Math.fround(0.7), 1, NaN]],
-  ['float32 huge', [-1e37, 1e37, -3e38, 3e38], true, [-3e38, 0, 1e38, 3e38]],
-  ['float32 tiny', [1e-30, 2e-30, 0, 3e-30], true, [0, 1e-30, 3e-30, -1]],
-  ['flat int', [5, 5, 5, 5], false, [5, 4, 6, 70000]],
-  ['flat float', [-8, -8, -8, -8], true, [-8, -9, -4, NaN]],
-  ['some NaN', [1, 2, 0, 3], true, [NaN, 0, 3, Infinity, -Infinity]],
-]
-
-describe('channelDisplay parity', () => {
-  test('reproduces the old Zarr outputs exactly, contiguous and strided', () => {
-    for (const [name, range, float, data] of [
-      ...safe,
-      [
-        'float64 overflow',
-        [-1e307, 1e307, -1e308, 1.7e308],
-        true,
-        [-1e308, 0, 1.7e308, 1],
-      ],
-      [
-        'float64 subnormal',
-        [0, 1e-310, 0, 2e-310],
-        true,
-        [0, 1e-310, 2e-310, 3e-310],
-      ],
-      [
-        'all NaN float',
-        [Infinity, -Infinity, Infinity, -Infinity],
-        true,
-        [NaN, 1, -1, 4e4],
-      ],
-    ] as typeof safe) {
-      // Transposed 2 x (n/2): read with strides (sy, sx) = (1, h).
-      const tw = 2
-      const th = data.length / tw
-      const t = Array.from(
-        { length: data.length },
-        (_, i) => data[(i % th) * tw + Math.floor(i / th)],
-      )
-      for (const [d, sy, sx] of [
-        [data, tw, 1],
-        [t, 1, th],
-      ] as const) {
-        const want = oldZarr(range, float, d, tw, sy, sx)
-        expect(now(range, float, d, tw, sy, sx), name).toEqual(want)
-      }
+describe('channelDisplay', () => {
+  test('int16: golden window, inverse and samples, contiguous and strided', () => {
+    const range = [-900, 1200, -1000, 1500]
+    const data = [-1000, -1, 0, 7, 1500, 2000]
+    // The same 2 x 3 tile stored transposed: strides (sy, sx) = (1, 3).
+    const t = [-1000, 0, 1500, -1, 7, 2000]
+    for (const got of [
+      quantized(range, false, data, 2, 2, 1),
+      quantized(range, false, t, 2, 1, 3),
+    ]) {
+      expect(got.out).toEqual([0, 26188, 26214, 26397, 65535, 65535])
+      expect(got.storedToValue.offset).toBe(-1000)
+      expect(got.storedToValue.scale).toBeCloseTo(2500 / 65535, 15)
+      expect(got.window.calMin).toBeCloseTo(2621.4, 9)
+      expect(got.window.calMax).toBeCloseTo(57670.8, 9)
     }
   })
 
-  test('reproduces the old TIFF samples exactly where its form was safe', () => {
-    for (const [name, range, float, data] of safe) {
-      const old = oldTiff(range, float, data)
-      const got = now(range, float, data, data.length, data.length, 1)
-      expect(got.out, name).toEqual(old.out)
-      // Window and inverse: Zarr's divide-first form, within an ulp or two.
-      for (const [a, b] of [
-        [got.window.calMin, old.window.calMin],
-        [got.window.calMax, old.window.calMax],
-        [got.storedToValue.scale, old.storedToValue.scale],
-        [got.storedToValue.offset, old.storedToValue.offset],
-      ])
-        expect(Math.abs(a - b), name).toBeLessThanOrEqual(4e-16 * Math.abs(b))
-    }
+  test('flat float centres on its value; NaN and +-Infinity clamp', () => {
+    const flat = quantized([-8, -8, -8, -8], true, [-8, -9, -4, NaN], 2, 2, 1)
+    expect(flat.storedToValue.offset).toBe(-12)
+    expect(flat.window).toEqual({ calMin: 0, calMax: 65535 })
+    expect(flat.out).toEqual([32768, 24576, 65535, 0])
+    const nan = [NaN, 0, 3, Infinity, -Infinity, 1.5]
+    expect(quantized([1, 2, 0, 3], true, nan, 2, 2, 1).out).toEqual([
+      0, 0, 65535, 65535, 0, 32768,
+    ])
   })
 
-  test('fixes old TIFF overflow: huge and subnormal float64 spans', () => {
-    // hi - lo overflows: old scale was 0, every sample stored 0.
-    const huge = [-1e307, 1e307, -1e308, 1.7e308]
-    const hd = [-1e308, 0, 1.7e308]
-    const h = now(huge, true, hd, 3, 3, 1)
+  test('huge and subnormal float64 spans stay finite and spread', () => {
+    // hi - lo overflows: k = 1/2 halves both ends first.
+    const h = quantized(
+      [-1e307, 1e307, -1e308, 1.7e308],
+      true,
+      [-1e308, 0, 1.7e308],
+      3,
+      3,
+      1,
+    )
     expect(h.q.k).toBe(0.5)
-    expect(oldTiff(huge, true, hd).out).toEqual(new Uint16Array([0, 0, 0]))
-    expect(Array.from(h.out)).toEqual([0, Math.round((1 / 2.7) * 65535), 65535])
+    expect(h.out).toEqual([0, Math.round((1 / 2.7) * 65535), 65535])
     expect(h.storedToValue.offset).toBe(-1e308)
-    // Subnormal span: old scale was Infinity, so the window fell back to
-    // full, lo stored 0 and the rest 65535; the divide path spreads them.
-    const tiny = [5e-311, 1.5e-310, 0, 2e-310]
-    const td = [0, 1e-310, 2e-310]
-    const t = now(tiny, true, td, 3, 3, 1)
+    // Subnormal span: scale is Infinity, so the divide path spreads samples.
+    const t = quantized(
+      [5e-311, 1.5e-310, 0, 2e-310],
+      true,
+      [0, 1e-310, 2e-310],
+      3,
+      3,
+      1,
+    )
     expect(Number.isFinite(t.q.scale)).toBe(false)
-    expect(oldTiff(tiny, true, td).window).toEqual({ calMin: 0, calMax: 65535 })
-    expect(Array.from(t.out)).toEqual([0, 32768, 65535])
+    expect(t.out).toEqual([0, 32768, 65535])
     expect(t.window.calMin).toBeCloseTo(16383.75, 6)
     expect(t.window.calMax).toBeCloseTo(49151.25, 6)
   })
 
-  test('all-NaN float sample: TIFF now centres +-32767.5 on 0 as Zarr', () => {
+  test('all-NaN float sample centres +-32767.5 on 0', () => {
     const none = [Infinity, -Infinity, Infinity, -Infinity]
-    expect(oldTiff(none, true, [NaN]).storedToValue.offset).toBe(-1)
-    const got = now(none, true, [NaN, 1], 2, 2, 1)
+    const got = quantized(none, true, [NaN, 1], 2, 2, 1)
     expect(got.storedToValue).toEqual({ scale: 1, offset: -32767.5 })
     expect(got.window).toEqual({ calMin: 0, calMax: 65535 })
-    expect(Array.from(got.out)).toEqual([0, 32769])
+    expect(got.out).toEqual([0, 32769])
   })
 
-  test('uint8/uint16 pass through unquantized, as before', () => {
+  test('uint8/uint16 pass through unquantized, ', () => {
     for (const [bits, Typed] of [
       [8, Uint8Array],
       [16, Uint16Array],

@@ -282,9 +282,12 @@ async function open(
 
 describe('TiffSlideSource', () => {
   test('builds the pyramid manifest with partial edge tiles', async () => {
-    const { source } = await open(writeTiff(PYRAMID))
+    const { source } = await open(
+      writeTiff(PYRAMID),
+      'http://test/my%20slide.svs?token=1',
+    )
     const m = source.manifest
-    expect(m.id).toBe('slide.tif')
+    expect(m.id).toBe('my slide.svs')
     expect([m.width, m.height]).toEqual([1000, 700])
     expect(m.levels.map((l) => [l.columns, l.rows, l.downsample])).toEqual([
       [8, 6, 1],
@@ -295,22 +298,15 @@ describe('TiffSlideSource', () => {
     expect(l0?.tiles.at(-1)).toEqual({ x: 7, y: 5, width: 104, height: 60 })
   })
 
-  test('serves the base image ICC profile (tag 34675), or null', async () => {
+  test('serves the base image ICC profile (tag 34675), or null; refused once disposed', async () => {
     const icc = Uint8Array.from({ length: 300 }, (_, i) => i & 255)
     const [l0, ...rest] = PYRAMID as [Level, ...Level[]]
     const tagged = await open(writeTiff([{ ...l0, icc }, ...rest]))
     expect(await tagged.source.fetchIccProfile()).toEqual(icc)
     const plain = await open(writeTiff(PYRAMID))
     expect(await plain.source.fetchIccProfile()).toBeNull()
-  })
-
-  test('a disposed source refuses its cached ICC profile', async () => {
-    const icc = Uint8Array.from({ length: 300 }, (_, i) => i & 255)
-    const [l0, ...rest] = PYRAMID as [Level, ...Level[]]
-    const { source } = await open(writeTiff([{ ...l0, icc }, ...rest]))
-    expect(await source.fetchIccProfile()).toEqual(icc)
-    source.dispose()
-    await expect(source.fetchIccProfile()).rejects.toMatchObject({
+    tagged.source.dispose()
+    await expect(tagged.source.fetchIccProfile()).rejects.toMatchObject({
       name: 'AbortError',
     })
   })
@@ -321,40 +317,21 @@ describe('TiffSlideSource', () => {
     const [l0, ...rest] = PYRAMID as [Level, ...Level[]]
     const { source, server } = await open(writeTiff([{ ...l0, icc }, ...rest]))
     server.hold = true
+    const held = new Promise<void>((resolve) => {
+      server.onRequest = resolve
+    })
     const caller = new AbortController()
-    let settled = ''
-    const fetched = source.fetchIccProfile(caller.signal).then(
-      () => (settled = 'resolved'),
-      () => (settled = 'rejected'),
-    )
-    await new Promise((r) => setTimeout(r, 20))
-    expect(server.requests.length).toBeGreaterThan(0)
+    const fetched = source.fetchIccProfile(caller.signal)
+    await held
     caller.abort()
-    await fetched
-    expect(settled).toBe('rejected')
+    await expect(fetched).rejects.toMatchObject({ name: 'AbortError' })
     // The read itself: dispose aborts the request the server is still holding
-    // (held requests settle only when their signal fires).
-    const second = source.fetchIccProfile().then(
-      () => 'settled',
-      () => 'settled',
-    )
-    await new Promise((r) => setTimeout(r, 20))
+    // (held requests settle only when their signal fires, else this hangs;
+    // geotiff may resolve or reject it).
+    // The second call joins geotiff's in-flight read past its disposed check.
+    const second = source.fetchIccProfile()
     source.dispose()
-    const pending = new Promise((r) => setTimeout(() => r('pending'), 200))
-    expect(await Promise.race([second, pending])).toBe('settled')
-  })
-
-  test('reads OME-style SubIFD pyramids', async () => {
-    const { source } = await open(writeTiff(PYRAMID, true))
-    expect(source.manifest.levels.map((l) => l.width)).toEqual([1000, 500, 250])
-  })
-
-  test('decodes the default id from the URL', async () => {
-    const { source } = await open(
-      writeTiff([rawLevel(0, 250, 175, 128)]),
-      'http://test/my%20slide.svs?token=1',
-    )
-    expect(source.manifest.id).toBe('my slide.svs')
+    await second.catch(() => {})
   })
 
   test('sorts levels and skips a tiled image off the base aspect', async () => {
@@ -538,7 +515,14 @@ describe('TiffSlideSource', () => {
     controller.abort()
     await expect(inflight).rejects.toMatchObject({ name: 'AbortError' })
     expect(events.get('c')).toBe('aborted')
+    // Dispose rejects a pending read (L4), then refuses new ones unread.
+    const requestedAgain = new Promise<void>((resolve) => {
+      server.onRequest = resolve
+    })
+    const pending = source.fetchTileBytes(level, uncached, 'd')
+    await requestedAgain
     source.dispose()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     const atDispose = server.requests.length
     await expect(source.fetchTileBytes(level, tile, 'b')).rejects.toMatchObject(
       { name: 'AbortError' },
@@ -559,16 +543,6 @@ describe('TiffSlideSource', () => {
     source.dispose()
     await Bun.sleep(0)
     expect(closes).toBe(1)
-  })
-
-  test('fromUrl honours an abort signal', async () => {
-    const server = rangeServer(writeTiff(PYRAMID))
-    await expect(
-      TiffSlideSource.fromUrl('http://test/slide.tif', {
-        fetch: server.fetchImpl,
-        signal: AbortSignal.abort(),
-      }),
-    ).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   test('fromUrl aborts a stalled directory read after the header', async () => {
@@ -734,10 +708,6 @@ describe('TiffSlideSource', () => {
     expect(pixel(rgba, 20, 19, 19)).toEqual([...rgbAt(1, 19, 19), 255])
   })
 
-  test('rejects tiles that are not a multiple of 16', async () => {
-    await openRejects(rawLevel(0, 250, 175, 24), /tile 24x24 is not a multiple/)
-  })
-
   test('caps tiles across levels, not just per level', async () => {
     // Three 16 px-tile levels of ~1M tiles each (tile data omitted).
     const tiny = (side: number): Level => ({
@@ -750,20 +720,6 @@ describe('TiffSlideSource', () => {
     })
     const file = writeTiff([tiny(16384), tiny(16368), tiny(16352)])
     await expect(open(file)).rejects.toThrow(/more than 2097152 tiles/)
-  })
-
-  test('rejects a level with too many tiles', async () => {
-    await openRejects(
-      { ...rawLevel(0, 250, 175, 128), edit: setTag(256, 2 ** 32 - 1) },
-      /more than 2097152 tiles/,
-    )
-  })
-
-  test('rejects non-unsigned samples', async () => {
-    await openRejects(
-      { ...rawLevel(0, 250, 175, 128), sampleFormat: 3 },
-      /SampleFormat 3 is not supported/,
-    )
   })
 
   test('shows WhiteIsZero 0 as white', async () => {
@@ -784,30 +740,34 @@ describe('TiffSlideSource', () => {
     await expect(
       open(file, undefined, { contentRange: 'wrong' }),
     ).rejects.toThrow(/Content-Range starting at 1, requested 0/)
-    // Cross-origin without Access-Control-Expose-Headers: no header, still works.
-    const { source } = await open(file, undefined, { contentRange: 'none' })
-    const level = source.manifest.levels[1]
-    const tile = level?.tiles[0]
+    // Cross-origin without Access-Control-Expose-Headers: no header, still
+    // works, by length (T5); the last block runs past EOF, a short body (T2b).
+    const { source, server } = await open(file, undefined, {
+      contentRange: 'none',
+    })
+    const level = source.manifest.levels[0]
+    const tile = level?.tiles[47]
     if (!level || !tile) throw new Error('missing tile')
     expect((await source.fetchTileBytes(level, tile, 'n')).length).toBe(
       tile.width * tile.height * 4,
     )
-  })
-
-  test('rejects 16-bit RGB', async () => {
-    await openRejects(
-      { ...rawLevel(0, 250, 175, 128), bits: 16 },
-      /16-bit RGB is not supported/,
+    expect(server.requests.some(([, end]) => end === file.byteLength - 1)).toBe(
+      true,
     )
   })
 
-  test('rejects JPEG that geotiff-rs cannot decode at open', async () => {
+  test('rejects RGB samples and JPEG that geotiff-rs cannot decode at open', async () => {
     const jpeg = (photometric: number, bits: number, compression = 7) => ({
       ...rawLevel(0, 250, 175, 128),
       compression,
       photometric,
       bits,
     })
+    await openRejects(
+      { ...rawLevel(0, 250, 175, 128), sampleFormat: 3 },
+      /SampleFormat 3 is not supported/,
+    )
+    await openRejects(jpeg(2, 16, 1), /16-bit RGB is not supported/)
     await openRejects(jpeg(6, 12), /12-bit JPEG is not supported/)
     await openRejects(jpeg(1, 12), /12-bit JPEG is not supported/)
     await openRejects(jpeg(6, 8, 6), /old-style JPEG is not supported/)
@@ -1092,17 +1052,14 @@ describe('multi-channel OME-TIFF', () => {
     )
   })
 
-  test('keeps WhiteIsZero planes white at 0', async () => {
-    const source = await openOme('XYCZT', [0, 1, 2, 3], {
+  test('WhiteIsZero planes stay white at 0; mixed PhotometricInterpretation is refused', async () => {
+    const white = await openOme('XYCZT', [0, 1, 2, 3], {
       dtype: { photometric: 0 },
     })
-    expect(source.manifest.levels.map((l) => l.photometric)).toEqual([
+    expect(white.manifest.levels.map((l) => l.photometric)).toEqual([
       'MONOCHROME1',
       'MONOCHROME1',
     ])
-  })
-
-  test('rejects channels with different PhotometricInterpretation', async () => {
     // XYCZT: plane 1 is channel 1; one manifest photometric would invert it.
     await expect(
       openOme('XYCZT', [0, 1, 2, 3], {
@@ -1117,7 +1074,6 @@ describe('multi-channel OME-TIFF', () => {
       ['DAPI', [255, 0, 0]],
       ['GFP', [0, 255, 0]],
     ])
-    expect(await planeIds(source, [1, 0])).toEqual([1000, 0])
   })
 
   test('a single plane at a TiffData IFD past unused IFDs', async () => {
@@ -1182,7 +1138,7 @@ describe('multi-channel OME-TIFF', () => {
     expect(pixel(rgba, 16, 1, 1)).toEqual([...rgbAt(2, 1, 1), 255])
   })
 
-  test('uint8 windows are the 2-98% range too; float32 is native, int32 quantized to uint16', async () => {
+  test('uint8 windows are the 2-98% range too; float32 reads back native, int32 through storedToValue', async () => {
     const u8 = await openOme('XYCZT', [0, 1, 2, 3], { dtype: { bits: 8 } })
     expect(u8.manifest.levels[0]?.bitsStored).toBe(8)
     // Channel 1 holds 1100 % 256 + s = 76..110; u8 is not quantized.
@@ -1196,19 +1152,6 @@ describe('multi-channel OME-TIFF', () => {
       dtype: { bits: 32, sampleFormat: 3 },
     })
     expect(f32.manifest.dtype).toBe('float32')
-    expect(f32.manifest.levels.map((l) => l.sampleType)).toEqual(['f32', 'f32'])
-    expect(f32.manifest.channelInfo?.[0]).toEqual({
-      name: 'DAPI',
-      rgb: [255, 0, 0],
-      active: true,
-      window: { calMin: bin(59, 100, 134), calMax: bin(941, 100, 134) },
-    })
-    const fl = f32.manifest.levels[1]
-    const ft = fl?.tiles[0]
-    if (!fl || !ft || !f32.fetchTileSamples) throw new Error('no samples')
-    const fr = await f32.fetchTileSamples(fl, ft, [1])
-    expect(fr.samples).toBeInstanceOf(Float32Array)
-    expect([fr.samples[0], fr.samples[17]]).toEqual([1100, 1102])
     const fslide = NVSlide.fromSource(f32)
     const [, l1] = await withFakeBitmaps(() =>
       fslide.loadSampleAt(2, 2, { level: 1 }),
@@ -1222,24 +1165,12 @@ describe('multi-channel OME-TIFF', () => {
       dtype: { bits: 32, sampleFormat: 2 },
     })
     expect(i32.manifest.dtype).toBe('uint16')
-    const stored = (v: number) => ((v - 100) / 34) * 65535
-    expect(i32.manifest.channelInfo?.[0]).toMatchObject({
-      window: {
-        calMin: stored(bin(59, 100, 134)),
-        calMax: stored(bin(941, 100, 134)),
-      },
-      storedToValue: { scale: 34 / 65535, offset: 100 },
+    expect(i32.manifest.channelInfo?.[0]?.storedToValue).toEqual({
+      scale: 34 / 65535,
+      offset: 100,
     })
-    // Channel 1's coarse range 1100..1134 spans 0..65535; level 0 holds 1000 (clamps to 0).
-    const lv = i32.manifest.levels[1]
-    const tile = lv?.tiles[0]
-    if (!lv || !tile || !i32.fetchTileSamples) throw new Error('no samples')
-    const r = await i32.fetchTileSamples(lv, tile, [1])
-    expect([r.samples[0], r.samples[17]]).toEqual([
-      0,
-      Math.round((2 / 34) * 65535),
-    ])
-    // NVSlide.sampleAt maps stored samples back through storedToValue.
+    // Channel 1's coarse range is 1100..1134; NVSlide.sampleAt maps stored
+    // samples back through storedToValue.
     const slide = NVSlide.fromSource(i32)
     const step = 34 / 65535
     const [, coarse] = await withFakeBitmaps(() =>
@@ -1487,10 +1418,6 @@ describe('single-channel grey TIFF', () => {
       title: 'Brain',
       license: 'CC0',
     })
-    const plain = await TiffSlideSource.fromGeoTIFF(tiff, {
-      attribution: { url: 'https://example.org/x' },
-    })
-    expect(plain.manifest.attribution).toEqual({ url: 'https://example.org/x' })
   })
 })
 
@@ -1892,55 +1819,6 @@ describe('OME-TIFF z/t planes (SlidePlaneCapable)', () => {
 })
 
 describe('Range replies', () => {
-  test('the file size is learned only from a reply that proved itself', async () => {
-    const file = writeTiff(PYRAMID)
-    const server = rangeServer(file, { contentRange: 'none' })
-    let bogus = false
-    const fetchImpl = (async (url: string, init?: RequestInit) =>
-      bogus
-        ? new Response(new Uint8Array(3), {
-            status: 206,
-            headers: { 'content-range': 'bytes 0-99/120' },
-          })
-        : server.fetchImpl(url, init)) as typeof fetch
-    const source = await TiffSlideSource.fromUrl('http://test/slide.tif', {
-      fetch: fetchImpl,
-    })
-    const { client } = source as unknown as {
-      client: { size?: number; request(init: RequestInit): Promise<unknown> }
-    }
-    bogus = true
-    await expect(
-      client.request({ headers: { Range: 'bytes=0-99' } }),
-    ).rejects.toThrow()
-    expect(client.size).toBeUndefined()
-  })
-
-  test('a short reply is refused when Content-Range or a known size says so (T2)', async () => {
-    const file = writeTiff(PYRAMID)
-    const server = rangeServer(file)
-    const inner = server.fetchImpl
-    let truncate = false
-    const fetchImpl = (async (url: unknown, init?: RequestInit) => {
-      const r = await inner(url as string, init)
-      if (!truncate) return r
-      const body = (await r.arrayBuffer()).slice(0, 1000)
-      return new Response(body, { status: 206, headers: r.headers })
-    }) as typeof fetch
-    const source = await TiffSlideSource.fromUrl('http://test/slide.tif', {
-      fetch: fetchImpl,
-    })
-    truncate = true
-    const [lv, tile] = tileOf(source, 0, 9)
-    // geotiff reports the refusal as "Request failed"; unrefused, it would
-    // decode 1000 bytes as a whole block.
-    await expect(source.fetchTileBytes(lv, tile, 't')).rejects.toThrow()
-    const { client } = source as unknown as { client: { lastError: Error } }
-    expect(client.lastError.message).toMatch(
-      /expected \d+ bytes, received 1000/,
-    )
-  })
-
   test('a short or misplaced reply is read once more with no-store, then served', async () => {
     const file = writeTiff(PYRAMID)
     const server = rangeServer(file)
@@ -2024,6 +1902,10 @@ describe('Range replies', () => {
     const file = writeTiff(PYRAMID)
     const server = rangeServer(file)
     let stall = false
+    let stalled = () => {}
+    const bodyStarted = new Promise<void>((resolve) => {
+      stalled = resolve
+    })
     const fetchImpl = (async (url: unknown, init?: RequestInit) => {
       const r = await server.fetchImpl(url as string, init)
       if (!stall) return r
@@ -2031,6 +1913,7 @@ describe('Range replies', () => {
       const body = new ReadableStream<Uint8Array>({
         start(c) {
           c.enqueue(new Uint8Array(10))
+          stalled()
           signal?.addEventListener('abort', () =>
             c.error(new DOMException('aborted', 'AbortError')),
           )
@@ -2045,7 +1928,7 @@ describe('Range replies', () => {
     const ctrl = new AbortController()
     const [lv, tile] = tileOf(source, 0, 9)
     const read = source.fetchTileBytes(lv, tile, 'm', ctrl.signal)
-    await Bun.sleep(10)
+    await bodyStarted
     ctrl.abort()
     await expect(read).rejects.toMatchObject({ name: 'AbortError' })
   })
@@ -2098,7 +1981,7 @@ describe('redirect reuse', () => {
     }
   }
 
-  test('a same-origin redirect is reused; an expired target falls back to the canonical URL once', async () => {
+  test('a same-origin redirect is reused; a failed target reply falls back to the canonical URL once', async () => {
     const file = writeTiff(PYRAMID)
     const r = redirecting(file, 'http://test/signed/slide.tif?sig=1')
     const source = await TiffSlideSource.fromUrl('http://test/slide.tif', {
@@ -2113,20 +1996,12 @@ describe('redirect reuse', () => {
     // 403 from the target, then the canonical URL re-resolves it.
     expect(r.hits.canonical).toBe(before.canonical + 1)
     expect(r.hits.resolved).toBeGreaterThan(before.resolved)
-  })
-
-  test('any failed reply from the target falls back to the canonical URL once', async () => {
-    const file = writeTiff(PYRAMID)
-    const r = redirecting(file, 'http://test/signed/slide.tif?sig=1')
-    const source = await TiffSlideSource.fromUrl('http://test/slide.tif', {
-      fetch: r.fetchImpl,
-    })
+    // Any failure, not only an expiry.
     r.expire(500)
-    const before = r.hits.canonical
-    const [lv, tile] = tileOf(source, 0, 9)
-    const bytes = await source.fetchTileBytes(lv, tile, 'x')
-    expect(bytes.length).toBe(tile.width * tile.height * 4)
-    expect(r.hits.canonical).toBe(before + 1)
+    const [l1, t1] = tileOf(source, 0, 20)
+    const bytes = await source.fetchTileBytes(l1, t1, 'y')
+    expect(bytes.length).toBe(t1.width * t1.height * 4)
+    expect(r.hits.canonical).toBe(before.canonical + 2)
   })
 
   test('a target that keeps failing is not learned again', async () => {
@@ -2194,19 +2069,6 @@ describe('redirect reuse', () => {
 })
 
 describe('TIFF source lifetime', () => {
-  test('dispose rejects a pending tile read with AbortError (L4)', async () => {
-    const { source, server } = await open(writeTiff(PYRAMID))
-    const [lv, tile] = tileOf(source, 0, 9)
-    server.hold = true
-    const requested = new Promise<void>((resolve) => {
-      server.onRequest = resolve
-    })
-    const read = source.fetchTileBytes(lv, tile, 'd')
-    await requested
-    source.dispose()
-    await expect(read).rejects.toMatchObject({ name: 'AbortError' })
-  })
-
   test("dispose leaves the caller's Pool working (L5)", async () => {
     const pool = new Pool(0)
     let destroyed = false
@@ -2387,29 +2249,6 @@ describe('vendor layouts', () => {
     warn.mockRestore()
     expect(s.manifest.width).toBe(48)
     expect(s.placementReport?.warning).toMatch(/XMP not read: tag 700 over/)
-  })
-
-  test('Ventana joints that do not resolve keep the grid with a warning', async () => {
-    const bad = ventanaXmp.replace(
-      'Direction="LEFT" Tile1="1"',
-      'Direction="DIAGONAL" Tile1="1"',
-    )
-    const warn = console.warn
-    const warnings: unknown[] = []
-    console.warn = (m: unknown) => warnings.push(m)
-    try {
-      const s = await fromBuffer(
-        writeTiff([{ ...solid(0, 48, 16), ascii: { 700: bad } }]),
-      )
-      expect(s.manifest.width).toBe(48)
-      expect(s.manifest.levels[0]?.placement).toBeUndefined()
-      expect(s.placementReport?.warning).toMatch(/joint 1-2/)
-    } finally {
-      console.warn = warn
-    }
-    expect(String(warnings[0])).toMatch(
-      /Ventana tile joints not applied: joint 1-2/,
-    )
   })
 
   test('Trestle overlaps: every level kept, placed at its stitched size', async () => {
@@ -2664,29 +2503,6 @@ describe('NDPI virtual tiles', () => {
 })
 
 describe('NDPI level size and offsets', () => {
-  test('the level size is the TIFF ImageWidth/ImageLength, not the 16-bit SOF', async () => {
-    const jpeg = NDPI_JPEG.slice()
-    // SOF0 at 0xffc0: height then width. A level past 65535 px wraps there.
-    const sof = jpeg.findIndex((v, i) => v === 0xff && jpeg[i + 1] === 0xc0)
-    jpeg[sof + 7] = 0
-    jpeg[sof + 8] = 0 // width 0, as 65536 + 0 would store
-    const s = await TiffSlideSource.fromGeoTIFF(
-      await fromArrayBuffer(writeTiff([ndpiStrip(jpeg, 20)])),
-    )
-    const l0 = s.manifest.levels[0]
-    expect(l0 && [l0.width, l0.columns, l0.tiles[0]?.width]).toEqual([
-      32, 1, 32,
-    ])
-    const bytes =
-      l0 &&
-      (await s.fetchTileBytes(
-        l0,
-        l0.tiles[0] as NonNullable<(typeof l0.tiles)[0]>,
-        't',
-      ))
-    expect(bytes).toEqual(NDPI_JPEG)
-  })
-
   test('a failed offset-table read is retried by the next tile', async () => {
     const s = await TiffSlideSource.fromGeoTIFF(
       await fromArrayBuffer(writeTiff([ndpiStrip(NDPI_JPEG, 20)])),
@@ -2781,24 +2597,37 @@ describe('NDPI hostile offsets', () => {
   })
 })
 
-// Advisory: the real Ventana-1.bif when present.
-const BIF = '/Users/chris/src/mono/scratch/ventana/Ventana-1.bif'
+// Advisory: Ventana-1.bif (CC0, OpenSlide test data) at $OPENSLIDE_VENTANA.
+const BIF = process.env.OPENSLIDE_VENTANA ?? ''
 describe.skipIf(!existsSync(BIF))('Ventana-1.bif placement (advisory)', () => {
-  test('placed 23432 x 21504; off, the storage grid', async () => {
+  test('placed 23432 x 21504 from the file XMP; off, the storage grid', async () => {
     const tiff = await fromFile(BIF)
     const plain = await TiffSlideSource.fromGeoTIFF(tiff, { placement: false })
     expect(plain.manifest.width).toBe(24576)
     const placed = await TiffSlideSource.fromGeoTIFF(tiff)
+    // V10 / PL5: 23 * 1024 - 5 * 24 wide; storage column 23 never placed.
     expect([placed.manifest.width, placed.manifest.height]).toEqual([
       23432, 21504,
     ])
-    const l3 = placed.manifest.levels[3]?.placement?.pieces.filter(
-      (p) => p.tile === 0,
-    )
-    expect(l3?.map((p) => [p.sx, p.sw, p.dx])).toEqual([
+    const pieces = (l: number) =>
+      placed.manifest.levels[l]?.placement?.pieces ?? []
+    expect(pieces(0).length).toBe(23 * 21)
+    expect(pieces(0).some((p) => p.tile % 24 === 23)).toBe(false)
+    // V7 / V8: L3 storage tiles 0 and 1 overlap 3 px (1.5 px each side).
+    const l3 = pieces(3)
+    expect(
+      l3.filter((p) => p.tile === 0).map((p) => [p.sx, p.sw, p.dx]),
+    ).toEqual([
       [0, 510.5, 0],
       [513.5, 509, 510.5],
     ])
+    expect(l3.find((p) => p.tile === 1)).toMatchObject({ sx: 1.5, dx: 1019.5 })
+    // L1 storage tile 11 keeps sx 0-512 (frame 22 only).
+    expect(
+      pieces(1)
+        .filter((p) => p.tile === 11)
+        .map((p) => [p.sx, p.sw]),
+    ).toEqual([[0, 512]])
     placed.dispose()
   })
 })

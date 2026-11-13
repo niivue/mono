@@ -304,8 +304,8 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
   `packages/nv-ext-tile/src/zarr/omeZarr.ts` already parses BOTH, but only the scale survives the
   trip to a volume:
 
-  - `omeZarrChannelFile` / `channelVolumeFile` (`packages/nv-ext-tile/src/zarr/omeZarrLoader.ts`)
-    build an explicitly origin-centred volume.
+  - `omeZarrChannelFile` (`packages/nv-ext-tile/src/zarr/omeZarrLoader.ts`)
+    builds whole levels in the streamed placement below, voxel 0 at the origin.
   - `ChunkedVolumeLevel` (`src/volume/ChunkedVolumeSource.ts`) carries
     `level` / `shape` / `spacing` and has no origin field.
   - `createStreamingNVImage` (`src/volume/streamingVolume.ts`) builds

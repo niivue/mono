@@ -15,6 +15,7 @@ import type {
   ChunkTimingSnapshot,
   OffThreadChunkTiming,
 } from '@niivue/niivue'
+import type { OmeZarrSource } from './omeZarrLoader'
 import type { PersistentCacheStats } from './persistentByteCache'
 
 const PHASES: readonly ChunkPhase[] = [
@@ -37,6 +38,58 @@ export function chunkRegionKey(req: {
   return `${req.levelIndex}|${req.texOrigin.join(',')}|${req.texDims.join(',')}${frame}`
 }
 
+/**
+ * The key a read on a SHARDED level routes by: its shard (level, origin and
+ * frame and channel over the shard extent from {@link shardExtents}). Every
+ * read of one shard then lands on one worker, which probes the shard (HEAD and
+ * index read) once instead of once per worker it reached.
+ *
+ * ponytail: a store with one huge shard per level funnels that level to one
+ * worker; share the index across workers if that ever measures slow.
+ */
+export function shardRouteKey(
+  req: {
+    levelIndex: number
+    texOrigin: readonly number[]
+    frame?: number
+    channel?: number
+  },
+  shard: readonly number[],
+): string {
+  const [x, y, z] = req.texOrigin
+  const at = [x, y, z, req.frame ?? 0, req.channel ?? 0]
+  return `${req.levelIndex}|s${at.map((v, i) => Math.floor(v / shard[i])).join(',')}`
+}
+
+/**
+ * Each opened level's shard extent as [x, y, z, t, c], or null for a level
+ * that is not sharded. zarrita's `chunks` is the inner chunk, so the shard
+ * shape comes from the level's `zarr.json` in the open's metadata reads.
+ */
+export function shardExtents(
+  src: Pick<OmeZarrSource, 'arrays' | 'indices' | 'order'>,
+  metadata: ReadonlyMap<string, Uint8Array | undefined>,
+): (number[] | null)[] {
+  const { indices, order } = src
+  const dims = [
+    ...[order.x, order.y, order.z].map((o) =>
+      o < 0 ? -1 : indices.spatial[o],
+    ),
+    indices.time,
+    indices.channel,
+  ]
+  return src.arrays.map((arr) => {
+    const bytes = metadata.get(`${arr.path}/zarr.json`)
+    const meta = bytes && JSON.parse(new TextDecoder().decode(bytes))
+    const sharded = meta?.codecs?.some(
+      (c: { name?: string }) => c.name === 'sharding_indexed',
+    )
+    if (!sharded) return null
+    const shape: number[] = meta.chunk_grid.configuration.chunk_shape
+    return dims.map((d) => (d < 0 ? 1 : shape[d]))
+  })
+}
+
 /** FNV-1a, 32 bit signed: cheap, and it spreads keys that differ in one digit. */
 export function fnv1a(key: string): number {
   let hash = 0x811c9dc5
@@ -52,6 +105,7 @@ export function fnv1a(key: string): number {
  * whole point: each worker holds its own byte cache, so a brick must come back
  * to the worker that already has its bytes. Routing to whichever worker is
  * idle would spread one brick across the pool and make every revisit a miss.
+ * A sharded level routes by {@link shardRouteKey} for the same reason.
  */
 export function routeChunkToWorker(key: string, size: number): number {
   if (size <= 1) return 0

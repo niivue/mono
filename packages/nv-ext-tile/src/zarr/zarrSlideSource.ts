@@ -25,7 +25,7 @@ import {
 } from '../channelDisplay'
 import { sampleLevel } from '../levelSample'
 import { anySignal } from '../rangeFetch'
-import { resolveChunkWorkerCount } from './chunkWorkerRouting'
+import { resolveChunkWorkerCount, shardExtents } from './chunkWorkerRouting'
 import { copyStrided } from './copyStrided'
 import {
   checkOmeZarrIndex,
@@ -36,6 +36,7 @@ import { OME_ZARR_CHUNK_ERROR, withMetadata } from './omeZarrChunkedSource'
 import type { OmeZarrChunkWorkerPool } from './omeZarrChunkWorkerPool'
 import {
   countingFetch,
+  type OmeZarrSource,
   omeZarrChannelName,
   omeZarrFetchStore,
   omeZarrNiftiDatatype,
@@ -125,6 +126,8 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
   private readonly cacheBytes: number
   /** Chunk workers that read and decode tiles off this thread (fromUrl). */
   private pool: OmeZarrChunkWorkerPool | null = null
+  /** The opened store's arrays and axes, for the pool's shard routing. */
+  private layout!: Pick<OmeZarrSource, 'arrays' | 'indices' | 'order'>
 
   private constructor(
     readonly manifest: NVSlideManifest,
@@ -222,7 +225,12 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
       source.pool = new mod.OmeZarrChunkWorkerPool(
         url,
         {},
-        { size: workers, cacheBytesPerWorker: share, persistPerWorker: false },
+        {
+          size: workers,
+          cacheBytesPerWorker: share,
+          persistPerWorker: false,
+          shards: shardExtents(opened.layout, metadata),
+        },
         metadata,
       )
       source.pool.onWireBytes = (bytes) => opened.host?.addWireBytes(bytes)
@@ -631,6 +639,7 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
       zAt,
       dtype,
     )
+    source.layout = src
     // Deferred display reads stop with the source.
     source.closed.signal.addEventListener('abort', () => closed.abort())
     return source

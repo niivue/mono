@@ -41,7 +41,7 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
-import { wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
+import { wsiFetch, wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
 import { mountWsiSlideView, type WsiSlideView } from './wsiSlideView'
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
@@ -431,7 +431,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         slideIndex,
         {
           seriesUrl,
-          headers: () => authHeaders(servicesManager),
+          fetch: wsiFetch(servicesManager),
           retrieveBulkData: wsiRetrieveBulkData(
             dataSourceRef.current,
             ds.StudyInstanceUID,

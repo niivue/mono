@@ -41,6 +41,7 @@ import {
   isAbortError,
   MAX_WHOLE_FILE,
   ManifestRangeSource,
+  orientSamples,
   placeListedTiles,
   readCapped,
   type SlidePlaneCapable,
@@ -182,6 +183,17 @@ export interface NVSlidePlacedPiece {
   dy: number
 }
 
+/**
+ * How a stored tile maps onto the displayed one: displayed column u comes from
+ * stored row u when `transpose`, and `flipX`/`flipY` then mirror the displayed
+ * columns/rows.
+ */
+export interface NVSlideTileOrientation {
+  transpose: boolean
+  flipX: boolean
+  flipY: boolean
+}
+
 /** Irregular tile placement of one level (vendor joints, overlaps, offsets). */
 export interface NVSlideLevelPlacement {
   /** Placed extent in level pixels; may be fractional. */
@@ -285,6 +297,13 @@ export interface NVSlideLevelManifest {
    * placed level pixels map to base by manifest.width / placement.width.
    */
   placement?: NVSlideLevelPlacement
+  /**
+   * Each decoded or source-supplied sample tile, as stored, is reoriented to
+   * the displayed grid after its padding is cropped (DICOM-WSI
+   * ImageOrientationSlide). The level's grid and tiles
+   * are already stated in displayed px; absent, tiles show as stored.
+   */
+  tileOrientation?: NVSlideTileOrientation
   /**
    * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
    * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when
@@ -2349,6 +2368,11 @@ export class NVSlide extends EventTarget {
       let samples: NVSlideTileSamples | undefined
       let held: number[] | undefined
       if (this._source.fetchTileSamples) {
+        // A reoriented tile comes as stored, like a decoder's (decodeTileBitmap).
+        const o = level.tileOrientation
+        const [width, height] = o?.transpose
+          ? [tile.height, tile.width]
+          : [tile.width, tile.height]
         for (;;) {
           const channels = this._visibleChannels()
           held = channels
@@ -2357,8 +2381,8 @@ export class NVSlide extends EventTarget {
             ? await this._source.fetchTileSamples(level, tile, channels, signal)
             : {
                 samples: new Uint8Array(0),
-                width: tile.width,
-                height: tile.height,
+                width,
+                height,
                 bitsStored: 8,
                 planes: 0,
               }
@@ -2367,11 +2391,12 @@ export class NVSlide extends EventTarget {
             throw new Error(
               `Expected ${channels.length} sample planes, received ${samples.planes ?? 1}`,
             )
-          if (samples.width > tile.width || samples.height > tile.height)
-            samples = cropSamples(samples, tile.width, tile.height)
+          if (samples.width > width || samples.height > height)
+            samples = cropSamples(samples, width, height)
           // A channel shown while this loaded: load again, never cache a tile without it.
           if (this._visibleChannels().every((c) => channels.includes(c))) break
         }
+        if (o) samples = orientSamples(samples, o)
       } else {
         const tileBytes = await this._source.fetchTileBytes(
           level,

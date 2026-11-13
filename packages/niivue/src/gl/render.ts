@@ -21,6 +21,8 @@ import {
   chunkRegions,
   stackGeneration,
   stackInputs,
+  stackModes,
+  stackWeights,
 } from '@/view/chunkStackFuse'
 import { loadMatcapOrDefault } from '@/view/matcapFallback'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -85,7 +87,7 @@ import {
   volumeSourceKey,
   wholeVolumeTextureKey,
 } from '@/volume/orientChunked'
-import { blendOverlayData } from '@/volume/overlayBlend'
+import { blendOverlayData, weightAlpha } from '@/volume/overlayBlend'
 import { blendOverlaysGL, destroyBlendOverlaysGL } from './blendOverlays'
 import * as depthPickShader from './depthPickShader'
 import * as gradient from './gradient'
@@ -1864,19 +1866,25 @@ export class VolumeRenderer extends NVRenderer {
     const chunks = base.plan.chunks
     const alpha = this.overlayAlphaBlend
     const color = this.overlayColorBlend
+    const weights = stackWeights(entries)
     return fuse.pump(
       chunkRegions(base.plan),
       stackGeneration(entries),
-      `${alpha}/${color}`,
+      stackModes(entries, alpha, color),
       (i) => stackInputs(entries, i),
       (inputs, i) => {
         const dims = chunks[i].texDims
         return (
-          blendOverlaysGL(gl, inputs, dims, alpha, color) ??
+          blendOverlaysGL(gl, inputs, dims, alpha, color, weights) ??
           this._createOverlayChunkTexture(
             gl,
             blendOverlayData(
-              inputs.map((t) => orientOverlay.readTexture3D(gl, t, dims)),
+              inputs.map((t, k) =>
+                weightAlpha(
+                  orientOverlay.readTexture3D(gl, t, dims),
+                  weights[k],
+                ),
+              ),
               dims,
               alpha,
               color,
@@ -2501,7 +2509,7 @@ export class VolumeRenderer extends NVRenderer {
     return fuse.pending(
       chunkRegions(base.plan),
       stackGeneration(entries),
-      `${this.overlayAlphaBlend}/${this.overlayColorBlend}`,
+      stackModes(entries, this.overlayAlphaBlend, this.overlayColorBlend),
       (i) => stackInputs(entries, i),
     )
   }

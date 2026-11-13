@@ -1,3 +1,18 @@
+## 1.0.0-rc.101 (2026-11-13)
+
+### Fixes
+
+- **nv-mcp:** add_isosurface leaves the timepoint to the store, names the chosen channel ([aed19aa6](https://github.com/niivue/mono/commit/aed19aa6))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.192
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.100 (2026-11-13)
 
 ### Updated Dependencies

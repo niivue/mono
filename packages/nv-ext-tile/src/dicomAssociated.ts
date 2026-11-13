@@ -1,14 +1,10 @@
-import { NVSlide, type NVSlideTileCodec } from '@niivue/niivue'
+import { NVSlide, type NVSlideTileCodec, settleBy } from '@niivue/niivue'
 import type {
   SlideIndex,
   SlideIndexAssociated,
   SlideIndexSlide,
 } from './dicomIndex'
-import {
-  abortable,
-  CODEC_BY_TRANSFER_SYNTAX,
-  fragmentsOf,
-} from './dicomWsiSource'
+import { CODEC_BY_TRANSFER_SYNTAX, fragmentsOf } from './dicomWsiSource'
 
 /** An associated image's pixels: an encoded frame, or 8-bit RGBA. */
 export interface AssociatedImageData {
@@ -69,7 +65,7 @@ function nativeRgba(
 export async function readAssociatedImage(
   image: SlideIndexAssociated,
   files: readonly File[],
-  signal: AbortSignal = new AbortController().signal,
+  signal?: AbortSignal,
 ): Promise<AssociatedImageData> {
   const { instance, offset, length, width, height } = image
   const file = files.find(
@@ -82,12 +78,12 @@ export async function readAssociatedImage(
   )
     throw new Error(`${instance.file} changed since it was indexed`)
   const read = (start: number, end: number) =>
-    abortable(
+    settleBy(
+      signal,
       file
         .slice(start, end)
         .arrayBuffer()
         .then((b) => new Uint8Array(b)),
-      signal,
     )
   if (image.native)
     return {

@@ -37,13 +37,13 @@ async function heldTo(
   })
 }
 
-/** A read's signal: the caller's, if any, plus the source's lifetime. */
-export const linked = (
-  signal: AbortSignal | undefined,
-  closed: AbortSignal,
-): AbortSignal => (signal ? AbortSignal.any([signal, closed]) : closed)
-
 /** Aborts when any given signal does; undefined when none is given. */
+export function anySignal(
+  ...signals: [...(AbortSignal | null | undefined)[], AbortSignal]
+): AbortSignal
+export function anySignal(
+  ...signals: (AbortSignal | null | undefined)[]
+): AbortSignal | undefined
 export function anySignal(
   ...signals: (AbortSignal | null | undefined)[]
 ): AbortSignal | undefined {

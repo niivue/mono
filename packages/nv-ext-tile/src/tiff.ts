@@ -43,7 +43,6 @@ import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
 import { sampleLevel } from './levelSample'
 import {
   anySignal,
-  linked,
   rangeReplyError,
   refuseReply,
   slideFetch,
@@ -1609,7 +1608,7 @@ export class TiffSlideSource implements SlideTileSource {
       throw new Error(
         'Multi-channel OME-TIFF: read tiles with fetchTileSamples',
       )
-    const abort = linked(signal, this.closed.signal)
+    const abort = anySignal(signal, this.closed.signal)
     this.host?.pushRangeEvent({ label, status: 'pending' })
     try {
       abort.throwIfAborted()
@@ -1802,7 +1801,7 @@ export class TiffSlideSource implements SlideTileSource {
     const { width: w, height: h } = tile
     const gray = this.channels as TiffChannels
     const out = new (sampleArray(gray.kind))(w * h * channels.length)
-    const abort = linked(signal, this.closed.signal)
+    const abort = anySignal(signal, this.closed.signal)
     const pyramids = this.pyramidsOf(level)
     // Hidden channels shown for the first time: their windows first.
     await settleBy(

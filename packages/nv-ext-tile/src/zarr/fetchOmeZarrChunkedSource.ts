@@ -14,7 +14,7 @@
  */
 
 import type { ChunkedVolumeFetch } from '@niivue/niivue'
-import { resolveChunkWorkerCount } from './chunkWorkerRouting'
+import { resolveChunkWorkerCount, shardExtents } from './chunkWorkerRouting'
 import {
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_CACHE_BYTES,
@@ -71,6 +71,7 @@ export async function fetchOmeZarrChunkedSource(
       size: poolSize,
       cacheBytesPerWorker: Math.floor(cacheBytes / poolSize),
       persistPerWorker,
+      shards: shardExtents(local.zarr, metadata),
     },
     metadata,
   )

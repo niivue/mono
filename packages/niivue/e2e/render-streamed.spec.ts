@@ -139,14 +139,12 @@ const SCENES: Scene[] = [
     },
   },
   {
-    // Each brick ray-marches on its own, so the 3D capture differs from the
-    // whole stack by a few hundred pixels of sampling phase (as any chunked
-    // COMPOSITE does) and keeps its own reference; the 2D slice must match.
+    // Two bricks per channel exercise fusion across a boundary without
+    // ray-marching an eight-brick grid. The 2D slice must match the whole stack.
     name: 'stack-streamed',
-    slow: true,
     size: [STACK_PX, STACK_PX],
-    options: { sliceType: RENDER, maxTextureDimension3D: 24 },
-    setup: async ({ nv, view, check, settle }) => {
+    options: { sliceType: RENDER },
+    setup: async ({ nv, check }) => {
       const ball = (c: number[]) => {
         const v = new Uint8Array(32 ** 3)
         for (let z = 0; z < 32; z++)
@@ -193,19 +191,18 @@ const SCENES: Scene[] = [
             name: `c${i}`,
             id: `c${i}`,
             coarseFloor: false,
+            gridDims: [2, 1, 1],
           },
         )
       }
-      check(view().volumeRenderer.hasChunkedVolume, 'volume is chunked')
-      await settle()
+      check(nv.chunkStreamStats()?.total === 4, 'two bricks per channel')
     },
     steps: [
       {
         name: 'axial',
         sameAs: 'stack-whole--axial',
-        run: async ({ nv, settle }) => {
+        run: async ({ nv }) => {
           nv.sliceType = 0
-          await settle()
         },
       },
       {

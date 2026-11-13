@@ -547,10 +547,12 @@ export async function openOmeZarrChunkedSource(
   /** Told each response's byte count (HEADs excluded); the chunk workers report it. */
   countWire?: (bytes: number) => void,
 ): Promise<OmeZarrChunkedSource> {
+  // Page-relative URLs resolve here, so persisted keys are absolute.
+  const href = new URL(url, globalThis.location?.href).href
   const cacheBytes = options.cacheBytes ?? OME_ZARR_CHUNK_CACHE_BYTES
   // Not through `options.fetch`: a custom fetch would decline persistence.
   const fetched = omeZarrFetchStore(
-    url,
+    href,
     countWire
       ? countingFetch(options.fetch, countWire)
       : options.fetch && slideFetch(options.fetch),
@@ -560,10 +562,10 @@ export async function openOmeZarrChunkedSource(
   // reaches it only when the byte LRU could not answer, and what it hands back
   // is what the network would have -- raw, still-compressed store bytes.
   const persistCache = await openPersistTier(
-    persistable(url, options) && options.persist,
+    persistable(href, options) && options.persist,
   )
   const persisted = persistCache
-    ? withPersistentBytes(base, persistCache, url)
+    ? withPersistentBytes(base, persistCache, href)
     : base
   const byteCache = cacheBytes > 0 ? new ByteLruCache(cacheBytes) : undefined
   const cached = byteCache
@@ -628,11 +630,14 @@ export function persistable(
   url: string,
   options: Pick<FetchOmeZarrChunkedSourceOptions, 'fetch' | 'persist'>,
 ): boolean {
+  // A page-relative URL is judged as the absolute one it fetches.
+  const base = globalThis.location?.href
+  const href = URL.canParse(url, base) ? new URL(url, base).href : url
   const ok =
     !options.fetch &&
-    /^https?:\/\//i.test(url) &&
-    !/[?#]/.test(url) &&
-    !/\/\/[^/]*@/.test(url)
+    /^https?:\/\//i.test(href) &&
+    !/[?#]/.test(href) &&
+    !/\/\/[^/]*@/.test(href)
   if (!ok && options.persist && !declinedWarned) {
     declinedWarned = true
     console.warn(

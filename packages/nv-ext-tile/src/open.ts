@@ -9,7 +9,7 @@ import {
   type SlideTileSource,
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
-import type { SlideIndex } from './dicomIndex'
+import type { SlideIndex, SlideIndexSlide } from './dicomIndex'
 import {
   anySignal,
   readCapped,
@@ -47,6 +47,8 @@ export interface OpenSlideOptions {
 export interface SlideCandidate {
   kind: SlideKind
   label: string
+  /** DICOM: the indexed slide it opens (levels, frames, transfer syntax). */
+  slide?: SlideIndexSlide
   open(signal?: AbortSignal): Promise<SlideTileSource>
 }
 
@@ -183,6 +185,7 @@ export async function openSlide(
     (slide): SlideCandidate => ({
       kind: 'dicom',
       label: `${slide.container ?? slide.series} path ${slide.opticalPath} z ${slide.focalPlane}`,
+      slide,
       open: async (s) => {
         anySignal(options.signal, s)?.throwIfAborted()
         return new DicomWsiSource(slide, dicom, {

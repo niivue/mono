@@ -173,6 +173,7 @@ describe('openSlide', () => {
     expect(opened.index?.skipped.map((s) => s.file)).toEqual(['not-dicom.dcm'])
     expect(opened.candidates.length).toBe(opened.index?.slides.length ?? -1)
     expect(opened.candidates.length).toBeGreaterThan(1)
+    expect(opened.candidates[1]?.slide).toBe(opened.index?.slides[1])
     const source = await opened.candidates[1]?.open()
     expect(source).toBeInstanceOf(DicomWsiSource)
     expect(source?.manifest.id).toBe(

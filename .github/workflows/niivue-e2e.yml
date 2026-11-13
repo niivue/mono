@@ -179,6 +179,15 @@ jobs:
           bunx playwright test $specs --workers=1 --reporter=line \
             --grep-invert 'stack-streamed-floor \(webgpu\)'
 
+      # Expected/actual/diff PNGs of a Linux-only mismatch (#747 was one that
+      # macOS SwiftShader could not reproduce).
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: render-references-${{ matrix.group }}-results
+          path: packages/niivue/test-results/
+          retention-days: 7
+
   # The full suite on real Metal (issue #199). Free macOS runners expose a
   # paravirtual GPU, but only full Chromium reaches it; the headless shell stays
   # on SwiftShader. PLAYWRIGHT_CHROMIUM_CHANNEL switches e2e/launchOptions.ts to

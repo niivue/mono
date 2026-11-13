@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { ManifestRangeSource } from '@niivue/niivue'
+import { ManifestRangeSource, type SlideFetch } from '@niivue/niivue'
 import { DicomWsiSource } from './dicomWsiSource'
 import { openSlide, sniffSlide } from './open'
-import type { SlideFetch } from './rangeFetch'
 import { TiffSlideSource } from './tiff'
 
 // Bun has no FileReader; geotiff-rs's fromBlob reads a File through one.
@@ -210,7 +209,7 @@ describe('openSlide', () => {
       )
     const opened = await openSlide('https://h.test/s/m.json', { fetch })
     await expect(opened.candidates[0]?.open()).rejects.toThrow(
-      'Slide manifest body too large',
+      `Reply over ${64 * 1024 * 1024} bytes`,
     )
     expect(pulled).toBeLessThanOrEqual(66)
   })

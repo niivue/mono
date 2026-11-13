@@ -1727,7 +1727,7 @@ describe('Range replies', () => {
     }) as typeof fetch
     await expect(
       TiffSlideSource.fromUrl('http://test/slide.tif', { fetch: fetchImpl }),
-    ).rejects.toThrow(/reply to bytes=0-65535 is too long/)
+    ).rejects.toThrow('Reply over 65536 bytes')
   })
 
   test('a reply without Content-Length is cut off past its range', async () => {
@@ -1749,7 +1749,7 @@ describe('Range replies', () => {
       )) as unknown as typeof fetch
     await expect(
       TiffSlideSource.fromUrl('http://test/slide.tif', { fetch: fetchImpl }),
-    ).rejects.toThrow(/reply to bytes=0-65535 body too large/)
+    ).rejects.toThrow('Reply over 65536 bytes')
     expect(cancelled).toBe(true)
     expect(pulled).toBeLessThan(10)
   })

@@ -414,7 +414,7 @@ export function omeZarrFetchStore(
         return new Response(null, { status: 404 })
       }
       // A server that ignores Range would send the whole file (a shard) per read.
-      const refused = rangeReplyError(response, range, true)
+      const refused = rangeReplyError(response, range)
       if (refused)
         await refuseReply(
           response,

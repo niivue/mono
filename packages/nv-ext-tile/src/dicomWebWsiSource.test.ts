@@ -270,7 +270,9 @@ describe('DicomWebWsiSource', () => {
       () =>
         new Response('x', { headers: { 'content-length': String(65 << 20) } }),
     )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
+      'Reply over',
+    )
     const mb = new Uint8Array(1 << 20)
     let sent = 0
     serve(
@@ -284,7 +286,9 @@ describe('DicomWebWsiSource', () => {
           }),
         ),
     )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
+      'Reply over',
+    )
   })
 
   test('cancels a refused body', async () => {
@@ -308,7 +312,9 @@ describe('DicomWebWsiSource', () => {
           headers: { 'content-length': String(65 << 20) },
         }),
     )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('too large')
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
+      'Reply over',
+    )
     expect(cancelled).toBe(2)
   })
 

@@ -3,6 +3,7 @@ import type {
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
+  SlideFetch,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
@@ -11,13 +12,7 @@ import { tileMap } from './dicomIndex'
 import type { DicomJsonSlide } from './dicomJson'
 import { manifestOf } from './dicomWsiSource'
 import { parseMultipartRelated } from './multipart'
-import {
-  anySignal,
-  MAX_BODY,
-  readCapped,
-  type SlideFetch,
-  slideFetch,
-} from './rangeFetch'
+import { anySignal, MAX_BODY, readOk, slideFetch } from './rangeFetch'
 
 const ANY_SYNTAX =
   'multipart/related; type="application/octet-stream"; transfer-syntax=*'
@@ -104,7 +99,7 @@ export async function readFirstPart(
   what: string,
   max = MAX_BODY,
 ): Promise<Uint8Array> {
-  const body = await readCapped(response, what, max)
+  const body = await readOk(response, what, max)
   const part = parseMultipartRelated(
     body,
     response.headers.get('content-type') ?? '',

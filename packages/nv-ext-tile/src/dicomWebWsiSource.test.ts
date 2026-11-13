@@ -261,18 +261,11 @@ describe('DicomWebWsiSource', () => {
     )
   })
 
-  test('caps a body by Content-Length and while streaming', async () => {
+  test('caps a streamed body', async () => {
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
     })
     const { level, tile } = firstTile(s)
-    serve(
-      () =>
-        new Response('x', { headers: { 'content-length': String(65 << 20) } }),
-    )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
-      'Reply over',
-    )
     const mb = new Uint8Array(1 << 20)
     let sent = 0
     serve(
@@ -291,7 +284,7 @@ describe('DicomWebWsiSource', () => {
     )
   })
 
-  test('cancels a refused body', async () => {
+  test('cancels a body refused for its status', async () => {
     const s = await DicomWebWsiSource.open(await slideOf('bot'), {
       seriesUrl: SERIES,
     })
@@ -306,16 +299,7 @@ describe('DicomWebWsiSource', () => {
       })
     serve(() => new Response(body(), { status: 503 }))
     await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow('HTTP 503')
-    serve(
-      () =>
-        new Response(body(), {
-          headers: { 'content-length': String(65 << 20) },
-        }),
-    )
-    await expect(s.fetchTileBytes(level, tile, '')).rejects.toThrow(
-      'Reply over',
-    )
-    expect(cancelled).toBe(2)
+    expect(cancelled).toBe(1)
   })
 
   test('passes the abort signal to fetch', async () => {

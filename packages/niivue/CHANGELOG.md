@@ -1,3 +1,13 @@
+## 1.0.0-rc.199 (2026-11-13)
+
+### Features
+
+- **niivue:** export readCapped and settleBy for slide-source extensions ([df86ee0c](https://github.com/niivue/mono/commit/df86ee0c))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.198 (2026-11-13)
 
 ### Fixes

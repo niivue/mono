@@ -114,9 +114,9 @@ function display(
   labels = zarr.info.isLabel,
 ): ChunkedVolumeOptions {
   const shown = omeroDisplay(zarr, channel)
-  // loadChunkedVolume refuses a label colormap on 64-bit IDs (not exact past
-  // 2^24), so those keep streaming as intensities.
-  if (!labels || zarr.levels[0].dtype.endsWith('64')) return shown
+  // loadChunkedVolume refuses a label colormap on float64 IDs (not exact past
+  // 2^24), so those stream as intensities; the source refuses (u)int64 at open.
+  if (!labels || zarr.levels[0].dtype === 'float64') return shown
   const map = omeZarrLabelColormap(zarr.info)
   const colormap = map ? nv.addColormap(`${url} labels`, map) : 'Random'
   return shown.name === undefined

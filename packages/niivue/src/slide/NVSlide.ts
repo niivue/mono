@@ -40,6 +40,7 @@ import {
   isAbortError,
   MAX_WHOLE_FILE,
   ManifestRangeSource,
+  orientSamples,
   placeListedTiles,
   readCapped,
   type SlidePlaneCapable,
@@ -182,6 +183,17 @@ export interface NVSlidePlacedPiece {
   dy: number
 }
 
+/**
+ * How a stored tile maps onto the displayed one: displayed column u comes from
+ * stored row u when `transpose`, and `flipX`/`flipY` then mirror the displayed
+ * columns/rows.
+ */
+export interface NVSlideTileOrientation {
+  transpose: boolean
+  flipX: boolean
+  flipY: boolean
+}
+
 /** Irregular tile placement of one level (vendor joints, overlaps, offsets). */
 export interface NVSlideLevelPlacement {
   /** Placed extent in level pixels; may be fractional. */
@@ -286,6 +298,13 @@ export interface NVSlideLevelManifest {
    */
   placement?: NVSlideLevelPlacement
   /**
+   * Each decoded or source-supplied sample tile, as stored, is reoriented to
+   * the displayed grid after its padding is cropped (DICOM-WSI
+   * ImageOrientationSlide). The level's grid and tiles
+   * are already stated in displayed px; absent, tiles show as stored.
+   */
+  tileOrientation?: NVSlideTileOrientation
+  /**
    * DICOM-WSI only: NumberOfFrames, NumberOfOpticalPaths (0048,0302) and
    * TotalPixelMatrixFocalPlanes (0048,0303), copied from the tags (unset when
    * absent). {@link assertSingleSlidePlane} checks them against the tile grid.
@@ -378,20 +397,6 @@ export interface NVSlideViewport {
   scale: number
 }
 
-export interface NVSlideSpatialTransform {
-  /**
-   * Column-major 4x4 transform from slide pixel coordinates into the base
-   * image/world space. The initial renderer uses standalone slide viewports;
-   * this is the registration hook for mapped slides.
-   */
-  pixelToWorld?: readonly number[]
-  /**
-   * Optional inverse of pixelToWorld. Callers can provide it to avoid repeated
-   * inversion when registering a slide against a base volume.
-   */
-  worldToPixel?: readonly number[]
-}
-
 export interface NVSlideOptions {
   id?: string
   name?: string
@@ -411,7 +416,6 @@ export interface NVSlideOptions {
   backgroundColor?: NVSlideColor
   placeholderColor?: NVSlideColor
   gridColor?: NVSlideColor
-  spatialTransform?: NVSlideSpatialTransform
   /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
    * adapters supply their own. See {@link SlideTileSource}. */
   source?: SlideTileSource
@@ -664,7 +668,6 @@ export class NVSlide extends EventTarget {
   readonly stats: NVSlideStats
   viewport: NVSlideViewport
   maxScale: number
-  spatialTransform: NVSlideSpatialTransform | null
   private _opacity!: number
   private _visible!: boolean
   private _levelChoice!: NVSlideLevelChoice
@@ -792,7 +795,6 @@ export class NVSlide extends EventTarget {
       manifest.backgroundColor ?? [0.027, 0.063, 0.051, 1]
     this._placeholderColor = options.placeholderColor ?? [0.067, 0.098, 0.09, 1]
     this._gridColor = options.gridColor ?? [0.455, 0.831, 0.812, 0.24]
-    this.spatialTransform = options.spatialTransform ?? null
     this.stats = freshStats()
     this._cache = new NVSlideTileCache(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
@@ -1378,11 +1380,6 @@ export class NVSlide extends EventTarget {
 
   setLevelChoice(levelChoice: NVSlideLevelChoice): void {
     this.levelChoice = levelChoice
-  }
-
-  setSpatialTransform(transform: NVSlideSpatialTransform | null): void {
-    this.spatialTransform = transform
-    this._emitChange()
   }
 
   setTileGridVisible(visible: boolean): void {
@@ -2337,6 +2334,11 @@ export class NVSlide extends EventTarget {
       let samples: NVSlideTileSamples | undefined
       let held: number[] | undefined
       if (this._source.fetchTileSamples) {
+        // A reoriented tile comes as stored, like a decoder's (decodeTileBitmap).
+        const o = level.tileOrientation
+        const [width, height] = o?.transpose
+          ? [tile.height, tile.width]
+          : [tile.width, tile.height]
         for (;;) {
           const channels = this._visibleChannels()
           held = channels
@@ -2345,8 +2347,8 @@ export class NVSlide extends EventTarget {
             ? await this._source.fetchTileSamples(level, tile, channels, signal)
             : {
                 samples: new Uint8Array(0),
-                width: tile.width,
-                height: tile.height,
+                width,
+                height,
                 bitsStored: 8,
                 planes: 0,
               }
@@ -2355,11 +2357,12 @@ export class NVSlide extends EventTarget {
             throw new Error(
               `Expected ${channels.length} sample planes, received ${samples.planes ?? 1}`,
             )
-          if (samples.width > tile.width || samples.height > tile.height)
-            samples = cropSamples(samples, tile.width, tile.height)
+          if (samples.width > width || samples.height > height)
+            samples = cropSamples(samples, width, height)
           // A channel shown while this loaded: load again, never cache a tile without it.
           if (this._visibleChannels().every((c) => channels.includes(c))) break
         }
+        if (o) samples = orientSamples(samples, o)
       } else {
         const tileBytes = await this._source.fetchTileBytes(
           level,

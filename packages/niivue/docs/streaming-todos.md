@@ -25,7 +25,7 @@ compensation work"; decode and budget plans wait behind them.
       hashing the region rather than picking the idlest worker, because each
       worker holds its own byte LRU and a revisited brick must return to the
       worker that already has its bytes. Pool size is half the reported cores,
-      clamped to `[1, 4]`. `createSourceChunkLoader` is untouched, so the
+      clamped to `[1, 4]`. `createSourceRegionReader` is untouched, so the
       manager still sees one `VolumeChunkSource` contract with the same
       concurrency, retry and dedup wrapper.
 

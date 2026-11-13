@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { ByteLru } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
-import { ByteLruCache, omeZarrChunkedSource } from './omeZarrChunkedSource'
+import { omeZarrChunkedSource } from './omeZarrChunkedSource'
 import { openOmeZarr } from './omeZarrLoader'
 
 function jsonBytes(value: unknown): Uint8Array {
@@ -298,103 +299,7 @@ describe('omeZarrChunkedSource', () => {
   })
 })
 
-describe('ByteLruCache', () => {
-  test('evicts least-recently-used entries past the byte budget', () => {
-    const cache = new ByteLruCache(10)
-    cache.set('a', new Uint8Array(4))
-    cache.set('b', new Uint8Array(4))
-    cache.get('a') // refresh: b is now the oldest
-    cache.set('c', new Uint8Array(4))
-    expect(cache.has('a')).toBe(true)
-    expect(cache.has('b')).toBe(false)
-    expect(cache.has('c')).toBe(true)
-    expect(cache.totalBytes).toBe(8)
-  })
-
-  test('never admits a value larger than the budget', () => {
-    const cache = new ByteLruCache(10)
-    cache.set('big', new Uint8Array(11))
-    expect(cache.has('big')).toBe(false)
-    expect(cache.totalBytes).toBe(0)
-
-    // Resident entries are not evicted to make room that will not suffice.
-    cache.set('a', new Uint8Array(4))
-    cache.set('b', new Uint8Array(4))
-    cache.set('huge', new Uint8Array(100))
-    expect(cache.has('a')).toBe(true)
-    expect(cache.has('b')).toBe(true)
-    expect(cache.has('huge')).toBe(false)
-    expect(cache.totalBytes).toBe(8)
-    // Replacing an entry with an oversized value drops the stale bytes too.
-    cache.set('a', new Uint8Array(64))
-    expect(cache.has('a')).toBe(false)
-    expect(cache.totalBytes).toBe(4)
-  })
-
-  test('a value exactly equal to the budget is admitted', () => {
-    const cache = new ByteLruCache(10)
-    cache.set('exact', new Uint8Array(10))
-    expect(cache.has('exact')).toBe(true)
-    expect(cache.totalBytes).toBe(10)
-    // A second entry evicts the first rather than exceeding the bound.
-    cache.set('next', new Uint8Array(10))
-    expect(cache.has('exact')).toBe(false)
-    expect(cache.has('next')).toBe(true)
-    expect(cache.totalBytes).toBe(10)
-  })
-
-  test('a zero budget caches only zero-byte absences', () => {
-    const cache = new ByteLruCache(0)
-    cache.set('data', new Uint8Array(1))
-    expect(cache.has('data')).toBe(false)
-    cache.set('absent', undefined)
-    expect(cache.has('absent')).toBe(true)
-    expect(cache.get('absent')).toBeUndefined()
-    expect(cache.totalBytes).toBe(0)
-  })
-
-  test('rejects negative and NaN budgets at construction', () => {
-    expect(() => new ByteLruCache(-1)).toThrow('non-negative')
-    expect(() => new ByteLruCache(Number.NaN)).toThrow('non-negative')
-    expect(() => new ByteLruCache(Number.POSITIVE_INFINITY)).not.toThrow()
-  })
-
-  test('stats report admissions, rejections and evicted bytes', () => {
-    const cache = new ByteLruCache(10)
-    cache.set('a', new Uint8Array(6))
-    cache.set('absent', undefined)
-    cache.set('huge', new Uint8Array(11))
-    cache.set('b', new Uint8Array(6)) // evicts 'a'
-    // `withByteCaching` calls has() then get(): only has() counts a lookup.
-    expect(cache.has('b')).toBe(true)
-    cache.get('b')
-    cache.has('a')
-    const stats = cache.stats
-    expect([stats.hits, stats.misses]).toEqual([1, 1])
-    expect(stats.admitted).toBe(3)
-    expect(stats.rejected).toBe(1)
-    expect(stats.evicted).toBe(1)
-    expect(stats.evictedBytes).toBe(6)
-    expect(stats.bytes).toBe(cache.totalBytes)
-    expect(stats.entries).toBe(2)
-    expect(stats.maxBytes).toBe(10)
-  })
-
-  test('resetStats zeroes the counters and keeps the entries', () => {
-    const cache = new ByteLruCache(64)
-    cache.set('k', new Uint8Array(4))
-    cache.has('k')
-    cache.has('missing')
-    cache.resetStats()
-    const stats = cache.stats
-    expect(stats.hits).toBe(0)
-    expect(stats.misses).toBe(0)
-    expect(stats.admitted).toBe(0)
-    expect(stats.entries).toBe(1)
-    expect(stats.bytes).toBe(4)
-    expect(cache.get('k')).toBeDefined()
-  })
-
+describe('zarr byte cache', () => {
   test('with zarrita byte caching, an absent chunk is fetched once', async () => {
     const backing = makeChunkedZyxStore()
     backing.delete('/0/1.1.1') // the chunk holding the far corner
@@ -406,7 +311,7 @@ describe('ByteLruCache', () => {
       },
     }
     const store = zarr.withByteCaching(counting, {
-      cache: new ByteLruCache(1024 * 1024),
+      cache: new ByteLru<string, Uint8Array | undefined>(1024 * 1024),
     })
     const source = omeZarrChunkedSource(await openOmeZarr(store))
     const read = () =>

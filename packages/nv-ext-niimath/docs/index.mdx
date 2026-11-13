@@ -1,0 +1,204 @@
+---
+title: nv-ext-niimath
+description: "Smooth, threshold, binarize and otherwise process a NIfTI image in the browser with niimath, compiled to WebAssembly."
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ext-niimath` runs [niimath](https://github.com/rordenlab/niimath)
+on a NIfTI image in the browser. niimath is a clone of FSL's `fslmaths`:
+it smooths, thresholds, binarizes, does arithmetic on voxel values and much
+more. Here it is compiled to WebAssembly and runs in a Web Worker, so the page
+stays responsive and the image never leaves the user's computer.
+
+Use it when you want image processing in a web page without a server. It does
+not need NiiVue, but its result loads straight into a NiiVue viewer.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ext-niimath@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ext-niimath@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ext-niimath@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ext-niimath@next
+```
+
+  </TabItem>
+</Tabs>
+
+It runs in the browser only, not in Node.js.
+
+If you build with Vite, keep both packages out of its dependency
+pre-bundling, which breaks the niimath worker:
+
+```js
+// vite.config.js
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  optimizeDeps: {
+    exclude: ['@niivue/niimath', '@niivue/nv-ext-niimath'],
+  },
+})
+```
+
+## Your first filter
+
+```ts
+import { Niimath, runNiimathPipeline } from '@niivue/nv-ext-niimath'
+
+const niimath = new Niimath()
+await niimath.init()
+
+const result = await runNiimathPipeline(niimath, file, [
+  { method: 's', args: [3] },
+  { method: 'thr', args: [0.5] },
+  { method: 'bin', args: [] },
+])
+```
+
+`file` is a browser `File`, for example one the user picked with an
+`<input type="file">`. The steps run in order: smooth with a Gaussian of
+sigma 3 mm, set everything below 0.5 to zero, then set everything that is
+left to 1.
+`result` is the processed image, a gzipped NIfTI `Blob`.
+
+`init()` starts the worker and loads the WebAssembly, which takes a moment.
+Do it once when the page loads, and reuse the same `Niimath` for every run.
+
+## Showing the result in NiiVue
+
+NiiVue loads a `File`, so wrap the result in one with a `.nii.gz` name:
+
+```ts
+await nv.loadVolumes([{ url: new File([result], 'processed.nii.gz') }])
+```
+
+[Loading images](/guide/loading/) covers the rest of what `loadVolumes` can
+do.
+
+## Writing the steps
+
+Each step is one niimath operation. `method` is the operation's name without
+its dash, and `args` are its values in order. So this command line:
+
+```bash
+niimath brain.nii.gz -s 3 -thr 0.5 -bin out.nii.gz
+```
+
+becomes the three steps in the example above. An operation that takes no
+values, like `bin`, still needs `args: []`. The
+[niimath README](https://github.com/rordenlab/niimath) explains every
+operation.
+
+## Letting users build the pipeline
+
+The steps are plain data, so they can come straight from a form. Values typed
+into an input arrive as strings, and you can pass them as they are:
+
+```ts
+const steps = [{ method: 'thr', args: [thresholdInput.value] }] // '0.5' works
+```
+
+To fill a menu of operations, use the list that comes with niimath. Each entry
+has the names of its values and a short help text, and the list is ready as
+soon as you create the `Niimath`:
+
+```ts
+for (const [name, operation] of Object.entries(niimath.operators)) {
+  addMenuItem(`-${name}`, operation.args ?? [], operation.help)
+}
+```
+
+Three entries, `kernel`, `mesh` and `bitmap`, take a different form and do
+not work as steps, so leave them out. The [demo](#trying-the-demo) offers a
+short hand-picked list instead of all of them.
+
+## One run at a time
+
+A `Niimath` handles one run at a time. If you start a second run before the
+first one finishes, the two get tangled: one can receive the other's result,
+and the other may never finish. Wait for each run to finish, for example by
+turning off your Run button while one is going:
+
+```ts
+runButton.disabled = true
+try {
+  result = await runNiimathPipeline(niimath, file, steps)
+} finally {
+  runButton.disabled = false
+}
+```
+
+To run several jobs at the same time, create a `Niimath` for each one.
+
+## Keeping the input's data type
+
+Results are saved as `float` by default. To keep the input's data type
+instead, set it before you run:
+
+```ts
+niimath.setOutputDataType('input')
+```
+
+The choices are `char`, `short`, `int`, `float`, `double` and `input`.
+
+## Writing fixed steps as a chain
+
+If your steps never change, you can chain them on niimath directly instead of
+writing a list:
+
+```ts
+const result = await niimath.image(file).s(3).thr(0.5).bin().run('out.nii.gz')
+```
+
+Give `run()` a name that ends in `.nii.gz`. niimath in the browser always
+writes compressed output, so the default name, `output.nii`, makes the run
+fail.
+
+## When something does not work
+
+- **`Unknown niimath method: -xyz`**: the `method` is not a niimath
+  operation. Check the spelling, and leave out the dash.
+- **`Expected 1 arguments for thr, but got 0`**: a step has fewer values than
+  its operation needs.
+- **A `TypeError` about `null` when the run starts**: `niimath.init()` was
+  never called. Call it, and wait for it, before the first run.
+- **`niimath processing failed with exit code N`**: niimath started but could
+  not finish the job. niimath prints its own explanation in the browser's
+  developer console.
+- **`outName must end with .nii.gz`**: the optional fourth argument of
+  `runNiimathPipeline` names the output file. Leave it out unless you need
+  it.
+- **An operation that reads a second image, such as `mas`, fails**: niimath
+  only sees the one file you pass in, so it cannot find the other image.
+- **A run gets the wrong result, or never finishes**: two runs overlapped.
+  See [One run at a time](#one-run-at-a-time).
+
+## Trying the demo
+
+The [live demo](https://niivue.github.io/mono/demo-ext-niimath/) lets you
+pick a sample image, stack and reorder filters, and see the matching niimath
+command before you run it. Its source is in
+[apps/demo-ext-niimath](https://github.com/niivue/mono/tree/main/apps/demo-ext-niimath).

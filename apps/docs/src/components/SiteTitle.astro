@@ -1,0 +1,54 @@
+---
+// Starlight's site title, followed by the top-level sections. On narrow
+// screens, pages with a sidebar show them in its menu; pages without one
+// (home, gallery) have no menu, so the links stay in the header.
+import Default from '@astrojs/starlight/components/SiteTitle.astro'
+import { withBase } from '../site'
+
+const links = [
+  { label: 'Docs', href: withBase('guide/') },
+  { label: 'Gallery', href: withBase('gallery/') },
+]
+const path = Astro.url.pathname
+const current = (href: string) =>
+  path === href ? 'page' : path.startsWith(href) ? 'true' : undefined
+const { hasSidebar } = Astro.locals.starlightRoute
+---
+
+<Default><slot /></Default>
+<nav class={hasSidebar ? 'sl-hidden md:sl-flex' : 'sl-flex'} aria-label="Sections">
+  {
+    links.map(({ label, href }) => (
+      <a href={href} aria-current={current(href)}>
+        {label}
+      </a>
+    ))
+  }
+</nav>
+
+<style>
+  nav {
+    gap: 1rem;
+    margin-inline-start: 0.75rem;
+    align-items: center;
+  }
+
+  a {
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  a:hover,
+  a[aria-current] {
+    color: var(--sl-color-white);
+  }
+
+  @media (min-width: 50rem) {
+    nav {
+      gap: 1.25rem;
+      margin-inline-start: 1.5rem;
+    }
+  }
+</style>

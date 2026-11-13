@@ -1,29 +1,24 @@
 {
   "name": "@niivue/docs-site",
   "private": true,
+  "type": "module",
   "scripts": {
-    "start": "docusaurus start",
-    "build": "docusaurus build --out-dir dist",
-    "serve": "docusaurus serve --dir dist",
-    "clear": "docusaurus clear",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
     "screenshots": "bun scripts/screenshots.ts"
   },
   "dependencies": {
-    "@docusaurus/core": "3.10.2",
-    "@docusaurus/preset-classic": "3.10.2",
-    "@mdx-js/react": "^3.1.0",
+    "@astrojs/markdown-satteri": "0.4.9",
+    "@astrojs/starlight": "0.42.11",
     "@niivue/niivue": "workspace:*",
-    "prism-react-renderer": "^2.4.1",
-    "react": "^19",
-    "react-dom": "^19"
+    "astro": "7.4.11",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.10.2",
-    "@docusaurus/plugin-content-docs": "3.10.2",
-    "@docusaurus/tsconfig": "3.10.2",
-    "@docusaurus/types": "3.10.2",
+    "@astrojs/check": "0.9.12",
     "playwright": "1.64.1",
-    "raw-loader": "^4.0.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8"
   }
 }

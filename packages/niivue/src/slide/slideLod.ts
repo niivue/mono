@@ -1,3 +1,4 @@
+import type { ByteLru } from '@/byteLru'
 import type {
   NVSlide,
   NVSlideLevelManifest,
@@ -10,7 +11,6 @@ import type {
 import { isMonochrome } from './slideChannels'
 import type { SlideRendererBudget } from './slideFuse'
 import { gutterTextureBytes } from './tileGutter'
-import type { NVSlideTileCache } from './tileLru'
 
 // Safety valve for pathological manifests (e.g. a missing tileSize defaulting
 // to 1px tiles): never enumerate more visible tiles than this per frame. A
@@ -166,7 +166,7 @@ export function fallbackTiles(
   slide: NVSlide,
   target: NVSlideLevelManifest,
   tiles: readonly NVSlideVisibleTile[],
-  cache: Pick<NVSlideTileCache, 'has'>,
+  cache: Pick<ByteLru<string, unknown>, 'has'>,
   walk: (level: NVSlideLevelManifest) => NVSlideVisibleTile[] | null,
 ): NVSlideVisibleTile[] {
   let missing = false

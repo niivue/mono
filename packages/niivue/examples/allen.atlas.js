@@ -12,7 +12,7 @@ const webgpuCheck = document.getElementById('webgpuCheck')
 
 // Allen "volume-viewer" datasets ship one JSON sidecar plus N PNG atlases, each
 // packing three independent channels into its R/G/B planes. See
-// docs/allen-atlas-format.md.
+// notes/allen-atlas-format.md.
 //
 // The default URL is a copy of the Integrated Mitotic Stem Cell dataset in
 // niivue/niivue-demo-images-lfs (Allen/IMSC, under the Allen Institute's

@@ -1,0 +1,289 @@
+---
+import { getCollection } from 'astro:content'
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { withBase } from '../../site'
+
+const cards = (await getCollection('gallery'))
+  .map((e) => e.data)
+  .sort((a, b) => a.order - b.order)
+const sections = Map.groupBy(cards, (c) => c.section)
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Gallery',
+    description: 'NiiVue examples with their code',
+    template: 'splash',
+  }}
+>
+  <nv-gallery class="not-content">
+    <div class="toolbar">
+      <div class="filters">
+      <fieldset class="chips">
+        <legend class="sr-only">Section</legend>
+        {
+          ['All', ...sections.keys()].map((name, i) => (
+            <button type="button" data-section={i ? name : ''} aria-pressed={i === 0 ? 'true' : 'false'}>
+              {name}
+            </button>
+          ))
+        }
+      </fieldset>
+      <div class="chips view" role="group" aria-label="View">
+        <button type="button" data-view="grid" aria-pressed="true">Grid</button>
+        <button type="button" data-view="list" aria-pressed="false">List</button>
+      </div>
+      </div>
+      <p class="count" aria-live="polite"></p>
+    </div>
+    {
+      [...sections].map(([section, list]) => (
+        <section data-section={section}>
+          <h2>
+            {section} <span class="group-count">{list.length}</span>
+          </h2>
+          <div class="grid">
+            {list.map((card) => (
+              <a
+                class="card"
+                href={withBase(`gallery/${card.slug}/`)}
+                data-text={`${card.title} ${card.summary} ${card.section}`.toLowerCase()}
+              >
+                <span class="thumb">
+                  {card.image && <img src={withBase(card.image)} alt="" loading="lazy" />}
+                </span>
+                <span class="body">
+                  <strong>{card.title}</strong>
+                  {card.summary && <span class="summary">{card.summary}</span>}
+                </span>
+              </a>
+            ))}
+          </div>
+        </section>
+      ))
+    }
+    <p class="empty" hidden>No examples match.</p>
+  </nv-gallery>
+</StarlightPage>
+
+<script>
+  import '../../client/nv-gallery'
+</script>
+
+<style is:global>
+  /* Starlight caps splash content at 1080px, four cards across; let the
+     gallery (title included, so it stays aligned) use a wide screen. This
+     sheet loads only on this page. */
+  .sl-container {
+    max-width: min(160rem, 100%);
+  }
+</style>
+
+<style>
+  .toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-block: 0 2rem;
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .chips button {
+    font: inherit;
+    font-size: var(--sl-text-sm);
+    padding: 0.15rem 0;
+    color: var(--sl-color-gray-3);
+    background: none;
+    border: 0;
+    border-bottom: 1px solid transparent;
+    cursor: pointer;
+  }
+
+  .chips button:hover {
+    color: var(--sl-color-white);
+  }
+
+  .chips button[aria-pressed='true'] {
+    color: var(--sl-color-white);
+    border-bottom-color: var(--sl-color-text-accent);
+  }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem 2rem;
+  }
+
+  /* Right-aligned, even when it wraps, so it does not read as a section. */
+  .view {
+    margin-left: auto;
+  }
+
+  .count {
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+  }
+
+  .count:empty {
+    display: none;
+  }
+
+  section {
+    margin-bottom: 3rem;
+  }
+
+  h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    font-size: var(--sl-text-xl);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  .group-count {
+    font-size: var(--sl-text-sm);
+    font-weight: 400;
+    color: var(--sl-color-gray-3);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: 1.5rem 1.25rem;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+
+  .card[hidden] {
+    display: none;
+  }
+
+  .thumb {
+    display: block;
+    aspect-ratio: 4 / 3;
+    margin-bottom: 0.4rem;
+    overflow: hidden;
+    background: var(--nv-viewer);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: var(--nv-radius);
+  }
+
+  .thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .card:hover .thumb {
+    border-color: var(--sl-color-gray-4);
+  }
+
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .card strong {
+    font-weight: 500;
+    color: var(--sl-color-white);
+  }
+
+  .summary {
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+    color: var(--sl-color-gray-3);
+  }
+
+  /* List view: one row per example, no thumbnails (lazy images then never load). */
+  nv-gallery[data-view='list'] section {
+    margin-bottom: 2rem;
+  }
+
+  nv-gallery[data-view='list'] .grid {
+    display: block;
+  }
+
+  nv-gallery[data-view='list'] .thumb {
+    display: none;
+  }
+
+  nv-gallery[data-view='list'] .card {
+    padding-block: 0.45rem;
+    border-bottom: 1px solid var(--sl-color-hairline);
+  }
+
+  nv-gallery[data-view='list'] .card:hover strong {
+    color: var(--sl-color-text-accent);
+  }
+
+  @media (min-width: 50rem) {
+    nv-gallery[data-view='list'] .body {
+      flex-direction: row;
+      align-items: baseline;
+      gap: 1.5rem;
+    }
+
+    nv-gallery[data-view='list'] .card strong {
+      flex: 0 0 18rem;
+    }
+  }
+
+  .empty {
+    padding: 3rem 0;
+    text-align: center;
+    color: var(--sl-color-gray-3);
+  }
+
+  /* Phones, after the base rules it overrides: two small cards per row
+     (one filled the screen with each) and the section filters scroll
+     sideways in one row instead of wrapping onto five. */
+  @media (max-width: 50em) {
+    .toolbar {
+      margin-bottom: 1.5rem;
+    }
+
+    fieldset.chips {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    fieldset.chips button {
+      flex: none;
+    }
+
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem 0.75rem;
+    }
+
+    .card strong {
+      font-size: var(--sl-text-sm);
+    }
+
+    .summary {
+      font-size: var(--sl-text-xs);
+    }
+  }
+</style>

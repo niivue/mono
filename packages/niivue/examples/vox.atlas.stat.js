@@ -78,5 +78,6 @@ await nv1.loadVolumes(volumeList)
 await nv1.addColormapFromUrl('/volumes/aal.json')
 await nv1.setVolume(1, { colormap: 'aal' })
 darkCheck.onclick()
+colorbarCheck.onclick() // the box starts checked; show the overlay's colorbar
 //nearestCheck.onclick()
 opacitySlider.oninput()

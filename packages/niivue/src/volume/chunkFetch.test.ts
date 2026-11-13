@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { ByteLru } from '@/byteLru'
 import type { NVImage, VolumeChunkSourceRequest } from '@/NVTypes'
 import {
   createChunkFetcher,
@@ -6,7 +7,6 @@ import {
   PREFETCH_SLOTS_RESERVED,
 } from './chunkFetch'
 import { chunkVolume } from './chunking'
-import { DecodedChunkCache } from './decodedChunkCache'
 
 // 8x8x8 uint8 volume in RAS order, tiled into 64 2x2x2 chunks without halo.
 const DIM = 8
@@ -81,16 +81,18 @@ describe('createChunkFetcher', () => {
 
   test('a prefetched read is reused, then served from the decoded tier', async () => {
     const src = pendingSource()
-    const decoded = new DecodedChunkCache(1 << 20)
+    const decoded = new ByteLru<number, Uint8Array>(1 << 20)
     const image = makeImage({ img: null, chunkSource: src.chunkSource })
     const fetcher = createChunkFetcher(image, plan, 1, decoded)
     fetcher.prefetchChunk(5)
     const taken = fetcher.takeChunkBytes(5)
     src.resolve(5)
     expect((await taken)[0]).toBe(5)
-    expect(decoded.has(5)).toBe(true)
+    // The first read misses; a prefetch of a held chunk is not a read.
+    fetcher.prefetchChunk(5)
     expect((await fetcher.takeChunkBytes(5))[0]).toBe(5)
     expect(src.requests.length).toBe(1)
+    expect([decoded.stats.hits, decoded.stats.misses]).toEqual([1, 1])
   })
 
   test('a failed read is retried, not cached', async () => {

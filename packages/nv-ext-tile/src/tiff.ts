@@ -53,6 +53,7 @@ import {
   refuseReply,
   slideFetch,
 } from './rangeFetch'
+import { tiffPixelSpacingMM } from './tiffSpacing'
 import { ARGOS_TAG, argosStack } from './vendor/argos'
 import { leicaComposition, leicaRegions } from './vendor/leica'
 import {
@@ -514,6 +515,7 @@ interface TiffOpened {
   /** Vendor tile placement (`TiffSlideOptions.placement`). */
   placement?: VendorPlacement
   placementReport?: TiffPlacementReport
+  pixelSpacingMM?: [number, number]
 }
 
 /** What placement resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
@@ -1247,6 +1249,74 @@ async function loadCapped(
   }
 }
 
+// geotiff-rs drops a deferred tag whose load failed (hasTag turns false), so
+// the first XMP read, failure included, is kept for later readers. null: absent.
+const xmpReads = new WeakMap<object, Promise<string> | null>()
+function readXmp(
+  tiff: GeoTIFF,
+  dir: GeoTIFFImage['fileDirectory'],
+): Promise<string> | null {
+  let read = xmpReads.get(dir)
+  if (read === undefined) {
+    read = dir.hasTag(700)
+      ? loadCapped(tiff, dir, 700, MAX_XMP).then(tagText)
+      : null
+    xmpReads.set(dir, read)
+  }
+  return read
+}
+
+// Level 0's physical pixel size (tiffSpacing.ts). Any unreadable tag it reads
+// is no spacing, never a failed open; an absent one is just not a source.
+async function pixelSpacingOf(
+  tiff: GeoTIFF,
+  opened: TiffOpened,
+): Promise<[number, number] | undefined> {
+  const ifd0 = (await tiff.getImage(0)).fileDirectory
+  const base = opened.pyramids[0]?.[0]?.img.fileDirectory
+  // null: present but unreadable.
+  const optional = async (tag: number) =>
+    base?.hasTag(tag) ? base.loadValue(tag).catch(() => null) : undefined
+  const rational = async (tag: number) => {
+    const v = await optional(tag)
+    return v ? Number(v[0]) / Number(v[1]) : v
+  }
+  const description = ifd0.hasTag(270)
+    ? await loadCapped(tiff, ifd0, 270, MAX_XMP).then(tagText, () => null)
+    : ''
+  if (description === null) return undefined
+  // The Leica region whose image is level 0; a composed level has none.
+  const level0 = opened.pyramids[0]?.[0]
+  const regions = level0?.regions ? null : leicaRegions(description)
+  const chain = regions
+    ? (await chainImages(tiff, await tiff.getImage(0))).map(
+        (img) => img.fileDirectory,
+      )
+    : []
+  const at = (regions ?? []).findIndex(
+    (r) => chain[r.ifds[0] ?? -1] === level0?.img.fileDirectory,
+  )
+  const opened0 = at < 0 ? {} : { leicaRegion: at }
+  // Each source is read only when the ones before it do not settle it; a
+  // failed read is null, which tiffSpacing.ts treats as no spacing from it.
+  const settled = tiffPixelSpacingMM({ description, ...opened0 })
+  if (settled) return settled
+  const withXmp = {
+    description,
+    ...opened0,
+    xmp: await (readXmp(tiff, ifd0)?.catch(() => null) ?? ''),
+  }
+  return (
+    tiffPixelSpacingMM(withXmp) ??
+    tiffPixelSpacingMM({
+      ...withXmp,
+      xResolution: await rational(282),
+      yResolution: await rational(283),
+      resolutionUnit: await optional(296),
+    })
+  )
+}
+
 async function placedPyramid(
   tiff: GeoTIFF,
   first: GeoTIFFImage,
@@ -1322,10 +1392,11 @@ async function placedPyramid(
   }
   const levels = pyramidLevels(images)
   const dir = levels[0]?.img.fileDirectory
-  if (!dir?.hasTag(700)) return null
+  const read = dir && readXmp(tiff, dir)
+  if (!read) return null
   let xmp: string
   try {
-    xmp = tagText(await loadCapped(tiff, dir, 700, MAX_XMP))
+    xmp = await read
   } catch (err) {
     const warning = `XMP not read: ${err instanceof Error ? err.message : err}`
     console.warn(warning)
@@ -1427,6 +1498,8 @@ export class TiffSlideSource implements SlideTileSource {
       plane,
       this.credit,
     )
+    if (this.opened.pixelSpacingMM)
+      manifest.pixelSpacingMM = this.opened.pixelSpacingMM
     const placed = this.opened.placement
     if (!placed) return manifest
     // F7: levels keep their storage grid; the manifest takes the placed extent.
@@ -1463,6 +1536,7 @@ export class TiffSlideSource implements SlideTileSource {
         options.signal,
       ).catch(fail)
       opened = await openTiff(tiff, options, options.signal).catch(fail)
+      opened.pixelSpacingMM = await pixelSpacingOf(tiff, opened).catch(fail)
     } finally {
       // Until the source exists; then its lifetime (below).
       client.openSignal = null
@@ -1486,6 +1560,7 @@ export class TiffSlideSource implements SlideTileSource {
     options: TiffSlideOptions & { signal?: AbortSignal } = {},
   ): Promise<TiffSlideSource> {
     const opened = await openTiff(tiff, options, options.signal)
+    opened.pixelSpacingMM = await pixelSpacingOf(tiff, opened)
     options.signal?.throwIfAborted()
     return new TiffSlideSource(
       tiff,

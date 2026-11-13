@@ -122,7 +122,7 @@ describe('indexDicomWsiMetadata', () => {
     })
   })
 
-  test('keeps a [1,1] PixelSpacing when no ImagedVolumeWidth/Height replaces it', async () => {
+  test('a [1,1] PixelSpacing placeholder with no ImagedVolumeWidth/Height is no spacing', async () => {
     const meta = await json('bot')
     type Seq = { Value: Json[] }
     const shared = (meta['52009229'] as Seq).Value[0] as Json
@@ -131,7 +131,7 @@ describe('indexDicomWsiMetadata', () => {
     delete meta['00480001']
     delete meta['00480002']
     const [slide] = indexDicomWsiMetadata([meta]).slides
-    expect(slide?.pixelSpacingMM).toEqual([1, 1])
+    expect(slide?.pixelSpacingMM).toBeUndefined()
   })
 
   test('takes AvailableTransferSyntaxUID, leaves an unstated one empty, skips native', async () => {

@@ -13,6 +13,7 @@ import {
   type SlideSourceHost,
 } from '@niivue/niivue'
 import { registerDcm2niixTiffDecoders, TiffSlideSource } from './tiff'
+import { type TiffSpacingTags, tiffPixelSpacingMM } from './tiffSpacing'
 
 // 64x64 baseline JPEG (cjpeg -sample 1x1): left half (200,30,30), right half (30,30,200).
 const JPEG_TILE = Uint8Array.from(
@@ -1493,6 +1494,244 @@ describe('single-channel grey TIFF', () => {
   })
 })
 
+test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholders give none', async () => {
+  // Golden: scratch/ruler-calibration-2026-11-12.md "Source spacing", in um [x, y].
+  const philips = (order: string) =>
+    `<DataObject ObjectType="DPUfsImport"><Attribute ${order}>&quot;0.000226891&quot; &quot;0.000226907&quot;</Attribute></DataObject>`
+  const leica =
+    '<scn><collection sizeX="30000000" sizeY="80000000">' +
+    '<image><pixels sizeX="1616" sizeY="4668"/><view sizeX="30000000" sizeY="80000000" offsetX="0" offsetY="0"/></image>' +
+    '<image><pixels sizeX="36832" sizeY="38000"/><view sizeX="18416000" sizeY="19000000" offsetX="9" offsetY="9"/></image>' +
+    '</collection></scn>'
+  const res = (x: number, unit?: number, y = x) => ({
+    description: '',
+    xResolution: x,
+    yResolution: y,
+    resolutionUnit: unit,
+  })
+  const rows: [string, TiffSpacingTags, number[] | undefined][] = [
+    [
+      'Aperio CMU-1',
+      {
+        description:
+          'Aperio Image Library v10.0.51\r\n46920x33014 [0,100 46000x32914] (256x256) JPEG/RGB Q=30|AppMag = 20|MPP = 0.4990|Left = 25.6',
+      },
+      [0.499, 0.499],
+    ],
+    [
+      'Aperio without MPP ignores tags',
+      { ...res(25000, 3), description: 'Aperio Image Library v10' },
+      undefined,
+    ],
+    [
+      'OME nm, default unit',
+      {
+        description: omeXml(
+          'PhysicalSizeX="400" PhysicalSizeXUnit="nm" PhysicalSizeY="0.5"',
+        ),
+      },
+      [0.4, 0.5],
+    ],
+    [
+      'OME units as XML entities',
+      {
+        description: omeXml(
+          'PhysicalSizeX="0.25" PhysicalSizeXUnit="&#xB5;m" PhysicalSizeY="0.5" PhysicalSizeYUnit="&#181;m"',
+        ),
+      },
+      [0.25, 0.5],
+    ],
+    [
+      'OME without PhysicalSizeY: square pixels',
+      {
+        description: omeXml('PhysicalSizeX="0.25" PhysicalSizeXUnit="µm"'),
+      },
+      [0.25, 0.25],
+    ],
+    [
+      'OME with a malformed PhysicalSizeY',
+      {
+        description: omeXml('PhysicalSizeX="0.25" PhysicalSizeY="abc"'),
+      },
+      undefined,
+    ],
+    [
+      'Philips row\\col',
+      { description: philips('Name="DICOM_PIXEL_SPACING" Group="0x0028"') },
+      [0.226907, 0.226891],
+    ],
+    [
+      'Philips-4 attribute order',
+      { description: philips('Element="0x0030" Name="DICOM_PIXEL_SPACING"') },
+      [0.226907, 0.226891],
+    ],
+    [
+      'Philips representation 0 though listed after 1',
+      {
+        description: `<DataObject ObjectType="DPUfsImport">${[1, 0]
+          .map(
+            (n) =>
+              `<DataObject ObjectType="PixelDataRepresentation"><Attribute Name="DICOM_PIXEL_SPACING">&quot;${n ? '0.001' : '0.00025'}&quot; &quot;${n ? '0.001' : '0.0005'}&quot;</Attribute><Attribute Name="PIIM_PIXEL_DATA_REPRESENTATION_NUMBER">${n}</Attribute></DataObject>`,
+          )
+          .join('')}</DataObject>`,
+      },
+      [0.5, 0.25],
+    ],
+    ['Leica main image, not the macro', { description: leica }, [0.5, 0.5]],
+    [
+      'Leica regions that disagree',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="1000" sizeY="1000"/><view sizeX="1000000" sizeY="1000000" offsetX="9" offsetY="9"/></image></collection>',
+        ),
+      },
+      undefined,
+    ],
+    [
+      'Leica fluorescence region at another resolution',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="1000" sizeY="1000"/><view sizeX="1000000" sizeY="1000000" offsetX="9" offsetY="9"/><illuminationSource>fluorescence</illuminationSource></image></collection>',
+        ),
+      },
+      [0.5, 0.5],
+    ],
+    [
+      'Leica fluorescence region opened as the widest image',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="40000" sizeY="40000"/><view sizeX="40000000" sizeY="40000000" offsetX="9" offsetY="9"/><illuminationSource>fluorescence</illuminationSource></image></collection>',
+        ),
+        leicaRegion: 1,
+      },
+      [1, 1],
+    ],
+    [
+      'Leica fluorescence-only image',
+      {
+        description:
+          '<scn><collection sizeX="2000000" sizeY="2000000"><image><pixels sizeX="1000" sizeY="1000"/><view sizeX="500000" sizeY="500000" offsetX="1" offsetY="1"/><illuminationSource>fluorescence</illuminationSource></image></collection></scn>',
+        leicaRegion: 0,
+      },
+      [0.5, 0.5],
+    ],
+    [
+      'Leica regions that disagree on Y only',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="1000" sizeY="1000"/><view sizeX="500000" sizeY="1000000" offsetX="9" offsetY="9"/></image></collection>',
+        ),
+      },
+      undefined,
+    ],
+    [
+      'Ventana iScan',
+      {
+        ...res(472.44, 3),
+        description: 'Label_Image',
+        xmp: '<iScan Magnification="40" ScanRes="0.25"/>',
+      },
+      [0.25, 0.25],
+    ],
+    [
+      'Ventana iScan, single-quoted',
+      { description: 'Label_Image', xmp: "<iScan ScanRes='0.25'/>" },
+      [0.25, 0.25],
+    ],
+    [
+      'Ventana with a bad ScanRes ignores tags',
+      {
+        ...res(25000, 3),
+        description: 'Label_Image',
+        xmp: '<iScan ScanRes="bad"/><EncodeInfo/><TileJointInfo/>',
+      },
+      undefined,
+    ],
+    [
+      'Ventana with an unreadable resolution tag',
+      { ...res(25000, 3), xResolution: null, xmp: '<iScan ScanRes="0.25"/>' },
+      [0.25, 0.25],
+    ],
+    ['unreadable XMP ignores tags', { ...res(25000, 3), xmp: null }, undefined],
+    [
+      'unreadable resolution tag',
+      { ...res(25000, 3), yResolution: null },
+      undefined,
+    ],
+    ['Huron-1 (cm)', res(25000, 3), [0.4, 0.4]],
+    ['Argos-1 (cm)', res(26109.381, 3), [0.383004]],
+    ['Generic-TIFF 10 px/cm placeholder', res(10, 3), undefined],
+    ['ResolutionUnit none', res(25000, 1), undefined],
+    ['72 dpi default', res(72), undefined],
+    ['300 dpi', res(300, 2), undefined],
+    ['no tags', { description: '' }, undefined],
+  ]
+  for (const [name, tags, um] of rows)
+    expect([
+      name,
+      tiffPixelSpacingMM(tags)?.map((v) => +(v * 1000).toPrecision(6)),
+    ]).toEqual([name, um && [um[0], um[1] ?? um[0]]])
+  // Wiring: the manifest carries it.
+  const xml = omeXml(
+    'DimensionOrder="XYCZT" SizeX="40" SizeY="32" SizeC="1" SizeZ="1" SizeT="1" Type="uint16" PhysicalSizeX="0.25" PhysicalSizeY="0.25"',
+  )
+  const server = rangeServer(writePlanes(grayPlanes([0]), xml))
+  const source = await TiffSlideSource.fromUrl('http://test/s.ome.tif', {
+    fetch: server.fetchImpl,
+  })
+  expect(source.manifest.pixelSpacingMM).toEqual([0.00025, 0.00025])
+})
+
+test('an unreadable resolution tag gives no spacing, never a failed open', async () => {
+  const lv = {
+    ...rawLevel(0, 16, 16, 16),
+    // XResolution (RATIONAL) pointing past the end of the file.
+    edit: (entries: number[][]) => {
+      entries.push([282, 5, 1, 0x7ffffff0], [283, 5, 1, 0x7ffffff0])
+    },
+  }
+  const source = await TiffSlideSource.fromGeoTIFF(
+    await fromArrayBuffer(writeTiff([lv])),
+  )
+  expect(source.manifest.width).toBe(16)
+  expect(source.manifest.pixelSpacingMM).toBeUndefined()
+})
+
+test('an unreadable source gives no spacing from it, and only from it', async () => {
+  // 25000 px/cm, which alone reads as 0.4 um.
+  const tagged = (bad?: number[], xmp?: string) => ({
+    ...rawLevel(0, 16, 16, 16),
+    longs: { 282: [25000, 1], 283: [25000, 1] },
+    ascii: xmp ? { 700: xmp } : undefined,
+    edit: (entries: number[][]) => {
+      for (const e of entries)
+        if (e[0] === 282 || e[0] === 283) e.splice(1, 2, 5, 1)
+      entries.push([296, 3, 1, 3])
+      if (!bad) return
+      // Pointing past the end of the file.
+      const i = entries.findIndex((e) => e[0] === bad[0])
+      entries.splice(i < 0 ? entries.length : i, 1, [...bad, 0x7ffffff0])
+    },
+  })
+  const spacing = async (bad?: number[], xmp?: string) =>
+    (
+      await TiffSlideSource.fromGeoTIFF(
+        await fromArrayBuffer(writeTiff([tagged(bad, xmp)])),
+      )
+    ).manifest.pixelSpacingMM
+  const iScan = '<iScan ScanRes="0.25"/>'
+  expect(await spacing()).toEqual([0.0004, 0.0004])
+  expect(await spacing(undefined, iScan)).toEqual([0.00025, 0.00025])
+  expect(await spacing([282, 5, 1], iScan)).toEqual([0.00025, 0.00025])
+  expect(await spacing([700, 1, 64])).toBeUndefined()
+  expect(await spacing([282, 5, 1])).toBeUndefined()
+  expect(await spacing([296, 3, 4])).toBeUndefined()
+})
+
 describe('OME-TIFF channel names', () => {
   test('names, colours, plane order and z step units (entities: core omeTiff.test)', async () => {
     const inner =
@@ -2269,6 +2508,51 @@ describe('vendor layouts', () => {
       [100, 60, 1],
       [34, 20, 3],
     ])
+  })
+
+  test('Leica spacing comes from the regions opened, not their sizes', async () => {
+    // um per pixel over 250 nm collection px: brightfield 0.5, fluorescence 1.
+    const image = (w: number, h: number, ifd: number, x: number, um: number) =>
+      `<image><pixels sizeX="${w}" sizeY="${h}"><dimension r="0" ifd="${ifd}" /></pixels><view sizeX="${w * um * 1000}" sizeY="${h * um * 1000}" offsetX="${x}" offsetY="0" /><illuminationSource>${um === 1 ? 'fluorescence' : 'brightfield'}</illuminationSource></image>`
+    const open = async (
+      xml: string,
+      sizes: [number, number][],
+      placement: boolean,
+    ) =>
+      (
+        await fromBuffer(
+          writeTiff(
+            sizes.map(([w, h], i) => ({
+              ...solid(i, w, h),
+              ...(i ? {} : { ascii: { 270: xml } }),
+            })),
+          ),
+          { placement },
+        )
+      ).manifest.pixelSpacingMM
+    const scn = (body: string) =>
+      `<scn><collection sizeX="1000000" sizeY="1000000">${body}</collection></scn>`
+    // Two 16x16 brightfield regions compose to 32x16, a fluorescence region's size.
+    const composed = scn(
+      image(16, 16, 0, 0, 0.5) +
+        image(16, 16, 1, 20000, 0.5) +
+        image(32, 16, 2, 40000, 1),
+    )
+    const sizes: [number, number][] = [
+      [16, 16],
+      [16, 16],
+      [32, 16],
+    ]
+    expect(await open(composed, sizes, true)).toEqual([0.0005, 0.0005])
+    expect(await open(composed, sizes, false)).toEqual([0.001, 0.001])
+    // Same-size regions at different resolutions.
+    const twins = scn(image(16, 16, 0, 0, 0.5) + image(16, 16, 1, 20000, 1))
+    const both: [number, number][] = [
+      [16, 16],
+      [16, 16],
+    ]
+    expect(await open(twins, both, false)).toEqual([0.0005, 0.0005])
+    expect(await open(twins, both, true)).toEqual([0.0005, 0.0005])
   })
 
   test('Leica regions: side by side in one grid, placed by their views', async () => {

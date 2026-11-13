@@ -12,6 +12,7 @@ import type {
 } from '@niivue/niivue'
 import {
   addChannelColormap,
+  isRgbSlide,
   lookupColorMap,
   slideStatsSummary,
   toStored,
@@ -119,15 +120,6 @@ const hexOf = (colormap: string): string => {
   return `#${rgb.map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`
 }
 
-// RGB samples have no channels to set (core's isRgbSlide).
-const isRgb = (slide: NVSlide): boolean =>
-  !slide.manifest.channelInfo &&
-  !slide.manifest.levels.some(
-    (l) =>
-      l.codec === 'raw-gray' ||
-      (l.photometric?.startsWith('MONOCHROME') ?? false),
-  )
-
 /**
  * Per-channel controls in `container` for the view's slide: visibility,
  * exact colour, window (in data units, through `storedToValue`), which channel
@@ -151,7 +143,7 @@ export function attachSlideChannelPanel(
     built = slide
     fieldset.replaceChildren()
     sync = null
-    container.hidden = !slide || isRgb(slide)
+    container.hidden = !slide || isRgbSlide(slide.manifest)
     if (!slide || container.hidden) return
     const legend = document.createElement('legend')
     legend.textContent = 'Channels'

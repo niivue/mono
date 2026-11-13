@@ -1082,25 +1082,23 @@ const positive = (v: number | undefined): v is number =>
  * Level pixel spacing in mm, [column, row]: the first valid PixelSpacing
  * (row, column) candidate, else ImagedVolumeWidth/Height (mm) over the total
  * pixel matrix. WSI files often carry a [1,1] PixelSpacing placeholder, so it
- * yields to the volume size (as in niivue's scripts/fetch-dicom-wsi.ts), but
- * is kept when there is no volume size to replace it.
+ * yields to the volume size (as in niivue's scripts/fetch-dicom-wsi.ts), and
+ * without one it is no spacing: 1 mm/px would draw a wrong (metres) scale bar.
  */
 function spacingOf<C>(
   a: WsiAttributes<C>,
   totalColumns: number,
   totalRows: number,
 ): [number, number] | undefined {
-  let unit: [number, number] | undefined
   for (const s of a.spacing) {
     if (!s || !positive(s[0]) || !positive(s[1])) continue
     if (s[0] !== 1 || s[1] !== 1) return [s[1], s[0]]
-    unit = [1, 1]
   }
   const volumeWidth = a.number[T.volumeWidth]
   const volumeHeight = a.number[T.volumeHeight]
   return positive(volumeWidth) && positive(volumeHeight)
     ? [volumeWidth / totalColumns, volumeHeight / totalRows]
-    : unit
+    : undefined
 }
 
 /** Fill `info.offset`/`info.length` from the encapsulated pixel data. */
@@ -1341,7 +1339,7 @@ function joinFramesOfReference(infos: Placed[]): void {
   /**
    * The extent of a group's finest instances (all of them when tied, so input
    * order never picks one); undefined when they disagree, which joins nothing.
-   * NaN (no spacing, or spacingOf's 1\1 placeholder, both axes) never differs,
+   * NaN (no spacing, both axes) never differs,
    * so it joins.
    */
   const extent = (g: Placed[]): number[] | undefined => {
@@ -1349,9 +1347,7 @@ function joinFramesOfReference(infos: Placed[]): void {
     const stated = g
       .filter((i) => area(i) === top)
       .flatMap(({ totalColumns, totalRows, pixelSpacingMM: mm }) =>
-        mm && !(mm[0] === 1 && mm[1] === 1)
-          ? [[totalColumns * mm[0], totalRows * mm[1]]]
-          : [],
+        mm ? [[totalColumns * mm[0], totalRows * mm[1]]] : [],
       )
     if (stated.some((a) => stated.some((b) => differs(a, b)))) return undefined
     return stated.length

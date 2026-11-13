@@ -452,6 +452,7 @@ export { nii2volume, writeVolume } from './volume/NVVolume'
 export {
   type ImageJStackInfo,
   type OmeChannel,
+  decodeXmlEntities,
   type OmeTiffInfo,
   omeChannelName,
   omeLengthToMicrons,

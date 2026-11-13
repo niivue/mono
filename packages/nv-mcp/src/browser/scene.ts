@@ -622,8 +622,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
     },
 
     async add_isosurface(params) {
-      const url = text(params, 'url')
-      if (!url) throw new Error('add_isosurface needs a url.')
+      const raw = text(params, 'url')
+      if (!raw) throw new Error('add_isosurface needs a url.')
       const threshold = number(params, 'threshold')
       const labels = numbers(params, 'labels')
       if ((threshold === undefined) === (labels === undefined))
@@ -641,24 +641,48 @@ export function coreHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           'This page cannot build isosurfaces: it did not provide the nv-ext-tile and nv-ext-isosurface loaders.',
         )
-      const source = await zarr.fetchOmeZarrChunkedSource(
-        new URL(url, globalThis.location?.href).href,
-        { channel: integer(params, 'channel') },
-      )
+      const base = globalThis.location?.href
+      if (!URL.canParse(raw, base))
+        throw new Error(
+          `The OME-Zarr store at ${raw} could not be loaded: it is not a valid URL.`,
+        )
+      const url = new URL(raw, base).href
+      const channel = integer(params, 'channel')
+      const timepoint = integer(params, 'timepoint')
+      const shown = view.volumes[0]
+      const shownFrame = shown?.frameSource?.frame ?? shown?.frame4D
       let mesh: unknown
       try {
-        ;[mesh] = await iso.channelIsosurfaces([
-          {
-            source,
-            threshold,
-            labels,
-            level: integer(params, 'level'),
-            color,
-            name: text(params, 'name'),
-          },
-        ])
-      } finally {
-        source.dispose?.()
+        const source = await zarr.fetchOmeZarrChunkedSource(url, {
+          channel,
+          timepoint,
+        })
+        try {
+          ;[mesh] = await iso.channelIsosurfaces([
+            {
+              source,
+              threshold,
+              labels,
+              level: integer(params, 'level'),
+              // Otherwise the frame shown, so the mesh matches the volume
+              // drawn; a shown frame the store lacks is another image's.
+              frame:
+                timepoint ??
+                (shownFrame !== undefined && shownFrame < (source.frames ?? 1)
+                  ? shownFrame
+                  : undefined),
+              color,
+              name: text(params, 'name') ?? `channel ${channel ?? 0}`,
+            },
+          ])
+        } finally {
+          source.dispose?.()
+        }
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `The OME-Zarr store at ${url} could not be loaded: ${why}`,
+        )
       }
       // addMesh takes a built NVMesh as well as load options.
       await view.addMesh(mesh as MeshToLoad)

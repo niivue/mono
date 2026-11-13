@@ -1178,10 +1178,11 @@ export class VolumeRenderer extends NVRenderer {
     // it streams alone or as the base, which rebuilds the entry for it.
     if (this._combinedOverlayEntries.includes(entry)) return
     // Combined mirrors are indexed by the base's chunks, so they move with it.
-    const swaps = [
+    const entries = [
       entry,
       ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
-    ].map(async (e) => {
+    ]
+    const swaps = entries.map(async (e) => {
       const ev = e === entry ? vol : e.volume
       const done = this._queueEntrySwap(
         device,
@@ -1267,14 +1268,14 @@ export class VolumeRenderer extends NVRenderer {
         )
       : new Map<number, number>()
     // Rebind the uploader to the new plan; dispose the old orient resources.
-    const newUploader = await createChunkUploaderGPU(
+    const made = this._newChunkUploader(
       device,
       vol,
       newPlan,
-      () => this._needsGradient(),
       entry.decoded,
       entry.modulation,
     )
+    const newUploader = made instanceof Promise ? await made : made
     entry.uploader.dispose()
     entry.uploader = newUploader
     entry.manager.remap(
@@ -1302,7 +1303,7 @@ export class VolumeRenderer extends NVRenderer {
       entry.cubicSafe,
       this.isCubicInterpolation,
     )
-    entry.bindGroups = newPlan.chunks.map(() => null)
+    this._resetChunkBindings(entry)
     entry.volume = vol
     entry.displayKey = displayKey
     entry.sourceKey = volumeSourceKey(vol)
@@ -1313,7 +1314,40 @@ export class VolumeRenderer extends NVRenderer {
       if (!chunk0.hasGradient) this._uploadedUnlit = true
       entry.manager.admit(0, chunk0)
     }
+    this._onPlanSwapped(entry)
   }
+
+  /** A chunk uploader for `plan`, baking the volume's current display state. */
+  private _newChunkUploader(
+    device: GPUDevice,
+    vol: NVImage,
+    plan: ChunkPlan,
+    decoded: DecodedChunkCache,
+    modulation: ModulationTextureParams | null,
+  ): Promise<ChunkUploaderGPU> {
+    return createChunkUploaderGPU(
+      device,
+      vol,
+      plan,
+      () => this._needsGradient(),
+      decoded,
+      modulation,
+    )
+  }
+
+  /** Drop every per-chunk bind group: they name the old chunk textures. */
+  private _resetChunkBindings(entry: ChunkedTexEntry): void {
+    entry.bindGroups = entry.plan.chunks.map(() => null)
+  }
+
+  /** A mirror chunk arrived or left: rebuild the base chunk's bind group. */
+  private _invalidateBaseChunkBinding(chunkIndex: number): void {
+    const base = this._activeChunked
+    if (base) base.bindGroups[chunkIndex] = null
+  }
+
+  /** WebGPU builds chunk bind groups at draw time, from live residency. */
+  private _onPlanSwapped(_entry: ChunkedTexEntry): void {}
 
   /**
    * Reload the matcap texture when the URL changes so that opts.matcap
@@ -1577,7 +1611,7 @@ export class VolumeRenderer extends NVRenderer {
     // Cap the working set to what the residency budget can hold. A full-volume
     // render makes every visible chunk needed-this-frame, so eviction can't drop
     // any of them; without a cap the resident set grows to the entire visible
-    // set and exhausts GPU memory (lost device). Streaming only the most
+    // set and exhausts GPU memory (context loss). Streaming only the most
     // view-central chunks that fit keeps memory bounded — the coarse floor
     // covers the rest. Unlit chunks carry no full-size gradient texture, so
     // the cap prices them at 4 bytes/voxel instead of 8.
@@ -1810,7 +1844,7 @@ export class VolumeRenderer extends NVRenderer {
     for (const entry of this._texCache.values()) {
       if (entry.kind !== 'chunked') continue
       entry.manager.remap(new Map(), entry.plan.chunks.length)
-      entry.bindGroups = entry.plan.chunks.map(() => null)
+      this._resetChunkBindings(entry)
     }
   }
 
@@ -2324,7 +2358,7 @@ export class VolumeRenderer extends NVRenderer {
    * Build (or reuse) the independent chunked entry for a hi-res streamed
    * overlay and mark it active. The entry lives in _texCache under the
    * overlay's own key, so the per-frame pump streams it alongside the base.
-   * Drawn as translucent chunk cubes over the base in _drawOverlayChunked.
+   * Drawn as translucent chunk cubes over the base in drawOverlayChunked.
    */
   private async _updateOverlayChunkedIndependent(
     device: GPUDevice,
@@ -2385,8 +2419,8 @@ export class VolumeRenderer extends NVRenderer {
    * combined overlay (a chunkSource overlay co-registered at the base grid).
    * They stream via the per-frame pump and feed the base block's overlay slot,
    * so the base ray-march / clip plane / compositing are reused unchanged. The
-   * onResidencyChange hook invalidates the base chunk's bind group when an
-   * overlay chunk arrives or is evicted, so binding 5 tracks residency.
+   * residency hook invalidates the base chunk's binding when an overlay chunk
+   * arrives or is evicted, so the overlay slot tracks residency.
    */
   private async _updateCombinedOverlayChunked(
     device: GPUDevice,
@@ -2412,10 +2446,7 @@ export class VolumeRenderer extends NVRenderer {
           vol,
           overlayBudget,
           buildModulationParams(vol, vol, volumes),
-          (ci) => {
-            const base = this._activeChunked
-            if (base) base.bindGroups[ci] = null
-          },
+          (ci) => this._invalidateBaseChunkBinding(ci),
           basePlan,
         )
         // A base swap during the await could not see this mirror yet (it is

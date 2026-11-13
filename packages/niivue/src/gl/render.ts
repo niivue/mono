@@ -834,6 +834,8 @@ export class VolumeRenderer extends NVRenderer {
     vol: NVImage,
     budgetBytes: number,
     modulation: ModulationTextureParams | null,
+    // WebGPU invalidates bind groups on mirror residency; WebGL2 binds per draw.
+    _onResidencyChange?: (chunkIndex: number) => void,
     basePlan?: ChunkPlan,
   ): Promise<ChunkedTexEntry> {
     const srcDims: Vec3i = [vol.hdr.dims[1], vol.hdr.dims[2], vol.hdr.dims[3]]
@@ -976,11 +978,6 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /**
-   * Swap a chunked volume's plan in place (multi-LOD refocus): re-key resident
-   * GPU chunks to the new plan by content so unchanged bricks keep their
-   * textures and only changed/new bricks stream. Mirrors the WebGPU backend.
-   */
-  /**
    * Refresh the whole-volume texture aliases for a chunked entry.
    *
    * A chunked volume has no single volume texture: `volumeTexture` /
@@ -995,6 +992,13 @@ export class VolumeRenderer extends NVRenderer {
     this.volumeGradientTexture = chunk0?.volumeGradientTexture ?? null
   }
 
+  /**
+   * Swap a chunked volume's plan in place (multi-LOD refocus): re-key the
+   * resident GPU chunks to the new plan by content (`matchChunksByContent`) so
+   * unchanged bricks keep their texture and fade, and only changed/new bricks
+   * stream — instead of rebuilding the whole entry via a reload. No-op when the
+   * volume has no chunked entry yet (first load still goes through updateVolume).
+   */
   async swapChunkedVolumePlan(
     gl: WebGL2RenderingContext,
     vol: NVImage,
@@ -1074,6 +1078,9 @@ export class VolumeRenderer extends NVRenderer {
     newPlan: ChunkPlan,
     keepUntilCovered: boolean,
   ): Promise<void> {
+    // The uploader bakes the display state as it is now, so record that key,
+    // not the one current after the await: a colormap change landing in
+    // between must still find the entry stale.
     const displayKey = chunkedDisplayKey(vol, entry.modulation)
     const oldToNew = matchChunksByContent(entry.plan, newPlan)
     // Resident bricks bake the display state of the uploader that made them.
@@ -1089,14 +1096,15 @@ export class VolumeRenderer extends NVRenderer {
           entry.manager.budgetBytes,
         )
       : new Map<number, number>()
-    const newUploader = createChunkUploaderGL(
+    // Rebind the uploader to the new plan; dispose the old orient resources.
+    const made = this._newChunkUploader(
       gl,
       vol,
       newPlan,
-      () => this._needsGradient(),
       entry.decoded,
       entry.modulation,
     )
+    const newUploader = made instanceof Promise ? await made : made
     entry.uploader.dispose()
     entry.uploader = newUploader
     entry.manager.remap(
@@ -1124,16 +1132,52 @@ export class VolumeRenderer extends NVRenderer {
       entry.cubicSafe,
       this.isCubicInterpolation,
     )
+    this._resetChunkBindings(entry)
     entry.volume = vol
     entry.displayKey = displayKey
     entry.sourceKey = volumeSourceKey(vol)
+    // Keep at least one chunk resident for the first post-swap frame; the pump
+    // streams the rest from the next working set.
     if (entry.manager.residentCount === 0) {
       const chunk0 = await entry.uploader.uploadChunk(0)
       if (!chunk0.hasGradient) this._uploadedUnlit = true
       entry.manager.admit(0, chunk0)
     }
-    // remap() destroyed every chunk the new plan does not match, so the aliases
-    // captured for the old plan may now name deleted textures.
+    this._onPlanSwapped(entry)
+  }
+
+  /** A chunk uploader for `plan`, baking the volume's current display state. */
+  private _newChunkUploader(
+    gl: WebGL2RenderingContext,
+    vol: NVImage,
+    plan: ChunkPlan,
+    decoded: DecodedChunkCache,
+    modulation: ModulationTextureParams | null,
+  ): ChunkUploaderGL {
+    return createChunkUploaderGL(
+      gl,
+      vol,
+      plan,
+      () => this._needsGradient(),
+      decoded,
+      modulation,
+    )
+  }
+
+  /** WebGL2 binds chunk textures per draw: no per-chunk binding to drop. */
+  private _resetChunkBindings(_entry: ChunkedTexEntry): void {}
+
+  /** WebGL2 binds overlay textures per draw: no bind-group cache to drop. */
+  private _invalidateBindGroupCache(): void {}
+
+  /** WebGL2 binds overlay textures per draw: nothing tracks mirror residency. */
+  private _invalidateBaseChunkBinding(_chunkIndex: number): void {}
+
+  /**
+   * remap() destroyed every chunk the new plan does not match, so the aliases
+   * captured for the old plan may now name deleted textures.
+   */
+  private _onPlanSwapped(entry: ChunkedTexEntry): void {
     if (this._activeChunked === entry) this._syncChunkedAliases(entry)
   }
 
@@ -1394,7 +1438,7 @@ export class VolumeRenderer extends NVRenderer {
     // Cap the working set to what the residency budget can hold. A full-volume
     // render makes every visible chunk needed-this-frame, so eviction can't drop
     // any of them; without a cap the resident set grows to the entire visible
-    // set and exhausts GPU memory (white context loss). Streaming only the most
+    // set and exhausts GPU memory (context loss). Streaming only the most
     // view-central chunks that fit keeps memory bounded — the coarse floor
     // covers the rest. Unlit chunks carry no full-size gradient texture, so
     // the cap prices them at 4 bytes/voxel instead of 8.
@@ -1625,6 +1669,7 @@ export class VolumeRenderer extends NVRenderer {
     for (const entry of this._texCache.values()) {
       if (entry.kind !== 'chunked') continue
       entry.manager.remap(new Map(), entry.plan.chunks.length)
+      this._resetChunkBindings(entry)
     }
   }
 
@@ -1644,8 +1689,8 @@ export class VolumeRenderer extends NVRenderer {
    * budget `CHUNK_UPLOAD_BUDGET_MS` or the cap `MAX_CHUNK_UPLOADS_PER_FRAME` is
    * reached, then `admit`s them. Returns true if any chunk was admitted, so the
    * view can schedule a follow-up frame to present the newly-resident data and
-   * keep the pump going. A single pump runs at a time so source-backed chunk
-   * fetches cannot overlap the next frame's drain.
+   * keep the pump going. A single pump runs at a time: a re-entrant call while
+   * an async upload is in flight returns false immediately.
    */
   async pumpChunkUploads(): Promise<boolean> {
     if (this._pumpInFlight) return false
@@ -1665,6 +1710,8 @@ export class VolumeRenderer extends NVRenderer {
         ))
           entry.uploader.prefetchChunk(ci)
       }
+      // Round-robin: each pass takes at most one queued chunk from each chunked
+      // entry, so a busy base does not starve the overlay (and vice versa).
       let progressed = true
       while (
         progressed &&
@@ -2239,7 +2286,7 @@ export class VolumeRenderer extends NVRenderer {
    * Build (or reuse) the independent chunked entry for a hi-res streamed
    * overlay and mark it active. The entry lives in _texCache under the
    * overlay's own key, so the per-frame pump streams it alongside the base.
-   * Drawn as translucent chunk cubes over the base in _drawOverlayChunkedVolume.
+   * Drawn as translucent chunk cubes over the base in drawOverlayChunked.
    */
   private async _updateOverlayChunkedIndependent(
     gl: WebGL2RenderingContext,
@@ -2268,6 +2315,7 @@ export class VolumeRenderer extends NVRenderer {
         this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
       )
     }
+    this._invalidateBindGroupCache()
   }
 
   /**
@@ -2296,9 +2344,11 @@ export class VolumeRenderer extends NVRenderer {
 
   /**
    * Strategy A: build (or reuse) a base-aligned chunked entry for each streamed
-   * combined overlay. They stream via the pump and feed the base block's overlay
-   * texture unit, so the base ray-march / clip plane / compositing are reused
-   * unchanged.
+   * combined overlay (a chunkSource overlay co-registered at the base grid).
+   * They stream via the per-frame pump and feed the base block's overlay slot,
+   * so the base ray-march / clip plane / compositing are reused unchanged. The
+   * residency hook invalidates the base chunk's binding when an overlay chunk
+   * arrives or is evicted, so the overlay slot tracks residency.
    */
   private async _updateCombinedOverlayChunked(
     gl: WebGL2RenderingContext,
@@ -2324,6 +2374,7 @@ export class VolumeRenderer extends NVRenderer {
           vol,
           overlayBudget,
           buildModulationParams(vol, vol, volumes),
+          (ci) => this._invalidateBaseChunkBinding(ci),
           basePlan,
         )
         // A base swap during the await could not see this mirror yet (it is
@@ -2337,6 +2388,7 @@ export class VolumeRenderer extends NVRenderer {
       if (this._activeChunked) {
         setChunkBudget(this._activeChunked, overlayBudget)
       }
+      this._invalidateBindGroupCache()
     } finally {
       this._stackRebuilding--
     }
@@ -2355,6 +2407,7 @@ export class VolumeRenderer extends NVRenderer {
     if (this._activeChunked) {
       setChunkBudget(this._activeChunked, this._chunkResidencyBytes)
     }
+    this._invalidateBindGroupCache()
   }
 
   /** The NVImage backing the active independent chunked overlay (or null). */
@@ -2468,12 +2521,12 @@ export class VolumeRenderer extends NVRenderer {
    * The next frame re-requests and re-bakes only the overlay blocks in the current
    * view frustum, picking up the overlays' current `opacity` (and any chunkSource
    * whose output changed). Lets a changed overlay opacity apply without a full
-   * volume reload. (WebGL2 rebinds overlay textures each draw, so no bind-group
-   * cache to invalidate.)
+   * volume reload.
    */
   rebakeChunkedOverlays(): void {
     for (const entry of this._combinedOverlayEntries) entry.manager.destroy()
     this._activeOverlayChunked?.manager.destroy()
+    this._invalidateBindGroupCache()
   }
 
   /**

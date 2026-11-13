@@ -761,7 +761,12 @@ export class NVSlide extends EventTarget {
   private _displayGen = 0
   private readonly _thumbs = new Map<
     string,
-    { gen: number; ids: number[]; bitmap: ImageBitmap }
+    {
+      gen: number
+      ids: number[]
+      lut: NVSlideColorLut | null
+      bitmap: ImageBitmap
+    }
   >()
   private _colorManagement: boolean
   private _colorLut: NVSlideColorLut | null = null
@@ -2018,8 +2023,9 @@ export class NVSlide extends EventTarget {
    * Level `level` (default the coarsest) composited on the CPU from its
    * resident tiles, rows as stored, scaled to fit `maxPx` a side, for a minimap
    * or a colour reference. Missing tiles are requested (thumbnail rank, at most
-   * the 64 nearest the level centre) and left black. The same bitmap is
-   * returned until a tile arrives or leaves or the channels change; the slide
+   * the 64 nearest the level centre) and left black. Colours as drawn, through
+   * {@link displayColorLut}. The same bitmap is returned until a tile arrives
+   * or leaves, or the channels or colour table change; the slide
    * closes it then and on dispose, so draw it at once. Null without
    * OffscreenCanvas or before any tile is resident.
    */
@@ -2049,8 +2055,10 @@ export class NVSlide extends EventTarget {
     )
     const ids = entries.map((e) => e?.id ?? 0)
     const memo = this._thumbs.get(key)
+    const lut = this.displayColorLut
     if (
       memo?.gen === this._displayGen &&
+      memo.lut === lut &&
       ids.every((id, i) => id === memo.ids[i])
     )
       return memo.bitmap
@@ -2068,11 +2076,12 @@ export class NVSlide extends EventTarget {
       this.channelBlend,
       this.manifest.channelInfo,
       this.selectedLabel,
+      lut,
     )
     if (!bitmap) return null
     memo?.bitmap.close()
     this._thumbs.delete(key)
-    this._thumbs.set(key, { gen: this._displayGen, ids, bitmap })
+    this._thumbs.set(key, { gen: this._displayGen, ids, lut, bitmap })
     for (const [old, { bitmap: b }] of this._thumbs) {
       if (this._thumbs.size <= MAX_THUMBNAILS) break
       b.close()

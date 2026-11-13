@@ -23,10 +23,12 @@ async function viewer(canvas, options) {
 }
 
 export const scenes = {
+  // An axial slice: the whole head sits inside the scan, with black all
+  // around, so it blends into the strip.
   async mri(canvas) {
-    const nv = await viewer(canvas, { sliceType: SLICE_TYPE.SAGITTAL })
+    const nv = await viewer(canvas, { sliceType: SLICE_TYPE.AXIAL })
     await nv.loadVolumes([{ url: '/volumes/chris_t1.nii.gz' }])
-    nv.pan2Dxyzmm = [0, 0, 0, 0.88] // a margin around the head
+    nv.pan2Dxyzmm = [0, 0, 0, 0.9]
   },
 
   async ct(canvas) {
@@ -36,6 +38,7 @@ export const scenes = {
     ])
     nv.azimuth = 120
     nv.elevation = 10
+    nv.scaleMultiplier = 1.1
   },
 
   async microscopy(canvas) {
@@ -87,6 +90,5 @@ export const scenes = {
     await nv.loadMeshes([{ url: '/meshes/yeh2022.trx' }])
     nv.azimuth = 250
     nv.elevation = 15
-    nv.scaleMultiplier = 0.9
   },
 }

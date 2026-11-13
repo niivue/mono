@@ -1,37 +1,32 @@
 ---
 // Stills of each kind of data NiiVue shows, drawn by NiiVue itself
-// (scripts/home-stills.ts).
+// (scripts/home-stills.ts), side by side on one black band.
 import { withBase } from '../site'
 
 const STILLS = [
-  {
-    image: 'mri',
-    alt: 'A T1-weighted MRI of a head, cut down the middle',
-  },
-  {
-    image: 'ct',
-    alt: 'A 3D rendering of a skull from a CT scan',
-  },
+  { image: 'mri', alt: 'An axial T1-weighted MRI slice through a head' },
+  { image: 'ct', alt: 'A 3D rendering of a skull from a CT scan' },
   {
     image: 'microscopy',
     alt: 'Stained skin tissue in a whole-slide microscope image',
+    // The tissue fills its frame; a round fade, like a microscope's field
+    // of view, lets it meet the black band without an edge.
+    fade: true,
   },
   {
     image: 'surfaces',
     alt: 'A brain surface with motor activity mapped onto it',
   },
-  {
-    image: 'tractography',
-    alt: 'White matter fibers colored by direction',
-  },
+  { image: 'tractography', alt: 'White matter fibers colored by direction' },
 ]
 ---
 
 <ul class="strip" aria-label="Some of what NiiVue shows">
   {
-    STILLS.map(({ image, alt }) => (
+    STILLS.map(({ image, alt, fade }) => (
       <li>
         <img
+          class:list={{ fade }}
           src={withBase(`img/home/${image}.webp`)}
           alt={alt}
           width="640"
@@ -45,34 +40,33 @@ const STILLS = [
 
 <style>
   /* Five across on a wide screen; narrower, three over two (two per row on
-     the smallest phones), always centered so a short row looks intended. */
+     the smallest phones), centered on the band. */
   .strip {
-    --gap: 0.75rem;
     --per-row: 3;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: var(--gap);
     margin: 0;
     padding: 0;
     list-style: none;
+    background: var(--nv-viewer);
+    border-radius: var(--nv-radius);
+    overflow: hidden;
   }
 
   li {
-    flex: 0 0
-      calc((100% - (var(--per-row) - 1) * var(--gap)) / var(--per-row));
+    flex: 0 0 calc(100% / var(--per-row));
     aspect-ratio: 1;
-    overflow: hidden;
-    background: var(--nv-viewer);
-    border: 1px solid var(--nv-viewer-line);
-    border-radius: var(--nv-radius);
   }
 
   img {
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+  }
+
+  .fade {
+    mask-image: radial-gradient(closest-side, #000 52%, transparent 82%);
   }
 
   @media (max-width: 22.5rem) {
@@ -83,7 +77,6 @@ const STILLS = [
 
   @media (min-width: 50rem) {
     .strip {
-      --gap: 1rem;
       --per-row: 5;
     }
   }

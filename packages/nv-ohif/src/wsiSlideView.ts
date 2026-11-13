@@ -34,6 +34,17 @@ const dragModeFor = (tool: string | undefined): DRAG_MODE =>
       ? DRAG_MODE.callbackOnly
       : DRAG_MODE.pan
 
+/** One ruler at a time: the last finished one, none while a new one is dragged. */
+export function keepOneRuler(ctl: {
+  measurements: unknown[]
+  activeMeasurement: unknown
+}): void {
+  ctl.measurements.splice(
+    0,
+    ctl.measurements.length - (ctl.activeMeasurement ? 0 : 1),
+  )
+}
+
 /**
  * Mount a standalone NVSlide deep-zoom view on a canvas: a core slide view on
  * WebGL2, redrawn on demand, refitting on resize until the user moves it. The
@@ -72,14 +83,8 @@ export async function mountWsiSlideView(
       secondaryDragMode: DRAG_MODE.pan,
       onDrag: (_dx, dy, x, y) =>
         slide.zoomBy(Math.exp(-dy * 0.01), x, y, view.screen()),
-      // One ruler at a time: none kept while a new one is dragged.
       onChange: () => {
-        const ctl = view.controller
-        if (ctl)
-          ctl.measurements.splice(
-            0,
-            ctl.measurements.length - (ctl.activeMeasurement ? 0 : 1),
-          )
+        if (view.controller) keepOneRuler(view.controller)
       },
     },
     onRender: (screen) => {

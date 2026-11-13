@@ -94,6 +94,12 @@ export interface NVSlideWindow {
  * slides read alike. A non-finite calMin or calMax means the stored range's
  * end (0 or 2^bitsStored - 1), as a volume's means its default window.
  */
+// Frozen at each (rare) write so liveChannels can hand out the array uncopied.
+function frozenChannels(channels: NVChannel[]): readonly NVChannel[] {
+  for (const ch of channels) Object.freeze(ch)
+  return Object.freeze(channels)
+}
+
 export interface NVChannel {
   name: string
   /** A NiiVue colormap name ('gray', 'red', ...). */
@@ -244,6 +250,9 @@ export interface NVSlideAttribution {
  * handles `raw-rgba`, `raw-gray` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
  * decoder, so a consumer must register one (e.g. @niivue/dcm2niix createFrameDecoder) via
  * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
+ * A returned bitmap must hold straight (unpremultiplied) alpha, e.g. made with
+ * `createImageBitmap(src, { premultiplyAlpha: 'none' })`; a premultiplied one
+ * draws translucent pixels too dark on WebGL2.
  */
 export type SlideTileDecoder = (
   bytes: Uint8Array,
@@ -404,20 +413,6 @@ export interface NVSlideViewport {
   scale: number
 }
 
-export interface NVSlideSpatialTransform {
-  /**
-   * Column-major 4x4 transform from slide pixel coordinates into the base
-   * image/world space. The initial renderer uses standalone slide viewports;
-   * this is the registration hook for mapped slides.
-   */
-  pixelToWorld?: readonly number[]
-  /**
-   * Optional inverse of pixelToWorld. Callers can provide it to avoid repeated
-   * inversion when registering a slide against a base volume.
-   */
-  worldToPixel?: readonly number[]
-}
-
 export interface NVSlideOptions {
   id?: string
   name?: string
@@ -437,7 +432,6 @@ export interface NVSlideOptions {
   backgroundColor?: NVSlideColor
   placeholderColor?: NVSlideColor
   gridColor?: NVSlideColor
-  spatialTransform?: NVSlideSpatialTransform
   /** Pluggable tile source. Defaults to a byte-range manifest source; DZI / TIFF
    * adapters supply their own. See {@link SlideTileSource}. */
   source?: SlideTileSource
@@ -690,7 +684,6 @@ export class NVSlide extends EventTarget {
   readonly stats: NVSlideStats
   viewport: NVSlideViewport
   maxScale: number
-  spatialTransform: NVSlideSpatialTransform | null
   private _opacity!: number
   private _visible!: boolean
   private _levelChoice!: NVSlideLevelChoice
@@ -818,7 +811,6 @@ export class NVSlide extends EventTarget {
       manifest.backgroundColor ?? [0.027, 0.063, 0.051, 1]
     this._placeholderColor = options.placeholderColor ?? [0.067, 0.098, 0.09, 1]
     this._gridColor = options.gridColor ?? [0.455, 0.831, 0.812, 0.24]
-    this.spatialTransform = options.spatialTransform ?? null
     this.stats = freshStats()
     this._cache = new NVSlideTileCache(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
@@ -827,7 +819,7 @@ export class NVSlide extends EventTarget {
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
     )
     this._colorManagement = options.colorManagement ?? true
-    this._channels = defaultSlideChannels(this.manifest)
+    this._channels = frozenChannels(defaultSlideChannels(this.manifest))
     this._setShown(this._channels)
     this._rgb = isRgbSlide(this.manifest)
     this._source = options.source ?? new ManifestRangeSource(manifest)
@@ -1061,7 +1053,8 @@ export class NVSlide extends EventTarget {
 
   /**
    * The channels uncopied, for the per-tile fuse: a W/L drag re-fuses every
-   * tile each frame. setChannel replaces, never mutates, this array.
+   * tile each frame. setChannel replaces, never mutates, this array; it and
+   * its channels are frozen, so a JS caller cannot write past setChannel.
    * @internal
    */
   get liveChannels(): readonly Readonly<NVChannel>[] {
@@ -1102,7 +1095,7 @@ export class NVSlide extends EventTarget {
       throw new RangeError(`Unknown colormap "${next.colormap}"`)
     const channels = [...this._channels]
     channels[c] = next
-    this._channels = channels
+    this._channels = frozenChannels(channels)
     if ('calMin' in update || 'calMax' in update) {
       if (Number.isFinite(next.calMin) || Number.isFinite(next.calMax))
         this._userWindows.add(c)
@@ -1130,7 +1123,7 @@ export class NVSlide extends EventTarget {
     if (usableWindow(window) && !this._userWindows.has(c)) {
       const channels = [...this._channels]
       channels[c] = { ...channel, ...window }
-      this._channels = channels
+      this._channels = frozenChannels(channels)
     }
     this._rerender()
   }
@@ -1413,11 +1406,6 @@ export class NVSlide extends EventTarget {
 
   setLevelChoice(levelChoice: NVSlideLevelChoice): void {
     this.levelChoice = levelChoice
-  }
-
-  setSpatialTransform(transform: NVSlideSpatialTransform | null): void {
-    this.spatialTransform = transform
-    this._emitChange()
   }
 
   setTileGridVisible(visible: boolean): void {

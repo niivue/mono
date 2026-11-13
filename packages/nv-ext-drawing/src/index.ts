@@ -88,7 +88,8 @@ export async function findDrawingBoundarySlices(
  * Runs in a Web Worker. Returns a new Uint8Array with the interpolated bitmap.
  *
  * Image data (`imageData`) must be in RAS voxel order. Use
- * `ctx.backgroundVolume.imgRAS` from the extension context.
+ * `ctx.backgroundVolume.imgRAS` from the extension context. `maxVal` is its
+ * maximum in the same raw units (`globalMax` is scaled by scl_slope/scl_inter).
  */
 export async function interpolateMaskSlices(
   drawBitmap: Uint8Array,

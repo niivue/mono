@@ -59,12 +59,19 @@ exactly as bright as the seed, so you will almost always set one of these:
   as the seed.
 - `thresholdMode: 'auto'` picks bright or dark for you, depending on whether
   the seed is brighter than the middle of the display range. Pass that
-  range as `calMin` and `calMax`.
+  range as `calMin` and `calMax`, in the raw units of `bg.imgRAS`.
 - `intensityMin` and `intensityMax`, given together, set the range yourself
   and override everything above.
 
 ```js
-const options = { thresholdMode: 'auto', calMin: bg.calMin, calMax: bg.calMax }
+// bg.calMin/calMax are scaled by scl_slope and scl_inter; the seed is raw.
+const { scl_slope, scl_inter } = bg.hdr
+const toRaw = (v) => (v - scl_inter) / scl_slope
+const options = {
+  thresholdMode: 'auto',
+  calMin: toRaw(bg.calMin),
+  calMax: toRaw(bg.calMax),
+}
 ```
 
 ## Staying on one slice

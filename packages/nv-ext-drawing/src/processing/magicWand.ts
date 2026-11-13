@@ -61,12 +61,14 @@ export interface MagicWandOptions {
   percent?: number
   /**
    * Volume calibration minimum — needed for `thresholdMode: "auto"` to
-   * determine bright vs dark. Equivalent to `back.cal_min`.
+   * determine bright vs dark. In the image data's raw units, so
+   * `back.cal_min` (scaled by scl_slope/scl_inter) must be converted back.
    */
   calMin?: number
   /**
    * Volume calibration maximum — needed for `thresholdMode: "auto"` to
-   * determine bright vs dark. Equivalent to `back.cal_max`.
+   * determine bright vs dark. In the image data's raw units, so
+   * `back.cal_max` (scaled by scl_slope/scl_inter) must be converted back.
    */
   calMax?: number
   /** Neighbour connectivity (default 6). */

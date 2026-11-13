@@ -36,7 +36,7 @@ export const EDGE_BOTTOM = 8
 export const EDGE_ALL = 15
 
 /** The key producer of a slide (NVSlide.tileKey). */
-export interface GutterSlide {
+interface GutterSlide {
   tileKey(level: NVSlideLevelManifest, tile: { x: number; y: number }): string
   /**
    * EDGE_* bits: the grid neighbour on that side is also the placed neighbour
@@ -61,7 +61,7 @@ export interface GutterAt {
 export type GutterKeyAt = (col: number, row: number) => string
 
 /** Neighbour keys of a tile at `at`, from its slide's key producer. */
-export const gutterKeyAt =
+const gutterKeyAt =
   ({ slide, level }: Pick<GutterAt, 'slide' | 'level'>): GutterKeyAt =>
   (x, y) =>
     slideTileKey(slide, slide.tileKey(level, { x, y }))
@@ -230,7 +230,7 @@ function fillSlot<T extends GutterTile>(
 }
 
 /** Looks a tile texture up by its cache key, without marking it used. */
-export function slideNeighbour<T>(
+function slideNeighbour<T>(
   cache: TileTextureCache<T>,
 ): (key: string) => T | undefined {
   return (key) => cache.peek(key)

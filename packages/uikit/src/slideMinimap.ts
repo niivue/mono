@@ -11,7 +11,7 @@ export type MinimapCorner =
   | 'bottom-right'
 
 /** The NVSlide viewport: slide-px center, CSS px per slide px. */
-export interface MinimapViewport {
+interface MinimapViewport {
   centerX: number
   centerY: number
   scale: number

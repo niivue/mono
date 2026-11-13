@@ -125,7 +125,7 @@ export interface PersistentCacheOptions {
 export const OME_ZARR_PERSIST_BYTES = 512 * 2 ** 20
 
 /** Cache Storage name for the current key encoding. */
-export const PERSISTENT_CACHE_NAME = 'niivue-zarr-v1'
+const PERSISTENT_CACHE_NAME = 'niivue-zarr-v1'
 
 /** The prefix every {@link PERSISTENT_CACHE_NAME} entry shares. */
 const KEY_PREFIX = 'https://niivue.cache/zarr/'

@@ -82,7 +82,7 @@ export interface ZarrSlideUrlOptions extends ZarrSlideOptions {
 }
 
 /** Default {@link ZarrSlideOptions.cacheBytes}. */
-export const ZARR_SLIDE_CACHE_BYTES = 64 * 2 ** 20
+const ZARR_SLIDE_CACHE_BYTES = 64 * 2 ** 20
 
 type Plane = { z: number; t: number }
 type Display = { quantize: Quantize | null; window: NVSlideWindow }

@@ -110,10 +110,7 @@ export function composeThumbnail(
  * `rgba` through `lut` in place: trilinear between nodes, as the shaders'
  * linear 3D texture fetch at node centres (slide/colorLutShader.ts). Alpha kept.
  */
-export function applyColorLut(
-  rgba: Uint8ClampedArray,
-  lut: NVSlideColorLut,
-): void {
+function applyColorLut(rgba: Uint8ClampedArray, lut: NVSlideColorLut): void {
   const { size: n, data } = lut
   const dR = 4
   const dG = 4 * n

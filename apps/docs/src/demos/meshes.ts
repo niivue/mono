@@ -2,7 +2,7 @@ import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import type { Demo } from './types'
 
 const demo: Demo = async (canvas, { ui, asset }) => {
-  const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
+  const nv = new NiiVue()
   await nv.attachToCanvas(canvas)
   await nv.loadMeshes([
     {

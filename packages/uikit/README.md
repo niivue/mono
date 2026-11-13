@@ -6,10 +6,12 @@ menus, selects, segmented controls, number and text fields, color controls,
 file pickers and dialogs) integrated into the
 [NiiVue](https://github.com/niivue/niivue) rendering lifecycle.
 
+Documentation: https://niivue.github.io/mono/docs/packages/uikit/
+
 > **Status: shipping widgets.** The rendering-lifecycle hook, UIKit's own
 > line/text/rect renderers (WebGL2 + WebGPU, with a text transform), the
 > measuring widgets (ruler, annotation, crosshair) and the control layer with
-> every widget in the table below are in. See `docs/ruler-port.md` in
+> every widget in the table below are in. See `notes/ruler-port.md` in
 > `@niivue/niivue` for the design.
 
 ## Design in one paragraph

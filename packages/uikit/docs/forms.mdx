@@ -1,0 +1,244 @@
+---
+title: Text fields, files and dialogs
+description: "Let people type numbers and text, pick a color, open and save files, and answer dialogs, all inside the NiiVue canvas."
+sidebar:
+  order: 2
+---
+
+These widgets go in a control layer like the others (see
+[Putting several kinds on one canvas](/packages/uikit/controls/#putting-several-kinds-on-one-canvas)).
+The examples assume `font`, `units` (`{ cssUnits: true }`) and `controls`
+from that page, and every UIKit name in them is imported from
+`@niivue/uikit`.
+
+## Typing a number
+
+```js
+const numbers = new UIKitNumberInputOverlay(font, units)
+controls.add(numbers)
+
+numbers.addNumberInput({
+  id: 'elevation',
+  label: 'Elevation',
+  x: 12,
+  y: 12,
+  width: 80,
+  min: -90,
+  max: 90,
+  step: 5,
+  value: 10,
+  onChange: (value) => {
+    nv.elevation = value
+  },
+})
+```
+
+Clicking the field selects the number, so typing replaces it. While the
+text is not a number the border turns red. Enter or clicking away keeps
+the new value, and Escape goes back to the old one. The small arrows at
+the right step the value, and so do the arrow keys and the mouse wheel
+once the field has been clicked. The value stays between `min` and `max`
+and snaps to `step`. Leave out `min` or `max` for no limit on that side,
+or `step` to allow any number.
+
+`numbers.getValue('elevation')` returns the kept value, and
+`numbers.getText('elevation')` what the field shows right now, half-typed
+or not.
+
+## Typing text
+
+```js
+const texts = new UIKitTextInputOverlay(font, units)
+controls.add(texts)
+
+texts.addTextInput({
+  id: 'note',
+  label: 'Note',
+  x: 12,
+  y: 52,
+  width: 200,
+  placeholder: 'Type, then Enter',
+  maxLength: 80,
+  onSubmit: (text) => saveNote(text),
+})
+```
+
+The field works as you would expect: click to place the cursor, drag to
+select, Shift with the arrows to extend the selection, and Ctrl or Cmd
+with C, X, V and A to copy, cut, paste and select all. Enter keeps the
+text and runs `onSubmit`; Escape undoes the edit. To limit what can be
+typed, pass `accept`, a function that says yes or no to each character.
+
+## Writing notes
+
+A text area holds several lines. It wraps long lines, and scrolls with a
+scrollbar once the text outgrows the rows you asked for:
+
+```js
+const areas = new UIKitTextAreaOverlay(font, units)
+controls.add(areas)
+
+areas.addTextArea({
+  id: 'notes',
+  label: 'Notes',
+  x: 12,
+  y: 92,
+  width: 300,
+  rows: 4,
+  placeholder: 'Findings...',
+  onChange: (text) => saveNotes(text),
+})
+```
+
+Here Enter starts a new line. Ctrl or Cmd with Enter keeps the text and
+runs `onSubmit`; clicking away keeps it too.
+
+## What the text fields cannot do
+
+The fields are drawn on the canvas, not built from HTML inputs, so a few
+things are missing:
+
+- Input methods for languages such as Chinese, Japanese or Korean do not
+  work.
+- Tab is left to the page; it does not move from one canvas field to the
+  next.
+- Copy and paste use the browser's clipboard, which browsers offer only
+  on secure pages (https, or localhost). Elsewhere they quietly do
+  nothing.
+
+## Picking a color
+
+The color control shows a preview, a slider for each of red, green and
+blue, and a row of named colors to choose from:
+
+```js
+const colors = new UIKitColorControlOverlay(font, units)
+controls.add(colors)
+
+colors.addColorControl({
+  id: 'crosshair',
+  label: 'Crosshair',
+  x: 12,
+  y: 200,
+  value: [1, 0, 0, 1],
+  palette: [
+    { name: 'Red', color: [1, 0, 0, 1] },
+    { name: 'Green', color: [0, 1, 0, 1] },
+    { name: 'White', color: [1, 1, 1, 1] },
+  ],
+  onInput: (color) => {
+    nv.crosshairColor = [...color]
+  },
+})
+```
+
+Add `alpha: true` for a fourth slider for transparency. The named color
+that matches the current one is ringed.
+
+## Opening files
+
+A file picker is a "Choose file..." button with the chosen file's name
+beside it. Pressing it opens the browser's file chooser:
+
+```js
+const pickers = new UIKitFilePickerOverlay(font, units)
+controls.add(pickers)
+
+pickers.addFilePicker({
+  id: 'volume',
+  label: 'Open volume...',
+  x: 12,
+  y: 320,
+  width: 300,
+  accept: acceptExtensions(['nii', 'nii.gz', 'mgz']),
+  onPick: ([file]) => nv.loadVolumes([{ url: file }]),
+})
+```
+
+`onPick` gets the chosen `File` objects, and `onCancel` runs if the user
+closes the chooser without picking. Add `multiple: true` for several
+files, or `directory: true` to pick a whole folder.
+
+`pickers.open('volume')` opens the chooser from code, for example from a
+menu item. Browsers only open a file chooser straight after a click or a
+key press, so call it from one of those handlers.
+
+Chrome on macOS cannot match a two-part extension such as `.nii.gz`, so
+UIKit also asks for its last part, `.gz`. The chooser may then offer other
+`.gz` files too; check the names in `onPick` if that matters.
+
+## Saving a file
+
+`createBrowserDownload` gives you a function that saves any `Blob` under a
+file name, as a browser download:
+
+```js
+const download = createBrowserDownload()
+
+download(new Blob([JSON.stringify(settings)], { type: 'application/json' }), 'settings.json')
+```
+
+## Asking with a dialog
+
+A dialog covers the canvas with a dim layer and shows a panel with a
+title, a message and buttons. Nothing else on the canvas responds until
+it closes:
+
+```js
+const dialogs = new UIKitDialogOverlay(font, units)
+controls.add(dialogs)
+
+dialogs.addDialog({
+  id: 'reset',
+  title: 'Reset the view?',
+  message: 'This puts the crosshair, zoom and rotation back to the start.',
+  buttons: [
+    { id: 'cancel', label: 'Cancel', role: 'cancel' },
+    { id: 'ok', label: 'Reset', role: 'default' },
+  ],
+  onClose: (result) => {
+    if (result === 'ok') resetView()
+  },
+})
+
+dialogs.open('reset')
+```
+
+`onClose` gets the `id` of the button that was pressed. Enter presses the
+`default` button and Escape the `cancel` one. A click on the dim layer
+does nothing, unless you set `closeOnScrim: true`; then it closes the
+dialog with a `null` result. Only one dialog is open at a time: opening
+another closes the first.
+
+## Putting fields in a dialog
+
+A dialog can hold other widgets, such as a text field. Give the dialog
+room for them with `contentHeight`, add their overlay with `addChild`, and
+move them into place in `onLayout`:
+
+```js
+const fields = new UIKitTextInputOverlay(font, units)
+
+dialogs.addDialog({
+  id: 'rename',
+  title: 'Rename volume',
+  contentHeight: 36,
+  buttons: [
+    { id: 'cancel', label: 'Cancel', role: 'cancel' },
+    { id: 'ok', label: 'Rename', role: 'default' },
+  ],
+  onLayout: ({ content }) => {
+    fields.updateTextInput('name', { x: content.x, y: content.y + 4 })
+  },
+  onClose: (result) => {
+    if (result === 'ok') renameVolume(fields.getValue('name'))
+  },
+})
+dialogs.addChild('rename', fields)
+fields.addTextInput({ id: 'name', x: 0, y: 0, width: 300, value: 'mni152' })
+```
+
+Do not also add `fields` to the control layer: the dialog shows it and
+sends it events while the dialog is open. Make the hosted overlays with
+the same `cssUnits` setting as the dialog. Enter in a text or number field
+inside the dialog presses its `default` button.

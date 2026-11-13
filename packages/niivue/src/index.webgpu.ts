@@ -369,7 +369,7 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
-// Chunk-streaming phase timing (docs/caching.md stage B)
+// Chunk-streaming phase timing (notes/caching.md stage B)
 export {
   type ChunkPhase,
   type ChunkPhaseTiming,
@@ -407,7 +407,7 @@ export {
   type ResolvedOptions as ResolvedBudgetOptions,
 } from './volume/budgetPlans'
 // The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
-export type { DecodedChunkStats } from './volume/decodedChunkCache'
+export { ByteLru, type ByteLruStats } from './byteLru'
 // Decoded image, for a caller supplying its own `decodeImage`
 export type { DecodedImage } from './volume/imageDecode'
 export {
@@ -422,6 +422,7 @@ export { nii2volume, writeVolume } from './volume/NVVolume'
 export {
   type ImageJStackInfo,
   type OmeChannel,
+  decodeXmlEntities,
   type OmeTiffInfo,
   omeChannelName,
   omeLengthToMicrons,

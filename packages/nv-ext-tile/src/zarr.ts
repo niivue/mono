@@ -15,8 +15,6 @@ export {
   parseOmeZarrAttrs,
 } from './zarr/omeZarr'
 export {
-  type ByteCacheStats,
-  ByteLruCache,
   type FetchOmeZarrChunkedSourceOptions,
   OME_ZARR_CHUNK_CACHE_BYTES,
   type OmeZarrChunkedSource,

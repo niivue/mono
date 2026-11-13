@@ -2,6 +2,8 @@
 
 Export a [NiiVue](https://github.com/niivue) scene as a self-contained HTML file.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-ext-save-html/
+
 ## Installation
 
 ```bash

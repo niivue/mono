@@ -1,0 +1,146 @@
+---
+title: Toolbar and controls
+description: "Add NiiVue's views, clip planes, window presets, colormaps and overlays to the OHIF toolbar, and see how OHIF's tools and shortcuts drive a NiiVue viewport."
+sidebar:
+  order: 2
+---
+
+nv-ohif comes with its own toolbar buttons for the things NiiVue does that
+Cornerstone does not. They act on the active viewport when it is a NiiVue
+viewport, and are grayed out on any other.
+
+## Adding the buttons
+
+The extension registers its buttons under two names, `niivue.toolbarButtons`
+and `niivue.toolbarSections`. Pull them into your mode next to Cornerstone's,
+then list the ones you want in the primary bar:
+
+```js
+toolbarButtons: [
+  { $reference: 'cornerstone.toolbarButtons' },
+  { $reference: 'niivue.toolbarButtons' },
+],
+toolbarSections: [
+  { $reference: 'cornerstone.toolbarSections' },
+  { $reference: 'niivue.toolbarSections' },
+  { primary: [/* your buttons, */ 'NiivueViews', 'NiivueClip', 'NiivueReset'] },
+],
+```
+
+Sections are merged name by name, and the last one wins. So the `primary`
+list must name every button you want in the bar, not only the new ones.
+
+## What each button does
+
+Pick the ones you need. The id to put in your bar is in brackets.
+
+- **Views** (`NiivueViews`) switches between axial, coronal, sagittal,
+  multiplanar and the 3D render.
+- **Clip** (`NiivueClip`) cuts away one side of the 3D render (left, right,
+  anterior, posterior, superior or inferior), or turns the cut off.
+- **Window** (`NiivueWindowLevel`) offers an automatic window, which
+  ignores the darkest and brightest 2% of the image, plus OHIF's CT and PET
+  presets. Presets for another modality are grayed out.
+- **Colormap** (`NiivueColormap`) colors the base image: gray, hot, bone,
+  cool, warm, viridis, plasma, inferno, turbo or jet.
+- **Colorbar** (`NiivueColorbar`) shows or hides the colormap legend.
+- **Smoothing** (`NiivueInterpolation`) switches between smooth and blocky
+  voxels.
+- **Ruler** (`NiivueRuler`) picks the Length tool. See
+  [Measuring](/packages/nv-ohif/measurements/).
+- **Overlay** (`NiivueOverlay`) and **Overlays** (`NiivueOverlayMenu`)
+  layer other series on top. See [Layering series](#layering-series).
+- **Crosshairs** (`NiivueCrosshair`) and **Capture** (`NiivueCapture`)
+  replace Cornerstone's buttons. See below.
+- **Reset View** (`NiivueReset`) puts the camera, zoom, pan, crosshair,
+  rotation and flips back.
+
+## Crosshairs and capture
+
+Cornerstone's Crosshairs button does nothing on a NiiVue viewport, and its
+Capture button fails with an error. Put `NiivueCrosshair` and
+`NiivueCapture` in your bar instead. The first shows or hides the
+crosshair; the second saves the viewport as a PNG, slides included.
+
+Reusing Cornerstone's button ids does not work: OHIF keeps the first button
+registered under an id and quietly drops later ones.
+
+## Mouse tools
+
+OHIF's tools are built for Cornerstone, so a NiiVue viewport watches which
+tool is active on the left mouse button and does the same thing itself:
+
+- **Window Level, Pan and Zoom** drag as you would expect.
+- **Angle and Cobb Angle** measure an angle on the slice.
+- **The measurement tools** draw shapes. See
+  [Measuring](/packages/nv-ohif/measurements/).
+- **Any other tool** moves the crosshair.
+
+On the 3D render, a drag always turns the view. The viewport follows the
+tool group named in its `viewportOptions.toolGroupId`, or `default`.
+
+## Keyboard shortcuts
+
+OHIF's own viewport commands work on NiiVue viewports too, so the usual
+hotkeys keep working in layouts that mix both kinds of viewport. That covers
+reset, orientation (axial, sagittal, coronal or acquisition), zoom in and
+out, fit to window, window presets, colormap, rotate and flip. Rotate and
+flip apply to 2D slices. On a Cornerstone viewport the same commands go to
+Cornerstone, as before.
+
+## Choosing the starting window
+
+A viewport starts with the window the hanging protocol sets, if any, and
+otherwise with the automatic window. Set it in the `displaySets` entry of
+a viewport in your hanging protocol:
+
+```js
+displaySets: [
+  { id: 'ctDisplaySet', options: { voi: { windowWidth: 400, windowCenter: 40 } } },
+],
+```
+
+Each viewport keeps its own window afterwards, as in OHIF.
+
+## Layering series
+
+A viewport shows one base series. You can draw other series from the same
+study on top of it as overlays:
+
+- **Overlay** (`NiivueOverlay`) adds the study's next series in a warm
+  colormap at half opacity. Press it again to remove every overlay.
+- **Overlays** (`NiivueOverlayMenu`) is a menu. It lists the series you can
+  add, then one row per overlay, top layer first, with visibility, colormap,
+  opacity, up and down, and remove.
+
+Only series NiiVue can open as a volume can be overlaid. A DICOM overlay is
+converted first, which can take a moment; pressing Overlay again cancels
+it. Changing the base series drops its overlays.
+
+The same actions are commands, so your own code can run them on the active
+viewport:
+
+```js
+commandsManager.runCommand('niivueAddOverlay', { displaySetInstanceUID })
+commandsManager.runCommand('niivueSetOverlayVisible', { displaySetInstanceUID, visible: false })
+commandsManager.runCommand('niivueRemoveOverlay', { displaySetInstanceUID })
+```
+
+`niivueMoveOverlay` moves one with a `direction` of `'up'` or `'down'`.
+OHIF's `setViewportColormap` changes an overlay's colormap and opacity when
+you pass its `displaySetInstanceUID`.
+
+## Hiding buttons NiiVue cannot run
+
+Some of your other buttons may do nothing on a NiiVue viewport. Wrap your
+own button definitions with `withNiivueSupport`, and each one is disabled
+while a NiiVue viewport is active if NiiVue cannot run it:
+
+```js
+import { withNiivueSupport } from '@niivue/nv-ohif'
+
+const buttons = myButtons.map(withNiivueSupport)
+```
+
+A button that sets `hideWhenDisabled` is hidden instead. On other
+viewports the buttons behave as before.

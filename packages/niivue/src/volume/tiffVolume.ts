@@ -6,7 +6,7 @@
  * cannot drift on plane ordering, datatype mapping or spacing.
  *
  * Spacing is in MICROMETRES, matching `allenAtlasSpacing` and OME's own
- * default `PhysicalSize` unit. See `docs/ome-tiff-format.md`.
+ * default `PhysicalSize` unit. See `notes/ome-tiff-format.md`.
  */
 
 import { log } from '@/logger'

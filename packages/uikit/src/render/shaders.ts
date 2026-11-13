@@ -2,7 +2,7 @@
 // wgpu/line.wgsl) during the bake-in phase so UIKit renders without reaching into
 // core. Same wire format as `LineData`: instanced quads expanded in the vertex
 // stage from [start, end, thickness, color]. Pixel coordinates map to NDC with a
-// Y flip (screen y-down -> clip y-up). See docs/ruler-port.md in @niivue/niivue.
+// Y flip (screen y-down -> clip y-up). See notes/ruler-port.md in @niivue/niivue.
 
 export const GL_LINE_VERT = `#version 300 es
 precision highp float;

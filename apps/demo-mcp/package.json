@@ -11,6 +11,7 @@
   "dependencies": {
     "@niivue/dev-images": "workspace:*",
     "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-isosurface": "workspace:*",
     "@niivue/nv-ext-tile": "workspace:*",
     "@niivue/nv-mcp": "workspace:*",
     "@niivue/uikit": "workspace:*",

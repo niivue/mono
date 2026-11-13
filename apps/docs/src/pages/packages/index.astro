@@ -1,0 +1,35 @@
+---
+// Every package with its overview page's description, in sidebar order.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { packagesInOrder } from '../../lib/markdown'
+import { withBase } from '../../site'
+
+const packages = (await packagesInOrder()).map(({ label, pages }) => ({
+  label,
+  href: withBase(`${pages[0].id}/`),
+  description: pages[0].data.description,
+}))
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Packages',
+    description:
+      'Bindings for other frameworks and languages, and extensions for jobs the core NiiVue package leaves out.',
+  }}
+>
+  <p>
+    The core <a href={withBase('guide/')}>NiiVue</a> package shows images.
+    These packages bring it to other frameworks and languages, or add jobs it
+    leaves out, so you only install what you use.
+  </p>
+  <ul>
+    {
+      packages.map((p) => (
+        <li>
+          <a href={p.href}>{p.label}</a>: {p.description}
+        </li>
+      ))
+    }
+  </ul>
+</StarlightPage>

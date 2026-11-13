@@ -1,0 +1,113 @@
+---
+title: NiiVueKit
+description: "Show a NiiVue viewer in a SwiftUI app on iPhone, iPad, Mac or Vision Pro, and drive it from Swift with NiiVueKit."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+NiiVueKit puts a NiiVue viewer in a SwiftUI app. The viewer is NiiVue
+itself, running as a small web page inside a `WKWebView`. NiiVueKit hosts
+that page and gives you a Swift model to drive it: load images, change the
+view and follow the crosshair, all from Swift.
+
+It is one half of a pair. The web page uses
+[Web bridge](/packages/niivue-web-bridge/) to answer the messages NiiVueKit
+sends. The [medgfx](https://github.com/niivue/mono/tree/main/apps/medgfx)
+app in this repository is built on both.
+
+## When to use it
+
+Use NiiVueKit when you are writing a native Apple app and want NiiVue's
+rendering without rebuilding it in Swift. If your app is a website, use
+NiiVue directly; start with the [guides](/guide/).
+
+It needs iOS or iPadOS 17, macOS 14, Mac Catalyst 17 or visionOS 1, or
+later.
+
+## Adding it to your app
+
+The package is not published, so you add it from your clone of this
+repository. In Xcode, choose **Add Package Dependencies** from the
+**File** menu, click **Add Local**, pick the `packages/niivue-swift` folder,
+and add the NiiVueKit library to your app target.
+
+From another Swift package, give the path from your package to that
+folder:
+
+```swift
+dependencies: [.package(path: "../niivue-swift")],
+targets: [
+    .target(name: "MyViewer", dependencies: [
+        .product(name: "NiiVueKit", package: "niivue-swift"),
+    ]),
+]
+```
+
+There are two libraries to choose from:
+
+- **NiiVueKit** is the one most apps want. It has the SwiftUI view, the
+  viewer model and everything in BridgeCore, so `import NiiVueKit` is all
+  you need.
+- **BridgeCore** is only the messaging between Swift and a web page, with
+  no NiiVue in it. See
+  [Sending your own messages](/packages/niivue-swift/messages/).
+
+## Your first viewer
+
+NiiVueKit can serve a ready-made viewer page, but that page is not checked
+in to git. Build it once from the repository root, after `bun install`:
+
+```bash
+packages/niivue-swift/scripts/build-web.sh
+```
+
+Then show it, and load a NIfTI file you added to your app target:
+
+```swift
+import NiiVueKit
+import SwiftUI
+
+struct ContentView: View {
+    @State private var bridge: Bridge
+    @State private var model: NiiVueModel
+
+    init() {
+        let bridge = Bridge(config: .niiVueKitBundled)
+        _bridge = State(initialValue: bridge)
+        _model = State(initialValue: NiiVueModel(bridge: bridge))
+    }
+
+    var body: some View {
+        NiiVueWebView(bridge: bridge)
+            .task {
+                guard let url = Bundle.main.url(forResource: "mni152", withExtension: "nii.gz") else { return }
+                try? await model.loadVolume(url: url)
+            }
+    }
+}
+```
+
+Three pieces work together here:
+
+- `NiiVueWebView` creates the web view and loads the page.
+- `Bridge` carries messages between Swift and the page.
+- `NiiVueModel` keeps a Swift copy of the viewer's settings and images,
+  which your SwiftUI views can read and change.
+
+You can call `loadVolume` straight away. Anything sent before the page has
+finished loading waits, and goes out once the page says it is ready.
+
+## What next
+
+- [The viewer page](/packages/niivue-swift/viewer-page/): ship your own
+  page, reload it live while you work, and fix a viewer that stays blank.
+- [Controlling the viewer](/packages/niivue-swift/controlling-the-viewer/):
+  bind settings to SwiftUI controls, load and adjust images, follow the
+  crosshair and switch between WebGL2 and WebGPU.
+- [Sending your own messages](/packages/niivue-swift/messages/): talk to
+  your own code in the page.
+
+The source is in
+[packages/niivue-swift](https://github.com/niivue/mono/tree/main/packages/niivue-swift).
+Run its tests with `swift test` in that folder.

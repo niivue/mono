@@ -1,3 +1,97 @@
+## 1.0.0-rc.106 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.197
+
+## 1.0.0-rc.105 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.196
+
+## 1.0.0-rc.104 (2026-11-13)
+
+### Features
+
+- ⚠️  **niivue,nv-ext-tile:** one core ByteLru for the byte caches ([3523b2c2](https://github.com/niivue/mono/commit/3523b2c2))
+
+### Breaking Changes
+
+- **niivue,nv-ext-tile:** one core ByteLru for the byte caches  ([3523b2c2](https://github.com/niivue/mono/commit/3523b2c2))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.195
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.103 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.194
+
+## 1.0.0-rc.102 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** add a labels option to streamOmeZarr ([f8467f4f](https://github.com/niivue/mono/commit/f8467f4f))
+
+### Fixes
+
+- **nv-ext-tile:** limit the 64-bit label fallback to float64 ([281942d2](https://github.com/niivue/mono/commit/281942d2))
+- **nv-ext-tile:** decode XML character references in OME TiffData attributes ([#49](https://github.com/niivue/mono/issues/49))
+- **nv-ext-tile:** stream a segmentation in its image-label colours ([dea03573](https://github.com/niivue/mono/commit/dea03573))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.193
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.101 (2026-11-13)
+
+### Fixes
+
+- **nv-mcp:** add_isosurface leaves the timepoint to the store, names the chosen channel ([aed19aa6](https://github.com/niivue/mono/commit/aed19aa6))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.192
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.100 (2026-11-13)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.191
+
+## 1.0.0-rc.99 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** tie the placement test to the chunked source; doc touch-ups ([5eb4c2b0](https://github.com/niivue/mono/commit/5eb4c2b0))
+- **nv-ext-tile:** place whole OME-Zarr levels like streamed ones ([f609ad8b](https://github.com/niivue/mono/commit/f609ad8b))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.190
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.98 (2026-11-13)
 
 ### Refactors

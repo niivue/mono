@@ -63,3 +63,11 @@ export function blendOverlayData(
   }
   return result
 }
+
+/** Scale an RGBA8 buffer's alpha by `weight` in place (a no-op at 1). */
+export function weightAlpha(data: Uint8Array, weight: number): Uint8Array {
+  if (weight === 1) return data
+  for (let j = 3; j < data.length; j += 4)
+    data[j] = Math.round(data[j] * weight)
+  return data
+}

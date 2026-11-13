@@ -61,6 +61,12 @@ const SCENES: Scene[] = [
           nv.sliceType = 0
         },
       },
+      {
+        name: 'faded',
+        run: async ({ nv }) => {
+          await nv.setVolume(1, { opacity: 0.4 })
+        },
+      },
     ],
   },
   {
@@ -199,6 +205,15 @@ const SCENES: Scene[] = [
         sameAs: 'stack-whole--axial',
         run: async ({ nv, settle }) => {
           nv.sliceType = 0
+          await settle()
+        },
+      },
+      {
+        // Per-channel opacity weights the fuse as it does the whole stack.
+        name: 'faded',
+        sameAs: 'stack-whole--faded',
+        run: async ({ nv, settle }) => {
+          await nv.setVolume(1, { opacity: 0.4 })
           await settle()
         },
       },

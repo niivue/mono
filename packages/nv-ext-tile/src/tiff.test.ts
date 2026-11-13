@@ -1978,24 +1978,6 @@ describe('Range replies', () => {
     )
   })
 
-  test('a reply longer than the range is refused before its body is read', async () => {
-    const file = writeTiff(PYRAMID)
-    const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
-      const m = /bytes=(\d+)-(\d+)/.exec(
-        new Headers(init?.headers).get('Range') ?? '',
-      )
-      const start = Number(m?.[1])
-      const body = file.slice(start, start + 70000)
-      return new Response(body, {
-        status: 206,
-        headers: { 'Content-Length': String(body.byteLength) },
-      })
-    }) as typeof fetch
-    await expect(
-      TiffSlideSource.fromUrl('http://test/slide.tif', { fetch: fetchImpl }),
-    ).rejects.toThrow(/reply to bytes=0-65535 is too long/)
-  })
-
   test('a reply without Content-Length is cut off past its range', async () => {
     let pulled = 0
     let cancelled = false
@@ -2015,7 +1997,7 @@ describe('Range replies', () => {
       )) as unknown as typeof fetch
     await expect(
       TiffSlideSource.fromUrl('http://test/slide.tif', { fetch: fetchImpl }),
-    ).rejects.toThrow(/reply to bytes=0-65535 body too large/)
+    ).rejects.toThrow('Reply over 65536 bytes')
     expect(cancelled).toBe(true)
     expect(pulled).toBeLessThan(10)
   })

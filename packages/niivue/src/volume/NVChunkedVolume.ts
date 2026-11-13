@@ -10,6 +10,7 @@ import type {
   VolumeChunkSource,
   VolumeSourceDescriptor,
 } from '@/NVTypes'
+import { chunkRegions, regionKey } from '@/view/chunkStackFuse'
 import type {
   BudgetPlan,
   BudgetPlanContext,
@@ -435,16 +436,6 @@ function frameChunkLoader(
       signal: request.signal,
     })
   }
-}
-
-function regionKey(levelIndex: number, origin: Vec3i, dims: Vec3i): string {
-  return `${levelIndex}|${origin.join(',')}|${dims.join(',')}`
-}
-
-function chunkRegionKeys(plan: ChunkPlan): string[] {
-  return plan.chunks.map((c) =>
-    regionKey(c.sourceLevel ?? 0, c.texOrigin, c.texDims),
-  )
 }
 
 /** One in-flight region read, shared by every caller that asked for it. */
@@ -1468,7 +1459,7 @@ export class NVChunkedVolume {
       this.volume.chunkPlan = plan
       this.readout.keep(plan)
       // Staged bricks the new plan does not request would wait forever.
-      const kept = new Set(chunkRegionKeys(plan))
+      const kept = new Set(chunkRegions(plan))
       for (const key of this.servedBricks.keys())
         if (!kept.has(key)) this.servedBricks.delete(key)
       try {
@@ -1868,7 +1859,7 @@ class BrickReadout {
 
   /** Drop the bricks a new plan no longer holds. */
   keep(plan: ChunkPlan): void {
-    const kept = new Set(chunkRegionKeys(plan))
+    const kept = new Set(chunkRegions(plan))
     this.planKeys = kept
     for (const [key, b] of this.bricks)
       if (!kept.has(key)) {

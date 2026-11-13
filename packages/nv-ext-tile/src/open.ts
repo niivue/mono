@@ -6,16 +6,12 @@ import {
   DziSource,
   ManifestRangeSource,
   type NVSlideAttribution,
+  type SlideFetch,
   type SlideTileSource,
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import type { SlideIndex, SlideIndexSlide } from './dicomIndex'
-import {
-  anySignal,
-  readCapped,
-  type SlideFetch,
-  slideFetch,
-} from './rangeFetch'
+import { anySignal, readOk, slideFetch } from './rangeFetch'
 import type { TiffSlideOptions } from './tiff'
 
 export type SlideKind =
@@ -276,7 +272,7 @@ async function openUrl(
     case 'manifest': {
       const response = await slideFetch(fetchImpl)(url, { signal })
       const manifest = JSON.parse(
-        new TextDecoder().decode(await readCapped(response, 'Slide manifest')),
+        new TextDecoder().decode(await readOk(response, 'Slide manifest')),
       )
       // A manifest is untrusted: its own attribution is cleaned too.
       const credit = cleanAttribution(attribution ?? manifest.attribution)

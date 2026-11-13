@@ -5,7 +5,6 @@
 
 import type {
   NVSlide,
-  NVSlidePlaneAxes,
   NVSlidePlaneIndex,
   NVSlideScreen,
   SlideView,
@@ -271,14 +270,6 @@ export function attachSlideChannelPanel(
   }
 }
 
-// NVSlide's plane surface per the frozen plane contract (C implements it):
-// `planes` absent means a fixed source, one plane.
-type PlaneSlide = {
-  readonly planes?: NVSlidePlaneAxes
-  readonly planeIndex: NVSlidePlaneIndex
-  setPlaneIndex(p: NVSlidePlaneIndex): unknown
-}
-
 /**
  * Focal-plane (z) and time (t) sliders in `container` for the view's slide,
  * per axis with more than one plane; hidden for a fixed source. A move calls
@@ -290,7 +281,7 @@ export function attachSlidePlaneControl(
   view: SlideView,
   container: HTMLElement,
 ): () => void {
-  let builtFor: PlaneSlide | null = null
+  let builtFor: NVSlide | null = null
   let builtKey = ''
   let calls = 0
   // The plane asked for and not yet committed: requests and the sliders build
@@ -303,7 +294,7 @@ export function attachSlidePlaneControl(
   }> = []
   const status = document.createElement('span')
   status.setAttribute('role', 'status')
-  const sync = (slide: PlaneSlide): void => {
+  const sync = (slide: NVSlide): void => {
     const shown = wanted ?? slide.planeIndex
     for (const { axis, input, text } of sliders) {
       input.value = String(shown[axis])
@@ -311,8 +302,7 @@ export function attachSlidePlaneControl(
     }
   }
   const build = (): void => {
-    // ponytail: cast until lane C's NVSlide declares `planes`.
-    const slide = view.slide as unknown as PlaneSlide | null
+    const slide = view.slide
     const axes = slide?.planes
     const key =
       slide && axes && (axes.z > 1 || axes.t > 1) ? `${axes.z}x${axes.t}` : ''

@@ -798,16 +798,25 @@ export function chunkExplodedMatRAS(
   if (offset[0] === 0 && offset[1] === 0 && offset[2] === 0) return matRAS
 
   const [vx, vy, vz] = plan.volumeDims
-  const ox = offset[0] * vx
-  const oy = offset[1] * vy
-  const oz = offset[2] * vz
-  const out = new Float32Array(16)
-  for (let i = 0; i < 16; i++) out[i] = matRAS[i] ?? 0
+  return translatedAffine(new Float32Array(16), matRAS, [
+    offset[0] * vx,
+    offset[1] * vy,
+    offset[2] * vz,
+  ])
+}
 
-  out[3] += ox * matRAS[0] + oy * matRAS[1] + oz * matRAS[2]
-  out[7] += ox * matRAS[4] + oy * matRAS[5] + oz * matRAS[6]
-  out[11] += ox * matRAS[8] + oy * matRAS[9] + oz * matRAS[10]
-  out[15] += ox * matRAS[12] + oy * matRAS[13] + oz * matRAS[14]
+/**
+ * Row-major voxel->mm affine `m` into `out` with its origin moved to voxel
+ * `o`: the rotation/scale block times `o` added to the translation.
+ */
+export function translatedAffine<T extends Float32Array | number[]>(
+  out: T,
+  m: ArrayLike<number>,
+  [ox, oy, oz]: readonly [number, number, number],
+): T {
+  for (let i = 0; i < 16; i++) out[i] = m[i] ?? 0
+  for (let r = 3; r < 16; r += 4)
+    out[r] += ox * (m[r - 3] ?? 0) + oy * (m[r - 2] ?? 0) + oz * (m[r - 1] ?? 0)
   return out
 }
 

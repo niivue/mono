@@ -2,25 +2,26 @@ import { colorLutGlsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
 import {
   DEFAULT_RAW_POOL_BYTES,
-  isFuseTile,
   SlideBudgetRegistration,
 } from '@/slide/slideFuse'
 import {
   cornerQuad,
   type SlidePlaneAnnotation,
   type SlidePlaneTile,
-  slideExtentCorners,
 } from '@/slide/slidePlane'
 import {
   frameTextureBudget,
+  gatherPlaneTiles,
+  PLANE_QUAD_FLOATS,
   planeQuad,
+  planeVertices,
   planTextures,
   sameTiles,
+  tileTexture,
 } from '@/slide/slideTiles'
 import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
-  slideTileKey,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { NVRenderer } from '@/view/NVRenderer'
@@ -51,7 +52,6 @@ const fragSrc = (lut: boolean): string => `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D tileTex;
-uniform float opacity;
 uniform int isNearest;
 // A mixed fused tile's label channels (slideFuse.ts fuseTarget), combined
 // nearest with the intensity: 0 none, 1 max, 2 saturating sum.
@@ -73,11 +73,8 @@ void main(){
     vec3 l = texelFetch(labelTexture, clamp(ivec2(vUV * vec2(size)), ivec2(1), size - 2), 0).rgb;
     c.rgb = labelBlend == 2 ? min(c.rgb + l, 1.0) : max(c.rgb, l);
   }
-  outColor = vec4(applyColorLut(c.rgb), c.a * opacity);
+  outColor = vec4(applyColorLut(c.rgb), c.a);
 }`
-
-// Interleaved [pos.xyz, uv.xy]: 5 floats a vertex, 20 a quad.
-const QUAD_FLOATS = 20
 
 function quadVao(
   gl: WebGL2RenderingContext,
@@ -147,6 +144,8 @@ export class SlidePlaneRenderer extends NVRenderer {
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
     this._gl = gl
+    this._gutter.gl = gl
+    this._fuser.gl = gl
     this._shader = new Shader(gl, vertSrc, fragSrc(false))
     this._lutShader = new Shader(gl, vertSrc, fragSrc(true))
     // Sampler units are program state: set once (the lookup table is on unit 1).
@@ -166,50 +165,15 @@ export class SlidePlaneRenderer extends NVRenderer {
     this.isReady = true
   }
 
-  private _atOf(slide: NVSlide, tile: SlidePlaneTile): GutterAt {
-    let at = this._at.get(tile)
-    if (!at) {
-      at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
-      this._at.set(tile, at)
-    }
-    return at
-  }
-
-  private _textureFor(
-    gl: WebGL2RenderingContext,
-    slide: NVSlide,
-    at: GutterAt,
-    cached: NVSlideCachedTile,
-  ): TileTextureGL | null {
-    if (isFuseTile(cached))
-      return this._fuser.textureFor(
-        gl,
-        this._gutter,
-        this._textures,
-        at,
-        slide,
-        cached,
-      )
-    const { bitmap } = cached
-    if (!bitmap) return null
-    const existing = this._textures.get(at.key, bitmap)
-    if (existing) return existing
-    return this._gutter.upload(gl, bitmap, at, this._textures)
-  }
-
   /** Bind the program and uniforms, and set the plane's depth/blend state. */
   private _begin(
     gl: WebGL2RenderingContext,
     shader: Shader,
     mvpMatrix: Float32Array,
-    opacity: number,
   ): void {
     shader.use(gl)
     if (shader.uniforms.mvpMtx) {
       gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
-    }
-    if (shader.uniforms.opacity) {
-      gl.uniform1f(shader.uniforms.opacity, opacity)
     }
     gl.uniform1i(shader.uniforms.isNearest ?? null, 0)
     gl.uniform1i(shader.uniforms.labelBlend ?? null, 0)
@@ -232,17 +196,11 @@ export class SlidePlaneRenderer extends NVRenderer {
     slide: NVSlide,
     pixelToWorld?: readonly number[],
   ): void {
-    const data = new Float32Array((tiles.length + 1) * QUAD_FLOATS)
-    if (pixelToWorld) {
-      const { width, height } = slide.manifest
-      data.set(cornerQuad(slideExtentCorners(pixelToWorld, width, height)))
-    }
-    this._insets.length = 0
-    tiles.forEach((tile, i) => {
-      data.set(planeQuad(tile, tile), (i + 1) * QUAD_FLOATS)
-      this._insets.push(tile)
-    })
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      planeVertices(tiles, slide, pixelToWorld, this._insets),
+      gl.STATIC_DRAW,
+    )
     this._built = tiles
     this._builtFor = { slide, pixelToWorld }
   }
@@ -258,22 +216,14 @@ export class SlidePlaneRenderer extends NVRenderer {
     mvpMatrix: Float32Array,
     tiles: readonly SlidePlaneTile[],
     slide: NVSlide,
-    opacity = 1,
     pixelToWorld?: readonly number[],
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
     this._budget.sync([slide])
-    if (this._gl) this._fuser.retainLabelTables(this._gl, [slide])
+    this._fuser.retainLabelTables([slide])
     const cached = this._cached
     const ats = this._ats
-    cached.length = ats.length = 0
-    let fuses = false
-    for (const tile of tiles) {
-      const c = slide.cachedTile(tile.key)
-      if (c && isFuseTile(c)) fuses = true
-      cached.push(c)
-      ats.push(this._atOf(slide, tile))
-    }
+    const fuses = gatherPlaneTiles(slide, tiles, this._at, cached, ats)
     // Evict BEFORE beginFrame so the previous frame's working set is exempt.
     this._textures.evictToBudget(
       frameTextureBudget(fuses, this._fuser.poolBytes, DEFAULT_RAW_POOL_BYTES),
@@ -288,15 +238,19 @@ export class SlidePlaneRenderer extends NVRenderer {
       ats,
       cached,
       (i) =>
-        this._textureFor(
-          gl,
-          slide,
+        tileTexture(
+          this._fuser,
+          this._gutter,
+          this._textures,
           ats[i] as GutterAt,
+          slide,
           cached[i] as NVSlideCachedTile,
+          true,
+          false,
         ),
       drawn,
     )
-    this._fuser.flush(gl, this._gutter, this._textures, true)
+    this._fuser.flush(this._gutter, this._textures, true)
 
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
@@ -309,14 +263,14 @@ export class SlidePlaneRenderer extends NVRenderer {
     )
       this._buildVertices(gl, tiles, slide, pixelToWorld)
     if (absent) {
-      this._begin(gl, this._shader, mvpMatrix, opacity)
+      this._begin(gl, this._shader, mvpMatrix)
       gl.bindTexture(gl.TEXTURE_2D, this._absentTexture(gl, slide))
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
     const lut = slide.displayColorLut
     const shader = (lut && this._lutShader) || this._shader
     if (lut) this._luts.bind(gl, lut)
-    this._begin(gl, shader, mvpMatrix, opacity)
+    this._begin(gl, shader, mvpMatrix)
     let nearest = false
     let labelBlend = 0
     // Unit 2's binding before the first label texture (a shared context), restored after.
@@ -331,7 +285,7 @@ export class SlidePlaneRenderer extends NVRenderer {
         const tile = tiles[i] as SlidePlaneTile
         gl.bufferSubData(
           gl.ARRAY_BUFFER,
-          (i + 1) * QUAD_FLOATS * 4,
+          (i + 1) * PLANE_QUAD_FLOATS * 4,
           planeQuad(tile, tex),
         )
       }
@@ -401,7 +355,6 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     mvpMatrix: Float32Array,
     ann: SlidePlaneAnnotation,
-    opacity = 1,
   ): void {
     if (!this.isReady || !this._shader || !this._annVao) return
     if (!this._annTex) this._annTex = gl.createTexture()
@@ -424,7 +377,7 @@ export class SlidePlaneRenderer extends NVRenderer {
       setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR, gl.NEAREST)
       this._annVersion = ann.version
     }
-    this._begin(gl, this._shader, mvpMatrix, opacity)
+    this._begin(gl, this._shader, mvpMatrix)
     gl.bindVertexArray(this._annVao)
     if (this._annCorners !== ann.corners) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this._annVbo)
@@ -440,7 +393,7 @@ export class SlidePlaneRenderer extends NVRenderer {
   clearBudget(): void {
     this._budget.clear()
     // The replaced slide's label tables go too; a new slide re-makes its own.
-    if (this._gl) this._fuser.retainLabelTables(this._gl, [])
+    this._fuser.retainLabelTables([])
   }
 
   destroy(): void {
@@ -448,8 +401,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     const gl = this._gl
     if (!gl) return
     this._textures.clear()
-    this._fuser.destroy(gl)
-    this._gutter.destroy(gl)
+    this._fuser.destroy()
+    this._gutter.destroy()
     this._luts.clear(gl)
     for (const t of [this._annTex, this._bgTex]) if (t) gl.deleteTexture(t)
     for (const v of [this._vao, this._annVao]) if (v) gl.deleteVertexArray(v)

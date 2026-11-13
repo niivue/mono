@@ -15,7 +15,11 @@
 // and the first linear frame after refills every resident border once.
 
 import { log } from '@/logger'
-import type { NVSlideLevelManifest, NVSlideVisibleTile } from './NVSlide'
+import type {
+  NVSlideLevelManifest,
+  NVSlideTileManifest,
+  NVSlideVisibleTile,
+} from './NVSlide'
 import { slideTileKey, type TileTextureCache } from './tileTextureCache'
 
 /** Interior size of a tile texture (the bitmap size). */
@@ -79,14 +83,25 @@ const edgeBits = (sx: number, sy: number): number =>
   (sx < 0 ? EDGE_LEFT : sx > 0 ? EDGE_RIGHT : 0) |
   (sy < 0 ? EDGE_TOP : sy > 0 ? EDGE_BOTTOM : 0)
 
+// Per manifest tile, so a steady view builds no key or object per frame. The
+// level check catches a level object replaced around shared tiles.
+const tileAts = new WeakMap<NVSlideTileManifest, GutterAt>()
+
 /** Where visible tile `item` of the 2D view goes. */
-export const visibleTileAt = (item: NVSlideVisibleTile): GutterAt => ({
-  slide: item.slide,
-  key: slideTileKey(item.slide, item.key),
-  level: item.level,
-  col: item.tile.x,
-  row: item.tile.y,
-})
+export function visibleTileAt(item: NVSlideVisibleTile): GutterAt {
+  let at = tileAts.get(item.tile)
+  if (!at || at.level !== item.level || at.slide !== item.slide) {
+    at = {
+      slide: item.slide,
+      key: slideTileKey(item.slide, item.key),
+      level: item.level,
+      col: item.tile.x,
+      row: item.tile.y,
+    }
+    tileAts.set(item.tile, at)
+  }
+  return at
+}
 
 /**
  * Copy `width` x `height` texels from (srcX, srcY) of a padded source texture
@@ -276,5 +291,92 @@ export function syncGutters<T extends GutterTile>(
           edges,
           tile,
         )
+  }
+}
+
+/**
+ * A slide tile texture of backend texture type `Tex`: `width` x `height`
+ * interior plus a 1-texel gutter, at tile `col`, `row` of level `level`.
+ */
+export type TileTexture<Tex> = {
+  texture: Tex
+  width: number
+  height: number
+  slide: GutterSlide
+  level: NVSlideLevelManifest
+  col: number
+  row: number
+  /** A fused scalar tile: the slide's displayGeneration it was fused for. */
+  fused?: number
+  /** Draw with nearest filtering (a fused tile of label channels only). */
+  nearest?: boolean
+  /**
+   * A fused tile's label channels when it also shows intensity channels: no
+   * gutter, read nearest and combined with `texture` as the channel blend.
+   */
+  labels?: Tex
+}
+
+/** One gutter copy into `dst`; a null `src` is `dst`'s own edge. */
+export type GutterCopyOf<Tex> = [
+  src: TileTexture<Tex> | null,
+  dst: TileTexture<Tex>,
+  c: GutterCopy,
+]
+
+/** The gutter bookkeeping both backends share; a subclass runs the copies. */
+export abstract class TileGutterBase<Tex> {
+  // An upload skipped its gutter copies since the last resync.
+  private _stale = false
+
+  protected abstract _copy(copies: GutterCopyOf<Tex>[]): void
+
+  /**
+   * Fill the gutters of `tiles` (already in `cache`) and refresh the resident
+   * neighbours' slots that read from them; with `sync` false, defer to `resync`.
+   */
+  sync(
+    tiles: readonly TileTexture<Tex>[],
+    cache: TileTextureCache<TileTexture<Tex>>,
+    sync = true,
+  ): void {
+    if (!sync) {
+      this._stale ||= tiles.length > 0
+      return
+    }
+    const copies: GutterCopyOf<Tex>[] = []
+    for (const t of tiles)
+      syncGutters(
+        gutterKeyAt(t),
+        t.col,
+        t.row,
+        t,
+        slideNeighbour(cache),
+        (...c) => copies.push(c),
+        gutterEdgesAt(t),
+      )
+    if (copies.length) this._copy(copies)
+  }
+
+  /** Refill every resident tile's gutter if an upload skipped its own. */
+  resync(cache: TileTextureCache<TileTexture<Tex>>): void {
+    if (!this._stale) return
+    this._stale = false
+    const copies: GutterCopyOf<Tex>[] = []
+    for (const t of cache.values())
+      fillGutter(
+        gutterKeyAt(t),
+        t.col,
+        t.row,
+        t,
+        slideNeighbour(cache),
+        (...c) => copies.push(c),
+        gutterEdgesAt(t),
+      )
+    this._copy(copies)
+  }
+
+  destroy(): void {
+    this._stale = false
   }
 }

@@ -180,9 +180,9 @@ export function chunkRGBA(
   const voxels = (chunkBytes.length / 3) | 0
   const out = new Uint8Array(voxels * 4)
   for (let v = 0, s = 0, d = 0; v < voxels; v++, s += 3, d += 4) {
-    out[d] = chunkBytes[s] ?? 0
-    out[d + 1] = chunkBytes[s + 1] ?? 0
-    out[d + 2] = chunkBytes[s + 2] ?? 0
+    out[d] = chunkBytes[s]
+    out[d + 1] = chunkBytes[s + 1]
+    out[d + 2] = chunkBytes[s + 2]
     out[d + 3] = 255
   }
   return out

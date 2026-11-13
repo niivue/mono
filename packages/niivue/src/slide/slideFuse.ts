@@ -530,7 +530,7 @@ export function fuseTarget<
   let target = cache.get(at.key, tile.samples)
   if (target?.fused === slide.displayGeneration) return target
   const plan = fusePlan(
-    slide.channels,
+    slide.liveChannels,
     slide.channelBlend,
     tile,
     slide.manifest.channelInfo,

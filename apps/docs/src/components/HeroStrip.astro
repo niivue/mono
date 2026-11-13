@@ -1,6 +1,6 @@
 ---
 // Stills of each kind of data NiiVue shows, drawn by NiiVue itself
-// (scripts/home-stills.ts). Each links to where the docs cover it.
+// (scripts/home-stills.ts).
 import { withBase } from '../site'
 
 const STILLS = [
@@ -8,40 +8,35 @@ const STILLS = [
     label: 'MRI',
     image: 'mri',
     alt: 'A T1-weighted MRI of a head, cut down the middle',
-    href: 'guide/loading/',
   },
   {
     label: 'CT',
     image: 'ct',
     alt: 'A 3D rendering of a skull from a CT scan',
-    href: 'gallery/vox-ct/',
   },
   {
     label: 'Microscopy',
     image: 'microscopy',
     alt: 'Stained skin tissue in a whole-slide microscope image',
-    href: 'packages/nv-ext-tile/',
   },
   {
     label: 'Surfaces',
     image: 'surfaces',
     alt: 'A brain surface with motor activity mapped onto it',
-    href: 'guide/meshes/',
   },
   {
     label: 'Tractography',
     image: 'tractography',
     alt: 'White matter fibers colored by direction',
-    href: 'guide/tracts/',
   },
 ]
 ---
 
 <ul class="strip" aria-label="Some of what NiiVue shows">
   {
-    STILLS.map(({ label, image, alt, href }) => (
+    STILLS.map(({ label, image, alt }) => (
       <li>
-        <a href={withBase(href)}>
+        <figure>
           <img
             src={withBase(`img/home/${image}.webp`)}
             alt={alt}
@@ -49,54 +44,41 @@ const STILLS = [
             height="640"
             decoding="async"
           />
-          <span>{label}</span>
-        </a>
+          <figcaption>{label}</figcaption>
+        </figure>
       </li>
     ))
   }
 </ul>
 
 <style>
+  /* Five across on a wide screen; narrower, three over two (two per row on
+     the smallest phones), always centered so a short row looks intended. */
   .strip {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(9.5rem, 42%);
-    gap: 0.75rem;
+    --gap: 0.75rem;
+    --per-row: 3;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--gap);
     margin: 0;
-    padding: 0 0 0.5rem;
+    padding: 0;
     list-style: none;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-
-  .strip::-webkit-scrollbar {
-    display: none;
   }
 
   li {
-    scroll-snap-align: start;
+    flex: 0 0
+      calc((100% - (var(--per-row) - 1) * var(--gap)) / var(--per-row));
   }
 
-  a {
+  figure {
     position: relative;
-    display: block;
+    margin: 0;
     aspect-ratio: 1;
     overflow: hidden;
     background: var(--nv-viewer);
     border: 1px solid var(--nv-viewer-line);
     border-radius: var(--nv-radius);
-    transition: border-color 0.2s ease;
-  }
-
-  a:hover {
-    border-color: var(--sl-color-gray-4);
-  }
-
-  a:focus-visible {
-    outline: 2px solid var(--sl-color-text-accent);
-    outline-offset: 2px;
   }
 
   img {
@@ -104,42 +86,36 @@ const STILLS = [
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
-  }
-
-  a:hover img {
-    transform: scale(1.04);
   }
 
   /* The label sits on a soft shade, so it reads on bright images too. */
-  span {
+  figcaption {
     position: absolute;
     inset: auto 0 0;
-    padding: 2.25rem 0.85rem 0.7rem;
-    font-size: var(--sl-text-sm);
+    padding: 1.75rem 0.6rem 0.5rem;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
+    white-space: nowrap;
     color: #fff;
     background: linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0));
   }
 
-  @media (min-width: 50rem) {
+  @media (max-width: 22.5rem) {
     .strip {
-      grid-auto-flow: row;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 1rem;
-      padding: 0;
-      overflow: visible;
+      --per-row: 2;
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    img {
-      transition: none;
+  @media (min-width: 50rem) {
+    .strip {
+      --gap: 1rem;
+      --per-row: 5;
     }
 
-    a:hover img {
-      transform: none;
+    figcaption {
+      padding: 2.25rem 0.85rem 0.7rem;
+      font-size: var(--sl-text-sm);
     }
   }
 </style>

@@ -107,6 +107,13 @@ jobs:
   # OME-Zarr time) on SwiftShader: synthetic fixtures served from memory or
   # nv-ext-tile/fixtures, no network, no LFS. WebGL2 only: see the header on
   # SwiftShader WebGPU here.
+  #
+  # Then nv-ext-tile's standalone suite (no-bundler pages over both packages'
+  # standalone builds, reusing the builds above). It needs WebGL2 AND WebGPU:
+  # its sample readback fails without a WebGPU adapter. Both run on SwiftShader
+  # (Vulkan for WebGPU; a few tiny canvases, ~10 s). Its niivue and nv-ext-tile
+  # sources, tests and fixtures are under the path filters; a dcm2niix or
+  # Playwright bump that changes only bun.lock is not.
   demo-ext-tile:
     runs-on: ubuntu-26.04
     steps:
@@ -126,6 +133,9 @@ jobs:
         env:
           DEMO_E2E_BACKENDS: webgl2
         run: bunx nx e2e demo-ext-tile
+
+      - name: nv-ext-tile standalone e2e
+        run: bunx nx e2e nv-ext-tile
 
   # The render-* reference specs on SwiftShader (see the header). Sharded so
   # the single-worker run stays short; synthetic data, so no LFS pull.

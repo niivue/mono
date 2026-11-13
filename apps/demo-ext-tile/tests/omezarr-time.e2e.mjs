@@ -412,14 +412,21 @@ async function check(backend) {
 async function checkSampleSwitch(backend) {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
   const fail = (msg) => failed(`${backend} sample switch: ${msg}`)
+  // hold: which colony raw requests wait for release() ('chunks' or 'meta').
+  let hold = 'chunks'
   let release
-  const released = new Promise((r) => {
-    release = r
-  })
+  let released
   let held
-  const firstHeld = new Promise((r) => {
-    held = r
-  })
+  let firstHeld
+  const gate = () => {
+    released = new Promise((r) => {
+      release = r
+    })
+    firstHeld = new Promise((r) => {
+      held = r
+    })
+  }
+  gate()
   const local = (name, rest) => `http://127.0.0.1:${port}/${name}/${rest}`
   await page.route(/^https:/, async (route) => {
     const url = route.request().url()
@@ -427,7 +434,11 @@ async function checkSampleSwitch(backend) {
     const other = /\/idr0101A\/13457537\.zarr\/(.*)$/.exec(url)
     if (colony) {
       const [, kind, rest] = colony
-      if (kind === 'raw' && /^0\/\d+\./.test(rest)) {
+      const chunk = /^0\/\d+\./.test(rest)
+      if (
+        kind === 'raw' &&
+        (hold === 'chunks' ? chunk : hold === 'meta' && !chunk)
+      ) {
         held()
         await released
       }
@@ -466,7 +477,30 @@ async function checkSampleSwitch(backend) {
     fail(
       `the colony segmentation attached to the other sample: ${ids.join(', ')}`,
     )
+  // The same, with the colony's metadata (not its chunks) arriving last.
+  hold = 'meta'
+  gate()
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  release()
+  await page.waitForTimeout(1500)
+  const late = await page.evaluate(() => ({
+    ids: window.nv1.volumes.map((v) => v.id),
+    url: document.getElementById('url').value,
+  }))
+  if (
+    late.ids.some((id) => id.startsWith('segmentation-')) ||
+    !late.url.includes('idr0101A')
+  )
+    fail(
+      `the late colony metadata replaced the other sample: ${JSON.stringify(late)}`,
+    )
   // An uninterrupted colony load must still attach its segmentation.
+  hold = null
   await page.selectOption('#sample', await option('Allen Cell'))
   await page
     .waitForFunction(

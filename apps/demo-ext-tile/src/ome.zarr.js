@@ -279,7 +279,9 @@ sampleSelect.onchange = async () => {
   }
 }
 
+let fetches = 0
 fetchButton.onclick = async () => {
+  const fetchId = ++fetches
   const url = urlInput.value.trim()
   if (!url) {
     return false
@@ -294,9 +296,13 @@ fetchButton.onclick = async () => {
   levelSelect.disabled = true
   try {
     const name = url.split('/').filter(Boolean).pop() || url
-    offer(await fetchOmeZarr(url), name)
+    const opened = await fetchOmeZarr(url)
+    // A newer selection started while this store opened: it owns the UI.
+    if (fetchId !== fetches) return false
+    offer(opened, name)
     return true
   } catch (err) {
+    if (fetchId !== fetches) return false
     fail('Could not open that store (a cross-origin host must send CORS)', err)
     return false
   }

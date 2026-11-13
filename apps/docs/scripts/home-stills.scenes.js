@@ -31,14 +31,15 @@ export const scenes = {
     nv.pan2Dxyzmm = [0, 0, 0, 0.9]
   },
 
+  // Seen from behind: the scan's ECG leads lie across the front of the chest.
   async ct(canvas) {
     const nv = await viewer(canvas, { sliceType: SLICE_TYPE.RENDER })
     await nv.loadVolumes([
-      { url: `${DEMO_IMAGES}CT_Philips.nii.gz`, colormap: 'ct_skull' },
+      { url: `${DEMO_IMAGES}CT_Abdo.nii.gz`, colormap: 'ct_bones' },
     ])
-    nv.azimuth = 120
+    nv.azimuth = 20
     nv.elevation = 10
-    nv.scaleMultiplier = 1.1
+    nv.scaleMultiplier = 0.9
   },
 
   async microscopy(canvas) {

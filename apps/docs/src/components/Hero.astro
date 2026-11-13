@@ -1,11 +1,8 @@
 ---
-// The home page's first screen: Starlight's hero text and actions, the install
-// command, and a live NiiVue viewer in place of the hero image. Only the home
-// page sets `hero`.
+// The home page's first screen: Starlight's hero text and actions, and a live
+// NiiVue viewer in place of the hero image. Only the home page sets `hero`.
 import { LinkButton } from '@astrojs/starlight/components'
 import HeroViewer from './HeroViewer.astro'
-
-const INSTALL = 'npm install @niivue/niivue@next'
 
 const { data } = Astro.locals.starlightRoute.entry
 const { title = data.title, tagline, actions = [] } = data.hero ?? {}
@@ -26,17 +23,9 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {}
         ),
       )
     }
-    <nv-copy class="install" data-text={INSTALL}>
-      <code>{INSTALL}</code>
-      <button type="button">Copy</button>
-    </nv-copy>
   </div>
   <HeroViewer />
 </div>
-
-<script>
-  import '../client/nv-copy'
-</script>
 
 <style>
   .hero {
@@ -77,37 +66,5 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {}
 
   .text-link:hover {
     text-decoration: underline;
-  }
-
-  .install {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.35rem 0.4rem 0.35rem 0.75rem;
-    font-family: var(--__sl-font-mono);
-    font-size: var(--sl-text-sm);
-    color: var(--sl-color-gray-2);
-    border: 1px solid var(--sl-color-hairline);
-    border-radius: var(--nv-radius);
-  }
-
-  .install button {
-    font: inherit;
-    font-family: var(--__sl-font);
-    font-size: var(--sl-text-xs);
-    color: var(--sl-color-gray-3);
-    background: none;
-    border: 0;
-    cursor: pointer;
-  }
-
-  .install button:hover {
-    color: var(--sl-color-white);
-  }
-
-  @media (min-width: 50rem) {
-    .install {
-      margin-inline-start: auto;
-    }
   }
 </style>

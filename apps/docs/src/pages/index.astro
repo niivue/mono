@@ -1,14 +1,7 @@
 ---
 import { getCollection } from 'astro:content'
-import { Code } from '@astrojs/starlight/components'
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
 import { repoUrl, withBase } from '../site'
-
-const FIRST_VIEWER = `import NiiVue from '@niivue/niivue'
-
-const nv = new NiiVue()
-await nv.attachToCanvas(document.getElementById('gl1'))
-await nv.loadVolumes([{ url: './mni152.nii.gz' }])`
 
 const FEATURES = [
   {
@@ -78,9 +71,8 @@ const strip = STRIP.flatMap((s) => {
     head: [{ tag: 'title', content: 'NiiVue' }],
     template: 'splash',
     hero: {
-      title: 'Medical images in the browser',
-      tagline:
-        'MRI, CT, microscopy, surfaces and tractography, drawn on the GPU. No plugins and no special server: give NiiVue a canvas and a URL.',
+      title: 'Visualize any medical image in the browser',
+      tagline: 'MRI, CT, microscopy, surfaces and tractography',
       actions: [
         { text: 'Get started', link: withBase('guide/'), variant: 'primary' },
         { text: 'Gallery', link: withBase('gallery/'), variant: 'minimal' },
@@ -90,7 +82,7 @@ const strip = STRIP.flatMap((s) => {
 >
   <div class="not-content">
     <section>
-      <h2>What it does</h2>
+      <h2>Some things NiiVue can do</h2>
       <ul class="features">
         {
           FEATURES.map((f) => (
@@ -103,18 +95,6 @@ const strip = STRIP.flatMap((s) => {
       </ul>
     </section>
 
-    <section class="code-row">
-      <div>
-        <h2>A few lines</h2>
-        <p>
-          Attach a viewer to a canvas and hand it the images. Settings are
-          plain properties, and the whole scene saves and restores as one
-          document. NiiVue uses WebGL2 by default and WebGPU when you ask.
-        </p>
-        <a class="text-link" href={withBase('guide/')}>Read the guide &rarr;</a>
-      </div>
-      <Code code={FIRST_VIEWER} lang="ts" title="main.ts" />
-    </section>
 
     <section>
       <h2>Examples</h2>
@@ -189,17 +169,6 @@ const strip = STRIP.flatMap((s) => {
     line-height: 1.55;
   }
 
-  .code-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.5rem 3rem;
-    align-items: start;
-  }
-
-  .code-row p {
-    margin-bottom: 1rem;
-  }
-
   .text-link {
     color: var(--sl-color-text-accent);
     text-decoration: none;
@@ -250,11 +219,5 @@ const strip = STRIP.flatMap((s) => {
 
   footer a {
     color: var(--sl-color-gray-2);
-  }
-
-  @media (min-width: 50rem) {
-    .code-row {
-      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    }
   }
 </style>

@@ -1,6 +1,7 @@
 import type { AnnotationRenderData } from '@/view/NVAnnotation'
 import { NVRenderer } from '@/view/NVRenderer'
 import {
+  blendOver,
   createIndexedGeometry,
   deleteGLObjects,
   type IndexedGeometry,
@@ -44,7 +45,7 @@ export class PolygonRenderer extends NVRenderer {
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     gl.disable(gl.CULL_FACE)
 
     gl.bindVertexArray(this._geom.vao)

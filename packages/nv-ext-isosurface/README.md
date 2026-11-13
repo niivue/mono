@@ -48,7 +48,7 @@ Options (`IsosurfaceOptions`): `maxVoxels` (default 256^3), `maxVertices` per me
 
 ## Units
 
-- Vertices are in the streamed volume's world space (`createStreamingNVImage`: affine `diag(level 0 spacing)`, voxel `i` centred at `i * spacing`), so each mesh overlays its rendered volume exactly.
+- Vertices are in the streamed volume's world space (`createStreamingNVImage`: affine `diag(level 0 spacing)`, voxel `i` centred at `i * spacing`), so each mesh overlays its rendered volume exactly, streamed or a whole level from `loadOmeZarrVolumes` (same placement).
 - That space is in the source's own units, never converted: mm for mm sources, micrometres for a micron `xyztUnits` source. NiiVue renders the volume the same way and uses the unit only for labels and the ruler. For mm from a micron source, scale positions by 1e-3 (the mesh then no longer overlays the volume).
 - A coarser level covers the same box: its voxel size is level 0 extent / level shape per axis.
 - `threshold` is in stored (raw) units: `ChunkedVolumeSource` carries no `scl_slope`/`scl_inter`. Calibrate as `(value - inter) / slope` first.

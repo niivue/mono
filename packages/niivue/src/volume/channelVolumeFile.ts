@@ -2,10 +2,10 @@
  * Wrap one assembled microscopy channel as a NIfTI `File` ready for
  * `loadVolumes`.
  *
- * The volume is centred on the origin so every channel (and every pyramid
- * level) of a dataset shares one world position regardless of which subset
- * was loaded. Shared by the Allen atlas, OME-TIFF and OME-Zarr channel
- * loaders so the three cannot drift on the affine convention.
+ * By default the volume is centred on the origin so every channel (and every
+ * pyramid level) of a dataset shares one world position regardless of which
+ * subset was loaded (Allen atlas, OME-TIFF). OME-Zarr passes its own affine to
+ * match its streamed volumes.
  */
 
 import type { TypedVoxelArray } from '@/NVTypes'
@@ -39,8 +39,9 @@ export function centeredAffine(
 }
 
 /**
- * One channel's voxels as an origin-centred NIfTI named `${name}.nii`, with
- * `spacing` in micrometers and `xyzt_units` saying so.
+ * One channel's voxels as a NIfTI named `${name}.nii`, with `spacing` in
+ * micrometers and `xyzt_units` saying so. Origin-centred unless `affine`
+ * (flat row-major 4x4) is given.
  */
 export function channelVolumeFile(
   dims: readonly [number, number, number],
@@ -48,11 +49,12 @@ export function channelVolumeFile(
   datatypeCode: number,
   img: TypedVoxelArray,
   name: string,
+  affine: number[] = centeredAffine(dims, spacing),
 ): File {
   const bytes = createNiftiArray(
     [dims[0], dims[1], dims[2]],
     [spacing[0], spacing[1], spacing[2]],
-    centeredAffine(dims, spacing),
+    affine,
     datatypeCode,
     img,
     withSpatialUnits(10, NIFTI_UNITS_MICRON), // um + sec

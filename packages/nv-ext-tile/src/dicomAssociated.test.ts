@@ -67,6 +67,17 @@ test('reads a native label as RGBA and joins a fragmented frame', async () => {
   )
 })
 
+test('reads an associated image whose file name repeats', async () => {
+  // Same name, so the label's index key is `a.dcm (2)`.
+  const fs = (await files('bot.dcm', 'label.dcm')).map(
+    (f) => new File([f], 'a.dcm', { lastModified: 1 }),
+  )
+  const [label] = (await indexDicomWsiOnThread(fs)).associated ?? []
+  if (!label) throw new Error('label')
+  expect(label.instance.file).toBe('a.dcm (2)')
+  expect((await readAssociatedImage(label, fs)).width).toBe(16)
+})
+
 test('refuses a changed file and an aborted read', async () => {
   const fs = await files('label.dcm')
   const [label] = (await indexDicomWsiOnThread(fs)).associated ?? []

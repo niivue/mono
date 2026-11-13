@@ -25,7 +25,7 @@ compensation work"; decode and budget plans wait behind them.
       hashing the region rather than picking the idlest worker, because each
       worker holds its own byte LRU and a revisited brick must return to the
       worker that already has its bytes. Pool size is half the reported cores,
-      clamped to `[1, 4]`. `createSourceChunkLoader` is untouched, so the
+      clamped to `[1, 4]`. `createSourceRegionReader` is untouched, so the
       manager still sees one `VolumeChunkSource` contract with the same
       concurrency, retry and dedup wrapper.
 
@@ -304,8 +304,8 @@ Full comparison against Neuroglancer, with the staged plan: **`notes/caching.md`
   `packages/nv-ext-tile/src/zarr/omeZarr.ts` already parses BOTH, but only the scale survives the
   trip to a volume:
 
-  - `omeZarrChannelFile` / `channelVolumeFile` (`packages/nv-ext-tile/src/zarr/omeZarrLoader.ts`)
-    build an explicitly origin-centred volume.
+  - `omeZarrChannelFile` (`packages/nv-ext-tile/src/zarr/omeZarrLoader.ts`)
+    builds whole levels in the streamed placement below, voxel 0 at the origin.
   - `ChunkedVolumeLevel` (`src/volume/ChunkedVolumeSource.ts`) carries
     `level` / `shape` / `spacing` and has no origin field.
   - `createStreamingNVImage` (`src/volume/streamingVolume.ts`) builds

@@ -976,10 +976,11 @@ async function openOme(
     inner?: string
     dtype?: object | ((id: number) => object)
     singleQuotes?: boolean
+    pixels?: string
   } = {},
 ) {
   const doubleQuoted = omeXml(
-    `DimensionOrder="${order}" SizeX="40" SizeY="32" SizeC="2" SizeZ="2" SizeT="1" Type="uint16"`,
+    `DimensionOrder="${order}" SizeX="40" SizeY="32" SizeC="2" SizeZ="2" SizeT="1" Type="uint16" ${options.pixels ?? ''}`,
     options.inner ?? `${TWO_CHANNELS}<TiffData/>`,
   )
   const xml = options.singleQuotes
@@ -1076,6 +1077,17 @@ describe('multi-channel OME-TIFF', () => {
     const far = `${TWO_CHANNELS}<TiffData IFD="9999" FirstC="1"/><TiffData IFD="0"/>`
     await expect(openOme('XYCZT', [0, 1], { inner: far })).rejects.toThrow(
       /maps to IFD 9999/,
+    )
+  })
+
+  test('decodes character references in TiffData and UUID attributes', async () => {
+    const inner = `${TWO_CHANNELS}<TiffData IFD="&#49;" FirstC="&#x30;" PlaneCount="&#49;"/><TiffData IFD="0" FirstC="1"/>`
+    expect(
+      await planeIds(await openOme('XYCZT', [0, 1], { inner }), [0, 1]),
+    ).toEqual([1000, 0])
+    const split = `${TWO_CHANNELS}<TiffData FirstC="0" IFD="0"><UUID FileName="ome.tif">urn:uuid:self</UUID></TiffData><TiffData FirstC="1" IFD="0"><UUID FileName="b&amp;c.ome.tif">urn:uuid:b</UUID></TiffData>`
+    await expect(openOme('XYCZT', [0, 1], { inner: split })).rejects.toThrow(
+      /is in b&c\.ome\.tif; open that file/,
     )
   })
 
@@ -1482,15 +1494,48 @@ describe('single-channel grey TIFF', () => {
 })
 
 describe('OME-TIFF channel names', () => {
-  test('decodes XML entities and character references', async () => {
+  test('names, colours, plane order and z step units (entities: core omeTiff.test)', async () => {
     const inner =
-      '<Channel ID="Channel:0:0" Name="A &amp; B &lt;1&gt; &quot;q&quot; &apos;s&apos;" SamplesPerPixel="1"/>' +
-      '<Channel ID="Channel:0:1" Name="&#945;-&#x3B2; &bogus;" SamplesPerPixel="1"/><TiffData/>'
-    const source = await openOme('XYCZT', [0, 1, 2, 3], { inner })
-    expect(source.manifest.channelInfo?.map((c) => c.name)).toEqual([
-      `A & B <1> "q" 's'`,
-      'α-β &bogus;',
+      '<Channel ID="Channel:0:0" Name="A" Color="-1" SamplesPerPixel="1"/>' +
+      '<Channel ID="Channel:0:1" Name="B" Color="65535" SamplesPerPixel="1"/>' +
+      '<Channel ID="Channel:0:2" SamplesPerPixel="1"/><Channel Color="bad" SamplesPerPixel="1"/><TiffData/>'
+    const source = await openOme('XYCZT', [0, 1, 2, 3, 4, 5, 6, 7], { inner })
+    expect(source.manifest.channelInfo?.map((c) => [c.name, c.rgb])).toEqual([
+      ['A', [255, 255, 255]],
+      ['B', [0, 0, 255]],
+      ['Channel 3', undefined],
+      ['Channel 4', undefined],
     ])
+    const { source: one } = await open(
+      writePlanes(
+        [grayPyramid()],
+        omeXml(
+          'DimensionOrder="XYCZT" SizeX="40" SizeY="32" SizeC="1" SizeZ="1" SizeT="1" Type="uint16"',
+          '<Channel ID="Channel:0:0" SamplesPerPixel="1"/><TiffData/>',
+        ),
+      ),
+    )
+    // A bad DimensionOrder reads as XYZCT (core parseOmeXml's fallback).
+    const bad = await openOme('XYCZQ', [0, 1, 2, 3])
+    expect([
+      one.manifest.channelInfo?.map((c) => c.name),
+      bad.planes,
+      await planeIds(bad, [0, 1]),
+    ]).toEqual([['gray'], { z: 2, t: 1 }, [0, 2000]])
+    const zStep = async (pixels: string) =>
+      (await openOme('XYCZT', [0, 1, 2, 3], { pixels })).planes?.zPositionsUm
+    expect(
+      await Promise.all(
+        [
+          'PhysicalSizeZ="2.5"',
+          'PhysicalSizeZ="2.5" PhysicalSizeZUnit="&#181;m"',
+          'PhysicalSizeZ="2.5" PhysicalSizeZUnit="um"',
+          'PhysicalSizeZ="500" PhysicalSizeZUnit="nm"',
+          'PhysicalSizeZ="0.002" PhysicalSizeZUnit="mm"',
+          'PhysicalSizeZ="2.5" PhysicalSizeZUnit="parsnip"',
+        ].map(zStep),
+      ),
+    ).toEqual([[0, 2.5], [0, 2.5], [0, 2.5], [0, 0.5], [0, 2], undefined])
   })
 })
 
@@ -2079,12 +2124,12 @@ describe('vendor layouts', () => {
 <TileJointInfo FlagJoined="1" Confidence="100" Direction="LEFT" Tile1="2" Tile2="3" OverlapX="0" OverlapY="0"/>
 </ImageInfo></SlideStitchInfo><AoiOrigin><AOI0 OriginX="0" OriginY="0"/></AoiOrigin></EncodeInfo>`
 
-  test('Ventana joints: placed only with the placement option (PL2, PL10)', async () => {
+  test('Ventana joints: placed by default, the grid with placement: false (PL2, PL10)', async () => {
     const file = writeTiff([
       { ...solid(0, 48, 16), ascii: { 700: ventanaXmp } },
       solid(1, 24, 8),
     ])
-    const plain = await fromBuffer(file)
+    const plain = await fromBuffer(file, { placement: false })
     expect(plain.manifest.width).toBe(48)
     expect(plain.manifest.levels.some((l) => l.placement)).toBe(false)
     // Off: byte-for-byte the manifest of the same file without XMP.
@@ -2092,7 +2137,7 @@ describe('vendor layouts', () => {
       writeTiff([solid(0, 48, 16), solid(1, 24, 8)]),
     )
     expect(JSON.stringify(plain.manifest)).toBe(JSON.stringify(noXmp.manifest))
-    const placed = await fromBuffer(file, { placement: true })
+    const placed = await fromBuffer(file)
     expect([placed.manifest.width, placed.manifest.height]).toEqual([44, 16])
     expect(placed.manifest.levels[0]?.width).toBe(48) // storage grid kept (F7)
     expect(placed.manifest.levels[0]?.placement?.pieces[1]).toEqual({
@@ -2117,7 +2162,6 @@ describe('vendor layouts', () => {
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     const s = await fromBuffer(
       writeTiff([{ ...solid(0, 48, 16), ascii: { 700: huge } }]),
-      { placement: true },
     )
     warn.mockRestore()
     expect(s.manifest.width).toBe(48)
@@ -2135,7 +2179,6 @@ describe('vendor layouts', () => {
     try {
       const s = await fromBuffer(
         writeTiff([{ ...solid(0, 48, 16), ascii: { 700: bad } }]),
-        { placement: true },
       )
       expect(s.manifest.width).toBe(48)
       expect(s.manifest.levels[0]?.placement).toBeUndefined()
@@ -2157,8 +2200,10 @@ describe('vendor layouts', () => {
       // Its own mosaic: not the base aspect, so not a level without placement.
       solid(1, 48, 16),
     ])
-    expect((await fromBuffer(file)).manifest.levels.length).toBe(1)
-    const s = await fromBuffer(file, { placement: true })
+    expect(
+      (await fromBuffer(file, { placement: false })).manifest.levels.length,
+    ).toBe(1)
+    const s = await fromBuffer(file)
     expect(s.manifest.levels.length).toBe(2)
     expect([s.manifest.width, s.manifest.height]).toEqual([48, 32])
     expect(s.manifest.levels[0]?.placement?.pieces).toEqual([
@@ -2197,10 +2242,36 @@ describe('vendor layouts', () => {
     await expect(
       s.preparePlane?.({ z: 3, t: 0 }) ?? Promise.resolve(),
     ).rejects.toThrow(RangeError)
-    // An explicit z opens that plane.
-    expect(
-      (await fromBuffer(writeTiff(levels), { z: 2 })).manifest.levels[0]?.plane,
-    ).toEqual({ z: 2, t: 0 })
+    // An explicit z opens that plane: its manifest, pixels and the slide's plane.
+    const z2 = await fromBuffer(writeTiff(levels), { z: 2 })
+    expect(z2.manifest.levels[0]?.plane).toEqual({ z: 2, t: 0 })
+    expect(await firstByte(z2, 0, 1)).toBe(161) // plane 2, level 0, tile 1
+    expect(NVSlide.fromSource(z2).planeIndex).toEqual({ z: 2, t: 0 })
+  })
+
+  test('Ventana iScan: levels padded to 8 px blocks keep their true size', async () => {
+    // 64x40 / 2 = 32x20 stored 32x24, / 4 = 16x10 stored 16x16; a tiled 16x48
+    // label is not a level.
+    const level = (n: number, w: number, h: number) => ({
+      ...solid(n, w, h),
+      ascii: { 270: `level=${n - 1} mag=${40 >> (n - 1)} quality=90` },
+    })
+    const levels = [
+      solid(0, 64, 40),
+      solid(1, 16, 48),
+      level(2, 32, 24),
+      level(3, 16, 16),
+    ]
+    const m = (await fromBuffer(writeTiff(levels))).manifest
+    expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
+      [64, 40, 1],
+      [32, 20, 2],
+      [16, 10, 4],
+    ])
+    // An unmarked tiled macro the size of a padded level is not one.
+    const macro = [solid(0, 64, 40), solid(1, 32, 24)]
+    const plain = (await fromBuffer(writeTiff(macro))).manifest
+    expect(plain.levels.map((l) => l.width)).toEqual([64])
   })
 
   test('Philips: a padded level at a stated factor of 3', async () => {
@@ -2227,10 +2298,10 @@ describe('vendor layouts', () => {
       solid(1, 32, 32),
       solid(2, 32, 16),
     ]
-    const plain = await fromBuffer(writeTiff(levels))
+    const plain = await fromBuffer(writeTiff(levels), { placement: false })
     expect(plain.manifest.width).toBe(32)
     expect(plain.manifest.levels[0]?.placement).toBeUndefined()
-    const s = await fromBuffer(writeTiff(levels), { placement: true })
+    const s = await fromBuffer(writeTiff(levels))
     const l0 = s.manifest.levels[0]
     expect([l0?.columns, l0?.rows]).toEqual([4, 2])
     // Region 2 has one row of tiles: its second row is a hole.
@@ -2449,9 +2520,9 @@ const BIF = '/Users/chris/src/mono/scratch/ventana/Ventana-1.bif'
 describe.skipIf(!existsSync(BIF))('Ventana-1.bif placement (advisory)', () => {
   test('placed 23432 x 21504; off, the storage grid', async () => {
     const tiff = await fromFile(BIF)
-    const plain = await TiffSlideSource.fromGeoTIFF(tiff)
+    const plain = await TiffSlideSource.fromGeoTIFF(tiff, { placement: false })
     expect(plain.manifest.width).toBe(24576)
-    const placed = await TiffSlideSource.fromGeoTIFF(tiff, { placement: true })
+    const placed = await TiffSlideSource.fromGeoTIFF(tiff)
     expect([placed.manifest.width, placed.manifest.height]).toEqual([
       23432, 21504,
     ])

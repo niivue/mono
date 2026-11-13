@@ -216,6 +216,14 @@ volumes, with no Vite in between.
 await nv.loadMeshes([{ url: '/meshes/brain.mz3' }])
 ```
 
+### AFNI tractography
+
+Binary `.niml.tract` files load through `loadMeshes` or by dropping them onto
+any viewer with drag-and-drop enabled (for example `examples/tract.html`).
+Little- and big-endian records are supported; text/base64 NIML is not.
+Coordinates are converted from AFNI RAI to RAS mm. Bundle IDs are available
+for coloring with `tractOptions: { colorBy: 'dps:tract' }`.
+
 ### Signals (physio and spectroscopy)
 
 Alongside spatial volumes and meshes, NiiVue can load **signals** — a third,
@@ -307,6 +315,14 @@ const nv = new NiiVue({
   clipPlaneColor: [1, 1, 1, 0.5],
 })
 ```
+
+### Migration (rc)
+
+Unused slide and streaming options were removed:
+
+- `NVSlideSpatialTransform`, `NVSlideOptions.spatialTransform`, `NVSlide.spatialTransform` and `setSpatialTransform` are gone. Nothing read them; place a slide in world space with `setSlidePlane`'s `pixelToWorld`.
+- `createSlideView` no longer takes `renderer`, `ownsSlide` or `signal`. The view makes and destroys its own renderer and always disposes the slide it releases (`setSlide`, `destroy`). To cancel a start, destroy the view once it resolves.
+- `loadChunkedVolume` no longer takes `focusBounds` (pass them to `NVChunkedVolume.setFocus(frac, bounds)`), `retryAttempts` (always 3), `frameStagingBytes` (64 MiB) or `readoutBytes` (384 MiB).
 
 ### Testing
 

@@ -14,9 +14,16 @@ import {
   type InstanceCore,
   type SlideIndexLevel,
   type SlideIndexSlide,
-  tileMap,
 } from './dicomIndex'
 import type { DicomJsonSlide } from './dicomJson'
+import {
+  flipPlacement,
+  levelCosines,
+  levelMaps,
+  orientGrid,
+  slideOrientation,
+  tileExtent,
+} from './dicomOrientation'
 import { linked } from './rangeFetch'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
@@ -30,21 +37,24 @@ export const CODEC_BY_TRANSFER_SYNTAX: Record<string, NVSlideTileCodec> = {
   '1.2.840.10008.1.2.4.91': 'image/jp2', // JPEG 2000
 }
 
-/** The slide's files in `slide.instances` order; `files` as indexed, in the same order. */
-export function filesFor(
-  slide: SlideIndexSlide,
+/** Looks up an instance's file among the indexed `files` (by its index key), checking it is unchanged. */
+export function fileFor(
   files: readonly File[],
-): File[] {
+): (inst: { file: string; size: number; version: string }) => File {
   const keys = fileKeys(files)
   const byKey = new Map(files.map((f, i) => [keys[i], f]))
-  return slide.instances.map((inst) => {
+  return (inst) => {
     const file = byKey.get(inst.file)
     if (!file) throw new Error(`${inst.file} is not among the files`)
     if (file.size !== inst.size || String(file.lastModified) !== inst.version)
       throw new Error(`${inst.file} changed since it was indexed`)
     return file
-  })
+  }
 }
+
+/** The slide's files in `slide.instances` order; `files` as indexed, in the same order. */
+export const filesFor = (slide: SlideIndexSlide, files: readonly File[]) =>
+  slide.instances.map(fileFor(files))
 
 /**
  * The fragments of a frame's item-led span (as read from `offset - 8`): each
@@ -78,11 +88,25 @@ export function fragmentsOf(
   return fragments
 }
 
+/** A frame's payload from its item-led span: its one fragment, or its fragments joined. */
+export function joinFragments(span: Uint8Array, what: string): Uint8Array {
+  const parts = fragmentsOf(span, what)
+  if (parts.length === 1) return span.subarray(8) // one fragment: no copy
+  const out = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0))
+  let o = 0
+  for (const p of parts) {
+    out.set(span.subarray(p.offset, p.offset + p.length), o)
+    o += p.length
+  }
+  return out
+}
+
 /** `read`, rejecting with the signal's reason as soon as it aborts (File.slice reads take none). */
 export function abortable<T>(
   read: Promise<T>,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<T> {
+  if (!signal) return read
   if (signal.aborted) return Promise.reject(signal.reason)
   let onAbort = () => {}
   return Promise.race([
@@ -117,7 +141,7 @@ export class DicomWsiSource implements SlideTileSource {
     options: DicomWsiSourceOptions = {},
   ) {
     this.files = filesFor(slide, files)
-    this.maps = slide.levels.map(tileMap)
+    this.maps = levelMaps(slide)
     this.manifest = manifestOf(slide, this.maps, { fileUrl: (i) => i.file })
     const attribution = cleanAttribution(options.attribution)
     if (attribution) this.manifest.attribution = attribution
@@ -170,15 +194,7 @@ export class DicomWsiSource implements SlideTileSource {
     // Read the item header too: its tag proves the index still matches the file.
     const span = await this.read(file, offset - 8, offset + length, signal)
     this.host?.addWireBytes(span.byteLength)
-    const parts = fragmentsOf(span, `${file.name} frame ${frames.frame[slot]}`)
-    if (parts.length === 1) return span.subarray(8) // one fragment: no copy
-    const out = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0))
-    let o = 0
-    for (const p of parts) {
-      out.set(span.subarray(p.offset, p.offset + p.length), o)
-      o += p.length
-    }
-    return out
+    return joinFragments(span, `${file.name} frame ${frames.frame[slot]}`)
   }
 
   /** Later reads, and reads in flight, reject AbortError. The files are the caller's. Idempotent. */
@@ -197,7 +213,7 @@ export function manifestOf<I extends InstanceCore>(
     instances: I[]
     iccProfile?: { offset?: number; length?: number; colorSpace?: string }
   },
-  /** Each level's {@link tileMap}. */
+  /** Each level's {@link levelMaps} entry. */
   maps: readonly Int32Array[],
   {
     format = 'dicom-wsi-index-v1',
@@ -211,7 +227,19 @@ export function manifestOf<I extends InstanceCore>(
   if (!l0) throw new Error('the slide has no levels')
   // The index puts each level's first instance in slide.instances.
   const inst0 = slide.instances[l0.instances[0] as number] as I
+  // Each level turns by its own ImageOrientationSlide, so all share one displayed frame.
+  const turns = slide.levels.map((level, index) => {
+    const cosines = levelCosines(slide, level)
+    const turn = slideOrientation(cosines)
+    if (turn === null)
+      console.warn(
+        `level ${index} ImageOrientationSlide ${cosines?.join('\\')} is oblique; it is shown as stored`,
+      )
+    return turn ?? undefined
+  })
+  const g0 = orientGrid(l0, turns[0])
   const levels = slide.levels.map((level, index): NVSlideLevelManifest => {
+    const o = turns[index]
     const inst = slide.instances[level.instances[0] as number] as I
     const codec = CODEC_BY_TRANSFER_SYNTAX[inst.transferSyntax]
     if (!codec)
@@ -219,33 +247,31 @@ export function manifestOf<I extends InstanceCore>(
         `transfer syntax ${inst.transferSyntax} cannot be decoded (JPEG, JPEG 2000 and JPEG-LS are supported)`,
       )
     // The index caps a level's grid, so this dense array is bounded.
+    const g = orientGrid(level, o)
     const tiles: Array<NVSlideTileManifest | null> = Array.from(
       maps[index] as Int32Array,
       (slot, i) => {
         if (slot < 0) return null
-        const x = i % level.columns
-        const y = Math.floor(i / level.columns)
+        const x = i % g.columns
+        const y = Math.floor(i / g.columns)
         return {
           x,
           y,
-          width: Math.min(level.tileWidth, level.width - x * level.tileWidth),
-          height: Math.min(
-            level.tileHeight,
-            level.height - y * level.tileHeight,
-          ),
+          ...tileExtent(g, o, x, y),
           frame: level.frames.frame[slot] as number,
         }
       },
     )
+    const placement = flipPlacement(g, o, tiles)
     return {
       index,
-      width: level.width,
-      height: level.height,
-      downsample: l0.width / level.width,
-      tileWidth: level.tileWidth,
-      tileHeight: level.tileHeight,
-      columns: level.columns,
-      rows: level.rows,
+      width: g.width,
+      height: g.height,
+      downsample: g0.width / g.width,
+      tileWidth: g.tileWidth,
+      tileHeight: g.tileHeight,
+      columns: g.columns,
+      rows: g.rows,
       codec,
       transferSyntaxUid: inst.transferSyntax,
       photometric: inst.photometric,
@@ -259,6 +285,8 @@ export function manifestOf<I extends InstanceCore>(
       opticalPaths: 1,
       focalPlanes: 1,
       ...(level.sparse ? { sparse: true as const } : {}),
+      ...(o ? { tileOrientation: o } : {}),
+      ...(placement ? { placement } : {}),
       tiles,
     }
   })
@@ -266,11 +294,11 @@ export function manifestOf<I extends InstanceCore>(
     id: `${slide.series}/${slide.opticalPath}/${slide.focalPlane}`,
     name: slide.container ?? slide.series,
     format,
-    width: l0.width,
-    height: l0.height,
+    width: g0.width,
+    height: g0.height,
     // Row 0 at the top, as OpenSlide and the TIFF/DZI sources show a slide.
     displayYAxis: 'down',
-    tileSize: l0.tileWidth,
+    tileSize: g0.tileWidth,
     dtype: 'uint8',
     channels: 'encoded-rgb',
     // One grey channel, as NVSlide shows a monochrome slide without one (S1),
@@ -294,7 +322,13 @@ export function manifestOf<I extends InstanceCore>(
           ],
         }
       : {}),
-    ...(slide.pixelSpacingMM ? { pixelSpacingMM: slide.pixelSpacingMM } : {}),
+    ...(slide.pixelSpacingMM
+      ? {
+          pixelSpacingMM: turns[0]?.transpose
+            ? [slide.pixelSpacingMM[1], slide.pixelSpacingMM[0]]
+            : slide.pixelSpacingMM,
+        }
+      : {}),
     ...(inst0.absentLab
       ? {
           backgroundColor: [

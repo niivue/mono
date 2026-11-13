@@ -158,13 +158,7 @@ export { UIKitSegmentedOverlay } from './segmentedOverlay'
 export type { SelectOption, SelectSpec } from './select'
 export type { UIKitSelectOverlayOptions } from './selectOverlay'
 export { UIKitSelectOverlay } from './selectOverlay'
-export type {
-  MinimapCorner,
-  MinimapViewport,
-  SlideMinimapLayout,
-  SlideMinimapSpec,
-} from './slideMinimap'
-export { layoutSlideMinimap, minimapToSlide } from './slideMinimap'
+export type { MinimapCorner, SlideMinimapLayout } from './slideMinimap'
 export type {
   UIKitMinimapSlide,
   UIKitSlideMinimapOptions,

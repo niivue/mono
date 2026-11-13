@@ -1,10 +1,14 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import NiiVue, {
   type ChunkedVolumeSource,
   NiiDataType,
   type NVChunkedVolume,
 } from '@/index'
 import type { NVImage } from '@/NVTypes'
+import { chunkedVolumeBudgets } from '@/volume/NVChunkedVolume'
+
+const defaultBudgets = { ...chunkedVolumeBudgets }
+afterEach(() => Object.assign(chunkedVolumeBudgets, defaultBudgets))
 
 // Lazy time on a streamed volume (VOL-01): a synthetic `frames` source whose
 // voxels hold 100 * frame + channel.
@@ -136,22 +140,19 @@ test('a failed frame fetch rejects and keeps the shown frame', async () => {
   const fetch = src.fetchChunk.bind(src)
   src.fetchChunk = (req) =>
     req.frame === 2 ? Promise.reject(new Error('gone')) : fetch(req)
-  const chunked = await nv.loadChunkedVolume(src, {
-    coarseFloor: false,
-    retryAttempts: 1,
-  })
+  const chunked = await nv.loadChunkedVolume(src, { coarseFloor: false })
   const before = nv.volumes[0].chunkSource
   await expect(chunked.setFrame(2)).rejects.toThrow('gone')
   expect(chunked.frame).toBe(0)
   expect(nv.volumes[0].chunkSource).toBe(before)
 })
 
-test('staging is bounded by frameStagingBytes, nearest the focus first', async () => {
+test('staging is bounded by the frame staging budget, nearest the focus first', async () => {
   const reads: Read[] = []
   const nv = new NiiVue({ backend: 'webgl2', maxTextureDimension3D: 8 })
+  chunkedVolumeBudgets.frameStagingBytes = 1
   const chunked = await nv.loadChunkedVolume(source(0, { reads }), {
     coarseFloor: false,
-    frameStagingBytes: 1,
   })
   expect(chunked.currentPlan.chunks.length).toBeGreaterThan(1)
   await chunked.setFrame(1)
@@ -324,11 +325,7 @@ test('P2: an aborted switch keeps no staged bytes; a failed member aborts its si
   const hanging = hang.fetchChunk
   hang.fetchChunk = (req) => (req.frame ? hanging(req) : fetchHang(req))
   await nv.loadChunkedVolume(hang, { frameGroup: group, coarseFloor: false })
-  await nv.loadChunkedVolume(fail, {
-    frameGroup: group,
-    coarseFloor: false,
-    retryAttempts: 1,
-  })
+  await nv.loadChunkedVolume(fail, { frameGroup: group, coarseFloor: false })
   await expect(ok.setFrame(1)).rejects.toThrow('gone')
   expect(aborted.length).toBeGreaterThan(0)
   expect((ok as unknown as { staged: unknown }).staged).toBeNull()
@@ -341,12 +338,10 @@ test('P2: the staging budget is for the whole group, floor included', async () =
     const reads: Read[] = []
     const nv = new NiiVue({ backend: 'webgl2', maxTextureDimension3D: 8 })
     const handles = []
+    chunkedVolumeBudgets.frameStagingBytes = budget
     for (let c = 0; c < members; c++)
       handles.push(
-        await nv.loadChunkedVolume(source(c, { reads }), {
-          frameGroup: group,
-          frameStagingBytes: budget,
-        }),
+        await nv.loadChunkedVolume(source(c, { reads }), { frameGroup: group }),
       )
     const brick = handles[0].currentPlan.chunks[0].texDims
     reads.length = 0
@@ -372,7 +367,8 @@ test('the readout cap is shared by every streamed volume of the viewer', async (
       return new Uint8Array(texDims[0] * texDims[1] * texDims[2]).fill(5)
     },
   })
-  const opts = { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes: 5e6 }
+  chunkedVolumeBudgets.readoutBytes = 5e6
+  const opts = { coarseFloor: false, calMin: 0, calMax: 9 }
   const firstExact = async (n: number) => {
     const nv = new NiiVue({ backend: 'webgl2' })
     const handles = []
@@ -395,9 +391,9 @@ test('the readout cap is shared by every streamed volume of the viewer', async (
 
 test('staged bricks a refocus leaves out are released', async () => {
   const nv = new NiiVue({ backend: 'webgl2', maxTextureDimension3D: 8 })
+  chunkedVolumeBudgets.frameStagingBytes = 1e9
   const chunked = await nv.loadChunkedVolume(source(0), {
     coarseFloor: false,
-    frameStagingBytes: 1e9,
     focus: [0.1, 0.1, 0.1],
   })
   await chunked.setFrame(1)
@@ -420,7 +416,7 @@ test('staged bricks a refocus leaves out are released', async () => {
   expect(left.every((k) => keys.has(k))).toBe(true)
 })
 
-test('volumes added one after another keep the readouts within readoutBytes', async () => {
+test('volumes added one after another keep the readouts within the readout cap', async () => {
   const src = (): ChunkedVolumeSource => ({
     levels: [{ level: 0, shape: [256, 128, 128], spacing: [1, 1, 1] }],
     datatypeCode: NiiDataType.DT_UINT8,
@@ -429,7 +425,8 @@ test('volumes added one after another keep the readouts within readoutBytes', as
     },
   })
   const readoutBytes = 5e6
-  const opts = { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes }
+  chunkedVolumeBudgets.readoutBytes = readoutBytes
+  const opts = { coarseFloor: false, calMin: 0, calMax: 9 }
   const nv = new NiiVue({ backend: 'webgl2' })
   const fill = async (handle: NVChunkedVolume) => {
     const vol = nv.volumes.find((v) => v.id === handle.id)
@@ -606,8 +603,9 @@ test('the newest frame request wins through a floor install wait', async () => {
   expect(vol.frameSource?.frame).toBe(2)
 })
 
-test('the readout never holds a brick larger than readoutBytes', async () => {
+test('the readout never holds a brick larger than its cap', async () => {
   const nv = new NiiVue({ backend: 'webgl2' })
+  chunkedVolumeBudgets.readoutBytes = 1024
   const handle = await nv.loadChunkedVolume(
     {
       levels: [{ level: 0, shape: [128, 128, 128], spacing: [1, 1, 1] }],
@@ -616,7 +614,7 @@ test('the readout never holds a brick larger than readoutBytes', async () => {
         return new Uint8Array(texDims[0] * texDims[1] * texDims[2]).fill(5)
       },
     },
-    { coarseFloor: false, calMin: 0, calMax: 9, readoutBytes: 1024 },
+    { coarseFloor: false, calMin: 0, calMax: 9 },
   )
   const vol = nv.volumes[0]
   for (const desc of handle.currentPlan.chunks)

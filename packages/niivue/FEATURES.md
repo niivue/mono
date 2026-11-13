@@ -81,7 +81,7 @@ NPY/NPZ. TIFF (incl. OME-TIFF, ImageJ stacks) is built in. OME-Zarr loads throug
 
 Mesh formats: GIfTI, FreeSurfer, PLY, STL, OBJ, VTK, MZ3, OFF, GEO/BYU, DFS,
 ICO/TRI, BrainNet NV, BrainVoyager SRF, X3D, ASC, WRL, IWM. Tracts: TCK, TRK,
-TRX, TT, TSF (scalars), VTK lines.
+TRX, TT, TSF (scalars), VTK lines, AFNI .niml.tract (binary).
 
 ## 4. Scene (Camera, Clipping, Background)
 

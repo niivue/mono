@@ -171,6 +171,13 @@ export class ByteLru<K, V> {
         this.dispose?.(value)
         continue
       }
+      // Two keys mapped to one: the later (more recent) wins, the other is dropped.
+      const displaced = next.get(mapped)
+      if (displaced !== undefined) {
+        next.delete(mapped)
+        total -= this.sizeOf(displaced)
+        this.dispose?.(displaced)
+      }
       next.set(mapped, value)
       total += this.sizeOf(value)
     }

@@ -173,6 +173,27 @@ describe('ByteLru', () => {
     expect([cache.has(10), cache.has(20)]).toEqual([false, true])
   })
 
+  test('remap onto one key keeps the more recent value and frees the other', () => {
+    const disposed: number[] = []
+    const cache = new ByteLru<number, { id: number; bytes: number }>(
+      100,
+      (v) => v.bytes,
+      (v) => disposed.push(v.id),
+    )
+    cache.set(1, { id: 1, bytes: 10 })
+    cache.set(2, { id: 2, bytes: 20 })
+    cache.remap(
+      new Map([
+        [1, 3],
+        [2, 3],
+      ]),
+    )
+    expect(disposed).toEqual([1])
+    expect(cache.totalBytes).toBe(20)
+    cache.set(4, { id: 4, bytes: 80 }) // fits beside the survivor
+    expect(cache.peek(3)?.id).toBe(2)
+  })
+
   test('disposes every value it lets go of and bumps version', () => {
     const disposed: string[] = []
     const cache = new ByteLru<string, { id: string; bytes: number }>(

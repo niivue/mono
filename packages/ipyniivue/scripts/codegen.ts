@@ -1728,7 +1728,7 @@ function emitJs(api: ApiDescriptor): string {
     '        const toRaw = (v) => (v - bg.hdr.scl_inter) / bg.hdr.scl_slope',
   )
   lines.push(
-    '        const maxVal = useIntensity && bg ? (Math.max(toRaw(bg.globalMin), toRaw(bg.globalMax)) || 1) : 1',
+    '        const maxVal = useIntensity && bg ? (Math.max(Math.abs(toRaw(bg.globalMin)), Math.abs(toRaw(bg.globalMax))) || 1) : 1',
   )
   lines.push(
     '        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)',

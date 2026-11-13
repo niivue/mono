@@ -158,7 +158,10 @@ function getInterpolationParams() {
     // imgRAS is raw; globalMin/globalMax are scaled by scl_slope and scl_inter.
     const { scl_slope, scl_inter } = bg.hdr
     const toRaw = (v: number) => (v - scl_inter) / scl_slope
-    maxVal = Math.max(toRaw(bg.globalMin), toRaw(bg.globalMax)) || 1
+    // maxVal is a positive scale, so take the largest magnitude.
+    maxVal =
+      Math.max(Math.abs(toRaw(bg.globalMin)), Math.abs(toRaw(bg.globalMax))) ||
+      1
   }
 
   const options = {

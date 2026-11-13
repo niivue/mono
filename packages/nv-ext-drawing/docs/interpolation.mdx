@@ -91,7 +91,9 @@ const bg = ctx.backgroundVolume
 // imgRAS is raw; globalMin/globalMax are scaled by scl_slope and scl_inter.
 const { scl_slope, scl_inter } = bg.hdr
 const toRaw = (v) => (v - scl_inter) / scl_slope
-const rawMax = Math.max(toRaw(bg.globalMin), toRaw(bg.globalMax))
+// maxVal is a positive scale, so take the largest magnitude.
+const rawMax =
+  Math.max(Math.abs(toRaw(bg.globalMin)), Math.abs(toRaw(bg.globalMax))) || 1
 const filled = await interpolateMaskSlices(
   dr.bitmap, dr.dims, bg.imgRAS, rawMax, undefined, undefined,
   { sliceType: SLICE_TYPE.AXIAL, useIntensityGuided: true },
@@ -99,9 +101,11 @@ const filled = await interpolateMaskSlices(
 ```
 
 Pass the image as `bg.imgRAS`, whose voxels are in the same order as the
-drawing, and its brightest value in the same raw units, which scales the
-image to 0 to 1. `bg.globalMax` is in display units, so convert it as above
-unless the volume has no scaling (`scl_slope` 1, `scl_inter` 0). You need both the image and `useIntensityGuided: true`. With only
+drawing, and its largest absolute value in the same raw units, which scales
+the image to at most 1. `bg.globalMin` and `bg.globalMax` are in display
+units, so convert them as above unless the volume has no scaling
+(`scl_slope` 1, `scl_inter` 0). You need both the image and
+`useIntensityGuided: true`. With only
 one of them the fill quietly falls back to the plain blend.
 
 Two settings tune it:

@@ -19,6 +19,7 @@ const CORE_TOOLS = [
   'new_tab',
   'load_volume',
   'load_ome_zarr',
+  'add_isosurface',
   'add_overlay',
   'where_am_i',
   'list_regions',

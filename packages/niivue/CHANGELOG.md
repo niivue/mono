@@ -1,3 +1,46 @@
+## 1.0.0-rc.193 (2026-11-13)
+
+### Fixes
+
+- **nv-ext-tile:** decode XML character references in OME TiffData attributes ([#49](https://github.com/niivue/mono/issues/49))
+- **niivue:** parseOmeXml keeps inherited entity names and XML noncharacters as written ([77feadcb](https://github.com/niivue/mono/commit/77feadcb))
+- **niivue:** parseOmeXml keeps references to XML-forbidden characters as written ([#0](https://github.com/niivue/mono/issues/0))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.192 (2026-11-13)
+
+This was a version bump only for niivue to align it with other projects, there were no code changes.
+
+## 1.0.0-rc.191 (2026-11-13)
+
+### Fixes
+
+- **niivue:** one header panel colour on both backends ([9f130f21](https://github.com/niivue/mono/commit/9f130f21))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.190 (2026-11-13)
+
+### Fixes
+
+- **niivue:** keep reoriented slide tiles straight-alpha ([9cb0dd3e](https://github.com/niivue/mono/commit/9cb0dd3e))
+- **nv-ext-tile:** tie the placement test to the chunked source; doc touch-ups ([5eb4c2b0](https://github.com/niivue/mono/commit/5eb4c2b0))
+- **nv-ext-tile:** place whole OME-Zarr levels like streamed ones ([f609ad8b](https://github.com/niivue/mono/commit/f609ad8b))
+- **niivue:** blend WebGL2 alpha as WebGPU does ([98b7246b](https://github.com/niivue/mono/commit/98b7246b))
+- **niivue:** keep straight alpha in slide tile bitmaps ([103505ee](https://github.com/niivue/mono/commit/103505ee))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.189 (2026-11-13)
 
 ### Fixes

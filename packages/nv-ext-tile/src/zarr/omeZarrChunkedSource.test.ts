@@ -233,7 +233,9 @@ describe('omeZarrChunkedSource', () => {
   test('streams the first active channel by default', async () => {
     const opened = await openOmeZarr(makeTczyxStore())
     opened.info.channels = [{ ...opened.info.channels[0], active: false }]
-    const bytes = await omeZarrChunkedSource(opened).fetchChunk({
+    const source = omeZarrChunkedSource(opened)
+    expect(source.channel).toBe(1)
+    const bytes = await source.fetchChunk({
       levelIndex: 0,
       texOrigin: [0, 0, 0],
       texDims: [4, 3, 2],

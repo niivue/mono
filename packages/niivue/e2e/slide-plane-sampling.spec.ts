@@ -82,6 +82,14 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       })
       await nv.attachToCanvas(canvas)
       if (nv.backend !== '${backend}') return { skip: 'fell back to ' + nv.backend }
+      // The "No image loaded" header's backing: HEADER_BACK_COLOR at 0.8 over
+      // black, compared premultiplied (a WebGL2 canvas may hold alpha < 1).
+      const empty = nv.getCanvasImage().data
+      let headerPx = 0
+      for (let i = 0; i < empty.length; i += 4) {
+        const k = empty[i + 3] / 255
+        if (Math.abs(empty[i] * k - 102) + Math.abs(empty[i + 1] * k - 41) + Math.abs(empty[i + 2] * k - 122) < 8) headerPx++
+      }
       nv.sliceType = lib.SLICE_TYPE.RENDER
       await nv.loadVolumes([{ url: (${syntheticVolume})({ n: 16 }), opacity: 0 }])
       const pixelToWorld = lib.axialPlaneTransform(n, n, {
@@ -101,7 +109,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         }
         return c
       }
-      const out = {}
+      const out = { headerPx }
       for (const [name, color] of [['absent', [0, 1, 0, 1]], ['none', null], ['label', null], ['mixed', null]]) {
         const slide = name === 'label' || name === 'mixed' ? labelSlide(name === 'mixed') : slideWith(color)
         const keys = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => slide.tileKey(slide.manifest.levels[0], { x, y }))
@@ -149,6 +157,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
       none: { nearest: Census; linear: Census }
       label: { nearest: Census; linear: Census }
       mixed: { nearest: Census; linear: Census }
+      headerPx: number
       annotation: { half: number; other: number; translucent: number }
       halfRed: number
     }
@@ -164,6 +173,8 @@ for (const backend of ['webgl2', 'webgpu'] as const)
     expect(absent.linear.green).toBe(absent.nearest.green)
     expect(none.nearest.green).toBe(0)
     expect(none.nearest.black - absent.nearest.black).toBe(absent.nearest.green)
+    // The header backing is one colour on both backends (WebGL2 drew bluer).
+    expect(r.headerPx).toBeGreaterThan(100)
     // Label-only fused tiles stay nearest under linear filtering.
     expect(r.label.linear.pure).toBeGreaterThan(4000)
     expect(r.label.linear.blend).toBeLessThan(r.label.linear.pure / 50)

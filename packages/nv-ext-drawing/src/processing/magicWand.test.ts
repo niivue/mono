@@ -43,3 +43,17 @@ test('auto with percent and a negative scl_slope fills the calibrated dark side'
   })
   expect([...bmp]).toEqual([0, 1, 1])
 })
+
+test('percent mode contains a zero or negative seed', () => {
+  const run = (raw: number[]) => {
+    const bmp = new Uint8Array(3)
+    magicWand([1, 0, 0], bmp, { dimX: 3, dimY: 1, dimZ: 1 }, raw, {
+      thresholdMode: 'percent',
+      percent: 0.1,
+    })
+    return [...bmp]
+  }
+  expect(run([-11, -10, -9])).toEqual([1, 1, 1])
+  expect(run([0, 0, 0])).toEqual([1, 1, 1])
+  expect(run([8, 10, 12])).toEqual([0, 1, 0])
+})

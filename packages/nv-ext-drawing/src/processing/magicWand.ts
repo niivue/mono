@@ -21,7 +21,7 @@ export type Connectivity = 6 | 18 | 26
  * Threshold mode controls how the intensity range is computed from the seed.
  *
  * - `"symmetric"` (default) — range = `[seed - tolerance, seed + tolerance]`.
- * - `"percent"` — range = `[seed * (1 - percent), seed * (1 + percent)]`.
+ * - `"percent"` — range = `seed ± |seed| * percent` (a zero seed uses 0.01).
  *   Requires {@link MagicWandOptions.percent}.
  * - `"bright"` — only voxels **≥** seed are included:
  *   range = `[seed, seed + tolerance]` (or `[seed, Infinity]` when tolerance is 0).
@@ -177,7 +177,7 @@ function getNeighbourOffsets(
 // Public: magicWand
 // ---------------------------------------------------------------------------
 
-/** One-sided percent band width; a zero seed uses 0.01 as the percent mode does. */
+/** Percent band half-width; a zero seed uses 0.01 so the band is not empty. */
 function percentSpan(seed: number, percent: number): number {
   return Math.abs(seed === 0 ? 0.01 : seed) * percent
 }
@@ -258,10 +258,11 @@ export function magicWand(
 
     switch (effectiveMode) {
       case 'percent': {
-        // Range = [seed*(1-pct), seed*(1+pct)], matching old clickToSegmentPercent
-        const eff = seedIntensity === 0 ? 0.01 : seedIntensity
-        lo = eff * (1 - percent)
-        hi = eff * (1 + percent)
+        // seed +/- |seed|*pct: old clickToSegmentPercent for positive seeds,
+        // and still contains the seed when it is zero or negative.
+        const span = percentSpan(seedIntensity, percent)
+        lo = seedIntensity - span
+        hi = seedIntensity + span
         break
       }
       case 'bright':

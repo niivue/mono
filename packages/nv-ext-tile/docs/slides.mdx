@@ -184,9 +184,10 @@ TIFF at a given plane, pass `tiff: { z: 3 }` to `openSlide`.
 ## Files from particular scanners
 
 Besides standard pyramidal TIFF, these open as you would expect: Philips
-TIFF, Hamamatsu NDPI (up to 4 GiB) and Argos z-stacks. Ventana BIF, Trestle
-and Leica SCN files open as the grid of tiles stored in the file; the
-scanner's tile overlaps and region layout are not applied by default.
+TIFF, Hamamatsu NDPI (up to 4 GiB) and Argos z-stacks. Ventana BIF tile
+joints, Trestle overlaps and Leica SCN regions open placed as the scanner
+laid them out; pass `tiff: { placement: false }` to `openSlide` for the grid
+of tiles stored in the file.
 
 ## Opening one format directly
 

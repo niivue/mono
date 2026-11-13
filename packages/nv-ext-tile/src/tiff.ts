@@ -49,6 +49,7 @@ import {
   type SlideFetch,
   slideFetch,
 } from './rangeFetch'
+import { tiffPixelSpacingMM } from './tiffSpacing'
 import { ARGOS_TAG, argosStack } from './vendor/argos'
 import { leicaComposition, leicaRegions } from './vendor/leica'
 import {
@@ -556,6 +557,7 @@ interface TiffOpened {
   /** Vendor tile placement (`TiffSlideOptions.placement`). */
   placement?: VendorPlacement
   placementReport?: TiffPlacementReport
+  pixelSpacingMM?: [number, number]
 }
 
 /** What `placement: true` resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
@@ -1261,6 +1263,32 @@ async function loadCapped(
   }
 }
 
+// Level 0's physical pixel size (tiffSpacing.ts). An unreadable XMP is no spacing.
+async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
+  const ifd0 = (await tiff.getImage(0)).fileDirectory
+  const base = opened.pyramids[0]?.[0]?.img.fileDirectory
+  const text = async (tag: number) =>
+    ifd0.hasTag(tag)
+      ? tagText(await loadCapped(tiff, ifd0, tag, MAX_XMP).catch(() => ''))
+      : ''
+  const rational = async (tag: number) => {
+    const v = base?.hasTag(tag) ? await base.loadValue(tag) : undefined
+    return v ? Number(v[0]) / Number(v[1]) : undefined
+  }
+  const description = await text(270)
+  // Tags are read only when the description does not settle it.
+  return (
+    tiffPixelSpacingMM({ description }) ??
+    tiffPixelSpacingMM({
+      description,
+      xmp: await text(700),
+      xResolution: await rational(282),
+      yResolution: await rational(283),
+      resolutionUnit: base?.hasTag(296) ? await base.loadValue(296) : undefined,
+    })
+  )
+}
+
 async function placedPyramid(
   tiff: GeoTIFF,
   first: GeoTIFFImage,
@@ -1441,6 +1469,8 @@ export class TiffSlideSource implements SlideTileSource {
       plane,
       this.credit,
     )
+    if (this.opened.pixelSpacingMM)
+      manifest.pixelSpacingMM = this.opened.pixelSpacingMM
     const placed = this.opened.placement
     if (!placed) return manifest
     // F7: levels keep their storage grid; the manifest takes the placed extent.
@@ -1477,6 +1507,7 @@ export class TiffSlideSource implements SlideTileSource {
         options.signal,
       ).catch(fail)
       opened = await openTiff(tiff, options, options.signal).catch(fail)
+      opened.pixelSpacingMM = await pixelSpacingOf(tiff, opened).catch(fail)
     } finally {
       // Until the source exists; then its lifetime (below).
       client.openSignal = null
@@ -1500,6 +1531,7 @@ export class TiffSlideSource implements SlideTileSource {
     options: TiffSlideOptions & { signal?: AbortSignal } = {},
   ): Promise<TiffSlideSource> {
     const opened = await openTiff(tiff, options, options.signal)
+    opened.pixelSpacingMM = await pixelSpacingOf(tiff, opened)
     options.signal?.throwIfAborted()
     return new TiffSlideSource(
       tiff,

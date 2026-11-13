@@ -13,6 +13,7 @@ import {
   type SlideSourceHost,
 } from '@niivue/niivue'
 import { registerDcm2niixTiffDecoders, TiffSlideSource } from './tiff'
+import { type TiffSpacingTags, tiffPixelSpacingMM } from './tiffSpacing'
 
 // 64x64 baseline JPEG (cjpeg -sample 1x1): left half (200,30,30), right half (30,30,200).
 const JPEG_TILE = Uint8Array.from(
@@ -1479,6 +1480,98 @@ describe('single-channel grey TIFF', () => {
     })
     expect(plain.manifest.attribution).toEqual({ url: 'https://example.org/x' })
   })
+})
+
+test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholders give none', async () => {
+  // Golden: scratch/ruler-calibration-2026-11-12.md "Source spacing", in um [x, y].
+  const philips = (order: string) =>
+    `<DataObject ObjectType="DPUfsImport"><Attribute ${order}>&quot;0.000226891&quot; &quot;0.000226907&quot;</Attribute></DataObject>`
+  const leica =
+    '<scn><collection sizeX="30000000" sizeY="80000000">' +
+    '<image><pixels sizeX="1616" sizeY="4668"/><view sizeX="30000000" sizeY="80000000" offsetX="0" offsetY="0"/></image>' +
+    '<image><pixels sizeX="36832" sizeY="38000"/><view sizeX="18416000" sizeY="19000000" offsetX="9" offsetY="9"/></image>' +
+    '</collection></scn>'
+  const res = (x: number, unit?: number, y = x) => ({
+    description: '',
+    xResolution: x,
+    yResolution: y,
+    resolutionUnit: unit,
+  })
+  const rows: [string, TiffSpacingTags, number[] | undefined][] = [
+    [
+      'Aperio CMU-1',
+      {
+        description:
+          'Aperio Image Library v10.0.51\r\n46920x33014 [0,100 46000x32914] (256x256) JPEG/RGB Q=30|AppMag = 20|MPP = 0.4990|Left = 25.6',
+      },
+      [0.499, 0.499],
+    ],
+    [
+      'Aperio without MPP ignores tags',
+      { ...res(25000, 3), description: 'Aperio Image Library v10' },
+      undefined,
+    ],
+    [
+      'OME nm, default unit',
+      {
+        description: omeXml(
+          'PhysicalSizeX="400" PhysicalSizeXUnit="nm" PhysicalSizeY="0.5"',
+        ),
+      },
+      [0.4, 0.5],
+    ],
+    [
+      'Philips row\\col',
+      { description: philips('Name="DICOM_PIXEL_SPACING" Group="0x0028"') },
+      [0.226907, 0.226891],
+    ],
+    [
+      'Philips-4 attribute order',
+      { description: philips('Element="0x0030" Name="DICOM_PIXEL_SPACING"') },
+      [0.226907, 0.226891],
+    ],
+    ['Leica main image, not the macro', { description: leica }, [0.5, 0.5]],
+    [
+      'Leica regions that disagree',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="1000" sizeY="1000"/><view sizeX="1000000" sizeY="1000000" offsetX="9" offsetY="9"/></image></collection>',
+        ),
+      },
+      undefined,
+    ],
+    [
+      'Ventana iScan',
+      {
+        ...res(472.44, 3),
+        description: 'Label_Image',
+        xmp: '<iScan Magnification="40" ScanRes="0.25"/>',
+      },
+      [0.25, 0.25],
+    ],
+    ['Huron-1 (cm)', res(25000, 3), [0.4, 0.4]],
+    ['Argos-1 (cm)', res(26109.381, 3), [0.383004]],
+    ['Generic-TIFF 10 px/cm placeholder', res(10, 3), undefined],
+    ['ResolutionUnit none', res(25000, 1), undefined],
+    ['72 dpi default', res(72), undefined],
+    ['300 dpi', res(300, 2), undefined],
+    ['no tags', { description: '' }, undefined],
+  ]
+  for (const [name, tags, um] of rows)
+    expect([
+      name,
+      tiffPixelSpacingMM(tags)?.map((v) => +(v * 1000).toPrecision(6)),
+    ]).toEqual([name, um && [um[0], um[1] ?? um[0]]])
+  // Wiring: the manifest carries it.
+  const xml = omeXml(
+    'DimensionOrder="XYCZT" SizeX="40" SizeY="32" SizeC="1" SizeZ="1" SizeT="1" Type="uint16" PhysicalSizeX="0.25" PhysicalSizeY="0.25"',
+  )
+  const server = rangeServer(writePlanes(grayPlanes([0]), xml))
+  const source = await TiffSlideSource.fromUrl('http://test/s.ome.tif', {
+    fetch: server.fetchImpl,
+  })
+  expect(source.manifest.pixelSpacingMM).toEqual([0.00025, 0.00025])
 })
 
 describe('OME-TIFF channel names', () => {

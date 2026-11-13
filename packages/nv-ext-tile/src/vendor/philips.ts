@@ -52,3 +52,17 @@ export function philipsLevels(xml: string): PhilipsLevel[] | null {
     }
   })
 }
+
+/**
+ * The first DICOM_PIXEL_SPACING (row\col, mm), the scanned image's, as [x, y]
+ * mm. Representations state rounded nominal spacings (Philips-1: 0.000227273
+ * against 0.000226891 \ 0.000226907).
+ */
+export function philipsSpacingMM(xml: string): [number, number] | undefined {
+  const [row = 0, col = row] =
+    (attribute(xml, 'DICOM_PIXEL_SPACING') ?? '')
+      .replace(/&quot;/g, '"')
+      .match(/[\d.eE+-]+/g)
+      ?.map(Number) ?? []
+  return row > 0 && col > 0 ? [col, row] : undefined
+}

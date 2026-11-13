@@ -2,12 +2,10 @@ import { ubuntu } from '@/assets/fonts'
 import { colorLutWgsl } from '@/slide/colorLutShader'
 import type {
   NVSlide,
-  NVSlideCachedTile,
   NVSlideScreen,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
-  isFuseTile,
   rawPoolBytes,
   SlideBudgetRegistration,
   type SlideRendererOptions,
@@ -19,20 +17,18 @@ import {
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import {
-  frameTextureBudget,
-  planTextures,
+  beginSlideFrame,
   SlideFramePlan,
+  screenPixels,
   writeRectNdc,
   writeTileUv,
 } from '@/slide/slideTiles'
-import type { GutterAt } from '@/slide/tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
-import { timeChunkPhase } from '@/volume/chunkTiming'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
@@ -214,6 +210,8 @@ export class SlideRendererGPU {
   ) {
     this._maxPoolBytes = maxRawPoolBytes
     this._fuser = new TileFuserGPU(maxRawPoolBytes)
+    this._gutter.device = device
+    this._fuser.device = device
     this._budget = new SlideBudgetRegistration(this, maxRawPoolBytes)
     this._textures = new TileTextureCache<TileTextureGPU>(
       DEFAULT_TILE_TEXTURE_BYTES,
@@ -411,39 +409,26 @@ export class SlideRendererGPU {
    */
   render(slides: readonly NVSlide[], screen: NVSlideScreen): void {
     this._budget.sync(slides)
-    this._fuser.retainLabelTables(slides)
     const placeholder = this._placeholderTexture
     if (!placeholder) return
-    const dpr = screen.devicePixelRatio ?? 1
-    const width = Math.max(1, Math.floor(screen.widthCss * dpr))
-    const height = Math.max(1, Math.floor(screen.heightCss * dpr))
+    const [dpr, width, height] = screenPixels(screen)
     if (this._canvas.width !== width) this._canvas.width = width
     if (this._canvas.height !== height) this._canvas.height = height
     const nearest = this.isNearestInterpolation
     const plan = this._plan
-    plan.build(slides, screen)
-
-    // Evict before beginFrame (see TileTextureCache).
-    this._textures.evictToBudget(
-      frameTextureBudget(plan.fuses, this._fuser.poolBytes, this._maxPoolBytes),
-    )
-    this._textures.beginFrame()
-    if (!nearest) this._gutter.resync(this._device, this._textures)
     const textures = this._planTextures
-    planTextures(
+    // Fuses are submitted now, ahead of the frame.
+    beginSlideFrame(
+      plan,
+      slides,
+      screen,
       this._textures,
-      plan.uploadAt,
-      plan.uploadCached,
-      (i) =>
-        this.textureFor(
-          plan.uploadAt[i] as GutterAt,
-          plan.uploads[i] as NVSlideVisibleTile,
-          plan.uploadCached[i] as NVSlideCachedTile,
-        ),
+      this._fuser,
+      this._gutter,
+      this._maxPoolBytes,
+      nearest,
       textures,
     )
-    // Submitted now, ahead of the frame; nearest needs no gutter (resync fills it).
-    this._fuser.flush(this._device, this._gutter, this._textures, !nearest)
 
     // A background per slide plus at most every quad.
     this._ensureQuads(plan.slides.length + plan.quads.length)
@@ -656,47 +641,5 @@ export class SlideRendererGPU {
       this._textureGroups.set(texture, group)
     }
     return group
-  }
-
-  private textureFor(
-    at: GutterAt,
-    item: NVSlideVisibleTile,
-    cached: NVSlideCachedTile,
-  ): TileTextureGPU | null {
-    if (isFuseTile(cached))
-      return this._fuser.textureFor(
-        this._device,
-        this._gutter,
-        this._textures,
-        at,
-        item.slide,
-        cached,
-      )
-    return cached.bitmap ? this.textureForBitmap(at, cached.bitmap) : null
-  }
-
-  private textureForBitmap(
-    at: GutterAt,
-    bitmap: ImageBitmap,
-  ): TileTextureGPU | null {
-    // Keyed by the bitmap too: a refetched tile is a new bitmap (set() replaces).
-    const existing = this._textures.get(at.key, bitmap)
-    if (existing) return existing
-    // Timed as `upload` alongside the volume path's brick uploads: a slide tile
-    // and a volume brick are two consumers of the same streamed source, and
-    // both pay their texture cost on this thread.
-    return timeChunkPhase(
-      'upload',
-      () =>
-        this._gutter.upload(
-          this._device,
-          bitmap,
-          at,
-          this._textures,
-          // Nearest needs no gutter (the shader clamps); resync fills it.
-          !this.isNearestInterpolation,
-        ),
-      bitmap.width * bitmap.height * 4,
-    )
   }
 }

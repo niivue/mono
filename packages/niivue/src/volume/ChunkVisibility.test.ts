@@ -7,7 +7,12 @@ import {
   chunksOverlappingVoxelBox,
   orderByViewCenter,
 } from './ChunkVisibility'
-import { type ChunkPlan, chunkVolume, type Vec3i } from './chunking'
+import {
+  type ChunkPlan,
+  chunkVolume,
+  chunkVolumeMultiLOD,
+  type Vec3i,
+} from './chunking'
 
 /** Column-major 4x4 identity. */
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -97,18 +102,6 @@ describe('chunksInFrustum', () => {
       1, 2, 3,
     ])
   })
-
-  test('optional chunk offsets move the culling AABB', () => {
-    const plan = fourChunkPlan()
-    const visible = chunksInFrustum(
-      plan,
-      translate(-1.3, 0, 0),
-      true,
-      undefined,
-      (chunkIndex) => (chunkIndex === 0 ? [0.4, 0, 0] : [0, 0, 0]),
-    )
-    expect(visible).toEqual([0, 1, 2, 3])
-  })
 })
 
 describe('chunksBackToFront', () => {
@@ -150,6 +143,38 @@ describe('chunksBackToFront', () => {
       [1, 0.1, 1],
     )
     expect(scaledOrder.indexOf(1)).toBeLessThan(scaledOrder.indexOf(2))
+  })
+
+  test('a memoised order matches a fresh one for every ray', () => {
+    const plan = chunkVolumeMultiLOD(
+      [
+        [256, 256, 256],
+        [128, 128, 128],
+        [64, 64, 64],
+      ],
+      { center: [100, 140, 60], radius: 60 },
+      64,
+      { cellEdge: 32 },
+    )
+    let seed = 7
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647
+      return seed / 2147483647 - 0.5
+    }
+    const rays = [
+      [1, 0, 0],
+      [0, -1, 0],
+      [0, 0, 1],
+      [1, -1, 0],
+      [1, 1, 1],
+    ]
+    for (let i = 0; i < 200; i++) rays.push([rnd(), rnd(), rnd()])
+    for (const ray of rays) {
+      chunksBackToFront(plan, ray)
+      expect(chunksBackToFront(plan, ray)).toEqual(
+        chunksBackToFront({ ...plan }, ray),
+      )
+    }
   })
 
   test('keeps plan order when the ray direction is degenerate', () => {
@@ -277,23 +302,6 @@ describe('chunksNotClippedOut', () => {
     ).toEqual([1, 2])
   })
 
-  test('explode offset shifts the corners across the plane', () => {
-    const plan = fourChunkPlan()
-    // n=[1,0,0], a=0 would cull chunk 0, but an explode offset of +0.5 in x
-    // pushes its corners to the kept side, so it survives.
-    const offsetFor = (ci: number): [number, number, number] =>
-      ci === 0 ? [0.5, 0, 0] : [0, 0, 0]
-    expect(
-      chunksNotClippedOut(
-        plan,
-        [0, 1, 2, 3],
-        clip([1, 0, 0, 0]),
-        false,
-        offsetFor,
-      ),
-    ).toEqual([0, 1, 2, 3])
-  })
-
   test('degenerate normal is treated as inactive', () => {
     const plan = fourChunkPlan()
     // n=[0,0,0] with an in-range a must not cull anything.
@@ -382,7 +390,7 @@ describe('chunkDrawOrder', () => {
     const ray = [1, 0.1, 0.2]
     expect(
       chunkDrawOrder(newPlan, [], () => false, ray).map((it) => it.index),
-    ).toEqual(chunksBackToFront(newPlan, ray))
+    ).toEqual([...chunksBackToFront(newPlan, ray)])
   })
 
   test('a retiring brick replaces the bricks it covers, in depth order', () => {

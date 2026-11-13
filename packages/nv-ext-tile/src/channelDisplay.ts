@@ -14,6 +14,19 @@ export const MAX_TILES = 1 << 21
 // store that marks no channel inactive; the rest stay listed, hidden.
 export const MAX_DEFAULT_VISIBLE = 4
 
+/** The typed array of a sample plane: its sampleType, else uint8 or uint16 by bitsStored. */
+export const planeArray = (kind: {
+  sampleType?: 'i16' | 'f32'
+  bitsStored?: number
+}) =>
+  kind.sampleType === 'f32'
+    ? Float32Array
+    : kind.sampleType === 'i16'
+      ? Int16Array
+      : kind.bitsStored === 8
+        ? Uint8Array
+        : Uint16Array
+
 /**
  * Stored = (v * k - lo) / span * 65535, with k = 1/2 when hi - lo overflows;
  * dividing before scaling keeps a subnormal span finite.

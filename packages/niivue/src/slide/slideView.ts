@@ -14,6 +14,7 @@ import {
   type SlideOverlayStyle,
   slideOverlayContent,
 } from './slideOverlay'
+import { screenPixels } from './slideTiles'
 
 /** What a slide view needs of a renderer; `SlideRenderer` and `SlideRendererGPU` both fit. */
 export interface SlideRenderBackend {
@@ -192,9 +193,7 @@ export async function createSlideViewWith(
     frame = 0
     timer = undefined
     const s = screen()
-    const dpr = s.devicePixelRatio ?? 1
-    const width = Math.max(1, Math.floor(s.widthCss * dpr))
-    const height = Math.max(1, Math.floor(s.heightCss * dpr))
+    const [, width, height] = screenPixels(s)
     // Resizing resets the canvas, so only when the size changed.
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width

@@ -173,8 +173,8 @@ describe('SlidePlaneRendererGPU', () => {
       }) as unknown as NVSlide
     const p2w = [1, 0, 0, 0, 1, 0]
     const mvp = new Float32Array(16)
-    r.draw(device, pass, mvp, tiles(1), dicom([1, 0, 0, 1]), 1, p2w)
-    r.draw(device, pass, mvp, tiles(1), dicom([0, 0, 1, 1]), 1, p2w)
+    r.draw(device, pass, mvp, tiles(1), dicom([1, 0, 0, 1]), p2w)
+    r.draw(device, pass, mvp, tiles(1), dicom([0, 0, 1, 1]), p2w)
     expect(
       absent.map((g) => colorOf.get(groupTexture.get(g) as object)),
     ).toEqual([

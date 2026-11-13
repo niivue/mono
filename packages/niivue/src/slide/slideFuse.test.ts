@@ -395,7 +395,7 @@ describe('fuseTarget', () => {
   }
   const slide = {
     displayGeneration: 1,
-    channels: [channel()],
+    liveChannels: [channel()],
     channelBlend: 'max',
     manifest: {},
     selectedLabel: null,
@@ -606,7 +606,7 @@ describe('labels', () => {
       t.samples.width = 2
       const slide = {
         displayGeneration: 1,
-        channels: visible.map((v) => channel({ visible: v })),
+        liveChannels: visible.map((v) => channel({ visible: v })),
         channelBlend: 'max',
         manifest: { channelInfo: info },
         selectedLabel: null,
@@ -632,7 +632,7 @@ describe('labels', () => {
     t.samples.width = 2
     const slide = {
       displayGeneration: 1,
-      channels: [channel(), channel()],
+      liveChannels: [channel(), channel()],
       channelBlend: 'max',
       manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
       selectedLabel: null,
@@ -647,7 +647,7 @@ describe('labels', () => {
     expect(target()).toBe(mixed)
     Object.assign(slide, {
       displayGeneration: 2,
-      channels: [channel(), channel({ visible: false })],
+      liveChannels: [channel(), channel({ visible: false })],
     })
     const intensity = target()
     expect([intensity?.labels, cache.bytes]).toEqual([undefined, 48])
@@ -661,7 +661,7 @@ describe('labels', () => {
     t.samples.width = 2
     const slide = {
       displayGeneration: 1,
-      channels: [channel(), channel()],
+      liveChannels: [channel(), channel()],
       channelBlend: 'max',
       manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
       selectedLabel: null,
@@ -678,7 +678,7 @@ describe('labels', () => {
     cache.touch('k', t.samples)
     Object.assign(slide, {
       displayGeneration: 2,
-      channels: [channel(), channel({ visible: false })],
+      liveChannels: [channel(), channel({ visible: false })],
     })
     expect(fuseTarget([], cache, at, slide, t, 4096, create)).not.toBeNull()
     expect(cache.bytes).toBe(48)

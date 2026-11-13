@@ -22,13 +22,14 @@ const guideGroups = [
     items: [
       'guide/layout',
       'guide/interaction',
+      'reference/events',
       'guide/sync',
       'guide/drawing',
       'guide/animation',
       'guide/fonts',
     ],
   },
-  { label: 'Reference', items: ['reference/events', 'reference/migrating'] },
+  { label: 'Reference', items: ['reference/migrating'] },
 ] satisfies Sidebar
 
 const resourcesGroup = {

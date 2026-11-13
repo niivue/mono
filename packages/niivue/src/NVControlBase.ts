@@ -8140,7 +8140,12 @@ export default class NiiVue extends EventTarget {
       return
     }
     this._ownsSlidePlane = true
-    if (signal.aborted || !sameSize) return
+    // A reentrant load (e.g. from a locationChange listener) aborted the restore.
+    if (signal.aborted) {
+      this.clearSlidePlane()
+      return
+    }
+    if (!sameSize) return
     if (
       sp.drawingRLE &&
       sp.drawingWidth &&

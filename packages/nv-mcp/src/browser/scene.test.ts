@@ -1812,7 +1812,7 @@ describe('load_ome_zarr', () => {
     ])
   })
 
-  it('streams through the page helper, replacing the scene', async () => {
+  it('streams through the page helper, which colours labels from the store it opens', async () => {
     const view = fakeView()
     const zarr = omeZarr()
     await coreHandlers(host(view, { omeZarr: async () => zarr })).load_ome_zarr(
@@ -1824,6 +1824,9 @@ describe('load_ome_zarr', () => {
       { channel: undefined, timepoint: undefined, replace: true },
     )
     expect(view.loadVolumes).not.toHaveBeenCalled()
+    // No second metadata fetch: the helper applies image-label colours itself.
+    expect(zarr.fetchOmeZarr).not.toHaveBeenCalled()
+    expect(zarr.omeZarrLabelColormap).not.toHaveBeenCalled()
   })
 
   it('names the store when the url cannot be parsed', async () => {

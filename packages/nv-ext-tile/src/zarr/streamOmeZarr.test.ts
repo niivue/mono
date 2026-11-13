@@ -130,10 +130,28 @@ test('a streamed channel takes its omero name, colour and window; caller options
     channelCount: 2,
     levels: [{ dtype: 'uint16' }],
   })
+  // Segmentations: stated colours registered under the url, else Random.
+  const label = (labelColors: unknown[], dtype = 'uint16') => ({
+    info: { channels: [], isLabel: true, labelColors },
+    channelCount: 1,
+    levels: [{ dtype }],
+  })
+  zarrs.set(
+    'https://example.test/seg.zarr',
+    label([{ id: 1, rgba: [255, 0, 0, 255] }]),
+  )
+  zarrs.set('https://example.test/plainseg.zarr', label([]))
+  // 64-bit IDs: core refuses a label colormap, so it streams as intensities.
+  zarrs.set('https://example.test/wideseg.zarr', label([], 'uint64'))
   const loaded: unknown[] = []
+  const added: string[] = []
   const nv = {
     isDestroyed: false,
     volumes: [] as unknown[],
+    addColormap(name: string) {
+      added.push(name)
+      return name
+    },
     addEventListener() {},
     removeEventListener() {},
     async removeAllVolumes() {},
@@ -156,10 +174,17 @@ test('a streamed channel takes its omero name, colour and window; caller options
   await streamOmeZarr(viewer, 'https://example.test/twored.zarr', {
     channel: 1,
   })
+  await streamOmeZarr(viewer, 'https://example.test/seg.zarr')
+  await streamOmeZarr(viewer, 'https://example.test/plainseg.zarr')
+  await streamOmeZarr(viewer, 'https://example.test/wideseg.zarr')
   expect(loaded).toEqual([
     { name: 'CD19', colormap: 'red', calMin: 5, calMax: 50 },
     { name: 'CD19', colormap: 'gray', calMin: 5, calMax: 50 },
     {},
     { name: 'B', colormap: 'violet', calMin: 5, calMax: 50 },
+    { colormap: 'https://example.test/seg.zarr labels' },
+    { colormap: 'Random' },
+    {},
   ])
+  expect(added).toEqual(['https://example.test/seg.zarr labels'])
 })

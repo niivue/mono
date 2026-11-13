@@ -6,10 +6,11 @@ import type {
 import { fetchOmeZarrChunkedSource } from './fetchOmeZarrChunkedSource'
 import { omeroActiveChannels } from './omeZarr'
 import type { FetchOmeZarrChunkedSourceOptions } from './omeZarrChunkedSource'
-import { omeZarrChannelOptions } from './omeZarrLoader'
+import { omeZarrChannelOptions, omeZarrLabelColormap } from './omeZarrLoader'
 
 type Viewer = Pick<
   NiiVue,
+  | 'addColormap'
   | 'loadChunkedVolume'
   | 'removeAllVolumes'
   | 'volumes'
@@ -32,7 +33,9 @@ const replacing = new WeakMap<Viewer, Promise<unknown>>()
  * unless `replace`) and own what that leaves running: once the streamed
  * volume is removed (by any load or removal, even while it initializes) or
  * `nv` is destroyed, the manager is disposed and the source's worker pool
- * terminated. For callers that hold no handle of their own (bindings,
+ * terminated. A segmentation (`image-label`) shows its stated colours,
+ * registered as `<url> labels`, else the generated `Random` colormap, as a
+ * whole-level load does. For callers that hold no handle of their own (bindings,
  * agents); an app that shares the source, as a volume and a slide do, keeps
  * using `fetchOmeZarrChunkedSource` and disposes it itself.
  */
@@ -53,7 +56,7 @@ export async function streamOmeZarr(
     if (nv.isDestroyed) throw new Error('the viewer was destroyed')
     if (replace) await nv.removeAllVolumes()
     return nv.loadChunkedVolume(source, {
-      ...omeroDisplay(source.zarr, options.channel),
+      ...display(nv, url, source.zarr, options.channel),
       ...volumeOptions,
     })
   }
@@ -97,6 +100,25 @@ export async function streamOmeZarr(
   // before these listeners.
   if (nv.isDestroyed || !nv.volumes.some(shown)) release()
   return chunked
+}
+
+// A segmentation's stated colours (else Random) under its omero name, as a
+// whole-level load shows it; otherwise the channel's omero display.
+function display(
+  nv: Viewer,
+  url: string,
+  zarr: Parameters<typeof omeZarrChannelOptions>[0],
+  channel?: number,
+): ChunkedVolumeOptions {
+  const shown = omeroDisplay(zarr, channel)
+  // loadChunkedVolume refuses a label colormap on 64-bit IDs (not exact past
+  // 2^24), so those keep streaming as intensities.
+  if (!zarr.info.isLabel || zarr.levels[0].dtype.endsWith('64')) return shown
+  const map = omeZarrLabelColormap(zarr.info)
+  const colormap = map ? nv.addColormap(`${url} labels`, map) : 'Random'
+  return shown.name === undefined
+    ? { colormap }
+    : { name: shown.name, colormap }
 }
 
 // The streamed channel's omero name, colour and window, as a whole-level load

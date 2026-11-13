@@ -3,9 +3,9 @@ import type {
   NVSlideChannelBlend,
   NVSlideChannelInfo,
   NVSlideLevelManifest,
+  TileBitmap,
 } from './NVSlide'
 import { fusePlan, fuseSamples, isFuseTile } from './slideFuse'
-import type { TileBitmap } from './tileLru'
 
 /**
  * Composite `level` from its resident tile `entries` (one per `level.tiles`

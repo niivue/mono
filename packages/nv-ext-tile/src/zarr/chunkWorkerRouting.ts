@@ -10,11 +10,11 @@
  */
 
 import type {
+  ByteLruStats,
   ChunkPhase,
   ChunkTimingSnapshot,
   OffThreadChunkTiming,
 } from '@niivue/niivue'
-import type { ByteCacheStats } from './omeZarrChunkedSource'
 import type { OmeZarrSource } from './omeZarrLoader'
 import type { PersistentCacheStats } from './persistentByteCache'
 
@@ -157,10 +157,10 @@ export function chunkTimingDelta(
  * bytes a single-threaded run would have had.
  */
 export function sumByteCacheStats(
-  parts: readonly (ByteCacheStats | null)[],
+  parts: readonly (ByteLruStats | null)[],
   maxBytes: number,
-): ByteCacheStats {
-  const total: ByteCacheStats = {
+): ByteLruStats {
+  const total: ByteLruStats = {
     hits: 0,
     misses: 0,
     admitted: 0,

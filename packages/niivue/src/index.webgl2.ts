@@ -407,7 +407,7 @@ export {
   type ResolvedOptions as ResolvedBudgetOptions,
 } from './volume/budgetPlans'
 // The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
-export type { DecodedChunkStats } from './volume/decodedChunkCache'
+export { ByteLru, type ByteLruStats } from './byteLru'
 // Decoded image, for a caller supplying its own `decodeImage`
 export type { DecodedImage } from './volume/imageDecode'
 export {

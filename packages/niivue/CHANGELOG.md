@@ -1,3 +1,18 @@
+## 1.0.0-rc.194 (2026-11-13)
+
+### Fixes
+
+- **niivue:** detach a slide whose document restore was aborted or misconfigured ([45cc6535](https://github.com/niivue/mono/commit/45cc6535))
+- **niivue:** a caller's setSlidePlane/clearSlidePlane supersedes a pending document slide restore ([13ea057e](https://github.com/niivue/mono/commit/13ea057e))
+- **niivue:** avoid rendering while destroying slide planes ([599e3a99](https://github.com/niivue/mono/commit/599e3a99))
+- **niivue:** cancel superseded slide document restores ([597e13b5](https://github.com/niivue/mono/commit/597e13b5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.193 (2026-11-13)
 
 ### Fixes

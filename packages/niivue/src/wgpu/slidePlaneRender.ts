@@ -48,7 +48,6 @@ override nearest = false;
 override labelBlend = 0u;
 struct U {
   mvp: mat4x4f,
-  opacity: vec4f,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var samp: sampler;
@@ -85,7 +84,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let l = textureLoad(labelTex, clamp(vec2i(in.uv * vec2f(size)), vec2i(1), size - 2), 0).rgb;
     c = vec4f(select(max(c.rgb, l), min(c.rgb + l, vec3f(1.0)), labelBlend == 2u), c.a);
   }
-  return vec4f(applyColorLut(c.rgb), c.a * u.opacity.x);
+  return vec4f(applyColorLut(c.rgb), c.a);
 }
 `
 
@@ -147,7 +146,6 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this,
     DEFAULT_RAW_POOL_BYTES,
   )
-  private readonly _scratch = new Float32Array(20) // mat4 (16) + opacity vec4 (4)
   private readonly _cached: (NVSlideCachedTile | null)[] = []
   private readonly _ats: GutterAt[] = []
   private readonly _drawn: ((PlaneTexture & { group: GPUBindGroup }) | null)[] =
@@ -158,6 +156,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   private _annTexture: GPUTexture | null = null
   private _annGroup: GPUBindGroup | null = null
   private _annVertexBuffer: GPUBuffer | null = null
+  private _annCorners: SlidePlaneAnnotation['corners'] | null = null
   private _annVersion = -1
   private _luts: ColorLutTexturesGPU | null = null
   private _annW = 0
@@ -246,7 +245,6 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     device: GPUDevice,
     pass: GPURenderPassEncoder,
     mvpMatrix: Float32Array,
-    opacity: number,
     fuses: boolean,
   ): DrawSlot | null {
     if (!this._uniformBGL || !this._sampler || !this._nearestSampler)
@@ -267,8 +265,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     }
     let slot = this._slots[this._slotsUsed]
     if (!slot) {
-      // mat4 (64) + opacity vec4 (16)
-      const uniform = uniformBuffer(device, 80)
+      const uniform = uniformBuffer(device, 64) // mat4
       slot = {
         uniform,
         group: device.createBindGroup({
@@ -289,9 +286,11 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       this._slots.push(slot)
     }
     this._slotsUsed++
-    this._scratch.set(mvpMatrix, 0)
-    this._scratch[16] = opacity
-    device.queue.writeBuffer(slot.uniform, 0, this._scratch)
+    device.queue.writeBuffer(
+      slot.uniform,
+      0,
+      mvpMatrix as Float32Array<ArrayBuffer>,
+    )
     return slot
   }
 
@@ -405,7 +404,6 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     mvpMatrix: Float32Array,
     tiles: readonly SlidePlaneTile[],
     slide: NVSlide,
-    opacity = 1,
     pixelToWorld?: readonly number[],
   ): void {
     const plain = this._pipeline(false, false, 0)
@@ -415,7 +413,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     const cached = this._cached
     const ats = this._ats
     const fuses = gatherPlaneTiles(slide, tiles, this._at, cached, ats)
-    const slot = this._nextSlot(device, pass, mvpMatrix, opacity, fuses)
+    const slot = this._nextSlot(device, pass, mvpMatrix, fuses)
     if (!slot) return
     // Upload and fuse every tile before drawing any.
     const drawn = this._drawn
@@ -492,7 +490,6 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     pass: GPURenderPassEncoder,
     mvpMatrix: Float32Array,
     ann: SlidePlaneAnnotation,
-    opacity = 1,
   ): void {
     const pipeline = this._pipeline(false, false, 0)
     if (!this.isReady || !pipeline || !this._textureBGL) return
@@ -526,16 +523,17 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       this._annVersion = ann.version
     }
     if (!this._annGroup) return
-    // One quad over the slide extent (rebuilt each call; just 4 verts).
-    const data = cornerQuad(ann.corners)
-    if (!this._annVertexBuffer) {
-      this._annVertexBuffer = device.createBuffer({
+    // One quad over the slide extent, rewritten when the corners change.
+    if (this._annCorners !== ann.corners) {
+      const data = cornerQuad(ann.corners)
+      this._annVertexBuffer ??= device.createBuffer({
         size: data.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       })
+      device.queue.writeBuffer(this._annVertexBuffer, 0, data)
+      this._annCorners = ann.corners
     }
-    device.queue.writeBuffer(this._annVertexBuffer, 0, data)
-    const slot = this._nextSlot(device, pass, mvpMatrix, opacity, false)
+    const slot = this._nextSlot(device, pass, mvpMatrix, false)
     if (!slot) return
     pass.setPipeline(pipeline)
     pass.setBindGroup(0, slot.group)
@@ -568,6 +566,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     this._annVertexBuffer?.destroy()
     this._annTexture = null
     this._annVertexBuffer = null
+    this._annCorners = null
     this._annGroup = null
     this._slots = []
     this._retired = []

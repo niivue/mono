@@ -52,7 +52,6 @@ const fragSrc = (lut: boolean): string => `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D tileTex;
-uniform float opacity;
 uniform int isNearest;
 // A mixed fused tile's label channels (slideFuse.ts fuseTarget), combined
 // nearest with the intensity: 0 none, 1 max, 2 saturating sum.
@@ -74,7 +73,7 @@ void main(){
     vec3 l = texelFetch(labelTexture, clamp(ivec2(vUV * vec2(size)), ivec2(1), size - 2), 0).rgb;
     c.rgb = labelBlend == 2 ? min(c.rgb + l, 1.0) : max(c.rgb, l);
   }
-  outColor = vec4(applyColorLut(c.rgb), c.a * opacity);
+  outColor = vec4(applyColorLut(c.rgb), c.a);
 }`
 
 function quadVao(
@@ -171,14 +170,10 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     shader: Shader,
     mvpMatrix: Float32Array,
-    opacity: number,
   ): void {
     shader.use(gl)
     if (shader.uniforms.mvpMtx) {
       gl.uniformMatrix4fv(shader.uniforms.mvpMtx, false, mvpMatrix)
-    }
-    if (shader.uniforms.opacity) {
-      gl.uniform1f(shader.uniforms.opacity, opacity)
     }
     gl.uniform1i(shader.uniforms.isNearest ?? null, 0)
     gl.uniform1i(shader.uniforms.labelBlend ?? null, 0)
@@ -221,7 +216,6 @@ export class SlidePlaneRenderer extends NVRenderer {
     mvpMatrix: Float32Array,
     tiles: readonly SlidePlaneTile[],
     slide: NVSlide,
-    opacity = 1,
     pixelToWorld?: readonly number[],
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
@@ -269,14 +263,14 @@ export class SlidePlaneRenderer extends NVRenderer {
     )
       this._buildVertices(gl, tiles, slide, pixelToWorld)
     if (absent) {
-      this._begin(gl, this._shader, mvpMatrix, opacity)
+      this._begin(gl, this._shader, mvpMatrix)
       gl.bindTexture(gl.TEXTURE_2D, this._absentTexture(gl, slide))
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
     const lut = slide.displayColorLut
     const shader = (lut && this._lutShader) || this._shader
     if (lut) this._luts.bind(gl, lut)
-    this._begin(gl, shader, mvpMatrix, opacity)
+    this._begin(gl, shader, mvpMatrix)
     let nearest = false
     let labelBlend = 0
     // Unit 2's binding before the first label texture (a shared context), restored after.
@@ -361,7 +355,6 @@ export class SlidePlaneRenderer extends NVRenderer {
     gl: WebGL2RenderingContext,
     mvpMatrix: Float32Array,
     ann: SlidePlaneAnnotation,
-    opacity = 1,
   ): void {
     if (!this.isReady || !this._shader || !this._annVao) return
     if (!this._annTex) this._annTex = gl.createTexture()
@@ -384,7 +377,7 @@ export class SlidePlaneRenderer extends NVRenderer {
       setTexParams(gl, gl.TEXTURE_2D, gl.LINEAR, gl.NEAREST)
       this._annVersion = ann.version
     }
-    this._begin(gl, this._shader, mvpMatrix, opacity)
+    this._begin(gl, this._shader, mvpMatrix)
     gl.bindVertexArray(this._annVao)
     if (this._annCorners !== ann.corners) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this._annVbo)

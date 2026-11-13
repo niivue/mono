@@ -1379,7 +1379,6 @@ export default class NVGlview {
           mvpMatrix as Float32Array,
           drawn,
           this.slidePlane.slide,
-          1,
           this.slidePlane.pixelToWorld,
         )
         if (this.slidePlane.annotation) {

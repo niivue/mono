@@ -55,7 +55,7 @@ export interface MagicWandOptions {
   thresholdMode?: ThresholdMode
   /**
    * Percentage threshold (0–1) used when `thresholdMode` is `"percent"`
-   * (range `[seed * (1-pct), seed * (1+pct)]`), or `"bright"`, `"dark"` or
+   * (range `seed ± |seed|*pct`), or `"bright"`, `"dark"` or
    * `"auto"` (one side only: `[seed, seed + |seed|*pct]` or `[seed - |seed|*pct, seed]`).
    * Equivalent to `clickToSegmentPercent` in the old niivue API.
    */

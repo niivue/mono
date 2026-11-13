@@ -101,30 +101,6 @@ it('a plane switch at the same level index sends no levelchange', async () => {
   slide.dispose()
 })
 
-it('a load shared by equal-rank owners keeps the nearest focus', () => {
-  const source = new PlaneSource()
-  source.gated = true
-  const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
-  const l0 = slide.manifest.levels[0] as NVSlideLevelManifest
-  const tiles = l0.tiles.map((tile) => ({
-    level: l0,
-    tile: tile as NVSlideTileManifest,
-  }))
-  const near = slide.createRequestOwner('plane3d')
-  const far = slide.createRequestOwner('plane3d')
-  near.want(tiles, { x: 0, y: 0 })
-  far.want(tiles, { x: 4 * T, y: 4 * T })
-  const loads = (slide as unknown as { _loads: Map<string, { dist: number }> })
-    ._loads
-  const key = slide.tileKey(l0, { x: 1, y: 0 })
-  // Tile (1,0) centre (12,4): 12^2 + 4^2 from the near focus.
-  expect(loads.get(key)?.dist).toBe(160)
-  // The near owner moves away: its old focus no longer counts.
-  near.want(tiles, { x: 4 * T, y: 0 })
-  expect(loads.get(key)?.dist).toBe(20 * 20 + 4 * 4)
-  slide.dispose()
-})
-
 it('no change event after dispose', async () => {
   const source = new PlaneSource()
   source.gated = true

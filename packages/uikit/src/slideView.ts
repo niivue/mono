@@ -5,7 +5,6 @@
 
 import type {
   NVSlide,
-  NVSlidePlaneAxes,
   NVSlidePlaneIndex,
   NVSlideScreen,
   SlideView,
@@ -13,6 +12,7 @@ import type {
 } from '@niivue/niivue'
 import {
   addChannelColormap,
+  isRgbSlide,
   lookupColorMap,
   slideStatsSummary,
   toStored,
@@ -120,15 +120,6 @@ const hexOf = (colormap: string): string => {
   return `#${rgb.map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`
 }
 
-// RGB samples have no channels to set (core's isRgbSlide).
-const isRgb = (slide: NVSlide): boolean =>
-  !slide.manifest.channelInfo &&
-  !slide.manifest.levels.some(
-    (l) =>
-      l.codec === 'raw-gray' ||
-      (l.photometric?.startsWith('MONOCHROME') ?? false),
-  )
-
 /**
  * Per-channel controls in `container` for the view's slide: visibility,
  * exact colour, window (in data units, through `storedToValue`), which channel
@@ -152,7 +143,7 @@ export function attachSlideChannelPanel(
     built = slide
     fieldset.replaceChildren()
     sync = null
-    container.hidden = !slide || isRgb(slide)
+    container.hidden = !slide || isRgbSlide(slide.manifest)
     if (!slide || container.hidden) return
     const legend = document.createElement('legend')
     legend.textContent = 'Channels'
@@ -279,14 +270,6 @@ export function attachSlideChannelPanel(
   }
 }
 
-// NVSlide's plane surface per the frozen plane contract (C implements it):
-// `planes` absent means a fixed source, one plane.
-type PlaneSlide = {
-  readonly planes?: NVSlidePlaneAxes
-  readonly planeIndex: NVSlidePlaneIndex
-  setPlaneIndex(p: NVSlidePlaneIndex): unknown
-}
-
 /**
  * Focal-plane (z) and time (t) sliders in `container` for the view's slide,
  * per axis with more than one plane; hidden for a fixed source. A move calls
@@ -298,7 +281,7 @@ export function attachSlidePlaneControl(
   view: SlideView,
   container: HTMLElement,
 ): () => void {
-  let builtFor: PlaneSlide | null = null
+  let builtFor: NVSlide | null = null
   let builtKey = ''
   let calls = 0
   // The plane asked for and not yet committed: requests and the sliders build
@@ -311,7 +294,7 @@ export function attachSlidePlaneControl(
   }> = []
   const status = document.createElement('span')
   status.setAttribute('role', 'status')
-  const sync = (slide: PlaneSlide): void => {
+  const sync = (slide: NVSlide): void => {
     const shown = wanted ?? slide.planeIndex
     for (const { axis, input, text } of sliders) {
       input.value = String(shown[axis])
@@ -319,8 +302,7 @@ export function attachSlidePlaneControl(
     }
   }
   const build = (): void => {
-    // ponytail: cast until lane C's NVSlide declares `planes`.
-    const slide = view.slide as unknown as PlaneSlide | null
+    const slide = view.slide
     const axes = slide?.planes
     const key =
       slide && axes && (axes.z > 1 || axes.t > 1) ? `${axes.z}x${axes.t}` : ''

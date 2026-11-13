@@ -41,17 +41,11 @@ function bytes(size: number, fill = 1): Uint8Array {
 }
 
 describe('persistentCacheKey', () => {
-  test('round trips an identity through the key', () => {
-    const identity = 'https://dandi.org/v.zarr/0/1/2/3'
-    const key = persistentCacheKey(identity, 4096)
-    expect(parsePersistentCacheKey(key)).toEqual({ identity, bytes: 4096 })
-  })
-
-  test('survives an identity full of separators', () => {
+  test('round trips an identity full of separators', () => {
     const identity = 'https://h/a b?x=1&y=2#z/0/0/0'
     const key = persistentCacheKey(identity, 7)
     expect(key.indexOf('?')).toBe(key.indexOf('?b='))
-    expect(parsePersistentCacheKey(key)?.identity).toBe(identity)
+    expect(parsePersistentCacheKey(key)).toEqual({ identity, bytes: 7 })
   })
 
   test('rejects a key this encoding did not write', () => {
@@ -425,28 +419,6 @@ describe('scoped caches over one backing', () => {
     expect(
       left.every((key) => key.includes('w0%2F') || key.includes('w1%2F')),
     ).toBe(true)
-  })
-
-  test('a scoped cache serves the store through withPersistentBytes', async () => {
-    const backing = new FakeBacking()
-    const bytes = new Uint8Array([7, 7, 7])
-    let reads = 0
-    const store = {
-      get: async (): Promise<Uint8Array | undefined> => {
-        reads++
-        return bytes
-      },
-    }
-    const cold = await PersistentByteCache.open(backing, 1024, 'w1/', ['w1/'])
-    const first = withPersistentBytes(store, cold, 'https://store/')
-    expect((await first.get('/0/0/0'))?.length).toBe(3)
-    await cold.idle()
-    expect(reads).toBe(1)
-
-    const warm = await PersistentByteCache.open(backing, 1024, 'w1/', ['w1/'])
-    const second = withPersistentBytes(store, warm, 'https://store/')
-    expect((await second.get('/0/0/0'))?.length).toBe(3)
-    expect(reads).toBe(1)
   })
 })
 

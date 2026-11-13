@@ -1,17 +1,23 @@
 // Backend-neutral parts of drawing a slide, shared by the WebGL2 and WebGPU
 // slide renderers (gl/slide.ts, wgpu/slide.ts).
 
+import { timeChunkPhase } from '@/volume/chunkTiming'
 import type {
   NVSlide,
   NVSlideCachedTile,
   NVSlideScreen,
   NVSlideVisibleTile,
 } from './NVSlide'
-import { isFuseTile, tileTextureBudget } from './slideFuse'
-import { cornerQuad, type SlidePlaneTile } from './slidePlane'
+import { type FuseTile, isFuseTile, tileTextureBudget } from './slideFuse'
+import {
+  cornerQuad,
+  type SlidePlaneTile,
+  slideExtentCorners,
+} from './slidePlane'
 import { type GutterAt, visibleTileAt } from './tileGutter'
 import {
   DEFAULT_TILE_TEXTURE_BYTES,
+  slideTileKey,
   type TileTextureCache,
 } from './tileTextureCache'
 
@@ -127,6 +133,122 @@ export function planTextures<T>(
   for (let i = 0; i < at.length; i++) out.push(cached[i] ? textureFor(i) : null)
 }
 
+/** `screen`'s device pixel ratio and canvas size in device pixels (at least 1). */
+export function screenPixels(
+  screen: NVSlideScreen,
+): [dpr: number, width: number, height: number] {
+  const dpr = screen.devicePixelRatio ?? 1
+  return [
+    dpr,
+    Math.max(1, Math.floor(screen.widthCss * dpr)),
+    Math.max(1, Math.floor(screen.heightCss * dpr)),
+  ]
+}
+
+/** What `tileTexture` needs of a backend's gutter (gl/, wgpu/ tileGutter.ts). */
+export interface SlideTileGutter<T> {
+  upload(
+    bitmap: ImageBitmap,
+    at: GutterAt,
+    cache: TileTextureCache<T>,
+    sync?: boolean,
+  ): T | null
+  resync(cache: TileTextureCache<T>): void
+}
+
+/** What `tileTexture` needs of a backend's fuser (gl/, wgpu/ tileFuse.ts). */
+export interface SlideTileFuser<T, G> {
+  readonly poolBytes: number
+  textureFor(
+    gutter: G,
+    cache: TileTextureCache<T>,
+    at: GutterAt,
+    slide: NVSlide,
+    tile: FuseTile,
+  ): T | null
+  flush(gutter: G, cache: TileTextureCache<T>, sync: boolean): void
+  retainLabelTables(slides: readonly NVSlide[]): void
+}
+
+/**
+ * The texture of `cached` as tile `at`: fused (queued for the fuser's flush),
+ * resident, or uploaded with its gutter synced unless `sync` is false (nearest
+ * needs none; resync fills it). `timed` records the upload as the `upload`
+ * chunk phase.
+ */
+export function tileTexture<T, G extends SlideTileGutter<T>>(
+  fuser: SlideTileFuser<T, G>,
+  gutter: G,
+  cache: TileTextureCache<T>,
+  at: GutterAt,
+  slide: NVSlide,
+  cached: NVSlideCachedTile,
+  sync: boolean,
+  timed: boolean,
+): T | null {
+  if (isFuseTile(cached))
+    return fuser.textureFor(gutter, cache, at, slide, cached)
+  const { bitmap } = cached
+  if (!bitmap) return null
+  // Keyed by the bitmap too: a refetched tile is a new bitmap (set() replaces).
+  const existing = cache.get(at.key, bitmap)
+  if (existing) return existing
+  if (!timed) return gutter.upload(bitmap, at, cache, sync)
+  // Timed as `upload` alongside the volume path's brick uploads: a slide tile
+  // and a volume brick are two consumers of the same streamed source, and
+  // both pay their texture cost on this thread.
+  return timeChunkPhase(
+    'upload',
+    () => gutter.upload(bitmap, at, cache, sync),
+    bitmap.width * bitmap.height * 4,
+  )
+}
+
+/**
+ * A 2D slide frame up to its first draw: prune label tables, plan the frame,
+ * evict BEFORE beginFrame (so the previous frame's working set, still marked
+ * with the current frame stamp, is exempt; see TileTextureCache), then upload
+ * and fuse every planned tile into `out`. Nearest needs no gutter (the shader
+ * clamps); resync fills it on the first linear frame.
+ */
+export function beginSlideFrame<T, G extends SlideTileGutter<T>>(
+  plan: SlideFramePlan,
+  slides: readonly NVSlide[],
+  screen: NVSlideScreen,
+  cache: TileTextureCache<T>,
+  fuser: SlideTileFuser<T, G>,
+  gutter: G,
+  maxPoolBytes: number,
+  nearest: boolean,
+  out: (T | null)[],
+): void {
+  fuser.retainLabelTables(slides)
+  plan.build(slides, screen)
+  cache.evictToBudget(
+    frameTextureBudget(plan.fuses, fuser.poolBytes, maxPoolBytes),
+  )
+  cache.beginFrame()
+  if (!nearest) gutter.resync(cache)
+  planTextures(
+    cache,
+    plan.uploadAt,
+    plan.uploadCached,
+    (i) =>
+      tileTexture(
+        fuser,
+        gutter,
+        cache,
+        plan.uploadAt[i] as GutterAt,
+        (plan.uploads[i] as NVSlideVisibleTile).slide,
+        plan.uploadCached[i] as NVSlideCachedTile,
+        !nearest,
+        true,
+      ),
+    out,
+  )
+  fuser.flush(gutter, cache, !nearest)
+}
+
 /**
  * Write the interior UV span of visible tile `tile` to `out` at `o` as
  * u0, v0 (screen top), u1, v1 (screen bottom): its crop (`src`, see cropUv),
@@ -205,3 +327,58 @@ export const planeQuad = (
   gutter?: { width: number; height: number },
 ): Float32Array<ArrayBuffer> =>
   cornerQuad(tile.corners, gutter, cropUv(tile, tile.src))
+
+/**
+ * The cache entry and gutter position of each plane tile of `slide` into
+ * `cached` and `ats` (positions memoized per tile in `atOf`); true when any
+ * tile fuses.
+ */
+export function gatherPlaneTiles(
+  slide: NVSlide,
+  tiles: readonly SlidePlaneTile[],
+  atOf: WeakMap<SlidePlaneTile, GutterAt>,
+  cached: (NVSlideCachedTile | null)[],
+  ats: GutterAt[],
+): boolean {
+  cached.length = ats.length = 0
+  let fuses = false
+  for (const tile of tiles) {
+    const c = slide.cachedTile(tile.key)
+    if (c && isFuseTile(c)) fuses = true
+    cached.push(c)
+    let at = atOf.get(tile)
+    if (!at) {
+      at = { ...tile, slide, key: slideTileKey(slide, tile.key) }
+      atOf.set(tile, at)
+    }
+    ats.push(at)
+  }
+  return fuses
+}
+
+// Interleaved [pos.xyz, uv.xy]: 5 floats a vertex, 20 a quad.
+export const PLANE_QUAD_FLOATS = 20
+
+/**
+ * One vertex buffer's data for a plane tile set: the slide extent quad (with
+ * `pixelToWorld`; zeros otherwise), then every tile. `insets` gets the size
+ * each tile's UVs were inset for.
+ */
+export function planeVertices(
+  tiles: readonly SlidePlaneTile[],
+  slide: NVSlide,
+  pixelToWorld: readonly number[] | undefined,
+  insets: { width: number; height: number }[],
+): Float32Array<ArrayBuffer> {
+  const data = new Float32Array((tiles.length + 1) * PLANE_QUAD_FLOATS)
+  if (pixelToWorld) {
+    const { width, height } = slide.manifest
+    data.set(cornerQuad(slideExtentCorners(pixelToWorld, width, height)))
+  }
+  insets.length = 0
+  tiles.forEach((tile, i) => {
+    data.set(planeQuad(tile, tile), (i + 1) * PLANE_QUAD_FLOATS)
+    insets.push(tile)
+  })
+  return data
+}

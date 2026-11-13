@@ -9,10 +9,13 @@ as the one in the original package's
 [README](https://github.com/niivue/niivue#projects-using-niivue). To add a
 project, open a pull request that edits this page.
 
+- [AFIDs Validator](https://validator.afids.io/) checks anatomical fiducial placements against the AFIDs protocol ([source](https://github.com/afids/afids-validator))
 - [Analysis of Functional NeuroImages (AFNI)](https://afni.nimh.nih.gov/) neuroimaging analysis suite that uses NiiVue for [afni_proc.py](https://pubmed.ncbi.nlm.nih.gov/39257641/)
 - [aoa-neuro-demos](https://nickriccardi.github.io/aoa-neuro-demos/) in-browser brain demos for an Academy of Aphasia workshop ([source](https://github.com/NickRiccardi/aoa-neuro-demos))
 - [AXON Brain scans](https://axon.az/brain-scans/index.html) explore MNI-space brain scans and overlays, with the atlas region under the crosshair
+- [BIDS Explorer](https://github.com/dlq/bids-explorer) VS Code extension for browsing BIDS studies by participant, session and scan, locally or over SSH
 - [BIDSvue](https://bidsvue.org/) create, curate, de-identify, and share BIDS datasets
+- [BoneHub Quality Check](https://github.com/BoneHub/Quality-Check-Server) client-server web application for human review of segmentations
 - [BOOSTLET.js](https://boostlet.org/) image processing plugins for NiiVue
 - [brain-tumor-segmentation](https://github.com/Kushall-07/brain-tumor-segmentation) SwinUNETR brain tumor segmentation with 2D/3D visualization
 - [brain-tumour-neuropsychology-atlas](https://atlas-of-neuropsychology-on-brain-t.vercel.app/) maps postoperative outcomes of brain tumour surgery to MNI152 regions ([source](https://github.com/muhanailyas/brain-tumour-neuropsychology-atlas))
@@ -44,6 +47,9 @@ project, open a pull request that edits this page.
 - [JHUdemo](https://josephreggy23-coder.github.io/JHUdemo/) CT scan and per-voxel segmentation viewer for JHU BodyMaps ([source](https://github.com/josephreggy23-coder/JHUdemo))
 - [LAMBADA (OpenBrainAtlas)](https://lambada.icm-institute.org/) [atlas](https://lambada.icm-institute.org/atlases/5) of the developing postnatal mouse brain from the Paris Brain Institute
 - [LINC Gallery](https://gallery.lincbrain.org) showcases data from [LINC](https://connects.mgh.harvard.edu), an [NIH BRAIN CONNECTS](https://www.brain-connects.org) center
+- [MedMCP](https://medmcp.ai/) open agentic workspace for medical imaging workflows ([source](https://github.com/medmcp/medmcp))
+- [MPAT](https://github.com/rokemlab/MPAT) Markov probabilistic absorbing tractography
+- [MRForge](https://github.com/behramsalar/MRForge) guides researchers through MRI and fMRI analysis with locally installed tools such as FSL
 - [MRI Brain Atlas](https://mribrainatlas.com/) interactive neuroanatomy teaching atlas on a T1-weighted MRI with FastSurfer and FreeSurfer labels
 - [MuscleMap](https://musclemap.neurodesk.org/) whole-body muscle MRI segmentation in your browser
 - [neurodesk](https://www.neurodesk.org/) browser-based [QSMxT quantitative susceptibility mapping](https://github.com/QSMxT/QSMxT-UI)
@@ -51,6 +57,7 @@ project, open a pull request that edits this page.
 - [NeuroFLAME](https://github.com/NeuroFlame/NeuroFLAME) federated learning across sites while keeping data securely on-site
 - [Neuroimaging Pattern Masks](https://github.com/canlab/Neuroimaging_Pattern_Masks) atlases and pattern-based brain signatures from CANlab
 - [Neuroinformatics Research and Development Group](http://neuroinformatics.uw.edu/) embeds NiiVue in [tractoscope](https://github.com/nrdg/tractoscope)
+- [NeuroScan AI](https://neuroscan-ai-research.vercel.app/) brain MRI tumor analysis research demo ([source](https://github.com/Stochastic-Research-Labs/NeuroScan-AI))
 - [neurosift](https://github.com/flatironinstitute/neurosift) NWB visualization and DANDI exploration
 - [neurosynth compose](https://compose.neurosynth.org/) meta-analysis [display](https://compose.neurosynth.org/meta-analyses/qKZkqm5STSqo)
 - [niftier](https://github.com/jan-scholz/niftier) small viewer with interactive intensity thresholding
@@ -72,6 +79,7 @@ project, open a pull request that edits this page.
 - [QSMbly](https://qsmbly.neurodesk.org/) quantitative susceptibility mapping in your browser
 - [QuantCo](https://www.quantco.com/) medical imaging workflows
 - [readyourscan](https://readyourscan.com/tools/dicom-viewer) in-browser DICOM and NIfTI viewer with MPR and volume rendering ([source](https://github.com/lgdesignee/readyourscan-viewer))
+- [reflex-niivue](https://github.com/ecrespo/reflex-niivue) NiiVue component for the [Reflex](https://reflex.dev) Python web framework
 - [scanspeak](https://github.com/Mohith26/scanspeak) local LLM drives a NiiVue viewer of mouse micro-CT through tool calls
 - [SeedSeg](https://seedseg.neurodesk.org/) prostate gold seed segmentation
 - [Slice:Drop Reloaded](https://gaiborjosue.github.io/slicedrop.github.com/reload/) extends the original [slicedrop](https://slicedrop.com/)
@@ -79,6 +87,7 @@ project, open a pull request that edits this page.
 - [SpinLab NIfTI Viewer](https://spinlab.mrispin.com/nifti-viewer) browser-based viewer in the SpinLab neuroimaging pipeline platform from MRISpin
 - [system-onco](https://github.com/krishxchowta/system-onco) brain MRI research dashboard with MONAI segmentation and Grad-CAM
 - [T2Lesion](https://niivue.github.io/T2lesion/) input data and segmented lesion masks
+- [tair-viewer](https://vivekg.dev/tair-viewer/) browser viewer for the TAIR dataset ([source](https://github.com/eigenvivek/tair-viewer))
 - [VesselBoost](https://vesselboost.neurodesk.org/) blood vessel segmentation
 - [VoxLogicA-UI](https://voxlogica-project.github.io/VoxLogicA-UI/) makes advanced medical imaging analysis intuitive
 - [Web-based CT viewer](https://web-based-applications-ct-viewer.vercel.app/) CT and organ-segmentation viewer for BodyMaps ([source](https://github.com/jayshreek2511-cloud/Web-based-applications-CT-viewer))

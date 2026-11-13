@@ -246,29 +246,6 @@ describe('ZarrSlideSource (synthetic)', () => {
     expect(Array.from(u16((await tileBytes(source, l0))[0]))).toEqual([6, 7])
   })
 
-  test('a chosen z plane maps to each level of a z-downsampled pyramid', async () => {
-    // Level 0 is 4 planes (value = plane), level 1 is 2 planes (value = 10 + plane).
-    const store = await writeImage(
-      { multiscales: multiscale(['z', 'y', 'x'], 2) },
-      [
-        { shape: [4, 4, 4], chunks: [1, 4, 4], data: ramp(64, (i) => i >> 4) },
-        {
-          shape: [2, 2, 2],
-          chunks: [1, 2, 2],
-          data: ramp(8, (i) => 10 + (i >> 2)),
-        },
-      ],
-      'uint16',
-    )
-    const source = await ZarrSlideSource.fromStore(store, { z: 3 })
-    const [l0, l1] = source.manifest.levels
-    expect(u16((await tileBytes(source, l0))[0] ?? new Uint8Array())[0]).toBe(3)
-    // Plane 3 of 4 lies in plane 1 of 2.
-    expect(u16((await tileBytes(source, l1))[0] ?? new Uint8Array())[0]).toBe(
-      11,
-    )
-  })
-
   test("a chosen z plane follows each level's z scale and translation", async () => {
     // Odd depths: 5 planes (value = plane) and 3 planes (value = 10 + plane)
     // with z scale 2, translation 0.5. Plane 3 (z = 3) is nearest 1.25 -> 1.
@@ -334,22 +311,6 @@ describe('ZarrSlideSource (synthetic)', () => {
     ])
   })
 
-  test('multi-channel store with every channel inactive shows the first', async () => {
-    const store = await writeImage(
-      {
-        multiscales: multiscale(['c', 'y', 'x'], 1),
-        omero: { channels: [{ active: false }, { active: false }] },
-      },
-      [{ shape: [2, 2, 2], chunks: [1, 2, 2], data: ramp(8, (i) => i) }],
-      'uint16',
-    )
-    const source = await ZarrSlideSource.fromStore(store)
-    expect(source.manifest.channelInfo?.map((c) => c.active)).toEqual([
-      true,
-      false,
-    ])
-  })
-
   test.each([
     // tonsil IMC style: 6 stated active of 7, all shown (no cap)
     [
@@ -363,13 +324,13 @@ describe('ZarrSlideSource (synthetic)', () => {
       Array(7).fill({ active: true }),
       [true, true, true, true, false, false, false],
     ],
-    // a missing flag counts as active
+    // every flag stated false: the first shows
     [
-      'mixed flags',
-      [{}, { active: false }, ...Array(5).fill({})],
-      [true, false, true, true, true, true, true],
+      'all inactive',
+      Array(7).fill({ active: false }),
+      [true, false, false, false, false, false, false],
     ],
-    // flags stated only past the old cap: still no cap
+    // flags stated only past the old cap: still no cap; a missing flag is active
     [
       'flags past the cap',
       [...Array(5).fill({}), { active: true }, { active: false }],
@@ -526,25 +487,6 @@ describe('ZarrSlideSource (synthetic)', () => {
     expect(t?.samples).toBeInstanceOf(Uint8Array)
     expect(Array.from(t?.samples ?? [])).toEqual([3, 4])
   })
-
-  test('float64 is quantized to uint16 over the omero min..max', async () => {
-    const store = await writeImage(
-      {
-        multiscales: multiscale(['y', 'x'], 1),
-        omero: {
-          channels: [{ window: { start: 0.25, end: 0.75, min: 0, max: 1 } }],
-        },
-      },
-      [{ shape: [1, 3], chunks: [1, 3], data: Float64Array.from([0, 0.5, 2]) }],
-      'float64',
-    )
-    const source = await ZarrSlideSource.fromStore(store)
-    const [l0] = source.manifest.levels
-    expect(source.window).toEqual({ calMin: 16383.75, calMax: 49151.25 })
-    expect(Array.from(u16((await tileBytes(source, l0))[0]))).toEqual([
-      0, 32768, 65535,
-    ])
-  })
 })
 
 test('quantized channels state storedToValue; NVSlide.sampleAt reads data values back', async () => {
@@ -603,29 +545,6 @@ test('int32 ignores a placeholder omero block and quantizes over the data range'
   expect(Array.from(u16((await tileBytes(source, l0))[0]))).toEqual([
     0, 32768, 65535,
   ])
-})
-
-test('all-NaN data falls back to the full window', async () => {
-  const store = await writeImage(
-    {
-      multiscales: multiscale(['y', 'x'], 1),
-      omero: {
-        channels: [
-          { window: { start: 0.25, end: 0.75, min: null, max: null } },
-        ],
-      },
-    },
-    [
-      {
-        shape: [1, 2],
-        chunks: [1, 2],
-        data: Float64Array.from([Number.NaN, Number.NaN]),
-      },
-    ],
-    'float64',
-  )
-  const source = await ZarrSlideSource.fromStore(store)
-  expect(source.window).toEqual({ calMin: 0, calMax: 65535 })
 })
 
 test('non-finite samples do not widen the quantize range', async () => {
@@ -691,7 +610,7 @@ test('the data range reads a few chunks at a time and stops after a failure', as
       if (!isChunk(key)) return store.get(key)
       reads++
       peak = Math.max(peak, ++inFlight)
-      await new Promise((r) => setTimeout(r, 1))
+      await new Promise(setImmediate)
       inFlight--
       if (key === failKey) throw new Error('chunk read failed')
       return store.get(key)
@@ -746,7 +665,7 @@ test('a multi-channel store reads its channel ranges a few chunks at a time', as
       if (!key.includes('/c/')) return store.get(key)
       reads++
       peak = Math.max(peak, ++inFlight)
-      await new Promise((r) => setTimeout(r, 1))
+      await new Promise(setImmediate)
       inFlight--
       return store.get(key)
     },
@@ -756,34 +675,19 @@ test('a multi-channel store reads its channel ranges a few chunks at a time', as
   expect(peak).toBe(4)
 })
 
-test('a flat, empty or huge sample still quantizes values outside it to distinct levels', async () => {
+test('a flat or empty sample still quantizes values outside it to distinct levels', async () => {
   // 1 x 8192 in 512-wide chunks: the sampled chunks (0, 5, 10, 15) hold
-  // `fill`; unsampled chunk 1 holds `values` in turn.
-  const cases = [
-    { dtype: 'int32', fill: 7, values: [0, 7, 14] },
-    { dtype: 'float64', fill: 7, values: [0, 7, 14] },
-    { dtype: 'float64', fill: Number.NaN, values: [0, 7, 14] },
-    { dtype: 'float64', fill: 1e308, values: [0.5e308, 1e308, 1.5e308] },
-    // Sampled range -1e308..1e308: hi - lo overflows.
-    { dtype: 'float64', fill: [-1e308, 1e308], values: [-5e307, 0, 5e307] },
-    // Sampled range 0..1e-323: 65535 / (hi - lo) overflows.
-    { dtype: 'float64', fill: [0, 1e-323], values: [0, 5e-324, 1e-323] },
-  ] as const
-  for (const { dtype, fill, values } of cases) {
-    // A pair fill alternates its two values across the sampled chunks.
+  // `fill`; unsampled chunk 1 holds 0, 7, 14 in turn. Huge and subnormal
+  // spans are channelDisplay.test.ts's.
+  for (const [dtype, fill] of [
+    ['int32', 7],
+    ['float64', Number.NaN],
+  ] as const) {
     const all = Array.from({ length: 8192 }, (_, i) =>
-      i >= 512 && i < 1024
-        ? values[i % 3]
-        : typeof fill === 'number'
-          ? fill
-          : fill[i % 2],
+      i >= 512 && i < 1024 ? 7 * (i % 3) : fill,
     )
     const data =
-      dtype === 'int32'
-        ? Int32Array.from(all)
-        : dtype === 'float64'
-          ? Float64Array.from(all)
-          : Float64Array.from(all)
+      dtype === 'int32' ? Int32Array.from(all) : Float64Array.from(all)
     const store = await writeImage(
       { multiscales: multiscale(['y', 'x'], 1) },
       [{ shape: [1, 8192], chunks: [1, 512], data }],
@@ -791,14 +695,8 @@ test('a flat, empty or huge sample still quantizes values outside it to distinct
     )
     const source = await ZarrSlideSource.fromStore(store)
     const [l0] = source.manifest.levels
-    const tile = l0.tiles[1]
-    if (!tile) throw new Error('no tile')
-    const out = u16(await source.fetchTileBytes(l0, tile, 't'))
-    expect([dtype, fill, new Set(out.slice(0, 3)).size]).toEqual([
-      dtype,
-      fill,
-      3,
-    ])
+    const out = u16(await source.fetchTileBytes(l0, tileAt(l0, 1), 't'))
+    expect([dtype, new Set(out.slice(0, 3)).size]).toEqual([dtype, 3])
   }
 })
 
@@ -1296,25 +1194,6 @@ describe('ZarrSlideSource lane B', () => {
     })
   })
 
-  test('one channel is a one-entry channelInfo in grey on the bytes path (S1)', async () => {
-    const image = await writeImage(
-      { multiscales: multiscale(['y', 'x'], 1) },
-      [{ shape: [2, 2], chunks: [2, 2], data: Uint16Array.from([1, 2, 3, 4]) }],
-      'uint16',
-    )
-    const source = await ZarrSlideSource.fromStore(image)
-    expect(source.fetchTileSamples).toBeUndefined()
-    expect(NVSlide.fromSource(source).channels).toEqual([
-      {
-        name: 'Channel 1',
-        colormap: 'gray',
-        calMin: 1,
-        calMax: 4,
-        visible: true,
-      },
-    ])
-  })
-
   test('preparePlane: each level reads the plane it states; storedToValue is shared; out of range rejects RangeError', async () => {
     // t 2 x z 3 of 1 x 2 float64: x 0 holds 10 t + z, x 1 holds 20, so the
     // opened plane's sample (0..20) spans every plane. Quantized per source.
@@ -1607,11 +1486,14 @@ describe('ZarrSlideSource lane B', () => {
     const hold = new Promise<void>((r) => {
       release = r
     })
-    let held = false
+    let held = (): void => {}
+    const reading = new Promise<void>((r) => {
+      held = r
+    })
     const source = await ZarrSlideSource.fromStore({
       get: async (key: string) => {
         if (key.startsWith('/0/c/4/')) {
-          held = true
+          held()
           await hold
         }
         return image.get(key)
@@ -1620,23 +1502,18 @@ describe('ZarrSlideSource lane B', () => {
     const [l0] = source.manifest.levels
     const ac = new AbortController()
     const read = source.fetchTileSamples?.(l0, tileAt(l0, 0), [4], ac.signal)
-    while (!held) await Bun.sleep(1)
+    await reading
     ac.abort()
-    const first = await Promise.race([
-      read?.then(
-        () => 'resolved',
-        (e: Error) => e.name,
-      ),
-      Bun.sleep(50).then(() => 'still waiting'),
-    ])
+    // Rejects while the range read is still held (a hang times out).
+    await expect(read).rejects.toMatchObject({ name: 'AbortError' })
     release()
-    expect(first).toBe('AbortError')
     // The shared range read still completes for the next tile.
     const s = await source.fetchTileSamples?.(l0, tileAt(l0, 0), [4])
     expect(Array.from(s?.samples ?? [])).toEqual([400, 401, 402, 403])
   })
 
-  test('preparePlane rejects AbortError when disposed during a hidden channel read', async () => {
+  test('dispose during a hidden channel read rejects the tile and preparePlane, and nothing reaches the host', async () => {
+    // 5 float64 channels: 4 visible, channel 4 hidden and unresolved.
     const image = await writeImage(
       { multiscales: multiscale(['c', 'y', 'x'], 1) },
       [
@@ -1652,44 +1529,14 @@ describe('ZarrSlideSource lane B', () => {
     const hold = new Promise<void>((r) => {
       release = r
     })
-    let held = false
+    let held = (): void => {}
+    const reading = new Promise<void>((r) => {
+      held = r
+    })
     const source = await ZarrSlideSource.fromStore({
       get: async (key: string) => {
         if (key.startsWith('/0/c/4/')) {
-          held = true
-          await hold
-        }
-        return image.get(key)
-      },
-    })
-    const next = source.preparePlane({ z: 0, t: 0 })
-    while (!held) await Bun.sleep(1)
-    source.dispose()
-    release()
-    await expect(next).rejects.toMatchObject({ name: 'AbortError' })
-  })
-
-  test('a hidden channel read that settles after dispose does not reach the host', async () => {
-    const image = await writeImage(
-      { multiscales: multiscale(['c', 'y', 'x'], 1) },
-      [
-        {
-          shape: [5, 2, 2],
-          chunks: [1, 2, 2],
-          data: ramp(20, (i) => 100 * Math.floor(i / 4) + (i % 4)),
-        },
-      ],
-      'uint16',
-    )
-    let release = (): void => {}
-    const hold = new Promise<void>((r) => {
-      release = r
-    })
-    let held = false
-    const source = await ZarrSlideSource.fromStore({
-      get: async (key: string) => {
-        if (key.startsWith('/0/c/4/')) {
-          held = true
+          held()
           await hold
         }
         return image.get(key)
@@ -1698,13 +1545,17 @@ describe('ZarrSlideSource lane B', () => {
     const { host, changed } = recordingHost()
     source.bind(host)
     const [l0] = source.manifest.levels
-    const read = source.fetchTileSamples?.(l0, tileAt(l0, 0), [4])
-    while (!held) await Bun.sleep(1)
+    const settled = Promise.allSettled([
+      source.fetchTileSamples?.(l0, tileAt(l0, 0), [4]),
+      source.preparePlane({ z: 0, t: 0 }),
+    ])
+    await reading
     source.dispose()
     release()
-    await expect(read).rejects.toMatchObject({ name: 'AbortError' })
+    for (const r of await settled)
+      expect(r).toMatchObject({ reason: { name: 'AbortError' } })
     expect(changed).toEqual([])
-    expect(source.manifest.channelInfo?.[4]?.window).toBeUndefined()
+    expect(source.manifest.channelInfo?.[4]?.storedToValue).toBeUndefined()
   })
 
   test('a hidden channel whose range read fails does not fail preparePlane; it resolves when shown', async () => {

@@ -51,14 +51,18 @@ Nothing remaining is blocking.
 
 ## Document restore contract
 
-- [ ] Decide and implement the `.nvd` restore contract for adapter-backed
-  slides. Serialization currently stores the manifest, transform, raster
+- [x] Decide and implement the `.nvd` restore contract for adapter-backed
+  slides. Done: a `SlideTileSource.descriptor` is saved as
+  `NVDocumentSlidePlane.source` and reopened by `loadDocument`'s
+  `resolveSource` (`slide: true`; `resolveSlideSource` in
+  `@niivue/nv-ext-tile/open`); the saved focal plane / time point is reselected.
+  Previously: Serialization currently stores the manifest, transform, raster
   drawing, and vector shapes, then restores via `NVSlide.fromManifestUrl()` or
   `new NVSlide(manifest)`. DZI/TIFF/SVS sources carry fetch state outside the
   manifest, so geometry can restore while tiles fail to load.
 
-- [ ] Either persist a source descriptor/factory key for DZI/TIFF/SVS-style
-  sources or explicitly reject/warn when serializing slide planes that cannot be
+- [x] Either persist a source descriptor/factory key for DZI/TIFF/SVS-style
+  sources (done, see above; an unresolved source warns on load) or explicitly reject/warn when serializing slide planes that cannot be
   restored from the stored manifest alone.
   **Acceptable for now:** the manifest-range path (synthetic, DICOM-WSI) — the
   serialization-verified flow — restores fully; the DZI/TIFF limitation is

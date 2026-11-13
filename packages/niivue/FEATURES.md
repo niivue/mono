@@ -357,7 +357,7 @@ a drag and `azimuth` updates — Swift state needs to follow).
 | `serializeDocument()` | Method | No | Returns CBOR `Uint8Array` |
 | `saveDocument(filename?)` | Method | No | Triggers browser download (.nvd). A matcap from `opts.matcaps` is saved by its name (`'cortex'`), not its URL |
 | `loadDocument(urlOrFile)` | Method | Yes | Reverse of save. A matcap saved by name is looked up in this instance's `matcaps`; see §7 |
-| `loadDocument(src, { resolveSource })` | Method | Yes | Reopens a lazy or streamed volume from its saved source descriptor (URL without query or credentials) with the host's credentials; a newer `loadDocument`, `loadVolumes` or `loadImage` aborts a pending restore |
+| `loadDocument(src, { resolveSource })` | Method | Yes | Reopens a lazy or streamed volume, or the slide plane (`slide: true`; saved focal plane / time point reselected), from its saved source descriptor (URL without query or credentials) with the host's credentials; a newer `loadDocument`, `loadVolumes` or `loadImage` aborts a pending restore |
 | `volumeWriteExtensions`, `volumeExtensions` | Prop (get) | No | |
 
 For a native shell, prefer `serializeDocument()` + `saveBitmap()` returning the

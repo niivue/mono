@@ -12,6 +12,12 @@ import { channelVolumeFile } from '@/volume/channelVolumeFile'
 
 const SHAPE: [number, number, number] = [8, 8, 8]
 
+const until = async (ok: () => boolean): Promise<void> => {
+  for (let i = 0; i < 200 && !ok(); i++)
+    await new Promise((r) => setImmediate(r))
+  if (!ok()) throw new Error('timed out')
+}
+
 function chunkedSource(
   opts: { frames?: number; revision?: string; disposed?: string[] } = {},
 ): ChunkedVolumeSource {
@@ -31,13 +37,13 @@ function chunkedSource(
 
 const DESCRIPTOR = {
   kind: 'test-zarr',
-  url: 'https://user:pw@example.org/store.zarr?X-Amz-Signature=abc#frag',
+  url: 'https://user:pw@example.org/store.zarr?X-Amz-Signature=sigq#frag',
   params: {
     channel: 1,
     token: 'secret',
     level: 0,
     keyframe: 2,
-    next: 'https://example.org/x?X-Amz-Signature=abc',
+    next: 'https://example.org/x?X-Amz-Signature=sigq',
   },
 }
 
@@ -56,7 +62,7 @@ async function savedStreamed(revision = 'r1'): Promise<Uint8Array> {
 
 test('a streamed volume saves its descriptor, frame and window, never credentials', async () => {
   const text = new TextDecoder().decode(await savedStreamed())
-  for (const secret of ['abc', 'secret', 'X-Amz', 'pw@', 'frag', 'token'])
+  for (const secret of ['sigq', 'secret', 'X-Amz', 'pw@', 'frag', 'token'])
     expect(text).not.toContain(secret)
   const doc = JSON.parse(text)
   expect(doc.volumes[0].source).toEqual({
@@ -168,13 +174,13 @@ test('a newer document replaces a pending restore, which disposes its source', a
       return chunkedSource({ revision: 'r1', disposed })
     },
   })
-  await new Promise((r) => setTimeout(r, 10))
+  await until(() => signal !== undefined)
   await nv.loadDocument(documentFile(plainDoc))
   // The resolver ignores its signal, yet the superseded load finishes.
   await first
   expect(signal?.aborted).toBe(true)
   release()
-  await new Promise((r) => setTimeout(r, 0))
+  await until(() => disposed.length > 0)
   expect(disposed).toEqual(['r1'])
   expect(nv.volumes.map((v) => v.name)).toEqual(['plain.nii'])
 })
@@ -313,17 +319,18 @@ test('restore keeps every saved display field of a streamed volume', async () =>
 
 test('loadVolumes supersedes a document still restoring', async () => {
   const streamed = await savedStreamed()
-  let release: () => void = () => {}
+  let release: (() => void) | null = null
+  let disposed = 0
   const nv = new NiiVue({ backend: 'webgl2' })
   const restoring = nv.loadDocument(documentFile(streamed), {
     resolveSource: async () => {
       await new Promise<void>((r) => {
         release = r
       })
-      return chunkedSource({ revision: 'r1' })
+      return { ...chunkedSource({ revision: 'r1' }), dispose: () => disposed++ }
     },
   })
-  await new Promise((r) => setTimeout(r, 10))
+  await until(() => release !== null)
   await nv.loadVolumes([
     {
       url: channelVolumeFile(
@@ -336,8 +343,8 @@ test('loadVolumes supersedes a document still restoring', async () => {
     },
   ])
   await restoring
-  release()
-  await new Promise((r) => setTimeout(r, 0))
+  ;(release as unknown as () => void)()
+  await until(() => disposed > 0)
   expect(nv.volumes.map((v) => v.name)).toEqual(['plain.nii'])
 })
 
@@ -347,10 +354,15 @@ test('a superseded document drops the meshes it added late', async () => {
   const gate = new Promise<void>((r) => {
     open = r
   })
+  let onRequest: () => void = () => {}
+  const requested = new Promise<void>((r) => {
+    onRequest = r
+  })
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
     async fetch(req) {
+      onRequest()
       await gate
       return new Response(Bun.file(root + new URL(req.url).pathname))
     },
@@ -363,7 +375,7 @@ test('a superseded document drops the meshes it added late', async () => {
     const plainDoc = new NiiVue({ backend: 'webgl2' }).serializeDocument()
     const nv = new NiiVue({ backend: 'webgl2' })
     const first = nv.loadDocument(documentFile(doc, 'mesh.json'))
-    await new Promise((r) => setTimeout(r, 20))
+    await requested
     await nv.loadDocument(documentFile(plainDoc))
     open()
     await first
@@ -373,7 +385,7 @@ test('a superseded document drops the meshes it added late', async () => {
   }
 })
 
-test('credential params are matched by word, keyframe and design are kept', async () => {
+test('credential params are matched by word and stripped from saved URLs; keyframe and design are kept', async () => {
   const { savedDescriptor, isCredentialParam } = await import(
     '@/documentSources'
   )
@@ -391,6 +403,17 @@ test('credential params are matched by word, keyframe and design are kept', asyn
     'sig',
     'sessionId',
     'Authorization',
+    'jwt',
+    'JWT',
+    'pwd',
+    'pass',
+    'bearer',
+    'cookie',
+    'hdnts',
+    'GoogleAccessId',
+    'Policy',
+    'header',
+    'jsessionid',
   ])
     expect([bad, isCredentialParam(bad)]).toEqual([bad, true])
   for (const ok of ['keyframe', 'design', 'channel', 'level', 'signal'])
@@ -402,6 +425,22 @@ test('credential params are matched by word, keyframe and design are kept', asyn
   expect(savedDescriptor({ kind: 'k', url: 'http://u:p@[bad/x?y' }).url).toBe(
     'http://[bad/x',
   )
+  // Bearer values, protocol-relative user info and path session ids.
+  const d = savedDescriptor({
+    kind: 'k',
+    url: '//user:pw@host/a.zarr;jsessionid=XYZ',
+    params: {
+      channel: 1,
+      note: 'Bearer abc',
+      other: 'bearer\tabc',
+      mirror: '//alice:secret@cdn.example.org/a',
+      spaced: '  Bearer abc123',
+    },
+  })
+  expect(d).toEqual({ kind: 'k', url: '//host/a.zarr', params: { channel: 1 } })
+  expect(
+    savedDescriptor({ kind: 'k', url: 'https://h/a;JSESSIONID=1/b.zarr' }).url,
+  ).toBe('https://h/a/b.zarr')
 })
 
 test('a malformed source cannot fail a load after the scene is cleared', async () => {
@@ -425,41 +464,6 @@ test('a malformed source cannot fail a load after the scene is cleared', async (
   expect(text).toContain('showing frame 0')
   expect(nv.volumes.length).toBe(1)
   expect(nv.getFrame4D(nv.volumes[0].id ?? '')).toBe(0)
-})
-
-test('credential denylist: tokens, cookies, signed-URL params, bearer values, protocol-relative user info', async () => {
-  const { savedDescriptor, isCredentialParam } = await import(
-    '@/documentSources'
-  )
-  for (const bad of [
-    'jwt',
-    'JWT',
-    'pwd',
-    'pass',
-    'bearer',
-    'cookie',
-    'hdnts',
-    'GoogleAccessId',
-    'Policy',
-    'header',
-    'jsessionid',
-  ])
-    expect([bad, isCredentialParam(bad)]).toEqual([bad, true])
-  const d = savedDescriptor({
-    kind: 'k',
-    url: '//user:pw@host/a.zarr;jsessionid=XYZ',
-    params: {
-      channel: 1,
-      note: 'Bearer abc',
-      other: 'bearer\tabc',
-      mirror: '//alice:secret@cdn.example.org/a',
-      spaced: '  Bearer abc123',
-    },
-  })
-  expect(d).toEqual({ kind: 'k', url: '//host/a.zarr', params: { channel: 1 } })
-  expect(
-    savedDescriptor({ kind: 'k', url: 'https://h/a;JSESSIONID=1/b.zarr' }).url,
-  ).toBe('https://h/a/b.zarr')
 })
 
 test('a streamed first volume that is not restored does not hand its drawing to the next volume', async () => {

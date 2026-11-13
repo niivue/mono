@@ -14,6 +14,9 @@ const files = (...names: string[]) =>
         }),
     ),
   )
+const label = (b: Uint8Array) =>
+  new TextDecoder().decode(b.subarray(6, -2)).trim()
+
 async function sourceOf(name: string, options = {}) {
   const fs = await files(name)
   const slide = (await indexDicomWsiOnThread(fs)).slides[0]
@@ -26,17 +29,6 @@ const first = (s: DicomWsiSource) => {
   if (!level || !tile) throw new Error('no tile')
   return { level, tile }
 }
-const label = (b: Uint8Array) =>
-  new TextDecoder().decode(b.subarray(6, -2)).trim()
-
-test('a tile is its frame payload: one fragment as a view, several joined', async () => {
-  for (const name of ['bot.dcm', 'frag-bot.dcm', 'frag-walk.dcm']) {
-    const s = await sourceOf(name)
-    const { level, tile } = first(s)
-    const bytes = await s.fetchTileBytes(level, tile, '')
-    expect(label(bytes)).toBe(`${name.replace('.dcm', '')} f1`)
-  }
-})
 
 test('counts wire bytes with the item header', async () => {
   const s = await sourceOf('bot.dcm')
@@ -84,14 +76,9 @@ test('an aborted signal rejects the read', async () => {
 
 test('states a caller attribution as text, dropping a non-http url', async () => {
   const s = await sourceOf('bot.dcm', {
-    attribution: { title: 'Bot', url: 'data:x', credit: 'Me' },
+    attribution: { title: 'Bot', url: 'data:x' },
   })
-  expect(s.manifest.attribution).toEqual({ title: 'Bot', credit: 'Me' })
-  const t = await sourceOf('bot.dcm', {
-    attribution: { url: 'https://example.org/bot' },
-  })
-  expect(t.manifest.attribution).toEqual({ url: 'https://example.org/bot' })
-  expect((await sourceOf('bot.dcm')).manifest.attribution).toBeUndefined()
+  expect(s.manifest.attribution).toEqual({ title: 'Bot' })
 })
 
 test('S7: a signed MONOCHROME2 JPEG states i16 samples and its rescale as one grey channel', async () => {

@@ -51,8 +51,7 @@ export interface SlideOverlayContent {
 /**
  * A nice scale-bar length (1/2/5 x 10^n, as the volume ruler) in device pixels
  * and its label ("100 um" below 1 mm, or in `units`), at most ~a quarter of
- * `maxDevicePx`. Null without spacing or when the field outgrows the 10 cm top
- * step (auto units).
+ * `maxDevicePx`. Null without spacing, or when the bar would be a sliver.
  */
 export function slideScaleBar(
   spacingMM: number | undefined,
@@ -65,7 +64,7 @@ export function slideScaleBar(
   // chooseRulerSize caps the bar at 65% of its field: 0.4 keeps it near 26%.
   const ruler = chooseRulerSize(maxDevicePx * mmPerPx * 0.4, units)
   const lengthPx = ruler ? ruler.lengthMM / mmPerPx : 0
-  // The ladder tops out at 10 cm; a field far wider leaves a sliver, so skip it.
+  // No bar under 2% of the view.
   return ruler && lengthPx >= maxDevicePx / 50
     ? { lengthPx, label: ruler.label }
     : null

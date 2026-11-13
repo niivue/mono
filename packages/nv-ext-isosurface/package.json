@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-isosurface",
-  "version": "1.0.0-rc.15",
+  "version": "1.0.0-rc.17",
   "type": "module",
   "description": "Per-channel isosurface meshes from NiiVue chunked (streamed) volumes",
   "main": "./dist/nv-ext-isosurface.js",

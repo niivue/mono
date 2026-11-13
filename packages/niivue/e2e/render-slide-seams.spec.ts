@@ -96,10 +96,9 @@ function expectRamps(
 }
 
 for (const backend of ['webgl2', 'webgpu'] as const) {
+  // 3x only: at 1.5x the ramp tolerance hides a stale gutter.
   for (const [scale, nearestFirst, scalar] of [
-    [1.5, false, false],
     [3, false, false],
-    [1.5, true, false],
     [3, true, false],
     [3, false, true],
     [3, true, true],

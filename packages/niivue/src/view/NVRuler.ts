@@ -46,10 +46,21 @@ const UNIT_MM: Record<Exclude<RulerUnits, 'auto'>, number> = {
   cm: 10,
 }
 
+// The largest 1/2/5 x 10^n at most `max`.
+function largestNice(max: number): number {
+  const decade = 10 ** Math.floor(Math.log10(max))
+  // toPrecision drops float noise such as 0.30000000000000004.
+  return Number(
+    (
+      (NICE_VALUES.slice(1).find((v) => v * decade <= max) ?? 1) * decade
+    ).toPrecision(1),
+  )
+}
+
 /**
- * Choose a ruler length (in mm) and label string. `units` 'auto' picks cm, mm
- * or um by the field; a fixed unit labels the largest 1/2/5 x 10^n of it that
- * fits. Returns { lengthMM, label } or null if nothing reasonable fits.
+ * Choose a ruler length (in mm) and label string. `units` 'auto' picks km, m,
+ * cm, mm or um by the field; a fixed unit labels the largest 1/2/5 x 10^n of
+ * it that fits. Returns { lengthMM, label } or null if nothing reasonable fits.
  */
 export function chooseRulerSize(
   fovMM: number,
@@ -60,15 +71,18 @@ export function chooseRulerSize(
   if (maxMM <= 0) return null
   const perUnit = units === 'auto' ? undefined : UNIT_MM[units]
   if (perUnit) {
-    const maxUnits = maxMM / perUnit
-    const decade = 10 ** Math.floor(Math.log10(maxUnits))
-    // toPrecision drops float noise such as 0.30000000000000004.
-    const value = Number(
-      (
-        (NICE_VALUES.slice(1).find((v) => v * decade <= maxUnits) ?? 1) * decade
-      ).toPrecision(1),
-    )
+    const value = largestNice(maxMM / perUnit)
     return { lengthMM: value * perUnit, label: `${value} ${units}` }
+  }
+  // Metres and kilometres for geographic fields (Sentinel-2: 10 m/px).
+  for (const [mmPer, unit] of [
+    [1e6, 'km'],
+    [1e3, 'm'],
+  ] as const) {
+    if (maxMM >= mmPer) {
+      const value = largestNice(maxMM / mmPer)
+      return { lengthMM: value * mmPer, label: `${value} ${unit}` }
+    }
   }
 
   // Try cm first (if object is large enough)

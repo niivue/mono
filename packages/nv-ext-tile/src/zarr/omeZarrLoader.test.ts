@@ -484,6 +484,8 @@ describe('omeZarrVolumesFrom', () => {
     expect(defaultOmeZarrLevel(source, source.levels[0].channelBytes - 1)).toBe(
       1,
     )
+    // Nothing fits: the coarsest.
+    expect(defaultOmeZarrLevel(source, 0)).toBe(1)
     const volumes = await omeZarrVolumesFrom(source, { level: 1 })
     const voxels = await fileVoxels(volumes[0].url as File)
     expect(voxels).toHaveLength(2 * 2)
@@ -504,11 +506,6 @@ describe('omeZarrVolumesFrom', () => {
     const level0 = await omeZarrVolumesFrom(source, { level: 0 })
     expect(await fileWorldBox(level0[0].url as File)).toEqual(box)
     expect(await fileWorldBox(volumes[0].url as File)).toEqual(box)
-  })
-
-  test('falls back to the coarsest level when nothing fits the budget', async () => {
-    const source = await openOmeZarr(makeTczyxStore())
-    expect(defaultOmeZarrLevel(source, 0)).toBe(1)
   })
 
   test('skips levels with an unknown decoded size', async () => {

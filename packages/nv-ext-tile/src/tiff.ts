@@ -22,17 +22,24 @@ import type {
   NVSlideTileManifest,
   NVSlideTileSamples,
   NVSlideWindow,
+  SlideFetch,
   SlidePlaneCapable,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { decodeXmlEntities, parseOmeXml } from '@niivue/niivue'
+import {
+  decodeXmlEntities,
+  parseOmeXml,
+  readCapped,
+  settleBy,
+} from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import {
   grayInto,
   MAX_DEFAULT_VISIBLE,
   MAX_TILE_SIZE,
   MAX_TILES,
+  planeArray,
   type Quantize,
   quantizeRange,
   storedToValue,
@@ -42,14 +49,11 @@ import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
 import { sampleLevel } from './levelSample'
 import {
   anySignal,
-  linked,
-  raceAbort,
   rangeReplyError,
-  readCapped,
   refuseReply,
-  type SlideFetch,
   slideFetch,
 } from './rangeFetch'
+import { tiffPixelSpacingMM } from './tiffSpacing'
 import { ARGOS_TAG, argosStack } from './vendor/argos'
 import { leicaComposition, leicaRegions } from './vendor/leica'
 import {
@@ -241,7 +245,7 @@ class RangeClient extends BaseClient {
         ...(attempt ? { cache: 'no-store' as const } : {}),
       })
       // Strict: every geotiff read is ranged, so any 200 is refused.
-      const bad = rangeReplyError(response, range, true)
+      const bad = rangeReplyError(response, range)
       if (bad?.kind === 'whole-file')
         await refuseReply(
           response,
@@ -269,17 +273,8 @@ class RangeClient extends BaseClient {
             : cr
               ? Number(cr[2]) - Number(cr[1]) + 1
               : undefined
-      if (Number(response.headers.get('Content-Length')) > max)
-        await refuseReply(
-          response,
-          `${this.url}: reply to ${range} is too long`,
-        )
-      // Streamed: a reply without Content-Length is refused past the range.
-      const body = await readCapped(
-        response,
-        `${this.url}: reply to ${range}`,
-        bound,
-      )
+      // Refused past the range, by Content-Length or else while streamed.
+      const body = await readCapped(response, bound)
       const data =
         body.byteLength === body.buffer.byteLength
           ? (body.buffer as ArrayBuffer)
@@ -500,15 +495,6 @@ function sampleKind(img: GeoTIFFImage): SampleKind {
   return { bitsStored: 16, quantize: true, float }
 }
 
-const sampleArray = (kind: SampleKind) =>
-  kind.sampleType === 'f32'
-    ? Float32Array
-    : kind.sampleType === 'i16'
-      ? Int16Array
-      : kind.bitsStored === 8
-        ? Uint8Array
-        : Uint16Array
-
 // Grey samples: one channel served as raw-gray tiles, or several (multi-channel
 // OME-TIFF) served as sample planes through fetchTileSamples.
 interface TiffChannels {
@@ -529,6 +515,7 @@ interface TiffOpened {
   /** Vendor tile placement (`TiffSlideOptions.placement`). */
   placement?: VendorPlacement
   placementReport?: TiffPlacementReport
+  pixelSpacingMM?: [number, number]
 }
 
 /** What placement resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
@@ -1262,6 +1249,74 @@ async function loadCapped(
   }
 }
 
+// geotiff-rs drops a deferred tag whose load failed (hasTag turns false), so
+// the first XMP read, failure included, is kept for later readers. null: absent.
+const xmpReads = new WeakMap<object, Promise<string> | null>()
+function readXmp(
+  tiff: GeoTIFF,
+  dir: GeoTIFFImage['fileDirectory'],
+): Promise<string> | null {
+  let read = xmpReads.get(dir)
+  if (read === undefined) {
+    read = dir.hasTag(700)
+      ? loadCapped(tiff, dir, 700, MAX_XMP).then(tagText)
+      : null
+    xmpReads.set(dir, read)
+  }
+  return read
+}
+
+// Level 0's physical pixel size (tiffSpacing.ts). Any unreadable tag it reads
+// is no spacing, never a failed open; an absent one is just not a source.
+async function pixelSpacingOf(
+  tiff: GeoTIFF,
+  opened: TiffOpened,
+): Promise<[number, number] | undefined> {
+  const ifd0 = (await tiff.getImage(0)).fileDirectory
+  const base = opened.pyramids[0]?.[0]?.img.fileDirectory
+  // null: present but unreadable.
+  const optional = async (tag: number) =>
+    base?.hasTag(tag) ? base.loadValue(tag).catch(() => null) : undefined
+  const rational = async (tag: number) => {
+    const v = await optional(tag)
+    return v ? Number(v[0]) / Number(v[1]) : v
+  }
+  const description = ifd0.hasTag(270)
+    ? await loadCapped(tiff, ifd0, 270, MAX_XMP).then(tagText, () => null)
+    : ''
+  if (description === null) return undefined
+  // The Leica region whose image is level 0; a composed level has none.
+  const level0 = opened.pyramids[0]?.[0]
+  const regions = level0?.regions ? null : leicaRegions(description)
+  const chain = regions
+    ? (await chainImages(tiff, await tiff.getImage(0))).map(
+        (img) => img.fileDirectory,
+      )
+    : []
+  const at = (regions ?? []).findIndex(
+    (r) => chain[r.ifds[0] ?? -1] === level0?.img.fileDirectory,
+  )
+  const opened0 = at < 0 ? {} : { leicaRegion: at }
+  // Each source is read only when the ones before it do not settle it; a
+  // failed read is null, which tiffSpacing.ts treats as no spacing from it.
+  const settled = tiffPixelSpacingMM({ description, ...opened0 })
+  if (settled) return settled
+  const withXmp = {
+    description,
+    ...opened0,
+    xmp: await (readXmp(tiff, ifd0)?.catch(() => null) ?? ''),
+  }
+  return (
+    tiffPixelSpacingMM(withXmp) ??
+    tiffPixelSpacingMM({
+      ...withXmp,
+      xResolution: await rational(282),
+      yResolution: await rational(283),
+      resolutionUnit: await optional(296),
+    })
+  )
+}
+
 async function placedPyramid(
   tiff: GeoTIFF,
   first: GeoTIFFImage,
@@ -1337,10 +1392,11 @@ async function placedPyramid(
   }
   const levels = pyramidLevels(images)
   const dir = levels[0]?.img.fileDirectory
-  if (!dir?.hasTag(700)) return null
+  const read = dir && readXmp(tiff, dir)
+  if (!read) return null
   let xmp: string
   try {
-    xmp = tagText(await loadCapped(tiff, dir, 700, MAX_XMP))
+    xmp = await read
   } catch (err) {
     const warning = `XMP not read: ${err instanceof Error ? err.message : err}`
     console.warn(warning)
@@ -1442,6 +1498,8 @@ export class TiffSlideSource implements SlideTileSource {
       plane,
       this.credit,
     )
+    if (this.opened.pixelSpacingMM)
+      manifest.pixelSpacingMM = this.opened.pixelSpacingMM
     const placed = this.opened.placement
     if (!placed) return manifest
     // F7: levels keep their storage grid; the manifest takes the placed extent.
@@ -1478,6 +1536,7 @@ export class TiffSlideSource implements SlideTileSource {
         options.signal,
       ).catch(fail)
       opened = await openTiff(tiff, options, options.signal).catch(fail)
+      opened.pixelSpacingMM = await pixelSpacingOf(tiff, opened).catch(fail)
     } finally {
       // Until the source exists; then its lifetime (below).
       client.openSignal = null
@@ -1501,6 +1560,7 @@ export class TiffSlideSource implements SlideTileSource {
     options: TiffSlideOptions & { signal?: AbortSignal } = {},
   ): Promise<TiffSlideSource> {
     const opened = await openTiff(tiff, options, options.signal)
+    opened.pixelSpacingMM = await pixelSpacingOf(tiff, opened)
     options.signal?.throwIfAborted()
     return new TiffSlideSource(
       tiff,
@@ -1541,9 +1601,9 @@ export class TiffSlideSource implements SlideTileSource {
     const key = planeKey(p)
     let pyramids = this.pyramids.get(key)
     if (!pyramids) {
-      pyramids = await raceAbort(
-        openPlane(p),
+      pyramids = await settleBy(
         anySignal(signal, this.closed.signal),
+        openPlane(p),
       )
       // F14: every plane serves the open plane's channels and quantization.
       if (
@@ -1601,9 +1661,9 @@ export class TiffSlideSource implements SlideTileSource {
     signal?.throwIfAborted()
     // geotiff's loadValue takes no signal: an abort stops the wait here, and
     // dispose() cancels the read itself (RangeClient.openSignal).
-    const value: ArrayLike<number> | undefined = await raceAbort(
-      dir.loadValue(34675),
+    const value: ArrayLike<number> | undefined = await settleBy(
       signal,
+      dir.loadValue(34675),
     )
     if (!value) return null
     return value instanceof Uint8Array ? value : Uint8Array.from(value)
@@ -1620,7 +1680,7 @@ export class TiffSlideSource implements SlideTileSource {
       throw new Error(
         'Multi-channel OME-TIFF: read tiles with fetchTileSamples',
       )
-    const abort = linked(signal, this.closed.signal)
+    const abort = anySignal(signal, this.closed.signal)
     this.host?.pushRangeEvent({ label, status: 'pending' })
     try {
       abort.throwIfAborted()
@@ -1650,7 +1710,7 @@ export class TiffSlideSource implements SlideTileSource {
         }
         this.host?.updateRangeEvent(label, 'hit')
         const bytes = this.channels
-          ? sampleArray(this.channels.kind).BYTES_PER_ELEMENT
+          ? planeArray(this.channels.kind).BYTES_PER_ELEMENT
           : 4
         return new Uint8Array(tile.width * tile.height * bytes)
       }
@@ -1686,7 +1746,7 @@ export class TiffSlideSource implements SlideTileSource {
       const window = [x0, y0, x0 + tile.width, y0 + tile.height]
       let bytes: Uint8Array
       if (gray) {
-        const Samples = sampleArray(gray.kind)
+        const Samples = planeArray(gray.kind)
         if (absent) bytes = new Uint8Array(pixels * Samples.BYTES_PER_ELEMENT)
         else {
           const [data] = await img.readRasters({
@@ -1758,7 +1818,7 @@ export class TiffSlideSource implements SlideTileSource {
         if (n.starts === load) n.starts = undefined
       })
     }
-    const starts = await raceAbort(n.starts, signal)
+    const starts = await settleBy(signal, n.starts)
     const last = j.perRow * j.mcuRows
     if (!(starts.length >= last))
       throw new Error(
@@ -1812,13 +1872,13 @@ export class TiffSlideSource implements SlideTileSource {
   ): Promise<NVSlideTileSamples> {
     const { width: w, height: h } = tile
     const gray = this.channels as TiffChannels
-    const out = new (sampleArray(gray.kind))(w * h * channels.length)
-    const abort = linked(signal, this.closed.signal)
+    const out = new (planeArray(gray.kind))(w * h * channels.length)
+    const abort = anySignal(signal, this.closed.signal)
     const pyramids = this.pyramidsOf(level)
     // Hidden channels shown for the first time: their windows first.
-    await raceAbort(
-      Promise.all(channels.map((c) => this.channelReady(c, pyramids[c]))),
+    await settleBy(
       abort,
+      Promise.all(channels.map((c) => this.channelReady(c, pyramids[c]))),
     )
     const x0 = tile.x * (level.tileWidth ?? 0)
     const y0 = tile.y * (level.tileHeight ?? 0)
@@ -1880,7 +1940,7 @@ export class TiffSlideSource implements SlideTileSource {
 // widened or quantized into the level's sample type.
 function grayBytes(
   data: ArrayLike<number>,
-  Samples: ReturnType<typeof sampleArray>,
+  Samples: ReturnType<typeof planeArray>,
   q: Quantize | null,
   w: number,
   h: number,

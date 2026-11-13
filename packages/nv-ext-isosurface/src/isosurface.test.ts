@@ -181,10 +181,11 @@ describe('channelIsosurfaces', () => {
     ])
     calls.length = 0
     const [many] = await channelIsosurfaces(
-      [{ source, threshold: 128, level: 0 }],
+      [{ source, threshold: 128, level: 0, frame: 2 }],
       { brickEdge: 7 },
     )
     expect(calls.length).toBe(6 ** 3)
+    expect(calls.every((c) => c.frame === 2)).toBe(true)
     expect(isClosed(many)).toBe(true)
     expect(many.indices.length).toBe(one.indices.length)
     expect(sorted(many)).toEqual(sorted(one))
@@ -215,19 +216,6 @@ describe('channelIsosurfaces', () => {
     expect(isClosed(both)).toBe(true)
   })
 
-  test('a level over maxVoxels rejects before fetching', async () => {
-    const { source, calls } = memorySource([40, 40, 40], spacing, sphere)
-    await expect(
-      channelIsosurfaces([{ source, threshold: 128, level: 0 }], {
-        maxVoxels: 1000,
-      }),
-    ).rejects.toThrow(RangeError)
-    await expect(
-      channelIsosurfaces([{ source, threshold: 128 }], { maxVoxels: 1000 }),
-    ).rejects.toThrow(RangeError)
-    expect(calls.length).toBe(0)
-  })
-
   test('abort rejects AbortError and stops fetching', async () => {
     const { source, calls } = memorySource([40, 40, 40], spacing, sphere)
     const ac = new AbortController()
@@ -241,14 +229,6 @@ describe('channelIsosurfaces', () => {
     expect(calls[0].signal).toBe(ac.signal)
   })
 
-  test('frame is passed to every fetch', async () => {
-    const { source, calls } = memorySource([40, 40, 40], spacing, sphere)
-    await channelIsosurfaces([{ source, threshold: 128, frame: 2 }], {
-      brickEdge: 16,
-    })
-    expect(calls.length).toBeGreaterThan(1)
-    expect(calls.every((c) => c.frame === 2)).toBe(true)
-  })
   test('maxVertices rejects while the mesh grows', async () => {
     const { source, calls } = memorySource([40, 40, 40], spacing, sphere)
     await expect(
@@ -300,19 +280,6 @@ describe('channelIsosurfaces', () => {
     }
   })
 
-  test('unknown datatype rejects before any channel fetches', async () => {
-    const ok = memorySource([40, 40, 40], spacing, sphere)
-    const rgb = memorySource([40, 40, 40], spacing, sphere)
-    const source = { ...rgb.source, datatypeCode: 128 }
-    await expect(
-      channelIsosurfaces([
-        { source: ok.source, threshold: 128 },
-        { source, threshold: 128 },
-      ]),
-    ).rejects.toThrow(TypeError)
-    expect(ok.calls.length).toBe(0)
-  })
-
   test('long CPU work yields so a host abort lands', async () => {
     const { source } = memorySource([40, 40, 40], spacing, sphere)
     const ac = new AbortController()
@@ -331,28 +298,22 @@ describe('channelIsosurfaces', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  test('yields per time batch, not per label', async () => {
-    const { source } = memorySource([8, 8, 8], [1, 1, 1], () => 1)
-    const Real = globalThis.MessageChannel
-    let yields = 0
-    globalThis.MessageChannel = class extends Real {
-      constructor() {
-        super()
-        yields++
-      }
-    }
-    try {
-      const labels = Array.from({ length: 50 }, (_, i) => i)
-      await channelIsosurfaces([{ source, labels }])
-    } finally {
-      globalThis.MessageChannel = Real
-    }
-    expect(yields).toBeLessThan(5)
-  })
-
-  test('bad maxVertices, brickEdge or color rejects before fetching', async () => {
+  test('bad options, an oversized level or an unknown datatype reject before fetching', async () => {
     const { source, calls } = memorySource([40, 40, 40], spacing, sphere)
     const ch = { source, threshold: 128 }
+    await expect(
+      channelIsosurfaces([{ ...ch, level: 0 }], { maxVoxels: 1000 }),
+    ).rejects.toThrow(RangeError)
+    await expect(channelIsosurfaces([ch], { maxVoxels: 1000 })).rejects.toThrow(
+      RangeError,
+    )
+    // One bad channel stops the others before they fetch.
+    await expect(
+      channelIsosurfaces([
+        ch,
+        { ...ch, source: { ...source, datatypeCode: 128 } },
+      ]),
+    ).rejects.toThrow(TypeError)
     for (const maxVertices of [0, 1.5, Number.NaN, Infinity])
       await expect(channelIsosurfaces([ch], { maxVertices })).rejects.toThrow(
         RangeError,

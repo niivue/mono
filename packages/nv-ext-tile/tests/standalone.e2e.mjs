@@ -12,16 +12,17 @@
  *     fetch, sniffing its transfer syntax, and reads a signed MONOCHROME2
  *     JPEG frame as negative data values; a DICOM folder's label and overview
  *     decode to bitmaps and its index reports progress from the worker,
- *   - a TIFF page streams a JPEG tile through geotiff-rs's WASM by Range, and
- *     a JPEG 2000 tile fails clearly until registerDcm2niixTiffDecoders, then
- *     decodes through the mapped @niivue/dcm2niix,
+ *   - a TIFF page's JPEG 2000 tile fails clearly until
+ *     registerDcm2niixTiffDecoders, then decodes through the mapped
+ *     @niivue/dcm2niix,
  *   - int16 and float32 raw-gray TIFF and signed MONOCHROME2 DICOM read back
  *     through the slide fusers on WebGL2 and WebGPU (a WebGPU-capable browser:
  *     full Chromium on a Mac unless PLAYWRIGHT_CHROMIUM_CHANNEL says otherwise),
  *   - the native fetch passed as a source option reads tiles and ICC
  *     (ManifestRangeSource, openSlide), with no "Illegal invocation",
- *   - an /open page loads no format until it opens a TIFF URL and a DICOM
- *     folder (every slide listed), and never loads Zarr code for them.
+ *   - an /open page loads no format until it opens a TIFF URL (a JPEG tile
+ *     through geotiff-rs's WASM by Range) and a DICOM folder (every slide
+ *     listed), and never loads Zarr code for them.
  * Synthetic fixtures (fixtures/standalone, dicom-wsi); a few seconds; CI runs it
  * on SwiftShader (niivue-e2e.yml, demo-ext-tile job).
  *   bunx nx e2e nv-ext-tile      # builds core and this package first
@@ -229,21 +230,6 @@ const PAGES = {
     const made = window.madeWorkers
     source.dispose()
     return { planes: source.planes, z0, z1, made, live: window.liveWorkers }`),
-  // Workers blocked by CSP: the same tiles, read on this thread.
-  'zarr-slide-csp.html': page(`
-    const { ZarrSlideSource } = await import('@niivue/nv-ext-tile/zarr')
-    const url = new URL('./fixtures/tiny.ome.zarr', location.href).href
-    window.countWorkers = true
-    const source = await ZarrSlideSource.fromUrl(url)
-    const read = async (m) => [...(await source.fetchTileBytes(m.levels[0], m.levels[0].tiles[0], 'x'))]
-    const z0 = await read(source.manifest)
-    const z1 = await read(await source.preparePlane({ z: 1, t: 0 }))
-    const made = window.madeWorkers
-    source.dispose()
-    return { planes: source.planes, z0, z1, made, live: window.liveWorkers }`).replace(
-    '<meta charset="utf-8">',
-    `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="worker-src 'none'">`,
-  ),
   // streamOmeZarr owns its manager and workers: replacing the volume or
   // destroying the viewer releases both (managers, live workers per step).
   'stream.html': page(`
@@ -252,11 +238,14 @@ const PAGES = {
     const nv = new NiiVue({ backend: 'webgl2' })
     await nv.attachTo('gl')
     const url = new URL('./fixtures/tiny.ome.zarr', location.href).href
-    const settle = () => new Promise((r) => setTimeout(r, 300))
+    // Up to 300 ms for the live workers to reach the count a correct release leaves.
+    const settle = async (live) => {
+      for (let i = 0; i < 30 && window.liveWorkers !== live; i++) await new Promise((r) => setTimeout(r, 10))
+    }
     const stream = async () => {
       window.countWorkers = true
       await streamOmeZarr(nv, url)
-      await settle()
+      await settle(1)
       window.countWorkers = false
     }
     const step = () => [nv._chunkedVolumes.size, window.liveWorkers]
@@ -267,11 +256,11 @@ const PAGES = {
       steps.push(step())
     }
     await nv.loadVolumes([{ url: './tiny.nii' }])
-    await settle()
+    await settle(0)
     steps.push(step())
     await stream()
     steps.push(step())
-    // Removed while it initializes (every read held 500 ms).
+    // Removed while it initializes (every read held 100 ms).
     const slow = new URL('./slow/fixtures/tiny.ome.zarr', location.href).href
     await nv.removeAllVolumes()
     window.countWorkers = true
@@ -279,7 +268,7 @@ const PAGES = {
     while (!nv.volumes.length) await new Promise((r) => setTimeout(r, 20))
     await nv.removeAllVolumes()
     await pending
-    await settle()
+    await settle(0)
     window.countWorkers = false
     steps.push(step())
     await stream()
@@ -292,10 +281,10 @@ const PAGES = {
     const nv2 = new NiiVue({ backend: 'webgl2' })
     await nv2.attachTo('gl2')
     window.countWorkers = true
-    const opening = streamOmeZarr(nv2, slow)
+    const opening = streamOmeZarr(nv2, url)
     nv2.destroy()
     const rejected = await opening.then(() => false, () => true)
-    await settle()
+    await settle(0)
     window.countWorkers = false
     return { steps, made: window.madeWorkers, opening: { rejected, managers: nv2._chunkedVolumes.size, workers: window.liveWorkers } }`),
   'dicom.html': page(`
@@ -366,6 +355,12 @@ const PAGES = {
     }`),
 }
 
+// Workers blocked by CSP: the same tiles, read on this thread.
+PAGES['zarr-slide-csp.html'] = PAGES['zarr-slide.html'].replace(
+  '<meta charset="utf-8">',
+  `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="worker-src 'none'">`,
+)
+
 // DICOMweb: a series served from /metadata and /frames (dicomweb/ route).
 PAGES['dicomweb.html'] = page(`
     const { NVSlide } = await import('@niivue/niivue/webgl2')
@@ -398,11 +393,10 @@ PAGES['tiff.html'] = page(`
         source.dispose()
       }
     }
-    const jpeg = await tile('jpeg.tif')
     const j2kUnregistered = await tile('j2k.tif')
     registerDcm2niixTiffDecoders()
     const j2k = await tile('j2k.tif')
-    return { jpeg, j2kUnregistered, j2k, unhandled: window.unhandled ?? null }`)
+    return { j2kUnregistered, j2k, unhandled: window.unhandled ?? null }`)
 
 // The opener loads a format's code only when a slide of it opens.
 PAGES['open.html'] = page(`
@@ -521,7 +515,7 @@ PAGES['nomap.html'] = page(
     const open = async (name) => {
       const slide = NVSlide.fromSource(new DicomWsiSource(index.slides.find((s) => s.container === name), files))
       slide.fitToScreen(screen)
-      for (let i = 0; i < 60 && slide.stats.completed + slide.stats.failures < slide.manifest.levels[0].tiles.length; i++) {
+      for (let i = 0; i < 60 && slide.stats.completed + slide.stats.failures < slide.manifest.levels[0].tiles.filter(Boolean).length; i++) {
         renderer.render([slide], screen)
         await new Promise((r) => setTimeout(r, 50))
       }
@@ -559,9 +553,9 @@ const server = createServer(async (req, res) => {
   }
   if (!path.startsWith(BASE)) return res.writeHead(404).end()
   let rest = path.slice(BASE.length)
-  // slow/<path>: the same file, 500 ms later (a store still loading).
+  // slow/<path>: the same file, 100 ms later (a store still loading).
   if (rest.startsWith('slow/')) {
-    await new Promise((r) => setTimeout(r, 500))
+    await new Promise((r) => setTimeout(r, 100))
     rest = rest.slice('slow/'.length)
   }
   const html = rest === 'gpu.html' ? GPU_PAGE : PAGES[rest]
@@ -677,24 +671,18 @@ try {
 
   const nifti = results['nifti.html']
   check(
-    nifti.result.dims?.[1] === 2,
-    `nifti: loaded ${JSON.stringify(nifti.result.dims)}`,
-  )
-  check(
-    !nifti.requests.some((u) => /^(ext|dcm2niix)\//.test(u)),
-    'nifti: no extension or dcm2niix request',
+    nifti.result.dims?.[1] === 2 &&
+      !nifti.requests.some((u) => /^(ext|dcm2niix)\//.test(u)),
+    `nifti: loaded ${JSON.stringify(nifti.result.dims)}, no extension or dcm2niix request`,
   )
 
   const zarr = results['zarr.html']
   check(
     JSON.stringify(zarr.result.whole?.dims?.slice(1, 4)) === '[4,3,2]' &&
-      zarr.result.whole.max === 23,
-    `zarr: whole level ${JSON.stringify(zarr.result.whole)}`,
-  )
-  check(
-    zarr.result.streamed?.length === 24 &&
+      zarr.result.whole.max === 23 &&
+      zarr.result.streamed?.length === 24 &&
       zarr.result.streamed.every((v, i) => v === i),
-    'zarr: streamed brick holds 0..23',
+    `zarr: whole level and streamed brick hold 0..23 ${JSON.stringify(zarr.result.whole)}`,
   )
   const zarrExt = zarr.requests.filter((u) => u.startsWith('ext/'))
   check(
@@ -717,37 +705,29 @@ try {
 
   const tiff = results['tiff.html']
   check(
-    near(tiff.result.jpeg ?? [], [200, 30, 30, 255]),
-    `tiff: JPEG tile through geotiff-rs ${JSON.stringify(tiff.result.jpeg)}`,
-  )
-  check(
     /has no built-in decoder/.test(tiff.result.j2kUnregistered) &&
       JSON.stringify(tiff.result.j2k) === '[0,0,128,255]' &&
-      !tiff.result.unhandled,
-    `tiff: JPEG 2000 tile fails clearly, then decodes through dcm2niix ${JSON.stringify(tiff.result)}`,
-  )
-  check(
-    !tiff.requests.some((u) => /^ext\/(dicom|zarr)\.js|chunks\/blosc-/.test(u)),
-    'tiff: no /dicom or /zarr code',
+      !tiff.result.unhandled &&
+      !tiff.requests.some((u) =>
+        /^ext\/(dicom|zarr)\.js|chunks\/blosc-/.test(u),
+      ),
+    `tiff: JPEG 2000 tile fails clearly, then decodes through dcm2niix, no /dicom or /zarr code ${JSON.stringify(tiff.result)}`,
   )
   const opened = results['open.html'].result
   check(
     opened.atImport?.includes('open.js') &&
       !opened.atImport.some((u) =>
         /^(tiff|dicom|zarr)\.js$|(tiff|zarr|lzw|jpeg|lerc|blosc)-/.test(u),
-      ),
-    `open: importing /open loads no format (${JSON.stringify(opened.atImport)})`,
+      ) &&
+      !opened.after?.some((u) => /zarr|blosc-/.test(u)),
+    `open: importing /open loads no format, TIFF and DICOM load no Zarr code (${JSON.stringify(opened.atImport)}; ${opened.after?.join(', ')})`,
   )
   check(
     near(opened.jpeg ?? [], [200, 30, 30, 255]) &&
       JSON.stringify(opened.kinds) === '["tiff","dicom"]' &&
       opened.dicomCandidates === opened.slides &&
       opened.slides > 1,
-    `open: a TIFF URL and a DICOM folder, every slide listed ${JSON.stringify({ ...opened, atImport: undefined, after: undefined })}`,
-  )
-  check(
-    !opened.after?.some((u) => /zarr|blosc-/.test(u)),
-    `open: TIFF and DICOM opened with no Zarr code (${opened.after?.join(', ')})`,
+    `open: a TIFF URL (JPEG tile through geotiff-rs) and a DICOM folder, every slide listed ${JSON.stringify({ ...opened, atImport: undefined, after: undefined })}`,
   )
   const channel =
     process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ??
@@ -779,28 +759,22 @@ try {
     await tab.waitForFunction(() => window.result, null, { timeout: 30000 })
     const g = await tab.evaluate(() => window.result)
     if (g.error) check(false, `gpu.html: ${g.error}`)
-    check(g.gpu, `gpu: a WebGPU adapter (both backends read back) ${g.gpu}`)
-    for (const backend of g.gpu ? ['webgl2', 'webgpu'] : ['webgl2']) {
+    // Without a WebGPU adapter the webgpu results are missing and its check fails.
+    for (const backend of ['webgl2', 'webgpu']) {
       const i16 = g[`i16 ${backend}`]
       const f32 = g[`f32 ${backend}`]
       const signed = g[`signed ${backend}`]
       check(
         i16?.sampleType === 'i16' &&
           i16.stored === -1000 &&
-          near(i16.gray, [0, 128, 255], 2),
-        `gpu ${backend}: TIFF int16 raw-gray, window -1000..1000 ${JSON.stringify(i16)}`,
-      )
-      check(
-        f32?.sampleType === 'f32' &&
+          near(i16.gray, [0, 128, 255], 2) &&
+          f32?.sampleType === 'f32' &&
           f32.stored === -1 &&
-          near(f32.gray, [0, 128, 255], 2),
-        `gpu ${backend}: TIFF float32 raw-gray, window -1..1 ${JSON.stringify(f32)}`,
-      )
-      check(
-        signed?.sampleType === 'i16' &&
+          near(f32.gray, [0, 128, 255], 2) &&
+          signed?.sampleType === 'i16' &&
           signed.stored === -56 &&
           Math.abs(signed.gray - 72) <= 3,
-        `gpu ${backend}: signed MONOCHROME2 DICOM -56 in -128..127 ${JSON.stringify(signed)}`,
+        `gpu ${backend}: TIFF int16 in -1000..1000 and float32 in -1..1, signed MONOCHROME2 DICOM -56 in -128..127 ${JSON.stringify({ gpu: g.gpu, i16, f32, signed })}`,
       )
     }
   } finally {
@@ -848,15 +822,21 @@ try {
     `streamOmeZarr releases its manager and workers on replace, removal while initializing, destroy, and destroy while opening ${JSON.stringify(stream)}`,
   )
 
-  const dicom = results['dicom.html'].result
+  const dicom = results['dicom.html']
+  const d = dicom.result
   check(
-    dicom.shared,
-    'dicom: decoders registered via @niivue/niivue are visible from the WebGPU entry',
+    d.shared &&
+      d.skipped?.length === 0 &&
+      dicom.requests.some(
+        (u) => u.startsWith('dcm2niix/') && u.endsWith('.wasm'),
+      ),
+    'dicom: dcm2niix WASM from the mapped folder under the nested base; its decoders registered via @niivue/niivue are visible from the WebGPU entry',
   )
-  check(dicom.skipped?.length === 0, 'dicom: both fixtures indexed')
   check(
-    dicom.indexWorkers?.join() === '1,0,1',
-    `dicom: indexed in one inlined worker, ended after [made, live, answered] ${JSON.stringify(dicom.indexWorkers)}`,
+    d.indexWorkers?.join() === '1,0,1' &&
+      d.progress?.join(';') === '1,2;2,2' &&
+      JSON.stringify(d.earlyAbort) === '["AbortError",0,0]',
+    `dicom: indexed in one inlined worker [made, live, answered] with progress, ended; an abort while it loads starts none ${JSON.stringify(d)}`,
   )
   const [red, yellow, green, blue] = [
     [255, 0, 0],
@@ -865,38 +845,27 @@ try {
     [0, 0, 255],
   ]
   check(
-    dicom.jls?.failed === 0 &&
-      near(dicom.jls.rgb[0], green) &&
-      near(dicom.jls.rgb[1], blue),
-    `dicom: JPEG-LS tiles ${JSON.stringify(dicom.jls)}`,
-  )
-  check(
-    dicom.jp2kRaw?.failed === 0 &&
-      near(dicom.jp2kRaw.rgb[0], red) &&
-      near(dicom.jp2kRaw.rgb[1], yellow),
-    `dicom: JPEG 2000 tiles, colour management off ${JSON.stringify(dicom.jp2kRaw)}`,
+    d.jls?.failed === 0 &&
+      near(d.jls.rgb[0], green) &&
+      near(d.jls.rgb[1], blue) &&
+      d.jp2kRaw?.failed === 0 &&
+      near(d.jp2kRaw.rgb[0], red) &&
+      near(d.jp2kRaw.rgb[1], yellow),
+    `dicom: JPEG-LS and JPEG 2000 tiles, colour management off ${JSON.stringify([d.jls, d.jp2kRaw])}`,
   )
   // The profile shows device R as sRGB blue and G as red: red -> blue, yellow -> magenta.
   check(
-    near(dicom.jp2kIcc?.rgb[0] ?? [], blue) &&
-      near(dicom.jp2kIcc.rgb[1], [255, 0, 255]),
-    `dicom: ICC profile applied ${JSON.stringify(dicom.jp2kIcc)}`,
+    near(d.jp2kIcc?.rgb[0] ?? [], blue) &&
+      near(d.jp2kIcc.rgb[1], [255, 0, 255]),
+    `dicom: ICC profile applied ${JSON.stringify(d.jp2kIcc)}`,
   )
   check(
-    JSON.stringify(dicom.earlyAbort) === '["AbortError",0,0]',
-    `dicom: an abort while the worker loads rejects and starts no worker ${JSON.stringify(dicom.earlyAbort)}`,
-  )
-  check(
-    dicom.progress?.join(';') === '1,2;2,2',
-    `dicom: the worker reports progress ${JSON.stringify(dicom.progress)}`,
-  )
-  check(
-    dicom.slides === 1 &&
-      JSON.stringify(dicom.associated?.map((a) => a.slice(0, 3))) ===
+    d.slides === 1 &&
+      JSON.stringify(d.associated?.map((a) => a.slice(0, 3))) ===
         '[["label",16,8],["overview",16,16]]' &&
-      near(dicom.associated[0][3], [48, 64, 7], 0) &&
-      near(dicom.associated[1][3], [10, 120, 200]),
-    `dicom: label and overview are associated, never slides, and decode ${JSON.stringify(dicom.associated)}`,
+      near(d.associated[0][3], [48, 64, 7], 0) &&
+      near(d.associated[1][3], [10, 120, 200]),
+    `dicom: label and overview are associated, never slides, and decode ${JSON.stringify(d.associated)}`,
   )
   const web = results['dicomweb.html'].result
   check(
@@ -907,12 +876,6 @@ try {
       web.value === -122 &&
       web.exact,
     `dicomweb: custom fetch for metadata, sniff and frame; signed JPEG reads -56 stored, -122 value ${JSON.stringify(web)}`,
-  )
-  check(
-    results['dicom.html'].requests.some(
-      (u) => u.startsWith('dcm2niix/') && u.endsWith('.wasm'),
-    ),
-    'dicom: dcm2niix WASM loaded from the mapped folder under the nested base',
   )
 } finally {
   await browser.close()

@@ -16,7 +16,7 @@ const SCENES: Scene[] = [
     name: 'stack-whole',
     size: [STACK_PX, STACK_PX],
     options: { sliceType: RENDER },
-    setup: async ({ nv, lib }) => {
+    setup: async ({ nv, lib, view, check, settle }) => {
       const ball = (c: number[]) => {
         const v = new Uint8Array(32 ** 3)
         for (let z = 0; z < 32; z++)
@@ -53,6 +53,33 @@ const SCENES: Scene[] = [
       nv.volumeOverlayColorBlend = 3
       for (const v of vols)
         await nv.addVolume(v as Parameters<typeof nv.addVolume>[0])
+      // A stack picks from every drawn channel: hiding volumes[0] still leaves
+      // the green ball pickable, and each ball alone picks a subset (#370).
+      const sweep = async () => {
+        await settle()
+        const hits = new Set<string>()
+        for (let y = 5; y < 80; y += 10)
+          for (let x = 5; x < 80; x += 10)
+            if (await view().depthPick(x, y)) hits.add(`${x},${y}`)
+        return hits
+      }
+      const both = await sweep()
+      await nv.setVolume(0, { visible: false })
+      const green = await sweep()
+      await nv.setVolume(0, { visible: true })
+      await nv.setVolume(1, { visible: false })
+      const red = await sweep()
+      await nv.setVolume(1, { visible: true })
+      check(
+        green.size > 0 && green.size < both.size,
+        `green ${green.size} of ${both.size}`,
+      )
+      check(
+        red.size > 0 && red.size < both.size,
+        `red ${red.size} of ${both.size}`,
+      )
+      const outside = [...green].filter((k) => !both.has(k))
+      check(outside.length === 0, `green picks off both: ${outside.length}`)
     },
     steps: [
       {
@@ -70,88 +97,27 @@ const SCENES: Scene[] = [
     ],
   },
   {
-    // A stack picks from every drawn channel: hiding volumes[0] still leaves
-    // the green ball pickable, and each ball alone picks a subset (#370).
-    name: 'stack-pick',
-    slow: true,
-    size: [STACK_PX, STACK_PX],
-    sameAs: 'stack-whole',
-    options: { sliceType: RENDER },
-    setup: async ({ nv, lib, view, check, settle }) => {
-      const ball = (c: number[]) => {
-        const v = new Uint8Array(32 ** 3)
-        for (let z = 0; z < 32; z++)
-          for (let y = 0; y < 32; y++)
-            for (let x = 0; x < 32; x++)
-              if ((x - c[0]) ** 2 + (y - c[1]) ** 2 + (z - c[2]) ** 2 < 81)
-                v[x + 32 * (y + 32 * z)] = 200
-        return v
-      }
-      const make = (
-        lib as unknown as {
-          createStreamingNVImage: (s: unknown) => { img: unknown }
-        }
-      ).createStreamingNVImage
-      nv.volumeIsChannelStack = true
-      nv.volumeOverlayColorBlend = 3
-      for (const [i, [x, y, z, colormap]] of [
-        [12, 14, 16, 'red'],
-        [19, 16, 16, 'green'],
-      ].entries()) {
-        const v = make({
-          shape: [32, 32, 32],
-          spacing: [1, 1, 1],
-          datatypeCode: 2,
-          calMin: 0,
-          calMax: 255,
-          colormap,
-          name: `c${i}`,
-          id: `c${i}`,
-          url: `c${i}`,
-        })
-        v.img = ball([x as number, y as number, z as number])
-        await nv.addVolume(v as Parameters<typeof nv.addVolume>[0])
-      }
-      const sweep = async () => {
-        await settle()
-        const hits = new Set<string>()
-        for (let y = 2; y < 80; y += 3)
-          for (let x = 2; x < 80; x += 3)
-            if (await view().depthPick(x, y)) hits.add(`${x},${y}`)
-        return hits
-      }
-      const both = await sweep()
-      await nv.setVolume(0, { visible: false })
-      const green = await sweep()
-      await nv.setVolume(0, { visible: true })
-      await nv.setVolume(1, { visible: false })
-      const red = await sweep()
-      await nv.setVolume(1, { visible: true })
-      check(green.size > 0, 'hidden volumes[0]: the green ball still picks')
-      check(
-        red.size > 0 && green.size < both.size,
-        `green ${green.size} of ${both.size}`,
-      )
-      check(red.size < both.size, `red ${red.size} of ${both.size}`)
-      const outside = [...green].filter((k) => !both.has(k))
-      check(outside.length === 0, `green picks off both: ${outside.length}`)
-      await settle()
-    },
-  },
-  {
-    // Two bricks per channel exercise fusion across a boundary without
-    // ray-marching an eight-brick grid. The 2D slice must match the whole stack.
+    // Two fine bricks per channel over a coarse floor exercise fusion across a
+    // boundary without ray-marching an eight-brick grid; the floor must stay
+    // hidden under the fused stack, so the 2D slice matches the whole stack.
+    // The CPU pick on a streamed stack with volumes[0] hidden (#370).
     name: 'stack-streamed',
     size: [STACK_PX, STACK_PX],
     options: { sliceType: RENDER },
-    setup: async ({ nv, check }) => {
-      const ball = (c: number[]) => {
-        const v = new Uint8Array(32 ** 3)
-        for (let z = 0; z < 32; z++)
-          for (let y = 0; y < 32; y++)
-            for (let x = 0; x < 32; x++)
-              if ((x - c[0]) ** 2 + (y - c[1]) ** 2 + (z - c[2]) ** 2 < 81)
-                v[x + 32 * (y + 32 * z)] = 200
+    setup: async ({ nv, view, check, settle }) => {
+      const ball = (c: number[], n: number) => {
+        const v = new Uint8Array(n ** 3)
+        const k = 32 / n
+        for (let z = 0; z < n; z++)
+          for (let y = 0; y < n; y++)
+            for (let x = 0; x < n; x++)
+              if (
+                ((x + 0.5) * k - 0.5 - c[0]) ** 2 +
+                  ((y + 0.5) * k - 0.5 - c[1]) ** 2 +
+                  ((z + 0.5) * k - 0.5 - c[2]) ** 2 <
+                81
+              )
+                v[x + n * (y + n * z)] = 200
         return v
       }
       nv.volumeIsChannelStack = true
@@ -160,26 +126,34 @@ const SCENES: Scene[] = [
         [12, 14, 16, 'red'],
         [19, 16, 16, 'green'],
       ].entries()) {
-        const vox = ball([x as number, y as number, z as number])
+        const c = [x as number, y as number, z as number]
+        const levels = [ball(c, 32), ball(c, 16)]
         await nv.loadChunkedVolume(
           {
             datatypeCode: 2,
-            levels: [{ level: 0, shape: [32, 32, 32], spacing: [1, 1, 1] }],
+            levels: [
+              { level: 0, shape: [32, 32, 32], spacing: [1, 1, 1] },
+              { level: 1, shape: [16, 16, 16], spacing: [2, 2, 2] },
+            ],
             fetchChunk: async ({
               texOrigin: o,
               texDims: d,
+              levelIndex,
             }: {
               texOrigin: number[]
               texDims: number[]
+              levelIndex: number
             }) => {
+              const n = levelIndex ? 16 : 32
+              const vox = levels[levelIndex]
               const out = new Uint8Array(d[0] * d[1] * d[2])
-              for (let k = 0; k < d[2]; k++)
+              for (let kk = 0; kk < d[2]; kk++)
                 for (let j = 0; j < d[1]; j++)
                   for (let h = 0; h < d[0]; h++) {
-                    const [sx, sy, sz] = [o[0] + h, o[1] + j, o[2] + k]
-                    if (sx < 32 && sy < 32 && sz < 32)
-                      out[h + d[0] * (j + d[1] * k)] =
-                        vox[sx + 32 * (sy + 32 * sz)]
+                    const [sx, sy, sz] = [o[0] + h, o[1] + j, o[2] + kk]
+                    if (sx < n && sy < n && sz < n)
+                      out[h + d[0] * (j + d[1] * kk)] =
+                        vox[sx + n * (sy + n * sz)]
                   }
               return out
             },
@@ -190,12 +164,38 @@ const SCENES: Scene[] = [
             colormap: colormap as string,
             name: `c${i}`,
             id: `c${i}`,
-            coarseFloor: false,
             gridDims: [2, 1, 1],
           },
         )
       }
       check(nv.chunkStreamStats()?.total === 4, 'two bricks per channel')
+      check(view().volumeRenderer.coarseFloorTexture, 'coarse floor')
+      const sweep = async () => {
+        await settle()
+        const hits = new Map<string, number[]>()
+        for (let y = 4; y < 80; y += 6)
+          for (let x = 4; x < 80; x += 6) {
+            const mm = await view().depthPick(x, y)
+            if (mm) hits.set(`${x},${y}`, Array.from(mm))
+          }
+        return hits
+      }
+      // Off the balls the CPU pick lands on the box, so compare where it
+      // lands: hiding volumes[0] still picks (it picked nothing before #370's
+      // fix), and the red ball's picks move off it.
+      const both = await sweep()
+      await nv.setVolume(0, { visible: false })
+      const green = await sweep()
+      await nv.setVolume(0, { visible: true })
+      const moved = [...both].filter(([k, mm]) => {
+        const g = green.get(k)
+        return !g || Math.hypot(g[0] - mm[0], g[1] - mm[1], g[2] - mm[2]) > 1
+      })
+      check(green.size > 0, 'hidden volumes[0]: the stack still picks')
+      check(
+        moved.length > 0 && moved.length < both.size,
+        `moved ${moved.length} of ${both.size}`,
+      )
     },
     steps: [
       {
@@ -217,15 +217,15 @@ const SCENES: Scene[] = [
     ],
   },
   {
-    // The default streamed configuration: a coarse floor and crosshair-follow
-    // plan swaps (which re-key chunk indices under the fuse), plus the CPU
-    // pick on a streamed stack with volumes[0] hidden (#370).
+    // The default streamed configuration: an eight-brick octree over the
+    // coarse floor and crosshair-follow plan swaps, which re-key chunk indices
+    // under the fuse. Metal-only in CI (niivue-e2e.yml): SwiftShader pays
+    // seconds a brick; stack-streamed keeps the floor and fuse there.
     name: 'stack-streamed-floor',
-    // WebGPU is Metal-only in CI (niivue-e2e.yml): SwiftShader takes ~1 s a brick.
     slow: true,
     size: [STACK_PX, STACK_PX],
     options: { sliceType: RENDER, maxTextureDimension3D: 24 },
-    setup: async ({ nv, view, check, settle }) => {
+    setup: async ({ nv, view, check }) => {
       const ball = (c: number[], n: number) => {
         const v = new Uint8Array(n ** 3)
         const k = 32 / n
@@ -289,34 +289,6 @@ const SCENES: Scene[] = [
         )
       }
       check(view().volumeRenderer.hasChunkedVolume, 'volume is chunked')
-      await settle()
-      const sweep = async () => {
-        await settle()
-        const hits = new Map<string, number[]>()
-        for (let y = 4; y < 80; y += 6)
-          for (let x = 4; x < 80; x += 6) {
-            const mm = await view().depthPick(x, y)
-            if (mm) hits.set(`${x},${y}`, Array.from(mm))
-          }
-        return hits
-      }
-      // Off the balls the CPU pick lands on the box, so compare where it
-      // lands: hiding volumes[0] still picks (it picked nothing before #370's
-      // fix), and the red ball's picks move off it.
-      const both = await sweep()
-      await nv.setVolume(0, { visible: false })
-      const green = await sweep()
-      await nv.setVolume(0, { visible: true })
-      const moved = [...both].filter(([k, mm]) => {
-        const g = green.get(k)
-        return !g || Math.hypot(g[0] - mm[0], g[1] - mm[1], g[2] - mm[2]) > 1
-      })
-      check(green.size > 0, 'hidden volumes[0]: the stack still picks')
-      check(
-        moved.length > 0 && moved.length < both.size,
-        `moved ${moved.length} of ${both.size}`,
-      )
-      await settle()
     },
     steps: [
       {
@@ -340,73 +312,9 @@ const SCENES: Scene[] = [
     ],
   },
   {
-    // Lazy time on a streamed volume, frame 1 loaded directly: the reference
-    // a switch to frame 1 must reach, with no frame-0 brick or floor left.
-    name: 'frames-direct',
-    options: { sliceType: RENDER, maxTextureDimension3D: 24 },
-    setup: async ({ nv, settle }) => {
-      const ball = (c: number[], n: number) => {
-        const v = new Uint8Array(n ** 3)
-        const s = 32 / n
-        for (let z = 0; z < n; z++)
-          for (let y = 0; y < n; y++)
-            for (let x = 0; x < n; x++)
-              if (
-                ((x + 0.5) * s - c[0]) ** 2 +
-                  ((y + 0.5) * s - c[1]) ** 2 +
-                  ((z + 0.5) * s - c[2]) ** 2 <
-                81
-              )
-                v[x + n * (y + n * z)] = 200
-        return v
-      }
-      const at = [
-        [10, 16, 16],
-        [22, 16, 16],
-      ]
-      const fine = at.map((c) => ball(c, 32))
-      const coarse = at.map((c) => ball(c, 16))
-      const chunked = await nv.loadChunkedVolume(
-        {
-          datatypeCode: 2,
-          frames: 2,
-          levels: [
-            { level: 0, shape: [32, 32, 32], spacing: [1, 1, 1] },
-            { level: 1, shape: [16, 16, 16], spacing: [2, 2, 2] },
-          ],
-          fetchChunk: async ({
-            texOrigin: o,
-            texDims: d,
-            levelIndex,
-            frame = 0,
-          }: {
-            texOrigin: number[]
-            texDims: number[]
-            levelIndex: number
-            frame?: number
-          }) => {
-            const n = levelIndex ? 16 : 32
-            const vox = (levelIndex ? coarse : fine)[frame]
-            const out = new Uint8Array(d[0] * d[1] * d[2])
-            for (let k = 0; k < d[2]; k++)
-              for (let j = 0; j < d[1]; j++)
-                for (let h = 0; h < d[0]; h++) {
-                  const [sx, sy, sz] = [o[0] + h, o[1] + j, o[2] + k]
-                  if (sx < n && sy < n && sz < n)
-                    out[h + d[0] * (j + d[1] * k)] = vox[sx + n * (sy + n * sz)]
-                }
-            return out
-          },
-        } as unknown as Parameters<typeof nv.loadChunkedVolume>[0],
-        { calMin: 0, calMax: 255, colormap: 'gray', frame: 1 },
-      )
-      ;(globalThis as { chunked?: unknown }).chunked = chunked
-      await settle()
-    },
-  },
-  {
-    // Opened at frame 0 (its own picture), then switched: the switch must
-    // draw exactly what opening at frame 1 draws, on both backends.
+    // Lazy time (VOL-01): opened at frame 0 (its own picture), then switched.
+    // The switch must draw what opening at frame 1 drew, with no frame-0 brick
+    // or floor left (its reference was captured that way).
     name: 'frames-switched',
     options: { sliceType: RENDER, maxTextureDimension3D: 24 },
     setup: async ({ nv, settle }) => {
@@ -471,7 +379,6 @@ const SCENES: Scene[] = [
     steps: [
       {
         name: 'to-1',
-        sameAs: 'frames-direct',
         run: async ({ settle, check }) => {
           const c = (
             globalThis as {

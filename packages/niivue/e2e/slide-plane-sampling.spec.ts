@@ -190,18 +190,18 @@ for (const backend of ['webgl2', 'webgpu'] as const)
     expect(Math.abs(r.halfRed - 128)).toBeLessThan(4)
   })
 
-// PL9 pixels: a placed slide (e2e/slide-placement.spec.ts: 3 frames of 16 px,
-// seam 1|2 overlapping by o px, split at its midpoint) drawn as the 3D slide
+// PL9 pixels: a placed slide (vendor joints, SRC-20: 3 frames of 16 px, seam
+// 1|2 overlapping by o px, split at its midpoint) drawn as the 3D slide
 // plane under nearest sampling shows the same columns as the 2D renderer:
 // along the centre row, the same run of sample values (tile t, col c holds
 // 20 t + c), each as wide as its placed span. o = 3 crops 1.5 px: two
 // half-width columns at the seam.
+const o = 3
 for (const backend of ['webgl2', 'webgpu'] as const)
-  for (const o of [4, 3])
-    test(`PL9: placed slide plane columns match the 2D renderer, overlap ${o} (${backend})`, async ({
-      page,
-    }) => {
-      const result = await page.evaluate(`(async () => {
+  test(`PL9: placed slide plane columns match the 2D renderer, overlap ${o} (${backend})`, async ({
+    page,
+  }) => {
+    const result = await page.evaluate(`(async () => {
         if ('${backend}' === 'webgpu') {
           if (!navigator.gpu) return { skip: 'no navigator.gpu' }
           const adapter = await navigator.gpu.requestAdapter().catch(() => null)
@@ -310,25 +310,34 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         if (planeRuns.length && planeRuns[0][0] > planeRuns[planeRuns.length - 1][0]) planeRuns = planeRuns.reverse()
         return { flatRuns, planeRuns }
       })()`)
-      const r = result as {
-        skip?: string
-        flatRuns: [number, number][]
-        planeRuns: [number, number][]
-      }
-      test.skip(Boolean(r.skip), r.skip)
-      const PW = 48 - o
-      const values = (rs: [number, number][]) => rs.map(([v]) => v)
-      // The same columns, in order.
-      expect(values(r.planeRuns)).toEqual(values(r.flatRuns))
-      // Each run spans its placed width (in placed px): 1, or 1/2 beside the
-      // seam for o = 3. Device px are rounded, so within half a placed px.
-      const widths = (rs: [number, number][]) => {
-        const total = rs.reduce((n, [, w]) => n + w, 0)
-        return rs.map(([, w]) => (w * PW) / total)
-      }
-      const flat = widths(r.flatRuns)
-      const plane = widths(r.planeRuns)
-      expect(flat.filter((w) => w < 0.75)).toHaveLength(o === 3 ? 2 : 0)
-      for (const [i, w] of plane.entries())
-        expect(Math.abs(w - (flat[i] as number))).toBeLessThan(0.3)
-    })
+    const r = result as {
+      skip?: string
+      flatRuns: [number, number][]
+      planeRuns: [number, number][]
+    }
+    test.skip(Boolean(r.skip), r.skip)
+    const PW = 48 - o
+    const values = (rs: [number, number][]) => rs.map(([v]) => v)
+    // SRC-20: each piece cropped at its placed origin (tile 0 up to the
+    // seam's midpoint, tile 1 from it, tile 2 whole), and the plane shows the
+    // same columns, in order.
+    const cols = (n: number, from: number) =>
+      Array.from({ length: n }, (_, c) => from + c)
+    expect(values(r.flatRuns)).toEqual([
+      ...cols(15, 0),
+      ...cols(15, 21),
+      ...cols(16, 40),
+    ])
+    expect(values(r.planeRuns)).toEqual(values(r.flatRuns))
+    // Each run spans its placed width (in placed px): 1, or 1/2 beside the
+    // seam. Device px are rounded, so within half a placed px.
+    const widths = (rs: [number, number][]) => {
+      const total = rs.reduce((n, [, w]) => n + w, 0)
+      return rs.map(([, w]) => (w * PW) / total)
+    }
+    const flat = widths(r.flatRuns)
+    const plane = widths(r.planeRuns)
+    expect(flat.filter((w) => w < 0.75)).toHaveLength(2)
+    for (const [i, w] of plane.entries())
+      expect(Math.abs(w - (flat[i] as number))).toBeLessThan(0.3)
+  })

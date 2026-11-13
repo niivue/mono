@@ -9,10 +9,21 @@ import {
   decodeTileBitmap,
   ManifestRangeSource,
   type SlideFetch,
+  type SlideSourceHost,
   tileDecoders,
 } from './slideSource'
 
 const LEN = 16
+
+const NO_HOST: SlideSourceHost = {
+  resolveUrl: (u) => u,
+  addWireBytes() {},
+  rangeHit() {},
+  rangeFallback() {},
+  pushRangeEvent() {},
+  updateRangeEvent() {},
+  channelInfoChanged() {},
+}
 
 function manifest(): NVSlideManifest {
   return {
@@ -108,13 +119,8 @@ describe('ManifestRangeSource transport', () => {
       baseUrl,
     })
     s.bind({
+      ...NO_HOST,
       resolveUrl: (u) => new URL(u, 'https://h.test/s/m.json').href,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-      channelInfoChanged() {},
     })
     const plain: (RequestInit | undefined)[] = []
     const saved = globalThis.fetch
@@ -146,15 +152,7 @@ describe('ManifestRangeSource transport', () => {
       baseUrl: 'https://cdn.test/tiles/',
       manifestUrl: 'https://auth.test/m.json',
     })
-    s.bind({
-      resolveUrl: (u) => u,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-      channelInfoChanged() {},
-    })
+    s.bind(NO_HOST)
     for (const url of ['https://auth.test/tile.bin', 'tile.bin']) {
       l0.fileUrl = url
       await s.fetchTileBytes(l0, l0.tiles[0] as never, 'L0')
@@ -268,15 +266,7 @@ describe('ManifestRangeSource transport', () => {
       fetch,
       baseUrl: 'https://h.test/',
     })
-    s.bind({
-      resolveUrl: (u) => u,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-      channelInfoChanged() {},
-    })
+    s.bind(NO_HOST)
     const level = s.manifest.levels[0] as NVSlideLevelManifest
     const pending = s.fetchTileBytes(level, level.tiles[0] as never, 'L0')
     s.dispose()
@@ -305,15 +295,7 @@ describe('ManifestRangeSource transport', () => {
           baseUrl: 'https://h.test/',
         },
       )
-      s.bind({
-        resolveUrl: (u) => u,
-        addWireBytes() {},
-        rangeHit() {},
-        rangeFallback() {},
-        pushRangeEvent() {},
-        updateRangeEvent() {},
-        channelInfoChanged() {},
-      })
+      s.bind(NO_HOST)
       s.dispose()
       await expect(s.fetchIccProfile()).rejects.toMatchObject({
         name: 'AbortError',
@@ -349,15 +331,7 @@ describe('dispose with a fetch that ignores its signal', () => {
       } as NVSlideManifest,
       { fetch, baseUrl: 'https://h.test/' },
     )
-    s.bind({
-      resolveUrl: (u) => u,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-      channelInfoChanged() {},
-    })
+    s.bind(NO_HOST)
     const level = s.manifest.levels[0] as NVSlideLevelManifest
     const tile = {
       ...(level.tiles?.[0] as NVSlideTileManifest),

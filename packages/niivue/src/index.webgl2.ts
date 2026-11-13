@@ -248,7 +248,7 @@ export type {
 } from './slide/NVSlide'
 export { NVSlide } from './slide/NVSlide'
 export type { NVSlideCapacityLimit } from './slide/slideLod'
-export { toStored, toValue } from './slide/slideChannels'
+export { isRgbSlide, toStored, toValue } from './slide/slideChannels'
 export type {
   ManifestRangeSourceOptions,
   SlideFetch,
@@ -256,7 +256,12 @@ export type {
   SlideSourceHost,
   SlideTileSource,
 } from './slide/slideSource'
-export { MAX_SLIDE_GRID, ManifestRangeSource } from './slide/slideSource'
+export {
+  MAX_SLIDE_GRID,
+  ManifestRangeSource,
+  readCapped,
+  settleBy,
+} from './slide/slideSource'
 export { SlideDrawing } from './slide/slideDrawing'
 export type {
   SlideRendererBudget,

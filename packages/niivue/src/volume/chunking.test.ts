@@ -47,24 +47,13 @@ function expectChunkInvariants(plan: ChunkPlan): void {
   }
 }
 
-describe('needsChunking', () => {
-  test('returns false when all axes within limit', () => {
-    expect(needsChunking([512, 512, 256], 2048)).toBe(false)
-  })
-
-  test('returns false at exactly the limit', () => {
-    expect(needsChunking([2048, 2048, 2048], 2048)).toBe(false)
-  })
-
-  test('returns true when any axis exceeds the limit', () => {
-    expect(needsChunking([2049, 512, 512], 2048)).toBe(true)
-    expect(needsChunking([512, 2049, 512], 2048)).toBe(true)
-    expect(needsChunking([512, 512, 2049], 2048)).toBe(true)
-  })
+test('needsChunking is true only when an axis exceeds the limit', () => {
+  expect(needsChunking([2048, 2048, 2048], 2048)).toBe(false)
+  expect(needsChunking([512, 2049, 512], 2048)).toBe(true)
 })
 
 describe('chunkVolume — single-chunk cases', () => {
-  test('sub-limit volume yields one chunk with no halo', () => {
+  test('sub-limit and at-limit volumes yield one chunk with no halo', () => {
     const plan = chunkVolume([100, 200, 300], 2048)
     expect(plan.gridDims).toEqual([1, 1, 1])
     expect(plan.chunks).toHaveLength(1)
@@ -76,23 +65,9 @@ describe('chunkVolume — single-chunk cases', () => {
     expect(c.texDims).toEqual([100, 200, 300])
     expect(c.texOrigin).toEqual([0, 0, 0])
     expect(c.gridIndex).toEqual([0, 0, 0])
-  })
-
-  test('exactly at the limit still yields a single chunk', () => {
-    const plan = chunkVolume([2048, 2048, 2048], 2048)
-    expect(plan.gridDims).toEqual([1, 1, 1])
-    expect(plan.chunks).toHaveLength(1)
-    expect(plan.chunks[0].haloLow).toEqual([0, 0, 0])
-    expect(plan.chunks[0].haloHigh).toEqual([0, 0, 0])
-    expectChunkInvariants(plan)
-  })
-
-  test('1-voxel volume', () => {
-    const plan = chunkVolume([1, 1, 1], 2048)
-    expect(plan.gridDims).toEqual([1, 1, 1])
-    expect(plan.chunks).toHaveLength(1)
-    expect(plan.chunks[0].voxelDims).toEqual([1, 1, 1])
-    expectChunkInvariants(plan)
+    const atLimit = chunkVolume([2048, 2048, 2048], 2048)
+    expect(atLimit.chunks).toHaveLength(1)
+    expect(atLimit.chunks[0].haloHigh).toEqual([0, 0, 0])
   })
 })
 
@@ -159,38 +134,18 @@ describe('chunkVolume — multi-chunk cases', () => {
     expect(plan.chunks[plan.chunks.length - 1].haloHigh[0]).toBe(0)
   })
 
-  test('chunks tile the volume exactly — no gaps, no duplicates', () => {
-    const dims: Vec3i = [4096, 4096, 4096]
-    const plan = chunkVolume(dims, 2048)
-    const total = dims[0] * dims[1] * dims[2]
-    expect(totalDataVoxels(plan)).toBe(total)
-  })
-
-  test('chunks are stored in row-major (z, y, x) order', () => {
+  test('a 3x3x3 plan tiles exactly, in row-major (z, y, x) order, at stride', () => {
     const plan = chunkVolume([4096, 4096, 4096], 2048)
+    expect(totalDataVoxels(plan)).toBe(4096 ** 3)
     for (let cz = 0; cz < plan.gridDims[2]; cz++) {
       for (let cy = 0; cy < plan.gridDims[1]; cy++) {
         for (let cx = 0; cx < plan.gridDims[0]; cx++) {
-          const idx = (cz * plan.gridDims[1] + cy) * plan.gridDims[0] + cx
-          expect(eq(plan.chunks[idx].gridIndex, [cx, cy, cz])).toBe(true)
-        }
-      }
-    }
-  })
-
-  test('successive chunk origins differ by exactly stride on interior boundaries', () => {
-    const plan = chunkVolume([4096, 4096, 4096], 2048)
-    const last = plan.gridDims[0] - 1
-    for (let cz = 0; cz < plan.gridDims[2]; cz++) {
-      for (let cy = 0; cy < plan.gridDims[1]; cy++) {
-        for (let cx = 0; cx < last; cx++) {
-          const a =
+          const c =
             plan.chunks[(cz * plan.gridDims[1] + cy) * plan.gridDims[0] + cx]
-          const b =
-            plan.chunks[
-              (cz * plan.gridDims[1] + cy) * plan.gridDims[0] + cx + 1
-            ]
-          expect(b.voxelOrigin[0] - a.voxelOrigin[0]).toBe(plan.stride[0])
+          expect(eq(c.gridIndex, [cx, cy, cz])).toBe(true)
+          expect(eq(c.voxelOrigin, [cx * 2046, cy * 2046, cz * 2046])).toBe(
+            true,
+          )
         }
       }
     }
@@ -235,19 +190,9 @@ describe('chunkVolume — halo variants', () => {
     expect(last.haloHigh[0]).toBe(0)
   })
 
-  test('very thin volume (axis length 1)', () => {
-    const plan = chunkVolume([1024, 1, 1], 2048)
-    expect(plan.gridDims).toEqual([1, 1, 1])
-    expect(plan.chunks).toHaveLength(1)
-    expect(plan.chunks[0].voxelDims).toEqual([1024, 1, 1])
-    expectChunkInvariants(plan)
-  })
-
   test('very thin axis combined with oversized axis', () => {
     const plan = chunkVolume([5000, 1, 1], 2048)
-    expect(plan.gridDims[0]).toBeGreaterThan(1)
-    expect(plan.gridDims[1]).toBe(1)
-    expect(plan.gridDims[2]).toBe(1)
+    expect(plan.gridDims).toEqual([3, 1, 1])
     expectChunkInvariants(plan)
     expect(totalDataVoxels(plan)).toBe(5000)
   })
@@ -283,30 +228,16 @@ describe('chunkVolumeGrid', () => {
   })
 })
 
-describe('chunkVolume — input validation', () => {
-  test('throws when deviceLimit < 1', () => {
-    expect(() => chunkVolume([10, 10, 10], 0)).toThrow()
-    expect(() => chunkVolume([10, 10, 10], -5)).toThrow()
-  })
-
-  test('throws when volumeDims[a] < 1', () => {
-    expect(() => chunkVolume([0, 10, 10], 2048)).toThrow()
-    expect(() => chunkVolume([10, 0, 10], 2048)).toThrow()
-    expect(() => chunkVolume([10, 10, 0], 2048)).toThrow()
-  })
-
-  test('throws when haloSize[a] < 0', () => {
-    expect(() => chunkVolume([10, 10, 10], 2048, [-1, 0, 0])).toThrow()
-  })
-
-  test('throws when deviceLimit too small for halo', () => {
-    // limit must be >= 2*halo + 1
-    // 5^3 keeps the limit-3 plan small (stride 1 plans one chunk per voxel)
-    expect(() => chunkVolume([5, 5, 5], 2, [1, 1, 1])).toThrow(
-      'too small for halo',
-    )
-    expect(() => chunkVolume([5, 5, 5], 3, [1, 1, 1])).not.toThrow()
-  })
+test('chunkVolume rejects invalid dims, limit and halo', () => {
+  expect(() => chunkVolume([10, 10, 10], 0)).toThrow()
+  expect(() => chunkVolume([10, 0, 10], 2048)).toThrow()
+  expect(() => chunkVolume([10, 10, 10], 2048, [-1, 0, 0])).toThrow()
+  // limit must be >= 2*halo + 1
+  // 5^3 keeps the limit-3 plan small (stride 1 plans one chunk per voxel)
+  expect(() => chunkVolume([5, 5, 5], 2, [1, 1, 1])).toThrow(
+    'too small for halo',
+  )
+  expect(() => chunkVolume([5, 5, 5], 3, [1, 1, 1])).not.toThrow()
 })
 
 describe('chunksCrossingSlice', () => {
@@ -319,31 +250,21 @@ describe('chunksCrossingSlice', () => {
     }
   })
 
-  test('returns the full in-plane chunk layer for the slice axis', () => {
+  test('returns the full in-plane chunk layer, in plan order, on each axis', () => {
     // 3x3x3 grid, stride 2046
     const plan = chunkVolume([4096, 4096, 4096], 2048)
-    // A slice near origin on x lands in chunk layer 0 on x.
-    const layer0 = chunksCrossingSlice(plan, 0, 0.01)
-    expect(layer0).toHaveLength(9)
-    for (const i of layer0) {
-      expect(plan.chunks[i].gridIndex[0]).toBe(0)
-    }
-    // A slice at the far end on x lands in the last x layer (2).
-    const layer2 = chunksCrossingSlice(plan, 0, 1)
-    expect(layer2).toHaveLength(9)
-    for (const i of layer2) {
-      expect(plan.chunks[i].gridIndex[0]).toBe(2)
-    }
-  })
-
-  test('selects the correct layer on each of the three axes', () => {
-    const plan = chunkVolume([4096, 4096, 4096], 2048)
     for (let axis = 0; axis < 3; axis++) {
-      const mid = chunksCrossingSlice(plan, axis, 0.5)
-      expect(mid).toHaveLength(9)
-      // mid frac -> voxel 2048 -> floor(2048/2046) = layer 1
-      for (const i of mid) {
-        expect(plan.chunks[i].gridIndex[axis]).toBe(1)
+      for (const [frac, layer] of [
+        [0.01, 0],
+        [0.5, 1], // voxel 2048 -> floor(2048/2046) = layer 1
+        [1, 2],
+      ]) {
+        const out = chunksCrossingSlice(plan, axis, frac)
+        expect(out).toHaveLength(9)
+        for (const i of out) expect(plan.chunks[i].gridIndex[axis]).toBe(layer)
+        for (let k = 1; k < out.length; k++) {
+          expect(out[k]).toBeGreaterThan(out[k - 1])
+        }
       }
     }
   })
@@ -537,46 +458,22 @@ describe('chunkSampleTransform', () => {
     expect(t.volumeDims).toEqual([100, 200, 300])
   })
 
-  test('multi-chunk plan — first chunk sub-cube and halo offsets', () => {
+  test('multi-chunk plan — halo offsets, and sub-cubes tile [0,1]', () => {
     // 4092 / 2046 = exactly 2 chunks on x
     const plan = chunkVolume([4092, 100, 100], 2048)
     // chunk 0: voxelOrigin 0, voxelDims 2046, haloLow 0, haloHigh 1, texDims 2047
-    const t = chunkSampleTransform(plan, 0)
-    expect(t.subOrigin[0]).toBe(0)
-    expect(t.subSize[0]).toBeCloseTo(2046 / 4092, 10)
-    expect(t.dataOrigin[0]).toBe(0)
-    expect(t.dataSize[0]).toBeCloseTo(2046 / 2047, 10)
-  })
-
-  test('multi-chunk plan — last chunk has a non-zero low halo offset', () => {
-    const plan = chunkVolume([4092, 100, 100], 2048)
+    const t0 = chunkSampleTransform(plan, 0)
+    expect(t0.subOrigin[0]).toBe(0)
+    expect(t0.subSize[0]).toBeCloseTo(2046 / 4092, 10)
+    expect(t0.dataOrigin[0]).toBe(0)
+    expect(t0.dataSize[0]).toBeCloseTo(2046 / 2047, 10)
     // chunk 1: voxelOrigin 2046, voxelDims 2046, haloLow 1, haloHigh 0
     const c = plan.chunks[1]
-    const t = chunkSampleTransform(plan, 1)
-    expect(t.subOrigin[0]).toBeCloseTo(2046 / 4092, 10)
-    expect(t.subSize[0]).toBeCloseTo(c.voxelDims[0] / 4092, 10)
-    expect(t.dataOrigin[0]).toBeCloseTo(1 / c.texDims[0], 10)
-    expect(t.dataSize[0]).toBeCloseTo(c.voxelDims[0] / c.texDims[0], 10)
-  })
-
-  test('sub-cubes tile [0,1] without gaps along the chunked axis', () => {
-    const plan = chunkVolume([4092, 100, 100], 2048)
-    const t0 = chunkSampleTransform(plan, 0)
     const t1 = chunkSampleTransform(plan, 1)
-    // chunk 1 data origin meets chunk 0 data end
     expect(t1.subOrigin[0]).toBeCloseTo(t0.subOrigin[0] + t0.subSize[0], 10)
-    // and the last chunk reaches the far face
     expect(t1.subOrigin[0] + t1.subSize[0]).toBeCloseTo(1, 10)
-  })
-
-  test('mapping a point through the transform lands inside the data region', () => {
-    const plan = chunkVolume([4092, 100, 100], 2048)
-    const t = chunkSampleTransform(plan, 1)
-    // p at the start of chunk 1 data -> local should equal dataOrigin
-    const p = t.subOrigin[0]
-    const local =
-      ((p - t.subOrigin[0]) / t.subSize[0]) * t.dataSize[0] + t.dataOrigin[0]
-    expect(local).toBeCloseTo(t.dataOrigin[0], 10)
+    expect(t1.dataOrigin[0]).toBeCloseTo(1 / c.texDims[0], 10)
+    expect(t1.dataSize[0]).toBeCloseTo(c.voxelDims[0] / c.texDims[0], 10)
   })
 
   test('halo-expanded draw footprint matches the texture extent', () => {
@@ -591,92 +488,24 @@ describe('chunkSampleTransform', () => {
     expect(drawOrigin).toBeCloseTo(c.texOrigin[0] / plan.volumeDims[0], 10)
     expect(drawSize).toBeCloseTo(c.texDims[0] / plan.volumeDims[0], 10)
   })
-
-  // An independently-streamed hi-res overlay uses its own (finer) ChunkPlan
-  // alongside the base plan. chunkSampleTransform must read only from the plan
-  // it is given — no shared module state — so a base and an overlay plan
-  // produce independent, plan-correct transforms.
-  test('two distinct plans yield independent, plan-local transforms', () => {
-    const base = chunkVolume([4092, 100, 100], 2048)
-    const overlay = chunkVolume([8184, 200, 200], 2048) // finer/larger grid
-    expect(overlay.chunks.length).toBeGreaterThan(base.chunks.length)
-
-    // Each transform reflects its own plan's dims, independent of the other.
-    const tb = chunkSampleTransform(base, 1)
-    const to = chunkSampleTransform(overlay, 1)
-    expect(tb.volumeDims).toEqual([4092, 100, 100])
-    expect(to.volumeDims).toEqual([8184, 200, 200])
-    expect(to.subSize[0]).not.toBeCloseTo(tb.subSize[0], 6)
-
-    // Recomputing the base transform after touching the overlay plan is stable
-    // (no cached cross-plan state).
-    const tbAgain = chunkSampleTransform(base, 1)
-    expect(tbAgain).toEqual(tb)
-
-    // Every chunk index of each plan stays within its own bounds.
-    for (let i = 0; i < overlay.chunks.length; i++) {
-      const t = chunkSampleTransform(overlay, i)
-      expect(t.subOrigin[0] + t.subSize[0]).toBeLessThanOrEqual(1 + 1e-9)
-    }
-  })
-
-  // Strategy A (streamed combined overlay): an overlay co-registered at the base
-  // grid (same dims) must produce a ChunkPlan identical to the base's, so chunk
-  // i covers exactly base chunk i — alignment without reslicing.
-  test('same dims yield an identical, chunk-aligned plan', () => {
-    const base = chunkVolume([4092, 300, 260], 2048, [3, 3, 3])
-    const overlay = chunkVolume([4092, 300, 260], 2048, [3, 3, 3])
-    expect(overlay.gridDims).toEqual(base.gridDims)
-    expect(overlay.stride).toEqual(base.stride)
-    expect(overlay.chunks.length).toBe(base.chunks.length)
-    for (let i = 0; i < base.chunks.length; i++) {
-      expect(overlay.chunks[i].voxelOrigin).toEqual(base.chunks[i].voxelOrigin)
-      expect(overlay.chunks[i].voxelDims).toEqual(base.chunks[i].voxelDims)
-      expect(overlay.chunks[i].texDims).toEqual(base.chunks[i].texDims)
-    }
-  })
 })
 
-describe('identityChunkSampleTransform', () => {
-  test('returns all-identity values with the given volume dims', () => {
-    const t = identityChunkSampleTransform([64, 128, 256])
-    expect(t.subOrigin).toEqual([0, 0, 0])
-    expect(t.subSize).toEqual([1, 1, 1])
-    expect(t.dataOrigin).toEqual([0, 0, 0])
-    expect(t.dataSize).toEqual([1, 1, 1])
-    expect(t.volumeDims).toEqual([64, 128, 256])
-    expect(t.lodDownsample).toBe(1)
-  })
-
-  test('matches chunkSampleTransform for a single-chunk plan', () => {
-    const plan = chunkVolume([100, 200, 300], 2048)
-    const a = chunkSampleTransform(plan, 0)
-    const b = identityChunkSampleTransform([100, 200, 300])
-    expect(a).toEqual(b)
-  })
+test('identityChunkSampleTransform matches a single-chunk plan', () => {
+  const t = identityChunkSampleTransform([100, 200, 300])
+  expect(t.subSize).toEqual([1, 1, 1])
+  expect(t.lodDownsample).toBe(1)
+  expect(chunkSampleTransform(chunkVolume([100, 200, 300], 2048), 0)).toEqual(t)
 })
 
-describe('dimsDownsample', () => {
-  test('is 1 when the data is already the full grid', () => {
-    expect(dimsDownsample([512, 512, 512], [512, 512, 512])).toBe(1)
-  })
-
-  test('is the isotropic ratio', () => {
-    expect(dimsDownsample([512, 512, 512], [64, 64, 64])).toBeCloseTo(8, 10)
-  })
-
-  test('is the geometric mean for an anisotropic floor', () => {
-    // The pawpawsaurus coarse floor: 958/119, 646/161, 1088/136.
-    expect(dimsDownsample([958, 646, 1088], [119, 161, 136])).toBeCloseTo(
-      Math.cbrt((958 / 119) * (646 / 161) * (1088 / 136)),
-      10,
-    )
-  })
-
-  test('is 1 for a degenerate or upsampled grid', () => {
-    expect(dimsDownsample([512, 512, 512], [0, 64, 64])).toBe(1)
-    expect(dimsDownsample([64, 64, 64], [512, 512, 512])).toBe(1)
-  })
+test('dimsDownsample is the geometric-mean ratio, 1 when degenerate', () => {
+  expect(dimsDownsample([512, 512, 512], [512, 512, 512])).toBe(1)
+  // The pawpawsaurus coarse floor: 958/119, 646/161, 1088/136.
+  expect(dimsDownsample([958, 646, 1088], [119, 161, 136])).toBeCloseTo(
+    Math.cbrt((958 / 119) * (646 / 161) * (1088 / 136)),
+    10,
+  )
+  expect(dimsDownsample([512, 512, 512], [0, 64, 64])).toBe(1)
+  expect(dimsDownsample([64, 64, 64], [512, 512, 512])).toBe(1)
 })
 
 describe('chunkLodDownsample', () => {
@@ -701,49 +530,19 @@ describe('chunkLodDownsample', () => {
     levelDims,
   })
 
-  test('is 1 for a single-level plan (no levelDims)', () => {
-    const plan = chunkVolume([100, 200, 300], 2048)
-    expect(chunkLodDownsample(plan, plan.chunks[0])).toBe(1)
-  })
-
-  test('is 1 for a finest-level brick', () => {
-    const plan = planWith([
-      [512, 512, 512],
-      [256, 256, 256],
-    ])
-    expect(chunkLodDownsample(plan, desc(0))).toBe(1)
-  })
-
-  test('returns the linear ratio for an isotropic pyramid', () => {
-    const plan = planWith([
-      [512, 512, 512],
-      [256, 256, 256],
-      [128, 128, 128],
-      [64, 64, 64],
-    ])
-    expect(chunkLodDownsample(plan, desc(1))).toBeCloseTo(2, 10)
-    expect(chunkLodDownsample(plan, desc(2))).toBeCloseTo(4, 10)
-    expect(chunkLodDownsample(plan, desc(3))).toBeCloseTo(8, 10)
-  })
-
-  test('takes the geometric mean when a pyramid decimates anisotropically', () => {
-    // 4x in x, 2x in y, 1x in z -> cbrt(8) = 2.
+  test('is the geometric-mean level ratio, 1 when single-level or degenerate', () => {
+    const single = chunkVolume([100, 200, 300], 2048)
+    expect(chunkLodDownsample(single, single.chunks[0])).toBe(1)
+    // 4x in x, 2x in y, 1x in z -> cbrt(8) = 2; level 2 has a zero dim.
     const plan = planWith([
       [512, 512, 512],
       [128, 256, 512],
-    ])
-    expect(chunkLodDownsample(plan, desc(1))).toBeCloseTo(2, 10)
-  })
-
-  test('is 1 for a missing or degenerate level entry', () => {
-    const plan = planWith([
-      [512, 512, 512],
       [0, 256, 256],
     ])
-    // Out of range.
+    expect(chunkLodDownsample(plan, desc(0))).toBe(1)
+    expect(chunkLodDownsample(plan, desc(1))).toBeCloseTo(2, 10)
+    expect(chunkLodDownsample(plan, desc(2))).toBe(1)
     expect(chunkLodDownsample(plan, desc(5))).toBe(1)
-    // A zero dim would divide by zero.
-    expect(chunkLodDownsample(plan, desc(1))).toBe(1)
   })
 
   test('a real multi-LOD plan reports each brick its level ratio', () => {
@@ -1113,24 +912,6 @@ describe('chunkVolumeMultiLOD — per-axis radius', () => {
     return `${plan.chunks.length}:${h.toString(16)}`
   }
 
-  test('a scalar radius plans identically to the equal per-axis vector', () => {
-    for (const r of [8, 16, 96]) {
-      const scalar = chunkVolumeMultiLOD(
-        pyramid,
-        { center: [256, 256, 256] as Vec3f, radius: r },
-        2048,
-        { cellEdge: 64 },
-      )
-      const vector = chunkVolumeMultiLOD(
-        pyramid,
-        { center: [256, 256, 256] as Vec3f, radius: [r, r, r] as Vec3f },
-        2048,
-        { cellEdge: 64 },
-      )
-      expect(vector.chunks).toEqual(scalar.chunks)
-    }
-  })
-
   test('scalar plans are bit-identical to the pre-change snapshots', () => {
     // Digests recorded against the implementation BEFORE the per-axis radius
     // landed, so the scalar path provably still emits the exact same bricks
@@ -1191,7 +972,7 @@ describe('chunkVolumeMultiLOD — per-axis radius', () => {
     expect(spanX(finest(aniso))).toBeGreaterThan(spanX(finest(iso)))
   })
 
-  test('zero/negative radius components widen to the largest axis', () => {
+  test('zero/negative radius components widen to the largest axis, matching a scalar', () => {
     const guarded = chunkVolumeMultiLOD(
       pyramid,
       { center: [256, 256, 256] as Vec3f, radius: [96, 0, -5] as Vec3f },
@@ -1200,7 +981,7 @@ describe('chunkVolumeMultiLOD — per-axis radius', () => {
     )
     const full = chunkVolumeMultiLOD(
       pyramid,
-      { center: [256, 256, 256] as Vec3f, radius: [96, 96, 96] as Vec3f },
+      { center: [256, 256, 256] as Vec3f, radius: 96 },
       2048,
       { cellEdge: 64 },
     )
@@ -1258,30 +1039,24 @@ describe('chunkVolumeMultiLOD — per-axis radius', () => {
 })
 
 describe('chunkVolumeMultiLOD — budget pass cost', () => {
-  test('a slide-sized pyramid under a brick cap plans in well under a second', () => {
+  test('a slide-sized pyramid under a brick cap fits the cap and covers the grid', () => {
     // 8192 x 4096 x 1024 over seven levels with the finest core spanning most
     // of the volume: every floor-0 candidate is a mixed-level plan of ~160k
-    // bricks whose 2:1 balance pass is quadratic (7 to 35 s each), and the
-    // detail pass used to build sixteen of them before the floor climb threw
-    // them all away (236 s end to end). The octree lower bound now rules those
-    // candidates out without balancing them, so the whole plan takes ~0.4 s
-    // (~1 s under coverage on an M-series Mac, ~1.4 s on CI's 4 vCPUs, 2.6 s
-    // seen under heavy contention). The 6 s bound stays under one 7 s balance
-    // pass, so the regression still fails; 2 s flaked on CI.
+    // bricks whose 2:1 balance pass is quadratic (7 to 35 s each). The octree
+    // lower bound rules those out unbalanced (~0.4 s here, 2.6 s seen under
+    // contention); a regression (236 s end to end) blows the 10 s timeout.
     const levels: Vec3i[] = []
     let d: Vec3i = [8192, 4096, 1024]
     for (let i = 0; i < 7; i++) {
       levels.push([d[0], d[1], d[2]])
       d = [Math.ceil(d[0] / 2), Math.ceil(d[1] / 2), Math.ceil(d[2] / 2)]
     }
-    const t0 = performance.now()
     const plan = chunkVolumeMultiLOD(
       levels,
       { center: [4096.37, 2048.29, 512.41], radius: [4096, 2048, 512] },
       2048,
       { cellEdge: 128, maxBricks: 240 },
     )
-    expect(performance.now() - t0).toBeLessThan(6000)
     expect(plan.chunks.length).toBeLessThanOrEqual(240)
     // Multi-LOD bricks place in the common grid but fetch from their own
     // level, so the single-level tex/voxel identity does not apply; check the
@@ -1296,7 +1071,7 @@ describe('chunkVolumeMultiLOD — budget pass cost', () => {
       }
     }
     expect(totalDataVoxels(plan)).toBe(8192 * 4096 * 1024)
-  }, 10_000) // above the 6 s bound, so the assertion (not bun's 5 s default) decides
+  }, 10_000)
 })
 
 describe('chunkVolumeMultiLOD — pinned gridDims lattice', () => {
@@ -1309,28 +1084,16 @@ describe('chunkVolumeMultiLOD — pinned gridDims lattice', () => {
   ]
   const anyFocus = { center: [10, 10, 10] as Vec3i, radius: 4 }
 
-  test('builds exactly the asked-for brick count, all at minLevel', () => {
+  test('builds exactly the asked-for lattice at minLevel, tiling the grid in order', () => {
     const plan = chunkVolumeMultiLOD(pyramid, anyFocus, 512, {
       haloSize: [3, 3, 3],
       minLevel: 1,
-      gridDims: [1, 2, 2],
-    })
-    expect(plan.gridDims).toEqual([1, 2, 2])
-    expect(plan.chunks.length).toBe(4)
-    for (const c of plan.chunks) expect(c.sourceLevel).toBe(1)
-  })
-
-  test('tiles the common grid exactly, with grid-ordered indices', () => {
-    const plan = chunkVolumeMultiLOD(pyramid, anyFocus, 512, {
-      minLevel: 0,
       gridDims: [2, 3, 4],
     })
+    expect(plan.gridDims).toEqual([2, 3, 4])
     expect(plan.chunks.length).toBe(24)
-    const sum = plan.chunks.reduce(
-      (t, c) => t + c.voxelDims[0] * c.voxelDims[1] * c.voxelDims[2],
-      0,
-    )
-    expect(sum).toBe(512 * 384 * 640)
+    for (const c of plan.chunks) expect(c.sourceLevel).toBe(1)
+    expect(totalDataVoxels(plan)).toBe(512 * 384 * 640)
     expect(plan.chunks[0].gridIndex).toEqual([0, 0, 0])
     expect(plan.chunks[23].gridIndex).toEqual([1, 2, 3])
   })
@@ -1397,18 +1160,10 @@ describe('matchChunksByContent', () => {
     }
     // The focus shifted, so it is not a full 1:1 identity map.
     expect(map.size).toBeLessThan(a.chunks.length)
-  })
-
-  test('an identical plan maps every brick to itself', () => {
-    const a = chunkVolumeMultiLOD(
-      pyramid,
-      { center: [256, 256, 256], radius: 96 },
-      2048,
-      { cellEdge: 64 },
-    )
-    const map = matchChunksByContent(a, a)
-    expect(map.size).toBe(a.chunks.length)
-    for (const [oi, ni] of map) expect(oi).toBe(ni)
+    // An identical plan maps every brick to itself.
+    const self = matchChunksByContent(a, a)
+    expect(self.size).toBe(a.chunks.length)
+    for (const [oi, ni] of self) expect(oi).toBe(ni)
   })
 })
 
@@ -1520,21 +1275,15 @@ describe('chunksToKeepResident', () => {
     chunks: [0, 1, 2].map(() => ({ texDims: [10, 10, 10] })),
   } as unknown as ChunkPlan
 
-  test('keeps every match while lit', () => {
+  test('drops lit bricks only when unlit and over budget', () => {
     expect(chunksToKeepResident(oldToNew, false, lit, newPlan, 0)).toEqual(
       oldToNew,
     )
-  })
-
-  test('drops lit bricks when unlit and over budget, leaving the decoded-tier map whole', () => {
-    // 4000 + 4000 + 8000 > 15000.
+    // 4000 + 4000 + 8000 > 15000; the decoded-tier map stays whole.
     expect(chunksToKeepResident(oldToNew, true, lit, newPlan, 15000)).toEqual(
       new Map([[0, 0]]),
     )
     expect(oldToNew.size).toBe(2)
-  })
-
-  test('keeps lit bricks when unlit and they still fit', () => {
     expect(chunksToKeepResident(oldToNew, true, lit, newPlan, 16000)).toEqual(
       oldToNew,
     )

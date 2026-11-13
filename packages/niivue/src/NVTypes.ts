@@ -788,7 +788,7 @@ export type LayoutConfig = {
 export type OrientationTextPosition = 'edges' | 'corner'
 
 /**
- * The scale ruler's unit: `'auto'` picks cm, mm or um by the field of view;
+ * The scale ruler's unit: `'auto'` picks km, m, cm, mm or um by the field of view;
  * any other value labels the ruler in that unit.
  */
 export type RulerUnits = 'auto' | 'nm' | 'um' | 'mm' | 'cm'

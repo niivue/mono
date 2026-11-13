@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, jest } from 'bun:test'
 import type { TabState } from '../protocol'
-import { type AppSocket, Bridge, NO_APP } from './bridge'
+import { type AppSocket, Bridge, NO_APP, RETURN_GRACE_MS } from './bridge'
 
 /** Requests written to the socket go to `sent`; the welcome, to `welcomes`. */
 type Fake = AppSocket & { sent: string[]; welcomes: string[] }
@@ -535,11 +535,25 @@ describe('Bridge', () => {
     expect(answer.reloaded).not.toBeNull()
   })
 
-  it('gives up on a tab that does not come back within the grace', async () => {
-    const bridge = new Bridge({ returnGraceMs: 20 })
-    const first = tab(bridge, 't1', 'one')
-    bridge.detach(first)
-    await expect(bridge.call('where_am_i')).rejects.toThrow(NO_APP)
+  it('gives up on a tab that does not come back within the default grace', async () => {
+    jest.useFakeTimers()
+    try {
+      const bridge = new Bridge()
+      const first = tab(bridge, 't1', 'one', () => 'before')
+      await bridge.call('where_am_i')
+      bridge.detach(first)
+      let settled = false
+      const call = bridge.call('where_am_i').finally(() => {
+        settled = true
+      })
+      jest.advanceTimersByTime(RETURN_GRACE_MS - 1)
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+      expect(settled).toBe(false)
+      jest.advanceTimersByTime(1)
+      await expect(call).rejects.toThrow(NO_APP)
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   it('welcomes each tab with the id it goes by', () => {

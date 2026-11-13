@@ -1094,9 +1094,13 @@ and its volumes alive."""
         to that volume's grid.
 
         `options.resolveSource` reopens a lazy or streamed volume's saved source
-        descriptor, with the host's credentials (see {@link DocumentSourceResolver}).
-        Without it, or when it yields no source, a lazy volume shows its embedded
-        frame as a static volume and a streamed one is skipped with a warning. A
+        descriptor, or the slide plane's (`slide: true`), with the host's
+        credentials (see {@link DocumentSourceResolver}). Without it, or when it
+        yields no source, a lazy volume shows its embedded frame as a static volume
+        and a streamed volume is skipped with a warning. A slide with a saved
+        source and no hosted manifest is skipped when the resolver yields no
+        source, and rebuilt from its embedded manifest when there is no resolver.
+        A
         newer `loadDocument` supersedes this one: its pending source opens are
         aborted and anything they would add is dropped.
         Restored slides are viewer-owned: clearing or replacing the plane, or

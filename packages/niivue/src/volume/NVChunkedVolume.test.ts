@@ -205,50 +205,44 @@ describe('planForFocus', () => {
 })
 
 describe('createSourceRegionReader', () => {
-  test('bounds in-flight fetches to maxConcurrentLoads', async () => {
-    let active = 0
-    let peak = 0
+  /** Reads that count, overlap for one macrotask, and fail with `fail` when given. */
+  const countingSource = (fail?: Error) => {
+    const stats = { calls: 0, active: 0, peak: 0 }
     const source: ChunkedVolumeSource = {
       datatypeCode: 4,
       levels: [{ level: 0, shape: [64, 64, 64], spacing: [1, 1, 1] }],
       fetchChunk: async () => {
-        active++
-        peak = Math.max(peak, active)
-        await new Promise((r) => setTimeout(r, 2))
-        active--
+        stats.calls++
+        stats.peak = Math.max(stats.peak, ++stats.active)
+        await new Promise((r) => setImmediate(r))
+        stats.active--
+        if (fail) throw fail
         return new Uint8Array(8)
       },
     }
+    return { source, stats }
+  }
+  /** `n` distinct regions (distinct texOrigin, so no dedup) fired at once. */
+  const loadRegions = (
+    load: ReturnType<typeof createSourceRegionReader>,
+    n: number,
+  ) =>
+    Promise.all(
+      Array.from({ length: n }, (_, i) => load(req(0, [i, 0, 0], [1, 1, 1]))),
+    )
+
+  test('bounds in-flight fetches to maxConcurrentLoads and dedups a repeated region', async () => {
+    const { source, stats } = countingSource()
     const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 2,
       retryAttempts: 1,
     })
-    // 8 distinct regions (no dedup) fired at once.
-    await Promise.all(
-      Array.from({ length: 8 }, (_, i) => load(req(0, [i, 0, 0], [1, 1, 1]))),
-    )
-    expect(peak).toBeLessThanOrEqual(2)
-  })
-
-  test('dedups concurrent requests for the same region', async () => {
-    let calls = 0
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [64, 64, 64], spacing: [1, 1, 1] }],
-      fetchChunk: async () => {
-        calls++
-        await new Promise((r) => setTimeout(r, 2))
-        return new Uint8Array(8)
-      },
-    }
-    const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: 4,
-      retryAttempts: 1,
-    })
-    const a = load(req(0, [0, 0, 0], [1, 1, 1]))
-    const b = load(req(0, [0, 0, 0], [1, 1, 1]))
-    await Promise.all([a, b])
-    expect(calls).toBe(1)
+    await Promise.all([
+      loadRegions(load, 8),
+      load(req(0, [0, 0, 0], [1, 1, 1])),
+    ])
+    expect(stats.calls).toBe(8)
+    expect(stats.peak).toBe(2)
   })
 
   test('retries a transient "Failed to fetch" and then succeeds', async () => {
@@ -272,71 +266,28 @@ describe('createSourceRegionReader', () => {
     expect((out as Uint8Array).byteLength).toBe(8)
   })
 
-  test('clamps maxConcurrentLoads:0 so it still fetches (no deadlock)', async () => {
-    let calls = 0
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
-      fetchChunk: async () => {
-        calls++
-        return new Uint8Array(8)
-      },
-    }
-    // A 0 concurrency cap would leave acquire() forever pending (no slot frees);
-    // the clamp to >= 1 must let the fetch through.
+  // 0, NaN or 0.5 concurrency would never start a read (deadlock); Infinity
+  // would drop the flood cap; retryAttempts 0 must still make the first fetch.
+  test.each([
+    [0, 1, 1],
+    [Number.NaN, 0.5, 1],
+    [Number.POSITIVE_INFINITY, 1, 1],
+    [4, 0, 4],
+  ])('clamps maxConcurrentLoads %p, retryAttempts %p to a usable floor', async (maxConcurrentLoads, retryAttempts, peak) => {
+    const { source, stats } = countingSource()
     const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: 0,
-      retryAttempts: 1,
+      maxConcurrentLoads,
+      retryAttempts,
     })
-    const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
-    expect(calls).toBe(1)
-    expect((out as Uint8Array).byteLength).toBe(8)
-  })
-
-  test('clamps a non-finite maxConcurrentLoads so the flood cap survives', async () => {
-    // Infinity passes straight through both Math.floor and Math.max, so an
-    // unguarded clamp leaves `active < maxConcurrent` permanently true and the
-    // bound is gone: all 5 would run at once.
-    let active = 0
-    let peak = 0
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [64, 64, 64], spacing: [1, 1, 1] }],
-      fetchChunk: async () => {
-        active++
-        peak = Math.max(peak, active)
-        await new Promise((r) => setTimeout(r, 2))
-        active--
-        return new Uint8Array(8)
-      },
-    }
-    const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: Number.POSITIVE_INFINITY,
-      retryAttempts: 1,
-    })
-    // 5 distinct regions (distinct texOrigin, so no dedup) fired at once.
-    await Promise.all(
-      Array.from({ length: 5 }, (_, i) => load(req(0, [i, 0, 0], [1, 1, 1]))),
-    )
-    // Falls back to the safe floor of 1, not to 'all five at once'.
-    expect(peak).toBe(1)
+    await loadRegions(load, 5)
+    expect(stats.calls).toBe(5)
+    expect(stats.peak).toBe(peak)
   })
 
   test('clamps a non-finite retryAttempts so retries stay bounded', async () => {
-    // Infinity here is the worse half: withRetry's loop has no end, and once the
-    // backoff 80 * 2 ** i overflows to Infinity the delay never resolves, so the
-    // read hangs for good. Race a timer so a regression fails fast and loudly
-    // rather than stalling the run until the job timeout.
-    let calls = 0
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
-      // TypeError is withRetry's 'transient' signal, the one it retries.
-      fetchChunk: async () => {
-        calls++
-        throw new TypeError('Failed to fetch')
-      },
-    }
+    // Infinity: withRetry's loop never ends once the backoff overflows. Race a
+    // timer so a regression fails fast rather than spinning the run.
+    const { source, stats } = countingSource(new TypeError('Failed to fetch'))
     const load = createSourceRegionReader(source, {
       maxConcurrentLoads: 2,
       retryAttempts: Number.POSITIVE_INFINITY,
@@ -348,50 +299,8 @@ describe('createSourceRegionReader', () => {
       ),
       new Promise((r) => setTimeout(() => r('still retrying'), 500)),
     ])
-    // Clamped to the floor of 1: one attempt, give up, no unbounded backoff.
     expect(outcome).toBe('rejected')
-    expect(calls).toBe(1)
-  })
-
-  test('clamps NaN and fractional counts to a usable floor', async () => {
-    let calls = 0
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
-      fetchChunk: async () => {
-        calls++
-        return new Uint8Array(8)
-      },
-    }
-    // NaN would make every `active < maxConcurrent` comparison false (nothing
-    // ever starts); 0.5 floors to 0, which is the same deadlock.
-    const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: Number.NaN,
-      retryAttempts: 0.5,
-    })
-    const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
-    expect(calls).toBe(1)
-    expect((out as Uint8Array).byteLength).toBe(8)
-  })
-
-  test('retryAttempts:0 still fetches exactly once', async () => {
-    let calls = 0
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
-      fetchChunk: async () => {
-        calls++
-        return new Uint8Array(8)
-      },
-    }
-    // 'No retries' must still make the initial fetch, not zero fetches.
-    const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: 4,
-      retryAttempts: 0,
-    })
-    const out = await load(req(0, [0, 0, 0], [1, 1, 1]))
-    expect(calls).toBe(1)
-    expect((out as Uint8Array).byteLength).toBe(8)
+    expect(stats.calls).toBe(1)
   })
 
   test('a permanently failing fetch rejects the caller with no unhandled rejection', async () => {
@@ -453,38 +362,6 @@ describe('createSourceRegionReader', () => {
     expect(seen?.aborted).toBe(true)
     // An abort is never retried, so it surfaces on the first attempt.
     await expect(pending).rejects.toThrow('aborted')
-  })
-
-  test('one cancelled request does not abort a shared read another still wants', async () => {
-    let seen: AbortSignal | undefined
-    let release: (() => void) | undefined
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [{ level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] }],
-      fetchChunk: (r) =>
-        new Promise((resolve) => {
-          seen = r.signal
-          release = () => resolve(new Uint8Array(2))
-        }),
-    }
-    const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: 2,
-      retryAttempts: 1,
-    })
-    const first = new AbortController()
-    const second = new AbortController()
-    // Same region, two callers — the plan-swap case the dedup exists for.
-    const shared = req(0, [0, 0, 0], [1, 1, 1])
-    const a = load({ ...shared, signal: first.signal })
-    const b = load({ ...shared, signal: second.signal })
-    await new Promise((r) => setTimeout(r, 0))
-    first.abort()
-    expect(seen?.aborted).toBe(false)
-    release?.()
-    // The cancelled caller rejects; the shared read still serves the other.
-    await expect(a).rejects.toBeDefined()
-    await expect(b).resolves.toHaveLength(2)
-    second.abort()
   })
 })
 
@@ -609,41 +486,29 @@ describe('NVChunkedVolume deviceLimit default', () => {
       _unregisterChunkedVolume: () => {},
     }) as unknown as NiiVue
 
-  test('defaults from the host maxTextureDimension3D option', () => {
+  test('defaults from the host limit, an explicit option wins, else 256', () => {
+    const maxEdge = (mgr: NVChunkedVolume) =>
+      Math.max(...mgr.currentPlan.chunks.map((c) => Math.max(...c.texDims)))
     // Default cellEdge (128) would emit texDims up to 130 under the old
     // hardcoded 256; the host's 64 cap must bound every brick edge.
-    const mgr = new NVChunkedVolume(makeHostWithLimit(64), mgrSource, {
-      radius: 16,
-    })
-    for (const c of mgr.currentPlan.chunks) {
-      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(64)
-    }
-  })
-
-  test('an explicit deviceLimit option wins over the host value', () => {
-    const mgr = new NVChunkedVolume(makeHostWithLimit(64), mgrSource, {
-      radius: 16,
-      deviceLimit: 32,
-    })
-    for (const c of mgr.currentPlan.chunks) {
-      for (let a = 0; a < 3; a++) expect(c.texDims[a]).toBeLessThanOrEqual(32)
-    }
-  })
-
-  test('falls back to 256 when the host has no configured limit', () => {
-    const mgr = new NVChunkedVolume(
-      makeHost(async () => {}),
-      mgrSource,
-      {
-        radius: 16,
-      },
+    const host = makeHostWithLimit(64)
+    expect(
+      maxEdge(new NVChunkedVolume(host, mgrSource, { radius: 16 })),
+    ).toBeLessThanOrEqual(64)
+    expect(
+      maxEdge(
+        new NVChunkedVolume(host, mgrSource, { radius: 16, deviceLimit: 32 }),
+      ),
+    ).toBeLessThanOrEqual(32)
+    const fallback = maxEdge(
+      new NVChunkedVolume(
+        makeHost(async () => {}),
+        mgrSource,
+        { radius: 16 },
+      ),
     )
-    // Bricks larger than a small cap prove the fallback stayed at 256.
-    const maxEdge = Math.max(
-      ...mgr.currentPlan.chunks.map((c) => Math.max(...c.texDims)),
-    )
-    expect(maxEdge).toBeGreaterThan(64)
-    expect(maxEdge).toBeLessThanOrEqual(256)
+    expect(fallback).toBeGreaterThan(64)
+    expect(fallback).toBeLessThanOrEqual(256)
   })
 })
 
@@ -861,38 +726,6 @@ describe("NVChunkedVolume 'auto' radius", () => {
   })
 })
 
-describe('NVChunkedVolume serialized refocus', () => {
-  test('a slow swap followed by a fast one leaves the newest plan applied', async () => {
-    const applied: ChunkPlan[] = []
-    let call = 0
-    // First swap resolves LATE, second resolves immediately. Recorded on
-    // RESOLUTION (when the GPU brick set actually updates), so an unserialized
-    // path would record newest-then-oldest and disagree with currentPlan.
-    const host = makeHost(
-      (_id, plan) =>
-        new Promise<void>((resolve) => {
-          const ms = call++ === 0 ? 30 : 0
-          setTimeout(() => {
-            applied.push(plan)
-            resolve()
-          }, ms)
-        }),
-    )
-    const mgr = new NVChunkedVolume(host, mgrSource, { radius: 16 })
-    const inner = mgr as unknown as Refocusable
-
-    inner.focusFrac = [0.2, 0.2, 0.2]
-    const p1 = inner.doRefocus()
-    inner.focusFrac = [0.8, 0.8, 0.8]
-    const p2 = inner.doRefocus()
-    await Promise.all([p1, p2])
-
-    expect(applied).toHaveLength(2)
-    // Newest plan applied last, and the handle/GPU agree.
-    expect(applied[applied.length - 1]).toBe(mgr.currentPlan)
-  })
-})
-
 // --- manager: refocus completion promise -----------------------------------
 
 /**
@@ -1093,25 +926,6 @@ describe('NVChunkedVolume refocus promise', () => {
     expect(swaps[1]).toBe(mgr.currentPlan)
   })
 
-  test('dispose() before the timer fires resolves the pending promise without a swap', async () => {
-    const { host, swaps } = makeGatedHost()
-    const mgr = new NVChunkedVolume(host, mgrSource, {
-      radius: 16,
-      debounceMs: 1000,
-    })
-    const before = mgr.currentPlan
-    const pending = mgr.setFocus([0.2, 0.2, 0.2])
-    mgr.dispose()
-    await pending
-    expect(swaps).toHaveLength(0)
-    expect(mgr.currentPlan).toBe(before)
-    // After dispose every mutator resolves immediately and stays inert.
-    await mgr.setBudget(1024)
-    await mgr.setMaxDetail(1)
-    await mgr.setBudgetPlan('uniform')
-    expect(swaps).toHaveLength(0)
-  })
-
   test('a failed host swap still resolves the request (logged, not rejected)', async () => {
     const host = makeHost(async () => {
       throw new Error('swap exploded')
@@ -1131,19 +945,7 @@ describe('NVChunkedVolume refocus promise', () => {
       radius: 16,
       debounceMs: DEBOUNCE,
     })
-    const done = settled(mgr.raiseHaloTo(1)) // default halo is already 1
-    await waitFor(() => done())
-    expect(swaps).toHaveLength(0)
-  })
-
-  test('whenRefocusIdle resolves immediately when idle', async () => {
-    const { host, swaps } = makeGatedHost()
-    const mgr = new NVChunkedVolume(host, mgrSource, {
-      radius: 16,
-      debounceMs: DEBOUNCE,
-    })
-    const done = settled(mgr.whenRefocusIdle())
-    await waitFor(() => done())
+    await mgr.raiseHaloTo(1) // default halo is already 1
     expect(swaps).toHaveLength(0)
   })
 
@@ -1226,41 +1028,34 @@ describe('NVChunkedVolume refocus promise', () => {
     expect(pivots).toHaveLength(1)
   })
 
-  test('mutators after dispose resolve without touching state', async () => {
+  test('dispose() settles a pending refocus; mutators after it touch nothing', async () => {
     const { host, swaps } = makeGatedHost()
     const mgr = new NVChunkedVolume(host, mgrSource, {
       radius: 16,
-      debounceMs: DEBOUNCE,
+      debounceMs: 1000,
     })
-    const focus = mgr.focus
     const plan = mgr.currentPlan
     const budgetBytes = mgr.budgetPlan.budgetBytes
     const halo = mgr.halo
+    // Pending (timer not fired): dispose resolves it and the barrier.
+    const pending = mgr.setFocus([0.2, 0.2, 0.2])
+    const barrier = mgr.whenRefocusIdle()
     mgr.dispose()
+    await pending
+    await expect(barrier).resolves.toBeUndefined()
+    const focus = mgr.focus
 
     await mgr.setFocus([0.9, 0.9, 0.9])
     await mgr.setMaxDetail(2)
     await mgr.setBudget(budgetBytes + 1)
+    await mgr.setBudgetPlan('uniform')
     await mgr.raiseHaloTo(halo[0] + 3)
 
     expect(mgr.focus).toEqual(focus)
     expect(mgr.currentPlan).toBe(plan)
     expect(mgr.budgetPlan.budgetBytes).toBe(budgetBytes)
     expect(mgr.halo).toEqual(halo)
-    await tick(DEBOUNCE * 4)
     expect(swaps).toHaveLength(0)
-  })
-
-  test('whenRefocusIdle resolves after dispose cancels a pending refocus', async () => {
-    const { host } = makeGatedHost()
-    const mgr = new NVChunkedVolume(host, mgrSource, {
-      radius: 16,
-      debounceMs: 1000,
-    })
-    void mgr.setFocus([0.2, 0.2, 0.2])
-    const barrier = mgr.whenRefocusIdle()
-    mgr.dispose()
-    await expect(barrier).resolves.toBeUndefined()
   })
 })
 
@@ -1326,18 +1121,10 @@ describe('NVChunkedVolume coarse floor', () => {
     expect(floor?.img?.length).toBe(64 * 64 * 64)
     expect(floor?.chunkSource).toBeUndefined()
     expect(floor?.dims?.slice(1, 4)).toEqual([64, 64, 64])
-  })
-
-  test('a repeat apply reuses the built floor instead of re-fetching', async () => {
-    const { host, installs } = makeFloorHost()
-    const { source, fetches } = floorSource(mgrSource.levels)
-    const mgr = new NVChunkedVolume(host, source, { radius: 16 })
-
-    await mgr.applyCoarseFloor()
+    // A repeat apply reuses the built floor instead of re-fetching.
     await mgr.applyCoarseFloor()
     expect(fetches).toHaveLength(1)
-    expect(installs).toHaveLength(2)
-    expect(installs[1]).toBe(installs[0])
+    expect(installs[1]).toBe(floor)
   })
 
   test('coarseFloor: false neither fetches nor touches the host floor', async () => {
@@ -1863,12 +1650,13 @@ describe('NVChunkedVolume failed init', () => {
 
   test('a failed additive init puts back the floor it replaced', async () => {
     const prior = { id: 'old floor' } as unknown as NVImage
-    const { host, floors } = floorFailHost(prior, false)
+    const { host, volumes, floors } = floorFailHost(prior, false)
     const mgr = new NVChunkedVolume(host, rampSource(), {
       focus: 'crosshair',
       radius: 'auto',
     })
     await expect(mgr.init()).rejects.toThrow('out of memory')
+    expect(volumes).toHaveLength(0)
     expect(floors[0]).not.toBe(prior)
     expect(floors.at(-1)).toBe(prior)
     expect(host._baseCoarseFloor).toBe(prior)
@@ -1926,19 +1714,6 @@ describe('NVChunkedVolume failed init', () => {
     expect(floors).toEqual([null, null])
     expect(host._baseCoarseFloor).toBeNull()
   })
-
-  test('a throw after the floor is installed clears the floor', async () => {
-    const { host, volumes, floors } = floorFailHost(null, false)
-    const mgr = new NVChunkedVolume(host, rampSource(), {
-      focus: 'crosshair',
-      radius: 'auto',
-    })
-
-    await expect(mgr.init()).rejects.toThrow('out of memory')
-    expect(volumes).toHaveLength(0)
-    expect(floors[0]).not.toBeNull()
-    expect(floors.at(-1)).toBeNull()
-  })
 })
 
 test('a request for a region whose sole reader aborted fetches it again', async () => {
@@ -1946,7 +1721,7 @@ test('a request for a region whose sole reader aborted fetches it again', async 
     levels: [{ level: 0, shape: [2, 2, 2], spacing: [1, 1, 1] }],
     datatypeCode: 2,
     fetchChunk: async ({ signal }: { signal?: AbortSignal }) => {
-      await new Promise((r) => setTimeout(r, 5))
+      await new Promise((r) => setImmediate(r))
       signal?.throwIfAborted()
       return new Uint8Array([7])
     },

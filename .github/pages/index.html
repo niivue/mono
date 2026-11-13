@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <link rel="icon" href="data:," />
     <title>NiiVue — Demos</title>
+    <!-- The published site's front door is the docs site, which lists every
+         demo below in its gallery. Only on GitHub Pages: the local dev server
+         serves this page at / and has no built docs at /docs/. -->
+    <script>
+      if (location.hostname.endsWith('github.io')) location.replace('./docs/')
+    </script>
     <style>
       body {
         font-family: system-ui, -apple-system, sans-serif;
@@ -84,9 +90,9 @@
   <body>
     <header>
       <div class="ribbon">
-        <a href="https://niivue.com/" class="logo">NiiVue</a>
+        <a href="./docs/" class="logo">NiiVue</a>
         <div class="nav-left">
-          <a href="https://niivue.com/gallery">Gallery</a>
+          <a href="./docs/gallery/">Gallery</a>
           <a href="./examples/">Examples</a>
           <a href="./docs/">Docs</a>
         </div>

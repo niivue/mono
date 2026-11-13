@@ -67,10 +67,14 @@ describe('slideScaleBar', () => {
     expect(slideScaleBar(0.0005, 1, 1000, 'nm')?.label).toBe('100000 nm')
   })
 
-  test('nothing without spacing', () => {
+  test('nothing without spacing; metres and kilometres for wide fields', () => {
     expect(slideScaleBar(undefined, 1, 1000)).toBeNull()
-    // 10 mm/px: 10 cm would be 10 px of a 1000 px view.
-    expect(slideScaleBar(10, 1, 1000)).toBeNull()
+    // Sentinel-2: 10 m/px, a 5120 px scene fit to 1280 px.
+    expect(slideScaleBar(10000, 0.25, 1280)).toEqual({
+      lengthPx: 250,
+      label: '10 km',
+    })
+    expect(slideScaleBar(10, 1, 1000)?.label).toBe('2 m')
   })
 })
 

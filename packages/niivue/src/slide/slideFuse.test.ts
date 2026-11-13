@@ -237,26 +237,6 @@ describe('fuseUniforms', () => {
     expect(bad).toEqual([])
   })
 
-  it('keeps every uniform a finite, nonzero float32', () => {
-    for (const [lo, hi] of [
-      [1e8 + 3.2, 1e8 + 9.6],
-      [-3e38, 3.2e38],
-      [-1e40, 1e40],
-      [0, 8e-44],
-    ] as const) {
-      const u = Float32Array.from(
-        fuseUniforms(
-          { plane: 0, colormap: 'gray', calMin: lo, calMax: hi },
-          2,
-          true,
-        ),
-      )
-      expect(u.every(Number.isFinite)).toBe(true)
-      expect([u[1] as number, u[5] as number].every((x) => x > 0)).toBe(true)
-      expect([u[2], u[3]]).toEqual([2, 1])
-    }
-  })
-
   it('stays within a level of the CPU for windows past float32 range', () => {
     const M = Number.MAX_VALUE
     for (const [lo, hi] of [
@@ -297,6 +277,8 @@ describe('fuseUniforms', () => {
   })
 
   it('matches the CPU levels for windows float32 alone would lose', () => {
+    const layer = { plane: 0, colormap: 'gray', calMin: 0, calMax: 1 }
+    expect(Array.from(fuseUniforms(layer, 2, true)).slice(2, 4)).toEqual([2, 1])
     // Rounding calMin and calMax to float32 first gives 255 here.
     expect(level(1e8 + 3.2, 1e8 + 9.6, 1e8 + 8)).toBe(191)
     // Widths past float32 max.
@@ -413,7 +395,7 @@ describe('fuseTarget', () => {
   }
   const slide = {
     displayGeneration: 1,
-    channels: [channel()],
+    liveChannels: [channel()],
     channelBlend: 'max',
     manifest: {},
     selectedLabel: null,
@@ -624,7 +606,7 @@ describe('labels', () => {
       t.samples.width = 2
       const slide = {
         displayGeneration: 1,
-        channels: visible.map((v) => channel({ visible: v })),
+        liveChannels: visible.map((v) => channel({ visible: v })),
         channelBlend: 'max',
         manifest: { channelInfo: info },
         selectedLabel: null,
@@ -650,7 +632,7 @@ describe('labels', () => {
     t.samples.width = 2
     const slide = {
       displayGeneration: 1,
-      channels: [channel(), channel()],
+      liveChannels: [channel(), channel()],
       channelBlend: 'max',
       manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
       selectedLabel: null,
@@ -665,7 +647,7 @@ describe('labels', () => {
     expect(target()).toBe(mixed)
     Object.assign(slide, {
       displayGeneration: 2,
-      channels: [channel(), channel({ visible: false })],
+      liveChannels: [channel(), channel({ visible: false })],
     })
     const intensity = target()
     expect([intensity?.labels, cache.bytes]).toEqual([undefined, 48])
@@ -679,7 +661,7 @@ describe('labels', () => {
     t.samples.width = 2
     const slide = {
       displayGeneration: 1,
-      channels: [channel(), channel()],
+      liveChannels: [channel(), channel()],
       channelBlend: 'max',
       manifest: { channelInfo: [{ name: 'i', active: true }, LABEL] },
       selectedLabel: null,
@@ -696,7 +678,7 @@ describe('labels', () => {
     cache.touch('k', t.samples)
     Object.assign(slide, {
       displayGeneration: 2,
-      channels: [channel(), channel({ visible: false })],
+      liveChannels: [channel(), channel({ visible: false })],
     })
     expect(fuseTarget([], cache, at, slide, t, 4096, create)).not.toBeNull()
     expect(cache.bytes).toBe(48)

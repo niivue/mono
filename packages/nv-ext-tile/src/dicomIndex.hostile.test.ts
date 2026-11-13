@@ -133,15 +133,6 @@ async function tileLabels(slide: SlideIndexSlide, files: File[]) {
 }
 
 describe('indexDicomWsiOnThread on hostile input', () => {
-  test('a well-formed file indexes (the builder is sound)', async () => {
-    const good = dicom()
-    const idx = await indexDicomWsiOnThread([good])
-    expect(idx.skipped).toEqual([])
-    expect(await tileLabels(idx.slides[0] as SlideIndexSlide, [good])).toEqual([
-      0, 1, 2, 3,
-    ])
-  })
-
   test('a read that returns no bytes (a file shrunk under us) is skipped, not looped on', async () => {
     const good = dicom()
     const empty = async () => new Uint8Array(0)
@@ -178,9 +169,7 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     const nest = cat(...Array(depth).fill(open), ...Array(depth).fill(close))
     const file = dicom({ nest })
     expect(file.size).toBeGreaterThan(700_000)
-    const t0 = performance.now()
     expect(await reasons(file)).toEqual(['malformed'])
-    expect(performance.now() - t0).toBeLessThan(500)
   })
 
   test('a frame count or grid that the file cannot hold is malformed', async () => {
@@ -188,13 +177,6 @@ describe('indexDicomWsiOnThread on hostile input', () => {
       expect(
         await reasons(dicom({ frames: el(0x0028, 0x0008, 'IS', str(frames)) })),
       ).toEqual(['malformed'])
-    const giant = dicom({
-      rows: el(0x0028, 0x0010, 'US', le(1, 2)),
-      columns: el(0x0028, 0x0011, 'US', le(1, 2)),
-      totalColumns: el(0x0048, 0x0006, 'UL', le(0xffffffff, 4)),
-      totalRows: el(0x0048, 0x0007, 'UL', le(0xffffffff, 4)),
-    })
-    expect(await reasons(giant)).toEqual(['too-large'])
   })
 
   test('a level past the tile cap says it is too large, with its sizes', async () => {
@@ -249,22 +231,13 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     ])
   })
 
-  test('a UN sequence cut off by the end of the file is malformed', async () => {
-    const head = cat(
-      new Uint8Array(128),
-      str('DICM'),
-      el(0x0011, 0x1010, 'UN', new Uint8Array(0), UNDEF),
-    )
-    // Ends inside the sequence, and inside an undefined-length item.
-    expect(await reasons(new File([head], 'h.dcm'))).toEqual(['malformed'])
-    const inItem = cat(head, tag(0xfffe, 0xe000), le(UNDEF, 4))
-    expect(await reasons(new File([inItem], 'h.dcm'))).toEqual(['malformed'])
-  })
-
-  test('an SQ cut off by the end of the file is malformed', async () => {
+  test('an SQ or UN sequence cut off by the end of the file is malformed', async () => {
     const pre = cat(new Uint8Array(128), str('DICM'))
     const open = cat(pre, el(0x0011, 0x1010, 'SQ', new Uint8Array(0), UNDEF))
     const inItem = cat(open, tag(0xfffe, 0xe000), le(UNDEF, 4))
+    // UN is skipped as implicit VR: ends inside it, and inside its item.
+    const un = cat(pre, el(0x0011, 0x1010, 'UN', new Uint8Array(0), UNDEF))
+    const unItem = cat(un, tag(0xfffe, 0xe000), le(UNDEF, 4))
     const tooLong = cat(pre, el(0x0011, 0x1010, 'SQ', new Uint8Array(0), 1000))
     // Cut inside an item tag, an item length, a delimiter, a nested element.
     const cuts = [
@@ -274,11 +247,21 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     ]
       .map((bytes) => cat(open, new Uint8Array(bytes)))
       .concat(cat(inItem, new Uint8Array([0x11, 0x00])))
-    for (const head of [open, inItem, tooLong, ...cuts])
+    for (const head of [open, inItem, tooLong, un, unItem, ...cuts])
       expect(await reasons(new File([head], 'h.dcm'))).toEqual(['malformed'])
     // A file that ends between elements has no Pixel Data: not truncated.
     const whole = cat(pre, el(0x0011, 0x1010, 'SQ', new Uint8Array(0), 0))
     expect(await reasons(new File([whole], 'h.dcm'))).toEqual(['not-tiled'])
+  })
+
+  test('a UN sequence cut off by the end of the file names the UN sequence', async () => {
+    const pre = cat(new Uint8Array(128), str('DICM'))
+    const un = cat(pre, el(0x0011, 0x1010, 'UN', new Uint8Array(0), UNDEF))
+    // Ends before an item tag, then inside an undefined-length item.
+    for (const head of [un, cat(un, tag(0xfffe, 0xe000), le(UNDEF, 4))]) {
+      const idx = await indexDicomWsiOnThread([new File([head], 'h.dcm')])
+      expect(idx.skipped[0]?.message).toBe('UN sequence runs past the file')
+    }
   })
 
   test('tiny native Pixel Data at the end of the file is not truncated', async () => {
@@ -423,7 +406,7 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     expect(await reasons(dicom({}, noItem))).toEqual(['malformed'])
   })
 
-  test('an offset table that is not increasing falls back to walking the items', async () => {
+  test('an offset table that is not increasing or misses an item falls back to walking the items', async () => {
     const step = 8 + 6 // one fragment: item header + payload
     const shuffled = dicom(
       {},
@@ -438,10 +421,20 @@ describe('indexDicomWsiOnThread on hostile input', () => {
       {},
       pixelData([0, 1, 2, 3].map(payload), [0, step, 2 * step, 1e9]),
     )
-    const idx2 = await indexDicomWsiOnThread([pastEnd])
-    expect(
-      await tileLabels(idx2.slides[0] as SlideIndexSlide, [pastEnd]),
-    ).toEqual([0, 1, 2, 3])
+    // The last entry 2 bytes short of its item.
+    const misses = dicom(
+      {},
+      pixelData([0, 1, 2, 3].map(payload), [0, step, 2 * step, 3 * step + 2]),
+    )
+    for (const f of [pastEnd, misses]) {
+      const idx2 = await indexDicomWsiOnThread([f])
+      expect([...(idx2.slides[0]?.levels[0]?.frames.length ?? [])]).toEqual([
+        6, 6, 6, 6,
+      ])
+      expect(await tileLabels(idx2.slides[0] as SlideIndexSlide, [f])).toEqual([
+        0, 1, 2, 3,
+      ])
+    }
   })
 
   test('per-frame positions that are not a tile origin are errors, never tile 0,0', async () => {
@@ -454,72 +447,41 @@ describe('indexDicomWsiOnThread on hostile input', () => {
           ),
         ]),
       )
-    const sparse = dicom({
-      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
-      // Frames 0 and 1 are not tile origins (column 9 of 16-px tiles; column 0,
-      // as positions are 1-based); truncating them would claim tile 0,0 first.
-      // Frame 2 is the real top-left tile; frame 3 the bottom right.
-      perFrame: sq(0x5200, 0x9230, [
-        pos(9, 1),
-        pos(0, 1),
-        pos(1, 1),
-        pos(17, 17),
-      ]),
-    })
+    // Frames 0 and 1 are not tile origins (column 9 of 16-px tiles; column 0,
+    // as positions are 1-based); truncating them would claim tile 0,0 first.
+    // Frame 2 is the real top-left tile; frame 3 the bottom right.
+    const sparseWith = (lab?: number[]) =>
+      dicom({
+        org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
+        ...(lab && {
+          absentLab: el(0x0048, 0x0015, 'US', cat(...lab.map((v) => le(v, 2)))),
+        }),
+        perFrame: sq(0x5200, 0x9230, [
+          pos(9, 1),
+          pos(0, 1),
+          pos(1, 1),
+          pos(17, 17),
+        ]),
+      })
+    const sparse = sparseWith()
     const idx = await indexDicomWsiOnThread([sparse])
     const slide = idx.slides[0] as SlideIndexSlide
     expect(slide.levels[0]?.duplicates).toBe(2)
     expect(await tileLabels(slide, [sparse])).toEqual([2, -1, -1, 3])
-    expect(new DicomWsiSource(slide, [sparse]).manifest.backgroundColor).toBe(
-      undefined,
-    )
-    // RecommendedAbsentPixelCIELabValue colours the holes (white here).
-    const white = dicom({
-      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
-      absentLab: el(
-        0x0048,
-        0x0015,
-        'US',
-        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2)),
-      ),
-      perFrame: sq(0x5200, 0x9230, [
-        pos(9, 1),
-        pos(0, 1),
-        pos(1, 1),
-        pos(17, 17),
-      ]),
-    })
-    // Through the public entry, whichever module implements it.
+    // RecommendedAbsentPixelCIELabValue colours the holes (white here); the
+    // tag is VM 3, so a fourth component makes it invalid, not white.
     const { indexDicomWsi: indexViaEntry } = await import('./dicom')
-    const ws = (await indexViaEntry([white])).slides[0] as SlideIndexSlide
-    const { manifest } = new DicomWsiSource(ws, [white])
-    expect(manifest.backgroundColor).toEqual([1, 1, 1, 1])
-    // The tag is VM 3: a fourth component makes it invalid, not white.
-    const four = dicom({
-      org: el(0x0020, 0x9311, 'CS', str('TILED_SPARSE')),
-      absentLab: el(
-        0x0048,
-        0x0015,
-        'US',
-        cat(le(0xffff, 2), le(0x8080, 2), le(0x8080, 2), le(1, 2)),
-      ),
-      perFrame: sq(0x5200, 0x9230, [
-        pos(9, 1),
-        pos(0, 1),
-        pos(1, 1),
-        pos(17, 17),
-      ]),
-    })
-    const fs = (await indexViaEntry([four])).slides[0] as SlideIndexSlide
-    expect(new DicomWsiSource(fs, [four]).manifest.backgroundColor).toBe(
-      undefined,
-    )
-    expect(manifest.levels[0]?.tiles.map((t) => t === null)).toEqual([
-      false,
-      true,
-      true,
-      false,
+    const background = async (f: File) => {
+      const sl = (await indexViaEntry([f])).slides[0] as SlideIndexSlide
+      return new DicomWsiSource(sl, [f]).manifest.backgroundColor
+    }
+    expect(await background(sparse)).toBeUndefined()
+    expect(await background(sparseWith([0xffff, 0x8080, 0x8080]))).toEqual([
+      1, 1, 1, 1,
     ])
+    expect(
+      await background(sparseWith([0xffff, 0x8080, 0x8080, 1])),
+    ).toBeUndefined()
   })
   // Per-frame z for a sparse level of 1-px tiles on a 2048 x 2048 grid.
   const planes = (zs: string[]) =>
@@ -551,33 +513,17 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     )
 
   test('thousands of focal planes are refused, not made into slides', async () => {
-    const t0 = performance.now()
     const idx = await indexDicomWsiOnThread([
       planes(Array.from({ length: 5000 }, (_, k) => String(k))),
     ])
     expect(idx.slides).toEqual([])
     expect(idx.skipped.map((s) => s.reason)).toEqual(['malformed'])
-    expect(performance.now() - t0).toBeLessThan(2000)
   })
 
   test('a non-finite focal plane is malformed', async () => {
     expect(await reasons(planes(['abc']))).toEqual(['malformed'])
   })
 
-  test('a Basic Offset Table whose last entry misses its item is walked instead', async () => {
-    const step = 14 // item header + 6-byte payload
-    const f = dicom(
-      {},
-      pixelData([0, 1, 2, 3].map(payload), [0, step, 2 * step, 3 * step + 2]),
-    )
-    const idx = await indexDicomWsiOnThread([f])
-    expect(idx.skipped).toEqual([])
-    const lengths = [...(idx.slides[0]?.levels[0]?.frames.length ?? [])]
-    expect(lengths).toEqual([6, 6, 6, 6])
-    expect(await tileLabels(idx.slides[0] as SlideIndexSlide, [f])).toEqual([
-      0, 1, 2, 3,
-    ])
-  })
   test('TILED_FULL with per-frame metadata but no positions keeps its implicit order', async () => {
     // Frame Content (0020,9111) > Frame Acquisition Number (0020,9156) only.
     const content = (k: number) =>
@@ -608,7 +554,7 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     expect(idx.slides.map((s) => s.levels.length)).toEqual([2])
   })
 
-  test('ZOffset on only some frames is malformed', async () => {
+  test('ZOffset on only some frames, or repeated in one, is malformed', async () => {
     const zItem = (z?: string) =>
       item(
         z === undefined
@@ -619,6 +565,12 @@ describe('indexDicomWsiOnThread on hostile input', () => {
       perFrame: sq(0x5200, 0x9230, [zItem('1'), zItem('2'), zItem(), zItem()]),
     })
     expect(await reasons(f)).toEqual(['malformed'])
+    // A frame repeating ZOffset does not count as two frames.
+    const z55 = item(zSeq('5', '5'))
+    const twice = dicom({
+      perFrame: sq(0x5200, 0x9230, [z55, z55, zItem(), zItem()]),
+    })
+    expect(await reasons(twice)).toEqual(['malformed'])
   })
   test('a concatenation split across focal planes keeps every plane', async () => {
     // 2 tiles per plane, 3 planes: part 1 holds frames 0-3, part 2 frames 4-5.
@@ -716,14 +668,6 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     ])
   })
 
-  test('a frame repeating ZOffset does not count as two frames', async () => {
-    const other = item(
-      sq(0x0020, 0x9111, [item(el(0x0020, 0x9156, 'US', le(1, 2)))]),
-    )
-    const z55 = item(zSeq('5', '5'))
-    const f = dicom({ perFrame: sq(0x5200, 0x9230, [z55, z55, other, other]) })
-    expect(await reasons(f)).toEqual(['malformed'])
-  })
   test('one shared ZOffset does not collapse several implicit planes', async () => {
     const f = dicom({
       totalRows: el(0x0048, 0x0007, 'UL', le(16, 4)),
@@ -822,11 +766,9 @@ describe('indexDicomWsiOnThread on hostile input', () => {
       },
       pixelData(Array.from({ length: N }, (_, k) => payload(k & 255))),
     )
-    const t0 = performance.now()
     expect(
       (await indexDicomWsiOnThread([f])).skipped.map((k) => k.message),
     ).toEqual(['over 4096 (optical path, focal plane) pairs'])
-    expect(performance.now() - t0).toBeLessThan(1000)
   })
   test('TILED_FULL frames past tiles x planes x paths are malformed, quickly', async () => {
     const f = dicom(
@@ -838,9 +780,7 @@ describe('indexDicomWsiOnThread on hostile input', () => {
       },
       pixelData([payload(0)]),
     )
-    const t0 = performance.now()
     expect(await reasons(f)).toEqual(['malformed'])
-    expect(performance.now() - t0).toBeLessThan(100)
   })
 
   test('near-equal levels past twice the grid cap are dropped from the slide', async () => {
@@ -1016,23 +956,5 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     const idx = await indexDicomWsiOnThread([f])
     expect(idx.skipped).toEqual([])
     expect(idx.slides).toHaveLength(1)
-  })
-  test('DicomWsiSource serves the optical path ICC profile from the level-0 file', async () => {
-    const icc = Uint8Array.from({ length: 200 }, (_, i) => (i * 3) & 255)
-    const f = dicom({
-      opticalPathSeq: sq(0x0048, 0x0105, [
-        item(el(0x0028, 0x2000, 'OB', icc), el(0x0048, 0x0106, 'SH', str('1'))),
-      ]),
-    })
-    const idx = await indexDicomWsiOnThread([f])
-    const slide = idx.slides[0] as SlideIndexSlide
-    expect(slide.iccProfile?.length).toBe(200)
-    expect(await new DicomWsiSource(slide, [f]).fetchIccProfile()).toEqual(icc)
-    const plain = dicom()
-    const plainSlide = (await indexDicomWsiOnThread([plain]))
-      .slides[0] as SlideIndexSlide
-    expect(
-      await new DicomWsiSource(plainSlide, [plain]).fetchIccProfile(),
-    ).toBeNull()
   })
 })

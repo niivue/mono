@@ -12,6 +12,9 @@ export interface PhilipsLevel {
   downsample: number
 }
 
+const REPRESENTATION =
+  /<DataObject ObjectType="PixelDataRepresentation">([\s\S]*?)<\/DataObject>/g
+
 const attribute = (block: string, name: string) =>
   // A lookahead: a plain `[^<>]*Name=` prefix backtracks quadratically.
   elementText(block, `(?=[^<>]*Name="${name}")`)
@@ -19,22 +22,17 @@ const attribute = (block: string, name: string) =>
 /** The representations of a Philips XML by number, or null when it states none. */
 export function philipsLevels(xml: string): PhilipsLevel[] | null {
   if (!xml.includes('DPUfsImport')) return null
-  const reps = Array.from(
-    xml.matchAll(
-      /<DataObject ObjectType="PixelDataRepresentation">([\s\S]*?)<\/DataObject>/g,
+  const reps = Array.from(xml.matchAll(REPRESENTATION), ([, b = '']) => ({
+    n: Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_NUMBER')),
+    columns: Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_COLUMNS')),
+    rows: Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_ROWS')),
+    // "0.000227273" "0.000227273" (quotes may be entity-escaped).
+    spacing: Number(
+      /[\d.eE+-]+/.exec(
+        (attribute(b, 'DICOM_PIXEL_SPACING') ?? '').replace(/&quot;/g, '"'),
+      )?.[0],
     ),
-    ([, b = '']) => ({
-      n: Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_NUMBER')),
-      columns: Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_COLUMNS')),
-      rows: Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_ROWS')),
-      // "0.000227273" "0.000227273" (quotes may be entity-escaped).
-      spacing: Number(
-        /[\d.eE+-]+/.exec(
-          (attribute(b, 'DICOM_PIXEL_SPACING') ?? '').replace(/&quot;/g, '"'),
-        )?.[0],
-      ),
-    }),
-  ).sort((a, b) => a.n - b.n)
+  })).sort((a, b) => a.n - b.n)
   const s0 = reps[0]?.spacing
   if (
     !(s0 && s0 > 0) ||
@@ -51,4 +49,31 @@ export function philipsLevels(xml: string): PhilipsLevel[] | null {
       downsample: Math.abs(d - whole) <= whole * 1e-3 ? whole : d,
     }
   })
+}
+
+// DICOM_PIXEL_SPACING (row\col, mm) in `xml`, as [x, y] mm.
+function spacingOf(xml: string): [number, number] | undefined {
+  const [row = 0, col = row] =
+    (attribute(xml, 'DICOM_PIXEL_SPACING') ?? '')
+      .replace(/&quot;/g, '"')
+      .match(/[\d.eE+-]+/g)
+      ?.map(Number) ?? []
+  return row > 0 && col > 0 ? [col, row] : undefined
+}
+
+/**
+ * The scanned image's DICOM_PIXEL_SPACING (outside any representation) as
+ * [x, y] mm, else representation 0's (the lowest number, as `philipsLevels`
+ * orders them). Representations state rounded nominal spacings (Philips-1:
+ * 0.000227273 against 0.000226891 \ 0.000226907).
+ */
+export function philipsSpacingMM(xml: string): [number, number] | undefined {
+  const reps = Array.from(xml.matchAll(REPRESENTATION), ([, b = '']) => b)
+  const n = (b: string) =>
+    Number(attribute(b, 'PIIM_PIXEL_DATA_REPRESENTATION_NUMBER'))
+  const first = reps.sort((a, b) => n(a) - n(b))[0]
+  return (
+    spacingOf(xml.replace(REPRESENTATION, '')) ??
+    (first === undefined ? undefined : spacingOf(first))
+  )
 }

@@ -309,58 +309,20 @@ describe('label stores', () => {
   })
 })
 
-test('one caller aborting a shared frame read does not fail the other', async () => {
+test('a shared frame read: an aborting caller rejects alone; the read stops once every live caller aborts', async () => {
   let reads = 0
-  const cache = omeZarrFrameCache(1 << 20, async (_c, t, signal) => {
+  let seen: AbortSignal | undefined
+  let resolve = (): void => {}
+  const cache = omeZarrFrameCache(1 << 20, (_c, t, signal) => {
     reads++
-    await new Promise((r) => setTimeout(r, 5))
-    if (signal?.aborted) throw new Error('aborted')
-    return new Uint16Array(4).fill(t)
+    seen = signal
+    return new Promise((r) => {
+      resolve = () => r(new Uint16Array(4).fill(t))
+    })
   })
   const a = new AbortController()
   const first = cache.load(0, 1, a.signal)
   const second = cache.load(0, 1, new AbortController().signal)
-  a.abort()
-  first.catch(() => {})
-  expect(Array.from(await second)).toEqual([1, 1, 1, 1])
-  expect(reads).toBe(1)
-})
-
-test('a shared frame read is aborted once every caller aborts', async () => {
-  let seen: AbortSignal | undefined
-  const cache = omeZarrFrameCache(1 << 20, (_c, _t, signal) => {
-    seen = signal
-    return new Promise(() => {})
-  })
-  const a = new AbortController()
-  const b = new AbortController()
-  cache.load(0, 1, a.signal).catch(() => {})
-  cache.load(0, 1, b.signal).catch(() => {})
-  a.abort()
-  expect(seen?.aborted).toBe(false)
-  b.abort()
-  expect(seen?.aborted).toBe(true)
-})
-
-test('a caller already aborted does not keep a shared read alive', async () => {
-  let seen: AbortSignal | undefined
-  const cache = omeZarrFrameCache(1 << 20, (_c, _t, signal) => {
-    seen = signal
-    return new Promise(() => {})
-  })
-  const live = new AbortController()
-  cache.load(0, 1, live.signal).catch(() => {})
-  const late = cache.load(0, 1, AbortSignal.abort())
-  late.catch(() => {})
-  live.abort()
-  expect(seen?.aborted).toBe(true)
-})
-
-test('an aborted caller of a shared read rejects at once', async () => {
-  const cache = omeZarrFrameCache(1 << 20, () => new Promise(() => {}))
-  const a = new AbortController()
-  const first = cache.load(0, 1, a.signal)
-  cache.load(0, 1, new AbortController().signal)
   a.abort('stop')
   expect(
     await first.then(
@@ -368,6 +330,17 @@ test('an aborted caller of a shared read rejects at once', async () => {
       (e) => e,
     ),
   ).toBe('stop')
+  expect(seen?.aborted).toBe(false)
+  resolve()
+  expect(Array.from(await second)).toEqual([1, 1, 1, 1])
+  expect(reads).toBe(1)
+  // A caller already aborted does not keep a shared read alive.
+  const live = new AbortController()
+  cache.load(0, 2, live.signal).catch(() => {})
+  cache.load(0, 2, AbortSignal.abort()).catch(() => {})
+  expect(seen?.aborted).toBe(false)
+  live.abort()
+  expect(seen?.aborted).toBe(true)
 })
 
 test('a settled read leaves no listener on the caller signal', async () => {

@@ -49,10 +49,13 @@ import { defaultMatcap, matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   attachFrameSource,
+  bareUrl,
   checkedSource,
   type DocumentSourceResolver,
+  openSlideSource,
   restoreStreamedVolume,
   type SourceRestore,
+  savedDescriptor,
 } from '@/documentSources'
 import {
   addUndoBitmap,
@@ -8029,7 +8032,14 @@ export default class NiiVue extends EventTarget {
           : slide.channelBlend,
       colorManagement: slide.colorManagement ? undefined : false,
       manifest: sp.slide.manifest,
-      manifestUrl: sp.slide.manifestUrl || undefined,
+      // A source's URL is saved bare, as its descriptor is: it may be signed.
+      manifestUrl:
+        (slide.sourceDescriptor
+          ? bareUrl(slide.manifestUrl)
+          : slide.manifestUrl) || undefined,
+      source: slide.sourceDescriptor
+        ? savedDescriptor(slide.sourceDescriptor)
+        : undefined,
       pixelToWorld: [...sp.pixelToWorld],
       levelIndex: sp.levelIndex,
       drawingRLE: dr ? encodeRLE(dr.img) : undefined,
@@ -8047,22 +8057,63 @@ export default class NiiVue extends EventTarget {
     }
   }
 
-  // Rebuild the slide plane (and its drawing) from a document. Reconstructs the
-  // NVSlide from its manifest (tiles refetch via byte ranges); custom sources
-  // need their decoders re-registered by the app for tiles to load.
+  // Rebuild the slide plane (and its drawing) from a document: a saved source
+  // through the host's resolver, else the hosted manifest, else the embedded one
+  // (tiles refetch via byte ranges). The saved focal plane / time point is
+  // selected before the slide attaches.
   private async _restoreSlidePlaneFromDoc(
     sp: NVDocument.NVDocumentSlidePlane,
-    signal: AbortSignal,
+    restore: SourceRestore,
     slideGen: number,
   ): Promise<void> {
-    const slide = sp.manifestUrl
+    const { signal } = restore
+    let slide: NVSlide | undefined
+    // Without a resolver (nv-mcp, older hosts) the embedded manifest is used as
+    // before saved sources: it restores slides opened from a hosted manifest.
+    if (sp.source && restore.resolve) {
+      const src = await openSlideSource(restore, sp.source)
+      if (signal.aborted || this._slidePlaneGen !== slideGen)
+        return src?.dispose?.()
+      if (src) {
+        try {
+          slide = NVSlide.fromSource(src)
+        } catch (err) {
+          src.dispose?.()
+          throw err
+        }
+      }
+      // The embedded manifest of a TIFF, Zarr or DICOM source has no ranges.
+      else if (!sp.manifestUrl) return
+    }
+    slide ??= sp.manifestUrl
       ? await NVSlide.fromManifestUrl(sp.manifestUrl, {}, signal)
       : new NVSlide(sp.manifest)
+    // Untrusted: setPlaneIndex range-checks the plane; a hosted-manifest
+    // document may omit the embedded manifest.
+    const saved = sp.manifest ?? slide.manifest
+    const plane = saved.levels?.[0]?.plane
+    if (plane)
+      await slide.setPlaneIndex(plane, { signal }).catch((err) => {
+        if (!signal.aborted)
+          log.warn(
+            `loadDocument: slide plane z ${plane.z}, t ${plane.t} not restored`,
+            err,
+          )
+      })
     // A caller's setSlidePlane/clearSlidePlane since the load began wins.
     if (signal.aborted || this._slidePlaneGen !== slideGen) {
       slide.dispose()
       return
     }
+    // Annotations are in base pixels: a slide whose size moved cannot take them.
+    const sameSize =
+      slide.manifest.width === saved.width &&
+      slide.manifest.height === saved.height
+    if (!sameSize)
+      log.warn(
+        `loadDocument: slide is ${slide.manifest.width}x${slide.manifest.height}, saved ${saved.width}x${saved.height}; annotations not restored`,
+      )
+    // Untrusted settings: any throw before attaching disposes the slide.
     try {
       // Before setSlidePlane primes tiles, so hidden channels are not fetched.
       sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
@@ -8072,7 +8123,12 @@ export default class NiiVue extends EventTarget {
           log.warn(`loadDocument: slide channel ${i} not restored`, err)
         }
       })
-      if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
+      if (sp.channelBlend)
+        try {
+          slide.setChannelBlend(sp.channelBlend)
+        } catch (err) {
+          log.warn('loadDocument: slide channel blend not restored', err)
+        }
       if (sp.colorManagement === false) slide.colorManagement = false
       this.setSlidePlane(slide, {
         pixelToWorld: sp.pixelToWorld,
@@ -8094,6 +8150,7 @@ export default class NiiVue extends EventTarget {
       this.clearSlidePlane()
       return
     }
+    if (!sameSize) return
     if (
       sp.drawingRLE &&
       sp.drawingWidth &&
@@ -8168,9 +8225,13 @@ export default class NiiVue extends EventTarget {
    * to that volume's grid.
    *
    * `options.resolveSource` reopens a lazy or streamed volume's saved source
-   * descriptor, with the host's credentials (see {@link DocumentSourceResolver}).
-   * Without it, or when it yields no source, a lazy volume shows its embedded
-   * frame as a static volume and a streamed one is skipped with a warning. A
+   * descriptor, or the slide plane's (`slide: true`), with the host's
+   * credentials (see {@link DocumentSourceResolver}). Without it, or when it
+   * yields no source, a lazy volume shows its embedded frame as a static volume
+   * and a streamed volume is skipped with a warning. A slide with a saved
+   * source and no hosted manifest is skipped when the resolver yields no
+   * source, and rebuilt from its embedded manifest when there is no resolver.
+   * A
    * newer `loadDocument` supersedes this one: its pending source opens are
    * aborted and anything they would add is dropped.
    * Restored slides are viewer-owned: clearing or replacing the plane, or
@@ -8368,11 +8429,7 @@ export default class NiiVue extends EventTarget {
     // Restore a registered slide plane + its slide-space drawing (v8+).
     if (doc.slidePlane) {
       try {
-        await this._restoreSlidePlaneFromDoc(
-          doc.slidePlane,
-          load.signal,
-          slideGen,
-        )
+        await this._restoreSlidePlaneFromDoc(doc.slidePlane, restore, slideGen)
         if (load.signal.aborted) return
       } catch (err) {
         if (load.signal.aborted) return

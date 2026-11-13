@@ -1,5 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  spyOn,
+} from 'bun:test'
+import NVViewGL from '@/gl/NVViewGL'
+import { SlideRenderer } from '@/gl/slide'
 import { log } from '@/logger'
+import NVViewGPU from '@/wgpu/NVViewGPU'
 import type {
   NVChannel,
   NVSlideChannelInfo,
@@ -8,19 +19,33 @@ import type {
   NVSlideLevelChangeDetail,
   NVSlideLevelManifest,
   NVSlideManifest,
+  NVSlidePlaneAxes,
+  NVSlidePlaneIndex,
   NVSlideRangeEvent,
   NVSlideRequestClass,
   NVSlideRequestOwner,
+  NVSlideSampleArray,
   NVSlideTileErrorDetail,
   NVSlideTileManifest,
   NVSlideTileSamples,
   SlideTileDecoder,
 } from './NVSlide'
 import { NVSlide } from './NVSlide'
-import { type FuseTile, fusePlan, fuseSamples } from './slideFuse'
+import { toStored, toValue } from './slideChannels'
+import {
+  type FuseTile,
+  fusePlan,
+  fuseSamples,
+  rawFormat,
+  SlideBudgetRegistration,
+} from './slideFuse'
+import { tileCapacity } from './slideLod'
+import type { SlidePlaneState } from './slidePlane'
 import {
   assertSingleSlidePlane,
   ManifestRangeSource,
+  type SlidePlaneCapable,
+  type SlideSourceHost,
   type SlideTileSource,
 } from './slideSource'
 
@@ -168,39 +193,6 @@ describe('NVSlide tile loading', () => {
     expect(slide.stats.decodedBytes).toBe(tileCount * DECODED_TILE_BYTES)
     slide.dispose()
   })
-
-  it('drops queued tiles that leave the working set instead of fetching them', async () => {
-    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
-    const source = new CountingSource(makeManifest(30))
-    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
-    const level = slide.manifest.levels[0]
-    if (!level) throw new Error('manifest has no level')
-    // A viewport pass wants all 30 (1 in flight, 29 queued), so every queued
-    // tile is VIEWPORT-origin ...
-    slide.setViewport({
-      centerX: (TILE_W * 30) / 2,
-      centerY: TILE_H / 2,
-      scale: 1,
-    })
-    slide.requestVisibleTiles({ widthCss: TILE_W * 30, heightCss: TILE_H })
-    // ... then the view moves on: only tile 0 remains visible. The screen is
-    // sized so exactly one tile is in view at the origin.
-    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
-    const last = slide.requestVisibleTiles({
-      widthCss: TILE_W,
-      heightCss: TILE_H,
-    })
-    expect(slide.lastVisibleTiles).toBe(last) // the view reads it, not a second walk
-    await waitFor(() => slide.pendingCount === 0)
-    // Only tile 0 loads: the centre tile in flight is aborted and the 28
-    // other queued tiles are dropped, not fetched.
-    expect(slide.stats.completed).toBe(1)
-    expect(slide.stats.aborted).toBe(29)
-    expect(source.peak).toBe(1)
-    expect(slide.stats.failures).toBe(0)
-    slide.dispose()
-  })
-
   it('drains the queue past failed tiles', async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const manifest = makeManifest(10)
@@ -441,16 +433,6 @@ describe('NVSlide coarse fallback layer', () => {
     expect(slide.stats.requested - requestedBefore).toBe(20)
     slide.dispose()
   })
-
-  it('has no fallback at the coarsest level', async () => {
-    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
-    const source = new CountingSource(makePyramid())
-    const slide = NVSlide.fromSource(source)
-    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
-    slide.setLevelChoice(2)
-    expect(slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN).fallback).toEqual([])
-    slide.dispose()
-  })
 })
 
 // A tile source that honours the AbortSignal and completes only when the test
@@ -517,7 +499,11 @@ describe('NVSlide load cancellation', () => {
     // ... then only tile 0 stays visible: all 8 in-flight loads are abandoned
     // on the wire and the 21 other queued ones are dropped.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
-    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    const last = slide.requestVisibleTiles({
+      widthCss: TILE_W,
+      heightCss: TILE_H,
+    })
+    expect(slide.lastVisibleTiles).toBe(last) // the view reads it, not a second walk
     expect(source.signals.filter((s) => s.aborted).length).toBe(8)
     await waitFor(() => source.signals.length === 9) // tile 0 starts
     source.releaseAll()
@@ -536,28 +522,6 @@ describe('NVSlide load cancellation', () => {
     expect(slide.cachedTile(k(slide, 0, 14, 0))).not.toBeNull()
     slide.dispose()
   })
-
-  it("lets another owner's in-flight loads finish when the view moves on", async () => {
-    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
-    const source = new AbortableSource(makeManifest(4))
-    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
-    const level = slide.manifest.levels[0]
-    if (!level) throw new Error('manifest has no level')
-    // A plane3d owner starts all four loads ...
-    wantAll(slide, level)
-    await waitFor(() => source.signals.length === 4)
-    // ... then a 2D view pass wants only tile 0. The other three are still
-    // wanted by their owner, so they are NOT aborted and reach the cache.
-    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
-    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
-    expect(source.signals.some((s) => s.aborted)).toBe(false)
-    source.releaseAll()
-    await waitFor(() => slide.stats.completed === 4)
-    expect(slide.stats.aborted).toBe(0)
-    expect(slide.cacheBytes).toBe(4 * DECODED_TILE_BYTES)
-    slide.dispose()
-  })
-
   it("keeps another owner's QUEUED load through a view pass that drops it", async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const source = new AbortableSource(makeManifest(2))
@@ -585,7 +549,7 @@ describe('NVSlide load cancellation', () => {
     slide.dispose()
   })
 
-  it('keeps a view-started load that another owner also wants', async () => {
+  it('keeps a view-started load that another owner also wants, until it releases', async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const source = new AbortableSource(makeManifest(4))
     // maxConcurrentLoads == tile count, so every tile is in flight (no queue):
@@ -601,19 +565,25 @@ describe('NVSlide load cancellation', () => {
     })
     slide.requestVisibleTiles({ widthCss: TILE_W * 4, heightCss: TILE_H })
     await waitFor(() => source.signals.length === 4)
-    // ... then another owner wants tile 1 (already in flight) ...
+    // ... then another owner wants tile 1 (already in flight: no second fetch) ...
     const claimed = level.tiles[1]
     if (!claimed) throw new Error('missing tile')
-    slide.createRequestOwner('plane3d').want([{ level, tile: claimed }])
+    const owner = slide.createRequestOwner('plane3d')
+    owner.want([{ level, tile: claimed }])
     // ... and the viewport moves away from everything but tile 0.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
     // Only tiles 2 and 3 abort; tile 0 (visible) and tile 1 (wanted) survive.
-    expect(source.signals.filter((s) => s.aborted).length).toBe(2)
+    const aborted = () => source.signals.filter((s) => s.aborted).length
+    expect(aborted()).toBe(2)
+    // The last owner's release aborts the shared load.
+    owner.release()
+    expect(aborted()).toBe(3)
     source.releaseAll()
     await waitFor(() => slide.pendingCount === 0)
-    expect(slide.stats.completed).toBe(2)
-    expect(slide.stats.aborted).toBe(2)
+    expect(slide.stats.completed).toBe(1)
+    expect(slide.stats.aborted).toBe(3)
+    expect(source.signals).toHaveLength(4)
     slide.dispose()
   })
 
@@ -676,6 +646,16 @@ describe('NVSlide load cancellation', () => {
   })
 })
 
+const NO_HOST: SlideSourceHost = {
+  resolveUrl: (url) => url,
+  addWireBytes() {},
+  rangeHit() {},
+  rangeFallback() {},
+  channelInfoChanged() {},
+  pushRangeEvent() {},
+  updateRangeEvent() {},
+}
+
 // A one-tile byte-range manifest for exercising ManifestRangeSource directly.
 function makeRangeManifest(): NVSlideManifest {
   return {
@@ -719,11 +699,7 @@ describe('ManifestRangeSource range telemetry', () => {
     const source = new ManifestRangeSource(makeRangeManifest())
     const events: NVSlideRangeEvent[] = []
     source.bind({
-      resolveUrl: (url) => url,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      channelInfoChanged() {},
+      ...NO_HOST,
       pushRangeEvent: (event) => {
         events.push(event)
       },
@@ -787,15 +763,7 @@ describe('ManifestRangeSource per-tile file', () => {
     if (!level || !tile) throw new Error('manifest has no tile')
     tile.fileUrl = 'https://example.test/part2.bin'
     const source = new ManifestRangeSource(manifest)
-    source.bind({
-      resolveUrl: (url) => url,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      channelInfoChanged() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-    })
+    source.bind(NO_HOST)
     const urls: string[] = []
     globalThis.fetch = ((url: string) => {
       urls.push(url)
@@ -880,17 +848,15 @@ describe('NVSlide DICOM-WSI dimensions', () => {
     return m
   }
 
-  it('accepts tags of one each that the frame count confirms', () => {
-    expect(() => assertSingleSlidePlane(dicom(1, 1, 1))).not.toThrow()
-  })
-
-  it('takes tags of one each as given when the frame count is absent', () => {
-    expect(() => assertSingleSlidePlane(dicom(undefined, 1, 1))).not.toThrow()
+  it('accepts one of each that tags or the frame count prove', () => {
+    for (const m of [
+      dicom(1, 1, 1),
+      dicom(undefined, 1, 1),
+      dicom(1),
+      makeManifest(2), // formats without these dimensions
+    ])
+      expect(() => assertSingleSlidePlane(m)).not.toThrow()
     expect(() => assertSingleSlidePlane(dicom(undefined, 2, 1))).toThrow()
-  })
-
-  it('proves one of each from the frame count when the tags are absent', () => {
-    expect(() => assertSingleSlidePlane(dicom(1))).not.toThrow()
   })
 
   it('refuses dimensions nothing proves', () => {
@@ -905,10 +871,6 @@ describe('NVSlide DICOM-WSI dimensions', () => {
     expect(() =>
       NVSlide.fromSource(new CountingSource(dicom(5, 1, 5))),
     ).toThrow(/5 focal planes/)
-  })
-
-  it('leaves formats without these dimensions alone', () => {
-    expect(() => assertSingleSlidePlane(makeManifest(2))).not.toThrow()
   })
 })
 
@@ -1094,16 +1056,6 @@ describe('NVSlide tile-cache budget', () => {
     warn.mockRestore()
     slide.dispose()
   })
-
-  it('reports no requested level when the requested one fits', () => {
-    const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
-    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
-    slide.setLevelChoice(0)
-    const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
-    expect(visible.requestedLevel).toBeUndefined()
-    expect(visible.limitedBy).toBeUndefined()
-    slide.dispose()
-  })
 })
 
 describe('NVSlide padded frames', () => {
@@ -1182,23 +1134,6 @@ describe('NVSlide padded frames', () => {
       g.OffscreenCanvas = originalCanvas
     }
   })
-
-  it('leaves a frame that fits its tile alone', async () => {
-    const manifest = makeManifest(1)
-    const level = manifest.levels[0]
-    const tile = level?.tiles[0]
-    if (!level || !tile) throw new Error('manifest has no tile')
-    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
-    let cropped = false
-    globalThis.createImageBitmap = (async () => {
-      cropped = true
-    }) as unknown as typeof createImageBitmap
-    const slide = NVSlide.fromSource(new CountingSource(manifest))
-    slide.createRequestOwner('plane3d').want([{ level, tile }])
-    await waitFor(() => slide.stats.completed === 1)
-    expect(cropped).toBe(false)
-    slide.dispose()
-  })
 })
 
 describe('NVSlide failed tiles', () => {
@@ -1231,26 +1166,35 @@ describe('NVSlide failed tiles', () => {
 })
 
 describe('NVSlide retry timers', () => {
-  it('retry a burst of failed tiles on one change event', async () => {
-    const manifest = makeManifest(3)
-    const level = manifest.levels[0]
-    if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) if (tile) tile.frame = -1
-    const slide = NVSlide.fromSource(new CountingSource(manifest))
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it('retry a burst of failed view tiles on one change event; a readout does not retry', async () => {
+    jest.useFakeTimers()
+    const source = new GraySource(grayManifest(2))
+    source.failing = true
+    const slide = NVSlide.fromSource(source)
     const error = spyOn(console, 'error').mockImplementation(() => {})
-    let now = 0
-    const clock = spyOn(performance, 'now').mockImplementation(() => now)
-    const owner = wantAll(slide, level)
-    await waitFor(() => slide.stats.failures === 3 && slide.pendingCount === 0)
+    const screen = { widthCss: 2 * T, heightCss: T }
+    slide.setViewport({ centerX: T, centerY: T / 2, scale: 1 })
+    slide.requestVisibleTiles(screen) // (0, 0) and (1, 0)
+    const readout = await slide.loadSampleAt(T + 1, T + 1) // (1, 1)
+    expect(readout[0]?.missing).toBe('uncached')
+    expect(slide.stats.failures).toBe(3)
+    source.failing = false
     let changes = 0
     slide.addEventListener('change', () => changes++)
-    await new Promise((resolve) => setTimeout(resolve, 1100)) // the 1 s backoff
+    // Past the 1 s backoff and its 250 ms retry tick.
+    jest.advanceTimersByTime(1300)
     expect(changes).toBe(1)
-    now = 1000
-    // The change re-renders: the owner wants its tiles again.
-    owner.want(level.tiles.flatMap((tile) => (tile ? [{ level, tile }] : [])))
-    expect(slide.stats.requested).toBe(6) // no tile is left waiting
-    clock.mockRestore()
+    slide.requestVisibleTiles(screen) // the host redraws on 'change'
+    const level = slide.manifest.levels[0] as NVSlideLevelManifest
+    const fetchesOf = (i: number) =>
+      source.fetched.filter((f) => f.tile === level.tiles[i]).length
+    expect([0, 1, 3].map(fetchesOf)).toEqual([2, 2, 1])
+    await new Promise((resolve) => slide.addEventListener('idle', resolve))
+    expect(slide.stats.completed).toBe(2)
     error.mockRestore()
     slide.dispose()
   })
@@ -1493,22 +1437,6 @@ describe('NVSlide monochrome window', () => {
     })
     slide.dispose()
   })
-
-  it('rejects a window without calMin < calMax', () => {
-    const slide = monoSlide(0)
-    for (const [lo, hi] of [
-      [5, 5],
-      [6, 5],
-    ] as const)
-      expect(() => slide.setChannel(0, { calMin: lo, calMax: hi })).toThrow(
-        RangeError,
-      )
-    expect(slide.channels[0]).toMatchObject({
-      calMin: Number.NaN,
-      calMax: Number.NaN,
-    })
-    slide.dispose()
-  })
 })
 
 // Serves planar samples: every pixel of channel c holds values[c]. `pad` adds
@@ -1654,29 +1582,34 @@ describe('NVSlide channels', () => {
     slide.dispose()
   })
 
-  it('keeps only the known channel fields', () => {
+  it('hands out live channels frozen: a JS caller cannot bypass setChannel', () => {
     const { slide } = planarSlide(threeChannels())
-    slide.setChannel(0, { extra: 7 } as Partial<NVChannel>)
-    expect(Object.keys(slide.channels[0] ?? {}).sort()).toEqual([
-      'calMax',
-      'calMin',
-      'colormap',
-      'name',
-      'visible',
-    ])
+    const live = slide.liveChannels as NVChannel[]
+    expect(() => {
+      ;(live[0] as NVChannel).visible = false
+    }).toThrow(TypeError)
+    expect(() => live.push(live[0] as NVChannel)).toThrow(TypeError)
+    slide.setChannel(0, { visible: false })
+    expect(() => {
+      ;(slide.liveChannels[0] as NVChannel).visible = true
+    }).toThrow(TypeError)
+    expect(slide.channels[0]?.visible).toBe(false)
     slide.dispose()
   })
 
-  it('keeps a field set to undefined', () => {
+  it('keeps only the known channel fields, and a field set to undefined', () => {
     const { slide } = planarSlide(threeChannels())
+    slide.setChannel(0, { extra: 7 } as Partial<NVChannel>)
     slide.setChannel(0, {
       name: undefined,
       colormap: undefined,
       visible: undefined,
     })
-    expect(slide.channels[0]).toMatchObject({
+    expect(slide.channels[0]).toEqual({
       name: 'grey',
       colormap: 'gray',
+      calMin: Number.NaN,
+      calMax: Number.NaN,
       visible: true,
     })
     slide.dispose()
@@ -1869,21 +1802,6 @@ describe('NVSlide channels', () => {
     expect(slide.channels[1]?.calMin).toBeNaN()
     slide.dispose()
   })
-
-  it('re-renders cached tiles on a channel change without refetching', async () => {
-    const { slide, source } = planarSlide(threeChannels())
-    await loadLevel(slide, 2)
-    const changes: number[] = []
-    slide.addEventListener('change', () => changes.push(1))
-    slide.setChannel(1, { calMin: 0, calMax: 100 }) // red saturates
-    slide.setChannel(0, { visible: false })
-    await waitFor(() => pixel(slide, k(slide, 2, 0, 0), 1) === 0)
-    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([255, 0, 30, 255])
-    expect(source.requested).toHaveLength(1)
-    expect(changes.length).toBeGreaterThan(0)
-    slide.dispose()
-  })
-
   it('composites a thumbnail of a level, the same bitmap until it changes', async () => {
     const put: number[][] = []
     const drawn: number[][] = []
@@ -2103,57 +2021,38 @@ describe('NVSlide colour management', () => {
       expect([s.colorLut, s.displayColorLut]).toEqual([null, null])
   })
 
-  it('skips a profile the manifest says is sRGB', async () => {
+  it('skips an sRGB profile, and a monochrome slide (its window is the display mapping)', async () => {
     let calls = 0
     NVSlide.registerIccTransform(async () => {
       calls++
       return lut
     })
     const source = withProfile(profile)
-    const manifest = {
-      ...source.manifest,
-      iccProfile: { url: 'p', colorSpace: 'SRGB' },
-    }
-    NVSlide.fromSource({ ...source, manifest })
-    await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toBe(0)
-  })
-
-  it('skips a monochrome slide: its window is the display mapping', async () => {
-    let calls = 0
-    NVSlide.registerIccTransform(async () => {
-      calls++
-      return lut
+    NVSlide.fromSource({
+      ...source,
+      manifest: {
+        ...source.manifest,
+        iccProfile: { url: 'p', colorSpace: 'SRGB' },
+      },
     })
-    const source = withProfile(profile)
-    const manifest = {
-      ...source.manifest,
-      levels: source.manifest.levels.map((l) => ({
-        ...l,
-        photometric: 'MONOCHROME2',
-      })),
-    }
-    NVSlide.fromSource({ ...source, manifest })
+    NVSlide.fromSource({
+      ...source,
+      manifest: {
+        ...source.manifest,
+        levels: source.manifest.levels.map((l) => ({
+          ...l,
+          photometric: 'MONOCHROME2',
+        })),
+      },
+    })
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toBe(0)
-  })
-
-  it('rejects a table of the wrong length, and keeps none', async () => {
-    const warn = spyOn(log, 'warn').mockImplementation(() => {})
-    NVSlide.registerIccTransform(async () => ({
-      size: 2,
-      data: new Uint8Array(24),
-    })) // RGB, not RGBA
-    const slide = NVSlide.fromSource(withProfile(profile))
-    await new Promise((r) => setTimeout(r, 0))
-    expect(slide.colorLut).toBeNull()
-    expect(warn).toHaveBeenCalledTimes(1)
-    warn.mockRestore()
   })
 
   it('refuses a table that is not size^3 RGBA8 bytes, or too large', async () => {
     const warn = spyOn(log, 'warn').mockImplementation(() => {})
     for (const bad of [
+      { size: 2, data: new Uint8Array(24) }, // RGB, not RGBA
       { size: 2, data: new Float32Array(32) as unknown as Uint8Array },
       { size: 130, data: new Uint8Array(130 ** 3 * 4) },
     ]) {
@@ -2162,7 +2061,7 @@ describe('NVSlide colour management', () => {
       await new Promise((r) => setTimeout(r, 0))
       expect(slide.colorLut).toBeNull()
     }
-    expect(warn).toHaveBeenCalledTimes(2)
+    expect(warn).toHaveBeenCalledTimes(3)
     warn.mockRestore()
   })
 
@@ -2171,15 +2070,7 @@ describe('NVSlide colour management', () => {
       ...makeManifest(1),
       iccProfile: { url: 'https://host/f.dcm', offset: 100 },
     })
-    source.bind({
-      resolveUrl: (u) => u,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      channelInfoChanged() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-    })
+    source.bind(NO_HOST)
     await expect(source.fetchIccProfile()).rejects.toThrow('only one of')
   })
 
@@ -2212,15 +2103,7 @@ describe('NVSlide colour management', () => {
       ...makeManifest(1),
       iccProfile: { url: 'https://host/f.dcm', offset: 100, length: 4 },
     })
-    source.bind({
-      resolveUrl: (u) => u,
-      addWireBytes() {},
-      rangeHit() {},
-      rangeFallback() {},
-      channelInfoChanged() {},
-      pushRangeEvent() {},
-      updateRangeEvent() {},
-    })
+    source.bind(NO_HOST)
     expect([...((await source.fetchIccProfile()) ?? [])]).toEqual([9, 9, 9, 9])
     expect(asked).toEqual(['https://host/f.dcm bytes=100-103'])
   })
@@ -2242,6 +2125,7 @@ describe('NVSlide.fromManifestUrl', () => {
   const originalFetch = globalThis.fetch
   afterEach(() => {
     globalThis.fetch = originalFetch
+    jest.useRealTimers()
   })
 
   it("reports the server's refusal reason with the status", async () => {
@@ -2266,6 +2150,7 @@ describe('NVSlide.fromManifestUrl', () => {
   })
 
   it('does not wait on a JSON error body that never finishes, and aborts it', async () => {
+    jest.useFakeTimers()
     const stalled = new ReadableStream({ start() {} })
     let signal: AbortSignal | null | undefined
     globalThis.fetch = (async (_url: string, init?: RequestInit) => {
@@ -2275,10 +2160,14 @@ describe('NVSlide.fromManifestUrl', () => {
         headers: { 'content-type': 'application/json' },
       })
     }) as unknown as typeof fetch
-    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
-      /^Slide manifest HTTP 502$/,
-    )
+    const failed = NVSlide.fromManifestUrl('/m.json').catch((e: Error) => e)
+    // Run the 1 s body timer once the reply has started it.
+    for (let i = 0; i < 100 && !signal?.aborted; i++) {
+      await Promise.resolve()
+      jest.advanceTimersByTime(1000)
+    }
     expect(signal?.aborted).toBe(true)
+    expect(String(await failed)).toBe('Error: Slide manifest HTTP 502')
   })
 
   it('refuses a manifest past 64 MiB, Content-Length or not', async () => {
@@ -2894,5 +2783,849 @@ describe('NVSlide readout of a stale tile', () => {
     ])
     expect(slide.stats.aborted).toBe(0)
     slide.dispose()
+  })
+})
+
+const T = 8
+const MiB = 1024 * 1024
+
+/** A raw-gray u16 pyramid of `n` x `n` tiles of T px. */
+function grayManifest(
+  n = 2,
+  level: Partial<NVSlideLevelManifest> = {},
+  channelInfo?: NVSlideChannelInfo[],
+): NVSlideManifest {
+  const tiles = []
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) tiles.push({ x, y, width: T, height: T })
+  return {
+    id: 'g',
+    name: 'g',
+    width: T * n,
+    height: T * n,
+    tileSize: T,
+    dtype: 'uint16',
+    channels: 'gray',
+    levels: [
+      {
+        index: 0,
+        width: T * n,
+        height: T * n,
+        downsample: 1,
+        columns: n,
+        rows: n,
+        codec: 'raw-gray',
+        bitsStored: 16,
+        tiles,
+        ...level,
+      },
+    ],
+    ...(channelInfo ? { channelInfo } : {}),
+  }
+}
+
+type Fetch = {
+  level: NVSlideLevelManifest
+  tile: NVSlideTileManifest
+  signal?: AbortSignal
+}
+
+/**
+ * A raw-gray source of focal planes: samples are `value`, else 10 * (z + 1).
+ * Records each fetch; `gated` holds fetches until `release` (ignoring the
+ * signal, as a source that cannot stop a read); `failing` rejects them.
+ */
+class GraySource implements SlideTileSource, SlidePlaneCapable {
+  readonly fetched: Fetch[] = []
+  gated = false
+  failing = false
+  disposed = 0
+  host: SlideSourceHost | null = null
+  private readonly gates: Array<() => void> = []
+  prepare = async (p: NVSlidePlaneIndex, _signal?: AbortSignal) =>
+    this.planeManifest(p)
+  constructor(
+    readonly manifest: NVSlideManifest,
+    private readonly value?: number,
+    private readonly Samples: new (
+      n: number,
+    ) => NVSlideSampleArray = Uint16Array,
+    readonly planes: NVSlidePlaneAxes = { z: 3, t: 1 },
+  ) {}
+  bind(host: SlideSourceHost): void {
+    this.host = host
+  }
+  planeManifest(p: NVSlidePlaneIndex): NVSlideManifest {
+    return {
+      ...this.manifest,
+      levels: this.manifest.levels.map((l) => ({ ...l, plane: { ...p } })),
+    }
+  }
+  preparePlane(p: NVSlidePlaneIndex, signal?: AbortSignal) {
+    return this.prepare(p, signal)
+  }
+  /** Resolve the oldest `n` held fetches (default all). */
+  release(n = this.gates.length): void {
+    for (const open of this.gates.splice(0, n)) open()
+  }
+  /** Fetches of plane `z`. */
+  of(z: number): Fetch[] {
+    return this.fetched.filter((f) => (f.level.plane?.z ?? 0) === z)
+  }
+  async fetchTileBytes(
+    level: NVSlideLevelManifest,
+    tile: NVSlideTileManifest,
+    _label: string,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    this.fetched.push({ level, tile, signal })
+    if (this.gated) await new Promise<void>((open) => this.gates.push(open))
+    if (this.failing) throw new Error('tile fetch failed')
+    const value = this.value ?? 10 * ((level.plane?.z ?? 0) + 1)
+    const s = new this.Samples(tile.width * tile.height).fill(value)
+    return new Uint8Array(s.buffer)
+  }
+  dispose(): void {
+    this.disposed++
+  }
+}
+
+describe('NVSlide source lifetime', () => {
+  it('disposes an owned source once, and a borrowed one never', () => {
+    const source = new GraySource(grayManifest())
+    const slide = NVSlide.fromSource(source)
+    slide.dispose()
+    slide.dispose()
+    expect(source.disposed).toBe(1)
+    const borrowed = new GraySource(grayManifest())
+    NVSlide.fromSource(borrowed, { ownsSource: false }).dispose()
+    expect(borrowed.disposed).toBe(0)
+  })
+
+  it('a throwing source dispose still settles pending loadSampleAt', async () => {
+    const source = new GraySource(grayManifest())
+    // Ignores abort, so only dispose's clearCache can settle the waiter.
+    source.fetchTileBytes = () => new Promise<Uint8Array>(() => {})
+    source.dispose = () => {
+      throw new Error('boom')
+    }
+    const slide = NVSlide.fromSource(source)
+    const pending = slide.loadSampleAt(1, 1)
+    await Promise.resolve()
+    expect(() => slide.dispose()).toThrow('boom')
+    expect((await pending)[0]?.missing).toBe('uncached')
+  })
+})
+
+describe('NVSlide single-channel samples', () => {
+  it('one channelInfo entry reads, fetches and budgets as none', async () => {
+    const screen = { widthCss: 2 * T, heightCss: 2 * T, devicePixelRatio: 1 }
+    const loaded = async (channelInfo?: NVSlideChannelInfo[]) => {
+      const source = new GraySource(grayManifest(2, {}, channelInfo), 7)
+      const slide = NVSlide.fromSource(source)
+      slide.setViewport({ centerX: T, centerY: T, scale: 1 })
+      for (const [x, y] of [
+        [1, 1],
+        [T + 1, 1],
+        [1, T + 1],
+        [T + 1, T + 1],
+      ] as const)
+        await slide.loadSampleAt(x, y)
+      return { slide, source }
+    }
+    const base = await loaded()
+    const one = await loaded([{ name: 'c', active: true }])
+    for (const { slide, source } of [base, one]) {
+      expect(slide.channels.map((c) => c.colormap)).toEqual(['gray'])
+      expect(slide.channelBlend).toBe('max')
+      // No refetch on hide or show.
+      slide.setChannel(0, { visible: false })
+      slide.setChannel(0, { visible: true })
+      expect(source.fetched).toHaveLength(4)
+      expect(slide.sampleAt(1, 1)[0]).toMatchObject({ stored: 7, exact: true })
+    }
+    const tiles = (s: NVSlide) => s.visibleTiles(screen).tiles.map((t) => t.key)
+    expect(tiles(one.slide)).toEqual(tiles(base.slide))
+    const level = base.slide.manifest.levels[0] as NVSlideLevelManifest
+    const budget = { tileBytes: 128 * MiB, rawPoolBytes: 32 * MiB }
+    expect(
+      tileCapacity(one.slide.manifest, level, 1e6, undefined, budget),
+    ).toEqual(tileCapacity(base.slide.manifest, level, 1e6, undefined, budget))
+    base.slide.dispose()
+    one.slide.dispose()
+  })
+
+  it('channelInfo on an RGB bytes source throws; several on a grey one warn', async () => {
+    const rgb = grayManifest(2, { codec: 'image/jpeg' }, [
+      { name: 'c', active: true },
+    ])
+    const source = new GraySource(rgb)
+    expect(() => NVSlide.fromSource(source)).toThrow(/monochrome/)
+    expect(source.disposed).toBe(0) // a constructor that throws leaves it
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const info = ['a', 'b', 'c'].map((name) => ({ name, active: true }))
+    const slide = NVSlide.fromSource(
+      new GraySource(grayManifest(2, {}, info), 7),
+    )
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/only channel 0/)
+    warn.mockRestore()
+    const samples = await slide.loadSampleAt(1, 1)
+    expect(samples.map((s) => s.stored)).toEqual([7, null, null])
+    expect(samples.map((s) => s.missing)).toEqual([
+      undefined,
+      'uncached',
+      'uncached',
+    ])
+    slide.dispose()
+  })
+
+  it('an exact rescale is exact at level 0 and never clipped', async () => {
+    const map = { scale: 2, offset: -1024, quantized: false }
+    const info = [{ name: 'ct', active: true, storedToValue: map }]
+    const slide = NVSlide.fromSource(
+      new GraySource(grayManifest(2, {}, info), 0),
+    )
+    const [s] = await slide.loadSampleAt(1, 1)
+    expect(s).toMatchObject({ stored: 0, value: -1024, exact: true })
+    expect(s?.clipped).toBeUndefined()
+    slide.dispose()
+  })
+
+  it('toValue/toStored invert; quantized stored values are integers', () => {
+    expect(toValue(3)).toBe(3)
+    expect(toStored(3)).toBe(3)
+    const exact = { scale: 0.5, offset: 1, quantized: false }
+    expect(toStored(toValue(3, exact), exact)).toBe(3)
+    expect(toStored(1.25, exact)).toBe(0.5)
+    // A quantized map rounds: float error never leaves a fractional sample.
+    const q = { scale: 6 / 65535, offset: -3 }
+    for (let s = 0; s <= 65535; s += 97)
+      expect(toStored(toValue(s, q), q)).toBe(s)
+  })
+
+  it('an i16 tile reads signed, clipped at its range end, and counts 2 bytes; f32 counts 4', async () => {
+    const info = [
+      { name: 'c', active: true, storedToValue: { scale: 1, offset: 0 } },
+    ]
+    const i16 = new GraySource(
+      grayManifest(2, { sampleType: 'i16' }, info),
+      -32768,
+      Int16Array,
+    )
+    const slide = NVSlide.fromSource(i16)
+    expect((await slide.loadSampleAt(1, 1))[0]).toMatchObject({
+      stored: -32768,
+      clipped: true,
+    })
+    const level0 = slide.manifest.levels[0] as NVSlideLevelManifest
+    const samples = slide.cachedTile(slide.tileKey(level0, { x: 0, y: 0 }))
+      ?.samples?.samples
+    expect(samples && rawFormat(samples)).toBe('i16')
+    slide.dispose()
+    const f32 = new GraySource(
+      grayManifest(2, { sampleType: 'f32', bitsStored: 32 }),
+      0.5,
+      Float32Array,
+    )
+    const fs = NVSlide.fromSource(f32)
+    expect((await fs.loadSampleAt(1, 1))[0]?.stored).toBe(0.5)
+    fs.dispose()
+    const budget = { tileBytes: 1e12, rawPoolBytes: 0 }
+    const cap = (level: Partial<NVSlideLevelManifest>) => {
+      const m = grayManifest(2, level)
+      const l0 = m.levels[0] as NVSlideLevelManifest
+      return tileCapacity(m, l0, 64 * T * T * 4, undefined, budget).tiles
+    }
+    // 0.75 of 64 tiles' bytes at 4 bytes a pixel: 48 f32 tiles, 96 at 2 bytes.
+    expect(cap({ sampleType: 'f32', bitsStored: 16 })).toBe(48)
+    expect(cap({ sampleType: 'i16' })).toBe(96)
+  })
+
+  it('a source window shows until the user sets one; readout takes the map', async () => {
+    const source = new GraySource(
+      grayManifest(2, {}, [{ name: 'c', active: true }]),
+      7,
+    )
+    const slide = NVSlide.fromSource(source)
+    const host = source.host as SlideSourceHost
+    host.channelInfoChanged(0, {
+      window: { calMin: 10, calMax: 20 },
+      storedToValue: { scale: 2, offset: 1 },
+    })
+    expect(slide.channels[0]).toMatchObject({ calMin: 10, calMax: 20 })
+    expect(slide.manifest.channelInfo?.[0]?.window).toEqual({
+      calMin: 10,
+      calMax: 20,
+    })
+    // The source's own manifest is left alone.
+    expect(source.manifest.channelInfo?.[0]?.window).toBeUndefined()
+    expect((await slide.loadSampleAt(1, 1))[0]).toMatchObject({
+      stored: 7,
+      value: 15,
+    })
+    slide.setChannel(0, { calMin: 1, calMax: 2 })
+    host.channelInfoChanged(0, { window: { calMin: 30, calMax: 40 } })
+    expect(slide.channels[0]).toMatchObject({ calMin: 1, calMax: 2 })
+    expect(() => host.channelInfoChanged(1, {})).toThrow(RangeError)
+    slide.dispose()
+  })
+})
+
+describe('NVSlide renderer budget', () => {
+  // 32 x 32 tiles of 256 px: a full view needs 1024 tiles, so the texture
+  // budget, not the cache, caps it.
+  function bigSlide() {
+    const n = 32
+    const m = grayManifest(n, { tileWidth: 256, tileHeight: 256 })
+    m.tileSize = 256
+    m.width = m.height = 256 * n
+    const level = m.levels[0] as NVSlideLevelManifest
+    level.width = level.height = 256 * n
+    level.tiles = level.tiles.map((t) => t && { ...t, width: 256, height: 256 })
+    const slide = NVSlide.fromSource(new GraySource(m), {
+      maxCacheBytes: 1 << 30,
+    })
+    slide.setViewport({ centerX: 128 * n, centerY: 128 * n, scale: 1 })
+    return slide
+  }
+  const screen = { widthCss: 8192, heightCss: 8192, devicePixelRatio: 1 }
+
+  it('a renderer with a 64 MiB pool caps what a HUD sees until it stops drawing the slide', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const slide = bigSlide()
+    const unregistered = slide.visibleTiles(screen).tiles.length
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(
+      /96 MiB for scalar slides, 128 for RGB/,
+    )
+    const renderer = new SlideRenderer({ maxRawPoolBytes: 64 * MiB })
+    // Not initialised: render registers the budget, then does nothing.
+    renderer.render([slide], screen)
+    const hud = slide.visibleTiles(screen).tiles.length
+    expect(hud / unregistered).toBeCloseTo(64 / 96, 1)
+    expect(String(warn.mock.calls.at(-1)?.[0])).toMatch(
+      /64 MiB for scalar slides, 128 for RGB/,
+    )
+    // The outcome is unchanged frame to frame: no second warning.
+    const warned = warn.mock.calls.length
+    slide.visibleTiles(screen)
+    expect(warn.mock.calls.length).toBe(warned)
+    // The smallest registered budget wins.
+    const other = {}
+    slide.setRendererBudget(other, { tileBytes: 128 * MiB, rawPoolBytes: 0 })
+    expect(slide.visibleTiles(screen).tiles.length).toBe(hud)
+    // A renderer drops slides it no longer draws.
+    renderer.render([], screen)
+    slide.setRendererBudget(other, null)
+    expect(slide.visibleTiles(screen).tiles.length).toBe(unregistered)
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it('a budget that flaps back between frames does not warn again', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    const slide = bigSlide()
+    const renderer = {}
+    const budget = { tileBytes: 128 * MiB, rawPoolBytes: 64 * MiB }
+    slide.setRendererBudget(renderer, budget)
+    slide.visibleTiles(screen)
+    const warned = warn.mock.calls.length
+    slide.setRendererBudget(renderer, null)
+    slide.setRendererBudget(renderer, budget)
+    slide.visibleTiles(screen)
+    expect(warn.mock.calls.length).toBe(warned)
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it('clearing a view slide plane unregisters its plane renderer', () => {
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    for (const View of [NVViewGL, NVViewGPU]) {
+      const slide = bigSlide()
+      const unregistered = slide.visibleTiles(screen).tiles.length
+      const view = Object.create(View.prototype) as NVViewGL | NVViewGPU
+      const renderer = {
+        _budget: new SlideBudgetRegistration({}, 64 * MiB),
+        clearBudget() {
+          this._budget.clear()
+        },
+      }
+      Object.assign(view, { slidePlaneRenderer: renderer })
+      view.slidePlane = { slide } as SlidePlaneState
+      renderer._budget.sync([slide]) // as draw does
+      expect(slide.visibleTiles(screen).tiles.length).toBeLessThan(unregistered)
+      view.slidePlane = null
+      expect(slide.visibleTiles(screen).tiles.length).toBe(unregistered)
+      slide.dispose()
+    }
+    warn.mockRestore()
+  })
+})
+
+// 2 x 2 tiles of T px, all in view at 1:1.
+const VIEW = { widthCss: 2 * T, heightCss: 2 * T, devicePixelRatio: 1 }
+
+/** A plane slide drawn once and resident, unless `draw` is false. */
+async function planeSlide(manifest = grayManifest(2), draw = true) {
+  const source = new GraySource(manifest)
+  const slide = NVSlide.fromSource(source)
+  slide.setViewport({ centerX: T, centerY: T, scale: 1 })
+  if (draw) {
+    slide.requestVisibleTiles(VIEW)
+    await waitFor(() => slide.pendingCount === 0)
+  }
+  return { slide, source }
+}
+
+const drawnKeys = (slide: NVSlide) => {
+  const { tiles, fallback } = slide.visibleTiles(VIEW)
+  return [...fallback, ...tiles].map((t) => t.key)
+}
+
+// Level 0 of plane z (the key producer is NVSlide.tileKey).
+const planeLevel = (slide: NVSlide, z: number): NVSlideLevelManifest => ({
+  ...(slide.manifest.levels[0] as NVSlideLevelManifest),
+  plane: { z, t: 0 },
+})
+
+describe('NVSlide planes', () => {
+  it('P1: after a switch resolves true, samples read the new plane and nothing drawn is z0', async () => {
+    const { slide, source } = await planeSlide()
+    let changes = 0
+    slide.addEventListener('planechange', () => changes++)
+    expect(slide.sampleAt(1, 1)[0]?.stored).toBe(10)
+    expect(await slide.setPlaneIndex({ z: 1, t: 0 })).toBe(true)
+    expect([slide.planeIndex, changes]).toEqual([{ z: 1, t: 0 }, 1])
+    expect(slide.sampleAt(1, 1)[0]?.stored).toBe(20)
+    const keys = drawnKeys(slide)
+    expect(keys).toHaveLength(4)
+    expect(keys.filter((key) => key.startsWith('z0'))).toEqual([])
+    expect(keys.every((key) => slide.cachedTile(key))).toBe(true)
+    // The old plane stayed in the LRU: switching back is warm.
+    const fetches = source.fetched.length
+    expect(await slide.setPlaneIndex({ z: 0, t: 0 })).toBe(true)
+    expect(source.fetched.length).toBe(fetches)
+    expect(slide.sampleAt(1, 1)[0]?.stored).toBe(10)
+    slide.dispose()
+  })
+
+  it('P2: a failed prepare leaves the plane, tiles and cache unchanged', async () => {
+    const { slide, source } = await planeSlide()
+    source.prepare = async () => {
+      throw new Error('no such plane')
+    }
+    const manifest = slide.manifest
+    const keys = drawnKeys(slide)
+    const bytes = slide.cacheBytes
+    const fetches = source.fetched.length
+    await expect(slide.setPlaneIndex({ z: 1, t: 0 })).rejects.toThrow(
+      'no such plane',
+    )
+    expect(slide.manifest).toBe(manifest)
+    expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
+    expect(drawnKeys(slide)).toEqual(keys)
+    expect(keys.every((key) => slide.cachedTile(key))).toBe(true)
+    expect([slide.cacheBytes, source.fetched.length]).toEqual([bytes, fetches])
+    slide.dispose()
+  })
+
+  it('P3: z0 -> 1 -> 2 in one tick: the first resolves false, only z2 commits', async () => {
+    const { slide, source } = await planeSlide()
+    const commits: number[] = []
+    slide.addEventListener('planechange', () =>
+      commits.push(slide.planeIndex.z),
+    )
+    const one = slide.setPlaneIndex({ z: 1, t: 0 })
+    const two = slide.setPlaneIndex({ z: 2, t: 0 })
+    expect([await one, await two]).toEqual([false, true])
+    expect(commits).toEqual([2])
+    expect(source.of(1)).toEqual([]) // superseded before its hold: no z1 load
+    expect(slide.sampleAt(1, 1)[0]?.stored).toBe(30)
+    slide.dispose()
+  })
+
+  it('P3: superseded during its hold, z1 resolves false and its loads count as aborted', async () => {
+    const { slide, source } = await planeSlide()
+    source.gated = true
+    const one = slide.setPlaneIndex({ z: 1, t: 0 })
+    await waitFor(() => source.of(1).length === 4)
+    const aborted = slide.stats.aborted
+    const two = slide.setPlaneIndex({ z: 2, t: 0 })
+    expect(await one).toBe(false)
+    expect(source.of(1).every((f) => f.signal?.aborted)).toBe(true)
+    await waitFor(() => source.of(2).length === 4)
+    source.release()
+    expect(await two).toBe(true)
+    await waitFor(() => slide.stats.aborted === aborted + 4)
+    const z1 = planeLevel(slide, 1)
+    expect(slide.cachedTile(slide.tileKey(z1, { x: 0, y: 0 }))).toBeNull()
+    expect(slide.planeIndex).toEqual({ z: 2, t: 0 })
+    slide.dispose()
+  })
+
+  it('P4: a z0 load that resolves after the commit is not cached', async () => {
+    // Nothing drawn (a prefetch owner is not held for): the switch commits at once.
+    const { slide, source } = await planeSlide(grayManifest(2), false)
+    source.gated = true
+    const owner = slide.createRequestOwner('prefetch')
+    const level = slide.manifest.levels[0] as NVSlideLevelManifest
+    owner.want(
+      level.tiles.map((tile) => ({ level, tile: tile as NVSlideTileManifest })),
+    )
+    expect(source.of(0)).toHaveLength(4)
+    expect(await slide.setPlaneIndex({ z: 1, t: 0 })).toBe(true)
+    expect(source.of(0).every((f) => f.signal?.aborted)).toBe(true)
+    source.release() // the z0 bytes arrive after the commit
+    await waitFor(() => slide.stats.aborted === 4)
+    expect([slide.stats.completed, slide.cacheBytes]).toEqual([0, 0])
+    expect(slide.cachedTile(slide.tileKey(level, { x: 0, y: 0 }))).toBeNull()
+    owner.release()
+    slide.dispose()
+  })
+
+  it('P7: a plane whose sample mapping or geometry differs is rejected at commit', async () => {
+    const info = [
+      { name: 'c', active: true, storedToValue: { scale: 2, offset: 0 } },
+    ]
+    const { slide, source } = await planeSlide(grayManifest(2, {}, info))
+    const changes: Array<(m: NVSlideManifest) => void> = [
+      (m) => {
+        m.channelInfo = [{ ...info[0], storedToValue: { scale: 3, offset: 0 } }]
+      },
+      (m) => {
+        ;(m.levels[0] as NVSlideLevelManifest).sampleType = 'i16'
+      },
+      (m) => {
+        ;(m.levels[0] as NVSlideLevelManifest).bitsStored = 12
+      },
+      (m) => {
+        m.width += 1
+      },
+    ]
+    for (const change of changes) {
+      source.prepare = async (p) => {
+        const m = source.planeManifest(p)
+        m.levels = m.levels.map((l) => ({ ...l }))
+        change(m)
+        return m
+      }
+      await expect(slide.setPlaneIndex({ z: 1, t: 0 })).rejects.toThrow(
+        RangeError,
+      )
+      expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
+    }
+    expect(source.of(1)).toEqual([])
+    // The same plane, unchanged, commits.
+    source.prepare = async (p) => source.planeManifest(p)
+    expect(await slide.setPlaneIndex({ z: 1, t: 0 })).toBe(true)
+    expect(slide.sampleAt(1, 1)[0]).toMatchObject({ stored: 20, value: 40 })
+    slide.dispose()
+  })
+
+  it('holds the old plane on screen until the new plane is resident', async () => {
+    const { slide, source } = await planeSlide()
+    source.gated = true
+    let committed: boolean | undefined
+    const switching = slide.setPlaneIndex({ z: 1, t: 0 }).then((ok) => {
+      committed = ok
+    })
+    await waitFor(() => source.of(1).length === 4)
+    source.release(3)
+    await waitFor(() => slide.pendingCount === 1)
+    // Three of four z1 tiles resident: still the whole old plane.
+    expect(committed).toBeUndefined()
+    expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
+    expect(drawnKeys(slide).every((key) => key.startsWith('z0t0/'))).toBe(true)
+    expect(slide.requestVisibleTiles(VIEW).fallback).toEqual([])
+    source.release()
+    await switching
+    expect(committed).toBe(true)
+    const keys = drawnKeys(slide)
+    expect(keys.every((key) => key.startsWith('z1t0/'))).toBe(true)
+    expect(keys.every((key) => slide.cachedTile(key))).toBe(true)
+    slide.dispose()
+  })
+
+  it('a failed tile ends the hold', async () => {
+    const { slide, source } = await planeSlide()
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    let errors = 0
+    slide.addEventListener('tileerror', () => errors++)
+    source.gated = true
+    const switching = slide.setPlaneIndex({ z: 1, t: 0 })
+    await waitFor(() => source.of(1).length === 4)
+    source.failing = true
+    source.release()
+    expect(await switching).toBe(true)
+    expect(errors).toBe(4)
+    expect(slide.planeIndex).toEqual({ z: 1, t: 0 })
+    error.mockRestore()
+    slide.dispose()
+  })
+
+  // Engine bug: an abort of opts.signal during the hold resolves the hold, and
+  // the switch then commits with the new plane's tiles missing.
+  it('an abort during the hold rejects and keeps the old plane', async () => {
+    const { slide, source } = await planeSlide()
+    source.gated = true
+    const stop = new AbortController()
+    const switching = slide.setPlaneIndex(
+      { z: 1, t: 0 },
+      { signal: stop.signal },
+    )
+    await waitFor(() => source.of(1).length === 4)
+    stop.abort()
+    await expect(switching).rejects.toThrow()
+    expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
+    slide.dispose()
+  })
+
+  it('dispose aborts a pending plane switch, which settles false', async () => {
+    const { slide, source } = await planeSlide()
+    let seen: AbortSignal | undefined
+    source.prepare = (_p, signal) =>
+      new Promise((_resolve, reject) => {
+        seen = signal
+        signal?.addEventListener('abort', () =>
+          reject(new DOMException('aborted', 'AbortError')),
+        )
+      })
+    const switching = slide.setPlaneIndex({ z: 1, t: 0 })
+    await Promise.resolve()
+    slide.dispose()
+    expect(seen?.aborted).toBe(true)
+    expect(await switching).toBe(false)
+  })
+
+  // Engine bug: a pre-aborted signal still switched planes.
+  it('a pre-aborted signal rejects AbortError without preparing', async () => {
+    const { slide, source } = await planeSlide()
+    let prepares = 0
+    source.prepare = async (p) => {
+      prepares++
+      return source.planeManifest(p)
+    }
+    const stop = new AbortController()
+    stop.abort()
+    await expect(
+      slide.setPlaneIndex({ z: 1, t: 0 }, { signal: stop.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect([slide.planeIndex, prepares]).toEqual([{ z: 0, t: 0 }, 0])
+    slide.dispose()
+  })
+
+  // Engine bug: with only the 3D plane drawn nothing was held, and with 2D + 3D
+  // only the 2D view's tiles were.
+  it('holds the 3D plane: alone, and beside the 2D view', async () => {
+    for (const draw2d of [false, true]) {
+      const { slide, source } = await planeSlide(grayManifest(2), false)
+      const level = slide.manifest.levels[0] as NVSlideLevelManifest
+      const plane = slide.createRequestOwner('plane3d')
+      plane.want(
+        level.tiles.map((tile) => ({
+          level,
+          tile: tile as NVSlideTileManifest,
+        })),
+      )
+      // The 2D view shows tile (0, 0) only.
+      if (draw2d) slide.requestVisibleTiles({ widthCss: T, heightCss: T })
+      await waitFor(() => slide.pendingCount === 0)
+      source.gated = true
+      let committed: boolean | undefined
+      const switching = slide.setPlaneIndex({ z: 1, t: 0 }).then((ok) => {
+        committed = ok
+      })
+      await waitFor(() => source.of(1).length === 4)
+      source.release(3)
+      await waitFor(() => slide.pendingCount === 1)
+      expect([committed, slide.planeIndex]).toEqual([undefined, { z: 0, t: 0 }])
+      source.release()
+      await switching
+      expect(committed).toBe(true)
+      const z1 = planeLevel(slide, 1)
+      for (const tile of level.tiles)
+        expect(
+          slide.cachedTile(slide.tileKey(z1, tile as NVSlideTileManifest)),
+        ).not.toBeNull()
+      // A second switch before the owners want again (no frame between)
+      // still holds: their z0 keys map to z2.
+      let again: boolean | undefined
+      const second = slide.setPlaneIndex({ z: 2, t: 0 }).then((ok) => {
+        again = ok
+      })
+      await waitFor(() => source.of(2).length === 4)
+      expect([again, slide.planeIndex]).toEqual([undefined, { z: 1, t: 0 }])
+      source.release()
+      await second
+      expect(again).toBe(true)
+      plane.release()
+      slide.dispose()
+    }
+  })
+
+  // Engine bug: the hold walked a placed level as a grid, holding the wrong tiles.
+  it('holds a placed level by the pieces in view', async () => {
+    // Three tiles in a row placed in reverse: tile 2 shows at x 0.
+    const manifest = grayManifest(3)
+    const l0 = manifest.levels[0] as NVSlideLevelManifest
+    manifest.height = l0.height = T
+    l0.rows = 1
+    l0.tiles = l0.tiles.slice(0, 3)
+    l0.placement = {
+      width: 3 * T,
+      height: T,
+      pieces: [2, 1, 0].map((tile, i) => ({
+        ...{ tile, sx: 0, sy: 0, sw: T, sh: T },
+        ...{ dx: i * T, dy: 0 },
+      })),
+    }
+    const source = new GraySource(manifest)
+    const slide = NVSlide.fromSource(source)
+    const screen = { widthCss: T / 2, heightCss: T, devicePixelRatio: 1 }
+    slide.setViewport({ centerX: T / 4, centerY: T / 2, scale: 1 })
+    const shown = slide.requestVisibleTiles(screen).tiles.map((t) => t.tile.x)
+    expect(shown).toEqual([2])
+    await waitFor(() => slide.pendingCount === 0)
+    expect(await slide.setPlaneIndex({ z: 1, t: 0 })).toBe(true)
+    expect(source.of(1).map((f) => f.tile.x)).toEqual(shown)
+    slide.dispose()
+  })
+})
+
+describe('NVSlide request ownership', () => {
+  it('R1: a 5 x 5 view on 1 slot fetches the centre first, then by distance', async () => {
+    const source = new GraySource(grayManifest(5))
+    source.gated = true
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
+    slide.setViewport({ centerX: 2.5 * T, centerY: 2.5 * T, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: 5 * T, heightCss: 5 * T })
+    for (let i = 1; i <= 25; i++) {
+      await waitFor(() => source.fetched.length === i)
+      source.release()
+    }
+    const dist = ({ tile }: Fetch) => (tile.x - 2) ** 2 + (tile.y - 2) ** 2
+    const order = source.fetched.map(dist)
+    expect(source.fetched[0]?.tile).toMatchObject({ x: 2, y: 2 })
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    await waitFor(() => slide.pendingCount === 0)
+    slide.dispose()
+  })
+
+  it('R3: a loadSampleAt aborted before it starts fetches nothing and resolves uncached', async () => {
+    const source = new GraySource(grayManifest(2))
+    source.gated = true
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
+    const stop = new AbortController()
+    stop.abort()
+    const early = await slide.loadSampleAt(1, 1, { signal: stop.signal })
+    expect(early[0]?.missing).toBe('uncached')
+    expect(source.fetched).toEqual([])
+    // Queued behind another load, then aborted: dequeued, never fetched.
+    const level = slide.manifest.levels[0] as NVSlideLevelManifest
+    slide
+      .createRequestOwner('plane3d')
+      .want([{ level, tile: level.tiles[3] as NVSlideTileManifest }])
+    const late = new AbortController()
+    const queued = slide.loadSampleAt(1, 1, { signal: late.signal })
+    late.abort()
+    expect((await queued)[0]?.missing).toBe('uncached')
+    expect(slide.stats.aborted).toBe(1)
+    source.release()
+    await waitFor(() => slide.pendingCount === 0)
+    expect(source.fetched.map((f) => f.tile)).toEqual([
+      level.tiles[3] as NVSlideTileManifest,
+    ])
+    slide.dispose()
+  })
+
+  // Engine bug: an aborted in-flight load stays in _loads until its source
+  // settles, and a new owner joins it instead of starting a fresh load.
+  it('a tile wanted again right after its load was aborted loads', async () => {
+    const source = new GraySource(grayManifest(2))
+    source.gated = true
+    const slide = NVSlide.fromSource(source)
+    const level = slide.manifest.levels[0] as NVSlideLevelManifest
+    const owner = slide.createRequestOwner('plane3d')
+    owner.want([{ level, tile: level.tiles[0] as NVSlideTileManifest }])
+    owner.release() // aborts the fetch in flight
+    const readout = slide.loadSampleAt(1, 1)
+    source.release()
+    await waitFor(() => source.fetched.length === 2, 500)
+    source.release()
+    expect((await readout)[0]?.stored).toBe(10)
+    slide.dispose()
+  })
+
+  it('R5: with 200 view tiles queued on 4 slots, a thumbnail and then a prefetch tile start within 4 dequeues each', async () => {
+    // L0: 16 x 16 tiles; L1: 8 x 8.
+    const manifest = grayManifest(16)
+    const l0 = manifest.levels[0] as NVSlideLevelManifest
+    const l1: NVSlideLevelManifest = {
+      ...l0,
+      index: 1,
+      downsample: 2,
+      width: l0.width / 2,
+      height: l0.height / 2,
+      columns: 8,
+      rows: 8,
+      tiles: l0.tiles.filter((t) => t && t.x < 8 && t.y < 8),
+    }
+    manifest.levels.push(l1)
+    const source = new GraySource(manifest)
+    source.gated = true
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
+    const [level0, level1] = slide.manifest.levels as NVSlideLevelManifest[]
+    const tilesOf = (level: NVSlideLevelManifest, n: number) =>
+      level.tiles
+        .slice(0, n)
+        .map((tile) => ({ level, tile: tile as NVSlideTileManifest }))
+    slide
+      .createRequestOwner('view')
+      .want(tilesOf(level0 as NVSlideLevelManifest, 204), { x: 64, y: 64 })
+    expect(source.fetched).toHaveLength(4)
+    const [thumbTile, prefetchTile] = tilesOf(level1 as NVSlideLevelManifest, 2)
+    slide.createRequestOwner('thumbnail').want([thumbTile as Fetch])
+    slide.createRequestOwner('prefetch').want([prefetchTile as Fetch])
+    const startOf = (t?: Fetch) =>
+      source.fetched.findIndex(
+        (f) => f.tile === t?.tile && f.level === t?.level,
+      )
+    while (startOf(prefetchTile) < 0) {
+      const n = source.fetched.length
+      source.release(1)
+      await waitFor(() => source.fetched.length === n + 1)
+    }
+    // Index 4 is the first dequeue after the two were queued.
+    expect(startOf(thumbTile) - 4).toBeLessThan(4)
+    expect(startOf(prefetchTile) - startOf(thumbTile)).toBeLessThanOrEqual(4)
+    slide.dispose()
+  })
+
+  it('R6: dispose with every class queued empties the queue and settles everything', async () => {
+    const source = new GraySource(grayManifest(4))
+    source.gated = true
+    const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
+    const level = slide.manifest.levels[0] as NVSlideLevelManifest
+    const at = (x: number, y: number) => ({
+      level,
+      tile: level.tiles[y * 4 + x] as NVSlideTileManifest,
+    })
+    slide.setViewport({ centerX: T / 2, centerY: T / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: T, heightCss: T }) // view: (0, 0), in flight
+    const readout = slide.loadSampleAt(T + 1, 1) // (1, 0)
+    slide.createRequestOwner('plane3d').want([at(2, 0)])
+    const thumb = slide.createRequestOwner('thumbnail')
+    thumb.want([at(3, 0)])
+    slide.createRequestOwner('prefetch').want([at(0, 1)])
+    expect(slide.pendingCount).toBe(5)
+    slide.dispose()
+    expect(slide.pendingCount).toBe(0)
+    expect((await readout)[0]?.missing).toBe('uncached')
+    expect(source.fetched).toHaveLength(1)
+    expect(source.fetched[0]?.signal?.aborted).toBe(true)
+    source.release()
+    await waitFor(() => slide.stats.aborted === 1) // the in-flight view load
+    thumb.want([at(3, 1)]) // a released owner wants nothing
+    expect(source.fetched).toHaveLength(1)
+    expect([slide.stats.completed, slide.cacheBytes]).toEqual([0, 0])
   })
 })

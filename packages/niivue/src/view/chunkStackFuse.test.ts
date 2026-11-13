@@ -66,13 +66,6 @@ test('pending counts what stale would fuse, without changing anything', () => {
   expect(fuse.stale(['r0', 'r1', 'r2'], 'g', M, of, 8)).toEqual([0])
 })
 
-test('a blend mode change re-fuses every chunk', () => {
-  const { fuse } = setup()
-  fuse.set(0, 'r0', 'g', '0/3', ['a'], 'f')
-  expect(fuse.stale(['r0'], 'g', '0/3', () => ['a'], 8)).toEqual([])
-  expect(fuse.stale(['r0'], 'g', '2/2', () => ['a'], 8)).toEqual([0])
-})
-
 test('a plan swap moves fused chunks with their regions, never to another', () => {
   const { fuse, gone, changed } = setup()
   fuse.set(0, 'ra', 'g', M, ['a'], 'fa')

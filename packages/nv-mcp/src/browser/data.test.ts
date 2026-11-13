@@ -121,6 +121,12 @@ describe('the data palette', () => {
       args: { url: '/s.ome.zarr', stream: true },
     }) as { data: { tool: string } }
     expect(got.data.tool).toBe('load_ome_zarr')
+    const surface = add_data({
+      id: 'cells',
+      tool: 'add_isosurface',
+      args: { url: '/s.ome.zarr', threshold: 100 },
+    }) as { data: { tool: string } }
+    expect(surface.data.tool).toBe('add_isosurface')
   })
 
   it('removes an agent entry and keeps the page entries', () => {

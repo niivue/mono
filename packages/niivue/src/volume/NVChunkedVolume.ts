@@ -72,18 +72,8 @@ export interface ChunkedVolumeOptions extends BudgetPlanOptions {
   /** Display name / id for the volume (default 'chunked volume'). */
   name?: string
   id?: string
-  /**
-   * Regions (common-grid voxels, min inclusive / max exclusive) that must be
-   * covered by ONE uniform pyramid level, e.g. one thin slab per visible
-   * orthogonal slice so no slice shows a seam between two resolutions. The
-   * budget pass may coarsen a bound as a whole but never mixes levels inside
-   * it. Replaced per refocus via {@link NVChunkedVolume.setFocus}. Default none.
-   */
-  focusBounds?: MultiLodBounds[]
   /** Max concurrent source fetches (default 6; bounds the request flood). */
   maxConcurrentLoads?: number
-  /** Retry attempts for a transient fetch failure (default 3, exp backoff). */
-  retryAttempts?: number
   /** First time point shown (default 0); see {@link NVChunkedVolume.setFrame}. */
   frame?: number
   /**
@@ -91,25 +81,24 @@ export interface ChunkedVolumeOptions extends BudgetPlanOptions {
    * (`setFrame4D` on any member moves all). Default: this volume alone.
    */
   frameGroup?: object
-  /**
-   * Bytes of the current plan's bricks a frame switch fetches before it
-   * commits, nearest the focus first (default 64 MiB), for the whole frame
-   * group, floors included. The rest stream after. Floor: every member
-   * always stages its floor and one brick, so a group of n stages at least
-   * n of each whatever this says.
-   */
-  frameStagingBytes?: number
-  /**
-   * Cap on the decoded bytes the exact voxel readout keeps (default 384 MiB,
-   * the decoded tier's cap), shared by every streamed volume of the viewer.
-   */
-  readoutBytes?: number
   /** Saved in documents so `loadDocument` can reopen this volume. */
   descriptor?: VolumeSourceDescriptor
 }
 
-/** Default {@link ChunkedVolumeOptions.frameStagingBytes}. */
-const FRAME_STAGING_BYTES = 64 * 1024 ** 2
+/**
+ * Byte budgets read when a volume is built; tests shrink them.
+ * `frameStagingBytes`: what a frame switch fetches of the current plan before
+ * it commits, nearest the focus first, for the whole frame group, floors
+ * included (the rest stream after); every member always stages its floor and
+ * one brick. `readoutBytes`: cap on the decoded bytes the exact voxel readout
+ * keeps, shared by every streamed volume of the viewer: the decoded tier's own
+ * cap, as its bricks are the very buffers the tier holds for the same plan, so
+ * below the cap they cost no extra memory.
+ */
+export const chunkedVolumeBudgets = {
+  frameStagingBytes: 64 * 1024 ** 2,
+  readoutBytes: 384 * 1024 ** 2,
+}
 
 /** What a frame switch fetched before it commits. */
 interface StagedFrame {
@@ -449,20 +438,6 @@ function frameChunkLoader(
   }
 }
 
-/**
- * Wrap a {@link ChunkedVolumeSource} as a renderer `VolumeChunkSource` for
- * `opts.frame` (default 0); see {@link createSourceRegionReader}.
- */
-export function createSourceChunkLoader(
-  source: ChunkedVolumeSource,
-  opts: SourceReaderOptions & { frame?: number },
-): VolumeChunkSource {
-  return frameChunkLoader(
-    createSourceRegionReader(source, opts),
-    opts.frame ?? 0,
-  )
-}
-
 /** One in-flight region read, shared by every caller that asked for it. */
 interface InflightRead {
   promise: Promise<Uint8Array>
@@ -541,8 +516,8 @@ export class NVChunkedVolume {
   private readonly onViewDestroyed: () => void
 
   private focusFrac: Vec3f
-  /** Regions pinned to one uniform level; see {@link ChunkedVolumeOptions.focusBounds}. */
-  private focusBounds: MultiLodBounds[]
+  /** Regions pinned to one uniform level; see {@link setFocus}. */
+  private focusBounds: MultiLodBounds[] = []
   private plan: ChunkPlan
   private disposed = false
   private refocusHandle: ReturnType<typeof setTimeout> | null = null
@@ -618,7 +593,7 @@ export class NVChunkedVolume {
       throw new Error(
         `label channel datatype ${source.datatypeCode} can hold IDs above 2^24, which do not read back exactly`,
       )
-    const readoutBytes = options.readoutBytes ?? READOUT_BYTES
+    const { readoutBytes } = chunkedVolumeBudgets
     this.readout = new BrickReadout(
       source,
       () => this.shownFrame,
@@ -640,7 +615,6 @@ export class NVChunkedVolume {
     this.focusFrac = Array.isArray(this.o.focus)
       ? [this.o.focus[0], this.o.focus[1], this.o.focus[2]]
       : [0.5, 0.5, 0.5]
-    this.focusBounds = cloneBounds(options.focusBounds)
     host._registerChunkedVolume(this)
     this.onLocationChange = () => this.handleLocationChange()
     this.onViewChange = (e) => this.handleViewChange(e)
@@ -682,7 +656,7 @@ export class NVChunkedVolume {
     this.volume.pickSampler = this.buildPickSampler()
     this.read = createSourceRegionReader(source, {
       maxConcurrentLoads: options.maxConcurrentLoads ?? 6,
-      retryAttempts: options.retryAttempts ?? 3,
+      retryAttempts: 3,
       onChunk: (bytes, req) => {
         // A staged frame grows the palette on commit, never if it is aborted.
         if (req.frame === this.shownFrame)
@@ -697,7 +671,7 @@ export class NVChunkedVolume {
       Math.max(0, Math.round(options.frame ?? 0) || 0),
     )
     this.volume.chunkSource = frameChunkLoader(this.read, this.shownFrame)
-    this.stagingBytes = options.frameStagingBytes ?? FRAME_STAGING_BYTES
+    this.stagingBytes = chunkedVolumeBudgets.frameStagingBytes
     this.volume.frameSource = {
       count: frames,
       frame: this.shownFrame,
@@ -794,7 +768,7 @@ export class NVChunkedVolume {
   /**
    * Show time point `frame` (clamped) on this volume and every volume of its
    * frame group, as `setFrame4D` does: the current plan's bricks nearest the
-   * focus (up to `frameStagingBytes`) and the coarse floor are fetched first,
+   * focus (up to `chunkedVolumeBudgets.frameStagingBytes`) and the coarse floor are fetched first,
    * then the whole group commits in one update, so no view mixes two time
    * points. A newer call aborts a pending one, which resolves unchanged; a
    * failed fetch rejects and keeps the shown frame.
@@ -1091,7 +1065,11 @@ export class NVChunkedVolume {
   /**
    * Move the focus and rebuild+swap the plan (debounced). Pass `focusBounds`
    * to replace the regions pinned to one uniform level (an empty array clears
-   * them); omit it to keep the current bounds. Resolves when the swap has
+   * them); omit it to keep the current bounds. Each region (common-grid
+   * voxels, min inclusive / max exclusive) is covered by ONE pyramid level,
+   * e.g. one thin slab per visible orthogonal slice so no slice shows a seam
+   * between two resolutions; the budget pass may coarsen a region as a whole
+   * but never mixes levels inside it. Resolves when the swap has
    * applied; see {@link refocus}. On a disposed manager it resolves
    * immediately and changes nothing.
    */
@@ -1838,13 +1816,6 @@ function toVoxelView(
 
 /** NIfTI types whose IDs reach the GPU as floats: FLOAT64, INT64, UINT64. */
 const WIDE_LABEL_TYPES = new Set([64, 1024, 1280])
-
-/**
- * Cap on the bytes the voxel readout keeps, the decoded tier's own cap: its
- * bricks are the very buffers the renderer's tier holds for the same plan, so
- * below the cap they cost no extra memory.
- */
-const READOUT_BYTES = 384 * 1024 ** 2
 
 type ReadoutBrick = {
   level: number

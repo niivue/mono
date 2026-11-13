@@ -5,7 +5,7 @@ import {
 } from '@/view/NVBoxEdges'
 import { NVRenderer } from '@/view/NVRenderer'
 import { boxLineFragShader, boxLineVertShader } from './boxLineShader'
-import { deleteGLObjects } from './glUtil'
+import { blendOver, deleteGLObjects } from './glUtil'
 import { Shader } from './shader'
 
 /** Draws world-space box edges on each 3D render tile, projected on the GPU. */
@@ -64,7 +64,7 @@ export class BoxLineRenderer extends NVRenderer {
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     gl.enable(gl.SCISSOR_TEST)
     gl.bindVertexArray(this._vao)
     for (const tile of tiles) {

@@ -87,30 +87,7 @@ export function chunkVolume(
   deviceLimit: number,
   haloSize: Vec3i = [1, 1, 1],
 ): ChunkPlan {
-  if (deviceLimit < 1) {
-    throw new Error(
-      `chunkVolume: deviceLimit must be >= 1 (got ${deviceLimit})`,
-    )
-  }
-  for (let a = 0; a < 3; a++) {
-    if (volumeDims[a] < 1) {
-      throw new Error(
-        `chunkVolume: volumeDims[${a}] must be >= 1 (got ${volumeDims[a]})`,
-      )
-    }
-    if (haloSize[a] < 0) {
-      throw new Error(
-        `chunkVolume: haloSize[${a}] must be >= 0 (got ${haloSize[a]})`,
-      )
-    }
-    if (deviceLimit < 2 * haloSize[a] + 1) {
-      throw new Error(
-        `chunkVolume: deviceLimit (${deviceLimit}) too small for halo ` +
-          `${haloSize[a]} on axis ${a}; need at least ${2 * haloSize[a] + 1}`,
-      )
-    }
-  }
-
+  checkChunkArgs('chunkVolume', volumeDims, deviceLimit, haloSize)
   const stride: Vec3i = [0, 0, 0]
   const gridDims: Vec3i = [1, 1, 1]
   for (let a = 0; a < 3; a++) {
@@ -123,56 +100,14 @@ export function chunkVolume(
       gridDims[a] = Math.ceil(volumeDims[a] / stride[a])
     }
   }
-
-  const chunks: VolumeChunkDesc[] = []
-  for (let cz = 0; cz < gridDims[2]; cz++) {
-    for (let cy = 0; cy < gridDims[1]; cy++) {
-      for (let cx = 0; cx < gridDims[0]; cx++) {
-        const gridIndex: Vec3i = [cx, cy, cz]
-        const voxelOrigin: Vec3i = [0, 0, 0]
-        const voxelDims: Vec3i = [0, 0, 0]
-        const haloLow: Vec3i = [0, 0, 0]
-        const haloHigh: Vec3i = [0, 0, 0]
-        const texOrigin: Vec3i = [0, 0, 0]
-        const texDims: Vec3i = [0, 0, 0]
-        for (let a = 0; a < 3; a++) {
-          const idx = gridIndex[a]
-          const origin = idx * stride[a]
-          const dataEnd = Math.min(origin + stride[a], volumeDims[a])
-          const data = dataEnd - origin
-          // Halo only on faces that have a neighbour in this axis direction.
-          // Single-chunk axes (gridDims === 1) get 0 halo on both sides.
-          const isFirst = idx === 0
-          const isLast = idx === gridDims[a] - 1
-          const hLow = isFirst ? 0 : haloSize[a]
-          const hHigh = isLast ? 0 : haloSize[a]
-          voxelOrigin[a] = origin
-          voxelDims[a] = data
-          haloLow[a] = hLow
-          haloHigh[a] = hHigh
-          texOrigin[a] = origin - hLow
-          texDims[a] = data + hLow + hHigh
-        }
-        chunks.push({
-          voxelOrigin,
-          voxelDims,
-          haloLow,
-          haloHigh,
-          texDims,
-          texOrigin,
-          gridIndex,
-        })
-      }
-    }
-  }
-  return {
+  return emitChunks(
+    'chunkVolume',
+    volumeDims,
     gridDims,
     stride,
-    chunks,
-    volumeDims,
     deviceLimit,
     haloSize,
-  }
+  )
 }
 
 /**
@@ -190,19 +125,9 @@ export function chunkVolumeGrid(
   deviceLimit: number,
   haloSize: Vec3i = [1, 1, 1],
 ): ChunkPlan {
-  if (deviceLimit < 1) {
-    throw new Error(
-      `chunkVolumeGrid: deviceLimit must be >= 1 (got ${deviceLimit})`,
-    )
-  }
-
+  checkChunkArgs('chunkVolumeGrid', volumeDims, deviceLimit, haloSize)
   const stride: Vec3i = [0, 0, 0]
   for (let a = 0; a < 3; a++) {
-    if (volumeDims[a] < 1) {
-      throw new Error(
-        `chunkVolumeGrid: volumeDims[${a}] must be >= 1 (got ${volumeDims[a]})`,
-      )
-    }
     if (!Number.isInteger(gridDims[a]) || gridDims[a] < 1) {
       throw new Error(
         `chunkVolumeGrid: gridDims[${a}] must be a positive integer (got ${gridDims[a]})`,
@@ -214,20 +139,53 @@ export function chunkVolumeGrid(
           `volumeDims[${a}] (${volumeDims[a]})`,
       )
     }
-    if (haloSize[a] < 0) {
+    stride[a] = Math.ceil(volumeDims[a] / gridDims[a])
+  }
+  return emitChunks(
+    'chunkVolumeGrid',
+    volumeDims,
+    gridDims,
+    stride,
+    deviceLimit,
+    haloSize,
+  )
+}
+
+function checkChunkArgs(
+  fn: string,
+  volumeDims: Vec3i,
+  deviceLimit: number,
+  haloSize: Vec3i,
+): void {
+  if (deviceLimit < 1)
+    throw new Error(`${fn}: deviceLimit must be >= 1 (got ${deviceLimit})`)
+  for (let a = 0; a < 3; a++) {
+    if (volumeDims[a] < 1) {
       throw new Error(
-        `chunkVolumeGrid: haloSize[${a}] must be >= 0 (got ${haloSize[a]})`,
+        `${fn}: volumeDims[${a}] must be >= 1 (got ${volumeDims[a]})`,
       )
     }
+    if (haloSize[a] < 0)
+      throw new Error(`${fn}: haloSize[${a}] must be >= 0 (got ${haloSize[a]})`)
     if (deviceLimit < 2 * haloSize[a] + 1) {
       throw new Error(
-        `chunkVolumeGrid: deviceLimit (${deviceLimit}) too small for halo ` +
+        `${fn}: deviceLimit (${deviceLimit}) too small for halo ` +
           `${haloSize[a]} on axis ${a}; need at least ${2 * haloSize[a] + 1}`,
       )
     }
-    stride[a] = Math.ceil(volumeDims[a] / gridDims[a])
   }
+}
 
+// The chunks of a `gridDims` grid at `stride`. Halo only on faces that have a
+// neighbour in that axis direction: single-chunk axes get none.
+function emitChunks(
+  fn: string,
+  volumeDims: Vec3i,
+  gridDims: Vec3i,
+  stride: Vec3i,
+  deviceLimit: number,
+  haloSize: Vec3i,
+): ChunkPlan {
   const chunks: VolumeChunkDesc[] = []
   for (let cz = 0; cz < gridDims[2]; cz++) {
     for (let cy = 0; cy < gridDims[1]; cy++) {
@@ -252,14 +210,11 @@ export function chunkVolumeGrid(
           haloHigh[a] = hHigh
           texOrigin[a] = origin - hLow
           texDims[a] = data + hLow + hHigh
-          if (data < 1) {
-            throw new Error(
-              `chunkVolumeGrid: gridDims[${a}] produced an empty chunk`,
-            )
-          }
+          if (data < 1)
+            throw new Error(`${fn}: gridDims[${a}] produced an empty chunk`)
           if (texDims[a] > deviceLimit) {
             throw new Error(
-              `chunkVolumeGrid: chunk texture dim ${texDims[a]} on axis ${a} ` +
+              `${fn}: chunk texture dim ${texDims[a]} on axis ${a} ` +
                 `exceeds deviceLimit ${deviceLimit}`,
             )
           }
@@ -276,15 +231,7 @@ export function chunkVolumeGrid(
       }
     }
   }
-
-  return {
-    gridDims,
-    stride,
-    chunks,
-    volumeDims,
-    deviceLimit,
-    haloSize,
-  }
+  return { gridDims, stride, chunks, volumeDims, deviceLimit, haloSize }
 }
 
 /**

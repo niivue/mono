@@ -79,12 +79,12 @@ function described<T extends SlideTileSource>(
   url: string,
   format: SlideKind,
   local = false,
-  placement = false,
+  unplaced = false,
 ): T {
   const params: Record<string, string | boolean> = { format }
   if (local) params.local = true
   // A non-default TIFF option the reopen cannot recover from the saved manifest.
-  if (placement) params.placement = true
+  if (unplaced) params.placement = false
   src.descriptor = { kind: SLIDE_SOURCE_KIND, url, params }
   return src
 }
@@ -111,8 +111,8 @@ export function resolveSlideSource(
       format === 'dzi'
         ? // DZI reads tiles with the global fetch and refuses a custom one.
           { ...options, fetch: undefined }
-        : d.params?.placement === true
-          ? { ...options, tiff: { ...options.tiff, placement: true } }
+        : d.params?.placement === false
+          ? { ...options, tiff: { ...options.tiff, placement: false } }
           : options
     return openUrl(format as SlideKind, d.url, reopen, signal)
   }
@@ -304,7 +304,7 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
           file.webkitRelativePath || file.name,
           'tiff',
           true,
-          !!options.tiff?.placement,
+          options.tiff?.placement === false,
         )
       } catch (err) {
         // Not adopted by a source: closed here.
@@ -326,7 +326,8 @@ async function openUrl(
     url,
     kind,
     false,
-    (kind === 'tiff' || kind === 'dicom-tiff') && !!options.tiff?.placement,
+    (kind === 'tiff' || kind === 'dicom-tiff') &&
+      options.tiff?.placement === false,
   )
 }
 

@@ -24,6 +24,9 @@
         "!{projectRoot}/.astro/**/*",
         "{workspaceRoot}/packages/niivue/examples/**/*",
         "{workspaceRoot}/packages/*/docs/**/*",
+        "{workspaceRoot}/.github/pages/index.html",
+        "{workspaceRoot}/apps/*/*.html",
+        "{workspaceRoot}/apps/*/src/**/*",
         "{workspaceRoot}/nx-tools/repo-graph.ts",
         {
           "env": "DOCS_BASE_URL"

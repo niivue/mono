@@ -196,7 +196,7 @@ function captureWebGLRenderer() {
 // userAgentData; other browsers keep the frozen value (the GPU line still
 // names the chip there).
 async function capturePlatform() {
-  /** @type {any} userAgentData is Chromium-only and missing from the DOM lib */
+  // userAgentData is Chromium-only and missing from the DOM lib.
   const uaData = /** @type {any} */ (navigator).userAgentData
   try {
     const v = await uaData?.getHighEntropyValues([

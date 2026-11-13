@@ -17,6 +17,11 @@ export default defineConfig({
   site,
   base,
   trailingSlash: 'always',
+  // Docusaurus pages whose content moved under /packages/.
+  redirects: {
+    '/guide/react': `${base}packages/nv-react/`,
+    '/guide/extensions': `${base}packages/`,
+  },
   markdown: {
     processor: satteri({
       hastPlugins: [

@@ -56,12 +56,23 @@ function readSections(
     for (const link of card[1].matchAll(
       /<a href="\.\/([^"?]+\.html(?:\?[^"]*)?)"[^>]*>([\s\S]*?)<\/a>/g,
     )) {
-      // Link text may hold markup, e.g. <code>perfFrame</code>.
-      const title = link[2].replace(/<[^>]+>/g, '').trim()
-      out.push({ section, page: link[1], title })
+      out.push({ section, page: link[1], title: plainText(link[2]) })
     }
   }
   return out
+}
+
+// Link text may hold markup (<code>perfFrame</code>) and line breaks.
+function plainText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// `vox.clip.html` -> `vox-clip`, `dandi-demo/index.html` -> `dandi-demo`.
+function slugify(page: string): string {
+  return page.replace(/(\/index)?\.html/, '').replace(/[^a-zA-Z0-9-]+/g, '-')
 }
 
 // The example pages import the library source through Vite; show the
@@ -136,10 +147,9 @@ export function collectGallery(
       })
     }
     examples.push({
-      slug: [file.replace(/\.html$/, ''), query?.replace(/^[^=]*=/, '')]
-        .filter(Boolean)
-        .join('-')
-        .replace(/[^a-zA-Z0-9-]+/g, '-'),
+      slug: slugify(
+        [file, query?.replace(/^[^=]*=/, '')].filter(Boolean).join('-'),
+      ),
       title,
       section,
       summary: cleanSummary(node?.summary, title),
@@ -152,7 +162,13 @@ export function collectGallery(
 }
 
 // A section with one example becomes part of a final 'Other' section.
+// Slugs name the pages and thumbnails, so a repeat would hide an entry.
 function groupSingletons(all: GalleryExample[]): GalleryExample[] {
+  const slugs = new Set<string>()
+  for (const { slug } of all) {
+    if (slugs.has(slug)) throw new Error(`Duplicate gallery slug: ${slug}`)
+    slugs.add(slug)
+  }
   const counts = new Map<string, number>()
   for (const e of all) counts.set(e.section, (counts.get(e.section) ?? 0) + 1)
   const lone = (e: GalleryExample) => counts.get(e.section) === 1
@@ -200,20 +216,13 @@ function collectApps(
         /<script\b[^>]*\bsrc="\/?([^"]+\.[jt]s)"/,
       )?.[1]
       const scriptPath = script && path.join(path.dirname(source), script)
-      const text = (t: string) =>
-        t
-          .replace(/<[^>]+>/g, '')
-          .replace(/\s+/g, ' ')
-          .trim()
-      const title = text(li[2])
+      const title = plainText(li[2])
       apps.push({
-        slug: page
-          .replace(/(\/index)?\.html$/, '')
-          .replace(/[^a-zA-Z0-9-]+/g, '-'),
+        slug: slugify(page),
         title,
         section,
         summary:
-          text(li[3]).replace(/^\u2014\s*/, '') ||
+          plainText(li[3]).replace(/^\u2014\s*/, '') ||
           cleanSummary(nodes.get(`file:${source}`)?.summary, title),
         page,
         source,

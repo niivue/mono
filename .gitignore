@@ -5,6 +5,8 @@ node_modules/
 dist/
 _site/
 .astro/
+# Left by the old Docusaurus docs app in existing checkouts.
+.docusaurus/
 .ipynb_checkpoints/
 __pycache__/
 *.pyc

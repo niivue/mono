@@ -13,7 +13,7 @@ const demo: Demo = async (canvas, { ui }) => {
   await nv.attachToCanvas(canvas)
   await nv.loadVolumes([{ url: CT_ABDO, colormap: 'ct_kidneys' }])
 
-  // Stored names are capitalized ('Ct_kidneys'); lookups accept either case.
+  // Stored names are capitalized.
   const maps = nv.colormapNames('continuous').filter((n) => /^ct_/i.test(n))
   ui.select('Colormap', maps, 'Ct_kidneys', async (name) => {
     await nv.setVolume(0, { colormap: name })

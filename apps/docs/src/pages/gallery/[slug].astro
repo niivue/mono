@@ -17,6 +17,8 @@ type Props = { example: CollectionEntry<'gallery'>['data'] }
 const { example } = Astro.props
 const live = new URL(example.page, examplesBase).href
 const source = `${repoUrl}/blob/main/${example.source}`
+// App scripts are TypeScript; example pages are JavaScript.
+const lang = (name: string) => (name.endsWith('.ts') ? 'ts' : 'js')
 ---
 
 <StarlightPage
@@ -49,12 +51,12 @@ const source = `${repoUrl}/blob/main/${example.source}`
   <div data-pagefind-ignore>
     {
       example.files.length === 1 ? (
-        <Code code={example.files[0].code} lang="js" title={example.files[0].name} />
+        <Code code={example.files[0].code} lang={lang(example.files[0].name)} title={example.files[0].name} />
       ) : (
         <Tabs>
           {example.files.map((f) => (
             <TabItem label={f.name}>
-              <Code code={f.code} lang="js" title={f.name} />
+              <Code code={f.code} lang={lang(f.name)} title={f.name} />
             </TabItem>
           ))}
         </Tabs>

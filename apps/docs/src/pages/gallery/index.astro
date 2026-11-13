@@ -97,13 +97,6 @@ const sections = Map.groupBy(cards, (c) => c.section)
     min-width: 0;
   }
 
-  /* Phones: the section filters scroll sideways in one row instead of
-     wrapping onto five. */
-  @media (max-width: 50em) {
-    .toolbar {
-      margin-block: 1rem 1.5rem;
-    }
-
     fieldset.chips {
       flex-wrap: nowrap;
       overflow-x: auto;
@@ -267,9 +260,30 @@ const sections = Map.groupBy(cards, (c) => c.section)
     }
   }
 
-  /* After the base rules, which it overrides. Two small cards per row on
-     phones; one per row filled the screen with each. */
+  .empty {
+    padding: 3rem 0;
+    text-align: center;
+    color: var(--sl-color-gray-3);
+  }
+
+  /* Phones, after the base rules it overrides: two small cards per row
+     (one filled the screen with each) and the section filters scroll
+     sideways in one row instead of wrapping onto five. */
   @media (max-width: 50em) {
+    .toolbar {
+      margin-bottom: 1.5rem;
+    }
+
+    fieldset.chips {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    fieldset.chips button {
+      flex: none;
+    }
+
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 1rem 0.75rem;
@@ -282,11 +296,5 @@ const sections = Map.groupBy(cards, (c) => c.section)
     .summary {
       font-size: var(--sl-text-xs);
     }
-  }
-
-  .empty {
-    padding: 3rem 0;
-    text-align: center;
-    color: var(--sl-color-gray-3);
   }
 </style>

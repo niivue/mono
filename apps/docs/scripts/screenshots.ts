@@ -7,8 +7,9 @@
 // so point it at a local `bun run dev` in packages/niivue to capture
 // unpublished examples. Give the server root
 // (DOCS_EXAMPLES_BASE=http://localhost:5273/), not /examples/: page paths
-// already start with examples/, and a doubled one captures a blank 404. Each thumbnail is the page's largest canvas, scaled
-// down in the browser and saved as WebP.
+// already start with examples/, and a doubled one captures a blank 404.
+// Each thumbnail is the page's largest canvas, scaled down in the browser
+// and saved as WebP.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,6 +20,12 @@ const WIDTH = 480
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 2500)
 const LOAD_TIMEOUT_MS = 30000
 type Clip = { x: number; y: number; width: number; height: number }
+async function canvasBox(page: Page): Promise<Clip> {
+  const box = await page.locator('canvas').first().boundingBox()
+  if (!box) throw new Error('no canvas')
+  return box
+}
+
 // Examples that draw nothing until the user acts; act for them, then wait.
 // A step may return the page region to frame when the drawing is small.
 const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
@@ -111,16 +118,10 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
       timeout: 180000,
     })
     // The canvas is a wide strip; frame a 4:3 area around its centre to fit the card.
-    const r = await page.locator('canvas').first().boundingBox()
-    if (!r) return undefined
+    const r = await canvasBox(page)
     const width = Math.min(r.width, (r.height * 4) / 3)
     return { x: r.x + (r.width - width) / 2, y: r.y, width, height: r.height }
   },
-}
-async function canvasBox(page: Page): Promise<Clip> {
-  const box = await page.locator('canvas').first().boundingBox()
-  if (!box) throw new Error('no canvas')
-  return box
 }
 
 // Examples that stream for a while before their first useful frame.

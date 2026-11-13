@@ -14,8 +14,8 @@ import {
 import { docsId } from './lib/packageDocs'
 
 // One entry per page in packages/niivue/examples and per demo app on the
-// Pages index, rebuilt in dev whenever an example, the Pages index or a
-// thumbnail is added, changed or removed.
+// Pages index, rebuilt in dev whenever an example, the Pages index, a listed
+// app's page or source, or a thumbnail is added, changed or removed.
 const gallery = defineCollection({
   loader: {
     name: 'niivue-gallery',
@@ -25,8 +25,20 @@ const gallery = defineCollection({
       const examplesDir = path.join(repoRoot, EXAMPLES_DIR)
       const pagesIndex = path.join(repoRoot, PAGES_INDEX)
       const thumbsDir = path.join(siteDir, 'public/img/gallery')
+      const watched = [examplesDir, pagesIndex, thumbsDir]
       const sync = async () => {
         const examples = collectGallery(repoRoot, buildGraph(repoRoot))
+        // Each listed app's page and src/, whose script the gallery shows.
+        for (const { source } of examples) {
+          if (!source.startsWith('apps/')) continue
+          for (const p of [source, path.join(path.dirname(source), 'src')]) {
+            const abs = path.join(repoRoot, p)
+            if (!watched.includes(abs)) {
+              watched.push(abs)
+              watcher?.add(abs)
+            }
+          }
+        }
         store.clear()
         for (const [order, example] of examples.entries()) {
           // Thumbnails come from `bunx nx screenshots docs-site`; a card
@@ -48,14 +60,9 @@ const gallery = defineCollection({
       // A failure here fails the build; in dev a later reload only logs, so
       // a half-written example does not stop the server.
       await sync()
-      watcher?.add([examplesDir, pagesIndex, thumbsDir])
+      watcher?.add(watched)
       watcher?.on('all', async (_event, changed) => {
-        if (
-          !changed.startsWith(examplesDir) &&
-          changed !== pagesIndex &&
-          !changed.startsWith(thumbsDir)
-        )
-          return
+        if (!watched.some((w) => changed.startsWith(w))) return
         logger.info('Reloading gallery')
         try {
           await sync()

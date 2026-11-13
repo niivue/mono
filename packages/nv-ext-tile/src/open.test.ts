@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { ManifestRangeSource } from '@niivue/niivue'
+import { readAssociatedImage } from './dicomAssociated'
 import { DicomWsiSource } from './dicomWsiSource'
 import { openSlide, sniffSlide } from './open'
 import type { SlideFetch } from './rangeFetch'
@@ -424,6 +425,17 @@ describe('openSlide', () => {
     const source = await opened.candidates[1]?.open()
     expect(source?.manifest.levels.length).toBe(2)
     source?.dispose?.()
+  })
+
+  test('an associated image reads against the input files when a TIFF shares its name', async () => {
+    const label = new File(
+      [await Bun.file(`${DIR}/label.dcm`).arrayBuffer()],
+      'a.dcm',
+    )
+    const files = [new File([tinyTiff()], 'a.dcm'), label]
+    const [image] = (await openSlide(files)).index?.associated ?? []
+    if (!image) throw new Error('label')
+    expect((await readAssociatedImage(image, files)).width).toBe(16)
   })
 
   test('the open signal and the candidate signal both abort', async () => {

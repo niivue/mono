@@ -1,0 +1,111 @@
+---
+title: What it can show
+description: "Which series the NiiVue viewport in OHIF can open: NIfTI and other volume files, DICOM series converted in the browser, and whole-slide microscopy."
+sidebar:
+  order: 1
+---
+
+The NiiVue viewport looks at each series OHIF hands it and picks one of
+three ways to open it. Anything else gets a short note in the viewport
+instead of an image.
+
+## NIfTI and other volume files
+
+A display set that carries a `url` to a file NiiVue reads opens directly.
+That covers `.nii`, `.nii.gz`, `.nrrd`, `.nhdr`, `.mgh`, `.mgz`, `.mha`,
+`.mhd`, `.mif`, `.npy`, `.head` and `.brik`. The URL can be on the display
+set itself or on its first instance:
+
+```js
+{
+  displaySetInstanceUID: 'brain-1',
+  SeriesDescription: 'T1',
+  url: 'https://example.com/t1.nii.gz',
+}
+```
+
+nv-ohif does not create these display sets. They come from your data
+source, and their `SOPClassHandlerId` must be one the NiiVue viewport lists
+in `displaySetsToDisplay`, or OHIF will not show them.
+
+## DICOM series
+
+A series from a DICOMweb server is downloaded and converted to NIfTI in the
+browser with [dcm2niix](https://github.com/rordenlab/dcm2niix), then shown
+like any other volume. Requests carry OHIF's login, so a protected server
+works too. Multi-frame (enhanced) files are converted as well.
+
+Some series hold more than one image, such as several echoes, or magnitude
+and phase. The viewport then shows one: original images before derived
+ones, magnitude before phase, the first echo, then the largest. A note
+names the images it left out.
+
+If dcm2niix reports a problem but still made an image, the image is shown
+with a note quoting the warning. If it made none, you see the error
+instead.
+
+Segmentations, RT structures, plans and records, structured reports,
+presentation states, key-object selections, registrations, fiducials,
+documents, waveforms and audio are not converted. RT dose grids are.
+
+## Whole-slide images
+
+Whole-slide microscopy (SM) series open in a deep-zoom slide view. Tiles are
+fetched from the server as you pan and zoom, so the slide is never
+downloaded all at once. The slide view is NiiVue's own, and the DICOM
+slide reader comes from [nv-ext-tile](/packages/nv-ext-tile/dicom/).
+
+To use it, add nv-ohif's slide handler to your mode, and list it on the
+NiiVue viewport:
+
+```js
+sopClassHandlers: [
+  '@ohif/extension-default.sopClassHandlerModule.stack',
+  '@niivue/nv-ohif.sopClassHandlerModule.niivue-wsi',
+],
+```
+
+```js
+{
+  namespace: '@niivue/nv-ohif.viewportModule.niivue',
+  displaySetsToDisplay: [
+    '@ohif/extension-default.sopClassHandlerModule.stack',
+    '@niivue/nv-ohif.sopClassHandlerModule.niivue-wsi',
+  ],
+}
+```
+
+Use it instead of OHIF's own slide handler, not as well. If your mode lists
+`@ohif/extension-cornerstone.sopClassHandlerModule.DicomMicroscopySopClassHandler`,
+remove it: both handlers claim slide series, so with both you would get
+every slide twice. nv-ohif's handler also gives each slide a thumbnail in
+the series list.
+
+### Slides that work
+
+- Tiles compressed as JPEG, JPEG 2000 or JPEG-LS.
+- One optical path and one focal plane.
+- Color or monochrome, 8 to 16 bits. Color slides are shown through their
+  color profile. Monochrome slides keep their full range.
+
+Slides with several optical paths or focal planes, or with other tile
+compression (such as JPEG Lossless, RLE or HTJ2K), are declined with a note
+that says why.
+
+### Moving around a slide
+
+Drag to pan, use the mouse wheel or OHIF's Zoom tool to zoom, and pick the
+Length tool to draw a ruler. If the tiles you are looking at do not fit in
+memory, the viewer draws a coarser level and asks you to zoom in for full
+resolution.
+
+Controls that only make sense for volumes, such as views, clip planes,
+window presets, colormaps, rotate, flip and overlays, are disabled on a
+slide. Capture and Reset View still work.
+
+A monochrome slide starts with its full brightness range on screen. To
+show a narrower window, run the `niivueSetWindowLevel` command:
+
+```js
+commandsManager.runCommand('niivueSetWindowLevel', { window: 4000, level: 2000 })
+```

@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import type { ChunkPhase, ChunkTimingSnapshot } from '@niivue/niivue'
+import type {
+  ByteLruStats,
+  ChunkPhase,
+  ChunkTimingSnapshot,
+} from '@niivue/niivue'
 import {
   chunkRegionKey,
   chunkTimingDelta,
   routeChunkToWorker,
   sumByteCacheStats,
 } from './chunkWorkerRouting'
-import type { ByteCacheStats } from './omeZarrChunkedSource'
 
 function snapshot(
   parts: Partial<
@@ -31,7 +34,7 @@ function snapshot(
   return { phases, netBusyMs, mainThreadMs: 0, offThreadMs: 0 }
 }
 
-function stats(over: Partial<ByteCacheStats>): ByteCacheStats {
+function stats(over: Partial<ByteLruStats>): ByteLruStats {
   return {
     hits: 0,
     misses: 0,

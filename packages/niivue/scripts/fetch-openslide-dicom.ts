@@ -73,7 +73,7 @@ const PRESETS: Preset[] = [
     // "buffer overrun" parsing them (before the pixel data), so THIS script
     // cannot build the byte-range manifest. The hosted manifest the slides demo
     // streams (niivue-demo-images-lfs streaming/dicom-wsi/hamamatsu-2) loads
-    // fine. See docs/slide-plane-review-todos.md.
+    // fine. See notes/slide-plane-review-todos.md.
     unsupported:
       'dicom-parser raises a buffer overrun on these instances (pixel data is never reached).',
   },

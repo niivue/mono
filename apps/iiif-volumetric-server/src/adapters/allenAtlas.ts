@@ -3,7 +3,7 @@
 // A dataset is one JSON sidecar plus N PNG atlases; each PNG is a row-major
 // grid of tiles (one tile per Z slice) packing up to four independent image
 // channels into its R/G/B/A planes. See
-// packages/niivue/docs/allen-atlas-format.md.
+// packages/niivue/notes/allen-atlas-format.md.
 //
 // The sidecar parsing and plane deinterleave are shared with the browser
 // loader rather than reimplemented here: a second copy of the validation

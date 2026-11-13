@@ -3,7 +3,7 @@
 // registered overlay renderer one privileged chance to draw into the SAME frame,
 // in screen space, on whichever backend is live. This is the seam the separate
 // @niivue/uikit package plugs its widgets (rulers, and later buttons/sliders/
-// panels) into. See docs/ruler-port.md for the design.
+// panels) into. See notes/ruler-port.md for the design.
 //
 // The types here are pure (no runtime), so both the WebGL2 and WebGPU views can
 // import them without pulling in backend code. GPUDevice / GPURenderPassEncoder

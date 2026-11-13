@@ -4,7 +4,7 @@ import type { Demo } from './types'
 const mosaic = 'A -20 0 20 40 ; C -30 0 30 S R X 0'
 
 const demo: Demo = async (canvas, { ui, asset }) => {
-  const nv = new NiiVue({ backgroundColor: [0.2, 0.2, 0.2, 1] })
+  const nv = new NiiVue()
   await nv.attachToCanvas(canvas)
   await nv.loadVolumes([{ url: asset('volumes/mni152.nii.gz') }])
 

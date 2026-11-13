@@ -1,7 +1,7 @@
 // DICOM-WSI deep-zoom viewer.
 //
 // A whole slide is served by the IIIF volumetric server as a multiscale
-// pyramid of depth-1 RGB volumes (see packages/niivue/docs/dicom-wsi.md). This
+// pyramid of depth-1 RGB volumes (see packages/niivue/notes/dicom-wsi.md). This
 // page renders it the way a pathologist navigates a slide: a whole-slide
 // overview that you fluidly zoom and pan into, OpenSeadragon-style.
 //

@@ -1,4 +1,5 @@
 import NiiVue, {
+  ByteLru,
   type ChunkPlan,
   chunkVolumeGrid,
   type NVImage,
@@ -123,51 +124,17 @@ interface RangeStats {
   lastRequests: string[]
 }
 
-class ByteLruCache implements zarr.ByteCache {
-  private readonly entries = new Map<
-    string,
-    { value: Uint8Array | undefined; bytes: number }
-  >()
-  private totalBytes = 0
-
-  constructor(private readonly maxBytes: number) {}
-
-  has(key: string): boolean {
-    const hit = this.entries.has(key)
+// The core ByteLru with the HUD's hit and byte counters on top.
+class TrackedByteCache extends ByteLru<string, Uint8Array | undefined> {
+  override has(key: string): boolean {
+    const hit = super.has(key)
     if (hit) stats.cacheHits++
     return hit
   }
 
-  get(key: string): Uint8Array | undefined {
-    const entry = this.entries.get(key)
-    if (!entry) return undefined
-    this.entries.delete(key)
-    this.entries.set(key, entry)
-    return entry.value
-  }
-
-  set(key: string, value: Uint8Array | undefined): void {
-    const existing = this.entries.get(key)
-    if (existing) {
-      this.totalBytes -= existing.bytes
-      this.entries.delete(key)
-    }
-    const bytes = value?.byteLength ?? 0
-    this.entries.set(key, { value, bytes })
-    this.totalBytes += bytes
-    this.evict()
+  override set(key: string, value: Uint8Array | undefined): void {
+    super.set(key, value)
     stats.cacheBytes = this.totalBytes
-  }
-
-  private evict(): void {
-    while (this.totalBytes > this.maxBytes && this.entries.size > 1) {
-      const firstKey = this.entries.keys().next().value
-      if (typeof firstKey !== 'string') return
-      const first = this.entries.get(firstKey)
-      if (!first) return
-      this.entries.delete(firstKey)
-      this.totalBytes -= first.bytes
-    }
   }
 }
 
@@ -479,7 +446,7 @@ async function loadOmezarrSource(): Promise<OmezarrSource> {
     fetch: createTrackedZarrFetch(),
   })
   const store = zarr.withByteCaching(baseStore, {
-    cache: new ByteLruCache(ZARR_BYTE_CACHE_BYTES),
+    cache: new TrackedByteCache(ZARR_BYTE_CACHE_BYTES),
   })
   const array = await zarr.open(zarr.root(store).resolve(`/${dataset.path}`), {
     kind: 'array',

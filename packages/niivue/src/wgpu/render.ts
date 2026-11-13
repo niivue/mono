@@ -1,3 +1,4 @@
+import { ByteLru } from '@/byteLru'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
@@ -65,10 +66,7 @@ import {
   chunkOffsetFor,
   chunkUniformsFor,
 } from '@/volume/chunkRender'
-import {
-  DecodedChunkCache,
-  decodedTierBudgetBytes,
-} from '@/volume/decodedChunkCache'
+import { decodedTierBudgetBytes } from '@/volume/decodedChunkCache'
 import {
   buildModulationParams,
   type ModulationTextureParams,
@@ -904,7 +902,7 @@ export class VolumeRenderer extends ChunkStreamRenderer<
       return existing
     }
     if (existing) this._evictTexEntry(cacheKey, existing)
-    const decoded = new DecodedChunkCache(
+    const decoded = new ByteLru<number, Uint8Array>(
       decodedTierBudgetBytes(budgetBytes, bpv),
     )
     const uploader = await createChunkUploaderGPU(
@@ -967,7 +965,7 @@ export class VolumeRenderer extends ChunkStreamRenderer<
     device: GPUDevice,
     vol: NVImage,
     plan: ChunkPlan,
-    decoded: DecodedChunkCache,
+    decoded: ByteLru<number, Uint8Array>,
     modulation: ModulationTextureParams | null,
   ): Promise<ChunkUploaderGPU> {
     return createChunkUploaderGPU(

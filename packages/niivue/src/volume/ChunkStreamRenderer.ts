@@ -3,6 +3,7 @@
 // streamed-overlay bookkeeping. A base class rather than a member object so the
 // draw code keeps reading `this._activeChunked` and friends unchanged; the
 // backends supply the GPU work through the abstract hooks at the end.
+import type { ByteLru, ByteLruStats } from '@/byteLru'
 import { log } from '@/logger'
 import { VOLUME_DEFAULTS } from '@/NVConstants'
 import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
@@ -33,7 +34,6 @@ import {
 } from './chunking'
 import type { ChunkTravelPredictor } from './chunkPrediction'
 import { setChunkBudget } from './chunkRender'
-import type { DecodedChunkCache, DecodedChunkStats } from './decodedChunkCache'
 import {
   buildModulationParams,
   type ModulationTextureParams,
@@ -172,7 +172,7 @@ export interface StreamEntry<TChunk, TUploader> {
    * the uploader: the bytes outlive an uploader rebuild, and survive a plan
    * swap by being re-keyed alongside the resident chunks.
    */
-  decoded: DecodedChunkCache
+  decoded: ByteLru<number, Uint8Array>
   /** Source bytes per voxel, which sets what the decoded tier costs to hold. */
   sourceBytesPerVoxel: number
   /**
@@ -1114,12 +1114,13 @@ export abstract class ChunkStreamRenderer<
     let predicted = 0
     let retiring = 0
     let retiringBytes = 0
-    const decoded: DecodedChunkStats = {
+    const decoded: ByteLruStats = {
       hits: 0,
       misses: 0,
       admitted: 0,
       rejected: 0,
       evicted: 0,
+      evictedBytes: 0,
       entries: 0,
       bytes: 0,
       maxBytes: 0,
@@ -1140,6 +1141,7 @@ export abstract class ChunkStreamRenderer<
       decoded.admitted += d.admitted
       decoded.rejected += d.rejected
       decoded.evicted += d.evicted
+      decoded.evictedBytes += d.evictedBytes
       decoded.entries += d.entries
       decoded.bytes += d.bytes
       decoded.maxBytes += d.maxBytes
@@ -1196,7 +1198,7 @@ export abstract class ChunkStreamRenderer<
     ctx: TCtx,
     vol: NVImage,
     plan: ChunkPlan,
-    decoded: DecodedChunkCache,
+    decoded: ByteLru<number, Uint8Array>,
     modulation: ModulationTextureParams | null,
   ): TUploader | Promise<TUploader>
 

@@ -17,15 +17,17 @@
  * chunked volume), and the declared spatial axis order is honoured: bricks
  * from an `x y z`-ordered store (the Human Organ Atlas) are transposed to the
  * x-fastest layout the contract requires, so the anatomy presents identically
- * to a conventional `z y x` store. See `docs/ome-zarr-format.md`.
+ * to a conventional `z y x` store. See `notes/ome-zarr-format.md`.
  */
 
 import type {
+  ByteLruStats,
   ChunkedVolumeFetch,
   ChunkedVolumeSource,
   TypedVoxelArray,
 } from '@niivue/niivue'
 import {
+  ByteLru,
   getBitsPerVoxel,
   NIFTI_UNITS_MICRON,
   recordChunkPhase,
@@ -61,189 +63,6 @@ import {
   withPersistentBytes,
 } from './persistentByteCache'
 
-/** What a {@link ByteLruCache} has done since it was created or reset. */
-export interface ByteCacheStats {
-  /** Lookups that found a resident entry. */
-  hits: number
-  /** Lookups that did not, each of which became a store read. */
-  misses: number
-  /** Values admitted, absences included. */
-  admitted: number
-  /** Values refused because one alone exceeds the whole budget. */
-  rejected: number
-  /** Entries dropped to stay inside the budget. */
-  evicted: number
-  /** Bytes dropped by those evictions. */
-  evictedBytes: number
-  /** Entries resident now. */
-  entries: number
-  /** Bytes resident now (absences count 0). */
-  bytes: number
-  /** The budget those bytes are measured against. */
-  maxBytes: number
-}
-
-/**
- * A byte-bounded LRU cache for zarrita's `withByteCaching` store wrapper.
- *
- * Values are raw store responses; an entry holding `undefined` is a CONFIRMED
- * ABSENCE (zarr's missing-chunk-means-fill-value convention), remembered so a
- * sparse store's absent chunks are not re-requested on every plan rebuild —
- * a store is immutable for the life of a load, so an absence is permanent.
- * Absences cost 0 bytes and are evicted like any other entry.
- *
- * `totalBytes <= maxBytes` holds after every operation: a value larger than
- * the whole budget is never admitted (its key is simply left uncached, and no
- * resident entries are evicted for it). A budget of 0 therefore caches only
- * zero-byte absence entries; `Infinity` never evicts.
- *
- * {@link stats} answers the question a byte budget always raises: is the
- * budget too small, or is there simply no reuse in this access pattern? The
- * two look identical from outside (both are all misses) and want opposite
- * fixes, so the counters distinguish them — a run with many evictions and few
- * hits is thrash, a run with few evictions and few hits has nothing to reuse.
- * `has` is the gate `withByteCaching` consults before every read, so it is the
- * one place a lookup is counted; `get` only runs after a hit.
- *
- * ```ts
- * const cache = new ByteLruCache(256 * 2 ** 20)
- * const store = zarr.withByteCaching(new zarr.FetchStore(url), { cache })
- * // ... stream ...
- * const { hits, misses, evicted } = cache.stats
- * ```
- */
-export class ByteLruCache {
-  private entries = new Map<
-    string,
-    { value: Uint8Array | undefined; bytes: number }
-  >()
-  private total = 0
-  private hits = 0
-  private misses = 0
-  private admitted = 0
-  private rejected = 0
-  private evicted = 0
-  private evictedBytes = 0
-
-  constructor(private budget: number) {
-    ByteLruCache.check(budget)
-  }
-
-  private static check(maxBytes: number): void {
-    // Rejects NaN and negatives in one comparison; 0 and Infinity are valid.
-    if (!(maxBytes >= 0)) {
-      throw new Error(
-        `ByteLruCache: maxBytes must be a non-negative number, got ${maxBytes}`,
-      )
-    }
-  }
-
-  /** The byte budget. */
-  get maxBytes(): number {
-    return this.budget
-  }
-
-  /** Change the budget, evicting oldest first to fit a smaller one. */
-  resize(maxBytes: number): void {
-    ByteLruCache.check(maxBytes)
-    this.budget = maxBytes
-    this.evictToFit()
-  }
-
-  /** Bytes currently held (absence entries count 0). */
-  get totalBytes(): number {
-    return this.total
-  }
-
-  /** A snapshot of {@link ByteCacheStats}. Cheap; take it every frame. */
-  get stats(): ByteCacheStats {
-    return {
-      hits: this.hits,
-      misses: this.misses,
-      admitted: this.admitted,
-      rejected: this.rejected,
-      evicted: this.evicted,
-      evictedBytes: this.evictedBytes,
-      entries: this.entries.size,
-      bytes: this.total,
-      maxBytes: this.maxBytes,
-    }
-  }
-
-  /** Zero the counters, keeping the resident entries. Starts a window. */
-  resetStats(): void {
-    this.hits = 0
-    this.misses = 0
-    this.admitted = 0
-    this.rejected = 0
-    this.evicted = 0
-    this.evictedBytes = 0
-  }
-
-  /** Drop every entry, keeping the counters. */
-  clear(): void {
-    this.entries.clear()
-    this.total = 0
-  }
-
-  has(key: string): boolean {
-    const hit = this.entries.has(key)
-    if (hit) {
-      this.hits++
-    } else {
-      this.misses++
-    }
-    return hit
-  }
-
-  get(key: string): Uint8Array | undefined {
-    const entry = this.entries.get(key)
-    if (!entry) {
-      return undefined
-    }
-    // Re-insert so iteration order stays least-recently-used first.
-    this.entries.delete(key)
-    this.entries.set(key, entry)
-    return entry.value
-  }
-
-  set(key: string, value: Uint8Array | undefined): void {
-    const existing = this.entries.get(key)
-    if (existing) {
-      this.total -= existing.bytes
-      this.entries.delete(key)
-    }
-    const bytes = value?.byteLength ?? 0
-    // A value larger than the whole budget can never be held within it. Do
-    // not admit it, and do not evict resident entries to make room that will
-    // not suffice. (The stale same-key entry was already dropped above.)
-    if (bytes > this.maxBytes) {
-      this.rejected++
-      return
-    }
-    this.entries.set(key, { value, bytes })
-    this.total += bytes
-    this.admitted++
-    this.evictToFit()
-  }
-
-  // Every admitted entry fits the budget on its own, so evicting oldest first
-  // reaches totalBytes <= maxBytes by the time one entry is left (none left,
-  // after a shrink below that entry).
-  private evictToFit(): void {
-    while (this.total > this.maxBytes && this.entries.size > 0) {
-      const oldest = this.entries.entries().next().value
-      if (!oldest) {
-        return
-      }
-      this.entries.delete(oldest[0])
-      this.total -= oldest[1].bytes
-      this.evicted++
-      this.evictedBytes += oldest[1].bytes
-    }
-  }
-}
-
 /** Options for {@link omeZarrChunkedSource}. */
 export interface OmeZarrChunkedSourceOptions {
   /** Channel to stream. Defaults to the first active one (omero). */
@@ -275,17 +94,17 @@ export interface OmeZarrChunkedSource extends ChunkedVolumeSource {
   /**
    * The store-level byte cache, when one was built for this source. Present
    * on {@link fetchOmeZarrChunkedSource} results with a non-zero budget, so a
-   * host can read {@link ByteLruCache.stats} to see whether the budget is
+   * host can read its `stats` to see whether the budget is
    * doing anything; absent when the caller brought its own store.
    */
-  readonly byteCache?: ByteLruCache
+  readonly byteCache?: ByteLru<string, Uint8Array | undefined>
   /**
    * The byte cache's counters, wherever the cache lives. Prefer this over
    * {@link byteCache} in a host that just wants to report a hit rate: with the
-   * chunk worker pool on there is no single `ByteLruCache` on this thread to
+   * chunk worker pool on there is no single byte cache on this thread to
    * read, and this returns the pool's caches summed instead.
    */
-  readonly byteCacheStats?: () => ByteCacheStats
+  readonly byteCacheStats?: () => ByteLruStats
   /**
    * The persistent tier's counters, when one was opened for this source. Same
    * arrangement as {@link byteCacheStats}: with the chunk worker pool on, the
@@ -570,7 +389,10 @@ export async function openOmeZarrChunkedSource(
   const persisted = persistCache
     ? withPersistentBytes(base, persistCache, href)
     : base
-  const byteCache = cacheBytes > 0 ? new ByteLruCache(cacheBytes) : undefined
+  const byteCache =
+    cacheBytes > 0
+      ? new ByteLru<string, Uint8Array | undefined>(cacheBytes)
+      : undefined
   const cached = byteCache
     ? zarr.withByteCaching(persisted, { cache: byteCache })
     : persisted

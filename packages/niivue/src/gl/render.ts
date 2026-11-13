@@ -1,3 +1,4 @@
+import { ByteLru } from '@/byteLru'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
@@ -67,10 +68,7 @@ import {
   chunkOffsetFor,
   chunkUniformsFor,
 } from '@/volume/chunkRender'
-import {
-  DecodedChunkCache,
-  decodedTierBudgetBytes,
-} from '@/volume/decodedChunkCache'
+import { decodedTierBudgetBytes } from '@/volume/decodedChunkCache'
 import {
   buildModulationParams,
   type ModulationTextureParams,
@@ -754,7 +752,7 @@ export class VolumeRenderer extends ChunkStreamRenderer<
     // The entry holds the live uploader so an in-place plan swap can replace it;
     // the prefetch hook reads it off `entry` (not a creation closure) so it
     // always targets the current plan.
-    const decoded = new DecodedChunkCache(
+    const decoded = new ByteLru<number, Uint8Array>(
       decodedTierBudgetBytes(budgetBytes, bpv),
     )
     const entry: ChunkedTexEntry = {
@@ -820,7 +818,7 @@ export class VolumeRenderer extends ChunkStreamRenderer<
     gl: WebGL2RenderingContext,
     vol: NVImage,
     plan: ChunkPlan,
-    decoded: DecodedChunkCache,
+    decoded: ByteLru<number, Uint8Array>,
     modulation: ModulationTextureParams | null,
   ): ChunkUploaderGL {
     return createChunkUploaderGL(

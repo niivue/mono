@@ -4,6 +4,7 @@ import { chunkRegionKey, routeChunkToWorker } from './chunkWorkerRouting'
 import {
   OME_ZARR_CHUNK_ERROR,
   openOmeZarrChunkedSource,
+  persistable,
 } from './omeZarrChunkedSource'
 
 // Bun cannot resolve Vite's inline-worker import; the tests pass real Bun
@@ -447,6 +448,38 @@ describe('OmeZarrChunkWorkerPool', () => {
     expect(wire).toBe(16)
     pool.dispose()
     local.dispose?.()
+  })
+
+  test('a page-relative store keeps its persistent tier', async () => {
+    const globals = ['location', 'caches'] as const
+    const saved = globals.map((key) =>
+      Object.getOwnPropertyDescriptor(globalThis, key),
+    )
+    const set = (key: string, value: unknown) =>
+      Object.defineProperty(globalThis, key, { value, configurable: true })
+    const cache = {
+      keys: async () => [],
+      match: async () => undefined,
+      put: async () => {},
+      delete: async () => true,
+    }
+    set('location', { href: url.replace('/s.zarr', '/app/index.html') })
+    set('caches', { open: async () => cache, keys: async () => [] })
+    try {
+      // fetchOmeZarrChunkedSource asks this before handing workers a tier.
+      expect(persistable('../s.zarr', { persist: true })).toBe(true)
+      const opened = await openOmeZarrChunkedSource('../s.zarr', {
+        persist: true,
+      })
+      expect(opened.persistStats).toBeDefined()
+      opened.dispose?.()
+    } finally {
+      globals.forEach((key, i) => {
+        const descriptor = saved[i]
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+        else Reflect.deleteProperty(globalThis, key)
+      })
+    }
   })
 
   test('cumulative wire bytes arriving out of order count once', () => {

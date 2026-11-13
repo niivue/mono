@@ -79,17 +79,20 @@ export class OmeZarrChunkWorkerPool {
   onWireBytes: ((bytes: number) => void) | null = null
   /** Workers already sent {@link metadata}. */
   private readonly seeded: boolean[]
+  private readonly url: string
   private nextTaskId = 0
   private disposed = false
 
   constructor(
-    private readonly url: string,
+    url: string,
     options: FetchOmeZarrChunkedSourceOptions,
     private readonly pool: OmeZarrChunkPoolOptions,
     /** The store's metadata reads, by key, as the main thread's open made them. */
     private readonly metadata?: Map<string, Uint8Array | undefined>,
     createWorker: () => Worker = () => new OmeZarrChunkWorker(),
   ) {
+    // Absolute: a worker would resolve a relative URL against its own (blob) URL.
+    this.url = new URL(url, globalThis.location?.href).href
     const size = Math.max(1, Math.floor(pool.size) || 1)
     this.workers = Array.from(
       { length: size },

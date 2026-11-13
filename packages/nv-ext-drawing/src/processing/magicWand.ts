@@ -95,7 +95,8 @@ export interface MagicWandResult {
   intensityMax: number
   /**
    * Whether the auto-detect resolved to "bright" (`true`) or "dark" (`false`).
-   * Only meaningful when `thresholdMode` was `"auto"`.
+   * Only meaningful when `thresholdMode` was `"auto"`. In raw units: with a
+   * negative scl_slope, raw "bright" is the calibrated dark side.
    */
   isBright?: boolean
 }

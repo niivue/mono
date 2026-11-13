@@ -1,3 +1,13 @@
+## 1.0.0-rc.201 (2026-11-13)
+
+### Features
+
+- **niivue:** display the Allen mouse CCF atlas with ontology names and scale ([#402](https://github.com/niivue/mono/issues/402))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.200 (2026-11-13)
 
 ### Features

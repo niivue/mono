@@ -41,7 +41,7 @@ import {
 import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
-import { resolveHeaderLabel } from '@/view/NVFont'
+import { HEADER_BACK_COLOR, resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
@@ -1851,7 +1851,7 @@ export default class NVView {
             [0, 0, 0, 1],
             0.5,
             -0.2,
-            [0.5, 0.2, 0.6, 0.8],
+            HEADER_BACK_COLOR,
           ),
         )
       }

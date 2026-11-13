@@ -291,10 +291,15 @@ Support boundary:
   - A slide with no tiled (VOLUME) pyramid levels.
 
 The slide viewport is core's `createSlideView` (WebGL2): pan, the Zoom tool's
-drag, the wheel, and one Length ruler (UIKit overlay fed by the controller's
-measurement). `mountWsiSlideView(canvas, slide, options)` returns a Promise of
-the view handle (`setTool`, `resetView`, `zoom`, `fit`, `setWindow`,
-`saveBitmap`, `dispose`, `canvas`). A NVSlide path for
+drag, the wheel, and one Length ruler (core's slide overlay, in yellow; a
+sub-millimetre length reads with one decimal, "180.0 um").
+`mountWsiSlideView(canvas, slide, options)` returns a Promise of the view handle
+(`setTool`, `resetView`, `zoom`, `fit`, `setWindow`, `saveBitmap`, `dispose`,
+`canvas`).
+
+**Migration (rc).** The WSI view's own UIKit ruler is gone, with
+`createRulerSync`, `rulerSpecFor` and the `onMeasure` option of
+`mountWsiSlideView` (nothing passed it). A NVSlide path for
 2-D single-frame images is still a TODO (see `PLAN.md`).
 
 ## Compatibility

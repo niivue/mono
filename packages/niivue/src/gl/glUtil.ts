@@ -15,6 +15,20 @@ export function setTexParams(
     gl.texParameteri(target, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
 }
 
+/**
+ * Straight-alpha "over", as WebGPU's ALPHA_BLEND. Plain
+ * blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA) also scales destination alpha, so
+ * anything translucent left canvas alpha < 1 and the page showed through.
+ */
+export function blendOver(gl: WebGL2RenderingContext): void {
+  gl.blendFuncSeparate(
+    gl.SRC_ALPHA,
+    gl.ONE_MINUS_SRC_ALPHA,
+    gl.ONE,
+    gl.ONE_MINUS_SRC_ALPHA,
+  )
+}
+
 /** Unit quad (0-1, triangle strip, vec3 at location 0) in its own VAO. */
 export function createUnitQuad(gl: WebGL2RenderingContext): {
   vao: WebGLVertexArrayObject

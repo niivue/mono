@@ -49,15 +49,10 @@ export interface SlideViewOptions extends SlideRendererOptions {
   antialias?: boolean
   /** WebGL2 only: keep the drawing buffer after compositing (canvas readback later). */
   preserveDrawingBuffer?: boolean
-  /** A renderer the caller made and keeps: the view never destroys it, and
-   * restores its `overlayDraw` on destroy. `backend` names its kind if needed. */
-  renderer?: SlideRenderBackend
   /** Draw at the display's pixel ratio (never below 1); false draws one canvas pixel per CSS pixel. Default true. */
   hidpi?: boolean
   /** The slide on show at start. */
   slide?: NVSlide | null
-  /** `setSlide` and `destroy` dispose the slide they release (default true). */
-  ownsSlide?: boolean
   /** Gestures (`NVSlideController`); false attaches none. */
   controller?: Omit<NVSlideControllerOptions, 'slide' | 'screen'> | false
   /** Draw the controller's rulers and boxes (core's overlay). Default true;
@@ -69,8 +64,6 @@ export interface SlideViewOptions extends SlideRendererOptions {
   onBeforeRender?: (screen: NVSlideScreen) => void
   /** Runs after each frame (HUD, status). */
   onRender?: (screen: NVSlideScreen) => void
-  /** Rejects (AbortError) and releases the renderer if aborted while the backend starts. */
-  signal?: AbortSignal
 }
 
 /** A slide on a canvas: one renderer, one frame loop, one teardown. */
@@ -104,9 +97,6 @@ const isWebKit = (): boolean =>
   typeof navigator !== 'undefined' &&
   /AppleWebKit/.test(navigator.userAgent) &&
   !/Chrome|Chromium|Edg\//.test(navigator.userAgent)
-
-const abortError = (): DOMException =>
-  new DOMException('The slide view was aborted', 'AbortError')
 
 async function startBackend(
   canvas: HTMLCanvasElement,
@@ -162,25 +152,11 @@ export async function createSlideViewWith(
   canvasIn: HTMLCanvasElement,
   options: SlideViewOptions = {},
 ): Promise<SlideView> {
-  const borrowed = options.renderer
-  const started = borrowed
-    ? {
-        canvas: canvasIn,
-        renderer: borrowed,
-        // SlideRenderer (WebGL2) has init(gl); SlideRendererGPU does not.
-        kind:
-          options.backend ??
-          (('init' in borrowed ? 'webgl2' : 'webgpu') as SlideBackendKind),
-      }
-    : await startBackend(canvasIn, backends, options)
-  if (options.signal?.aborted) {
-    if (!borrowed) started.renderer.destroy()
-    // A clone swapped in for a retry goes; the caller's canvas returns.
-    if (started.canvas !== canvasIn) started.canvas.replaceWith(canvasIn)
-    throw abortError()
-  }
-  const { canvas, renderer, kind } = started
-  const ownsSlide = options.ownsSlide ?? true
+  const { canvas, renderer, kind } = await startBackend(
+    canvasIn,
+    backends,
+    options,
+  )
   let slide: NVSlide | null = null
   let hidpi = options.hidpi ?? true
   let overlayStyle = options.overlayStyle ?? {}
@@ -262,16 +238,12 @@ export async function createSlideViewWith(
     timer = setTimeout(render, 100)
   }
 
-  // A borrowed renderer's own hook keeps drawing, first.
-  const ownDraw = renderer.overlayDraw
-  const ownOverlay = renderer.overlay
   const syncOverlays = (): void => {
     renderer.overlayDraw = overlays.size
       ? (f) => {
-          ownDraw?.(f)
           for (const o of overlays) o.drawOverlay(f)
         }
-      : ownDraw
+      : null
   }
 
   const controller =
@@ -325,14 +297,14 @@ export async function createSlideViewWith(
       requestRender()
     },
     setSlide(next, { fit = true } = {}) {
-      // After destroy nothing will show it: an owned slide is released at once.
+      // After destroy nothing will show it: the slide is released at once.
       if (destroyed) {
-        if (ownsSlide) next?.dispose()
+        next?.dispose()
         return
       }
       if (next === slide) return
       slide?.removeEventListener('change', requestRender)
-      if (ownsSlide) slide?.dispose()
+      slide?.dispose()
       renderer.clearTextures()
       slide = next
       slide?.addEventListener('change', requestRender)
@@ -352,7 +324,6 @@ export async function createSlideViewWith(
       syncOverlays()
       requestRender()
       return () => {
-        // After destroy the hook belongs to the renderer's owner again.
         if (destroyed) return
         overlays.delete(overlay)
         syncOverlays()
@@ -372,13 +343,11 @@ export async function createSlideViewWith(
       ratioQuery?.removeEventListener('change', onRatio)
       controller?.dispose()
       slide?.removeEventListener('change', requestRender)
-      if (ownsSlide) slide?.dispose()
+      slide?.dispose()
       slide = null
       overlays.clear()
       listeners.clear()
-      renderer.overlayDraw = ownDraw
-      renderer.overlay = ownOverlay
-      if (!borrowed) renderer.destroy()
+      renderer.destroy()
     },
   }
   if (options.slide) view.setSlide(options.slide)

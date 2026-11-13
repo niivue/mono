@@ -69,6 +69,11 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 // Tile-codec registry. Built-ins cover the browser-native paths; additional
 // codecs (e.g. image/jp2 via @niivue/dcm2niix) are registered by the
 // consumer with NVSlide.registerTileDecoder, so the core ships no heavy codec.
+// Bitmaps keep straight alpha: WebGL2 uploads a default (premultiplied in
+// Chrome) bitmap as is, ignoring UNPACK_PREMULTIPLY_ALPHA, so a translucent
+// tile drew colour x alpha^2 there while WebGPU drew colour x alpha.
+const STRAIGHT: ImageBitmapOptions = { premultiplyAlpha: 'none' }
+
 export const tileDecoders = new Map<string, SlideTileDecoder>([
   [
     'image/jpeg',
@@ -76,6 +81,7 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
     // (NVSlide.colorLut), not an APP2 segment inside a tile.
     (bytes) =>
       createImageBitmap(new Blob([unshared(bytes)], { type: 'image/jpeg' }), {
+        ...STRAIGHT,
         colorSpaceConversion: 'none',
       }),
   ],
@@ -95,6 +101,7 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
           width,
           height,
         ),
+        STRAIGHT,
       )
     },
   ],
@@ -698,6 +705,7 @@ export async function decodeTileBitmap(
           0,
           Math.min(bitmap.width, width),
           Math.min(bitmap.height, height),
+          STRAIGHT,
         )
       } finally {
         bitmap.close()
@@ -708,10 +716,10 @@ export async function decodeTileBitmap(
 }
 
 /** A decoded tile turned per `o` (see {@link NVSlideTileOrientation}); closes a bitmap input. */
-function orientTile(
+async function orientTile(
   decoded: ImageBitmap | NVSlideTileSamples,
   o: NVSlideTileOrientation,
-): ImageBitmap | NVSlideTileSamples {
+): Promise<ImageBitmap | NVSlideTileSamples> {
   if ('samples' in decoded) return orientSamples(decoded, o)
   const [w, h] = o.transpose
     ? [decoded.height, decoded.width]
@@ -727,7 +735,8 @@ function orientTile(
   else ctx.setTransform(sx, 0, 0, sy, e, f)
   ctx.drawImage(decoded, 0, 0)
   decoded.close()
-  return canvas.transferToImageBitmap()
+  // A canvas bitmap is premultiplied; tiles must stay straight (see STRAIGHT).
+  return createImageBitmap(canvas, STRAIGHT)
 }
 
 /** Samples turned per `o` (see {@link NVSlideTileOrientation}). */

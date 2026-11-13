@@ -31,6 +31,7 @@ import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 import { recordChunkPhase } from '@/volume/chunkTiming'
 import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
 import {
+  IDENTITY_MTX,
   type ModulationTextureParams,
   modulationFitsTextureLimit,
 } from '@/volume/modulation'
@@ -39,7 +40,12 @@ import {
   chunkRGBA,
   isRGBAChunkDatatype,
 } from '@/volume/orientChunked'
-import { createModTexture, ensureOrientPipeline } from './orient'
+import {
+  createModTexture,
+  ensureOrientPipeline,
+  getTextureFormat,
+  writeOrientUniforms,
+} from './orient'
 import * as wgpu from './wgpu'
 
 export interface VolumeChunkGPU {
@@ -80,72 +86,6 @@ function emptyGradientTextureGPU(device: GPUDevice): GPUTexture {
     dimension: '3d',
     usage: GPUTextureUsage.TEXTURE_BINDING,
   })
-}
-
-/** Identity row-major 4x4 — orient.wgsl reads mtxRow0..3 as vec4 rows. */
-const IDENTITY_MAT4: Float32Array = new Float32Array([
-  1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-])
-
-function getTextureFormat(datatypeCode: number): {
-  format: GPUTextureFormat
-  pipelineType: string
-  bytesPerVoxel: number
-} {
-  switch (datatypeCode) {
-    case 2:
-      return { format: 'r8uint', pipelineType: 'uint', bytesPerVoxel: 1 }
-    case 4:
-      return { format: 'r16sint', pipelineType: 'sint', bytesPerVoxel: 2 }
-    case 8:
-      return { format: 'r32sint', pipelineType: 'sint', bytesPerVoxel: 4 }
-    case 16:
-    case 32:
-      return { format: 'r32float', pipelineType: 'float', bytesPerVoxel: 4 }
-    case 512:
-      return { format: 'r16uint', pipelineType: 'uint', bytesPerVoxel: 2 }
-    case 768:
-      return { format: 'r32uint', pipelineType: 'uint', bytesPerVoxel: 4 }
-    default:
-      throw new Error(
-        `orientChunked: unsupported NIfTI datatype ${datatypeCode}`,
-      )
-  }
-}
-
-function writeIdentityOrientUniforms(
-  device: GPUDevice,
-  uniformBuffer: GPUBuffer,
-  nvimage: NVImage,
-): void {
-  const ab = new ArrayBuffer(12 * 16)
-  const dv = new DataView(ab)
-  for (let i = 0; i < 16; i++) dv.setFloat32(i * 4, IDENTITY_MAT4[i], true)
-  const u = buildOrientUniforms(nvimage, 0)
-  dv.setFloat32(64, u.slope, true)
-  dv.setFloat32(68, u.intercept, true)
-  dv.setFloat32(72, u.calMin, true)
-  dv.setFloat32(76, u.calMax, true)
-  dv.setFloat32(80, u.mnNeg, true)
-  dv.setFloat32(84, u.mxNeg, true)
-  dv.setFloat32(88, u.isAlphaThreshold, true)
-  dv.setFloat32(92, u.isColorbarFromZero, true)
-  dv.setFloat32(96, u.overlayOpacity, true)
-  dv.setFloat32(100, u.isLabel, true)
-  dv.setFloat32(104, u.labelMin, true)
-  dv.setFloat32(108, u.labelWidth, true)
-  // modMtx (offset 112, 4 vec4s) + mode flag (offset 176): identity + mode 0
-  // here; writeChunkModulationUniforms overwrites them per chunk when the
-  // volume has a modulator.
-  for (let i = 0; i < 16; i++)
-    dv.setFloat32(112 + i * 4, IDENTITY_MAT4[i], true)
-  dv.setFloat32(176, 0, true)
-  // atlasOutline probes neighbours in the SOURCE texture; a chunk's texture is
-  // a tile of the volume, so probes at a chunk seam would read the neighbouring
-  // chunk's edge and draw a spurious border. Outlining is therefore off for the
-  // chunked path.
-  dv.setFloat32(180, 0, true)
-  device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 
 // Per-chunk modulation uniforms (offsets 112..180 of the orient struct): the
@@ -286,7 +226,19 @@ async function buildOrientMachinery(
     size: 12 * 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   })
-  writeIdentityOrientUniforms(device, uniformBuffer, nvimage)
+  // Identity matrix and no modulation: writeChunkModulationUniforms sets the
+  // modulation per chunk when the volume has a modulator. Outline is off for
+  // chunks (see writeOrientUniforms).
+  writeOrientUniforms(
+    device,
+    uniformBuffer,
+    nvimage,
+    IDENTITY_MTX,
+    0,
+    null,
+    false,
+    false,
+  )
   const {
     colormapTexture,
     negativeColormapTexture,

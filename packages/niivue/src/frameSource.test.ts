@@ -193,10 +193,15 @@ test('two viewers loading one source keep their own frame', async () => {
 test('removing the last volume of a group aborts its pending fetch', async () => {
   const gates = new Map([[1, gate()]])
   const aborted: number[] = []
-  const nv = await load([source(0, {}, gates, aborted)])
+  let cancels = 0
+  const nv = await load([
+    { ...source(0, {}, gates, aborted), cancel: () => cancels++ },
+  ])
   const request = nv.setFrame4D('c0.nii', 1)
   await nv.removeVolume(0)
   expect(aborted).toEqual([1])
+  // Its source's background work (prefetch) is cancelled too.
+  expect(cancels).toBe(1)
   gates.get(1)?.resolve()
   await request
 })

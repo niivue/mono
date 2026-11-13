@@ -1,11 +1,10 @@
-import { NVSlide, type NVSlideTileCodec } from '@niivue/niivue'
+import { NVSlide, type NVSlideTileCodec, settleBy } from '@niivue/niivue'
 import type {
   SlideIndex,
   SlideIndexAssociated,
   SlideIndexSlide,
 } from './dicomIndex'
 import {
-  abortable,
   CODEC_BY_TRANSFER_SYNTAX,
   fileFor,
   joinFragments,
@@ -75,12 +74,12 @@ export async function readAssociatedImage(
   const { instance, offset, length, width, height } = image
   const file = fileFor(files)(instance)
   const read = (start: number, end: number) =>
-    abortable(
+    settleBy(
+      signal,
       file
         .slice(start, end)
         .arrayBuffer()
         .then((b) => new Uint8Array(b)),
-      signal,
     )
   if (image.native)
     return {

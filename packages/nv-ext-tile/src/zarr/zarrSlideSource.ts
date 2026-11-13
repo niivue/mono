@@ -11,7 +11,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { ByteLru, omeLengthToMicrons } from '@niivue/niivue'
+import { ByteLru, omeLengthToMicrons, settleBy } from '@niivue/niivue'
 import * as zarr from '@niivue/zarrita-rs/inline'
 import {
   grayInto,
@@ -1067,17 +1067,5 @@ function asBytes(a: Samples): Uint8Array {
  * `run`, or the abort as soon as `signal` fires. A channel's range read is
  * shared, so an aborted tile stops waiting rather than cancelling it.
  */
-function untilAborted(
-  run: Promise<void> | undefined,
-  signal?: AbortSignal,
-): Promise<void> | undefined {
-  if (!run || !signal) return run
-  if (signal.aborted) return Promise.reject(signal.reason)
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason)
-    signal.addEventListener('abort', onAbort, { once: true })
-    run
-      .finally(() => signal.removeEventListener('abort', onAbort))
-      .then(resolve, reject)
-  })
-}
+const untilAborted = (run: Promise<void> | undefined, signal?: AbortSignal) =>
+  run && settleBy(signal, run)

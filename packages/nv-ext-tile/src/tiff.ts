@@ -22,11 +22,17 @@ import type {
   NVSlideTileManifest,
   NVSlideTileSamples,
   NVSlideWindow,
+  SlideFetch,
   SlidePlaneCapable,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
-import { decodeXmlEntities, parseOmeXml } from '@niivue/niivue'
+import {
+  decodeXmlEntities,
+  parseOmeXml,
+  readCapped,
+  settleBy,
+} from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import {
   grayInto,
@@ -43,12 +49,8 @@ import { sharedDcm2niixDecoders } from './dcm2niixDecoders'
 import { sampleLevel } from './levelSample'
 import {
   anySignal,
-  linked,
-  raceAbort,
   rangeReplyError,
-  readCapped,
   refuseReply,
-  type SlideFetch,
   slideFetch,
 } from './rangeFetch'
 import { ARGOS_TAG, argosStack } from './vendor/argos'
@@ -242,7 +244,7 @@ class RangeClient extends BaseClient {
         ...(attempt ? { cache: 'no-store' as const } : {}),
       })
       // Strict: every geotiff read is ranged, so any 200 is refused.
-      const bad = rangeReplyError(response, range, true)
+      const bad = rangeReplyError(response, range)
       if (bad?.kind === 'whole-file')
         await refuseReply(
           response,
@@ -270,17 +272,8 @@ class RangeClient extends BaseClient {
             : cr
               ? Number(cr[2]) - Number(cr[1]) + 1
               : undefined
-      if (Number(response.headers.get('Content-Length')) > max)
-        await refuseReply(
-          response,
-          `${this.url}: reply to ${range} is too long`,
-        )
-      // Streamed: a reply without Content-Length is refused past the range.
-      const body = await readCapped(
-        response,
-        `${this.url}: reply to ${range}`,
-        bound,
-      )
+      // Refused past the range, by Content-Length or else while streamed.
+      const body = await readCapped(response, bound)
       const data =
         body.byteLength === body.buffer.byteLength
           ? (body.buffer as ArrayBuffer)
@@ -1533,9 +1526,9 @@ export class TiffSlideSource implements SlideTileSource {
     const key = planeKey(p)
     let pyramids = this.pyramids.get(key)
     if (!pyramids) {
-      pyramids = await raceAbort(
-        openPlane(p),
+      pyramids = await settleBy(
         anySignal(signal, this.closed.signal),
+        openPlane(p),
       )
       // F14: every plane serves the open plane's channels and quantization.
       if (
@@ -1593,9 +1586,9 @@ export class TiffSlideSource implements SlideTileSource {
     signal?.throwIfAborted()
     // geotiff's loadValue takes no signal: an abort stops the wait here, and
     // dispose() cancels the read itself (RangeClient.openSignal).
-    const value: ArrayLike<number> | undefined = await raceAbort(
-      dir.loadValue(34675),
+    const value: ArrayLike<number> | undefined = await settleBy(
       signal,
+      dir.loadValue(34675),
     )
     if (!value) return null
     return value instanceof Uint8Array ? value : Uint8Array.from(value)
@@ -1612,7 +1605,7 @@ export class TiffSlideSource implements SlideTileSource {
       throw new Error(
         'Multi-channel OME-TIFF: read tiles with fetchTileSamples',
       )
-    const abort = linked(signal, this.closed.signal)
+    const abort = anySignal(signal, this.closed.signal)
     this.host?.pushRangeEvent({ label, status: 'pending' })
     try {
       abort.throwIfAborted()
@@ -1750,7 +1743,7 @@ export class TiffSlideSource implements SlideTileSource {
         if (n.starts === load) n.starts = undefined
       })
     }
-    const starts = await raceAbort(n.starts, signal)
+    const starts = await settleBy(signal, n.starts)
     const last = j.perRow * j.mcuRows
     if (!(starts.length >= last))
       throw new Error(
@@ -1805,12 +1798,12 @@ export class TiffSlideSource implements SlideTileSource {
     const { width: w, height: h } = tile
     const gray = this.channels as TiffChannels
     const out = new (planeArray(gray.kind))(w * h * channels.length)
-    const abort = linked(signal, this.closed.signal)
+    const abort = anySignal(signal, this.closed.signal)
     const pyramids = this.pyramidsOf(level)
     // Hidden channels shown for the first time: their windows first.
-    await raceAbort(
-      Promise.all(channels.map((c) => this.channelReady(c, pyramids[c]))),
+    await settleBy(
       abort,
+      Promise.all(channels.map((c) => this.channelReady(c, pyramids[c]))),
     )
     const x0 = tile.x * (level.tileWidth ?? 0)
     const y0 = tile.y * (level.tileHeight ?? 0)

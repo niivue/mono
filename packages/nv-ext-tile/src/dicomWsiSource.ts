@@ -7,6 +7,7 @@ import type {
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
+import { settleBy } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
 import { dicomLabToSrgb } from './cielab'
 import {
@@ -24,7 +25,7 @@ import {
   slideOrientation,
   tileExtent,
 } from './dicomOrientation'
-import { linked } from './rangeFetch'
+import { anySignal } from './rangeFetch'
 
 // DICOM transfer syntaxes -> NVSlide tile codecs (JPEG 2000 and JPEG-LS need a
 // registered decoder, e.g. registerDcm2niixDecoders()).
@@ -101,23 +102,6 @@ export function joinFragments(span: Uint8Array, what: string): Uint8Array {
   return out
 }
 
-/** `read`, rejecting with the signal's reason as soon as it aborts (File.slice reads take none). */
-export function abortable<T>(
-  read: Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  if (!signal) return read
-  if (signal.aborted) return Promise.reject(signal.reason)
-  let onAbort = () => {}
-  return Promise.race([
-    read,
-    new Promise<never>((_, reject) => {
-      onAbort = () => reject(signal.reason)
-      signal.addEventListener('abort', onAbort, { once: true })
-    }),
-  ]).finally(() => signal.removeEventListener('abort', onAbort))
-}
-
 export interface DicomWsiSourceOptions {
   /** Credit for the slide, as `manifest.attribution`. */
   attribution?: NVSlideAttribution
@@ -158,13 +142,13 @@ export class DicomWsiSource implements SlideTileSource {
     end: number,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const abort = linked(signal, this.closed.signal)
-    return abortable(
+    // File.slice reads take no signal: an abort stops the wait.
+    return settleBy(
+      anySignal(signal, this.closed.signal),
       file
         .slice(start, end)
         .arrayBuffer()
         .then((b) => new Uint8Array(b)),
-      abort,
     )
   }
 

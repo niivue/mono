@@ -80,11 +80,12 @@ adds the site's base path.
 
 ### Package docs
 
-Every package except `niivue` and `dev-images` has a page under Packages in
-the sidebar, built from `packages/<name>/docs`:
+Every package except `dev-images` has a group under Packages in the
+sidebar. The `niivue` group points to the guides above; every other
+package's pages are built from `packages/<folder>/docs`:
 
-- `docs/index.mdx` is required. It becomes `/packages/<name>/`; another
-  page, `docs/hosts.mdx` say, becomes `/packages/<name>/hosts/`.
+- `docs/index.mdx` is required. It becomes `/packages/<folder>/`; another
+  page, `docs/hosts.mdx` say, becomes `/packages/<folder>/hosts/`.
 - Each page needs a `title` and a `description` in its frontmatter; the
   index's title is the package name. `sidebar: { order: N }` sets the order
   of the other pages.
@@ -122,10 +123,10 @@ script plus those files, with the library imports rewritten to
 `@niivue/niivue`. A new example appears in the Gallery once it is linked
 from `examples/index.html`; there is nothing else to register.
 
-For agents, every guide is also served as Markdown at its URL plus
+For agents, every page is also served as Markdown at its URL plus
 `index.md` (`/guide/meshes/index.md`), which the Copy page button copies.
-`/llms.txt` lists those files and `/llms-full.txt` joins them, both in the
-sidebar order set in `src/sidebar.ts`. `src/lib/markdown.ts` drops the
+`/llms.txt` lists those files and `/llms-full.txt` joins them: the guides
+in the sidebar order set in `src/sidebar.ts`, then each package's pages. `src/lib/markdown.ts` drops the
 imports, writes each `<Demo>` out as its code and each `<Tabs>` panel
 under its label; any other component would reach the Markdown as written,
 so keep pages to Markdown plus `<Demo>` and `<Tabs>`. A new NiiVue guide

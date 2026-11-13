@@ -18,6 +18,7 @@ import {
   MAX_DEFAULT_VISIBLE,
   MAX_TILE_SIZE,
   MAX_TILES,
+  planeArray,
   type Quantize,
   quantizeRange,
   storedToValue,
@@ -722,9 +723,9 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     if (this.rgb) return rgba(data, sy, sx, sc, w, h)
     const q = this.quantize[c] ?? null
     const ids = this.labelIds(level)
-    if (!q && !ids && sx === 1 && sy === w && isPlaneOf(level, data))
+    if (!q && !ids && sx === 1 && sy === w && data instanceof planeArray(level))
       return asBytes(data)
-    const out = newPlane(level, w * h)
+    const out = new (planeArray(level))(w * h)
     if (ids) copyLabelIds(out, 0, data, sy, sx, w, h)
     else if (level.sampleType)
       copyStrided(out, data, [w, h, 1], [sx, sy, 0], w, 0)
@@ -745,7 +746,7 @@ export class ZarrSlideSource implements SlideTileSource, SlidePlaneCapable {
     await Promise.all(channels.map((c) => untilAborted(this.ready(c), signal)))
     const { width: w, height: h } = tile
     const n = w * h
-    const out = newPlane(level, n * channels.length)
+    const out = new (planeArray(level))(n * channels.length)
     // Native signed/float planes copy; uint8/uint16 (maybe quantized) go
     // through grayInto. Decided per tile, not per sample.
     const native = level.sampleType !== undefined
@@ -1012,31 +1013,6 @@ function rgba(
       out[o + 3] = 255
     }
   return out
-}
-
-/** A level's sample plane: its sampleType, else uint8 or uint16 by bitsStored. */
-function newPlane(
-  level: NVSlideLevelManifest,
-  n: number,
-): Uint8Array | Uint16Array | Int16Array | Float32Array {
-  return level.sampleType === 'i16'
-    ? new Int16Array(n)
-    : level.sampleType === 'f32'
-      ? new Float32Array(n)
-      : level.bitsStored === 8
-        ? new Uint8Array(n)
-        : new Uint16Array(n)
-}
-
-/** Whether `data` already is `level`'s sample plane type. */
-function isPlaneOf(level: NVSlideLevelManifest, data: Samples): boolean {
-  return level.sampleType === 'i16'
-    ? data instanceof Int16Array
-    : level.sampleType === 'f32'
-      ? data instanceof Float32Array
-      : level.bitsStored === 8
-        ? data instanceof Uint8Array
-        : data instanceof Uint16Array
 }
 
 // f32 holds every integer up to 2^24 exactly.

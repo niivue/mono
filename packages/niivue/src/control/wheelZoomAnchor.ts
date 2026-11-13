@@ -7,7 +7,7 @@ import * as NVSliceLayout from '@/view/NVSliceLayout'
  *
  * With `interaction.wheelZoomAnchor === 'crosshair'` (the default) the anchor
  * is the crosshair position, preserving the behavior pinned by issue #68 and
- * relied on by the DICOM-WSI integration contract (docs/dicom-wsi.md section 7).
+ * relied on by the DICOM-WSI integration contract (notes/dicom-wsi.md section 7).
  *
  * With `'pointer'` the anchor is the pointer's pick on the hovered slice tile
  * (OpenSeadragon-style zoom-to-cursor). When the pick misses — pointer off any

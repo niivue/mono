@@ -26,17 +26,9 @@ const demo: Demo = async (canvas, { ui, asset }) => {
       })
     },
   )
-  ui.slider(
-    'Size',
-    0.1,
-    1,
-    nv.fontScale,
-    (v) => {
-      nv.fontScale = v
-      nv.resize() // text size is computed when the view is laid out
-    },
-    0.05,
-  )
+  ui.slider('Size', 8, 32, nv.fontMinSize, (v) => {
+    nv.fontMinSize = v
+  })
   return nv
 }
 

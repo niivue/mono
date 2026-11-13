@@ -8,7 +8,7 @@ import {
 import { segmentationColormap } from './segColormap'
 
 // OME-Zarr is the fourth of the microscopy containers this package reads (see
-// packages/nv-ext-tile/docs/ome-zarr-format.md). A store is a resolution pyramid over up to five
+// packages/nv-ext-tile/notes/ome-zarr-format.md). A store is a resolution pyramid over up to five
 // named dimensions; this page opens one, offers its channels, levels and
 // timepoints, and loads each selected channel as its own volume: named,
 // coloured and windowed by the store's omero display block when it has one.

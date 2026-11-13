@@ -1,0 +1,102 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import { getCollection } from 'astro:content'
+import { Code, TabItem, Tabs } from '@astrojs/starlight/components'
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { examplesBase, repoUrl, withBase } from '../../site'
+
+export async function getStaticPaths() {
+  return (await getCollection('gallery')).map((entry) => ({
+    params: { slug: entry.id },
+    props: { example: entry.data },
+  }))
+}
+
+type Props = { example: CollectionEntry<'gallery'>['data'] }
+
+const { example } = Astro.props
+const live = new URL(example.page, examplesBase).href
+const source = `${repoUrl}/blob/main/${example.source}`
+// App scripts are TypeScript; example pages are JavaScript.
+const lang = (name: string) => (name.endsWith('.ts') ? 'ts' : 'js')
+---
+
+<StarlightPage
+  frontmatter={{
+    title: example.title,
+    description: example.summary || `NiiVue example: ${example.title}`,
+    template: 'splash',
+  }}
+>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href={withBase('gallery/')}>Gallery</a>
+    <span aria-hidden="true">/</span>
+    <span>{example.section}</span>
+  </nav>
+  {example.summary && <p>{example.summary}</p>}
+  <div class="nv-viewer not-content">
+    <div class="nv-viewer-bar">
+      <span class="url">{example.page}</span>
+      <a href={live} target="_blank" rel="noopener noreferrer">Open full page</a>
+      <a href={source} target="_blank" rel="noopener noreferrer">Source</a>
+    </div>
+    <iframe
+      src={live}
+      title={example.title}
+      allow="fullscreen; clipboard-write"
+      loading="lazy"></iframe>
+  </div>
+  <!-- Left out of search: the code would match nearly every query. -->
+  <h2 data-pagefind-ignore>Code</h2>
+  <div data-pagefind-ignore>
+    {
+      example.files.length === 1 ? (
+        <Code code={example.files[0].code} lang={lang(example.files[0].name)} title={example.files[0].name} />
+      ) : (
+        <Tabs>
+          {example.files.map((f) => (
+            <TabItem label={f.name}>
+              <Code code={f.code} lang={lang(f.name)} title={f.name} />
+            </TabItem>
+          ))}
+        </Tabs>
+      )
+    }
+  </div>
+</StarlightPage>
+
+<style>
+  .crumbs {
+    display: flex;
+    gap: 0.5rem;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+  }
+
+  .url {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--__sl-font-mono);
+    color: #a3a3a3;
+  }
+
+  .nv-viewer-bar a {
+    color: #d4d4d4;
+    text-decoration: none;
+  }
+
+  .nv-viewer-bar a:hover {
+    color: #fff;
+  }
+
+  iframe {
+    display: block;
+    width: 100%;
+    height: min(72vh, 680px);
+    border: 0;
+    background: var(--nv-viewer);
+  }
+</style>

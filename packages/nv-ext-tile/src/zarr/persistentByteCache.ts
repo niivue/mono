@@ -508,7 +508,7 @@ type StoreGetRange = NonNullable<zarr.AsyncReadable['getRange']>
  * ```ts
  * const store = zarr.withByteCaching(
  *   withPersistentBytes(new zarr.FetchStore(url), cache, url),
- *   { cache: new ByteLruCache(bytes) },
+ *   { cache: new ByteLru<string, Uint8Array | undefined>(bytes) },
  * )
  * ```
  *

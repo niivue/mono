@@ -1,3 +1,4 @@
+import { ByteLru } from '@/byteLru'
 import { lookupColorMap } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import {
@@ -45,11 +46,11 @@ import {
   readCapped,
   type SlidePlaneCapable,
   type SlideTileSource,
+  settleBy,
   tileDecoders,
 } from './slideSource'
 import { composeThumbnail } from './slideThumbnail'
 import { EDGE_ALL } from './tileGutter'
-import { NVSlideTileCache, type TileBitmap } from './tileLru'
 import { DEFAULT_TILE_TEXTURE_BYTES } from './tileTextureCache'
 
 export type NVSlideTileCodec =
@@ -550,6 +551,15 @@ export interface NVSlideCachedTile {
   readonly level: NVSlideLevelManifest
 }
 
+// A tile cache entry. id: a load serial, so a memo can tell entries apart
+// without holding them. mask: the held channels below 32 as bits (sample
+// tiles of a samples source).
+export type TileBitmap = NVSlideCachedTile & {
+  bytes: number
+  id: number
+  mask?: number
+}
+
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
 // What capacity assumes before any renderer registers its budget.
 const DEFAULT_RENDERER_BUDGET: SlideRendererBudget = {
@@ -680,7 +690,7 @@ export class NVSlide extends EventTarget {
   private _placeholderColor!: NVSlideColor
   private _gridColor!: NVSlideColor
   private readonly _rangeLogLength = DEFAULT_RANGE_LOG_LENGTH
-  private readonly _cache: NVSlideTileCache
+  private readonly _cache: ByteLru<string, TileBitmap>
   // A failed tile waits before it is requested again (1 s, doubling to 30 s):
   // owners re-want missing tiles every frame, so a persistent failure (HTTP
   // error, bad frame) would otherwise be fetched in a tight loop.
@@ -758,7 +768,12 @@ export class NVSlide extends EventTarget {
   private _displayGen = 0
   private readonly _thumbs = new Map<
     string,
-    { gen: number; ids: number[]; bitmap: ImageBitmap }
+    {
+      gen: number
+      ids: number[]
+      lut: NVSlideColorLut | null
+      bitmap: ImageBitmap
+    }
   >()
   private _colorManagement: boolean
   private _colorLut: NVSlideColorLut | null = null
@@ -799,8 +814,11 @@ export class NVSlide extends EventTarget {
     this._placeholderColor = options.placeholderColor ?? [0.067, 0.098, 0.09, 1]
     this._gridColor = options.gridColor ?? [0.455, 0.831, 0.812, 0.24]
     this.stats = freshStats()
-    this._cache = new NVSlideTileCache(
+    this._cache = new ByteLru<string, TileBitmap>(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
+      (tile) => tile.bytes,
+      (tile) => tile.bitmap?.close(),
+      true, // keep an oversize tile alone: refusing it re-fetches it every frame
     )
     this._maxConcurrentLoads = clampTileLoadCap(
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
@@ -992,35 +1010,58 @@ export class NVSlide extends EventTarget {
   static async fromManifestUrl(
     manifestUrl: string,
     options: NVSlideOptions = {},
+    signal?: AbortSignal,
   ): Promise<NVSlide> {
+    signal?.throwIfAborted()
     const controller = new AbortController()
-    const response = await fetch(manifestUrl, { signal: controller.signal })
-    if (!response.ok) {
-      // A server may explain a refusal as JSON `{ error }`; keep its reason, but
-      // never let an error body that does not finish hold back the status.
-      const isJson = response.headers
-        .get('content-type')
-        ?.toLowerCase()
-        .includes('json')
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const body = isJson
-        ? ((await Promise.race([
-            response.json().catch(() => null),
-            new Promise((resolve) => {
-              timer = setTimeout(resolve, 1000, null)
-            }),
-          ])) as { error?: unknown } | null)
-        : null
-      clearTimeout(timer)
-      controller.abort() // releases a body read still pending, or never started
-      const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
-      throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
+    const readSignal = signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal
+    try {
+      const response = await settleBy(
+        readSignal,
+        fetch(manifestUrl, { signal: readSignal }),
+        (late) => {
+          late.body?.cancel().catch(() => {})
+        },
+      )
+      if (!response.ok) {
+        // Keep a server's JSON reason without waiting forever for its error body.
+        const isJson = response.headers
+          .get('content-type')
+          ?.toLowerCase()
+          .includes('json')
+        let timer: ReturnType<typeof setTimeout> | undefined
+        let body: { error?: unknown } | null = null
+        try {
+          if (isJson)
+            body = await settleBy(
+              readSignal,
+              Promise.race([
+                readCapped(response, MAX_WHOLE_FILE, readSignal)
+                  .then((bytes) => JSON.parse(new TextDecoder().decode(bytes)))
+                  .catch(() => null),
+                new Promise<null>((resolve) => {
+                  timer = setTimeout(resolve, 1000, null)
+                }),
+              ]),
+            )
+        } finally {
+          clearTimeout(timer)
+        }
+        const reason = typeof body?.error === 'string' ? `: ${body.error}` : ''
+        throw new Error(`Slide manifest HTTP ${response.status}${reason}`)
+      }
+      const manifest = JSON.parse(
+        new TextDecoder().decode(
+          await readCapped(response, MAX_WHOLE_FILE, readSignal),
+        ),
+      ) as NVSlideManifest
+      readSignal.throwIfAborted()
+      return new NVSlide(manifest, { ...options, manifestUrl })
+    } finally {
+      controller.abort()
     }
-    // Untrusted: refused past the whole-file cap, Content-Length or not.
-    const manifest = JSON.parse(
-      new TextDecoder().decode(await readCapped(response, MAX_WHOLE_FILE)),
-    ) as NVSlideManifest
-    return new NVSlide(manifest, { ...options, manifestUrl })
   }
 
   /** Tile loads queued or in flight. */
@@ -1029,7 +1070,7 @@ export class NVSlide extends EventTarget {
   }
 
   get cacheBytes(): number {
-    return this._cache.bytes
+    return this._cache.totalBytes
   }
 
   /** The displayed channels, one per source sample plane (see {@link NVChannel}). */
@@ -2006,8 +2047,9 @@ export class NVSlide extends EventTarget {
    * Level `level` (default the coarsest) composited on the CPU from its
    * resident tiles, rows as stored, scaled to fit `maxPx` a side, for a minimap
    * or a colour reference. Missing tiles are requested (thumbnail rank, at most
-   * the 64 nearest the level centre) and left black. The same bitmap is
-   * returned until a tile arrives or leaves or the channels change; the slide
+   * the 64 nearest the level centre) and left black. Colours as drawn, through
+   * {@link displayColorLut}. The same bitmap is returned until a tile arrives
+   * or leaves, or the channels or colour table change; the slide
    * closes it then and on dispose, so draw it at once. Null without
    * OffscreenCanvas or before any tile is resident.
    */
@@ -2037,8 +2079,10 @@ export class NVSlide extends EventTarget {
     )
     const ids = entries.map((e) => e?.id ?? 0)
     const memo = this._thumbs.get(key)
+    const lut = this.displayColorLut
     if (
       memo?.gen === this._displayGen &&
+      memo.lut === lut &&
       ids.every((id, i) => id === memo.ids[i])
     )
       return memo.bitmap
@@ -2056,11 +2100,12 @@ export class NVSlide extends EventTarget {
       this.channelBlend,
       this.manifest.channelInfo,
       this.selectedLabel,
+      lut,
     )
     if (!bitmap) return null
     memo?.bitmap.close()
     this._thumbs.delete(key)
-    this._thumbs.set(key, { gen: this._displayGen, ids, bitmap })
+    this._thumbs.set(key, { gen: this._displayGen, ids, lut, bitmap })
     for (const [old, { bitmap: b }] of this._thumbs) {
       if (this._thumbs.size <= MAX_THUMBNAILS) break
       b.close()
@@ -2406,7 +2451,7 @@ export class NVSlide extends EventTarget {
               id: ++tileSerial,
             },
       )
-      this.stats.cacheBytes = this._cache.bytes
+      this.stats.cacheBytes = this._cache.totalBytes
       this.stats.completed++
       this._failed.delete(key)
     } catch (err) {

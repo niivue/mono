@@ -1,0 +1,64 @@
+---
+title: Measuring
+description: "Use OHIF's measurement tools on a NiiVue viewport: draw lengths, regions and arrows, and see them in OHIF's Measurements panel."
+sidebar:
+  order: 3
+---
+
+OHIF's measurement tools work on a NiiVue viewport. Pick a tool in the
+toolbar and draw on a 2D slice. When the viewport shows a DICOM series, the
+finished shape also appears as a row in OHIF's Measurements panel, with its
+numbers.
+
+## Which tools work
+
+| Tool | How to draw | What you get |
+| --- | --- | --- |
+| Length | drag | the length, drawn as a ruler with tick marks |
+| Ellipse, Rectangle, Circle | drag | area and intensity |
+| Freehand | drag | the outline only |
+| Spline, Livewire | click each point | area and intensity |
+| Bidirectional | two drags | the long and short diameters |
+| Arrow | drag | a label |
+
+Intensity means the minimum, mean, maximum and standard deviation inside
+the shape. NiiVue's Ruler button picks the Length tool.
+
+## Drawing shapes
+
+Most tools are a single press, drag and release.
+
+For Spline and Livewire, click to place each point, then double-click to
+close the shape. Press Escape to throw away a shape you are still drawing.
+
+For Bidirectional, drag the long axis first, then the short axis across it,
+on the same slice. Starting the second drag on another slice starts the
+measurement over.
+
+## Units
+
+Lengths are in millimeters and areas in square millimeters, both measured
+in the plane of the slice using the real voxel size. Intensity is in the
+series' own unit: Hounsfield units for CT, SUV for PET, and no unit
+otherwise.
+
+## Using the Measurements panel
+
+Edit a row's label in the panel, and the new label appears next to the
+shape in the viewport.
+
+Clicking a row brings its shape back into view in the NiiVue viewport, as
+long as nv-ohif is listed after the Cornerstone extension.
+
+Each row points back to its DICOM series. A shape drawn on one of the
+slices as they were acquired also points to that exact DICOM image; one
+drawn across slices or on a reformatted view does not.
+
+## When a measurement is not in the panel
+
+- **The viewport shows a NIfTI file.** The shape is drawn and measured, but
+  rows need a DICOM series behind the viewport.
+- **The outline is in pieces or has a hole.** Freehand, Spline and Livewire
+  rows need one outline without holes. A shape in pieces stays on the
+  viewport, measured, but is not listed.
+- **It is an angle.** Angle and Cobb Angle measure on the viewport only.

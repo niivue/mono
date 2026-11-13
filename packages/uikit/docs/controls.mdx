@@ -1,0 +1,221 @@
+---
+title: Buttons, sliders and menus
+description: "Put buttons, toggles, sliders, menus, drop-down lists and segmented controls on a NiiVue canvas and keep them in step with the viewer."
+sidebar:
+  order: 1
+---
+
+Each kind of control has its own overlay: one for buttons, one for
+sliders, one for menus, and so on. Make an overlay once, then add as many
+controls of that kind to it as you need.
+
+## Putting several kinds on one canvas
+
+When you use more than one kind, put the overlays in a control layer and
+register and attach the layer instead of each overlay:
+
+```js
+import {
+  loadDefaultFont,
+  UIKitButtonOverlay,
+  UIKitControls,
+  UIKitMenuOverlay,
+  UIKitSliderOverlay,
+  UIKitToggleOverlay,
+} from '@niivue/uikit'
+
+const font = await loadDefaultFont()
+const units = { cssUnits: true }
+const buttons = new UIKitButtonOverlay(font, units)
+const toggles = new UIKitToggleOverlay(font, units)
+const sliders = new UIKitSliderOverlay(font, units)
+const menus = new UIKitMenuOverlay(font, units)
+
+const controls = new UIKitControls().add(buttons).add(toggles).add(sliders).add(menus)
+nv.registerOverlayRenderer(controls)
+controls.attach(nv)
+```
+
+The layer decides which control gets each click, scroll and key press, so
+controls never compete for the same event. They are drawn in the order you
+add them, and a menu or list that pops open is always drawn on top.
+
+## Buttons
+
+Add a button with `addButton`, as in the
+[overview](/packages/uikit/). After that you can change it by its `id`:
+
+```js
+buttons.updateButton('reset', { label: 'Reset (3)' })
+buttons.click('reset')
+buttons.setEnabled('reset', false)
+```
+
+`click` presses the button from code, with the same animation and the
+same `onClick` as a real click, which suits a keyboard shortcut. A
+disabled button is drawn dimmed and ignores both the pointer and `click`.
+
+## Check boxes
+
+A toggle is a check box with a label. Clicking it, or pressing Space or
+Enter once it has been clicked, flips it:
+
+```js
+toggles.addToggle({
+  id: 'colorbar',
+  label: 'Colorbar',
+  x: 12,
+  y: 52,
+  onChange: (checked) => {
+    nv.isColorbarVisible = checked
+  },
+})
+```
+
+`toggles.setChecked('colorbar', true)` changes it quietly from code.
+`toggles.toggle('colorbar')` flips it as if the user had, and runs
+`onChange`.
+
+## Sliders
+
+```js
+sliders.addSlider({
+  id: 'gamma',
+  label: 'Gamma',
+  x: 12,
+  y: 84,
+  width: 220,
+  min: 0.1,
+  max: 3,
+  step: 0.05,
+  value: 1,
+  showValue: true,
+  onInput: (value) => {
+    nv.gamma = value
+  },
+})
+```
+
+Pressing the track jumps to that point and starts a drag. Values stay
+between `min` and `max` and snap to `step`; leave `step` out for a smooth
+slider. After a click, the arrow keys move one step, Shift with an arrow
+or Page Up and Page Down move ten, and Home and End go to the ends.
+
+`showValue` prints the value at the right, `format` decides how it reads,
+and `tickStep` adds tick marks. Read the value with
+`sliders.getValue('gamma')` and set it quietly with `setValue`.
+
+## Menus
+
+A menu is a button that opens a list of items. Items do something when
+chosen, hold a check mark, or belong to a group where only one is checked:
+
+```js
+menus.addMenu({
+  id: 'view',
+  label: 'View',
+  x: 12,
+  y: 12,
+  items: [
+    { id: 'axial', label: 'Axial', kind: 'radio', group: 'view' },
+    { id: 'mpr', label: 'Multiplanar', kind: 'radio', group: 'view', checked: true },
+    { id: 'sep', kind: 'separator' },
+    { id: 'colorbar', label: 'Colorbar', kind: 'check' },
+    { id: 'reset', label: 'Reset view', shortcut: 'R', onSelect: resetView },
+  ],
+  onChange: (itemId, checked) => {
+    if (itemId === 'colorbar') nv.isColorbarVisible = checked
+  },
+})
+```
+
+`onChange` reports every check mark that changed; `onSelect`, on an item
+or on the whole menu, runs whenever an item is chosen. A `shortcut` is
+only printed beside the item: it does not bind the key, so listen for it
+yourself.
+
+The list opens below the button, or above it when there is no room, and
+scrolls when it is too long for either. While it is open, the arrow keys
+move the highlight, Enter chooses, and Escape or a click elsewhere closes
+it. `menus.setItemChecked('view', 'colorbar', true)` changes a check mark
+quietly; `menus.open('view')` and `menus.close()` work from code.
+
+## Drop-down lists
+
+A select shows the chosen option on a button and lists every option when
+opened:
+
+```js
+const selects = new UIKitSelectOverlay(font, units)
+controls.add(selects)
+
+selects.addSelect({
+  id: 'colormap',
+  x: 12,
+  y: 300,
+  options: nv.colormaps.map((name) => ({ value: name, label: name })),
+  value: 'Gray',
+  onChange: (value) => nv.setVolume(0, { colormap: value }),
+})
+```
+
+The button is as wide as the longest option, so it keeps its size as the
+choice changes. A long list scrolls. Once a select has been used and its
+list is closed, the arrow keys change the choice without opening it. Set
+`value: null` and a `placeholder` to start with nothing chosen.
+
+## Segmented controls
+
+A segmented control is a row of buttons with exactly one selected, for
+picking a mode or a view:
+
+```js
+const segmented = new UIKitSegmentedOverlay(font, units)
+controls.add(segmented)
+
+segmented.addSegmented({
+  id: 'tool',
+  x: 12,
+  y: 260,
+  segments: [
+    { value: 'pan', label: 'Pan' },
+    { value: 'zoom', label: 'Zoom' },
+    { value: 'measure', label: 'Measure', enabled: false },
+  ],
+  value: 'pan',
+  onChange: (value) => setTool(value),
+})
+```
+
+`segmented.setValue('tool', 'zoom')` selects quietly, and
+`segmented.select('tool', 'zoom')` selects as the user would.
+
+## Keeping the image clear of the controls
+
+Controls float over the image. To give them a strip of their own, keep
+NiiVue's tiles out of it with `layoutInset` (left, top, right, bottom, in
+CSS pixels):
+
+```js
+nv.layoutInset = [420, 0, 0, 0]
+```
+
+UIKit still draws on the whole canvas, so the controls can sit in the strip.
+See [Layouts and slice types](/guide/layout/) for the other layout
+settings.
+
+## Removing controls
+
+Each overlay has a remove method for one control, such as
+`buttons.removeButton('reset')` or `sliders.removeSlider('gamma')`. To
+take everything away, undo the three setup steps and free the graphics
+memory:
+
+```js
+const detach = controls.attach(nv)
+
+// later
+detach()
+nv.unregisterOverlayRenderer(controls)
+controls.destroy()
+```

@@ -4,7 +4,6 @@ import type { Demo } from './types'
 const demo: Demo = async (canvas, { ui, asset }) => {
   const nv = new NiiVue({
     showRender: SHOW_RENDER.ALWAYS,
-    backgroundColor: [0.3, 0.3, 0.5, 1],
   })
   await nv.attachToCanvas(canvas)
   // A colormap with a `labels` array turns the integer volume into an atlas

@@ -1,0 +1,75 @@
+---
+title: One viewer
+description: "Show images with the NvViewer component, change them with props, and respond when the user clicks."
+sidebar:
+  order: 1
+---
+
+`NvViewer` is a single viewer. You tell it which images to show, and it
+keeps the viewer in step with your props.
+
+## Showing images
+
+Pass a list of volumes. The first is the background and the rest are
+drawn on top of it:
+
+```tsx
+<NvViewer
+  volumes={[
+    { url: '/volumes/mni152.nii.gz' },
+    { url: '/volumes/spmMotor.nii.gz', colormap: 'warm', calMin: 3, calMax: 6 },
+  ]}
+  sliceType={SLICE_TYPE.MULTIPLANAR}
+  style={{ height: 500 }}
+/>
+```
+
+`SLICE_TYPE` comes from `@niivue/nvreact` too. Without `sliceType` the
+viewer shows a single axial slice.
+
+## Changing images
+
+Change the `volumes` prop and the viewer follows. Volumes are matched by
+URL: new ones are loaded, missing ones are removed, and a change to
+`colormap`, `calMin`, `calMax` or `opacity` is applied without reloading the
+image. Other volume settings are only read when a volume is first loaded.
+
+```tsx
+const [colormap, setColormap] = useState('gray')
+
+<NvViewer volumes={[{ url: '/volumes/mni152.nii.gz', colormap }]} />
+```
+
+## Viewer settings
+
+`options` takes the same settings as `new NiiVue(options)`:
+
+```tsx
+<NvViewer
+  volumes={volumes}
+  options={{ backgroundColor: [0, 0, 0, 1], isColorbarVisible: true }}
+/>
+```
+
+Writing the object inline is fine: it is compared by value, not by
+identity. Most settings update the live viewer. A few can only be set when
+a viewer is created, such as `backend` or `isAntiAlias`, so changing one of
+those rebuilds the viewer and reloads its images.
+
+## Responding to the user
+
+```tsx
+<NvViewer
+  volumes={volumes}
+  onLocationChange={(location) => console.log(location)}
+  onImageLoaded={(volume) => console.log('loaded', volume.name)}
+  onError={(error) => console.error(error)}
+/>
+```
+
+`onLocationChange` fires when the user moves the crosshair. The callbacks
+can change between renders without rebuilding the viewer.
+
+`NvViewer` does not hand out its NiiVue instance. If you need it, for
+example to draw or to save the scene, use a
+[scene](/packages/nv-react/several-viewers/), even for one viewer.

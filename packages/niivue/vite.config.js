@@ -40,7 +40,7 @@ function pagesSiteDevPlugin() {
           res.end(await server.transformIndexHtml('/index.html', html))
           return
         }
-        // The docs site is Docusaurus, which this server cannot run: say so
+        // The docs site is an Astro app, which this server cannot run: say so
         // rather than 404.
         if (path === '/docs' || path.startsWith('/docs/')) {
           res.setHeader('Content-Type', 'text/html')

@@ -522,6 +522,7 @@ export default class NiiVue extends EventTarget {
   // undefined = reset each to its built-in default. See `settingsFillPolicy`.
   private _settingsFillPolicy: SettingsFillPolicy | undefined
   private _slidePlane: SlidePlaneState | null = null
+  private _ownsSlidePlane = false
   private _slidePlaneSlide: NVSlide | null = null
   private _slidePlaneOnChange: (() => void) | null = null
   // The slide samples the last locationChange carried, to re-emit only when they change.
@@ -5228,6 +5229,8 @@ export default class NiiVue extends EventTarget {
    */
   /** The running loadDocument, aborted by the next. */
   private _documentLoad: AbortController | null = null
+  // Bumped by setSlidePlane/clearSlidePlane so a pending document restore yields.
+  private _slidePlaneGen = 0
 
   private _frameRequests = new Map<
     object,
@@ -6206,6 +6209,8 @@ export default class NiiVue extends EventTarget {
    * cache and the view redraws on its `change` event. Call `clearSlidePlane()`.
    * With `isRulerVisible` and no 2D tile, the scale ruler draws on the render
    * tile at its (orthographic) world-mm scale.
+   * Caller-supplied slides remain caller-owned. Slides created by
+   * `loadDocument` are viewer-owned and disposed when cleared or replaced.
    */
   setSlidePlane(
     slide: NVSlide,
@@ -6215,6 +6220,7 @@ export default class NiiVue extends EventTarget {
       isNearestInterpolation?: boolean
     },
   ): void {
+    this._slidePlaneGen++
     const levels = slide.manifest.levels
     if (levels.length === 0) return
     const pinnedLevel = opts.levelIndex
@@ -6248,6 +6254,10 @@ export default class NiiVue extends EventTarget {
         'change',
         this._slidePlaneOnChange,
       )
+    }
+    if (this._slidePlaneSlide !== slide) {
+      if (this._ownsSlidePlane) this._slidePlaneSlide?.dispose()
+      this._ownsSlidePlane = false
     }
     this._slidePlaneSlide = slide
     this._slidePlaneOnChange = (): void => {
@@ -6351,20 +6361,24 @@ export default class NiiVue extends EventTarget {
 
   /** Remove a slide plane registered with {@link setSlidePlane}. */
   clearSlidePlane(): void {
+    this._slidePlaneGen++
     if (this._slidePlaneSlide && this._slidePlaneOnChange) {
       this._slidePlaneSlide.removeEventListener(
         'change',
         this._slidePlaneOnChange,
       )
     }
+    if (this._slidePlane) releaseSlidePlane(this._slidePlane)
+    if (this._ownsSlidePlane) this._slidePlaneSlide?.dispose()
+    this._ownsSlidePlane = false
     this._slidePlaneSlide = null
     this._slidePlaneOnChange = null
-    if (this._slidePlane) releaseSlidePlane(this._slidePlane)
     this._slidePlane = null
     this._slideDrawing = null
     this._slideVector = null
     this._slideLastRasterPt = null
     if (this.view) this.view.slidePlane = null
+    if (this._destroyed) return
     // Listeners drop the readout of the removed slide.
     if (this._slideLocationSamples) this.createOnLocationChange()
     this.drawScene()
@@ -7721,6 +7735,7 @@ export default class NiiVue extends EventTarget {
     // A second call would reach renderers whose GPU device is already gone.
     if (this._destroyed) return
     this._destroyed = true
+    this.clearSlidePlane()
     this._releasePageWorkers()
     this._animation?.stop('destroyed')
     for (const { ctl } of this._frameRequests.values()) ctl.abort()
@@ -8037,24 +8052,48 @@ export default class NiiVue extends EventTarget {
   // need their decoders re-registered by the app for tiles to load.
   private async _restoreSlidePlaneFromDoc(
     sp: NVDocument.NVDocumentSlidePlane,
+    signal: AbortSignal,
+    slideGen: number,
   ): Promise<void> {
     const slide = sp.manifestUrl
-      ? await NVSlide.fromManifestUrl(sp.manifestUrl)
+      ? await NVSlide.fromManifestUrl(sp.manifestUrl, {}, signal)
       : new NVSlide(sp.manifest)
-    // Before setSlidePlane primes tiles, so hidden channels are not fetched.
-    sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
-      try {
-        slide.setChannel(i, c)
-      } catch (err) {
-        log.warn(`loadDocument: slide channel ${i} not restored`, err)
-      }
-    })
-    if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
-    if (sp.colorManagement === false) slide.colorManagement = false
-    this.setSlidePlane(slide, {
-      pixelToWorld: sp.pixelToWorld,
-      levelIndex: sp.levelIndex,
-    })
+    // A caller's setSlidePlane/clearSlidePlane since the load began wins.
+    if (signal.aborted || this._slidePlaneGen !== slideGen) {
+      slide.dispose()
+      return
+    }
+    try {
+      // Before setSlidePlane primes tiles, so hidden channels are not fetched.
+      sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
+        try {
+          slide.setChannel(i, c)
+        } catch (err) {
+          log.warn(`loadDocument: slide channel ${i} not restored`, err)
+        }
+      })
+      if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
+      if (sp.colorManagement === false) slide.colorManagement = false
+      this.setSlidePlane(slide, {
+        pixelToWorld: sp.pixelToWorld,
+        levelIndex: sp.levelIndex,
+      })
+    } catch (error) {
+      if (this._slidePlane?.slide === slide) this.clearSlidePlane()
+      slide.dispose()
+      throw error
+    }
+    // Attachment callbacks can clear or replace the plane before returning.
+    if (this._slidePlane?.slide !== slide) {
+      slide.dispose()
+      return
+    }
+    this._ownsSlidePlane = true
+    // A reentrant load (e.g. from a locationChange listener) aborted the restore.
+    if (signal.aborted) {
+      this.clearSlidePlane()
+      return
+    }
     if (
       sp.drawingRLE &&
       sp.drawingWidth &&
@@ -8134,6 +8173,8 @@ export default class NiiVue extends EventTarget {
    * frame as a static volume and a streamed one is skipped with a warning. A
    * newer `loadDocument` supersedes this one: its pending source opens are
    * aborted and anything they would add is dropped.
+   * Restored slides are viewer-owned: clearing or replacing the plane, or
+   * destroying the viewer, disposes them. Reopen the document to reuse them.
    */
   async loadDocument(
     source: string | File,
@@ -8172,6 +8213,7 @@ export default class NiiVue extends EventTarget {
     // Clear existing data (releases GPU resources)
     this.closeDrawing()
     this.clearSlidePlane()
+    const slideGen = this._slidePlaneGen
     await this.removeAllVolumes()
     await this.removeAllMeshes()
     if (load.signal.aborted) return
@@ -8326,9 +8368,14 @@ export default class NiiVue extends EventTarget {
     // Restore a registered slide plane + its slide-space drawing (v8+).
     if (doc.slidePlane) {
       try {
-        await this._restoreSlidePlaneFromDoc(doc.slidePlane)
+        await this._restoreSlidePlaneFromDoc(
+          doc.slidePlane,
+          load.signal,
+          slideGen,
+        )
         if (load.signal.aborted) return
       } catch (err) {
+        if (load.signal.aborted) return
         log.warn(
           `loadDocument: failed to restore slide plane: ${err instanceof Error ? err.message : err}`,
         )

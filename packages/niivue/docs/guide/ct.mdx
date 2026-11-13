@@ -1,0 +1,37 @@
+---
+title: CT colormaps
+description: "Hounsfield units and the ct_ colormaps, which carry their own display window for each tissue."
+---
+
+import Demo from '@site/components/Demo.astro'
+
+Computed tomography (CT) stores calibrated intensities, unlike most MRI
+sequences, whose signal is relative. CT uses Hounsfield units (HU): air is
+about -1000 HU, water 0 HU, and dense bone can exceed +1000 HU. Most soft
+tissues (gray and white matter, muscle) fall between 0 and 40 HU, and an
+intravenous contrast agent briefly brightens blood and enhancing tissue.
+
+Because the values are standardized, NiiVue ships colormaps tuned to
+particular tissues. Each name starts with `ct_`, and each carries its own
+display window, so choosing one also sets `calMin` and `calMax`
+([Colormaps and contrast](/guide/colormaps/) explains how a map's window
+combines with one you pass). Try them on an abdominal scan:
+
+<Demo name="ct" />
+
+```js
+await nv.loadVolumes([{ url: 'CT_Abdo.nii.gz', colormap: 'ct_kidneys' }])
+await nv.setVolume(0, { colormap: 'ct_bones' }) // window becomes 180..600 HU
+const ctMaps = nv.colormapNames('continuous').filter((n) => /^ct_/i.test(n))
+```
+
+The other controls in the demo:
+
+- **Clip dark**: `nv.volumeIsAlphaClipDark = true` makes voxels below
+  `calMin` transparent, so air and fat no longer hide the render.
+- **Gamma**: `nv.gamma` brightens (above 1) or darkens (below 1) the 3D
+  render's colors without changing how much each sample occludes.
+- **Render**: `nv.volumeRenderMode` picks a ray-marched render
+  (`VOLUME_RENDER_MODE.COMPOSITE`) or the three crosshair planes
+  (`VOLUME_RENDER_MODE.SLICES`); `nv.volumeIllumination` shades the march,
+  from matte (0) to glossy (0.6).

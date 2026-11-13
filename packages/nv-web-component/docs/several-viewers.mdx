@@ -1,0 +1,164 @@
+---
+title: Several viewers
+description: "Lay out a grid of NiiVue viewers with the niivue-scene tag, load images into each one, and link them so they move together."
+sidebar:
+  order: 2
+---
+
+`<niivue-scene>` manages a group of viewers that share one area of the
+page. Each viewer is a full NiiVue viewer with its own images.
+
+## A grid of viewers
+
+```html
+<niivue-scene id="scene" layout="2x2" style="height: 600px"></niivue-scene>
+```
+
+`layout="2x2"` fills the area with four viewers. The layouts are `1x1`
+(the default), `1x2`, `2x1`, `1x3`, `3x1`, `2x2` and `3x3`. Viewers are
+numbered from 0, left to right and then top to bottom, and each one starts
+with a single axial slice.
+
+## Loading images
+
+The viewers are created when the element first renders, so wait for that
+before loading:
+
+```js
+const scene = document.querySelector('#scene')
+await scene.updateComplete
+
+await scene.loadVolume(0, { url: '/volumes/mni152.nii.gz' })
+await scene.loadVolumes(1, [
+  { url: '/volumes/mni152.nii.gz' },
+  { url: '/volumes/spmMotor.nii.gz', colormap: 'warm' },
+])
+```
+
+Each viewer gets its own copy of an image, so to show one image
+everywhere, load it into each viewer:
+
+```js
+for (let i = 0; i < scene.snapshot.viewerCount; i++) {
+  await scene.loadVolume(i, { url: '/volumes/mni152.nii.gz' })
+}
+```
+
+`scene.removeVolume(1, '/volumes/spmMotor.nii.gz')` takes an image away
+again. If an image fails to load, the promise rejects and the scene also
+sends a `niivue-error` event.
+
+## Changing the layout
+
+```js
+scene.layout = '1x2'
+```
+
+Switching to a smaller layout removes the viewers at the end that no longer
+fit; a larger one adds empty viewers. You can also remove a viewer with
+`scene.removeViewer(index)`, and the viewers after it move up one number.
+`scene.addViewer()` adds one back. It throws when the layout is full, so
+check `scene.canAddViewer()` first.
+
+## Moving viewers together
+
+Add the `broadcasting` attribute, or set the property:
+
+```js
+scene.broadcasting = true
+```
+
+Now moving the crosshair, panning or zooming a slice, or turning the 3D
+view in one viewer does the same in the others. The images and colors stay
+separate. See [Linking viewers](/guide/sync/) for how it works.
+
+## Changing how the viewers look
+
+Methods that change an image take two numbers: the viewer, then the
+image's position in that viewer's list:
+
+```js
+await scene.setColormap(0, 0, 'hot')
+await scene.setOpacity(1, 1, 0.5)
+await scene.setCalMinMax(0, 0, 20, 120)
+```
+
+Methods for the whole viewer change every viewer, unless you pass the
+viewer's number at the end:
+
+```js
+import { DRAG_MODE } from '@niivue/nv-web-component'
+
+scene.setColorbarVisible(true)
+scene.setPrimaryDragMode(DRAG_MODE.pan)
+scene.setCrosshairVisible(false, 0) // only viewer 0
+```
+
+## Arranging slices inside a viewer
+
+A viewer can show several slices at once. The package comes with a few
+ready-made arrangements:
+
+```js
+import { defaultSliceLayouts } from '@niivue/nv-web-component'
+
+scene.setViewerSliceLayout(0, defaultSliceLayouts['quad-render'].layout)
+scene.setViewerSliceLayout(0, null) // back to a single axial slice
+```
+
+The arrangements are:
+
+- `axial-hero`: a large axial slice with coronal and sagittal below it.
+- `sag-left`: sagittal on the left, coronal and axial stacked on the right.
+- `tri-h`: axial, coronal and sagittal side by side.
+- `tri-v`: the same three, stacked.
+- `quad-render`: the three slices and a 3D render in a 2 by 2 grid.
+- `render-hero`: a large 3D render with the three slices below it.
+
+You can also pass your own list of tiles, as described in
+[Custom layouts](/guide/layout/#custom-layouts).
+
+## Keeping track of the scene
+
+The element sends `scene-change` whenever something changes, and
+`scene.snapshot` always holds the current state:
+
+```js
+scene.addEventListener('scene-change', () => {
+  const { viewerCount, isLoading } = scene.snapshot
+  console.log(isLoading ? 'Loading...' : `${viewerCount} viewers`)
+})
+```
+
+The snapshot also tells you the current layout, whether the viewers are
+linked, and each viewer's loading state and errors.
+
+The scene sends the same `location-change`, `image-loaded` and
+`niivue-error` events as a single viewer, but each `detail` also says which
+viewer it came from:
+
+```js
+scene.addEventListener('location-change', (event) => {
+  const { viewerIndex, data } = event.detail
+  console.log(viewerIndex, data.string)
+})
+```
+
+For `image-loaded` the image is in `detail.volume`, and for `niivue-error`
+the error is in `detail.error`. There are also `viewer-created`,
+`viewer-removed`, `volume-added` and `volume-removed` events.
+
+## Using NiiVue directly
+
+The element's `scene` property is the controller that manages the viewers.
+Ask it for the NiiVue instance behind any viewer:
+
+```js
+import { SLICE_TYPE } from '@niivue/nv-web-component'
+
+const nv = scene.scene.getNiivue(0)
+nv.sliceType = SLICE_TYPE.SAGITTAL
+```
+
+It returns `undefined` for a viewer number that does not exist. All of the
+[NiiVue guides](/guide/) apply to the instance.

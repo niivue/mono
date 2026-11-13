@@ -2,6 +2,8 @@
 
 An [MCP](https://modelcontextprotocol.io) server for a [NiiVue](https://github.com/niivue) page, so an agent can load volumes, move the crosshair, cut planes, find atlas regions and take screenshots of a scene a person is looking at.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-mcp/
+
 An agent connects to the server over streamable HTTP; the page keeps a WebSocket open to the same server; each tool call is written to the page as one JSON request and answered with one JSON response. The server holds no anatomy and no scene of its own, so it stays small and the page stays the one place the state lives.
 
 The package has four entry points, and nothing in it knows about the app that hosts it:

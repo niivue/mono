@@ -80,3 +80,6 @@ for (const name of groups) {
   opt.textContent = name
   groupSelect.appendChild(opt)
 }
+// Open on one bundle, so the page shows what group selection does.
+groupSelect.value = 'IFOF_L'
+await applyColor()

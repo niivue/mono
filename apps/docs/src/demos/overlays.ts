@@ -5,7 +5,6 @@ const demo: Demo = async (canvas, { ui, asset }) => {
   const nv = new NiiVue({
     isColorbarVisible: true,
     showRender: SHOW_RENDER.ALWAYS,
-    backgroundColor: [0.1, 0.1, 0.1, 1],
   })
   await nv.attachToCanvas(canvas)
   await nv.loadVolumes([

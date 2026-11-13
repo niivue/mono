@@ -125,7 +125,7 @@ export type {
   VolumeUpdatedDetail,
 } from './NVEvents'
 // The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
-export type { DecodedChunkStats } from './volume/decodedChunkCache'
+export { ByteLru, type ByteLruStats } from './byteLru'
 // Core types used in the public API
 export type {
   AffineMatrix,
@@ -406,7 +406,7 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
-// Chunk-streaming phase timing (docs/caching.md stage B)
+// Chunk-streaming phase timing (notes/caching.md stage B)
 export {
   type ChunkPhase,
   type ChunkPhaseTiming,

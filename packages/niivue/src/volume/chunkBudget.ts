@@ -207,7 +207,7 @@ export function chunkIndicesForAllBudgets(
   // it matters most (only an NVChunkedVolume has a coarse floor under it), so
   // it keeps that chunk. The bound is budget + one chunk per such tile: an
   // N-tile mosaic can sit N chunks over a mirror's budget, which beats N holed
-  // tiles (docs/tiled-volumes-handoff.md, "Over-budget is allowed").
+  // tiles (notes/tiled-volumes-handoff.md, "Over-budget is allowed").
   // The central chunk wins over smaller edge chunks that happened to fit.
   const first = orderedChunkIndices.find((ci) => plan.chunks[ci])
   if (first === undefined || prior.has(first) || added.includes(first)) {

@@ -1,3 +1,17 @@
+## 1.0.0-rc.94 (2026-11-13)
+
+### Fixes
+
+- **niivue,nv-ext-tile:** cancel lazy-frame prefetch when its volume leaves ([cc9a8884](https://github.com/niivue/mono/commit/cc9a8884))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.187
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.93 (2026-11-12)
 
 ### Updated Dependencies

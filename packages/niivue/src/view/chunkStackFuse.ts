@@ -1,4 +1,4 @@
-import { isVolumeDrawn } from './NVVolumeVisibility'
+import { drawnOpacity, isVolumeDrawn } from './NVVolumeVisibility'
 
 /**
  * Fused overlay textures, one per base chunk, for a channel stack
@@ -193,6 +193,26 @@ export function stackInputs<T>(
     out.push(tex)
   }
   return out
+}
+
+/**
+ * Drawn channels' opacities, in {@link stackInputs} order: the blend weights
+ * the whole-volume stack bakes into each channel's alpha, which the bricks
+ * leave out so an opacity change re-fuses instead of re-uploading.
+ */
+export function stackWeights<T>(entries: readonly StackEntry<T>[]): number[] {
+  return entries
+    .filter((e) => isVolumeDrawn(e.volume))
+    .map((e) => drawnOpacity(e.volume))
+}
+
+/** The fuse key: blend modes and channel weights (see ChunkStackFuse.stale). */
+export function stackModes<T>(
+  entries: readonly StackEntry<T>[],
+  alphaBlend: number,
+  colorBlend: number,
+): string {
+  return `${alphaBlend}/${colorBlend}/${stackWeights(entries).join(',')}`
 }
 
 /** The channels' source generation: changes with any channel's loader. */

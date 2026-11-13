@@ -3711,7 +3711,7 @@ export default class NiiVue extends EventTarget {
       this.emit('volumeRemoved', { volume: previous[i], index: i })
     }
     this.model.volumes = loaded
-    this._abortOrphanedFrameRequests()
+    this._abortOrphanedFrameRequests(previous)
     // A half-drawn shape's points belong to the old background (#470).
     this._abandonForNewScene()
     this.model._setupPivot3D()
@@ -4297,7 +4297,7 @@ export default class NiiVue extends EventTarget {
   async removeAllVolumes(): Promise<void> {
     const vols = [...this.model.getVolumes()]
     await this.model.removeAllVolumes()
-    this._abortOrphanedFrameRequests()
+    this._abortOrphanedFrameRequests(vols)
     this._abandonForNewScene()
     // One event per volume, after the removal, in reverse index order (so
     // each detail's index was valid at the time that volume was removed).
@@ -4318,7 +4318,7 @@ export default class NiiVue extends EventTarget {
     if (!this._checkBounds(volumes, volumeIndex, 'Volume')) return
     const volume = volumes[volumeIndex]
     this.model.removeVolume(volumeIndex)
-    this._abortOrphanedFrameRequests()
+    this._abortOrphanedFrameRequests([volume])
     // Removing the background changes the geometry a half-drawn shape used.
     if (volumeIndex === 0) this._abandonForNewScene()
     // Emit after the removal, like every other mutation event: the detail
@@ -5234,8 +5234,13 @@ export default class NiiVue extends EventTarget {
     { ctl: AbortController; members: NVImage[] }
   >()
 
-  /** Abort every frame fetch none of whose volumes is still loaded. */
-  private _abortOrphanedFrameRequests(): void {
+  /**
+   * Abort every frame fetch none of whose volumes is still loaded, and cancel
+   * the background work (prefetch) of the `removed` volumes' frame sources.
+   */
+  private _abortOrphanedFrameRequests(removed: readonly NVImage[] = []): void {
+    for (const v of removed)
+      if (!this.volumes.includes(v)) v.frameSource?.cancel?.()
     for (const [group, request] of this._frameRequests) {
       if (request.members.some((v) => this.volumes.includes(v))) continue
       request.ctl.abort()
@@ -5282,6 +5287,9 @@ export default class NiiVue extends EventTarget {
             missing.map((v) => v.frameSource?.load(t, request.signal) ?? []),
           )
           for (const [i, v] of missing.entries()) frames.set(v, loaded[i])
+          // A member removed mid-fetch started a prefetch after its removal.
+          for (const v of missing)
+            if (!this.volumes.includes(v)) v.frameSource?.cancel?.()
         } else if (this._updating || this._floorInstall) {
           // A pass already running would build the new loaders' bricks before
           // the floor it does not know about: swap only between passes. Nor
@@ -7717,6 +7725,7 @@ export default class NiiVue extends EventTarget {
     this._animation?.stop('destroyed')
     for (const { ctl } of this._frameRequests.values()) ctl.abort()
     this._frameRequests.clear()
+    for (const v of this.volumes) v.frameSource?.cancel?.()
     this.emit('viewDestroyed')
     if (this._perf) this._perf.enabled = false
     this.cancelPendingFrame()

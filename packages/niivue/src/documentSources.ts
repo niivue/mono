@@ -285,6 +285,7 @@ export async function attachFrameSource(
     },
     group,
     load: (t, signal) => src.load(t, signal),
+    ...(src.cancel && { cancel: () => src.cancel?.() }),
     descriptor: s.descriptor,
     get revision() {
       return src.revision

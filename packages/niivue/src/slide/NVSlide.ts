@@ -1041,6 +1041,15 @@ export class NVSlide extends EventTarget {
   }
 
   /**
+   * The channels uncopied, for the per-tile fuse: a W/L drag re-fuses every
+   * tile each frame. setChannel replaces, never mutates, this array.
+   * @internal
+   */
+  get liveChannels(): readonly Readonly<NVChannel>[] {
+    return this._channels
+  }
+
+  /**
    * Update channel `c`. Renderers re-fuse cached sample tiles from their kept
    * planes on the next frame; showing a channel they were fetched without
    * refetches them. Tiles a decoder returned as bitmaps (JPEG, RGBA) are drawn

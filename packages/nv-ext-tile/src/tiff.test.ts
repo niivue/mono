@@ -1554,6 +1554,16 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       undefined,
     ],
     [
+      'Leica fluorescence region at another resolution',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="1000" sizeY="1000"/><view sizeX="1000000" sizeY="1000000" offsetX="9" offsetY="9"/><illuminationSource>fluorescence</illuminationSource></image></collection>',
+        ),
+      },
+      [0.5, 0.5],
+    ],
+    [
       'Leica regions that disagree on Y only',
       {
         description: leica.replace(

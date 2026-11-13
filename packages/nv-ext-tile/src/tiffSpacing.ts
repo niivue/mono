@@ -44,9 +44,10 @@ export function tiffPixelSpacingMM(
   }
   if (d.includes('DPUfsImport')) return philipsSpacingMM(d)
   if (/<scn\b/.test(d)) {
-    // View in nm over pixels. Regions that disagree (beyond leicaComposition's
+    // View in nm over pixels. Only brightfield regions are displayed (as
+    // tiff.ts places them); ones that disagree (beyond leicaComposition's
     // 0.1%) leave level 0's size unknown.
-    const regions = leicaRegions(d) ?? []
+    const regions = leicaRegions(d)?.filter((r) => r.brightfield) ?? []
     const nm = (r: (typeof regions)[number]): [number, number] => [
       r.view.width / r.width,
       r.view.height / r.height,

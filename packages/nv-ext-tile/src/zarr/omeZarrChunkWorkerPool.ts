@@ -11,9 +11,9 @@
  *
  * Each worker opens the store from the metadata the main thread already read
  * (sent with its first request; a worker without it reads it itself) and
- * keeps its own byte LRU, so a request is routed by hashing its region rather
- * than by picking the idlest worker -- see {@link routeChunkToWorker} for why
- * that matters.
+ * keeps its own byte LRU, so a request is routed by hashing its region (its
+ * shard, on a sharded level) rather than by picking the idlest worker -- see
+ * {@link routeChunkToWorker} for why that matters.
  *
  * A worker failure is not automatically fatal: the caller still holds a
  * main-thread source and can read there. Only failures a re-run would repeat
@@ -29,6 +29,7 @@ import {
   chunkRegionKey,
   chunkTimingDelta,
   routeChunkToWorker,
+  shardRouteKey,
   sumByteCacheStats,
   sumPersistStats,
 } from './chunkWorkerRouting'
@@ -65,6 +66,8 @@ export interface OmeZarrChunkPoolOptions {
    * worker that holds it and the scopes partition the store.
    */
   persistPerWorker: PersistentCacheOptions | false
+  /** Per opened level, its shard extent ({@link shardExtents}), routed by shard. */
+  shards?: readonly (readonly number[] | null)[]
 }
 
 export class OmeZarrChunkWorkerPool {
@@ -79,17 +82,20 @@ export class OmeZarrChunkWorkerPool {
   onWireBytes: ((bytes: number) => void) | null = null
   /** Workers already sent {@link metadata}. */
   private readonly seeded: boolean[]
+  private readonly url: string
   private nextTaskId = 0
   private disposed = false
 
   constructor(
-    private readonly url: string,
+    url: string,
     options: FetchOmeZarrChunkedSourceOptions,
     private readonly pool: OmeZarrChunkPoolOptions,
     /** The store's metadata reads, by key, as the main thread's open made them. */
     private readonly metadata?: Map<string, Uint8Array | undefined>,
     createWorker: () => Worker = () => new OmeZarrChunkWorker(),
   ) {
+    // Absolute: a worker would resolve a relative URL against its own (blob) URL.
+    this.url = new URL(url, globalThis.location?.href).href
     const size = Math.max(1, Math.floor(pool.size) || 1)
     this.workers = Array.from(
       { length: size },
@@ -147,8 +153,11 @@ export class OmeZarrChunkWorkerPool {
       req
     const { signal } = req
     signal?.throwIfAborted()
+    const shard = this.pool.shards?.[levelIndex]
     const index = routeChunkToWorker(
-      chunkRegionKey({ levelIndex, texOrigin, texDims, frame }),
+      shard
+        ? shardRouteKey(req, shard)
+        : chunkRegionKey({ levelIndex, texOrigin, texDims, frame }),
       this.workers.length,
     )
     const worker = this.workers[index]

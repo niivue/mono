@@ -8,8 +8,8 @@ import type {
   SlideTileSource,
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
-import { tileMap } from './dicomIndex'
 import type { DicomJsonSlide } from './dicomJson'
+import { levelMaps } from './dicomOrientation'
 import { manifestOf } from './dicomWsiSource'
 import { parseMultipartRelated } from './multipart'
 import { anySignal, MAX_BODY, readOk, slideFetch } from './rangeFetch'
@@ -26,12 +26,6 @@ export interface DicomWebWsiOptions {
    * so a caller's credentials never leave the series' origin.
    */
   fetch?: SlideFetch
-  /**
-   * Headers for each request to the seriesUrl origin, read per request so
-   * refreshed auth is used.
-   * @deprecated Pass `fetch` instead; removed once nv-ohif moves to it.
-   */
-  headers?: () => Record<string, string>
   /** Credit for the slide, as `manifest.attribution`. */
   attribution?: NVSlideAttribution
   /**
@@ -120,10 +114,12 @@ const REFUSED_ACCEPT = new Set([400, 406, 415])
 async function sniffLevel(
   fetchImpl: SlideFetch,
   url: string,
-  headers: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetchImpl(url, { headers, signal })
+  const response = await fetchImpl(url, {
+    headers: { Accept: ANY_SYNTAX },
+    signal,
+  })
   if (REFUSED_ACCEPT.has(response.status)) {
     await response.body?.cancel()
     return '1.2.840.10008.1.2.4.50'
@@ -148,7 +144,7 @@ export class DicomWebWsiSource implements SlideTileSource {
     readonly slide: DicomJsonSlide,
     private readonly options: DicomWebWsiOptions,
   ) {
-    this.maps = slide.levels.map(tileMap)
+    this.maps = levelMaps(slide)
     this.series = seriesOf(options.seriesUrl)
     const icc = slide.iccProfile
     this.manifest = manifestOf(
@@ -197,7 +193,6 @@ export class DicomWebWsiSource implements SlideTileSource {
         const ts = await sniffLevel(
           seriesFetchOf(options),
           frameUrl(series, inst.id, frame),
-          { ...options.headers?.(), Accept: ANY_SYNTAX },
           signal,
         )
         for (const k of level.instances)
@@ -241,7 +236,6 @@ export class DicomWebWsiSource implements SlideTileSource {
       frameUrl(this.series, sop, frames.frame[slot] as number),
       {
         headers: {
-          ...this.options.headers?.(),
           // JPEG 2000 / JPEG-LS: ask for the stored bytes; the checks below
           // refuse a server that transcodes anyway rather than mis-decoding.
           Accept:
@@ -267,7 +261,7 @@ export class DicomWebWsiSource implements SlideTileSource {
     if (icc?.data) return icc.data
     if (!icc?.bulkDataURI) return null
     const url = this.bulkUrl(icc.bulkDataURI)
-    const { retrieveBulkData, headers } = this.options
+    const { retrieveBulkData } = this.options
     const abort = this.signalOf(signal)
     // Auth goes only to the server it is for, not to a bulk host elsewhere:
     // the host's retrieval and fetch carry its auth, so they get same-origin URLs only.
@@ -280,10 +274,7 @@ export class DicomWebWsiSource implements SlideTileSource {
       return data instanceof Uint8Array ? data : new Uint8Array(data)
     }
     const response = await (sameOrigin ? this.seriesFetch : slideFetch())(url, {
-      headers: {
-        ...(sameOrigin ? headers?.() : {}),
-        Accept: 'multipart/related; type="application/octet-stream"',
-      },
+      headers: { Accept: 'multipart/related; type="application/octet-stream"' },
       signal: abort,
     })
     return readFirstPart(response, 'ICC profile')

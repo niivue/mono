@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
+import { wsiFetch, wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
 
 // nv-ext-tile's DICOM-WSI fixtures, as PS3.18 DICOM JSON.
 const DIR = `${import.meta.dir}/../../nv-ext-tile/fixtures/dicom-wsi`
@@ -87,5 +87,34 @@ describe('wsiRetrieveBulkData', () => {
     abort.abort()
     expect(await pending?.catch((e: DOMException) => e.name)).toBe('AbortError')
     await expect(retrieve?.('https://h/bulk', abort.signal)).rejects.toThrow()
+  })
+})
+
+describe('wsiFetch', () => {
+  it('adds the current token to each request and keeps the source init', async () => {
+    const seen: Record<string, string>[] = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(init?.headers as Record<string, string>)
+      return new Response()
+    }) as typeof fetch
+    let token = 'a'
+    const services = {
+      userAuthenticationService: {
+        getAuthorizationHeader: () => ({ Authorization: `Bearer ${token}` }),
+      },
+    }
+    try {
+      const f = wsiFetch({ services })
+      await f('u', { headers: { Accept: 'x' } })
+      token = 'b'
+      await f('u', { headers: { Accept: 'x' } })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    expect(seen).toEqual([
+      { Accept: 'x', Authorization: 'Bearer a' },
+      { Accept: 'x', Authorization: 'Bearer b' },
+    ])
   })
 })

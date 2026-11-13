@@ -2061,12 +2061,12 @@ describe('vendor layouts', () => {
 <TileJointInfo FlagJoined="1" Confidence="100" Direction="LEFT" Tile1="2" Tile2="3" OverlapX="0" OverlapY="0"/>
 </ImageInfo></SlideStitchInfo><AoiOrigin><AOI0 OriginX="0" OriginY="0"/></AoiOrigin></EncodeInfo>`
 
-  test('Ventana joints: placed only with the placement option (PL2, PL10)', async () => {
+  test('Ventana joints: placed by default, the grid with placement: false (PL2, PL10)', async () => {
     const file = writeTiff([
       { ...solid(0, 48, 16), ascii: { 700: ventanaXmp } },
       solid(1, 24, 8),
     ])
-    const plain = await fromBuffer(file)
+    const plain = await fromBuffer(file, { placement: false })
     expect(plain.manifest.width).toBe(48)
     expect(plain.manifest.levels.some((l) => l.placement)).toBe(false)
     // Off: byte-for-byte the manifest of the same file without XMP.
@@ -2074,7 +2074,7 @@ describe('vendor layouts', () => {
       writeTiff([solid(0, 48, 16), solid(1, 24, 8)]),
     )
     expect(JSON.stringify(plain.manifest)).toBe(JSON.stringify(noXmp.manifest))
-    const placed = await fromBuffer(file, { placement: true })
+    const placed = await fromBuffer(file)
     expect([placed.manifest.width, placed.manifest.height]).toEqual([44, 16])
     expect(placed.manifest.levels[0]?.width).toBe(48) // storage grid kept (F7)
     expect(placed.manifest.levels[0]?.placement?.pieces[1]).toEqual({
@@ -2099,7 +2099,6 @@ describe('vendor layouts', () => {
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     const s = await fromBuffer(
       writeTiff([{ ...solid(0, 48, 16), ascii: { 700: huge } }]),
-      { placement: true },
     )
     warn.mockRestore()
     expect(s.manifest.width).toBe(48)
@@ -2117,7 +2116,6 @@ describe('vendor layouts', () => {
     try {
       const s = await fromBuffer(
         writeTiff([{ ...solid(0, 48, 16), ascii: { 700: bad } }]),
-        { placement: true },
       )
       expect(s.manifest.width).toBe(48)
       expect(s.manifest.levels[0]?.placement).toBeUndefined()
@@ -2139,8 +2137,10 @@ describe('vendor layouts', () => {
       // Its own mosaic: not the base aspect, so not a level without placement.
       solid(1, 48, 16),
     ])
-    expect((await fromBuffer(file)).manifest.levels.length).toBe(1)
-    const s = await fromBuffer(file, { placement: true })
+    expect(
+      (await fromBuffer(file, { placement: false })).manifest.levels.length,
+    ).toBe(1)
+    const s = await fromBuffer(file)
     expect(s.manifest.levels.length).toBe(2)
     expect([s.manifest.width, s.manifest.height]).toEqual([48, 32])
     expect(s.manifest.levels[0]?.placement?.pieces).toEqual([
@@ -2179,10 +2179,36 @@ describe('vendor layouts', () => {
     await expect(
       s.preparePlane?.({ z: 3, t: 0 }) ?? Promise.resolve(),
     ).rejects.toThrow(RangeError)
-    // An explicit z opens that plane.
-    expect(
-      (await fromBuffer(writeTiff(levels), { z: 2 })).manifest.levels[0]?.plane,
-    ).toEqual({ z: 2, t: 0 })
+    // An explicit z opens that plane: its manifest, pixels and the slide's plane.
+    const z2 = await fromBuffer(writeTiff(levels), { z: 2 })
+    expect(z2.manifest.levels[0]?.plane).toEqual({ z: 2, t: 0 })
+    expect(await firstByte(z2, 0, 1)).toBe(161) // plane 2, level 0, tile 1
+    expect(NVSlide.fromSource(z2).planeIndex).toEqual({ z: 2, t: 0 })
+  })
+
+  test('Ventana iScan: levels padded to 8 px blocks keep their true size', async () => {
+    // 64x40 / 2 = 32x20 stored 32x24, / 4 = 16x10 stored 16x16; a tiled 16x48
+    // label is not a level.
+    const level = (n: number, w: number, h: number) => ({
+      ...solid(n, w, h),
+      ascii: { 270: `level=${n - 1} mag=${40 >> (n - 1)} quality=90` },
+    })
+    const levels = [
+      solid(0, 64, 40),
+      solid(1, 16, 48),
+      level(2, 32, 24),
+      level(3, 16, 16),
+    ]
+    const m = (await fromBuffer(writeTiff(levels))).manifest
+    expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
+      [64, 40, 1],
+      [32, 20, 2],
+      [16, 10, 4],
+    ])
+    // An unmarked tiled macro the size of a padded level is not one.
+    const macro = [solid(0, 64, 40), solid(1, 32, 24)]
+    const plain = (await fromBuffer(writeTiff(macro))).manifest
+    expect(plain.levels.map((l) => l.width)).toEqual([64])
   })
 
   test('Philips: a padded level at a stated factor of 3', async () => {
@@ -2209,10 +2235,10 @@ describe('vendor layouts', () => {
       solid(1, 32, 32),
       solid(2, 32, 16),
     ]
-    const plain = await fromBuffer(writeTiff(levels))
+    const plain = await fromBuffer(writeTiff(levels), { placement: false })
     expect(plain.manifest.width).toBe(32)
     expect(plain.manifest.levels[0]?.placement).toBeUndefined()
-    const s = await fromBuffer(writeTiff(levels), { placement: true })
+    const s = await fromBuffer(writeTiff(levels))
     const l0 = s.manifest.levels[0]
     expect([l0?.columns, l0?.rows]).toEqual([4, 2])
     // Region 2 has one row of tiles: its second row is a hole.
@@ -2431,9 +2457,9 @@ const BIF = '/Users/chris/src/mono/scratch/ventana/Ventana-1.bif'
 describe.skipIf(!existsSync(BIF))('Ventana-1.bif placement (advisory)', () => {
   test('placed 23432 x 21504; off, the storage grid', async () => {
     const tiff = await fromFile(BIF)
-    const plain = await TiffSlideSource.fromGeoTIFF(tiff)
+    const plain = await TiffSlideSource.fromGeoTIFF(tiff, { placement: false })
     expect(plain.manifest.width).toBe(24576)
-    const placed = await TiffSlideSource.fromGeoTIFF(tiff, { placement: true })
+    const placed = await TiffSlideSource.fromGeoTIFF(tiff)
     expect([placed.manifest.width, placed.manifest.height]).toEqual([
       23432, 21504,
     ])

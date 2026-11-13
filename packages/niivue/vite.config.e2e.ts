@@ -55,15 +55,25 @@ function e2ePreviewPlugin(): Plugin {
           return next()
         }
         // Raw files by path: source assets (matcap images) and, via /@fs/,
-        // the self-contained uikit bundle uikit-overlay-hook imports.
+        // the uikit bundle the uikit specs import.
         const file = path.startsWith('/src/')
           ? resolve(root, path.slice(1))
           : path.startsWith('/@fs/')
             ? resolve(path.slice(4))
             : ''
         if (!file.startsWith(`${repoRoot}/`) || !existsSync(file)) return next()
-        if (file.endsWith('.js'))
+        if (file.endsWith('.js')) {
+          // The uikit bundle keeps @niivue/niivue external; the dev server
+          // rewrites that bare import, preview serves files raw. Point it at
+          // the built src/index entry so it shares module state with the specs.
           res.setHeader('Content-Type', 'text/javascript')
+          return res.end(
+            readFileSync(file, 'utf8').replaceAll(
+              '"@niivue/niivue"',
+              '"/src/index.js"',
+            ),
+          )
+        }
         createReadStream(file).pipe(res)
       })
     },

@@ -26,6 +26,7 @@ precision highp sampler3D;
 uniform sampler2D accA;
 uniform sampler2D accB;
 ${Array.from({ length: PER_PASS }, (_, k) => `uniform sampler3D o${k};`).join('\n')}
+uniform float weight[${PER_PASS}];
 uniform int count;
 uniform int z;
 uniform int colorBlend;
@@ -49,7 +50,7 @@ void main() {
   vec4 A = texelFetch(accA, p, 0);
   vec4 B = texelFetch(accB, p, 0);
   ivec3 v = ivec3(p, z);
-${Array.from({ length: PER_PASS }, (_, k) => `  if (count > ${k}) add(texelFetch(o${k}, v, 0), A, B);`).join('\n')}
+${Array.from({ length: PER_PASS }, (_, k) => `  if (count > ${k}) add(texelFetch(o${k}, v, 0) * vec4(1.0, 1.0, 1.0, weight[${k}]), A, B);`).join('\n')}
   outA = A;
   outB = B;
 }`
@@ -136,6 +137,7 @@ function build(gl: WebGL2RenderingContext): Cache | null {
         accum: program(gl, accumFrag, [
           'accA',
           'accB',
+          'weight',
           'count',
           'z',
           'colorBlend',
@@ -179,7 +181,8 @@ function floatTarget(
 
 /**
  * Blend `overlays` (RGBA8 3D textures of size `dims`) into a new RGBA8 3D
- * texture with the overlay alpha and colour modes, entirely on the GPU.
+ * texture with the overlay alpha and colour modes, entirely on the GPU. Each
+ * overlay's alpha is scaled by its `weights` entry (default 1).
  * Restores the GL state it touches. Null when this context cannot (no float
  * render targets, a shader or framebuffer the driver rejects): blend on the
  * CPU then; after one rejection every later call returns null at once.
@@ -190,6 +193,7 @@ export function blendOverlaysGL(
   dims: readonly number[],
   alphaBlend: number,
   colorBlend: number,
+  weights: readonly number[] = [],
 ): WebGLTexture | null {
   const c = cacheFor(gl)
   if (!c) return null
@@ -279,6 +283,9 @@ export function blendOverlaysGL(
         gl.activeTexture(gl.TEXTURE2 + k)
         gl.bindTexture(gl.TEXTURE_3D, tex)
       })
+      const w = new Float32Array(PER_PASS).fill(1)
+      w.set(weights.slice(first, first + PER_PASS))
+      gl.uniform1fv(c.accum.u.weight, w)
       gl.uniform1i(c.accum.u.count, batch.length)
       attach(acc[1 - cur][0], acc[1 - cur][1])
       gl.drawArrays(gl.TRIANGLES, 0, 3)

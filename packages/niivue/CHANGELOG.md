@@ -1,3 +1,39 @@
+## 1.0.0-rc.188 (2026-11-13)
+
+### Features
+
+- **nv-ext-tile:** apply DICOM ImageOrientationSlide to WSI slides ([46aef03a](https://github.com/niivue/mono/commit/46aef03a))
+- support AFNI binary NIML tractography ([22e2152c](https://github.com/niivue/mono/commit/22e2152c))
+
+### Fixes
+
+- **nv-ext-tile:** keep the persistent tier for a page-relative OME-Zarr URL ([7a926cb2](https://github.com/niivue/mono/commit/7a926cb2))
+- **niivue:** keep AFNI bundle tags exact as Int32Array dps ([8d5496e7](https://github.com/niivue/mono/commit/8d5496e7))
+- **niivue:** reorient fetchTileSamples tiles per tileOrientation ([70c52c2b](https://github.com/niivue/mono/commit/70c52c2b))
+- **niivue:** cap placed tiles by texture, not by piece ([1da61b3b](https://github.com/niivue/mono/commit/1da61b3b))
+
+### Performance
+
+- **niivue:** track kept placed tiles with a stamp array, not a Set ([0a794e39](https://github.com/niivue/mono/commit/0a794e39))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.187 (2026-11-13)
+
+### Fixes
+
+- **niivue:** resolve uikit's @niivue/niivue import in the e2e bundle server ([118af83e](https://github.com/niivue/mono/commit/118af83e))
+- **niivue,nv-ext-tile:** cancel lazy-frame prefetch when its volume leaves ([cc9a8884](https://github.com/niivue/mono/commit/cc9a8884))
+- **niivue:** weight streamed channel-stack fuse by channel opacity ([5e40e43e](https://github.com/niivue/mono/commit/5e40e43e))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.186 (2026-11-12)
 
 ### Features

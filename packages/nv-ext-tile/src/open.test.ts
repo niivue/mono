@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { ManifestRangeSource, type SlideFetch } from '@niivue/niivue'
+import { readAssociatedImage } from './dicomAssociated'
 import { DicomWsiSource } from './dicomWsiSource'
 import { openSlide, sniffSlide } from './open'
 import { TiffSlideSource } from './tiff'
@@ -172,6 +173,7 @@ describe('openSlide', () => {
     expect(opened.index?.skipped.map((s) => s.file)).toEqual(['not-dicom.dcm'])
     expect(opened.candidates.length).toBe(opened.index?.slides.length ?? -1)
     expect(opened.candidates.length).toBeGreaterThan(1)
+    expect(opened.candidates[1]?.slide).toBe(opened.index?.slides[1])
     const source = await opened.candidates[1]?.open()
     expect(source).toBeInstanceOf(DicomWsiSource)
     expect(source?.manifest.id).toBe(
@@ -422,6 +424,17 @@ describe('openSlide', () => {
     const source = await opened.candidates[1]?.open()
     expect(source?.manifest.levels.length).toBe(2)
     source?.dispose?.()
+  })
+
+  test('an associated image reads against the input files when a TIFF shares its name', async () => {
+    const label = new File(
+      [await Bun.file(`${DIR}/label.dcm`).arrayBuffer()],
+      'a.dcm',
+    )
+    const files = [new File([tinyTiff()], 'a.dcm'), label]
+    const [image] = (await openSlide(files)).index?.associated ?? []
+    if (!image) throw new Error('label')
+    expect((await readAssociatedImage(image, files)).width).toBe(16)
   })
 
   test('the open signal and the candidate signal both abort', async () => {

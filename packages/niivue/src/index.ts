@@ -255,6 +255,7 @@ export type {
   NVSlideTileCodec,
   NVSlideTileFragment,
   NVSlideTileManifest,
+  NVSlideTileOrientation,
   NVSlideTileSamples,
   NVSlideViewport,
   NVSlideVisibleTile,

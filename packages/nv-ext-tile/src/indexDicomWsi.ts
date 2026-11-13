@@ -19,9 +19,17 @@ export async function indexDicomWsi(
   files: readonly File[],
   options: IndexOptions = {},
 ): Promise<SlideIndex> {
-  options.signal?.throwIfAborted()
   // Keys are taken here: a File's webkitRelativePath need not survive the clone.
-  const keys = fileKeys(files)
+  return indexDicomWsiKeyed(files, fileKeys(files), options)
+}
+
+/** {@link indexDicomWsi} under the caller's `keys`, e.g. a subset keyed by its place in a wider input. */
+export async function indexDicomWsiKeyed(
+  files: readonly File[],
+  keys: string[],
+  options: IndexOptions = {},
+): Promise<SlideIndex> {
+  options.signal?.throwIfAborted()
   const onThread = () => indexDicomWsiOnThread(files, keys, undefined, options)
   if (typeof window === 'undefined' || typeof Worker === 'undefined')
     return onThread()

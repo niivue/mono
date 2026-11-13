@@ -4,7 +4,11 @@ import type {
   SlideIndexAssociated,
   SlideIndexSlide,
 } from './dicomIndex'
-import { CODEC_BY_TRANSFER_SYNTAX, fragmentsOf } from './dicomWsiSource'
+import {
+  CODEC_BY_TRANSFER_SYNTAX,
+  fileFor,
+  joinFragments,
+} from './dicomWsiSource'
 
 /** An associated image's pixels: an encoded frame, or 8-bit RGBA. */
 export interface AssociatedImageData {
@@ -68,15 +72,7 @@ export async function readAssociatedImage(
   signal?: AbortSignal,
 ): Promise<AssociatedImageData> {
   const { instance, offset, length, width, height } = image
-  const file = files.find(
-    (f) => (f.webkitRelativePath || f.name) === instance.file,
-  )
-  if (!file) throw new Error(`${instance.file} is not among the files`)
-  if (
-    file.size !== instance.size ||
-    String(file.lastModified) !== instance.version
-  )
-    throw new Error(`${instance.file} changed since it was indexed`)
+  const file = fileFor(files)(instance)
   const read = (start: number, end: number) =>
     settleBy(
       signal,
@@ -98,18 +94,7 @@ export async function readAssociatedImage(
       `transfer syntax ${instance.transferSyntax} cannot be decoded`,
     )
   const span = await read(offset - 8, offset + length)
-  const parts = fragmentsOf(span, `${file.name} ${image.kind}`)
-  const bytes =
-    parts.length === 1
-      ? span.subarray(8)
-      : new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
-  if (parts.length > 1) {
-    let o = 0
-    for (const p of parts) {
-      bytes.set(span.subarray(p.offset, p.offset + p.length), o)
-      o += p.length
-    }
-  }
+  const bytes = joinFragments(span, `${file.name} ${image.kind}`)
   return { codec, width, height, bytes }
 }
 

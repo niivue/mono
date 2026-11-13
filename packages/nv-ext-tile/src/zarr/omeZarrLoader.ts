@@ -396,35 +396,39 @@ export function omeZarrFetchStore(
 ): zarr.AsyncReadable & {
   getRange: NonNullable<zarr.AsyncReadable['getRange']>
 } {
-  const store = new zarr.FetchStore(url, {
-    async fetch(request) {
-      const range = request.headers.get('range')
-      const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
-      const response = await (fetchImpl ?? fetch)(request.url, {
-        method: request.method,
-        // A plain object, so a custom fetch can spread it.
-        headers: Object.fromEntries(request.headers),
-        signal: request.signal,
-        ...(chunk && range ? { cache: 'no-store' } : {}),
-      })
-      // Only a success: an HTML error page (502, 429, 403) must still throw.
-      const type = response.headers.get('content-type')?.toLowerCase()
-      if (response.ok && type?.startsWith('text/html')) {
-        await response.body?.cancel()
-        return new Response(null, { status: 404 })
-      }
-      // A server that ignores Range would send the whole file (a shard) per read.
-      const refused = rangeReplyError(response, range)
-      if (refused)
-        await refuseReply(
-          response,
-          refused.kind === 'whole-file'
-            ? `OME-Zarr: ${request.url} ignored the Range request (200, not 206)`
-            : `OME-Zarr: ${request.url} answered bytes ${refused.got}- to ${range}`,
-        )
-      return response
+  // zarrita needs an absolute URL; a page-relative one resolves against the page.
+  const store = new zarr.FetchStore(
+    new URL(url, globalThis.location?.href).href,
+    {
+      async fetch(request) {
+        const range = request.headers.get('range')
+        const chunk = !METADATA_KEY.test(new URL(request.url).pathname)
+        const response = await (fetchImpl ?? fetch)(request.url, {
+          method: request.method,
+          // A plain object, so a custom fetch can spread it.
+          headers: Object.fromEntries(request.headers),
+          signal: request.signal,
+          ...(chunk && range ? { cache: 'no-store' } : {}),
+        })
+        // Only a success: an HTML error page (502, 429, 403) must still throw.
+        const type = response.headers.get('content-type')?.toLowerCase()
+        if (response.ok && type?.startsWith('text/html')) {
+          await response.body?.cancel()
+          return new Response(null, { status: 404 })
+        }
+        // A server that ignores Range would send the whole file (a shard) per read.
+        const refused = rangeReplyError(response, range)
+        if (refused)
+          await refuseReply(
+            response,
+            refused.kind === 'whole-file'
+              ? `OME-Zarr: ${request.url} ignored the Range request (200, not 206)`
+              : `OME-Zarr: ${request.url} answered bytes ${refused.got}- to ${range}`,
+          )
+        return response
+      },
     },
-  })
+  )
   return {
     get: (key, opts) => store.get(key, opts),
     // zarrita's ranges lie inside the file (a shard index or a HEAD gave
@@ -705,9 +709,10 @@ export async function omeZarrVolumesFrom(
           group,
           load: async (t, signal) => {
             const img = await frames.load(channel, t, signal)
-            if (!signal?.aborted) prefetch?.(channel, t, img.byteLength)
+            if (!signal?.aborted) prefetch?.next(channel, t, img.byteLength)
             return img
           },
+          cancel: () => prefetch?.cancel(channel),
         }
       : undefined
     volumes.push({
@@ -732,7 +737,8 @@ export async function omeZarrVolumesFrom(
  * travel (t+1, or t-1 while scrubbing back; playback wraps) into `frames`, so
  * playback and scrubbing find it cached. One frame ahead per channel, never
  * evicting (skipped when it would not fit the budget), and cancelled when the
- * next frame shown makes it stale; a read another caller joined goes on.
+ * next frame shown makes it stale or `cancel` drops the channel (its volume
+ * was removed); a read another caller joined goes on.
  */
 function framePrefetch(
   frames: ReturnType<typeof omeZarrFrameCache>,
@@ -743,7 +749,11 @@ function framePrefetch(
   const last = new Map<number, number>()
   const step = new Map<number, number>()
   const running = new Map<number, { t: number; ctl: AbortController }>()
-  return (c: number, t: number, frameBytes: number) => {
+  const cancel = (c: number) => {
+    running.get(c)?.ctl.abort()
+    running.delete(c)
+  }
+  const next = (c: number, t: number, frameBytes: number) => {
     const prev = last.get(c) ?? first
     last.set(c, t)
     if (prev !== t) {
@@ -751,27 +761,26 @@ function framePrefetch(
       const back = prev === 0 && t === count - 1
       step.set(c, wrapped || (!back && t > prev) ? 1 : -1)
     }
-    const next = (t + (step.get(c) ?? 1) + count) % count
-    const run = running.get(c)
-    if (run?.t === next) return
-    run?.ctl.abort()
-    running.delete(c)
+    const ahead = (t + (step.get(c) ?? 1) + count) % count
+    if (running.get(c)?.t === ahead) return
+    cancel(c)
     // Frames already being prefetched count against the budget too.
     if (
-      next === t ||
-      frames.has(c, next) ||
+      ahead === t ||
+      frames.has(c, ahead) ||
       frames.bytes + (running.size + 1) * frameBytes > budgetBytes
     )
       return
     const ctl = new AbortController()
-    running.set(c, { t: next, ctl })
+    running.set(c, { t: ahead, ctl })
     frames
-      .load(c, next, ctl.signal)
+      .load(c, ahead, ctl.signal)
       .catch(() => {})
       .finally(() => {
         if (running.get(c)?.ctl === ctl) running.delete(c)
       })
   }
+  return { next, cancel }
 }
 
 /** Default {@link OmeZarrLoadOptions.frameCacheBytes}. */

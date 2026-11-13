@@ -148,7 +148,25 @@ export function collectGallery(
       files,
     })
   }
-  return [...examples, ...collectApps(repoRoot, nodes)]
+  return groupSingletons([...examples, ...collectApps(repoRoot, nodes)])
+}
+
+// A section with one example becomes part of a final 'Other' section.
+function groupSingletons(all: GalleryExample[]): GalleryExample[] {
+  const counts = new Map<string, number>()
+  for (const e of all) counts.set(e.section, (counts.get(e.section) ?? 0) + 1)
+  const lone = (e: GalleryExample) => counts.get(e.section) === 1
+  return [
+    ...all.filter((e) => !lone(e)),
+    ...all.filter(lone).map((e) => {
+      // Keep the lost heading when the title alone is vague ('Minimal').
+      const word = e.section.split(' ')[0].toLowerCase()
+      const title = e.title.toLowerCase().includes(word)
+        ? e.title
+        : `${e.title} (${e.section})`
+      return { ...e, title, section: 'Other' }
+    }),
+  ]
 }
 
 // Pages-index headings as gallery sections; DANDI joins the examples'

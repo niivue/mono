@@ -15,7 +15,11 @@
 // and the first linear frame after refills every resident border once.
 
 import { log } from '@/logger'
-import type { NVSlideLevelManifest, NVSlideVisibleTile } from './NVSlide'
+import type {
+  NVSlideLevelManifest,
+  NVSlideTileManifest,
+  NVSlideVisibleTile,
+} from './NVSlide'
 import { slideTileKey, type TileTextureCache } from './tileTextureCache'
 
 /** Interior size of a tile texture (the bitmap size). */
@@ -79,14 +83,25 @@ const edgeBits = (sx: number, sy: number): number =>
   (sx < 0 ? EDGE_LEFT : sx > 0 ? EDGE_RIGHT : 0) |
   (sy < 0 ? EDGE_TOP : sy > 0 ? EDGE_BOTTOM : 0)
 
+// Per manifest tile, so a steady view builds no key or object per frame. The
+// level check catches a level object replaced around shared tiles.
+const tileAts = new WeakMap<NVSlideTileManifest, GutterAt>()
+
 /** Where visible tile `item` of the 2D view goes. */
-export const visibleTileAt = (item: NVSlideVisibleTile): GutterAt => ({
-  slide: item.slide,
-  key: slideTileKey(item.slide, item.key),
-  level: item.level,
-  col: item.tile.x,
-  row: item.tile.y,
-})
+export function visibleTileAt(item: NVSlideVisibleTile): GutterAt {
+  let at = tileAts.get(item.tile)
+  if (!at || at.level !== item.level || at.slide !== item.slide) {
+    at = {
+      slide: item.slide,
+      key: slideTileKey(item.slide, item.key),
+      level: item.level,
+      col: item.tile.x,
+      row: item.tile.y,
+    }
+    tileAts.set(item.tile, at)
+  }
+  return at
+}
 
 /**
  * Copy `width` x `height` texels from (srcX, srcY) of a padded source texture

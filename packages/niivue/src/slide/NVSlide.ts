@@ -201,9 +201,16 @@ export type NVSlideRequestClass =
 /** One consumer's set of wanted tiles; cancelling it never cancels a read another owner wants. */
 export interface NVSlideRequestOwner {
   readonly kind: NVSlideRequestClass
-  /** Replaces this owner's wanted set. `focus` (base px) orders its loads centre-out. */
+  /**
+   * Replaces this owner's wanted set. `focus` (base px) orders its loads
+   * centre-out. A tile's `key`, when given, must be its {@link NVSlide.tileKey}.
+   */
   want(
-    tiles: Iterable<{ level: NVSlideLevelManifest; tile: NVSlideTileManifest }>,
+    tiles: Iterable<{
+      level: NVSlideLevelManifest
+      tile: NVSlideTileManifest
+      key?: string
+    }>,
     focus?: { x: number; y: number },
   ): void
   /** Idempotent. */
@@ -1869,7 +1876,11 @@ export class NVSlide extends EventTarget {
   // longer wants, cancelling those nobody else wants.
   private _want(
     o: OwnerState,
-    tiles: Iterable<{ level: NVSlideLevelManifest; tile: NVSlideTileManifest }>,
+    tiles: Iterable<{
+      level: NVSlideLevelManifest
+      tile: NVSlideTileManifest
+      key?: string
+    }>,
     focus?: { x: number; y: number },
   ): void {
     if (this._disposed) return
@@ -1880,7 +1891,7 @@ export class NVSlide extends EventTarget {
     let started = false
     for (const wanted of tiles) {
       const { level, tile } = wanted
-      const key = this.tileKey(level, tile)
+      const key = wanted.key ?? this.tileKey(level, tile)
       if (next.has(key)) continue
       next.set(key, wanted)
       const fresh = !o.keys.has(key)

@@ -73,6 +73,7 @@ project, open a pull request that edits this page.
 - [SeedSeg](https://seedseg.neurodesk.org/) prostate gold seed segmentation
 - [Slice:Drop Reloaded](https://gaiborjosue.github.io/slicedrop.github.com/reload/) extends the original [slicedrop](https://slicedrop.com/)
 - [SpinalCordToolbox](https://sct.neurodesk.org/) spinal cord MRI segmentation in the browser
+- [SpinLab NIfTI Viewer](https://spinlab.mrispin.com/nifti-viewer) browser-based viewer in the SpinLab neuroimaging pipeline platform from MRISpin
 - [system-onco](https://github.com/krishxchowta/system-onco) brain MRI research dashboard with MONAI segmentation and Grad-CAM
 - [T2Lesion](https://niivue.github.io/T2lesion/) input data and segmented lesion masks
 - [VesselBoost](https://vesselboost.neurodesk.org/) blood vessel segmentation

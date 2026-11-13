@@ -345,3 +345,46 @@ for (const call of ['set', 'clear'] as const) {
     }
   })
 }
+
+function sourceDoc(): Record<string, unknown> & {
+  slidePlane: Record<string, unknown>
+} {
+  const before = new NiiVue({ backend: 'webgl2' })
+  const slide = NVSlide.fromSource(planeSource())
+  before.setSlidePlane(slide, { pixelToWorld: transform })
+  const bytes = before.serializeDocument({ format: 'json' })
+  before.destroy()
+  slide.dispose()
+  return parseJsonDocument(bytes) as ReturnType<typeof sourceDoc>
+}
+
+test('an invalid saved channel blend keeps the plane and its reopened source', async () => {
+  const doc = sourceDoc()
+  doc.slidePlane.channelBlend = 'bogus'
+  const src = planeSource()
+  const warnings = captureWarnings()
+  const nv = new NiiVue({ backend: 'webgl2' })
+  try {
+    await nv.loadDocument(documentFile(JSON.stringify(doc)), {
+      resolveSource: () => src,
+    })
+    expect(nv.slidePlaneIndex).toEqual({ z: 0, t: 0 })
+    expect(warnings.messages.join('\n')).toContain('channel blend')
+    expect(src.disposed).toBe(false)
+    nv.destroy()
+    expect(src.disposed).toBe(true)
+  } finally {
+    warnings.restore()
+    nv.destroy()
+  }
+})
+
+test('a saved source falls back to the embedded manifest without a resolver', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  try {
+    await nv.loadDocument(documentFile(JSON.stringify(sourceDoc())))
+    expect(nv.slidePlaneIndex).toEqual({ z: 0, t: 0 })
+  } finally {
+    nv.destroy()
+  }
+})

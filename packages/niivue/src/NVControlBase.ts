@@ -8054,9 +8054,12 @@ export default class NiiVue extends EventTarget {
   ): Promise<void> {
     const { signal } = restore
     let slide: NVSlide | undefined
-    if (sp.source) {
+    // Without a resolver (nv-mcp, older hosts) the embedded manifest is used as
+    // before saved sources: it restores slides opened from a hosted manifest.
+    if (sp.source && restore.resolve) {
       const src = await openSlideSource(restore, sp.source)
-      if (signal.aborted) return src?.dispose?.()
+      if (signal.aborted || this._slidePlaneGen !== slideGen)
+        return src?.dispose?.()
       if (src) {
         try {
           slide = NVSlide.fromSource(src)
@@ -8096,17 +8099,23 @@ export default class NiiVue extends EventTarget {
       log.warn(
         `loadDocument: slide is ${slide.manifest.width}x${slide.manifest.height}, saved ${saved.width}x${saved.height}; annotations not restored`,
       )
-    // Before setSlidePlane primes tiles, so hidden channels are not fetched.
-    sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
-      try {
-        slide.setChannel(i, c)
-      } catch (err) {
-        log.warn(`loadDocument: slide channel ${i} not restored`, err)
-      }
-    })
-    if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
-    if (sp.colorManagement === false) slide.colorManagement = false
+    // Untrusted settings: any throw before attaching disposes the slide.
     try {
+      // Before setSlidePlane primes tiles, so hidden channels are not fetched.
+      sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
+        try {
+          slide.setChannel(i, c)
+        } catch (err) {
+          log.warn(`loadDocument: slide channel ${i} not restored`, err)
+        }
+      })
+      if (sp.channelBlend)
+        try {
+          slide.setChannelBlend(sp.channelBlend)
+        } catch (err) {
+          log.warn('loadDocument: slide channel blend not restored', err)
+        }
+      if (sp.colorManagement === false) slide.colorManagement = false
       this.setSlidePlane(slide, {
         pixelToWorld: sp.pixelToWorld,
         levelIndex: sp.levelIndex,
@@ -8199,9 +8208,11 @@ export default class NiiVue extends EventTarget {
    * `options.resolveSource` reopens a lazy or streamed volume's saved source
    * descriptor, or the slide plane's (`slide: true`), with the host's
    * credentials (see {@link DocumentSourceResolver}). Without it, or when it
-   * yields no source, a lazy volume shows its embedded frame as a static volume,
-   * and a streamed volume, or a slide with a saved source and no hosted
-   * manifest, is skipped with a warning. A
+   * yields no source, a lazy volume shows its embedded frame as a static volume
+   * and a streamed volume is skipped with a warning. A slide with a saved
+   * source and no hosted manifest is skipped when the resolver yields no
+   * source, and rebuilt from its embedded manifest when there is no resolver.
+   * A
    * newer `loadDocument` supersedes this one: its pending source opens are
    * aborted and anything they would add is dropped.
    * Restored slides are viewer-owned: clearing or replacing the plane, or

@@ -74,7 +74,8 @@ const URL_KINDS: readonly string[] = [
 
 // `extra` holds what the reopen cannot recover from the saved manifest: `local`
 // (a file the default resolver cannot reopen; the name lets a host offer it
-// again), a non-default TIFF `placement`, a manifest's custom `baseUrl`.
+// again), a non-default TIFF `placement`, a manifest's custom `baseUrl` (as
+// its path; see `basePath`).
 function described<T extends SlideTileSource>(
   src: T,
   url: string,
@@ -112,7 +113,12 @@ export function resolveSlideSource(
     if (format === 'dzi') reopen.fetch = undefined
     if (d.params?.placement === false)
       reopen.tiff = { ...options.tiff, placement: false }
-    if (typeof d.params?.baseUrl === 'string') reopen.baseUrl = d.params.baseUrl
+    const base = d.params?.baseUrl
+    if (typeof base === 'string') {
+      // Untrusted: only a path on the manifest's origin, as saved.
+      const b = URL.parse(base, d.url)
+      if (b && b.origin === URL.parse(d.url)?.origin) reopen.baseUrl = b.href
+    }
     return openUrl(format as SlideKind, d.url, reopen, signal)
   }
 }
@@ -315,6 +321,24 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
   }
 }
 
+/**
+ * `baseUrl` as a path on the manifest's origin. A saved document drops
+ * URL-valued params (they may be signed), and a path carries no host,
+ * query or credentials. A cross-origin base is not saved: the reopen falls
+ * back to the manifest URL.
+ */
+function basePath(baseUrl: string, manifestUrl: string): string | undefined {
+  const b = URL.parse(baseUrl, manifestUrl)
+  // `//x` would read as a host on reopen.
+  if (
+    !b ||
+    b.origin !== URL.parse(manifestUrl)?.origin ||
+    b.pathname.startsWith('//')
+  )
+    return undefined
+  return b.pathname
+}
+
 async function openUrl(
   kind: SlideKind,
   url: string,
@@ -327,7 +351,10 @@ async function openUrl(
     options.tiff?.placement === false
   )
     extra.placement = false
-  if (kind === 'manifest' && options.baseUrl) extra.baseUrl = options.baseUrl
+  if (kind === 'manifest' && options.baseUrl) {
+    const path = basePath(options.baseUrl, url)
+    if (path) extra.baseUrl = path
+  }
   return described(await openSource(kind, url, options, s), url, kind, extra)
 }
 

@@ -146,7 +146,8 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files, { at
   one (PixelRepresentation 1) states `sampleType: 'i16'` on its levels, so NVSlide reads
   the decoded samples as two's complement.
 - `pixelSpacingMM` is the level-0 PixelSpacing: shared PixelMeasures, else the first
-  frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix.
+  frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix. A
+  1\1 PixelSpacing is a placeholder: it yields to the volume size, else the slide has no spacing.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
   `transfer-syntax` (explicit VR little endian only), `uncompressed` (native pixel
   data of a level, or of an associated image that is not 8-bit grey or RGB), `malformed`,

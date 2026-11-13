@@ -54,7 +54,7 @@ function readSections(
   )) {
     const section = card[1].match(/<h1>([^<]+)<\/h1>/)?.[1].trim() ?? ''
     for (const link of card[1].matchAll(
-      /<a href="\.\/([^"]+\.html)"[^>]*>([\s\S]*?)<\/a>/g,
+      /<a href="\.\/([^"?]+\.html(?:\?[^"]*)?)"[^>]*>([\s\S]*?)<\/a>/g,
     )) {
       // Link text may hold markup, e.g. <code>perfFrame</code>.
       const title = link[2].replace(/<[^>]+>/g, '').trim()
@@ -117,12 +117,14 @@ export function collectGallery(
   )) {
     if (seen.has(page) || HIDDEN.has(page)) continue
     seen.add(page)
-    const id = `file:${EXAMPLES_DIR}/${page}`
+    // A query string picks a variant of one page (cinematic.html?sample=...).
+    const [file, query] = page.split('?')
+    const id = `file:${EXAMPLES_DIR}/${file}`
     const node = nodes.get(id)
-    const html = readFileSync(path.join(dir, page), 'utf8')
+    const html = readFileSync(path.join(dir, file), 'utf8')
     const files: GalleryFile[] = []
     const inline = inlineModuleScripts(html)
-    if (inline) files.push({ name: page, code: asPackageImports(inline) })
+    if (inline) files.push({ name: file, code: asPackageImports(inline) })
     // Scripts the page loads that live beside it (not the library itself).
     const local = (imports.get(id) ?? [])
       .map((t) => nodes.get(t)?.path)
@@ -134,12 +136,15 @@ export function collectGallery(
       })
     }
     examples.push({
-      slug: page.replace(/\.html$/, '').replace(/[^a-zA-Z0-9-]+/g, '-'),
+      slug: [file.replace(/\.html$/, ''), query?.replace(/^[^=]*=/, '')]
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^a-zA-Z0-9-]+/g, '-'),
       title,
       section,
       summary: cleanSummary(node?.summary, title),
       page: `examples/${page}`,
-      source: `${EXAMPLES_DIR}/${page}`,
+      source: `${EXAMPLES_DIR}/${file}`,
       files,
     })
   }

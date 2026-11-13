@@ -64,6 +64,9 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
 }
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
+  // Path-traced: give the progressive render time to converge.
+  'cinematic-mr-siam': 10000,
+  'cinematic-mr-mni152-tract': 10000,
   // Fetches a DICOM series and converts it in WASM.
   'demo-ext-dcm2niix': 15000,
   // The DICOM-WSI slide streams its tiles from the network.

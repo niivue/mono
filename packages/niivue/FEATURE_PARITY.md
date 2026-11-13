@@ -11,7 +11,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 - ⚠️ = Partial
 - ⏳ = Implemented in an open PR (named), not yet on `main`
 
-*Updated: 2026-06-18*
+*Updated: 2026-11-13*
 
 ---
 

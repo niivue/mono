@@ -72,20 +72,20 @@ const URL_KINDS: readonly string[] = [
   'manifest',
 ]
 
-// A local file's descriptor names it, so a host can offer it again; the
-// default resolver cannot reopen it.
+// `extra` holds what the reopen cannot recover from the saved manifest: `local`
+// (a file the default resolver cannot reopen; the name lets a host offer it
+// again), a non-default TIFF `placement`, a manifest's custom `baseUrl`.
 function described<T extends SlideTileSource>(
   src: T,
   url: string,
   format: SlideKind,
-  local = false,
-  unplaced = false,
+  extra: { local?: true; placement?: false; baseUrl?: string } = {},
 ): T {
-  const params: Record<string, string | boolean> = { format }
-  if (local) params.local = true
-  // A non-default TIFF option the reopen cannot recover from the saved manifest.
-  if (unplaced) params.placement = false
-  src.descriptor = { kind: SLIDE_SOURCE_KIND, url, params }
+  src.descriptor = {
+    kind: SLIDE_SOURCE_KIND,
+    url,
+    params: { format, ...extra },
+  }
   return src
 }
 
@@ -107,13 +107,12 @@ export function resolveSlideSource(
       !URL_KINDS.includes(format)
     )
       return null
-    const reopen: OpenSlideOptions =
-      format === 'dzi'
-        ? // DZI reads tiles with the global fetch and refuses a custom one.
-          { ...options, fetch: undefined }
-        : d.params?.placement === false
-          ? { ...options, tiff: { ...options.tiff, placement: false } }
-          : options
+    const reopen: OpenSlideOptions = { ...options }
+    // DZI reads tiles with the global fetch and refuses a custom one.
+    if (format === 'dzi') reopen.fetch = undefined
+    if (d.params?.placement === false)
+      reopen.tiff = { ...options.tiff, placement: false }
+    if (typeof d.params?.baseUrl === 'string') reopen.baseUrl = d.params.baseUrl
     return openUrl(format as SlideKind, d.url, reopen, signal)
   }
 }
@@ -259,7 +258,7 @@ export async function openSlide(
           }),
           slide.container ?? slide.series,
           'dicom',
-          true,
+          { local: true },
         )
       },
     }),
@@ -303,8 +302,9 @@ function tiffCandidate(file: File, options: OpenSlideOptions): SlideCandidate {
           }),
           file.webkitRelativePath || file.name,
           'tiff',
-          true,
-          options.tiff?.placement === false,
+          options.tiff?.placement === false
+            ? { local: true, placement: false }
+            : { local: true },
         )
       } catch (err) {
         // Not adopted by a source: closed here.
@@ -321,14 +321,14 @@ async function openUrl(
   options: OpenSlideOptions,
   s?: AbortSignal,
 ): Promise<SlideTileSource> {
-  return described(
-    await openSource(kind, url, options, s),
-    url,
-    kind,
-    false,
+  const extra: Parameters<typeof described>[3] = {}
+  if (
     (kind === 'tiff' || kind === 'dicom-tiff') &&
-      options.tiff?.placement === false,
+    options.tiff?.placement === false
   )
+    extra.placement = false
+  if (kind === 'manifest' && options.baseUrl) extra.baseUrl = options.baseUrl
+  return described(await openSource(kind, url, options, s), url, kind, extra)
 }
 
 async function openSource(

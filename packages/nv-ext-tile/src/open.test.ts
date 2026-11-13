@@ -407,6 +407,49 @@ describe('openSlide', () => {
     local.dispose?.()
   })
 
+  test("a hosted manifest's custom baseUrl survives a document reopen", async () => {
+    const manifest = rangeManifest([
+      { x: 0, y: 0, width: 4, height: 4, offset: 10, length: 4 },
+    ])
+    const urls: string[] = []
+    const fetch: SlideFetch = async (url) => {
+      urls.push(url)
+      return url.endsWith('.json')
+        ? Response.json(manifest)
+        : new Response(new Uint8Array(4), { status: 206 })
+    }
+    const baseUrl = 'https://h.test/data/'
+    const opened = await (
+      await openSlide('https://h.test/s/m.json', { fetch, baseUrl })
+    ).candidates[0]?.open()
+    const descriptor = opened?.descriptor
+    if (!descriptor) throw new Error('no descriptor')
+    expect(descriptor.params).toEqual({ format: 'manifest', baseUrl })
+    opened?.dispose?.()
+    urls.length = 0
+    const again = (await resolveSlideSource({ fetch })(descriptor, {
+      signal: new AbortController().signal,
+      streamed: false,
+      slide: true,
+    })) as ManifestRangeSource | null
+    again?.bind({
+      resolveUrl: (u) => u,
+      addWireBytes() {},
+      rangeHit() {},
+      rangeFallback() {},
+      pushRangeEvent() {},
+      updateRangeEvent() {},
+      channelInfoChanged() {},
+    })
+    const level = again?.manifest.levels[0]
+    if (!again || !level) throw new Error('no level')
+    await again.fetchTileBytes(level, level.tiles[0] as never, 'L0')
+    expect(urls).toEqual([
+      'https://h.test/s/m.json',
+      'https://h.test/data/l0.dcm',
+    ])
+  })
+
   test('the resolver reopens a DZI with the global fetch and a TIFF with its saved placement', async () => {
     const signal = new AbortController().signal
     const ctx = { signal, streamed: false, slide: true }

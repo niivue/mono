@@ -388,3 +388,22 @@ test('a saved source falls back to the embedded manifest without a resolver', as
     nv.destroy()
   }
 })
+
+test('a volume load from a locationChange listener during restore detaches the slide', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const bytes = saved(false)
+  const dispose = spyOn(NVSlide.prototype, 'dispose')
+  let replacement: Promise<unknown> | undefined
+  nv.addEventListener('locationChange', () => {
+    if (nv.slidePlaneIndex && !replacement) replacement = nv.loadVolumes([])
+  })
+  try {
+    await nv.loadDocument(documentFile(bytes))
+    await replacement
+    expect(nv.slidePlaneIndex).toBeNull()
+    expect(dispose).toHaveBeenCalledTimes(1)
+  } finally {
+    dispose.mockRestore()
+    nv.destroy()
+  }
+})

@@ -1483,15 +1483,15 @@ describe('single-channel grey TIFF', () => {
 })
 
 describe('OME-TIFF channel names', () => {
-  test('golden: names (XML entities), order, colours, z step units', async () => {
+  test('names, colours, plane order and z step units (entities: core omeTiff.test)', async () => {
     const inner =
-      '<Channel ID="Channel:0:0" Name="A &amp; B &lt;1&gt; &quot;q&quot; &apos;s&apos;" Color="-1" SamplesPerPixel="1"/>' +
-      '<Channel ID="Channel:0:1" Name="&#945;-&#x3B2; &bogus;" Color="65535" SamplesPerPixel="1"/>' +
+      '<Channel ID="Channel:0:0" Name="A" Color="-1" SamplesPerPixel="1"/>' +
+      '<Channel ID="Channel:0:1" Name="B" Color="65535" SamplesPerPixel="1"/>' +
       '<Channel ID="Channel:0:2" SamplesPerPixel="1"/><Channel Color="bad" SamplesPerPixel="1"/><TiffData/>'
     const source = await openOme('XYCZT', [0, 1, 2, 3, 4, 5, 6, 7], { inner })
     expect(source.manifest.channelInfo?.map((c) => [c.name, c.rgb])).toEqual([
-      [`A & B <1> "q" 's'`, [255, 255, 255]],
-      ['α-β &bogus;', [0, 0, 255]],
+      ['A', [255, 255, 255]],
+      ['B', [0, 0, 255]],
       ['Channel 3', undefined],
       ['Channel 4', undefined],
     ])
@@ -1504,12 +1504,13 @@ describe('OME-TIFF channel names', () => {
         ),
       ),
     )
+    // A bad DimensionOrder reads as XYZCT (core parseOmeXml's fallback).
     const bad = await openOme('XYCZQ', [0, 1, 2, 3])
     expect([
       one.manifest.channelInfo?.map((c) => c.name),
       bad.planes,
-      bad.manifest.channelInfo?.map((c) => c.name),
-    ]).toEqual([['gray'], undefined, ['gray']])
+      await planeIds(bad, [0, 1]),
+    ]).toEqual([['gray'], { z: 2, t: 1 }, [0, 2000]])
     const zStep = async (pixels: string) =>
       (await openOme('XYCZT', [0, 1, 2, 3], { pixels })).planes?.zPositionsUm
     expect(
@@ -1523,7 +1524,7 @@ describe('OME-TIFF channel names', () => {
           'PhysicalSizeZ="2.5" PhysicalSizeZUnit="parsnip"',
         ].map(zStep),
       ),
-    ).toEqual([[0, 2.5], [0, 2.5], [0, 2.5], undefined, undefined, undefined])
+    ).toEqual([[0, 2.5], [0, 2.5], [0, 2.5], [0, 0.5], [0, 2], undefined])
   })
 })
 

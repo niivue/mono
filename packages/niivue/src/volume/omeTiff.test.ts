@@ -98,9 +98,13 @@ describe('parseOmeXml', () => {
   test('decodes XML entities in attribute values', () => {
     const xml = omeXml(
       '',
-      '<Channel Name="Alexa &amp; Cy5 &lt;far red&gt;" Color="-1"/>',
+      '<Channel Name="Alexa &amp; Cy5 &lt;far red&gt;" Color="-1"/><Channel Name="&#945;-&#x3B2; &amp;lt; &bogus; &#99999999;"/><Channel ID="Channel:0:2"/>',
     )
-    expect(parseOmeXml(xml)?.channels[0].name).toBe('Alexa & Cy5 <far red>')
+    expect(parseOmeXml(xml)?.channels.map((c) => c.name)).toEqual([
+      'Alexa & Cy5 <far red>',
+      'α-β &lt; &bogus; &#99999999;',
+      '',
+    ])
   })
 
   test('returns null for text that is not OME-XML', () => {

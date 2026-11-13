@@ -21,6 +21,7 @@ import { log } from '@/logger'
 
 /** One channel of an OME image. */
 export interface OmeChannel {
+  /** `Name` as written, '' when absent; `omeChannelName` labels it for display. */
   name: string
   /** Display colour from the `Color` attribute, or null when unset. */
   color: [number, number, number] | null
@@ -171,16 +172,24 @@ function parseAttributes(source: string): Record<string, string> {
   return attrs
 }
 
+const XML_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+// Unknown names and out-of-range code points stay as written.
 function decodeXmlEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_all, code: string) =>
-      String.fromCodePoint(Number(code)),
-    )
-    .replace(/&amp;/g, '&')
+  return value.replace(
+    /&(?:#x([\da-f]+)|#(\d+)|(\w+));/gi,
+    (ref, hex, dec, name) => {
+      if (name) return XML_ENTITIES[name] ?? ref
+      const code = hex ? Number.parseInt(hex, 16) : Number(dec)
+      return code <= 0x10ffff ? String.fromCodePoint(code) : ref
+    },
+  )
 }
 
 /** Attributes of the first `<tag ...>` in `xml`, namespace prefix tolerated. */
@@ -253,8 +262,7 @@ export function parseOmeXml(xml: string | undefined): OmeTiffInfo | null {
   while (channelMatch !== null) {
     const channelAttrs = parseAttributes(channelMatch[1])
     channels.push({
-      name:
-        channelAttrs.Name ?? channelAttrs.ID ?? `Channel ${channels.length}`,
+      name: channelAttrs.Name ?? '',
       color: parseOmeColor(channelAttrs.Color),
       samplesPerPixel: positiveInt(channelAttrs.SamplesPerPixel, 1),
     })

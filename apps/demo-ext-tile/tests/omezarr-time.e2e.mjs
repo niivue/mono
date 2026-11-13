@@ -535,6 +535,13 @@ async function checkSampleSwitch(backend) {
       { timeout: 30000 },
     )
     .catch(() => fail('the colony load never attached its segmentation'))
+  // Leaving the colony must not leave its labels URL ready to Add elsewhere.
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  const segUrl = await page.inputValue('#segUrl')
+  if (segUrl) fail(`the colony segmentation URL outlived its sample: ${segUrl}`)
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
   await page.close()
 }
 

@@ -264,6 +264,8 @@ sampleSelect.onchange = async () => {
   const sample = SAMPLES.find((s) => s.url === sampleSelect.value)
   creditLine.textContent = sample?.credit ?? ''
   urlInput.value = sample?.url ?? ''
+  // A segmentation URL belongs to the sample that filled it.
+  segUrlInput.value = ''
   // Only load on success: otherwise the stale store would reload and its
   // status line would paper over the fetch error the user needs to read.
   if (!(await fetchButton.onclick())) return

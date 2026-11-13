@@ -7,6 +7,10 @@ import {
   fuseTarget,
   fuseTiles,
   fuseUniforms,
+  type LabelTable,
+  labelUniforms,
+  liveLabelTables,
+  pruneLabelTables,
   type RawFormat,
   rawFormat,
 } from '@/slide/slideFuse'
@@ -78,6 +82,51 @@ fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 }
 `
 
+// Label layers (gl/tileFuse.ts labelFragSrc): the ID through its table, else
+// the labelColor hash, the highlight scale applied; integer math, so exact.
+const labelShaderCode = (kind: Kind): string => /* wgsl */ `
+struct Label {
+  // labelUniforms: selected ID, scale of the others in 256ths, table size, table width
+  selected: u32,
+  other: u32,
+  size: u32,
+  width: u32,
+};
+@group(0) @binding(0) var<uniform> p: Label;
+@group(1) @binding(0) var raw: texture_2d<${kind === 'uint' ? 'u32' : kind === 'sint' ? 'i32' : 'f32'}>;
+@group(2) @binding(0) var table: texture_2d<u32>;
+
+@vertex
+fn vertex_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  return vec4f(f32((i & 1u) << 2u) - 1.0, f32((i & 2u) << 1u) - 1.0, 0.0, 1.0);
+}
+
+fn labelColor(x: u32) -> vec3u {
+  var h = x;
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return 64u + (((vec3u(h, h >> 8u, h >> 16u) & vec3u(255u)) * 3u) >> vec3u(2u));
+}
+
+@fragment
+fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+  let v = f32(textureLoad(raw, vec2i(pos.xy) - 1, 0).r);
+  // NaN and negatives are 0, as labelId.
+  let id = select(0u, u32(v), v > 0.0);
+  var c: vec3u;
+  if (id < p.size) {
+    c = textureLoad(table, vec2u(id % p.width, id / p.width), 0).rgb;
+  } else {
+    c = labelColor(id);
+  }
+  c = (c * select(p.other, 256u, id == p.selected)) >> vec3u(8u);
+  return vec4f(vec3f(c) / 255.0, 1.0);
+}
+`
+
 export class TileFuserGPU {
   private readonly _pool: TileTextureCache<RawGPU>
   private readonly _luts = new FuseLutRows()
@@ -86,6 +135,12 @@ export class TileFuserGPU {
   private _layout: GPUBindGroupLayout | null = null
   private readonly _rawLayouts = new Map<Kind, GPUBindGroupLayout>()
   private readonly _pipelines = new Map<string, GPURenderPipeline>()
+  private _tableLayout: GPUBindGroupLayout | null = null
+  // One per labelColors array, freed by clear.
+  private readonly _tables = new Map<
+    LabelTable,
+    { texture: GPUTexture; group: GPUBindGroup }
+  >()
   private _uniform: GPUBuffer | null = null
   private _group: GPUBindGroup | null = null
   private _jobs: FuseJob<TileTextureGPU>[] = []
@@ -117,7 +172,12 @@ export class TileFuserGPU {
       slide,
       tile,
       device.limits.maxTextureDimension2D,
-      (width, height) => gutter.create(device, width, height, at),
+      (width, height, labels) => {
+        const t = gutter.create(device, width, height, at)
+        // Read with textureLoad (nearest), so it needs no gutter of its own.
+        if (labels) t.labels = gutter.create(device, width, height, at).texture
+        return t
+      },
     )
   }
 
@@ -136,7 +196,7 @@ export class TileFuserGPU {
     this._jobs = []
     let most = 1
     for (const job of jobs) {
-      most = Math.max(most, job.plan.layers.length)
+      most = Math.max(most, job.plan.layers.length + job.plan.labels.length)
       for (const l of job.plan.layers) this._luts.row(l.colormap)
     }
     const stride = device.limits.minUniformBufferOffsetAlignment
@@ -146,35 +206,60 @@ export class TileFuserGPU {
       jobs,
       this._pool,
       (s, plane) => this._upload(device, s, plane),
-      ({ target, plan }, layers) => {
+      ({ target, plan }, layers, labels) => {
         // One uniform slot per channel: a queue write lands before the submit
         // that reads it, and the next tile's write after.
-        const params = new Float32Array(Math.max(1, layers.length) * lanes)
+        const params = new Float32Array(
+          Math.max(1, layers.length + labels.length) * lanes,
+        )
         layers.forEach(([l], k) => {
           params.set(
             fuseUniforms(l, this._luts.row(l.colormap), plan.invert),
             k * lanes,
           )
         })
+        if (labels.length) {
+          const words = new Uint32Array(params.buffer)
+          labels.forEach(([l], k) => {
+            words.set(labelUniforms(l), (layers.length + k) * lanes)
+          })
+        }
         device.queue.writeBuffer(uniform, 0, params)
         const encoder = device.createCommandEncoder()
-        const pass = encoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: target.texture.createView(),
-              loadOp: 'clear',
-              clearValue: { r: 0, g: 0, b: 0, a: 1 },
-              storeOp: 'store',
-            },
-          ],
-        })
-        pass.setViewport(1, 1, target.width, target.height, 0, 1)
+        const into = (texture: GPUTexture): GPURenderPassEncoder => {
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [
+              {
+                view: texture.createView(),
+                loadOp: 'clear',
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                storeOp: 'store',
+              },
+            ],
+          })
+          pass.setViewport(1, 1, target.width, target.height, 0, 1)
+          return pass
+        }
+        let pass = into(target.texture)
         layers.forEach(([, raw], k) => {
           pass.setPipeline(
             this._pipeline(device, KIND[raw.format], plan.additive),
           )
           pass.setBindGroup(0, group, [k * stride])
           pass.setBindGroup(1, raw.group)
+          pass.draw(3)
+        })
+        if (target.labels) {
+          pass.end()
+          pass = into(target.labels)
+        }
+        labels.forEach(([l, raw], k) => {
+          pass.setPipeline(
+            this._pipeline(device, KIND[raw.format], plan.additive, true),
+          )
+          pass.setBindGroup(0, group, [(layers.length + k) * stride])
+          pass.setBindGroup(1, raw.group)
+          pass.setBindGroup(2, this._table(device, l.table))
           pass.draw(3)
         })
         pass.end()
@@ -279,11 +364,16 @@ export class TileFuserGPU {
     device: GPUDevice,
     kind: Kind,
     additive: boolean,
+    label = false,
   ): GPURenderPipeline {
-    const key = `${kind}${additive}`
+    const key = `${kind}${additive}${label}`
     let pipeline = this._pipelines.get(key)
     if (!pipeline) {
-      const module = device.createShaderModule({ code: shaderCode(kind) })
+      const module = device.createShaderModule({
+        code: label ? labelShaderCode(kind) : shaderCode(kind),
+      })
+      const layouts = [this._groupLayout(device), this._rawLayout(device, kind)]
+      if (label) layouts.push(this._labelLayout(device))
       // 'max' requires both factors 'one'; the sum clamps in the unorm target.
       const op: GPUBlendComponent = {
         operation: additive ? 'add' : 'max',
@@ -292,10 +382,7 @@ export class TileFuserGPU {
       }
       pipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({
-          bindGroupLayouts: [
-            this._groupLayout(device),
-            this._rawLayout(device, kind),
-          ],
+          bindGroupLayouts: layouts,
         }),
         vertex: { module, entryPoint: 'vertex_main' },
         fragment: {
@@ -308,6 +395,45 @@ export class TileFuserGPU {
       this._pipelines.set(key, pipeline)
     }
     return pipeline
+  }
+
+  private _labelLayout(device: GPUDevice): GPUBindGroupLayout {
+    this._tableLayout ??= device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'uint' },
+        },
+      ],
+    })
+    return this._tableLayout
+  }
+
+  // The rgba8uint texture of `table` and its bind group, made on first use.
+  private _table(device: GPUDevice, table: LabelTable): GPUBindGroup {
+    let entry = this._tables.get(table)
+    if (!entry) {
+      const rows = table.colors.length / table.width
+      const texture = device.createTexture({
+        size: [table.width, rows],
+        format: 'rgba8uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      })
+      device.queue.writeTexture(
+        { texture },
+        table.colors as Uint32Array<ArrayBuffer>,
+        { bytesPerRow: table.width * 4 },
+        [table.width, rows],
+      )
+      const group = device.createBindGroup({
+        layout: this._labelLayout(device),
+        entries: [{ binding: 0, resource: texture.createView() }],
+      })
+      entry = { texture, group }
+      this._tables.set(table, entry)
+    }
+    return entry.group
   }
 
   private _upload(
@@ -336,16 +462,30 @@ export class TileFuserGPU {
     return { texture, group, format }
   }
 
-  /** Drop the pooled raw layers (tile textures belong to the caller's cache). */
+  /**
+   * Free the label tables (CPU and GPU) no slide in `slides` uses: a replaced
+   * label slide's tables go on the next frame. No-op without tables.
+   */
+  retainLabelTables(slides: readonly NVSlide[]): void {
+    if (this._tables.size === 0) return
+    pruneLabelTables(this._tables, liveLabelTables(slides), ({ texture }) =>
+      texture.destroy(),
+    )
+  }
+
+  /** Drop the pooled raw layers and label tables (tile textures belong to the caller's cache). */
   clear(): void {
     this._pool.clear()
     this._jobs = []
+    for (const { texture } of this._tables.values()) texture.destroy()
+    this._tables.clear()
   }
 
   destroy(): void {
     this.clear()
     this._lutTexture?.destroy()
     this._uniform?.destroy()
+    this._tableLayout = null
     this._lutTexture = null
     this._uniform = null
     this._group = null

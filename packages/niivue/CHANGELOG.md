@@ -1,3 +1,54 @@
+## 1.0.0-rc.186 (2026-11-12)
+
+### Features
+
+- **niivue, nv-mcp:** tile lane C slide engine (request owners, LOD, frame plan, memory cap, planes, placement, labels) ([ab973380](https://github.com/niivue/mono/commit/ab973380))
+
+### Fixes
+
+- **niivue:** restore a null unit-2 binding after several label tiles ([3de4c231](https://github.com/niivue/mono/commit/3de4c231))
+- **niivue,nv-mcp:** PR 748 review findings ([a8c8c787](https://github.com/niivue/mono/commit/a8c8c787))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.185 (2026-11-12)
+
+### Fixes
+
+- **niivue:** a third finger's lift no longer ends a slide pinch ([75946fdb](https://github.com/niivue/mono/commit/75946fdb))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.184 (2026-11-12)
+
+### Features
+
+- **niivue, nv-ext-tile:** tile lane A slide sources (opener, fetch contract, transport checks, grey/signed, vendor layouts) ([fca4aed8](https://github.com/niivue/mono/commit/fca4aed8))
+
+### Fixes
+
+- **niivue:** a manifest's own origin gets the custom fetch with a cross-origin baseUrl ([c43372a7](https://github.com/niivue/mono/commit/c43372a7))
+- **nv-ext-tile:** hold every custom fetch to its signal in slideFetch ([6b12c8d7](https://github.com/niivue/mono/commit/6b12c8d7))
+- **niivue:** a disposed ManifestRangeSource settles reads a custom fetch leaves pending, and cancels late bodies ([3c71f665](https://github.com/niivue/mono/commit/3c71f665))
+- **niivue:** a ManifestRangeSource read refuses a reply that settles after dispose ([24094525](https://github.com/niivue/mono/commit/24094525))
+- **niivue:** a disposed ManifestRangeSource never fetches a whole ICC profile ([eb742908](https://github.com/niivue/mono/commit/eb742908))
+- **niivue:** ManifestRangeSource checks the Content-Range end too ([a09602ea](https://github.com/niivue/mono/commit/a09602ea))
+- **niivue:** ManifestRangeSource without baseUrl scopes custom fetch to the host manifest origin ([4db2ea5b](https://github.com/niivue/mono/commit/4db2ea5b))
+- **nv-ext-tile:** PR 746 review fixes (sub-8-bit grey, Philips regex, capped reads) ([0a9d883f](https://github.com/niivue/mono/commit/0a9d883f))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.183 (2026-11-12)
 
 ### Features

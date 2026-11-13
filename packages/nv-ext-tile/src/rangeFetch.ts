@@ -1,6 +1,52 @@
 // Range-reply checks shared by the TIFF and Zarr fetch paths. Each caller
 // keeps its own policy: which replies it refuses and with what message.
 
+/**
+ * The custom fetch every slide source option takes, e.g. one that adds auth
+ * headers or signs URLs. `globalThis.fetch` satisfies it.
+ */
+export type SlideFetch = (url: string, init?: RequestInit) => Promise<Response>
+
+/**
+ * `f`, else the global fetch, safe to store and call as a method: a native
+ * fetch called with another receiver throws "Illegal invocation". `f` is held
+ * to its signal as a native fetch is, since it may ignore it.
+ */
+export const slideFetch = (f?: SlideFetch): SlideFetch =>
+  f
+    ? (url, init) => heldTo(f(url, init), init?.signal)
+    : globalThis.fetch.bind(globalThis)
+
+/**
+ * `reply` held to `signal`: it rejects on abort (a late reply's body is
+ * cancelled), and so does every later read of its body.
+ */
+async function heldTo(
+  reply: Promise<Response>,
+  signal?: AbortSignal | null,
+): Promise<Response> {
+  if (!signal) return reply
+  const response = await raceAbort(reply, signal, (late) => {
+    late.body?.cancel().catch(() => {})
+  })
+  if (!response.body) return response
+  const held = new Response(
+    response.body.pipeThrough(new TransformStream(), { signal }),
+    response,
+  )
+  // A new Response has neither; the TIFF client reads them to follow a redirect.
+  return Object.defineProperties(held, {
+    url: { value: response.url },
+    redirected: { value: response.redirected },
+  })
+}
+
+/** A read's signal: the caller's, if any, plus the source's lifetime. */
+export const linked = (
+  signal: AbortSignal | undefined,
+  closed: AbortSignal,
+): AbortSignal => (signal ? AbortSignal.any([signal, closed]) : closed)
+
 /** Aborts when any given signal does; undefined when none is given. */
 export function anySignal(
   ...signals: (AbortSignal | null | undefined)[]
@@ -47,4 +93,82 @@ export async function refuseReply(
 ): Promise<never> {
   await response.body?.cancel()
   throw new Error(message)
+}
+
+/**
+ * `p`, or the signal's reason when it aborts first (a custom fetch may ignore
+ * its signal). A value `p` yields after the abort goes to `late`, to release it.
+ */
+export async function raceAbort<T>(
+  p: Promise<T>,
+  signal?: AbortSignal,
+  late?: (value: T) => void,
+): Promise<T> {
+  if (!signal) return p
+  // A shared promise may reject after this wait gave up on it.
+  p.then((value) => signal.aborted && late?.(value)).catch(() => {})
+  signal.throwIfAborted()
+  let onAbort = () => {}
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    return await Promise.race([p, aborted])
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
+// 64 MB: far beyond a tile, manifest or scanner ICC profile (Leica's is 13 MB);
+// matches ManifestRangeSource's profile cap and the dcm2niix decoder's input cap.
+export const MAX_BODY = 64 * 1024 * 1024
+
+/**
+ * A response body, refused past `max` whether or not Content-Length says so.
+ * With `signal`, rejects as soon as it aborts, cancelling the body.
+ */
+export async function readCapped(
+  response: Response,
+  what: string,
+  max = MAX_BODY,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const refused = !response.ok
+    ? `${what} HTTP ${response.status}`
+    : Number(response.headers.get('content-length')) > max
+      ? `${what} body too large`
+      : undefined
+  if (refused) {
+    // An unread body keeps its connection downloading.
+    await response.body?.cancel()
+    throw new Error(refused)
+  }
+  const reader = response.body?.getReader()
+  if (!reader) return new Uint8Array(0)
+  const chunks: Uint8Array[] = []
+  let n = 0
+  for (;;) {
+    const { done, value } = await raceAbort(reader.read(), signal).catch(
+      (error) => {
+        reader.cancel().catch(() => {})
+        throw error
+      },
+    )
+    if (done) break
+    n += value.length
+    if (n > max) {
+      await reader.cancel()
+      throw new Error(`${what} body too large`)
+    }
+    chunks.push(value)
+  }
+  if (chunks.length === 1) return chunks[0] as Uint8Array
+  const out = new Uint8Array(n)
+  let o = 0
+  for (const c of chunks) {
+    out.set(c, o)
+    o += c.length
+  }
+  return out
 }

@@ -456,6 +456,111 @@ describe('DicomWebWsiSource', () => {
   })
 })
 
+describe('DicomWebWsiSource options and lifetime', () => {
+  const crossOriginIcc = (o: Json) => {
+    const paths = (o['00480105'] as { Value: Json[] }).Value
+    ;(paths[0] as Json)['00282000'] = {
+      vr: 'OB',
+      BulkDataURI: 'https://cdn.test/icc',
+    }
+  }
+
+  test('a custom fetch serves the series origin, never another origin', async () => {
+    serve(() => part(new Uint8Array([4])))
+    const mine: string[] = []
+    const custom = async (url: string, init?: RequestInit) => {
+      mine.push(url)
+      return globalThis.fetch(url, init)
+    }
+    const s = await DicomWebWsiSource.open(
+      await slideOf('bot', crossOriginIcc),
+      { seriesUrl: SERIES, fetch: custom },
+    )
+    const { level, tile } = firstTile(s)
+    await s.fetchTileBytes(level, tile, '')
+    await s.fetchIccProfile()
+    expect(mine).toEqual([`${SERIES}/instances/1.2.3.10/frames/${tile.frame}`])
+    expect(calls.map((c) => c.url)).toEqual([
+      mine[0] as string,
+      'https://cdn.test/icc',
+    ])
+  })
+
+  test('a custom fetch sniffs the transfer syntax too', async () => {
+    serve(() => part(JPEG))
+    let used = 0
+    const custom = async (url: string, init?: RequestInit) => {
+      used++
+      return globalThis.fetch(url, init)
+    }
+    await DicomWebWsiSource.open(
+      await slideOf('bot', (o) => {
+        delete o['00020010']
+      }),
+      { seriesUrl: SERIES, fetch: custom },
+    )
+    expect(used).toBe(1)
+  })
+
+  test('L4: dispose aborts a tile read in flight and every later read', async () => {
+    let started = () => {}
+    const begun = new Promise<void>((r) => {
+      started = r
+    })
+    globalThis.fetch = ((_: RequestInfo | URL, init?: RequestInit) =>
+      new Promise((_, reject) => {
+        started()
+        if (init?.signal?.aborted) reject(init.signal.reason)
+        init?.signal?.addEventListener('abort', () =>
+          reject(init.signal?.reason),
+        )
+      })) as typeof fetch
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+    })
+    const { level, tile } = firstTile(s)
+    const read = s.fetchTileBytes(level, tile, '')
+    await begun
+    s.dispose()
+    s.dispose()
+    await expect(read).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    await expect(s.fetchIccProfile()).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+  })
+
+  test('after dispose no read reaches a fetch that ignores its signal', async () => {
+    let calls = 0
+    const custom = async () => {
+      calls++
+      return part(JPEG)
+    }
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+      fetch: custom,
+    })
+    const { level, tile } = firstTile(s)
+    calls = 0
+    s.dispose()
+    await expect(s.fetchTileBytes(level, tile, '')).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(calls).toBe(0)
+  })
+
+  test('states a caller attribution, dropping a non-http url', async () => {
+    serve(() => part(JPEG))
+    const s = await DicomWebWsiSource.open(await slideOf('bot'), {
+      seriesUrl: SERIES,
+      attribution: { title: 'T', url: 'javascript:alert(1)', license: 'CC0' },
+    })
+    expect(s.manifest.attribution).toEqual({ title: 'T', license: 'CC0' })
+  })
+})
+
 describe('parseMultipartRelated', () => {
   test('extracts parts byte-exact, with or without the boundary in Content-Type', () => {
     const a = new Uint8Array([0x44, 0x00, 0x0d, 0x0a, 0xff])

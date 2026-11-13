@@ -2,7 +2,7 @@ import { expect } from '@playwright/test'
 import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
-// Two slides sharing a tile key (both L0/0/0) in one frame: each must draw its
+// Two slides sharing a tile key (both tile (0, 0) of level 0) in one frame: each must draw its
 // own tile. Tile textures were cached by tile key alone, so the second slide's
 // upload replaced the first's: WebGPU destroyed a texture the open pass bound
 // and dropped the whole frame (black, no console error); GL drew correctly but
@@ -58,7 +58,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         renderer.init(gl)
         draw = () => renderer.render(slides, screen)
       }
-      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile('L0/0/0')); i++) {
+      for (let i = 0; i < 100 && slides.some((s) => !s.cachedTile(s.tileKey(s.manifest.levels[0], { x: 0, y: 0 }))); i++) {
         for (const s of slides) s.requestVisibleTiles(screen)
         await new Promise((res) => setTimeout(res, 20))
       }

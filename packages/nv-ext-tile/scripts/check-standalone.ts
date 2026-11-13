@@ -10,7 +10,8 @@
  *      branch, which the minifier inlines (browsers never run it);
  *   2. nothing locates an asset through `import.meta.url`;
  *   3. each entry's static imports stay within its format: /tiff loads no
- *      zarrita-rs code, /zarr and /dicom load no geotiff-rs code.
+ *      zarrita-rs code, /zarr and /dicom load no geotiff-rs code, /open
+ *      neither.
  *
  * Prints what each entry loads before any lazy chunk. Exits non-zero on any
  * violation. Run after `vite build -c vite.config.standalone.ts`.
@@ -23,7 +24,7 @@ const DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../dist/standalone',
 )
-const ENTRIES = ['tiff.js', 'dicom.js', 'zarr.js']
+const ENTRIES = ['tiff.js', 'dicom.js', 'zarr.js', 'open.js']
 const CORE = '@niivue/niivue'
 const DCM2NIIX = '@niivue/dcm2niix'
 const DCM2NIIX_ENTRIES = ['dicom.js', 'tiff.js']
@@ -38,6 +39,8 @@ const FORBIDDEN: Record<string, string[]> = {
   'tiff.js': ['zarrita-rs'],
   'dicom.js': ['zarrita-rs', 'geotiff-rs'],
   'zarr.js': ['geotiff-rs'],
+  // Every format behind a dynamic import.
+  'open.js': ['zarrita-rs', 'geotiff-rs'],
 }
 
 const listJs = (dir: string): string[] =>

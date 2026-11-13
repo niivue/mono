@@ -5,9 +5,13 @@ import type {
   NVSlideChannelInfo,
   NVSlideColor,
   NVSlideColorLut,
+  NVSlideLevelChangeDetail,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideRangeEvent,
+  NVSlideRequestClass,
+  NVSlideRequestOwner,
+  NVSlideTileErrorDetail,
   NVSlideTileManifest,
   NVSlideTileSamples,
   SlideTileDecoder,
@@ -99,6 +103,21 @@ async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
   }
 }
 
+/** The tile key of level `i`, column `x`, row `y`. */
+const k = (slide: NVSlide, i: number, x: number, y: number) =>
+  slide.tileKey(slide.manifest.levels[i] as NVSlideLevelManifest, { x, y })
+
+/** A new owner of class `kind` wanting every present tile of `level`. */
+function wantAll(
+  slide: NVSlide,
+  level: NVSlideLevelManifest,
+  kind: NVSlideRequestClass = 'plane3d',
+): NVSlideRequestOwner {
+  const owner = slide.createRequestOwner(kind)
+  owner.want(level.tiles.flatMap((tile) => (tile ? [{ level, tile }] : [])))
+  return owner
+}
+
 describe('NVSlide tile loading', () => {
   it('caps concurrent fetch+decode at maxConcurrentLoads and completes all tiles', async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
@@ -107,7 +126,7 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    wantAll(slide, level)
     expect(slide.pendingCount).toBe(tileCount)
     await waitFor(() => slide.stats.completed === tileCount)
     expect(source.peak).toBeLessThanOrEqual(4)
@@ -127,7 +146,7 @@ describe('NVSlide tile loading', () => {
       const slide = NVSlide.fromSource(source, { maxConcurrentLoads: bad })
       const level = slide.manifest.levels[0]
       if (!level) throw new Error('manifest has no level')
-      for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+      wantAll(slide, level)
       await waitFor(() => slide.stats.completed === tileCount)
       expect(source.peak).toBeLessThanOrEqual(12)
       expect(slide.stats.failures).toBe(0)
@@ -142,7 +161,7 @@ describe('NVSlide tile loading', () => {
     const slide = NVSlide.fromSource(source)
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    wantAll(slide, level)
     await waitFor(() => slide.stats.completed === tileCount)
     // Encoded payload is 16 bytes/tile; decoded accounting must dominate.
     expect(slide.cacheBytes).toBe(tileCount * DECODED_TILE_BYTES)
@@ -173,9 +192,10 @@ describe('NVSlide tile loading', () => {
     })
     expect(slide.lastVisibleTiles).toBe(last) // the view reads it, not a second walk
     await waitFor(() => slide.pendingCount === 0)
-    // Only the tile already in flight (tile 0, also the visible one) loads;
-    // the 29 stale viewport-origin queued tiles are dropped, not fetched.
+    // Only tile 0 loads: the centre tile in flight is aborted and the 28
+    // other queued tiles are dropped, not fetched.
     expect(slide.stats.completed).toBe(1)
+    expect(slide.stats.aborted).toBe(29)
     expect(source.peak).toBe(1)
     expect(slide.stats.failures).toBe(0)
     slide.dispose()
@@ -193,7 +213,7 @@ describe('NVSlide tile loading', () => {
     }
     const source = new CountingSource(manifest)
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
-    for (const tile of level0.tiles) if (tile) slide.requestTile(level0, tile)
+    wantAll(slide, level0)
     await waitFor(() => slide.stats.completed + slide.stats.failures === 10)
     expect(slide.stats.completed).toBe(7)
     expect(slide.stats.failures).toBe(3)
@@ -304,13 +324,18 @@ function makePyramid(): NVSlideManifest {
 // Whole slide in view at 1:1, so every level's tiles cover the viewport.
 const WHOLE_SLIDE_SCREEN = { widthCss: 32, heightCss: 16 }
 
+// Pins a level and draws until it (and its coverage) is resident: the view
+// starts its loads synchronously, so nothing pending means all settled.
 async function loadLevel(slide: NVSlide, levelIndex: number): Promise<void> {
-  const before = slide.stats.completed
   const level = slide.manifest.levels[levelIndex]
   if (!level) throw new Error(`no level ${levelIndex}`)
   slide.setLevelChoice(levelIndex)
   slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
-  await waitFor(() => slide.stats.completed === before + level.tiles.length)
+  await waitFor(
+    () =>
+      slide.pendingCount === 0 &&
+      level.tiles.every((t) => !t || slide.cachedTile(slide.tileKey(level, t))),
+  )
 }
 
 describe('NVSlide auto level selection', () => {
@@ -332,6 +357,21 @@ describe('NVSlide auto level selection', () => {
       expect(level(0.74 / dpr, dpr)).toBe(1)
     }
   })
+
+  it('holds a level within the 1.1 hysteresis band, both ways', () => {
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
+    const at = (scale: number) => {
+      slide.viewport.scale = scale
+      return slide.visibleTiles(WHOLE_SLIDE_SCREEN).level?.index
+    }
+    expect(at(0.75)).toBe(0)
+    expect(level(0.7)).toBe(1) // fresh: below the target
+    expect(at(0.7)).toBe(0) // held: within 0.75 / 1.1
+    expect(at(0.68)).toBe(1) // past the band
+    expect(at(0.8)).toBe(1) // held: under 0.75 * 1.1
+    expect(at(0.83)).toBe(0)
+    slide.dispose()
+  })
 })
 
 describe('NVSlide coarse fallback layer', () => {
@@ -341,20 +381,40 @@ describe('NVSlide coarse fallback layer', () => {
     const slide = NVSlide.fromSource(source)
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     await loadLevel(slide, 2)
-    await loadLevel(slide, 1)
+    // Three of L1's four tiles resident, so L1 alone does not cover the view.
+    const l1 = slide.manifest.levels[1] as NVSlideLevelManifest
+    const three = slide.createRequestOwner('plane3d')
+    three.want(
+      l1.tiles
+        .slice(0, 3)
+        .map((tile) => ({ level: l1, tile: tile as NVSlideTileManifest })),
+    )
+    await waitFor(() => slide.stats.completed === 4)
 
     // Switch to the finest level: none of its 16 tiles are cached yet, so the
     // renderer must be handed the coarse tiles standing in for them.
     slide.setLevelChoice(0)
-    const visible = slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
     expect(visible.level?.index).toBe(0)
     expect(visible.tiles.length).toBe(16)
-    // L2's single tile, then L1's four: painting in array order lets each
+    // L2's single tile, then L1's three: painting in array order lets each
     // finer level overpaint the one below it.
     expect(visible.fallback.map((item) => item.level.index)).toEqual([
-      2, 1, 1, 1, 1,
+      2, 1, 1, 1,
     ])
+    // A complete L1 hides L2: the walk stops at it.
+    three.want(
+      l1.tiles.map((tile) => ({
+        level: l1,
+        tile: tile as NVSlideTileManifest,
+      })),
+    )
+    await waitFor(() => slide.stats.completed === 5)
+    expect(
+      slide.visibleTiles(WHOLE_SLIDE_SCREEN).fallback.map((t) => t.level.index),
+    ).toEqual([1, 1, 1, 1])
 
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
     await waitFor(() => slide.stats.completed === 21)
     // Every target tile is cached now, so the fallback layer costs nothing.
     expect(slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN).fallback).toEqual([])
@@ -372,9 +432,13 @@ describe('NVSlide coarse fallback layer', () => {
     // what is already decoded and leaves the load slots to the target level.
     slide.setLevelChoice(0)
     const requestedBefore = slide.stats.requested
-    const visible = slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
     expect(visible.fallback.map((item) => item.level.index)).toEqual([2])
-    expect(slide.stats.requested - requestedBefore).toBe(16)
+    expect(slide.stats.requested).toBe(requestedBefore)
+    // Drawing wants the 16 target tiles and L1's 4 as coverage, nothing for
+    // the fallback layer.
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(slide.stats.requested - requestedBefore).toBe(20)
     slide.dispose()
   })
 
@@ -428,7 +492,7 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    wantAll(slide, level)
     await waitFor(() => source.signals.length === 4)
     expect(source.signals.every((s) => !s.aborted)).toBe(true)
     slide.dispose()
@@ -447,43 +511,43 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 8 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    // All 30 tiles in view: 8 in flight, 22 queued, all viewport-initiated ...
+    // All 30 tiles in view: the 8 nearest the centre (11..18) in flight, 22 queued ...
     slide.requestVisibleTiles({ widthCss: TILE_W * 30, heightCss: TILE_H })
     await waitFor(() => source.signals.length === 8)
-    // ... then only tile 0 stays visible: the other 7 in-flight loads are
-    // abandoned on the wire, the queued ones are dropped at dequeue time.
+    // ... then only tile 0 stays visible: all 8 in-flight loads are abandoned
+    // on the wire and the 21 other queued ones are dropped.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
-    expect(source.signals.filter((s) => s.aborted).length).toBe(7)
+    expect(source.signals.filter((s) => s.aborted).length).toBe(8)
+    await waitFor(() => source.signals.length === 9) // tile 0 starts
     source.releaseAll()
-    await waitFor(() => slide.pendingCount === 0)
-    expect(slide.stats.completed).toBe(1)
-    expect(slide.stats.aborted).toBe(7)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(slide.pendingCount).toBe(0)
+    expect(slide.stats.aborted).toBe(29)
     expect(slide.stats.failures).toBe(0)
-    // An aborted tile is not poisoned: bringing it back into view refetches.
+    // An aborted tile is not poisoned: bringing tile 14 back into view refetches.
     const before = source.signals.length
-    slide.setViewport({ centerX: TILE_W * 1.5, centerY: TILE_H / 2, scale: 1 })
+    slide.setViewport({ centerX: TILE_W * 14.5, centerY: TILE_H / 2, scale: 1 })
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
     await waitFor(() => source.signals.length === before + 1)
     source.releaseAll()
     await waitFor(() => slide.stats.completed === 2)
     expect(source.signals.length).toBe(before + 1)
+    expect(slide.cachedTile(k(slide, 0, 14, 0))).not.toBeNull()
     slide.dispose()
   })
 
-  it('lets a requestTile()-initiated in-flight load finish when the viewport moves on', async () => {
+  it("lets another owner's in-flight loads finish when the view moves on", async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const source = new AbortableSource(makeManifest(4))
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 4 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    // A non-viewport consumer (e.g. setSlidePlane's coarsest-level priming)
-    // starts all four loads ...
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    // A plane3d owner starts all four loads ...
+    wantAll(slide, level)
     await waitFor(() => source.signals.length === 4)
-    // ... then a 2D viewport pass wants only tile 0. The other three loads
-    // were not started by the viewport working set, so they must NOT be
-    // aborted: they complete and populate the cache for their consumer.
+    // ... then a 2D view pass wants only tile 0. The other three are still
+    // wanted by their owner, so they are NOT aborted and reach the cache.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
     expect(source.signals.some((s) => s.aborted)).toBe(false)
@@ -494,21 +558,20 @@ describe('NVSlide load cancellation', () => {
     slide.dispose()
   })
 
-  it('lets a requestTile()-initiated QUEUED load survive a viewport pass that drops it', async () => {
+  it("keeps another owner's QUEUED load through a view pass that drops it", async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const source = new AbortableSource(makeManifest(2))
-    // One load slot, so the second requestTile() tile stays QUEUED behind the
-    // first (deterministic: which tile is in flight vs queued is fixed).
+    // One load slot, so the owner's second tile stays QUEUED behind the first.
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 1 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    // A non-viewport consumer requests both: tile 0 in flight, tile 1 queued.
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    wantAll(slide, level)
     await waitFor(() => source.signals.length === 1)
-    // A 2D viewport pass then wants only tile 0. It clears and rebuilds the
-    // working set, so the queued tile 1 is no longer "wanted" -- but it was
-    // queued by requestTile(), not the viewport, so it must NOT be dropped.
+    // The view wants only tile 0 and then nothing: the queued tile 1 is still
+    // its owner's, so it must not be dropped.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    slide.visible = false
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
     // Releasing tile 0 drains the queue: tile 1 must start (not be dropped).
     source.releaseAll()
@@ -522,7 +585,7 @@ describe('NVSlide load cancellation', () => {
     slide.dispose()
   })
 
-  it('keeps a viewport-started load that requestTile() also claimed', async () => {
+  it('keeps a view-started load that another owner also wants', async () => {
     NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
     const source = new AbortableSource(makeManifest(4))
     // maxConcurrentLoads == tile count, so every tile is in flight (no queue):
@@ -538,14 +601,14 @@ describe('NVSlide load cancellation', () => {
     })
     slide.requestVisibleTiles({ widthCss: TILE_W * 4, heightCss: TILE_H })
     await waitFor(() => source.signals.length === 4)
-    // ... then another consumer explicitly claims tile 1 (already in flight) ...
+    // ... then another owner wants tile 1 (already in flight) ...
     const claimed = level.tiles[1]
     if (!claimed) throw new Error('missing tile')
-    slide.requestTile(level, claimed)
+    slide.createRequestOwner('plane3d').want([{ level, tile: claimed }])
     // ... and the viewport moves away from everything but tile 0.
     slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
     slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
-    // Only tiles 2 and 3 abort; tile 0 (visible) and tile 1 (claimed) survive.
+    // Only tiles 2 and 3 abort; tile 0 (visible) and tile 1 (wanted) survive.
     expect(source.signals.filter((s) => s.aborted).length).toBe(2)
     source.releaseAll()
     await waitFor(() => slide.pendingCount === 0)
@@ -561,7 +624,7 @@ describe('NVSlide load cancellation', () => {
     const slide = NVSlide.fromSource(source, { maxConcurrentLoads: 2 })
     const level = slide.manifest.levels[0]
     if (!level) throw new Error('manifest has no level')
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    wantAll(slide, level)
     await waitFor(() => source.current === 2)
     slide.dispose()
     await waitFor(() => source.current === 0)
@@ -601,7 +664,7 @@ describe('NVSlide load cancellation', () => {
     const level = slide.manifest.levels[0]
     const tile = level?.tiles[0]
     if (!level || !tile) throw new Error('manifest has no tile')
-    slide.requestTile(level, tile)
+    slide.createRequestOwner('plane3d').want([{ level, tile }])
     await waitFor(() => decodeStarted)
     slide.dispose()
     releaseDecode()
@@ -694,7 +757,7 @@ describe('ManifestRangeSource range telemetry', () => {
     const { level, tile } = onlyTile(source)
     await expect(
       source.fetchTileBytes(level, tile, 'L0/0/0', controller.signal),
-    ).rejects.toThrow('fetch aborted')
+    ).rejects.toMatchObject({ name: 'AbortError' })
     // The 'pending' entry must not survive the rejected fetch.
     expect(events).toEqual([{ label: 'L0/0/0 0-15', status: 'aborted' }])
   })
@@ -875,7 +938,7 @@ describe('NVSlide tile decoder context', () => {
     const slide = NVSlide.fromSource(new CountingSource(manifest))
     const tile = level.tiles[0]
     if (!tile) throw new Error('level has no tile')
-    slide.requestTile(slide.manifest.levels[0] ?? level, tile)
+    wantAll(slide, slide.manifest.levels[0] ?? level)
     await waitFor(() => slide.stats.completed === 1)
     expect(seen).toEqual(['YBR_FULL_422', 'true'])
     slide.dispose()
@@ -895,6 +958,7 @@ describe('NVSlide tile-cache budget', () => {
     slide.visibleTiles(WHOLE_SLIDE_SCREEN) // the next frame does not warn again
     expect(visible.level?.index).toBe(1)
     expect(visible.requestedLevel?.index).toBe(0)
+    expect(visible.limitedBy).toBe('cache')
     expect(visible.tiles.length).toBe(4)
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0]?.[0])).toContain('showing L1')
@@ -1009,6 +1073,7 @@ describe('NVSlide tile-cache budget', () => {
     })
     expect(visible.capped).toBe(true)
     expect(visible.tiles).toHaveLength(17)
+    expect(visible.limitedBy).toBe('texture')
     warn.mockRestore()
     slide.dispose()
   })
@@ -1034,9 +1099,9 @@ describe('NVSlide tile-cache budget', () => {
     const slide = NVSlide.fromSource(new CountingSource(makePyramid()))
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     slide.setLevelChoice(0)
-    expect(
-      slide.visibleTiles(WHOLE_SLIDE_SCREEN).requestedLevel,
-    ).toBeUndefined()
+    const visible = slide.visibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(visible.requestedLevel).toBeUndefined()
+    expect(visible.limitedBy).toBeUndefined()
     slide.dispose()
   })
 })
@@ -1072,7 +1137,7 @@ describe('NVSlide padded frames', () => {
       return { width, height, close() {} }
     }) as unknown as typeof createImageBitmap
     const slide = NVSlide.fromSource(new CountingSource(manifest))
-    slide.requestTile(level, tile)
+    slide.createRequestOwner('plane3d').want([{ level, tile }])
     await waitFor(() => slide.stats.completed === 1)
     expect(crops).toEqual([[0, 0, 3, 2]])
     expect(closedPadded).toBe(true)
@@ -1091,7 +1156,7 @@ describe('NVSlide padded frames', () => {
       cropped = true
     }) as unknown as typeof createImageBitmap
     const slide = NVSlide.fromSource(new CountingSource(manifest))
-    slide.requestTile(level, tile)
+    slide.createRequestOwner('plane3d').want([{ level, tile }])
     await waitFor(() => slide.stats.completed === 1)
     expect(cropped).toBe(false)
     slide.dispose()
@@ -1109,15 +1174,17 @@ describe('NVSlide failed tiles', () => {
     const error = spyOn(console, 'error').mockImplementation(() => {})
     let now = performance.now()
     const clock = spyOn(performance, 'now').mockImplementation(() => now)
-    slide.requestTile(level, tile)
+    const owner = slide.createRequestOwner('view')
+    const render = () => owner.want([{ level, tile }])
+    render()
     await waitFor(() => slide.stats.failures === 1)
-    for (let i = 0; i < 5; i++) slide.requestTile(level, tile) // renders
+    for (let i = 0; i < 5; i++) render()
     expect(slide.stats.requested).toBe(1)
     now += 1001 // past the 1 s backoff
-    slide.requestTile(level, tile)
+    render()
     await waitFor(() => slide.stats.failures === 2)
     now += 1001 // the second wait is 2 s
-    slide.requestTile(level, tile)
+    render()
     expect(slide.stats.requested).toBe(2)
     clock.mockRestore()
     error.mockRestore()
@@ -1135,14 +1202,15 @@ describe('NVSlide retry timers', () => {
     const error = spyOn(console, 'error').mockImplementation(() => {})
     let now = 0
     const clock = spyOn(performance, 'now').mockImplementation(() => now)
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    const owner = wantAll(slide, level)
     await waitFor(() => slide.stats.failures === 3 && slide.pendingCount === 0)
     let changes = 0
     slide.addEventListener('change', () => changes++)
     await new Promise((resolve) => setTimeout(resolve, 1100)) // the 1 s backoff
     expect(changes).toBe(1)
     now = 1000
-    for (const tile of level.tiles) if (tile) slide.requestTile(level, tile)
+    // The change re-renders: the owner wants its tiles again.
+    owner.want(level.tiles.flatMap((tile) => (tile ? [{ level, tile }] : [])))
     expect(slide.stats.requested).toBe(6) // no tile is left waiting
     clock.mockRestore()
     error.mockRestore()
@@ -1251,11 +1319,14 @@ describe('NVSlide monochrome window', () => {
     const values = [
       ...slide.manifest.levels[0].tiles,
       ...slide.manifest.levels[1].tiles,
-    ].map((t, i) => pixel(slide, `L${i < 16 ? 0 : 1}/${t?.x}/${t?.y}`))
+    ].map((t, i) =>
+      pixel(slide, k(slide, i < 16 ? 0 : 1, t?.x ?? 0, t?.y ?? 0)),
+    )
     expect(new Set(values)).toEqual(new Set([255]))
-    // 8x4 uint16 samples per tile, no RGBA bitmap.
+    // 8x4 uint16 samples per tile, no RGBA bitmap: L0 and L1 (each fits one
+    // round of load slots, so no coverage is fetched).
     expect(slide.cacheBytes).toBe(20 * (TILE_W * TILE_H * 2))
-    expect(slide.cachedTile('L0/0/0')?.bitmap).toBeUndefined()
+    expect(slide.cachedTile(k(slide, 0, 0, 0))?.bitmap).toBeUndefined()
     slide.dispose()
   })
 
@@ -1269,9 +1340,9 @@ describe('NVSlide monochrome window', () => {
       return { samples, width: 16, height: 8, bitsStored: 16 }
     })
     await loadLevel(slide, 2)
-    const s = slide.cachedTile('L2/0/0')?.samples
+    const s = slide.cachedTile(k(slide, 2, 0, 0))?.samples
     expect([s?.width, s?.height]).toEqual([TILE_W, TILE_H])
-    const rgba = drawn(slide, 'L2/0/0') ?? []
+    const rgba = drawn(slide, k(slide, 2, 0, 0)) ?? []
     expect(new Set(rgba.filter((_, i) => i % 4 === 0))).toEqual(new Set([255]))
     slide.dispose()
   })
@@ -1301,25 +1372,25 @@ describe('NVSlide monochrome window', () => {
     const slide = NVSlide.fromSource(new CountingSource(manifest))
     slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
     await loadLevel(slide, 2)
-    expect(pixel(slide, 'L2/0/0')).toBe(195) // 255 - 60, the default 0..255 window
+    expect(pixel(slide, k(slide, 2, 0, 0))).toBe(195) // 255 - 60, the default 0..255 window
     slide.setChannel(0, { calMin: 0, calMax: 120 })
-    await waitFor(() => pixel(slide, 'L2/0/0') === 127) // 255 - round(60 * 255 / 120)
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0)) === 127) // 255 - round(60 * 255 / 120)
     slide.dispose()
   })
 
   it('re-windows cached tiles and windows later arrivals the same way', async () => {
     const slide = monoSlide(500)
     await loadLevel(slide, 2)
-    const entry = slide.cachedTile('L2/0/0')
-    expect(pixel(slide, 'L2/0/0')).toBe(31) // round(500 * 255 / 4095)
+    const entry = slide.cachedTile(k(slide, 2, 0, 0))
+    expect(pixel(slide, k(slide, 2, 0, 0))).toBe(31) // round(500 * 255 / 4095)
     const gen = slide.displayGeneration
     slide.setChannel(0, { calMin: 0, calMax: 1000 })
     // The renderers re-fuse the kept samples: same entry, a new generation.
     expect(slide.displayGeneration).toBe(gen + 1)
-    expect(slide.cachedTile('L2/0/0')).toBe(entry)
-    expect(pixel(slide, 'L2/0/0')).toBe(128)
+    expect(slide.cachedTile(k(slide, 2, 0, 0))).toBe(entry)
+    expect(pixel(slide, k(slide, 2, 0, 0))).toBe(128)
     await loadLevel(slide, 1)
-    expect(pixel(slide, 'L1/1/1')).toBe(128)
+    expect(pixel(slide, k(slide, 1, 1, 1))).toBe(128)
     expect(slide.channels[0]).toMatchObject({ calMin: 0, calMax: 1000 })
     slide.dispose()
   })
@@ -1340,7 +1411,7 @@ describe('NVSlide monochrome window', () => {
         slide.setChannel(0, { calMin: 0, calMax: hi })
       expect(calls).toBe(0)
       expect(changes).toBe(5)
-      expect(pixel(slide, 'L2/0/0')).toBe(128)
+      expect(pixel(slide, k(slide, 2, 0, 0))).toBe(128)
     } finally {
       globalThis.createImageBitmap = create
     }
@@ -1360,15 +1431,15 @@ describe('NVSlide monochrome window', () => {
     ])
     await loadLevel(slide, 2)
     slide.setChannel(0, { calMin: 0, calMax: 1000 })
-    expect(Array.from(drawn(slide, 'L2/0/0') ?? [])).toEqual(
+    expect(Array.from(drawn(slide, k(slide, 2, 0, 0)) ?? [])).toEqual(
       Array.from({ length: TILE_W * TILE_H }, () => [
         128, 128, 128, 255,
       ]).flat(),
     )
     // A non-grey colormap takes the composite path: red carries the same grey level.
     slide.setChannel(0, { colormap: 'red' })
-    await waitFor(() => pixel(slide, 'L2/0/0', 1) === 0)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([128, 0, 0, 255])
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0), 1) === 0)
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([128, 0, 0, 255])
     slide.dispose()
   })
 
@@ -1376,7 +1447,7 @@ describe('NVSlide monochrome window', () => {
     const slide = monoSlide(500, 'MONOCHROME1')
     slide.setChannel(0, { colormap: 'red' })
     await loadLevel(slide, 2)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([224, 0, 0, 255]) // 255 - round(500 * 255 / 4095)
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([224, 0, 0, 255]) // 255 - round(500 * 255 / 4095)
     slide.setChannel(0, { calMin: 100 })
     expect(slide.channels[0]).toMatchObject({
       calMin: 100,
@@ -1502,12 +1573,12 @@ describe('NVSlide channels', () => {
   it('composites planar channels by max, and by sum once additive', async () => {
     const { slide } = planarSlide(threeChannels())
     await loadLevel(slide, 2)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 100, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([200, 100, 100, 255])
     // Three uint8 planes per tile, no RGBA bitmap.
     expect(slide.cacheBytes).toBe(TILE_W * TILE_H * 3)
     slide.setChannelBlend('additive')
-    await waitFor(() => pixel(slide, 'L2/0/0', 2) === 130)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 130, 255])
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0), 2) === 130)
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([255, 100, 130, 255])
     slide.dispose()
   })
 
@@ -1515,15 +1586,18 @@ describe('NVSlide channels', () => {
     const { slide, source } = planarSlide(threeChannels(false))
     await loadLevel(slide, 2)
     expect(source.requested).toEqual([[0, 1]])
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 100, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([200, 100, 100, 255])
     slide.setChannelBlend('additive')
-    await waitFor(() => pixel(slide, 'L2/0/0') === 255)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 100, 255])
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0)) === 255)
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([255, 100, 100, 255])
     slide.setChannel(2, { visible: true })
-    expect(slide.cachedTile('L2/0/0')).toBeNull()
+    // ENG-09: the tile stays drawable without the new channel until the next
+    // draw refetches it in place.
+    expect(slide.cachedTile(k(slide, 2, 0, 0))?.channels).toEqual([0, 1])
+    expect(source.requested).toHaveLength(1)
     await loadLevel(slide, 2)
     expect(source.requested.at(-1)).toEqual([0, 1, 2])
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 130, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([255, 100, 130, 255])
     slide.dispose()
   })
 
@@ -1574,7 +1648,7 @@ describe('NVSlide channels', () => {
     const { slide, source } = planarSlide([{ name: 'grey', active: false }])
     await loadLevel(slide, 2)
     expect(source.requested).toEqual([])
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([0, 0, 0, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([0, 0, 0, 255])
     slide.dispose()
   })
 
@@ -1596,23 +1670,99 @@ describe('NVSlide channels', () => {
       [0, 1],
       [0, 1, 2],
     ])
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 100, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([200, 100, 100, 255])
     slide.setChannelBlend('additive')
-    await waitFor(() => pixel(slide, 'L2/0/0', 2) === 130)
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0), 2) === 130)
     slide.dispose()
   })
 
-  it('re-primes the coarsest level when a shown channel drops it', async () => {
+  it('refreshes a stale tile in place on show; hiding issues no reads (ENG-09)', async () => {
     const { slide, source } = planarSlide(threeChannels(false))
-    const coarsest = slide.manifest.levels[2]
-    const tile = coarsest?.tiles[0]
-    if (!coarsest || !tile) throw new Error('no coarsest tile')
-    slide.requestTile(coarsest, tile) // as setSlidePlane primes it
+    const coarsest = slide.manifest.levels[2] as NVSlideLevelManifest
+    const owner = wantAll(slide, coarsest)
+    const key = k(slide, 2, 0, 0)
     await waitFor(() => slide.stats.completed === 1)
+    const old = slide.cachedTile(key)
+    let release = () => {}
+    source.gate = new Promise((resolve) => {
+      release = resolve
+    })
     slide.setChannel(2, { visible: true })
-    await waitFor(() => slide.stats.completed === 2)
+    // Showing drops nothing and reads nothing by itself ...
+    expect(slide.cachedTile(key)).toBe(old)
+    expect(source.requested).toHaveLength(1)
+    // ... the owner's next want refetches, the old tile drawing meanwhile.
+    owner.want([
+      { level: coarsest, tile: coarsest.tiles[0] as NVSlideTileManifest },
+    ])
     expect(source.requested.at(-1)).toEqual([0, 1, 2])
-    expect(slide.cachedTile('L2/0/0')).not.toBeNull()
+    expect(slide.cachedTile(key)).toBe(old)
+    // A stale tile is no load avoided: a second owner joins the refetch.
+    const second = wantAll(slide, coarsest)
+    expect(slide.stats.cacheHits).toBe(0)
+    expect(source.requested).toHaveLength(2)
+    second.release()
+    release()
+    await waitFor(() => slide.stats.completed === 2)
+    expect(slide.cachedTile(key)?.channels).toEqual([0, 1, 2])
+    // Hiding keeps the fuller tile: no read on any later want or draw.
+    slide.setChannel(2, { visible: false })
+    owner.want([
+      { level: coarsest, tile: coarsest.tiles[0] as NVSlideTileManifest },
+    ])
+    slide.setLevelChoice(2)
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(source.requested).toHaveLength(2)
+    expect(slide.pendingCount).toBe(0)
+    slide.dispose()
+  })
+
+  // Engine bug: channels >= 32 never marked a tile stale.
+  it('refreshes in place on showing channel 35 of 40; re-showing it reads nothing', async () => {
+    const info = Array.from({ length: 40 }, (_, c) => ({
+      name: `c${c}`,
+      active: c === 0,
+    }))
+    const { slide, source } = planarSlide(
+      info,
+      info.map((_, c) => c),
+    )
+    const coarsest = slide.manifest.levels[2] as NVSlideLevelManifest
+    const tiles = [
+      { level: coarsest, tile: coarsest.tiles[0] as NVSlideTileManifest },
+    ]
+    const owner = slide.createRequestOwner('plane3d')
+    owner.want(tiles)
+    await waitFor(() => slide.stats.completed === 1)
+    slide.setChannel(35, { visible: true })
+    owner.want(tiles)
+    expect(source.requested.at(-1)).toEqual([0, 35])
+    await waitFor(() => slide.stats.completed === 2)
+    expect(slide.cachedTile(k(slide, 2, 0, 0))?.channels).toEqual([0, 35])
+    slide.setChannel(35, { visible: false })
+    owner.want(tiles)
+    slide.setChannel(35, { visible: true })
+    owner.want(tiles)
+    expect(source.requested).toHaveLength(2)
+    slide.dispose()
+  })
+
+  // Revised Q10: a source raises a tile error (e.g. a label ID over 2^24).
+  it("a sample source's tile error reaches 'tileerror' with its key", async () => {
+    const { slide, source } = planarSlide(threeChannels())
+    source.fetchTileSamples = () =>
+      Promise.reject(new RangeError('label ID 16777217 is over 2^24'))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    const details: NVSlideTileErrorDetail[] = []
+    slide.addEventListener('tileerror', (e) =>
+      details.push((e as CustomEvent<NVSlideTileErrorDetail>).detail),
+    )
+    const coarsest = slide.manifest.levels[2] as NVSlideLevelManifest
+    wantAll(slide, coarsest)
+    await waitFor(() => details.length === 1)
+    expect(details[0]?.key).toBe(k(slide, 2, 0, 0))
+    expect(String(details[0]?.error)).toContain('over 2^24')
+    error.mockRestore()
     slide.dispose()
   })
 
@@ -1621,11 +1771,13 @@ describe('NVSlide channels', () => {
     source.pad = 3
     slide.setChannelBlend('additive')
     await loadLevel(slide, 2)
-    const s = slide.cachedTile('L2/0/0')?.samples
+    const s = slide.cachedTile(k(slide, 2, 0, 0))?.samples
     expect([s?.width, s?.height]).toEqual([TILE_W, TILE_H])
     const last = (TILE_W * TILE_H - 1) * 4
     expect(
-      Array.from(drawn(slide, 'L2/0/0')?.subarray(last, last + 4) ?? []),
+      Array.from(
+        drawn(slide, k(slide, 2, 0, 0))?.subarray(last, last + 4) ?? [],
+      ),
     ).toEqual([255, 100, 130, 255])
     slide.dispose()
   })
@@ -1640,7 +1792,7 @@ describe('NVSlide channels', () => {
     expect(String(errors.mock.calls[0]?.[1])).toContain(
       'Expected 3 sample planes, received 2',
     )
-    expect(slide.cachedTile('L2/0/0')).toBeNull()
+    expect(slide.cachedTile(k(slide, 2, 0, 0))).toBeNull()
     errors.mockRestore()
     slide.dispose()
   })
@@ -1649,7 +1801,7 @@ describe('NVSlide channels', () => {
     const { slide } = planarSlide(threeChannels())
     slide.setChannel(1, { calMin: 5000 }) // above every u8 sample: black, not inverted
     await loadLevel(slide, 2)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([100, 100, 100, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([100, 100, 100, 255])
     slide.setChannel(1, { calMin: undefined })
     expect(slide.channels[1]?.calMin).toBeNaN()
     slide.dispose()
@@ -1662,8 +1814,8 @@ describe('NVSlide channels', () => {
     slide.addEventListener('change', () => changes.push(1))
     slide.setChannel(1, { calMin: 0, calMax: 100 }) // red saturates
     slide.setChannel(0, { visible: false })
-    await waitFor(() => pixel(slide, 'L2/0/0', 1) === 0)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 0, 30, 255])
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0), 1) === 0)
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([255, 0, 30, 255])
     expect(source.requested).toHaveLength(1)
     expect(changes.length).toBeGreaterThan(0)
     slide.dispose()
@@ -1733,13 +1885,13 @@ describe('NVSlide channels', () => {
       'blue',
     ])
     await loadLevel(slide, 2)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([200, 100, 50, 255])
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([200, 100, 50, 255])
     slide.setChannelBlend('max')
     expect(slide.channelBlend).toBe('additive')
     // Green as grey overlaps red: additive sums them.
     slide.setChannel(1, { colormap: 'gray' })
-    await waitFor(() => pixel(slide, 'L2/0/0') === 255)
-    expect(rgbaAt(slide, 'L2/0/0')).toEqual([255, 100, 150, 255])
+    await waitFor(() => pixel(slide, k(slide, 2, 0, 0)) === 255)
+    expect(rgbaAt(slide, k(slide, 2, 0, 0))).toEqual([255, 100, 150, 255])
     slide.dispose()
   })
 
@@ -1756,7 +1908,7 @@ describe('NVSlide channels', () => {
     slide.dispose()
   })
 
-  it('rejects bad channel updates and planes other than {0, 0}', () => {
+  it('rejects bad channel updates and, on a fixed source, planes other than {0, 0} (P6)', async () => {
     const { slide } = planarSlide(threeChannels())
     expect(() => slide.setChannel(3, { visible: true })).toThrow(RangeError)
     expect(() => slide.setChannel(0, { calMin: 9, calMax: 9 })).toThrow(
@@ -1768,10 +1920,16 @@ describe('NVSlide channels', () => {
     expect(() => slide.setChannel(0, { colormap: 'no-such-map' })).toThrow(
       RangeError,
     )
+    expect(slide.planes).toEqual({ z: 1, t: 1 })
     expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
-    slide.setPlaneIndex({ z: 0, t: 0 })
-    expect(() => slide.setPlaneIndex({ z: 1, t: 0 })).toThrow(RangeError)
-    expect(() => slide.setPlaneIndex({ z: 0, t: 2 })).toThrow(RangeError)
+    expect(await slide.setPlaneIndex({ z: 0, t: 0 })).toBe(true)
+    await expect(slide.setPlaneIndex({ z: 1, t: 0 })).rejects.toThrow(
+      RangeError,
+    )
+    await expect(slide.setPlaneIndex({ z: 0, t: 2 })).rejects.toThrow(
+      RangeError,
+    )
+    expect(slide.planeIndex).toEqual({ z: 0, t: 0 })
     slide.dispose()
   })
 })
@@ -1811,6 +1969,7 @@ describe('NVSlide sparse levels', () => {
       '2,2',
       '3,3',
     ])
+    // The 6 present tiles; no coverage for a target within one round of slots.
     expect(slide.stats.requested).toBe(6)
     slide.dispose()
   })
@@ -2057,6 +2216,23 @@ describe('NVSlide.fromManifestUrl', () => {
       /^Slide manifest HTTP 502$/,
     )
     expect(signal?.aborted).toBe(true)
+  })
+
+  it('refuses a manifest past 64 MiB, Content-Length or not', async () => {
+    let pulled = 0
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream({
+          pull(c) {
+            if (++pulled > 100) c.close()
+            else c.enqueue(new Uint8Array(1 << 20))
+          },
+        }),
+      )) as unknown as typeof fetch
+    await expect(NVSlide.fromManifestUrl('/m.json')).rejects.toThrow(
+      `Reply over ${64 * 1024 * 1024} bytes`,
+    )
+    expect(pulled).toBeLessThanOrEqual(66)
   })
 
   it('reads the reason for an uppercase JSON media type', async () => {
@@ -2431,7 +2607,8 @@ describe('NVSlide.sampleAt', () => {
       release = resolve
     })
     const panned = slide.loadSampleAt(0, 0)
-    // The viewport moves to another level and corner: not aborted (requestTile).
+    // The viewport moves to another level and corner: the readout's own
+    // owner keeps its load.
     slide.setViewport({ centerX: 28, centerY: 12, scale: 4 })
     slide.setLevelChoice(0)
     slide.requestVisibleTiles({ widthCss: 8, heightCss: 4 })
@@ -2441,7 +2618,9 @@ describe('NVSlide.sampleAt', () => {
     expect(missing(await aborted)[0]).toBe('uncached')
     release()
     expect((await panned)[0]?.level).toBe(0)
-    expect(slide.stats.aborted).toBe(0)
+    // The aborted readout's load was nobody else's: cancelled, never cached.
+    await waitFor(() => slide.stats.aborted === 1)
+    expect(missing(slide.sampleAt(8, 4, { level: 0 }))[0]).toBe('uncached')
 
     source.fail = true
     const quiet = spyOn(console, 'error').mockImplementation(() => {})
@@ -2510,5 +2689,147 @@ describe('NVSlide.sampleAt', () => {
     expect(missing(await first)[0]).toBe('uncached')
     expect(source.requested.length).toBe(1) // tile 1 was never fetched
     expect(removed.mock.calls.filter(([t]) => t === 'change').length).toBe(2)
+  })
+})
+
+describe('NVSlide events', () => {
+  it("emits 'tileerror' with the tile and its backoff", async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0] as NVSlideLevelManifest
+    const tile = level.tiles[0] as NVSlideTileManifest
+    tile.frame = -1 // CountingSource rejects it
+    const slide = NVSlide.fromSource(new CountingSource(manifest))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    const details: NVSlideTileErrorDetail[] = []
+    slide.addEventListener('tileerror', (e) =>
+      details.push((e as CustomEvent<NVSlideTileErrorDetail>).detail),
+    )
+    slide.createRequestOwner('view').want([{ level, tile }])
+    await waitFor(() => details.length === 1)
+    const [detail] = details
+    expect(detail?.key).toBe(k(slide, 0, 0, 0))
+    expect(detail?.level).toBe(slide.manifest.levels[0] as NVSlideLevelManifest)
+    expect(detail?.tile).toBe(tile)
+    expect(String(detail?.error)).toContain('tile fetch failed')
+    expect(detail?.retryInMs).toBe(1000)
+    error.mockRestore()
+    slide.dispose()
+  })
+
+  it("emits 'levelchange' from requestVisibleTiles once per level, with its limit", () => {
+    const slide = NVSlide.fromSource(new CountingSource(makePyramid()), {
+      maxCacheBytes: 700, // L0's 16 tiles do not fit; L1's 4 do
+    })
+    slide.setViewport({ centerX: 16, centerY: 8, scale: 1 })
+    const details: NVSlideLevelChangeDetail[] = []
+    slide.addEventListener('levelchange', (e) =>
+      details.push((e as CustomEvent<NVSlideLevelChangeDetail>).detail),
+    )
+    const warn = spyOn(log, 'warn').mockImplementation(() => {})
+    slide.setLevelChoice(2)
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    slide.visibleTiles(WHOLE_SLIDE_SCREEN) // a HUD read is no draw
+    slide.setLevelChoice(0)
+    slide.requestVisibleTiles(WHOLE_SLIDE_SCREEN)
+    expect(
+      details.map((d) => [d.level.index, d.requestedLevel?.index, d.limitedBy]),
+    ).toEqual([
+      [2, undefined, undefined],
+      [1, 0, 'cache'],
+    ])
+    warn.mockRestore()
+    slide.dispose()
+  })
+
+  it("emits 'idle' once nothing is queued or loading", async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const slide = NVSlide.fromSource(new CountingSource(makeManifest(3)), {
+      maxConcurrentLoads: 1,
+    })
+    const pendingAtIdle: number[] = []
+    slide.addEventListener('idle', () => pendingAtIdle.push(slide.pendingCount))
+    wantAll(slide, slide.manifest.levels[0] as NVSlideLevelManifest)
+    await waitFor(() => slide.stats.completed === 3)
+    expect(pendingAtIdle).toEqual([0])
+    slide.dispose()
+  })
+
+  it("accessors emit 'change' when the value changes", () => {
+    const slide = NVSlide.fromSource(new CountingSource(makeManifest(1)))
+    let changes = 0
+    slide.addEventListener('change', () => changes++)
+    slide.opacity = 0.5
+    slide.opacity = 0.5
+    slide.visible = false
+    slide.levelChoice = 0
+    slide.targetScreenPixelsPerTilePixel = 2
+    slide.showTileGrid = true
+    slide.backgroundColor = [1, 0, 0, 1]
+    slide.placeholderColor = [0, 1, 0, 1]
+    slide.gridColor = [0, 0, 1, 1]
+    expect(changes).toBe(8)
+    expect([slide.opacity, slide.visible, slide.levelChoice]).toEqual([
+      0.5,
+      false,
+      0,
+    ])
+    slide.dispose()
+  })
+})
+
+describe('NVSlide cacheHits', () => {
+  it('counts loads avoided, not draws', async () => {
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const slide = NVSlide.fromSource(new CountingSource(makeManifest(1)))
+    const level = slide.manifest.levels[0] as NVSlideLevelManifest
+    const loader = wantAll(slide, level)
+    await waitFor(() => slide.stats.completed === 1)
+    expect(slide.stats.cacheHits).toBe(0)
+    // Draws and readouts of the resident tile avoid no load.
+    for (let i = 0; i < 5; i++) slide.cachedTile(k(slide, 0, 0, 0))
+    slide.sampleAt(1, 1)
+    loader.want(
+      level.tiles.map((tile) => ({ level, tile: tile as NVSlideTileManifest })),
+    )
+    expect(slide.stats.cacheHits).toBe(0)
+    // A view newly wanting it avoids one load, however often it draws.
+    slide.setViewport({ centerX: TILE_W / 2, centerY: TILE_H / 2, scale: 1 })
+    for (let i = 0; i < 3; i++)
+      slide.requestVisibleTiles({ widthCss: TILE_W, heightCss: TILE_H })
+    expect(slide.stats.cacheHits).toBe(1)
+    wantAll(slide, level)
+    expect(slide.stats.cacheHits).toBe(2)
+    expect(slide.stats.requested).toBe(1)
+    slide.dispose()
+  })
+})
+
+describe('NVSlide readout of a stale tile', () => {
+  useFakeBitmaps()
+
+  // Engine bug: loadSampleAt's settle() takes "key in cache" for done, so a
+  // stale tile (fetched before a channel was shown) resolves at once and its
+  // release cancels the refetch it just started.
+  it('loadSampleAt refetches a tile lacking a now-visible channel', async () => {
+    const manifest = makePyramid()
+    manifest.channelInfo = ['grey', 'red', 'blue'].map((name, c) => ({
+      name,
+      active: c < 2,
+    }))
+    for (const level of manifest.levels) level.bitsStored = 8
+    const source = new PlanarSource(manifest, [100, 200, 30])
+    const slide = NVSlide.fromSource(source)
+    expect((await slide.loadSampleAt(1, 1)).map((s) => s.stored)).toEqual([
+      100,
+      200,
+      null,
+    ])
+    slide.setChannel(2, { visible: true })
+    expect((await slide.loadSampleAt(1, 1)).map((s) => s.stored)).toEqual([
+      100, 200, 30,
+    ])
+    expect(slide.stats.aborted).toBe(0)
+    slide.dispose()
   })
 })

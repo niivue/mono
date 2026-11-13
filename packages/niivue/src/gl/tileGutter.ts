@@ -1,8 +1,12 @@
+import type { NVSlideLevelManifest } from '@/slide/NVSlide'
 import {
   fillGutter,
   fitGutterSource,
   type GutterAt,
   type GutterCopy,
+  type GutterSlide,
+  gutterEdgesAt,
+  gutterKeyAt,
   gutterTextureBytes,
   slideNeighbour,
   syncGutters,
@@ -18,12 +22,19 @@ export type TileTextureGL = {
   texture: WebGLTexture
   width: number
   height: number
-  slide: object
-  level: number
+  slide: GutterSlide
+  level: NVSlideLevelManifest
   col: number
   row: number
   /** A fused scalar tile: the slide's displayGeneration it was fused for. */
   fused?: number
+  /** Draw with nearest filtering (a fused tile of label channels only). */
+  nearest?: boolean
+  /**
+   * A fused tile's label channels when it also shows intensity channels: no
+   * gutter, read nearest and combined with `texture` as the channel blend.
+   */
+  labels?: WebGLTexture
 }
 
 type Copy = [src: TileTextureGL | null, dst: TileTextureGL, c: GutterCopy]
@@ -80,6 +91,8 @@ export class TileGutterGL {
     )
     if (!source) return null
     const { width, height } = source
+    // Over the frame's texture budget: defer (ENG-11), the tile retries next frame.
+    if (!cache.reserve(gutterTextureBytes(width, height))) return null
     const tile = this.create(gl, width, height, at)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.texSubImage2D(
@@ -115,12 +128,13 @@ export class TileGutterGL {
     const copies: Copy[] = []
     for (const t of tiles)
       syncGutters(
-        t.level,
+        gutterKeyAt(t),
         t.col,
         t.row,
         t,
-        slideNeighbour(cache, t.slide),
+        slideNeighbour(cache),
         (...c) => copies.push(c),
+        gutterEdgesAt(t),
       )
     if (copies.length) this._copy(gl, copies)
   }
@@ -135,12 +149,13 @@ export class TileGutterGL {
     const copies: Copy[] = []
     for (const t of cache.values())
       fillGutter(
-        t.level,
+        gutterKeyAt(t),
         t.col,
         t.row,
         t,
-        slideNeighbour(cache, t.slide),
+        slideNeighbour(cache),
         (...c) => copies.push(c),
+        gutterEdgesAt(t),
       )
     this._copy(gl, copies)
   }

@@ -182,6 +182,7 @@ The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volum
 | Feature | Kind | Notes |
 |---|---|---|
 | `NVSlideOptions.ownsSource` | Option | `slide.dispose()` also disposes the source (default true). `false` for a shared source, which the caller disposes |
+| `ManifestRangeSource(manifest, ManifestRangeSourceOptions)` | Class | A byte-range manifest source; `{ fetch?: SlideFetch, baseUrl? }`: a custom `(url, init?) => Promise<Response>` for reads on `baseUrl`'s origin (elsewhere a plain fetch without credentials) and the base for relative URLs. A 206 that is not exactly its range is read once more with `no-store`, then refused; a whole-file 200 is refused past 64 MiB |
 | `createSlideView(canvas, opts)` | Export | A standalone slide pane: renderer (WebGPU, WebGL2 fallback), frame loop, resize and pixel-ratio watch, fit, controller and overlay, `addOverlay`, `setSlide`, one `destroy`; bound per entry |
 | `linkSlideViews(views)` / `attachSlideLens(main, lens)` | Export | Viewports synced in mm (or slide fractions), echo suppressed, first view leads; the lens shows a linked view through a pointer circle |
 | `formatSlideSample(x, y, samples)` / `slideStatsSummary(slide, screen)` | Export | Readout line and HUD rows |

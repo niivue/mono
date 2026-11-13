@@ -181,8 +181,28 @@ pan/zoom gestures; `view.destroy()` releases all of it.
 `@niivue/nv-ext-tile/dicom` opens DICOM-WSI folders (`indexDicomWsi`,
 `DicomWsiSource`); `registerDcm2niixDecoders()` adds JPEG 2000 and JPEG-LS
 tiles and ICC colour management through `@niivue/dcm2niix`.
+DICOM-WSI label, overview and thumbnail images are listed in
+`index.associated` (`associatedImages`, `associatedImageBitmap`), never as slides.
 `@niivue/nv-ext-tile/zarr` loads OME-Zarr volumes (`loadOmeZarrVolumes`) or
 streams them (`streamOmeZarr`); see [Loading](/guide/loading/).
+
+`@niivue/nv-ext-tile/open` opens any of these, loading only the format it finds.
+It lists every slide the input holds and never picks one:
+
+```js
+import { NVSlide } from '@niivue/niivue'
+import { openSlide } from '@niivue/nv-ext-tile/open'
+
+// A URL (TIFF, OME-Zarr, DZI, hosted DICOM-WSI manifest), or local files
+// (TIFFs and DICOM-WSI folders); `fetch` adds auth to every read.
+const { candidates } = await openSlide(input, { fetch, signal })
+const slide = NVSlide.fromSource(await candidates[0].open())
+// slide.dispose() disposes the source
+```
+
+Vendor TIFF layouts open too: Philips padded levels, NDPI (as virtual JPEG
+tiles), Argos focal stacks, and, with `{ tiff: { placement: true } }`, Ventana
+tile joints, Trestle overlaps and Leica regions as placed tiles.
 
 [Live demo](https://niivue.github.io/mono/demo-ext-tile/)
 

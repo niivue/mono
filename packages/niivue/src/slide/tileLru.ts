@@ -1,12 +1,19 @@
 import type { NVSlideCachedTile, NVSlideTileSamples } from './NVSlide'
 
 // id: a load serial, so a memo can tell entries apart without holding them.
-export type TileBitmap = NVSlideCachedTile & { bytes: number; id: number }
+// mask: the held channels below 32 as bits (sample tiles of a samples source).
+export type TileBitmap = NVSlideCachedTile & {
+  bytes: number
+  id: number
+  mask?: number
+}
 export type SampleTile = TileBitmap & { samples: NVSlideTileSamples }
 
 export class NVSlideTileCache {
   private readonly entries = new Map<string, TileBitmap>()
   bytes = 0
+  /** Bumped whenever an entry arrives or leaves: memo key of residency. */
+  version = 0
 
   constructor(readonly maxBytes: number) {}
 
@@ -27,6 +34,7 @@ export class NVSlideTileCache {
     }
     this.entries.set(key, entry)
     this.bytes += entry.bytes
+    this.version++
     this.evict()
   }
 
@@ -40,6 +48,7 @@ export class NVSlideTileCache {
     entry.bitmap?.close()
     this.bytes -= entry.bytes
     this.entries.delete(key)
+    this.version++
   }
 
   /** Like get, without refreshing LRU order. */
@@ -56,6 +65,7 @@ export class NVSlideTileCache {
     for (const entry of this.entries.values()) entry.bitmap?.close()
     this.entries.clear()
     this.bytes = 0
+    this.version++
   }
 
   private evict(): void {
@@ -67,6 +77,7 @@ export class NVSlideTileCache {
       entry.bitmap?.close()
       this.entries.delete(firstKey)
       this.bytes -= entry.bytes
+      this.version++
     }
   }
 }

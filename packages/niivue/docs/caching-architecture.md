@@ -322,10 +322,6 @@ whose plan exceeds the residency budget at a fine level is still needed to read
   placeholders even when finer resident tiles cover part of the view. It is the
   symmetric half of the same idea, worth less, because those tiles only cover
   the middle of the new viewport.
-- **The fallback layer in the 3D slide-plane renderer.** `gl/slidePlaneRender.ts`
-  and its WebGPU twin drive their working set from world geometry through
-  `requestTile` and do not use the fallback layer. Same fix, different
-  visibility source.
 - **A persistent tier for slides.** Slide tiles reach the browser as range
   responses that the HTTP cache already handles reasonably, and the decoded
   form is the expensive one to store. Not attempted.

@@ -1,26 +1,44 @@
 import type {
+  NVSlideAttribution,
   NVSlideLevelManifest,
   NVSlideManifest,
   NVSlideTileManifest,
   SlideSourceHost,
   SlideTileSource,
 } from '@niivue/niivue'
+import { cleanAttribution } from './attribution'
 import { tileMap } from './dicomIndex'
 import type { DicomJsonSlide } from './dicomJson'
 import { manifestOf } from './dicomWsiSource'
 import { parseMultipartRelated } from './multipart'
+import {
+  anySignal,
+  MAX_BODY,
+  readCapped,
+  type SlideFetch,
+  slideFetch,
+} from './rangeFetch'
 
-// 64 MB: far beyond a tile or scanner ICC profile (Leica's is 13 MB); matches
-// ManifestRangeSource's profile cap and the dcm2niix decoder's input cap.
-const MAX_BODY = 64 * 1024 * 1024
 const ANY_SYNTAX =
   'multipart/related; type="application/octet-stream"; transfer-syntax=*'
 
 export interface DicomWebWsiOptions {
   /** The series' WADO-RS URL: `{wadoRoot}/studies/{study}/series/{series}`. */
   seriesUrl: string
-  /** Headers for each request to the seriesUrl origin, read per request so refreshed auth is used. */
+  /**
+   * Fetches every request to the seriesUrl origin, e.g. one that adds auth.
+   * URLs on other origins (an ICC BulkDataURI elsewhere) use globalThis.fetch,
+   * so a caller's credentials never leave the series' origin.
+   */
+  fetch?: SlideFetch
+  /**
+   * Headers for each request to the seriesUrl origin, read per request so
+   * refreshed auth is used.
+   * @deprecated Pass `fetch` instead; removed once nv-ohif moves to it.
+   */
   headers?: () => Record<string, string>
+  /** Credit for the slide, as `manifest.attribution`. */
+  attribution?: NVSlideAttribution
   /**
    * Fetches ICC bulk data by its resolved URL (e.g. OHIF's
    * dataSource.retrieve.bulkDataURI), for URLs on the series' origin only;
@@ -76,46 +94,6 @@ function sniffSyntax(frame: Uint8Array): string {
   throw new Error('WSI frame is not JPEG, JPEG 2000 or JPEG-LS')
 }
 
-/** A response body, refused past `max` whether or not Content-Length says so. */
-async function readCapped(
-  response: Response,
-  what: string,
-  max: number,
-): Promise<Uint8Array> {
-  const refused = !response.ok
-    ? `${what} HTTP ${response.status}`
-    : Number(response.headers.get('content-length')) > max
-      ? `${what} body too large`
-      : undefined
-  if (refused) {
-    // An unread body keeps its connection downloading.
-    await response.body?.cancel()
-    throw new Error(refused)
-  }
-  const reader = response.body?.getReader()
-  if (!reader) return new Uint8Array(0)
-  const chunks: Uint8Array[] = []
-  let n = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    n += value.length
-    if (n > max) {
-      await reader.cancel()
-      throw new Error(`${what} body too large`)
-    }
-    chunks.push(value)
-  }
-  if (chunks.length === 1) return chunks[0] as Uint8Array
-  const out = new Uint8Array(n)
-  let o = 0
-  for (const c of chunks) {
-    out.set(c, o)
-    o += c.length
-  }
-  return out
-}
-
 /**
  * The first part of a WADO-RS (multipart/related) response, or the whole body
  * if it is not multipart. Throws on a non-OK status, an empty part or a body
@@ -145,11 +123,12 @@ const REFUSED_ACCEPT = new Set([400, 406, 415])
  * missing, server errors), aborts and network errors reject.
  */
 async function sniffLevel(
+  fetchImpl: SlideFetch,
   url: string,
   headers: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(url, { headers, signal })
+  const response = await fetchImpl(url, { headers, signal })
   if (REFUSED_ACCEPT.has(response.status)) {
     await response.body?.cancel()
     return '1.2.840.10008.1.2.4.50'
@@ -168,6 +147,7 @@ export class DicomWebWsiSource implements SlideTileSource {
   /** seriesUrl, resolved against the page when relative. */
   private readonly series: URL
   private host: SlideSourceHost | null = null
+  private readonly closed = new AbortController()
 
   private constructor(
     readonly slide: DicomJsonSlide,
@@ -186,6 +166,19 @@ export class DicomWebWsiSource implements SlideTileSource {
           icc?.bulkDataURI ? this.bulkUrl(icc.bulkDataURI) : this.series.href,
       },
     )
+    const attribution = cleanAttribution(options.attribution)
+    if (attribution) this.manifest.attribution = attribution
+  }
+
+  /** The series-origin fetch: the caller's, else globalThis.fetch (bound: a bare one throws "Illegal invocation"). */
+  private get seriesFetch(): SlideFetch {
+    return seriesFetchOf(this.options)
+  }
+
+  /** Every read also stops on dispose; after it, none reaches fetch. */
+  private signalOf(signal?: AbortSignal): AbortSignal | undefined {
+    this.closed.signal.throwIfAborted()
+    return anySignal(signal, this.closed.signal)
   }
 
   /**
@@ -207,6 +200,7 @@ export class DicomWebWsiSource implements SlideTileSource {
         const inst = instances[i as number]
         if (!inst || inst.transferSyntax || frame === undefined) return
         const ts = await sniffLevel(
+          seriesFetchOf(options),
           frameUrl(series, inst.id, frame),
           { ...options.headers?.(), Accept: ANY_SYNTAX },
           signal,
@@ -248,7 +242,7 @@ export class DicomWebWsiSource implements SlideTileSource {
     ).id
     const isJp2 = level.codec === 'image/jp2'
     const isJls = level.codec === 'image/jls'
-    const response = await fetch(
+    const response = await this.seriesFetch(
       frameUrl(this.series, sop, frames.frame[slot] as number),
       {
         headers: {
@@ -260,7 +254,7 @@ export class DicomWebWsiSource implements SlideTileSource {
               ? ANY_SYNTAX
               : 'multipart/related; type="image/jpeg"',
         },
-        signal,
+        signal: this.signalOf(signal),
       },
     )
     const frame = await readFirstPart(response, 'WSI tile')
@@ -279,25 +273,35 @@ export class DicomWebWsiSource implements SlideTileSource {
     if (!icc?.bulkDataURI) return null
     const url = this.bulkUrl(icc.bulkDataURI)
     const { retrieveBulkData, headers } = this.options
+    const abort = this.signalOf(signal)
     // Auth goes only to the server it is for, not to a bulk host elsewhere:
-    // the host's retrieval carries its auth, so it gets same-origin URLs only.
+    // the host's retrieval and fetch carry its auth, so they get same-origin URLs only.
     const sameOrigin = new URL(url).origin === this.series.origin
-    const data = sameOrigin ? await retrieveBulkData?.(url, signal) : undefined
+    const data = sameOrigin ? await retrieveBulkData?.(url, abort) : undefined
+    abort?.throwIfAborted()
     if (data?.byteLength) {
       if (data.byteLength > MAX_BODY)
         throw new Error(`ICC profile of ${data.byteLength} bytes`)
       return data instanceof Uint8Array ? data : new Uint8Array(data)
     }
-    const response = await fetch(url, {
+    const response = await (sameOrigin ? this.seriesFetch : slideFetch())(url, {
       headers: {
         ...(sameOrigin ? headers?.() : {}),
         Accept: 'multipart/related; type="application/octet-stream"',
       },
-      signal,
+      signal: abort,
     })
     return readFirstPart(response, 'ICC profile')
   }
+
+  /** Abort in-flight reads; later reads reject AbortError. Idempotent. */
+  dispose(): void {
+    this.closed.abort()
+  }
 }
+
+const seriesFetchOf = (options: DicomWebWsiOptions): SlideFetch =>
+  slideFetch(options.fetch)
 
 /** WADO-RS frame URL; the series query (an access token) is kept. */
 function frameUrl(

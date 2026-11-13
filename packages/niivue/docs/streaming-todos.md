@@ -203,8 +203,9 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
       quad for any target tile still loading. Nothing is fetched for the fallback
       layer, and it is empty once every target tile is cached, so a settled view
       pays nothing. The volume path's equivalent is the coarse floor, which
-      already exists. Not yet applied to the 3D slide-plane renderers, which
-      drive visibility from world geometry via `requestTile`.
+      already exists. The 3D slide-plane renderers drive visibility from world
+      geometry through their `plane3d` request owners and have their own
+      fallback layer (coarse coverage at prefetch rank).
 
 ## Budget plans
 

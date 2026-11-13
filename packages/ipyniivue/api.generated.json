@@ -4175,13 +4175,47 @@
         },
         {
           "name": "opts",
-          "tsType": "{ pixelToWorld: readonly number[]; levelIndex?: number | undefined; }",
+          "tsType": "{ pixelToWorld: readonly number[]; levelIndex?: number | undefined; isNearestInterpolation?: boolean | undefined; }",
           "optional": false,
           "doc": null
         }
       ],
       "returns": "void",
       "doc": "Register an NVSlide to render as a textured plane in the 3D render view,\nlaid into the loaded volume's world (mm) space. `pixelToWorld` maps slide\nbase pixels -> world mm (build one with `axialPlaneTransform` for an\naxis-aligned plane). By default the pyramid level is chosen per-frame from\nthe camera distance (`resolveSlidePlaneTiles`) so the plane sharpens as you\nzoom in; pass `levelIndex` to pin a fixed level. Tiles stream via NVSlide's\ncache and the view redraws on its `change` event. Call `clearSlidePlane()`.\nWith `isRulerVisible` and no 2D tile, the scale ruler draws on the render\ntile at its (orthographic) world-mm scale.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSlidePlaneIndex",
+      "pyName": "set_slide_plane_index",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "index",
+          "tsType": "NVSlidePlaneIndex",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "Promise<boolean>",
+      "doc": "Show focal plane `z`, time point `t` of the slide plane (`NVSlide.setPlaneIndex`):\nthe old plane stays on screen until the new one is ready. Resolves false\nwhen a newer call superseded it or there is no plane; rejects on failure.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "setSlidePlaneInterpolation",
+      "pyName": "set_slide_plane_interpolation",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "isNearest",
+          "tsType": "boolean",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Sample the slide plane nearest-neighbour (true) or linear. No-op without a plane.",
       "returnsDoc": null
     },
     {
@@ -4954,6 +4988,16 @@
         "jsName": "slideChannels",
         "tsType": "Readonly<NVChannel>",
         "reason": "non-serializable nominal type: Readonly<NVChannel>"
+      },
+      {
+        "jsName": "slidePlaneIndex",
+        "tsType": "NVSlidePlaneIndex",
+        "reason": "non-serializable nominal type: NVSlidePlaneIndex"
+      },
+      {
+        "jsName": "slidePlanes",
+        "tsType": "NVSlidePlaneIndex",
+        "reason": "non-serializable nominal type: NVSlidePlaneIndex"
       },
       {
         "jsName": "slideVector",

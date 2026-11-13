@@ -72,11 +72,11 @@ export function storedWindow(
 
 /**
  * One w x h grey plane into `out` from sample `o0`, `data` read with strides
- * (sy, sx); quantized when `q` is set. Strides are fixed per tile, so each
- * loop is one case.
+ * (sy, sx); quantized (into a Uint16Array) when `q` is set, else copied (and
+ * widened) as is. Strides are fixed per tile, so each loop is one case.
  */
 export function grayInto(
-  out: Uint8Array | Uint16Array,
+  out: Uint8Array | Uint16Array | Int16Array | Float32Array,
   o0: number,
   data: ArrayLike<number>,
   sy: number,

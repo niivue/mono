@@ -7,6 +7,10 @@ import {
   fuseTarget,
   fuseTiles,
   fuseUniforms,
+  type LabelTable,
+  labelUniforms,
+  liveLabelTables,
+  pruneLabelTables,
   type RawFormat,
   rawFormat,
 } from '@/slide/slideFuse'
@@ -56,6 +60,33 @@ void main() {
   color = vec4(texelFetch(lut, ivec2(int(g), int(window.z)), 0).rgb, 1.0);
 }`
 
+// Label layers (fuseSamples' label loop): the ID through its table, else the
+// labelColor hash, the highlight scale applied; integer math, so exact.
+const labelFragSrc = (sampler: string): string => `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp ${sampler} raw;
+uniform highp usampler2D table;
+// labelUniforms: selected ID, scale of the others in 256ths, table size, table width
+uniform uvec4 label;
+out vec4 color;
+uvec3 labelColor(uint h) {
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  h *= 0x846ca68bu;
+  h ^= h >> 16u;
+  return 64u + (((uvec3(h, h >> 8u, h >> 16u) & 255u) * 3u) >> 2u);
+}
+void main() {
+  float v = float(texelFetch(raw, ivec2(gl_FragCoord.xy) - 1, 0).r);
+  // uint() of NaN or a negative is undefined: 0, as labelId.
+  uint id = v > 0.0 ? uint(v) : 0u;
+  uvec3 c = id < label.z ? texelFetch(table, ivec2(id % label.w, id / label.w), 0).rgb : labelColor(id);
+  c = (c * (id == label.x ? 256u : label.y)) >> 8u;
+  color = vec4(vec3(c) / 255.0, 1.0);
+}`
+
 const SAMPLERS: Record<RawFormat, string> = {
   u8: 'usampler2D',
   u16: 'usampler2D',
@@ -70,6 +101,8 @@ export class TileFuserGL {
   private _lutTexture: WebGLTexture | null = null
   private _lutVersion = -1
   private readonly _shaders = new Map<string, Shader>()
+  // One per labelColors array, freed by clear.
+  private readonly _tables = new Map<LabelTable, WebGLTexture | null>()
   private _fb: WebGLFramebuffer | null = null
   private _vao: WebGLVertexArrayObject | null = null
   private _jobs: FuseJob<TileTextureGL>[] = []
@@ -103,7 +136,12 @@ export class TileFuserGL {
       slide,
       tile,
       this._maxTexture,
-      (width, height) => gutter.create(gl, width, height, at),
+      (width, height, labels) => {
+        const t = gutter.create(gl, width, height, at)
+        // Read with texelFetch (nearest), so it needs no gutter of its own.
+        if (labels) t.labels = gutter.create(gl, width, height, at).texture
+        return t
+      },
     )
   }
 
@@ -143,6 +181,12 @@ export class TileFuserGL {
     gl.activeTexture(gl.TEXTURE1)
     const unit1 = gl.getParameter(gl.TEXTURE_BINDING_2D)
     this._syncLut(gl)
+    const hasLabels = jobs.some((j) => j.plan.labels.length > 0)
+    let unit2: WebGLTexture | null = null
+    if (hasLabels) {
+      gl.activeTexture(gl.TEXTURE2)
+      unit2 = gl.getParameter(gl.TEXTURE_BINDING_2D)
+    }
     gl.activeTexture(gl.TEXTURE0)
     const unit0 = gl.getParameter(gl.TEXTURE_BINDING_2D)
 
@@ -163,17 +207,20 @@ export class TileFuserGL {
       jobs,
       this._pool,
       (s, plane) => this._upload(gl, s, plane),
-      ({ target, plan }, layers) => {
-        gl.framebufferTexture2D(
-          gl.DRAW_FRAMEBUFFER,
-          gl.COLOR_ATTACHMENT0,
-          gl.TEXTURE_2D,
-          target.texture,
-          0,
-        )
-        gl.viewport(0, 0, target.width + 2, target.height + 2)
-        gl.clear(gl.COLOR_BUFFER_BIT)
-        gl.viewport(1, 1, target.width, target.height)
+      ({ target, plan }, layers, labels) => {
+        const into = (texture: WebGLTexture) => {
+          gl.framebufferTexture2D(
+            gl.DRAW_FRAMEBUFFER,
+            gl.COLOR_ATTACHMENT0,
+            gl.TEXTURE_2D,
+            texture,
+            0,
+          )
+          gl.viewport(0, 0, target.width + 2, target.height + 2)
+          gl.clear(gl.COLOR_BUFFER_BIT)
+          gl.viewport(1, 1, target.width, target.height)
+        }
+        into(target.texture)
         gl.blendEquation(plan.additive ? gl.FUNC_ADD : gl.MAX)
         for (const [l, raw] of layers) {
           const shader = this._shader(gl, raw.format)
@@ -182,6 +229,18 @@ export class TileFuserGL {
           gl.uniform4f(shader.uniforms.window ?? null, u[0], u[1], u[2], u[3])
           gl.uniform1f(shader.uniforms.calMinRest ?? null, u[4])
           gl.uniform1f(shader.uniforms.scale ?? null, u[5])
+          gl.bindTexture(gl.TEXTURE_2D, raw.texture)
+          gl.drawArrays(gl.TRIANGLES, 0, 3)
+        }
+        if (target.labels) into(target.labels)
+        for (const [l, raw] of labels) {
+          const shader = this._shader(gl, raw.format, true)
+          shader.use(gl)
+          const [sel, other, size, width] = labelUniforms(l)
+          gl.uniform4ui(shader.uniforms.label ?? null, sel, other, size, width)
+          gl.activeTexture(gl.TEXTURE2)
+          gl.bindTexture(gl.TEXTURE_2D, this._table(gl, l.table))
+          gl.activeTexture(gl.TEXTURE0)
           gl.bindTexture(gl.TEXTURE_2D, raw.texture)
           gl.drawArrays(gl.TRIANGLES, 0, 3)
         }
@@ -215,6 +274,10 @@ export class TileFuserGL {
       if (on) gl.enable(cap)
       else gl.disable(cap)
     gl.bindTexture(gl.TEXTURE_2D, unit0)
+    if (hasLabels) {
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, unit2)
+    }
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, unit1)
     gl.activeTexture(saved.active)
@@ -250,17 +313,55 @@ export class TileFuserGL {
     gl.bindTexture(gl.TEXTURE_2D, this._lutTexture)
   }
 
-  private _shader(gl: WebGL2RenderingContext, format: RawFormat): Shader {
+  private _shader(
+    gl: WebGL2RenderingContext,
+    format: RawFormat,
+    label = false,
+  ): Shader {
     const sampler = SAMPLERS[format]
-    let shader = this._shaders.get(sampler)
+    const key = label ? `label ${sampler}` : sampler
+    let shader = this._shaders.get(key)
     if (!shader) {
-      shader = new Shader(gl, vertSrc, fragSrc(sampler))
+      shader = new Shader(
+        gl,
+        vertSrc,
+        label ? labelFragSrc(sampler) : fragSrc(sampler),
+      )
       shader.use(gl)
       gl.uniform1i(shader.uniforms.raw ?? null, 0)
       gl.uniform1i(shader.uniforms.lut ?? null, 1)
-      this._shaders.set(sampler, shader)
+      gl.uniform1i(shader.uniforms.table ?? null, 2)
+      this._shaders.set(key, shader)
     }
     return shader
+  }
+
+  // The RGBA8UI texture of `table`, made on first use.
+  private _table(
+    gl: WebGL2RenderingContext,
+    table: LabelTable,
+  ): WebGLTexture | null {
+    let texture = this._tables.get(table)
+    if (texture === undefined) {
+      texture = gl.createTexture()
+      gl.bindTexture(gl.TEXTURE_2D, texture)
+      const rows = table.colors.length / table.width
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8UI, table.width, rows)
+      setTexParams(gl, gl.TEXTURE_2D, gl.NEAREST)
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        table.width,
+        rows,
+        gl.RGBA_INTEGER,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array(table.colors.buffer),
+      )
+      this._tables.set(table, texture)
+    }
+    return texture
   }
 
   // Plane `plane` of `s` as an integer (or float) texture on unit 0.
@@ -296,10 +397,27 @@ export class TileFuserGL {
     return { texture, format }
   }
 
-  /** Drop the pooled raw layers (tile textures belong to the caller's cache). */
+  /**
+   * Free the label tables (CPU and GPU) no slide in `slides` uses: a replaced
+   * label slide's tables go on the next frame. No-op without tables.
+   */
+  retainLabelTables(
+    gl: WebGL2RenderingContext,
+    slides: readonly NVSlide[],
+  ): void {
+    if (this._tables.size === 0) return
+    pruneLabelTables(this._tables, liveLabelTables(slides), (t) =>
+      gl.deleteTexture(t),
+    )
+  }
+
+  /** Drop the pooled raw layers and label tables (tile textures belong to the caller's cache). */
   clear(): void {
     this._pool.clear()
     this._jobs = []
+    for (const texture of this._tables.values())
+      this._gl?.deleteTexture(texture)
+    this._tables.clear()
   }
 
   destroy(gl: WebGL2RenderingContext | null): void {

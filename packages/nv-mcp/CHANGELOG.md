@@ -1,3 +1,38 @@
+## 1.0.0-rc.181 (2026-11-12)
+
+### Features
+
+- **niivue, nv-mcp:** tile lane C slide engine (request owners, LOD, frame plan, memory cap, planes, placement, labels) ([ab973380](https://github.com/niivue/mono/commit/ab973380))
+
+### Fixes
+
+- **niivue,nv-mcp:** PR 748 review findings ([a8c8c787](https://github.com/niivue/mono/commit/a8c8c787))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.186
+- Updated uikit to 1.0.0-rc.184
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.180 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.185
+- Updated uikit to 1.0.0-rc.183
+
+## 1.0.0-rc.179 (2026-11-12)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.184
+- Updated uikit to 1.0.0-rc.182
+
 ## 1.0.0-rc.178 (2026-11-12)
 
 ### Features

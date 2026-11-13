@@ -37,6 +37,7 @@ const resourcesGroup = {
   items: [
     { label: 'Gallery', link: '/gallery/' },
     'reference/migrating',
+    'projects',
     'guide/develop',
   ],
 } satisfies Sidebar[number]

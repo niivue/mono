@@ -91,46 +91,45 @@ export function Viewer({ url }: { url: string }) {
 
 ## WebGPU or WebGL2
 
-`@niivue/niivue` includes both renderers and uses WebGL2 by default. Ask for
-WebGPU with the `backend` option; if the browser has no WebGPU, or it fails
-to start, NiiVue falls back to WebGL2:
+NiiVue uses WebGL2 by default. Ask for WebGPU with `backend`; if the browser
+can't run it, NiiVue falls back to WebGL2:
 
 ```js
 const nv = new NiiVue({ backend: 'webgpu' })
 ```
 
-Anti-aliasing (`isAntiAlias`) is on by default. On WebKit (Safari, iOS
-browsers) WebGPU with MSAA is about 4x slower, so the example pages pass
-`isAntiAlias: false` there:
+In Safari, and every browser on iOS, WebGPU is about 4x slower with
+anti-aliasing on, so turn it off there:
 
 ```js
 const isWebKit =
   /AppleWebKit/.test(navigator.userAgent) &&
-  !/Chrome|Chromium|Edg\//.test(navigator.userAgent) // iOS Edge (EdgiOS) is WebKit
+  !/Chrome|Chromium|Edg\//.test(navigator.userAgent)
 const nv = new NiiVue({ backend: 'webgpu', isAntiAlias: !isWebKit })
 ```
 
-Backend-only builds are smaller:
+To ship one renderer, import its build instead. It's smaller, and asking it
+for the other backend throws:
 
 ```js
-import NiiVueWebGPU from '@niivue/niivue/webgpu'
-import NiiVueWebGL2 from '@niivue/niivue/webgl2'
+import NiiVue from '@niivue/niivue/webgpu' // or '@niivue/niivue/webgl2'
 ```
 
-In a backend-only build, asking for the missing backend throws.
+## Settings
 
-## Settings are properties
-
-Viewer settings are plain properties. Set them in the constructor or at any
-time later, and the view redraws:
+Settings are properties. Pass them to the constructor, or change them at any
+time and the view redraws:
 
 ```js
-const nv = new NiiVue({ isColorbarVisible: true, sliceType: 3 })
-nv.backgroundColor = [0.2, 0.2, 0.2, 1]
-nv.sliceType = 4 // render only
+import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+
+const nv = new NiiVue({ sliceType: SLICE_TYPE.MULTIPLANAR })
+nv.isColorbarVisible = true
+nv.sliceType = SLICE_TYPE.RENDER
 ```
 
-Per-volume and per-mesh settings go through `setVolume` and `setMesh`:
+Each volume and mesh has its own settings, changed with `setVolume` and
+`setMesh`:
 
 ```js
 nv.setVolume(0, { colormap: 'hot', calMin: 2, calMax: 6 })

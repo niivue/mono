@@ -523,8 +523,8 @@ export type NVTractData = {
   offsets: Uint32Array
   /** Per-vertex scalar arrays keyed by name */
   dpv: Record<string, Float32Array>
-  /** Per-streamline scalar arrays keyed by name */
-  dps: Record<string, Float32Array>
+  /** Per-streamline scalar arrays keyed by name (Int32Array for integer IDs) */
+  dps: Record<string, Float32Array | Int32Array>
   /** Group membership arrays: group name -> array of streamline indices */
   groups: Record<string, Uint32Array>
   /** Range metadata for per-vertex scalars */

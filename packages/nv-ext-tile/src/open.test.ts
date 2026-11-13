@@ -1,5 +1,9 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import NiiVue, { ManifestRangeSource, NVSlide } from '@niivue/niivue'
+import NiiVue, {
+  ManifestRangeSource,
+  NVSlide,
+  type SlideFetch,
+} from '@niivue/niivue'
 import { readAssociatedImage } from './dicomAssociated'
 import { DicomWsiSource } from './dicomWsiSource'
 import {
@@ -8,7 +12,6 @@ import {
   SLIDE_SOURCE_KIND,
   sniffSlide,
 } from './open'
-import type { SlideFetch } from './rangeFetch'
 import { TiffSlideSource } from './tiff'
 
 // Bun has no FileReader; geotiff-rs's fromBlob reads a File through one.
@@ -239,7 +242,7 @@ describe('openSlide', () => {
       )
     const opened = await openSlide('https://h.test/s/m.json', { fetch })
     await expect(opened.candidates[0]?.open()).rejects.toThrow(
-      'Slide manifest body too large',
+      `Reply over ${64 * 1024 * 1024} bytes`,
     )
     expect(pulled).toBeLessThanOrEqual(66)
   })

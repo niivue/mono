@@ -288,6 +288,7 @@ Managed via Nx Release with conventional commits (config in root `nx.json`):
 - **No shared `tsconfig.base.json`.** Each project has its own `tsconfig.json`. Copy from an existing project when creating a new one.
 - **Git LFS required for test images.** `packages/dev-images/images/` uses LFS. Run `git lfs pull` if files are pointers.
 - **Feature parity tracking.** `packages/niivue/FEATURE_PARITY.md` tracks which features from the old NiiVue exist in the rewrite. Consult before implementing features.
+- **"Your AI agent configuration is outdated."** Nx prints this after a task when an agent counts as configured (Copilot does on any machine with VS Code and Nx Console, given this `AGENTS.md`) and its generator would still write files. Those are the gitignored per-checkout `.github/{agents,prompts,skills}` (Codex: `.codex/`, `.agents/`), so every fresh clone or worktree warns; `AGENTS.md` itself is current. Run `NX_AI_FILES_USE_LOCAL=true bunx nx configure-ai-agents --agents copilot --no-interactive` once per checkout: it writes only ignored files. If the warning stays, `bunx nx daemon --stop`: the daemon caches the status. Without the variable the command downloads `nx@latest`; the daemon always judges against `nx@latest`, so a later Nx release can make a checkout outdated again. Do not commit those files or edit this file to silence it.
 
 
 <!-- nx configuration start-->

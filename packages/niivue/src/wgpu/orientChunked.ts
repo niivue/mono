@@ -22,6 +22,7 @@
 // RGBA + gradient textures are returned to the caller and live for the
 // chunk's lifetime in the renderer cache.
 
+import type { ByteLru } from '@/byteLru'
 import * as NVCmaps from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { NVImage } from '@/NVTypes'
@@ -29,7 +30,6 @@ import { buildOrientUniforms, labelLutTexels } from '@/view/NVOrient'
 import { createChunkFetcher } from '@/volume/chunkFetch'
 import type { ChunkPlan, VolumeChunkDesc } from '@/volume/chunking'
 import { recordChunkPhase } from '@/volume/chunkTiming'
-import type { DecodedChunkCache } from '@/volume/decodedChunkCache'
 import {
   type ModulationTextureParams,
   modulationFitsTextureLimit,
@@ -333,7 +333,7 @@ export async function createChunkUploaderGPU(
   // holds) and can be re-keyed through a plan swap. Never populated for an
   // in-memory volume, whose chunks are a cheap copy out of a buffer we are
   // already holding -- shadowing those would only duplicate the image.
-  decoded: DecodedChunkCache | null = null,
+  decoded: ByteLru<number, Uint8Array> | null = null,
   // Resolved modulation for this volume (buildModulationParams against its
   // OWN grid), or null. Baked into every chunk texture like the colormap is,
   // so the renderer's display key must cover it (chunkedDisplayKey).

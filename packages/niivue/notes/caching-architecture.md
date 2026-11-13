@@ -31,8 +31,8 @@ the last is the browser's and we simply do not defeat it.
 | Tier | Holds | Keyed by | Budget | Lifetime | Code |
 |---|---|---|---|---|---|
 | GPU bricks | Uploaded 3D textures, color plus gradient | Chunk index in the current plan | 1.5 GB planned, per volume | Render entry | `volume/ChunkResidency.ts` |
-| Decoded chunks | Decoded source bytes, pre-orient | Chunk index in the current plan | `min(384 MB, shadow x 1.5)` | Render entry | `volume/decodedChunkCache.ts` |
-| Store bytes | Raw compressed store responses, plus remembered absences | Store key | 256 MB, split across workers | Page | `packages/nv-ext-tile/src/zarr/omeZarrChunkedSource.ts` (`ByteLruCache`) |
+| Decoded chunks | Decoded source bytes, pre-orient | Chunk index in the current plan | `min(384 MB, shadow x 1.5)` | Render entry | `ByteLru` (`src/byteLru.ts`), sized by `volume/decodedChunkCache.ts` |
+| Store bytes | Raw compressed store responses, plus remembered absences | Store key | 256 MB, split across workers | Page | `src/byteLru.ts` (`ByteLru`), built in `packages/nv-ext-tile/src/zarr/omeZarrChunkedSource.ts` |
 | Disk bytes | The same raw store responses | Store key, scope-prefixed | 512 MB, opt-in, split across workers | Cross-session | `packages/nv-ext-tile/src/zarr/persistentByteCache.ts` |
 | HTTP cache | Whatever the server allowed | URL | Browser policy | Browser | not ours |
 

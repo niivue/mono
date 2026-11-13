@@ -340,7 +340,7 @@ carry a `ChunkStreamDetail` — the same shape as the non-null return of
 | `predicted` | `number` | Cumulative speculative source reads |
 | `retiring` | `number` | Replaced bricks a `keepUntilCovered` swap still draws |
 | `retiringBytes` | `number` | GPU bytes those bricks hold |
-| `decoded` | `DecodedChunkStats` | Decoded-chunk (CPU byte) tier counters |
+| `decoded` | `ByteLruStats` | Decoded-chunk (CPU byte) tier counters |
 
 #### `chunkStreamProgress`
 Fired on a drawn frame while streaming is outstanding (`pending + inFlight > 0`),
@@ -528,6 +528,6 @@ import type {
   AnnotationChangedDetail,
   ColormapAddedDetail,
   ChunkStreamDetail,
-  DecodedChunkStats,
+  ByteLruStats,
 } from '@niivue/niivue'
 ```

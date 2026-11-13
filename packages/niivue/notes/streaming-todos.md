@@ -100,7 +100,7 @@ Full comparison against Neuroglancer, with the staged plan: **`notes/caching.md`
 
 - [x] Size the byte cache to the working set, or make its policy scan-resistant.
       Came out of stage B, and the answer is that neither is needed.
-      `ByteLruCache` now counts hits, misses, admissions, oversize rejections
+      `ByteLru` now counts hits, misses, admissions, oversize rejections
       and evictions, exposed as `source.byteCache.stats` and shown as a
       `byte cache` row in the dandi-demo HUD. Counting happens in `has`, the
       one gate `withByteCaching` consults before a read.

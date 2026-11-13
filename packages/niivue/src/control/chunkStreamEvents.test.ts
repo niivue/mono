@@ -25,6 +25,7 @@ function stats(over: Partial<ChunkStreamDetail> = {}): ChunkStreamDetail {
       admitted: 0,
       rejected: 0,
       evicted: 0,
+      evictedBytes: 0,
       entries: 0,
       bytes: 0,
       maxBytes: 0,

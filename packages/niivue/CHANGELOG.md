@@ -1,3 +1,40 @@
+## 1.0.0-rc.195 (2026-11-13)
+
+### Features
+
+- ⚠️  **niivue,nv-ext-tile:** one core ByteLru for the byte caches ([3523b2c2](https://github.com/niivue/mono/commit/3523b2c2))
+
+### Fixes
+
+- **niivue:** ByteLru.remap tests membership, not undefined values ([08647c8d](https://github.com/niivue/mono/commit/08647c8d))
+- **niivue:** ByteLru.remap frees a value displaced by a key collision ([7099a882](https://github.com/niivue/mono/commit/7099a882))
+- **niivue:** keep an oversize slide tile as the only cache entry ([170d6f78](https://github.com/niivue/mono/commit/170d6f78))
+
+### Breaking Changes
+
+- **niivue,nv-ext-tile:** one core ByteLru for the byte caches  ([3523b2c2](https://github.com/niivue/mono/commit/3523b2c2))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.194 (2026-11-13)
+
+### Fixes
+
+- **niivue:** detach a slide whose document restore was aborted or misconfigured ([45cc6535](https://github.com/niivue/mono/commit/45cc6535))
+- **niivue:** a caller's setSlidePlane/clearSlidePlane supersedes a pending document slide restore ([13ea057e](https://github.com/niivue/mono/commit/13ea057e))
+- **niivue:** avoid rendering while destroying slide planes ([599e3a99](https://github.com/niivue/mono/commit/599e3a99))
+- **niivue:** cancel superseded slide document restores ([597e13b5](https://github.com/niivue/mono/commit/597e13b5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.193 (2026-11-13)
 
 ### Fixes

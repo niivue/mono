@@ -318,6 +318,8 @@ const nv = new NiiVue({
 
 ### Migration (rc)
 
+`DecodedChunkStats` (`ChunkStreamDetail.decoded`) is now `ByteLruStats`, which adds `evictedBytes`. `ByteLru<K, V>`, the byte-bounded LRU behind the decoded-chunk tier and the slide tile cache, is exported, and replaces nv-ext-tile's `ByteLruCache`.
+
 Unused slide and streaming options were removed:
 
 - `NVSlideSpatialTransform`, `NVSlideOptions.spatialTransform`, `NVSlide.spatialTransform` and `setSpatialTransform` are gone. Nothing read them; place a slide in world space with `setSlidePlane`'s `pixelToWorld`.

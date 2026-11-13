@@ -427,6 +427,8 @@ async function checkSampleSwitch(backend) {
     })
   }
   gate()
+  // When set, every request for the other sample waits for this promise.
+  let otherHeld = null
   const local = (name, rest) => `http://127.0.0.1:${port}/${name}/${rest}`
   await page.route(/^https:/, async (route) => {
     const url = route.request().url()
@@ -447,6 +449,7 @@ async function checkSampleSwitch(backend) {
         response: await route.fetch({ url: local(name, rest) }),
       })
     }
+    if (other && otherHeld) await otherHeld
     if (other)
       return route.fulfill({
         response: await route.fetch({ url: local('store.zarr', other[1]) }),
@@ -499,6 +502,29 @@ async function checkSampleSwitch(backend) {
     fail(
       `the late colony metadata replaced the other sample: ${JSON.stringify(late)}`,
     )
+  // And with the colony's channels arriving while the other sample's metadata
+  // is still pending.
+  hold = 'chunks'
+  gate()
+  let releaseOther
+  otherHeld = new Promise((r) => {
+    releaseOther = r
+  })
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  release()
+  await page.waitForTimeout(1500)
+  const pending = await page.evaluate(() => window.nv1.volumes.map((v) => v.id))
+  otherHeld = null
+  releaseOther()
+  if (pending.some((id) => id.startsWith('segmentation-')))
+    fail(
+      `the colony segmentation attached after switching: ${pending.join(', ')}`,
+    )
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
   // An uninterrupted colony load must still attach its segmentation.
   hold = null
   await page.selectOption('#sample', await option('Allen Cell'))

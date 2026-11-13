@@ -268,12 +268,14 @@ sampleSelect.onchange = async () => {
   // status line would paper over the fetch error the user needs to read.
   if (!(await fetchButton.onclick())) return
   const opened = source
+  const fetchId = fetches
   const level = source.levels.findIndex((l) => l.dims[0] === sample?.levelWidth)
   if (level >= 0) levelSelect.value = String(level)
   // Add the segmentation only over this sample's own channels: not when the
   // load failed, or another sample replaced it while it loaded.
   const shown = await loadButton.onclick()
-  if (shown && source === opened && sample?.seg) {
+  // A newer fetch (another sample) supersedes this one even before it opens.
+  if (shown && source === opened && fetchId === fetches && sample?.seg) {
     segUrlInput.value = sample.seg
     await addSegButton.onclick()
   }

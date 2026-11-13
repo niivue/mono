@@ -257,6 +257,8 @@ export function visitPieces(
 }
 
 const ordered: number[] = []
+let keptStamp = new Uint32Array(0)
+let keptWalk = 0
 
 /**
  * As visitPieces, in manifest order: draw collectors stack overlapping pieces
@@ -392,11 +394,16 @@ export function placedTiles(
   const tiles: NVSlideVisibleTile[] = []
   // `limit` caps tiles (textures), not pieces: an iScan level holds thousands
   // of few-px frames per tile. Past it, new tiles drop in manifest order.
-  const kept = new Set<number>()
+  // A tile is kept when its stamp is this walk's (no per-walk allocation).
+  if (keptStamp.length < level.tiles.length)
+    keptStamp = new Uint32Array(level.tiles.length)
+  const walk = ++keptWalk
+  let kept = 0
   visitPiecesInOrder(index, x0, y0, x1, y1, (p) => {
-    if (!kept.has(p.tile)) {
-      if (kept.size >= limit) return
-      kept.add(p.tile)
+    if (keptStamp[p.tile] !== walk) {
+      if (kept >= limit) return
+      keptStamp[p.tile] = walk
+      kept++
     }
     const tile = level.tiles[p.tile] as NVSlideTileManifest
     const baseX = p.dx * dsX

@@ -134,12 +134,22 @@ export function applyOtsu(
 ): Uint8Array {
   const nvox = img.length
   const out = new Uint8Array(nvox)
-  // findOtsu's thresholds are calibrated.
+  const [t0, t1, t2] = thresholds
+  // findOtsu's thresholds are calibrated; skip the affine for unscaled data (the common case).
+  if (sclSlope === 1 && sclInter === 0) {
+    for (let i = 0; i < nvox; i++) {
+      const v = img[i]
+      if (v > t0) out[i] = 1
+      if (v > t1) out[i] = 2
+      if (v > t2) out[i] = 3
+    }
+    return out
+  }
   for (let i = 0; i < nvox; i++) {
     const v = img[i] * sclSlope + sclInter
-    if (v > thresholds[0]) out[i] = 1
-    if (v > thresholds[1]) out[i] = 2
-    if (v > thresholds[2]) out[i] = 3
+    if (v > t0) out[i] = 1
+    if (v > t1) out[i] = 2
+    if (v > t2) out[i] = 3
   }
   return out
 }

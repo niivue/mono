@@ -85,7 +85,7 @@ export function isCredentialParam(name: string): boolean {
 }
 
 /** `url` without query, fragment, user info or a `;jsessionid=` path param. */
-function bareUrl(url: string): string {
+export function bareUrl(url: string): string {
   let bare: string
   try {
     const u = new URL(url)

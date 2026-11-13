@@ -49,6 +49,7 @@ import { defaultMatcap, matcapFromName } from '@/documentMatcap'
 import type { SettingsFillPolicy, SettingsSavePolicy } from '@/documentSettings'
 import {
   attachFrameSource,
+  bareUrl,
   checkedSource,
   type DocumentSourceResolver,
   openSlideSource,
@@ -8031,7 +8032,11 @@ export default class NiiVue extends EventTarget {
           : slide.channelBlend,
       colorManagement: slide.colorManagement ? undefined : false,
       manifest: sp.slide.manifest,
-      manifestUrl: sp.slide.manifestUrl || undefined,
+      // A source's URL is saved bare, as its descriptor is: it may be signed.
+      manifestUrl:
+        (slide.sourceDescriptor
+          ? bareUrl(slide.manifestUrl)
+          : slide.manifestUrl) || undefined,
       source: slide.sourceDescriptor
         ? savedDescriptor(slide.sourceDescriptor)
         : undefined,

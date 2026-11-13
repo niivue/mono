@@ -988,7 +988,13 @@ export class NVSlide extends EventTarget {
     source: SlideTileSource,
     options: NVSlideOptions = {},
   ): NVSlide {
-    return new NVSlide(source.manifest, { ...options, source })
+    // A document saves the URL, so an embedded manifest's relative URLs
+    // resolve against it on a restore without the source.
+    return new NVSlide(source.manifest, {
+      manifestUrl: source.manifestUrl,
+      ...options,
+      source,
+    })
   }
 
   static async fromManifestUrl(

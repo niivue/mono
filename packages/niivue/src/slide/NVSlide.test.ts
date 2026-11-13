@@ -1146,6 +1146,43 @@ describe('NVSlide padded frames', () => {
     slide.dispose()
   })
 
+  it('reorients a bitmap tile into a straight-alpha bitmap', async () => {
+    const manifest = makeManifest(1)
+    const level = manifest.levels[0]
+    const tile = level?.tiles[0]
+    if (!level || !tile) throw new Error('manifest has no tile')
+    level.tileOrientation = { transpose: false, flipX: true, flipY: false }
+    NVSlide.registerTileDecoder('image/jpeg', async () => fakeBitmap())
+    const g = globalThis as { OffscreenCanvas?: unknown }
+    const originalCanvas = g.OffscreenCanvas
+    g.OffscreenCanvas = class {
+      constructor(
+        readonly width: number,
+        readonly height: number,
+      ) {}
+      getContext() {
+        return { setTransform() {}, drawImage() {} }
+      }
+      transferToImageBitmap() {
+        return { width: TILE_W, height: TILE_H, close() {} }
+      }
+    }
+    const made: unknown[] = []
+    globalThis.createImageBitmap = (async (...args: unknown[]) => {
+      made.push(args[1])
+      return { width: TILE_W, height: TILE_H, close() {} }
+    }) as unknown as typeof createImageBitmap
+    try {
+      const slide = NVSlide.fromSource(new CountingSource(manifest))
+      slide.createRequestOwner('plane3d').want([{ level, tile }])
+      await waitFor(() => slide.stats.completed === 1)
+      expect(made).toEqual([{ premultiplyAlpha: 'none' }])
+      slide.dispose()
+    } finally {
+      g.OffscreenCanvas = originalCanvas
+    }
+  })
+
   it('leaves a frame that fits its tile alone', async () => {
     const manifest = makeManifest(1)
     const level = manifest.levels[0]

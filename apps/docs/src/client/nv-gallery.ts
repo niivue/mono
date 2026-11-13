@@ -5,7 +5,8 @@ const VIEW_KEY = 'nv-gallery-view'
 
 class NvGallery extends HTMLElement {
   connectedCallback() {
-    const search = this.querySelector<HTMLInputElement>('.search')
+    // The search box sits beside the page title (components/PageTitle.astro).
+    const search = document.querySelector<HTMLInputElement>('#gallery-search')
     const chips = Array.from(
       this.querySelectorAll<HTMLButtonElement>('fieldset.chips button'),
     )

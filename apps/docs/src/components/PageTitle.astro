@@ -1,6 +1,7 @@
 ---
 // Starlight's page title, followed on guides by "Copy page" and a link to the
-// Markdown version, for pasting a page into an agent.
+// Markdown version, for pasting a page into an agent. On the gallery the
+// title shares its row with the example search (read by nv-gallery).
 import Default from '@astrojs/starlight/components/PageTitle.astro'
 import { findGuide, guideMarkdown, markdownPath } from '../lib/markdown'
 import { docsUrl, withBase } from '../site'
@@ -8,9 +9,24 @@ import { docsUrl, withBase } from '../site'
 const { id } = Astro.locals.starlightRoute
 const entry = await findGuide(id)
 const markdown = entry && guideMarkdown(entry, docsUrl(Astro.url))
+const isGallery = id === 'gallery'
 ---
 
-<Default><slot /></Default>
+{
+  isGallery ? (
+    <div class="title-row">
+      <Default><slot /></Default>
+      <input
+        id="gallery-search"
+        type="search"
+        placeholder="Search examples"
+        aria-label="Search examples"
+      />
+    </div>
+  ) : (
+    <Default><slot /></Default>
+  )
+}
 {
   markdown && (
     <nv-copy class="actions" data-text={markdown}>
@@ -25,6 +41,30 @@ const markdown = entry && guideMarkdown(entry, docsUrl(Astro.url))
 </script>
 
 <style>
+  .title-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem 2rem;
+  }
+
+  #gallery-search {
+    flex: 0 1 24rem;
+    min-width: min(100%, 16rem);
+    padding: 0.5rem 0.75rem;
+    font: inherit;
+    color: var(--sl-color-white);
+    background: transparent;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: var(--nv-radius);
+  }
+
+  #gallery-search:focus-visible {
+    outline: 2px solid var(--sl-color-text-accent);
+    outline-offset: 1px;
+  }
+
   .actions {
     display: flex;
     gap: 1.25rem;

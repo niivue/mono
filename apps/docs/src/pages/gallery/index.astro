@@ -16,18 +16,8 @@ const sections = Map.groupBy(cards, (c) => c.section)
     template: 'splash',
   }}
 >
-  <p class="intro">
-    All {cards.length} pages from <code>packages/niivue/examples</code> and the
-    demo apps, each running in the browser next to the code that drives it.
-  </p>
   <nv-gallery class="not-content">
     <div class="toolbar">
-      <input
-        class="search"
-        type="search"
-        placeholder="Search examples"
-        aria-label="Search examples"
-      />
       <div class="filters">
       <fieldset class="chips">
         <legend class="sr-only">Section</legend>
@@ -90,31 +80,11 @@ const sections = Map.groupBy(cards, (c) => c.section)
 </style>
 
 <style>
-  .intro {
-    max-width: 45rem;
-  }
-
   .toolbar {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    margin-block: 1.5rem 2.5rem;
-  }
-
-  .search {
-    width: 100%;
-    max-width: 24rem;
-    padding: 0.5rem 0.75rem;
-    font: inherit;
-    color: var(--sl-color-white);
-    background: transparent;
-    border: 1px solid var(--sl-color-gray-4);
-    border-radius: var(--nv-radius);
-  }
-
-  .search:focus-visible {
-    outline: 2px solid var(--sl-color-text-accent);
-    outline-offset: 1px;
+    margin-block: 0 2rem;
   }
 
   .chips {

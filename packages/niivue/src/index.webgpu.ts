@@ -369,7 +369,7 @@ export type {
   VolumeChunkDesc,
 } from './volume/chunking'
 export { chunkVolumeGrid, chunkVolumeMultiLOD } from './volume/chunking'
-// Chunk-streaming phase timing (docs/caching.md stage B)
+// Chunk-streaming phase timing (notes/caching.md stage B)
 export {
   type ChunkPhase,
   type ChunkPhaseTiming,

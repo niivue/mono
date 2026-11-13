@@ -41,7 +41,7 @@ export interface BudgetPlan {
   /**
    * Frame-time target in ms. RECORDED but not yet acted on: the closed-loop
    * controller that adapts the plan to hold a frame time is the next stage (see
-   * `docs/budget-plans.md`). Today `'interactive'` gets its headroom from a
+   * `notes/budget-plans.md`). Today `'interactive'` gets its headroom from a
    * lower {@link maxBricks} alone, which is the direct proxy for draw cost --
    * each brick is one ray-marched cube draw.
    */

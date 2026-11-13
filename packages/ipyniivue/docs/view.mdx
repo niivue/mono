@@ -1,0 +1,119 @@
+---
+title: Changing the view
+description: "Switch between slices and 3D, change colors and contrast, cut into the 3D view, and add sliders and buttons that control the viewer."
+sidebar:
+  order: 2
+---
+
+Viewer settings are Python properties. Set one and the viewer redraws.
+
+## Slices or 3D
+
+```python
+nv.slice_type = 4
+```
+
+Slice types are numbers, since Python has no named constants for them:
+
+| Value | View |
+|-------|------|
+| 0 | one axial slice |
+| 1 | one coronal slice |
+| 2 | one sagittal slice |
+| 3 | all three slices, plus a 3D view when there is room (the default) |
+| 4 | the 3D view only |
+
+In the three-slice view, `nv.show_render = 1` always adds the 3D view and
+`0` never does.
+
+For many slices at once, set a mosaic. Each number is a slice position in
+millimeters, and setting the string back to `""` returns to the normal
+layout:
+
+```python
+nv.mosaic_string = "A -20 0 20 40"
+```
+
+[Layouts and slice types](/guide/layout/) explains the mosaic letters and
+the other layout settings.
+
+## Colors and contrast
+
+```python
+nv.set_volume(0, {"colormap": "viridis", "calMin": 20, "calMax": 90})
+nv.background_color = [0, 0, 0, 1]
+```
+
+`set_volume` changes how a loaded image looks without loading it again.
+Images are numbered from 0, background first, and the keys are camelCase:
+`calMin` works, `cal_min` is ignored. Colors are lists of four numbers from
+0 to 1, for red, green, blue and opacity.
+
+Once the viewer is showing, `nv.colormaps` lists the colormap names you can
+use. [Colormaps](/guide/colormaps/) shows what they look like.
+
+## Turning and cutting the 3D view
+
+```python
+nv.azimuth = 110
+nv.elevation = 15
+```
+
+Azimuth and elevation are in degrees. To cut into the 3D view, give one
+plane or more, up to six, each as `[depth, azimuth, elevation]`:
+
+```python
+nv.set_clip_planes([[0.1, 180, 20]])
+```
+
+A depth of 0 cuts through the middle. `nv.set_clip_planes([])` removes the
+cuts. Each plane removes everything on its side; with
+`nv.is_clip_plane_cutaway = True`, only the part behind all the planes at
+once goes, which cuts a notch out of the volume. See
+[Clip planes and cutaways](/guide/clip-planes/).
+
+## Moving the crosshair
+
+```python
+nv.set_crosshair_pos([0, -18, 12])
+```
+
+The position is in world millimeters: right, front and up are positive.
+
+## Reading settings back
+
+A property tells you what you last set, or what NiiVue had when the viewer
+first appeared. It does not follow the mouse: after the user turns the 3D
+view or clicks somewhere new, `nv.azimuth` and `nv.crosshair_pos` still hold
+their old values. To follow what the user does, listen for events or ask the
+viewer, as [Results and saving](/packages/ipyniivue/results/) shows.
+
+Lists that describe the viewer, such as `nv.colormaps`, `nv.mesh_shaders`
+and `nv.volume_extensions` (the file types it can load), are filled in when
+the viewer appears and kept up to date after that.
+
+## Sliders and buttons
+
+Pair the viewer with [ipywidgets](https://ipywidgets.readthedocs.io)
+controls. Each change sends one small command to the viewer:
+
+```python
+import ipywidgets as widgets
+
+opacity = widgets.FloatSlider(value=1, min=0, max=1, step=0.05, description="Overlay")
+
+def set_opacity(change):
+    nv.set_volume(1, {"opacity": change["new"]})
+
+opacity.observe(set_opacity, names="value")
+display(widgets.VBox([opacity, nv]))
+```
+
+Most of the
+[example notebooks](https://github.com/niivue/mono/tree/main/packages/ipyniivue/examples)
+are built this way, with dropdowns for the slice type, colormap and more.
+
+## Showing the viewer in another cell
+
+A viewer has a single canvas. Displaying the same `nv` again moves it into
+the new cell. For two separate views, create two `NiiVue` objects.

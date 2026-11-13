@@ -2,6 +2,8 @@
 
 Browser-side niimath pipelines for [NiiVue](https://github.com/niivue), wrapping the [`@niivue/niimath`](https://www.npmjs.com/package/@niivue/niimath) WebAssembly build of Chris Rorden's [`niimath`](https://github.com/rordenlab/niimath). All processing runs in a Web Worker; no data leaves the browser.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-ext-niimath/
+
 ## Installation
 
 ```bash

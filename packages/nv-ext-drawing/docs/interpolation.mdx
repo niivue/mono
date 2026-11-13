@@ -1,0 +1,128 @@
+---
+title: Filling in between slices
+description: "Outline a structure on a few slices and let nv-ext-drawing fill the slices in between, optionally following the edges in the image."
+sidebar:
+  order: 1
+---
+
+Outlining a structure on every slice is slow. Instead, draw it on a few
+slices and let `interpolateMaskSlices` fill in the rest:
+
+```js
+import { SLICE_TYPE } from '@niivue/niivue'
+import { interpolateMaskSlices } from '@niivue/nv-ext-drawing'
+
+const dr = ctx.drawing
+const filled = await interpolateMaskSlices(
+  dr.bitmap, dr.dims, null, 1, undefined, undefined,
+  { sliceType: SLICE_TYPE.AXIAL },
+)
+dr.pushUndo()
+dr.update(filled)
+```
+
+`ctx` is NiiVue's extension context, from `nv.createExtensionContext()`.
+The third and fourth arguments are only used to
+[follow the image](#following-the-edges-in-the-image), and the fifth and
+sixth to [fill part of the stack](#filling-part-of-the-stack).
+
+## How the shape is filled in
+
+- Each label (pen value) is filled on its own, so one call can fill several
+  structures drawn in different colors.
+- For each label, the fill starts from the first slice that label is drawn
+  on and blends it into the last one, across the slices in between.
+- Anything you drew on the slices in between stays, and the fill is added
+  to it, but it does not steer the blend. For a structure whose shape
+  changes a lot, fill it in sections instead: see
+  [Filling part of the stack](#filling-part-of-the-stack).
+- A label needs at least one slice between its first and last slice, or
+  there is nothing to fill.
+
+## Choosing the direction
+
+`sliceType` sets which way the slices run. Use the orientation you drew on:
+`SLICE_TYPE.AXIAL` (the default), `SLICE_TYPE.CORONAL` or
+`SLICE_TYPE.SAGITTAL`.
+
+## Finding the drawn slices
+
+To show the user which slices hold their drawing before filling:
+
+```js
+import { findDrawingBoundarySlices } from '@niivue/nv-ext-drawing'
+
+const range = await findDrawingBoundarySlices(SLICE_TYPE.AXIAL, dr.bitmap, dr.dims)
+if (range) console.log(`Drawn from slice ${range.first} to ${range.last}`)
+```
+
+It counts every label, and returns `null` when the drawing is empty.
+
+## Filling part of the stack
+
+The fifth and sixth arguments limit the fill to a range of slices:
+
+```js
+const filled = await interpolateMaskSlices(
+  dr.bitmap, dr.dims, null, 1, 20, 40,
+  { sliceType: SLICE_TYPE.AXIAL },
+)
+```
+
+Only the slices between 20 and 40 change. Each label is blended from slice
+20 to slice 40, or from its own first and last slice when those fall inside
+the range. Leave either end `undefined` to use the label's own first or
+last slice. When you give both ends, the low one must be smaller than the
+high one and both must be inside the volume, or the promise rejects with
+an error.
+
+To fill a structure drawn on slices 10, 20 and 30 in two sections, fill 10
+to 20, then fill 20 to 30 on the result.
+
+## Following the edges in the image
+
+By default the fill only looks at the shapes you drew. With intensity
+guidance it also looks at the image: on each slice in between, a voxel
+takes more of its shape from whichever drawn slice is closer in brightness
+at that spot. That helps the outline follow edges in the image.
+
+```js
+const bg = ctx.backgroundVolume
+const filled = await interpolateMaskSlices(
+  dr.bitmap, dr.dims, bg.imgRAS, bg.globalMax, undefined, undefined,
+  { sliceType: SLICE_TYPE.AXIAL, useIntensityGuided: true },
+)
+```
+
+Pass the image as `bg.imgRAS`, whose voxels are in the same order as the
+drawing, and its brightest value (`bg.globalMax`), which scales the image to
+0 to 1. You need both the image and `useIntensityGuided: true`. With only
+one of them the fill quietly falls back to the plain blend.
+
+Two settings tune it:
+
+- `intensityWeight` (0 to 1, default 0.7) is how much the image counts
+  against the plain blend.
+- `intensitySigma` (default 0.1, on the 0 to 1 scale) is how closely
+  brightness must match to count as alike. Smaller values make the fill
+  more sensitive to small differences.
+
+## Making the shapes bigger or smoother
+
+- `binaryThreshold` (default 0.375) decides which voxels make it into the
+  drawing. The blend gives each voxel a score from 0 to 1, and voxels at or
+  above the threshold are painted. Lower it for fuller shapes, raise it for
+  tighter ones.
+- `applySmoothingToSlices` (default `true`) softens the two drawn shapes
+  before blending, which rounds off jagged edges. Your drawn slices are not
+  changed. Set it to `false` to blend the exact outlines.
+
+Both go in the last argument, next to `sliceType`:
+
+```js
+const options = {
+  sliceType: SLICE_TYPE.AXIAL,
+  binaryThreshold: 0.5,
+  applySmoothingToSlices: false,
+}
+```

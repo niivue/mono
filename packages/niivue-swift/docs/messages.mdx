@@ -1,0 +1,106 @@
+---
+title: Sending your own messages
+description: "Call your own code in the web page from Swift, let the page call Swift, send events both ways, and reuse the messaging without NiiVue."
+sidebar:
+  order: 3
+---
+
+`NiiVueModel` covers loading images and the common settings. When your page
+does something more, you can add your own messages on the same bridge. Both
+sides have the same four tools:
+
+- `call` asks the other side for an answer and waits for it.
+- `handle` answers a call.
+- `emit` sends a message with no answer.
+- `on` listens for one.
+
+The page side of each is described in
+[Web bridge](/packages/niivue-web-bridge/).
+
+## Asking the page for something
+
+On the page, answer the call:
+
+```ts
+bridge.handle('getTitle', () => ({ title: document.title }))
+```
+
+In Swift, call it and say what kind of answer you expect:
+
+```swift
+struct TitleReply: Decodable { let title: String }
+
+let reply: TitleReply = try await bridge.call("getTitle", EmptyPayload())
+```
+
+The payload can be anything `Encodable`; use `EmptyPayload()` when there is
+nothing to send. The answer is decoded into the type you asked for.
+
+If the page's handler throws, or there is no handler with that name, the
+call throws `BridgeError.remote` with the page's error message. There is no
+timeout: a call waits until the page answers.
+
+## Letting the page ask Swift
+
+```swift
+bridge.handle("appVersion") { _ in
+    Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+}
+```
+
+The page then gets the answer with
+`await bridge.call('appVersion')`.
+
+The handler receives the page's payload as JSON `Data`, which you can
+decode with `JSONDecoder`. It can be `async`, and it must return something
+`Encodable`. If it throws, the page's call fails with the error.
+
+Each name can have only one handler. Registering a second one for the same
+name crashes the app, so register handlers once, for example where you
+create the bridge.
+
+## Sending events
+
+From Swift to the page:
+
+```swift
+bridge.emit("highlight", ["index": 2])
+```
+
+From the page to Swift, after the page runs
+`bridge.emit('measured', { mm: 12.5 })`:
+
+```swift
+struct Distance: Decodable { let mm: Double }
+
+bridge.on("measured") { data in
+    guard let distance = try? JSONDecoder().decode(Distance.self, from: data) else { return }
+    print(distance.mm)
+}
+```
+
+Any number of listeners can share an event name. That means you can also
+listen to the events `NiiVueModel` uses, such as `imageLoaded`, without
+getting in its way.
+
+## Before the page is ready
+
+Calls and events you send from Swift before the page has loaded wait in a
+queue. They go out when the page sends its `ready` event, so every page
+that uses the bridge must send `ready` once it is set up.
+
+## Using the messaging without NiiVue
+
+BridgeCore has the bridge, its settings and the handler that serves a
+bundled page, with no NiiVue code in it. You can use it for any web page
+in a `WKWebView`.
+
+It has no SwiftUI view, so you set up the web view yourself:
+
+- send the web view's script messages to `bridge.receive(rawBody:)`,
+- set `bridge.webView` to the web view,
+- register a `WebAssetHandler` for your URL scheme.
+
+[NiiVueWebView.swift](https://github.com/niivue/mono/blob/main/packages/niivue-swift/Sources/NiiVueKit/NiiVueWebView.swift)
+does exactly this and is a short example to follow. On the page, use the
+bridge part of [Web bridge](/packages/niivue-web-bridge/) on its own.

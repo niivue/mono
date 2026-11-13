@@ -1,0 +1,171 @@
+---
+title: Controlling the viewer
+description: "Bind viewer settings to SwiftUI controls, load and adjust images, follow the crosshair and switch between WebGL2 and WebGPU."
+sidebar:
+  order: 2
+---
+
+`NiiVueModel` is your handle on the viewer. It keeps a Swift copy of the
+viewer's settings and loaded images, and sends your changes to the page.
+SwiftUI views that read it update by themselves.
+
+## Changing settings with SwiftUI controls
+
+Bind a setting straight to a control:
+
+```swift
+Toggle("Colorbar", isOn: model.binding(\.isColorbarVisible))
+Slider(value: model.binding(\.azimuth), in: 0...360)
+```
+
+Settings with named choices, such as the view type, have their own
+bindings and Swift enums:
+
+```swift
+Picker("View", selection: model.sliceTypeBinding) {
+    ForEach(SliceType.allCases) { Text($0.label).tag($0) }
+}
+```
+
+You can also set them from code:
+
+```swift
+model.sliceType = .axial
+model.isColorbarVisible.value = true
+```
+
+Changes go both ways. When the viewer changes a setting itself, for example
+when the user turns the 3D view with the mouse, the model follows and so do
+your controls. A change that came from the viewer is not sent back to it.
+
+## What you can change
+
+- **The layout:** the view type (`sliceType`), how multiplanar tiles are
+  arranged (`multiplanarType`), when the 3D render joins them
+  (`showRender`), the size of the large tile (`heroFraction`), mosaics
+  (`mosaicString`), custom layouts (`customLayout`) and radiological
+  orientation (`isRadiological`). The [layout guide](/guide/layout/)
+  explains what each one does.
+- **What is drawn over the image:** the colorbar, orientation cube and
+  labels, 3D crosshair, cross lines, ruler and legend. Each is an on or off
+  switch named like `isRulerVisible`. `meshXRayEnabled` draws the crosshair
+  and meshes faintly through a 3D render, so they stay easy to find.
+- **The scene:** the background color (`backgroundColor`), `gamma`, and the
+  3D camera angles `azimuth` and `elevation`.
+
+`sliceType`, `multiplanarType`, `showRender` and `meshXRayEnabled` each have
+a matching binding, such as `showRenderBinding`.
+
+A custom layout is a list of tiles. Each tile's position is
+`[left, top, width, height]`, from 0 to 1:
+
+```swift
+model.customLayout.value = [
+    CustomLayoutTile(sliceType: .sagittal, position: [0, 0, 0.5, 1]),
+    CustomLayoutTile(sliceType: .render, position: [0.5, 0, 0.5, 1]),
+]
+```
+
+## Loading images
+
+```swift
+try await model.loadVolume(url: scanURL)
+try await model.loadVolume(url: overlayURL, add: true)
+```
+
+The first call replaces everything shown, volumes, meshes and signals
+alike. With `add: true` the file goes on top instead. Despite the name,
+`loadVolume` loads meshes and signals too: NiiVue goes by the file
+extension. See the [loading guide](/guide/loading/) for the formats it
+reads.
+
+For a file already in memory, give it a name with the right extension:
+
+```swift
+try await model.loadVolume(data: bytes, name: "scan.nii.gz")
+```
+
+The call throws if nothing could be loaded. The whole file is read into
+memory and sent to the page in one message.
+
+Files the user picks with `fileImporter` or drops on your app are outside
+your sandbox. Call `url.startAccessingSecurityScopedResource()` before
+loading one, and stop when you are done.
+
+## Seeing what is loaded
+
+`model.volumes` lists the loaded volumes, background first. Each has a
+name, a colormap, a display range (`calMin`, `calMax`), an opacity and a
+size (`dims`, with voxel sizes in `pixDims`). `model.meshes` lists meshes by
+name, and `model.hasSignal` says whether a signal is loaded. All three
+update by themselves when something is loaded or removed, from Swift or on
+the page.
+
+```swift
+ForEach(model.volumes, id: \.name) { volume in
+    Text("\(volume.name): \(volume.colormap)")
+}
+```
+
+`model.isReady` turns true once the page is ready, which is handy for
+disabling buttons until then.
+
+## Changing how an image looks
+
+```swift
+await model.setVolume(SetVolumePayload(index: 1, colormap: "warm", calMin: 3, calMax: 6))
+```
+
+Index 0 is the background. Anything you leave out stays as it is, and
+`opacity` can be set the same way. `model.colormaps` holds the names of the
+colormaps the viewer knows, ready for a picker.
+
+To take an image away, use `await model.removeVolume(at: 1)` or
+`await model.removeMesh(at: 0)`.
+
+These calls do not throw. If one fails, the reason goes to
+`model.lastStatus`, a short status line you can show in your app.
+
+## Following the crosshair
+
+`model.locationText` is a ready-made description of the crosshair
+position, or a dash before there is one:
+
+```swift
+Text(model.locationText)
+    .font(.caption.monospacedDigit())
+```
+
+To format it yourself, `model.locationMM` holds the position in
+millimeters, and `model.locationValues` the name and value of each volume
+at that point.
+
+## Switching between WebGL2 and WebGPU
+
+```swift
+await model.setBackend(.webgpu)
+```
+
+Loaded images stay loaded. If WebGPU is not available, NiiVue may fall
+back to WebGL2, so read `model.currentBackend` to see which one is in use.
+`model.isSwitchingBackend` is true while a switch is under way; use it to
+disable your picker until it is done.
+
+## Syncing a setting the model does not have
+
+The model covers the settings above, but you can add any other NiiVue
+setting. Make a property for it and pass it in when you create the model:
+
+```swift
+let crosshairColor = NiiVueProp<[Double]>(path: "crosshairColor", initial: [1, 0, 0, 1])
+let model = NiiVueModel(bridge: bridge, extraCells: [crosshairColor])
+
+crosshairColor.value = [0, 1, 0, 1]
+```
+
+Passing it at creation, rather than adding it later with `registerExtra`,
+means it picks up the viewer's current value as soon as the page is ready.
+
+The page has to allow the setting too, so this needs
+[your own page](/packages/niivue-swift/viewer-page/). Add the name to the
+page's allow-list, as described in [Web bridge](/packages/niivue-web-bridge/).

@@ -2,7 +2,7 @@
  * A pool of workers that read OME-Zarr chunks, so fetch and decode stop
  * competing with the render loop.
  *
- * Stage B measured the problem (`docs/caching.md` 2.5): 20 seconds of
+ * Stage B measured the problem (`packages/niivue/notes/caching.md` 2.5): 20 seconds of
  * uninteracted streaming cost the render loop 8.6 seconds over a 24 ms frame
  * budget, of which only 125 ms was texture upload. Everything else was the
  * store read and the decode inside zarrita, and all of it ran on the thread

@@ -21,7 +21,7 @@ export const type = 'nii'
  * Every IFD becomes one z plane. A multi-channel file yields its FIRST channel
  * only, because a volume reader returns one volume; load every channel as its
  * own volume with `loadOmeTiffVolumes` instead. Spacing is in micrometres -
- * see `docs/ome-tiff-format.md`.
+ * see `notes/ome-tiff-format.md`.
  */
 export async function read(
   buffer: ArrayBuffer,

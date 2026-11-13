@@ -649,8 +649,6 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       const url = new URL(raw, base).href
       const channel = integer(params, 'channel')
       const timepoint = integer(params, 'timepoint')
-      const shown = view.volumes[0]
-      const shownFrame = shown?.frameSource?.frame ?? shown?.frame4D
       let mesh: unknown
       try {
         const source = await zarr.fetchOmeZarrChunkedSource(url, {
@@ -664,15 +662,8 @@ export function coreHandlers(host: NiiVueHost): Handlers {
               threshold,
               labels,
               level: integer(params, 'level'),
-              // Otherwise the frame shown, so the mesh matches the volume
-              // drawn; a shown frame the store lacks is another image's.
-              frame:
-                timepoint ??
-                (shownFrame !== undefined && shownFrame < (source.frames ?? 1)
-                  ? shownFrame
-                  : undefined),
               color,
-              name: text(params, 'name') ?? `channel ${channel ?? 0}`,
+              name: text(params, 'name') ?? `channel ${source.channel}`,
             },
           ])
         } finally {

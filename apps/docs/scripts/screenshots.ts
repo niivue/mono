@@ -30,6 +30,61 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.locator('#fontSlide').fill('20')
     return { x: 260, y: 0, width: 480, height: 360 }
   },
+  // The extension demos all open on the same MNI152 view; show each tool's result.
+  'demo-ext-image-processing-imgproc': async (page) => {
+    await page.selectOption('#transformSelect', 'otsu')
+    await page.click('#applyBtn') // the options dialog, left at its defaults
+    return undefined
+  },
+  'demo-ext-niimath': async (page) => {
+    await page.click('.tab-btn[data-tab="tools"]')
+    await page.selectOption('#operatorSelect', '-s') // Gaussian smoothing, 3 mm
+    await page.click('#addOperatorBtn')
+    await page.click('#runBtn:not([disabled])')
+    return undefined
+  },
+  'demo-ext-save-html': async (page) => {
+    await page.selectOption('#sliceType', '2') // a single sagittal slice
+    return undefined
+  },
+  'demo-ext-drawing-magic-wand': async (page) => {
+    await page.selectOption('#sliceType', '0') // one axial slice
+    await page.waitForTimeout(500)
+    const r = await canvasBox(page)
+    // The default tolerance floods the whole brain; a tight one stays in
+    // the white matter around the seed (left frontal).
+    await page.locator('#toleranceSlider').fill('12')
+    await page.mouse.click(r.x + r.width * 0.45, r.y + r.height * 0.3)
+    return undefined
+  },
+  'demo-ext-drawing-drawing': async (page) => {
+    await page.selectOption('#sliceType', '0')
+    await page.click('#enableDrawBtn')
+    await page.check('#penFilled')
+    await page.waitForTimeout(500)
+    const r = await canvasBox(page)
+    const loop = async (cx: number, cy: number, rad: number) => {
+      const pt = (a: number) => [
+        r.x + r.width * (cx + rad * Math.cos(a)),
+        r.y + r.height * (cy + rad * Math.sin(a)),
+      ]
+      const [x0, y0] = pt(0)
+      await page.mouse.move(x0, y0)
+      await page.mouse.down()
+      for (let i = 1; i <= 24; i++) {
+        const [x, y] = pt((i / 24) * 2 * Math.PI)
+        await page.mouse.move(x, y)
+      }
+      await page.mouse.up()
+    }
+    // Two outlines eight slices apart; Interpolate fills the slices between.
+    await loop(0.42, 0.4, 0.06)
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -100)
+    await loop(0.46, 0.45, 0.09)
+    await page.click('#interpolateBtn')
+    await page.selectOption('#sliceType', '3') // A+C+S+R shows the filled run
+    return undefined
+  },
   'demo-ext-dcm2niix': async (page) => {
     await page.click('#loadManifestBtn')
     return undefined
@@ -62,8 +117,15 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     return { x: r.x + (r.width - width) / 2, y: r.y, width, height: r.height }
   },
 }
+async function canvasBox(page: Page): Promise<Clip> {
+  const box = await page.locator('canvas').first().boundingBox()
+  if (!box) throw new Error('no canvas')
+  return box
+}
+
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
+  'demo-ext-niimath': 10000,
   // Path-traced: give the progressive render time to converge.
   'cinematic-mr-siam': 10000,
   'cinematic-mr-mni152-tract': 10000,

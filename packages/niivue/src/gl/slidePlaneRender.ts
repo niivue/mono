@@ -16,6 +16,7 @@ import {
   planeQuad,
   planTextures,
   sameTiles,
+  tileTexture,
 } from '@/slide/slideTiles'
 import type { GutterAt } from '@/slide/tileGutter'
 import {
@@ -148,6 +149,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     if (this.isReady) return
     this._gl = gl
     this._gutter.gl = gl
+    this._fuser.gl = gl
     this._shader = new Shader(gl, vertSrc, fragSrc(false))
     this._lutShader = new Shader(gl, vertSrc, fragSrc(true))
     // Sampler units are program state: set once (the lookup table is on unit 1).
@@ -174,28 +176,6 @@ export class SlidePlaneRenderer extends NVRenderer {
       this._at.set(tile, at)
     }
     return at
-  }
-
-  private _textureFor(
-    gl: WebGL2RenderingContext,
-    slide: NVSlide,
-    at: GutterAt,
-    cached: NVSlideCachedTile,
-  ): TileTextureGL | null {
-    if (isFuseTile(cached))
-      return this._fuser.textureFor(
-        gl,
-        this._gutter,
-        this._textures,
-        at,
-        slide,
-        cached,
-      )
-    const { bitmap } = cached
-    if (!bitmap) return null
-    const existing = this._textures.get(at.key, bitmap)
-    if (existing) return existing
-    return this._gutter.upload(bitmap, at, this._textures)
   }
 
   /** Bind the program and uniforms, and set the plane's depth/blend state. */
@@ -264,7 +244,7 @@ export class SlidePlaneRenderer extends NVRenderer {
   ): void {
     if (!this.isReady || !this._shader || !this._vao || !this._vbo) return
     this._budget.sync([slide])
-    if (this._gl) this._fuser.retainLabelTables(this._gl, [slide])
+    this._fuser.retainLabelTables([slide])
     const cached = this._cached
     const ats = this._ats
     cached.length = ats.length = 0
@@ -289,15 +269,19 @@ export class SlidePlaneRenderer extends NVRenderer {
       ats,
       cached,
       (i) =>
-        this._textureFor(
-          gl,
-          slide,
+        tileTexture(
+          this._fuser,
+          this._gutter,
+          this._textures,
           ats[i] as GutterAt,
+          slide,
           cached[i] as NVSlideCachedTile,
+          true,
+          false,
         ),
       drawn,
     )
-    this._fuser.flush(gl, this._gutter, this._textures, true)
+    this._fuser.flush(this._gutter, this._textures, true)
 
     gl.bindVertexArray(this._vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, this._vbo)
@@ -441,7 +425,7 @@ export class SlidePlaneRenderer extends NVRenderer {
   clearBudget(): void {
     this._budget.clear()
     // The replaced slide's label tables go too; a new slide re-makes its own.
-    if (this._gl) this._fuser.retainLabelTables(this._gl, [])
+    this._fuser.retainLabelTables([])
   }
 
   destroy(): void {
@@ -449,7 +433,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     const gl = this._gl
     if (!gl) return
     this._textures.clear()
-    this._fuser.destroy(gl)
+    this._fuser.destroy()
     this._gutter.destroy()
     this._luts.clear(gl)
     for (const t of [this._annTex, this._bgTex]) if (t) gl.deleteTexture(t)

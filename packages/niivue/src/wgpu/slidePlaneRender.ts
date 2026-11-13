@@ -16,6 +16,7 @@ import {
   planeQuad,
   planTextures,
   sameTiles,
+  tileTexture,
 } from '@/slide/slideTiles'
 import type { GutterAt } from '@/slide/tileGutter'
 import {
@@ -166,6 +167,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
   init(device: GPUDevice, format: GPUTextureFormat, msaaCount: number): void {
     if (this.isReady) return
     this._gutter.device = device
+    this._fuser.device = device
     this._sampler = linearSampler(device)
     this._nearestSampler = device.createSampler({
       magFilter: 'nearest',
@@ -344,20 +346,16 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     cached: NVSlideCachedTile,
   ): (PlaneTexture & { group: GPUBindGroup }) | null {
     if (!this._textureBGL) return null
-    let entry: PlaneTexture | null = null
-    if (isFuseTile(cached))
-      entry = this._fuser.textureFor(
-        device,
-        this._gutter,
-        this._textures,
-        at,
-        slide,
-        cached,
-      )
-    else if (cached.bitmap)
-      entry =
-        this._textures.get(at.key, cached.bitmap) ??
-        this._gutter.upload(cached.bitmap, at, this._textures)
+    const entry: PlaneTexture | null = tileTexture(
+      this._fuser,
+      this._gutter,
+      this._textures,
+      at,
+      slide,
+      cached,
+      true,
+      false,
+    )
     if (!entry) return null
     if (entry.group) return entry as PlaneTexture & { group: GPUBindGroup }
     return Object.assign(entry, {
@@ -461,7 +459,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
       drawn,
     )
     // Submitted now, ahead of the frame's pass that draws the tiles.
-    this._fuser.flush(device, this._gutter, this._textures, true)
+    this._fuser.flush(this._gutter, this._textures, true)
     const built = slot.builtFor
     if (
       !slot.vertex ||

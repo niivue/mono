@@ -95,7 +95,8 @@ const SAMPLERS: Record<RawFormat, string> = {
 }
 
 export class TileFuserGL {
-  private _gl: WebGL2RenderingContext | null = null
+  /** The context tiles are fused in; the renderer sets it in `init`. */
+  gl: WebGL2RenderingContext | null = null
   private readonly _pool: TileTextureCache<RawGL>
   private readonly _luts = new FuseLutRows()
   private _lutTexture: WebGLTexture | null = null
@@ -110,7 +111,7 @@ export class TileFuserGL {
 
   constructor(maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) {
     this._pool = new TileTextureCache<RawGL>(maxRawPoolBytes, (raw) =>
-      this._gl?.deleteTexture(raw.texture),
+      this.gl?.deleteTexture(raw.texture),
     )
   }
 
@@ -121,13 +122,13 @@ export class TileFuserGL {
 
   /** The tile texture of scalar `tile`, queued for `flush` (see `fuseTarget`). */
   textureFor(
-    gl: WebGL2RenderingContext,
     gutter: TileGutterGL,
     cache: TileTextureCache<TileTextureGL>,
     at: GutterAt,
     slide: NVSlide,
     tile: FuseTile,
   ): TileTextureGL | null {
+    const gl = this.gl as WebGL2RenderingContext
     this._maxTexture ||= gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
     return fuseTarget(
       this._jobs,
@@ -147,7 +148,6 @@ export class TileFuserGL {
 
   /** Fuse the queued tiles, then refresh their gutters (`sync` false: defer). */
   flush(
-    gl: WebGL2RenderingContext,
     gutter: TileGutterGL,
     cache: TileTextureCache<TileTextureGL>,
     sync: boolean,
@@ -155,7 +155,7 @@ export class TileFuserGL {
     const jobs = this._jobs
     if (jobs.length === 0) return
     this._jobs = []
-    this._gl = gl
+    const gl = this.gl as WebGL2RenderingContext
     for (const job of jobs)
       for (const l of job.plan.layers) this._luts.row(l.colormap)
     // The callers draw mid-frame (NVViewGL's slide plane): keep their state.
@@ -400,13 +400,10 @@ export class TileFuserGL {
    * Free the label tables (CPU and GPU) no slide in `slides` uses: a replaced
    * label slide's tables go on the next frame. No-op without tables.
    */
-  retainLabelTables(
-    gl: WebGL2RenderingContext,
-    slides: readonly NVSlide[],
-  ): void {
+  retainLabelTables(slides: readonly NVSlide[]): void {
     if (this._tables.size === 0) return
     pruneLabelTables(this._tables, liveLabelTables(slides), (t) =>
-      gl.deleteTexture(t),
+      this.gl?.deleteTexture(t),
     )
   }
 
@@ -414,13 +411,12 @@ export class TileFuserGL {
   clear(): void {
     this._pool.clear()
     this._jobs = []
-    for (const texture of this._tables.values())
-      this._gl?.deleteTexture(texture)
+    for (const texture of this._tables.values()) this.gl?.deleteTexture(texture)
     this._tables.clear()
   }
 
-  destroy(gl: WebGL2RenderingContext | null): void {
-    this._gl = gl
+  destroy(): void {
+    const gl = this.gl
     this.clear()
     for (const shader of this._shaders.values())
       gl?.deleteProgram(shader.program)

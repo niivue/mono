@@ -128,6 +128,8 @@ fn fragment_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 `
 
 export class TileFuserGPU {
+  /** The device tiles are fused on; the renderer sets it. */
+  device: GPUDevice | null = null
   private readonly _pool: TileTextureCache<RawGPU>
   private readonly _luts = new FuseLutRows()
   private _lutTexture: GPUTexture | null = null
@@ -158,7 +160,6 @@ export class TileFuserGPU {
 
   /** The tile texture of scalar `tile`, queued for `flush` (see `fuseTarget`). */
   textureFor(
-    device: GPUDevice,
     gutter: TileGutterGPU,
     cache: TileTextureCache<TileTextureGPU>,
     at: GutterAt,
@@ -171,7 +172,7 @@ export class TileFuserGPU {
       at,
       slide,
       tile,
-      device.limits.maxTextureDimension2D,
+      (this.device as GPUDevice).limits.maxTextureDimension2D,
       (width, height, labels) => {
         const t = gutter.create(width, height, at)
         // Read with textureLoad (nearest), so it needs no gutter of its own.
@@ -186,7 +187,6 @@ export class TileFuserGPU {
    * Submitted now, so it lands before the frame that draws them.
    */
   flush(
-    device: GPUDevice,
     gutter: TileGutterGPU,
     cache: TileTextureCache<TileTextureGPU>,
     sync: boolean,
@@ -194,6 +194,7 @@ export class TileFuserGPU {
     const jobs = this._jobs
     if (jobs.length === 0) return
     this._jobs = []
+    const device = this.device as GPUDevice
     let most = 1
     for (const job of jobs) {
       most = Math.max(most, job.plan.layers.length + job.plan.labels.length)

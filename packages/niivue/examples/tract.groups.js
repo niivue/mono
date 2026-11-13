@@ -222,3 +222,5 @@ mesh.trx.dpsMeta.z_score = {
   globalMin: 0,
   globalMax: Math.max(...groupZValues),
 }
+// Open on the selected mode (First three groups), so the page shows groups.
+await fiberSelect.onchange()

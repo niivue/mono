@@ -86,6 +86,7 @@ import { CinematicRenderer } from './cinematic'
 import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
+import { blendOver } from './glUtil'
 import { LineRenderer } from './line'
 import * as mesh from './mesh'
 import { PolygonRenderer } from './polygon'
@@ -361,7 +362,7 @@ export default class NVGlview {
     gl.frontFace(gl.CCW)
     // Enable blending
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     // Enable backface culling
     gl.enable(gl.CULL_FACE)
     gl.cullFace(gl.BACK)

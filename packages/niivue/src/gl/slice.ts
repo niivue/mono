@@ -14,7 +14,12 @@ import {
   identityChunkSampleTransform,
 } from '@/volume/chunking'
 import type { SliceInterpolation } from '@/volume/interpolation'
-import { createUnitQuad, deleteGLObjects, setTexParams } from './glUtil'
+import {
+  blendOver,
+  createUnitQuad,
+  deleteGLObjects,
+  setTexParams,
+} from './glUtil'
 import { Shader } from './shader'
 import { sliceFragShader, sliceVertShader } from './sliceShader'
 
@@ -286,7 +291,7 @@ export class SliceRenderer extends NVRenderer {
 
     // Set up rendering state
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
 
     // Enable depth writing so slices correctly interact with meshes in 2D views
     // (but a coarse floor backdrop must not write depth — see noDepthWrite).

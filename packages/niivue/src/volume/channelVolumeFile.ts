@@ -39,8 +39,9 @@ export function centeredAffine(
 }
 
 /**
- * One channel's voxels as an origin-centred NIfTI named `${name}.nii`, with
- * `spacing` in micrometers and `xyzt_units` saying so.
+ * One channel's voxels as a NIfTI named `${name}.nii`, with `spacing` in
+ * micrometers and `xyzt_units` saying so. Origin-centred unless `affine`
+ * (flat row-major 4x4) is given.
  */
 export function channelVolumeFile(
   dims: readonly [number, number, number],
@@ -48,11 +49,12 @@ export function channelVolumeFile(
   datatypeCode: number,
   img: TypedVoxelArray,
   name: string,
+  affine: number[] = centeredAffine(dims, spacing),
 ): File {
   const bytes = createNiftiArray(
     [dims[0], dims[1], dims[2]],
     [spacing[0], spacing[1], spacing[2]],
-    centeredAffine(dims, spacing),
+    affine,
     datatypeCode,
     img,
     withSpatialUnits(10, NIFTI_UNITS_MICRON), // um + sec

@@ -570,9 +570,12 @@ export function defaultOmeZarrLevel(
 }
 
 /**
- * Wrap an assembled channel as a NIfTI `File` ready for `loadVolumes`,
- * origin-centred like every microscopy channel loader (see
- * `channelVolumeFile.ts`).
+ * Wrap an assembled channel as a NIfTI `File` ready for `loadVolumes`, placed
+ * as `createStreamingNVImage` places the streamed volume: level 0 voxel i
+ * centred at i * spacing (affine diag(spacing)). A coarser level covers the
+ * same box, [-0.5, n0 - 0.5] * s0 per axis, so its voxel size is the level-0
+ * extent over its shape. Pass `level0` for a coarser level. OME-NGFF
+ * translations are ignored, as on the streamed path.
  */
 export function omeZarrChannelFile(
   dims: readonly [number, number, number],
@@ -580,8 +583,26 @@ export function omeZarrChannelFile(
   datatypeCode: number,
   img: TypedVoxelArray,
   name: string,
+  level0: {
+    dims: readonly [number, number, number]
+    spacingUm: readonly [number, number, number]
+  } = { dims, spacingUm },
 ): File {
-  return channelVolumeFile(dims, spacingUm, datatypeCode, img, name)
+  const s0 = level0.spacingUm
+  const spacing = dims.map((n, a) => (s0[a] * level0.dims[a]) / n) as [
+    number,
+    number,
+    number,
+  ]
+  const [ox, oy, oz] = spacing.map((s, a) => 0.5 * (s - s0[a]))
+  // biome-ignore format: 4x4 matrix
+  const affine = [
+    spacing[0], 0, 0, ox,
+    0, spacing[1], 0, oy,
+    0, 0, spacing[2], oz,
+    0, 0, 0, 1,
+  ]
+  return channelVolumeFile(dims, spacing, datatypeCode, img, name, affine)
 }
 
 /**
@@ -718,6 +739,7 @@ export async function omeZarrVolumesFrom(
         datatypeCode,
         img,
         display.name,
+        source.levels[0],
       ),
       // Only 'all' loads inactive channels; requested ones always show.
       visible: options.channels !== 'all' || display.visible,

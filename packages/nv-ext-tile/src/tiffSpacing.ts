@@ -1,7 +1,7 @@
 // A TIFF slide's level-0 pixel size, from the first source that states it:
 // vendor metadata, OME-XML, then the resolution tags. A recognised vendor
 // never falls through to the tags, which slide writers fill with defaults.
-import { decodeXmlEntities, omeLengthToMicrons } from '@niivue/niivue'
+import { parseOmeXml } from '@niivue/niivue'
 import { leicaRegions } from './vendor/leica'
 import { philipsSpacingMM } from './vendor/philips'
 import { attrs } from './vendor/placement'
@@ -39,23 +39,14 @@ export function tiffPixelSpacingMM(
   if (d.startsWith('Aperio'))
     return um(Number(/\|\s*MPP\s*=\s*([\d.]+)/.exec(d)?.[1]))
   if (/<(?:\w+:)?OME\b/.test(d)) {
-    const p = attrs(/<(?:\w+:)?Pixels\b[^>]*>/.exec(d)?.[0] ?? '')
-    // An absent unit is OME's default (um).
-    const unit = (u?: string) => u && decodeXmlEntities(u)
-    const x = omeLengthToMicrons(
-      Number(p.PhysicalSizeX),
-      unit(p.PhysicalSizeXUnit),
-    )
+    const ome = parseOmeXml(d)
+    if (!ome) return undefined
+    const [x, y] = ome.spacingUm
     // An absent Y is square pixels (OME's convention); a malformed one is not.
-    return um(
-      x,
-      p.PhysicalSizeY === undefined
-        ? x
-        : omeLengthToMicrons(
-            Number(p.PhysicalSizeY),
-            unit(p.PhysicalSizeYUnit),
-          ),
-    )
+    // Read the first Pixels tag only: parseOmeXml reads the first image, and a
+    // later image's PhysicalSizeY says nothing about it.
+    const pixels = /<(?:\w+:)?Pixels\b[^>]*>/.exec(d)?.[0] ?? ''
+    return um(x, /\bPhysicalSizeY\s*=/.test(pixels) ? y : x)
   }
   if (d.includes('DPUfsImport')) return philipsSpacingMM(d)
   if (/<scn\b/.test(d)) {

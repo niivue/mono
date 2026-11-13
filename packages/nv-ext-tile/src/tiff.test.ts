@@ -1454,7 +1454,7 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       'OME nm, default unit',
       {
         description: omeXml(
-          'PhysicalSizeX="400" PhysicalSizeXUnit="nm" PhysicalSizeY="0.5"',
+          'SizeX="1" SizeY="1" PhysicalSizeX="400" PhysicalSizeXUnit="nm" PhysicalSizeY="0.5"',
         ),
       },
       [0.4, 0.5],
@@ -1463,7 +1463,7 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       'OME units as XML entities',
       {
         description: omeXml(
-          'PhysicalSizeX="0.25" PhysicalSizeXUnit="&#xB5;m" PhysicalSizeY="0.5" PhysicalSizeYUnit="&#181;m"',
+          'SizeX="1" SizeY="1" PhysicalSizeX="0.25" PhysicalSizeXUnit="&#xB5;m" PhysicalSizeY="0.5" PhysicalSizeYUnit="&#181;m"',
         ),
       },
       [0.25, 0.5],
@@ -1471,14 +1471,27 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
     [
       'OME without PhysicalSizeY: square pixels',
       {
-        description: omeXml('PhysicalSizeX="0.25" PhysicalSizeXUnit="µm"'),
+        description: omeXml(
+          'SizeX="1" SizeY="1" PhysicalSizeX="0.25" PhysicalSizeXUnit="µm"',
+        ),
+      },
+      [0.25, 0.25],
+    ],
+    [
+      'OME first image without PhysicalSizeY, a later image with one',
+      {
+        description:
+          '<OME><Image><Pixels SizeX="40" SizeY="32" PhysicalSizeX="0.25" /></Image>' +
+          '<Image><Pixels SizeX="20" SizeY="16" PhysicalSizeX="0.5" PhysicalSizeY="0.5" /></Image></OME>',
       },
       [0.25, 0.25],
     ],
     [
       'OME with a malformed PhysicalSizeY',
       {
-        description: omeXml('PhysicalSizeX="0.25" PhysicalSizeY="abc"'),
+        description: omeXml(
+          'SizeX="1" SizeY="1" PhysicalSizeX="0.25" PhysicalSizeY="abc"',
+        ),
       },
       undefined,
     ],

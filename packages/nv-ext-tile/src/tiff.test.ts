@@ -1564,6 +1564,28 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       [0.5, 0.5],
     ],
     [
+      'Leica fluorescence region opened as the widest image',
+      {
+        description: leica.replace(
+          '</collection>',
+          '<image><pixels sizeX="40000" sizeY="40000"/><view sizeX="40000000" sizeY="40000000" offsetX="9" offsetY="9"/><illuminationSource>fluorescence</illuminationSource></image></collection>',
+        ),
+        width: 40000,
+        height: 40000,
+      },
+      [1, 1],
+    ],
+    [
+      'Leica fluorescence-only image',
+      {
+        description:
+          '<scn><collection sizeX="2000000" sizeY="2000000"><image><pixels sizeX="1000" sizeY="1000"/><view sizeX="500000" sizeY="500000" offsetX="1" offsetY="1"/><illuminationSource>fluorescence</illuminationSource></image></collection></scn>',
+        width: 1000,
+        height: 1000,
+      },
+      [0.5, 0.5],
+    ],
+    [
       'Leica regions that disagree on Y only',
       {
         description: leica.replace(

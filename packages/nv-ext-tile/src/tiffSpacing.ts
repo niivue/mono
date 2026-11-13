@@ -15,6 +15,9 @@ export interface TiffSpacingTags {
   xResolution?: number
   yResolution?: number
   resolutionUnit?: number
+  /** Level 0's size as opened: picks the Leica region it shows. */
+  width?: number
+  height?: number
 }
 
 // A resolution tag coarser than this is a writer default (72/96/300 dpi,
@@ -44,10 +47,14 @@ export function tiffPixelSpacingMM(
   }
   if (d.includes('DPUfsImport')) return philipsSpacingMM(d)
   if (/<scn\b/.test(d)) {
-    // View in nm over pixels. Only brightfield regions are displayed (as
-    // tiff.ts places them); ones that disagree (beyond leicaComposition's
-    // 0.1%) leave level 0's size unknown.
-    const regions = leicaRegions(d)?.filter((r) => r.brightfield) ?? []
+    // View in nm over pixels, of the region level 0 shows; a size no region
+    // has is the brightfield composition (placement). Regions that disagree
+    // (beyond leicaComposition's 0.1%) leave level 0's size unknown.
+    const all = leicaRegions(d) ?? []
+    const shown = all.filter(
+      (r) => r.width === t.width && r.height === t.height,
+    )
+    const regions = shown.length ? shown : all.filter((r) => r.brightfield)
     const nm = (r: (typeof regions)[number]): [number, number] => [
       r.view.width / r.width,
       r.view.height / r.height,

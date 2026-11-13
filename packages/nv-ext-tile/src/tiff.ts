@@ -1281,11 +1281,14 @@ async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
     return v ? Number(v[0]) / Number(v[1]) : undefined
   }
   const description = await text(270)
+  const level0 = opened.pyramids[0]?.[0]
+  const size = { width: level0?.width, height: level0?.height }
   // Tags are read only when the description does not settle it.
   return (
-    tiffPixelSpacingMM({ description }) ??
+    tiffPixelSpacingMM({ description, ...size }) ??
     tiffPixelSpacingMM({
       description,
+      ...size,
       xmp: await text(700),
       xResolution: await rational(282),
       yResolution: await rational(283),

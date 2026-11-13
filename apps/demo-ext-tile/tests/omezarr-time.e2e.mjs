@@ -403,6 +403,72 @@ async function check(backend) {
   await page.close()
 }
 
+/**
+ * Switching samples while the Allen colony preset is still loading must not
+ * attach the colony's segmentation to the replacement sample. Both samples'
+ * remote URLs are routed to the in-memory stores; the colony's channel chunks
+ * are held until the other sample has loaded.
+ */
+async function checkSampleSwitch(backend) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
+  const fail = (msg) => failed(`${backend} sample switch: ${msg}`)
+  let release
+  const released = new Promise((r) => {
+    release = r
+  })
+  let held
+  const firstHeld = new Promise((r) => {
+    held = r
+  })
+  const local = (name, rest) => `http://127.0.0.1:${port}/${name}/${rest}`
+  await page.route(/^https:/, async (route) => {
+    const url = route.request().url()
+    const colony = /\/20200323_06_medium\/(raw|seg)\.ome\.zarr\/(.*)$/.exec(url)
+    const other = /\/idr0101A\/13457537\.zarr\/(.*)$/.exec(url)
+    if (colony) {
+      const [, kind, rest] = colony
+      if (kind === 'raw' && /^0\/\d+\./.test(rest)) {
+        held()
+        await released
+      }
+      const name = kind === 'raw' ? 'store.zarr' : 'seg.zarr'
+      return route.fulfill({
+        response: await route.fetch({ url: local(name, rest) }),
+      })
+    }
+    if (other)
+      return route.fulfill({
+        response: await route.fetch({ url: local('store.zarr', other[1]) }),
+      })
+    return route.abort()
+  })
+  await page.goto(`http://127.0.0.1:${port}/ome.zarr.html?backend=${backend}`)
+  await page.waitForFunction(() =>
+    /Could not open/.test(document.getElementById('status').textContent),
+  )
+  const option = (prefix) =>
+    page.$eval(
+      '#sample',
+      (s, p) => [...s.options].find((o) => o.text.startsWith(p)).value,
+      prefix,
+    )
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  release()
+  // Give the superseded colony load time to finish and (wrongly) continue.
+  await page.waitForTimeout(1500)
+  const ids = await page.evaluate(() => window.nv1.volumes.map((v) => v.id))
+  if (ids.some((id) => id.startsWith('segmentation-')))
+    fail(
+      `the colony segmentation attached to the other sample: ${ids.join(', ')}`,
+    )
+  await page.close()
+}
+
 try {
   // CI's Ubuntu runners lose the SwiftShader WebGPU device mid-run
   // (niivue-e2e.yml header), so the job there asks for WebGL2 only.
@@ -410,6 +476,7 @@ try {
     process.env.DEMO_E2E_BACKENDS ?? 'webgl2,webgpu'
   ).split(','))
     await check(backend)
+  await checkSampleSwitch('webgl2')
 } finally {
   await browser.close()
   server.close()

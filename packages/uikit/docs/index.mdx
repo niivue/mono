@@ -1,0 +1,194 @@
+---
+title: UIKit
+description: "Draw buttons, sliders, menus, text fields and measuring tools inside a NiiVue canvas with @niivue/uikit."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/uikit` draws controls and measuring tools inside the NiiVue
+canvas, in the same frame as the image. Buttons, toggles, sliders, menus,
+text fields, dialogs, rulers and crosshairs all render on NiiVue's own
+graphics backend, WebGL2 or WebGPU, and they see the pointer before NiiVue
+does.
+
+Use it when the controls belong on the image: a toolbar floating over a
+full-screen viewer, a settings dialog in a kiosk, a ruler between two
+points. If ordinary HTML controls beside the canvas do the job, prefer
+them. Tab does not move between canvas widgets, and screen readers cannot
+see them.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/uikit@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/uikit@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/uikit@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/uikit@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+UIKit draws into a NiiVue viewer you create yourself, so install NiiVue
+alongside it.
+
+## A first button
+
+```js
+import NiiVue from '@niivue/niivue'
+import { loadDefaultFont, UIKitButtonOverlay } from '@niivue/uikit'
+
+const nv = new NiiVue()
+await nv.attachToCanvas(document.getElementById('gl1'))
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+
+const font = await loadDefaultFont()
+const buttons = new UIKitButtonOverlay(font, { cssUnits: true })
+nv.registerOverlayRenderer(buttons)
+buttons.attach(nv)
+
+buttons.addButton({
+  id: 'colorbar',
+  label: 'Colorbar',
+  x: 12,
+  y: 12,
+  onClick: () => {
+    nv.isColorbarVisible = !nv.isColorbarVisible
+  },
+})
+```
+
+Three steps connect a widget to the viewer, and every widget uses them:
+
+- `loadDefaultFont()` prepares the font that comes with UIKit. Load it
+  once and give it to every widget you make.
+- `nv.registerOverlayRenderer(buttons)` asks NiiVue to draw the buttons at
+  the end of every frame.
+- `buttons.attach(nv)` sends clicks on the canvas to the buttons first. A
+  click on a button stops there, so it never moves the crosshair or starts
+  a drag.
+
+Call `attach` after `attachToCanvas` has finished. Before that there is no
+canvas to listen to, and `attach` throws an error.
+
+## Positions, sizes and colors
+
+Positions are measured from the top-left corner of the canvas. With
+`cssUnits: true` they are CSS pixels, the same units as the rest of your
+page, and UIKit scales them up on high-density screens. Without it they
+are the canvas's own pixels, so on a 2x laptop screen everything comes out
+half the size.
+
+Buttons, menus and drop-down lists size themselves to fit their text; give
+`width` or `height` to fix a size. Sliders always need a `width`. To place
+one widget after another, ask for the first one's box:
+
+```js
+const box = buttons.getLayout('colorbar')
+buttons.addButton({ id: 'reset', label: 'Reset', x: box.x + box.width + 8, y: 12 })
+```
+
+Colors are `[red, green, blue, alpha]` lists with values from 0 to 1, as
+everywhere else in NiiVue.
+
+## Responding to the user
+
+Widgets tell you about changes through the same few callbacks:
+
+- `onInput` runs on every change, for example at each step while a slider
+  is dragged.
+- `onChange` runs once the change is finished: the drag ends, or Enter is
+  pressed in a field.
+- `onSubmit` runs when Enter is pressed in a text field, even if the text
+  did not change.
+
+Buttons have `onClick`, and menu items `onSelect`. Each callback gets the
+widget's `id` as its last argument, so one function can serve several
+widgets.
+
+Changing a widget from your code, with `setValue`, `setChecked` and the
+like, never runs these callbacks. That lets you keep a slider and a number
+field in step without each one setting off the other.
+
+## Changing the look
+
+Every style setting has a default. Pass `style` when you create an
+overlay to change it for all of its widgets, or pass it to one widget to
+change only that one:
+
+```js
+const buttons = new UIKitButtonOverlay(font, {
+  cssUnits: true,
+  style: { radius: 12, textSizePx: 14 },
+})
+
+buttons.addButton({
+  id: 'delete',
+  label: 'Delete',
+  x: 12,
+  y: 12,
+  style: { fill: [0.55, 0.1, 0.12, 0.95] },
+})
+```
+
+The defaults are exported too, such as `DEFAULT_BUTTON_STYLE` and
+`DEFAULT_SLIDER_STYLE`. Print one to see every setting you can change.
+
+## What else is in the package
+
+- **Several controls on one canvas**: toggles, sliders, menus, drop-down
+  lists and segmented controls. See
+  [Buttons, sliders and menus](/packages/uikit/controls/).
+- **Typing, colors, files and dialogs**: number and text fields, notes,
+  a color picker, opening and saving files, and pop-up dialogs. See
+  [Text fields, files and dialogs](/packages/uikit/forms/).
+- **Measuring and marking the image**: a ruler, a crosshair with a scale,
+  labels pinned to a point, and extras for whole-slide images. See
+  [Rulers, crosshairs and labels](/packages/uikit/measuring/).
+
+## When something does not work
+
+- **Nothing appears.** Register the widget with
+  `nv.registerOverlayRenderer`. After moving a ruler or a crosshair, call
+  `nv.drawScene()` so the new position is drawn.
+- **`attach` throws "UIKit: host has no canvas to attach to".** Wait for
+  `nv.attachToCanvas` to finish first.
+- **The widgets are tiny on a laptop screen.** Create the overlay with
+  `cssUnits: true`.
+- **A click on a control also moves the crosshair.** The control is drawn
+  but not attached. Call `attach(nv)` on it, or on the control layer that
+  holds it.
+- **Keys do nothing.** A widget takes the keyboard when it is clicked.
+  Clicking anywhere else on the page gives the keys back to the page, and
+  keys typed into an HTML input on the page never reach UIKit.
+
+## Source and demos
+
+The source is in the
+[uikit folder](https://github.com/niivue/mono/tree/main/packages/uikit) of
+the NiiVue repository. In a checkout, `bunx nx dev uikit` serves the
+package's demo pages, including one with every control on a single canvas.

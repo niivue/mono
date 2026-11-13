@@ -1,0 +1,237 @@
+---
+title: Web bridge
+description: "The JavaScript side of the bridge that lets a SwiftUI app drive a NiiVue viewer running inside a WKWebView."
+---
+
+`@niivue/web-bridge` connects a NiiVue viewer in a web page to the native
+app that shows the page. The app can load images, change settings and
+follow the crosshair, and the page tells the app what changed.
+
+It is one half of a pair. This package runs in the page. The Swift half,
+[NiiVueKit](/packages/niivue-swift/), runs in a SwiftUI app that shows the
+page in a `WKWebView`. Both sides speak the same small JSON messages, so
+you do not write new glue code for each app.
+
+## Do you need it?
+
+- **You are writing the web page for a Swift app:** yes. The page creates a
+  NiiVue viewer and hands it to the bridge. The medgfx app in this
+  repository works this way.
+- **You only write Swift:** maybe not. NiiVueKit can serve a ready-made page
+  built from medgfx's web app, which already uses this package. See
+  [the viewer page](/packages/niivue-swift/viewer-page/) in the Swift docs.
+- **You are building an ordinary website:** no. Use
+  [NiiVue](/guide/) directly.
+
+## Adding it to a project
+
+The package is not on npm. It lives in this monorepo, and other projects in
+the monorepo use it through the workspace. Add it to your project's
+`package.json`, next to NiiVue:
+
+```json
+"dependencies": {
+  "@niivue/niivue": "workspace:*",
+  "@niivue/web-bridge": "workspace:*"
+}
+```
+
+Then run `bun install` from the repository root.
+
+Each part has its own import path, such as `@niivue/web-bridge/bridge` or
+`@niivue/web-bridge/niivue-controller`. A Vite dev server reads the
+package's source directly, so there is nothing to build first. A production
+build uses the compiled files, so build the package before your app
+(`bunx nx build niivue-web-bridge`, or let Nx do it by making your app's
+`build` depend on `^build`).
+
+## The smallest page that works
+
+```ts
+import NiiVue from '@niivue/niivue'
+import { createBridge } from '@niivue/web-bridge/bridge'
+import { wireNiiVueToBridge } from '@niivue/web-bridge/niivue-controller'
+
+const nv = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
+const bridge = createBridge()
+wireNiiVueToBridge(nv, bridge)
+await nv.attachToCanvas(document.getElementById('gl1') as HTMLCanvasElement)
+bridge.emit('ready', { backend: nv.backend })
+```
+
+Three things happen here:
+
+1. `createBridge()` opens the line to the app.
+2. `wireNiiVueToBridge` lets the app drive this viewer and reports changes
+   back to it.
+3. `ready` tells the app the page is set up. Send it last, after the viewer
+   is attached.
+
+Do not skip `ready`. Until it arrives, the Swift side holds back every
+message it wants to send. NiiVueKit then asks the page for the current
+settings and the list of loaded images.
+
+## What the app can do with the viewer
+
+Once the viewer is wired, the app can:
+
+- **Load a file.** The app sends the file's bytes. The file replaces
+  everything in the scene (volumes, meshes and signals), or is added on top
+  when the app asks for that. If nothing loads, the old scene stays and the
+  app gets an error.
+- **Change viewer settings.** The default list covers things like the layout
+  (slice type, multiplanar arrangement, mosaics, custom layouts, radiological
+  view), the on-screen extras (colorbar, orientation cube and labels,
+  crosshair lines, ruler, legend) and the scene (background color, gamma,
+  3D camera angle). When page code sets one of these, the page tells the
+  app, so the app's controls stay in step. That includes turning the 3D view
+  with the mouse. A change the app made itself is not sent back.
+- **Adjust each volume.** Set a volume's colormap, contrast range and
+  opacity, or remove volumes and meshes. The page sends what the app needs
+  to draw its own controls: each volume's colormap and its colors, its
+  contrast and data range, its size and voxel size, and the names of the
+  colormaps to choose from.
+- **Switch between WebGPU and WebGL2.** If WebGPU is not available, NiiVue
+  may fall back to WebGL2, and the page reports the one actually in use.
+- **Follow along.** The page tells the app when an image finishes loading,
+  whenever the lists of volumes, meshes or signals change, and every time
+  the crosshair moves, with its position in millimeters and voxels and the
+  image values there.
+
+The message names and payloads are in
+[niivue-controller.ts](https://github.com/niivue/mono/blob/main/packages/niivue-web-bridge/src/niivue-controller.ts),
+if you need to talk to the page without NiiVueKit.
+
+## Trying the page in a browser
+
+Outside a web view there is no app on the other end. The bridge notices and
+writes each outgoing message to the console instead, starting with
+`[niivue-web-bridge:niivue]`. So you can open the page from your dev server
+and watch what it would send. Calls the page makes to the app never get an
+answer there, so their promises never settle.
+
+## Letting the app change another setting
+
+The app can only change settings on the page's allow-list. To add one, pass
+your own list. Your list replaces the default one, so copy the default into
+it:
+
+```ts
+import { DEFAULT_PROP_ALLOWLIST } from '@niivue/web-bridge/prop-allowlist'
+
+wireNiiVueToBridge(nv, bridge, {
+  allowlist: { ...DEFAULT_PROP_ALLOWLIST, crosshairColor: { kind: 'rgba' } },
+})
+```
+
+`kind` says how the incoming value is converted before it is set:
+
+- `boolean`, `number` or `string` for plain values.
+- `enum` for a setting NiiVue stores as a number, such as `sliceType`.
+- `rgba` for a color, sent as `[r, g, b]` or `[r, g, b, a]` with values from
+  0 to 1. A missing alpha becomes 1.
+- `json` for a structured value, such as a custom layout. It is passed
+  through unchanged.
+
+Changes to the setting on the page are reported to the app unless you add
+`emitOnChange: false`.
+
+The Swift side needs a matching entry with the same name:
+
+```swift
+let crosshair = NiiVueProp<[Double]>(path: "crosshairColor", initial: [1, 0, 0, 1])
+let model = NiiVueModel(bridge: bridge, extraCells: [crosshair])
+```
+
+Pass it when you create the model, so it is filled in from the page on
+`ready`.
+
+## Adding your own messages
+
+Settings cover most needs. For anything else, such as calling a NiiVue
+method or sending a result back to the app, add your own message. There are
+four ways to talk, and the Swift `Bridge` has the same four:
+
+```ts
+// The app asks, the page answers
+bridge.handle('stepCrosshair', (payload) => {
+  const { di, dj, dk } = payload as { di: number; dj: number; dk: number }
+  nv.moveCrosshairInVox(di, dj, dk)
+  return { ok: true }
+})
+
+// The page tells the app, no answer expected
+bridge.emit('drawingStarted', { label: 1 })
+
+// The app tells the page
+bridge.on('theme', (payload) => console.log(payload))
+
+// The page asks, the app answers
+const answer = await bridge.call('confirm', { message: 'Discard the drawing?' })
+```
+
+A few rules:
+
+- Messages and answers must be plain JSON. Send binary data as base64 text,
+  the way file loading does.
+- A handler can be async. The answer is sent when it finishes.
+- If a handler throws, the app's call fails with the error message. A call
+  to a name with no handler fails too.
+- Each name can have only one handler, and registering it twice throws.
+  `wireNiiVueToBridge` already uses names such as `loadVolume` and
+  `setProp`, so pick others.
+- `on` returns a function that stops listening.
+
+## Handling files dropped on the page
+
+When someone drops files on the viewer, `loadDroppedFiles` loads them with
+the same replace-or-add rule the app uses. Turn off NiiVue's own drag and
+drop first: it replaces the scene for each file and ignores modifier keys.
+NiiVue still accepts the drop on its canvas, so the browser does not open
+the file itself. This example adds to the scene while Cmd or Ctrl is held,
+as medgfx does:
+
+```ts
+import { loadDroppedFiles } from '@niivue/web-bridge/niivue-controller'
+
+const nv = new NiiVue({ isDragDropEnabled: false })
+document.addEventListener('drop', (event) => {
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  const add = event.metaKey || event.ctrlKey
+  if (files.length > 0) void loadDroppedFiles(nv, files, add)
+})
+```
+
+All dropped files are added first and the old scene is removed afterwards,
+so dropping several files at once gives a background image plus overlays.
+A file that fails is logged and the rest still load. If nothing new loads,
+the old scene stays. For a single file there is `loadFile`, which throws
+when nothing loads. The [loading guide](/guide/loading/) lists the formats
+NiiVue reads.
+
+## When something does not work
+
+- **The app's messages never arrive.** The page must send `ready` after the
+  viewer is attached. Until then the Swift side keeps everything in a queue.
+- **Nothing reaches the app, and the console shows
+  `[niivue-web-bridge:...]` lines inside the app.** The bridge could not
+  find the app's message handler, so the names on the two sides do not
+  match. By default both sides use `niivue`. If you change it on one side,
+  change it on the other: `createBridge({ handlerName: 'viewer' })` pairs
+  with a Swift `BridgeConfig(handlerName: "viewer")`.
+- **The app gets `property '...' is not in the allow-list`.** The app tried
+  to change a setting the page does not allow. Add it to the allow-list.
+- **The page throws `handler already registered`.** A message name was
+  registered twice, often by calling `wireNiiVueToBridge` twice on one
+  bridge.
+- **The web view stays blank.** See
+  [when the viewer stays blank](/packages/niivue-swift/viewer-page/#when-the-viewer-stays-blank) in the
+  Swift docs.
+
+## Source and a full example
+
+The code is in
+[packages/niivue-web-bridge](https://github.com/niivue/mono/tree/main/packages/niivue-web-bridge).
+For a complete page, see medgfx's
+[main.ts](https://github.com/niivue/mono/blob/main/apps/medgfx/web/src/main.ts).
+Run the tests with `bunx nx test niivue-web-bridge`.

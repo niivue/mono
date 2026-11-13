@@ -1,0 +1,75 @@
+---
+title: React
+description: "Show NiiVue viewers in a React 19 app with @niivue/nvreact: one component for a single viewer, or a scene for a grid of them."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nvreact` puts NiiVue viewers in a React app. It creates the
+canvas, attaches the viewer, resizes it with the page and cleans up when the
+component goes away, so you only describe what to show.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nvreact@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nvreact@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nvreact@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nvreact@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+You install NiiVue alongside the bindings, and your app needs React 19.
+
+## Your first viewer
+
+```tsx
+import { NvViewer } from '@niivue/nvreact'
+
+export function Brain() {
+  return (
+    <NvViewer
+      volumes={[{ url: '/volumes/mni152.nii.gz' }]}
+      style={{ height: 500 }}
+    />
+  )
+}
+```
+
+The viewer fills the element it is given, so give it a height.
+
+## Which part do you need?
+
+- **One viewer on a page:** the `NvViewer` component. See
+  [One viewer](/packages/nv-react/one-viewer/).
+- **Several viewers in a grid**, optionally moving together: a scene. See
+  [Several viewers](/packages/nv-react/several-viewers/).
+- **Anything else NiiVue can do:** a scene hands you the NiiVue instance
+  behind each viewer, and every NiiVue guide applies to it. See
+  [Using NiiVue directly](/packages/nv-react/niivue-instance/).

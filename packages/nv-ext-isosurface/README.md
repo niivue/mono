@@ -2,6 +2,8 @@
 
 One isosurface `NVMesh` per channel of a [NiiVue](https://github.com/niivue) chunked (streamed) volume.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-ext-isosurface/
+
 ## Installation
 
 ```bash

@@ -1,0 +1,241 @@
+---
+title: Building your app
+description: "Tell agents what your app offers, add an atlas, labels, controls and sample data, add tools of your own, and serve the page from another address."
+sidebar:
+  order: 2
+---
+
+The page from the [Overview](/packages/nv-mcp/) already answers every
+core tool. This page covers what you add so an agent fits your app: things
+only your app knows, and things the person should see.
+
+## Telling the agent about your app
+
+The tools describe themselves, but they cannot know what your page shows
+or which files your server has. Say it in `instructions`, which the agent
+reads when it connects:
+
+```ts
+startServer({
+  name: 'my-viewer',
+  instructions:
+    'The page opens with the MNI152 template. The same address also serves ' +
+    'aal.nii.gz, the AAL atlas, and spmMotor.nii.gz, a motor t-map.',
+  pageUrl: 'http://localhost:5173',
+  bridge: { noTabHint: 'Open http://localhost:5173 and try again.' },
+})
+```
+
+Without the file names, an agent guesses at addresses. The other two
+options help when no page is open: `noTabHint` is added to the message the
+agent gets, so it can tell the person what to open, and `pageUrl` lets it
+hand out a link that opens your page in a new tab.
+
+## Showing the person what changed
+
+When an agent moves the view, the person should see why the picture
+changed. Give the host an `announce` function:
+
+```ts
+const host: NiiVueHost = {
+  view: nv,
+  announce: (text) => {
+    statusLine.textContent = text
+  },
+}
+```
+
+It is called when the agent goes to a region or a point, or cuts a plane,
+with a line such as the new crosshair position. To say more, such as the region
+under the crosshair, add a `describe` function that returns the place in
+words. The agent hears the same words when it asks where it is.
+
+## Finding regions by name
+
+With an atlas, an agent can list regions and go to one by name, such as
+"left insula". Give the host an `atlas` function that returns one. An
+atlas answers four questions in millimetres: which regions there are, with
+their centre points; which region is at a point; which label value is at a
+point; and the nearest point inside a region.
+
+Add `atlasApplies` to say when the loaded scan is not in the atlas's
+space, so the agent does not navigate by the wrong map. Without an atlas,
+the region tools tell the agent the page has none, and everything else
+still works.
+
+The demo builds one from the AAL atlas in
+[atlas.ts](https://github.com/niivue/mono/blob/main/apps/demo-mcp/src/atlas.ts).
+It uses `SPOKEN_NAMES` from `@niivue/nv-mcp` to turn AAL labels such as
+`Frontal_Inf_Tri_L` into names people say: "left inferior frontal gyrus,
+triangular part".
+
+## Drawing labels the agent places
+
+An agent can pin text labels to regions or points, but drawing them is up
+to your page. Give the host a `labels` function. Each call hands it the
+full list to show, each label with its `text` and its point `mm` in
+millimetres; an empty list means clear them. Without it, the agent is told
+the page cannot draw labels.
+
+The demo draws them on the canvas with `UIKitPointLabelOverlay` from
+`@niivue/uikit`. See
+[main.ts](https://github.com/niivue/mono/blob/main/apps/demo-mcp/src/main.ts).
+
+## Putting controls on the canvas
+
+An agent can build a control panel for the person: buttons, toggles,
+sliders, menus, text and number fields, colour and file pickers, and
+dialogs. To draw them on the NiiVue canvas, install `@niivue/uikit@next`
+and set the host's `controls` once NiiVue is attached:
+
+```ts
+import { bindControls } from '@niivue/nv-mcp/browser'
+import { uikitControls } from '@niivue/nv-mcp/uikit'
+import { loadDefaultFont } from '@niivue/uikit'
+
+const font = await loadDefaultFont()
+host.controls = bindControls(uikitControls(nv, { font }), { view: nv })
+```
+
+Each control the agent adds says what it drives: a NiiVue setting such as
+`gamma`, a property of an image such as `volume.0.opacity`, the slice
+layout, a dialog, or an action of your page. It works both ways: moving a
+slider changes the scene, and a change made elsewhere shows on the
+slider.
+
+Actions are things only your page knows how to do:
+
+```ts
+host.controls = bindControls(uikitControls(nv, { font }), {
+  view: nv,
+  actions: {
+    reload: { description: 'Loads the template again.', run: () => loadTemplate() },
+  },
+})
+```
+
+The agent reads the `description` to choose an action, and a button bound
+to `action.reload` runs it when pressed. A file picker bound to an action
+gets the files the person picked, which is how a person opens their own
+files.
+
+To keep the controls without drawing them, for example to list them in
+your own HTML, use `memoryControls()` in place of `uikitControls`. Without
+any `controls`, the control tools tell the agent the page has none.
+
+## Offering sample data
+
+A data palette lists files your page can load by a short id, so the agent
+does not have to know addresses:
+
+```ts
+import { dataPalette } from '@niivue/nv-mcp/browser'
+
+host.data = dataPalette([
+  { id: 'mni152', label: 'MNI152', tool: 'load_volume', args: { url: '/volumes/mni152.nii.gz', mni: true } },
+  { id: 'motor', label: 'Motor map', tool: 'add_overlay', args: { url: '/volumes/spmMotor.nii.gz', colormap: 'warm' } },
+])
+```
+
+Each entry is a load saved for later: the loading tool to call and what to
+pass it. The agent can list and load entries, add its own, and put a
+button on the canvas that loads one. For that button to work, pass the
+palette to `bindControls` as `data` too.
+
+## Opening OME-Zarr stores
+
+To let the agent open OME-Zarr stores, install `@niivue/nv-ext-tile@next`
+and give the host a way to load it:
+
+```ts
+host.omeZarr = () => import('@niivue/nv-ext-tile/zarr')
+```
+
+The extension is only fetched the first time an agent opens a store. See
+[OME-Zarr volumes](/packages/nv-ext-tile/ome-zarr/) for what it
+reads.
+
+## Adding tools of your own
+
+A tool has two halves. On the page, add a handler next to the core ones.
+It gets the tool's arguments and returns what the agent sees; throw an
+error to fail the call with your message:
+
+```ts
+let light = false
+host.extraState = () => ({ light })
+
+const handlers: Handlers = {
+  ...coreHandlers(host),
+  set_light: (params) => {
+    light = params.on === true
+    return { light }
+  },
+}
+new AgentClient(handlers, { state: () => sceneState(host) }).attach()
+```
+
+`extraState` is state the agent should keep track of. If the person
+reloads the page, the agent is told what it was before and what it is now.
+
+On the server, register the tool in an extension:
+
+```ts
+import { type Extension, startServer, TAB_ARG } from '@niivue/nv-mcp/server'
+import { z } from 'zod'
+
+const light: Extension = {
+  name: 'light',
+  register(server, context) {
+    server.registerTool(
+      'set_light',
+      { description: 'Turns the room light on or off.', inputSchema: { ...TAB_ARG, on: z.boolean() } },
+      ({ tab, ...params }) => context.answer('set_light', params, { tab }),
+    )
+  },
+}
+
+startServer({ name: 'my-viewer', extensions: [light] })
+```
+
+`context.answer` passes the call to the page and returns its answer to the
+agent. `TAB_ARG` adds the optional `tab` argument the core tools have, so
+the agent can send the call to a chosen tab. Arguments are described with
+[zod](https://zod.dev), so add it to your app.
+
+## Serving the page from another address
+
+The page first tries `/agent` on its own address, then the server
+directly at `ws://127.0.0.1:4242/app`. While the page runs on `localhost`,
+the direct address is all it needs.
+
+You need a proxy for `/agent` when the page is served over HTTPS, or opens
+in a browser that lets a page reach its own address only, such as the pane
+inside Claude's desktop app. In Vite:
+
+```ts
+server: {
+  proxy: {
+    '/agent': {
+      target: 'ws://127.0.0.1:4242',
+      ws: true,
+      rewrite: (path) => path.replace(/^\/agent/, '/app'),
+    },
+  },
+},
+```
+
+Run Vite under Node for this (`bunx vite`, not `bunx --bun vite`): its
+WebSocket proxy hangs under Bun.
+
+The server turns away pages from any address other than your own machine,
+so other websites open in the same browser cannot drive it. If your page
+lives elsewhere, list its origin. If agents reach the server under another
+name, list that name with its port:
+
+```ts
+startServer({
+  allowedOrigins: ['https://viewer.example.org'],
+  allowedHosts: ['niivue.local:4242'],
+})
+```

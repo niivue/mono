@@ -1,0 +1,176 @@
+---
+title: AI agents
+description: "Let an AI agent such as Claude drive a NiiVue page a person is looking at: load images, move the crosshair, cut planes, find atlas regions and take screenshots."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-mcp` lets an AI agent work the NiiVue viewer you have open in
+your browser. Ask Claude, Cursor or another agent to "go to the left
+insula" or "cut an axial plane and send me a screenshot", and the viewer
+does it while you watch.
+
+It speaks the [Model Context Protocol](https://modelcontextprotocol.io)
+(MCP), the standard way agents call outside tools. Use it to let people
+explore images by asking, to let an agent look at the viewer to check its
+own work, or to drive a viewer from a chat.
+
+## How it works
+
+There are two parts:
+
+- **A small server** that runs on your machine under
+  [Bun](https://bun.sh). Agents connect to it at
+  `http://127.0.0.1:4242/mcp`.
+- **Your NiiVue page**, which keeps a connection open to that server. Each
+  request from the agent goes to the page, which changes the scene and
+  answers.
+
+The server keeps no images or scene of its own, so what the agent sees is
+exactly what the person sees. It needs no login, and by default it
+listens on your own machine only.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-mcp@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-mcp@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-mcp@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-mcp@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+Whichever package manager you use, the server runs under Bun.
+
+## Your first agent-ready page
+
+Start the server:
+
+```ts
+// server.ts
+import { startServer } from '@niivue/nv-mcp/server'
+
+startServer({ name: 'my-viewer' })
+```
+
+Run it with `bun server.ts`. Then connect your page to it, next to the
+NiiVue code you already have:
+
+```ts
+import NiiVue from '@niivue/niivue'
+import { AgentClient, coreHandlers, type NiiVueHost, sceneState } from '@niivue/nv-mcp/browser'
+
+const nv = new NiiVue()
+await nv.attachTo('gl1')
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+
+const host: NiiVueHost = { view: nv }
+new AgentClient(coreHandlers(host), { state: () => sceneState(host) }).attach()
+```
+
+`host` describes your page to the package. The NiiVue instance is all it
+needs; [Building your app](/packages/nv-mcp/your-app/) shows what else
+you can give it. The page finds the server by itself, and keeps trying if
+you start the server second.
+
+Finally, tell your agent where the server is. For Claude Code:
+
+```bash
+claude mcp add --transport http niivue http://127.0.0.1:4242/mcp
+```
+
+Now ask it to "show the three slices and the 3D render", "use the hot
+colormap" or "cut away the top half and send me a screenshot". Keep the
+page's tab in front while it works: a hidden tab cannot draw.
+
+Other agents connect the same way. See
+[Connecting agents](/packages/nv-mcp/connecting-agents/).
+
+## Trying the demo
+
+The repository has a ready-made page and server. From the repository root:
+
+```bash
+bunx nx dev demo-mcp
+```
+
+It opens the MNI152 brain template and knows the AAL atlas, so you can ask
+for regions by name. Its source is in
+[apps/demo-mcp](https://github.com/niivue/mono/tree/main/apps/demo-mcp).
+
+## What an agent can do
+
+An agent can do most of what a person at the viewer can, and a few things
+they cannot:
+
+- **Find its way around.** Ask where the crosshair is, move it to a point,
+  or step it one voxel at a time. When the page has an atlas, it can also
+  list the regions and go to one by name.
+- **Load images.** Volumes, overlays, label maps with their own names and
+  colours, meshes, tracts, connectomes, signals and saved NiiVue
+  documents, from any address the page can fetch. OME-Zarr stores too, if
+  the page offers them.
+- **Change how things look.** Colormaps, display ranges, opacity, the
+  slice layout, the colorbar, or any other NiiVue setting by name.
+- **Cut and turn.** Clip planes named for the side they take away ("cut
+  off the left side"), the camera angle, and smooth animated moves from one
+  view to the next.
+- **Look at the result.** A screenshot of the canvas, so it can check its
+  own work. It can also find the point under any pixel it sees.
+- **Mark things up.** Distance measurements, outlines and annotations on
+  the slices, boxes on the 3D render, and text labels pinned to regions or
+  points if your page draws them.
+- **Measure and edit.** Statistics of a volume, over the whole image or
+  inside a mask or the drawing, and its histogram. It can also run NiiVue's
+  volume transforms or write new voxel values.
+- **Build a control panel.** Buttons, sliders, menus and other controls on
+  the canvas, tied to settings, images or actions your page offers. The
+  page has to host them.
+- **Work with whole-slide images.** Switch levels, focal planes and channel
+  colours, and read pixel values.
+- **Save.** Have the browser download the scene, a volume, a mesh, the
+  drawing or a picture.
+
+An agent cannot open a file on your computer from its path. Instead it can
+put an "Open file" button on the canvas for you to click, if your page
+offers an action that opens files.
+
+If you have the page open in several tabs, the agent can list them and
+pick the one to work in. It can also give you a link that opens the page
+in a new tab with an id of its own, and keep talking to that tab.
+
+## Where to go next
+
+- [Connecting agents](/packages/nv-mcp/connecting-agents/): Claude desktop,
+  Codex, Gemini CLI, VS Code, Cursor, Windsurf or your own program, and
+  what to check when a call fails.
+- [Building your app](/packages/nv-mcp/your-app/): an atlas, labels,
+  controls on the canvas, sample data, tools of your own, and serving the
+  page from another address.
+- [Source on GitHub](https://github.com/niivue/mono/tree/main/packages/nv-mcp).

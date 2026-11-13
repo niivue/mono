@@ -1,0 +1,214 @@
+---
+title: Image processing
+description: "Split a volume into classes by brightness, remove background haze, reslice it to a 1 mm grid and label separate blobs, with the work done in a Web Worker."
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ext-image-processing` adds four operations to NiiVue. Each one
+takes a volume and gives you back a new one, which you can show on top of
+the original or use in its place:
+
+- **Otsu thresholding** splits an image into 2 to 4 classes by brightness.
+- **Haze removal** blanks out the dim noise in the air around a head.
+- **Conform** reslices a volume to a 256 x 256 x 256 grid of 1 mm voxels,
+  the way FreeSurfer does.
+- **Connected labels** gives each separate blob in a mask its own number.
+
+The work runs in a Web Worker, so the page stays responsive while it
+computes. The worker ships inside the package, so there is nothing to set
+up in your bundler.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ext-image-processing@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ext-image-processing@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ext-image-processing@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ext-image-processing@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+You install NiiVue alongside the extension.
+
+## Your first segmentation
+
+```js
+import NiiVue from '@niivue/niivue'
+import { otsu } from '@niivue/nv-ext-image-processing'
+
+const nv = new NiiVue()
+const ctx = nv.createExtensionContext()
+ctx.registerVolumeTransform(otsu)
+
+await nv.attachToCanvas(canvas)
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+
+const classes = await ctx.applyVolumeTransform('otsu', ctx.volumes[0])
+await ctx.addVolume(classes)
+```
+
+You register an operation once, then apply it by name to any volume. The
+original stays as it was: you get a new volume, and `addVolume` draws it on
+top.
+
+## Changing the settings
+
+Pass settings as the third argument. Anything you leave out keeps its
+default:
+
+```js
+const classes = await ctx.applyVolumeTransform('otsu', ctx.volumes[0], {
+  levels: 4,
+})
+```
+
+Each operation's settings are described in its own section below.
+
+## Showing the result
+
+Set a colormap and an opacity before you add the result, so the image
+underneath stays visible:
+
+```js
+classes.colormap = 'actc'
+classes.opacity = 0.5
+await ctx.addVolume(classes)
+```
+
+Those are the values Otsu thresholding suggests. Connected labels suggests
+the `random` colormap at 0.8 opacity, which gives each blob its own color.
+You find the suggestions in `otsu.resultDefaults` and
+`connectedLabel.resultDefaults`; NiiVue does not apply them for you. See
+[Overlays](/guide/overlays/) for more on colormaps and opacity.
+
+To use the result instead of the original, as you would after removing
+haze, swap them:
+
+```js
+const clean = await ctx.applyVolumeTransform('removeHaze', ctx.volumes[0])
+await ctx.removeAllVolumes()
+await ctx.addVolume(clean)
+```
+
+## Splitting an image by brightness
+
+`otsu` finds the brightness cutoffs that best separate the voxels into
+groups (Otsu's method). Each voxel gets a label: 0 for the darkest group,
+then 1, 2 and so on up to the brightest. The result is an 8-bit label
+volume.
+
+The `levels` setting picks how many groups: 2, 3 (the default) or 4. Use 2
+to split foreground from background, and 3 or 4 to separate tissues of
+different brightness.
+
+## Removing the haze around a head
+
+`removeHaze` finds a brightness cutoff the same way and sets every voxel
+below it to the image's lowest value. Brighter voxels keep their values.
+The result is stored as 32-bit floats.
+
+The `level` setting goes from 1, which removes the most, to 5, which
+removes the least. The default is 5, the most careful setting.
+
+## Reslicing to a standard grid
+
+`conform` reslices a volume to 256 x 256 x 256 voxels of 1 mm, centered on
+the original, like FreeSurfer's conform step. By default the result matches
+a FreeSurfer conformed image: LIA orientation, smooth (linear)
+interpolation, and brightness rescaled to 0 to 255 and stored as 8-bit.
+Three settings change that:
+
+- `toRAS: true` gives RAS orientation instead of LIA.
+- `isLinear: false` uses nearest neighbor instead of linear interpolation.
+- `asFloat32: true` stores 32-bit floats from 0 to 1 instead of 8-bit.
+
+```js
+const resliced = await ctx.applyVolumeTransform('conform', ctx.volumes[0], {
+  toRAS: true,
+})
+```
+
+## Labeling separate blobs
+
+`connectedLabel` finds groups of touching voxels and numbers them 1, 2, 3
+and so on. Zero stays background. Voxels only join a group when they have
+the same value, so in a label volume each class is split into its own
+blobs. Its settings:
+
+- `conn`: which neighbors count as touching. 6 means voxels that share a
+  face, 18 adds shared edges, and 26, the default, adds shared corners.
+- `binarize: true` treats every nonzero voxel as one class, as in a mask.
+- `onlyLargestClusterPerClass: true` keeps only the biggest blob of each
+  class, with its original value, and clears the rest.
+
+That last setting tidies up a segmentation, such as the result of Otsu
+thresholding, by dropping stray specks. Register both operations first:
+
+```js
+const classes = await ctx.applyVolumeTransform('otsu', ctx.volumes[0])
+const cleaned = await ctx.applyVolumeTransform('connectedLabel', classes, {
+  onlyLargestClusterPerClass: true,
+})
+await ctx.addVolume(cleaned)
+```
+
+## Building a settings form
+
+Each operation describes its own settings, so your app can build a form
+for it instead of hard-coding one:
+
+```js
+const info = nv.getVolumeTransformInfo('otsu')
+for (const field of info?.options ?? []) {
+  console.log(field.name, field.label, field.type, field.default)
+}
+```
+
+A field's `type` is `checkbox` or `select`, and a select lists its choices
+in `options`. `info.description` is a one-line summary for the form's
+title, and `nv.volumeTransforms` lists every registered name, which is
+handy for a menu.
+
+## When something does not work
+
+- **`Transform "otsu" already registered`:** every viewer on the page
+  shares one list of operations, so register each one only once, for
+  example when the page starts rather than in code that runs for each
+  viewer.
+- **`Unknown volume transform: otsu`:** the name was misspelled or never
+  registered. The names are `otsu`, `removeHaze`, `conform` and
+  `connectedLabel`.
+
+## Try it
+
+The [live demo](https://niivue.github.io/mono/demo-ext-image-processing/imgproc.html)
+runs all four operations on a sample brain, with a settings form built as
+shown above. Its source is in
+[apps/demo-ext-image-processing](https://github.com/niivue/mono/tree/main/apps/demo-ext-image-processing),
+and the package source is in
+[packages/nv-ext-image-processing](https://github.com/niivue/mono/tree/main/packages/nv-ext-image-processing).
+For other add-ons, see [Extensions](/guide/extensions/).

@@ -2,6 +2,8 @@
 
 Image processing extensions for [NiiVue](https://github.com/niivue) — includes Otsu thresholding, haze removal, and more.
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-ext-image-processing/
+
 ## Installation
 
 ```bash

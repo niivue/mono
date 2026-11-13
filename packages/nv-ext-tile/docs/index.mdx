@@ -1,0 +1,134 @@
+---
+title: Slides and OME-Zarr
+description: "Open huge microscopy images in NiiVue, such as whole-slide scans and OME-Zarr volumes, reading only the parts you look at."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ext-tile` opens images that are too big to download in one go:
+whole-slide microscopy scans and OME-Zarr stores. These files are stored as
+a pyramid of small tiles at several resolutions. Instead of fetching the
+whole file, the package reads only the tiles on screen, at the resolution
+you are looking at.
+
+Use it to:
+
+- show a whole-slide scan and let people pan and zoom around it. It reads
+  tiled TIFF, BigTIFF, OME-TIFF, Aperio SVS and other scanner files, DICOM
+  whole-slide images and flat OME-Zarr images.
+- load an OME-Zarr volume into a NiiVue scene, either one resolution level
+  at a time or streamed piece by piece.
+
+You do not need it for NIfTI, plain TIFF stacks and the other formats NiiVue
+reads itself. See [Loading images](/guide/loading/).
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ext-tile@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ext-tile@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ext-tile@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ext-tile@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+NiiVue is a peer dependency, so you install it alongside the package.
+
+## Your first slide
+
+```ts
+import { createSlideView, NVSlide } from '@niivue/niivue'
+import { openSlide } from '@niivue/nv-ext-tile/open'
+
+const url =
+  'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/svs/CMU-1-Small-Region.svs'
+const { candidates } = await openSlide(url)
+const slide = NVSlide.fromSource(await candidates[0].open())
+
+const canvas = document.getElementById('slide') as HTMLCanvasElement
+const view = await createSlideView(canvas, { slide })
+```
+
+`openSlide` works out what kind of file it was given and lists the slides
+in it. `createSlideView` comes from NiiVue. It draws the slide with WebGPU,
+or WebGL2 when WebGPU is not available, follows the canvas when it resizes,
+and handles panning and zooming. The view fills the canvas, so give the
+canvas a size in your CSS.
+
+When you are finished, `view.destroy()` releases the view, the slide and
+the file reads behind it.
+
+## What do you want to do?
+
+- **Show a slide** from a URL or from the user's computer: see
+  [Viewing slides](/packages/nv-ext-tile/slides/).
+- **Open DICOM whole-slide images** from a folder, a DICOMweb server or your
+  own web server: see [DICOM slides](/packages/nv-ext-tile/dicom/).
+- **Load an OME-Zarr volume** into a NiiVue scene: see
+  [OME-Zarr volumes](/packages/nv-ext-tile/ome-zarr/).
+
+Each format has its own import path (`/open`, `/tiff`, `/dicom` and
+`/zarr`), so a page downloads only the code for the formats it uses.
+`/open` loads a format's code the first time it meets a file of that kind.
+
+The [live demo](https://niivue.github.io/mono/demo-ext-tile/) opens sample
+slides of each kind. Its source is in
+[apps/demo-ext-tile](https://github.com/niivue/mono/tree/main/apps/demo-ext-tile).
+
+## Moving from older packages
+
+This package replaces `@niivue/nv-ext-wsi`, `@niivue/nv-ext-tiff` and the
+OME-Zarr functions that used to be part of `@niivue/niivue`. Import them
+from here instead.
+
+## Using it without a bundler
+
+The published package includes ready-to-load files in `dist/standalone/`:
+`open.js`, `tiff.js`, `dicom.js` and `zarr.js`. Everything they need is
+bundled in except NiiVue itself (and dcm2niix, below), so point an import
+map at NiiVue's own standalone build and both share one copy:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@niivue/niivue": "./niivue/niivue.js",
+      "@niivue/nv-ext-tile/open": "./nv-ext-tile/open.js"
+    }
+  }
+</script>
+```
+
+Map any other entry point you import, such as `@niivue/nv-ext-tile/zarr`,
+the same way. Copy NiiVue's `dist/standalone/` folder to `niivue/` and this
+package's to `nv-ext-tile/`.
+
+For [JPEG 2000 tiles](/packages/nv-ext-tile/slides/#jpeg-2000-tiles), also
+map `@niivue/dcm2niix` to `./dcm2niix/index.jpeg.js` and copy that package's
+`dist/` folder to `dcm2niix/`. Without it, ordinary JPEG tiles still show.

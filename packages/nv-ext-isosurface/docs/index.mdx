@@ -1,0 +1,184 @@
+---
+title: Isosurfaces
+description: "Wrap the bright parts or labelled regions of a streamed volume, such as an OME-Zarr image, in 3D surface meshes that NiiVue shows over the volume."
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ext-isosurface` turns a volume into solid 3D surfaces. It wraps
+everything above a brightness you choose, or each region of a label image,
+and hands you a NiiVue mesh you can colour, rotate and show on top of the
+volume it came from.
+
+It works on streamed volumes: the large, multi-resolution images NiiVue
+loads piece by piece with `nv.loadChunkedVolume`, such as an OME-Zarr store
+opened with [`@niivue/nv-ext-tile`](/packages/nv-ext-tile/). Typical uses
+are cell nuclei in a microscopy stack or the regions of a segmentation.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ext-isosurface@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ext-isosurface@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ext-isosurface@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ext-isosurface@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+You install NiiVue alongside the extension. The examples below open an
+OME-Zarr store, which also needs `@niivue/nv-ext-tile@next`.
+
+## Your first surface
+
+```ts
+import { channelIsosurfaces } from '@niivue/nv-ext-isosurface'
+import { fetchOmeZarrChunkedSource } from '@niivue/nv-ext-tile/zarr'
+
+const source = await fetchOmeZarrChunkedSource(url)
+await nv.loadChunkedVolume(source)
+
+const [surface] = await channelIsosurfaces([{ source, threshold: 800 }])
+await nv.addMesh(surface)
+```
+
+The surface wraps every voxel whose value is 800 or more. Because it is
+built from the same `source` you gave NiiVue, it lines up exactly with the
+volume on screen. Any other `ChunkedVolumeSource` works the same way.
+
+The threshold is compared with the raw values stored in the file. A
+streamed source carries no scale or offset, so if you think in calibrated
+units, convert first: `raw = (value - intercept) / slope`. In float data,
+voxels holding NaN or infinity count as outside.
+
+## Surfaces from a label image
+
+For a segmentation, list the label IDs you want instead of a threshold:
+
+```ts
+const [cells] = await channelIsosurfaces([
+  { source: labels, labels: [1, 2, 7] },
+])
+```
+
+Each ID gets its own closed surface, built only from voxels holding exactly
+that ID, and the surfaces are merged into one mesh. Give a channel either
+`threshold` or `labels`, not both.
+
+## Several channels at once
+
+Each entry in the list is a channel, and you get one mesh back per channel,
+in the same order. Give each one a colour (red, green, blue and opacity,
+each from 0 to 1) and a name:
+
+```ts
+const [nuclei, membranes] = await channelIsosurfaces([
+  { source: dapi, threshold: 800, color: [0, 0, 1, 1], name: 'DAPI' },
+  { source: membrane, threshold: 300, color: [1, 0.5, 0, 1], name: 'membrane' },
+])
+```
+
+Without a colour a surface is white, and without a name it is called
+`channel 0`, `channel 1` and so on. The resolution level used is added to
+the name, as in `DAPI (level 2)`.
+
+A multi-channel OME-Zarr store gives you one channel per source, so open
+one source for each: `fetchOmeZarrChunkedSource(url, { channel: 1 })`. For
+a time series, `frame` picks the time point, as in
+`{ source, threshold: 800, frame: 3 }`.
+
+## Choosing the level of detail
+
+A streamed volume comes in several resolutions. By default each channel
+uses the finest level with at most 256³ voxels (about 16.7 million), which
+keeps time and memory in check. Pick a level yourself with `level` (0 is
+the finest), or move the limit with `maxVoxels`:
+
+```ts
+await channelIsosurfaces([{ source, threshold: 800, level: 1 }])
+await channelIsosurfaces([{ source, threshold: 800 }], { maxVoxels: 512 ** 3 })
+```
+
+A level larger than `maxVoxels` is refused even when you name it, so raise
+the limit to use a fine level of a big volume. Finer levels give smoother
+surfaces but take longer. A coarser level covers the same space, so its
+surface still lines up with the volume.
+
+Each mesh is also capped at 4 million vertices. Pass `maxVertices` to
+change that.
+
+## Showing progress and cancelling
+
+The work runs on the page's own thread, but it pauses about every 8 ms so
+the page stays responsive. A big level can still take a while, so show
+progress and let the user cancel:
+
+```ts
+const controller = new AbortController()
+const meshes = await channelIsosurfaces(channels, {
+  signal: controller.signal,
+  onProgress: (done, total) => console.log(`${done} / ${total}`),
+})
+```
+
+The volume is read in blocks, 64 voxels a side by default (`brickEdge`
+changes it). Each block is turned into surface and then dropped, so memory
+stays low even for a large level, and the pieces join without seams.
+`done` and `total` count these blocks across all channels.
+
+`controller.abort()` stops the run: no more blocks are fetched and the
+promise rejects with an `AbortError`.
+
+## Which units the mesh is in
+
+A mesh uses the same coordinates as the volume NiiVue streams from the same
+source, in the source's own units: millimetres for most medical images,
+micrometres for a microscopy store measured in microns. Nothing is
+converted. NiiVue treats the volume the same way, so the two stay lined up
+whatever the unit.
+
+## When something does not work
+
+Most mistakes are caught before anything is fetched:
+
+- **`RangeError`, "no level within maxVoxels":** the level you asked for
+  does not exist or is larger than `maxVoxels`, or every level is. Pick a
+  coarser level or raise the limit.
+- **`RangeError`, "over maxVertices":** the surface grew past the vertex
+  cap while it was being built. Use a coarser level or a larger
+  `maxVertices`.
+- **`TypeError`, "set exactly one of threshold or labels":** each channel
+  needs one or the other.
+- **`TypeError`, "unsupported datatype":** RGB volumes are not supported.
+  8, 16 and 32-bit integers, signed or unsigned, and 32 or 64-bit floats
+  are.
+- **`RangeError`, "bad color", "bad brickEdge" or "bad maxVertices":** a
+  colour must be four numbers from 0 to 1, `brickEdge` a whole number of at
+  least 2, and `maxVertices` a positive whole number.
+
+Two things about the surfaces themselves: an object cut off by the edge of
+the volume is closed at that edge rather than left open, and two objects
+that touch only at the corner or edge of a voxel can be joined into one
+surface there.

@@ -1,0 +1,170 @@
+---
+title: Magic wand
+description: "Click a voxel to paint the connected region of similar brightness, choose how similar counts, keep it on one slice, and preview it under the pointer."
+sidebar:
+  order: 2
+---
+
+The magic wand starts at one voxel, the seed, and paints every connected
+voxel whose brightness falls in a range around it. The examples below use
+`ctx`, NiiVue's extension context from `nv.createExtensionContext()`.
+
+## Painting a region where the user clicks
+
+```js
+import { magicWand } from '@niivue/nv-ext-drawing'
+
+ctx.createEmptyDrawing()
+nv.drawIsEnabled = false // clicks go to the wand, not the pen
+
+ctx.on('slicePointerUp', async (e) => {
+  if (e.detail.pointerEvent.button !== 0) return // left button only
+  const dr = ctx.drawing
+  const bg = ctx.backgroundVolume
+  const { bitmap, result } = await magicWand(
+    e.detail.voxel, dr.bitmap, dr.dims, bg.imgRAS,
+    { tolerance: 20 },
+    dr.voxelSizeMM,
+  )
+  dr.pushUndo()
+  dr.update(bitmap)
+  console.log(`Filled ${result.filledCount} voxels`)
+})
+```
+
+`slicePointerUp` fires when the pointer is released over a 2D slice, and
+`e.detail.voxel` is the voxel under it. The image must be `bg.imgRAS`, whose
+voxels are in the same order as the drawing.
+
+The wand paints with label 1. Set `penValue` to paint another label, for
+example `penValue: nv.drawPenValue` to match NiiVue's pen.
+
+Besides `filledCount`, the result tells you the seed's brightness
+(`seedIntensity`) and the range that was used (`intensityMin` and
+`intensityMax`). If the seed lies outside the volume, nothing is painted.
+
+## Setting how similar voxels must be
+
+Brightness means the voxel values as stored in the file, before any scaling
+from the file header. The default tolerance is 0, which matches only voxels
+exactly as bright as the seed, so you will almost always set one of these:
+
+- `tolerance: 20` takes voxels within 20 of the seed, brighter or darker.
+- `thresholdMode: 'percent'` with `percent: 0.1` takes voxels within 10
+  percent of the seed.
+- `thresholdMode: 'bright'` takes only voxels at least as bright as the
+  seed, up to `tolerance` above it, or with no upper limit when the
+  tolerance is 0.
+- `thresholdMode: 'dark'` is the mirror image: only voxels at least as dark
+  as the seed.
+- `thresholdMode: 'auto'` picks bright or dark for you, depending on whether
+  the seed is brighter than the middle of the display range. Pass that
+  range as `calMin` and `calMax`.
+- `intensityMin` and `intensityMax`, given together, set the range yourself
+  and override everything above.
+
+```js
+const options = { thresholdMode: 'auto', calMin: bg.calMin, calMax: bg.calMax }
+```
+
+## Staying on one slice
+
+The region grows in 3D unless you keep it on the clicked slice. Inside the
+click handler:
+
+```js
+const options = { tolerance: 20, is2D: true, sliceAxis: e.detail.sliceType }
+```
+
+`sliceAxis` is 0 for axial (the default), 1 for coronal and 2 for sagittal,
+the same numbers as `e.detail.sliceType`.
+
+## Stopping the region from spreading too far
+
+- `maxDistanceMM: 30` stops the region 30 mm from the seed. Pass
+  `dr.voxelSizeMM` as the last argument, as above, so the distance is in
+  millimetres. Without it, each voxel counts as 1 mm.
+- `connectivity` sets which voxels count as touching: 6 (the default) for
+  shared faces, 18 to add shared edges, 26 to add shared corners. 6 cannot
+  slip through diagonal gaps; 26 follows thin diagonal structures.
+
+## Erasing or recoloring a drawn region
+
+`magicWandFromBitmap` ignores the image and works on the drawing itself. It
+changes the connected patch of the clicked label to a new value, and 0
+erases it:
+
+```js
+import { magicWandFromBitmap } from '@niivue/nv-ext-drawing'
+
+const { bitmap, count } = await magicWandFromBitmap(e.detail.voxel, dr.bitmap, dr.dims, 0)
+dr.pushUndo()
+dr.update(bitmap)
+```
+
+`count` is 0 when the clicked voxel is empty or already has the new value.
+Pass 18 or 26 as a fifth argument to change the connectivity.
+
+## Previewing the region under the pointer
+
+To show the region before the user clicks, use `MagicWandShared`. It keeps
+the drawing in memory that both the page and the worker can use, so running
+the wand on every pointer move costs no copying.
+
+This needs `SharedArrayBuffer`, which browsers only allow on a
+cross-origin isolated page. Your server must send these two headers:
+
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Static hosts that cannot set headers, such as GitHub Pages, cannot run it,
+so check `crossOriginIsolated` first and use `magicWand` when it is false.
+
+Create the wand from the current drawing and point NiiVue's drawing at the
+wand's memory:
+
+```js
+import { MagicWandShared } from '@niivue/nv-ext-drawing'
+
+const dr = ctx.drawing
+const bg = ctx.backgroundVolume
+let committed = dr.bitmap.slice()
+const wand = new MagicWandShared(dr.dims, bg.imgRAS, committed, dr.voxelSizeMM)
+nv.drawingVolume.img = wand.bitmap
+await wand.ready
+```
+
+`committed` is the drawing without the preview. Show a preview as the
+pointer moves, and put the drawing back when it leaves the slice:
+
+```js
+ctx.on('slicePointerMove', async (e) => {
+  const result = await wand.preview(e.detail.voxel, { tolerance: 20 })
+  if (result) ctx.refreshDrawing()
+})
+ctx.on('slicePointerLeave', () => dr.update(committed))
+```
+
+Each preview starts again from `committed`. When previews overlap, some
+resolve with `null` instead of a result. Skip the refresh for those.
+
+On a click, the preview is already on screen. Keep it, and make it one
+undo step:
+
+```js
+ctx.on('slicePointerUp', () => {
+  const kept = dr.bitmap.slice()
+  dr.update(committed) // undo should return to the drawing before the click
+  dr.pushUndo()
+  dr.update(kept)
+  committed = kept
+  wand.updateCommitted(committed)
+})
+```
+
+Whenever the drawing changes some other way, such as after `ctx.drawUndo()`,
+copy it into `committed` again and pass it to `wand.updateCommitted()`.
+Call `wand.dispose()` when you are done, and make a new wand if you start a
+new drawing.

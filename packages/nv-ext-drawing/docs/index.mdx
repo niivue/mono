@@ -1,0 +1,128 @@
+---
+title: Drawing tools
+description: "Fill in the slices between hand-drawn outlines and grow regions with a magic wand, on NiiVue's drawing layer."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ext-drawing` adds two tools to NiiVue's drawing layer:
+
+- **Slice interpolation.** Outline a structure on a few slices, and it fills
+  in the slices between them.
+- **A magic wand.** Click a voxel, and it paints the connected region of
+  similar brightness around it, on one slice or in 3D.
+
+The work runs in a Web Worker, so the page stays responsive on large
+volumes.
+
+NiiVue itself does the painting: the pen, fills, undo and saving are covered
+in [Drawing and segmentation](/guide/drawing/). NiiVue also has a simple
+built-in magic wand (`drawIsClickToSegment`). Use this package when you want
+to fill in between slices, or when the wand needs more control, such as
+one-sided thresholds, a distance limit or a live preview under the pointer.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ext-drawing@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ext-drawing@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ext-drawing@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ext-drawing@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+NiiVue is a peer dependency, so you install it alongside the tools.
+
+## Your first fill
+
+The tools work on the drawing as a plain array of voxels.
+`nv.createExtensionContext()` gives you that array, and a way to put the
+result back on screen:
+
+```js
+import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+import { interpolateMaskSlices } from '@niivue/nv-ext-drawing'
+
+const nv = new NiiVue()
+const ctx = nv.createExtensionContext()
+await nv.attachToCanvas(document.querySelector('canvas'))
+await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz' }])
+ctx.createEmptyDrawing()
+
+// Later, once the user has drawn on a few axial slices:
+const dr = ctx.drawing
+const filled = await interpolateMaskSlices(
+  dr.bitmap, dr.dims, null, 1, undefined, undefined,
+  { sliceType: SLICE_TYPE.AXIAL },
+)
+dr.pushUndo()
+dr.update(filled)
+```
+
+The `null, 1, undefined, undefined` in the middle turns off two optional
+features, explained in
+[Filling in between slices](/packages/nv-ext-drawing/interpolation/).
+
+The tools never change your drawing directly. They return a new copy, and
+`dr.update()` puts it on screen. Calling `dr.pushUndo()` first means the
+user can take the change back with NiiVue's undo.
+
+## Which part do you need?
+
+- **Filling in between drawn slices:** see
+  [Filling in between slices](/packages/nv-ext-drawing/interpolation/).
+- **Painting a region from a click**, erasing a drawn region in one click,
+  or previewing the region under the pointer: see
+  [Magic wand](/packages/nv-ext-drawing/magic-wand/).
+
+## When something does not work
+
+- **`ctx.drawing` is `null`.** There is no drawing yet. Load a background
+  volume, then call `ctx.createEmptyDrawing()` or load a drawing.
+- **The magic wand paints in the wrong place.** Pass the image as
+  `ctx.backgroundVolume.imgRAS`, not `img`. Only `imgRAS` has its voxels in
+  the same order as the drawing.
+- **The magic wand paints almost nothing.** Its tolerance starts at 0, which
+  matches only voxels exactly as bright as the one clicked. Set a
+  `tolerance` or another threshold.
+- **Interpolation changes nothing.** Check that you drew along the same
+  direction you are filling, and that there is at least one slice between
+  the first and last drawn slice.
+- **The live preview fails with `SharedArrayBuffer is not defined`.** The
+  page is not cross-origin isolated. See
+  [Previewing the region under the pointer](/packages/nv-ext-drawing/magic-wand/#previewing-the-region-under-the-pointer).
+
+## Try it
+
+The [interpolation demo](https://niivue.github.io/mono/demo-ext-drawing/drawing.html)
+and the [magic wand demo](https://niivue.github.io/mono/demo-ext-drawing/magic-wand.html)
+let you try most of the settings described here. Their source is in
+[apps/demo-ext-drawing](https://github.com/niivue/mono/tree/main/apps/demo-ext-drawing),
+and the package's source is in
+[packages/nv-ext-drawing](https://github.com/niivue/mono/tree/main/packages/nv-ext-drawing).

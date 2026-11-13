@@ -1,0 +1,158 @@
+---
+title: Jupyter
+description: "Show a NiiVue viewer in a Jupyter notebook with ipyniivue and drive it from Python: load images, change the view and read back results."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+ipyniivue puts a NiiVue viewer in a Jupyter notebook. You control it from
+Python: load brain images and meshes, change how they look, and find out
+where the user clicked. Use it when your data and analysis already live in
+Python, with NumPy or nibabel, and you want to look at the results without
+leaving the notebook.
+
+These pages describe version 3, which is built on the NiiVue in this
+repository. Version 2 is a separate project,
+[niivue/ipyniivue](https://github.com/niivue/ipyniivue), built on the older
+NiiVue, with a different API.
+
+## Install
+
+At the moment `pip install ipyniivue` gives you version 2. To use version 3,
+install it from this repository. You need [Bun](https://bun.sh) and
+Python 3.10 or newer.
+
+```bash
+git clone https://github.com/niivue/mono.git
+cd mono
+bun install
+bunx nx codegen ipyniivue
+```
+
+The last command builds the widget's JavaScript, which the Python package
+loads into the browser. Then install the package and start JupyterLab:
+
+<Tabs syncKey="py">
+  <TabItem label="pip">
+
+```bash
+cd packages/ipyniivue
+pip install -e ".[examples]"
+jupyter lab
+```
+
+  </TabItem>
+  <TabItem label="pixi">
+
+```bash
+cd packages/ipyniivue
+pixi run -e notebook lab
+```
+
+  </TabItem>
+</Tabs>
+
+The `examples` extra brings JupyterLab, plus NumPy and nibabel for loading
+arrays. `pip install -e .` installs the widget alone. The pixi environment
+has JupyterLab but not NumPy or nibabel, so use pip if you want to load
+arrays.
+
+## Your first viewer
+
+```python
+from IPython.display import display
+from ipyniivue import NiiVue
+
+nv = NiiVue(is_colorbar_visible=True)
+display(nv)
+
+nv.add_volume_from_url(
+    "https://niivue.github.io/mono/volumes/mni152.nii.gz",
+    cal_min=30,
+    cal_max=80,
+)
+```
+
+This shows a brain template with a colorbar. The viewer is as wide as the
+notebook and 600 pixels tall.
+
+## Settings and commands
+
+Viewer settings are properties. Each NiiVue setting has a Python property
+with the same name in snake case, so `isColorbarVisible` becomes
+`is_colorbar_visible`. Pass them to `NiiVue(...)`, or set them later:
+
+```python
+nv.is_colorbar_visible = False
+nv.background_color = [0.2, 0.2, 0.2, 1]
+```
+
+Actions are methods, also in snake case: `setVolume` becomes `set_volume`.
+A dictionary you pass to a method goes to NiiVue unchanged, so its keys keep
+NiiVue's camelCase names:
+
+```python
+nv.set_volume(0, {"colormap": "hot", "calMin": 40})
+```
+
+The `add_volume_from_...` and `add_mesh_from_...` helpers are the
+exception: they take NiiVue's options as snake case keyword arguments and
+convert them for you.
+
+A command sent before the viewer appears waits until it does, and commands
+run in the order you send them. That is why the first example can load an
+image straight after `display(nv)`.
+
+With those rules, every [NiiVue guide](/guide/) applies: translate the
+names and you have the Python version. Two differences remain. A few NiiVue
+methods take browser objects, such as files or callback functions, and have
+no Python version. And methods that return a value need care in a notebook,
+as [Asking the viewer for a value](/packages/ipyniivue/results/#asking-the-viewer-for-a-value)
+explains.
+
+## WebGPU or WebGL2
+
+```python
+nv = NiiVue(backend="webgl2")
+```
+
+By default NiiVue uses WebGPU and falls back to WebGL2 when the browser
+does not support it. `backend` can only be set when you create the viewer.
+The example notebooks ask for `"webgl2"` because the headless browsers used
+for automated tests often lack WebGPU.
+
+## Where to go next
+
+- [Loading images](/packages/ipyniivue/loading/): URLs, local files, NumPy
+  arrays, overlays and meshes.
+- [Changing the view](/packages/ipyniivue/view/): slice types, colors, the
+  3D view, and sliders that control the viewer.
+- [Results and saving](/packages/ipyniivue/results/): clicks, values,
+  screenshots, drawings and image processing.
+- The [example notebooks](https://github.com/niivue/mono/tree/main/packages/ipyniivue/examples)
+  port many of the NiiVue demos to Python.
+
+## When something does not work
+
+- **The viewer stays empty after loading a URL.** The browser downloads the
+  file, not Python, so the URL has to work from the browser. The reason
+  shows in the browser's developer console.
+- **A local file or array does not show up.** ipyniivue prints the reason
+  to the kernel's error output, on a line starting with `[ipyniivue]`.
+- **A cell with `await` never finishes.** The answer it waits for can only
+  arrive after the cell ends. Interrupt the kernel and start the request as
+  a task instead, as
+  [Asking the viewer for a value](/packages/ipyniivue/results/#asking-the-viewer-for-a-value)
+  shows.
+- **`Error: widget model not found` when you reopen a notebook.** The saved
+  output belongs to a kernel that no longer exists. Run the cell again.
+- **The widget is out of date after you pull changes.** Run
+  `bunx nx codegen ipyniivue` again and restart the kernel. If JupyterLab
+  still shows the old widget, clear its cache with
+  `rm -rf ~/.cache/jupyter ~/.local/share/jupyter/runtime`.
+- **Right-click over the viewer does not open a menu.** NiiVue uses the
+  right mouse button itself. Hold Shift while you right-click to let the
+  click through to the notebook.

@@ -1,0 +1,168 @@
+---
+title: Results and saving
+description: "React to clicks in the notebook viewer, ask it for values, save pictures and scenes, and bring drawings and processed images back into Python."
+sidebar:
+  order: 3
+---
+
+Most of ipyniivue sends commands from Python to the viewer. This page is
+about the other direction: getting something back.
+
+## Responding to clicks
+
+```python
+import ipywidgets as widgets
+
+where = widgets.Label()
+
+def show_location(detail):
+    where.value = detail["string"]
+
+nv.on("locationChange", show_location)
+display(where)
+```
+
+`locationChange` fires when the crosshair moves. Its `detail` is a
+dictionary with the position in millimeters (`mm`) and in voxels (`vox`),
+the value of each image at that point (`values`), and all of it as one line
+of text (`string`).
+
+`nv.on` returns a function that unsubscribes the callback, and
+`nv.off("locationChange")` removes every callback for that event. The event
+names are in `ipyniivue.NIIVUE_EVENT_NAMES`; a name that is not in the list
+raises `ValueError`. If a callback raises, the traceback is printed and the
+viewer carries on.
+
+Events travel from the browser to Python over the notebook connection, so
+keep them for things that happen now and then, like clicks. Large arrays in
+an event arrive as `None`. To control the viewer, send commands from Python
+instead, for example from a slider.
+
+## Asking the viewer for a value
+
+Methods that return something, such as `get_crosshair_pos`,
+`get_descriptives` or `save_drawing`, are `async`. The answer comes from the
+browser, and the notebook only reads messages from the browser between
+cells. So do not write `await nv.get_crosshair_pos()` in a cell: the cell
+waits for an answer that cannot arrive until it ends, and hangs.
+
+Start the request in one cell instead:
+
+```python
+import asyncio
+
+task = asyncio.ensure_future(nv.get_crosshair_pos())
+```
+
+and read the answer in the next one:
+
+```python
+task.result()
+```
+
+Run that second cell on its own, after the first. When you run all cells in
+one go, it runs before the answer arrives and raises `InvalidStateError`.
+If NiiVue reports an error, `task.result()` raises `RuntimeError`.
+
+To use an answer as soon as it comes, for example from a button, put the
+steps in an async function and start that. The example notebooks do it this
+way:
+
+```python
+async def report():
+    where.value = str(await nv.get_crosshair_pos())
+
+button = widgets.Button(description="Where am I?")
+button.on_click(lambda _button: asyncio.ensure_future(report()))
+display(button)
+```
+
+## Saving a picture
+
+```python
+nv.download_bitmap("brain.png")
+```
+
+The browser downloads a PNG of the viewer. It waits for any load sent before
+it, so it can follow `add_volume_from_url` straight away. The pixels come
+from the browser, so running a notebook without one, for example with
+`jupyter nbconvert --execute`, saves nothing.
+
+## Saving the whole scene
+
+```python
+nv.save_document("scene.nvd")
+```
+
+This downloads the scene, with its images, meshes, drawing and view
+settings, as an `.nvd` file that NiiVue can open again. To keep it in Python
+instead, ask for the bytes:
+
+```python
+from pathlib import Path
+
+task = asyncio.ensure_future(nv.serialize_document())
+# in the next cell:
+Path("scene.nvd").write_bytes(bytes(task.result()))
+```
+
+## Drawing a mask
+
+```python
+nv.create_empty_drawing()
+nv.draw_is_enabled = True
+nv.draw_pen_value = 1
+```
+
+Now clicking and dragging in the viewer paints with label 1, and
+`nv.draw_undo()` takes back the last stroke. To work with the result in
+Python, ask for the drawing with an empty file name, which returns it as
+NIfTI bytes instead of downloading it:
+
+```python
+import nibabel as nib
+
+task = asyncio.ensure_future(nv.save_drawing(""))
+# in the next cell:
+mask = nib.Nifti1Image.from_bytes(bytes(task.result()))
+```
+
+Pass a file name such as `"mask.nii.gz"` to download it instead. For
+statistics of the background image inside the drawing, such as the mean and
+the volume in milliliters:
+
+```python
+task = asyncio.ensure_future(nv.get_descriptives({"isDrawingMask": True}))
+# in the next cell:
+stats = task.result()
+print(stats["mean"], stats["volumeML"])
+```
+
+## Filling in the slices between drawings
+
+Draw on a few slices some distance apart, then let the viewer fill in the
+slices between them:
+
+```python
+task = asyncio.ensure_future(nv.interpolate_drawing_slices(axis=0))
+```
+
+`axis` is 0 for axial, 1 for coronal and 2 for sagittal slices. With
+`use_intensity_guided=True` the fill follows the edges in the background
+image. When it is done, `task.result()` tells you how many voxels were drawn
+`before` and `after`. It uses [nv-ext-drawing](/packages/nv-ext-drawing/),
+and [Drawing](/guide/drawing/) covers the pen and its settings.
+
+## Running image processing
+
+```python
+asyncio.ensure_future(nv.apply_image_transform("otsu", options={"levels": 3}))
+```
+
+Four transforms come built in: `otsu`, `connectedLabel`, `conform` and
+`removeHaze`. Each runs in a background worker in the browser and adds its
+result as a new overlay. `removeHaze` cleans up the image itself, so pass
+`replace_background=True` with it. `nv.get_volume_transform_info("otsu")`
+describes a transform and its options; read its answer the same way. The
+transforms come from
+[nv-ext-image-processing](/packages/nv-ext-image-processing/).

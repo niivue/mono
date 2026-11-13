@@ -1,0 +1,181 @@
+---
+title: DICOM slides
+description: "Open DICOM whole-slide images from a local folder, a DICOMweb server or your own web server, including their labels, overviews and focal planes."
+sidebar:
+  order: 2
+---
+
+A DICOM whole-slide image (DICOM-WSI) is spread over several files: usually
+one for each resolution level, plus small label and overview pictures.
+`@niivue/nv-ext-tile/dicom` finds the slides in those files and reads their
+tiles.
+
+It is not a general DICOM reader. To view CT, MRI and other DICOM series,
+convert them to NIfTI with `@niivue/dcm2niix` (see
+[Extensions](/guide/extensions/)).
+
+## Opening a folder of DICOM files
+
+The quickest way is to hand the files to `openSlide`, as described in
+[Viewing slides](/packages/nv-ext-tile/slides/#opening-files-from-the-users-computer).
+To work with the slides yourself, index the files first:
+
+```ts
+import { NVSlide } from '@niivue/niivue'
+import { DicomWsiSource, indexDicomWsi } from '@niivue/nv-ext-tile/dicom'
+
+// files from <input type="file" webkitdirectory>
+const index = await indexDicomWsi(files)
+const source = new DicomWsiSource(index.slides[0], files)
+const slide = NVSlide.fromSource(source)
+```
+
+Indexing looks only at the file headers, not the pixels, and runs in a web
+worker so the page stays responsive. Give `DicomWsiSource` the same files
+you indexed.
+
+Indexing needs a recent browser: Chrome 111, Firefox 128 or Safari 16.4 or
+newer.
+
+## Showing progress and cancelling
+
+A large folder can take a moment. `onProgress` runs after each file, and a
+signal stops indexing:
+
+```ts
+const controller = new AbortController()
+const index = await indexDicomWsi(files, {
+  signal: controller.signal,
+  onProgress: (done, total) => {
+    status.textContent = `Read ${done} of ${total} files`
+  },
+})
+```
+
+## Files that were left out
+
+Files the index could not use are listed in `index.skipped`, each with a
+`reason` and a readable `message`. The usual reasons are a file that is not
+DICOM, a DICOM file that is not a tiled slide (a CT slice, say), and a
+slide stored uncompressed, which this package does not read. Show the list
+to the user when a folder opens no slides.
+
+## Label and overview pictures
+
+Scanners also save a photo of the slide's label and a picture of the whole
+glass. These are never listed as slides. Find a slide's pictures with
+`associatedImages` and turn one into an image you can draw:
+
+```ts
+import {
+  associatedImageBitmap,
+  associatedImages,
+} from '@niivue/nv-ext-tile/dicom'
+
+for (const image of associatedImages(index, index.slides[0])) {
+  const bitmap = await associatedImageBitmap(image, files)
+  console.log(image.kind, bitmap.width, bitmap.height) // 'label', 'overview' or 'thumbnail'
+}
+```
+
+## Several channels or focal planes
+
+A scan can hold several optical paths (fluorescence channels, for example)
+or several focal planes. Each combination of optical path and focal plane
+becomes its own slide in `index.slides`.
+
+To step through the focal planes of one slide in a single view, group them
+with `focalStacks` and wrap them in a `DicomPlaneStack`:
+
+```ts
+import {
+  DicomPlaneStack,
+  DicomWsiSource,
+  focalStacks,
+} from '@niivue/nv-ext-tile/dicom'
+
+const [planes] = focalStacks(index.slides)
+const stack = new DicomPlaneStack(
+  planes.map((plane) => new DicomWsiSource(plane, files)),
+)
+const slide = NVSlide.fromSource(stack)
+await slide.setPlaneIndex({ z: 1, t: 0 })
+```
+
+Planes are ordered from lowest to highest. The stack owns the sources you
+give it.
+
+## Slides on a DICOMweb server
+
+On a PACS or other DICOMweb server, index the series from its metadata and
+read tiles frame by frame:
+
+```ts
+import {
+  DicomWebWsiSource,
+  indexDicomWsiMetadata,
+} from '@niivue/nv-ext-tile/dicom'
+
+const seriesUrl = 'https://pacs.example.org/dicomweb/studies/1.2.3/series/4.5.6'
+const metadata = await (await fetch(`${seriesUrl}/metadata`)).json()
+const index = indexDicomWsiMetadata(metadata)
+const source = await DicomWebWsiSource.open(index.slides[0], { seriesUrl })
+const slide = NVSlide.fromSource(source)
+```
+
+The metadata can be standard DICOM JSON, as the server returns it, or the
+keyword-style objects that OHIF and dcmjs use.
+
+To log in, pass a `fetch` option the same way as for
+[other slides](/packages/nv-ext-tile/slides/#servers-that-need-a-login).
+It is only used for requests to the series' own server, so your credentials
+never go anywhere else. The [OHIF viewer](/packages/nv-ohif/) integration
+opens slides this way.
+
+## Hosting a slide on your own web server
+
+A slide's tiles sit at known places inside its files, so any web server
+that supports Range requests can serve it. Index the slide once and write a
+manifest that lists where each tile is:
+
+```ts
+import { indexDicomWsi, manifestFromIndex } from '@niivue/nv-ext-tile/dicom'
+
+const index = await indexDicomWsi(files)
+const manifest = await manifestFromIndex(index.slides[0], files, (instance) =>
+  // where this file will be on your server, relative to manifest.json
+  `files/${instance.file.split('/').map(encodeURIComponent).join('/')}`,
+)
+// save JSON.stringify(manifest) as manifest.json
+```
+
+The last argument says where each file will live on your server.
+`instance.file` is the file's path inside the folder the user picked (just
+its name for loose files), so here the files keep their folder layout under
+`files/`. Upload `manifest.json` and the `files/` folder together, then open
+the manifest by its URL:
+
+```ts
+const { candidates } = await openSlide('https://example.org/slides/kidney/manifest.json')
+```
+
+File paths in the manifest are read relative to the manifest's own URL. To
+put the files elsewhere, pass `baseUrl` to `openSlide`. If the server does
+not support Range requests, each file is downloaded whole, up to 64 MiB.
+
+In a clone of the repository, a script does the same from the command
+line. Put the slide's files in `<slide-dir>/files`, then run this from
+`packages/nv-ext-tile`:
+
+```bash
+bun scripts/build-manifest.ts <slide-dir> <id>
+```
+
+It writes `<slide-dir>/manifest.json` for the first slide it finds.
+
+## JPEG 2000 and JPEG-LS tiles
+
+Some DICOM slides compress their tiles with JPEG 2000 or JPEG-LS. Call
+`registerDcm2niixDecoders()` before opening them; see
+[JPEG 2000 tiles](/packages/nv-ext-tile/slides/#jpeg-2000-tiles). It also
+applies the slide's colour profile.

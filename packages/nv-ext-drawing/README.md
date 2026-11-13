@@ -2,6 +2,8 @@
 
 Drawing interpolation and segmentation tools for [NiiVue](https://github.com/niivue).
 
+Documentation: https://niivue.github.io/mono/docs/packages/nv-ext-drawing/
+
 ## Installation
 
 ```bash

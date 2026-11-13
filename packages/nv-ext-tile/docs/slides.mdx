@@ -1,0 +1,242 @@
+---
+title: Viewing slides
+description: "Open whole-slide images from a URL or the user's computer, pick a slide, decode JPEG 2000 tiles and set up the server they come from."
+sidebar:
+  order: 1
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+A slide is one very large 2D image, such as a scanned microscope slide.
+This package reads its tiles. NiiVue's `NVSlide` keeps track of which tiles
+are needed, and `createSlideView` draws them on a canvas.
+
+## Opening a slide from a URL
+
+```ts
+import { createSlideView, NVSlide } from '@niivue/niivue'
+import { openSlide } from '@niivue/nv-ext-tile/open'
+
+const { candidates } = await openSlide('https://example.org/scans/kidney.svs')
+const slide = NVSlide.fromSource(await candidates[0].open())
+const view = await createSlideView(canvas, { slide })
+```
+
+`openSlide` tells the kind of file from the end of the URL:
+
+- `.svs`, `.tif`, `.tiff`, `.ndpi`, `.scn`, `.bif` and other TIFF-based
+  scanner files are read as tiled TIFF.
+- A path ending in `.zarr` or `/` is an OME-Zarr image.
+- `.dzi` is a Deep Zoom image.
+- `.json` is a slide manifest, such as a
+  [hosted DICOM slide](/packages/nv-ext-tile/dicom/#hosting-a-slide-on-your-own-web-server).
+
+When the URL does not say, it reads the first few bytes of the file to find
+out. A single DICOM file cannot be opened by URL, because a DICOM slide is
+spread over several files.
+
+## Opening files from the user's computer
+
+Pass the files from a file input, a folder picker or a drop. Nothing is
+uploaded: tiles are read straight from the files.
+
+```ts
+const input = document.getElementById('files') as HTMLInputElement
+const { candidates } = await openSlide(Array.from(input.files ?? []))
+```
+
+TIFF files and DICOM whole-slide files can be mixed. A folder of DICOM
+files can hold several slides, so the next section matters here. A local
+OME-Zarr folder or Deep Zoom image cannot be opened this way; serve it and
+open it by URL.
+
+## When there is more than one slide
+
+`openSlide` never chooses for you. It lists every slide it found, in the
+order of the files you gave it, each with a label you can show in a menu:
+
+```ts
+const { candidates } = await openSlide(files)
+const names = candidates.map((c) => c.label)
+// later, when the user picks one:
+const slide = NVSlide.fromSource(await candidates[picked].open())
+```
+
+To show a different slide in the same view, call `view.setSlide(slide)`.
+The view releases the slide it was showing.
+
+## JPEG 2000 tiles
+
+Some Aperio SVS files and DICOM slides store their tiles as JPEG 2000, and
+some DICOM slides use JPEG-LS. Browsers cannot decode either, so these tiles
+fail to load until you add decoders from `@niivue/dcm2niix`:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/dcm2niix@rc
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/dcm2niix@rc
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/dcm2niix@rc
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/dcm2niix@rc
+```
+
+  </TabItem>
+</Tabs>
+
+The package needs dcm2niix 1.4.20261105-rc.3 or newer. Then register the
+decoders once, before you open any slide:
+
+```ts
+import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
+import { registerDcm2niixTiffDecoders } from '@niivue/nv-ext-tile/tiff'
+
+registerDcm2niixDecoders() // DICOM tiles and colour profiles
+registerDcm2niixTiffDecoders() // JPEG 2000 tiles in TIFF and SVS files
+```
+
+The decoders run in web workers that load the first time a tile needs them.
+`registerDcm2niixDecoders` also turns on colour management: a slide that
+carries a colour (ICC) profile is shown in the colours the scanner intended.
+A slide reads its profile when it is created, which is why registering comes
+first. Ordinary JPEG tiles decode without any of this.
+
+## Servers that need a login
+
+Pass your own `fetch`. It is called the same way as the browser's `fetch`
+for every read, so you can add headers or sign URLs:
+
+```ts
+const { candidates } = await openSlide(url, {
+  fetch: (url, init) =>
+    fetch(url, {
+      ...init,
+      headers: { ...init?.headers, Authorization: `Bearer ${token}` },
+    }),
+})
+```
+
+Deep Zoom images are the exception: they always use the browser's `fetch`,
+and opening one with a custom `fetch` throws an error.
+
+## What the server must support
+
+Slides are read in small pieces with HTTP Range requests, so the server
+must answer them with `206 Partial Content`. A server that sends the whole
+file instead is refused with "server ignored the HTTP Range request"; the
+package does not fall back to downloading a slide that might be gigabytes.
+
+If the slide is on another domain, the server must also allow it with CORS:
+send `Access-Control-Allow-Origin` and allow the `Range` request header.
+
+For a server you cannot change, download the file and open it from disk as
+shown above.
+
+## Images with several channels
+
+Fluorescence images in OME-TIFF and OME-Zarr often have many channels. They
+open blended together, using the channel names and colours stored in the
+file. The contrast comes from the file when it gives one, or else from a
+quick look at a low-resolution copy. When the file does not say which
+channels to show, the first four are shown. Hidden channels are not
+downloaded until you show them.
+
+Three 8-bit channels in an OME-Zarr image are shown as an ordinary colour
+picture, and a one-channel image is shown in grey.
+
+For ready-made controls, such as a channel panel, a focal-plane slider and
+a minimap, see [UIKit](/packages/uikit/).
+
+## Focal planes and time points
+
+Some slides hold a stack of focal planes or a series of time points: OME-TIFF
+stacks, Argos z-stacks, OME-Zarr images with z or t, and
+[DICOM focal stacks](/packages/nv-ext-tile/dicom/#several-channels-or-focal-planes).
+`slide.planes` tells you how many there are, and `setPlaneIndex` moves
+between them:
+
+```ts
+console.log(slide.planes) // for example { z: 5, t: 1 }
+await slide.setPlaneIndex({ z: 3, t: 0 })
+```
+
+The current plane stays on screen until the new one is ready. To open a
+TIFF at a given plane, pass `tiff: { z: 3 }` to `openSlide`.
+
+## Files from particular scanners
+
+Besides standard pyramidal TIFF, these open as you would expect: Philips
+TIFF, Hamamatsu NDPI (up to 4 GiB) and Argos z-stacks. Ventana BIF, Trestle
+and Leica SCN files open as the grid of tiles stored in the file; the
+scanner's tile overlaps and region layout are not applied by default.
+
+## Opening one format directly
+
+If you always know the format, you can skip `openSlide` and use that
+format's source:
+
+```ts
+import { TiffSlideSource } from '@niivue/nv-ext-tile/tiff'
+
+const source = await TiffSlideSource.fromUrl('https://example.org/scan.svs')
+const slide = NVSlide.fromSource(source)
+```
+
+For OME-Zarr, `ZarrSlideSource.fromUrl` from `@niivue/nv-ext-tile/zarr`
+works the same way.
+
+## Decoding in the background
+
+By default, TIFF tiles decode on the page's main thread. A `Pool` from
+`@niivue/geotiff-rs` decodes them in web workers instead, which keeps the
+page smooth. It is also safer for files you do not trust: a few of the
+decoders do not limit how much memory a damaged tile can claim, and in a
+worker the damage stays out of your page.
+
+```ts
+import { Pool } from '@niivue/geotiff-rs'
+
+const pool = new Pool()
+const { candidates } = await openSlide(url, { pool })
+// when you no longer need it:
+pool.destroy()
+```
+
+The pool belongs to you: the package borrows it and never shuts it down.
+`@niivue/geotiff-rs` is already a dependency of this package; add it to
+your own dependencies to import it.
+
+## Cleaning up
+
+Ownership runs in a chain: the view owns the slide, and the slide owns the
+source it was made from. So `view.destroy()` releases everything. To share
+one source between two slides, make them with
+`NVSlide.fromSource(source, { ownsSource: false })` and call
+`source.dispose()` yourself when both are gone.
+
+To stop an open that is taking too long, or one the user has moved on from,
+pass an `AbortSignal`:
+
+```ts
+const controller = new AbortController()
+const opened = openSlide(url, { signal: controller.signal })
+controller.abort()
+```

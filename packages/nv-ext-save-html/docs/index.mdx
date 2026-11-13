@@ -1,0 +1,196 @@
+---
+title: HTML export
+description: "Save a NiiVue scene as one HTML file that anyone can open in a browser, with no server and no install."
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ext-save-html` turns what your NiiVue viewer is showing into a
+single HTML file. The file carries the images, the way they are displayed
+and NiiVue itself, so it opens straight from disk in a web browser, with no
+server and nothing to install.
+
+Use it when you want to hand a scene to someone who does not run your app:
+send it to a colleague, attach it to a report, or keep a copy of a result
+exactly as you saw it.
+
+[Live demo](https://niivue.github.io/mono/demo-ext-save-html/)
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ext-save-html@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ext-save-html@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ext-save-html@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ext-save-html@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+NiiVue is a peer dependency, so you install it alongside the extension.
+
+## Saving your first scene
+
+```ts
+import { saveHTML } from '@niivue/nv-ext-save-html'
+
+const bundleSource = await fetch('/niivue-standalone.js').then((r) => r.text())
+await saveHTML(nv, 'brain.html', { niivueBundleSource: bundleSource })
+```
+
+`nv` is your NiiVue viewer, with images already loaded. The browser
+downloads `brain.html`. Open it and the same scene appears, filling the
+window, ready to scroll through and rotate.
+
+`niivueBundleSource` is the NiiVue code that goes into the file. The next
+section shows how to make it.
+
+## Making the NiiVue bundle
+
+The saved page carries NiiVue inside it, so it needs all of NiiVue in one
+JavaScript file that imports nothing else. The NiiVue files on npm are split
+into several modules and import other packages, so you build that single
+file yourself with Vite.
+
+Start with an entry file that re-exports NiiVue as its default export:
+
+```js
+// niivue-standalone-entry.js
+export { default } from '@niivue/niivue'
+```
+
+Then a Vite config that bundles it, with every dependency, font and image
+inlined:
+
+```js
+// vite.config.standalone.js
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  publicDir: false,
+  build: {
+    outDir: 'public',
+    emptyOutDir: false,
+    lib: {
+      entry: 'niivue-standalone-entry.js',
+      formats: ['es'],
+      fileName: () => 'niivue-standalone.js',
+    },
+    rolldownOptions: { external: [] },
+    assetsInlineLimit: Number.MAX_SAFE_INTEGER,
+  },
+})
+```
+
+Build it:
+
+```bash
+npx vite build --config vite.config.standalone.js
+```
+
+This writes `public/niivue-standalone.js`, which your app can then fetch
+from `/niivue-standalone.js`. If your app is served from a sub-path, fetch
+it relative to that path instead.
+
+A few tips:
+
+- Run this build before your app's own build, so the bundle always matches
+  the NiiVue version you have installed. The demo app does this in its
+  `dev` and `build` scripts.
+- The bundle is about 2 MB, and every saved page contains a copy. You may
+  prefer to fetch it the first time someone saves, not when the page loads.
+- On Vite 7 or older, write `rollupOptions` instead of `rolldownOptions`.
+
+## What ends up in the file
+
+The file holds the same scene that `nv.saveDocument()` saves, with the
+image data inside it:
+
+- every volume and mesh you loaded, with its colormap, opacity and other
+  display settings
+- the drawing, if there is one
+- the view, such as the slice layout and the crosshair position
+
+When the page opens, it starts a fresh NiiVue on a full-window canvas and
+loads that scene into it. Display settings such as the background color
+come along, even when you set them in `new NiiVue()`. Options
+that set up the viewer itself do not, such as the rendering backend,
+antialiasing, a custom font or custom matcaps. The page uses NiiVue's
+defaults for those.
+
+## Naming the file and the page
+
+The file name comes second, and `title` sets the text in the browser tab:
+
+```ts
+await saveHTML(nv, 'motor-task.html', {
+  niivueBundleSource: bundleSource,
+  title: 'Motor task, subject 12',
+})
+```
+
+Without a title, the tab reads "NiiVue Scene". The canvas in the saved page
+has the id `gl1`; set `canvasId` if you plan to edit the page afterwards and
+need a different one.
+
+## Keeping the page instead of downloading it
+
+`generateHTML` builds the same page and hands it back as a string, without
+starting a download:
+
+```ts
+import { generateHTML } from '@niivue/nv-ext-save-html'
+
+const html = await generateHTML(nv, { niivueBundleSource: bundleSource })
+```
+
+Use it to upload the page to your server, store it, or attach it to
+something your app sends.
+
+## When something does not look right
+
+- **"niivueBundleSource is required".** The bundle string was empty. Check
+  that the fetch of `niivue-standalone.js` succeeded before saving.
+- **The saved page stays black.** Open the browser console. A message such
+  as "Failed to resolve module specifier" means the bundle still imports
+  another package. Rebuild it with the config above, and check that the entry
+  file exports NiiVue as its default.
+- **A custom matcap is gone.** NiiVue's built-in matcaps are saved by name
+  and come back. One you added through the `matcaps` option is not in the
+  bundle, so the page shows the default matcap instead.
+- **A streamed image is missing.** Images that NiiVue streams in pieces,
+  instead of loading whole, are not copied into the file. A tiled slide
+  fetches its tiles from its server again when the page opens, so that
+  server has to be reachable. A streamed volume does not come back at all.
+
+## Learn more
+
+- [Extensions](/guide/extensions/) shows this package next to NiiVue's other
+  extensions.
+- [Loading images](/guide/loading/) covers getting images into the viewer
+  before you save.
+- The [demo app source](https://github.com/niivue/mono/tree/main/apps/demo-ext-save-html)
+  has a complete working setup, including the bundle build.
+- [Package source](https://github.com/niivue/mono/tree/main/packages/nv-ext-save-html)

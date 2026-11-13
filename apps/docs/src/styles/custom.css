@@ -148,3 +148,31 @@
   background: var(--nv-viewer-bar);
   border-top: 1px solid var(--nv-viewer-line);
 }
+
+/* Phones: Starlight keeps desktop-like sizes and spacing below 50em (35px
+   titles, 1.75 line height, 24px panel padding), so a small screen shows
+   little text per view. Tighten them; unlayered rules beat Starlight's
+   cascade layers without extra specificity. */
+@media (max-width: 50em) {
+  :root {
+    --sl-line-height: 1.6;
+    --sl-text-h1: var(--sl-text-3xl);
+    --sl-text-h2: var(--sl-text-2xl);
+    --sl-text-h3: var(--sl-text-xl);
+    --sl-text-h4: var(--sl-text-lg);
+  }
+
+  .content-panel {
+    padding-block: 1rem;
+  }
+
+  .sl-container > * + * {
+    margin-top: 1rem;
+  }
+
+  .sl-markdown-content
+    :not(h1, h2, h3, h4, h5, h6)
+    + :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+    margin-top: 1.25em;
+  }
+}

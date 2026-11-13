@@ -127,6 +127,24 @@ const sections = Map.groupBy(cards, (c) => c.section)
     min-width: 0;
   }
 
+  /* Phones: the section filters scroll sideways in one row instead of
+     wrapping onto five. */
+  @media (max-width: 50em) {
+    .toolbar {
+      margin-block: 1rem 1.5rem;
+    }
+
+    fieldset.chips {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    fieldset.chips button {
+      flex: none;
+    }
+  }
+
   .chips button {
     font: inherit;
     font-size: var(--sl-text-sm);
@@ -276,6 +294,23 @@ const sections = Map.groupBy(cards, (c) => c.section)
 
     nv-gallery[data-view='list'] .card strong {
       flex: 0 0 18rem;
+    }
+  }
+
+  /* After the base rules, which it overrides. Two small cards per row on
+     phones; one per row filled the screen with each. */
+  @media (max-width: 50em) {
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem 0.75rem;
+    }
+
+    .card strong {
+      font-size: var(--sl-text-sm);
+    }
+
+    .summary {
+      font-size: var(--sl-text-xs);
     }
   }
 

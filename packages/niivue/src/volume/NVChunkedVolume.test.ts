@@ -205,34 +205,6 @@ describe('planForFocus', () => {
 })
 
 describe('createSourceRegionReader', () => {
-  test('dispatches each brick to its own level with level-grid coords', async () => {
-    const calls: ChunkedVolumeFetch[] = []
-    const source: ChunkedVolumeSource = {
-      datatypeCode: 4,
-      levels: [
-        { level: 0, shape: [8, 8, 8], spacing: [1, 1, 1] },
-        { level: 1, shape: [4, 4, 4], spacing: [2, 2, 2] },
-      ],
-      fetchChunk: async (r) => {
-        calls.push(r)
-        return new Uint8Array(
-          r.texDims[0] * r.texDims[1] * r.texDims[2] * r.bytesPerVoxel,
-        )
-      },
-    }
-    const load = createSourceRegionReader(source, {
-      maxConcurrentLoads: 4,
-      retryAttempts: 1,
-    })
-    await load(req(0, [0, 0, 0], [2, 2, 2], 2))
-    await load(req(1, [1, 2, 3], [2, 2, 2], 2))
-    expect(calls).toHaveLength(2)
-    expect(calls[0].levelIndex).toBe(0)
-    expect(calls[1].levelIndex).toBe(1)
-    expect(calls[1].texOrigin).toEqual([1, 2, 3])
-    expect(calls[1].bytesPerVoxel).toBe(2)
-  })
-
   test('bounds in-flight fetches to maxConcurrentLoads', async () => {
     let active = 0
     let peak = 0

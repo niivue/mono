@@ -311,7 +311,7 @@ const nv = new NiiVue({
 Unused slide and streaming options were removed:
 
 - `NVSlideSpatialTransform`, `NVSlideOptions.spatialTransform`, `NVSlide.spatialTransform` and `setSpatialTransform` are gone. Nothing read them; place a slide in world space with `setSlidePlane`'s `pixelToWorld`.
-- `createSlideView` no longer takes `renderer`, `ownsSlide` or `signal`. The view makes and destroys its own renderer and disposes the slides it releases; to keep a slide, show it in a view you do not destroy or `setSlide` it into another view first. To cancel a start, destroy the view once it resolves.
+- `createSlideView` no longer takes `renderer`, `ownsSlide` or `signal`. The view makes and destroys its own renderer and always disposes the slide it releases (`setSlide`, `destroy`). To cancel a start, destroy the view once it resolves.
 - `loadChunkedVolume` no longer takes `focusBounds` (pass them to `NVChunkedVolume.setFocus(frac, bounds)`), `retryAttempts` (always 3), `frameStagingBytes` (64 MiB) or `readoutBytes` (384 MiB).
 
 ### Testing

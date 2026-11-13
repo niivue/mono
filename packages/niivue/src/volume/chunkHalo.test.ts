@@ -22,8 +22,8 @@ import {
 //
 // The probe below measures exactly that: the same reconstruction evaluated over
 // the whole volume vs over one extracted brick, sampled in the half-voxel band
-// at the brick's faces. It pins LINEAR_MIN_HALO and CUBIC_MIN_HALO to measured
-// behaviour rather than to a comment, so lowering either constant fails here.
+// at the brick's faces. It pins both halos to measured behaviour rather than
+// to a comment, so lowering CUBIC_MIN_HALO, or a trilinear halo below 1, fails.
 // ---------------------------------------------------------------------------
 
 // Hardware trilinear needs one voxel of neighbour data: a face sample

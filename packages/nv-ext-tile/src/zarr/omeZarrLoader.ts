@@ -91,7 +91,7 @@ const BYTES_PER_ELEMENT: Record<string, number> = {
  * the loader at a slide-sized pyramid cannot flood the network or the GPU,
  * the lesson of the streaming demo's L0 incident.
  */
-export const OME_ZARR_LEVEL_BUDGET_BYTES = 256 * 2 ** 20
+const OME_ZARR_LEVEL_BUDGET_BYTES = 256 * 2 ** 20
 
 /** One resolution level, described in display terms. */
 export interface OmeZarrLevel {
@@ -444,11 +444,6 @@ export function omeZarrFetchStore(
       return bytes
     },
   }
-}
-
-/** The number of channels the store's channel axis carries (1 when absent). */
-export function omeZarrChannelCount(source: OmeZarrSource): number {
-  return source.channelCount
 }
 
 /** A channel's display name: its omero label, else a positional fallback. */

@@ -8,6 +8,7 @@ import type { NVImage } from '@/NVTypes'
 import { drawingChunkUploads } from '@/view/NVDrawingTexture'
 import { NVRenderer } from '@/view/NVRenderer'
 import { drawnOpacity } from '@/view/NVVolumeVisibility'
+import { MAX_CHUNKS_PER_TILE } from '@/volume/ChunkStreamRenderer'
 import {
   type ChunkPlan,
   type ChunkSampleTransform,
@@ -24,9 +25,6 @@ const SLICE_UNIFORM_SIZE = 272
 const alignedSliceSize =
   Math.ceil(SLICE_UNIFORM_SIZE / UNIFORM_ALIGNMENT) * UNIFORM_ALIGNMENT
 const MAX_TILES = 128
-// Max chunks one chunked volume may contribute to a single slice tile.
-// Mirrors the 3D render path's per-tile chunk cap.
-const MAX_CHUNKS_PER_TILE = 1024
 // Max simultaneously-drawn slice tiles a chunked volume may occupy. Mirrors the
 // 3D render path: the chunk region is sized MAX_CHUNK_TILES * MAX_CHUNKS_PER_TILE
 // (not MAX_TILES * ...) so raising the chunk cap stays memory-neutral; a chunked

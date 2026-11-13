@@ -74,7 +74,7 @@ export const MAX_CHUNKS_PER_TILE = 1024
  * fast GPU) many land per frame for a quick fill; when they are expensive the
  * frame still yields promptly. The cap bounds the worst case.
  */
-export const CHUNK_UPLOAD_BUDGET_MS = 8
+const CHUNK_UPLOAD_BUDGET_MS = 8
 export const MAX_CHUNK_UPLOADS_PER_FRAME = 24
 /**
  * Default duration of the streaming-chunk cross-fade between LOD levels, in ms.

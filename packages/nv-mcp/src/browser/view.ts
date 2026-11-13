@@ -971,7 +971,7 @@ export interface NiiVueHost {
 }
 
 /** The `@niivue/nv-ext-isosurface` function `add_isosurface` drives. */
-export interface IsosurfaceLoader {
+interface IsosurfaceLoader {
   /** One mesh per channel; a `source` is what `fetchOmeZarrChunkedSource` opened. */
   channelIsosurfaces(
     channels: {

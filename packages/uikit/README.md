@@ -50,7 +50,7 @@ package-private (see "Conventions for contributors").
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
-| `layoutSlideMinimap` | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |
+| (package-private) | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
 | `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
 | `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |

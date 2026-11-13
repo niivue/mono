@@ -551,7 +551,9 @@ async function initialize({ model }) {
         }
         const bg = ctx.backgroundVolume
         const imageData = useIntensity && bg ? bg.imgRAS : null
-        const maxVal = useIntensity && bg ? (bg.globalMax || 1) : 1
+        // imgRAS is raw; globalMin/globalMax are scaled by scl_slope and scl_inter.
+        const toRaw = (v) => (v - bg.hdr.scl_inter) / bg.hdr.scl_slope
+        const maxVal = useIntensity && bg ? (Math.max(toRaw(bg.globalMin), toRaw(bg.globalMax)) || 1) : 1
         const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)
         const before = dr.bitmap.reduce((n, v) => n + (v > 0 ? 1 : 0), 0)
         const t0 = performance.now()

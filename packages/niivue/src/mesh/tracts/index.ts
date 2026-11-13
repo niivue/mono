@@ -23,7 +23,7 @@ export function getTractReader(ext: string): TractReader | undefined {
 }
 
 /** Compute global_min/global_max for a scalar array. */
-function computeScalarMeta(arr: Float32Array): TractScalarMeta {
+function computeScalarMeta(arr: Float32Array | Int32Array): TractScalarMeta {
   let mn = Infinity,
     mx = -Infinity
   for (let i = 0; i < arr.length; i++) {
@@ -78,7 +78,7 @@ export type TessellationResult = {
 function getScalarArray(
   data: NVTractData,
   colorBy: string,
-): Float32Array | null {
+): Float32Array | Int32Array | null {
   if (colorBy.startsWith('dpv:')) return data.dpv[colorBy.slice(4)] ?? null
   if (colorBy.startsWith('dps:')) return data.dps[colorBy.slice(4)] ?? null
   return null
@@ -358,7 +358,7 @@ type CachedLuts = {
   colormapNegative: string
   lut: Uint8ClampedArray
   lutNeg: Uint8ClampedArray | null
-  scalarArray: Float32Array | null
+  scalarArray: Float32Array | Int32Array | null
   isPerVertex: boolean
 }
 
@@ -382,7 +382,7 @@ function ensureLuts(data: NVTractData, options: NVTractOptions): CachedLuts {
     ? NVCmaps.lutrgba8(options.colormapNegative)
     : null
 
-  let scalarArray: Float32Array | null = null
+  let scalarArray: Float32Array | Int32Array | null = null
   let isPerVertex = false
 
   if (options.colorBy.startsWith('dpv:')) {

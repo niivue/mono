@@ -1783,6 +1783,31 @@ describe('NVSlide channels', () => {
     slide.dispose()
   })
 
+  it('reorients a sample tile, cropped as stored', async () => {
+    const { slide, source } = planarSlide([
+      { name: 'grey', rgb: [255, 255, 255], active: true },
+    ])
+    const level = slide.manifest.levels[2] as NVSlideLevelManifest
+    level.tileOrientation = { transpose: true, flipX: true, flipY: false }
+    // Stored TILE_H x TILE_W, plus a padding column and row; pixel (x, y) = y * TILE_H + x.
+    source.fetchTileSamples = async () => {
+      const width = TILE_H + 1
+      const samples = new Uint8Array(width * (TILE_W + 1)).fill(255)
+      for (let y = 0; y < TILE_W; y++)
+        for (let x = 0; x < TILE_H; x++) samples[y * width + x] = y * TILE_H + x
+      return { samples, width, height: TILE_W + 1, bitsStored: 8, planes: 1 }
+    }
+    await loadLevel(slide, 2)
+    const s = slide.cachedTile(k(slide, 2, 0, 0))?.samples
+    expect([s?.width, s?.height]).toEqual([TILE_W, TILE_H])
+    // Displayed (u, v) is stored (v, TILE_W - 1 - u).
+    const want: number[] = []
+    for (let v = 0; v < TILE_H; v++)
+      for (let u = 0; u < TILE_W; u++) want.push((TILE_W - 1 - u) * TILE_H + v)
+    expect(Array.from(s?.samples ?? [])).toEqual(want)
+    slide.dispose()
+  })
+
   it('fails a tile whose plane count differs from the channels asked for', async () => {
     const { slide, source } = planarSlide(threeChannels())
     source.planes = 2

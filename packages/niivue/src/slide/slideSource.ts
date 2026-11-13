@@ -9,6 +9,7 @@ import type {
   NVSlideSampleArray,
   NVSlideTileFragment,
   NVSlideTileManifest,
+  NVSlideTileOrientation,
   NVSlideTileSamples,
   SlideTileDecoder,
 } from './NVSlide'
@@ -660,12 +661,12 @@ export async function decodeTileBitmap(
         '(e.g. @niivue/dcm2niix createFrameDecoder for image/jp2).',
     )
   }
-  let decoded = await decoder(tileBytes, {
-    width: tile.width,
-    height: tile.height,
-    level,
-    signal,
-  })
+  // A reoriented tile is decoded and cropped as stored, then turned.
+  const o = level.tileOrientation
+  const [width, height] = o?.transpose
+    ? [tile.height, tile.width]
+    : [tile.width, tile.height]
+  let decoded = await decoder(tileBytes, { width, height, level, signal })
   // A decoder that returns only a bitmap (the browser's JPEG) still windows:
   // a monochrome tile's grey level comes back as 8-bit samples.
   // Without a 2D OffscreenCanvas (Safari < 16.4) such a tile shows unwindowed.
@@ -693,20 +694,71 @@ export async function decodeTileBitmap(
   // Formats that store whole tiles (DICOM) pad edge frames, and every frame of
   // a level smaller than one tile, at the right and bottom. Padding is not
   // slide: crop it, or the level's image shrinks into one corner.
-  if (decoded.width <= tile.width && decoded.height <= tile.height)
-    return decoded
-  if ('samples' in decoded) return cropSamples(decoded, tile.width, tile.height)
-  const bitmap = decoded
-  try {
-    return await createImageBitmap(
-      bitmap,
-      0,
-      0,
-      Math.min(bitmap.width, tile.width),
-      Math.min(bitmap.height, tile.height),
-      STRAIGHT,
-    )
-  } finally {
-    bitmap.close()
+  if (decoded.width > width || decoded.height > height) {
+    if ('samples' in decoded) decoded = cropSamples(decoded, width, height)
+    else {
+      const bitmap = decoded
+      try {
+        decoded = await createImageBitmap(
+          bitmap,
+          0,
+          0,
+          Math.min(bitmap.width, width),
+          Math.min(bitmap.height, height),
+          STRAIGHT,
+        )
+      } finally {
+        bitmap.close()
+      }
+    }
   }
+  return o ? orientTile(decoded, o) : decoded
+}
+
+/** A decoded tile turned per `o` (see {@link NVSlideTileOrientation}); closes a bitmap input. */
+function orientTile(
+  decoded: ImageBitmap | NVSlideTileSamples,
+  o: NVSlideTileOrientation,
+): ImageBitmap | NVSlideTileSamples {
+  if ('samples' in decoded) return orientSamples(decoded, o)
+  const [w, h] = o.transpose
+    ? [decoded.height, decoded.width]
+    : [decoded.width, decoded.height]
+  const canvas = new OffscreenCanvas(w, h)
+  const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D
+  // Stored px -> displayed px.
+  const sx = o.flipX ? -1 : 1
+  const sy = o.flipY ? -1 : 1
+  const e = o.flipX ? w : 0
+  const f = o.flipY ? h : 0
+  if (o.transpose) ctx.setTransform(0, sy, sx, 0, e, f)
+  else ctx.setTransform(sx, 0, 0, sy, e, f)
+  ctx.drawImage(decoded, 0, 0)
+  decoded.close()
+  return canvas.transferToImageBitmap()
+}
+
+/** Samples turned per `o` (see {@link NVSlideTileOrientation}). */
+export function orientSamples(
+  decoded: NVSlideTileSamples,
+  o: NVSlideTileOrientation,
+): NVSlideTileSamples {
+  const [w, h] = o.transpose
+    ? [decoded.height, decoded.width]
+    : [decoded.width, decoded.height]
+  // Displayed (u, v) reads stored index ix + iy + u du + v dv.
+  const stride = decoded.width
+  const along = (flip: boolean, n: number, step: number) =>
+    flip ? [(n - 1) * step, -step] : [0, step]
+  const [ix, du] = along(o.flipX, w, o.transpose ? stride : 1)
+  const [iy, dv] = along(o.flipY, h, o.transpose ? 1 : stride)
+  const src = decoded.samples
+  const Samples = src.constructor as new (n: number) => NVSlideSampleArray
+  const out = new Samples(src.length)
+  const planeSize = w * h
+  for (let p = 0, n = 0; p < (decoded.planes ?? 1); p++) {
+    for (let v = 0, row = p * planeSize + ix + iy; v < h; v++, row += dv)
+      for (let u = 0, i = row; u < w; u++, i += du) out[n++] = src[i] as number
+  }
+  return { ...decoded, samples: out, width: w, height: h }
 }

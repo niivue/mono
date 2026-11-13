@@ -203,8 +203,8 @@ const slide = NVSlide.fromSource(await candidates[0].open())
 ```
 
 Vendor TIFF layouts open too: Philips padded levels, NDPI (as virtual JPEG
-tiles), Argos focal stacks, and, with `{ tiff: { placement: true } }`, Ventana
-tile joints, Trestle overlaps and Leica regions as placed tiles.
+tiles), Argos focal stacks, and Ventana tile joints, Trestle overlaps and Leica
+regions as placed tiles (`{ tiff: { placement: false } }` keeps the storage grid).
 
 [Live demo](https://niivue.github.io/mono/demo-ext-tile/)
 

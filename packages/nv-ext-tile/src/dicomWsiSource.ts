@@ -252,7 +252,7 @@ export function manifestOf<I extends InstanceCore>(
       index,
       width: g.width,
       height: g.height,
-      downsample: l0.width / level.width,
+      downsample: g0.width / g.width,
       tileWidth: g.tileWidth,
       tileHeight: g.tileHeight,
       columns: g.columns,

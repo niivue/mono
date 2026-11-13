@@ -1297,28 +1297,24 @@ async function pixelSpacingOf(
     (r) => chain[r.ifds[0] ?? -1] === level0?.img.fileDirectory,
   )
   const opened0 = at < 0 ? {} : { leicaRegion: at }
-  // Tags are read only when the description does not settle it.
+  // Each source is read only when the ones before it do not settle it; a
+  // failed read is null, which tiffSpacing.ts treats as no spacing from it.
   const settled = tiffPixelSpacingMM({ description, ...opened0 })
   if (settled) return settled
-  const xmp = await (readXmp(tiff, ifd0)?.catch(() => null) ?? '')
-  const xResolution = await rational(282)
-  const yResolution = await rational(283)
-  const resolutionUnit = await optional(296)
-  if (
-    xmp === null ||
-    xResolution === null ||
-    yResolution === null ||
-    resolutionUnit === null
-  )
-    return undefined
-  return tiffPixelSpacingMM({
+  const withXmp = {
     description,
     ...opened0,
-    xmp,
-    xResolution,
-    yResolution,
-    resolutionUnit,
-  })
+    xmp: await (readXmp(tiff, ifd0)?.catch(() => null) ?? ''),
+  }
+  return (
+    tiffPixelSpacingMM(withXmp) ??
+    tiffPixelSpacingMM({
+      ...withXmp,
+      xResolution: await rational(282),
+      yResolution: await rational(283),
+      resolutionUnit: await optional(296),
+    })
+  )
 }
 
 async function placedPyramid(

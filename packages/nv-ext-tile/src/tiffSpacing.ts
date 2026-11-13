@@ -10,12 +10,12 @@ import { isVentanaXmp } from './vendor/ventana'
 export interface TiffSpacingTags {
   /** IFD0 ImageDescription. */
   description: string
-  /** IFD0 XMP (tag 700): Ventana's iScan. */
-  xmp?: string
-  /** Level 0's XResolution, YResolution (pixels per unit) and ResolutionUnit. */
-  xResolution?: number
-  yResolution?: number
-  resolutionUnit?: number
+  /** IFD0 XMP (tag 700): Ventana's iScan. null: present but unreadable. */
+  xmp?: string | null
+  /** Level 0's XResolution, YResolution (pixels per unit) and ResolutionUnit; null: unreadable. */
+  xResolution?: number | null
+  yResolution?: number | null
+  resolutionUnit?: number | null
   /** The opened Leica region (index in leicaRegions); omitted: the brightfield composition. */
   leicaRegion?: number
 }
@@ -79,10 +79,18 @@ export function tiffPixelSpacingMM(
       ? um(x / 1000, y / 1000)
       : undefined
   }
-  // Ventana: its ScanRes or nothing, never the tags.
+  // Ventana: its ScanRes or nothing, never the tags. An unreadable XMP may be
+  // Ventana's, so it is nothing too.
+  if (t.xmp === null) return undefined
   const iScan = t.xmp && /<iScan\b[^>]*>/.exec(t.xmp)?.[0]
   if (iScan || (t.xmp && isVentanaXmp(t.xmp)))
     return um(Number(attrs(iScan || '').ScanRes))
+  if (
+    t.xResolution === null ||
+    t.yResolution === null ||
+    t.resolutionUnit === null
+  )
+    return undefined
   const perUnit = UNIT_UM[t.resolutionUnit ?? 2]
   if (!perUnit || !t.xResolution || !t.yResolution) return undefined
   const x = perUnit / t.xResolution

@@ -1651,6 +1651,17 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       },
       undefined,
     ],
+    [
+      'Ventana with an unreadable resolution tag',
+      { ...res(25000, 3), xResolution: null, xmp: '<iScan ScanRes="0.25"/>' },
+      [0.25, 0.25],
+    ],
+    ['unreadable XMP ignores tags', { ...res(25000, 3), xmp: null }, undefined],
+    [
+      'unreadable resolution tag',
+      { ...res(25000, 3), yResolution: null },
+      undefined,
+    ],
     ['Huron-1 (cm)', res(25000, 3), [0.4, 0.4]],
     ['Argos-1 (cm)', res(26109.381, 3), [0.383004]],
     ['Generic-TIFF 10 px/cm placeholder', res(10, 3), undefined],
@@ -1690,27 +1701,34 @@ test('an unreadable resolution tag gives no spacing, never a failed open', async
   expect(source.manifest.pixelSpacingMM).toBeUndefined()
 })
 
-test('an unreadable XMP or ResolutionUnit gives no spacing, not the tags', async () => {
+test('an unreadable source gives no spacing from it, and only from it', async () => {
   // 25000 px/cm, which alone reads as 0.4 um.
-  const tagged = (bad?: number[]) => ({
+  const tagged = (bad?: number[], xmp?: string) => ({
     ...rawLevel(0, 16, 16, 16),
     longs: { 282: [25000, 1], 283: [25000, 1] },
+    ascii: xmp ? { 700: xmp } : undefined,
     edit: (entries: number[][]) => {
       for (const e of entries)
         if (e[0] === 282 || e[0] === 283) e.splice(1, 2, 5, 1)
-      if (bad?.[0] !== 296) entries.push([296, 3, 1, 3])
+      entries.push([296, 3, 1, 3])
+      if (!bad) return
       // Pointing past the end of the file.
-      if (bad) entries.push([...bad, 0x7ffffff0])
+      const i = entries.findIndex((e) => e[0] === bad[0])
+      entries.splice(i < 0 ? entries.length : i, 1, [...bad, 0x7ffffff0])
     },
   })
-  const spacing = async (bad?: number[]) =>
+  const spacing = async (bad?: number[], xmp?: string) =>
     (
       await TiffSlideSource.fromGeoTIFF(
-        await fromArrayBuffer(writeTiff([tagged(bad)])),
+        await fromArrayBuffer(writeTiff([tagged(bad, xmp)])),
       )
     ).manifest.pixelSpacingMM
+  const iScan = '<iScan ScanRes="0.25"/>'
   expect(await spacing()).toEqual([0.0004, 0.0004])
+  expect(await spacing(undefined, iScan)).toEqual([0.00025, 0.00025])
+  expect(await spacing([282, 5, 1], iScan)).toEqual([0.00025, 0.00025])
   expect(await spacing([700, 1, 64])).toBeUndefined()
+  expect(await spacing([282, 5, 1])).toBeUndefined()
   expect(await spacing([296, 3, 4])).toBeUndefined()
 })
 

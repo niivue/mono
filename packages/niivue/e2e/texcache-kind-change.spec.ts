@@ -90,6 +90,9 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       await nv.updateGLVolume()
       await nextFrame()
       const chunked = nv.chunkStreamStats()
+      // A chunked base has no whole-volume bind group, so a 2D GPU depth pick
+      // must not find the one the single-texture upload built (WebGPU only).
+      const staleBindGroup = !!nv.view.volumeRenderer.bindGroup
 
       // Back to one texture under the SAME cache key, which is the kind change
       // that used to strand the chunked entry.
@@ -100,6 +103,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
 
       return {
         chunkedTotal: chunked ? chunked.total : null,
+        staleBindGroup,
         singleTotal: single ? single.total : null,
         singleResident: single ? single.resident : null,
       }
@@ -127,6 +131,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
     // Guard the guard: if the forced plan never took, the real assertion below
     // would pass for the wrong reason.
     expect(r.chunkedTotal).toBe(EXPECTED_CHUNKS)
+    expect(r.staleBindGroup).toBe(false)
 
     expect(r.singleTotal).toBe(0)
     expect(r.singleResident).toBe(0)

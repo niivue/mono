@@ -670,6 +670,9 @@ export class VolumeRenderer extends ChunkStreamRenderer<
       this._activeChunked = chunkedEntry
       this._cubicVolumeSafe = !vol.colormapLabel
       this._activeVolKey = cacheKey || null
+      // No whole-volume bind group: the depth pick must not bind the one a
+      // previous single-texture volume left here.
+      this.bindGroup = null
       this.volumeTexture =
         chunkedEntry.manager.getChunk(0)?.volumeTexture ?? null
       this.volumeGradientTexture =

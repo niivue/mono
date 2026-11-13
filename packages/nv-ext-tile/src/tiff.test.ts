@@ -2207,11 +2207,15 @@ describe('vendor layouts', () => {
   test('Ventana iScan: levels padded to 8 px blocks keep their true size', async () => {
     // 64x40 / 2 = 32x20 stored 32x24, / 4 = 16x10 stored 16x16; a tiled 16x48
     // label is not a level.
+    const level = (n: number, w: number, h: number) => ({
+      ...solid(n, w, h),
+      ascii: { 270: `level=${n - 1} mag=${40 >> (n - 1)} quality=90` },
+    })
     const levels = [
       solid(0, 64, 40),
       solid(1, 16, 48),
-      solid(2, 32, 24),
-      solid(3, 16, 16),
+      level(2, 32, 24),
+      level(3, 16, 16),
     ]
     const m = (await fromBuffer(writeTiff(levels))).manifest
     expect(m.levels.map((l) => [l.width, l.height, l.downsample])).toEqual([
@@ -2219,6 +2223,10 @@ describe('vendor layouts', () => {
       [32, 20, 2],
       [16, 10, 4],
     ])
+    // An unmarked tiled macro the size of a padded level is not one.
+    const macro = [solid(0, 64, 40), solid(1, 32, 24)]
+    const plain = (await fromBuffer(writeTiff(macro))).manifest
+    expect(plain.levels.map((l) => l.width)).toEqual([64])
   })
 
   test('Philips: a padded level at a stated factor of 3', async () => {

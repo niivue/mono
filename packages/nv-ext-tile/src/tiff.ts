@@ -312,6 +312,21 @@ async function chainImages(
     last = await tiff.getImage(images.length)
     images.push(last)
   }
+  const base = images
+    .filter((img) => img.isTiled)
+    .reduce<GeoTIFFImage | null>(
+      (a, b) => (a && a.getWidth() >= b.getWidth() ? a : b),
+      null,
+    )
+  // Only padded images pay the read: an ordinary pyramid opens as before.
+  await Promise.all(
+    images.map(async (img) => {
+      if (!base || !img.isTiled || !paddedDownsample(base, img)) return
+      const desc = await img.fileDirectory.loadValue('ImageDescription')
+      if (typeof desc === 'string' && desc.startsWith('level='))
+        iscanLevels.add(img)
+    }),
+  )
   return images
 }
 
@@ -832,6 +847,25 @@ function regionTile(level: TiffLevel, x: number, y: number) {
 const padToTiles = (n: number, downsample: number, tile: number) =>
   Math.ceil(Math.ceil(n / downsample) / tile) * tile
 
+// Ventana iScan pads each level to whole 8 px JPEG blocks (82960 / 4 = 20740
+// rows stored as 20744): the power-of-two downsample of a padded `img`, else 0.
+function paddedDownsample(base: GeoTIFFImage, img: GeoTIFFImage): number {
+  const [bw, bh] = [base.getWidth(), base.getHeight()]
+  const [w, h] = [img.getWidth(), img.getHeight()]
+  const d = 2 ** Math.round(Math.log2(bw / w))
+  const padded = w !== Math.ceil(bw / d) || h !== Math.ceil(bh / d)
+  return d > 1 &&
+    padded &&
+    padToTiles(bw, d, 8) === w &&
+    padToTiles(bh, d, 8) === h
+    ? d
+    : 0
+}
+
+// Padded images an iScan ImageDescription names a level ("level=2 mag=10
+// quality=90"): an unmarked tiled macro can fit the padding too.
+const iscanLevels = new WeakSet<GeoTIFFImage>()
+
 // `img` as a level of `base`, or null when it is not one: a tiled image off
 // the base aspect ratio (SVS macro between levels) would be stretched over the
 // slide. The tolerance is the height error of rounding the width to pixels.
@@ -855,14 +889,8 @@ function levelOf(
   const width = img.getWidth()
   const height = img.getHeight()
   const aspect = baseHeight / baseWidth
-  // Ventana iScan pads each level to whole 8 px JPEG blocks (82960 / 4 =
-  // 20740 rows stored as 20744): its true size and power-of-two downsample.
-  const d = 2 ** Math.round(Math.log2(baseWidth / width))
-  if (
-    d > 1 &&
-    padToTiles(baseWidth, d, 8) === width &&
-    padToTiles(baseHeight, d, 8) === height
-  )
+  const d = iscanLevels.has(img) ? paddedDownsample(base, img) : 0
+  if (d)
     return {
       img,
       width: Math.ceil(baseWidth / d),

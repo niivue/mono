@@ -382,6 +382,10 @@ describe('chooseRulerSize units', () => {
   test("'auto' is unchanged", () => {
     expect(chooseRulerSize(100)).toEqual(chooseRulerSize(100, 'auto'))
     expect(chooseRulerSize(100)).toEqual({ lengthMM: 50, label: '5 cm' })
+    // Below a 1 m bar the cm ladder still tops out at 10 cm.
+    expect(chooseRulerSize(1000)?.label).toBe('10 cm')
+    expect(chooseRulerSize(5000)).toEqual({ lengthMM: 2000, label: '2 m' })
+    expect(chooseRulerSize(5e7)).toEqual({ lengthMM: 2e7, label: '20 km' })
   })
 
   test('a fixed unit takes the largest 1/2/5 x 10^n that fits 65%', () => {

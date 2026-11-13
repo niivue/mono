@@ -16,7 +16,7 @@ const sections = Map.groupBy(cards, (c) => c.section)
     template: 'splash',
   }}
 >
-  <p>
+  <p class="intro">
     All {cards.length} pages from <code>packages/niivue/examples</code> and the
     demo apps, each running in the browser next to the code that drives it.
   </p>
@@ -80,7 +80,20 @@ const sections = Map.groupBy(cards, (c) => c.section)
   import '../../client/nv-gallery'
 </script>
 
+<style is:global>
+  /* Starlight caps splash content at 1080px, four cards across; let the
+     gallery (title included, so it stays aligned) use a wide screen. This
+     sheet loads only on this page. */
+  .sl-container {
+    max-width: min(160rem, 100%);
+  }
+</style>
+
 <style>
+  .intro {
+    max-width: 45rem;
+  }
+
   .toolbar {
     display: flex;
     flex-direction: column;

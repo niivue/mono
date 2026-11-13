@@ -1570,8 +1570,7 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
           '</collection>',
           '<image><pixels sizeX="40000" sizeY="40000"/><view sizeX="40000000" sizeY="40000000" offsetX="9" offsetY="9"/><illuminationSource>fluorescence</illuminationSource></image></collection>',
         ),
-        width: 40000,
-        height: 40000,
+        leicaRegion: 1,
       },
       [1, 1],
     ],
@@ -1580,8 +1579,7 @@ test('pixel spacing: vendor metadata, OME-XML, then resolution tags; placeholder
       {
         description:
           '<scn><collection sizeX="2000000" sizeY="2000000"><image><pixels sizeX="1000" sizeY="1000"/><view sizeX="500000" sizeY="500000" offsetX="1" offsetY="1"/><illuminationSource>fluorescence</illuminationSource></image></collection></scn>',
-        width: 1000,
-        height: 1000,
+        leicaRegion: 0,
       },
       [0.5, 0.5],
     ],
@@ -2378,6 +2376,51 @@ describe('vendor layouts', () => {
       [100, 60, 1],
       [34, 20, 3],
     ])
+  })
+
+  test('Leica spacing comes from the regions opened, not their sizes', async () => {
+    // um per pixel over 250 nm collection px: brightfield 0.5, fluorescence 1.
+    const image = (w: number, h: number, ifd: number, x: number, um: number) =>
+      `<image><pixels sizeX="${w}" sizeY="${h}"><dimension r="0" ifd="${ifd}" /></pixels><view sizeX="${w * um * 1000}" sizeY="${h * um * 1000}" offsetX="${x}" offsetY="0" /><illuminationSource>${um === 1 ? 'fluorescence' : 'brightfield'}</illuminationSource></image>`
+    const open = async (
+      xml: string,
+      sizes: [number, number][],
+      placement: boolean,
+    ) =>
+      (
+        await fromBuffer(
+          writeTiff(
+            sizes.map(([w, h], i) => ({
+              ...solid(i, w, h),
+              ...(i ? {} : { ascii: { 270: xml } }),
+            })),
+          ),
+          { placement },
+        )
+      ).manifest.pixelSpacingMM
+    const scn = (body: string) =>
+      `<scn><collection sizeX="1000000" sizeY="1000000">${body}</collection></scn>`
+    // Two 16x16 brightfield regions compose to 32x16, a fluorescence region's size.
+    const composed = scn(
+      image(16, 16, 0, 0, 0.5) +
+        image(16, 16, 1, 20000, 0.5) +
+        image(32, 16, 2, 40000, 1),
+    )
+    const sizes: [number, number][] = [
+      [16, 16],
+      [16, 16],
+      [32, 16],
+    ]
+    expect(await open(composed, sizes, true)).toEqual([0.0005, 0.0005])
+    expect(await open(composed, sizes, false)).toEqual([0.001, 0.001])
+    // Same-size regions at different resolutions.
+    const twins = scn(image(16, 16, 0, 0, 0.5) + image(16, 16, 1, 20000, 1))
+    const both: [number, number][] = [
+      [16, 16],
+      [16, 16],
+    ]
+    expect(await open(twins, both, false)).toEqual([0.0005, 0.0005])
+    expect(await open(twins, both, true)).toEqual([0.0005, 0.0005])
   })
 
   test('Leica regions: side by side in one grid, placed by their views', async () => {

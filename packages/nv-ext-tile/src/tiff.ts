@@ -1281,14 +1281,24 @@ async function pixelSpacingOf(tiff: GeoTIFF, opened: TiffOpened) {
     return v ? Number(v[0]) / Number(v[1]) : undefined
   }
   const description = await text(270)
+  // The Leica region whose image is level 0; a composed level has none.
   const level0 = opened.pyramids[0]?.[0]
-  const size = { width: level0?.width, height: level0?.height }
+  const regions = level0?.regions ? null : leicaRegions(description)
+  const chain = regions
+    ? (await chainImages(tiff, await tiff.getImage(0))).map(
+        (img) => img.fileDirectory,
+      )
+    : []
+  const at = (regions ?? []).findIndex(
+    (r) => chain[r.ifds[0] ?? -1] === level0?.img.fileDirectory,
+  )
+  const opened0 = at < 0 ? {} : { leicaRegion: at }
   // Tags are read only when the description does not settle it.
   return (
-    tiffPixelSpacingMM({ description, ...size }) ??
+    tiffPixelSpacingMM({ description, ...opened0 }) ??
     tiffPixelSpacingMM({
       description,
-      ...size,
+      ...opened0,
       xmp: await text(700),
       xResolution: await rational(282),
       yResolution: await rational(283),

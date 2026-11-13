@@ -254,6 +254,16 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     expect(await reasons(new File([whole], 'h.dcm'))).toEqual(['not-tiled'])
   })
 
+  test('a UN sequence cut off by the end of the file names the UN sequence', async () => {
+    const pre = cat(new Uint8Array(128), str('DICM'))
+    const un = cat(pre, el(0x0011, 0x1010, 'UN', new Uint8Array(0), UNDEF))
+    // Ends before an item tag, then inside an undefined-length item.
+    for (const head of [un, cat(un, tag(0xfffe, 0xe000), le(UNDEF, 4))]) {
+      const idx = await indexDicomWsiOnThread([new File([head], 'h.dcm')])
+      expect(idx.skipped[0]?.message).toBe('UN sequence runs past the file')
+    }
+  })
+
   test('tiny native Pixel Data at the end of the file is not truncated', async () => {
     const pre = cat(new Uint8Array(128), str('DICM'))
     const tiny = cat(pre, el(0x7fe0, 0x0010, 'OB', new Uint8Array(4)))

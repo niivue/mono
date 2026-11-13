@@ -161,6 +161,26 @@ describe('DicomWebWsiSource', () => {
     return slide
   }
 
+  test('sniffs all levels concurrently', async () => {
+    const release: (() => void)[] = []
+    globalThis.fetch = (() =>
+      new Promise<Response>((resolve) =>
+        release.push(() => resolve(part(JLS))),
+      )) as unknown as typeof fetch
+    const opened = DicomWebWsiSource.open(await twoLevels(), {
+      seriesUrl: SERIES,
+    })
+    await Bun.sleep(0)
+    const inFlight = release.length
+    for (const r of release) r()
+    expect(inFlight).toBe(2)
+    const s = await opened
+    expect(s.manifest.levels.map((l) => l.codec)).toEqual([
+      'image/jls',
+      'image/jls',
+    ])
+  })
+
   test('assumes JPEG Baseline when the server refuses the sniff', async () => {
     serve(() => new Response('no', { status: 406 }))
     const s = await DicomWebWsiSource.open(await twoLevels(), {

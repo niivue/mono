@@ -16,4 +16,5 @@ interface Window {
   __bench: any
   __benchDone: any
   __benchError: any
+  ccfIds: any
 }

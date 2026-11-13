@@ -355,6 +355,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 |---------|--------|-------|
 | Voxel-based atlas labels | ✅ | A label `colormap` |
 | PAQD probabilistic atlas | ✅ | `volumePaqdUniforms` |
+| Allen mouse CCFv3 atlas (NRRD template + annotation) | ✅ | Example-level, not public API: `src/volume/ccf.ts` supplies the unstated micrometre unit and PIR axes, remaps sparse uint32 IDs to compact uint16 before display, and builds the ontology colormap (labels carry acronym, name, Allen ID). Demo `examples/allen.ccf.html`. Not the Vol-E JSON+PNG loader (section 31) |
 | Mesh-based atlases | ⚠️ | GIfTI and MZ3 label tables load as layers (`colormapLabel`); FreeSurfer `.annot` has no reader |
 | `addLabel()` | ❌ | No 3D labels in the viewer. `@niivue/uikit`'s `UIKitPointLabelOverlay` draws a text label with a leader line to a world-mm point on the render tile via `mmToRenderCanvas()` / `explodedMM()` |
 
@@ -410,7 +411,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | V16 | ✅ |
 | VMR | ✅ |
 | NPY/NPZ | ✅ |
-| Allen JSON+PNG atlas | ✅ |
+| Allen JSON+PNG atlas (Vol-E; CCF display: section 27) | ✅ |
 | Zarr (OME-Zarr, extension: `@niivue/nv-ext-tile/zarr`, no longer exported from `@niivue/niivue`) | ✅ |
 | DICOM (extension) | ✅ |
 | MINC (plugin) | ❌ |

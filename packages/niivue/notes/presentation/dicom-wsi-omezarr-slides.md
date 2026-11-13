@@ -13,8 +13,8 @@ style: |
 
 <!--
 Render this deck with Marp:
-  bunx @marp-team/marp-cli@latest packages/niivue/docs/presentation/dicom-wsi-omezarr-slides.md -o slides.html
-  bunx @marp-team/marp-cli@latest packages/niivue/docs/presentation/dicom-wsi-omezarr-slides.md --pdf
+  bunx @marp-team/marp-cli@latest packages/niivue/notes/presentation/dicom-wsi-omezarr-slides.md -o slides.html
+  bunx @marp-team/marp-cli@latest packages/niivue/notes/presentation/dicom-wsi-omezarr-slides.md --pdf
 Or live-preview in VS Code with the "Marp for VS Code" extension.
 Slides are separated by `---`; this also renders as a reveal.js deck if preferred.
 -->
@@ -339,7 +339,7 @@ Two bugs that read as "shader problems" but weren't (commit `8be40df`):
   over-occluded the chunks behind, compounding per chunk crossing.
   Fix: snap alpha to 1 only on full coverage.
 
-Invariants now codified + unit-tested in `docs/high-res-streaming.md` §8.
+Invariants now codified + unit-tested in `notes/high-res-streaming.md` §8.
 
 <!--
 Presenter: Optional "we earned this" slide — good for a technical crowd, cut for

@@ -5,8 +5,8 @@ A plan for giving the chunked-volume planner more than one policy.
 Status: **Stages 1-3 implemented** (`src/volume/budgetPlans.ts`, exposed by the
 Plan control in `apps/demo-ext-tile/range.html`). Stage 4, the closed-loop frame-time
 controller behind `targetFrameMs`, is still design. Tracked from
-`docs/streaming-todos.md`; background on the machinery this builds on:
-`docs/high-res-streaming.md`.
+`notes/streaming-todos.md`; background on the machinery this builds on:
+`notes/high-res-streaming.md`.
 
 ## Terms
 
@@ -225,6 +225,6 @@ detail that lets me rotate smoothly" actually asks for.
 
 ## Not in this plan
 
-- Moving chunk decode off the main thread (`docs/streaming-todos.md`). That is
+- Moving chunk decode off the main thread (`notes/streaming-todos.md`). That is
   performance work and is deliberately sequenced AFTER the visual artifacts.
 - Cross-LOD blending at brick faces (`FEATURE_PARITY.md`, deferred).

@@ -280,7 +280,7 @@ These hold across both backends and both paths. Breaking any of them produces a 
 | Single-texture | 8 (RGBA8 colour + RGBA8 gradient) | 1 | 1 × (orient + gradient) |
 | Chunked, 2×2×2, halo `[3,3,3]` | ~13–14 (≈80% halo overhead × 8) | 8 (one per chunk) | 8 × (orient + gradient) per full re-upload; only the affected chunk on stream-in |
 
-For real-GPU frame times on the single-texture path, see the headed table in `docs/perf.md`. The chunked path doesn't yet have a dedicated benchmark scenario — see the open follow-up at the bottom of `docs/tiled-volumes-handoff.md`.
+For real-GPU frame times on the single-texture path, see the headed table in `notes/perf.md`. The chunked path doesn't yet have a dedicated benchmark scenario — see the open follow-up at the bottom of `notes/tiled-volumes-handoff.md`.
 
 ---
 
@@ -327,7 +327,7 @@ each brick client-side.
 
 ## 11. Open follow-ups
 
-Tracked in `docs/streaming-todos.md`: moving chunk decode off the main thread,
+Tracked in `notes/streaming-todos.md`: moving chunk decode off the main thread,
 the level-grid texture misregistration, and the residual LOD seams. Named
 **budget plans** (planning policies beyond the crosshair-focused default) have
-their own design doc, `docs/budget-plans.md`.
+their own design doc, `notes/budget-plans.md`.

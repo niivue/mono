@@ -35,7 +35,7 @@ Each of these raises an error naming the cause. None of them silently degrades:
 
 - JPEG-in-TIFF (compression 6, 7 and 34892) and JPEG 2000. These are how
   pyramidal whole-slide images store their tiles; NVSlide handles that case (see
-  `docs/dicom-wsi.md`).
+  `notes/dicom-wsi.md`).
 - Sub-byte bit depths (1, 2 and 4 bits per sample). Bilevel and paletted TIFFs
   are not scientific image data.
 - Mixed `BitsPerSample` across the samples of one pixel.

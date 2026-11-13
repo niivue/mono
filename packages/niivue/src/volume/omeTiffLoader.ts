@@ -12,7 +12,7 @@
  * ```
  *
  * The container parse lives in `tiff.ts`, the OME-XML parse in `omeTiff.ts`
- * and the plane stacking in `tiffVolume.ts`. See `docs/ome-tiff-format.md`.
+ * and the plane stacking in `tiffVolume.ts`. See `notes/ome-tiff-format.md`.
  */
 
 import { maybeDecompress } from '@/codecs/NVGz'

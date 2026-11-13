@@ -55,7 +55,7 @@ import * as zarr from '@niivue/zarrita-rs/inline'
 // mm are brick-local. This demo re-adds the offset itself (offsetMM below) to
 // link the two crosshairs -- exactly the bookkeeping that `A_child = A_parent .
 // translate(voxelOrigin)` does for free on the NIfTI side. See
-// docs/streaming-todos.md, "OME-Zarr world origin never reaches the volume
+// notes/streaming-todos.md, "OME-Zarr world origin never reaches the volume
 // affine".
 
 // Human Organ Atlas (HiP-CT) whole human heart at 7.013 um, in a public GCS

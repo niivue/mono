@@ -2,7 +2,7 @@
  * Per-phase timing for the chunked-volume streaming path.
  *
  * Streaming a brick costs three very different kinds of work, and the plan in
- * `docs/caching.md` turns on which one dominates: bytes over the wire, decode
+ * `notes/caching.md` turns on which one dominates: bytes over the wire, decode
  * on the main thread, and the GPU upload. A decode worker (stage C) can move
  * the first two off the render thread and can do nothing about the third, so
  * the split had to be measured before the worker plumbing was worth writing.

@@ -11,7 +11,7 @@
  * ```
  *
  * The parse/deinterleave logic lives in `allenAtlas.ts`; this module adds
- * fetching, PNG decoding and NIfTI assembly. See `docs/allen-atlas-format.md`.
+ * fetching, PNG decoding and NIfTI assembly. See `notes/allen-atlas-format.md`.
  */
 
 import { NiiDataType } from '@/NVConstants'

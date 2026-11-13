@@ -355,4 +355,4 @@ reads, real `PixelSpacing`).
 | `apps/iiif-volumetric-server/src/adapters/dicomWsi.test.ts` | unit tests (ground-truth pyramid + tile math) |
 | `apps/iiif-volumetric-server/src/adapters/dicom.ts` | the `VolumeAdapter` (decode + assemble) |
 | `apps/iiif-volumetric-server/scripts/fetch-dicom-wsi.ts` | IDC fetch + registration symlink |
-| `packages/niivue/docs/high-res-streaming.md` | the client/server streaming architecture this reuses |
+| `packages/niivue/notes/high-res-streaming.md` | the client/server streaming architecture this reuses |

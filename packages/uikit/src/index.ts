@@ -1,7 +1,7 @@
 // @niivue/uikit public entry. UIKit is a collection of controls/widgets that
 // integrate into NiiVue's rendering lifecycle. Each widget is a pure geometry
 // builder plus an overlay that owns the GPU resources and draws it (see
-// docs/ruler-port.md in @niivue/niivue for the design); the annotation builder
+// notes/ruler-port.md in @niivue/niivue for the design); the annotation builder
 // has no overlay of its own and draws through the line + text overlays.
 //
 // The surface is the overlays, the control layer, the spec/style/option types,

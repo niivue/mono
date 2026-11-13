@@ -35,7 +35,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | DICOM loading | ✅ | Convert in the browser with `@niivue/dcm2niix` (WASM), then load the NIfTI |
 | `loadDeferred4DVolumes()` | ✅ | |
 | Partial 4D load (`limitFrames4D` option) | ✅ | Reads only header + first N frames: a gzip NIfTI-1 via `DecompressionStream` (no fflate), or an uncompressed `.nii` `File` via `Blob.slice`; the only way to open a 4D volume larger than V8's ~2 GiB `ArrayBuffer` cap. Auto-caps to as-many-frames-as-fit on `RangeError`/`NotReadableError` even without the option |
-| `getZarrVolume()` / Zarr format | ✅ | `@niivue/nv-ext-tile/zarr`: OME-Zarr multiscale stores via `loadOmeZarrVolumes` / `fetchOmeZarr` (whole level) and `streamOmeZarr` / `fetchOmeZarrChunkedSource` (streamed chunks); see `packages/nv-ext-tile/docs/ome-zarr-format.md` |
+| `getZarrVolume()` / Zarr format | ✅ | `@niivue/nv-ext-tile/zarr`: OME-Zarr multiscale stores via `loadOmeZarrVolumes` / `fetchOmeZarr` (whole level) and `streamOmeZarr` / `fetchOmeZarrChunkedSource` (streamed chunks); see `packages/nv-ext-tile/notes/ome-zarr-format.md` |
 | `NVImage` static loaders (`loadFromUrl/File/Base64`) | ❌ | NVImage is a type, not a class with static methods |
 
 ## 3. Mesh Loading
@@ -166,7 +166,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `moveCrosshairInVox(dx,dy,dz)` | ✅ | |
 | `pan2Dxyzmm` | ✅ | Property |
 | `crosshairPos` | ✅ | Property. Scene fraction, [0,1] per axis across the scene bounding box (not mm); stored as given, no snapping or clamping. Same units as `NiiVueOptions.crosshairPos` and `vox2frac()` |
-| `setCrosshairPos(mm)` / `getCrosshairPos()` | ✅ | RAS world millimetres. `setCrosshairPos` snaps to the nearest background-volume voxel centre when `isSnapToVoxelCenters` is true, then clamps to the scene bounding box. 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)` -> `nv.setCrosshairPos(mm)`; 0.6x `nv.frac2mm(nv.scene.crosshairPos)` -> `nv.getCrosshairPos()`. `AnimationTarget.crosshairMM` is also in mm. See `docs/api.md` (Crosshair units) |
+| `setCrosshairPos(mm)` / `getCrosshairPos()` | ✅ | RAS world millimetres. `setCrosshairPos` snaps to the nearest background-volume voxel centre when `isSnapToVoxelCenters` is true, then clamps to the scene bounding box. 0.6x `nv.scene.crosshairPos = nv.mm2frac(mm)` -> `nv.setCrosshairPos(mm)`; 0.6x `nv.frac2mm(nv.scene.crosshairPos)` -> `nv.getCrosshairPos()`. `AnimationTarget.crosshairMM` is also in mm. See `notes/api.md` (Crosshair units) |
 | World-space 2D slices (`isSliceMM: true`) | ✅ | The only mode in 1.0: slices are resampled in world (mm) space, so voxels of a sheared or oblique image appear rhomboidal |
 | Image-space 2D slices (`isSliceMM: false`, `isPositionInMM`) | ❌ | Not supported by design; 1.0 never shows voxels in image space (where sheared voxels appear rectangular), so the 0.6x `isSliceMM` option and vestigial `isPositionInMM` property were removed. 0.6x demo of both modes: https://niivue.com/demos/features/worldspace.html |
 
@@ -365,7 +365,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | External reader registration | ✅ | `registerExternalReader` on NVVolume |
 | DICOM loader plugin | ✅ | `@niivue/dcm2niix` (conversion to NIfTI) |
 | Other loader plugins (itkwasm, minc, vox, cbor) | ❌ | Must be provided externally |
-| TIFF loader | ✅ | Built in, not a plugin — see `docs/ome-tiff-format.md`. Streaming tiled/pyramidal slides (SVS, OME-TIFF, JPEG tiles) and local DICOM-WSI folders into `NVSlide`: `@niivue/nv-ext-tile` (`/tiff`, `/dicom`) |
+| TIFF loader | ✅ | Built in, not a plugin — see `notes/ome-tiff-format.md`. Streaming tiled/pyramidal slides (SVS, OME-TIFF, JPEG tiles) and local DICOM-WSI folders into `NVSlide`: `@niivue/nv-ext-tile` (`/tiff`, `/dicom`) |
 
 ## 29. NVImage Public API
 
@@ -537,7 +537,7 @@ Render volumes larger than the GPU's `maxTextureDimension3D` by tiling them into
 chunks, and render multi-GB pyramids (OME-Zarr) with per-brick level-of-detail
 focused on a point. Chunk math is shared (`volume/chunking.ts`,
 `volume/ChunkVisibility.ts`, `volume/ChunkResidency.ts`); GPU resources are
-per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
+per-backend. Design: `notes/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 (`omezarr.html`).
 
 | Feature | Status | Notes |
@@ -549,7 +549,7 @@ per-backend. Design: `docs/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 | Per-brick ray step + opacity correction | ✅ | `rayStepTexVox` uniform + `1 − pow(1−a, stepRatio)`; coarse bricks step at their own density without rendering dimmer. Both backends (`render.wgsl` / `renderShader.ts`) |
 | Per-level LOD brightness/opacity compensation | ✅ | `lodGammaExponent` (colour, default `0.08` per level) folds into the display-gamma exponent per brick; `lodOpacityScale` (alpha, default `0` — measured worse on dense structure) scales the step-size opacity exponent. Both backends; colour also on 2D slice tiles, opacity is ray-march only. Neither applies in `VOLUME_RENDER_MODE.SLICES`, which takes one sample per plane whatever the level. `lodCompensation()` reports whether either applies, why not, and the exact per-level numbers |
 | Mixed-size back-to-front order | ✅ | `chunksBackToFront` BSP clean-plane recursive sort — exact compositing order for mixed brick sizes at any angle (`depthFunc ALWAYS` relies on it); a pairwise comparator left rare mis-ordered opaque bricks as stray bright blocks |
-| In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch. `swapPolicy: 'keepUntilCovered'` draws replaced bricks until their replacements are resident (3D render only; drawn without overlay/drawing/PAQD layers, like the coarse floor); see `docs/budget-plans.md` |
+| In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch. `swapPolicy: 'keepUntilCovered'` draws replaced bricks until their replacements are resident (3D render only; drawn without overlay/drawing/PAQD layers, like the coarse floor); see `notes/budget-plans.md` |
 | Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
 | Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |
 

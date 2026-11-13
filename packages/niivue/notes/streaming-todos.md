@@ -2,8 +2,8 @@
 
 Open follow-ups for the multi-LOD chunked volume path
 (`src/volume/chunking.ts`, `src/volume/NVChunkedVolume.ts`, the `gl/` and
-`wgpu/` chunk renderers). Design context: `docs/high-res-streaming.md` and
-`docs/tiled-volumes.md`. Anything that changes rendering must land in BOTH
+`wgpu/` chunk renderers). Design context: `notes/high-res-streaming.md` and
+`notes/tiled-volumes.md`. Anything that changes rendering must land in BOTH
 backends in the same change.
 
 Order of work (Chris, 2026-08-21): fix the VISUAL artifacts first, then the
@@ -13,7 +13,7 @@ compensation work"; decode and budget plans wait behind them.
 ## Move chunk decode off the main thread
 
 - [x] Decode OME-Zarr chunks in a worker instead of on the main thread.
-      DONE (stage C). Full write-up: `docs/caching.md` 2.1 and 2.7.
+      DONE (stage C). Full write-up: `notes/caching.md` 2.1 and 2.7.
 
       `fetchOmeZarrChunkedSource` opens the store on the calling thread for its
       metadata and puts every chunk read on a pool of workers.
@@ -53,11 +53,11 @@ compensation work"; decode and budget plans wait behind them.
       Not addressed here, by design: the GPU upload stays on the render thread
       (it cannot move, and it was 1.5 percent of the problem), and a pool moves
       the decode without avoiding it, so the 15x to 39x byte amplification in
-      `docs/caching.md` 2.5 is stage D's target.
+      `notes/caching.md` 2.5 is stage D's target.
 
 ## Caching and prefetch
 
-Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`**
+Full comparison against Neuroglancer, with the staged plan: **`notes/caching.md`**
 (written for the 2026-08-26 discussion). The items it raises, shortest first:
 
 - [x] Stale-drop and per-frame reprioritization in `ChunkResidencyManager`.
@@ -92,7 +92,7 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
       demo measures the effect instead, by accumulating rAF gaps over a 24 ms
       budget.
 
-      Two findings beyond the decode result, both in `docs/caching.md` 2.5:
+      Two findings beyond the decode result, both in `notes/caching.md` 2.5:
       we deliver 15x to 39x more store bytes than the bricks we build consume
       (a 2D plane still needs whole 3D chunks), and a repeat scrub over the same
       slice range appeared to get no reuse from the byte cache. The second one
@@ -118,7 +118,7 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
       counts reads the cache answered too: HiP-CT delivered 1154 MB through a
       cache holding 328 MiB precisely because half of those gets were hits. A
       delivered total above the budget is evidence of reuse, not of thrash.
-      Details in `docs/caching.md` 2.6.
+      Details in `notes/caching.md` 2.6.
 
 - [x] Directional prefetch for slice scrolling and zoom. `CHUNK_PREFETCH_WINDOW`
       is pipeline lookahead over chunks we have already decided we need, not
@@ -212,7 +212,7 @@ Full comparison against Neuroglancer, with the staged plan: **`docs/caching.md`*
 - [ ] Give the planner named **budget plans** rather than one crosshair-focused
       policy with a byte budget.
 
-  Full design and staging: **`docs/budget-plans.md`**. In short: today's single
+  Full design and staging: **`notes/budget-plans.md`**. In short: today's single
   policy is right for interactive exploration, wrong for a static whole-volume
   figure (which wants the finest UNIFORM level that fits) and wrong for smooth
   rotation (which wants a frame-time budget, since bytes do not predict draw

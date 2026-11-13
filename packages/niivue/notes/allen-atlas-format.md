@@ -81,5 +81,5 @@ image.
 The rendering demand it creates is the same one OME-Zarr multi-channel
 microscopy creates: many single-channel volumes displayed at once, each with its
 own colour, window and visibility toggle. The IMSC viewer shows 16 labeled
-structures simultaneously. See `docs/tiled-volumes.md` for the streaming side and
+structures simultaneously. See `notes/tiled-volumes.md` for the streaming side and
 `FEATURE_PARITY.md` for where Zarr sits.

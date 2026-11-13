@@ -17,7 +17,7 @@
  * the channels omero marks active load.
  *
  * The metadata parse lives in `omeZarr.ts`; store access and chunk decoding
- * are zarrita's. See `docs/ome-zarr-format.md`.
+ * are zarrita's. See `notes/ome-zarr-format.md`.
  */
 
 import type {

@@ -357,7 +357,7 @@ Key conventions: `init()` stores the GPU context, `destroy()` is parameterless (
 
 ## API conventions
 
-See `docs/api.md` for full style guide and `docs/convert.md` for old→new property mapping.
+See `notes/api.md` for full style guide and `docs/reference/migrating.md` for old→new property mapping.
 
 ### Naming rules
 
@@ -436,7 +436,7 @@ nv1.addEventListener('volumeLoaded', (e) => { ... })    // volume finished loadi
 nv1.addEventListener('clipPlaneChange', (e) => { ... }) // clip plane adjusted
 ```
 
-See `docs/events.md` for the full event catalog and detail types.
+See `docs/reference/events.md` for the full event catalog and detail types.
 
 **Emission order — every event fires after its mutation.** Add / update /
 reorder / remove events all fire once the model has changed: `addVolume`→
@@ -696,7 +696,7 @@ Each `SliceTile` caches `mvpMatrix`, `planeNormal`, and `planePoint` during rend
 
 ### 2D pan/zoom (`pan2Dxyzmm`) — external dependency
 
-`scene.pan2Dxyzmm` is `[panX_mm, panY_mm, panZ_mm, zoom]`. `calculateMvpMatrix2D` applies it so the **visible width = volumeWidthMM / zoom** centered at **volumeCentreMM − pan**. An external consumer — the DICOM-WSI / OpenSeadragon viewer (`apps/iiif-volumetric-demo`) — *inverts* this convention to drive deep-zoom navigation of whole slides. **Before changing the 2D pan/zoom math or the wheel-zoom anchoring, read the integration contract in `docs/dicom-wsi.md` §7** — those formulas are pinned to this behavior.
+`scene.pan2Dxyzmm` is `[panX_mm, panY_mm, panZ_mm, zoom]`. `calculateMvpMatrix2D` applies it so the **visible width = volumeWidthMM / zoom** centered at **volumeCentreMM − pan**. An external consumer — the DICOM-WSI / OpenSeadragon viewer (`apps/iiif-volumetric-demo`) — *inverts* this convention to drive deep-zoom navigation of whole slides. **Before changing the 2D pan/zoom math or the wheel-zoom anchoring, read the integration contract in `notes/dicom-wsi.md` §7** — those formulas are pinned to this behavior.
 
 The built-in wheel zoom (`control/interactions.ts`, `isPanZoomMode` branch) anchors on `crosshairPos` by default. It holds that point still by calling `NVTransforms.zoomPan2DAbout`, which is the exact inverse of the window `calculateMvpMatrix2D` builds: `pan' = (zoom / newZoom) * (d + pan) - d` with `d = anchorMM - extentCentre`. Keep the two in step — a change to the ortho window's zoom or pan handling must be mirrored there, or the crosshair drifts again (issue #68). The anchor is resolved by `control/wheelZoomAnchor.ts` (`resolveWheelZoomAnchorMM`, unit-tested): `interaction.wheelZoomAnchor` is `'crosshair'` (default, unchanged) or `'pointer'` (issue #157), which anchors at `screenSlicePick` under the pointer and falls back to the crosshair when the pick misses.
 

@@ -58,6 +58,7 @@ const filterSelect = document.getElementById('filter') as HTMLSelectElement
 const credit = document.getElementById('credit') as HTMLDivElement
 const readout = document.getElementById('readout') as HTMLOutputElement
 const dragSelect = document.getElementById('drag') as HTMLSelectElement
+const contrastBox = document.getElementById('contrastBox') as HTMLOptionElement
 const channelsPanel = document.getElementById('channels') as HTMLElement
 const minimapToggle = document.getElementById('minimap') as HTMLInputElement
 const compareSelect = document.getElementById('compare') as HTMLSelectElement
@@ -159,13 +160,37 @@ attachSlideHud(view, hud, (slide, s) => [
 attachSlideChannelPanel(view, channelsPanel)
 attachSlidePlaneControl(view, document.getElementById('planes') as HTMLElement)
 
-// The values under the pointer, from resident tiles (refined as tiles land).
+// The values under the pointer, from resident tiles (refined as tiles land),
+// in place of the credit while hovering.
 function showReadout(): void {
   const slide = view.slide
   readout.value =
     slide && hover
       ? formatSlideSample(hover.x, hover.y, slide.sampleAt(hover.x, hover.y))
       : ''
+  readout.title = readout.value
+  readout.hidden = !readout.value
+  credit.hidden = !readout.hidden
+}
+
+// RGB samples have no channel to window (core's isRgbSlide, not exported).
+const isRgb = (slide: NVSlide): boolean =>
+  !slide.manifest.channelInfo &&
+  !slide.manifest.levels.some(
+    (l) =>
+      l.codec === 'raw-gray' ||
+      (l.photometric?.startsWith('MONOCHROME') ?? false),
+  )
+// Contrast box sets a channel window, so RGB slides get navigation instead.
+function syncContrastBox(slide: NVSlide): void {
+  contrastBox.disabled = isRgb(slide)
+  if (!contrastBox.disabled || dragSelect.value !== contrastBox.value) return
+  dragSelect.value = String(DRAG_MODE.pan)
+  if (view.controller) {
+    view.controller.primaryDragMode = DRAG_MODE.pan
+    view.controller.selection = null
+  }
+  requestRender()
 }
 
 function afterRender(): void {
@@ -368,6 +393,7 @@ async function open(load: Load): Promise<void> {
     // disposes) its source; the view owns the slide.
     const nextSlide = slideFor(next)
     view.setSlide(nextSlide)
+    syncContrastBox(nextSlide)
     shownLoad = load
     if (compareSelect.value !== 'single') void syncCompare()
     showCredit(nextSlide.manifest.attribution ?? credits.get(current))
@@ -712,6 +738,7 @@ function showCurrent(value: string, label: string): void {
 
 function showCredit(a: NVSlideAttribution | undefined): void {
   credit.replaceChildren()
+  credit.title = ''
   if (typeof a?.title !== 'string') return
   // Remote metadata: a link only for http(s), so a javascript: URL stays text.
   const url = typeof a.url === 'string' ? URL.parse(a.url) : null
@@ -729,7 +756,13 @@ function showCredit(a: NVSlideAttribution | undefined): void {
     .filter(str)
     .map((t) => `. ${t.replace(/\.$/, '')}`)
   credit.append(title, ...rest)
-  credit.title = str(a.modified) ? `Modified: ${a.modified}` : ''
+  // The bar truncates it: the tooltip has it all.
+  credit.title = [
+    credit.textContent,
+    str(a.modified) && `Modified: ${a.modified}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 const openUrl = (url: string) => {

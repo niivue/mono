@@ -2,7 +2,8 @@
  * Browser check of the viewer shell (createSlideView and its UIKit extras) on
  * a synthetic 2-channel 64 x 48 uint8 OME-Zarr store served from memory (no
  * network):
- * hover readout, the channel panel reached by keyboard with visible focus, a
+ * the status bar (credit, hover readout, fixed layout at any width), the
+ * contrast box off for RGB (a 3-channel store), the channel panel reached by keyboard with visible focus, a
  * window/level drag, double-click zoom, and the side-by-side and lens compare
  * views linked to the main one.
  *
@@ -19,60 +20,65 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const DIST = join(HERE, '..', 'dist')
 const [C, Y, X] = [2, 48, 64]
 const json = (v) => Buffer.from(JSON.stringify(v))
-const store = new Map([
-  ['.zgroup', json({ zarr_format: 2 })],
-  [
-    '.zattrs',
-    json({
-      multiscales: [
-        {
-          version: '0.4',
-          axes: [
-            { name: 'c', type: 'channel' },
-            { name: 'y', type: 'space', unit: 'micrometer' },
-            { name: 'x', type: 'space', unit: 'micrometer' },
-          ],
-          datasets: [
-            {
-              path: '0',
-              coordinateTransformations: [
-                { type: 'scale', scale: [1, 0.5, 0.5] },
-              ],
-            },
-          ],
+const CREDIT = 'Synthetic test store'
+// C channels: two show composited, three uint8 show as RGB.
+const makeStore = (C) =>
+  new Map([
+    ['.zgroup', json({ zarr_format: 2 })],
+    [
+      '.zattrs',
+      json({
+        attribution: { title: CREDIT },
+        multiscales: [
+          {
+            version: '0.4',
+            axes: [
+              { name: 'c', type: 'channel' },
+              { name: 'y', type: 'space', unit: 'micrometer' },
+              { name: 'x', type: 'space', unit: 'micrometer' },
+            ],
+            datasets: [
+              {
+                path: '0',
+                coordinateTransformations: [
+                  { type: 'scale', scale: [1, 0.5, 0.5] },
+                ],
+              },
+            ],
+          },
+        ],
+        omero: {
+          channels: ['00FF00', 'FF00FF'].map((color, c) => ({
+            label: `ch${c}`,
+            color,
+            active: true,
+            window: { start: 0, end: 255, min: 0, max: 255 },
+          })),
         },
-      ],
-      omero: {
-        channels: ['00FF00', 'FF00FF'].map((color, c) => ({
-          label: `ch${c}`,
-          color,
-          active: true,
-          window: { start: 0, end: 255, min: 0, max: 255 },
-        })),
-      },
+      }),
+    ],
+    [
+      '0/.zarray',
+      json({
+        zarr_format: 2,
+        shape: [C, Y, X],
+        chunks: [1, Y, X],
+        dtype: '|u1',
+        compressor: null,
+        fill_value: 0,
+        order: 'C',
+        filters: null,
+      }),
+    ],
+    ...Array.from({ length: C }, (_, c) => {
+      // Channel 0 holds 3x, the others 4y.
+      const chunk = new Uint8Array(Y * X)
+      for (let y = 0; y < Y; y++)
+        for (let x = 0; x < X; x++) chunk[y * X + x] = c ? 4 * y : 3 * x
+      return [`0/${c}.0.0`, Buffer.from(chunk.buffer)]
     }),
-  ],
-  [
-    '0/.zarray',
-    json({
-      zarr_format: 2,
-      shape: [C, Y, X],
-      chunks: [1, Y, X],
-      dtype: '|u1',
-      compressor: null,
-      fill_value: 0,
-      order: 'C',
-      filters: null,
-    }),
-  ],
-])
-// Channel 0 holds 3x, channel 1 holds 4y.
-for (let c = 0; c < C; c++) {
-  const chunk = new Uint8Array(Y * X)
-  for (let y = 0; y < Y; y++)
-    for (let x = 0; x < X; x++) chunk[y * X + x] = c ? 4 * y : 3 * x
-  store.set(`0/${c}.0.0`, Buffer.from(chunk.buffer))
-}
+  ])
+const stores = { 's.zarr': makeStore(C), 'rgb.zarr': makeStore(3) }
 const TYPES = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -89,9 +95,10 @@ const server = createServer(async (req, res) => {
     failStore = req.url.endsWith('?on')
     return res.end()
   }
-  if (path.startsWith('s.zarr/')) {
+  const [name, ...key] = path.split('/')
+  if (stores[name]) {
     if (failStore) return res.writeHead(500).end()
-    const body = store.get(path.slice('s.zarr/'.length))
+    const body = stores[name].get(key.join('/'))
     return body ? res.end(body) : res.writeHead(404).end()
   }
   try {
@@ -144,6 +151,57 @@ async function check(backend) {
   const box = await page.locator('#canvas').boundingBox()
   const cx = box.x + box.width / 2
   const cy = box.y + box.height / 2
+
+  // Status bar: the credit on load, the readout while hovering, the credit
+  // again on leave; the toolbar, view and bar never change size meanwhile.
+  const layout = () =>
+    page.evaluate(() =>
+      ['header', 'main', 'footer']
+        .map((s) => {
+          const r = document.querySelector(s).getBoundingClientRect()
+          return `${r.width}x${r.height}`
+        })
+        .join(' '),
+    )
+  const creditShown = () =>
+    page.evaluate(() => {
+      const credit = document.getElementById('credit')
+      return !credit.hidden && document.getElementById('readout').hidden
+        ? credit.textContent
+        : null
+    })
+  const hoverKeepsLayout = async (x, y) => {
+    const before = await layout()
+    if ((await creditShown()) !== CREDIT) fail(`credit ${await creditShown()}`)
+    const top = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.id,
+      [x, y],
+    )
+    if (top !== 'canvas') return fail(`${top} covers the hover point`)
+    await page.mouse.move(x, y)
+    await page.waitForFunction(() => document.getElementById('credit').hidden)
+    const during = await layout()
+    const { x: fx, y: fy } = await page.locator('footer').boundingBox()
+    await page.mouse.move(fx + 4, fy + 4)
+    await page.waitForFunction(() => !document.getElementById('credit').hidden)
+    if ((await creditShown()) !== CREDIT) fail('credit not back on leave')
+    const after = await layout()
+    if (during !== before || after !== before)
+      fail(`layout moved on hover: ${before} | ${during} | ${after}`)
+  }
+  await hoverKeepsLayout(cx, cy)
+  // Narrow: nothing scrolls sideways, the view keeps its room.
+  await page.setViewportSize({ width: 360, height: 700 })
+  const narrow = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    view: document.querySelector('main').getBoundingClientRect().height,
+  }))
+  if (narrow.scroll > 360 || narrow.view < 200)
+    fail(`narrow layout ${JSON.stringify(narrow)}`)
+  const nbox = await page.locator('#canvas').boundingBox()
+  // Clear of the overlaid panels: bottom left.
+  await hoverKeepsLayout(nbox.x + 24, nbox.y + nbox.height - 24)
+  await page.setViewportSize({ width: 900, height: 700 })
 
   // Hover readout: base pixel, the channel and its value, the level read.
   await page.mouse.move(cx, cy)
@@ -347,6 +405,33 @@ async function check(backend) {
     fail('the channel panel lists every channel')
   if (!(await page.locator('#canvas2').isHidden()))
     fail('compare canvas still shown')
+
+  // Contrast box: off for RGB (which falls back to pan), back for scalar.
+  const openStore = async (name, rgb) => {
+    await page.evaluate(
+      (url) => nvBench.openUrl(url),
+      `http://127.0.0.1:${port}/${name}/`,
+    )
+    await page.waitForFunction(
+      (rgb) => !nvBench.slide().manifest.channelInfo === rgb,
+      rgb,
+    )
+  }
+  const contrastOff = () =>
+    page.evaluate(() => document.getElementById('contrastBox').disabled)
+  await page.selectOption('#drag', '1')
+  await openStore('rgb.zarr', true)
+  if (!(await contrastOff()) || (await page.inputValue('#drag')) !== '3')
+    fail('RGB slide kept the contrast box')
+  const centre = () => page.evaluate(() => nvBench.slide().viewport.centerX)
+  const c0 = await centre()
+  await page.mouse.move(cx, cy)
+  await page.mouse.down()
+  await page.mouse.move(cx + 40, cy, { steps: 4 })
+  await page.mouse.up()
+  if ((await centre()) === c0) fail('RGB slide: a left drag does not pan')
+  await openStore('s.zarr', false)
+  if (await contrastOff()) fail('scalar slide: contrast box still disabled')
 
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
   await page.close()

@@ -91,6 +91,7 @@ import {
 import { blendOverlayData } from '@/volume/overlayBlend'
 import { blendOverlaysGL, destroyBlendOverlaysGL } from './blendOverlays'
 import * as depthPickShader from './depthPickShader'
+import { blendOver } from './glUtil'
 import * as gradient from './gradient'
 import {
   type ChunkUploaderGL,
@@ -3028,7 +3029,7 @@ export class VolumeRenderer extends NVRenderer {
       })
       gl.drawElements(gl.TRIANGLE_STRIP, indexCount, gl.UNSIGNED_SHORT, 0)
     }
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
 
     // Cleanup
     gl.bindVertexArray(null)
@@ -3534,7 +3535,7 @@ export class VolumeRenderer extends NVRenderer {
       entry,
       true,
     )
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    blendOver(gl)
     gl.bindVertexArray(null)
   }
 

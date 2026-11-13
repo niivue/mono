@@ -9,13 +9,12 @@ import { elementText } from './placement'
 export const ARGOS_TAG = 65000
 
 export interface ArgosStack {
-  /** Main-chain image indices of each plane's pyramid, plane 0 first. */
-  planes: number[][]
   /**
-   * The plane to open by default: the middle one for now. Once NVSlide takes
-   * its first plane from `level.plane` (lane C), it becomes z = 0, i.e.
-   * plane -MinZ.
+   * Main-chain image indices of each plane's pyramid, plane 0 first. Plane i
+   * is focal step MinZ + i (units unstated); plane -MinZ is step 0.
    */
+  planes: number[][]
+  /** The plane opened by default (owner): the middle, usually the sharpest. */
   middle: number
   minZ: number
   maxZ: number

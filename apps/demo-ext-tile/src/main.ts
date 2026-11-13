@@ -655,8 +655,8 @@ sourceSelect.replaceChildren(
     tiffOption('Philips-TIFF/Philips-1.tiff', '327 MB'),
     tiffOption('Philips-TIFF/Philips-2.tiff', '914 MB, largest'),
     tiffOption('Philips-TIFF/Philips-4.tiff', '291 MB, sparse'),
-    tiffOption('Leica/Leica-1.scn', '292 MB, offsets not applied'),
-    tiffOption('Ventana/Ventana-1.bif', '227 MB, tile joints not applied'),
+    tiffOption('Leica/Leica-1.scn', '292 MB'),
+    tiffOption('Ventana/Ventana-1.bif', '227 MB, tile joints placed'),
   ]),
   group('DICOM-WSI', [
     dicomOption('3dhistech-1', '3DHISTECH-1'),

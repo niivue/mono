@@ -73,7 +73,7 @@ export interface TiffSlideOptions {
   id?: string
   /** geotiff decoder pool (web workers). Owned by the caller; omit to decode on the main thread. */
   pool?: Pool
-  /** OME-TIFF focal plane; default 0. */
+  /** Focal plane: OME-TIFF default 0, Argos stack default the middle. */
   z?: number
   /** OME-TIFF timepoint; default 0. */
   t?: number
@@ -81,8 +81,8 @@ export interface TiffSlideOptions {
   attribution?: NVSlideAttribution
   /**
    * Vendor tile placement (`level.placement`): Ventana BIF joints, Trestle
-   * overlaps, Leica SCN regions side by side. Off by default until NVSlide
-   * draws placed tiles; off, these files open as their storage grid.
+   * overlaps, Leica SCN regions side by side. Default true; false opens
+   * these files as their storage grid.
    */
   placement?: boolean
 }
@@ -558,7 +558,7 @@ interface TiffOpened {
   placementReport?: TiffPlacementReport
 }
 
-/** What `placement: true` resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
+/** What placement resolved: a grid fallback's warning, or Ventana's per-seam residuals. */
 export interface TiffPlacementReport {
   warning?: string
   notice?: string
@@ -614,9 +614,10 @@ async function openTiff(
     (sizes.C * sizes.Z * sizes.T === 1 &&
       planeIfd(ome, { C: 0, Z: 0, T: 0 }) === 0)
   ) {
-    const placed = options.placement
-      ? await placedPyramid(tiff, first, description)
-      : null
+    const placed =
+      options.placement !== false
+        ? await placedPyramid(tiff, first, description)
+        : null
     const pyramids = [
       placed?.levels ??
         (await pyramidImages(tiff, first, true, philipsLevels(description))),
@@ -854,6 +855,20 @@ function levelOf(
   const width = img.getWidth()
   const height = img.getHeight()
   const aspect = baseHeight / baseWidth
+  // Ventana iScan pads each level to whole 8 px JPEG blocks (82960 / 4 =
+  // 20740 rows stored as 20744): its true size and power-of-two downsample.
+  const d = 2 ** Math.round(Math.log2(baseWidth / width))
+  if (
+    d > 1 &&
+    padToTiles(baseWidth, d, 8) === width &&
+    padToTiles(baseHeight, d, 8) === height
+  )
+    return {
+      img,
+      width: Math.ceil(baseWidth / d),
+      height: Math.ceil(baseHeight / d),
+      downsample: d,
+    }
   if (Math.abs(height - aspect * width) <= 1 + aspect) {
     return { img, width, height, downsample: baseWidth / width }
   }
@@ -1395,7 +1410,7 @@ export class TiffSlideSource implements SlideTileSource {
   /** An OME-TIFF z/t stack's planes (`SlidePlaneCapable`); unset otherwise. */
   readonly planes?: NVSlidePlaneAxes
   readonly preparePlane?: SlidePlaneCapable['preparePlane']
-  /** With `placement: true`: a grid fallback's warning, or the per-seam residuals. */
+  /** A vendor layout's grid fallback warning, or the per-seam residuals. */
   readonly placementReport?: TiffPlacementReport
   private host: SlideSourceHost | null = null
   private readonly closed = new AbortController()

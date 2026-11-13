@@ -107,6 +107,7 @@ export class SlideRenderer {
     if (this._isReady) return
 
     this._gl = gl
+    this._gutter.gl = gl
     this._nearestSampler = gl.createSampler()
     for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER])
       gl.samplerParameteri(this._nearestSampler, p, gl.NEAREST)
@@ -188,7 +189,7 @@ export class SlideRenderer {
     )
     this._textures.beginFrame()
     gl.activeTexture(gl.TEXTURE0)
-    if (!nearest) this._gutter.resync(gl, this._textures)
+    if (!nearest) this._gutter.resync(this._textures)
     const textures = this._planTextures
     planTextures(
       this._textures,
@@ -354,7 +355,7 @@ export class SlideRenderer {
     this._luts.clear(this._gl)
     this._lines.destroy()
     this._font.destroy()
-    this._gutter.destroy(this._gl)
+    this._gutter.destroy()
     const gl = this._gl
     if (gl) {
       if (this._placeholderTexture) gl.deleteTexture(this._placeholderTexture)
@@ -416,7 +417,7 @@ export class SlideRenderer {
   }
 
   private textureForBitmap(
-    gl: WebGL2RenderingContext,
+    _gl: WebGL2RenderingContext,
     at: GutterAt,
     bitmap: ImageBitmap,
   ): TileTextureGL | null {
@@ -430,7 +431,6 @@ export class SlideRenderer {
       'upload',
       () =>
         this._gutter.upload(
-          gl,
           bitmap,
           at,
           this._textures,

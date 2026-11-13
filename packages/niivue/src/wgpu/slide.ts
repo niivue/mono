@@ -214,6 +214,7 @@ export class SlideRendererGPU {
   ) {
     this._maxPoolBytes = maxRawPoolBytes
     this._fuser = new TileFuserGPU(maxRawPoolBytes)
+    this._gutter.device = device
     this._budget = new SlideBudgetRegistration(this, maxRawPoolBytes)
     this._textures = new TileTextureCache<TileTextureGPU>(
       DEFAULT_TILE_TEXTURE_BYTES,
@@ -428,7 +429,7 @@ export class SlideRendererGPU {
       frameTextureBudget(plan.fuses, this._fuser.poolBytes, this._maxPoolBytes),
     )
     this._textures.beginFrame()
-    if (!nearest) this._gutter.resync(this._device, this._textures)
+    if (!nearest) this._gutter.resync(this._textures)
     const textures = this._planTextures
     planTextures(
       this._textures,
@@ -689,7 +690,6 @@ export class SlideRendererGPU {
       'upload',
       () =>
         this._gutter.upload(
-          this._device,
           bitmap,
           at,
           this._textures,

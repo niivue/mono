@@ -147,6 +147,7 @@ export class SlidePlaneRenderer extends NVRenderer {
   init(gl: WebGL2RenderingContext): void {
     if (this.isReady) return
     this._gl = gl
+    this._gutter.gl = gl
     this._shader = new Shader(gl, vertSrc, fragSrc(false))
     this._lutShader = new Shader(gl, vertSrc, fragSrc(true))
     // Sampler units are program state: set once (the lookup table is on unit 1).
@@ -194,7 +195,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     if (!bitmap) return null
     const existing = this._textures.get(at.key, bitmap)
     if (existing) return existing
-    return this._gutter.upload(gl, bitmap, at, this._textures)
+    return this._gutter.upload(bitmap, at, this._textures)
   }
 
   /** Bind the program and uniforms, and set the plane's depth/blend state. */
@@ -449,7 +450,7 @@ export class SlidePlaneRenderer extends NVRenderer {
     if (!gl) return
     this._textures.clear()
     this._fuser.destroy(gl)
-    this._gutter.destroy(gl)
+    this._gutter.destroy()
     this._luts.clear(gl)
     for (const t of [this._annTex, this._bgTex]) if (t) gl.deleteTexture(t)
     for (const v of [this._vao, this._annVao]) if (v) gl.deleteVertexArray(v)

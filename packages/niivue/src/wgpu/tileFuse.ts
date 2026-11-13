@@ -173,9 +173,9 @@ export class TileFuserGPU {
       tile,
       device.limits.maxTextureDimension2D,
       (width, height, labels) => {
-        const t = gutter.create(device, width, height, at)
+        const t = gutter.create(width, height, at)
         // Read with textureLoad (nearest), so it needs no gutter of its own.
-        if (labels) t.labels = gutter.create(device, width, height, at).texture
+        if (labels) t.labels = gutter.create(width, height, at).texture
         return t
       },
     )
@@ -267,7 +267,6 @@ export class TileFuserGPU {
       },
     )
     gutter.sync(
-      device,
       jobs.map((j) => j.target),
       cache,
       sync,

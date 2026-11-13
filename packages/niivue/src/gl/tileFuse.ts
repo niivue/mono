@@ -137,9 +137,9 @@ export class TileFuserGL {
       tile,
       this._maxTexture,
       (width, height, labels) => {
-        const t = gutter.create(gl, width, height, at)
+        const t = gutter.create(width, height, at)
         // Read with texelFetch (nearest), so it needs no gutter of its own.
-        if (labels) t.labels = gutter.create(gl, width, height, at).texture
+        if (labels) t.labels = gutter.create(width, height, at).texture
         return t
       },
     )
@@ -283,7 +283,6 @@ export class TileFuserGL {
     gl.activeTexture(saved.active)
 
     gutter.sync(
-      gl,
       jobs.map((j) => j.target),
       cache,
       sync,

@@ -165,6 +165,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
 
   init(device: GPUDevice, format: GPUTextureFormat, msaaCount: number): void {
     if (this.isReady) return
+    this._gutter.device = device
     this._sampler = linearSampler(device)
     this._nearestSampler = device.createSampler({
       magFilter: 'nearest',
@@ -356,7 +357,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     else if (cached.bitmap)
       entry =
         this._textures.get(at.key, cached.bitmap) ??
-        this._gutter.upload(device, cached.bitmap, at, this._textures)
+        this._gutter.upload(cached.bitmap, at, this._textures)
     if (!entry) return null
     if (entry.group) return entry as PlaneTexture & { group: GPUBindGroup }
     return Object.assign(entry, {

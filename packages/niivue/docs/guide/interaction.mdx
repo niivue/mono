@@ -3,7 +3,7 @@ title: Mouse, touch and events
 description: "Choose what mouse drags, the wheel, touch and keys do, and listen for viewer events."
 ---
 
-import Demo from '../../../components/Demo.astro'
+import Demo from '@site/components/Demo.astro'
 
 A viewer responds to the mouse, touch and keyboard on its own. You choose
 what a drag does, and you listen for events to keep the rest of your page in
@@ -108,7 +108,7 @@ The events you will use most:
 - `change`: any property setter ran, with `{ property, value }`.
 
 The full list, with every detail field, is in
-[events.md](https://github.com/niivue/mono/blob/main/packages/niivue/docs/events.md).
+[Events](/reference/events/).
 Callback options from NiiVue 0.x such as `onLocationChange` are gone; use the
 events instead. There is no separate `intensityChange` event: read the
 values from `locationChange`.

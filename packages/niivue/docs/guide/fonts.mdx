@@ -3,7 +3,7 @@ title: Fonts and text
 description: "Change the size and color of on-canvas text, switch fonts at runtime, and make new MSDF font atlases."
 ---
 
-import Demo from '../../../components/Demo.astro'
+import Demo from '@site/components/Demo.astro'
 
 NiiVue draws its own text on the canvas: orientation labels, colorbar ticks,
 legends, measurements and the placeholder shown before an image loads. The
@@ -82,5 +82,5 @@ msdf-atlas-gen -font NotoSansSC-Regular.ttf -charset charset.txt -pxrange 2 \
 
 Host the PNG and JSON on a server with CORS and load them with
 `setFontFromUrl`. The
-[fonts guide](https://github.com/niivue/mono/blob/main/packages/niivue/docs/fonts.md)
+[fonts notes](https://github.com/niivue/mono/blob/main/packages/niivue/notes/fonts.md)
 in the repository covers bundling a font into the package instead.

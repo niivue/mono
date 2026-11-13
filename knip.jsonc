@@ -16,8 +16,13 @@
     },
     "apps/docs": {
       // Demo.astro loads the demos by name through import.meta.glob; Starlight
-      // loads routeData.ts from its `routeMiddleware` path.
-      "entry": ["src/demos/*.ts", "src/routeData.ts"],
+      // loads routeData.ts from its `routeMiddleware` path; the guides in
+      // packages/niivue/docs import Demo.astro through the `@site` alias.
+      "entry": [
+        "src/demos/*.ts",
+        "src/routeData.ts",
+        "src/components/Demo.astro"
+      ],
       // `astro check` (project.json typecheck) loads it; Knip does not read project.json.
       "ignoreDependencies": ["@astrojs/check"]
     },

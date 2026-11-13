@@ -1,4 +1,7 @@
-# NiiVue Events
+---
+title: Events
+description: "Every event a NiiVue viewer fires, when it fires, and what its detail holds."
+---
 
 NiiVue uses the standard [`EventTarget`](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) API. Every controller instance is an `EventTarget`, so you use `addEventListener` and `removeEventListener` just like a DOM element.
 

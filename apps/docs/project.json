@@ -23,6 +23,7 @@
         "!{projectRoot}/dist/**/*",
         "!{projectRoot}/.astro/**/*",
         "{workspaceRoot}/packages/niivue/examples/**/*",
+        "{workspaceRoot}/packages/*/docs/**/*",
         "{workspaceRoot}/nx-tools/repo-graph.ts",
         {
           "env": "DOCS_BASE_URL"

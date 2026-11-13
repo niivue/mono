@@ -1,4 +1,7 @@
-# NiiVue Property Migration Reference
+---
+title: Migrating from NiiVue 0.x
+description: "Where each NiiVue 0.x property and setter lives in the new API."
+---
 
 Complete mapping from old property names/locations to new API.
 

@@ -72,10 +72,32 @@ cover code style, commit messages and the rest of the workflow.
 
 The site is an [Astro](https://astro.build/) app using the
 [Starlight](https://starlight.astro.build/) docs theme, in `apps/docs` (the
-Nx project `docs-site`). The guides are MDX files in
-`apps/docs/src/content/docs/guide`. Link between pages with root-relative
-URLs such as `/guide/meshes/` or `/gallery/sync/`; the build adds the site's
-base path.
+Nx project `docs-site`). Its pages come from the packages: each package
+keeps its docs in its own `docs` folder, and the site collects them. The
+NiiVue guides are in `packages/niivue/docs/guide`. Link between pages with
+root-relative URLs such as `/guide/meshes/` or `/gallery/sync/`; the build
+adds the site's base path.
+
+### Package docs
+
+Every package except `niivue` and `dev-images` has a page under Packages in
+the sidebar, built from `packages/<name>/docs`:
+
+- `docs/index.mdx` is required. It becomes `/packages/<name>/`; another
+  page, `docs/hosts.mdx` say, becomes `/packages/<name>/hosts/`.
+- Each page needs a `title` and a `description` in its frontmatter. With
+  more than one page, `sidebar: { order: N }` sets their order, and the
+  index usually sets `sidebar: { label: Overview, order: 0 }`.
+- A package with one page is a single sidebar link; with more, a group
+  named in `PACKAGES` in `apps/docs/src/sidebar.ts`. A new package must be
+  added there, or the build fails.
+- Files starting with `_` are skipped. Notes that are not for the site,
+  such as design docs and TODO lists, go in the package's `notes` folder.
+
+Write for someone using the package for the first time: say what it is for,
+how to install it and the smallest thing that works, then one page or
+section per task, named for what the reader wants to do. Keep code samples
+short, and check every fact against the package's source.
 
 Each live demo is a small module in `apps/docs/src/demos`. It receives a
 canvas, a helper for the control bar, and an `asset()` function that
@@ -84,7 +106,7 @@ resolves sample file paths, and it returns the viewer it made.
 runs it in the browser. A guide embeds one by its file name:
 
 ```mdx
-import Demo from '../../../components/Demo.astro'
+import Demo from '@site/components/Demo.astro'
 
 <Demo name="meshes" />
 ```
@@ -104,10 +126,11 @@ For agents, every guide is also served as Markdown at its URL plus
 `index.md` (`/guide/meshes/index.md`), which the Copy page button copies.
 `/llms.txt` lists those files and `/llms-full.txt` joins them, both in the
 sidebar order set in `src/sidebar.ts`. `src/lib/markdown.ts` drops the
-imports and writes each `<Demo>` out as its code; any other component would
-reach the Markdown as written, so keep guides to Markdown plus `<Demo>`. A
-new guide needs a `description` in its frontmatter (llms.txt shows it) and
-an entry in `src/sidebar.ts`.
+imports, writes each `<Demo>` out as its code and each `<Tabs>` panel
+under its label; any other component would reach the Markdown as written,
+so keep pages to Markdown plus `<Demo>` and `<Tabs>`. A new NiiVue guide
+needs a `description` in its frontmatter (llms.txt shows it) and an entry
+in `src/sidebar.ts`.
 
 ## Running the site
 

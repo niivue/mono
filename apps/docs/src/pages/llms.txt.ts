@@ -1,11 +1,17 @@
 import { getCollection } from 'astro:content'
 import type { APIRoute } from 'astro'
-import { guide, markdownPath } from '../lib/markdown'
+import {
+  guide,
+  markdownPath,
+  packagePageTitle,
+  packagesInOrder,
+} from '../lib/markdown'
 import { sidebar } from '../sidebar'
 import { docsUrl, rawRepoUrl, repoUrl } from '../site'
 
 // The llms.txt index (https://llmstxt.org/): a summary, the facts an agent
-// most often gets wrong, then every guide's Markdown version in reading order.
+// most often gets wrong, then every guide's and package page's Markdown
+// version in reading order.
 
 const SUMMARY = `NiiVue is a JavaScript library for viewing medical images in the browser: volumes such as MRI and CT, surface meshes, tractography, connectomes and physiological signals, drawn with WebGL2 or WebGPU. It needs only a canvas and a URL to the data, and no server beyond one that serves the files.`
 
@@ -39,21 +45,27 @@ export const GET: APIRoute = async ({ url }) => {
     }),
   )
 
+  const packageLines = (await packagesInOrder()).flatMap((pkg) =>
+    pkg.pages.map(
+      (entry) =>
+        `- [${packagePageTitle(pkg, entry)}](${link(markdownPath(entry.id))}): ${entry.data.description}`,
+    ),
+  )
+
   const sections = [
     `# NiiVue`,
     `> ${SUMMARY}`,
     NOTES,
-    `## Documentation sets\n\n- [Complete guide](${link('llms-full.txt')}): every guide below in one file`,
+    `## Documentation sets\n\n- [Complete docs](${link('llms-full.txt')}): every guide and package page below in one file`,
     ...guides,
+    `## Packages\n\nBindings for other frameworks and languages, and extensions for jobs the core package leaves out.\n\n${packageLines.join('\n')}`,
     `## Examples
 
 - [Gallery](${link('gallery/')}): ${examples} example pages, each running live beside its source code
 - [Example source](${repoUrl}/tree/main/packages/niivue/examples): the HTML and JavaScript of every example page`,
-    `## Reference
+    `## Source files
 
-- [API reference](${rawRepoUrl('packages/niivue/docs/api.md')}): naming rules, every viewer property by group, and the per-volume and per-mesh option types
-- [Events](${rawRepoUrl('packages/niivue/docs/events.md')}): every event a viewer fires and its \`detail\`
-- [Migrating from NiiVue 0.x](${rawRepoUrl('packages/niivue/docs/convert.md')}): old property names and setter methods mapped to the new API
+- [API style guide](${rawRepoUrl('packages/niivue/notes/api.md')}): naming rules, every viewer property by group, and the per-volume and per-mesh option types
 - [Package README](${rawRepoUrl('packages/niivue/README.md')}): installation, backend-only builds and standalone ES modules`,
     `## Optional
 

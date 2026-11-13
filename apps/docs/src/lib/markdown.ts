@@ -1,8 +1,8 @@
 // Plain Markdown versions of the guides, for agents and the "Copy page"
 // button. llmstxt.org asks for them at the page URL plus `index.md` when the
 // URL ends in a slash: /guide/loading/ -> /guide/loading/index.md.
-import { type CollectionEntry, getEntry } from 'astro:content'
-import { sidebar } from '../sidebar'
+import { type CollectionEntry, getCollection } from 'astro:content'
+import { PACKAGES, sidebar } from '../sidebar'
 import { demoSource } from './demos'
 
 type Guide = CollectionEntry<'docs'>
@@ -24,15 +24,47 @@ export async function guidesInOrder(): Promise<Guide[]> {
   return Promise.all(ids.map(guide))
 }
 
+/** A package's docs, as listed in the sidebar's Packages section. */
+export type PackageDocs = { dir: string; label: string; pages: Guide[] }
+
+/**
+ * Every listed package with its pages, in sidebar order: the overview first,
+ * then by `sidebar.order`, then by id.
+ */
+export async function packagesInOrder(): Promise<PackageDocs[]> {
+  const docs = await getCollection('docs')
+  return PACKAGES.map(({ dir, label }) => {
+    const root = `packages/${dir}`
+    const rank = (entry: Guide) =>
+      entry.id === root
+        ? Number.NEGATIVE_INFINITY
+        : (entry.data.sidebar.order ?? Number.POSITIVE_INFINITY)
+    const pages = docs
+      .filter((entry) => entry.id === root || entry.id.startsWith(`${root}/`))
+      .sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id))
+    return { dir, label, pages }
+  }).filter((pkg) => pkg.pages.length > 0)
+}
+
+/** A package page's title with its package's label, for lists across packages. */
+export function packagePageTitle(pkg: PackageDocs, page: Guide): string {
+  const { title } = page.data
+  return page.id === `packages/${pkg.dir}` || title.startsWith(pkg.label)
+    ? title
+    : `${pkg.label}: ${title}`
+}
+
 export async function guide(id: string): Promise<Guide> {
   const entry = await findGuide(id)
   if (!entry) throw new Error(`No guide ${id}`)
   return entry
 }
 
-/** The guide for a Starlight route id, if the route is one (the home page's id is ''). */
+/** The docs page for a Starlight route id, if the route is one. */
 export async function findGuide(id: string): Promise<Guide | undefined> {
-  return id ? getEntry('docs', id) : undefined
+  // getCollection, not getEntry: getEntry warns for every route that is not
+  // a docs page (the home page, the gallery).
+  return (await getCollection('docs')).find((entry) => entry.id === id)
 }
 
 /**

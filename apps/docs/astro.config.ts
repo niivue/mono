@@ -1,8 +1,10 @@
+import { fileURLToPath } from 'node:url'
 import { satteri } from '@astrojs/markdown-satteri'
 import starlight from '@astrojs/starlight'
 import { defineConfig } from 'astro/config'
 import { checkLinks } from './src/lib/checkLinks'
-import { sidebar } from './src/sidebar'
+import { packagesSection } from './src/lib/packageDocs'
+import { fullSidebar } from './src/sidebar'
 import { repoUrl } from './src/site'
 
 // The site is served from the root in dev and from /mono/docs/ on GitHub
@@ -54,7 +56,11 @@ export default defineConfig({
       ],
       social: [{ icon: 'github', label: 'GitHub', href: repoUrl }],
       editLink: { baseUrl: `${repoUrl}/edit/main/apps/docs/` },
-      sidebar,
+      sidebar: fullSidebar(
+        packagesSection(
+          fileURLToPath(new URL('../../packages', import.meta.url)),
+        ),
+      ),
       routeMiddleware: './src/routeData.ts',
       components: {
         Hero: './src/components/Hero.astro',
@@ -73,4 +79,11 @@ export default defineConfig({
     }),
     checkLinks(base),
   ],
+  vite: {
+    resolve: {
+      // The guides live in packages/niivue/docs and import site components
+      // (Demo) from here.
+      alias: { '@site': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
+  },
 })

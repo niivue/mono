@@ -2,10 +2,11 @@ import { defineCollection } from 'astro:content'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { docsLoader } from '@astrojs/starlight/loaders'
 import { docsSchema } from '@astrojs/starlight/schema'
+import { glob } from 'astro/loaders'
 import { z } from 'astro/zod'
 import { buildGraph, collectGallery, EXAMPLES_DIR } from './lib/gallery'
+import { docsId } from './lib/packageDocs'
 
 // One entry per page in packages/niivue/examples, rebuilt in dev whenever an
 // example or a thumbnail is added, changed or removed.
@@ -65,7 +66,19 @@ const gallery = defineCollection({
   }),
 })
 
+// Each package keeps its pages in packages/<dir>/docs (see docsId for the
+// URLs they get). Files starting with _ are left out, as Starlight does.
+const docs = defineCollection({
+  loader: glob({
+    base: '../../packages',
+    pattern: '*/docs/**/[^_]*.{md,mdx}',
+    generateId: ({ entry, data }) =>
+      typeof data.slug === 'string' ? data.slug : docsId(entry),
+  }),
+  schema: docsSchema(),
+})
+
 export const collections = {
-  docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),
+  docs,
   gallery,
 }

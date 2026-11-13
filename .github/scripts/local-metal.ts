@@ -105,6 +105,7 @@ const env: Record<string, string | undefined> = {
   ...process.env,
   CI: '1',
   PLAYWRIGHT_CHROMIUM_CHANNEL: 'chromium',
+  E2E_BUNDLE: '1',
 }
 // Keeps tokens out of the PR's environment (see the header for the limits).
 for (const k of ['GH_TOKEN', 'GITHUB_TOKEN', 'NPM_TOKEN', 'NODE_AUTH_TOKEN'])

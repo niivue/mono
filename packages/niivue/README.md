@@ -214,6 +214,14 @@ volumes, with no Vite in between.
 await nv.loadMeshes([{ url: '/meshes/brain.mz3' }])
 ```
 
+### AFNI tractography
+
+Binary `.niml.tract` files load through `loadMeshes` or by dropping them onto
+any viewer with drag-and-drop enabled (for example `examples/tract.html`).
+Little- and big-endian records are supported; text/base64 NIML is not.
+Coordinates are converted from AFNI RAI to RAS mm. Bundle IDs are available
+for coloring with `tractOptions: { colorBy: 'dps:tract' }`.
+
 ### Signals (physio and spectroscopy)
 
 Alongside spatial volumes and meshes, NiiVue can load **signals** — a third,

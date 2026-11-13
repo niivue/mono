@@ -2,7 +2,7 @@ import NiiVue, { DRAG_MODE } from '@niivue/niivue'
 import type { Demo } from './types'
 
 const demo: Demo = async (canvas, { ui, asset }) => {
-  const nv = new NiiVue({ backgroundColor: [0.2, 0.2, 0.2, 1] })
+  const nv = new NiiVue()
   await nv.attachToCanvas(canvas)
   await nv.loadVolumes([{ url: asset('volumes/mni152.nii.gz') }])
 

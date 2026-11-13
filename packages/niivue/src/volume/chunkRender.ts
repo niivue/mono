@@ -7,10 +7,7 @@ import {
   chunkOwnedTexBox,
   type Vec3f,
 } from './chunking'
-import {
-  type DecodedChunkCache,
-  decodedTierBudgetBytes,
-} from './decodedChunkCache'
+import { decodedTierBudgetBytes } from './decodedChunkCache'
 
 /**
  * Per-chunk uniform values for one cube draw of a chunked volume. The renderer
@@ -107,13 +104,11 @@ export function chunkOffsetFor(
 export function setChunkBudget(
   entry: {
     manager: { setBudgetBytes(bytes: number): void }
-    decoded: DecodedChunkCache
+    decoded: { resize(maxBytes: number): void }
     sourceBytesPerVoxel: number
   },
   bytes: number,
 ): void {
   entry.manager.setBudgetBytes(bytes)
-  entry.decoded.setMaxBytes(
-    decodedTierBudgetBytes(bytes, entry.sourceBytesPerVoxel),
-  )
+  entry.decoded.resize(decodedTierBudgetBytes(bytes, entry.sourceBytesPerVoxel))
 }

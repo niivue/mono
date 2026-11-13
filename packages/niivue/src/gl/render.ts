@@ -1,3 +1,4 @@
+import { ByteLru, type ByteLruStats } from '@/byteLru'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVShapes from '@/mesh/NVShapes'
@@ -71,11 +72,7 @@ import {
   chunkUniformsFor,
   setChunkBudget,
 } from '@/volume/chunkRender'
-import {
-  DecodedChunkCache,
-  type DecodedChunkStats,
-  decodedTierBudgetBytes,
-} from '@/volume/decodedChunkCache'
+import { decodedTierBudgetBytes } from '@/volume/decodedChunkCache'
 import {
   buildModulationParams,
   type ModulationTextureParams,
@@ -244,7 +241,7 @@ interface ChunkedTexEntry {
    * the uploader: the bytes outlive an uploader rebuild, and survive a plan
    * swap by being re-keyed alongside the resident chunks.
    */
-  decoded: DecodedChunkCache
+  decoded: ByteLru<number, Uint8Array>
   /** Source bytes per voxel, which sets what the decoded tier costs to hold. */
   sourceBytesPerVoxel: number
   /**
@@ -931,7 +928,7 @@ export class VolumeRenderer extends NVRenderer {
     // The entry holds the live uploader so an in-place plan swap can replace it;
     // the prefetch hook reads it off `entry` (not a creation closure) so it
     // always targets the current plan.
-    const decoded = new DecodedChunkCache(
+    const decoded = new ByteLru<number, Uint8Array>(
       decodedTierBudgetBytes(budgetBytes, bpv),
     )
     const entry: ChunkedTexEntry = {
@@ -2430,12 +2427,13 @@ export class VolumeRenderer extends NVRenderer {
     let predicted = 0
     let retiring = 0
     let retiringBytes = 0
-    const decoded: DecodedChunkStats = {
+    const decoded: ByteLruStats = {
       hits: 0,
       misses: 0,
       admitted: 0,
       rejected: 0,
       evicted: 0,
+      evictedBytes: 0,
       entries: 0,
       bytes: 0,
       maxBytes: 0,
@@ -2456,6 +2454,7 @@ export class VolumeRenderer extends NVRenderer {
       decoded.admitted += d.admitted
       decoded.rejected += d.rejected
       decoded.evicted += d.evicted
+      decoded.evictedBytes += d.evictedBytes
       decoded.entries += d.entries
       decoded.bytes += d.bytes
       decoded.maxBytes += d.maxBytes

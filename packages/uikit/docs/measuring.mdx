@@ -1,0 +1,182 @@
+---
+title: Rulers, crosshairs and labels
+description: "Draw a measuring ruler, a crosshair with a scale, or labels pinned to a point over NiiVue images and whole-slide views."
+sidebar:
+  order: 3
+---
+
+These widgets only draw: you tell them where things are, then ask for a
+redraw. Nobody clicks them, so they need no control layer. Screen
+positions are in the canvas's own pixels, the same units NiiVue's pointer
+events report.
+
+## Drawing a ruler
+
+A ruler is a line between two points with tick marks and a length label
+that stays upright at any angle:
+
+```js
+import { loadDefaultFont, UIKitRulerOverlay } from '@niivue/uikit'
+
+const font = await loadDefaultFont()
+const ruler = new UIKitRulerOverlay(font)
+nv.registerOverlayRenderer(ruler)
+
+ruler.setRuler({ a: [100, 200], b: [300, 260], length: 42.5, units: 'mm' })
+nv.drawScene()
+```
+
+The ruler does not measure anything itself. It prints the `length` you
+give it, so you decide what is measured and in which units. By default it
+is yellow, draws a tick every unit with a longer one every fifth, and
+shows one decimal. `showTickNumbers: true` numbers the long ticks,
+`decimals` changes the precision, `sizePx` the label size, and
+`lineColor` and `textColor` the colors. `ruler.clear()` removes it.
+
+## Measuring between two clicks
+
+NiiVue's extension context reports where each click lands on a slice, both
+on screen and in millimetres. That is everything the ruler needs:
+
+```js
+const ctx = nv.createExtensionContext()
+let start = null
+
+ctx.on('slicePointerUp', (e) => {
+  const { canvasX, canvasY, mm } = e.detail
+  if (!start) {
+    start = { at: [canvasX, canvasY], mm }
+    return
+  }
+  const length = Math.hypot(mm[0] - start.mm[0], mm[1] - start.mm[1], mm[2] - start.mm[2])
+  ruler.setRuler({ a: start.at, b: [canvasX, canvasY], length, units: 'mm' })
+  nv.drawScene()
+  start = null
+})
+```
+
+The first click sets the start and the second draws the ruler. Listen for
+`slicePointerMove` as well to stretch the ruler while the pointer moves.
+
+## Marking a point with a crosshair
+
+NiiVue draws its own crosshair on slices. The UIKit crosshair is for views
+that have none, such as a whole-slide view, or for marking a point with a
+scale you can read distances from:
+
+```js
+const crosshair = new UIKitCrosshairOverlay(font)
+view.addOverlay(crosshair)
+
+crosshair.setCrosshair({
+  at: [400, 300],
+  gapPx: 10,
+  showTicks: true,
+  showTickNumbers: true,
+  pxPerUnit: 2,
+  unitsPerTick: 100,
+  units: 'um',
+})
+view.requestRender()
+```
+
+The arms reach the edges of the canvas, even after it is resized, and
+leave a small hole at the centre so the point itself stays visible
+(`gapPx`; 0 closes it). Ticks need a scale: `pxPerUnit` says how many
+pixels one unit covers, and `unitsPerTick` how many units lie between
+ticks. Give `pxPerUnit` as a pair when the two axes have different
+scales.
+
+The example adds the crosshair to a slide view. On a NiiVue canvas,
+register it with `nv.registerOverlayRenderer(crosshair)` and redraw with
+`nv.drawScene()`. The font is only needed for the numbers; without one the
+crosshair still draws its lines and ticks.
+
+## Labelling a point in 3D
+
+A point label is a short text joined to a spot by a line. You give the
+spot in millimetres, and a function that turns millimetres into a canvas
+position. The label then follows the 3D view as it turns:
+
+```js
+const labels = new UIKitPointLabelOverlay(font, (mm) =>
+  nv.mmToRenderCanvas([mm[0], mm[1], mm[2]]),
+)
+labels.setLabels([{ mm: [-40, -20, 50], text: 'Motor cortex' }])
+nv.registerOverlayRenderer(labels)
+```
+
+The line points away from the middle of the canvas, so labels on a
+turning brain swing outwards instead of across it, and the text flips
+sides rather than run off an edge. A point the function cannot place,
+such as one behind the camera, is skipped. `leaderLength` sets the line's
+length, `sizePx` the text size, and `lineColor` and `textColor` the
+colors. Sizes here are CSS pixels.
+
+[Atlases and labels](/guide/atlases/) shows how to read region names
+from an atlas.
+
+## Arrows and text of your own
+
+The pieces the widgets are built from are available too. A line overlay
+draws lines, optionally ending in an arrowhead, and a text overlay draws
+text:
+
+```js
+import {
+  buildTerminatedLine,
+  LineTerminator,
+  UIKitLineOverlay,
+  UIKitTextOverlay,
+} from '@niivue/uikit'
+
+const arrow = new UIKitLineOverlay(
+  buildTerminatedLine(50, 50, 200, 120, 3, [1, 0, 0, 1], { end: LineTerminator.ARROW }),
+)
+const note = new UIKitTextOverlay(font, [
+  { str: 'Lesion', x: 205, y: 130, sizePx: 24, outlineWidthPx: 2 },
+])
+nv.registerOverlayRenderer(arrow)
+nv.registerOverlayRenderer(note)
+```
+
+The line runs from (50, 50) to (200, 120), 3 pixels thick. A text outline
+keeps the words readable over a busy image. Change them later with
+`arrow.setLines(...)` and `note.setItems(...)`.
+
+## Extras for whole-slide views
+
+Four helpers add the usual tools to a slide view made with
+`createSlideView` from `@niivue/niivue` (see
+[Slides and OME-Zarr](/packages/nv-ext-tile/) for loading slides). Each
+one returns a function that removes it again:
+
+```js
+import {
+  attachSlideChannelPanel,
+  attachSlideHud,
+  attachSlideMinimap,
+  attachSlidePlaneControl,
+} from '@niivue/uikit'
+
+attachSlideMinimap(view, { corner: 'top-right' })
+attachSlideHud(view, document.getElementById('hud'))
+attachSlideChannelPanel(view, document.getElementById('channels'))
+attachSlidePlaneControl(view, document.getElementById('planes'))
+```
+
+- **The minimap** shows the whole slide in a corner of the canvas with
+  the part on screen boxed. Press or drag on it to move there. Pick the
+  corner with `corner` (bottom-right by default) and the size with
+  `sizeCss`.
+- **The HUD** writes the slide's details as plain text into an element
+  after every frame, one row per line, so give it a `pre` element. It
+  skips the work while the element is hidden.
+- **The channel panel** gives each channel of a multichannel slide a
+  visibility box, a color, a display range and a blend setting. It hides
+  itself for an RGB slide.
+- **The plane control** adds sliders for focal planes and time points
+  when the slide has more than one of them.
+
+The HUD, channel panel and plane control are ordinary HTML controls, so
+the keyboard and screen readers can reach them.

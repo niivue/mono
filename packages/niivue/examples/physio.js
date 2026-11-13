@@ -37,6 +37,13 @@ async function show(view) {
       display: { selectedColumns: [0], isLegendVisible: legendCheck.checked },
     })),
   )
+  // The whole recording squeezes ~50k cardiac samples into the plot width;
+  // open on 15 s from the scan start (time 0, after the pre-scan log). The
+  // graph's - button zooms back out.
+  const range = nv1.getGraphRange() // null when no trace is shown
+  if (!range) return
+  const start = Math.max(0, range.full[0])
+  nv1.setGraphRange([start, start + 15])
 }
 
 viewSelect.onchange = () => show(viewSelect.value)

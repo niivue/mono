@@ -1,0 +1,147 @@
+---
+title: nv-ohif
+description: "Show series in the OHIF Viewer with NiiVue: multiplanar and 3D views, overlays, measurements and whole-slide images in an OHIF viewport."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-ohif` is an extension for the [OHIF Viewer](https://ohif.org).
+It adds a NiiVue viewport to OHIF, so a series can be shown by NiiVue
+instead of OHIF's built-in Cornerstone viewport. Your users keep OHIF's
+study list, panels and toolbar, and get NiiVue's multiplanar and 3D views,
+clip planes, colormapped overlays and measurements.
+
+Use it when you run your own OHIF app and want NiiVue to draw some or all
+of its viewports. It is tested with OHIF 3.13 and the 3.14 beta. If you are
+building a viewer from scratch, use [NiiVue](/guide/) directly, or the
+[React bindings](/packages/nv-react/).
+
+## Install
+
+Install it in your OHIF app, together with NiiVue:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-ohif@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-ohif@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-ohif@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-ohif@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+OHIF already provides React (18 or 19 both work) and its own packages. The
+DICOM converter and the slide tools come along as regular dependencies.
+
+## Registering the extension
+
+Add the package to the `extensions` list in your app's `pluginConfig.json`,
+after the Cornerstone extension:
+
+```json
+{
+  "extensions": [
+    { "packageName": "@ohif/extension-default" },
+    { "packageName": "@ohif/extension-cornerstone" },
+    { "packageName": "@niivue/nv-ohif" }
+  ]
+}
+```
+
+The order matters. Registered after Cornerstone, NiiVue answers OHIF's
+standard viewport commands (reset, zoom, window presets and so on) on its
+own viewports, and passes the rest on to Cornerstone.
+
+## Showing a series in NiiVue
+
+A mode decides which viewport shows which series. The simplest setup swaps
+the Cornerstone viewport in your mode's layout for the NiiVue one, so it
+takes OHIF's ordinary image series:
+
+```js
+viewports: [
+  {
+    namespace: '@niivue/nv-ohif.viewportModule.niivue',
+    displaySetsToDisplay: ['@ohif/extension-default.sopClassHandlerModule.stack'],
+  },
+  // ...your other viewports
+],
+```
+
+Open a study in that mode and its series open in NiiVue, in the
+multiplanar view. A DICOM series is downloaded and converted in the browser
+first, so a large one takes a moment; the viewport says what it is doing.
+
+## What else it can do
+
+- **See what it can open:** NIfTI files, DICOM series and whole-slide
+  microscopy. See [What it can show](/packages/nv-ohif/images/).
+- **Add NiiVue's buttons to the toolbar:** views, clip planes, window
+  presets, colormaps and overlays. See
+  [Toolbar and controls](/packages/nv-ohif/toolbar/).
+- **Measure:** OHIF's measurement tools draw on NiiVue and fill the
+  Measurements panel. See [Measuring](/packages/nv-ohif/measurements/).
+
+## When something does not work
+
+- **The viewport stays black.** OHIF only hands a series to a viewport
+  that lists its display-set handler in `displaySetsToDisplay`. Check that
+  the series' handler is listed on the NiiVue viewport.
+- **"This series isn't something NiiVue can load yet."** Segmentations,
+  RT structures, reports and other non-image series are not converted.
+  Show them in OHIF's own viewports.
+- **Only one series shows.** A NiiVue viewport shows the first series it is
+  given and names the rest in a note. To stack one series on another, add
+  it as an [overlay](/packages/nv-ohif/toolbar/#layering-series).
+- **Crosshairs or Capture does not work.** Cornerstone's buttons do not
+  work on a NiiVue viewport. Use
+  [NiiVue's own](/packages/nv-ohif/toolbar/#crosshairs-and-capture).
+- **Clicking a measurement opens it in another viewport.** List
+  `@niivue/nv-ohif` after the Cornerstone extension in `pluginConfig.json`.
+
+## Working on the extension
+
+If you are changing nv-ohif itself, the repository has a small test page
+that behaves like OHIF and drives the real viewport. From the repository
+root, build the packages it uses, then start it:
+
+```bash
+bunx nx build nv-ohif
+cd packages/nv-ohif && bun run dev
+```
+
+It opens on `http://localhost:5183/` with a NIfTI brain. Add `?dicom` to the
+URL for a DICOM series from a public server, or `?slide` for a whole-slide
+image.
+
+To try your changes in a real OHIF app, pack the packages you changed into
+tarballs with `bun pm pack` and install those. Do not symlink the
+repository into the app: its bundler then picks up a second copy of shared
+packages, which breaks OHIF.
+
+The source is at
+https://github.com/niivue/mono/tree/main/packages/nv-ohif.

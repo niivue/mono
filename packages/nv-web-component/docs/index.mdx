@@ -1,0 +1,118 @@
+---
+title: nv-web-component
+description: "Put NiiVue viewers on any web page with plain HTML tags: one tag for a single viewer, another for a grid of viewers."
+sidebar:
+  label: Overview
+  order: 0
+---
+
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+
+`@niivue/nv-web-component` gives you two HTML tags, `<niivue-viewer>` and
+`<niivue-scene>`, that show NiiVue viewers on a page. Use it when you are
+not using a framework, or when you want to treat a viewer like any other
+page element: set its properties, call its methods and listen for its
+events.
+
+The tags create the canvas, start NiiVue, resize the viewer when the
+element changes size and clean up when it is removed.
+
+## Install
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm" icon="seti:npm">
+
+```bash
+npm install @niivue/nv-web-component@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="pnpm" icon="pnpm">
+
+```bash
+pnpm add @niivue/nv-web-component@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Yarn" icon="seti:yarn">
+
+```bash
+yarn add @niivue/nv-web-component@next @niivue/niivue@next
+```
+
+  </TabItem>
+  <TabItem label="Bun" icon="bun">
+
+```bash
+bun add @niivue/nv-web-component@next @niivue/niivue@next
+```
+
+  </TabItem>
+</Tabs>
+
+NiiVue is installed next to the tags rather than built into them, so build
+your page with a bundler such as Vite, which finds both for the browser.
+
+## Your first viewer
+
+```html
+<niivue-viewer id="viewer" style="height: 500px"></niivue-viewer>
+
+<script type="module">
+  import '@niivue/nv-web-component'
+
+  const viewer = document.querySelector('#viewer')
+  viewer.volumes = [{ url: '/volumes/mni152.nii.gz' }]
+</script>
+```
+
+Importing the package is enough to make both tags work. The viewer fills
+the element, so give it a height.
+
+## Which tag do you need?
+
+- **One viewer on a page:** `<niivue-viewer>`. See
+  [One viewer](/packages/nv-web-component/one-viewer/).
+- **Several viewers in a grid**, optionally moving together:
+  `<niivue-scene>`. See
+  [Several viewers](/packages/nv-web-component/several-viewers/).
+
+Both tags hand you the NiiVue instance behind each viewer, so everything in
+the [NiiVue guides](/guide/) still applies. If your app is written in
+React, the [React package](/packages/nv-react/) fits it better.
+
+## Using it from TypeScript
+
+The package ships its types. Name the element type when you look the
+element up, and the type of an event's `detail` when you read it:
+
+```ts
+import type { NiivueViewerElement, NVImage } from '@niivue/nv-web-component'
+
+const viewer = document.querySelector<NiivueViewerElement>('#viewer')
+
+viewer?.addEventListener('image-loaded', (event) => {
+  const volume = (event as CustomEvent<NVImage>).detail
+  console.log(volume.name)
+})
+```
+
+The scene's type is `NiivueSceneElement`.
+
+## When something does not work
+
+- **The viewer does not show up.** The element has no height. Give it one
+  with CSS.
+- **Changing `volumes` did nothing.** Assign a new list. Changing the old
+  list in place, for example with `push`, is not noticed.
+- **A method such as `setColormap` did nothing.** The image is not loaded
+  yet. Wait for the `image-loaded` event, or put the setting in the
+  `volumes` list instead.
+- **`options` were ignored.** The viewer reads them once, when it starts.
+  Set them before the element goes on the page.
+- **A viewer went blank after it was moved.** Removing an element from the
+  page shuts its viewers down for good, and moving it removes it first.
+  Create a new element instead.
+- **An image did not appear and nothing says why.** Listen for the
+  `niivue-error` event, which both tags send. On a viewer, `event.detail` is
+  the error; on a scene, it is `event.detail.error`.

@@ -1,0 +1,76 @@
+---
+title: Several viewers
+description: "Lay out a grid of NiiVue viewers with a scene, load images into each one, and link them so they move together."
+sidebar:
+  order: 2
+---
+
+A scene manages a group of viewers that share one area of the page. Create
+it with `useScene` and draw it with `NvScene`.
+
+## A grid of viewers
+
+```tsx
+import { NvScene, useScene } from '@niivue/nvreact'
+
+export function Viewers() {
+  const { scene } = useScene()
+  return <NvScene scene={scene} initialLayout="2x2" style={{ height: 600 }} />
+}
+```
+
+`initialLayout="2x2"` fills the area with four viewers. The layouts are
+`1x1` (the default), `1x2`, `2x1`, `1x3`, `3x1`, `2x2` and `3x3`.
+
+## Loading images
+
+Each viewer is numbered from 0. Load images into one viewer at a time:
+
+```tsx
+await scene.loadVolumes(0, [{ url: '/volumes/mni152.nii.gz' }])
+await scene.loadVolume(1, { url: '/volumes/chris_t1.nii.gz' })
+```
+
+`scene.removeVolume(index, url)` takes one away again.
+
+## Changing the layout
+
+```tsx
+scene.setLayout('1x2')
+```
+
+Switching to a smaller layout removes the viewers that no longer fit; a
+larger one adds empty viewers. You can also add and remove viewers yourself
+with `scene.addViewer()` and `scene.removeViewer(index)`.
+`scene.canAddViewer()` tells you whether the current layout has room.
+
+## Moving viewers together
+
+```tsx
+scene.setBroadcasting(true)
+```
+
+Now panning, zooming, moving the crosshair or turning the 3D view in one
+viewer does the same in the others. To share only part of that, pass what to
+link, for example `scene.setBroadcasting(true, { '3d': false })` to keep each
+3D view separate. See [Linking viewers](/guide/sync/) for how it works.
+
+## Showing the scene's state
+
+`useScene` also returns a snapshot that re-renders your component when the
+scene changes:
+
+```tsx
+const { scene, snapshot } = useScene()
+
+return (
+  <>
+    <p>{snapshot.viewerCount} viewers</p>
+    {snapshot.isLoading && <p>Loading...</p>}
+    <NvScene scene={scene} style={{ height: 600 }} />
+  </>
+)
+```
+
+It also tells you the current layout, whether the viewers are linked, and
+each viewer's loading state and errors.

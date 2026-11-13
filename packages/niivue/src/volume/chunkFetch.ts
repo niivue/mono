@@ -3,9 +3,9 @@
 // in-flight/prefetch cache, the decoded tier hand-off and read cancellation;
 // the backends only turn the bytes into textures.
 
+import type { ByteLru } from '@/byteLru'
 import type { NVImage } from '@/NVTypes'
 import type { ChunkPlan, Vec3i } from './chunking'
-import type { DecodedChunkCache } from './decodedChunkCache'
 import {
   extractChunkBytes,
   extractChunkBytesReoriented,
@@ -84,7 +84,7 @@ export function createChunkFetcher(
   nvimage: NVImage,
   plan: ChunkPlan,
   bytesPerVoxel: number,
-  decoded: DecodedChunkCache | null,
+  decoded: ByteLru<number, Uint8Array> | null,
 ): ChunkFetcher {
   const dimsRAS = nvimage.dimsRAS ?? []
   const volumeDims: Vec3i = [dimsRAS[1], dimsRAS[2], dimsRAS[3]]
@@ -176,7 +176,7 @@ export function createChunkFetcher(
     // The decoded tier is consulted AFTER the in-flight map so a read already
     // on the wire is never duplicated, and before any new read so an evicted
     // chunk comes back as an upload rather than a fetch + decode.
-    const held = decoded?.get(index)
+    const held = decoded?.has(index) ? decoded.get(index) : undefined
     if (held) return Promise.resolve(held)
     const controller = new AbortController()
     const promise = computeBytes(index, controller.signal)
@@ -205,7 +205,7 @@ export function createChunkFetcher(
     if (fetchCache.has(index)) return
     // Already decoded: there is nothing to warm, and counting the lookup here
     // would credit the tier for a read the pump never made.
-    if (decoded?.has(index)) return
+    if (decoded?.peek(index)) return
     const cap = speculative
       ? MAX_PREFETCHED_CHUNKS - PREFETCH_SLOTS_RESERVED
       : MAX_PREFETCHED_CHUNKS

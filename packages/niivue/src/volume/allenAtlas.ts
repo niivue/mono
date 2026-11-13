@@ -3,7 +3,7 @@
  *
  * A dataset is one JSON sidecar plus N PNG atlases; each PNG is a row-major
  * grid of tiles (one tile per Z slice) that packs up to four independent image
- * channels into its R/G/B/A planes. See `docs/allen-atlas-format.md`.
+ * channels into its R/G/B/A planes. See `notes/allen-atlas-format.md`.
  *
  * This module is the PURE half: parse/validate the sidecar and deinterleave one
  * channel out of already-decoded RGBA bytes. Fetching and PNG decoding live with

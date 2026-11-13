@@ -2,6 +2,8 @@
 
 Swift half of the typed two-way bridge between a SwiftUI host and a [NiiVue](../niivue) web view. Pairs with the `@niivue/web-bridge` npm package ([`packages/niivue-web-bridge/`](../niivue-web-bridge/)).
 
+Documentation: https://niivue.github.io/mono/docs/packages/niivue-swift/
+
 This package is **not published**. It is consumed locally by `apps/medgfx/` via an Xcode local-package reference. To use it in another Xcode project inside this monorepo, add it with **File > Add Package Dependencies > Add Local...** and point at `packages/niivue-swift/`.
 
 ## Products

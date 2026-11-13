@@ -1,3 +1,73 @@
+## 1.0.0-rc.197 (2026-11-13)
+
+### Fixes
+
+- **niivue:** apply the slide ICC table to the CPU thumbnail ([23f9bc6f](https://github.com/niivue/mono/commit/23f9bc6f))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.196 (2026-11-13)
+
+### Features
+
+- **docs-site:** move the docs site to Astro Starlight ([0dc43a4e](https://github.com/niivue/mono/commit/0dc43a4e))
+
+### Fixes
+
+- **docs-site:** address the branch audit ([54864282](https://github.com/niivue/mono/commit/54864282))
+- **examples:** show the statistical overlay's colorbar in vox.atlas.stat ([de225e5e](https://github.com/niivue/mono/commit/de225e5e))
+- **examples:** open the tract group pages on a group selection ([17a34191](https://github.com/niivue/mono/commit/17a34191))
+- **examples:** keep the slide3d HUD off its toolbar ([139d0a60](https://github.com/niivue/mono/commit/139d0a60))
+- **examples:** open the slides page on the DICOM-WSI slide ([e9402f4a](https://github.com/niivue/mono/commit/e9402f4a))
+- **examples:** end the benchmark on an opaque mesh ([d350a0fc](https://github.com/niivue/mono/commit/d350a0fc))
+- **examples:** report the real platform in the benchmark ([ff16685b](https://github.com/niivue/mono/commit/ff16685b))
+- **examples:** open the physio graphs on 15 s from the scan start ([133d5b62](https://github.com/niivue/mono/commit/133d5b62))
+- **examples:** open the physio graphs on a 30 s window ([c38ad6e0](https://github.com/niivue/mono/commit/c38ad6e0))
+
+### Thank You
+
+- neurolabusc
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.195 (2026-11-13)
+
+### Features
+
+- ⚠️  **niivue,nv-ext-tile:** one core ByteLru for the byte caches ([3523b2c2](https://github.com/niivue/mono/commit/3523b2c2))
+
+### Fixes
+
+- **niivue:** ByteLru.remap tests membership, not undefined values ([08647c8d](https://github.com/niivue/mono/commit/08647c8d))
+- **niivue:** ByteLru.remap frees a value displaced by a key collision ([7099a882](https://github.com/niivue/mono/commit/7099a882))
+- **niivue:** keep an oversize slide tile as the only cache entry ([170d6f78](https://github.com/niivue/mono/commit/170d6f78))
+
+### Breaking Changes
+
+- **niivue,nv-ext-tile:** one core ByteLru for the byte caches  ([3523b2c2](https://github.com/niivue/mono/commit/3523b2c2))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.194 (2026-11-13)
+
+### Fixes
+
+- **niivue:** detach a slide whose document restore was aborted or misconfigured ([45cc6535](https://github.com/niivue/mono/commit/45cc6535))
+- **niivue:** a caller's setSlidePlane/clearSlidePlane supersedes a pending document slide restore ([13ea057e](https://github.com/niivue/mono/commit/13ea057e))
+- **niivue:** avoid rendering while destroying slide planes ([599e3a99](https://github.com/niivue/mono/commit/599e3a99))
+- **niivue:** cancel superseded slide document restores ([597e13b5](https://github.com/niivue/mono/commit/597e13b5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.193 (2026-11-13)
 
 ### Fixes

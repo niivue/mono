@@ -22,6 +22,8 @@ type Viewer = Pick<
 export interface StreamOmeZarrOptions extends FetchOmeZarrChunkedSourceOptions {
   /** Remove the volumes shown once the store has opened, so a store that fails to open leaves the scene as it was. */
   replace?: boolean
+  /** Show it as a segmentation (true) or not (false); detected from `image-label` otherwise. */
+  labels?: boolean
 }
 
 // The last replacement on each viewer: a replacement waits for it, so two
@@ -42,7 +44,7 @@ const replacing = new WeakMap<Viewer, Promise<unknown>>()
 export async function streamOmeZarr(
   nv: Viewer,
   url: string,
-  { replace, ...options }: StreamOmeZarrOptions = {},
+  { replace, labels, ...options }: StreamOmeZarrOptions = {},
   volumeOptions?: ChunkedVolumeOptions,
 ): Promise<NVChunkedVolume> {
   // Opening starts now, but a replacement joins the queue at call time, so an
@@ -56,7 +58,7 @@ export async function streamOmeZarr(
     if (nv.isDestroyed) throw new Error('the viewer was destroyed')
     if (replace) await nv.removeAllVolumes()
     return nv.loadChunkedVolume(source, {
-      ...display(nv, url, source.zarr, options.channel),
+      ...display(nv, url, source.zarr, options.channel, labels),
       ...volumeOptions,
     })
   }
@@ -109,11 +111,12 @@ function display(
   url: string,
   zarr: Parameters<typeof omeZarrChannelOptions>[0],
   channel?: number,
+  labels = zarr.info.isLabel,
 ): ChunkedVolumeOptions {
   const shown = omeroDisplay(zarr, channel)
   // loadChunkedVolume refuses a label colormap on 64-bit IDs (not exact past
   // 2^24), so those keep streaming as intensities.
-  if (!zarr.info.isLabel || zarr.levels[0].dtype.endsWith('64')) return shown
+  if (!labels || zarr.levels[0].dtype.endsWith('64')) return shown
   const map = omeZarrLabelColormap(zarr.info)
   const colormap = map ? nv.addColormap(`${url} labels`, map) : 'Random'
   return shown.name === undefined

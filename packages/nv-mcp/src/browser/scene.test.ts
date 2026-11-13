@@ -1816,12 +1816,17 @@ describe('load_ome_zarr', () => {
     const view = fakeView()
     const zarr = omeZarr()
     await coreHandlers(host(view, { omeZarr: async () => zarr })).load_ome_zarr(
-      { url: 'https://x/s.ome.zarr', stream: true },
+      { url: 'https://x/s.ome.zarr', stream: true, labels: false },
     )
     expect(zarr.streamOmeZarr).toHaveBeenCalledWith(
       view,
       'https://x/s.ome.zarr',
-      { channel: undefined, timepoint: undefined, replace: true },
+      {
+        channel: undefined,
+        timepoint: undefined,
+        labels: false,
+        replace: true,
+      },
     )
     expect(view.loadVolumes).not.toHaveBeenCalled()
     // No second metadata fetch: the helper applies image-label colours itself.

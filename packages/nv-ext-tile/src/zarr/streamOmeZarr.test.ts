@@ -177,6 +177,9 @@ test('a streamed channel takes its omero name, colour and window; caller options
   await streamOmeZarr(viewer, 'https://example.test/seg.zarr')
   await streamOmeZarr(viewer, 'https://example.test/plainseg.zarr')
   await streamOmeZarr(viewer, 'https://example.test/wideseg.zarr')
+  await streamOmeZarr(viewer, 'https://example.test/seg.zarr', {
+    labels: false,
+  })
   expect(loaded).toEqual([
     { name: 'CD19', colormap: 'red', calMin: 5, calMax: 50 },
     { name: 'CD19', colormap: 'gray', calMin: 5, calMax: 50 },
@@ -184,6 +187,7 @@ test('a streamed channel takes its omero name, colour and window; caller options
     { name: 'B', colormap: 'violet', calMin: 5, calMax: 50 },
     { colormap: 'https://example.test/seg.zarr labels' },
     { colormap: 'Random' },
+    {},
     {},
   ])
   expect(added).toEqual(['https://example.test/seg.zarr labels'])

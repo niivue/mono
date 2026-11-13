@@ -580,6 +580,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
           await zarr.streamOmeZarr(view, url, {
             channel,
             timepoint,
+            labels,
             replace: true,
           })
         } else {

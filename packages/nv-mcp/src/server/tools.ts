@@ -180,7 +180,7 @@ export const CORE_SCHEMAS = {
       .boolean()
       .optional()
       .describe(
-        'Show the store as a segmentation (a label colormap). Detected from its image-label metadata otherwise; streaming uses only that detection.',
+        'Show the store as a segmentation (a label colormap), or with false not; detected from its image-label metadata otherwise.',
       ),
   },
   add_overlay: {

@@ -944,6 +944,9 @@ async function rendererScenarios(nv, frames) {
     },
     () => ({ meshes: { 0: { opacity: 0.2 } } }),
   )
+  // Untimed: leave the mesh opaque, so the last frame does not show the
+  // translucent mesh's triangle-order artifacts.
+  await nv.setMesh(0, { opacity: 1 })
 
   return scenarios
 }

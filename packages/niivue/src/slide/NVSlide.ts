@@ -1,3 +1,4 @@
+import { ByteLru } from '@/byteLru'
 import { lookupColorMap } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import {
@@ -50,7 +51,6 @@ import {
 } from './slideSource'
 import { composeThumbnail } from './slideThumbnail'
 import { EDGE_ALL } from './tileGutter'
-import { NVSlideTileCache, type TileBitmap } from './tileLru'
 import { DEFAULT_TILE_TEXTURE_BYTES } from './tileTextureCache'
 
 export type NVSlideTileCodec =
@@ -551,6 +551,15 @@ export interface NVSlideCachedTile {
   readonly level: NVSlideLevelManifest
 }
 
+// A tile cache entry. id: a load serial, so a memo can tell entries apart
+// without holding them. mask: the held channels below 32 as bits (sample
+// tiles of a samples source).
+export type TileBitmap = NVSlideCachedTile & {
+  bytes: number
+  id: number
+  mask?: number
+}
+
 const DEFAULT_CACHE_BYTES = 96 * 1024 * 1024
 // What capacity assumes before any renderer registers its budget.
 const DEFAULT_RENDERER_BUDGET: SlideRendererBudget = {
@@ -681,7 +690,7 @@ export class NVSlide extends EventTarget {
   private _placeholderColor!: NVSlideColor
   private _gridColor!: NVSlideColor
   private readonly _rangeLogLength = DEFAULT_RANGE_LOG_LENGTH
-  private readonly _cache: NVSlideTileCache
+  private readonly _cache: ByteLru<string, TileBitmap>
   // A failed tile waits before it is requested again (1 s, doubling to 30 s):
   // owners re-want missing tiles every frame, so a persistent failure (HTTP
   // error, bad frame) would otherwise be fetched in a tight loop.
@@ -800,8 +809,11 @@ export class NVSlide extends EventTarget {
     this._placeholderColor = options.placeholderColor ?? [0.067, 0.098, 0.09, 1]
     this._gridColor = options.gridColor ?? [0.455, 0.831, 0.812, 0.24]
     this.stats = freshStats()
-    this._cache = new NVSlideTileCache(
+    this._cache = new ByteLru<string, TileBitmap>(
       options.maxCacheBytes ?? DEFAULT_CACHE_BYTES,
+      (tile) => tile.bytes,
+      (tile) => tile.bitmap?.close(),
+      true, // keep an oversize tile alone: refusing it re-fetches it every frame
     )
     this._maxConcurrentLoads = clampTileLoadCap(
       options.maxConcurrentLoads ?? DEFAULT_MAX_CONCURRENT_TILE_LOADS,
@@ -1053,7 +1065,7 @@ export class NVSlide extends EventTarget {
   }
 
   get cacheBytes(): number {
-    return this._cache.bytes
+    return this._cache.totalBytes
   }
 
   /** The displayed channels, one per source sample plane (see {@link NVChannel}). */
@@ -2430,7 +2442,7 @@ export class NVSlide extends EventTarget {
               id: ++tileSerial,
             },
       )
-      this.stats.cacheBytes = this._cache.bytes
+      this.stats.cacheBytes = this._cache.totalBytes
       this.stats.completed++
       this._failed.delete(key)
     } catch (err) {

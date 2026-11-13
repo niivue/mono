@@ -37,7 +37,7 @@ the time/channel axes are pinned per source, so multi-channel stores stream
 one chosen channel rather than silently dropping the rest.
 
 `fetchOmeZarrChunkedSource` reads on a pool of chunk workers wherever one can
-run. The workers hold the byte cache, a `ByteLruCache` behind
+run. The workers hold the byte cache, a core `ByteLru` behind
 `zarr.withByteCaching` (default 256 MiB, split across the workers, not given
 to each), and the opt-in persistent tier, split the same way; the main thread
 keeps none and reads only when a worker fails. The workers open from the

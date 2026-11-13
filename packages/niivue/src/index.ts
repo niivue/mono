@@ -125,7 +125,7 @@ export type {
   VolumeUpdatedDetail,
 } from './NVEvents'
 // The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
-export type { DecodedChunkStats } from './volume/decodedChunkCache'
+export { ByteLru, type ByteLruStats } from './byteLru'
 // Core types used in the public API
 export type {
   AffineMatrix,

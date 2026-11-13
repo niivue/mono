@@ -266,3 +266,39 @@ for (const call of ['set', 'clear'] as const) {
     }
   })
 }
+
+test('a volume load from a locationChange listener during restore detaches the slide', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const bytes = saved(false)
+  const dispose = spyOn(NVSlide.prototype, 'dispose')
+  let replacement: Promise<unknown> | undefined
+  nv.addEventListener('locationChange', () => {
+    if (nv.slidePlaneIndex && !replacement) replacement = nv.loadVolumes([])
+  })
+  try {
+    await nv.loadDocument(documentFile(bytes))
+    await replacement
+    expect(nv.slidePlaneIndex).toBeNull()
+    expect(dispose).toHaveBeenCalledTimes(1)
+  } finally {
+    dispose.mockRestore()
+    nv.destroy()
+  }
+})
+
+test('an invalid saved channel blend disposes the reconstructed slide', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const doc = parseJsonDocument(saved(false))
+  ;(doc.slidePlane as { channelBlend: unknown }).channelBlend = 'invalid'
+  const dispose = spyOn(NVSlide.prototype, 'dispose')
+  const warnings = captureWarnings()
+  try {
+    await nv.loadDocument(documentFile(JSON.stringify(doc)))
+    expect(nv.slidePlaneIndex).toBeNull()
+    expect(dispose).toHaveBeenCalledTimes(1)
+  } finally {
+    warnings.restore()
+    dispose.mockRestore()
+    nv.destroy()
+  }
+})

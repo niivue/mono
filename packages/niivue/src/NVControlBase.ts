@@ -8063,17 +8063,17 @@ export default class NiiVue extends EventTarget {
       slide.dispose()
       return
     }
-    // Before setSlidePlane primes tiles, so hidden channels are not fetched.
-    sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
-      try {
-        slide.setChannel(i, c)
-      } catch (err) {
-        log.warn(`loadDocument: slide channel ${i} not restored`, err)
-      }
-    })
-    if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
-    if (sp.colorManagement === false) slide.colorManagement = false
     try {
+      // Before setSlidePlane primes tiles, so hidden channels are not fetched.
+      sp.channels?.slice(0, slide.channels.length).forEach((c, i) => {
+        try {
+          slide.setChannel(i, c)
+        } catch (err) {
+          log.warn(`loadDocument: slide channel ${i} not restored`, err)
+        }
+      })
+      if (sp.channelBlend) slide.setChannelBlend(sp.channelBlend)
+      if (sp.colorManagement === false) slide.colorManagement = false
       this.setSlidePlane(slide, {
         pixelToWorld: sp.pixelToWorld,
         levelIndex: sp.levelIndex,
@@ -8089,7 +8089,11 @@ export default class NiiVue extends EventTarget {
       return
     }
     this._ownsSlidePlane = true
-    if (signal.aborted) return
+    // A reentrant load (e.g. from a locationChange listener) aborted the restore.
+    if (signal.aborted) {
+      this.clearSlidePlane()
+      return
+    }
     if (
       sp.drawingRLE &&
       sp.drawingWidth &&

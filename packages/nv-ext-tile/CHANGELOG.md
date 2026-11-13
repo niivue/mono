@@ -1,3 +1,17 @@
+## 1.0.0-rc.95 (2026-11-13)
+
+### Features
+
+- ⚠️  **nv-ext-tile:** remove deprecated DicomWebWsiOptions.headers ([9a1611de](https://github.com/niivue/mono/commit/9a1611de))
+
+### Breaking Changes
+
+- **nv-ext-tile:** remove deprecated DicomWebWsiOptions.headers  ([9a1611de](https://github.com/niivue/mono/commit/9a1611de))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.94 (2026-11-13)
 
 ### Fixes

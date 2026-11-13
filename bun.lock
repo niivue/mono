@@ -328,7 +328,7 @@
     },
     "packages/nv-ext-tile": {
       "name": "@niivue/nv-ext-tile",
-      "version": "1.0.0-rc.94",
+      "version": "1.0.0-rc.95",
       "dependencies": {
         "@niivue/geotiff-rs": "3.1.0-rc.0",
         "@niivue/zarrita-rs": "0.7.5-rc.1",
@@ -376,7 +376,7 @@
     },
     "packages/nv-ohif": {
       "name": "@niivue/nv-ohif",
-      "version": "1.0.0-rc.212",
+      "version": "1.0.0-rc.213",
       "dependencies": {
         "@niivue/dcm2niix": "^1.4.20261105-rc.3",
         "@niivue/nv-ext-tile": "workspace:^",

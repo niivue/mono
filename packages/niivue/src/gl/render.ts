@@ -12,7 +12,6 @@ import {
   VOLUME_DEFAULTS,
   VOLUME_RENDER_MODE,
 } from '@/NVConstants'
-import type { ChunkStreamCounts, ChunkStreamDetail } from '@/NVEvents'
 import { loadImageElement } from '@/NVLoader'
 import type { NVImage } from '@/NVTypes'
 import {
@@ -24,7 +23,6 @@ import {
   stackWeights,
 } from '@/view/chunkStackFuse'
 import { loadMatcapOrDefault } from '@/view/matcapFallback'
-import { NVRenderer } from '@/view/NVRenderer'
 import {
   GENERIC_RENDER_VARIANT,
   renderVariantDefines,
@@ -36,28 +34,27 @@ import {
 } from '@/view/NVRenderVolumeData'
 import { isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import type { RgbaGrid } from '@/view/planeVisibility'
-import { chunkExplodedMatRAS, chunkExplodeEnabled } from '@/volume/ChunkExplode'
+import { chunkExplodedMatRAS } from '@/volume/ChunkExplode'
 import {
   ChunkResidencyManager,
   type RetiringChunk,
 } from '@/volume/ChunkResidency'
 import {
-  chunkDrawOrder,
-  chunksInFrustum,
-  chunksNotClippedOut,
-  orderByViewCenter,
-} from '@/volume/ChunkVisibility'
+  ChunkStreamRenderer,
+  DEFAULT_CHUNK_RESIDENCY_BYTES,
+  MAX_CHUNK_UPLOADS_PER_FRAME,
+  MAX_CHUNKS_PER_TILE,
+  type StreamEntry,
+} from '@/volume/ChunkStreamRenderer'
+import { chunkDrawOrder } from '@/volume/ChunkVisibility'
 import {
   bytesPerSourceVoxel,
-  chunkIndicesForAllBudgets,
   residentBytesForChunkDesc,
 } from '@/volume/chunkBudget'
 import {
   type ChunkPlan,
-  chunksToKeepResident,
   chunkVolume,
   dimsDownsample,
-  matchChunksByContent,
   needsChunking,
   planSupportsCubic,
   type Vec3i,
@@ -69,11 +66,9 @@ import {
   type ChunkUniforms,
   chunkOffsetFor,
   chunkUniformsFor,
-  setChunkBudget,
 } from '@/volume/chunkRender'
 import {
   DecodedChunkCache,
-  type DecodedChunkStats,
   decodedTierBudgetBytes,
 } from '@/volume/decodedChunkCache'
 import {
@@ -104,70 +99,6 @@ import {
 import * as orientOverlay from './orientOverlay'
 import * as renderShader from './renderShader'
 import { compileShaderAsync, Shader } from './shader'
-
-/**
- * Default GPU memory budget, in bytes, for a chunked volume's resident chunk
- * set. Mirrors the WebGPU backend; overridable per instance via the
- * `maxChunkResidencyBytes` option. The ChunkResidencyManager evicts
- * least-recently-visible chunks to keep the resident set within budget.
- */
-const DEFAULT_CHUNK_RESIDENCY_BYTES = 1_500_000_000
-
-/**
- * Maximum chunks a single chunked volume may tile into. The WebGL2 backend sets
- * per-chunk uniforms per draw call (no fixed slot buffer), so this is purely a
- * parity guard mirroring the WebGPU backend's structural limit, keeping
- * cross-backend error behavior identical. Raised to 1024 (from 256) in lockstep
- * with the WebGPU paths so full-resolution levels of large volumes load.
- */
-const MAX_CHUNKS_PER_TILE = 1024
-
-/**
- * Streaming-pump budget per `pumpChunkUploads` call. Mirrors the WebGPU
- * backend: chunks (source fetch + orient + gradient) upload round-robin across
- * chunked volumes until the wall-clock budget or hard cap is hit, then the pump
- * yields so the next frame can present the freshly-resident bricks. A
- * wall-clock budget self-tunes the fill rate to upload cost.
- */
-const CHUNK_UPLOAD_BUDGET_MS = 8
-const MAX_CHUNK_UPLOADS_PER_FRAME = 24
-/**
- * Default duration of the streaming-chunk cross-fade between LOD levels, in ms.
- * A chunk admitted this long ago (or longer) draws at full strength; younger
- * chunks dissolve in over the coarse floor, so a plan swap reads as a soften-
- * then-sharpen rather than a hard cut. Overridable per instance with the
- * `chunkFadeMs` option; 0 disables the cross-fade entirely (fadeFraction then
- * returns 1 immediately, so a fine chunk pops in at full strength — the floor
- * is still drawn for chunks that are not yet resident). Kept short enough that
- * it never reads as lag on a settled view.
- */
-const DEFAULT_CHUNK_FADE_MS = 120
-/**
- * How many upcoming queued chunks the pump prefetches (source fetch) ahead of
- * upload, per chunked volume per pump. Matched to the uploader's internal
- * outstanding-fetch cap so the fetch window stays full as uploads drain it.
- */
-const CHUNK_PREFETCH_WINDOW = 16
-/**
- * How many predicted chunks a chunked volume may have on speculative fetch at
- * once. Small on purpose: the prediction is served from whatever fetch slots
- * the working set left over, so a wrong guess costs a few reads, never a
- * visible chunk's place in the queue.
- */
-const CHUNK_PREDICT_WINDOW = 4
-/**
- * Share of the single configured `maxChunkResidencyBytes` given to an
- * independent hi-res overlay's residency manager; the base keeps the rest, so
- * base + overlay together stay within the configured cap instead of each
- * filling it. The overlay gets the smaller share (base is the primary anatomy).
- */
-const OVERLAY_RESIDENCY_FRACTION = 0.4
-
-/**
- * Near-plane depth convention for this backend's clip space. WebGL2 clip space
- * has z in [-w, w]; `chunksInFrustum` uses this to cull against the near plane.
- */
-const CLIP_SPACE_ZERO_TO_ONE = false
 
 type Vec3f = [number, number, number]
 
@@ -200,65 +131,7 @@ interface SingleTexEntry {
 }
 
 /** Chunked (tiled) volume: one or more axes exceed max3D. */
-interface ChunkedTexEntry {
-  kind: 'chunked'
-  /** Volume object that owns mutable per-volume render options. */
-  volume: NVImage
-  /** GPU residency bookkeeping for the volume's chunks. */
-  manager: ChunkResidencyManager<VolumeChunkGL>
-  /** On-demand uploader the streaming pump drives to fill the manager. */
-  uploader: ChunkUploaderGL
-  plan: ChunkPlan
-  /**
-   * chunkedDisplayKey at uploader creation. Resident chunk textures bake the
-   * colormap/window this key captures, so a mismatch on updateVolume forces an
-   * uploader rebuild + full re-stream (see _ensureChunkedVolumeEntry).
-   */
-  displayKey: string
-  /**
-   * volumeSourceKey of the image the entry streams. Voxels or a source
-   * replaced on the same volume build a new entry, decoded tier included,
-   * rather than reusing chunks read from the old one.
-   */
-  sourceKey: string
-  /**
-   * Modulation the uploader bakes into every chunk (resolved against the
-   * volume's own grid), or null. Kept so a plan swap rebuilds the uploader
-   * with the same modulator; `displayKey` covers it for change detection.
-   */
-  modulation: ModulationTextureParams | null
-  /** planSupportsCubic(plan), cached: the plan is immutable for the entry's life. */
-  cubicSafe: boolean
-  /** Tracks how this volume's working set travels across its chunk grid. */
-  predictor: ChunkTravelPredictor
-  /** Chunk indices this frame's working set asked for, across every tile. */
-  requestedThisFrame: number[]
-  /** Chunks currently on speculative fetch, so a stale guess can be released. */
-  speculative: Set<number>
-  /** Speculative fetches started for this volume, cumulative. */
-  predictedCount: number
-  /**
-   * Decoded source bytes for this volume's chunks, so a chunk evicted from the
-   * GPU is demoted here instead of destroyed. Owned by the entry rather than
-   * the uploader: the bytes outlive an uploader rebuild, and survive a plan
-   * swap by being re-keyed alongside the resident chunks.
-   */
-  decoded: DecodedChunkCache
-  /** Source bytes per voxel, which sets what the decoded tier costs to hold. */
-  sourceBytesPerVoxel: number
-  /**
-   * The plan swapChunkedVolumePlan is moving this entry to, while the swap is
-   * queued or awaits its uploader. A refresh that lands in that window waits
-   * for it instead of evicting the entry as built for a different plan.
-   */
-  pendingSwap?: { plan: ChunkPlan; done: Promise<void> }
-  /**
-   * The last swap queued on this entry. Swaps run one at a time in call order
-   * (each reads the plan and residency, awaits, then rewrites them), and one
-   * that a later swap supersedes is skipped.
-   */
-  swapTail?: Promise<void>
-}
+type ChunkedTexEntry = StreamEntry<VolumeChunkGL, ChunkUploaderGL>
 
 type TexCacheEntry = SingleTexEntry | ChunkedTexEntry
 
@@ -281,7 +154,17 @@ function withClipPlanes(gl: WebGL2RenderingContext, shader: Shader): Shader {
 // plan is re-bound on every update.
 const loggedChunkPlans = new WeakSet<ChunkPlan>()
 
-export class VolumeRenderer extends NVRenderer {
+export class VolumeRenderer extends ChunkStreamRenderer<
+  WebGL2RenderingContext,
+  WebGLTexture,
+  VolumeChunkGL,
+  ChunkUploaderGL,
+  ChunkedTexEntry,
+  SingleTexEntry
+> {
+  // WebGL2 clip space has z in [-w, w]; chunksInFrustum culls against that
+  // near plane.
+  protected readonly clipSpaceZeroToOne = false
   private _gl: WebGL2RenderingContext | null
   // Generic volume program; chunked draws always use it.
   shader: Shader | null
@@ -326,12 +209,6 @@ export class VolumeRenderer extends NVRenderer {
   indexBuffer: WebGLBuffer | null
   cube: { vertices: number[]; indices: number[] }
   max3D: number
-  // GPU memory budget for a chunked volume's resident chunk set. Set from the
-  // maxChunkResidencyBytes option in init; passed to each ChunkResidencyManager.
-  private _chunkResidencyBytes = DEFAULT_CHUNK_RESIDENCY_BYTES
-  // Cross-fade duration, ms, for a freshly-admitted streaming chunk. Set from
-  // the chunkFadeMs option when the view initializes; 0 disables the fade.
-  chunkFadeMs = DEFAULT_CHUNK_FADE_MS
   // Scene flag (set per-frame from md.scene): clip the overlay/PAQD/drawing passes
   // with the base volume instead of letting them ignore the clip plane.
   clipPlaneOverlay = false
@@ -385,22 +262,6 @@ export class VolumeRenderer extends NVRenderer {
   // pass must run even when the volume is unlit (see _needsGradient).
   gradientOpacity = VOLUME_DEFAULTS.gradientOpacity
   silhouette = VOLUME_DEFAULTS.silhouette
-  // Tricubic B-spline instead of hardware trilinear in the background fine pass
-  // (from md.volume.isCubicInterpolation). Cures the blocky texel staircase that
-  // C0 trilinear leaves on band edges, at 8 fetches per sample instead of 1.
-  // Assigned every frame by the view, so the setter is where an "on, but the
-  // active chunk plan cannot feed the kernel" warning is raised: it is the only
-  // point that sees the request and the current plan together (the entry may
-  // have been built long before the user turned cubic on).
-  private _isCubicInterpolation = VOLUME_DEFAULTS.isCubicInterpolation
-  get isCubicInterpolation(): boolean {
-    return this._isCubicInterpolation
-  }
-  set isCubicInterpolation(v: boolean) {
-    this._isCubicInterpolation = v
-    const entry = this._activeChunked
-    if (entry) warnIfCubicUnsafe(entry.volume.name, entry.cubicSafe, v)
-  }
   // Coarse whole-volume "floor" texture for the active base, drawn behind the
   // resident fine chunks on 2D slices so a deep-zoom slice never blanks while
   // finer chunks stream. Oriented once from a coarse pyramid level the app
@@ -412,62 +273,23 @@ export class VolumeRenderer extends NVRenderer {
   // matcap lighting consistent with the resident fine chunks. Null when unset.
   coarseFloorGradientTexture: WebGLTexture | null = null
   private _coarseFloorKey: string | null = null
-  // Per-volume GPU texture cache. Populated by updateVolume; consumed by
-  // bindCachedVolume to switch the active volume/gradient texture per tile
-  // when rendering multi-instance global3d scenes.
-  private _texCache: Map<string, TexCacheEntry>
   // Current volume gradient/illumination amount, set by the view each frame
   // BEFORE chunk work (request/pump). Chunk uploaders read this to skip the
   // (expensive, per-slice) gradient pass when the volume is unlit (== 0).
   gradientAmount = 0
-  // True once any chunk was uploaded without a real gradient (unlit). If lighting
-  // is later enabled, those chunks are re-streamed so they gain gradients.
-  private _uploadedUnlit = false
   // Dims for the non-cached single-texture volume's deferred gradient build.
   // The single-texture analogue of _uploadedUnlit: non-null and paired with a
   // null volumeGradientTexture means "gradient skipped, build it if asked".
   private _singleGradDims: Vec3f | null = null
-  // Set when the active volume is chunked; null for single-texture volumes.
-  // draw() branches on this to run the multi-chunk loop.
-  private _activeChunked: ChunkedTexEntry | null = null
   // False when the active volume is categorical (colormapLabel): the ray march
   // samples an RGBA texture whose colors are already baked, so a smooth
   // reconstruction would blend two unrelated labels into a third label's colour.
   // Cubic is forced off for such a volume regardless of the global setting.
   private _cubicVolumeSafe = true
-  // Set when an independently-streamed hi-res overlay (chunkOverlayOf) is
-  // loaded over a chunked base. It has its OWN ChunkPlan + residency manager
-  // (a second _texCache entry, keyed by its own url/name) and draws as
-  // translucent chunk cubes over the base, instead of being resliced onto the
-  // base grid. Null when no such overlay is present (base path unchanged).
-  private _activeOverlayChunked: ChunkedTexEntry | null = null
-  // Streamed combined overlays (strategy A): base-aligned chunked overlay
-  // entries (chunkSource, co-registered at the base grid) that stream via the
-  // pump and feed the base block's overlay texture unit — base ray-march / clip
-  // plane / compositing reused unchanged. WebGL2 rebinds overlay textures each
-  // draw, so no bind-group invalidation is needed.
-  private _combinedOverlayEntries: ChunkedTexEntry[] = []
-  // A channel stack over a chunked base: per base chunk, the drawn channels'
-  // bricks (base and combined mirrors) fused into the overlay slot. Null
-  // otherwise.
-  private _stackFuse: ChunkStackFuse<WebGLTexture> | null = null
-  /** The stack fuse's chunks and ms (CPU side), for benches. */
-  get stackFuseStats(): { chunks: number; ms: number } {
-    return this._stackFuse?.stats ?? { chunks: 0, ms: 0 }
-  }
-  /** Set while the stack's mirror list is being rebuilt: no fuse then. */
-  private _stackRebuilding = 0
   // Full RAS dims of the active single-texture volume. WebGL cannot query a
   // texture's size, so the renderer tracks it for the volumeTexDimsFull
   // uniform on non-chunked draws and depth picks.
   private _activeDims: Vec3f = [0, 0, 0]
-  private _pumpInFlight = false
-  // Wall-clock stamp captured once per frame in beginChunkFrame, so every chunk
-  // draw in the frame measures fade age against the same instant.
-  private _frameNow = 0
-  // Set true during a frame whenever a chunk drew mid cross-fade, so the view
-  // schedules a follow-up frame to keep the fade animating to completion.
-  private _fadeActive = false
   private overlayOrientCache: orientOverlay.OverlayTextureCache | null = null
   private volumeOrientCache: orientOverlay.OverlayTextureCache | null = null
   // RGB/RGBA volumes skip the orient pass, so their textures are kept here
@@ -500,7 +322,6 @@ export class VolumeRenderer extends NVRenderer {
     this.indexBuffer = null
     this.cube = NVShapes.getCubeMesh()
     this.max3D = 0
-    this._texCache = new Map()
   }
 
   async init(
@@ -829,7 +650,7 @@ export class VolumeRenderer extends NVRenderer {
    * the chunk, and trilinear sampling at the data edge reaches one further --
    * 3 is the exact requirement, not a margin.
    */
-  private async _ensureChunkedVolumeEntry(
+  protected async _ensureChunkedVolumeEntry(
     gl: WebGL2RenderingContext,
     vol: NVImage,
     budgetBytes: number,
@@ -992,162 +813,9 @@ export class VolumeRenderer extends NVRenderer {
     this.volumeGradientTexture = chunk0?.volumeGradientTexture ?? null
   }
 
-  /**
-   * Swap a chunked volume's plan in place (multi-LOD refocus): re-key the
-   * resident GPU chunks to the new plan by content (`matchChunksByContent`) so
-   * unchanged bricks keep their texture and fade, and only changed/new bricks
-   * stream — instead of rebuilding the whole entry via a reload. No-op when the
-   * volume has no chunked entry yet (first load still goes through updateVolume).
-   */
-  async swapChunkedVolumePlan(
-    gl: WebGL2RenderingContext,
-    vol: NVImage,
-    newPlan: ChunkPlan,
-    keepUntilCovered = false,
-  ): Promise<void> {
-    const cacheKey = volumeCacheKey(vol)
-    const entry = cacheKey ? this._texCache.get(cacheKey) : undefined
-    if (!entry || entry.kind !== 'chunked') return
-    if (newPlan.chunks.length > MAX_CHUNKS_PER_TILE) {
-      throw new Error(
-        `multi-LOD plan tiles into ${newPlan.chunks.length} chunks, ` +
-          `exceeding the per-tile limit of ${MAX_CHUNKS_PER_TILE}.`,
-      )
-    }
-    vol.chunkPlan = newPlan
-    // A combined mirror streams on the base's grid. Its own plan applies once
-    // it streams alone or as the base, which rebuilds the entry for it.
-    if (this._combinedOverlayEntries.includes(entry)) return
-    // Combined mirrors are indexed by the base's chunks, so they move with it.
-    const entries = [
-      entry,
-      ...(entry === this._activeChunked ? this._combinedOverlayEntries : []),
-    ]
-    const swaps = entries.map(async (e) => {
-      const ev = e === entry ? vol : e.volume
-      const done = this._queueEntrySwap(gl, ev, e, newPlan, keepUntilCovered)
-      const pending = { plan: newPlan, done }
-      e.pendingSwap = pending
-      try {
-        await done
-      } finally {
-        if (e.pendingSwap === pending) e.pendingSwap = undefined
-      }
-    })
-    await Promise.all(swaps)
-  }
-
   /** Queue a plan swap on `entry` behind any swap already queued on it. */
-  private _queueEntrySwap(
-    gl: WebGL2RenderingContext,
-    vol: NVImage,
-    entry: ChunkedTexEntry,
-    newPlan: ChunkPlan,
-    keepUntilCovered: boolean,
-  ): Promise<void> {
-    const run: Promise<void> = (entry.swapTail ?? Promise.resolve()).then(() =>
-      entry.swapTail === tail
-        ? this._swapChunkedEntryPlan(gl, vol, entry, newPlan, keepUntilCovered)
-        : undefined,
-    )
-    const tail = run.catch(() => undefined)
-    entry.swapTail = tail
-    return run
-  }
-
-  /**
-   * Swap `entry` again while `base.chunkPlan` moved on during the last await,
-   * so overlapping swaps leave it on the newest plan, not the last to finish.
-   */
-  private async _catchUpToPlan(
-    gl: WebGL2RenderingContext,
-    vol: NVImage,
-    entry: ChunkedTexEntry,
-    base: NVImage,
-    keepUntilCovered: boolean,
-  ): Promise<void> {
-    for (let p = base.chunkPlan; p && entry.plan !== p; p = base.chunkPlan) {
-      await this._swapChunkedEntryPlan(gl, vol, entry, p, keepUntilCovered)
-    }
-  }
-
-  private async _swapChunkedEntryPlan(
-    gl: WebGL2RenderingContext,
-    vol: NVImage,
-    entry: ChunkedTexEntry,
-    newPlan: ChunkPlan,
-    keepUntilCovered: boolean,
-  ): Promise<void> {
-    // The uploader bakes the display state as it is now, so record that key,
-    // not the one current after the await: a colormap change landing in
-    // between must still find the entry stale.
-    const displayKey = chunkedDisplayKey(vol, entry.modulation)
-    const oldToNew = matchChunksByContent(entry.plan, newPlan)
-    // Resident bricks bake the display state of the uploader that made them.
-    // When that state has changed since (a colormap set but not yet
-    // refreshed), keeping them would show the old state, so none carry over.
-    const carryOver = displayKey === entry.displayKey
-    const keepResident = carryOver
-      ? chunksToKeepResident(
-          oldToNew,
-          !this._needsGradient(),
-          (ci) => entry.manager.getChunk(ci)?.hasGradient,
-          newPlan,
-          entry.manager.budgetBytes,
-        )
-      : new Map<number, number>()
-    // Rebind the uploader to the new plan; dispose the old orient resources.
-    const made = this._newChunkUploader(
-      gl,
-      vol,
-      newPlan,
-      entry.decoded,
-      entry.modulation,
-    )
-    const newUploader = made instanceof Promise ? await made : made
-    entry.uploader.dispose()
-    entry.uploader = newUploader
-    entry.manager.remap(
-      keepResident,
-      newPlan.chunks.length,
-      keepUntilCovered && carryOver
-        ? { oldPlan: entry.plan, newPlan }
-        : undefined,
-    )
-    // Chunk indices are plan-relative, so the tier is re-keyed by the same
-    // content match: a brick the new plan still contains keeps its bytes, and
-    // a refocus back to this level finds them.
-    entry.decoded.remap(oldToNew)
-    // A new grid makes the recorded travel meaningless (a refocused octree of
-    // the same volume keeps it), and the old uploader took its outstanding
-    // speculative reads with it.
-    if (entry.volume === vol) entry.predictor.replan(entry.plan, newPlan)
-    else entry.predictor.reset()
-    entry.plan = newPlan
-    entry.requestedThisFrame.length = 0
-    entry.speculative.clear()
-    entry.cubicSafe = planSupportsCubic(newPlan)
-    warnIfCubicUnsafe(
-      entry.volume.name,
-      entry.cubicSafe,
-      this.isCubicInterpolation,
-    )
-    this._resetChunkBindings(entry)
-    entry.volume = vol
-    entry.displayKey = displayKey
-    entry.sourceKey = volumeSourceKey(vol)
-    // Keep at least one chunk resident for the first post-swap frame; the pump
-    // streams the rest from the next working set.
-    if (entry.manager.residentCount === 0) {
-      const chunk0 = await entry.uploader.uploadChunk(0)
-      if (!chunk0.hasGradient) this._uploadedUnlit = true
-      entry.manager.admit(0, chunk0)
-    }
-    this._onPlanSwapped(entry)
-  }
-
   /** A chunk uploader for `plan`, baking the volume's current display state. */
-  private _newChunkUploader(
+  protected _newChunkUploader(
     gl: WebGL2RenderingContext,
     vol: NVImage,
     plan: ChunkPlan,
@@ -1165,19 +833,19 @@ export class VolumeRenderer extends NVRenderer {
   }
 
   /** WebGL2 binds chunk textures per draw: no per-chunk binding to drop. */
-  private _resetChunkBindings(_entry: ChunkedTexEntry): void {}
+  protected _resetChunkBindings(_entry: ChunkedTexEntry): void {}
 
   /** WebGL2 binds overlay textures per draw: no bind-group cache to drop. */
-  private _invalidateBindGroupCache(): void {}
+  protected _invalidateBindGroupCache(): void {}
 
   /** WebGL2 binds overlay textures per draw: nothing tracks mirror residency. */
-  private _invalidateBaseChunkBinding(_chunkIndex: number): void {}
+  protected _invalidateBaseChunkBinding(_chunkIndex: number): void {}
 
   /**
    * remap() destroyed every chunk the new plan does not match, so the aliases
    * captured for the old plan may now name deleted textures.
    */
-  private _onPlanSwapped(entry: ChunkedTexEntry): void {
+  protected _onPlanSwapped(entry: ChunkedTexEntry): void {
     if (this._activeChunked === entry) this._syncChunkedAliases(entry)
   }
 
@@ -1235,394 +903,7 @@ export class VolumeRenderer extends NVRenderer {
     return true
   }
 
-  /**
-   * When the active volume is chunked, expose its plan and per-chunk color
-   * textures so the 2D slice renderer can draw one in-plane-restricted quad
-   * per chunk. Returns null for single-texture volumes.
-   */
-  getActiveChunkedSlice(): {
-    plan: ChunkPlan
-    chunkTextures: (WebGLTexture | null)[]
-    overlayChunks: WebGLTexture[] | null
-    paqdChunks: WebGLTexture[] | null
-  } | null {
-    if (!this._activeChunked) return null
-    const { manager } = this._activeChunked
-    const chunkCount = manager.chunkCount
-    // Indexed by chunk index; null for chunks not yet streamed in. The slice
-    // loop skips nulls — a transient gap rather than a hole, since the pump
-    // fills them within a few frames.
-    const chunkTextures: (WebGLTexture | null)[] = []
-    for (let i = 0; i < chunkCount; i++) {
-      chunkTextures.push(manager.getChunk(i)?.volumeTexture ?? null)
-    }
-    return {
-      plan: this._activeChunked.plan,
-      chunkTextures,
-      // A streamed combined overlay (strategy A) feeds the slice overlay slot
-      // from its resident chunks (transparent placeholder until each streams
-      // in); otherwise the whole-reslice overlayChunks apply.
-      overlayChunks:
-        this._combinedOverlaySliceChunks(chunkCount) ??
-        (this.overlayChunks && this.overlayChunks.length === chunkCount
-          ? this.overlayChunks
-          : null),
-      paqdChunks:
-        this.paqdChunks && this.paqdChunks.length === chunkCount
-          ? this.paqdChunks
-          : null,
-    }
-  }
-
-  /**
-   * Per-chunk overlay textures for the active streamed combined overlay, sized
-   * to the base chunk count, with the transparent placeholder where a chunk is
-   * not yet resident. Null when no single combined overlay is active.
-   */
-  private _combinedOverlaySliceChunks(
-    chunkCount: number,
-  ): WebGLTexture[] | null {
-    const fuse = this._stackFuse
-    const empty = this.placeholderOverlay
-    const base = this._activeChunked
-    if (fuse && empty && base)
-      return fuse.textures(chunkRegions(base.plan), this._stackGen(), empty)
-    if (this._combinedOverlayEntries.length !== 1 || !this.placeholderOverlay) {
-      return null
-    }
-    const entry = this._combinedOverlayEntries[0]
-    if (entry.manager.chunkCount !== chunkCount) return null
-    const placeholder = this.placeholderOverlay
-    const out: WebGLTexture[] = []
-    for (let i = 0; i < chunkCount; i++) {
-      out.push(entry.manager.getChunk(i)?.volumeTexture ?? placeholder)
-    }
-    return out
-  }
-
-  /**
-   * Streaming cross-fade weight in [0,1] for one chunk of the active chunked
-   * base, for the 2D slice path: ramps 0->1 over `chunkFadeMs` from admit, so a
-   * fine chunk slice dissolves in over the coarse floor instead of popping.
-   * Returns 1 (no fade) when there is no floor to dissolve into or no active
-   * chunked base. Flags fadeActive while a chunk is mid-fade so the view keeps
-   * re-rendering to animate it.
-   */
-  activeChunkedSliceFade(chunkIndex: number): number {
-    if (!this._activeChunked || this.coarseFloorTexture === null) return 1
-    const fade = this._activeChunked.manager.fadeFraction(
-      chunkIndex,
-      this._frameNow,
-      this.chunkFadeMs,
-    )
-    if (fade < 1) this._fadeActive = true
-    return fade
-  }
-
-  /**
-   * Phase 3c: queue the active chunked volume's chunks for streaming upload.
-   * `requestUpload` is idempotent — already-resident or already-queued chunks
-   * are skipped — so the view may call this every frame with a tile's working
-   * set. No-op when the active volume is not chunked.
-   */
-  requestVisibleChunks(chunkIndices: readonly number[]): void {
-    const entry = this._activeChunked
-    if (!entry) return
-    for (const ci of chunkIndices) entry.manager.requestUpload(ci)
-  }
-
-  /**
-   * When an independently-streamed hi-res overlay is active, expose its plan
-   * and per-chunk color textures so the 2D slice renderer can draw one
-   * in-plane-restricted quad per overlay chunk. Returns null when no such
-   * overlay is present.
-   */
-  getActiveOverlayChunkedSlice(): {
-    plan: ChunkPlan
-    chunkTextures: (WebGLTexture | null)[]
-  } | null {
-    const entry = this._activeOverlayChunked
-    if (!entry) return null
-    const chunkTextures: (WebGLTexture | null)[] = []
-    for (let i = 0; i < entry.manager.chunkCount; i++) {
-      chunkTextures.push(entry.manager.getChunk(i)?.volumeTexture ?? null)
-    }
-    return { plan: entry.plan, chunkTextures }
-  }
-
-  /**
-   * Phase 3c: frustum-cull the active chunked volume against a 3D render
-   * tile's MVP and queue the visible chunks for streaming. No-op when the
-   * active volume is not chunked.
-   */
-  requestChunksInFrustum(
-    mvp: Float32Array | number[],
-    matRAS: Float32Array | number[],
-    clipPlanes: number[],
-    isCutaway: boolean,
-  ): void {
-    this._requestChunksInFrustum(
-      this._activeChunked,
-      mvp,
-      matRAS,
-      clipPlanes,
-      isCutaway,
-      // Streamed combined overlays share the base grid, so mirror the base's
-      // visible working set onto their managers (same chunk indices).
-      this._combinedOverlayEntries.map((e) => e.manager),
-    )
-  }
-
-  /**
-   * Same frustum-driven working set for the independently-streamed hi-res
-   * overlay. The overlay is culled against its OWN plan + matRAS but the same
-   * scene MVP (shared camera). No-op when no chunked overlay is active.
-   */
-  requestOverlayChunksInFrustum(
-    mvp: Float32Array | number[],
-    matRAS: Float32Array | number[],
-    clipPlanes: number[],
-    isCutaway: boolean,
-  ): void {
-    this._requestChunksInFrustum(
-      this._activeOverlayChunked,
-      mvp,
-      matRAS,
-      clipPlanes,
-      isCutaway,
-    )
-  }
-
-  private _requestChunksInFrustum(
-    entry: ChunkedTexEntry | null,
-    mvp: Float32Array | number[],
-    matRAS: Float32Array | number[],
-    clipPlanes: number[],
-    isCutaway: boolean,
-    mirrors: ChunkResidencyManager<VolumeChunkGL>[] = [],
-  ): void {
-    if (!entry) return
-    // Exploded view: the whole plan is the working set. Explode spreads the
-    // blocks apart (often beyond the framed extent), so a frustum cull would
-    // drop the blocks that pan off the viewport edges during a rotate; the LRU
-    // would then evict them and the 1-chunk/frame pump cannot refill them
-    // before the next drag frame, so they visibly blink out. Stamping every
-    // chunk each frame keeps them all resident (eviction never drops a chunk
-    // touched this frame) so the separated blocks stay put while the camera
-    // moves. An exploded render is a deliberate "show all blocks" view, so
-    // requesting them all matches intent.
-    if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
-      for (let ci = 0; ci < entry.plan.chunks.length; ci++) {
-        entry.manager.requestUpload(ci)
-        for (const m of mirrors) m.requestUpload(ci)
-      }
-      return
-    }
-    const visible = chunksInFrustum(
-      entry.plan,
-      mvp,
-      CLIP_SPACE_ZERO_TO_ONE,
-      matRAS,
-    )
-    // Drop chunks a clip plane removes entirely from the cutaway, so we never
-    // stream blocks the 3D render hides.
-    const unclipped = chunksNotClippedOut(
-      entry.plan,
-      visible,
-      clipPlanes,
-      isCutaway,
-    )
-    // Stream the centre of the view first, then spiral outward. Streamed
-    // combined overlays share the base grid, so the same indices apply.
-    const ordered = orderByViewCenter(entry.plan, unclipped, mvp, matRAS)
-    // Cap the working set to what the residency budget can hold. A full-volume
-    // render makes every visible chunk needed-this-frame, so eviction can't drop
-    // any of them; without a cap the resident set grows to the entire visible
-    // set and exhausts GPU memory (context loss). Streaming only the most
-    // view-central chunks that fit keeps memory bounded — the coarse floor
-    // covers the rest. Unlit chunks carry no full-size gradient texture, so
-    // the cap prices them at 4 bytes/voxel instead of 8.
-    // Mirrors get the same indices but a fraction of the budget, so the set
-    // must fit the tightest of them too. A chunk uploaded lit keeps its 8-byte
-    // gradient footprint until it re-streams, so each manager prices its
-    // resident chunks by their actual gradient state; non-resident chunks fall
-    // back to the current lighting state.
-    const capped = chunkIndicesForAllBudgets(
-      entry.plan,
-      ordered,
-      [entry.manager, ...mirrors],
-      this._needsGradient(),
-      entry.requestedThisFrame,
-    )
-    for (const ci of capped) {
-      entry.manager.requestUpload(ci)
-      for (const m of mirrors) m.requestUpload(ci)
-    }
-    // Accumulate rather than replace: a multiplanar layout drives this volume
-    // from several tiles per frame, and the union is what travels and what
-    // later tiles are capped against.
-    for (const ci of capped) entry.requestedThisFrame.push(ci)
-  }
-
-  /**
-   * Queue a 2D-slice working set, viewport-bounded: of the chunks the slice
-   * plane crosses (`crossing`), request only those also inside the slice tile's
-   * ortho frustum. Without this, a depth-1 volume (every chunk crosses the one
-   * axial plane) would stream the whole level; with it, only the on-screen
-   * tiles stream — so a gigapixel slide pans at full resolution within budget.
-   * Falls back to all `crossing` for an exploded view (intent: show all blocks).
-   */
-  requestVisibleChunksInView(
-    crossing: readonly number[],
-    mvp: Float32Array | number[],
-    matRAS: Float32Array | number[],
-  ): void {
-    this._requestVisibleChunksInView(
-      this._activeChunked,
-      crossing,
-      mvp,
-      matRAS,
-      // Streamed combined overlays share the base grid — mirror the slice
-      // working set so the overlay streams alongside the base on 2D slices too.
-      this._combinedOverlayEntries.map((e) => e.manager),
-    )
-  }
-
   /** 2D-slice working set for the independently-streamed hi-res overlay. */
-  requestOverlayVisibleChunksInView(
-    crossing: readonly number[],
-    mvp: Float32Array | number[],
-    matRAS: Float32Array | number[],
-  ): void {
-    this._requestVisibleChunksInView(
-      this._activeOverlayChunked,
-      crossing,
-      mvp,
-      matRAS,
-    )
-  }
-
-  private _requestVisibleChunksInView(
-    entry: ChunkedTexEntry | null,
-    crossing: readonly number[],
-    mvp: Float32Array | number[],
-    matRAS: Float32Array | number[],
-    mirrors: ChunkResidencyManager<VolumeChunkGL>[] = [],
-  ): void {
-    if (!entry) return
-    if (chunkExplodeEnabled(entry.volume.chunkExplode)) {
-      for (const ci of crossing) {
-        entry.manager.requestUpload(ci)
-        for (const m of mirrors) m.requestUpload(ci)
-      }
-      return
-    }
-    const inView = new Set(
-      chunksInFrustum(entry.plan, mvp, CLIP_SPACE_ZERO_TO_ONE, matRAS),
-    )
-    const visible = crossing.filter((ci) => inView.has(ci))
-    // Stream the centre of the view first, then spiral outward, capped to what
-    // the residency budget can hold (see _requestChunksInFrustum).
-    const ordered = orderByViewCenter(entry.plan, visible, mvp, matRAS)
-    // Fits the base and every mirror; see _requestChunksInFrustum.
-    const capped = chunkIndicesForAllBudgets(
-      entry.plan,
-      ordered,
-      [entry.manager, ...mirrors],
-      this._needsGradient(),
-      entry.requestedThisFrame,
-    )
-    for (const ci of capped) {
-      entry.manager.requestUpload(ci)
-      for (const m of mirrors) m.requestUpload(ci)
-    }
-    for (const ci of capped) entry.requestedThisFrame.push(ci)
-  }
-
-  /**
-   * Phase 3d: advance every chunked volume's LRU clock. Must be called once at
-   * the start of each frame, before the view requests its working set, so
-   * working-set `requestUpload` calls stamp the current frame and a same-frame
-   * eviction in `pumpChunkUploads` cannot drop a visible chunk.
-   */
-  beginChunkFrame(): void {
-    this._frameNow = performance.now()
-    this._fadeActive = false
-    this._refreshUnlitChunksForLighting()
-    this._ensureSingleGradients()
-    for (const entry of this._texCache.values()) {
-      if (entry.kind !== 'chunked') continue
-      // Predict from the frame that just ended, before its record is cleared.
-      // Here rather than in the pump because the pump is paused mid-drag, and a
-      // drag is exactly when the view is travelling and worth fetching ahead of.
-      this._speculateAhead(entry)
-      entry.requestedThisFrame.length = 0
-      entry.manager.beginFrame()
-    }
-  }
-
-  /**
-   * Fetch ahead of the working set along its direction of travel: ask the
-   * predictor where the last frame's chunks were heading and start source reads
-   * for the answer, releasing the guesses that no longer apply so a wrong turn
-   * cannot hold fetch slots for the rest of the session.
-   *
-   * Speculative only. Nothing here is requested for upload, so the residency
-   * queue and the eviction clock never see it, and the uploader admits these
-   * reads only into fetch slots the working set is not using.
-   */
-  private _speculateAhead(entry: ChunkedTexEntry): void {
-    const predicted = entry.predictor.predict(
-      entry.plan,
-      entry.requestedThisFrame,
-      CHUNK_PREDICT_WINDOW,
-    )
-    if (predicted.length === 0) {
-      // Either the view is settled or this frame said nothing new. Standing
-      // guesses are left alone: dropping them on the first idle frame would
-      // cancel every read a discrete scrub had just started for its next step.
-      return
-    }
-    for (const ci of entry.requestedThisFrame) {
-      // The view arrived at a guess: the read did its job and the chunk is the
-      // working set's now, so drop the claim without cancelling it.
-      entry.speculative.delete(ci)
-    }
-    if (!predicted.some((ci) => entry.speculative.has(ci))) {
-      // Nothing standing is on the new heading, so the view turned. Release the
-      // old guesses; travel that merely continues shares chunks with them and
-      // takes this branch only once its whole flight has been consumed.
-      for (const ci of entry.speculative) {
-        entry.speculative.delete(ci)
-        // Once the working set has claimed a guess the read belongs to the
-        // pump, and cancelling it would abort an upload already under way.
-        if (entry.manager.isUploadPending(ci)) continue
-        entry.uploader.cancelChunk(ci)
-      }
-    }
-    for (const ci of predicted) {
-      // One flight of guesses at a time: new reads start only as the view
-      // consumes the standing ones, so speculation cannot churn per frame.
-      if (entry.speculative.size >= CHUNK_PREDICT_WINDOW) break
-      if (entry.manager.isResident(ci)) continue
-      if (entry.speculative.has(ci)) continue
-      entry.speculative.add(ci)
-      entry.predictedCount++
-      entry.uploader.prefetchChunk(ci, true)
-    }
-  }
-
-  /**
-   * Whether the per-chunk gradient pass must run. Lighting is not the only
-   * consumer: gradient opacity and silhouette read the same texture's magnitude
-   * and direction, so an unlit volume with either turned up still needs it.
-   */
-  private _needsGradient(): boolean {
-    return (
-      this.gradientAmount > 0 || this.gradientOpacity > 0 || this.silhouette > 0
-    )
-  }
-
   /**
    * Build any non-chunked gradient texture that the upload path deferred.
    *
@@ -1633,7 +914,7 @@ export class VolumeRenderer extends NVRenderer {
    * the texture outlives the toggle so flipping the feature off and on again
    * does not rebuild it.
    */
-  private _ensureSingleGradients(): void {
+  protected _ensureSingleGradients(): void {
     const gl = this._gl
     if (!gl || !this._needsGradient()) return
     for (const entry of this._texCache.values()) {
@@ -1663,124 +944,8 @@ export class VolumeRenderer extends NVRenderer {
     }
   }
 
-  private _refreshUnlitChunksForLighting(): void {
-    if (!this._needsGradient() || !this._uploadedUnlit) return
-    this._uploadedUnlit = false
-    for (const entry of this._texCache.values()) {
-      if (entry.kind !== 'chunked') continue
-      entry.manager.remap(new Map(), entry.plan.chunks.length)
-      this._resetChunkBindings(entry)
-    }
-  }
-
-  /**
-   * True if any chunk drew mid cross-fade in the last frame. The view ORs this
-   * into its follow-up-frame decision so a fade animates to completion even
-   * when no further chunks are streaming in.
-   */
-  get fadeActive(): boolean {
-    return this._fadeActive
-  }
-
-  /**
-   * Stream in queued chunks for every cached chunked volume — the per-frame
-   * upload pump. Uploads chunks round-robin across chunked volumes (one per
-   * volume per round, so base and overlay fill together) until the wall-clock
-   * budget `CHUNK_UPLOAD_BUDGET_MS` or the cap `MAX_CHUNK_UPLOADS_PER_FRAME` is
-   * reached, then `admit`s them. Returns true if any chunk was admitted, so the
-   * view can schedule a follow-up frame to present the newly-resident data and
-   * keep the pump going. A single pump runs at a time: a re-entrant call while
-   * an async upload is in flight returns false immediately.
-   */
-  async pumpChunkUploads(): Promise<boolean> {
-    if (this._pumpInFlight) return false
-    this._pumpInFlight = true
-    let admitted = false
-    let uploaded = 0
-    const start = performance.now()
-    try {
-      // Kick off source fetches for the upcoming working set so they run in
-      // parallel ahead of the serial upload below. prefetchChunk is idempotent
-      // and self-bounded, so topping up the window every pump keeps it full as
-      // uploads drain it.
-      for (const entry of this._texCache.values()) {
-        if (entry.kind !== 'chunked') continue
-        for (const ci of entry.manager.peekPendingUploads(
-          CHUNK_PREFETCH_WINDOW,
-        ))
-          entry.uploader.prefetchChunk(ci)
-      }
-      // Round-robin: each pass takes at most one queued chunk from each chunked
-      // entry, so a busy base does not starve the overlay (and vice versa).
-      let progressed = true
-      while (
-        progressed &&
-        uploaded < MAX_CHUNK_UPLOADS_PER_FRAME &&
-        performance.now() - start < CHUNK_UPLOAD_BUDGET_MS
-      ) {
-        progressed = false
-        for (const entry of this._texCache.values()) {
-          if (entry.kind !== 'chunked') continue
-          if (
-            uploaded >= MAX_CHUNK_UPLOADS_PER_FRAME ||
-            performance.now() - start >= CHUNK_UPLOAD_BUDGET_MS
-          )
-            break
-          const indices = entry.manager.takePendingUploads(1)
-          if (indices.length === 0) continue
-          const i = indices[0]
-          // Capture the uploader + plan generation BEFORE the await: a refocus
-          // can run swapChunkedVolumePlan -> remap() during the upload, which
-          // bumps the generation and re-keys the plan. Admitting the stale
-          // result would put the old brick's texture at a new-plan index.
-          const uploader = entry.uploader
-          const gen = entry.manager.generation
-          try {
-            const chunk = await uploader.uploadChunk(i)
-            if (entry.manager.generation === gen) {
-              if (!chunk.hasGradient) this._uploadedUnlit = true
-              entry.manager.admit(i, chunk)
-            } else {
-              entry.manager.discardUpload(i, chunk)
-            }
-          } catch (err) {
-            // Isolate a single chunk's failure: mark it failed and keep pumping.
-            // failUpload clears the in-flight marker so a later working-set pass
-            // re-enqueues it. Rethrowing would reject the whole pump and stop the
-            // view's self-driven re-render loop, freezing all streaming until an
-            // unrelated redraw (e.g. a drag) re-kicks it.
-            entry.manager.failUpload(i)
-            // An abort is this renderer's own doing (the view stopped wanting
-            // the chunk, or the uploader was disposed), so it is not a failure
-            // to report.
-            if (!(err instanceof Error && err.name === 'AbortError'))
-              log.error('chunk upload failed', err)
-            continue
-          }
-          admitted = true
-          uploaded++
-          progressed = true
-        }
-      }
-      if (await this._fuseStackChunks(start + CHUNK_UPLOAD_BUDGET_MS))
-        admitted = true
-    } finally {
-      this._pumpInFlight = false
-    }
-    return admitted
-  }
-
   /** The stack's channel entries, base first. */
-  private _stackEntries(): ChunkedTexEntry[] {
-    const base = this._activeChunked
-    return base ? [base, ...this._combinedOverlayEntries] : []
-  }
-
   /** The stack's source generation (see ChunkStackFuse). */
-  private _stackGen(): string {
-    return stackGeneration(this._stackEntries())
-  }
-
   /**
    * Re-fuse stack chunks whose bricks or blend modes changed until `deadline`
    * (at least one per pump), on the GPU (blendOverlaysGL, as WebGPU's
@@ -1790,7 +955,7 @@ export class VolumeRenderer extends NVRenderer {
    * CPU. A fused chunk costs one RGBA8 brick (texDims x 4 bytes), outside the
    * residency budget. Returns whether any chunk changed.
    */
-  private async _fuseStackChunks(deadline: number): Promise<boolean> {
+  protected async _fuseStackChunks(deadline: number): Promise<boolean> {
     const fuse = this._stackFuse
     const gl = this._gl
     const base = this._activeChunked
@@ -2282,253 +1447,9 @@ export class VolumeRenderer extends NVRenderer {
     this._coarseFloorKey = key
   }
 
-  /**
-   * Build (or reuse) the independent chunked entry for a hi-res streamed
-   * overlay and mark it active. The entry lives in _texCache under the
-   * overlay's own key, so the per-frame pump streams it alongside the base.
-   * Drawn as translucent chunk cubes over the base in drawOverlayChunked.
-   */
-  private async _updateOverlayChunkedIndependent(
-    gl: WebGL2RenderingContext,
-    vol: NVImage,
-    volumes: NVImage[],
-  ): Promise<void> {
-    // Split the single configured residency budget: the overlay gets a share,
-    // the base keeps the rest, so base + overlay together stay within the
-    // configured cap instead of each filling it.
-    const overlayBudget = this._chunkResidencyBytes * OVERLAY_RESIDENCY_FRACTION
-    // The overlay streams on its own grid, so its modulation matrix is
-    // resolved against itself, not the base.
-    const entry = await this._ensureChunkedVolumeEntry(
-      gl,
-      vol,
-      overlayBudget,
-      buildModulationParams(vol, vol, volumes),
-    )
-    // Apply the split even when the entry was reused from the cache (its
-    // manager may have been built with a different budget).
-    setChunkBudget(entry, overlayBudget)
-    this._activeOverlayChunked = entry
-    if (this._activeChunked && this._activeChunked !== entry) {
-      setChunkBudget(
-        this._activeChunked,
-        this._chunkResidencyBytes * (1 - OVERLAY_RESIDENCY_FRACTION),
-      )
-    }
-    this._invalidateBindGroupCache()
-  }
-
-  /**
-   * Forget the active independent chunked overlay. The cache entry itself is
-   * left in _texCache for reuse / normal pruneVolumeCache lifecycle; only the
-   * active pointer is cleared so it is no longer drawn or requested. The base
-   * reclaims the full residency budget the overlay had been sharing.
-   */
-  clearOverlayChunked(): void {
-    this._activeOverlayChunked = null
-    if (this._activeChunked) {
-      setChunkBudget(this._activeChunked, this._chunkResidencyBytes)
-    }
-  }
-
-  hasOverlayChunked(): boolean {
-    return this._activeOverlayChunked !== null
-  }
-
   /** Whether an overlay is co-registered at the base grid (same RAS dims). */
-  private _dimsMatchBase(vol: NVImage, baseVol: NVImage): boolean {
-    const a = vol.dimsRAS
-    const b = baseVol.dimsRAS
-    return !!a && !!b && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]
-  }
-
-  /**
-   * Strategy A: build (or reuse) a base-aligned chunked entry for each streamed
-   * combined overlay (a chunkSource overlay co-registered at the base grid).
-   * They stream via the per-frame pump and feed the base block's overlay slot,
-   * so the base ray-march / clip plane / compositing are reused unchanged. The
-   * residency hook invalidates the base chunk's binding when an overlay chunk
-   * arrives or is evicted, so the overlay slot tracks residency.
-   */
-  private async _updateCombinedOverlayChunked(
-    gl: WebGL2RenderingContext,
-    vols: NVImage[],
-    volumes: NVImage[],
-  ): Promise<void> {
-    // No fuse while the mirror list is partial (the pump awaits meanwhile).
-    this._stackRebuilding = (this._stackRebuilding ?? 0) + 1
-    try {
-      this._combinedOverlayEntries = []
-      if (vols.length === 0) return
-      // Mirrors share the base grid and are asked for the base's indices, so
-      // the base's view is capped by the smallest mirror: split evenly.
-      const overlayBudget = this._chunkResidencyBytes / (vols.length + 1)
-      // Mirrors are asked for the base's chunk indices and priced by its plan,
-      // so each streams on the base's grid, not one set on the overlay itself.
-      const basePlan = volumes[0]?.chunkPlan
-      for (const vol of vols) {
-        // Co-registered at the base grid, so resolving against the overlay's
-        // own grid is the base-grid matrix the whole-volume path would use.
-        const entry = await this._ensureChunkedVolumeEntry(
-          gl,
-          vol,
-          overlayBudget,
-          buildModulationParams(vol, vol, volumes),
-          (ci) => this._invalidateBaseChunkBinding(ci),
-          basePlan,
-        )
-        // A base swap during the await could not see this mirror yet (it is
-        // not listed), so bring it to the base's current plan before listing it.
-        if (volumes[0]) {
-          await this._catchUpToPlan(gl, vol, entry, volumes[0], false)
-        }
-        setChunkBudget(entry, overlayBudget)
-        this._combinedOverlayEntries.push(entry)
-      }
-      if (this._activeChunked) {
-        setChunkBudget(this._activeChunked, overlayBudget)
-      }
-      this._invalidateBindGroupCache()
-    } finally {
-      this._stackRebuilding--
-    }
-  }
-
-  private _clearStackFuse(): void {
-    this._stackFuse?.clear()
-    this._stackFuse = null
-  }
-
   /** Forget the streamed combined overlays; base reclaims the full budget. */
-  private _clearCombinedOverlayChunked(): void {
-    this._clearStackFuse()
-    if (this._combinedOverlayEntries.length === 0) return
-    this._combinedOverlayEntries = []
-    if (this._activeChunked) {
-      setChunkBudget(this._activeChunked, this._chunkResidencyBytes)
-    }
-    this._invalidateBindGroupCache()
-  }
-
   /** The NVImage backing the active independent chunked overlay (or null). */
-  getOverlayChunkedVolume(): NVImage | null {
-    return this._activeOverlayChunked?.volume ?? null
-  }
-
-  /**
-   * Cheap per-frame subset of {@link chunkStreamStats}: sums only the chunk
-   * managers' scalar counters, skipping the decoded-tier walk and its
-   * accumulator allocation. The render loop calls this around every
-   * upload-pump run to feed the streaming-event hook, so it must stay O(one
-   * integer read per chunked volume).
-   */
-  chunkStreamCounts(): ChunkStreamCounts {
-    let resident = 0
-    let pending = 0
-    let inFlight = 0
-    let total = 0
-    for (const entry of this._texCache.values()) {
-      if (entry.kind !== 'chunked') continue
-      resident += entry.manager.residentCount
-      pending += entry.manager.pendingUploadCount
-      inFlight += entry.manager.inFlightUploadCount
-      total += entry.manager.chunkCount
-    }
-    // Stack chunks still owed a fuse count as pending: the frame does not yet
-    // show every drawn channel.
-    pending += this._stackFusePending()
-    return { resident, pending, inFlight, total }
-  }
-
-  private _stackFusePending(): number {
-    const fuse = this._stackFuse
-    const base = this._activeChunked
-    if (!fuse || !base) return 0
-    const entries = this._stackEntries()
-    return fuse.pending(
-      chunkRegions(base.plan),
-      stackGeneration(entries),
-      stackModes(entries, this.overlayAlphaBlend, this.overlayColorBlend),
-      (i) => stackInputs(entries, i),
-    )
-  }
-
-  /**
-   * Aggregate streaming stats across all chunked volumes (base + overlay), for
-   * HUD / debug instrumentation. `resident` is bricks currently on the GPU,
-   * `pending` queued for upload, `inFlight` mid-upload, `total` the chunk count.
-   * `staleDropped` counts queued uploads retired because the working set moved
-   * on before they ran — upload work the old cross-frame queue would have spent
-   * on viewports the user had already left. `decoded` sums the decoded-chunk
-   * tiers: its hit rate is the share of source reads that an evicted brick's
-   * return cost nothing but an upload.
-   */
-  chunkStreamStats(): ChunkStreamDetail {
-    let resident = 0
-    let pending = 0
-    let inFlight = 0
-    let total = 0
-    let staleDropped = 0
-    let predicted = 0
-    let retiring = 0
-    let retiringBytes = 0
-    const decoded: DecodedChunkStats = {
-      hits: 0,
-      misses: 0,
-      admitted: 0,
-      rejected: 0,
-      evicted: 0,
-      entries: 0,
-      bytes: 0,
-      maxBytes: 0,
-    }
-    for (const entry of this._texCache.values()) {
-      if (entry.kind !== 'chunked') continue
-      resident += entry.manager.residentCount
-      pending += entry.manager.pendingUploadCount
-      inFlight += entry.manager.inFlightUploadCount
-      total += entry.manager.chunkCount
-      staleDropped += entry.manager.staleDropCount
-      predicted += entry.predictedCount
-      retiring += entry.manager.retiringChunks.length
-      retiringBytes += entry.manager.retiringBytes
-      const d = entry.decoded.stats
-      decoded.hits += d.hits
-      decoded.misses += d.misses
-      decoded.admitted += d.admitted
-      decoded.rejected += d.rejected
-      decoded.evicted += d.evicted
-      decoded.entries += d.entries
-      decoded.bytes += d.bytes
-      decoded.maxBytes += d.maxBytes
-    }
-    return {
-      resident,
-      pending: pending + this._stackFusePending(),
-      inFlight,
-      total,
-      staleDropped,
-      predicted,
-      retiring,
-      retiringBytes,
-      decoded,
-    }
-  }
-
-  /**
-   * Drop the resident bricks of every streamed overlay (the base-aligned combined
-   * overlays and an independent hi-res overlay), leaving the base volume resident.
-   * The next frame re-requests and re-bakes only the overlay blocks in the current
-   * view frustum, picking up the overlays' current `opacity` (and any chunkSource
-   * whose output changed). Lets a changed overlay opacity apply without a full
-   * volume reload.
-   */
-  rebakeChunkedOverlays(): void {
-    for (const entry of this._combinedOverlayEntries) entry.manager.destroy()
-    this._activeOverlayChunked?.manager.destroy()
-    this._invalidateBindGroupCache()
-  }
-
   /**
    * Build one RGBA8 overlay texture per chunk for a chunked oversized volume.
    * The overlay layer shares the background volume's ChunkPlan, so the chunk

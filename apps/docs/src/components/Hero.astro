@@ -1,35 +1,77 @@
 ---
-// The home page's first screen: Starlight's hero text and actions, and a strip
-// of NiiVue stills in place of the hero image. Only the home page sets `hero`.
+// The home page's first screen: Starlight's hero text and actions on a black
+// panel, over a row of NiiVue stills. Only the home page sets `hero`.
 import { LinkButton } from '@astrojs/starlight/components'
-import HeroStrip from './HeroStrip.astro'
+import HeroBackdrop from './HeroBackdrop.astro'
 
 const { data } = Astro.locals.starlightRoute.entry
 const { title = data.title, tagline, actions = [] } = data.hero ?? {}
 ---
 
 <div class="hero">
-  <h1 id="_top" data-page-title set:html={title} />
-  {tagline && <p class="tagline" set:html={tagline} />}
-  <div class="actions">
-    {
-      actions.map(({ link, text, variant }) =>
-        variant === 'primary' ? (
-          <LinkButton href={link}>{text}</LinkButton>
-        ) : (
-          <a class="text-link" href={link}>
-            {text} &rarr;
-          </a>
-        ),
-      )
-    }
+  <HeroBackdrop />
+  <div class="copy">
+    <h1 id="_top" data-page-title set:html={title} />
+    {tagline && <p class="tagline" set:html={tagline} />}
+    <div class="actions">
+      {
+        actions.map(({ link, text, variant }) =>
+          variant === 'primary' ? (
+            <LinkButton href={link}>{text}</LinkButton>
+          ) : (
+            <a class="text-link" href={link}>
+              {text} &rarr;
+            </a>
+          ),
+        )
+      }
+    </div>
   </div>
-  <HeroStrip />
 </div>
 
 <style>
+  /* The panel is black in both themes, so it uses the dark theme's text and
+     accent colors (the primary button reads them too). */
   .hero {
-    padding-block: 2.5rem 1rem;
+    --sl-color-white: #fafafa;
+    --sl-color-black: #0a0a0a;
+    --sl-color-gray-3: #c8c8c8;
+    --sl-color-text-accent: #e07a84;
+
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    margin-block: 1.5rem 1rem;
+    padding: clamp(1.75rem, 5vw, 3.5rem) clamp(1.25rem, 4vw, 3rem);
+    background: var(--nv-viewer);
+    border-radius: var(--nv-radius);
+  }
+
+  /* A shade under the text: dark where the text is, clear where it is not. */
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(
+      to right,
+      rgb(0 0 0 / 0.8) 0%,
+      rgb(0 0 0 / 0.72) 38%,
+      rgb(0 0 0 / 0.25) 66%,
+      rgb(0 0 0 / 0) 84%
+    );
+  }
+
+  .copy {
+    position: relative;
+    z-index: 2;
+    max-width: 34rem;
+  }
+
+  /* Keeps the text crisp where an image shows through the shade. */
+  h1,
+  .tagline {
+    text-shadow: 0 1px 14px rgb(0 0 0 / 0.85);
   }
 
   h1 {
@@ -52,7 +94,7 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {}
     flex-wrap: wrap;
     gap: 1rem 1.5rem;
     align-items: center;
-    margin-block: 1.75rem 2.5rem;
+    margin-top: 1.75rem;
   }
 
   .actions :global(.sl-link-button) {
@@ -66,5 +108,17 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {}
 
   .text-link:hover {
     text-decoration: underline;
+  }
+
+  /* Narrow screens: the text on top and the row of stills below it, each a
+     fifth of the panel's width (a percentage padding is of the width too). */
+  @media (max-width: 50rem) {
+    .hero {
+      padding-bottom: calc(20% + 1.5rem);
+    }
+
+    .hero::before {
+      background: none;
+    }
   }
 </style>

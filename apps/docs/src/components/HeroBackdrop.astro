@@ -1,0 +1,60 @@
+---
+// The home page hero's backdrop: stills of each kind of data NiiVue shows,
+// drawn by NiiVue itself (scripts/home-stills.ts), in one row on black. The
+// tagline names them, so the images are decorative here.
+import { withBase } from '../site'
+
+// The microscopy tissue fills its frame, so its edges fade into the black.
+const STILLS = [
+  { image: 'mri' },
+  { image: 'ct' },
+  { image: 'microscopy', fade: true },
+  { image: 'surfaces' },
+  { image: 'tractography' },
+]
+---
+
+<div class="backdrop" aria-hidden="true">
+  {
+    STILLS.map(({ image, fade }) => (
+      <img
+        class:list={{ fade }}
+        src={withBase(`img/home/${image}.webp`)}
+        alt=""
+        width="640"
+        height="640"
+        decoding="async"
+      />
+    ))
+  }
+</div>
+
+<style>
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  img {
+    display: block;
+    width: 20%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .fade {
+    mask-image:
+      linear-gradient(to right, transparent 5%, #000 22%, #000 78%, transparent 95%),
+      linear-gradient(to bottom, transparent 5%, #000 22%, #000 78%, transparent 95%);
+    mask-composite: intersect;
+  }
+
+  /* Narrow screens: the row sits along the bottom, below the text. */
+  @media (max-width: 50rem) {
+    .backdrop {
+      align-items: flex-end;
+    }
+  }
+</style>

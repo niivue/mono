@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { expect } from '@playwright/test'
 import { test } from './sharedPage'
 
-// The built, self-contained @niivue/uikit bundle (no runtime imports), loaded via
+// The built @niivue/uikit bundle, loaded via
 // Vite's /@fs/ escape hatch. A bare `@niivue/uikit` specifier is not rewritten
 // inside a page.evaluate string (Vite only transforms real modules), so we point
 // at the file directly. Requires `nx build uikit` to have run.

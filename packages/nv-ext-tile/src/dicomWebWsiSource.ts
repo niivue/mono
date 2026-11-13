@@ -7,8 +7,8 @@ import type {
   SlideTileSource,
 } from '@niivue/niivue'
 import { cleanAttribution } from './attribution'
-import { levelMaps } from './dicomOrientation'
 import type { DicomJsonSlide } from './dicomJson'
+import { levelMaps } from './dicomOrientation'
 import { manifestOf } from './dicomWsiSource'
 import { parseMultipartRelated } from './multipart'
 import {

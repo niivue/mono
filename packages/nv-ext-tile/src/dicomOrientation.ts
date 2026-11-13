@@ -95,7 +95,9 @@ export function tileExtent(
   y: number,
 ): { width: number; height: number } {
   return {
-    width: o?.flipX ? g.tileWidth : Math.min(g.tileWidth, g.width - x * g.tileWidth),
+    width: o?.flipX
+      ? g.tileWidth
+      : Math.min(g.tileWidth, g.width - x * g.tileWidth),
     height: o?.flipY
       ? g.tileHeight
       : Math.min(g.tileHeight, g.height - y * g.tileHeight),

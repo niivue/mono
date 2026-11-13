@@ -683,10 +683,11 @@ export class VolumeRenderer extends ChunkStreamRenderer<
 
     const mtx = NVTransforms.calculateOverlayTransformMatrix(vol, vol)
     const modParams = buildModulationParams(vol, vol, allVolumes)
-    // Leaving a chunked volume: the aliases name chunk 0's textures, which the
-    // chunked cache entry still owns, and the single-volume path below destroys
-    // whatever they hold. Drop them first, as gl/render.ts does.
-    if (this._activeChunked) {
+    // Leaving a cached volume: the aliases name textures a `_texCache` entry
+    // still owns (chunk 0's, or a per-volume single's), and the single-volume
+    // path below destroys whatever they hold. Drop them first, as gl/render.ts
+    // does for chunked.
+    if (this._activeChunked || this._activeVolKey) {
       this.volumeTexture = null
       this.volumeGradientTexture = null
     }
@@ -1001,8 +1002,16 @@ export class VolumeRenderer extends ChunkStreamRenderer<
     if (base) base.bindGroups[chunkIndex] = null
   }
 
-  /** WebGPU builds chunk bind groups at draw time, from live residency. */
-  protected _onPlanSwapped(_entry: ChunkedTexEntry): void {}
+  /**
+   * WebGPU builds chunk bind groups at draw time, from live residency. Only the
+   * chunk-0 aliases need re-pointing: remap may have released the old chunk 0.
+   */
+  protected _onPlanSwapped(entry: ChunkedTexEntry): void {
+    if (this._activeChunked !== entry) return
+    const chunk0 = entry.manager.getChunk(0)
+    this.volumeTexture = chunk0?.volumeTexture ?? null
+    this.volumeGradientTexture = chunk0?.volumeGradientTexture ?? null
+  }
 
   /**
    * Reload the matcap texture when the URL changes so that opts.matcap
@@ -1045,6 +1054,9 @@ export class VolumeRenderer extends ChunkStreamRenderer<
       // inspect them, not the chunked volume's readiness signal.
       this._activeChunked = entry
       this._cubicVolumeSafe = !entry.volume.colormapLabel
+      // As in updateVolume: the depth pick must not bind the previous single
+      // volume's group.
+      this.bindGroup = null
       this.volumeTexture = entry.manager.getChunk(0)?.volumeTexture ?? null
       this.volumeGradientTexture =
         entry.manager.getChunk(0)?.volumeGradientTexture ?? null

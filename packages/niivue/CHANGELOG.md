@@ -1,3 +1,21 @@
+## 1.0.0-rc.189 (2026-11-13)
+
+### Fixes
+
+- **niivue:** match the 3D slide-plane annotation across backends ([a07ef397](https://github.com/niivue/mono/commit/a07ef397))
+
+### Refactors
+
+- ⚠️  **niivue:** remove unused slide and streaming options ([e2dafbb3](https://github.com/niivue/mono/commit/e2dafbb3))
+
+### Breaking Changes
+
+- **niivue:** remove unused slide and streaming options  ([e2dafbb3](https://github.com/niivue/mono/commit/e2dafbb3))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.188 (2026-11-13)
 
 ### Features

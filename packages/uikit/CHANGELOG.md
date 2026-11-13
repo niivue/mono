@@ -1,3 +1,21 @@
+## 1.0.0-rc.187 (2026-11-13)
+
+### Refactors
+
+- ⚠️  **uikit:** make the slide minimap model package-private ([c7450f5d](https://github.com/niivue/mono/commit/c7450f5d))
+
+### Breaking Changes
+
+- **uikit:** make the slide minimap model package-private  ([c7450f5d](https://github.com/niivue/mono/commit/c7450f5d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.189
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.186 (2026-11-13)
 
 ### Updated Dependencies

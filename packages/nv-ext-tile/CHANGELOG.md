@@ -1,3 +1,21 @@
+## 1.0.0-rc.98 (2026-11-13)
+
+### Refactors
+
+- ⚠️  **nv-ext-tile:** drop 14 consumer-less /zarr entry exports ([e5842397](https://github.com/niivue/mono/commit/e5842397))
+
+### Breaking Changes
+
+- **nv-ext-tile:** drop 14 consumer-less /zarr entry exports  ([e5842397](https://github.com/niivue/mono/commit/e5842397))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.189
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.97 (2026-11-13)
 
 ### Fixes

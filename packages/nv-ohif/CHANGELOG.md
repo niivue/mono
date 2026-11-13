@@ -1,3 +1,23 @@
+## 1.0.0-rc.216 (2026-11-13)
+
+### Refactors
+
+- ⚠️  **nv-ohif:** draw the WSI ruler with core's slide overlay ([0be54e98](https://github.com/niivue/mono/commit/0be54e98))
+
+### Breaking Changes
+
+- **nv-ohif:** draw the WSI ruler with core's slide overlay  ([0be54e98](https://github.com/niivue/mono/commit/0be54e98))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.189
+- Updated nv-ext-tile to 1.0.0-rc.98
+- Updated uikit to 1.0.0-rc.187
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.215 (2026-11-13)
 
 ### Updated Dependencies

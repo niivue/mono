@@ -110,6 +110,15 @@ describe('parseOmeXml', () => {
   test('keeps references to characters XML forbids as written', () => {
     const xml = omeXml('', '<Channel Name="a&#0;b&#xD800;c&#x10FFFF;"/>')
     expect(parseOmeXml(xml)?.channels[0].name).toBe('a&#0;b&#xD800;c\u{10FFFF}')
+    const nonChars = omeXml('', '<Channel Name="&#xFFFE;&#xFFFF;&#1;&#9;"/>')
+    expect(parseOmeXml(nonChars)?.channels[0].name).toBe(
+      '&#xFFFE;&#xFFFF;&#1;\t',
+    )
+  })
+
+  test('keeps entity names inherited from Object.prototype as written', () => {
+    const xml = omeXml('', '<Channel Name="&constructor;&toString;&amp;"/>')
+    expect(parseOmeXml(xml)?.channels[0].name).toBe('&constructor;&toString;&')
   })
 
   test('returns null for text that is not OME-XML', () => {

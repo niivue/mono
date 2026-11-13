@@ -5,7 +5,9 @@
 //
 // Pages load from DOCS_EXAMPLES_BASE (default: the published examples site),
 // so point it at a local `bun run dev` in packages/niivue to capture
-// unpublished examples. Each thumbnail is the page's largest canvas, scaled
+// unpublished examples. Give the server root
+// (DOCS_EXAMPLES_BASE=http://localhost:5273/), not /examples/: page paths
+// already start with examples/, and a doubled one captures a blank 404. Each thumbnail is the page's largest canvas, scaled
 // down in the browser and saved as WebP.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'

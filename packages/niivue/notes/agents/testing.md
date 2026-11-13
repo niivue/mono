@@ -196,6 +196,7 @@ The following modules require a browser or GPU context and are not covered by th
 
 ### Writing new tests
 
+- New binary assets need Git LFS staging: the `*.nii.gz` LFS filter applies only on `git add`, so an untracked file under `packages/dev-images/` works locally but 404s in the deployed demo. `git add` it so the index holds an LFS pointer.
 - Co-locate tests next to source: `src/foo/bar.ts` → `src/foo/bar.test.ts`
 - Import from `bun:test`: `import { describe, expect, test } from 'bun:test'`
 - Use the `@/*` path alias for cross-directory imports (resolved via `bunfig.toml`)

@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test'
 import NiiVue from '@/index'
 import { niftiBytes } from '@/testing/headless'
 
-// `limitFrames4D` must bound DECODING, not only retention (see AGENTS.md,
-// "Both load paths must FORWARD the limit"). The gzip stream is truncated
+// `limitFrames4D` must bound DECODING, not only retention (see
+// notes/agents/formats-and-volumes.md, "Both load paths must FORWARD the limit"). The gzip stream is truncated
 // after frame 0: a bounded read succeeds, a full decode cannot reach the end
 // of the member, so the outcome says how much was decoded. Under Bun the load
 // takes the main-thread path (loadBridge's fallback); the worker path is

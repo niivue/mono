@@ -313,6 +313,23 @@ Signal contracts (keep these true):
   (`cloneAnnotation`), color tuple included.
 - `examples/svs.html` runs `applyScene` calls one at a time through a promise
   chain, and only the latest queued mode runs.
+
+Deferred (low priority): two-pass/streaming TSV parser; annotations render only
+in the signal-only graph, not the volume+physio association view
+(`collectAssociatedTimeGraphData`); annotation count, long-label truncation and
+collision handling are unbounded by design (user-supplied); no committed
+Playwright e2e for the svs demo; ambiguous-NIfTI double read (dispatcher sniffs,
+then the loader re-reads); `loadImage` keeps append semantics for signals by
+design; per-draw O(samples) domain/range scans in the graph (fix: a
+binary-searched visible `[start,end)` slice per monotonic x-array); graph
+trigger positions are a boxed `number[]`, not a `Float32Array` (revisit if a
+dense trigger column appears); incompatible signals are silently dropped from a
+merged graph; no public setters to correct `SamplingFrequency`/`StartTime`/
+`SpectrometerFrequency`/`DwellTime` after load; rapid graph scrubs queue async
+`setFrame4D` uploads without coalescing; annotations have no add/clear
+convenience or per-annotation visibility (`setSignal({ annotations })` is
+full-replace by design).
+
 ### MRSI (spatial spectroscopic imaging)
 
 MRSI/CSI is a **complex 4-D volume** (dim1-3 = space, dim4 = FID), so it stays

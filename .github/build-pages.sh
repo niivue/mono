@@ -44,6 +44,12 @@ for app in "${APPS[@]}"; do
     bunx nx build "$app"
 done
 
+# UIKit's demo pages (packages/uikit/*.html), published like an app.
+echo "==> Building uikit demo"
+(cd packages/uikit \
+  && VITE_BASE="${BASE_PATH}uikit/" VITE_IMAGES_BASE="$BASE_PATH" \
+    bunx --bun vite build --mode demo)
+
 # 3. Build the docs site while the library dist still exists (step 4 deletes it).
 # Its demos fetch volumes and embed example pages from this same deployment.
 echo "==> Building docs site"
@@ -81,6 +87,9 @@ for app in "${APPS[@]}"; do
   mkdir -p "_site/$app"
   cp -r "apps/$app/dist/"* "_site/$app/"
 done
+
+mkdir -p _site/uikit
+cp -r packages/uikit/dist-demo/* _site/uikit/
 
 # Moved pages: keep old links working (query and hash kept).
 redirect() {

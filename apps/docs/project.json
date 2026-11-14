@@ -27,6 +27,7 @@
         "{workspaceRoot}/.github/pages/index.html",
         "{workspaceRoot}/apps/*/*.html",
         "{workspaceRoot}/apps/*/src/**/*",
+        "{workspaceRoot}/packages/uikit/*.html",
         "{workspaceRoot}/nx-tools/repo-graph.ts",
         {
           "env": "DOCS_BASE_URL"

@@ -13,8 +13,11 @@ export type LegendEntry = {
   centroid?: () => [number, number, number] | undefined
   /** Set on volume label entries; used by the legend toggle */
   volumeIndex?: number
+  /** Set on mesh layer label entries instead; used by the legend toggle */
+  meshIndex?: number
+  layerIndex?: number
   labelValue?: number
-  /** The label is in its volume's `hiddenLabels`: drawn as an outlined box */
+  /** The label is in its volume's or layer's `hiddenLabels`: drawn as an outlined box */
   isHidden?: boolean
 }
 
@@ -228,18 +231,24 @@ export function collectLegendEntries(
   }
 
   // Collect from mesh layers with label colormaps
-  for (const mesh of meshes) {
+  for (const [meshIndex, mesh] of meshes.entries()) {
     if (mesh.isLegendVisible === false || !isMeshDrawn(mesh)) continue
     if (!mesh.layers) continue
 
-    for (const layer of mesh.layers) {
+    for (const [layerIndex, layer] of mesh.layers.entries()) {
       if (!layer.colormapLabel) continue
+      const min = layer.colormapLabel.min ?? 0
+      const hidden = new Set(layer.hiddenLabels)
 
-      for (const [, label, color] of opaqueLabels(layer.colormapLabel)) {
+      for (const [i, label, color] of opaqueLabels(layer.colormapLabel)) {
         entries.push({
           label,
           color,
           centroid: () => meshLabelCentroid(mesh, layer, label),
+          meshIndex,
+          layerIndex,
+          labelValue: min + i,
+          isHidden: hidden.has(min + i),
         })
       }
     }

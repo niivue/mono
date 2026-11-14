@@ -4,127 +4,100 @@
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-    <title>OME-TIFF, ImageJ and plain TIFF stacks</title>
+    <title>OME-TIFF channel stacks</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/niivue.css" />
     <style>
-      #panel {
+      /* A fixed height lets the channel list scroll instead of growing the page. */
+      body {
+        height: 100%;
+      }
+      header {
         display: flex;
-        gap: 0.75rem;
+        gap: 0.4rem 1rem;
         align-items: center;
         flex-wrap: wrap;
       }
-      #url {
-        min-width: 18rem;
-        flex: 1 1 18rem;
+      header select {
+        max-width: min(24rem, calc(100vw - 2rem));
+      }
+      #row {
+        display: flex;
+        flex: 1;
+        min-height: 0;
       }
       #channels {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.15rem 0.75rem;
-        padding: 0.2rem 0;
+        flex: none;
+        overflow: auto;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+        max-width: 45vw;
+      }
+      #channels summary {
+        cursor: pointer;
       }
       #channels label {
-        font-size: 0.8rem;
-        white-space: nowrap;
-      }
-      /* Keep each checkbox glued to its own label when the row wraps. */
-      .pair {
-        display: inline-flex;
+        display: flex;
+        gap: 0.35rem;
         align-items: center;
-        gap: 0.25rem;
         white-space: nowrap;
       }
-      #credit {
-        font-size: 0.75rem;
-        opacity: 0.8;
+      #channels .swatch {
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 2px;
+        flex: none;
+      }
+      #channels input[type='number'] {
+        width: 4.5rem;
+        margin-left: auto;
+      }
+      #channels input[type='number']:disabled {
+        visibility: hidden;
+      }
+      #channelList {
+        display: grid;
+        gap: 0.1rem;
       }
       #status {
-        font-size: 0.8rem;
-      }
-      #download {
         font-size: 0.8rem;
       }
     </style>
   </head>
   <body>
     <header>
-      <div id="panel">
-        <label for="source">File</label>
-        <select id="source">
-          <option value="ome">OME-TIFF, 3 channels</option>
-          <option value="imagej">ImageJ hyperstack, 2 channels</option>
-          <option value="plain">Plain TIFF stack, 1 channel</option>
+      <label>Image <select id="image"></select></label>
+      <input id="file" type="file" accept=".tif,.tiff" hidden />
+      <label title="What a right drag does; with pan/zoom the wheel zooms the slices">Right drag
+        <select id="secondaryDrag">
+          <option value="3" selected>pan/zoom</option>
+          <option value="1">contrast</option>
+          <option value="9">windowing</option>
+          <option value="2">measurement</option>
         </select>
-        <label for="compression">Compression</label>
-        <select id="compression">
-          <option value="none">None</option>
-          <option value="packbits">PackBits</option>
-          <option value="deflate">Deflate</option>
-        </select>
-        <button id="generate" type="button">Generate</button>
-        <a id="download" href="" download="" hidden>Save this file</a>
-        <label for="file">or open a .tif</label>
-        <input id="file" type="file" accept=".tif,.tiff" />
-        <label for="sample">or a public file</label>
-        <select id="sample"></select>
-        <input id="url" type="text" placeholder="or a URL to a .ome.tif" />
-        <button id="fetchUrl" type="button">Fetch</button>
-        <span class="pair">
-          <label for="fuse">Fuse channels</label>
-          <input type="checkbox" id="fuse" checked />
-        </span>
-        <label for="opacity">Overlay opacity</label>
-        <input
-          id="opacity"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value="0.5"
-        />
-        <span class="pair">
-          <label for="clipCheck">Clip</label>
-          <input type="checkbox" id="clipCheck" />
-        </span>
-        <span class="pair">
-          <label for="clipOverlaysCheck">Clip overlays</label>
-          <input type="checkbox" id="clipOverlaysCheck" />
-        </span>
-        <label for="zoom">3D zoom</label>
-        <input
-          id="zoom"
-          type="range"
-          min="0.5"
-          max="4"
-          step="0.05"
-          value="1"
-        />
-        <label for="backendSelect">Backend</label>
-        <select id="backendSelect" title="Rendering backend (reloads the page)">
-          <option value="webgpu">WebGPU</option>
-          <option value="webgl2">WebGL2</option>
-        </select>
-        <label for="aaSelect">Anti-alias</label>
-        <select id="aaSelect" title="Multisample anti-aliasing (reloads the page)">
-          <option value="off">off</option>
-          <option value="on">on</option>
-        </select>
-        <label for="interp">Interpolation</label>
-        <select id="interp" autocomplete="off" title="2D slice sampling">
-          <option value="linear">linear</option>
-          <option value="nearest">nearest</option>
-        </select>
-      </div>
-      <div id="credit"></div>
-      <div id="channels"></div>
-      <button id="load" type="button" disabled>Load selected channels</button>
-      <div id="status">&nbsp;</div>
+      </label>
+      <label><input type="checkbox" id="clipCheck" /> Clip</label>
+      <label title="Show each voxel as a block instead of blending neighbours"><input type="checkbox" id="nearestCheck" /> Nearest</label>
+      <label title="Canvas background">Background <input type="color" id="colorBtn" value="#000000" /></label>
+      <label><input type="checkbox" id="webgpuCheck" /> WebGPU</label>
+      <button id="aboutBtn" type="button">About</button>
     </header>
-    <main id="canvas-container">
-      <canvas id="gl1"></canvas>
-    </main>
-    <footer id="location">&nbsp;</footer>
+    <div id="row">
+      <main id="canvas-container">
+        <canvas id="gl1"></canvas>
+      </main>
+      <details id="channels" open>
+        <summary>Channels</summary>
+        <label title="How overlapping channels combine">Blend
+          <select id="blend">
+            <option value="max" selected>max</option>
+            <option value="additive">additive</option>
+          </select>
+        </label>
+        <div id="channelList"></div>
+      </details>
+    </div>
+    <footer id="status">&nbsp;</footer>
     <script type="module" src="./ome.tiff.js"></script>
   </body>
 </html>

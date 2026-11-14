@@ -14,19 +14,50 @@
         align-items: center;
         flex-wrap: wrap;
       }
-      #url {
-        min-width: 18rem;
-        flex: 1 1 18rem;
+      #sample {
+        max-width: min(26rem, calc(100vw - 2rem));
+      }
+      /* A fixed height lets the channel list scroll instead of growing the page. */
+      body {
+        height: 100%;
+      }
+      #row {
+        display: flex;
+        flex: 1;
+        min-height: 0;
       }
       #channels {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.15rem 0.75rem;
-        padding: 0.2rem 0;
+        flex: none;
+        overflow: auto;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+        max-width: 45vw;
+      }
+      #channels summary {
+        cursor: pointer;
       }
       #channels label {
-        font-size: 0.8rem;
+        display: flex;
+        gap: 0.35rem;
+        align-items: center;
         white-space: nowrap;
+      }
+      #channels .swatch {
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 2px;
+        flex: none;
+      }
+      #channels input[type='number'] {
+        width: 4.5rem;
+        margin-left: auto;
+      }
+      #channels input[type='number']:disabled {
+        visibility: hidden;
+      }
+      #channelList {
+        display: grid;
+        gap: 0.1rem;
       }
       /* Keep each checkbox glued to its own label when the row wraps. */
       .pair {
@@ -35,12 +66,12 @@
         gap: 0.25rem;
         white-space: nowrap;
       }
+      /* .pair sets display, which would otherwise override [hidden]. */
+      .pair[hidden] {
+        display: none;
+      }
       #timepoint {
         width: 8rem;
-      }
-      #credit {
-        font-size: 0.75rem;
-        opacity: 0.8;
       }
       #status {
         font-size: 0.8rem;
@@ -65,8 +96,6 @@
       <div id="panel">
         <label for="sample">Store</label>
         <select id="sample"></select>
-        <input id="url" type="text" placeholder="or a URL to a .ome.zarr" />
-        <button id="fetchUrl" type="button">Fetch</button>
         <label for="level">Level</label>
         <select id="level" disabled></select>
         <label for="view">View</label>
@@ -84,38 +113,37 @@
           <button id="play" type="button">Play</button>
         </span>
         <span class="pair">
-          <label for="fuse">Fuse channels</label>
-          <input type="checkbox" id="fuse" checked />
+          <label for="colorBtn" title="Canvas background">Background</label>
+          <input type="color" id="colorBtn" value="#000000" />
         </span>
-        <label for="opacity">Overlay opacity</label>
-        <input
-          id="opacity"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value="0.5"
-        />
         <span class="pair">
           <label for="webgpuCheck">WebGPU</label>
           <input type="checkbox" id="webgpuCheck"/>
         </span>
       </div>
-      <div id="credit"></div>
-      <div id="channels"></div>
-      <button id="load" type="button" disabled>Load selected channels</button>
       <span class="pair">
         <label for="segUrl">Segmentation</label>
         <input id="segUrl" type="text" placeholder="a label .ome.zarr URL" />
         <button id="addSeg" type="button" disabled>Add</button>
       </span>
-      <div id="status">&nbsp;</div>
     </header>
-    <main id="canvas-container">
-      <canvas id="gl1"></canvas>
-      <div id="timestamp" hidden></div>
-    </main>
-    <footer id="location">&nbsp;</footer>
+    <div id="row">
+      <main id="canvas-container">
+        <canvas id="gl1"></canvas>
+        <div id="timestamp" hidden></div>
+      </main>
+      <details id="channels" open>
+        <summary>Channels</summary>
+        <label title="How overlapping channels combine">Blend
+          <select id="blend">
+            <option value="max" selected>max</option>
+            <option value="additive">additive</option>
+          </select>
+        </label>
+        <div id="channelList"></div>
+      </details>
+    </div>
+    <footer id="status">&nbsp;</footer>
     <script type="module" src="./src/ome.zarr.js"></script>
   </body>
 </html>

@@ -212,3 +212,21 @@ test('a URL document keeps a layer label table read from its file', async () => 
     label1: rgb(m.colors[1]),
   }).toEqual({ colormap: 'warm', lut: [0, 2], label1: [255, 0, 0] })
 })
+
+test('a document keeps a mesh layer hiddenLabels', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadMeshes([
+    {
+      url: MESH,
+      layers: [{ url: server.url('/fixture/table.label.gii'), opacity: 1 }],
+    },
+  ])
+  await nv.setMeshLayerProperty(0, 0, { hiddenLabels: [1] })
+  const nv2 = new NiiVue({ backend: 'webgl2' })
+  await nv2.loadDocument(documentFile(nv.serializeDocument()))
+  const m = nv2.meshes[0]
+  expect(m.layers[0].hiddenLabels).toEqual([1])
+  // Label 1 shows the mesh beneath; label 2 keeps its colour.
+  expect(rgb(m.colors[1])).not.toEqual([255, 0, 0])
+  expect(rgb(m.colors[2])).toEqual([0, 255, 0])
+})

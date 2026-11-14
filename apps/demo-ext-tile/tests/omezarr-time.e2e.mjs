@@ -155,17 +155,13 @@ async function check(backend) {
   await page.waitForFunction(() =>
     /Could not open/.test(document.getElementById('status').textContent),
   )
-  await page.fill('#url', `http://127.0.0.1:${port}/store.zarr`)
-  await page.click('#fetchUrl')
-  await page.waitForFunction(() =>
-    /timepoint\(s\)/.test(document.getElementById('status').textContent),
-  )
-  if (!(await page.locator('#timepoint').isVisible()))
-    fail('the timepoint slider is hidden for a time series')
-  await page.click('#load')
+  page.once('dialog', (d) => d.accept(`http://127.0.0.1:${port}/store.zarr`))
+  await page.selectOption('#sample', 'custom-url')
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.startsWith('Showing'),
   )
+  if (!(await page.locator('#timepoint').isVisible()))
+    fail('the timepoint slider is hidden for a time series')
   const state = () =>
     page.evaluate(() => {
       const nv = window.nv1
@@ -249,7 +245,7 @@ async function check(backend) {
   // the new frame, in the channels' group.
   const reload = () =>
     page.evaluate(async () => {
-      await document.getElementById('load').onclick()
+      await window.loadChannels()
     })
   const heldPrepare = async () => {
     await page.evaluate(() => {
@@ -345,7 +341,7 @@ async function check(backend) {
   await page.click('#addSeg')
   await page.waitForFunction(() => window.releaseGpu)
   await page.evaluate(() => {
-    window.reloading = document.getElementById('load').onclick()
+    window.reloading = window.loadChannels()
   })
   await page.waitForFunction(() => window.nv1.volumes[0] !== window.beforeRaw)
   await page.evaluate(() => window.releaseGpu())
@@ -398,6 +394,40 @@ async function check(backend) {
       `bench ${backend} ${C} x ${X}x${Y}x${Z} uint16: switch median uncached ${median(times.cold)} ms, cached ${median(times.warm)} ms (${times.cold.length} frames)`,
     )
   }
+  // A reload that fails before the swap leaves the slider driving the store
+  // still shown.
+  await page.evaluate(async () => {
+    const nv = window.nv1
+    const load = nv.loadVolumes
+    nv.loadVolumes = async () => {
+      nv.loadVolumes = load
+      throw new Error('prepare failed')
+    }
+    await window.loadChannels()
+  })
+  const target = (await state()).frame === 1 ? 0 : 1
+  await page.evaluate((t) => {
+    const slider = document.getElementById('timepoint')
+    slider.value = String(t)
+    slider.dispatchEvent(new Event('input'))
+  }, target)
+  await page
+    .waitForFunction(
+      (t) => window.nv1.getFrame4D(window.nv1.volumes[0].id) === t,
+      target,
+      { timeout: 5000 },
+    )
+    .catch(() => fail('a failed reload left the slider unable to switch'))
+  // Unticking every channel clears the image, not just the status line.
+  await page.evaluate(async () => {
+    for (const box of document.querySelectorAll(
+      '#channelList input[type=checkbox]',
+    ))
+      box.checked = false
+    await window.loadChannels()
+  })
+  const left = await page.evaluate(() => window.nv1.volumes.length)
+  if (left !== 0) fail(`no channel ticked still shows ${left} volume(s)`)
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
   if (process.exitCode) console.error(await status())
   await page.close()
@@ -435,7 +465,7 @@ async function checkSampleSwitch(backend) {
   await page.route(/^https:/, async (route) => {
     const url = route.request().url()
     const colony = /\/20200323_06_medium\/(raw|seg)\.ome\.zarr\/(.*)$/.exec(url)
-    const other = /\/idr0101A\/13457537\.zarr\/(.*)$/.exec(url)
+    const other = /\/idr0101A-13457537\.ome\.zarr\/(.*)$/.exec(url)
     if (colony) {
       const [, kind, rest] = colony
       const chunk = /^0\/\d+\./.test(rest)
@@ -511,7 +541,7 @@ async function checkSampleSwitch(backend) {
   await page.waitForTimeout(1500)
   const late = await page.evaluate(() => ({
     ids: window.nv1.volumes.map((v) => v.id),
-    url: document.getElementById('url').value,
+    url: document.getElementById('sample').value,
   }))
   if (
     late.ids.some((id) => id.startsWith('segmentation-')) ||
@@ -553,15 +583,16 @@ async function checkSampleSwitch(backend) {
       { timeout: 30000 },
     )
     .catch(() => fail('the colony load never attached its segmentation'))
-  // Leaving the colony, by typed URL or by sample, must not leave its labels
+  // Leaving the colony, by custom URL or by sample, must not leave its labels
   // URL ready to Add elsewhere.
-  await page.fill('#url', await option('IDR: 6 channels'))
-  await page.click('#fetchUrl')
+  const idr = await option('IDR: 6 channels')
+  page.once('dialog', (d) => d.accept(idr))
+  await page.selectOption('#sample', 'custom-url')
   const typedSegUrl = await page.inputValue('#segUrl')
   if (typedSegUrl)
     fail(`the colony segmentation URL outlived a typed store: ${typedSegUrl}`)
   await page.waitForFunction(() =>
-    /NGFF/.test(document.getElementById('status').textContent),
+    document.getElementById('status').textContent.startsWith('Showing'),
   )
   await page.selectOption('#sample', await option('Allen Cell'))
   await page.waitForFunction(() => document.getElementById('segUrl').value)
@@ -571,25 +602,41 @@ async function checkSampleSwitch(backend) {
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.startsWith('Showing'),
   )
-  // An empty Fetch click while a store opens must not strand that fetch.
+  // A cancelled Custom URL dialog while a store opens must not strand that
+  // open: the colony still loads and attaches its segmentation.
   hold = 'meta'
   gate()
-  await page.fill('#url', await option('Allen Cell'))
-  await page.click('#fetchUrl')
+  await page.selectOption('#sample', await option('Allen Cell'))
   await firstHeld
-  await page.fill('#url', '')
-  await page.click('#fetchUrl')
+  page.once('dialog', (d) => d.dismiss())
+  await page.selectOption('#sample', 'custom-url')
   release()
   await page
     .waitForFunction(
-      () =>
-        !document.getElementById('load').disabled &&
-        !document.getElementById('level').disabled,
+      () => window.nv1.volumes.some((v) => v.id.startsWith('segmentation-')),
       null,
       { timeout: 10000 },
     )
-    .catch(() => fail('an empty Fetch click stranded the fetch in flight'))
+    .catch(() => fail('a cancelled Custom URL stranded the open in flight'))
+  // A store whose metadata opens but whose chunks fail is never offered: the
+  // menu goes back to the store still shown.
+  await page.selectOption('#sample', idr)
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  hold = 'chunks'
+  failHeld = true
+  gate()
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  release()
+  await page.waitForFunction(() =>
+    /Could not load/.test(document.getElementById('status').textContent),
+  )
+  const menu = await page.inputValue('#sample')
+  if (menu !== idr) fail(`a failed chunk read left the menu on ${menu}`)
   hold = null
+  failHeld = false
   await page.close()
 }
 

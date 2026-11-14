@@ -23,6 +23,9 @@ struct SliceUniforms {
     // compensation. 1 = exact no-op.
     invGamma: f32,
     chunkSubSize: vec3f,
+    // >0 = a channel stack: its fused channels draw on opaque black, in
+    // chunkSubSize's trailing pad lane (float 55).
+    isChannelStack: i32,
     chunkDataOrigin: vec3f,
     chunkDataSize: vec3f,
     volumeTexDimsFull: vec3f,     // full volume voxel dims (texture-size-independent)
@@ -131,6 +134,13 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 
     // Apply overlay alpha modulation
     color.a *= u.overlayAlphaShader;
+
+    // A channel stack draws opaque, on black, as fluorescence viewers do: its
+    // volumes[0] is one of the channels fused into the overlay texture, so
+    // the canvas background must not show through.
+    if (u.isChannelStack != 0) {
+        color = vec4f(0.0, 0.0, 0.0, 1.0);
+    }
 
     // Overlay blending (only when overlay volumes are loaded)
     if (u.numVolumes > 1.0) {

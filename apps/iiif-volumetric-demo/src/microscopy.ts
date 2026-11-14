@@ -189,7 +189,6 @@ const els = {
   shading: el<HTMLInputElement>('shading'),
   maxProject: el<HTMLInputElement>('maxproject'),
   clip: el<HTMLInputElement>('clip'),
-  clipOverlays: el<HTMLInputElement>('clipoverlays'),
   alpha2d: el<HTMLInputElement>('alpha2d'),
   load: el<HTMLButtonElement>('load'),
   clear: el<HTMLButtonElement>('clear'),
@@ -650,6 +649,9 @@ async function main(): Promise<void> {
     // structure is in alpha. Without this the 2D slices show the first
     // channel as a flat wash (the 3D render has always used this alpha).
     volumeIsColormapAlphaOn2D: els.alpha2d.checked,
+    // Every channel here is an overlay, so the clip plane must cut them too,
+    // or it only cuts the base layer and appears to do nothing to the stack.
+    clipPlaneOverlay: true,
   })
   await nv.attachToCanvas(els.canvas)
   markBackendInUse(nv.backend ?? 'webgl2')
@@ -693,12 +695,6 @@ async function main(): Promise<void> {
   els.clip.addEventListener('change', () => {
     if (!nv) return
     nv.setClipPlane(els.clip.checked ? [0.1, 270, 0] : [2, 0, 0])
-  })
-  // Every channel here is an overlay, so without this the plane only cuts
-  // the base layer and appears to do nothing to the stack.
-  els.clipOverlays.addEventListener('change', () => {
-    if (!nv) return
-    nv.clipPlaneOverlay = els.clipOverlays.checked
   })
   els.alpha2d.addEventListener('change', () => {
     if (!nv) return

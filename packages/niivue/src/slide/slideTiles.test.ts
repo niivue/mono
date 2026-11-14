@@ -133,6 +133,11 @@ describe('frameTextureBudget (ENG-11)', () => {
     expect(cache.bytes + 64 * MiB).toBeLessThanOrEqual(128 * MiB)
   })
 
+  test('a custom total bounds the frame the same way', () => {
+    expect(frameTextureBudget(false, 0, 8 * MiB, 32 * MiB)).toBe(32 * MiB)
+    expect(frameTextureBudget(true, 0, 8 * MiB, 32 * MiB)).toBe(24 * MiB)
+  })
+
   test('the plan reports a frame with a scalar upload', () => {
     const plan = new SlideFramePlan()
     const slide = fakeSlide([], [tile('t1')], ['t1'])

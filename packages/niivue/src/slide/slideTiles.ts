@@ -24,17 +24,18 @@ import {
 /**
  * Tile texture bytes to evict to before a frame. While the frame fuses scalar
  * tiles or the raw pool holds layers, the pool's whole share is reserved, so
- * textures plus pool stay within 128 MiB even as the frame fills the pool;
- * RGB-only frames keep the whole budget.
+ * textures plus pool stay within `totalBytes` even as the frame fills the
+ * pool; RGB-only frames keep the whole budget.
  */
 export const frameTextureBudget = (
   fuses: boolean,
   poolBytes: number,
   maxRawPoolBytes: number,
+  totalBytes = DEFAULT_TILE_TEXTURE_BYTES,
 ): number =>
   fuses || poolBytes > 0
-    ? tileTextureBudget(maxRawPoolBytes)
-    : DEFAULT_TILE_TEXTURE_BYTES
+    ? tileTextureBudget(maxRawPoolBytes, totalBytes)
+    : totalBytes
 
 /**
  * One frame of 2D slide drawing, backend-neutral: `build` walks the slides
@@ -225,7 +226,12 @@ export function beginSlideFrame<T, G extends SlideTileGutter<T>>(
   fuser.retainLabelTables(slides)
   plan.build(slides, screen)
   cache.evictToBudget(
-    frameTextureBudget(plan.fuses, fuser.poolBytes, maxPoolBytes),
+    frameTextureBudget(
+      plan.fuses,
+      fuser.poolBytes,
+      maxPoolBytes,
+      cache.maxBytes,
+    ),
   )
   cache.beginFrame()
   if (!nearest) gutter.resync(cache)

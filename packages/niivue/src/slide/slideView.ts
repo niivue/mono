@@ -111,6 +111,7 @@ async function startBackend(
     antialias: options.antialias ?? !isWebKit(),
     preserveDrawingBuffer: options.preserveDrawingBuffer,
     maxRawPoolBytes: options.maxRawPoolBytes,
+    maxTileTextureBytes: options.maxTileTextureBytes,
   }
   const first = options.backend ?? 'webgpu'
   const ordered = [...backends].sort(

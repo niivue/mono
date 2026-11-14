@@ -207,14 +207,19 @@ export class SlideRendererGPU {
     format: GPUTextureFormat,
     sampleCount: number,
     maxRawPoolBytes: number,
+    maxTileTextureBytes: number,
   ) {
     this._maxPoolBytes = maxRawPoolBytes
     this._fuser = new TileFuserGPU(maxRawPoolBytes)
     this._gutter.device = device
     this._fuser.device = device
-    this._budget = new SlideBudgetRegistration(this, maxRawPoolBytes)
+    this._budget = new SlideBudgetRegistration(
+      this,
+      maxRawPoolBytes,
+      maxTileTextureBytes,
+    )
     this._textures = new TileTextureCache<TileTextureGPU>(
-      DEFAULT_TILE_TEXTURE_BYTES,
+      maxTileTextureBytes,
       (entry) => {
         entry.texture.destroy()
         entry.labels?.destroy()
@@ -253,6 +258,7 @@ export class SlideRendererGPU {
     options: { antialias?: boolean } & SlideRendererOptions = {},
   ): Promise<SlideRendererGPU | null> {
     if (!navigator.gpu) return null
+    const tileBytes = options.maxTileTextureBytes ?? DEFAULT_TILE_TEXTURE_BYTES
     const adapter = await navigator.gpu.requestAdapter()
     if (!adapter) return null
     const device = await adapter.requestDevice()
@@ -336,7 +342,8 @@ export class SlideRendererGPU {
         placeholderTexture,
         format,
         msaaCount,
-        rawPoolBytes(options.maxRawPoolBytes),
+        rawPoolBytes(options.maxRawPoolBytes, tileBytes),
+        tileBytes,
       )
       await renderer._initOverlay()
       created = true

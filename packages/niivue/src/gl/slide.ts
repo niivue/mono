@@ -81,13 +81,20 @@ export class SlideRenderer {
   private readonly _ndc = new Float32Array(4)
   private readonly _uv = new Float32Array(4)
 
-  constructor({ maxRawPoolBytes }: SlideRendererOptions = {}) {
-    const poolBytes = rawPoolBytes(maxRawPoolBytes)
+  constructor({
+    maxRawPoolBytes,
+    maxTileTextureBytes = DEFAULT_TILE_TEXTURE_BYTES,
+  }: SlideRendererOptions = {}) {
+    const poolBytes = rawPoolBytes(maxRawPoolBytes, maxTileTextureBytes)
     this._maxPoolBytes = poolBytes
     this._fuser = new TileFuserGL(poolBytes)
-    this._budget = new SlideBudgetRegistration(this, poolBytes)
+    this._budget = new SlideBudgetRegistration(
+      this,
+      poolBytes,
+      maxTileTextureBytes,
+    )
     this._textures = new TileTextureCache<TileTextureGL>(
-      DEFAULT_TILE_TEXTURE_BYTES,
+      maxTileTextureBytes,
       (entry) => {
         this._gl?.deleteTexture(entry.texture)
         if (entry.labels) this._gl?.deleteTexture(entry.labels)

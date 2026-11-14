@@ -9,8 +9,12 @@ import {
 /** WebGPU renderer factory for `createSlideViewWith`. */
 export const webgpuSlideBackend: SlideBackendFactory = {
   kind: 'webgpu',
-  create: (canvas, { antialias, maxRawPoolBytes }) =>
-    SlideRendererGPU.create(canvas, { antialias, maxRawPoolBytes }),
+  create: (canvas, { antialias, maxRawPoolBytes, maxTileTextureBytes }) =>
+    SlideRendererGPU.create(canvas, {
+      antialias,
+      maxRawPoolBytes,
+      maxTileTextureBytes,
+    }),
 }
 
 /** Mount a slide view on `canvas` (WebGPU). See {@link SlideViewOptions}. */

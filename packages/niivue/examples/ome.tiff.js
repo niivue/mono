@@ -199,20 +199,18 @@ let shownValue = SAMPLES[0].url
 
 // A custom pick is listed as itself, so the menu always names what is shown.
 function showCustom(value, label) {
-  previousCustom = { value: customOption.value, text: customOption.text }
   customOption.value = value
   customOption.text = `${label} (custom)`
   customUrlOption.before(customOption)
   imageSelect.value = value
 }
 
-// A failed open puts the menu back on what is still shown, custom entry included.
-let previousCustom = { value: '', text: '' }
+// A failed open puts the menu back on what is still shown, custom entry
+// included: by text too, as two local files share the value 'local'.
+let shownCustom = { value: '', text: '' }
 function restoreMenu() {
-  if (customOption.value !== shownValue) {
-    Object.assign(customOption, previousCustom)
-    if (!previousCustom.value) customOption.remove()
-  }
+  Object.assign(customOption, shownCustom)
+  if (!shownCustom.value) customOption.remove()
   imageSelect.value = shownValue
 }
 
@@ -239,9 +237,8 @@ imageSelect.onchange = () => {
 // The last local file opened, so its menu entry can reopen it.
 let localFile = null
 async function openFile(file) {
-  localFile = file
   showCustom('local', file.name)
-  await open(file.name, () => file.arrayBuffer(), '')
+  await open(file.name, () => file.arrayBuffer(), '', file)
 }
 fileInput.onchange = () => {
   const file = fileInput.files?.[0]
@@ -298,20 +295,30 @@ function swapScene(mine, step) {
   return done
 }
 
-async function open(label, readBuffer, credit) {
+async function open(label, readBuffer, credit, file = null) {
   const mine = ++opening
   const picked = imageSelect.value
   say(`Reading ${label}...`)
   try {
     const next = describeTiff(parseTiff(await readBuffer()))
     if (mine !== opening) return
+    // Decode every channel (all start ticked) before switching, so a corrupt
+    // plane leaves the old file, menu and channel list in place.
+    const channels = Array.from({ length: tiffChannelCount(next) }, (_, c) => c)
+    say('Decoding planes...')
+    const volumes = channels.length
+      ? await omeTiffVolumesFrom(next, { channels })
+      : []
+    if (mine !== opening) return
+    if (file) localFile = file
     shownValue = picked
+    shownCustom = { value: customOption.value, text: customOption.text }
     source = next
     sourceCredit = credit
     sourceSummary = describeSource(source)
     shownChannels = []
     showChannels()
-    await loadSelected()
+    await loadSelected(volumes)
   } catch (err) {
     if (mine !== opening) return
     restoreMenu()
@@ -347,7 +354,7 @@ function showChannels() {
       value: String(c),
       checked: true,
     })
-    box.onchange = loadSelected
+    box.onchange = () => loadSelected()
     const swatch = document.createElement('span')
     swatch.className = 'swatch'
     swatch.dataset.channel = String(c)
@@ -396,15 +403,16 @@ function showLoaded(channels) {
   }
 }
 
-async function loadSelected() {
+/** `prepared`: the selected channels' volumes, already decoded by `open`. */
+async function loadSelected(prepared) {
   const mine = ++generation
   const channels = selectedChannels()
   const loading = source
   say(channels.length ? 'Decoding planes...' : 'No channel selected')
   try {
-    const volumes = channels.length
-      ? await omeTiffVolumesFrom(source, { channels })
-      : []
+    const volumes =
+      prepared ??
+      (channels.length ? await omeTiffVolumesFrom(source, { channels }) : [])
     const swapped = await swapScene(mine, async () => {
       await nv1.loadVolumes(volumes)
       // A file opened meanwhile has its own rows: these channels are not theirs.

@@ -159,20 +159,18 @@ function fileSource(files) {
 
 // A custom pick is listed as itself, so the menu always names what is shown.
 function showCustom(value, label) {
-  previousCustom = { value: customOption.value, text: customOption.text }
   customOption.value = value
   customOption.text = `${label} (custom)`
   datasetSelect.querySelector('optgroup:last-of-type').prepend(customOption)
   datasetSelect.value = value
 }
 
-// A failed open puts the menu back on what is still shown, custom entry included.
-let previousCustom = { value: '', text: '' }
+// A failed open puts the menu back on what is still shown, custom entry
+// included: by text too, as two local files share the value 'local'.
+let shownCustom = { value: '', text: '' }
 function restoreMenu() {
-  if (customOption.value !== shownValue) {
-    Object.assign(customOption, previousCustom)
-    if (!previousCustom.value) customOption.remove()
-  }
+  Object.assign(customOption, shownCustom)
+  if (!shownCustom.value) customOption.remove()
   datasetSelect.value = shownValue
 }
 
@@ -201,9 +199,9 @@ filesInput.onchange = () => {
   filesInput.value = ''
   if (files.length === 0) return
   try {
-    localSource = fileSource(files)
-    showCustom('local', localSource.sidecarUrl.slice(8))
-    open(localSource)
+    const next = fileSource(files)
+    showCustom('local', next.sidecarUrl.slice(8))
+    open(next)
   } catch (err) {
     fail('Could not use those files', err)
   }
@@ -288,7 +286,10 @@ async function open(next) {
   try {
     const nextInfo = await fetchAllenAtlasInfo(next.sidecarUrl, next.options)
     if (mine !== opening) return
+    // Only a local set that opened replaces the one the menu entry reopens.
+    if (picked === 'local') localSource = next
     shownValue = picked
+    shownCustom = { value: customOption.value, text: customOption.text }
     source = next
     info = nextInfo
     shownChannels = []

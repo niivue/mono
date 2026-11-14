@@ -53,6 +53,7 @@ package-private (see "Conventions for contributors").
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
 | (package-private) | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |
+| (package-private) | `UIKitMagnifierOverlay` | A magnifying glass: a round lens on the pointer showing the frame under it enlarged (`zoom`, default 3). Takes pointer moves, never presses, so the scene's gestures work beneath it. Register it after the overlays it should magnify. WebGPU needs the host's `captureScene` (core NiiVue and slide views provide it) |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
 | `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
 | `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |
@@ -78,9 +79,10 @@ crosshair.setCrosshair({
 })
 ```
 
-For a core `createSlideView` there are four attach helpers, each returning
+For a core `createSlideView` there are five attach helpers, each returning
 its detach function: `attachSlideMinimap(view, options)` (the minimap on its
-own control layer, following the view's slide), `attachSlideHud(view, element,
+own control layer, following the view's slide), `attachSlideMagnifier(view,
+options)` (a lens over the drawn frame, not a finer level), `attachSlideHud(view, element,
 rows?)` (pre-formatted rows, default `slideStatsSummary`),
 `attachSlideChannelPanel(view, container)` (visibility, exact colour, window in
 data units, windowing target and blend per channel; no window for label
@@ -752,9 +754,9 @@ and `urlParamSelect.js` are shared by the pages.
 | --- | --- |
 | `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
 | `ruler.html` | The ruler on a blank pane |
-| `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick |
-| `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels |
-| `slide-wsi.html` | The ruler and the slide minimap on the standalone WSI viewer with a DICOM whole-slide image |
+| `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick; a magnifier toggle |
+| `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels; a magnifier toggle |
+| `slide-wsi.html` | The ruler, the slide minimap and a magnifier toggle on the standalone WSI viewer with a DICOM whole-slide image |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
 
 ## Conventions for contributors

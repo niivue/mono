@@ -22,6 +22,7 @@
       <header>
         <b>UIKit</b>
         <nav><a href="./index.html">controls</a><a href="./ruler.html">ruler</a><a href="./volume.html" aria-current="page">volume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">WSI</a><a href="./buttons.html">buttons</a></nav>
+        <label title="A lens following the pointer"><input id="magnify" type="checkbox" autocomplete="off" /> magnifier</label>
         <label class="backend">backend <select id="backendSelect">
           <option value="webgl2">webgl2</option>
           <option value="webgpu">webgpu</option>
@@ -33,7 +34,11 @@
 
     <script type="module">
       import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
-      import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
+      import {
+        loadDefaultFont,
+        UIKitMagnifierOverlay,
+        UIKitRulerOverlay,
+      } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -57,6 +62,21 @@
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
       nv.registerOverlayRenderer(ruler)
+
+      // Registered after the ruler, so the lens magnifies it too.
+      let unmagnify = null
+      document.getElementById('magnify').addEventListener('change', (ev) => {
+        if (ev.target.checked) {
+          const lens = new UIKitMagnifierOverlay({ zoom: 3 })
+          const unregister = nv.registerOverlayRenderer(lens)
+          const detach = lens.attach(nv)
+          unmagnify = () => { detach(); unregister(); lens.destroy() }
+        } else {
+          unmagnify?.()
+          unmagnify = null
+        }
+        nv.drawScene()
+      })
 
       // Slice pointer events hand us the world (mm) coordinate + device-pixel
       // position already hit-tested against the 2D slice - exactly what the ruler

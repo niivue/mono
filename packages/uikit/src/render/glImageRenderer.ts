@@ -7,7 +7,7 @@ import { GL_IMAGE_FRAG, GL_IMAGE_VERT } from './shaders'
 
 export type UIKitImageSource = ImageBitmap | OffscreenCanvas | HTMLCanvasElement
 
-function compile(
+export function compile(
   gl: WebGL2RenderingContext,
   type: number,
   src: string,

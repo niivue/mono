@@ -33,6 +33,7 @@ import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
 import { alphaPipelineDesc, linearSampler } from './pipeline'
+import { SceneCapture } from './sceneCapture'
 import { TileFuserGPU } from './tileFuse'
 import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
@@ -155,6 +156,7 @@ export class SlideRendererGPU {
   // The multisampled colour target `antialias` draws into, resolved to the
   // canvas each frame; recreated when the canvas size changes.
   private _msaaTexture: GPUTexture | null = null
+  private readonly _sceneCapture = new SceneCapture()
   // Byte-budgeted: tile textures for scrolled-away regions are evicted each
   // frame instead of accumulating for the life of the renderer. Eviction runs
   // before beginFrame (see render), so a texture referenced by the frame just
@@ -264,7 +266,13 @@ export class SlideRendererGPU {
       const context = canvas.getContext('webgpu')
       if (!context) return null
       const format = navigator.gpu.getPreferredCanvasFormat()
-      context.configure({ device, format, alphaMode: 'opaque' })
+      context.configure({
+        device,
+        format,
+        alphaMode: 'opaque',
+        // COPY_SRC: an overlay's captureScene copies the frame.
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      })
 
       const sampler = linearSampler(device)
       const fragment = GPUShaderStage.FRAGMENT
@@ -437,7 +445,8 @@ export class SlideRendererGPU {
     const offsets = [0]
     let quads = 0
     const encoder = this._device.createCommandEncoder()
-    const canvasView = this._context.getCurrentTexture().createView()
+    const canvasTexture = this._context.getCurrentTexture()
+    const canvasView = canvasTexture.createView()
     const msaa = this._msaaView(width, height)
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -532,22 +541,24 @@ export class SlideRendererGPU {
 
     // UIKit overlay hook: append the widget's draws to the open pass. The slide
     // pass has no depth attachment (depthFormat omitted).
+    const handle = this._sceneCapture.handle(
+      this._device,
+      encoder,
+      pass,
+      canvasTexture,
+      this._format,
+      this._sampleCount,
+    )
     if (this.overlayDraw) {
       this.overlayDraw({
-        handle: {
-          backend: 'webgpu',
-          device: this._device,
-          pass,
-          colorFormat: this._format,
-          sampleCount: this._sampleCount,
-        },
+        handle,
         bounds: { x: 0, y: 0, width, height },
         dpr,
         settled: true,
       })
     }
 
-    pass.end()
+    handle.pass.end()
     this._device.queue.submit([encoder.finish()])
   }
 
@@ -579,6 +590,7 @@ export class SlideRendererGPU {
     this._budget.clear()
     this._msaaTexture?.destroy()
     this._msaaTexture = null
+    this._sceneCapture.destroy()
     this._textures.clear()
     this._fuser.destroy()
     this._gutter.destroy()

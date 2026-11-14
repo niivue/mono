@@ -403,6 +403,196 @@ async function check(backend) {
   await page.close()
 }
 
+/**
+ * Switching samples while the Allen colony preset is still loading must not
+ * attach the colony's segmentation to the replacement sample. Both samples'
+ * remote URLs are routed to the in-memory stores; the colony's channel chunks
+ * are held until the other sample has loaded.
+ */
+async function checkSampleSwitch(backend) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
+  const fail = (msg) => failed(`${backend} sample switch: ${msg}`)
+  // hold: which colony raw requests wait for release() ('chunks' or 'meta').
+  let hold = 'chunks'
+  let release
+  let released
+  let held
+  let firstHeld
+  const gate = () => {
+    released = new Promise((r) => {
+      release = r
+    })
+    firstHeld = new Promise((r) => {
+      held = r
+    })
+  }
+  gate()
+  // When set, held colony requests fail once released.
+  let failHeld = false
+  // When set, every request for the other sample waits for this promise.
+  let otherHeld = null
+  const local = (name, rest) => `http://127.0.0.1:${port}/${name}/${rest}`
+  await page.route(/^https:/, async (route) => {
+    const url = route.request().url()
+    const colony = /\/20200323_06_medium\/(raw|seg)\.ome\.zarr\/(.*)$/.exec(url)
+    const other = /\/idr0101A\/13457537\.zarr\/(.*)$/.exec(url)
+    if (colony) {
+      const [, kind, rest] = colony
+      const chunk = /^0\/\d+\./.test(rest)
+      if (
+        kind === 'raw' &&
+        (hold === 'chunks' ? chunk : hold === 'meta' && !chunk)
+      ) {
+        held()
+        await released
+        if (failHeld) return route.abort()
+      }
+      const name = kind === 'raw' ? 'store.zarr' : 'seg.zarr'
+      return route.fulfill({
+        response: await route.fetch({ url: local(name, rest) }),
+      })
+    }
+    if (other && otherHeld) await otherHeld
+    if (other)
+      return route.fulfill({
+        response: await route.fetch({ url: local('store.zarr', other[1]) }),
+      })
+    return route.abort()
+  })
+  await page.goto(`http://127.0.0.1:${port}/ome.zarr.html?backend=${backend}`)
+  await page.waitForFunction(() =>
+    /Could not open/.test(document.getElementById('status').textContent),
+  )
+  const option = (prefix) =>
+    page.$eval(
+      '#sample',
+      (s, p) => [...s.options].find((o) => o.text.startsWith(p)).value,
+      prefix,
+    )
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  release()
+  // Give the superseded colony load time to finish and (wrongly) continue.
+  await page.waitForTimeout(1500)
+  const ids = await page.evaluate(() => window.nv1.volumes.map((v) => v.id))
+  if (ids.some((id) => id.startsWith('segmentation-')))
+    fail(
+      `the colony segmentation attached to the other sample: ${ids.join(', ')}`,
+    )
+  // A superseded colony load that then fails must not overwrite the status.
+  gate()
+  failHeld = true
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  release()
+  await page.waitForTimeout(1500)
+  const status = await page.textContent('#status')
+  if (!status.startsWith('Showing'))
+    fail(`a superseded load's error replaced the status: ${status}`)
+  failHeld = false
+  // The same, with the colony's metadata (not its chunks) arriving last.
+  hold = 'meta'
+  gate()
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  release()
+  await page.waitForTimeout(1500)
+  const late = await page.evaluate(() => ({
+    ids: window.nv1.volumes.map((v) => v.id),
+    url: document.getElementById('url').value,
+  }))
+  if (
+    late.ids.some((id) => id.startsWith('segmentation-')) ||
+    !late.url.includes('idr0101A')
+  )
+    fail(
+      `the late colony metadata replaced the other sample: ${JSON.stringify(late)}`,
+    )
+  // And with the colony's channels arriving while the other sample's metadata
+  // is still pending.
+  hold = 'chunks'
+  gate()
+  let releaseOther
+  otherHeld = new Promise((r) => {
+    releaseOther = r
+  })
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  release()
+  await page.waitForTimeout(1500)
+  const pending = await page.evaluate(() => window.nv1.volumes.map((v) => v.id))
+  otherHeld = null
+  releaseOther()
+  if (pending.some((id) => id.startsWith('segmentation-')))
+    fail(
+      `the colony segmentation attached after switching: ${pending.join(', ')}`,
+    )
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  // An uninterrupted colony load must still attach its segmentation.
+  hold = null
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await page
+    .waitForFunction(
+      () => window.nv1.volumes.some((v) => v.id.startsWith('segmentation-')),
+      null,
+      { timeout: 30000 },
+    )
+    .catch(() => fail('the colony load never attached its segmentation'))
+  // Leaving the colony, by typed URL or by sample, must not leave its labels
+  // URL ready to Add elsewhere.
+  await page.fill('#url', await option('IDR: 6 channels'))
+  await page.click('#fetchUrl')
+  const typedSegUrl = await page.inputValue('#segUrl')
+  if (typedSegUrl)
+    fail(`the colony segmentation URL outlived a typed store: ${typedSegUrl}`)
+  await page.waitForFunction(() =>
+    /NGFF/.test(document.getElementById('status').textContent),
+  )
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await page.waitForFunction(() => document.getElementById('segUrl').value)
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  const segUrl = await page.inputValue('#segUrl')
+  if (segUrl) fail(`the colony segmentation URL outlived its sample: ${segUrl}`)
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  // An empty Fetch click while a store opens must not strand that fetch.
+  hold = 'meta'
+  gate()
+  await page.fill('#url', await option('Allen Cell'))
+  await page.click('#fetchUrl')
+  await firstHeld
+  await page.fill('#url', '')
+  await page.click('#fetchUrl')
+  release()
+  await page
+    .waitForFunction(
+      () =>
+        !document.getElementById('load').disabled &&
+        !document.getElementById('level').disabled,
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => fail('an empty Fetch click stranded the fetch in flight'))
+  hold = null
+  await page.close()
+}
+
 try {
   // CI's Ubuntu runners lose the SwiftShader WebGPU device mid-run
   // (niivue-e2e.yml header), so the job there asks for WebGL2 only.
@@ -410,6 +600,7 @@ try {
     process.env.DEMO_E2E_BACKENDS ?? 'webgl2,webgpu'
   ).split(','))
     await check(backend)
+  await checkSampleSwitch('webgl2')
 } finally {
   await browser.close()
   server.close()

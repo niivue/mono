@@ -323,6 +323,7 @@
           <span class="group">
             <label for="renderMode">Render</label>
             <select id="renderMode"></select>
+            <span id="cinematicNote" hidden>shows only the first checked structure</span>
           </span>
           <span class="group" id="rampControls">
             <label for="density">Density</label>
@@ -331,8 +332,14 @@
             <input type="number" id="brightness" min="0" step="0.1" value="1.6" />
           </span>
           <span class="group">
-            <input type="checkbox" id="clipCheck" />
-            <label for="clipCheck">Clip</label>
+            <label for="clipSelect">Clip</label>
+            <select id="clipSelect">
+              <option value="none" selected>none</option>
+              <option value="plane">one plane</option>
+              <option value="box">box (6 planes)</option>
+            </select>
+            <input type="checkbox" id="cutawayCheck" />
+            <label for="cutawayCheck">Cutaway</label>
           </span>
           <span class="group">
             <input type="checkbox" id="webgpuCheck" />

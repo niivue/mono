@@ -226,8 +226,8 @@ function swapScene(mine, step) {
   return done
 }
 
-function selectedChannels() {
-  return [...channelList.querySelectorAll('input[type=checkbox]:checked')].map(
+function selectedChannels(panel) {
+  return [...panel.querySelectorAll('input[type=checkbox]:checked')].map(
     (box) => Number(box.value),
   )
 }
@@ -237,8 +237,9 @@ function geneName(name) {
   return name.replace(/(_\d+)?_raw$/, '')
 }
 
-function showChannels() {
-  channelList.replaceChildren()
+/** The channel rows for a dataset, built off screen until its channels load. */
+function buildChannels(info) {
+  const panel = document.createElement('div')
   // IMSC pairs each raw channel with a binary segmentation of the same
   // structure (_seg); list only the raw ones, by their gene name.
   const hasRaw = info.channelNames.some((name) => name.endsWith('_raw'))
@@ -252,7 +253,7 @@ function showChannels() {
       // the first structure and the nuclear envelope (lamin B1).
       checked: index < 2 || name.startsWith('LMNB1_'),
     })
-    box.onchange = loadSelected
+    box.onchange = () => loadSelected()
     const swatch = document.createElement('span')
     swatch.className = 'swatch'
     swatch.dataset.channel = String(index)
@@ -275,8 +276,9 @@ function showChannels() {
         })
     }
     label.append(box, swatch, hasRaw ? geneName(name) : name, max)
-    channelList.append(label)
+    panel.append(label)
   })
+  return panel
 }
 
 async function open(next) {
@@ -286,15 +288,25 @@ async function open(next) {
   try {
     const nextInfo = await fetchAllenAtlasInfo(next.sidecarUrl, next.options)
     if (mine !== opening) return
-    // Only a local set that opened replaces the one the menu entry reopens.
-    if (picked === 'local') localSource = next
-    shownValue = picked
-    shownCustom = { value: customOption.value, text: customOption.text }
-    source = next
-    info = nextInfo
-    shownChannels = []
-    showChannels()
-    await loadSelected()
+    const panel = buildChannels(nextInfo)
+    // The menu and panel switch only once the new channels are on screen, so
+    // a failed load leaves the old dataset named as what is shown.
+    const commit = () => {
+      // Only a local set that opened replaces the one the menu entry reopens.
+      if (picked === 'local') localSource = next
+      shownValue = picked
+      shownCustom = { value: customOption.value, text: customOption.text }
+      source = next
+      info = nextInfo
+      channelList.replaceChildren(...panel.childNodes)
+    }
+    const shown = await loadSelected({
+      source: next,
+      info: nextInfo,
+      panel,
+      commit,
+    })
+    if (!shown && mine === opening) restoreMenu()
   } catch (err) {
     if (mine !== opening) return
     restoreMenu()
@@ -343,33 +355,42 @@ function paintSwatches(channels) {
   }
 }
 
-function describe(channels) {
-  const spacing = allenAtlasSpacing(info)
+function describe(channels, atlas = info) {
+  const spacing = allenAtlasSpacing(atlas)
     .map((s) => s.toFixed(2))
     .join(' x ')
-  const names = channels.map((c) => geneName(info.channelNames[c])).join(', ')
+  const names = channels.map((c) => geneName(atlas.channelNames[c])).join(', ')
   return (
-    `${info.tileWidth}x${info.tileHeight}x${info.tiles} voxels, ${spacing} ${info.spacingUnit}; ` +
+    `${atlas.tileWidth}x${atlas.tileHeight}x${atlas.tiles} voxels, ${spacing} ${atlas.spacingUnit}; ` +
     (names ? `showing ${names}` : 'no channel selected')
   )
 }
 
 // Every tick reloads the selection: channel colours are assigned across the
 // selected set, so they stay distinct. The PNGs come from the HTTP cache.
-async function loadSelected() {
+/**
+ * Loads the ticked channels; `opened` loads a dataset not yet shown and
+ * commits its menu and panel with the swap. True once on screen.
+ */
+async function loadSelected(opened = null) {
   const mine = ++generation
-  const channels = selectedChannels()
-  const loading = source
-  say(channels.length ? `Loading ${channels.length} channels...` : describe([]))
+  const loading = opened?.source ?? source
+  const channels = selectedChannels(opened?.panel ?? channelList)
+  say(
+    channels.length
+      ? `Loading ${channels.length} channels...`
+      : describe([], opened?.info),
+  )
   try {
     const volumes = channels.length
-      ? await loadAllenAtlasVolumes(source.sidecarUrl, {
-          ...source.options,
+      ? await loadAllenAtlasVolumes(loading.sidecarUrl, {
+          ...loading.options,
           channels,
         })
       : []
     const swapped = await swapScene(mine, async () => {
       await nv1.loadVolumes(volumes)
+      opened?.commit()
       // A dataset opened meanwhile has its own rows: these channels are not theirs.
       shownChannels = loading === source ? channels : []
       for (const max of channelList.querySelectorAll('input[type=number]')) {
@@ -380,8 +401,10 @@ async function loadSelected() {
       return true
     })
     if (swapped && mine === generation) say(describe(channels))
+    return swapped
   } catch (err) {
     if (mine === generation) fail('Could not load the channels', err)
+    return false
   }
 }
 

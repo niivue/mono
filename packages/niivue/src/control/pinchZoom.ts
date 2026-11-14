@@ -16,6 +16,14 @@ const clamp = (v: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, v))
 
 /**
+ * The 3D scale after a 3D wheel or pinch, kept within 0.5-2. A scale already
+ * outside (a yoked 2D zoom put it there) may move back but not further out, so
+ * a small gesture does not snap it, and the slices yoked to it, into range.
+ */
+export const clampScale3D = (scale: number, scaleBefore: number): number =>
+  clamp(scale, Math.min(0.5, scaleBefore), Math.max(2, scaleBefore))
+
+/**
  * A yoked 2D zoom after the 3D zoom moved from `scaleBefore` to `scaleAfter`:
  * scaled by the same ratio, not set equal, so a 2D zoom past the 3D range (0.5-2)
  * does not snap back into it.
@@ -45,7 +53,7 @@ export function pinchCamera(
 ): { pan2Dxyzmm?: number[]; scaleMultiplier?: number } {
   const ratio = distance / pinch.distance
   if (!pinch.anchorMM) {
-    const scale = clamp(pinch.scale * ratio, 0.5, 2)
+    const scale = clampScale3D(pinch.scale * ratio, pinch.scale)
     // Yoked, the slices zoom by the same ratio and keep their pan.
     return isYoked3DTo2DZoom
       ? {

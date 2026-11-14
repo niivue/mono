@@ -13,7 +13,12 @@ import {
 } from '@/control/cameraEvents'
 import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
-import { type Pinch, pinchCamera, yokedZoom2D } from '@/control/pinchZoom'
+import {
+  clampScale3D,
+  type Pinch,
+  pinchCamera,
+  yokedZoom2D,
+} from '@/control/pinchZoom'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {
@@ -2657,10 +2662,9 @@ export function initInteraction(ctrl: NiiVue): void {
     }
     const zoomSpeed = 0.001
     const scaleBefore = ctrl.model.scene.scaleMultiplier
-    ctrl.model.scene.scaleMultiplier = scaleBefore + evt.deltaY * zoomSpeed
-    ctrl.model.scene.scaleMultiplier = Math.max(
-      0.5,
-      Math.min(2.0, ctrl.model.scene.scaleMultiplier),
+    ctrl.model.scene.scaleMultiplier = clampScale3D(
+      scaleBefore + evt.deltaY * zoomSpeed,
+      scaleBefore,
     )
     emitScaleMultiplierChange(ctrl)
     // Yoked, the slices zoom by the same ratio and keep their pan.

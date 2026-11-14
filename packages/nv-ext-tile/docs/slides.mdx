@@ -225,6 +225,15 @@ The pool belongs to you: the package borrows it and never shuts it down.
 `@niivue/geotiff-rs` is already a dependency of this package; add it to
 your own dependencies to import it.
 
+## Memory and bandwidth
+
+A slide keeps 96 MiB of decoded tiles (`maxCacheBytes`), loads 12 tiles at
+once (`maxConcurrentLoads`), and picks its level from
+`targetScreenPixelsPerTilePixel`. When the finest level in view will not fit
+the cache, it draws a coarser one and says why. See
+[Memory and bandwidth](/packages/nv-ext-tile/resources/) for every setting
+and a live demo.
+
 ## Cleaning up
 
 Ownership runs in a chain: the view owns the slide, and the slide owns the

@@ -1,0 +1,138 @@
+---
+title: Memory and bandwidth
+description: "The settings that bound GPU memory, CPU memory, network load and prefetch for slides and streamed volumes, what each one trades, and which policies are fixed."
+sidebar:
+  order: 4
+---
+
+import Demo from '@site/components/Demo.astro'
+
+A whole-slide image or a streamed OME-Zarr store is far bigger than the
+memory a browser tab can spare, so NiiVue only ever holds part of it. Each
+part has its own limit. Slides (`NVSlide`) and streamed volumes
+(`loadChunkedVolume`, `streamOmeZarr`) are separate systems with separate
+settings.
+
+The demo streams a 53783 x 49534 pixel slide. Its tile cache is CPU memory
+(`maxCacheBytes`); the GPU side is a fixed 128 MiB. This hosted copy leaves
+out the full-resolution level, so its levels are L1 to L3 (4, 16 and 32
+times smaller). Try a 12 MiB cache, then zoom in: the line under the canvas
+shows NiiVue drawing a coarser level than it wanted, because the finer
+level's visible tiles do not fit. Fewer parallel loads fill the view more
+slowly. A finer detail setting fetches more tiles for the same view.
+
+<Demo name="slide-budget" />
+
+## At a glance
+
+| Question | Slides | Streamed volumes |
+| --- | --- | --- |
+| GPU memory | 128 MiB of tile textures per renderer (fixed), shared by the slides it draws; `maxRawPoolBytes` (32 MiB) of it holds raw channels for fast windowing | `maxChunkResidencyBytes` (1.5 GB) caps the resident bricks; `budgetBytes` (1.5 GB) and `maxBricks` (240) cap one plan |
+| CPU memory | `maxCacheBytes` (96 MiB) of decoded tiles | `cacheBytes` (256 MiB) of raw store bytes; `persist` adds a disk cache (512 MiB, off by default) |
+| Detail versus coverage | `targetScreenPixelsPerTilePixel` (0.75) and `levelChoice` (`'auto'`); steps down a level automatically when the view will not fit | `budgetPlan` (`'focus'`), or its parts `focus`, `radius`, `detail`; `minLevel` caps detail; `swapPolicy` (`'replace'`) |
+| Prefetch | Coarse coverage of the view, at the lowest priority (fixed) | Predicts the next chunks along a scroll or pan (fixed) |
+| Network | `maxConcurrentLoads` (12) | `maxConcurrentLoads` (6) and `workers` (up to 4) |
+
+The defaults are in brackets. Everything not marked fixed can be set.
+
+## Slides
+
+```ts
+import { createSlideView, NVSlide } from '@niivue/niivue'
+
+const slide = NVSlide.fromSource(source, {
+  maxCacheBytes: 192 * 1024 * 1024, // decoded tiles kept in memory
+  maxConcurrentLoads: 6, // tile fetches and decodes at once
+  targetScreenPixelsPerTilePixel: 1, // raise for coarser, fewer tiles
+})
+const view = await createSlideView(canvas, { slide, maxRawPoolBytes: 0 })
+```
+
+- **`maxCacheBytes`** bounds the decoded tiles: 4 bytes a pixel for a colour
+  tile, or 1, 2 or 4 bytes a pixel for each channel of a scalar tile. When it is full, the least
+  recently used tile goes. It is set when the slide is made.
+- **`targetScreenPixelsPerTilePixel`** chooses the level in `'auto'` mode:
+  the finest level with at least this many screen pixels per tile pixel.
+  Screen pixels are device pixels, so a Retina display asks for up to four
+  times the tiles. Can be changed at any time.
+- **`levelChoice`** (or `setLevelChoice`) pins a level by index, or `'auto'`.
+- **`maxRawPoolBytes`** (0 to 64 MiB) keeps raw channel samples of
+  multi-channel tiles on the GPU, so a window or colormap change does not
+  upload them again. 0 keeps them on the CPU only.
+
+When the visible tiles of the level asked for would not fit in three
+quarters of `maxCacheBytes` (or of the GPU tile textures), NiiVue draws the finest coarser level that does
+fit, rather than loading and evicting tiles forever. The slide's
+`lastVisibleTiles` then carries `requestedLevel` and `limitedBy` (`cache`,
+`texture` or `tiles`), and the slide fires `levelchange`. If even the
+coarsest level does not fit, only the block at the centre is drawn
+(`capped`) until the user zooms in. `cacheBytes` and `pendingCount` report
+what is held and what is still loading.
+
+## Streamed volumes
+
+```ts
+import { streamOmeZarr } from '@niivue/nv-ext-tile/zarr'
+
+const nv = new NiiVue({ maxChunkResidencyBytes: 1_000_000_000 })
+await streamOmeZarr(
+  nv,
+  url,
+  { cacheBytes: 512 * 1024 * 1024, persist: true }, // the store
+  { budgetPlan: 'interactive', swapPolicy: 'keepUntilCovered' }, // the plan
+)
+```
+
+The volume is a tree of bricks: fine ones near the point of interest,
+coarser ones further away. The plan decides which bricks to load:
+
+| `budgetPlan` | Finest bricks | Up to | For |
+| --- | --- | --- | --- |
+| `'focus'` (default) | around the crosshair, sized to the view | 240 bricks | reading around the crosshair |
+| `'uniform'` | everywhere | 240 bricks | one picture of the whole volume |
+| `'interactive'` | around the crosshair | 128 bricks | smooth rotation and zoom |
+
+- **`budgetBytes`** is the GPU memory one plan may use. Set it once for the
+  device, since every preset shares it; a value you pass wins over the plan.
+  `setBudget` changes it later.
+- **`maxChunkResidencyBytes`** (a `NiiVue` option) caps the bricks that stay
+  on the GPU, from this plan and earlier ones. The least recently seen go
+  first, and come back when needed.
+- **`minLevel`** caps detail: 0 allows the finest level. `setMaxDetail`
+  changes it later.
+- **`focus`**, **`radius`** and **`detail`** set where the finest bricks go,
+  how far they reach and how fast detail falls away, overriding the plan.
+- **`coarseFloor`** (on by default) keeps the coarsest level of the whole
+  volume on the GPU, so a region never shows as empty while finer bricks
+  arrive.
+- **`swapPolicy`**: when the focus moves, `'replace'` frees the old bricks at
+  once, using the least memory, and their regions show the coarse floor until
+  the new bricks arrive. `'keepUntilCovered'` keeps drawing each old brick
+  until the new ones over its region have arrived, so the view never gets
+  coarser while it refines. It needs the old and new bricks to fit
+  `maxChunkResidencyBytes` together, and replaces as usual when they do not.
+  It applies to the 3D render only.
+- **`cacheBytes`** and **`persist`** belong to the store (see
+  [OME-Zarr](/packages/nv-ext-tile/ome-zarr/#streaming-stores-too-big-to-load)).
+  With workers running, both budgets are split across them, so the total
+  stays the same.
+
+`setBudgetPlan` and `setSwapPolicy` switch the plan while the volume is
+shown.
+
+## Fixed policies
+
+These are not settings today:
+
+- Visible tiles and chunks always load before anything speculative.
+  Slides keep a quarter of `maxCacheBytes` for the other users of the cache
+  (the 3D slide plane, thumbnails and coarse coverage).
+- A slide fetches coarse coverage of the view only when the view needs more
+  than one round of loads.
+- A streamed volume looks 16 chunks ahead and predicts where a scroll or pan
+  is heading. At most 16 fetched chunks wait to be uploaded, and some of those
+  slots are kept free for chunks that are actually visible.
+- A renderer's slide tile textures are 128 MiB in all, split evenly between
+  the slides it draws.
+- `targetFrameMs` in a plan is recorded but not yet acted on: `'interactive'`
+  gets its smoothness from a lower brick count.

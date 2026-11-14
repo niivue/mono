@@ -145,6 +145,10 @@ most four (`workers`, or `0` to read on the page itself). Raw chunks are
 kept in a 256 MiB memory cache (`cacheBytes`). The workers stop by
 themselves when the volume is removed or the viewer is destroyed.
 
+The GPU side has its own limits: how many bricks a plan may load, where the
+finest go, and what happens to old bricks when the crosshair moves. See
+[Memory and bandwidth](/packages/nv-ext-tile/resources/#streamed-volumes).
+
 To keep downloaded chunks between visits, pass `persist: true`. They are
 then stored in the browser's Cache Storage, so a reload streams from disk.
 It is off by default because it writes to the user's disk. It needs a

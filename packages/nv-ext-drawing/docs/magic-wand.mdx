@@ -59,9 +59,10 @@ exactly as bright as the seed, so you will almost always set one of these:
   as the seed.
 - `thresholdMode: 'auto'` picks bright or dark for you, depending on whether
   the seed is brighter than the middle of the display range. Pass that
-  range as `calMin` and `calMax`, in the raw units of `bg.imgRAS`. Bright
-  and dark compare raw values too, so with a negative `scl_slope` the
-  filled side and `isBright` are the reverse of the calibrated sense.
+  range as `calMin` and `calMax`, in the raw units of `bg.imgRAS`. With a
+  negative `scl_slope`, explicit `bright` and `dark` modes reverse the
+  calibrated direction. `auto` still chooses the calibrated side; `isBright`
+  reports the raw ordering.
 - `intensityMin` and `intensityMax`, given together, set the range yourself
   and override everything above.
 

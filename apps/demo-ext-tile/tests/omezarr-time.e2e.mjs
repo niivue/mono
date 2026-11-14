@@ -394,6 +394,16 @@ async function check(backend) {
       `bench ${backend} ${C} x ${X}x${Y}x${Z} uint16: switch median uncached ${median(times.cold)} ms, cached ${median(times.warm)} ms (${times.cold.length} frames)`,
     )
   }
+  // Unticking every channel clears the image, not just the status line.
+  await page.evaluate(async () => {
+    for (const box of document.querySelectorAll(
+      '#channelList input[type=checkbox]',
+    ))
+      box.checked = false
+    await window.loadChannels()
+  })
+  const left = await page.evaluate(() => window.nv1.volumes.length)
+  if (left !== 0) fail(`no channel ticked still shows ${left} volume(s)`)
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
   if (process.exitCode) console.error(await status())
   await page.close()

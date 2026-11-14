@@ -416,24 +416,27 @@ async function loadChannels() {
   }
   const mine = ++loadGeneration
   const channels = selectedChannels()
-  if (channels.length === 0) {
-    say('Select at least one channel')
-    return
-  }
   stopPlayback()
   const level = Number(levelSelect.value)
   const timepoint = Number(timepointInput.value) || 0
-  say(`Reading ${channels.length} channel(s) at level ${level}...`)
+  say(
+    channels.length
+      ? `Reading ${channels.length} channel(s) at level ${level}...`
+      : 'Select at least one channel',
+  )
   // Another store may be opened while this one loads: its result is then stale.
   const loading = source
   try {
     const group = {}
-    const volumes = await omeZarrVolumesFrom(loading, {
-      channels,
-      level,
-      timepoint,
-      lazyTime: group,
-    })
+    // No channel ticked swaps in an empty scene, so the unticked image goes.
+    const volumes = channels.length
+      ? await omeZarrVolumesFrom(loading, {
+          channels,
+          level,
+          timepoint,
+          lazyTime: group,
+        })
+      : []
     const isCurrent = () => source === loading && mine === loadGeneration
     const swapped = await swapScene(isCurrent, async () => {
       shownSource = null
@@ -448,7 +451,7 @@ async function loadChannels() {
       applyDisplay(volumes, shownChannels)
       return true
     })
-    if (!swapped || !isCurrent()) return
+    if (!swapped || !isCurrent() || volumes.length === 0) return
     const vol = nv1.volumes[0]
     const voxels = vol.dimsRAS.slice(1, 4)
     // A single-slice image (a 2D store) has nothing to show in the other two

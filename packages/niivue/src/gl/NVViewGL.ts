@@ -1247,7 +1247,7 @@ export default class NVGlview {
           normalMatrix as Float32Array,
           tile.axCorSag,
         )
-        // Before the meshes, so only the slice can hide what this reveals.
+        // Before the meshes, so only the slice or volume can hide what this reveals.
         const hiddenAlpha = hiddenArmAlpha(
           md.mesh.xRay,
           tile.axCorSag,

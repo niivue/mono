@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@niivue/uikit - Ruler on the WSI viewer</title>
+    <title>@niivue/uikit - Ruler on the tiled slide viewer</title>
     <style>
       html, body { margin: 0; height: 100%; background: #111; color: #eee;
         font: 14px/1.4 system-ui, sans-serif; }
@@ -24,9 +24,10 @@
     <div id="wrap">
       <header>
         <b>UIKit</b>
-        <nav><a href="./index.html">controls</a><a href="./ruler.html">ruler</a><a href="./volume.html">volume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html" aria-current="page">WSI</a><a href="./buttons.html">buttons</a></nav>
-        <button id="fit" type="button">Fit</button>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html" aria-current="page">tiles</a><a href="./buttons.html">buttons</a></nav>
+        <label title="Zoom, as a power of two of the fitted view (the wheel moves it too)">zoom <input id="zoom" type="range" min="-1" max="10" step="0.1" value="0" style="vertical-align:middle" /></label>
         <label>font <input id="fontSize" type="range" min="12" max="72" value="24" style="vertical-align:middle" /></label>
+        <button id="fit" type="button">Fit</button>
         <label>slide <select id="srcSelect">
           <option value="cptac">tissue</option>
           <option value="dzi">demo</option>
@@ -43,10 +44,10 @@
           <option value="linear">linear</option>
           <option value="nearest">nearest</option>
         </select></label>
-        <label id="retinaLabel" hidden title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
+        <label id="retinaLabel" style="visibility:hidden" title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
-      <footer><span id="help">Drag to pan, wheel to zoom. Click two points to measure. Drag the minimap to jump.</span><span id="status" data-state="wait">Loading slide...</span><span id="credit"></span></footer>
+      <footer><span id="help">Drag to pan, right-drag to zoom to a box, wheel to zoom. Click two points to measure. Drag the minimap to jump.</span><span id="status" data-state="wait">Loading slide...</span><span id="credit"></span></footer>
     </div>
 
     <script type="module">
@@ -57,8 +58,8 @@
 
       // Real tissue from NiiVue's test-images repo (hosted live on GitHub Pages,
       // which serves HTTP Range + CORS), plus a CORS-enabled Deep Zoom fallback.
-      // The DICOM-WSI reports base slide pixels (its PixelSpacing is [1,1]); a
-      // slide that carried real spacing would read in millimetres instead.
+      // The DICOM-WSI carries pixel spacing (~0.5 um), so it reads in um/mm; the
+      // Deep Zoom image has none and reads in base slide pixels.
       const WSI_BASE = 'https://niivue.github.io/niivue-demo-images/wsi'
       const DZI = 'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi'
       const TISSUE = {
@@ -86,6 +87,7 @@
       document.getElementById('credit').textContent = CREDIT[src === 'dzi' ? 'dzi' : 'cptac']
       const filter = document.getElementById('filter')
       const retina = document.getElementById('retina')
+      const zoom = document.getElementById('zoom')
       const COLOR = [1, 0.85, 0, 1]
 
       // --- measurement (endpoints stored in SLIDE coords so they track the ----
@@ -149,8 +151,25 @@
           : await NVSlide.fromManifestUrl(manifestUrl, opts)
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
-      // A click places a ruler end, a drag pans, the wheel zooms (no double-click
-      // zoom: the primary mode is not pan).
+      // NiiVue's scale bar (isRulerVisible) needs pixel spacing; without it a
+      // fixed bottom-left bar in slide pixels stands in.
+      const pxBar = new UIKitRulerOverlay(font)
+      const updatePxBar = (screen) => {
+        const dpr = screen.devicePixelRatio ?? 1
+        const pxPerBase = slide.viewport.scale * dpr
+        const want = (screen.widthCss * dpr * 0.25) / pxPerBase
+        const p10 = 10 ** Math.floor(Math.log10(want))
+        const length = [5, 2, 1].map((m) => m * p10).find((n) => n <= want)
+        const x = 12 * dpr
+        const y = (screen.heightCss - 12) * dpr
+        pxBar.setRuler({
+          a: [x, y], b: [x + length * pxPerBase, y], length, units: 'px', decimals: 0,
+          sizePx: labelSizePx, thickness: 3, showTicks: false,
+          lineColor: [0.5, 0.5, 0.5, 1], textColor: [0.5, 0.5, 0.5, 1], // NiiVue fontColor, as its bar
+        })
+      }
+      // A click places a ruler end, a drag pans, a right drag zooms to its box,
+      // the wheel zooms (no double-click zoom: the primary mode is not pan).
       const view = await createSlideView(document.getElementById('gl'), {
         backend: wantGpu ? 'webgpu' : 'webgl2',
         antialias: isAntiAlias,
@@ -158,6 +177,7 @@
         slide,
         controller: {
           primaryDragMode: DRAG_MODE.crosshairPan,
+          secondaryDragMode: DRAG_MODE.roiSelection, // right drag zooms to a box, as examples/slides
           onCrosshair: (p) => {
             if (!ruleA || ruleB) { ruleA = p; ruleB = null; hover = null }
             else ruleB = p
@@ -169,14 +189,22 @@
             view.requestRender()
           },
         },
-        onBeforeRender: updateRuler,
-        onRender: () => {
+        overlayStyle: { isRulerVisible: true },
+        onBeforeRender: (screen) => {
+          if (!spacing()) updatePxBar(screen)
+          updateRuler(screen)
+        },
+        onRender: (screen) => {
+          zoom.value = Math.log2(slide.viewport.scale / slide.fitScaleFor(screen))
           // Retina is offered only on a HiDPI display (another monitor, browser zoom).
-          document.getElementById('retinaLabel').hidden = window.devicePixelRatio <= 1
+          // visibility, not hidden, so the label keeps its toolbar slot.
+          document.getElementById('retinaLabel').style.visibility =
+            window.devicePixelRatio > 1 ? 'visible' : 'hidden'
         },
       })
       document.getElementById('backendSelect').value = view.backend
       view.addOverlay(ruler)
+      if (!spacing()) view.addOverlay(pxBar)
       // The minimap owns presses on itself, so they never reach the pan / measure gestures.
       attachSlideMinimap(view)
       view.renderer.isNearestInterpolation = filter.value === 'nearest'
@@ -186,6 +214,10 @@
       )
 
       // --- controls ---------------------------------------------------------------
+      zoom.addEventListener('input', () => {
+        slide.setViewport({ ...slide.viewport, scale: slide.fitScaleFor(view.screen()) * 2 ** Number(zoom.value) })
+        view.requestRender()
+      })
       document.getElementById('fit').addEventListener('click', () => view.fit())
       document.getElementById('fontSize').addEventListener('input', (ev) => {
         labelSizePx = Number(ev.target.value); view.requestRender()

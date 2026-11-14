@@ -1,16 +1,12 @@
 // A magnifying glass: a circular lens following the pointer that shows the
 // frame under it enlarged. Register it after the overlays it should magnify
 // (on WebGPU its capture ends the overlay pass and continues in a new one),
-// then `attach(host)` so it sees pointer moves. It never takes a press, so
-// the scene keeps its own drag, click and wheel handling underneath.
+// then `attach(host)` so it sees pointer moves. It is not a control-layer
+// widget: it only watches moves, never claims hover, a press or the cursor,
+// so the scene and other UIKit layers keep their own pointer handling.
 
 import type { UIKitOverlayFrame } from '@niivue/niivue'
-import {
-  UIKitControls,
-  type UIKitHost,
-  type UIKitInteractive,
-  type UIKitRedrawSource,
-} from './controls'
+import type { UIKitHost } from './controls'
 import { layoutMagnifier } from './magnifier'
 import { buildRect } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
@@ -29,7 +25,7 @@ export interface UIKitMagnifierOverlayOptions {
   fillColor?: readonly number[]
 }
 
-export class UIKitMagnifierOverlay implements UIKitInteractive {
+export class UIKitMagnifierOverlay {
   radiusCss: number
   zoom: number
   borderCss: number
@@ -37,7 +33,7 @@ export class UIKitMagnifierOverlay implements UIKitInteractive {
   fillColor: readonly number[]
   private x = -1
   private y = -1
-  private layer: UIKitRedrawSource | null = null
+  private redraw: (() => void) | null = null
   private readonly ring = new UIKitRectOverlay()
   private readonly gl = new GlLensRenderer()
   private readonly wgpu = new WgpuLensRenderer()
@@ -48,10 +44,6 @@ export class UIKitMagnifierOverlay implements UIKitInteractive {
     this.borderCss = options.borderCss ?? 2
     this.borderColor = options.borderColor ?? [1, 1, 1, 0.9]
     this.fillColor = options.fillColor ?? [0, 0, 0, 1]
-  }
-
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -90,33 +82,35 @@ export class UIKitMagnifierOverlay implements UIKitInteractive {
     this.ring.drawOverlay(frame)
   }
 
-  /** Every on-canvas point: the lens must see each move (but no press). */
-  hitTest(x: number, y: number): boolean {
-    return x >= 0 && y >= 0
-  }
-
-  pointerDown(_x: number, _y: number): boolean {
-    return false
-  }
-
-  pointerMove(x: number, y: number): boolean {
-    if (x === this.x && y === this.y) return false
+  /** Move the lens to canvas (x, y); (-1, -1) hides it. */
+  pointerMove(x: number, y: number): void {
+    if (x === this.x && y === this.y) return
     const wasShown = this.x >= 0 && this.y >= 0
     this.x = x
     this.y = y
-    if (wasShown || this.hitTest(x, y)) this.layer?.requestRedraw()
-    return false
+    if (wasShown || (x >= 0 && y >= 0)) this.redraw?.()
   }
 
-  pointerUp(_x: number, _y: number): boolean {
-    return false
-  }
-
-  pointerCancel(): void {}
-
-  /** Wire the host canvas's pointer moves; returns the unwire function. */
+  /** Follow the host canvas's pointer; returns the unwire function. */
   attach(host: UIKitHost): () => void {
-    return new UIKitControls().add(this).attach(host)
+    const canvas = host.canvas
+    if (!canvas) throw new Error('UIKit: host has no canvas to attach to')
+    this.redraw = () => host.drawScene()
+    const onMove = (e: PointerEvent): void => {
+      const p = host.clientToCanvas(e.clientX, e.clientY) ?? [-1, -1]
+      this.pointerMove(p[0], p[1])
+    }
+    const onLeave = (): void => this.pointerMove(-1, -1)
+    // Capture phase, so a host or layer handler that stops the move still
+    // moves the lens when it was attached later.
+    const opts = { capture: true }
+    canvas.addEventListener('pointermove', onMove, opts)
+    canvas.addEventListener('pointerleave', onLeave, opts)
+    return () => {
+      canvas.removeEventListener('pointermove', onMove, opts)
+      canvas.removeEventListener('pointerleave', onLeave, opts)
+      this.redraw = null
+    }
   }
 
   destroy(): void {

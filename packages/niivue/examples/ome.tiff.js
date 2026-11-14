@@ -302,23 +302,30 @@ async function open(label, readBuffer, credit, file = null) {
   try {
     const next = describeTiff(parseTiff(await readBuffer()))
     if (mine !== opening) return
-    // Decode every channel (all start ticked) before switching, so a corrupt
-    // plane leaves the old file, menu and channel list in place.
+    // Decode every channel (all start ticked) and switch only with the scene,
+    // so a corrupt plane or failed upload leaves the old file, menu and
+    // channel list in place.
     const channels = Array.from({ length: tiffChannelCount(next) }, (_, c) => c)
     say('Decoding planes...')
     const volumes = channels.length
       ? await omeTiffVolumesFrom(next, { channels })
       : []
     if (mine !== opening) return
-    if (file) localFile = file
-    shownValue = picked
-    shownCustom = { value: customOption.value, text: customOption.text }
-    source = next
-    sourceCredit = credit
-    sourceSummary = describeSource(source)
-    shownChannels = []
-    showChannels()
-    await loadSelected(volumes)
+    const shown = await loadSelected({
+      source: next,
+      channels,
+      volumes,
+      commit() {
+        if (file) localFile = file
+        shownValue = picked
+        shownCustom = { value: customOption.value, text: customOption.text }
+        source = next
+        sourceCredit = credit
+        sourceSummary = describeSource(source)
+        showChannels()
+      },
+    })
+    if (!shown && mine === opening) restoreMenu()
   } catch (err) {
     if (mine !== opening) return
     restoreMenu()
@@ -403,24 +410,28 @@ function showLoaded(channels) {
   }
 }
 
-/** `prepared`: the selected channels' volumes, already decoded by `open`. */
-async function loadSelected(prepared) {
+/**
+ * Load the ticked channels, or with `opened` a newly read file's decoded
+ * channels, offering that file (`opened.commit`) once they show. True when shown.
+ */
+async function loadSelected(opened = null) {
   const mine = ++generation
-  const channels = selectedChannels()
-  const loading = source
+  const channels = opened?.channels ?? selectedChannels()
+  const loading = opened?.source ?? source
   say(channels.length ? 'Decoding planes...' : 'No channel selected')
   try {
     const volumes =
-      prepared ??
-      (channels.length ? await omeTiffVolumesFrom(source, { channels }) : [])
+      opened?.volumes ??
+      (channels.length ? await omeTiffVolumesFrom(loading, { channels }) : [])
     const swapped = await swapScene(mine, async () => {
       await nv1.loadVolumes(volumes)
+      opened?.commit()
       // A file opened meanwhile has its own rows: these channels are not theirs.
       shownChannels = loading === source ? channels : []
       showLoaded(shownChannels)
       return true
     })
-    if (!swapped || mine !== generation || volumes.length === 0) return
+    if (!swapped || mine !== generation || volumes.length === 0) return swapped
     const vol = nv1.volumes[0]
     const voxels = vol.dimsRAS.slice(1, 4)
     // A single-plane file (one z, as most published 2D fields are) has nothing
@@ -435,8 +446,10 @@ async function loadSelected(prepared) {
         `${voxels.join(' x ')} voxels, ${spacing} um (${sourceSummary})` +
         `${sourceCredit ? `. ${sourceCredit}` : ''}`,
     )
+    return true
   } catch (err) {
     if (mine === generation) fail('Could not load the channels', err)
+    return false
   }
 }
 

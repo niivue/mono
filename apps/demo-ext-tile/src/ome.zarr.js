@@ -1,6 +1,7 @@
 import NiiVue, {
   CHANNEL_COLORMAPS,
   CHANNEL_GRAY_COLORMAP,
+  DRAG_MODE,
   OVERLAY_COLOR_BLEND,
   SLICE_TYPE,
 } from '@niivue/niivue'
@@ -114,6 +115,12 @@ const nv1 = new NiiVue({
   backgroundColor: [0, 0, 0, 1],
   sliceType: SLICE_TYPE.MULTIPLANAR,
   isColorbarVisible: false,
+  // As the other microscopy pages: right drag pans and the wheel zooms the
+  // slices, yoked so a zoom on any tile zooms them all, and a clip plane
+  // cuts the channel overlays too.
+  secondaryDragMode: DRAG_MODE.pan,
+  isYoked3DTo2DZoom: true,
+  clipPlaneOverlay: true,
 })
 
 // Every channel counts alike, on black, as fluorescence viewers show them;

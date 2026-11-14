@@ -53,16 +53,8 @@ export class WgpuLensRenderer {
         module,
         entryPoint: 'fragment_main',
         targets: [
-          {
-            format: colorFormat,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
+          // No blend: the lens replaces the frame, alpha included.
+          { format: colorFormat },
         ],
       },
       ...(depthFormat

@@ -391,8 +391,11 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 `
 
 // Magnifier lens: the image quad over the lens's bounding square, cut to a
-// circle (1 px anti-aliased edge), sampling the captured frame enlarged about
-// the lens centre. Outside the frame it shows `fill`.
+// circle, sampling the captured frame enlarged about the lens centre. Outside
+// the frame it shows `fill`. Drawn without blending so a transparent scene
+// pixel stays transparent: the capture is already premultiplied.
+// shortcut: hard circle edge (blending would need a second draw to keep alpha),
+// hidden by the default 2 px ring; anti-alias it if borderless lenses matter.
 export const GL_LENS_FRAG = `#version 300 es
 precision highp float;
 uniform highp sampler2D image;
@@ -405,13 +408,11 @@ out vec4 fragColor;
 
 void main() {
   vec2 d = box.xy + vUv * box.zw - lens.xy;
-  float coverage = clamp(lens.z - length(d) + 0.5, 0.0, 1.0);
-  if (coverage <= 0.0) discard;
+  if (length(d) > lens.z) discard;
   vec2 s = (lens.xy + d / lens.w) / imageSize;
   bool inside = all(greaterThanEqual(s, vec2(0.0))) && all(lessThanEqual(s, vec2(1.0)));
   // The blitted frame's rows are bottom-up.
-  vec4 c = inside ? vec4(texture(image, vec2(s.x, 1.0 - s.y)).rgb, 1.0) : fill;
-  fragColor = vec4(c.rgb, c.a * coverage);
+  fragColor = inside ? texture(image, vec2(s.x, 1.0 - s.y)) : vec4(fill.rgb * fill.a, fill.a);
 }
 `
 export const WGSL_LENS = `
@@ -445,13 +446,11 @@ fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let d = u.box.xy + in.uv * u.box.zw - u.lens.xy;
-    let coverage = clamp(u.lens.z - length(d) + 0.5, 0.0, 1.0);
     let s = (u.lens.xy + d / u.lens.w) / u.imageSize;
     // Sampled before any branch: textureSample needs uniform control flow.
     let c = textureSample(imageTex, imageSampler, s);
+    if (length(d) > u.lens.z) { discard; }
     let inside = all(s >= vec2f(0.0)) && all(s <= vec2f(1.0));
-    let rgb = select(u.fill.rgb, c.rgb, inside);
-    let a = select(u.fill.a, 1.0, inside);
-    return vec4f(rgb, a * coverage);
+    return select(vec4f(u.fill.rgb * u.fill.a, u.fill.a), c, inside);
 }
 `

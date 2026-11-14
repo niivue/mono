@@ -155,17 +155,13 @@ async function check(backend) {
   await page.waitForFunction(() =>
     /Could not open/.test(document.getElementById('status').textContent),
   )
-  await page.fill('#url', `http://127.0.0.1:${port}/store.zarr`)
-  await page.click('#fetchUrl')
-  await page.waitForFunction(() =>
-    /timepoint\(s\)/.test(document.getElementById('status').textContent),
-  )
-  if (!(await page.locator('#timepoint').isVisible()))
-    fail('the timepoint slider is hidden for a time series')
-  await page.click('#load')
+  page.once('dialog', (d) => d.accept(`http://127.0.0.1:${port}/store.zarr`))
+  await page.selectOption('#sample', 'custom-url')
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.startsWith('Showing'),
   )
+  if (!(await page.locator('#timepoint').isVisible()))
+    fail('the timepoint slider is hidden for a time series')
   const state = () =>
     page.evaluate(() => {
       const nv = window.nv1
@@ -249,7 +245,7 @@ async function check(backend) {
   // the new frame, in the channels' group.
   const reload = () =>
     page.evaluate(async () => {
-      await document.getElementById('load').onclick()
+      await window.loadChannels()
     })
   const heldPrepare = async () => {
     await page.evaluate(() => {
@@ -345,7 +341,7 @@ async function check(backend) {
   await page.click('#addSeg')
   await page.waitForFunction(() => window.releaseGpu)
   await page.evaluate(() => {
-    window.reloading = document.getElementById('load').onclick()
+    window.reloading = window.loadChannels()
   })
   await page.waitForFunction(() => window.nv1.volumes[0] !== window.beforeRaw)
   await page.evaluate(() => window.releaseGpu())

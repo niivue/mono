@@ -284,7 +284,7 @@ export function compositeLayers(
 
     if (isLabel) {
       // Use label colormap directly
-      lut = layer.colormapLabel?.lut ?? new Uint8ClampedArray(0)
+      lut = NVCmaps.shownLabelLut(layer)?.lut ?? new Uint8ClampedArray(0)
     } else {
       lut = NVCmaps.lutrgba8(layer.colormap)
       if (layer.colormapNegative) {

@@ -58,6 +58,9 @@ function describeLayer(layer: ShownMeshLayer, index: number) {
     ...(frames > 1 ? { frame: layer.frame4D ?? 0, frames } : {}),
     ...(layer.isColormapInverted ? { inverted: true } : {}),
     ...(layer.isColorbarVisible ? { colorbar: true } : {}),
+    ...(layer.hiddenLabels?.length
+      ? { hiddenLabels: [...layer.hiddenLabels] }
+      : {}),
   }
 }
 
@@ -494,10 +497,11 @@ export function meshHandlers(host: NiiVueHost): Handlers {
       const layerAt = layerIndex(mesh, params)
       const layer = (mesh.layers ?? [])[layerAt]
       const update = layerFields(params)
+      put(update, 'hiddenLabels', numbers(params, 'hidden_labels'))
       const frame = integer(params, 'frame')
       if (nothingIn(update) && frame === undefined) {
         throw new Error(
-          'set_mesh_layer needs something to set: colormap, cal_min, cal_max, opacity, invert, colorbar, frame, or one of the others its schema lists.',
+          'set_mesh_layer needs something to set: colormap, cal_min, cal_max, opacity, invert, colorbar, frame, hidden_labels, or one of the others its schema lists.',
         )
       }
       if (!nothingIn(update)) {

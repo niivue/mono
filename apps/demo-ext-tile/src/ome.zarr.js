@@ -1,4 +1,9 @@
-import NiiVue, { OVERLAY_COLOR_BLEND, SLICE_TYPE } from '@niivue/niivue'
+import NiiVue, {
+  CHANNEL_COLORMAPS,
+  CHANNEL_GRAY_COLORMAP,
+  OVERLAY_COLOR_BLEND,
+  SLICE_TYPE,
+} from '@niivue/niivue'
 import {
   defaultOmeZarrLevel,
   fetchOmeZarr,
@@ -25,24 +30,18 @@ import { segmentationColormap } from './segColormap'
 // levels, which is the right shape for multi-channel fluorescence data.
 
 const sampleSelect = document.getElementById('sample')
-const urlInput = document.getElementById('url')
-const fetchButton = document.getElementById('fetchUrl')
 const levelSelect = document.getElementById('level')
 const viewSelect = document.getElementById('view')
 const timepointPair = document.getElementById('timepointPair')
 const timepointInput = document.getElementById('timepoint')
 const timepointValue = document.getElementById('timepointValue')
 const playButton = document.getElementById('play')
-const creditLine = document.getElementById('credit')
-const channelsBox = document.getElementById('channels')
-const loadButton = document.getElementById('load')
-const opacityInput = document.getElementById('opacity')
+const channelList = document.getElementById('channelList')
+const blendSelect = document.getElementById('blend')
 const statusLine = document.getElementById('status')
 const segUrlInput = document.getElementById('segUrl')
 const addSegButton = document.getElementById('addSeg')
 const timestamp = document.getElementById('timestamp')
-// id="location" shadows window.location, so this one element is looked up.
-const footer = document.getElementById('location')
 
 /**
  * Real stores written by other software, each exercising a different corner
@@ -53,37 +52,41 @@ const footer = document.getElementById('location')
  * Nothing is vendored: the licences below cover redistribution, but a demo
  * that links is simpler to keep honest than one that copies.
  */
+// IDR's stores re-chunked to one chunk per channel and timepoint (IDR keeps
+// one z-plane per chunk: ~480 requests for the first image), mirrored on
+// Hugging Face at a pinned commit; omezarr3d/README.md there has the details.
+const IDR =
+  'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/26ac8f743a7654a60241945e0cfa968d08e6f7da/omezarr3d/'
+
 const SAMPLES = [
   {
     label: 'IDR: 2-channel nuclei, 271 x 275 x 236 (67 MB)',
-    url: 'https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0062A/6001240.zarr',
-    credit:
-      'Image Data Resource idr0062 (Blin et al., CC BY 4.0). NGFF 0.4, czyx ' +
-      'uint16, omero labels/colours/windows: LaminB1 and Dapi.',
+    url: `${IDR}idr0062A-6001240.ome.zarr`,
+    credit: 'Image Data Resource idr0062 (Blin et al., CC BY 4.0)',
+    note: 'NGFF 0.4, czyx uint16, omero labels/colours/windows: LaminB1 and Dapi.',
   },
   {
     label: 'IDR: 6 channels x 18 timepoints, 198 x 223 x 12 (115 MB full)',
-    url: 'https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0101A/13457537.zarr',
-    credit:
-      'Image Data Resource idr0101 (Chessel et al., CC BY 4.0). NGFF 0.4, the ' +
-      'full tczyx shape: the timepoint slider and Play fetch frames on demand.',
+    url: `${IDR}idr0101A-13457537.ome.zarr`,
+    credit: 'Image Data Resource idr0101 (Chessel et al., CC BY 4.0)',
+    note: 'NGFF 0.4, the full tczyx shape: the timepoint slider and Play fetch frames on demand.',
   },
   {
     label: 'IDR: 50-channel imaging mass cytometry, 464 x 494 (92 MB full)',
-    url: 'https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.4/idr0076A/10501752.zarr',
-    credit:
-      'Image Data Resource idr0076 (Ali et al., CC BY 4.0). A 2D cyx float64 ' +
-      'image: each channel loads as a single-slice volume, so pick a few of ' +
-      'the fifty rather than all of them.',
+    url: `${IDR}idr0076A-10501752.ome.zarr`,
+    credit: 'Image Data Resource idr0076 (Ali et al., CC BY 4.0)',
+    note:
+      'A 2D cyx float64 image: each channel loads as a single-slice volume, ' +
+      'so pick a few of the fifty rather than all of them.',
   },
   {
     label: 'Human Organ Atlas: whole heart, 7 levels to 5787 x 5943 x 7865',
     url:
       'https://storage.googleapis.com/ucl-hip-ct-35a68e99feaae8932b1d44da0358940b/' +
       'UCL-ZCR-3341/heart/7.013um_overview_bm18.ome.zarr',
-    credit:
-      'Human Organ Atlas HiP-CT heart (CC BY 4.0), the streaming demo store. ' +
-      'Declares its axes x y z (the loader honours that order), ' +
+    credit: 'Human Organ Atlas HiP-CT heart (CC BY 4.0)',
+    note:
+      'The streaming demo store. Declares its axes x y z (the loader honours that order), ' +
       'and its finest levels are far past any budget, so the level picker ' +
       'matters here: the default stays under 256 MB.',
   },
@@ -113,27 +116,32 @@ const nv1 = new NiiVue({
   isColorbarVisible: false,
 })
 
-// Fused (the default): every channel counts alike, its brightest colour kept,
-// on black, as fluorescence viewers such as Vol-E show them. Unfused: the
-// first channel is an opaque base and the rest blend translucent on top.
-const fuseCheck = document.getElementById('fuse')
-function applyFusion() {
-  nv1.volumeIsChannelStack = fuseCheck.checked
-  nv1.volumeOverlayColorBlend = fuseCheck.checked
-    ? OVERLAY_COLOR_BLEND.MAX
-    : OVERLAY_COLOR_BLEND.ADDITIVE
-  opacityInput.disabled = fuseCheck.checked
+// Every channel counts alike, on black, as fluorescence viewers show them;
+// max keeps each pixel's brightest channel, additive sums them.
+nv1.volumeIsChannelStack = true
+function applyBlend() {
+  nv1.volumeOverlayColorBlend =
+    blendSelect.value === 'max'
+      ? OVERLAY_COLOR_BLEND.MAX
+      : OVERLAY_COLOR_BLEND.ADDITIVE
 }
-applyFusion()
-fuseCheck.onchange = () => {
-  applyFusion()
-  if (nv1.volumes.length > 0) {
-    applyDisplay(lastLoaded)
-  }
+applyBlend()
+blendSelect.onchange = applyBlend
+document.getElementById('colorBtn').oninput = function () {
+  const [r, g, b] = [1, 3, 5].map(
+    (i) => parseInt(this.value.slice(i, i + 2), 16) / 255,
+  )
+  nv1.backgroundColor = [r, g, b, 1]
 }
 window.nv1 = nv1
+// The status bar shows messages and the store's credit until a click on the
+// image, then the voxel under the crosshair; the next message takes it back.
+let isShowingLocation = false
+gl1.addEventListener('pointerdown', () => {
+  isShowingLocation = true
+})
 nv1.addEventListener('locationChange', (e) => {
-  footer.textContent = e.detail.string
+  if (isShowingLocation) statusLine.textContent = e.detail.string
 })
 nv1.addEventListener('frameChange', () => showTimestamp())
 
@@ -155,6 +163,7 @@ await nv1.attachToCanvas(gl1)
 
 // textContent (not innerHTML): messages include data-derived channel names.
 function say(message) {
+  isShowingLocation = false
   statusLine.textContent = message
 }
 
@@ -182,20 +191,33 @@ function megabytes(bytes) {
 function offer(next, label) {
   stopPlayback()
   source = next
-  channelsBox.replaceChildren()
+  shownChannels = []
+  channelList.replaceChildren()
   for (let c = 0; c < source.channelCount; c++) {
-    const box = document.createElement('input')
-    box.type = 'checkbox'
-    box.value = String(c)
-    box.checked = c < DEFAULT_CHECKED
-    box.id = `channel-${c}`
-    const text = document.createElement('label')
-    text.htmlFor = box.id
-    text.textContent = omeZarrChannelName(source, c)
-    const wrap = document.createElement('span')
-    wrap.className = 'pair'
-    wrap.append(box, text)
-    channelsBox.append(wrap)
+    const label = document.createElement('label')
+    const box = Object.assign(document.createElement('input'), {
+      type: 'checkbox',
+      value: String(c),
+      checked: c < DEFAULT_CHECKED,
+    })
+    box.onchange = scheduleLoad
+    const swatch = document.createElement('span')
+    swatch.className = 'swatch'
+    // The window maximum, in the store's units, once loaded.
+    const max = Object.assign(document.createElement('input'), {
+      type: 'number',
+      disabled: true,
+      title: 'Window maximum: lower is brighter',
+    })
+    max.dataset.channel = String(c)
+    max.oninput = () => {
+      const at = shownChannels.indexOf(c)
+      const calMax = Number(max.value)
+      if (at >= 0 && Number.isFinite(calMax) && calMax > nv1.volumes[at].calMin)
+        nv1.setVolume(at, { calMax })
+    }
+    label.append(box, swatch, omeZarrChannelName(source, c), max)
+    channelList.append(label)
   }
 
   const preferred = defaultOmeZarrLevel(source)
@@ -210,6 +232,7 @@ function offer(next, label) {
   }
   levelSelect.value = String(preferred)
   levelSelect.disabled = false
+  levelSelect.onchange = scheduleLoad
 
   timepointPair.hidden = source.timepointCount <= 1
   timepointInput.max = String(source.timepointCount - 1)
@@ -220,7 +243,6 @@ function offer(next, label) {
   )
   timepointValue.textContent = timepointInput.value
 
-  loadButton.disabled = false
   const axes = source.axes.map((a) => a.name).join(' ')
   say(
     `${label}: NGFF ${source.info.version ?? '?'}, axes ${axes}, ` +
@@ -229,78 +251,114 @@ function offer(next, label) {
   )
 }
 
+// The store menu: the samples, then a custom URL (a text-entry dialog). A
+// custom pick is listed as itself, so the menu always names what is shown.
+const customOption = new Option()
+const customUrlOption = new Option('Custom URL...', 'custom-url')
 for (const sample of SAMPLES) {
-  const option = document.createElement('option')
-  option.value = sample.url
-  option.textContent = sample.label
+  const option = new Option(sample.label, sample.url)
+  option.title = sample.note
   sampleSelect.append(option)
+}
+sampleSelect.append(customUrlOption)
+let shownUrl = SAMPLES[0].url
+
+// A failed open puts the menu back on what is still shown, custom entry included.
+let previousCustom = { value: '', text: '' }
+function restoreMenu() {
+  if (customOption.value !== shownUrl) {
+    Object.assign(customOption, previousCustom)
+    if (!previousCustom.value) customOption.remove()
+  }
+  sampleSelect.value = shownUrl
 }
 
 sampleSelect.onchange = async () => {
-  const sample = SAMPLES.find((s) => s.url === sampleSelect.value)
-  creditLine.textContent = sample?.credit ?? ''
-  urlInput.value = sample?.url ?? ''
-  // Only load on success: otherwise the stale store would reload and its
-  // status line would paper over the fetch error the user needs to read.
-  if (await fetchButton.onclick()) {
-    await loadButton.onclick()
+  let url = sampleSelect.value
+  if (url === 'custom-url') {
+    sampleSelect.value = shownUrl
+    url = window.prompt('OME-Zarr store URL (the host must send CORS)')?.trim()
+    if (!url) return
+    previousCustom = { value: customOption.value, text: customOption.text }
+    customOption.value = url
+    customOption.text = `${url.split('/').filter(Boolean).pop() || url} (custom)`
+    customUrlOption.before(customOption)
+    sampleSelect.value = url
   }
+  await openAndLoad(url)
 }
 
-fetchButton.onclick = async () => {
-  const url = urlInput.value.trim()
-  if (!url) {
-    return false
-  }
+// Only load on success: otherwise the stale store would reload and its
+// status line would paper over the fetch error the user needs to read.
+async function openAndLoad(url) {
+  if (await openStore(url)) await loadChannels()
+}
+
+/** The credit of the shown store, ending the status line once it loads. */
+function creditFor(url) {
+  const credit = SAMPLES.find((s) => s.url === url)?.credit
+  return credit ? `. ${credit}` : ''
+}
+
+// Opens can overlap (a slow store, then another pick); only the latest lands.
+let opening = 0
+async function openStore(url) {
+  const mine = ++opening
   say(`Opening ${url}...`)
-  loadButton.disabled = true
-  levelSelect.disabled = true
   try {
     const name = url.split('/').filter(Boolean).pop() || url
-    offer(await fetchOmeZarr(url), name)
+    const next = await fetchOmeZarr(url)
+    if (mine !== opening) return false
+    shownUrl = url
+    offer(next, name)
     return true
   } catch (err) {
+    if (mine !== opening) return false
+    restoreMenu()
     fail('Could not open that store (a cross-origin host must send CORS)', err)
     return false
   }
 }
 
 function selectedChannels() {
-  return [...channelsBox.querySelectorAll('input:checked')].map((b) =>
-    Number(b.value),
+  return [...channelList.querySelectorAll('input[type=checkbox]:checked')].map(
+    (b) => Number(b.value),
   )
 }
 
-/**
- * Show every channel at once: fused at full opacity, or unfused with the
- * first opaque and the rest translucent on top.
- *
- * A channel with an omero window keeps it (the loader set calMin/calMax); one
- * without gets the robust range, since a fluorescence channel is mostly
- * background and the global range would leave the signal a few counts above
- * black.
- */
-function applyDisplay(loaded) {
-  const overlayOpacity = Number(opacityInput.value)
-  nv1.volumes.forEach((volume, index) => {
-    const hasWindow = loaded?.[index]?.calMin !== undefined
-    nv1.setVolume(index, {
-      ...(hasWindow
-        ? {}
-        : {
-            calMin: volume.robustMin ?? volume.globalMin,
-            calMax: volume.robustMax ?? volume.globalMax,
-          }),
-      opacity: index === 0 || fuseCheck.checked ? 1 : overlayOpacity,
-    })
-  })
-}
+// Colours come from the omero colours, else the fallback palette.
+const CHANNEL_RGB = new Map(
+  [...CHANNEL_COLORMAPS, CHANNEL_GRAY_COLORMAP].map((c) => [c.name, c.rgb]),
+)
 
-opacityInput.oninput = () => {
-  if (nv1.volumes.length > 0) {
-    applyDisplay(lastLoaded)
+/**
+ * Window each channel and fill in its swatch and max. A channel with an omero
+ * window keeps it (the loader set calMin/calMax); one without gets the robust
+ * range, since a fluorescence channel is mostly background and the global
+ * range would leave the signal a few counts above black.
+ */
+function applyDisplay(loaded, channels) {
+  const calMaxes = nv1.volumes.map((volume, index) => {
+    if (loaded?.[index]?.calMin !== undefined) return volume.calMax
+    const calMax = volume.robustMax ?? volume.globalMax
+    nv1.setVolume(index, {
+      calMin: volume.robustMin ?? volume.globalMin,
+      calMax,
+    })
+    return calMax
+  })
+  for (const row of channelList.querySelectorAll('label')) {
+    const max = row.querySelector('input[type=number]')
+    const at = channels.indexOf(Number(max.dataset.channel))
+    const volume = nv1.volumes[at]
+    max.disabled = !volume
+    const rgb = CHANNEL_RGB.get(volume?.colormap)
+    row.querySelector('.swatch').style.background =
+      volume && rgb ? `rgb(${rgb.join(',')})` : ''
+    if (volume) max.value = String(Math.round(calMaxes[at] * 100) / 100)
   }
 }
+
 /**
  * Put the crosshair on the writer's chosen plane (omero `rdefs.defaultZ`,
  * a full-resolution z index) scaled to the loaded level, centred in x and y.
@@ -324,8 +382,6 @@ viewSelect.onchange = () => {
   nv1.sliceType = Number(viewSelect.value)
 }
 
-/** The load options of the volumes on screen, for re-applying opacity. */
-let lastLoaded = null
 // The time group of the volumes on screen: a segmentation joins it.
 let timeGroup = {}
 // Bumped whenever the channels on screen are replaced, so a segmentation
@@ -333,16 +389,37 @@ let timeGroup = {}
 let scene = 0
 let segAdds = 0
 
-loadButton.onclick = async () => {
+// A ticked channel or a new level loads after a short pause, so several
+// quick ticks make one load.
+let loadTimer = 0
+function scheduleLoad() {
+  clearTimeout(loadTimer)
+  loadTimer = setTimeout(loadChannels, 500)
+}
+
+// Loads can overlap (a slow store, quick ticks); only the latest is shown.
+let loadGeneration = 0
+// The channels on screen, in volume order: what the window inputs address.
+let shownChannels = []
+// Scene swaps run one at a time, each skipped once a newer request exists:
+// loadVolumes prepares before it swaps, so a check after it is too late.
+let swaps = Promise.resolve()
+function swapScene(isCurrent, step) {
+  const done = swaps.then(() => (isCurrent() ? step() : false))
+  swaps = done.catch(() => {})
+  return done
+}
+async function loadChannels() {
+  clearTimeout(loadTimer)
   if (!source) {
     return
   }
+  const mine = ++loadGeneration
   const channels = selectedChannels()
   if (channels.length === 0) {
     say('Select at least one channel')
     return
   }
-  loadButton.disabled = true
   stopPlayback()
   const level = Number(levelSelect.value)
   const timepoint = Number(timepointInput.value) || 0
@@ -357,17 +434,21 @@ loadButton.onclick = async () => {
       timepoint,
       lazyTime: group,
     })
-    if (source !== loading) return
-    shownSource = null
-    scene += 1
-    await nv1.loadVolumes(volumes)
-    shownSource = loading
-    timeGroup = group
-    addSegButton.disabled = false
-    showTimestamp()
-    if (source !== loading) return
-    lastLoaded = volumes
-    applyDisplay(volumes)
+    const isCurrent = () => source === loading && mine === loadGeneration
+    const swapped = await swapScene(isCurrent, async () => {
+      shownSource = null
+      scene += 1
+      await nv1.loadVolumes(volumes)
+      shownSource = loading
+      // A store opened meanwhile has its own rows: these channels are not theirs.
+      shownChannels = source === loading ? channels : []
+      timeGroup = group
+      addSegButton.disabled = false
+      showTimestamp()
+      applyDisplay(volumes, shownChannels)
+      return true
+    })
+    if (!swapped || !isCurrent()) return
     const vol = nv1.volumes[0]
     const voxels = vol.dimsRAS.slice(1, 4)
     // A single-slice image (a 2D store) has nothing to show in the other two
@@ -383,14 +464,14 @@ loadButton.onclick = async () => {
         `${vol.pixDimsRAS
           .slice(1, 4)
           .map((v) => v.toFixed(3))
-          .join(' x ')} um`,
+          .join(' x ')} um${creditFor(shownUrl)}`,
     )
   } catch (err) {
-    fail('Could not load the channels', err)
-  } finally {
-    loadButton.disabled = false
+    if (mine === loadGeneration) fail('Could not load the channels', err)
   }
 }
+// The e2e test reloads the channels through this.
+window.loadChannels = loadChannels
 
 /**
  * Add a segmentation store over the shown channels: the level whose grid
@@ -531,8 +612,4 @@ playButton.onclick = async () => {
 }
 
 // Start with something on screen: open the default store and load it.
-creditLine.textContent = SAMPLES[0].credit
-urlInput.value = SAMPLES[0].url
-if (await fetchButton.onclick()) {
-  await loadButton.onclick()
-}
+await openAndLoad(SAMPLES[0].url)

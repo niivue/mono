@@ -1,4 +1,5 @@
 import NiiVue, {
+  DRAG_MODE,
   fetchAllenAtlasInfo,
   loadAllenAtlasVolumes,
   OVERLAY_COLOR_BLEND,
@@ -34,19 +35,16 @@ const kindButtons = [...document.querySelectorAll('#dataKind button')]
 const turntableButton = document.getElementById('turntable')
 const resetButton = document.getElementById('reset')
 const lede = document.getElementById('lede')
-const fuseCheck = document.getElementById('fuse')
 const clipCheck = document.getElementById('clipCheck')
-const clipOverlaysCheck = document.getElementById('clipOverlaysCheck')
-const zoomInput = document.getElementById('zoom')
 const renderModeSelect = document.getElementById('renderMode')
 const rampControls = document.getElementById('rampControls')
 const densityInput = document.getElementById('density')
 const brightnessInput = document.getElementById('brightness')
 const stagePanel = document.getElementById('stagePanel')
 const cellPanel = document.getElementById('cellPanel')
-const stagesColumn = document.getElementById('stages')
-const stageUp = document.getElementById('stageUp')
-const stageDown = document.getElementById('stageDown')
+const viewer = document.getElementById('viewer')
+const about = document.getElementById('about')
+const stageSelect = document.getElementById('stage')
 const structuresBody = document.querySelector('#structures tbody')
 const allStructures = document.getElementById('allStructures')
 const cellChannelsRow = document.getElementById('cellChannels')
@@ -62,6 +60,18 @@ const nv1 = new NiiVue({
   sliceType: SLICE_TYPE.RENDER,
   showRender: SHOW_RENDER.ALWAYS,
   isColorbarVisible: false,
+  // Every channel is an overlay, so the clip plane must cut them too, or they
+  // show through the clipped base and it appears to do nothing.
+  clipPlaneOverlay: true,
+  // Fused: each channel keeps its brightest colour, on black, as Allen's
+  // viewers draw them.
+  volumeIsChannelStack: true,
+  volumeOverlayColorBlend: OVERLAY_COLOR_BLEND.MAX,
+  // Right drag pans and the wheel zooms the slices; yoked, a zoom on any tile
+  // zooms them all (on the 3D render the wheel moves an active clip plane
+  // instead, so zoom a clipped render from a slice).
+  secondaryDragMode: DRAG_MODE.pan,
+  isYoked3DTo2DZoom: true,
 })
 window.nv1 = nv1
 nv1.addEventListener('locationChange', (e) => {
@@ -78,8 +88,11 @@ function say(message) {
  * A colormap per hex colour. Composite uses a baked ramp that draws like
  * Allen's 3D viewer: colour = tint * t^2 * brightness, opacity = density *
  * luminance(tint) * t^2, so a sample is as opaque as it is bright. Maximum and
- * Max project use a plain linear ramp. Alpha always ramps from 0: opaque black
- * would hide the 3D render. Each colour keeps one name per ramp; a new density
+ * Max project use the plain ramp of NiiVue's channel colormaps: the tint at
+ * every level, alpha ramping from 0 (opaque black would hide the 3D render).
+ * Slices composite colour by alpha on black, so the plain ramp reads linearly
+ * there; the baked ramp's t^4 and low density leave slices dim, which is why
+ * the Cell Gallery, which shows slices, starts on Maximum. Each colour keeps one name per ramp; a new density
  * or brightness re-registers that name, which NiiVue's colormap caches follow.
  */
 const tints = new Map()
@@ -91,7 +104,12 @@ function tint(hex) {
   const setting = baked ? `${density}_${brightness}` : ''
   if (tints.get(name) === setting) return name
   const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-  let cmap = { R: [0, rgb[0]], G: [0, rgb[1]], B: [0, rgb[2]], A: [0, 255] }
+  let cmap = {
+    R: [rgb[0], rgb[0]],
+    G: [rgb[1], rgb[1]],
+    B: [rgb[2], rgb[2]],
+    A: [0, 255],
+  }
   if (baked) {
     // Rec. 709 luminance of the tint, 0..1.
     const luma = (0.2125 * rgb[0] + 0.7154 * rgb[1] + 0.0721 * rgb[2]) / 255
@@ -107,20 +125,6 @@ function tint(hex) {
   }
   tints.set(name, setting)
   return nv1.addColormap(name, cmap)
-}
-
-// Fused (the default): each channel keeps its brightest colour, on black, as
-// Allen's viewers draw them. Unfused: the first channel is an opaque base.
-function applyFusion() {
-  nv1.volumeIsChannelStack = fuseCheck.checked
-  nv1.volumeOverlayColorBlend = fuseCheck.checked
-    ? OVERLAY_COLOR_BLEND.MAX
-    : OVERLAY_COLOR_BLEND.ADDITIVE
-}
-applyFusion()
-fuseCheck.onchange = () => {
-  applyFusion()
-  refresh()
 }
 
 // Raw, Max project or Segmented, as in Allen's toolbar. Max project is the raw
@@ -164,29 +168,9 @@ densityInput.oninput = () => refresh()
 brightnessInput.oninput = () => refresh()
 applyRender()
 
-// 3D clip plane and zoom, as in allen.atlas.html. Every channel is an overlay,
-// so without clipPlaneOverlay the clip plane appears to do nothing: the
-// overlays show through a clipped base. Clip overlays cuts the whole stack.
 clipCheck.onchange = () => {
   nv1.setClipPlane(clipCheck.checked ? [0.1, 270, 0] : [2, 0, 0])
 }
-clipOverlaysCheck.onchange = () => {
-  nv1.clipPlaneOverlay = clipOverlaysCheck.checked
-}
-
-// While a clip plane is active the wheel moves the plane, not the camera, so
-// the slider is the way to zoom a clipped render. Wheel zoom emits 'change',
-// which keeps the slider in step (setting .value fires no 'input', no loop).
-zoomInput.oninput = () => {
-  nv1.scaleMultiplier = Number(zoomInput.value)
-}
-nv1.addEventListener('change', (e) => {
-  if (e.detail?.property !== 'scaleMultiplier') return
-  const value = Number(e.detail.value)
-  if (Number.isFinite(value) && Number(zoomInput.value) !== value) {
-    zoomInput.value = String(value)
-  }
-})
 
 // Turntable and Reset, through animateTo. The camera starts looking down on
 // the cell, as Allen's viewer does. Pressing on or scrolling the canvas stops
@@ -266,7 +250,7 @@ async function showLoaded() {
       colormap: tint(layer.color),
       calMin,
       calMax,
-      opacity: index === 0 || fuseCheck.checked ? 1 : 0.5,
+      opacity: 1,
     })
   }
 }
@@ -375,32 +359,18 @@ function pressed(container, active) {
   }
 }
 
-const stageButtons = manifest.stages.map((stage) => {
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.textContent = stage.label
-  button.onclick = () => selectStage(stage.key)
-  stagesColumn.append(button)
-  return button
-})
+stageSelect.append(
+  ...manifest.stages.map((stage) => new Option(stage.label, stage.key)),
+)
+stageSelect.onchange = () => selectStage(stageSelect.value)
 function markStage(key) {
   stageKey = key
-  const index = manifest.stages.findIndex((s) => s.key === key)
-  pressed(stagesColumn, stageButtons[index])
-  stageUp.disabled = index === 0
-  stageDown.disabled = index === manifest.stages.length - 1
+  stageSelect.value = key
 }
 function selectStage(key) {
   markStage(key)
   loadStage()
 }
-function stepStage(delta) {
-  const index = manifest.stages.findIndex((s) => s.key === stageKey)
-  const next = manifest.stages[index + delta]
-  if (next) selectStage(next.key)
-}
-stageUp.onclick = () => stepStage(-1)
-stageDown.onclick = () => stepStage(1)
 markStage(stageKey)
 
 // DNA and three structures to start; all 16 at once is slow and unreadable.
@@ -560,15 +530,30 @@ function loadCell() {
 function mode() {
   return modeInputs.find((input) => input.checked).value
 }
+// The viewer last shown; the About tab leaves it loaded underneath.
+let viewerMode = mode()
 
 function loadCurrent() {
-  return mode() === 'stage' ? loadStage() : loadCell()
+  return viewerMode === 'stage' ? loadStage() : loadCell()
 }
 
 // The stage composites are shown as one large render, as on Allen's page; a
 // single cell also gets the slice views, like the essay's z-stack viewer.
 function applyMode() {
-  const stageMode = mode() === 'stage'
+  const isAbout = mode() === 'about'
+  about.hidden = !isAbout
+  viewer.hidden = isAbout
+  lede.hidden = isAbout
+  if (isAbout) return
+  const previous = viewerMode
+  viewerMode = mode()
+  const stageMode = viewerMode === 'stage'
+  if (viewerMode !== previous) {
+    renderModeSelect.value = String(
+      stageMode ? VOLUME_RENDER_MODE.COMPOSITE : VOLUME_RENDER_MODE.MAXIMUM,
+    )
+    applyRender()
+  }
   stagePanel.hidden = !stageMode
   cellPanel.hidden = stageMode
   nv1.sliceType = stageMode ? SLICE_TYPE.RENDER : SLICE_TYPE.MULTIPLANAR
@@ -579,8 +564,9 @@ function applyMode() {
 }
 for (const input of modeInputs) {
   input.onchange = () => {
+    const previous = viewerMode
     applyMode()
-    loadCurrent()
+    if (mode() !== 'about' && viewerMode !== previous) loadCurrent()
   }
 }
 applyMode()

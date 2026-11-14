@@ -2608,6 +2608,10 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'isSnapToVoxelCenters', value: v })
   }
 
+  /**
+   * Yokes the 2D slice zoom and the 3D render zoom: a wheel, drag or pinch
+   * zoom on either sets both to the same value. Default false.
+   */
   get isYoked3DTo2DZoom(): boolean {
     return this.model.interaction.isYoked3DTo2DZoom
   }
@@ -2638,10 +2642,10 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Opt-in: clicking a volume legend entry's colour box hides or shows that
-   * label (the volume's `hiddenLabels`); clicking its name still moves the
-   * crosshair to the label. Default false: every click moves the crosshair.
-   * Mesh and connectome legend entries do not toggle.
+   * Opt-in: clicking a legend entry's colour box hides or shows that label
+   * (the volume's or mesh layer's `hiddenLabels`); clicking its name still
+   * moves the crosshair to the label. Default false: every click moves the
+   * crosshair. Connectome legend entries do not toggle.
    */
   get isLegendToggleEnabled(): boolean {
     return this.model.interaction.isLegendToggleEnabled

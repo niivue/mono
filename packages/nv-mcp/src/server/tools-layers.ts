@@ -261,6 +261,12 @@ export const LAYER_SCHEMAS = {
     mesh: MESH_ARG.optional(),
     layer: LAYER_ARG.optional(),
     ...LAYER_FIELDS,
+    hidden_labels: z
+      .array(z.number().int())
+      .optional()
+      .describe(
+        'For a label layer (an atlas): the label values to hide, replacing the current list; [] shows every label.',
+      ),
     frame: z
       .number()
       .int()
@@ -409,8 +415,8 @@ export function registerLayerTools(
   registerSimple(server, context, 'set_mesh_layer', {
     title: 'Change a mesh layer',
     description:
-      'Changes how one layer of a mesh is drawn: its colormap, window, opacity, and the like, or ' +
-      'the frame shown of a 4D layer. Reports the mesh with its layers.',
+      'Changes how one layer of a mesh is drawn: its colormap, window, opacity, hidden label values, ' +
+      'and the like, or the frame shown of a 4D layer. Reports the mesh with its layers.',
     inputSchema: LAYER_SCHEMAS.set_mesh_layer,
     lead: named('mesh', 'Changed'),
   })

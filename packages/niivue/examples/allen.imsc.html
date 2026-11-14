@@ -80,45 +80,28 @@
         font-weight: 400;
         margin: 0 0 0.5rem;
       }
-      .stagesCol {
-        display: flex;
+      #stagePanel {
         flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
+        gap: 0.8rem;
       }
-      .arrows {
+      .stageRow {
         display: flex;
+        align-items: center;
         gap: 0.4rem;
       }
-      .arrows button {
-        width: 2.2rem;
-        height: 1.6rem;
-        background: #333;
-        border: 1px solid #444;
-        color: #ddd;
-        border-radius: 3px;
-        cursor: pointer;
+      #stage {
+        flex: 1;
+        padding: 0.2rem;
       }
-      #stages {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+      #about {
+        max-width: 44rem;
+        margin: 0 auto;
+        padding: 0 1.2rem 1rem;
+        line-height: 1.5;
+        overflow: auto;
       }
-      #stages button {
-        width: 6.4rem;
-        height: 4.2rem;
-        background: #262626;
-        color: #ccc;
-        border: 1px solid #262626;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        line-height: 1.15;
-      }
-      #stages button[aria-pressed='true'] {
-        border-color: #aaa;
-        background: #333;
-        color: #fff;
+      #about a {
+        color: #9cf;
       }
       #structures {
         border-collapse: collapse;
@@ -263,20 +246,48 @@
         </span>
         <span>
           <input type="radio" name="mode" id="modeCell" value="cell" />
-          <label for="modeCell">Cell gallery</label>
+          <label for="modeCell">Cell Gallery</label>
+        </span>
+        <span>
+          <input type="radio" name="mode" id="modeAbout" value="about" />
+          <label for="modeAbout">About</label>
         </span>
       </div>
     </div>
     <p class="lede" id="lede">&nbsp;</p>
-    <div class="viewer">
+    <section id="about" hidden>
+      <h2>About this demo</h2>
+      <p>
+        This page rebuilds, on NiiVue, the two viewers of the Allen Institute
+        for Cell Science essay
+        <a href="https://imsc.allencell.org" target="_blank" rel="noopener">Integrated Mitotic Stem Cell</a>,
+        which follows human induced pluripotent stem cells through mitosis.
+      </p>
+      <p>
+        <b>3D Cell Viewer:</b> for each mitotic stage, one atlas holds DNA plus
+        15 tagged structures, each imaged in a different cell and aligned into
+        one 256x256x58 volume. These atlases are copies in
+        <a href="https://github.com/niivue/niivue-demo-images-lfs/tree/main/Allen/IMSC" target="_blank" rel="noopener">niivue-demo-images-lfs (Allen/IMSC)</a>,
+        because imsc.allencell.org does not allow other sites to fetch its files.
+      </p>
+      <p>
+        <b>Cell Gallery:</b> the same 75 cells as the essay's z-stack viewer
+        (15 genes by 5 stages), each loaded at full resolution from its
+        <a href="https://cfe.allencell.org" target="_blank" rel="noopener">Cell Feature Explorer</a>
+        atlas in the Allen Institute's own storage, with membrane, structure
+        and DNA as separate channels plus their segmentations.
+      </p>
+      <p>
+        The data are from the Allen Institute for Cell Science and are used
+        under the Allen Institute's terms of use: noncommercial, with citation.
+        See the LICENSE in the niivue-demo-images-lfs repository.
+      </p>
+    </section>
+    <div class="viewer" id="viewer">
       <div class="side" id="stagePanel">
-        <div class="stagesCol">
-          <h2>Stages</h2>
-          <div class="arrows">
-            <button type="button" id="stageUp" aria-label="Previous stage">&#8963;</button>
-            <button type="button" id="stageDown" aria-label="Next stage">&#8964;</button>
-          </div>
-          <div id="stages"></div>
+        <div class="stageRow">
+          <label for="stage">Stage</label>
+          <select id="stage"></select>
         </div>
         <table id="structures">
           <thead>
@@ -322,16 +333,6 @@
           <span class="group">
             <input type="checkbox" id="clipCheck" />
             <label for="clipCheck">Clip</label>
-            <input type="checkbox" id="clipOverlaysCheck" />
-            <label for="clipOverlaysCheck">Clip overlays</label>
-          </span>
-          <span class="group">
-            <label for="zoom">Zoom</label>
-            <input id="zoom" type="range" min="0.5" max="4" step="0.05" value="1" />
-          </span>
-          <span class="group">
-            <input type="checkbox" id="fuse" checked />
-            <label for="fuse">Fuse channels</label>
           </span>
           <span class="group">
             <input type="checkbox" id="webgpuCheck" />

@@ -1,7 +1,10 @@
 // UIKit's WebGL2 magnifier lens: blits the frame drawn so far (the overlay
 // hook's bounds rect of the bound framebuffer) into a texture, then draws it
 // enlarged in a circle. The blit resolves a multisampled canvas, which a
-// texture read could not.
+// texture read could not. A multisampled blit must keep its rectangle (WebGL2
+// rejects any offset or scale with INVALID_OPERATION), so the texture covers
+// the canvas from its origin to the bounds rect, the rect lands at its own
+// coordinates, and the shader samples it there.
 
 import type { UIKitOverlayBounds } from '@niivue/niivue'
 import type { MagnifierLayout } from '../magnifier'
@@ -17,6 +20,8 @@ export class GlLensRenderer {
   private fbo: WebGLFramebuffer | null = null
   private texWidth = 0
   private texHeight = 0
+  // Bottom-up canvas y of the bounds rect's lower edge, where it sits in the texture.
+  private y0 = 0
   private u: Record<string, WebGLUniformLocation | null> = {}
 
   private ensure(gl: WebGL2RenderingContext): void {
@@ -46,6 +51,7 @@ export class GlLensRenderer {
       'lens',
       'fill',
       'imageSize',
+      'imageRect',
       'image',
     ])
       this.u[name] = gl.getUniformLocation(program, name)
@@ -53,7 +59,23 @@ export class GlLensRenderer {
 
   private capture(gl: WebGL2RenderingContext, b: UIKitOverlayBounds): void {
     const { width, height } = b
-    if (!this.texture || this.texWidth !== width || this.texHeight !== height) {
+    // shortcut: assumes the hook draws to the canvas (true of every core view);
+    // an offscreen target would need its own height here.
+    const y0 = gl.drawingBufferHeight - b.y - height
+    // The part of the rect on the canvas: a canvas viewport can pan a view
+    // partly off it, and the shader fills what was not copied.
+    const x0 = Math.max(0, b.x)
+    const x1 = Math.min(gl.drawingBufferWidth, b.x + width)
+    const y1 = Math.min(gl.drawingBufferHeight, y0 + height)
+    const yLow = Math.max(0, y0)
+    const texWidth = Math.max(1, x1)
+    const texHeight = Math.max(1, y1)
+    this.y0 = y0
+    if (
+      !this.texture ||
+      this.texWidth !== texWidth ||
+      this.texHeight !== texHeight
+    ) {
       // A multisample resolve needs the canvas's own format: RGB8 without alpha.
       const rgb = gl.getContextAttributes()?.alpha === false
       this.texture ??= gl.createTexture()
@@ -62,8 +84,8 @@ export class GlLensRenderer {
         gl.TEXTURE_2D,
         0,
         rgb ? gl.RGB8 : gl.RGBA8,
-        width,
-        height,
+        texWidth,
+        texHeight,
         0,
         rgb ? gl.RGB : gl.RGBA,
         gl.UNSIGNED_BYTE,
@@ -74,8 +96,8 @@ export class GlLensRenderer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
       gl.bindTexture(gl.TEXTURE_2D, null)
-      this.texWidth = width
-      this.texHeight = height
+      this.texWidth = texWidth
+      this.texHeight = texHeight
     }
     const read = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING)
     const draw = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING)
@@ -90,21 +112,19 @@ export class GlLensRenderer {
       this.texture,
       0,
     )
-    // shortcut: assumes the hook draws to the canvas (true of every core view);
-    // an offscreen target would need its own height here.
-    const y0 = gl.drawingBufferHeight - b.y - height
-    gl.blitFramebuffer(
-      b.x,
-      y0,
-      b.x + width,
-      y0 + height,
-      0,
-      0,
-      width,
-      height,
-      gl.COLOR_BUFFER_BIT,
-      gl.NEAREST,
-    )
+    if (x1 > x0 && y1 > yLow)
+      gl.blitFramebuffer(
+        x0,
+        yLow,
+        x1,
+        y1,
+        x0,
+        yLow,
+        x1,
+        y1,
+        gl.COLOR_BUFFER_BIT,
+        gl.NEAREST,
+      )
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read)
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw)
     if (scissor) gl.enable(gl.SCISSOR_TEST)
@@ -133,6 +153,7 @@ export class GlLensRenderer {
     )
     gl.uniform4f(u.fill, fill[0], fill[1], fill[2], fill[3])
     gl.uniform2f(u.imageSize, bounds.width, bounds.height)
+    gl.uniform4f(u.imageRect, bounds.x, this.y0, this.texWidth, this.texHeight)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     gl.uniform1i(u.image, 0)
@@ -163,5 +184,6 @@ export class GlLensRenderer {
     this.fbo = null
     this.texWidth = 0
     this.texHeight = 0
+    this.y0 = 0
   }
 }

@@ -403,6 +403,7 @@ uniform vec4 box; // lens bounding square, canvas px
 uniform vec4 lens; // centre x, y, radius (canvas px), zoom
 uniform vec4 fill;
 uniform vec2 imageSize;
+uniform vec4 imageRect; // bounds rect's x and bottom-up y in the texture, texture size
 in vec2 vUv;
 out vec4 fragColor;
 
@@ -411,8 +412,11 @@ void main() {
   if (length(d) > lens.z) discard;
   vec2 s = (lens.xy + d / lens.w) / imageSize;
   bool inside = all(greaterThanEqual(s, vec2(0.0))) && all(lessThanEqual(s, vec2(1.0)));
-  // The blitted frame's rows are bottom-up.
-  fragColor = inside ? texture(image, vec2(s.x, 1.0 - s.y)) : vec4(fill.rgb * fill.a, fill.a);
+  // The blitted frame's rows are bottom-up, at the bounds rect's own place.
+  vec2 t = (imageRect.xy + vec2(s.x, 1.0 - s.y) * imageSize) / imageRect.zw;
+  // Off the canvas nothing was copied: fill it, as outside the image.
+  inside = inside && all(greaterThanEqual(t, vec2(0.0))) && all(lessThanEqual(t, vec2(1.0)));
+  fragColor = inside ? texture(image, t) : vec4(fill.rgb * fill.a, fill.a);
 }
 `
 export const WGSL_LENS = `

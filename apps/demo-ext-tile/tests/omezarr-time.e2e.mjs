@@ -427,6 +427,8 @@ async function checkSampleSwitch(backend) {
     })
   }
   gate()
+  // When set, held colony requests fail once released.
+  let failHeld = false
   // When set, every request for the other sample waits for this promise.
   let otherHeld = null
   const local = (name, rest) => `http://127.0.0.1:${port}/${name}/${rest}`
@@ -443,6 +445,7 @@ async function checkSampleSwitch(backend) {
       ) {
         held()
         await released
+        if (failHeld) return route.abort()
       }
       const name = kind === 'raw' ? 'store.zarr' : 'seg.zarr'
       return route.fulfill({
@@ -480,6 +483,21 @@ async function checkSampleSwitch(backend) {
     fail(
       `the colony segmentation attached to the other sample: ${ids.join(', ')}`,
     )
+  // A superseded colony load that then fails must not overwrite the status.
+  gate()
+  failHeld = true
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  await page.selectOption('#sample', await option('IDR: 6 channels'))
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  release()
+  await page.waitForTimeout(1500)
+  const status = await page.textContent('#status')
+  if (!status.startsWith('Showing'))
+    fail(`a superseded load's error replaced the status: ${status}`)
+  failHeld = false
   // The same, with the colony's metadata (not its chunks) arriving last.
   hold = 'meta'
   gate()

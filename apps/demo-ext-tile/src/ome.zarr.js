@@ -435,6 +435,8 @@ loadButton.onclick = async () => {
     )
     return true
   } catch (err) {
+    // A newer store owns the status line: its failure, if any, is its own.
+    if (source !== loading) return
     fail('Could not load the channels', err)
   } finally {
     loadButton.disabled = false
@@ -512,6 +514,7 @@ addSegButton.onclick = async () => {
         (match >= 0 ? '' : ' (no level matches the channels grid)'),
     )
   } catch (err) {
+    if (superseded()) return
     fail('Could not add that segmentation', err)
   } finally {
     addSegButton.disabled = false

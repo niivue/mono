@@ -755,7 +755,7 @@ and `urlParamSelect.js` are shared by the pages.
 | `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
 | `ruler.html` | The ruler on a blank pane |
 | `volume.html` | The ruler over a NiiVue volume, measuring in millimetres from the slice pick; a magnifier toggle |
-| `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels |
+| `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile, measuring in screen pixels; a magnifier toggle |
 | `slide-wsi.html` | The ruler, the slide minimap and a magnifier toggle on the standalone WSI viewer with a DICOM whole-slide image |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
 

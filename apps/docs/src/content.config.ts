@@ -28,9 +28,11 @@ const gallery = defineCollection({
       const watched = [examplesDir, pagesIndex, thumbsDir]
       const sync = async () => {
         const examples = collectGallery(repoRoot, buildGraph(repoRoot))
-        // Each listed app's page and src/, whose script the gallery shows.
+        // Each listed demo app's page and src/, whose script the gallery
+        // shows: under apps/, or a package's own demo pages (packages/uikit/).
+        // The examples folder is watched whole above.
         for (const { source } of examples) {
-          if (!source.startsWith('apps/')) continue
+          if (source.startsWith(EXAMPLES_DIR)) continue
           for (const p of [source, path.join(path.dirname(source), 'src')]) {
             const abs = path.join(repoRoot, p)
             if (!watched.includes(abs)) {

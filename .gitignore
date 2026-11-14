@@ -3,6 +3,7 @@ node_modules/
 .repo-graph/
 .pixi/
 dist/
+dist-demo/
 _site/
 .astro/
 # Left by the old Docusaurus docs app in existing checkouts.

@@ -52,12 +52,24 @@ const timestamp = document.getElementById('timestamp')
  *
  * Nothing is vendored: the licences below cover redistribution, but a demo
  * that links is simpler to keep honest than one that copies.
+ *
+ * Optional per sample: `levelWidth` opens the level of that x size (found by
+ * size, so a trimmed copy of the store with fewer levels still matches), and
+ * `seg` adds that segmentation store once the channels show.
  */
 // IDR's stores re-chunked to one chunk per channel and timepoint (IDR keeps
 // one z-plane per chunk: ~480 requests for the first image), mirrored on
 // Hugging Face at a pinned commit; omezarr3d/README.md there has the details.
 const IDR =
   'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/26ac8f743a7654a60241945e0cfa968d08e6f7da/omezarr3d/'
+
+// Allen's nuc-morph colony 20200323_06_medium, copied with permission to
+// Hugging Face (pinned commit) for bandwidth: all 570 timepoints, pyramid
+// levels 2-4. Full resolution stays at the source, allencell.s3.amazonaws.com
+// /aics/nuc-morph-dataset/ (see allencell/README.md in the copy).
+const ALLEN_COLONY =
+  'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/' +
+  '78702232aae0a4687dea6f91b7e3d50c15df68a0/allencell/20200323_06_medium/'
 
 const SAMPLES = [
   {
@@ -71,6 +83,20 @@ const SAMPLES = [
     url: `${IDR}idr0101A-13457537.ome.zarr`,
     credit: 'Image Data Resource idr0101 (Chessel et al., CC BY 4.0)',
     note: 'NGFF 0.4, the full tczyx shape: the timepoint slider and Play fetch frames on demand.',
+  },
+  {
+    label: 'Allen Cell: hiPSC colony, 2 channels + nuclei, 570 timepoints',
+    url: `${ALLEN_COLONY}raw.ome.zarr`,
+    seg: `${ALLEN_COLONY}seg.ome.zarr`,
+    // 228 x 156 x 42, about 3 MB a frame, so Play keeps up; 456 x 312 x 42
+    // is in the Level menu.
+    levelWidth: 228,
+    credit:
+      'Allen Institute for Cell Science, nuc-morph dataset (Dixon et al. 2024, ' +
+      'bioRxiv 10.1101/2024.06.28.601071; allencell.org terms of use)',
+    note:
+      'NGFF 0.4 tczyx uint16, EGFP and bright-field, with its 3D nuclear ' +
+      'segmentation in the same time group.',
   },
   {
     label: 'IDR: 50-channel imaging mass cytometry, 464 x 494 (92 MB full)',
@@ -292,13 +318,27 @@ sampleSelect.onchange = async () => {
     customUrlOption.before(customOption)
     sampleSelect.value = url
   }
+  // A segmentation URL belongs to the store that filled it.
+  segUrlInput.value = ''
   await openAndLoad(url)
 }
 
 // Only load on success: otherwise the stale store would reload and its
 // status line would paper over the fetch error the user needs to read.
 async function openAndLoad(url) {
-  if (await openStore(url)) await loadChannels()
+  const sample = SAMPLES.find((s) => s.url === url)
+  if (!(await openStore(url))) return
+  const opened = source
+  const openId = opening
+  const level = source.levels.findIndex((l) => l.dims[0] === sample?.levelWidth)
+  if (level >= 0) levelSelect.value = String(level)
+  const shown = await loadChannels()
+  // Add the segmentation only over this sample's own channels: not when the
+  // load failed, or another store opened (or began to) while it loaded.
+  if (shown && source === opened && openId === opening && sample?.seg) {
+    segUrlInput.value = sample.seg
+    await addSegButton.onclick()
+  }
 }
 
 /** The credit of the shown store, ending the status line once it loads. */
@@ -476,6 +516,7 @@ async function loadChannels() {
           .map((v) => v.toFixed(3))
           .join(' x ')} um${creditFor(shownUrl)}`,
     )
+    return true
   } catch (err) {
     if (mine === loadGeneration) fail('Could not load the channels', err)
   }
@@ -554,6 +595,7 @@ addSegButton.onclick = async () => {
         (match >= 0 ? '' : ' (no level matches the channels grid)'),
     )
   } catch (err) {
+    if (superseded()) return
     fail('Could not add that segmentation', err)
   } finally {
     addSegButton.disabled = false

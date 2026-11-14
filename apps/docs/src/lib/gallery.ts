@@ -4,7 +4,7 @@
 // summary and the scripts it loads. The demo apps listed on the Pages site's
 // own index (.github/pages/index.html) follow, under that page's headings.
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 export const EXAMPLES_DIR = 'packages/niivue/examples'
@@ -210,12 +210,18 @@ function collectApps(
     )) {
       const page = li[1]
       if (page.startsWith('examples/')) continue
-      const source = `apps/${page}`
+      // Demo apps live in apps/; a package's own demo pages (uikit/) in packages/.
+      const source = [`apps/${page}`, `packages/${page}`].find((p) =>
+        existsSync(path.join(repoRoot, p)),
+      )
+      if (!source)
+        throw new Error(`${PAGES_INDEX} links a missing page: ${page}`)
       const pageHtml = readFileSync(path.join(repoRoot, source), 'utf8')
       const script = pageHtml.match(
         /<script\b[^>]*\bsrc="\/?([^"]+\.[jt]s)"/,
       )?.[1]
       const scriptPath = script && path.join(path.dirname(source), script)
+      const inline = scriptPath ? '' : inlineModuleScripts(pageHtml)
       const title = plainText(li[2])
       apps.push({
         slug: slugify(page),
@@ -233,7 +239,9 @@ function collectApps(
                 code: readFileSync(path.join(repoRoot, scriptPath), 'utf8'),
               },
             ]
-          : [],
+          : inline
+            ? [{ name: path.basename(page), code: inline }]
+            : [],
       })
     }
   }

@@ -169,6 +169,7 @@ export interface ShownMeshLayer {
   frame4D?: number
   nFrame4D?: number
   isColorbarVisible?: boolean
+  hiddenLabels?: number[]
 }
 
 /** A mesh as NiiVue keeps it once loaded: `NVMesh`, in the part the tools read. */
@@ -238,7 +239,9 @@ export interface MeshLayerToLoad {
 }
 
 /** What `View.setMeshLayerProperty` can change: NiiVue's `NVMeshLayer`, in part. */
-export type MeshLayerUpdate = Omit<MeshLayerToLoad, 'url' | 'name'>
+export type MeshLayerUpdate = Omit<MeshLayerToLoad, 'url' | 'name'> & {
+  hiddenLabels?: number[]
+}
 
 /** How a signal is drawn: NiiVue's `NVSignalDisplay`. */
 export interface SignalDisplay {

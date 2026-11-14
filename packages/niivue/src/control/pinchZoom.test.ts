@@ -46,4 +46,18 @@ describe('pinchCamera', () => {
       scaleMultiplier: 0.5,
     })
   })
+  test('yoked, a pinch on the 3D render zooms the slices too', () => {
+    const pinch = { distance: 100, pan: [5, 6, 7, 1], scale: 1, anchorMM: null }
+    expect(pinchCamera(pinch, 150, min, max, true)).toEqual({
+      pan2Dxyzmm: [5, 6, 7, 1.5],
+      scaleMultiplier: 1.5,
+    })
+  })
+  test('yoked, a 3D pinch scales a 2D zoom past 2 instead of snapping it', () => {
+    const pinch = { distance: 100, pan: [5, 6, 7, 5], scale: 1, anchorMM: null }
+    expect(pinchCamera(pinch, 150, min, max, true).pan2Dxyzmm?.[3]).toBe(7.5)
+    expect(pinchCamera(pinch, 101, min, max, true).pan2Dxyzmm?.[3]).toBeCloseTo(
+      5.05,
+    )
+  })
 })

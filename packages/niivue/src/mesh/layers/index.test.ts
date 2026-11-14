@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { addColormap, makeLabelLut } from '@/cmap/NVCmaps'
 import { log } from '@/logger'
 import type { LUT, NVMeshLayer } from '@/NVTypes'
-import { applyLayerColormap, loadLayerFromUrl } from './index'
+import { applyLayerColormap, compositeLayers, loadLayerFromUrl } from './index'
 
 // A non-label FreeSurfer INT32 volume (version 1, not a label file name).
 // Max and sum are its big-endian int32 values (see mgh.test.ts).
@@ -133,4 +133,22 @@ describe('applyLayerColormap', () => {
     )
     expect(l.colormapLabel).toBeNull()
   })
+})
+
+test('compositeLayersShowsTheBaseColourUnderAHiddenLabel', () => {
+  const lut = makeLabelLut({
+    R: [0, 255, 0],
+    G: [0, 0, 255],
+    B: [0, 0, 0],
+    A: [0, 255, 255],
+    I: [0, 1, 2],
+  })
+  const l = layer('', [1, 2], lut)
+  l.hiddenLabels = [2]
+  const out = new Uint32Array(2)
+  compositeLayers(null, [0.5, 0.5, 0.5, 1], [l], out)
+  const shown = new Uint32Array(2)
+  compositeLayers(null, [0.5, 0.5, 0.5, 1], [], shown)
+  expect(out[0]).not.toBe(shown[0])
+  expect(out[1]).toBe(shown[1])
 })

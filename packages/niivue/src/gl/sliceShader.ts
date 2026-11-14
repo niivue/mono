@@ -49,6 +49,7 @@ uniform float opacity;
 uniform float overlayAlphaShader;
 uniform float overlayOpacity;  // opacity of overlay volume (0-1)
 uniform int isAlphaClipDark;
+uniform int isChannelStack;  // >0 = fused channels draw on opaque black
 uniform int isColormapAlphaOn2D;  // >0 = background's baked colormap alpha scales slice opacity
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
 uniform highp sampler3D drawing;
@@ -124,6 +125,13 @@ void main() {
 
   // Apply overlay alpha modulation
   color.a *= overlayAlphaShader;
+
+  // A channel stack draws opaque, on black, as fluorescence viewers do: its
+  // volumes[0] is one of the channels fused into the overlay texture, so the
+  // canvas background must not show through.
+  if (isChannelStack != 0) {
+    color = vec4(0.0, 0.0, 0.0, 1.0);
+  }
 
   // Overlay blending (only when overlay volumes are loaded)
   if (numVolumes > 1.0) {

@@ -13,7 +13,7 @@ import {
 } from '@/control/cameraEvents'
 import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
-import { type Pinch, pinchCamera } from '@/control/pinchZoom'
+import { type Pinch, pinchCamera, yokedZoom2D } from '@/control/pinchZoom'
 import { resolveWheelZoomAnchorMM } from '@/control/wheelZoomAnchor'
 import { getDrawingBitmap } from '@/drawing/drawingManager'
 import {
@@ -1268,23 +1268,33 @@ export function initInteraction(ctrl: NiiVue): void {
     if (legendHit) {
       const { entry, isOnBox } = legendHit
       log.info(`Legend clicked: ${entry.label}`)
+      const { volumeIndex, meshIndex, layerIndex, labelValue: value } = entry
       if (
         isOnBox &&
         ctrl.model.interaction.isLegendToggleEnabled &&
-        entry.volumeIndex !== undefined &&
-        entry.labelValue !== undefined
+        value !== undefined
       ) {
-        const value = entry.labelValue
-        const hidden = ctrl.volumes[entry.volumeIndex]?.hiddenLabels ?? []
         // Decide from the live list: the legend's isHidden lags a frame, so
         // a quick double-click would otherwise add the value twice.
-        const hiddenLabels = hidden.includes(value)
-          ? hidden.filter((v) => v !== value)
-          : [...hidden, value]
-        ctrl
-          .setVolume(entry.volumeIndex, { hiddenLabels })
-          .catch((e) => log.error('legend label toggle failed', e))
-        return
+        const toggled = (hidden: number[] = []) =>
+          hidden.includes(value)
+            ? hidden.filter((v) => v !== value)
+            : [...hidden, value]
+        const failed = (e: unknown) =>
+          log.error('legend label toggle failed', e)
+        if (volumeIndex !== undefined) {
+          const hiddenLabels = toggled(ctrl.volumes[volumeIndex]?.hiddenLabels)
+          ctrl.setVolume(volumeIndex, { hiddenLabels }).catch(failed)
+          return
+        }
+        if (meshIndex !== undefined && layerIndex !== undefined) {
+          const layer = ctrl.model.getMeshes()[meshIndex]?.layers?.[layerIndex]
+          const hiddenLabels = toggled(layer?.hiddenLabels)
+          ctrl
+            .setMeshLayerProperty(meshIndex, layerIndex, { hiddenLabels })
+            .catch(failed)
+          return
+        }
       }
       const centroid = entry.centroid?.()
       if (centroid) ctrl.setCrosshairPos(centroid)
@@ -2646,13 +2656,22 @@ export function initInteraction(ctrl: NiiVue): void {
       return
     }
     const zoomSpeed = 0.001
-    ctrl.model.scene.scaleMultiplier =
-      ctrl.model.scene.scaleMultiplier + evt.deltaY * zoomSpeed
+    const scaleBefore = ctrl.model.scene.scaleMultiplier
+    ctrl.model.scene.scaleMultiplier = scaleBefore + evt.deltaY * zoomSpeed
     ctrl.model.scene.scaleMultiplier = Math.max(
       0.5,
       Math.min(2.0, ctrl.model.scene.scaleMultiplier),
     )
     emitScaleMultiplierChange(ctrl)
+    // Yoked, the slices zoom by the same ratio and keep their pan.
+    if (ctrl.model.interaction.isYoked3DTo2DZoom) {
+      ctrl.model.scene.pan2Dxyzmm[3] = yokedZoom2D(
+        ctrl.model.scene.pan2Dxyzmm[3],
+        scaleBefore,
+        ctrl.model.scene.scaleMultiplier,
+      )
+      emitPan2DChange(ctrl)
+    }
     ctrl.drawScene()
   }
   ctrl._eventListeners.keydown = (e: Event) =>

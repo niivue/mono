@@ -594,6 +594,15 @@ describe('the mesh layers', () => {
     ).rejects.toThrow('No layer is named "thick". Shown: curv.')
   })
 
+  it('hides label values on an atlas layer', async () => {
+    const view = meshView()
+    const { set_mesh_layer } = meshHandlers(hostOf(view))
+    await set_mesh_layer({ hidden_labels: [3, 5] })
+    expect(view.setMeshLayerProperty).toHaveBeenCalledWith(0, 0, {
+      hiddenLabels: [3, 5],
+    })
+  })
+
   it('passes an empty colormap_negative through, so the layer drops it', async () => {
     const view = meshView()
     const { set_mesh_layer } = meshHandlers(hostOf(view))

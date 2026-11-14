@@ -16,9 +16,25 @@ const clamp = (v: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, v))
 
 /**
+ * A yoked 2D zoom after the 3D zoom moved from `scaleBefore` to `scaleAfter`:
+ * scaled by the same ratio, not set equal, so a 2D zoom past the 3D range (0.5-2)
+ * does not snap back into it.
+ */
+export const yokedZoom2D = (
+  zoom2D: number,
+  scaleBefore: number,
+  scaleAfter: number,
+): number =>
+  clamp(
+    (zoom2D * scaleAfter) / scaleBefore,
+    NVTransforms.ZOOM_2D_MIN,
+    NVTransforms.ZOOM_2D_MAX,
+  )
+
+/**
  * The camera once the fingers are `distance` apart: a 2D tile zooms about the
- * anchor within the wheel's limits (and the 3D render follows when yoked); the
- * 3D render scales within the wheel's 0.5-2 range.
+ * anchor within the wheel's limits; the 3D render scales within the wheel's
+ * 0.5-2 range. Yoked, each follows the other.
  */
 export function pinchCamera(
   pinch: Pinch,
@@ -28,8 +44,19 @@ export function pinchCamera(
   isYoked3DTo2DZoom: boolean,
 ): { pan2Dxyzmm?: number[]; scaleMultiplier?: number } {
   const ratio = distance / pinch.distance
-  if (!pinch.anchorMM)
-    return { scaleMultiplier: clamp(pinch.scale * ratio, 0.5, 2) }
+  if (!pinch.anchorMM) {
+    const scale = clamp(pinch.scale * ratio, 0.5, 2)
+    // Yoked, the slices zoom by the same ratio and keep their pan.
+    return isYoked3DTo2DZoom
+      ? {
+          pan2Dxyzmm: [
+            ...pinch.pan.slice(0, 3),
+            yokedZoom2D(pinch.pan[3], pinch.scale, scale),
+          ],
+          scaleMultiplier: scale,
+        }
+      : { scaleMultiplier: scale }
+  }
   const zoom = clamp(
     pinch.pan[3] * ratio,
     NVTransforms.ZOOM_2D_MIN,

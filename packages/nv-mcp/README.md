@@ -245,7 +245,7 @@ Every reply is a line of prose for the agent to read, then the JSON the page ret
 | `update_mesh_positions` | `mesh?`, one of `values`, `url` or `from_mesh` | Moves a triangulated mesh's vertices in place, x, y and z in millimetres for each, keeping its triangles and layers. `url` fetches them as little-endian float32 bytes, gzipped or not. Tracts and connectomes are refused, as are positions float32 cannot hold. A mesh removed or replaced while its values were fetched is left alone, and the call fails |
 | `remove_mesh` | `mesh?`, `all?` | Unloads one mesh, or every mesh |
 | `add_mesh_layer` | `url`, `mesh?`, `name?`, `colormap?`, `colormap_negative?`, `cal_min?`, `cal_max?`, `cal_min_neg?`, `cal_max_neg?`, `opacity?`, `colorbar?`, `invert?`, `transparent_below_cal_min?`, `additive?`, `outline_width?` | Draws a per-vertex overlay (a curvature, a thickness, a statistic) on a mesh. A `null` `cal_min_neg` or `cal_max_neg` mirrors the positive window |
-| `set_mesh_layer` | `mesh?`, `layer?`, the layer fields above, `frame?` | Changes how a layer is drawn, or the frame of a 4D layer |
+| `set_mesh_layer` | `mesh?`, `layer?`, the layer fields above, `hidden_labels?`, `frame?` | Changes how a layer is drawn (`hidden_labels`, an atlas layer's label values to hide, replaces the list), or the frame of a 4D layer |
 | `remove_mesh_layer` | `mesh?`, `layer?` | Takes a layer off a mesh |
 
 ### Signals and the graph

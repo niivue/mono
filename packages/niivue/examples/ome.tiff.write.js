@@ -211,23 +211,6 @@ export function omeXml({
   )
 }
 
-/** An ImageJ hyperstack `ImageDescription`. ImageJ hyperstacks are XYCZT. */
-export function imageJDescription({ sizeZ, sizeC, spacingZ }) {
-  return [
-    'ImageJ=1.54f',
-    `images=${sizeZ * sizeC}`,
-    `channels=${sizeC}`,
-    `slices=${sizeZ}`,
-    'frames=1',
-    'hyperstack=true',
-    'mode=composite',
-    'unit=micron',
-    `spacing=${spacingZ}`,
-    'loop=false',
-    '',
-  ].join('\n')
-}
-
 /**
  * Three channels of synthetic structure, each a different shape so a wrong
  * plane-to-channel mapping is obvious on screen rather than subtle.

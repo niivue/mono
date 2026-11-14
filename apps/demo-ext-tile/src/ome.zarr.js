@@ -52,7 +52,18 @@ const footer = document.getElementById('location')
  *
  * Nothing is vendored: the licences below cover redistribution, but a demo
  * that links is simpler to keep honest than one that copies.
+ *
+ * Optional per sample: `levelWidth` opens the level of that x size (found by
+ * size, so a trimmed copy of the store with fewer levels still matches), and
+ * `seg` adds that segmentation store once the channels show.
  */
+// Allen's nuc-morph colony 20200323_06_medium, copied with permission to
+// Hugging Face (pinned commit) for bandwidth: all 570 timepoints, pyramid
+// levels 2-4. Full resolution stays at the source, allencell.s3.amazonaws.com
+// /aics/nuc-morph-dataset/ (see allencell/README.md in the copy).
+const ALLEN_COLONY =
+  'https://huggingface.co/datasets/neurodeskorg/webapps/resolve/' +
+  '78702232aae0a4687dea6f91b7e3d50c15df68a0/allencell/20200323_06_medium/'
 const SAMPLES = [
   {
     label: 'IDR: 2-channel nuclei, 271 x 275 x 236 (67 MB)',
@@ -67,6 +78,19 @@ const SAMPLES = [
     credit:
       'Image Data Resource idr0101 (Chessel et al., CC BY 4.0). NGFF 0.4, the ' +
       'full tczyx shape: the timepoint slider and Play fetch frames on demand.',
+  },
+  {
+    label: 'Allen Cell: hiPSC colony, 2 channels + nuclei, 570 timepoints',
+    url: `${ALLEN_COLONY}raw.ome.zarr`,
+    seg: `${ALLEN_COLONY}seg.ome.zarr`,
+    // 228 x 156 x 42, about 3 MB a frame, so Play keeps up; 456 x 312 x 42
+    // is in the Level menu.
+    levelWidth: 228,
+    credit:
+      'Allen Institute for Cell Science, nuc-morph dataset (Dixon et al. 2024, ' +
+      'bioRxiv 10.1101/2024.06.28.601071; allencell.org terms of use). NGFF ' +
+      '0.4 tczyx uint16, EGFP and bright-field, with its 3D nuclear ' +
+      'segmentation in the same time group.',
   },
   {
     label: 'IDR: 50-channel imaging mass cytometry, 464 x 494 (92 MB full)',
@@ -240,26 +264,51 @@ sampleSelect.onchange = async () => {
   const sample = SAMPLES.find((s) => s.url === sampleSelect.value)
   creditLine.textContent = sample?.credit ?? ''
   urlInput.value = sample?.url ?? ''
+  // A segmentation URL belongs to the sample that filled it.
+  segUrlInput.value = ''
   // Only load on success: otherwise the stale store would reload and its
   // status line would paper over the fetch error the user needs to read.
-  if (await fetchButton.onclick()) {
-    await loadButton.onclick()
+  if (!(await fetchButton.onclick())) return
+  const opened = source
+  const fetchId = fetches
+  const level = source.levels.findIndex((l) => l.dims[0] === sample?.levelWidth)
+  if (level >= 0) levelSelect.value = String(level)
+  // Add the segmentation only over this sample's own channels: not when the
+  // load failed, or another sample replaced it while it loaded.
+  const shown = await loadButton.onclick()
+  // A newer fetch (another sample) supersedes this one even before it opens.
+  if (shown && source === opened && fetchId === fetches && sample?.seg) {
+    segUrlInput.value = sample.seg
+    await addSegButton.onclick()
   }
 }
 
+let fetches = 0
 fetchButton.onclick = async () => {
   const url = urlInput.value.trim()
+  // An empty click is a no-op: it must not supersede a fetch in flight.
   if (!url) {
     return false
+  }
+  const fetchId = ++fetches
+  // A typed URL is not the listed sample: drop its name, credit and labels.
+  if (url !== sampleSelect.value) {
+    sampleSelect.value = ''
+    creditLine.textContent = ''
+    segUrlInput.value = ''
   }
   say(`Opening ${url}...`)
   loadButton.disabled = true
   levelSelect.disabled = true
   try {
     const name = url.split('/').filter(Boolean).pop() || url
-    offer(await fetchOmeZarr(url), name)
+    const opened = await fetchOmeZarr(url)
+    // A newer selection started while this store opened: it owns the UI.
+    if (fetchId !== fetches) return false
+    offer(opened, name)
     return true
   } catch (err) {
+    if (fetchId !== fetches) return false
     fail('Could not open that store (a cross-origin host must send CORS)', err)
     return false
   }
@@ -385,7 +434,10 @@ loadButton.onclick = async () => {
           .map((v) => v.toFixed(3))
           .join(' x ')} um`,
     )
+    return true
   } catch (err) {
+    // A newer store owns the status line: its failure, if any, is its own.
+    if (source !== loading) return
     fail('Could not load the channels', err)
   } finally {
     loadButton.disabled = false
@@ -463,6 +515,7 @@ addSegButton.onclick = async () => {
         (match >= 0 ? '' : ' (no level matches the channels grid)'),
     )
   } catch (err) {
+    if (superseded()) return
     fail('Could not add that segmentation', err)
   } finally {
     addSegButton.disabled = false

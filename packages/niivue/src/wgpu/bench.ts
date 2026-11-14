@@ -57,7 +57,11 @@ export class WGPUBench {
         this._offscreen = device.createTexture({
           size: { width: w, height: h },
           format: view.preferredCanvasFormat,
-          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+          // COPY_SRC: an overlay's captureScene copies the frame.
+          usage:
+            GPUTextureUsage.RENDER_ATTACHMENT |
+            GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.COPY_SRC,
         })
       }
       // Suppress sub-canvas mode so render() writes directly to the override

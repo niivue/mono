@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-web-component",
-  "version": "1.0.0-rc.201",
+  "version": "1.0.0-rc.202",
   "private": false,
   "type": "module",
   "description": "Web component bindings for NiiVue",

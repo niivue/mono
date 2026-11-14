@@ -1,3 +1,9 @@
+## 1.0.0-rc.22 (2026-11-14)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.204
+
 ## 1.0.0-rc.21 (2026-11-14)
 
 ### Updated Dependencies

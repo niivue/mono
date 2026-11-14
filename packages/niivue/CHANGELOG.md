@@ -1,3 +1,18 @@
+## 1.0.0-rc.204 (2026-11-14)
+
+### Features
+
+- **uikit:** magnifier overlay widget ([db8d16ef](https://github.com/niivue/mono/commit/db8d16ef))
+
+### Fixes
+
+- **niivue:** bench offscreen target allows scene capture ([04110a0c](https://github.com/niivue/mono/commit/04110a0c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.203 (2026-11-14)
 
 ### Features

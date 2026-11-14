@@ -1,3 +1,27 @@
+## 1.0.0-rc.202 (2026-11-14)
+
+### Features
+
+- **uikit:** volume demo view selector ([9b79c2cd](https://github.com/niivue/mono/commit/9b79c2cd))
+- **uikit:** magnifier toggle on the 3D slide demo ([cae1f5e2](https://github.com/niivue/mono/commit/cae1f5e2))
+- **uikit:** magnifier overlay widget ([db8d16ef](https://github.com/niivue/mono/commit/db8d16ef))
+
+### Fixes
+
+- **uikit:** WebGL2 magnifier keeps the blit rectangle under MSAA ([cd01f87b](https://github.com/niivue/mono/commit/cd01f87b))
+- **uikit:** magnifier watches moves without joining a control layer ([14e56a6b](https://github.com/niivue/mono/commit/14e56a6b))
+- **uikit:** magnifier keeps the scene's alpha ([9cfa2d07](https://github.com/niivue/mono/commit/9cfa2d07))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.204
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.201 (2026-11-14)
 
 ### Updated Dependencies

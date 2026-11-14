@@ -21,7 +21,7 @@ export type Connectivity = 6 | 18 | 26
  * Threshold mode controls how the intensity range is computed from the seed.
  *
  * - `"symmetric"` (default) — range = `[seed - tolerance, seed + tolerance]`.
- * - `"percent"` — range = `[seed * (1 - percent), seed * (1 + percent)]`.
+ * - `"percent"` — range = `seed ± |seed| * percent` (a zero seed uses 0.01).
  *   Requires {@link MagicWandOptions.percent}.
  * - `"bright"` — only voxels **≥** seed are included:
  *   range = `[seed, seed + tolerance]` (or `[seed, Infinity]` when tolerance is 0).
@@ -54,19 +54,22 @@ export interface MagicWandOptions {
    */
   thresholdMode?: ThresholdMode
   /**
-   * Percentage threshold (0–1) used when `thresholdMode` is `"percent"` or
-   * `"auto"`. Range becomes `[seed * (1-pct), seed * (1+pct)]`.
+   * Percentage threshold (0–1) used when `thresholdMode` is `"percent"`
+   * (range `seed ± |seed|*pct`), or `"bright"`, `"dark"` or
+   * `"auto"` (one side only: `[seed, seed + |seed|*pct]` or `[seed - |seed|*pct, seed]`).
    * Equivalent to `clickToSegmentPercent` in the old niivue API.
    */
   percent?: number
   /**
    * Volume calibration minimum — needed for `thresholdMode: "auto"` to
-   * determine bright vs dark. Equivalent to `back.cal_min`.
+   * determine bright vs dark. In the image data's raw units, so
+   * `back.cal_min` (scaled by scl_slope/scl_inter) must be converted back.
    */
   calMin?: number
   /**
    * Volume calibration maximum — needed for `thresholdMode: "auto"` to
-   * determine bright vs dark. Equivalent to `back.cal_max`.
+   * determine bright vs dark. In the image data's raw units, so
+   * `back.cal_max` (scaled by scl_slope/scl_inter) must be converted back.
    */
   calMax?: number
   /** Neighbour connectivity (default 6). */
@@ -93,7 +96,8 @@ export interface MagicWandResult {
   intensityMax: number
   /**
    * Whether the auto-detect resolved to "bright" (`true`) or "dark" (`false`).
-   * Only meaningful when `thresholdMode` was `"auto"`.
+   * Only meaningful when `thresholdMode` was `"auto"`. In raw units: with a
+   * negative scl_slope, raw "bright" is the calibrated dark side.
    */
   isBright?: boolean
 }
@@ -173,6 +177,11 @@ function getNeighbourOffsets(
 // Public: magicWand
 // ---------------------------------------------------------------------------
 
+/** Percent band half-width; a zero seed uses 0.01 so the band is not empty. */
+function percentSpan(seed: number, percent: number): number {
+  return Math.abs(seed === 0 ? 0.01 : seed) * percent
+}
+
 /**
  * Flood-fill (magic wand / click-to-segment) starting from a **RAS-voxel**
  * seed coordinate.
@@ -249,18 +258,18 @@ export function magicWand(
 
     switch (effectiveMode) {
       case 'percent': {
-        // Range = [seed*(1-pct), seed*(1+pct)], matching old clickToSegmentPercent
-        const eff = seedIntensity === 0 ? 0.01 : seedIntensity
-        lo = eff * (1 - percent)
-        hi = eff * (1 + percent)
+        // seed +/- |seed|*pct: old clickToSegmentPercent for positive seeds,
+        // and still contains the seed when it is zero or negative.
+        const span = percentSpan(seedIntensity, percent)
+        lo = seedIntensity - span
+        hi = seedIntensity + span
         break
       }
       case 'bright':
         // Only voxels at or above the seed
         if (percent > 0) {
-          const eff = seedIntensity === 0 ? 0.01 : seedIntensity
-          lo = eff * (1 - percent)
-          hi = eff * (1 + percent)
+          lo = seedIntensity
+          hi = seedIntensity + percentSpan(seedIntensity, percent)
         } else if (tolerance > 0) {
           lo = seedIntensity
           hi = seedIntensity + tolerance
@@ -272,9 +281,8 @@ export function magicWand(
       case 'dark':
         // Only voxels at or below the seed
         if (percent > 0) {
-          const eff = seedIntensity === 0 ? 0.01 : seedIntensity
-          lo = eff * (1 - percent)
-          hi = eff * (1 + percent)
+          lo = seedIntensity - percentSpan(seedIntensity, percent)
+          hi = seedIntensity
         } else if (tolerance > 0) {
           lo = seedIntensity - tolerance
           hi = seedIntensity

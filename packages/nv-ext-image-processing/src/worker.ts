@@ -94,7 +94,7 @@ const handlers: Record<string, Handler> = {
     const [calMin, calMax] = computeMinMax(data, slope, inter)
     const thresholds = findOtsu(data, calMin, calMax, inter, slope, levels)
     return {
-      img: applyOtsu(data, thresholds),
+      img: applyOtsu(data, thresholds, inter, slope),
       datatypeCode: 2,
       bitsPerVoxel: 8,
       sclSlope: 1,

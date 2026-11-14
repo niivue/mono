@@ -1722,7 +1722,13 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('        const bg = ctx.backgroundVolume')
   lines.push('        const imageData = useIntensity && bg ? bg.imgRAS : null')
   lines.push(
-    '        const maxVal = useIntensity && bg ? (bg.globalMax || 1) : 1',
+    '        // imgRAS is raw; globalMin/globalMax are scaled by scl_slope and scl_inter.',
+  )
+  lines.push(
+    '        const toRaw = (v) => (v - bg.hdr.scl_inter) / bg.hdr.scl_slope',
+  )
+  lines.push(
+    '        const maxVal = useIntensity && bg ? (Math.max(Math.abs(toRaw(bg.globalMin)), Math.abs(toRaw(bg.globalMax))) || 1) : 1',
   )
   lines.push(
     '        const options = Object.assign({ sliceType: axis, useIntensityGuided: useIntensity }, userOptions)',

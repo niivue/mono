@@ -197,12 +197,17 @@ initSharedIfNeeded()
 function buildWandOptions(sliceAxis: number) {
   const bg = ctx.backgroundVolume
   if (!bg) return null
+  const mode = thresholdModeSelect.value as ThresholdMode
+  const usesPct = mode === 'percent' || mode === 'auto'
+  // magicWand reads raw bg.imgRAS; calMin/calMax are scaled by scl_slope/scl_inter.
+  const { scl_slope, scl_inter } = bg.hdr
+  const toRaw = (v: number) => (v - scl_inter) / scl_slope
   return {
     tolerance: parseFloat(toleranceSlider.value),
-    thresholdMode: thresholdModeSelect.value as ThresholdMode,
-    percent: parseFloat(percentSlider.value) / 100,
-    calMin: bg.calMin ?? bg.robustMin ?? 0,
-    calMax: bg.calMax ?? bg.robustMax ?? 1,
+    thresholdMode: mode,
+    percent: usesPct ? parseFloat(percentSlider.value) / 100 : 0,
+    calMin: toRaw(bg.calMin ?? bg.robustMin ?? 0),
+    calMax: toRaw(bg.calMax ?? bg.robustMax ?? 1),
     connectivity: parseInt(connectivitySelect.value, 10) as Connectivity,
     maxDistanceMM: maxDistInput.value.trim()
       ? parseFloat(maxDistInput.value)

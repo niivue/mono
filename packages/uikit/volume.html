@@ -23,6 +23,13 @@
         <b>UIKit</b>
         <nav><a href="./index.html">controls</a><a href="./ruler.html">ruler</a><a href="./volume.html" aria-current="page">volume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">WSI</a><a href="./buttons.html">buttons</a></nav>
         <label title="A lens following the pointer"><input id="magnify" type="checkbox" autocomplete="off" /> magnifier</label>
+        <label>view <select id="viewSelect" autocomplete="off">
+          <option value="AXIAL">axial</option>
+          <option value="CORONAL">coronal</option>
+          <option value="SAGITTAL">sagittal</option>
+          <option value="MULTIPLANAR">multiplanar</option>
+          <option value="RENDER">render</option>
+        </select></label>
         <label class="backend">backend <select id="backendSelect">
           <option value="webgl2">webgl2</option>
           <option value="webgpu">webgpu</option>
@@ -58,6 +65,9 @@
       document.getElementById('backendSelect').value = nv.backend
       await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
       setStatus('Waiting for first click', 'wait')
+      document.getElementById('viewSelect').addEventListener('change', (ev) => {
+        nv.sliceType = SLICE_TYPE[ev.target.value]
+      })
 
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)

@@ -969,23 +969,6 @@ export interface NiiVueHost {
   data?: DataPalette
   /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
   omeZarr?: () => Promise<OmeZarrLoaders>
-  /** `@niivue/nv-ext-isosurface`, typically `() => import('@niivue/nv-ext-isosurface')`; with `omeZarr`, a page without it declines `add_isosurface`. */
-  isosurface?: () => Promise<IsosurfaceLoader>
-}
-
-/** The `@niivue/nv-ext-isosurface` function `add_isosurface` drives. */
-interface IsosurfaceLoader {
-  /** One mesh per channel; a `source` is what `fetchOmeZarrChunkedSource` opened. */
-  channelIsosurfaces(
-    channels: {
-      source: unknown
-      threshold?: number
-      labels?: number[]
-      level?: number
-      color?: [number, number, number, number]
-      name?: string
-    }[],
-  ): Promise<unknown[]>
 }
 
 /** A slide plane channel, as NiiVue's `NVChannel`; a default bound is NaN. */
@@ -1040,11 +1023,6 @@ export interface OmeZarrLoaders {
   ): Promise<unknown[]>
   /** The store's own label colours, or null when it states none. */
   omeZarrLabelColormap(info: unknown): ColormapToAdd | null
-  /** A chunked source over one channel (`channel`, the one it chose), for `add_isosurface`; `dispose` stops its workers. */
-  fetchOmeZarrChunkedSource(
-    url: string,
-    options?: { channel?: number; timepoint?: number },
-  ): Promise<{ channel: number; dispose?(): void }>
   /** Streams the store into the page's NiiVue (`view`), freeing its workers once the volume is removed or the viewer destroyed. */
   streamOmeZarr(
     view: unknown,

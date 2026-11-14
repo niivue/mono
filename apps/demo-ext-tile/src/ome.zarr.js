@@ -323,19 +323,37 @@ sampleSelect.onchange = async () => {
   await openAndLoad(url)
 }
 
-// Only load on success: otherwise the stale store would reload and its
-// status line would paper over the fetch error the user needs to read.
+// The store is offered (rows, levels, menu) only once its channels are on
+// screen, so a failed read leaves the old store's controls over its image.
 async function openAndLoad(url) {
   const sample = SAMPLES.find((s) => s.url === url)
-  if (!(await openStore(url))) return
-  const opened = source
+  const next = await openStore(url)
+  if (!next) return
   const openId = opening
-  const level = source.levels.findIndex((l) => l.dims[0] === sample?.levelWidth)
-  if (level >= 0) levelSelect.value = String(level)
-  const shown = await loadChannels()
-  // Add the segmentation only over this sample's own channels: not when the
-  // load failed, or another store opened (or began to) while it loaded.
-  if (shown && source === opened && openId === opening && sample?.seg) {
+  const sampleLevel = next.levels.findIndex(
+    (l) => l.dims[0] === sample?.levelWidth,
+  )
+  const level = sampleLevel >= 0 ? sampleLevel : defaultOmeZarrLevel(next)
+  const defaultT = next.info.defaults.t
+  const shown = await loadChannels({
+    source: next,
+    channels: [...Array(Math.min(DEFAULT_CHECKED, next.channelCount)).keys()],
+    level,
+    timepoint:
+      defaultT !== null && defaultT < next.timepointCount ? defaultT : 0,
+    commit() {
+      shownUrl = url
+      offer(next, url.split('/').filter(Boolean).pop() || url)
+      levelSelect.value = String(level)
+    },
+  })
+  if (!shown) {
+    if (openId === opening) restoreMenu()
+    return
+  }
+  // Add the segmentation only over this sample's own channels: not when
+  // another store opened (or began to) while it loaded.
+  if (source === next && openId === opening && sample?.seg) {
     segUrlInput.value = sample.seg
     await addSegButton.onclick()
   }
@@ -349,21 +367,18 @@ function creditFor(url) {
 
 // Opens can overlap (a slow store, then another pick); only the latest lands.
 let opening = 0
+/** The store's metadata, or null when it failed or a newer open began. */
 async function openStore(url) {
   const mine = ++opening
   say(`Opening ${url}...`)
   try {
-    const name = url.split('/').filter(Boolean).pop() || url
     const next = await fetchOmeZarr(url)
-    if (mine !== opening) return false
-    shownUrl = url
-    offer(next, name)
-    return true
+    return mine === opening ? next : null
   } catch (err) {
-    if (mine !== opening) return false
+    if (mine !== opening) return null
     restoreMenu()
     fail('Could not open that store (a cross-origin host must send CORS)', err)
-    return false
+    return null
   }
 }
 
@@ -456,23 +471,27 @@ function swapScene(isCurrent, step) {
   swaps = done.catch(() => {})
   return done
 }
-async function loadChannels() {
+/**
+ * Load the ticked channels of the offered store, or with `opened` a newly
+ * opened store's first channels, offering it (`opened.commit`) once they show.
+ */
+async function loadChannels(opened = null) {
   clearTimeout(loadTimer)
-  if (!source) {
+  const loading = opened?.source ?? source
+  if (!loading) {
     return
   }
   const mine = ++loadGeneration
-  const channels = selectedChannels()
+  const openId = opening
+  const channels = opened?.channels ?? selectedChannels()
   stopPlayback()
-  const level = Number(levelSelect.value)
-  const timepoint = Number(timepointInput.value) || 0
+  const level = opened?.level ?? Number(levelSelect.value)
+  const timepoint = opened?.timepoint ?? (Number(timepointInput.value) || 0)
   say(
     channels.length
       ? `Reading ${channels.length} channel(s) at level ${level}...`
       : 'Select at least one channel',
   )
-  // Another store may be opened while this one loads: its result is then stale.
-  const loading = source
   try {
     const group = {}
     // No channel ticked swaps in an empty scene, so the unticked image goes.
@@ -484,11 +503,15 @@ async function loadChannels() {
           lazyTime: group,
         })
       : []
-    const isCurrent = () => source === loading && mine === loadGeneration
+    // Another store may be opened while this one loads: its result is then stale.
+    const isCurrent = () =>
+      mine === loadGeneration &&
+      (opened ? openId === opening : source === loading)
     const swapped = await swapScene(isCurrent, async () => {
       shownSource = null
       scene += 1
       await nv1.loadVolumes(volumes)
+      opened?.commit()
       shownSource = loading
       // A store opened meanwhile has its own rows: these channels are not theirs.
       shownChannels = source === loading ? channels : []

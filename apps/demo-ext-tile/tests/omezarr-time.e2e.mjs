@@ -594,7 +594,25 @@ async function checkSampleSwitch(backend) {
       { timeout: 10000 },
     )
     .catch(() => fail('a cancelled Custom URL stranded the open in flight'))
+  // A store whose metadata opens but whose chunks fail is never offered: the
+  // menu goes back to the store still shown.
+  await page.selectOption('#sample', idr)
+  await page.waitForFunction(() =>
+    document.getElementById('status').textContent.startsWith('Showing'),
+  )
+  hold = 'chunks'
+  failHeld = true
+  gate()
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await firstHeld
+  release()
+  await page.waitForFunction(() =>
+    /Could not load/.test(document.getElementById('status').textContent),
+  )
+  const menu = await page.inputValue('#sample')
+  if (menu !== idr) fail(`a failed chunk read left the menu on ${menu}`)
   hold = null
+  failHeld = false
   await page.close()
 }
 

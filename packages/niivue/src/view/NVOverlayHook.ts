@@ -32,6 +32,14 @@ export type UIKitBackendHandle =
        * overlay pipeline must omit its depth-stencil state when this is undefined.
        */
       readonly depthFormat?: GPUTextureFormat
+      /**
+       * A copy of the frame drawn so far (scene and core overlays), at the
+       * pass's attachment size, for an overlay that samples it (a magnifier).
+       * The first call ends the pass and continues in a new one, single-sample
+       * without depth, so read `pass`, `sampleCount` and `depthFormat` again
+       * after it. Later calls in the frame return the same copy.
+       */
+      readonly captureScene?: () => GPUTexture
     }
 
 /** The drawable rectangle for this frame, in device pixels. */

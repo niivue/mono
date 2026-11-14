@@ -18,7 +18,11 @@ import {
   toStored,
   toValue,
 } from '@niivue/niivue'
-import { UIKitControls } from './controls'
+import { UIKitControls, type UIKitHost } from './controls'
+import {
+  UIKitMagnifierOverlay,
+  type UIKitMagnifierOverlayOptions,
+} from './magnifierOverlay'
 import {
   type UIKitSlideMinimapOptions,
   UIKitSlideMinimapOverlay,
@@ -57,18 +61,7 @@ export function attachSlideMinimap(
   // Before the control layer's listener, so a press between a slide swap and
   // the next frame reaches the new slide's minimap, not the disposed one's.
   canvas.addEventListener('pointerdown', sync, { capture: true })
-  const unwire = controls.attach({
-    canvas,
-    clientToCanvas: (clientX, clientY) => {
-      const r = canvas.getBoundingClientRect()
-      const x = ((clientX - r.left) * canvas.width) / r.width
-      const y = ((clientY - r.top) * canvas.height) / r.height
-      return x >= 0 && y >= 0 && x < canvas.width && y < canvas.height
-        ? [x, y]
-        : null
-    },
-    drawScene: view.requestRender,
-  })
+  const unwire = controls.attach(slideHost(view))
   const removeOverlay = view.addOverlay({
     drawOverlay: (frame) => {
       lastFrame = frame
@@ -82,6 +75,41 @@ export function attachSlideMinimap(
     canvas.removeEventListener('pointerdown', sync, { capture: true })
     // Destroys its widgets, the minimap included.
     controls.destroy()
+  }
+}
+
+function slideHost(view: SlideView): UIKitHost {
+  const canvas = view.canvas
+  return {
+    canvas,
+    clientToCanvas: (clientX, clientY) => {
+      const r = canvas.getBoundingClientRect()
+      const x = ((clientX - r.left) * canvas.width) / r.width
+      const y = ((clientY - r.top) * canvas.height) / r.height
+      return x >= 0 && y >= 0 && x < canvas.width && y < canvas.height
+        ? [x, y]
+        : null
+    },
+    drawScene: view.requestRender,
+  }
+}
+
+/**
+ * A magnifying glass on the view's canvas, drawn over the slide and any
+ * overlay added before it. It enlarges the rendered frame, not a finer
+ * level. Returns the detach function.
+ */
+export function attachSlideMagnifier(
+  view: SlideView,
+  options: UIKitMagnifierOverlayOptions = {},
+): () => void {
+  const magnifier = new UIKitMagnifierOverlay(options)
+  const unwire = magnifier.attach(slideHost(view))
+  const removeOverlay = view.addOverlay(magnifier)
+  return () => {
+    removeOverlay()
+    unwire()
+    magnifier.destroy()
   }
 }
 

@@ -15,6 +15,8 @@ const demo: Demo = async (canvas, { ui }) => {
   let cacheMiB = 96
   let gpuMiB = 128
   let loads = 12
+  let detail = 0.75
+  let level: 'auto' | number = 'auto'
   let view = null as SlideView | null
   // The limits of the slide on screen, which lag the menus until a build lands.
   let shown = { cpu: cacheMiB, gpu: gpuMiB }
@@ -36,38 +38,54 @@ const demo: Demo = async (canvas, { ui }) => {
   }
 
   // The caches and the load cap are set when the slide and its view are made,
-  // so a change rebuilds both where the view is, keeping detail and level.
-  // Only the latest build installs, so a slower earlier one cannot leave
-  // settings running that the menus no longer show.
-  let token = 0
-  const build = async () => {
-    const mine = ++token
-    const old = view?.slide
-    const keep = old && {
-      viewport: { ...old.viewport },
-      detail: old.targetScreenPixelsPerTilePixel,
-      level: old.levelChoice,
-    }
+  // so a change rebuilds both where the view is. One rebuild runs at a time;
+  // changes made meanwhile run one more, with the latest settings, so the
+  // canvas never holds two views or settings the menus no longer show.
+  const rebuild = async () => {
     const want = { cpu: cacheMiB, gpu: gpuMiB }
+    const old = view?.slide
     const slide = await NVSlide.fromManifestUrl(MANIFEST, {
       maxCacheBytes: want.cpu * MiB,
       maxConcurrentLoads: loads,
-      ...(keep ? { viewport: keep.viewport } : {}),
     })
-    if (mine !== token) return slide.dispose()
-    if (keep) {
-      slide.targetScreenPixelsPerTilePixel = keep.detail
-      slide.levelChoice = keep.level
-    }
+    // Read the view where it is now, not where it was when the fetch began.
+    if (old) slide.setViewport(old.viewport)
     view?.destroy()
+    view = null
     // Drag pans, the wheel zooms, a right drag zooms to its box (as the slides demo).
     view = await createSlideView(canvas, {
       maxTileTextureBytes: want.gpu * MiB,
       controller: { secondaryDragMode: DRAG_MODE.roiSelection },
     })
-    view.setSlide(slide, { fit: !keep })
+    view.setSlide(slide, { fit: !old })
+    // After the last await, so a Detail or Level change made during it holds.
+    slide.targetScreenPixelsPerTilePixel = detail
+    slide.levelChoice = level
     view.addRenderListener(report)
     shown = want
+  }
+  let running: Promise<void> | null = null
+  let again = false
+  const build = async () => {
+    if (running) {
+      again = true
+      return running
+    }
+    running = (async () => {
+      do {
+        again = false
+        await rebuild()
+      } while (again)
+    })()
+    try {
+      await running
+    } catch (e) {
+      // A failed fetch or GPU start: say so, and let the next change retry.
+      say(`Rebuild failed: ${e instanceof Error ? e.message : e}`)
+    } finally {
+      running = null
+      again = false
+    }
   }
   await build()
 
@@ -104,8 +122,9 @@ const demo: Demo = async (canvas, { ui }) => {
     ],
     '0.75',
     (v) => {
+      detail = Number(v)
       if (!view?.slide) return
-      view.slide.targetScreenPixelsPerTilePixel = Number(v)
+      view.slide.targetScreenPixelsPerTilePixel = detail
       view.requestRender()
     },
   )
@@ -117,7 +136,10 @@ const demo: Demo = async (canvas, { ui }) => {
       ...levels.map((l): [string, string] => [`L${l.index}`, String(l.index)]),
     ],
     'auto',
-    (v) => view?.slide?.setLevelChoice(v === 'auto' ? 'auto' : Number(v)),
+    (v) => {
+      level = v === 'auto' ? 'auto' : Number(v)
+      view?.slide?.setLevelChoice(level)
+    },
   )
   return view as SlideView
 }

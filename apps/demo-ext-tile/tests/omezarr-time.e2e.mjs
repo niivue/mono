@@ -394,6 +394,30 @@ async function check(backend) {
       `bench ${backend} ${C} x ${X}x${Y}x${Z} uint16: switch median uncached ${median(times.cold)} ms, cached ${median(times.warm)} ms (${times.cold.length} frames)`,
     )
   }
+  // A reload that fails before the swap leaves the slider driving the store
+  // still shown.
+  await page.evaluate(async () => {
+    const nv = window.nv1
+    const load = nv.loadVolumes
+    nv.loadVolumes = async () => {
+      nv.loadVolumes = load
+      throw new Error('prepare failed')
+    }
+    await window.loadChannels()
+  })
+  const target = (await state()).frame === 1 ? 0 : 1
+  await page.evaluate((t) => {
+    const slider = document.getElementById('timepoint')
+    slider.value = String(t)
+    slider.dispatchEvent(new Event('input'))
+  }, target)
+  await page
+    .waitForFunction(
+      (t) => window.nv1.getFrame4D(window.nv1.volumes[0].id) === t,
+      target,
+      { timeout: 5000 },
+    )
+    .catch(() => fail('a failed reload left the slider unable to switch'))
   // Unticking every channel clears the image, not just the status line.
   await page.evaluate(async () => {
     for (const box of document.querySelectorAll(

@@ -508,9 +508,16 @@ async function loadChannels(opened = null) {
       mine === loadGeneration &&
       (opened ? openId === opening : source === loading)
     const swapped = await swapScene(isCurrent, async () => {
+      const previous = shownSource
+      const previousVolumes = nv1.volumes
       shownSource = null
       scene += 1
-      await nv1.loadVolumes(volumes)
+      // A load that fails before the swap (in prepare) leaves the old store's
+      // volumes up, so the slider must keep driving them.
+      await nv1.loadVolumes(volumes).catch((err) => {
+        if (nv1.volumes === previousVolumes) shownSource = previous
+        throw err
+      })
       opened?.commit()
       shownSource = loading
       // A store opened meanwhile has its own rows: these channels are not theirs.

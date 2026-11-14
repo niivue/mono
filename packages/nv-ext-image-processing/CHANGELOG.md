@@ -1,3 +1,18 @@
+## 1.0.0-rc.203 (2026-11-14)
+
+### Fixes
+
+- **nv-ext-image-processing:** keep scl_slope scaling in otsu and removeHaze ([c29c1b22](https://github.com/niivue/mono/commit/c29c1b22))
+
+### Performance
+
+- **nv-ext-image-processing:** keep applyOtsu's unscaled loop affine-free ([5c485561](https://github.com/niivue/mono/commit/5c485561))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.202 (2026-11-13)
 
 ### Updated Dependencies

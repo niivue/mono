@@ -257,7 +257,7 @@
     },
     "packages/nv-ext-drawing": {
       "name": "@niivue/nv-ext-drawing",
-      "version": "1.0.0-rc.202",
+      "version": "1.0.0-rc.203",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "^5.9.3",
@@ -270,7 +270,7 @@
     },
     "packages/nv-ext-image-processing": {
       "name": "@niivue/nv-ext-image-processing",
-      "version": "1.0.0-rc.202",
+      "version": "1.0.0-rc.203",
       "dependencies": {
         "gl-matrix": "^3.4.4",
       },

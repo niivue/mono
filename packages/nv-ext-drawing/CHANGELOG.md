@@ -1,3 +1,17 @@
+## 1.0.0-rc.203 (2026-11-14)
+
+### Fixes
+
+- **nv-ext-drawing:** keep a zero or negative seed inside the percent band ([d7e9c67d](https://github.com/niivue/mono/commit/d7e9c67d))
+- **nv-ext-drawing:** use the largest raw magnitude as interpolation maxVal ([113b39a8](https://github.com/niivue/mono/commit/113b39a8))
+- **nv-ext-drawing:** one-sided percent band for bright and dark ([cf10da68](https://github.com/niivue/mono/commit/cf10da68))
+- **nv-ext-image-processing:** keep scl_slope scaling in otsu and removeHaze ([c29c1b22](https://github.com/niivue/mono/commit/c29c1b22))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.202 (2026-11-13)
 
 ### Updated Dependencies

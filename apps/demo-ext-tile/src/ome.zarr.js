@@ -285,11 +285,12 @@ sampleSelect.onchange = async () => {
 
 let fetches = 0
 fetchButton.onclick = async () => {
-  const fetchId = ++fetches
   const url = urlInput.value.trim()
+  // An empty click is a no-op: it must not supersede a fetch in flight.
   if (!url) {
     return false
   }
+  const fetchId = ++fetches
   // A typed URL is not the listed sample: drop its name, credit and labels.
   if (url !== sampleSelect.value) {
     sampleSelect.value = ''

@@ -571,6 +571,25 @@ async function checkSampleSwitch(backend) {
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.startsWith('Showing'),
   )
+  // An empty Fetch click while a store opens must not strand that fetch.
+  hold = 'meta'
+  gate()
+  await page.fill('#url', await option('Allen Cell'))
+  await page.click('#fetchUrl')
+  await firstHeld
+  await page.fill('#url', '')
+  await page.click('#fetchUrl')
+  release()
+  await page
+    .waitForFunction(
+      () =>
+        !document.getElementById('load').disabled &&
+        !document.getElementById('level').disabled,
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => fail('an empty Fetch click stranded the fetch in flight'))
+  hold = null
   await page.close()
 }
 

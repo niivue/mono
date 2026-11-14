@@ -535,7 +535,18 @@ async function checkSampleSwitch(backend) {
       { timeout: 30000 },
     )
     .catch(() => fail('the colony load never attached its segmentation'))
-  // Leaving the colony must not leave its labels URL ready to Add elsewhere.
+  // Leaving the colony, by typed URL or by sample, must not leave its labels
+  // URL ready to Add elsewhere.
+  await page.fill('#url', await option('IDR: 6 channels'))
+  await page.click('#fetchUrl')
+  const typedSegUrl = await page.inputValue('#segUrl')
+  if (typedSegUrl)
+    fail(`the colony segmentation URL outlived a typed store: ${typedSegUrl}`)
+  await page.waitForFunction(() =>
+    /NGFF/.test(document.getElementById('status').textContent),
+  )
+  await page.selectOption('#sample', await option('Allen Cell'))
+  await page.waitForFunction(() => document.getElementById('segUrl').value)
   await page.selectOption('#sample', await option('IDR: 6 channels'))
   const segUrl = await page.inputValue('#segUrl')
   if (segUrl) fail(`the colony segmentation URL outlived its sample: ${segUrl}`)

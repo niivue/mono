@@ -290,10 +290,11 @@ fetchButton.onclick = async () => {
   if (!url) {
     return false
   }
-  // A typed URL is not the listed sample: drop its name and credit.
+  // A typed URL is not the listed sample: drop its name, credit and labels.
   if (url !== sampleSelect.value) {
     sampleSelect.value = ''
     creditLine.textContent = ''
+    segUrlInput.value = ''
   }
   say(`Opening ${url}...`)
   loadButton.disabled = true

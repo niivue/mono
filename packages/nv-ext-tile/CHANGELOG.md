@@ -1,3 +1,17 @@
+## 1.0.0-rc.114 (2026-11-15)
+
+### Features
+
+- **niivue:** maxTileTextureBytes sets a slide view's GPU tile budget ([07a2294d](https://github.com/niivue/mono/commit/07a2294d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.205
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.113 (2026-11-14)
 
 ### Updated Dependencies

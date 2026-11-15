@@ -1,3 +1,24 @@
+## 1.0.0-rc.200 (2026-11-15)
+
+### Chores
+
+- ⚠️  remove nv-ext-isosurface and the MCP add_isosurface tool ([#757](https://github.com/niivue/mono/issues/757))
+
+### Breaking Changes
+
+- remove nv-ext-isosurface and the MCP add_isosurface tool  ([#757](https://github.com/niivue/mono/issues/757))
+  @niivue/nv-ext-isosurface is removed, and nv-mcp no longer
+  offers add_isosurface or NiiVueHost.isosurface.
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.205
+- Updated uikit to 1.0.0-rc.203
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.199 (2026-11-14)
 
 ### Updated Dependencies

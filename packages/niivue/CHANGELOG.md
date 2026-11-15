@@ -1,3 +1,38 @@
+## 1.0.0-rc.205 (2026-11-15)
+
+### Features
+
+- **niivue:** resetSettings, FreeSurfer pointsets and annotations; parity table for 1.0 ([6562c5b5](https://github.com/niivue/mono/commit/6562c5b5))
+- **niivue:** microscopy presets for linked views and the clip box ([#402](https://github.com/niivue/mono/pull/402))
+- **niivue:** maxTileTextureBytes sets a slide view's GPU tile budget ([07a2294d](https://github.com/niivue/mono/commit/07a2294d))
+
+### Fixes
+
+- resolve drawing reset and slide budget audit findings ([f3fd81d3](https://github.com/niivue/mono/commit/f3fd81d3))
+- **docs:** serialize slide budget demo rebuilds ([f4613733](https://github.com/niivue/mono/commit/f4613733))
+- **niivue:** redraw crosshair arms the volume render hides faintly ([3272f10f](https://github.com/niivue/mono/commit/3272f10f))
+
+### Documentation
+
+- ⚠️  Plugins section with live niimath and dcm2niix demos; retire nv-ext-niimath ([70072c67](https://github.com/niivue/mono/commit/70072c67))
+
+### Chores
+
+- ⚠️  remove nv-ext-isosurface and the MCP add_isosurface tool ([#757](https://github.com/niivue/mono/issues/757))
+
+### Breaking Changes
+
+- Plugins section with live niimath and dcm2niix demos; retire nv-ext-niimath  ([70072c67](https://github.com/niivue/mono/commit/70072c67))
+  @niivue/nv-ext-niimath is removed (deprecated on npm);
+  use @niivue/niimath directly.
+- remove nv-ext-isosurface and the MCP add_isosurface tool  ([#757](https://github.com/niivue/mono/issues/757))
+  @niivue/nv-ext-isosurface is removed, and nv-mcp no longer
+  offers add_isosurface or NiiVueHost.isosurface.
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.204 (2026-11-14)
 
 ### Features

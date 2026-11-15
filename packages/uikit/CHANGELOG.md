@@ -1,3 +1,21 @@
+## 1.0.0-rc.203 (2026-11-15)
+
+### Features
+
+- **uikit:** calipers, tiles and slide demo polish ([a6e52e26](https://github.com/niivue/mono/commit/a6e52e26))
+
+### Fixes
+
+- **niivue:** redraw crosshair arms the volume render hides faintly ([3272f10f](https://github.com/niivue/mono/commit/3272f10f))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.205
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.202 (2026-11-14)
 
 ### Features

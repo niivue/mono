@@ -355,6 +355,141 @@ test('Escape mid-drag cancels a bidirectional short axis (#471)', async ({
   })
 })
 
+test('Escape mid-drag cancels a half-placed angle', async ({ page }) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    nv.annotationIsEnabled = false
+    nv.primaryDragMode = 7 // DRAG_MODE.angle
+    await drawn()
+    drag([150, 200], [250, 200])
+    const open = nv._angleState
+    // Press to place the second arm, then Escape before releasing.
+    ev('pointerdown', 250, 120, 0)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    const view = [nv.azimuth, nv.elevation]
+    ev('pointermove', 290, 160, -1)
+    const turned = nv.azimuth !== view[0] || nv.elevation !== view[1]
+    const dragging = nv.isDragging
+    ev('pointerup', 290, 160, 0)
+    return { open, state: nv._angleState, angles: nv.model.completedAngles.length, dragging, turned }
+  })()`)
+  expect(r).toEqual({
+    open: 'drawing_second_line',
+    state: 'none',
+    angles: 0,
+    dragging: false,
+    turned: false,
+  })
+})
+
+test('an angle on a sheared slice is measured in mm; clearAngles drops an open one', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional', "'/volumes/shear.nii.gz'")}
+    nv.annotationIsEnabled = false
+    nv.primaryDragMode = 7 // DRAG_MODE.angle
+    await drawn()
+    // Arms at +-45 degrees on screen: 90 on screen, not on the tilted slice.
+    drag([140, 140], [200, 200])
+    click([260, 140])
+    const a = nv.model.completedAngles[0]
+    const sub = (p, q) => p.map((x, i) => x - q[i])
+    const u = sub(a.firstLine.startMM, a.firstLine.endMM)
+    const w = sub(a.secondLine.endMM, a.secondLine.startMM)
+    const dot = u.reduce((s, x, i) => s + x * w[i], 0)
+    const mmAngle = (Math.acos(dot / Math.hypot(...u) / Math.hypot(...w)) * 180) / Math.PI
+    drag([140, 300], [200, 330])
+    nv.clearAngles()
+    click([260, 300])
+    return { angle: a.angle, mmAngle, after: nv.model.completedAngles.length, state: nv._angleState }
+  })()`)
+  expect(r.angle).toBeCloseTo(r.mmAngle, 3)
+  expect(Math.abs(r.angle - 90)).toBeGreaterThan(1)
+  expect([r.after, r.state]).toEqual([0, 'none'])
+})
+
+test('an angle drag on another tile starts a new angle there', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('MULTIPLANAR', 'bidirectional')}
+    nv.annotationIsEnabled = false
+    nv.primaryDragMode = 7 // DRAG_MODE.angle
+    await drawn()
+    const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
+    const [cx, cy] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.CORONAL)
+    drag([ax - 30, ay], [ax + 10, ay])
+    const view = [nv.azimuth, nv.elevation]
+    drag([cx - 30, cy], [cx + 10, cy])
+    const out = {
+      state: nv._angleState,
+      sliceType: nv.view.screenSlices[nv._angleArm.hit.tileIndex].axCorSag,
+      turned: nv.azimuth !== view[0] || nv.elevation !== view[1],
+    }
+    // A layout change that puts another plane on that tile drops the angle.
+    nv.sliceType = SLICE_TYPE.SAGITTAL
+    await drawn()
+    ev('pointermove', 200, 200, -1, PointerEvent, 0)
+    return { ...out, afterLayout: nv._angleState }
+  })()`)
+  expect(r).toEqual({
+    state: 'drawing_second_line',
+    sliceType: 1,
+    turned: false,
+    afterLayout: 'none',
+  })
+})
+
+test('scrolling to another slice between the arms drops the angle', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    nv.annotationIsEnabled = false
+    nv.primaryDragMode = 7 // DRAG_MODE.angle
+    await drawn()
+    drag([160, 200], [260, 200])
+    const z = nv.crosshairPos[2]
+    for (let i = 0; i < 6; i++)
+      c.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: r.left + 200, clientY: r.top + 200, bubbles: true, cancelable: true }))
+    await drawn()
+    ev('pointermove', 260, 100, -1, PointerEvent, 0)
+    click([260, 100])
+    return { scrolled: nv.crosshairPos[2] !== z, state: nv._angleState, angles: nv.model.completedAngles.length }
+  })()`)
+  expect(r).toEqual({ scrolled: true, state: 'none', angles: 0 })
+})
+
+test('zoom between the arms moves the first arm with the image', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    nv.annotationIsEnabled = false
+    nv.primaryDragMode = 7 // DRAG_MODE.angle
+    nv.secondaryDragMode = 3 // DRAG_MODE.pan: the wheel zooms
+    await drawn()
+    drag([160, 200], [260, 200])
+    for (let i = 0; i < 6; i++)
+      c.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: r.left + 200, clientY: r.top + 200, bubbles: true, cancelable: true }))
+    await drawn()
+    ev('pointermove', 250, 120, -1, PointerEvent, 0)
+    const arm = nv.model._dragOverlay.lines[0]
+    // Perpendicular to the drawn (moved) arm at its vertex.
+    const [vx, vy] = arm.endXY
+    click([vx, vy - 80])
+    return { start: arm.startXY, angle: nv.model.completedAngles[0]?.angle }
+  })()`)
+  expect(r.start[0]).not.toBeCloseTo(160, 0)
+  expect(r.angle).toBeCloseTo(90, 0)
+})
+
 for (const [name, call] of [
   ['loadVolumes', `await nv.loadVolumes([{ url: synth() }])`],
   ['removeAllVolumes', 'await nv.removeAllVolumes()'],

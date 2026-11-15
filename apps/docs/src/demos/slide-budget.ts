@@ -57,6 +57,7 @@ const demo: Demo = async (canvas, { ui }) => {
       maxTileTextureBytes: want.gpu * MiB,
       controller: { secondaryDragMode: DRAG_MODE.roiSelection },
     })
+    canvas = view.canvas
     view.setSlide(slide, { fit: !old })
     // After the last await, so a Detail or Level change made during it holds.
     slide.targetScreenPixelsPerTilePixel = detail

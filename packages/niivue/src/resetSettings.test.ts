@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { snapshotSettings } from '@/documentEvents'
 import NiiVue, { SLICE_TYPE } from '@/index'
 import { devImageUrl } from '@/testing/headless'
@@ -79,4 +79,36 @@ test('reset emits a change per changed setting and a volume update', async () =>
   changed.length = 0
   await nv.resetSettings()
   expect(changed).toEqual([])
+})
+
+test('reset recolors a preserved drawing and refreshes its opacity', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadVolumes([{ url: SPHERE }])
+  nv.createEmptyDrawing()
+  const drawing = nv.drawingVolume
+  const bitmap = drawing?.img
+  if (!bitmap) throw new Error('Expected a drawing bitmap')
+  bitmap.fill(1)
+  nv.drawColormap = nv.addColormap('resetDrawing', {
+    R: [0, 1],
+    G: [0, 2],
+    B: [0, 3],
+    labels: ['air', 'label'],
+  })
+  nv.drawOpacity = 0.2
+  expect(nv.drawingToSVG(SLICE_TYPE.AXIAL, 0)).toContain('#010203')
+  const refresh = spyOn(nv, 'refreshDrawing')
+  try {
+    await nv.resetSettings()
+    expect(nv.drawingVolume).toBe(drawing)
+    expect(bitmap.every((v) => v === 1)).toBe(true)
+    expect(nv.drawColormap).toBe('Draw')
+    expect(nv.drawOpacity).toBe(0.8)
+    expect(nv.drawingToSVG(SLICE_TYPE.AXIAL, 0)).toContain('#ff0000')
+    expect(nv.drawingToSVG(SLICE_TYPE.AXIAL, 0)).not.toContain('#010203')
+    expect(refresh).toHaveBeenCalled()
+  } finally {
+    refresh.mockRestore()
+    nv.destroy()
+  }
 })

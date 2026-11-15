@@ -3,8 +3,10 @@
  * relative to it. A new connectome reader must be added here; `src/registry.test.ts`
  * fails when a file in this directory is missing from the registry.
  */
+import * as fsPointset from './fsPointset'
 import * as jcon from './jcon'
 
 export const connectomeReaderModules = {
+  './fsPointset.ts': fsPointset,
   './jcon.ts': jcon,
 }

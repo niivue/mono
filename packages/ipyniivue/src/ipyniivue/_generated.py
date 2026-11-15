@@ -1501,6 +1501,24 @@ and its volumes alive."""
         """
         self.send({"cmd": "resetChunkTiming", "args": []})
 
+    def reset_settings(self) -> None:
+        """Return every viewer setting to its built-in default, for deterministic scripted setup (the 0.x `setDefaults`).
+
+        Resets the scene settings and the
+        eight config groups (layout, UI, volume, mesh, draw, interaction,
+        annotation) and windows each loaded volume to its robust range.
+        Constructor options and the document fill policy do not apply: the result
+        is the same whatever ran before. `isDragDropEnabled` is left as the host
+        set it: it says who owns drops, not how the viewer looks.
+
+        Loaded data stays: volumes, meshes, signals, drawing voxels, annotations
+        and clip planes are kept, as are per-volume and per-mesh display options
+        other than the volume window (colormap, opacity, mesh layers). Emits a
+        `change` event per setting that changed and `volumeUpdated` per volume,
+        then redraws; resolves once applied.
+        """
+        self.send({"cmd": "resetSettings", "args": []})
+
     def reset_volume_affine(self, volume_index: Any) -> None:
         self.send({"cmd": "resetVolumeAffine", "args": _make_args(volume_index)})
 

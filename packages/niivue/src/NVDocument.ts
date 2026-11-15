@@ -790,9 +790,16 @@ export function deserialize(data: Uint8Array): NVDocumentData {
   return doc
 }
 
-export function applyDocumentToModel(
+/**
+ * Write a document's settings into the model: the scene settings and the eight
+ * config groups (layout, UI, volume, mesh, draw, interaction, annotation). A
+ * setting the document omits is filled per `fill` (default: its built-in
+ * default). Data (volumes, meshes, signals, annotations, clip planes) is left
+ * alone, so `applySettingsToModel(model, {})` resets every setting.
+ */
+export function applySettingsToModel(
   model: NVModel,
-  doc: NVDocumentData,
+  doc: Partial<NVDocumentData>,
   fill?: SettingsFillPolicy,
 ): void {
   // Apply scene state. Sparse (v9+) documents omit any field left at its default;
@@ -947,16 +954,6 @@ export function applyDocumentToModel(
       fill,
     ),
   )
-  // annotation config resolved the same way, after the annotations array below
-
-  // Apply clip planes (an omitted list leaves the instance's planes alone).
-  const clipPlanes = doc.clipPlanes ?? []
-  for (let i = 0; i < clipPlanes.length && i < model.clipPlanes.length; i++) {
-    model.clipPlanes[i] = clipPlanes[i]
-  }
-
-  // Restore annotations (v7+); clear if not present to avoid stale state
-  model.annotations = doc.annotations ?? []
   // annotation config resolves like the other groups (doc wins; omitted ->
   // default or current per `fill`).
   Object.assign(
@@ -969,6 +966,23 @@ export function applyDocumentToModel(
       fill,
     ),
   )
+}
+
+export function applyDocumentToModel(
+  model: NVModel,
+  doc: NVDocumentData,
+  fill?: SettingsFillPolicy,
+): void {
+  applySettingsToModel(model, doc, fill)
+
+  // Apply clip planes (an omitted list leaves the instance's planes alone).
+  const clipPlanes = doc.clipPlanes ?? []
+  for (let i = 0; i < clipPlanes.length && i < model.clipPlanes.length; i++) {
+    model.clipPlanes[i] = clipPlanes[i]
+  }
+
+  // Restore annotations (v7+); clear if not present to avoid stale state
+  model.annotations = doc.annotations ?? []
 
   // Restore signals (data is embedded, so no async fetch is needed). Route each
   // through addSignal so unique-id handling and graph-cache invalidation run (a

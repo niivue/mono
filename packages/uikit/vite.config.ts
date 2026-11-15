@@ -13,7 +13,14 @@ import dts from 'vite-plugin-dts'
 // (.github/build-pages.sh): VITE_BASE is their folder (e.g. /mono/uikit/) and
 // VITE_IMAGES_BASE the shared site root whose dev-images they load, as the
 // demo apps do (apps/demo-ext-drawing/vite.config.js).
-const DEMO_PAGES = ['index', 'buttons', 'calipers', 'volume', 'slide', 'slide-wsi']
+const DEMO_PAGES = [
+  'index',
+  'buttons',
+  'calipers',
+  'volume',
+  'slide',
+  'slide-wsi',
+]
 
 function imagesBaseRewrite(imagesBase: string): Plugin {
   return {

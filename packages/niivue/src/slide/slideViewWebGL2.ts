@@ -10,14 +10,17 @@ import {
 /** WebGL2 renderer factory for `createSlideViewWith`. */
 export const webgl2SlideBackend: SlideBackendFactory = {
   kind: 'webgl2',
-  async create(canvas, { antialias, preserveDrawingBuffer, maxRawPoolBytes }) {
+  async create(
+    canvas,
+    { antialias, preserveDrawingBuffer, maxRawPoolBytes, maxTileTextureBytes },
+  ) {
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias,
       preserveDrawingBuffer,
     })
     if (!gl) return null
-    const renderer = new SlideRenderer({ maxRawPoolBytes })
+    const renderer = new SlideRenderer({ maxRawPoolBytes, maxTileTextureBytes })
     try {
       renderer.init(gl)
     } catch (err) {

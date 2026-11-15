@@ -28,13 +28,17 @@ import {
 /** GPU budget for raw layers, carved out of the tile texture budget. */
 export const DEFAULT_RAW_POOL_BYTES = 32 * 1024 * 1024
 
-/** A renderer's tile texture budget: what its raw pool leaves of 128 MiB. */
-export const tileTextureBudget = (maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) =>
-  Math.max(0, DEFAULT_TILE_TEXTURE_BYTES - maxRawPoolBytes)
+/** A renderer's tile texture budget: what its raw pool leaves of its total. */
+export const tileTextureBudget = (
+  maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES,
+  totalBytes = DEFAULT_TILE_TEXTURE_BYTES,
+) => Math.max(0, totalBytes - maxRawPoolBytes)
 
-/** `maxRawPoolBytes` clamped to [0, 64 MiB] so tile textures keep >= 64 MiB. */
-export const rawPoolBytes = (maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES) =>
-  Math.min(Math.max(0, maxRawPoolBytes), DEFAULT_TILE_TEXTURE_BYTES / 2)
+/** `maxRawPoolBytes` clamped to [0, half the total] so tile textures keep the other half. */
+export const rawPoolBytes = (
+  maxRawPoolBytes = DEFAULT_RAW_POOL_BYTES,
+  totalBytes = DEFAULT_TILE_TEXTURE_BYTES,
+) => Math.min(Math.max(0, maxRawPoolBytes), totalBytes / 2)
 
 /** The tile texture and raw pool bytes a renderer states to its slides. */
 export interface SlideRendererBudget {
@@ -60,6 +64,7 @@ export class SlideBudgetRegistration {
   constructor(
     private readonly _renderer: object,
     private readonly _rawPoolBytes: number,
+    private readonly _tileBytes = DEFAULT_TILE_TEXTURE_BYTES,
   ) {
     this._budget = this._share(1)
     this._mixedBudget = this._share(2)
@@ -67,7 +72,7 @@ export class SlideBudgetRegistration {
 
   private _share(n: number): SlideRendererBudget {
     return {
-      tileBytes: DEFAULT_TILE_TEXTURE_BYTES / n,
+      tileBytes: this._tileBytes / n,
       rawPoolBytes: this._rawPoolBytes / n,
     }
   }
@@ -106,9 +111,15 @@ export class SlideBudgetRegistration {
 /** Options of `SlideRenderer` and `SlideRendererGPU.create`. */
 export interface SlideRendererOptions {
   /**
+   * GPU bytes for 2D slide tile textures, raw pool included (default 128 MiB).
+   * Shared evenly by the slides the renderer draws. A smaller budget makes
+   * the auto level step down sooner (`limitedBy: 'texture'`).
+   */
+  maxTileTextureBytes?: number
+  /**
    * GPU bytes for raw channel layers of scalar tiles (default 32 MiB), carved
-   * out of the 128 MiB tile texture budget. 0 keeps raw layers on the CPU
-   * only: every W/L change then re-uploads them. Clamped to [0, 64 MiB].
+   * out of `maxTileTextureBytes`. 0 keeps raw layers on the CPU only: every
+   * W/L change then re-uploads them. Clamped to [0, half the tile budget].
    */
   maxRawPoolBytes?: number
 }

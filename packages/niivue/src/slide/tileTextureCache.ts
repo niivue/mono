@@ -58,6 +58,11 @@ export class TileTextureCache<T> {
     return this._entries.size
   }
 
+  /** The byte budget this cache was made with. */
+  get maxBytes(): number {
+    return this._maxBytes
+  }
+
   /** Start a new draw pass; entries touched from here on are eviction-exempt. */
   beginFrame(): void {
     this._frame++

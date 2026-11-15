@@ -728,6 +728,24 @@ describe('rawPoolBytes', () => {
     expect(rawPoolBytes(-1)).toBe(0)
     expect(tileTextureBudget(rawPoolBytes(256 * MiB))).toBe(64 * MiB)
   })
+
+  it('follows a custom maxTileTextureBytes', () => {
+    const MiB = 1024 * 1024
+    expect(rawPoolBytes(32 * MiB, 32 * MiB)).toBe(16 * MiB)
+    expect(tileTextureBudget(16 * MiB, 32 * MiB)).toBe(16 * MiB)
+    type Budget = { tileBytes: number; rawPoolBytes: number } | null
+    const slide = {
+      budget: null as Budget,
+      manifest: { channelInfo: [{ name: 'c', active: true }] },
+      setRendererBudget(_r: object, b: Budget) {
+        slide.budget = b
+      },
+    }
+    new SlideBudgetRegistration({}, 8 * MiB, 32 * MiB).sync([
+      slide,
+    ] as unknown as NVSlide[])
+    expect(slide.budget).toEqual({ tileBytes: 32 * MiB, rawPoolBytes: 8 * MiB })
+  })
 })
 
 describe('tileTextureBudget', () => {

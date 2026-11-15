@@ -1,4 +1,4 @@
-import { type vec2, type vec3, vec4 } from 'gl-matrix'
+import { vec2, type vec3, vec4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import { annotationDelta } from '@/annotation/delta'
@@ -70,6 +70,7 @@ import { drawUndo, setDrawingBitmap } from '@/drawing/undo'
 import { NVExtensionContext } from '@/extension/context'
 import { type LogLevel, log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
+import { isFsPointset } from '@/mesh/connectome/readers/fsPointset'
 import * as NVMeshLayers from '@/mesh/layers'
 import * as NVMesh from '@/mesh/NVMesh'
 import { clearMeshClusters } from '@/mesh/triangleClusters'
@@ -93,6 +94,7 @@ import {
   type OVERLAY_ALPHA_BLEND,
   type OVERLAY_COLOR_BLEND,
   type PEN_SHAPE,
+  SCENE_DEFAULTS,
   SLICE_TYPE,
   sliceTypeDim,
   VOLUME_DEFAULTS,
@@ -4159,8 +4161,9 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Load local files as a drag and drop does: an `.nvd` opens as a document,
-   * and a `.json` is not loaded itself but applied as the sidecar of the data
-   * file sharing its basename. Each other file is loaded with
+   * a FreeSurfer pointset `.json` loads as a connectome, and any other `.json`
+   * is not loaded itself but applied as the sidecar of the data file sharing
+   * its basename. Each other file is loaded with
    * {@link addImage} when `add`, else {@link loadImage}. A file that fails is
    * logged and the rest still load.
    * @example
@@ -4173,13 +4176,13 @@ export default class NiiVue extends EventTarget {
     // Keyed by lowercased name so pairing is case-insensitive; the browser
     // cannot fetch a sibling .json it was not given.
     const sidecars = new Map<string, ReturnType<typeof parseSidecar>>()
+    const pointsets = new Set<File>()
     for (const f of files) {
       if (f.name.toLowerCase().endsWith('.json')) {
         try {
-          sidecars.set(
-            f.name.toLowerCase(),
-            parseSidecar(JSON.parse(await f.text())),
-          )
+          const json = JSON.parse(await f.text())
+          if (isFsPointset(json)) pointsets.add(f)
+          else sidecars.set(f.name.toLowerCase(), parseSidecar(json))
         } catch (err) {
           log.error('Failed to parse sidecar:', f.name, err)
         }
@@ -4187,7 +4190,7 @@ export default class NiiVue extends EventTarget {
     }
     for (const file of files) {
       const lower = file.name.toLowerCase()
-      if (lower.endsWith('.json')) continue
+      if (lower.endsWith('.json') && !pointsets.has(file)) continue
       try {
         if (lower.endsWith('.nvd')) {
           await this.loadDocument(file)
@@ -8184,6 +8187,41 @@ export default class NiiVue extends EventTarget {
       for (const s of sp.vectorShapes) this._slideVector.add({ ...s })
       this._refreshSlideAnnotation()
     }
+  }
+
+  /**
+   * Return every viewer setting to its built-in default, for deterministic
+   * scripted setup (the 0.x `setDefaults`). Resets the scene settings and the
+   * eight config groups (layout, UI, volume, mesh, draw, interaction,
+   * annotation) and windows each loaded volume to its robust range.
+   * Constructor options and the document fill policy do not apply: the result
+   * is the same whatever ran before. `isDragDropEnabled` is left as the host
+   * set it: it says who owns drops, not how the viewer looks.
+   *
+   * Loaded data stays: volumes, meshes, signals, drawing voxels, annotations
+   * and clip planes are kept, as are per-volume and per-mesh display options
+   * other than the volume window (colormap, opacity, mesh layers). Emits a
+   * `change` event per setting that changed and `volumeUpdated` per volume,
+   * then redraws; resolves once applied.
+   * @example await nv1.resetSettings()
+   */
+  async resetSettings(): Promise<void> {
+    const settingsBefore = snapshotSettings(this.model)
+    NVDocument.applySettingsToModel(this.model, {})
+    // Scene settings documents do not carry, so the shared fill leaves them.
+    this.model.scene.renderPan = vec2.fromValues(...SCENE_DEFAULTS.renderPan)
+    this.model.scene.clipPlaneOverlay = SCENE_DEFAULTS.clipPlaneOverlay
+    // As a fresh viewer: the first registered matcap, not VOLUME_DEFAULTS' none.
+    this.model.volume.matcap = defaultMatcap(this.opts.matcaps)
+    this.emitSettingsChanges(settingsBefore)
+    const volumes = this.model.getVolumes()
+    for (let i = 0; i < volumes.length; i++) {
+      const { robustMin, robustMax } = volumes[i]
+      await this.setVolume(i, { calMin: robustMin, calMax: robustMax })
+    }
+    await this._updateGLChanged()
+    // fontScale/fontMinSize take effect at resize, as after loadDocument.
+    this.resize()
   }
 
   saveDocument(

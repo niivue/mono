@@ -3454,6 +3454,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "resetSettings",
+      "pyName": "reset_settings",
+      "isAsync": true,
+      "returnsValue": false,
+      "params": [],
+      "returns": "Promise<void>",
+      "doc": "Return every viewer setting to its built-in default, for deterministic\nscripted setup (the 0.x `setDefaults`). Resets the scene settings and the\neight config groups (layout, UI, volume, mesh, draw, interaction,\nannotation) and windows each loaded volume to its robust range.\nConstructor options and the document fill policy do not apply: the result\nis the same whatever ran before. `isDragDropEnabled` is left as the host\nset it: it says who owns drops, not how the viewer looks.\n\nLoaded data stays: volumes, meshes, signals, drawing voxels, annotations\nand clip planes are kept, as are per-volume and per-mesh display options\nother than the volume window (colormap, opacity, mesh layers). Emits a\n`change` event per setting that changed and `volumeUpdated` per volume,\nthen redraws; resolves once applied.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "resetVolumeAffine",
       "pyName": "reset_volume_affine",
       "isAsync": true,

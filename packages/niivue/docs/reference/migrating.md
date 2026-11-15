@@ -174,6 +174,13 @@ Complete mapping from old property names/locations to new API.
 | `setScale(v)` | `nv1.scaleMultiplier = v` |
 | `setDragMode(v)` | still exists as method (for string-to-number mapping) |
 
+## Renamed Controller Methods
+
+| Old Method | New Method |
+|------------|-----------|
+| `setDefaults(opts, resetBriCon)` | `await nv1.resetSettings()`, then set any options: every setting to its built-in default, and each volume windowed to its robust range |
+| `saveScene(filename)` (a PNG screenshot) | `nv1.saveBitmap(filename)`; scene documents are `saveDocument` |
+
 ## Annotation Options
 
 | Old | New (`model.annotation.*`) | Controller Access |

@@ -12,6 +12,7 @@ packages/dev-images/images/**/*.trk filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.tck filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.vtk filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.pial filter=lfs diff=lfs merge=lfs -text
+packages/dev-images/images/**/*.annot filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.curv filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.jcon filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.tsf filter=lfs diff=lfs merge=lfs -text

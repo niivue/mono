@@ -531,8 +531,9 @@ export function dragForWindowing(
   if (!vol) return
 
   const range = vol.robustMax - vol.robustMin
-  const widthStep = range * 0.005
-  const centerStep = range * 0.005
+  const [widthGain, centerGain] = ctrl.model.interaction.windowingStep
+  const widthStep = range * widthGain
+  const centerStep = range * centerGain
 
   const width = vol.calMax - vol.calMin
   const center = (vol.calMax + vol.calMin) * 0.5

@@ -1199,6 +1199,12 @@ export type InteractionConfig = {
   // window stays put and the crosshair may leave it. Explicit pan/zoom
   // gestures are never fought.
   isPanFollowingCrosshair: boolean
+  /**
+   * Windowing drag gain, [width, center], as fractions of the base volume's
+   * robust range per pixel. Default [0.005, 0.005]: right widens, up raises the
+   * center. A negative center step makes dragging down raise it (cornerstone).
+   */
+  windowingStep: [number, number]
 }
 
 // ============================================================
@@ -1506,6 +1512,8 @@ export type NiiVueOptions = {
   wheelZoomAnchor?: WheelZoomAnchor
   isViewModeHotKeyEnabled?: boolean
   isPanFollowingCrosshair?: boolean
+  /** Windowing drag gain. See InteractionConfig.windowingStep. */
+  windowingStep?: [number, number]
   isLegendToggleEnabled?: boolean
 
   // Annotation (prefixed)

@@ -8,6 +8,15 @@ nav a[aria-current] {
   font-weight: 600;
   text-decoration: none;
 }
+/* One fixed-height row on every page, so switching pages never moves the
+   canvas; a toolbar wider than the window scrolls instead of wrapping. */
+header {
+  box-sizing: border-box;
+  height: 42px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow-x: auto;
+}
 header .backend {
   margin-left: auto;
 }

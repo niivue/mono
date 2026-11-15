@@ -21,7 +21,9 @@
     <div id="wrap">
       <header>
         <b>UIKit</b>
-        <nav><a href="./index.html">controls</a><a href="./ruler.html">ruler</a><a href="./volume.html">volume</a><a href="./slide.html" aria-current="page">slide (3D)</a><a href="./slide-wsi.html">WSI</a><a href="./buttons.html">buttons</a></nav>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./slide.html" aria-current="page">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a></nav>
+        <label title="3D render zoom: the calipers stay put, they measure the canvas, not the scene">zoom <input id="zoom" type="range" min="0.5" max="2" step="0.05" value="1" style="vertical-align:middle" /></label>
+        <label title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
         <label title="A lens following the pointer"><input id="magnify" type="checkbox" autocomplete="off" /> magnifier</label>
         <label class="backend">backend <select id="backendSelect">
           <option value="webgl2">webgl2</option>
@@ -29,7 +31,7 @@
         </select></label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
-      <footer><span id="help">A whole-slide image on a plane in the volume. Click two points to measure.</span><span id="status" data-state="wait">Loading slide...</span></footer>
+      <footer><span id="help">A whole-slide image on a plane in the volume. Click two points to measure in canvas pixels.</span><span id="status" data-state="wait">Loading slide...</span></footer>
     </div>
 
     <script type="module">
@@ -114,7 +116,8 @@
       })
 
       // The slide is drawn in the 3D render tile, which has no 2D-slice mm
-      // pick, so this ruler measures in screen pixels. Single clicks place the
+      // pick, so this ruler measures canvas (backing-store) pixels: device
+      // pixels with Retina on, CSS pixels with it off. Single clicks place the
       // endpoints (a click is not a drag, so it does not orbit the camera).
       const COLOR = [1, 0.85, 0, 1]
       const toDevice = (ev) => {
@@ -125,6 +128,17 @@
         ]
       }
       let anchor = null
+      document.getElementById('zoom').addEventListener('input', (ev) => {
+        nv.scaleMultiplier = Number(ev.target.value)
+      })
+      // A new pixel ratio rescales the canvas, so endpoints placed in the old
+      // canvas pixels no longer line up: start over.
+      document.getElementById('retina').addEventListener('change', (ev) => {
+        nv.devicePixelRatio = ev.target.checked ? -1 : 1
+        anchor = null
+        ruler.clear()
+        setStatus('Waiting for first click', 'wait')
+      })
       // Distinguish a measurement click from an orbit drag: only a pointer that
       // barely moved between down and up places a ruler point.
       let downAt = null

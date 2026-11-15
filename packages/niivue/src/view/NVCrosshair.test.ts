@@ -24,8 +24,10 @@ describe('hiddenArmAlpha', () => {
     expect(hiddenArmAlpha(0.5, SLICE_TYPE.AXIAL, OBLIQUE)).toBe(0)
   })
 
-  test('render tiles never redraw hidden arms', () => {
-    expect(hiddenArmAlpha(0, SLICE_TYPE.RENDER, OBLIQUE)).toBe(0)
+  test('render tiles redraw hidden arms on any volume, as NiiVue 0.x', () => {
+    expect(hiddenArmAlpha(0, SLICE_TYPE.RENDER, 0)).toBe(0.15)
+    expect(hiddenArmAlpha(0, SLICE_TYPE.RENDER, OBLIQUE)).toBe(0.15)
+    expect(hiddenArmAlpha(0.3, SLICE_TYPE.RENDER, 0)).toBe(0)
   })
 })
 

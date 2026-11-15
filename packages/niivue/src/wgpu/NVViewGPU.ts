@@ -1523,7 +1523,7 @@ export default class NVView {
             tile.axCorSag,
             chSlot,
           )
-          // Before the meshes, so only the slice can hide what this reveals.
+          // Before the meshes, so only the slice or volume can hide what this reveals.
           // Takes the mesh x-ray pass's uniform slot, which is idle while
           // mesh x-ray is off.
           const hiddenAlpha = hiddenArmAlpha(

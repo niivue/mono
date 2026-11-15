@@ -126,7 +126,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Colorbar visibility | ✅ | `isColorbarVisible` |
 | Ruler visibility | ✅ | `isRulerVisible` (2D tiles, mosaic render tiles; not `global3d`, whose camera is perspective); `rulerUnits` fixes the unit |
 | Orient cube visibility | ✅ | `isOrientCubeVisible` |
-| 3D crosshair visibility | ✅ | `is3DCrosshairVisible` |
+| 3D crosshair visibility | ✅ | `is3DCrosshairVisible`. Arms the volume render hides are redrawn at 15% opacity, as 0.x (`hiddenArmAlpha`; off while `meshXRay` > 0, which redraws them itself) |
 | Radiological convention | ✅ | `isRadiological` |
 | Sagittal nose left (`sagittalNoseLeft`) | ✅ | `isSagittalNoseLeft`, independent of `isRadiological` as in the old package. Default `null` follows `isRadiological` (radiological: nose left), so unset scenes and documents render as before; `true`/`false` override. Classic NVD `opts.sagittalNoseLeft` is mapped |
 | 2D rotate / flip | ✅ | New (not in the old package; for OHIF viewport rotate/flip): `rotation2D`, `isFlipped2DHorizontal`, `isFlipped2DVertical`. `rotate2D(quarterTurns)` / `flip2D(axis)` act on screen. Slice tiles only, both backends; labels, ruler and picking follow |

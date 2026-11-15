@@ -125,16 +125,19 @@ export function shouldCullCylinder(cylIdx: number, sliceType: number): boolean {
 const HIDDEN_ARM_ALPHA = 0.15
 
 /**
- * Opacity for redrawing the arms a 2D slice hides, or 0 for none. Only an
- * oblique base volume (`obliqueAngle` > 0) tilts its slices. Mesh x-ray already
- * redraws hidden arms after the meshes, so this applies only while it is off.
+ * Opacity for redrawing the arms a slice or the volume render hides, or 0 for
+ * none. Render tiles always show them faintly, as NiiVue 0.x did; a 2D slice
+ * hides arms only when an oblique base volume (`obliqueAngle` > 0) tilts it.
+ * Mesh x-ray already redraws hidden arms after the meshes, so this applies
+ * only while it is off.
  */
 export function hiddenArmAlpha(
   meshXRay: number,
   sliceType: number,
   obliqueAngle: number,
 ): number {
-  if (meshXRay > 0 || obliqueAngle <= 0) return 0
-  if (sliceType === NVConstants.SLICE_TYPE.RENDER) return 0
-  return HIDDEN_ARM_ALPHA
+  if (meshXRay > 0) return 0
+  if (sliceType === NVConstants.SLICE_TYPE.RENDER || obliqueAngle > 0)
+    return HIDDEN_ARM_ALPHA
+  return 0
 }

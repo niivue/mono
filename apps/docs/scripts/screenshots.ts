@@ -43,13 +43,6 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.click('#applyBtn') // the options dialog, left at its defaults
     return undefined
   },
-  'demo-ext-niimath': async (page) => {
-    await page.click('.tab-btn[data-tab="tools"]')
-    await page.selectOption('#operatorSelect', '-s') // Gaussian smoothing, 3 mm
-    await page.click('#addOperatorBtn')
-    await page.click('#runBtn:not([disabled])')
-    return undefined
-  },
   'demo-ext-save-html': async (page) => {
     await page.selectOption('#sliceType', '2') // a single sagittal slice
     return undefined
@@ -92,10 +85,6 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.selectOption('#sliceType', '3') // A+C+S+R shows the filled run
     return undefined
   },
-  'demo-ext-dcm2niix': async (page) => {
-    await page.click('#loadManifestBtn')
-    return undefined
-  },
   'demo-nv-web-component': async (page) => {
     await page.click('#loadViewerBtn')
     await page.click('#loadSceneBtn')
@@ -136,12 +125,9 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
 
 // Examples that stream for a while before their first useful frame.
 const SLOW: Record<string, number> = {
-  'demo-ext-niimath': 10000,
   // Path-traced: give the progressive render time to converge.
   'cinematic-mr-siam': 10000,
   'cinematic-mr-mni152-tract': 10000,
-  // Fetches a DICOM series and converts it in WASM.
-  'demo-ext-dcm2niix': 15000,
   // The DICOM-WSI slide streams its tiles from the network.
   slides: 8000,
   'vox-block-pick': 8000,

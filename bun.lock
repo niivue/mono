@@ -25,16 +25,6 @@
         "vite": "^8.3.8",
       },
     },
-    "apps/demo-ext-dcm2niix": {
-      "name": "demo-ext-dcm2niix",
-      "dependencies": {
-        "@niivue/dcm2niix": "^1.4.20261105-rc.3",
-        "@niivue/niivue": "workspace:*",
-      },
-      "devDependencies": {
-        "vite": "^8.3.8",
-      },
-    },
     "apps/demo-ext-drawing": {
       "name": "demo-ext-drawing",
       "dependencies": {
@@ -63,17 +53,6 @@
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
         "@niivue/nv-ext-image-processing": "workspace:*",
-      },
-      "devDependencies": {
-        "vite": "^8.3.8",
-      },
-    },
-    "apps/demo-ext-niimath": {
-      "name": "demo-ext-niimath",
-      "dependencies": {
-        "@niivue/dev-images": "workspace:*",
-        "@niivue/niivue": "workspace:*",
-        "@niivue/nv-ext-niimath": "workspace:*",
       },
       "devDependencies": {
         "vite": "^8.3.8",
@@ -136,6 +115,8 @@
       "dependencies": {
         "@astrojs/markdown-satteri": "0.4.9",
         "@astrojs/starlight": "0.42.11",
+        "@niivue/dcm2niix": "^1.4.20261105-rc.3",
+        "@niivue/niimath": "^1.4.20261114",
         "@niivue/niivue": "workspace:*",
         "astro": "7.4.11",
         "sharp": "^0.35.4",
@@ -281,18 +262,6 @@
       },
       "peerDependencies": {
         "@niivue/niivue": "workspace:*",
-      },
-    },
-    "packages/nv-ext-niimath": {
-      "name": "@niivue/nv-ext-niimath",
-      "version": "1.0.0-rc.162",
-      "dependencies": {
-        "@niivue/niimath": "^1.2.0",
-      },
-      "devDependencies": {
-        "typescript": "^5.9.3",
-        "vite": "^8.3.8",
-        "vite-plugin-dts": "^4.5.4",
       },
     },
     "packages/nv-ext-save-html": {
@@ -876,15 +845,13 @@
 
     "@niivue/geotiff-rs": ["@niivue/geotiff-rs@3.1.0-rc.0", "", { "dependencies": { "@petamoriken/float16": "^3.9.3", "lerc": "^3.0.0", "pako": "^2.0.4", "quick-lru": "^6.1.1", "web-worker": "^1.5.0", "xml-utils": "^1.10.2", "zstddec": "^0.2.0" } }, "sha512-mmaU08MDlhpMrMe7f6++6kqV8upfc327z1hmNzOn3TNPoZSbKKzlD1713AxMpj406ocS/EvpsUsmIBJoUhuJig=="],
 
-    "@niivue/niimath": ["@niivue/niimath@1.2.0", "", {}, "sha512-Llats13a09Pj9CRn0izLhG0TQ6sJ4ny5ZzQSbO8e4EjSpdLYM+amZA42ZuMAt+5k/N/Mh3mzt8423GcUkl0pig=="],
+    "@niivue/niimath": ["@niivue/niimath@1.4.20261114", "", {}, "sha512-Wy3mqz+G7Tn6/Ar/ce5Anj5loi98baBRn5rsRki23YKnzZpwp3uvjD18nv2cNQxhv4Qwltr7e95Aw6ntCp+g6w=="],
 
     "@niivue/niivue": ["@niivue/niivue@workspace:packages/niivue"],
 
     "@niivue/nv-ext-drawing": ["@niivue/nv-ext-drawing@workspace:packages/nv-ext-drawing"],
 
     "@niivue/nv-ext-image-processing": ["@niivue/nv-ext-image-processing@workspace:packages/nv-ext-image-processing"],
-
-    "@niivue/nv-ext-niimath": ["@niivue/nv-ext-niimath@workspace:packages/nv-ext-niimath"],
 
     "@niivue/nv-ext-save-html": ["@niivue/nv-ext-save-html@workspace:packages/nv-ext-save-html"],
 
@@ -1434,15 +1401,11 @@
 
     "delayed-stream": ["delayed-stream@1.0.0", "", {}, "sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ=="],
 
-    "demo-ext-dcm2niix": ["demo-ext-dcm2niix@workspace:apps/demo-ext-dcm2niix"],
-
     "demo-ext-drawing": ["demo-ext-drawing@workspace:apps/demo-ext-drawing"],
 
     "demo-ext-fullstack": ["demo-ext-fullstack@workspace:apps/demo-ext-fullstack"],
 
     "demo-ext-image-processing": ["demo-ext-image-processing@workspace:apps/demo-ext-image-processing"],
-
-    "demo-ext-niimath": ["demo-ext-niimath@workspace:apps/demo-ext-niimath"],
 
     "demo-ext-save-html": ["demo-ext-save-html@workspace:apps/demo-ext-save-html"],
 

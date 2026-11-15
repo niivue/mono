@@ -29,7 +29,6 @@ niivue/mono/
 │   ├── demo-ext-drawing/        Drawing extension demo
 │   ├── demo-ext-image-processing/ Image processing extension demo
 │   ├── demo-ext-save-html/      Save-to-HTML extension demo
-│   └── demo-ext-dcm2niix/       DICOM-to-NIfTI demo (@niivue/dcm2niix)
 ├── packages/
 │   ├── niivue/          @niivue/niivue — Core WebGPU/WebGL2 viewer
 │   ├── nv-react/        @niivue/nvreact — React bindings
@@ -65,7 +64,6 @@ NX tracks project dependencies to run tasks in the correct order:
 demo-ext-drawing ──→ nv-ext-drawing ──→ niivue
 demo-ext-image-processing ──→ nv-ext-image-processing ──→ niivue
 demo-ext-save-html ──→ nv-ext-save-html ──→ niivue
-demo-ext-dcm2niix ──→ niivue
 nv-react ──→ niivue
 ```
 

@@ -22,8 +22,6 @@ APPS=(
   demo-ext-drawing
   demo-ext-image-processing
   demo-ext-save-html
-  demo-ext-dcm2niix
-  demo-ext-niimath
   demo-ext-tile
   demo-nv-web-component
   dandi-demo

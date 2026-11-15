@@ -30,6 +30,8 @@ const guideGroups = [
       'guide/fonts',
     ],
   },
+  // Separate WebAssembly packages whose output NiiVue loads.
+  { label: 'Plugins', items: ['plugins/niimath', 'plugins/dcm2niix'] },
 ] satisfies Sidebar
 
 const resourcesGroup = {
@@ -59,7 +61,6 @@ export const PACKAGES = [
   { dir: 'niivue-swift', label: 'NiiVueKit' },
   { dir: 'niivue-web-bridge', label: 'web-bridge' },
   { dir: 'nv-ext-tile', label: 'nv-ext-tile' },
-  { dir: 'nv-ext-niimath', label: 'nv-ext-niimath' },
   { dir: 'nv-ext-image-processing', label: 'nv-ext-image-processing' },
   { dir: 'nv-ext-drawing', label: 'nv-ext-drawing' },
   { dir: 'nv-ext-save-html', label: 'nv-ext-save-html' },

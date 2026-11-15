@@ -69,6 +69,23 @@ export class DemoUI {
     return this.add(label, el)
   }
 
+  /** A file picker; `directory` picks a whole folder (e.g. a DICOM series). */
+  files(
+    label: string,
+    onPick: (files: File[]) => void,
+    { accept = '', directory = false } = {},
+  ): HTMLInputElement {
+    const el = document.createElement('input')
+    el.type = 'file'
+    el.multiple = true
+    el.accept = accept
+    el.webkitdirectory = directory
+    el.onchange = () => {
+      if (el.files?.length) onPick(Array.from(el.files))
+    }
+    return this.add(label, el)
+  }
+
   button(label: string, onClick: () => void): HTMLButtonElement {
     const el = document.createElement('button')
     el.type = 'button'

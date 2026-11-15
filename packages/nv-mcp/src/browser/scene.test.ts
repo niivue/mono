@@ -1767,7 +1767,6 @@ describe('load_ome_zarr', () => {
       ],
     ),
     omeZarrLabelColormap: mock(() => labelMap),
-    fetchOmeZarrChunkedSource: mock(async () => ({ channel: 0 })),
     streamOmeZarr: mock(async () => ({})),
   })
 
@@ -1848,100 +1847,6 @@ describe('load_ome_zarr', () => {
     await expect(
       coreHandlers(host()).load_ome_zarr({ url: 'https://x/s.ome.zarr' }),
     ).rejects.toThrow('did not provide the nv-ext-tile loaders')
-  })
-})
-
-describe('add_isosurface', () => {
-  it('surfaces one channel through the page loaders and frees the source', async () => {
-    const source = { channel: 1, dispose: mock() }
-    const zarr = { fetchOmeZarrChunkedSource: mock(async () => source) }
-    const mesh = { name: 'cells (level 2)' }
-    const iso = { channelIsosurfaces: mock(async () => [mesh]) }
-    const addMesh = mock(async () => {})
-    const view = fakeView({ addMesh })
-    const handlers = coreHandlers(
-      host(view, {
-        omeZarr: async () => zarr as never,
-        isosurface: async () => iso,
-      }),
-    )
-    const result = await handlers.add_isosurface({
-      url: 'https://x/s.ome.zarr',
-      channel: 1,
-      labels: [1, 7],
-      color: [1, 0, 0, 1],
-    })
-    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenCalledWith(
-      'https://x/s.ome.zarr',
-      { channel: 1, timepoint: undefined },
-    )
-    expect(iso.channelIsosurfaces).toHaveBeenCalledWith([
-      expect.objectContaining({ source, labels: [1, 7], color: [1, 0, 0, 1] }),
-    ])
-    expect(source.dispose).toHaveBeenCalled()
-    expect(addMesh).toHaveBeenCalledWith(mesh)
-    expect(result).toMatchObject({ name: 'cells (level 2)' })
-    await expect(
-      handlers.add_isosurface({ url: 'https://x/s.ome.zarr' }),
-    ).rejects.toThrow('exactly one of threshold or labels')
-  })
-  it('names the channel the source chose and leaves the timepoint to the store', async () => {
-    // Channels 0 and 1 inactive: the source picks channel 2.
-    const source = { channel: 2, dispose: mock() }
-    const zarr = { fetchOmeZarrChunkedSource: mock(async () => source) }
-    const iso = {
-      channelIsosurfaces: mock(async (_channels: unknown[]) => [{ name: 'm' }]),
-    }
-    // An unrelated volume shown at frame 2 does not pick the timepoint.
-    const view = fakeView({
-      addMesh: mock(async () => {}),
-      volumes: [{ name: 'other', frameSource: { count: 4, frame: 2 } }],
-    })
-    const handlers = coreHandlers(
-      host(view, {
-        omeZarr: async () => zarr as never,
-        isosurface: async () => iso,
-      }),
-    )
-    await handlers.add_isosurface({ url: 'https://x/s.ome.zarr', threshold: 1 })
-    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenLastCalledWith(
-      'https://x/s.ome.zarr',
-      { channel: undefined, timepoint: undefined },
-    )
-    const [[surface]] = iso.channelIsosurfaces.mock.calls.at(-1) ?? [[]]
-    expect(surface).toMatchObject({ name: 'channel 2' })
-    expect(surface).not.toHaveProperty('frame')
-    await handlers.add_isosurface({
-      url: 'https://x/s.ome.zarr',
-      timepoint: 1,
-      threshold: 1,
-    })
-    expect(zarr.fetchOmeZarrChunkedSource).toHaveBeenLastCalledWith(
-      'https://x/s.ome.zarr',
-      { channel: undefined, timepoint: 1 },
-    )
-  })
-
-  it('rejects a bad url and names the store when it fails', async () => {
-    const zarr = {
-      fetchOmeZarrChunkedSource: mock(async () => {
-        throw new Error('404 Not Found')
-      }),
-    }
-    const handlers = coreHandlers(
-      host(fakeView({ addMesh: mock(async () => {}) }), {
-        omeZarr: async () => zarr as never,
-        isosurface: async () => ({ channelIsosurfaces: mock(async () => []) }),
-      }),
-    )
-    await expect(
-      handlers.add_isosurface({ url: 'http://a b/x', threshold: 1 }),
-    ).rejects.toThrow('The OME-Zarr store at http://a b/x could not be loaded')
-    await expect(
-      handlers.add_isosurface({ url: 'https://x/s.ome.zarr', threshold: 1 }),
-    ).rejects.toThrow(
-      'The OME-Zarr store at https://x/s.ome.zarr could not be loaded: 404 Not Found',
-    )
   })
 })
 

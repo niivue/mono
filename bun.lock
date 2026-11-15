@@ -89,7 +89,6 @@
       "dependencies": {
         "@niivue/dev-images": "workspace:*",
         "@niivue/niivue": "workspace:*",
-        "@niivue/nv-ext-isosurface": "workspace:*",
         "@niivue/nv-ext-tile": "workspace:*",
         "@niivue/nv-mcp": "workspace:*",
         "@niivue/uikit": "workspace:*",
@@ -255,19 +254,6 @@
       "dependencies": {
         "gl-matrix": "^3.4.4",
       },
-      "devDependencies": {
-        "@niivue/niivue": "workspace:*",
-        "typescript": "^5.9.3",
-        "vite": "^8.3.8",
-        "vite-plugin-dts": "^4.5.4",
-      },
-      "peerDependencies": {
-        "@niivue/niivue": "workspace:*",
-      },
-    },
-    "packages/nv-ext-isosurface": {
-      "name": "@niivue/nv-ext-isosurface",
-      "version": "1.0.0-rc.22",
       "devDependencies": {
         "@niivue/niivue": "workspace:*",
         "typescript": "^5.9.3",
@@ -866,8 +852,6 @@
     "@niivue/nv-ext-drawing": ["@niivue/nv-ext-drawing@workspace:packages/nv-ext-drawing"],
 
     "@niivue/nv-ext-image-processing": ["@niivue/nv-ext-image-processing@workspace:packages/nv-ext-image-processing"],
-
-    "@niivue/nv-ext-isosurface": ["@niivue/nv-ext-isosurface@workspace:packages/nv-ext-isosurface"],
 
     "@niivue/nv-ext-save-html": ["@niivue/nv-ext-save-html@workspace:packages/nv-ext-save-html"],
 

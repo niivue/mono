@@ -63,7 +63,6 @@ export const PACKAGES = [
   { dir: 'nv-ext-tile', label: 'nv-ext-tile' },
   { dir: 'nv-ext-image-processing', label: 'nv-ext-image-processing' },
   { dir: 'nv-ext-drawing', label: 'nv-ext-drawing' },
-  { dir: 'nv-ext-isosurface', label: 'nv-ext-isosurface' },
   { dir: 'nv-ext-save-html', label: 'nv-ext-save-html' },
   { dir: 'nv-mcp', label: 'nv-mcp' },
   { dir: 'nv-ohif', label: 'nv-ohif' },

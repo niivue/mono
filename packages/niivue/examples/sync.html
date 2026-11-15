@@ -10,6 +10,11 @@
   </head>
   <body>
     <header>
+      <label for="dataset">Data</label>
+      <select id="dataset">
+        <option value="brain" selected>MNI152 brain and mesh</option>
+        <option value="cells">Allen hiPSC interphase, 4 channels</option>
+      </select>
       <select id="sliceType">
         <option value="0">Axial</option>
         <option value="1">Coronal</option>
@@ -27,6 +32,18 @@
       <label for="webgpuCheck">WebGPU</label>
       <input type="checkbox" id="webgpuCheck"/>
       <button type="button" id="aboutBtn">About</button>
+    </header>
+    <!-- Microscopy only: each pane keeps its own channel settings while the camera is linked. -->
+    <header id="channelControls" hidden>
+      <span>Top:</span>
+      <select id="topChannel"></select>
+      <label><input type="checkbox" id="topVisible" checked /> visible</label>
+      <label>window <input type="range" id="topWindow" min="1" max="255" /></label>
+      <span>Bottom:</span>
+      <select id="bottomChannel"></select>
+      <label><input type="checkbox" id="bottomVisible" checked /> visible</label>
+      <label>window <input type="range" id="bottomWindow" min="1" max="255" /></label>
+      <span id="cellCredit"></span>
     </header>
     <main id="canvas-container">
       <canvas id="gl1"></canvas>

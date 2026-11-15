@@ -35,7 +35,9 @@ const kindButtons = [...document.querySelectorAll('#dataKind button')]
 const turntableButton = document.getElementById('turntable')
 const resetButton = document.getElementById('reset')
 const lede = document.getElementById('lede')
-const clipCheck = document.getElementById('clipCheck')
+const clipSelect = document.getElementById('clipSelect')
+const cutawayCheck = document.getElementById('cutawayCheck')
+const cinematicNote = document.getElementById('cinematicNote')
 const renderModeSelect = document.getElementById('renderMode')
 const rampControls = document.getElementById('rampControls')
 const densityInput = document.getElementById('density')
@@ -142,6 +144,10 @@ function channelKind() {
 const renderModes = [
   ['Composite', VOLUME_RENDER_MODE.COMPOSITE],
   ['Maximum', VOLUME_RENDER_MODE.MAXIMUM],
+  // Path traces the base volume only: on this fused channel stack it shows
+  // just the first checked structure (unfused, the others draw unlit).
+  // Multi-channel cinematic is deferred beyond 1.0.
+  ['Cinematic', VOLUME_RENDER_MODE.CINEMATIC],
 ]
 for (const [label, value] of renderModes) {
   renderModeSelect.add(new Option(label, String(value)))
@@ -156,6 +162,9 @@ function applyRender() {
   const projecting = dataKind === 'mip'
   renderModeSelect.disabled = projecting
   rampControls.hidden = !isBaked()
+  cinematicNote.hidden =
+    projecting ||
+    Number(renderModeSelect.value) !== VOLUME_RENDER_MODE.CINEMATIC
   nv1.volumeRenderMode = projecting
     ? VOLUME_RENDER_MODE.MAXIMUM
     : Number(renderModeSelect.value)
@@ -168,8 +177,28 @@ densityInput.oninput = () => refresh()
 brightnessInput.oninput = () => refresh()
 applyRender()
 
-clipCheck.onchange = () => {
-  nv1.setClipPlane(clipCheck.checked ? [0.1, 270, 0] : [2, 0, 0])
+// Clip planes as vox.clip.html sets them: [depth, azimuth, elevation] through
+// setClipPlanes. The box is six ordinary axis-aligned planes (left, right,
+// anterior, posterior, inferior, superior), each 0.1 from the centre so it
+// cuts into the cell, which fills only the middle of the atlas volume;
+// clipPlaneOverlay cuts every channel, and none removes them all.
+const clipPresets = {
+  none: [],
+  plane: [[0.1, 270, 0]],
+  box: [
+    [0.1, 270, 0],
+    [0.1, 90, 0],
+    [0.1, 180, 0],
+    [0.1, 0, 0],
+    [0.1, 0, -90],
+    [0.1, 0, 90],
+  ],
+}
+clipSelect.onchange = () => {
+  nv1.setClipPlanes(clipPresets[clipSelect.value])
+}
+cutawayCheck.onchange = () => {
+  nv1.isClipPlaneCutaway = cutawayCheck.checked
 }
 
 // Turntable and Reset, through animateTo. The camera starts looking down on
@@ -202,8 +231,8 @@ turntableButton.onclick = () => {
 }
 resetButton.onclick = () => {
   setSpinning(false)
-  clipCheck.checked = false
-  clipCheck.onchange()
+  clipSelect.value = 'none'
+  clipSelect.onchange()
   nv1.animateTo(home, { duration: 600 })
 }
 

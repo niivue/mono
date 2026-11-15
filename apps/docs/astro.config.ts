@@ -105,6 +105,8 @@ export default defineConfig({
     },
   ],
   vite: {
+    // Their WASM workers break when prebundled.
+    optimizeDeps: { exclude: ['@niivue/dcm2niix', '@niivue/niimath'] },
     resolve: {
       // The guides live in packages/niivue/docs and import site components
       // (Demo) from here.

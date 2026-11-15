@@ -1,0 +1,59 @@
+---
+title: dcm2niix
+description: "Convert DICOM to NIfTI in the browser with @niivue/dcm2niix and show the result in NiiVue: classic series, enhanced DICOM and local folders."
+---
+
+import Demo from '@site/components/Demo.astro'
+
+NiiVue does not read DICOM directly. [dcm2niix](https://github.com/rordenlab/dcm2niix)
+converts it to NIfTI, and `@niivue/dcm2niix` runs it as WebAssembly in the
+browser. It is a separate package: NiiVue loads the NIfTI it returns.
+
+The demo converts a single-file enhanced DICOM T1w scan, a classic series of
+120 slice files, or a folder you choose. Nothing leaves your computer.
+
+<Demo name="dcm2niix" />
+
+## Install
+
+```bash
+npm install @niivue/dcm2niix
+```
+
+## Convert and show
+
+```js
+import { convert } from '@niivue/dcm2niix'
+
+// <input id="dicomFolder" type="file" webkitdirectory multiple />
+input.addEventListener('change', async () => {
+  // A nonzero exit still returns the series that converted.
+  const { series } = await convert(input.files)
+  await nv.loadVolumes([{ url: series[0].image }])
+})
+```
+
+Each series carries its NIfTI `image`, its `json` sidecar and any
+`bval`/`bvec`. For a dropped folder, `filesFromDataTransfer(e.dataTransfer.items)`
+collects the files first; `listSeries` lists series without converting them.
+
+dcm2niix groups files into series by folder. Files fetched one by one have
+no folder, so give each the same one through `_webkitRelativePath`, as the
+demo does:
+
+```js
+const file = new File([bytes], name)
+file._webkitRelativePath = `series/${name}`
+```
+
+## Full control
+
+The `Dcm2niix` class sets any dcm2niix flag:
+
+```js
+import { Dcm2niix } from '@niivue/dcm2niix'
+
+const dcm2niix = new Dcm2niix()
+await dcm2niix.init()
+const result = await dcm2niix.input(files).compressionLevel(9).bids('n').run()
+```

@@ -1,0 +1,61 @@
+---
+title: niimath
+description: "Run niimath image processing (smoothing, thresholds, masks, meshes) in the browser with @niivue/niimath and show the results in NiiVue."
+---
+
+import Demo from '@site/components/Demo.astro'
+
+[niimath](https://github.com/rordenlab/niimath) is a fast image calculator for
+neuroimaging, a clone of fslmaths. `@niivue/niimath` runs it as WebAssembly in
+a Web Worker, so pages can process images without a server. It is a separate
+package: NiiVue loads what it produces like any other file.
+
+<Demo name="niimath" />
+
+## Install
+
+```bash
+npm install @niivue/niimath
+```
+
+## Process a volume
+
+```js
+import { Niimath } from '@niivue/niimath'
+
+const niimath = new Niimath()
+await niimath.init() // loads the WASM once
+const smoothed = await niimath.image(file).s(3).run('smoothed.nii.gz')
+await nv.loadVolumes([{ url: smoothed }])
+```
+
+`image()` takes a `File`, a `Blob` or raw bytes. `run()` resolves to a `File`
+named after its argument, so it loads straight into NiiVue, downloads as is,
+or feeds the next pipeline.
+
+## Options as an array
+
+A pipeline held as data, such as a menu or a saved recipe, passes its options
+as they would follow the input on the command line:
+
+```js
+const steps = ['-s', 3, '-thrp', 50, '-bin']
+const mask = await niimath.image(file).args(steps).run('mask.nii.gz')
+```
+
+## Meshes
+
+`mesh()` runs marching cubes and writes a mesh format NiiVue reads:
+
+```js
+const surface = await niimath.image(file).mesh({ i: 'm', b: 1 }).run('brain.mz3')
+await nv.loadMeshes([{ url: surface }])
+```
+
+Use this when you need geometry: to export, edit or measure a surface. To
+only show a thresholded structure, a colormap that is transparent below the
+threshold renders it from the volume, with no mesh.
+
+One `Niimath` runs one pipeline at a time: wait for each `run()`, or create
+one per concurrent job. See the [niimath package](https://www.npmjs.com/package/@niivue/niimath)
+for every operator.

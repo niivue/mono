@@ -1,6 +1,7 @@
 # Medical image volumes
 packages/dev-images/images/**/*.nii.gz filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.mgz filter=lfs diff=lfs merge=lfs -text
+packages/dev-images/images/**/*.dcm filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.BRIK.gz filter=lfs diff=lfs merge=lfs -text
 packages/dev-images/images/**/*.HEAD filter=lfs diff=lfs merge=lfs -text
 

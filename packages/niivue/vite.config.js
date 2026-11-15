@@ -15,8 +15,6 @@ const SITE_APPS = [
   'demo-ext-drawing',
   'demo-ext-image-processing',
   'demo-ext-save-html',
-  'demo-ext-dcm2niix',
-  'demo-ext-niimath',
   'demo-ext-tile',
   'uikit',
 ]
@@ -153,10 +151,10 @@ export default defineConfig({
       },
     ],
   },
-  // As the niimath and dcm2niix demo apps do: their WASM workers break when
-  // prebundled.
+  // dcm2niix's WASM worker breaks when prebundled (the slides example reads
+  // DICOM through it).
   optimizeDeps: {
-    exclude: ['@niivue/niimath', '@niivue/nv-ext-niimath', '@niivue/dcm2niix'],
+    exclude: ['@niivue/dcm2niix'],
   },
   server: {
     port: 8080,

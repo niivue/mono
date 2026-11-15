@@ -571,7 +571,7 @@ No old-package equivalent. Formats via `@niivue/nv-ext-tile` (`/tiff`, `/dicom`,
 | TIFF scale bars (vendor/OME/resolution-tag spacing), metre/km ruler steps | ⏳ pending PR #770 | On main TIFF slides show no scale bar |
 | Superseded slide document restore cancelled; viewer owns restored slides | ⏳ pending PR #753 | |
 | Saved slide reopens its own source and focal/time plane | ⏳ pending PR #755 | On main a TIFF/Zarr/DICOM slide restores as a range source at the default plane |
-| MCP: OME-Zarr label colours, `add_isosurface` | ⏳ pending PR #757 | |
+| MCP: OME-Zarr label colours | ✅ | #757 |
 | One core `ByteLru` for byte, decoded-chunk and tile caches | ⏳ pending PR #767 | Public `ByteLru` export |
 
 ---

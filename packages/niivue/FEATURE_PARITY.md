@@ -571,40 +571,6 @@ No old-package equivalent. Formats via `@niivue/nv-ext-tile` (`/tiff`, `/dicom`,
 | DICOMweb auth through `fetch` (no `headers`) | ✅ | #758. nv-ohif migrates; `headers` removed |
 | TIFF scale bars (vendor/OME/resolution-tag spacing), metre/km ruler steps | ✅ | #770 |
 | Superseded slide document restore cancelled; viewer owns restored slides | ✅ | #753 |
-| Saved slide reopens its own source and focal/time plane | ⏳ pending PR #755 | On main a TIFF/Zarr/DICOM slide restores as a range source at the default plane |
+| Saved slide reopens its own source and focal/time plane | Present | TIFF/Zarr/DICOM sources and focal/time planes restored (#755) |
 | MCP: OME-Zarr label colours | ✅ | #757 |
-| One core `ByteLru` for byte, decoded-chunk and tile caches | ⏳ pending PR #767 | Public `ByteLru` export |
-
----
-
-## Summary of Key Missing Features
-
-### High Priority (Core Functionality)
-1. **Mesh overlay formats**: CIfTI-2 and FreeSurfer ANNOT layer readers
-
-### Medium Priority
-2. **3D rendering**: `setGradientOpacity`, custom gradient textures (MIP is now covered by `volumeRenderMode`)
-3. **Volume/mesh lookup by ID/URL**: `getVolumeIndexByID`, `getMeshIndexByID`, `removeVolumeByUrl`, `removeMeshByUrl`
-4. **`saveScene()`**: HTML export is covered by `@niivue/nv-ext-save-html`, but old scene export remains missing
-5. **FreeSurfer connectome** loader
-6. **NVImage class methods**: coordinate conversion, getValue, clone, etc. (architectural difference — NVImage is a type not a class)
-
-### Lower Priority
-9. **Mouse/touch event config**: `setMouseEventConfig`, `setTouchEventConfig`
-10. **`cloneVolume`**
-11. **Mesh utilities**: `decimateFaces`, `linesToCylinders`, `createFiberDensityMap`, `reverseFaces`
-12. **Missing/changed events**: no separate `intensityChange`; shader events not present; legacy callback properties not supported
-13. **Enum exports**: `NiiIntentCode`
-14. **`watchOptsChanges`** (replaced by `change` / property-change style event)
-15. **Standalone `binarize()`** (functionality partly available through different APIs)
-
-### Covered by New Extensions / Different APIs
-- **DICOM loading**: `@niivue/dcm2niix`
-- **Drawing helpers**: `findDrawingBoundarySlices`, `interpolateMaskSlices`, magic wand segmentation in `@niivue/nv-ext-drawing`
-- **Image processing**: `otsu`, `removeHaze`, `conform`, `connectedLabel` in `@niivue/nv-ext-image-processing`
-- **HTML export**: `generateHTML`, `saveHTML` in `@niivue/nv-ext-save-html`
-- **Negative colormaps/thresholds and clip plane setters**: present in the new core API, but setter names differ from the old package
-
-### Deferred (Not Planning to Implement Soon)
-- **`drawGrowCut`** — GPU grow-cut segmentation
-- **Custom mesh shaders**: entire shader system (`createCustomMeshShader`, `setMeshShader`, `meshShaderNames`)
+| One core `ByteLru` for byte, decoded-chunk and tile caches | Present | Public `ByteLru` export |

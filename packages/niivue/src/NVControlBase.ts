@@ -8213,6 +8213,10 @@ export default class NiiVue extends EventTarget {
     this.model.scene.clipPlaneOverlay = SCENE_DEFAULTS.clipPlaneOverlay
     // As a fresh viewer: the first registered matcap, not VOLUME_DEFAULTS' none.
     this.model.volume.matcap = defaultMatcap(this.opts.matcaps)
+    this._drawLut = null
+    this._drawDirtyBox = null
+    this.refreshDrawing()
+    this._refreshSlideAnnotation()
     this.emitSettingsChanges(settingsBefore)
     const volumes = this.model.getVolumes()
     for (let i = 0; i < volumes.length; i++) {

@@ -138,7 +138,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Drawing enabled | ✅ | `drawIsEnabled` |
 | Pen value/size/fill | ✅ | Properties |
 | Selection box color | ✅ | Property |
-| Show bounds border | ⚠️ | `showBoundsBorder`, `boundsBorderColor`, `boundsBorderThickness` options exist; drawing on both backends not yet verified |
+| Show bounds border | ✅ | `showBoundsBorder` with `boundsBorderColor`/`boundsBorderThickness` draws the border of a sub-canvas instance (`setBounds`), both backends |
 
 ## 10. View/Layout Control
 
@@ -196,7 +196,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Clip plane color | ✅ | `clipPlaneColor` property |
 | Clip plane cutaway | ✅ | `isClipPlaneCutaway` property |
 | `setClipPlane` / `setClipPlanes` (up to 6) | ✅ | `setClipPlane`, `setClipPlanes`, `setClipPlaneDepthAziElev` |
-| Keyboard/mouse clip plane interaction | ⚠️ | Clip planes are modelled and synchronized; full old interaction parity not verified |
+| Keyboard/mouse clip plane interaction | ✅ | As 0.x: `C` cycles the active plane through presets, scrolling over the render moves its depth, a right drag turns it. The next plane is `A` (0.x `P`), and the keys are fixed (0.x `clipPlaneHotKey`/`cycleClipPlaneHotKey` were configurable) |
 
 ## 14. Drawing & Segmentation
 
@@ -294,7 +294,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `pointerUp` | ✅ | |
 | `canvasResize` | ✅ | |
 | `propertyChange` | ✅ | Typed `change` event with `{ property, value }` |
-| `locationChange` / `intensityChange` | ⚠️ | `locationChange` exists; window changes through `setVolume` emit `volumeUpdated` (and `NvSceneController` emits `intensityChanged`). Interactive window changes not yet verified |
+| `locationChange` / `intensityChange` | ✅ | `locationChange`; window changes emit `volumeUpdated` with `calMin`/`calMax`, from `setVolume`, the windowing drag and the contrast box (`NvSceneController` also emits `intensityChanged`) |
 | `dragRelease` | ✅ | |
 | `clickToSegment` event | ✅ | Fires after a magic-wand fill with the seed voxel, pen value, voxel count, `mm3`/`mL`, and whether the grow hit the voxel cap or was confined to one slice |
 | `measurementCompleted` / `angleCompleted` | ✅ | |
@@ -555,8 +555,8 @@ per-backend. Design: `notes/tiled-volumes.md`. Demo: `apps/iiif-volumetric-demo`
 | In-place plan swap (refocus) | ✅ | `swapChunkedVolumePlan` + residency `remap`: unchanged bricks keep their GPU textures; only changed bricks re-fetch. `swapPolicy: 'keepUntilCovered'` draws replaced bricks until their replacements are resident (3D render only; drawn without overlay/drawing/PAQD layers, like the coarse floor); see `notes/budget-plans.md` |
 | Focus box / per-brick LOD boxes | ✅ | `nv.focusBox` (single AABB) and `nv.lodBoxes` (set, e.g. coloured per level) drawn on 3D render tiles, both backends |
 | Cross-LOD blending (geomorph) | ⛔ Deferred | Different-level boundaries show a one-level brightness/blockiness step; smooth fade between a brick's level and the next coarser is the real fix (needs a 2nd texture bound per brick, both shaders) |
-| Streamed channel-stack opacity | ⏳ pending PR #761 | Per-channel `opacity` on a chunked channel stack, matching whole volumes (both backends). On main it has no effect |
-| Lazy-frame prefetch lifetime | ⏳ pending PR #761 | `VolumeFrameSource.cancel()` stops an OME-Zarr `lazyTime` prefetch when its volume leaves the viewer |
+| Streamed channel-stack opacity | ✅ | #761. Per-channel `opacity` on a chunked channel stack, matching whole volumes (both backends) |
+| Lazy-frame prefetch lifetime | ✅ | #761. `VolumeFrameSource.cancel()` stops an OME-Zarr `lazyTime` prefetch when its volume leaves the viewer |
 
 ## 37. Whole-slide images (`NVSlide`, new in the rewrite)
 
@@ -565,12 +565,12 @@ No old-package equivalent. Formats via `@niivue/nv-ext-tile` (`/tiff`, `/dicom`,
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Pyramidal TIFF/SVS/OME-TIFF, DICOM-WSI (files, hosted manifest, DICOMweb), 2D OME-Zarr, DZI | ✅ | Both backends; per-channel colour, window and visibility, slide-wide channel blend; ICC; label colormaps |
-| One opener (`@niivue/nv-ext-tile/open`) in the demo | ⏳ pending PR #759 | Also fixes associated images from repeated file names |
-| Vendor tile placement on by default (Ventana, Trestle, Leica; iScan padded levels) | ⏳ pending PR #762 | On main `placement` is opt-in |
-| DICOM `ImageOrientationSlide` | ⏳ pending PR #760 | On main it is recorded, not applied |
-| DICOMweb auth through `fetch` (no `headers`) | ⏳ pending PR #758 | nv-ohif migrates; `headers` removed |
-| TIFF scale bars (vendor/OME/resolution-tag spacing), metre/km ruler steps | ⏳ pending PR #770 | On main TIFF slides show no scale bar |
-| Superseded slide document restore cancelled; viewer owns restored slides | ⏳ pending PR #753 | |
+| One opener (`@niivue/nv-ext-tile/open`) in the demo | ✅ | #759. Also fixes associated images from repeated file names |
+| Vendor tile placement on by default (Ventana, Trestle, Leica; iScan padded levels) | ✅ | #762 |
+| DICOM `ImageOrientationSlide` | ✅ | #760 |
+| DICOMweb auth through `fetch` (no `headers`) | ✅ | #758. nv-ohif migrates; `headers` removed |
+| TIFF scale bars (vendor/OME/resolution-tag spacing), metre/km ruler steps | ✅ | #770 |
+| Superseded slide document restore cancelled; viewer owns restored slides | ✅ | #753 |
 | Saved slide reopens its own source and focal/time plane | ⏳ pending PR #755 | On main a TIFF/Zarr/DICOM slide restores as a range source at the default plane |
 | MCP: OME-Zarr label colours | ✅ | #757 |
 | One core `ByteLru` for byte, decoded-chunk and tile caches | ⏳ pending PR #767 | Public `ByteLru` export |

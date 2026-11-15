@@ -63,7 +63,10 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 - Mirrors the viewport's tool group's active primary tool (`viewportOptions.toolGroupId`,
   default `'default'`) onto NiiVue's left-drag. Windows are per viewport, as in OHIF;
   the initial window comes from the hanging protocol's `displaySetOptions[0].options.voi`
-  when set, else NiiVue's robust 2-98% range.
+  when set, else the series' DICOM WindowCenter/WindowWidth when every slice
+  shares it (as cornerstone),
+  else NiiVue's robust 2-98% range. Slices use cornerstone's radiological
+  convention (patient right on screen left, sagittal nose left).
 - Ships **toolbar buttons + commands**: a views dropdown (axial / coronal /
   sagittal / multiplanar / 3D render), a **clip-plane** dropdown (off / anterior /
   posterior / left / right / superior / inferior), a **window/level** dropdown

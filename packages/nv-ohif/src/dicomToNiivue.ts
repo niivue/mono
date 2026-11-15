@@ -4,6 +4,7 @@ import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
 import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
+import { sharedTask } from './sharedTask'
 import { buildSliceFrames, type SliceFrames } from './sliceFrames'
 
 // Phase 2 DICOM bridge: turn a DICOMweb display set into a NIfTI volume, then load
@@ -77,12 +78,28 @@ export interface DicomConversion {
  * Convert a DICOMweb display set via dcm2niix and pick the output to show by
  * policy (rankOutputs). Null when there is nothing to fetch; rejects when no
  * image converted (with dcm2niix's log tail), on fetch failure, or on abort.
+ * Viewports showing the same display set share one fetch + conversion
+ * (sharedTask); `signal` releases this caller's hold.
  */
-export async function convertDisplaySetToNifti(
+export function convertDisplaySetToNifti(
   ds: OhifDisplaySet,
   options: DicomConvertOptions = {},
 ): Promise<DicomConversion | null> {
-  if (instanceRefs(ds).length === 0) return null
+  const refs = instanceRefs(ds)
+  if (refs.length === 0) return Promise.resolve(null)
+  const key = `${ds.displaySetInstanceUID ?? ''}|${refs[0]?.url}|${refs.length}`
+  return sharedTask(
+    key,
+    (signal, onProgress) =>
+      convertUnshared(ds, { ...options, signal, onProgress }),
+    options,
+  )
+}
+
+async function convertUnshared(
+  ds: OhifDisplaySet,
+  options: DicomConvertOptions,
+): Promise<DicomConversion | null> {
   const files = await fetchDicomInstanceFiles(ds, options)
   if (files.length === 0) return null
   options.onProgress?.('converting', 0, 1)
@@ -134,7 +151,7 @@ export async function loadConversion(
   nv: Pick<NiiVue, 'prepareVolume' | 'loadVolumes'>,
   viewportId: string,
   converted: DicomConversion,
-  spec: { calMin: number; calMax: number } | undefined,
+  spec: { calMin?: number; calMax?: number; colormap?: string } | undefined,
   cancelled: () => boolean,
 ): Promise<boolean> {
   // The converted file's own name (.nii) lets NiiVue sniff the format.

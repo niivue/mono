@@ -18,6 +18,10 @@ import {
   applyNiivueAnnotationDelta,
   centerCrosshair,
   clearNiivueAnnotations,
+  cornerstoneWindowingStep,
+  dicomWindow,
+  initialRenderView,
+  initialSliceType,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
@@ -40,7 +44,9 @@ import {
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
+import { joinSyncGroups } from './viewportSync'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
+import { displayPresetColormap } from './vrPresets'
 import { wsiFetch, wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
 import { mountWsiSlideView, type WsiSlideView } from './wsiSlideView'
 
@@ -59,6 +65,8 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   // A click lands the crosshair on a slice centre, so a measurement drawn there
   // lies on its DICOM frame (sliceFrames.frameAt).
   isSnapToVoxelCenters: true,
+  // Cornerstone's convention: patient right on screen left, sagittal nose left.
+  isRadiological: true,
 }
 
 type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -107,6 +115,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   dataSourceRef.current = props.dataSource
   const displaySetOptionsRef = useRef(props.displaySetOptions)
   displaySetOptionsRef.current = props.displaySetOptions
+  const viewportOptionsRef = useRef(props.viewportOptions)
+  viewportOptionsRef.current = props.viewportOptions
   const onElementEnabledRef = useRef(props.onElementEnabled)
   onElementEnabledRef.current = props.onElementEnabled
   const displaySetsKey = displaySets
@@ -134,6 +144,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // the font loads); torn down on unmount.
     let annotationOverlay: VolumeAnnotationOverlay | null = null
     let unregisterAnnotation: (() => void) | null = null
+    let leaveSyncGroups: (() => void) | null = null
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%'
@@ -146,7 +157,9 @@ export function NiivueViewport(props: OhifViewportProps) {
     // Catching the chained promise also covers a throw in the ready callback.
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
-      nv.sliceType = SLICE_TYPE.MULTIPLANAR
+      nv.sliceType = initialSliceType(viewportOptionsRef.current)
+      const view = initialRenderView(viewportOptionsRef.current)
+      if (view) [nv.azimuth, nv.elevation] = view
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
       // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
@@ -171,6 +184,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
+      leaveSyncGroups = joinSyncGroups(
+        viewportId,
+        nv,
+        viewportOptionsRef.current?.syncGroups,
+      )
       updateNiivueViewport(viewportId, {
         setStatus: (message, kind = 'note') =>
           setStatus(message === null ? { kind: 'idle' } : { kind, message }),
@@ -264,6 +282,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // the module-level reflection maps would leak across every unmount
       // (StrictMode double-mount, route / layout churn).
       clearNiivueAnnotations(viewportId, servicesManagerRef.current)
+      leaveSyncGroups?.()
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
@@ -349,14 +368,24 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     let cancelled = false
     const abort = new AbortController()
-    // The hanging protocol's initial window, if any, replaces NiiVue's robust one.
-    const voi = voiRange(displaySetOptionsRef.current)
+    // Initial window as cornerstone opens it: the hanging protocol's, else the
+    // series' DICOM window, else (undefined) NiiVue's robust 2-98% range.
+    const voi = voiRange(displaySetOptionsRef.current) ?? dicomWindow(ds)
+    // A 3D pane opens with its hanging protocol's volume-rendering preset,
+    // whose colormap carries its own window.
+    const preset =
+      initialSliceType(viewportOptionsRef.current) === SLICE_TYPE.RENDER
+        ? displayPresetColormap(displaySetOptionsRef.current, ds.Modality)
+        : undefined
+    const spec = preset ? { colormap: preset } : voi
 
     // Record the base volume's initial window/level as the readout
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
       centerCrosshair(nv)
+      const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
+      if (step) nv.windowingStep = step
       updateNiivueViewport(viewportId, {
         windowLevel: readBaseWindowLevel(nv),
         baseLoading: false,
@@ -378,7 +407,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       loaded()
       // Fetch first and install only if the slot still shows this series: a
       // stale load must not replace (or, undone, remove) a newer base.
-      nv.prepareVolume({ ...direct, ...voi })
+      nv.prepareVolume({ ...direct, ...spec })
         .then(async (image) => {
           if (cancelled) return
           await nv.loadVolumes([image])
@@ -560,7 +589,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           nv,
           viewportId,
           converted,
-          voi,
+          spec,
           () => cancelled,
         ).then((shown) => {
           if (shown) seedWindowLevel()

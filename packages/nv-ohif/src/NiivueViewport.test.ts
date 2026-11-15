@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test'
-import NiiVue from '@niivue/niivue'
-import { centerCrosshair } from './commands'
+import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+import {
+  centerCrosshair,
+  cornerstoneWindowingStep,
+  dicomWindow,
+  initialRenderView,
+  initialSliceType,
+} from './commands'
 import { DEFAULT_OPTIONS } from './NiivueViewport'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 
@@ -53,4 +59,73 @@ test('a loaded volume shows a slice centre, so its plane has a frame', async () 
   expect(atCrosshair()).toBeUndefined()
   centerCrosshair(nv)
   expect(atCrosshair()?.SOPInstanceUID).toMatch(/^ax[12]$/)
+})
+
+test("a hanging protocol picks each viewport's slice type", () => {
+  expect(
+    initialSliceType({ viewportType: 'volume3d', orientation: 'coronal' }),
+  ).toBe(SLICE_TYPE.RENDER)
+  expect(
+    initialSliceType({ viewportType: 'volume', orientation: 'sagittal' }),
+  ).toBe(SLICE_TYPE.SAGITTAL)
+  expect(initialSliceType({ orientation: 'acquisition' })).toBe(
+    SLICE_TYPE.MULTIPLANAR,
+  )
+  expect(initialSliceType(undefined)).toBe(SLICE_TYPE.MULTIPLANAR)
+})
+
+test("the viewport opens in cornerstone's radiological convention", () => {
+  expect(new NiiVue(DEFAULT_OPTIONS).isRadiological).toBe(true)
+})
+
+test("the series' DICOM window is the fallback initial window", () => {
+  const ds = (inst: Record<string, unknown>) =>
+    ({ instances: [inst] }) as unknown as Parameters<typeof dicomWindow>[0]
+  const multi = dicomWindow(
+    ds({ WindowWidth: [400, 1500], WindowCenter: [40, -600] }),
+  )
+  expect(multi && (multi.calMin + multi.calMax) / 2).toBeCloseTo(40, 0)
+  expect(multi && multi.calMax - multi.calMin).toBeCloseTo(400, -1)
+  expect(dicomWindow(ds({ WindowWidth: 0, WindowCenter: 40 }))).toBeUndefined()
+  expect(dicomWindow(ds({}))).toBeUndefined()
+  // A per-slice auto window (Siemens MR) is not a series window.
+  const perSlice = {
+    instances: [
+      { WindowWidth: 95, WindowCenter: 35 },
+      { WindowWidth: 386, WindowCenter: 172 },
+      { WindowWidth: 300, WindowCenter: 150 },
+    ],
+  } as unknown as Parameters<typeof dicomWindow>[0]
+  expect(dicomWindow(perSlice)).toBeUndefined()
+  expect(dicomWindow(undefined)).toBeUndefined()
+})
+
+test("a 3D pane's hanging-protocol orientation sets the render camera", () => {
+  expect(
+    initialRenderView({ viewportType: 'volume3d', orientation: 'coronal' }),
+  ).toEqual([180, 0])
+  expect(
+    initialRenderView({ viewportType: 'volume', orientation: 'coronal' }),
+  ).toBeUndefined()
+  expect(initialRenderView({ viewportType: 'volume3d' })).toBeUndefined()
+})
+
+test("the windowing drag matches cornerstone's gain and direction", () => {
+  // CT: 4096 HU dynamic range -> 4 HU per pixel; robust range 2000 HU.
+  const step = cornerstoneWindowingStep({
+    globalMin: -1024,
+    globalMax: 3072,
+    robustMin: -1000,
+    robustMax: 1000,
+  })
+  expect(step?.[0]).toBeCloseTo(4 / 2000)
+  expect(step?.[1]).toBeCloseTo(-4 / 2000)
+  expect(
+    cornerstoneWindowingStep({
+      globalMin: 0,
+      globalMax: 0,
+      robustMin: 0,
+      robustMax: 0,
+    }),
+  ).toBeUndefined()
 })

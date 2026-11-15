@@ -23,6 +23,7 @@ mock.module('@niivue/dcm2niix', () => ({
 const { convertDisplaySetToNifti, loadConversion } = await import(
   './dicomToNiivue'
 )
+const { clearSharedTasks } = await import('./sharedTask')
 
 // Header-only NIfTI-1 output; the voxel count breaks ties in the policy.
 function output(stem: string, voxels: number): Series {
@@ -51,6 +52,8 @@ function stubFetch(sop = '3') {
 }
 
 beforeEach(() => {
+  // Every test converts the same display set; start each with a cold cache.
+  clearSharedTasks()
   calls = []
   result = Promise.resolve({})
   stubFetch()
@@ -69,7 +72,8 @@ describe('convertDisplaySetToNifti', () => {
     expect(out?.image.name).toBe('s.nii') // no sidecars: echo 1 by stem wins
     expect(out?.note).toBe('Showing s; also converted: s_e2, s_ph.')
     expect(calls[0]?.args).toEqual(['-z', 'n'])
-    expect(calls[0]?.signal).toBe(signal)
+    // The shared conversion owns its signal; the caller's releases its hold.
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('loads the outputs of a nonzero exit with a note', async () => {

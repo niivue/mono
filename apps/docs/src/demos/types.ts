@@ -1,4 +1,4 @@
-import type NiiVue from '@niivue/niivue'
+import type { default as NiiVue, SlideView } from '@niivue/niivue'
 import type { DemoUI } from './ui'
 
 export type DemoContext = {
@@ -10,8 +10,8 @@ export type DemoContext = {
   canvases: HTMLCanvasElement[]
 }
 
-/** A live demo: set up NiiVue on the canvas and return it so it can be destroyed. */
+/** A live demo: set up NiiVue (or a slide view) on the canvas and return it so it can be destroyed. */
 export type Demo = (
   canvas: HTMLCanvasElement,
   ctx: DemoContext,
-) => Promise<NiiVue | NiiVue[]>
+) => Promise<NiiVue | NiiVue[] | SlideView>

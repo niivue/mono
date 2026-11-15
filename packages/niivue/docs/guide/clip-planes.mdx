@@ -34,6 +34,22 @@ nv.setClipPlanes([
 nv.setClipPlanes([]) // no clipping
 ```
 
+Six axis-aligned planes make a box that keeps only the middle of the volume.
+On a multi-channel image, set `clipPlaneOverlay` to `true` so the planes cut
+every channel, not only the first:
+
+```js
+nv.clipPlaneOverlay = true
+nv.setClipPlanes([
+  [0.1, 270, 0], // left
+  [0.1, 90, 0], // right
+  [0.1, 180, 0], // anterior
+  [0.1, 0, 0], // posterior
+  [0.1, 0, -90], // inferior
+  [0.1, 0, 90], // superior
+])
+```
+
 To change one plane, use `setClipPlaneDepthAziElev(depth, azimuth,
 elevation, index)`, or `setClipPlane([depth, azimuth, elevation])`, which
 sets the active plane (`activeClipPlaneIndex`, 0 by default).
@@ -95,3 +111,5 @@ setting, `meshThicknessOn2D`; see [Meshes and layers](/guide/meshes/).
   surface options.
 - [FreeSurfer clip](/gallery/freesurfer-clip/): a clip plane over a
   FreeSurfer volume and pial surface.
+- [Allen IMSC](/gallery/allen-imsc/): a clip box and cutaway over a
+  four-channel microscopy cell.

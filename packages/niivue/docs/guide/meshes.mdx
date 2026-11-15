@@ -69,6 +69,12 @@ Layer options mirror volume overlays: `colormap`, `calMin`, `calMax`,
 look: 0 maps the full min-to-max range, 1 (the default) hides values below
 the threshold, and 2 shows them translucent.
 
+For label layers, `hiddenLabels` lists label values to hide; their
+triangles are removed, as hidden voxels vanish. Each triangle takes its
+majority vertex label, so neighbouring regions never gap. Set
+`isHiddenLabelCulled: false` to keep the triangles and show the mesh colour
+beneath instead.
+
 Update a layer with `setMeshLayerProperty(meshIndex, layerIndex, options)`
 and remove it with `removeMeshLayer(meshIndex, layerIndex)`. In this demo
 layer 0 is curvature and layer 1 is a motor-task statistical map. The

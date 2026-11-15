@@ -2646,8 +2646,10 @@ export default class NiiVue extends EventTarget {
   /**
    * Opt-in: clicking a legend entry's colour box hides or shows that label
    * (the volume's or mesh layer's `hiddenLabels`); clicking its name still
-   * moves the crosshair to the label. Default false: every click moves the
-   * crosshair. Connectome legend entries do not toggle.
+   * moves the crosshair to the label. Double-clicking a colour box shows only
+   * that label (again, when it is the only one shown, shows all). Default
+   * false: every click moves the crosshair. Connectome legend entries do not
+   * toggle.
    */
   get isLegendToggleEnabled(): boolean {
     return this.model.interaction.isLegendToggleEnabled

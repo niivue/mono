@@ -81,10 +81,12 @@ export function buildLocationMessage(
         const raw = getVoxelRGBA(vol, vox[0], vox[1], vox[2])
         if (raw[2] > 2 && lut.labels) {
           const pct1 = Math.round((100 * raw[2]) / 255)
-          valStr += `${lut.labels[raw[0]] ?? `label(${raw[0]})`} (${pct1}%)`
+          // R and G hold label values; labels is indexed from lut.min.
+          const min = lut.min ?? 0
+          valStr += `${lut.labels[raw[0] - min] ?? `label(${raw[0]})`} (${pct1}%)`
           if (raw[3] > 2) {
             const pct2 = Math.round((100 * raw[3]) / 255)
-            valStr += ` ${lut.labels[raw[1]] ?? `label(${raw[1]})`} (${pct2}%)`
+            valStr += ` ${lut.labels[raw[1] - min] ?? `label(${raw[1]})`} (${pct2}%)`
           }
         }
       } else if (vol.colormapLabel) {
@@ -173,7 +175,8 @@ export function buildLocationMessage(
         const lut = v.colormapLabel
         const raw = getVoxelRGBA(v, vvox[0], vvox[1], vvox[2])
         if (raw[2] > 2 && lut.labels) {
-          entry.label = lut.labels[raw[0]] ?? `label(${raw[0]})`
+          entry.label =
+            lut.labels[raw[0] - (lut.min ?? 0)] ?? `label(${raw[0]})`
         }
       } else if (v.colormapLabel) {
         const lut = v.colormapLabel

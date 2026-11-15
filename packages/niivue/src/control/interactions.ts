@@ -50,6 +50,7 @@ import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import {
   isInLegend,
   isLegendScrollable,
+  type LegendEntry,
   type LegendLayout,
   legendHitTest,
   legendScrollHit,
@@ -81,6 +82,65 @@ function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.lastPointerX = evt.clientX
   ctrl.lastPointerY = evt.clientY
   ctrl.canvas?.setPointerCapture(evt.pointerId)
+}
+
+// --- Legend label visibility ---------------------------------------------------
+
+/**
+ * Replace the hidden labels of the volume or mesh layer a legend entry belongs
+ * to with `next(current)`. Reads the live list: the legend's isHidden lags a
+ * frame, so a quick double-click would otherwise act on stale state. False
+ * when the entry has no label source (a connectome).
+ */
+function updateLegendHidden(
+  ctrl: NiiVue,
+  entry: LegendEntry,
+  next: (hidden: number[]) => number[],
+): boolean {
+  const failed = (e: unknown) => log.error('legend label toggle failed', e)
+  const { volumeIndex, meshIndex, layerIndex } = entry
+  if (volumeIndex !== undefined) {
+    const hidden = ctrl.volumes[volumeIndex]?.hiddenLabels ?? []
+    ctrl.setVolume(volumeIndex, { hiddenLabels: next(hidden) }).catch(failed)
+    return true
+  }
+  if (meshIndex !== undefined && layerIndex !== undefined) {
+    const layer = ctrl.model.getMeshes()[meshIndex]?.layers?.[layerIndex]
+    ctrl
+      .setMeshLayerProperty(meshIndex, layerIndex, {
+        hiddenLabels: next(layer?.hiddenLabels ?? []),
+      })
+      .catch(failed)
+    return true
+  }
+  return false
+}
+
+/**
+ * Show only the entry's label among its volume's or layer's legend labels, or
+ * show them all when it is already the only one shown. The double-click's two
+ * single clicks toggle the label and back first, so this sees the state from
+ * before the gesture.
+ */
+function soloLegendLabel(ctrl: NiiVue, entry: LegendEntry): void {
+  const value = entry.labelValue
+  if (value === undefined) return
+  const others = ctrl.model
+    .collectLegendEntries()
+    .flatMap((e) =>
+      e.volumeIndex === entry.volumeIndex &&
+      e.meshIndex === entry.meshIndex &&
+      e.layerIndex === entry.layerIndex &&
+      e.labelValue !== undefined &&
+      e.labelValue !== value
+        ? [e.labelValue]
+        : [],
+    )
+  updateLegendHidden(ctrl, entry, (hidden) =>
+    !hidden.includes(value) && others.every((v) => hidden.includes(v))
+      ? []
+      : others,
+  )
 }
 
 // --- Multi-click contour tools (spline / livewire) --------------------------
@@ -1273,33 +1333,18 @@ export function initInteraction(ctrl: NiiVue): void {
     if (legendHit) {
       const { entry, isOnBox } = legendHit
       log.info(`Legend clicked: ${entry.label}`)
-      const { volumeIndex, meshIndex, layerIndex, labelValue: value } = entry
+      const value = entry.labelValue
       if (
         isOnBox &&
         ctrl.model.interaction.isLegendToggleEnabled &&
         value !== undefined
       ) {
-        // Decide from the live list: the legend's isHidden lags a frame, so
-        // a quick double-click would otherwise add the value twice.
-        const toggled = (hidden: number[] = []) =>
+        const hasLabelSource = updateLegendHidden(ctrl, entry, (hidden) =>
           hidden.includes(value)
             ? hidden.filter((v) => v !== value)
-            : [...hidden, value]
-        const failed = (e: unknown) =>
-          log.error('legend label toggle failed', e)
-        if (volumeIndex !== undefined) {
-          const hiddenLabels = toggled(ctrl.volumes[volumeIndex]?.hiddenLabels)
-          ctrl.setVolume(volumeIndex, { hiddenLabels }).catch(failed)
-          return
-        }
-        if (meshIndex !== undefined && layerIndex !== undefined) {
-          const layer = ctrl.model.getMeshes()[meshIndex]?.layers?.[layerIndex]
-          const hiddenLabels = toggled(layer?.hiddenLabels)
-          ctrl
-            .setMeshLayerProperty(meshIndex, layerIndex, { hiddenLabels })
-            .catch(failed)
-          return
-        }
+            : [...hidden, value],
+        )
+        if (hasLabelSource) return
       }
       const centroid = entry.centroid?.()
       if (centroid) ctrl.setCrosshairPos(centroid)
@@ -2686,6 +2731,15 @@ export function initInteraction(ctrl: NiiVue): void {
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
     const [px, py] = dblHit
+    // Double-clicking a legend colour box solos that label; any legend
+    // double-click is consumed so it never depth-picks behind the panel.
+    const legendLayout = ctrl.view?.legendLayout ?? null
+    if (isInLegend(px, py, legendLayout)) {
+      const legendHit = legendHitTest(px, py, legendLayout)
+      if (legendHit?.isOnBox && ctrl.model.interaction.isLegendToggleEnabled)
+        soloLegendLabel(ctrl, legendHit.entry)
+      return
+    }
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that
     // button: a double-click on "+"/"<"/">" must keep its single-click action

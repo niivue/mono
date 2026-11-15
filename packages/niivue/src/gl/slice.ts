@@ -226,6 +226,11 @@ export class SliceRenderer extends NVRenderer {
         this._shader.uniforms.isAlphaClipDark,
         md.isAlphaClipDark ? 1 : 0,
       )
+    if (this._shader.uniforms.isChannelStack)
+      gl.uniform1i(
+        this._shader.uniforms.isChannelStack,
+        md.isChannelStack ? 1 : 0,
+      )
     if (this._shader.uniforms.isColormapAlphaOn2D)
       gl.uniform1i(
         this._shader.uniforms.isColormapAlphaOn2D,

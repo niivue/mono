@@ -1,3 +1,25 @@
+## 1.0.0-rc.199 (2026-11-14)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.204
+- Updated uikit to 1.0.0-rc.202
+
+## 1.0.0-rc.198 (2026-11-14)
+
+### Features
+
+- **examples:** clean up the microscopy and atlas demos ([bd6f89bf](https://github.com/niivue/mono/commit/bd6f89bf))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.203
+- Updated uikit to 1.0.0-rc.201
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.197 (2026-11-14)
 
 ### Updated Dependencies

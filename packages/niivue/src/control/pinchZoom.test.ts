@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { pinchCamera } from './pinchZoom'
+import { clampScale3D, pinchCamera } from './pinchZoom'
 
 const min = [-100, -100, -100]
 const max = [100, 100, 100]
@@ -45,5 +45,39 @@ describe('pinchCamera', () => {
     expect(pinchCamera(pinch, 10, min, max, false)).toEqual({
       scaleMultiplier: 0.5,
     })
+  })
+  test('yoked, a pinch on the 3D render zooms the slices too', () => {
+    const pinch = { distance: 100, pan: [5, 6, 7, 1], scale: 1, anchorMM: null }
+    expect(pinchCamera(pinch, 150, min, max, true)).toEqual({
+      pan2Dxyzmm: [5, 6, 7, 1.5],
+      scaleMultiplier: 1.5,
+    })
+  })
+  test('yoked, a 3D pinch scales a 2D zoom past 2 instead of snapping it', () => {
+    const pinch = { distance: 100, pan: [5, 6, 7, 5], scale: 1, anchorMM: null }
+    expect(pinchCamera(pinch, 150, min, max, true).pan2Dxyzmm?.[3]).toBe(7.5)
+    expect(pinchCamera(pinch, 101, min, max, true).pan2Dxyzmm?.[3]).toBeCloseTo(
+      5.05,
+    )
+  })
+  test('yoked, a 3D pinch from a scale past 2 keeps the slice zoom', () => {
+    const pinch = { distance: 100, pan: [5, 6, 7, 5], scale: 5, anchorMM: null }
+    expect(pinchCamera(pinch, 101, min, max, true)).toEqual({
+      pan2Dxyzmm: [5, 6, 7, 5],
+      scaleMultiplier: 5,
+    })
+    const cam = pinchCamera(pinch, 95, min, max, true)
+    expect(cam.scaleMultiplier).toBeCloseTo(4.75)
+    expect(cam.pan2Dxyzmm?.[3]).toBeCloseTo(4.75)
+  })
+})
+
+describe('clampScale3D', () => {
+  test('keeps 0.5-2, but a scale outside may only move back', () => {
+    expect(clampScale3D(3, 1)).toBe(2)
+    expect(clampScale3D(0.1, 1)).toBe(0.5)
+    expect(clampScale3D(5.1, 5)).toBe(5)
+    expect(clampScale3D(4.9, 5)).toBe(4.9)
+    expect(clampScale3D(0.2, 0.3)).toBe(0.3)
   })
 })

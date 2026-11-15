@@ -93,6 +93,7 @@ import * as mesh from './mesh'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
 import { VolumeRenderer } from './render'
+import { SceneCapture } from './sceneCapture'
 import { SliceRenderer } from './slice'
 import { SlidePlaneRendererGPU } from './slidePlaneRender'
 import { ThumbnailRenderer } from './thumbnail'
@@ -232,6 +233,7 @@ export default class NVView {
   /** True when the bounds rect (after viewport pan/zoom) is entirely off-canvas */
   _isBoundsOffscreen = false
   private _boundsColorTexture: GPUTexture | null = null
+  private readonly _sceneCapture = new SceneCapture()
   private _depthTextureView: GPUTextureView | null = null
   private _msaaTextureView: GPUTextureView | null = null
   /** Effective device pixel ratio from the last resize(); reported to overlays. */
@@ -2089,16 +2091,18 @@ export default class NVView {
       stream.inFlight === 0
     // UIKit overlay hook: last screen-space draw of the frame, appended to the
     // still-open render pass before it ends.
+    const handle = this._sceneCapture.handle(
+      device,
+      commandEncoder,
+      pass,
+      isSub ? (this._boundsColorTexture as GPUTexture) : canvasTexture,
+      this.preferredCanvasFormat,
+      this.sampleCount,
+      DEPTH_FORMAT,
+    )
     if (this.overlayDraw) {
       this.overlayDraw({
-        handle: {
-          backend: 'webgpu',
-          device,
-          pass,
-          colorFormat: this.preferredCanvasFormat,
-          sampleCount: this.sampleCount,
-          depthFormat: DEPTH_FORMAT,
-        },
+        handle,
         bounds: {
           x: this._boundsOffsetX,
           y: this._boundsOffsetY,
@@ -2109,7 +2113,7 @@ export default class NVView {
         settled,
       })
     }
-    pass.end()
+    handle.pass.end()
     // Copy intermediate texture to canvas at bounds offset
     if (isSub) {
       this._copyBoundsToCanvas(commandEncoder, canvasTexture)
@@ -2343,7 +2347,11 @@ export default class NVView {
     this.context.configure({
       device: this.device,
       format: this.preferredCanvasFormat,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+      // COPY_SRC: an overlay's captureScene copies the frame.
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.COPY_SRC,
       alphaMode: 'premultiplied',
     })
     // Cache for sharing with other instances on same canvas
@@ -2499,7 +2507,11 @@ export default class NVView {
       this.context.configure({
         device: this.device,
         format: this.preferredCanvasFormat,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+        // COPY_SRC: an overlay's captureScene copies the frame.
+        usage:
+          GPUTextureUsage.RENDER_ATTACHMENT |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.COPY_SRC,
         alphaMode: 'premultiplied',
       })
     }
@@ -3313,6 +3325,7 @@ export default class NVView {
     // Latch teardown so a device-lost promise settling afterwards does not ask
     // the controller to rebuild a view that is deliberately going away.
     this._destroyed = true
+    this._sceneCapture.destroy()
     // Detach the controller's streaming observer so nothing this view does
     // after teardown can reach the emitter that now tracks its replacement.
     this.onChunkStream = null

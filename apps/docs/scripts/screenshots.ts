@@ -109,6 +109,16 @@ const PREPARE: Record<string, (page: Page) => Promise<Clip | undefined>> = {
     await page.uncheck('#showGrid')
     return undefined
   },
+  // Fetches and decodes ~70 MB of NRRD before its first frame.
+  'allen-ccf': async (page) => {
+    await page.waitForFunction(
+      () =>
+        document.getElementById('location')?.textContent?.includes('loaded'),
+      null,
+      { timeout: 180000 },
+    )
+    return undefined
+  },
   // A short renderer-only run; it ends on the opaque brain mesh.
   benchmark: async (page) => {
     await page.fill('#frameCount', '30')

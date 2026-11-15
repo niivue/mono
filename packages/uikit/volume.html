@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Ruler over a volume</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      #canvasHolder { flex: 1; position: relative; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+    </style>
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit</b>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html" aria-current="page">volume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a></nav>
+        <label title="A lens following the pointer"><input id="magnify" type="checkbox" autocomplete="off" /> magnifier</label>
+        <label>view <select id="viewSelect" autocomplete="off">
+          <option value="AXIAL">axial</option>
+          <option value="CORONAL">coronal</option>
+          <option value="SAGITTAL">sagittal</option>
+          <option value="MULTIPLANAR">multiplanar</option>
+          <option value="RENDER">render</option>
+        </select></label>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
+      </header>
+      <div id="canvasHolder"><canvas id="gl"></canvas></div>
+      <footer><span id="help">Click a point, move, then click again to fix the measurement.</span><span id="status" data-state="wait">Loading volume...</span></footer>
+    </div>
+
+    <script type="module">
+      import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
+      import {
+        loadDefaultFont,
+        UIKitMagnifierOverlay,
+        UIKitRulerOverlay,
+      } from './src/index.ts'
+      import { setStatus } from './statusBar.js'
+      import { urlParamSelect } from './urlParamSelect.js'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      // Wired before anything loads, so the menu works even if loading fails.
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+
+      const nv = new NiiVue({
+        backend,
+        backgroundColor: [0.05, 0.05, 0.08, 1],
+        sliceType: SLICE_TYPE.AXIAL,
+        isColorbarVisible: false,
+      })
+      const canvas = document.getElementById('gl')
+      await nv.attachToCanvas(canvas)
+      document.getElementById('backendSelect').value = nv.backend
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
+      setStatus('Waiting for first click', 'wait')
+      document.getElementById('viewSelect').addEventListener('change', (ev) => {
+        nv.sliceType = SLICE_TYPE[ev.target.value]
+      })
+
+      const font = await loadDefaultFont()
+      const ruler = new UIKitRulerOverlay(font)
+      nv.registerOverlayRenderer(ruler)
+
+      // Registered after the ruler, so the lens magnifies it too.
+      let unmagnify = null
+      document.getElementById('magnify').addEventListener('change', (ev) => {
+        if (ev.target.checked) {
+          const lens = new UIKitMagnifierOverlay({ zoom: 3 })
+          const unregister = nv.registerOverlayRenderer(lens)
+          const detach = lens.attach(nv)
+          unmagnify = () => { detach(); unregister(); lens.destroy() }
+        } else {
+          unmagnify?.()
+          unmagnify = null
+        }
+        nv.drawScene()
+      })
+
+      // Slice pointer events hand us the world (mm) coordinate + device-pixel
+      // position already hit-tested against the 2D slice - exactly what the ruler
+      // needs (screen geometry) and what a real measurement needs (mm distance).
+      const ctx = nv.createExtensionContext()
+      const COLOR = [1, 0.85, 0, 1]
+      let anchor = null // { screen:[x,y], mm:[x,y,z] }
+
+      const mmDist = (m) =>
+        Math.hypot(m[0] - anchor.mm[0], m[1] - anchor.mm[1], m[2] - anchor.mm[2])
+
+      const drawTo = (screen, mm) => {
+        const length = mmDist(mm)
+        ruler.setRuler({
+          a: anchor.screen, b: screen, length, units: 'mm',
+          sizePx: 22, showTickNumbers: true, lineColor: COLOR, textColor: COLOR,
+        })
+        nv.drawScene()
+        return length
+      }
+
+      ctx.on('slicePointerMove', (e) => {
+        const p = e.detail
+        if (anchor && p.mm) {
+          const d = drawTo([p.canvasX, p.canvasY], p.mm)
+          setStatus(`${d.toFixed(1)} mm (click to fix)`, 'wait')
+        }
+      })
+      ctx.on('slicePointerUp', (e) => {
+        const p = e.detail
+        if (!p.mm) return
+        if (!anchor) {
+          anchor = { screen: [p.canvasX, p.canvasY], mm: p.mm }
+          ruler.clear()
+          nv.drawScene()
+          setStatus('Move, then click to fix', 'wait')
+        } else {
+          const d = drawTo([p.canvasX, p.canvasY], p.mm)
+          setStatus(`${d.toFixed(1)} mm`, 'ok')
+          anchor = null
+        }
+      })
+    </script>
+  </body>
+</html>

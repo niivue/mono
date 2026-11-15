@@ -96,6 +96,8 @@ export {
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
+export type { UIKitMagnifierOverlayOptions } from './magnifierOverlay'
+export { UIKitMagnifierOverlay } from './magnifierOverlay'
 export type {
   MenuBounds,
   MenuButtonSpec,
@@ -177,6 +179,7 @@ export type { SlideHudRows } from './slideView'
 export {
   attachSlideChannelPanel,
   attachSlideHud,
+  attachSlideMagnifier,
   attachSlideMinimap,
   attachSlidePlaneControl,
 } from './slideView'

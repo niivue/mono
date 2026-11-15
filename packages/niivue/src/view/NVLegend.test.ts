@@ -70,6 +70,22 @@ describe('collectLegendEntries', () => {
       ['y', 1, 7, true],
     ])
   })
+
+  test('tagsMeshLayerEntriesForTheToggle', () => {
+    const rgba = new Uint8ClampedArray([0, 0, 0, 0, 9, 9, 9, 255, 8, 8, 8, 255])
+    const layer = {
+      colormapLabel: { lut: rgba, min: 0, labels: ['bg', 'x', 'y'] },
+      hiddenLabels: [1],
+    }
+    const mesh = { layers: [{}, layer] } as unknown as NVMesh
+    const entries = collectLegendEntries([{} as NVMesh, mesh], [])
+    expect(
+      entries.map((e) => [e.meshIndex, e.layerIndex, e.labelValue, e.isHidden]),
+    ).toEqual([
+      [1, 1, 1, true],
+      [1, 1, 2, false],
+    ])
+  })
 })
 
 const visibleH = (l: LegendLayout) => l.visibleRows * l.pitch - l.gap

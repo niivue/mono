@@ -320,8 +320,9 @@ compositing over the background. GL blends on the CPU (`volume/overlayBlend.ts`
 in volume order (later overlays on top); colour `MAX` keeps the per-component
 max of the premultiplied colours; every mode but `OVER` is commutative.
 `volumeIsChannelStack` blends volumes[0] in as one more overlay (both views'
-`_updateOverlayStack` pass every volume, the base draws at opacity 0) so the
-fused channels land on the canvas background; ignored with one volume, in
+`_updateOverlayStack` pass every volume, the base draws at opacity 0); 2D
+slices draw the fused channels on opaque black (`isChannelStack` in both
+slice shaders), so the canvas background never shows through; ignored with one volume, in
 multi-instance mode, and while volumes[0] is chunked unless every volume is
 streamed (`chunkSource`): then both renderers fuse each base chunk's drawn
 bricks in the upload pump (`view/chunkStackFuse.ts` `pump`; GL

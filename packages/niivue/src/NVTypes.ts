@@ -484,6 +484,8 @@ export type NVMeshLayer = {
   isColorbarVisible: boolean
   /** Label colormap (for atlas/parcellation overlays) */
   colormapLabel: LUT | null
+  /** Label values drawn transparent, as a volume's `hiddenLabels` */
+  hiddenLabels?: number[]
   /** Outline width (0 = filled, >0 = outline only) */
   outlineWidth: number
   /** Source URL or filename */

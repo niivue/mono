@@ -389,3 +389,72 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     return textureSample(imageTex, imageSampler, in.uv);
 }
 `
+
+// Magnifier lens: the image quad over the lens's bounding square, cut to a
+// circle, sampling the captured frame enlarged about the lens centre. Outside
+// the frame it shows `fill`. Drawn without blending so a transparent scene
+// pixel stays transparent: the capture is already premultiplied.
+// shortcut: hard circle edge (blending would need a second draw to keep alpha),
+// hidden by the default 2 px ring; anti-alias it if borderless lenses matter.
+export const GL_LENS_FRAG = `#version 300 es
+precision highp float;
+uniform highp sampler2D image;
+uniform vec4 box; // lens bounding square, canvas px
+uniform vec4 lens; // centre x, y, radius (canvas px), zoom
+uniform vec4 fill;
+uniform vec2 imageSize;
+uniform vec4 imageRect; // bounds rect's x and bottom-up y in the texture, texture size
+in vec2 vUv;
+out vec4 fragColor;
+
+void main() {
+  vec2 d = box.xy + vUv * box.zw - lens.xy;
+  if (length(d) > lens.z) discard;
+  vec2 s = (lens.xy + d / lens.w) / imageSize;
+  bool inside = all(greaterThanEqual(s, vec2(0.0))) && all(lessThanEqual(s, vec2(1.0)));
+  // The blitted frame's rows are bottom-up, at the bounds rect's own place.
+  vec2 t = (imageRect.xy + vec2(s.x, 1.0 - s.y) * imageSize) / imageRect.zw;
+  // Off the canvas nothing was copied: fill it, as outside the image.
+  inside = inside && all(greaterThanEqual(t, vec2(0.0))) && all(lessThanEqual(t, vec2(1.0)));
+  fragColor = inside ? texture(image, t) : vec4(fill.rgb * fill.a, fill.a);
+}
+`
+export const WGSL_LENS = `
+struct LensUniforms {
+    canvasSize: vec2f,
+    imageSize: vec2f,
+    box: vec4f,
+    lens: vec4f,
+    fill: vec4f,
+};
+
+@group(0) @binding(0) var<uniform> u: LensUniforms;
+@group(0) @binding(1) var imageTex: texture_2d<f32>;
+@group(0) @binding(2) var imageSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@vertex
+fn vertex_main(@builtin(vertex_index) vIdx: u32) -> VertexOutput {
+    let corner = vec2f(f32(vIdx >> 1u), f32(vIdx & 1u));
+    let ndc = ((u.box.xy + corner * u.box.zw) / u.canvasSize) * 2.0 - 1.0;
+    var out: VertexOutput;
+    out.position = vec4f(ndc.x, -ndc.y, 0.0, 1.0);
+    out.uv = corner;
+    return out;
+}
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
+    let d = u.box.xy + in.uv * u.box.zw - u.lens.xy;
+    let s = (u.lens.xy + d / u.lens.w) / u.imageSize;
+    // Sampled before any branch: textureSample needs uniform control flow.
+    let c = textureSample(imageTex, imageSampler, s);
+    if (length(d) > u.lens.z) { discard; }
+    let inside = all(s >= vec2f(0.0)) && all(s <= vec2f(1.0));
+    return select(vec4f(u.fill.rgb * u.fill.a, u.fill.a), c, inside);
+}
+`

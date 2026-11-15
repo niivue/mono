@@ -1,3 +1,38 @@
+## 1.0.0-rc.204 (2026-11-14)
+
+### Features
+
+- **uikit:** magnifier overlay widget ([db8d16ef](https://github.com/niivue/mono/commit/db8d16ef))
+
+### Fixes
+
+- **niivue:** bench offscreen target allows scene capture ([04110a0c](https://github.com/niivue/mono/commit/04110a0c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.203 (2026-11-14)
+
+### Features
+
+- **examples:** clean up the microscopy and atlas demos ([bd6f89bf](https://github.com/niivue/mono/commit/bd6f89bf))
+
+### Fixes
+
+- **niivue:** 3D wheel and pinch keep a yoked zoom past 2 ([898a0b97](https://github.com/niivue/mono/commit/898a0b97))
+- **examples:** ome.tiff switches file only once its scene loads ([03679558](https://github.com/niivue/mono/commit/03679558))
+- **examples:** allen atlas switches dataset only once its channels load ([d90e2c58](https://github.com/niivue/mono/commit/d90e2c58))
+- **examples:** a failed local file or corrupt plane keeps the shown image ([5869a81e](https://github.com/niivue/mono/commit/5869a81e))
+- **niivue:** yoked 3D zoom scales the 2D zoom instead of snapping it ([a6ebe0f5](https://github.com/niivue/mono/commit/a6ebe0f5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.202 (2026-11-14)
 
 ### Features

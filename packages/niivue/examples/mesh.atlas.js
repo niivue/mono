@@ -34,7 +34,11 @@ webgpuCheck.onchange = async function () {
   await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
-const nv1 = new NiiVue({ backgroundColor: [0, 0, 0, 1] })
+// Click a legend colour box to hide/show that region; the name moves the crosshair.
+const nv1 = new NiiVue({
+  backgroundColor: [0, 0, 0, 1],
+  isLegendToggleEnabled: true,
+})
 await nv1.attachToCanvas(gl1)
 for (const shader of nv1.meshShaders) {
   const option = document.createElement('option')

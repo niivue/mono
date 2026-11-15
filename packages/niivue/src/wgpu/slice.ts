@@ -635,6 +635,7 @@ export class SliceRenderer extends NVRenderer {
     uniformData[52] = ct.subSize[0]
     uniformData[53] = ct.subSize[1]
     uniformData[54] = ct.subSize[2]
+    intView[55] = md.isChannelStack ? 1 : 0 // i32 isChannelStack (pad lane)
     uniformData[56] = ct.dataOrigin[0]
     uniformData[57] = ct.dataOrigin[1]
     uniformData[58] = ct.dataOrigin[2]

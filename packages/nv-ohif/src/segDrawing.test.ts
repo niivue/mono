@@ -108,8 +108,10 @@ describe('startSegDrawing', () => {
     })
     const calls: string[] = []
     const nv = {
+      _drawingGeneration: 0,
       loadDrawing: async () => {
         calls.push('load')
+        nv._drawingGeneration++
         await gate
         return isShown
       },
@@ -164,8 +166,8 @@ describe('startSegDrawing', () => {
     expect(calls).toEqual(['load', 'colormap'])
   })
 
-  test('cleanupWhileCoreLoadPending_closesIt_thenTouchesNothing', async () => {
-    const { nv, calls, release } = pane(false) // core gives way once closed
+  test('cleanupWhileCoreLoadPending_supersedesIt_thenTouchesNothing', async () => {
+    const { nv, calls, release } = pane(false) // core gives way to the bump
     const stop = startSegDrawing(nv, segDs, {
       setNote: () => {},
       convert,
@@ -175,8 +177,23 @@ describe('startSegDrawing', () => {
     stop()
     release()
     await settle()
-    expect(calls).toEqual(['load', 'close'])
+    expect(calls).toEqual(['load'])
+    expect(nv._drawingGeneration).toBe(2)
     expect(nv.drawIsEnabled).toBe(true)
+  })
+
+  test('cleanupAfterCoreInstalled_beforeTheSegResumed_closesIt', async () => {
+    const { nv, calls, release } = pane(true) // core installed despite the bump
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert,
+      whenBase,
+    })
+    await settle()
+    release()
+    stop()
+    await settle()
+    expect(calls).toEqual(['load', 'close'])
   })
 
   test('cleanupWhileRealCoreReadsTheFile_installsNothing', async () => {
@@ -270,6 +287,73 @@ describe('startSegDrawing', () => {
     finish()
     await settle()
     expect(nv.drawingVolume).toBe(mine)
+  })
+
+  // A File whose read waits on `release`; `isReading` resolves when it starts.
+  function slowFile(name: string) {
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let reading = () => {}
+    const isReading = new Promise<void>((r) => {
+      reading = r
+    })
+    class SlowFile extends File {
+      override async arrayBuffer() {
+        reading()
+        await gate
+        return super.arrayBuffer()
+      }
+    }
+    return { file: new SlowFile([labels()], name), release, isReading }
+  }
+
+  test('cleanupWhileSegReads_keepsTheDrawingItWouldReplace', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    await nv.loadDrawing(new File([labels()], 'prior.nii'))
+    const prior = nv.drawingVolume
+    expect(prior).not.toBeNull()
+    const seg = slowFile('seg.nii')
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert: async () => ({ ...converted, image: seg.file }),
+      whenBase,
+    })
+    await seg.isReading
+    stop()
+    seg.release()
+    await settle()
+    expect(nv.drawingVolume).toBe(prior)
+  })
+
+  test('userDrawingStillReadingWhenConversionEnds_winsOverTheSeg', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    let finish = () => {}
+    const converting = new Promise<void>((r) => {
+      finish = r
+    })
+    startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert: async () => {
+        await converting
+        return { ...converted, image: new File([labels()], 'seg.nii') }
+      },
+      whenBase,
+    })
+    const mine = slowFile('mine.nii')
+    const isMineShown = nv.loadDrawing(mine.file)
+    await mine.isReading
+    finish()
+    await settle()
+    mine.release()
+    expect(await isMineShown).toBe(true)
+    await settle()
+    expect(nv.drawingVolume).not.toBeNull()
   })
 
   test('cleanupAfterAnotherDrawingReplacedTheSeg_keepsIt', async () => {

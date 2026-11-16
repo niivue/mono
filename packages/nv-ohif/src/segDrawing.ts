@@ -91,9 +91,8 @@ export function segColormap(segments: ReadonlyArray<SidecarSegment>) {
 
 /**
  * Convert `seg` and show it as `nv`'s drawing, coloured from its sidecar.
- * Returns the cleanup: it closes the drawing only while this owns it (loading
- * in core or shown), so it never erases a drawing that replaced it; closing
- * also makes a core load still reading its file give way.
+ * Returns the cleanup: a load still reading gives way (the prior drawing
+ * stays); a shown SEG closes unless another drawing replaced it.
  */
 export function startSegDrawing(
   nv: Pick<
@@ -102,6 +101,7 @@ export function startSegDrawing(
     | 'closeDrawing'
     | 'addColormap'
     | 'drawingVolume'
+    | '_drawingGeneration'
     | 'drawColormap'
     | 'drawIsEnabled'
     | 'drawOpacity'
@@ -117,32 +117,43 @@ export function startSegDrawing(
   },
 ): () => void {
   let cancelled = false
-  // The SEG owns the drawing slot while it is unchanged since its load began
-  // (closing then supersedes the read) and, once installed, the volume it put
-  // there. A drawing loaded since has already superseded the SEG in core.
-  let isOwned = false
-  let owned: NiiVue['drawingVolume'] = null
+  // Core bumps _drawingGeneration on every drawing load, install or close; a
+  // loadDrawing still reading gives way to a bump. `pending` is the SEG's load
+  // generation while it reads; `installed` the volume it put there.
+  let pending: number | undefined
+  let installed: NiiVue['drawingVolume'] = null
   const abort = new AbortController()
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
-    // A drawing loaded during the conversion supersedes the SEG.
-    const atStart = nv.drawingVolume
+    // Any drawing call during the conversion (even one still reading) wins.
+    const atStart = nv._drawingGeneration
     const [converted, hasBase] = await Promise.all([
       convert(seg, { headers: options.headers, signal: abort.signal }),
       options.whenBase,
     ])
-    if (!converted || !hasBase || cancelled || nv.drawingVolume !== atStart)
+    if (
+      !converted ||
+      !hasBase ||
+      cancelled ||
+      nv._drawingGeneration !== atStart
+    )
       return
-    isOwned = true
-    owned = nv.drawingVolume
-    const isShown = await nv.loadDrawing(converted.image)
-    if (cancelled) return
+    const load = nv.loadDrawing(converted.image)
+    pending = nv._drawingGeneration
+    const isShown = await load
+    const loadGeneration = pending
+    pending = undefined
+    if (cancelled) {
+      // Stopped after core installed it but before this resumed.
+      if (isShown && nv._drawingGeneration === loadGeneration + 1)
+        nv.closeDrawing()
+      return
+    }
     if (!isShown) {
-      isOwned = false
       options.setNote('The segmentation could not be shown.')
       return
     }
-    owned = nv.drawingVolume
+    installed = nv.drawingVolume
     const segments = converted.json?.Segments
     if (Array.isArray(segments) && segments.length > 0)
       nv.drawColormap = nv.addColormap(
@@ -164,7 +175,9 @@ export function startSegDrawing(
   return () => {
     cancelled = true
     abort.abort()
-    if (isOwned && nv.drawingVolume === owned) nv.closeDrawing()
+    // A SEG load still reading gives way, keeping the drawing it would replace.
+    if (pending === nv._drawingGeneration) nv._drawingGeneration++
+    else if (installed && nv.drawingVolume === installed) nv.closeDrawing()
   }
 }
 

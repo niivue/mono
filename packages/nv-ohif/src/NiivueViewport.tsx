@@ -208,16 +208,20 @@ export function NiivueViewport(props: OhifViewportProps) {
     ro.observe(container)
 
     // Core emits volumeUpdated for every base-window change (windowing/contrast
-    // drags, pointercancel, setVolume); a transient readout confirms a change
+    // drags, pointercancel, setVolume), and only locationChange when a linked
+    // pane's sync writes calMin/calMax; a transient readout confirms a change
     // (the baseline diff in commands.ts drops unchanged updates).
-    const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
-      if (e.detail.volumeIndex !== 0) return
+    const onWindowChange = () => {
       const wl = trackNiivueWindowLevel(viewportId)
       if (!wl) return
       const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
       flashNote(message)
     }
+    const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
+      if (e.detail.volumeIndex === 0) onWindowChange()
+    }
     nv.addEventListener('volumeUpdated', onVolumeUpdated)
+    nv.addEventListener('locationChange', onWindowChange)
 
     // Annotations (Length / ROI / arrow): reflect a completed vector annotation
     // into OHIF's measurement panel, remove its row when the annotation is
@@ -286,6 +290,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
+      nv.removeEventListener('locationChange', onWindowChange)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
@@ -606,6 +611,9 @@ export function NiivueViewport(props: OhifViewportProps) {
           ),
         })
       })
+      // Release the shared conversion once the base settles: NiiVue holds its
+      // own decoded copy, and panes in the same commit have joined already.
+      .finally(() => abort.abort())
 
     return () => {
       cancelled = true

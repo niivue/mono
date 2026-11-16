@@ -72,7 +72,7 @@ export function initialRenderView(viewportOptions?: {
 }): [number, number] | undefined {
   if (viewportOptions?.viewportType !== 'volume3d') return undefined
   return (
-    { coronal: [180, 0], sagittal: [270, 0], axial: [180, -90] } as Record<
+    { coronal: [180, 0], sagittal: [90, 0], axial: [180, -90] } as Record<
       string,
       [number, number]
     >
@@ -1390,15 +1390,16 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * On a base-volume volumeUpdated, record the new window/level on the entry.
- * Returns it when it changed (for a viewport readout), else undefined. Windows
- * stay per viewport, as in OHIF: nothing is pushed to other viewports.
+ * On a base-window change (volumeUpdated, or locationChange after a linked
+ * pane's sync wrote calMin/calMax), record the new window/level on the entry.
+ * Returns it when it changed (for a viewport readout), else undefined.
  */
 export function trackNiivueWindowLevel(
   viewportId: string,
 ): { window: number; level: number } | undefined {
   const entry = getNiivueEntry(viewportId)
-  if (!entry) return undefined
+  // A loading base is not a change; seedWindowLevel sets the new baseline.
+  if (!entry || entry.baseLoading) return undefined
   const wl = readBaseWindowLevel(entry.nv)
   if (!wl) return undefined
   // First observation just seeds the baseline (no readout).
@@ -1442,7 +1443,7 @@ export function voiRange(
 /**
  * The series' own DICOM window (first WindowWidth/WindowCenter), which
  * cornerstone opens with when the hanging protocol sets none. Only a window
- * shared by the first, middle and last instance counts: scanners that store a
+ * shared by every instance counts: scanners that store a
  * per-slice auto window (e.g. Siemens MR) would otherwise window the whole
  * volume by one edge slice.
  */
@@ -1458,8 +1459,8 @@ export function dicomWindow(
     const inst = instances[i]
     return `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
   }
-  const n = instances.length
-  if (key(0) !== key(n >> 1) || key(0) !== key(n - 1)) return undefined
+  // Every instance: a per-slice window can agree at any sampled few.
+  if (!instances.every((_, i) => key(i) === key(0))) return undefined
   return windowRange(
     first(instances[0]?.WindowWidth),
     first(instances[0]?.WindowCenter),

@@ -106,6 +106,8 @@ export function startSegDrawing(
     | 'drawIsEnabled'
     | 'drawOpacity'
     | 'drawRimOpacity'
+    | 'addEventListener'
+    | 'removeEventListener'
   >,
   seg: OhifDisplaySet,
   options: {
@@ -122,6 +124,8 @@ export function startSegDrawing(
   // generation while it reads; `installed` the volume it put there.
   let pending: number | undefined
   let installed: NiiVue['drawingVolume'] = null
+  // Gives back the style the SEG replaced once its drawing leaves.
+  let restoreStyle: (() => void) | undefined
   const abort = new AbortController()
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
@@ -154,6 +158,11 @@ export function startSegDrawing(
       return
     }
     installed = nv.drawingVolume
+    const prior = {
+      drawColormap: nv.drawColormap,
+      drawOpacity: nv.drawOpacity,
+      drawRimOpacity: nv.drawRimOpacity,
+    }
     const segments = converted.json?.Segments
     if (Array.isArray(segments) && segments.length > 0)
       nv.drawColormap = nv.addColormap(
@@ -164,6 +173,26 @@ export function startSegDrawing(
     nv.drawIsEnabled = false
     nv.drawOpacity = SEG_FILL_OPACITY
     nv.drawRimOpacity = SEG_RIM_OPACITY
+    const applied = {
+      drawColormap: nv.drawColormap,
+      drawOpacity: nv.drawOpacity,
+      drawRimOpacity: nv.drawRimOpacity,
+    }
+    const onDrawingChanged = () => {
+      if (nv.drawingVolume !== installed) restoreStyle?.()
+    }
+    restoreStyle = () => {
+      restoreStyle = undefined
+      nv.removeEventListener('drawingChanged', onDrawingChanged)
+      // A style the user set since stays.
+      if (nv.drawColormap === applied.drawColormap)
+        nv.drawColormap = prior.drawColormap
+      if (nv.drawOpacity === applied.drawOpacity)
+        nv.drawOpacity = prior.drawOpacity
+      if (nv.drawRimOpacity === applied.drawRimOpacity)
+        nv.drawRimOpacity = prior.drawRimOpacity
+    }
+    nv.addEventListener('drawingChanged', onDrawingChanged)
   }
   show().catch((err) => {
     if (cancelled) return
@@ -178,6 +207,7 @@ export function startSegDrawing(
     // A SEG load still reading gives way, keeping the drawing it would replace.
     if (pending === nv._drawingGeneration) nv._drawingGeneration++
     else if (installed && nv.drawingVolume === installed) nv.closeDrawing()
+    restoreStyle?.()
   }
 }
 

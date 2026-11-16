@@ -125,6 +125,8 @@ describe('startSegDrawing', () => {
       drawIsEnabled: true,
       drawOpacity: 1,
       drawRimOpacity: -1,
+      addEventListener: () => {},
+      removeEventListener: () => {},
     }
     return { nv, calls, release }
   }
@@ -374,6 +376,41 @@ describe('startSegDrawing', () => {
     const mine = nv.drawingVolume
     stop()
     expect(nv.drawingVolume).toBe(mine)
+  })
+
+  test('segSupersededOrStopped_restoresTheStyleItReplaced_unlessTheUserChangedIt', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    nv.drawColormap = 'Draw'
+    nv.drawOpacity = 0.8
+    nv.drawRimOpacity = -1
+    const style = () => [nv.drawColormap, nv.drawOpacity, nv.drawRimOpacity]
+    const start = async () => {
+      const stop = startSegDrawing(nv, segDs, {
+        setNote: () => {},
+        convert: async () => ({
+          ...converted,
+          image: new File([labels()], 'seg.nii'),
+        }),
+        whenBase,
+      })
+      await settle()
+      expect(style()).toEqual(['Seg-seg', 0.5, 1])
+      return stop
+    }
+    // Superseded: the user's drawing gets its style back before the stop.
+    let stop = await start()
+    await nv.loadDrawing(new File([labels()], 'mine.nii'))
+    expect(style()).toEqual(['Draw', 0.8, -1])
+    stop()
+    expect(style()).toEqual(['Draw', 0.8, -1])
+    // Stopped: the fill opacity the user set since stays.
+    stop = await start()
+    nv.drawOpacity = 0.3
+    stop()
+    expect(nv.drawingVolume).toBeNull()
+    expect(style()).toEqual(['Draw', 0.3, -1])
   })
 
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {

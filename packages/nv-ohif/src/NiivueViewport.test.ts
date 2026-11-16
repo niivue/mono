@@ -323,3 +323,33 @@ test('a 2D -> 3D protocol on the same series starts a new base (the SEG reloads 
     baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso)),
   ).toBe(twoD)
 })
+
+test('removing a render preset keeps the DICOM window and restores gray', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [
+    {
+      displaySetInstanceUID: 'ds',
+      Modality: 'CT',
+      instances: [{ WindowWidth: 400, WindowCenter: 40 }],
+    },
+  ]
+  const render = { viewportType: 'volume3d' }
+  try {
+    applyHangingDisplay(entry, render, [
+      { options: { displayPreset: { CT: 'CT-Bone' } } },
+    ])
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('ct_bones')
+    applyHangingDisplay(entry, render, [{ options: {} }])
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('gray')
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-160, 240])
+  } finally {
+    unregisterNiivue('hp')
+  }
+})

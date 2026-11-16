@@ -50,4 +50,20 @@ describe('storeAnnotation', () => {
     expect(stored).toHaveLength(1)
     expect(stored[0]?.id).toBe('second')
   })
+
+  test('never merges a probe, placed or existing', () => {
+    const probe = {
+      ...square('probe', 4, 6),
+      shape: {
+        type: 'measurePoint',
+        start: { x: 5, y: 5 },
+        end: { x: 5, y: 5 },
+      },
+    } as VectorAnnotation
+    const roi = square('roi', 0, 10)
+    expect(storeAnnotation([roi], probe, true)).toEqual([roi, probe])
+    const stored = storeAnnotation([probe], square('roi2', 0, 10), true)
+    expect(stored.map((a) => a.id)).toEqual(['roi2', 'probe'])
+    expect(stored[1]).toBe(probe)
+  })
 })

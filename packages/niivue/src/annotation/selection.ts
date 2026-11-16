@@ -139,7 +139,11 @@ export function updateShapeBounds(
     case 'measureLine':
       return _updateLineArrow(original, controlPointIndex, newPosition)
     case 'measurePoint':
-      return { start: { ...newPosition }, end: { ...newPosition } }
+      return {
+        start: { ...newPosition },
+        end: { ...newPosition },
+        width: original.width,
+      }
     default:
       return { start: { ...original.start }, end: { ...original.end } }
   }

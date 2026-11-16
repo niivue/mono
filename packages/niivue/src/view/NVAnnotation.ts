@@ -284,7 +284,9 @@ export function buildAnnotation3DRenderData(
 }
 
 function formatAnnotationStats(stats: AnnotationStats, unit: string): string[] {
-  if (stats.value !== undefined) return [stats.value.toFixed(1)]
+  // 4 significant digits: an SUV of 0.04 must not read 0.0.
+  if (stats.value !== undefined)
+    return [String(Number(stats.value.toPrecision(4)))]
   if (stats.length !== undefined) {
     // Bidirectional carries both axes: long (length) + short (shortLength).
     if (stats.shortLength !== undefined) {

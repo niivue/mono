@@ -1710,6 +1710,9 @@ export function initInteraction(ctrl: NiiVue): void {
           for (const ann of ctrl.model.annotations) {
             if (!ann.shape) continue
             if (ann.sliceType !== sliceType) continue
+            // A probe lands inside a region; only another probe's dot selects.
+            if (tool === 'measurePoint' && ann.shape.type !== 'measurePoint')
+              continue
             const anchor = ann.anchorMM
             const onSlice =
               anchor && selTile?.planeNormal && selTile?.planePoint
@@ -1955,7 +1958,8 @@ export function initInteraction(ctrl: NiiVue): void {
                 if (
                   cfg.tool === 'line' ||
                   cfg.tool === 'arrow' ||
-                  cfg.tool === 'measureLine'
+                  cfg.tool === 'measureLine' ||
+                  cfg.tool === 'measurePoint'
                 ) {
                   shapeData.width = cfg.style.strokeWidth
                 }

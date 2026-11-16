@@ -2737,7 +2737,10 @@ export default class NiiVue extends EventTarget {
   /** See {@link AnnotationConfig.isClickToPlace}. */
   set annotationIsClickToPlace(v: boolean) {
     this.model.annotation.isClickToPlace = v
-    if (!v) this._annotationClickStart = null
+    if (!v && this._annotationClickStart) {
+      this._abandonAnnotationInProgress()
+      this.drawScene()
+    }
     this.emit('change', { property: 'annotationIsClickToPlace', value: v })
   }
 
@@ -2749,6 +2752,7 @@ export default class NiiVue extends EventTarget {
   set annotationIsDrawnFromCenter(v: boolean) {
     this.model.annotation.isDrawnFromCenter = v
     this.emit('change', { property: 'annotationIsDrawnFromCenter', value: v })
+    this.drawScene()
   }
 
   get annotationAreaIsGeometric(): boolean {

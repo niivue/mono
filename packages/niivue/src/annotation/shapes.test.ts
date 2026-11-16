@@ -31,14 +31,14 @@ describe('generateSplineFromPoints', () => {
     const [poly] = generateSplineFromPoints(pts)
     expect(poly).toBeDefined()
     if (!poly) throw new Error('no polygon')
-    // 4 control points * 16 samples per segment.
-    expect(poly.outer.length).toBe(64)
+    // 4 control points * 20 samples per segment.
+    expect(poly.outer.length).toBe(80)
     expect(poly.holes).toEqual([])
     // The spline passes through each control point at segment starts (t=0).
     expect(poly.outer[0]).toEqual({ x: 0, y: 0 })
-    expect(poly.outer[16]).toEqual({ x: 10, y: 0 })
-    expect(poly.outer[32]).toEqual({ x: 10, y: 10 })
-    expect(poly.outer[48]).toEqual({ x: 0, y: 10 })
+    expect(poly.outer[20]).toEqual({ x: 10, y: 0 })
+    expect(poly.outer[40]).toEqual({ x: 10, y: 10 })
+    expect(poly.outer[60]).toEqual({ x: 0, y: 10 })
   })
 
   test('stays within the control-point bounding box (no wild overshoot)', () => {

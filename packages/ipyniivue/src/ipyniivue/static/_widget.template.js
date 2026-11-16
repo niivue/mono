@@ -150,12 +150,15 @@ const PROPS_RW = [
 
 // [jsName, pyName] for read-only properties (JS-to-Python only).
 const PROPS_RO = [
+  ["annotationRedoTop", "annotation_redo_top"],
+  ["annotationUndoTop", "annotation_undo_top"],
   ["backend", "backend"],
   ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],
   ["drawingColormaps", "drawing_colormaps"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],
   ["isAnimating", "is_animating"],
+  ["isAnnotationInProgress", "is_annotation_in_progress"],
   ["isAntiAlias", "is_anti_alias"],
   ["isDestroyed", "is_destroyed"],
   ["meshExtensions", "mesh_extensions"],
@@ -198,6 +201,7 @@ const EVENTS = [
   "angleCompleted",
   "annotationAdded",
   "annotationChanged",
+  "annotationHistoryPush",
   "annotationRemoved",
   "azimuthElevationChange",
   "canvasResize",

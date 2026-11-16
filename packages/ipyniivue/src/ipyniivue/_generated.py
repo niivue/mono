@@ -34,6 +34,7 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "angleCompleted",
     "annotationAdded",
     "annotationChanged",
+    "annotationHistoryPush",
     "annotationRemoved",
     "azimuthElevationChange",
     "change",
@@ -257,6 +258,10 @@ off-window crosshair is brought back."""
     """Windowing drag gain; see {@link InteractionConfig.windowingStep}."""
 
     # Read-only properties (synced from JS to Python)
+    annotation_redo_top = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Sequence number of the step annotationRedo would reapply."""
+    annotation_undo_top = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Sequence number of the step annotationUndo would revert (annotationHistoryPush)."""
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
     cinematic_frame_ms = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Mean GPU time (ms) of a cinematic refinement frame, over the first 10
@@ -272,6 +277,8 @@ option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
 pixels times this are canvas pixels."""
     is_animating = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True while an animateTo transition is running."""
+    is_annotation_in_progress = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """A multi-click contour, bidirectional or click-placed shape is half-drawn."""
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_destroyed = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True once {@link destroy} has run. Lets external holders (e.g. an
@@ -502,6 +509,15 @@ and its volumes alive."""
             which properties to sync (default: { '2d': true, '3d': true })
         """
         self.send({"cmd": "broadcastTo", "args": _make_args(targets, opts)})
+
+    async def cancel_annotation_in_progress(self) -> Any:
+        """Drop the half-drawn annotation (as Escape does); false if there was none.
+
+        Returns
+        -------
+        boolean
+        """
+        return await self._request("cancelAnnotationInProgress", [])
 
     async def cancel_pending_frame(self) -> Any:
         """Drop the frame that {@link drawScene} has scheduled but not yet drawn.
@@ -1463,8 +1479,25 @@ and its volumes alive."""
     def remove_all_volumes(self) -> None:
         self.send({"cmd": "removeAllVolumes", "args": []})
 
-    def remove_annotation(self, id: Any) -> None:
-        self.send({"cmd": "removeAnnotation", "args": _make_args(id)})
+    def remove_annotation(self, id: Any, is_undoable: Any = _UNSET) -> None:
+        """Remove an annotation; `isUndoable` records an annotationUndo step first.
+
+        Parameters
+        ----------
+        id : string
+        is_undoable : boolean
+        """
+        self.send({"cmd": "removeAnnotation", "args": _make_args(id, is_undoable)})
+
+    def remove_annotations(self, ids: Any, is_undoable: Any = _UNSET) -> None:
+        """Remove several annotations as one change (one annotationUndo step when `isUndoable`); emits annotationChanged with action 'delete'.
+
+        Parameters
+        ----------
+        ids : readonly string[]
+        is_undoable : boolean
+        """
+        self.send({"cmd": "removeAnnotations", "args": _make_args(ids, is_undoable)})
 
     def remove_measurement(self, index: Any) -> None:
         """Remove a single completed distance measurement by index, emitting `measurementRemoved` before the mutation (so the listener can still reach it) and redrawing.

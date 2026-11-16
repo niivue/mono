@@ -56,6 +56,7 @@ import {
 } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { projectMMToCanvas } from '@/view/sliceUtils'
 import {
   type ClipDrawPlane,
   chunkExplodeEnabled,
@@ -78,6 +79,33 @@ const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
 // isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
 // screen space so thick slices or zoom don't change what counts as a click.
 const CLICK_PX = 3
+// A multi-click contour closes on a click this close (CSS px) to its first
+// point, as cornerstone's closeContourProximity (10).
+const CLOSE_PX = 10
+
+function isNearFirstPoint(
+  ctrl: NiiVue,
+  evt: PointerEvent,
+  first: AnnotationPoint,
+): boolean {
+  // Through the clicked tile: the nearest tile to the point may be another
+  // plane through it (a multiplanar layout's crosshair).
+  const tile = ctrl.activeTileHit
+    ? ctrl.view?.screenSlices[ctrl.activeTileHit.tileIndex]
+    : undefined
+  const { mvpMatrix, planeNormal, planePoint, leftTopWidthHeight } = tile ?? {}
+  if (!mvpMatrix || !planeNormal || !planePoint || !leftTopWidthHeight)
+    return false
+  const mm = Annotation.slice2DToMMOnPlane(
+    first,
+    ctrl._annotationPolySliceType,
+    planeNormal,
+    planePoint,
+  )
+  const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
+  const [x, y] = clientToCanvasPixel(ctrl, evt.clientX, evt.clientY)
+  return Math.hypot(x - cx, y - cy) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
+}
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -1720,6 +1748,25 @@ export function initInteraction(ctrl: NiiVue): void {
             resetLivewire(ctrl)
           }
           const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
+          // isClickToPlace (cornerstone's conventions): a click back near the
+          // first point closes the contour, as a double-click does.
+          if (
+            cfg.isClickToPlace &&
+            !(tool in ANGLE_CLICKS) &&
+            poly.length >= 3 &&
+            isNearFirstPoint(ctrl, evt, poly[0] as AnnotationPoint)
+          ) {
+            // Live wire closes along the snapped path back to the first point
+            // (its ends duplicate the last and first vertices), not a chord.
+            if (isLivewireTool(tool)) {
+              const seg = livewireSnappedPath(ctrl, poly[0] as AnnotationPoint)
+              for (let i = 1; i < seg.length - 1; i++) poly.push(seg[i])
+            }
+            commitMultiClickContour(ctrl)
+            ctrl._abandonAnnotationInProgress()
+            ctrl.drawScene()
+            return
+          }
           // The second press of a double-click (which closes the contour via
           // the dblclick handler) and a press coincident with the last placed
           // point must not append: the duplicate point would let a single

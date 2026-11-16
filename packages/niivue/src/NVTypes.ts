@@ -2196,7 +2196,8 @@ export type AnnotationConfig = {
    * click (press and release in place) parks the start; the next press on the
    * same slice ends the shape where it is released. Drags work as before.
    * A bidirectional then commits with its long axis, plus an automatic
-   * perpendicular short axis 2/3 as long through its midpoint.
+   * perpendicular short axis 2/3 as long through its midpoint. A multi-click
+   * contour (spline, live wire) also closes on a click near its first point.
    */
   isClickToPlace: boolean
   /**

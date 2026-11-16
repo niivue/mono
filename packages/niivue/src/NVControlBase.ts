@@ -695,7 +695,9 @@ export default class NiiVue extends EventTarget {
   /** True once a `crosshairPan` gesture has crossed the drag threshold. */
   _crosshairPanDidDrag = false
   // Annotation transient state (controller-owned, not serialized)
-  _annotationUndoStack = new AnnotationUndoStack()
+  _annotationUndoStack = Object.assign(new AnnotationUndoStack(), {
+    onPush: (seq: number) => this.emit('annotationHistoryPush', { seq }),
+  })
   _annotationBrushPath: AnnotationPoint[] = []
   _frozenLoopPoints: AnnotationPoint[] | null = null
   _annotationSliceType = 0
@@ -2825,6 +2827,23 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** A multi-click contour, bidirectional or click-placed shape is half-drawn. */
+  get isAnnotationInProgress(): boolean {
+    return Boolean(
+      this._annotationPolyPoints ||
+        this._bidirectionalLong ||
+        this._annotationClickStart,
+    )
+  }
+
+  /** Drop the half-drawn annotation (as Escape does); false if there was none. */
+  cancelAnnotationInProgress(): boolean {
+    if (!this.isAnnotationInProgress) return false
+    this._abandonAnnotationInProgress()
+    this.drawScene()
+    return true
+  }
+
   /** Drop a half-drawn multi-click contour or bidirectional measurement. */
   _abandonAnnotationInProgress(): void {
     // A drag in progress too: pointer-up would otherwise commit it, e.g. a
@@ -2920,13 +2939,38 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  removeAnnotation(id: string): void {
+  /** Remove an annotation; `isUndoable` records an annotationUndo step first. */
+  removeAnnotation(id: string, isUndoable = false): void {
     const idx = this.model.annotations.findIndex((a) => a.id === id)
     if (idx >= 0) {
+      if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
       this.model.annotations.splice(idx, 1)
       this.emit('annotationRemoved', { id })
       this.drawScene()
     }
+  }
+
+  /**
+   * Remove several annotations as one change (one annotationUndo step when
+   * `isUndoable`); emits annotationChanged with action 'delete'.
+   */
+  removeAnnotations(ids: readonly string[], isUndoable = false): void {
+    const drop = new Set(ids)
+    const removed = this.model.annotations
+      .filter((a) => drop.has(a.id))
+      .map((a) => a.id)
+    if (removed.length === 0) return
+    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
+    this.model.annotations = this.model.annotations.filter(
+      (a) => !drop.has(a.id),
+    )
+    this.emit('annotationChanged', {
+      action: 'delete',
+      added: [],
+      updated: [],
+      removed,
+    })
+    this.drawScene()
   }
 
   clearAnnotations(): void {
@@ -2972,6 +3016,16 @@ export default class NiiVue extends EventTarget {
       sliceType: isSlicePlane ? type : undefined,
       slicePosition: slicePosition,
     })
+  }
+
+  /** Sequence number of the step annotationUndo would revert (annotationHistoryPush). */
+  get annotationUndoTop(): number | undefined {
+    return this._annotationUndoStack.undoTop
+  }
+
+  /** Sequence number of the step annotationRedo would reapply. */
+  get annotationRedoTop(): number | undefined {
+    return this._annotationUndoStack.redoTop
   }
 
   annotationUndo(): void {

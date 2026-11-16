@@ -2187,6 +2187,8 @@ export type AnnotationConfig = {
    * axes) may also be placed click-move-click, as cornerstone's tools are: a
    * click (press and release in place) parks the start; the next press on the
    * same slice ends the shape where it is released. Drags work as before.
+   * A bidirectional then commits with its long axis, plus an automatic
+   * perpendicular short axis 2/3 as long through its midpoint.
    */
   isClickToPlace: boolean
   /**

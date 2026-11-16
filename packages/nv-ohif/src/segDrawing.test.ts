@@ -24,6 +24,23 @@ describe('segColormap', () => {
     expect([cmap.R[1], cmap.G[1], cmap.B[1]]).toEqual([255, 255, 255])
     expect(cmap.labels).toEqual(['', '2'])
   })
+
+  test('lateralityModifier_prefixesSharedLabel', () => {
+    const left = { CodeMeaning: 'Left' }
+    const cmap = segColormap([
+      {
+        LabelValue: 1,
+        SegmentLabel: 'Putamen',
+        SegmentedPropertyTypeModifierCode: left,
+      },
+      {
+        LabelValue: 2,
+        SegmentLabel: 'Left Putamen',
+        SegmentedPropertyTypeModifierCode: left,
+      },
+    ])
+    expect(cmap.labels).toEqual(['', 'Left Putamen', 'Left Putamen'])
+  })
 })
 
 describe('resolveSegDisplaySets', () => {

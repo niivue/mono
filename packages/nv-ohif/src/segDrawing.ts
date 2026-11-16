@@ -50,6 +50,7 @@ interface SidecarSegment {
   LabelValue?: number
   SegmentLabel?: string
   RGB?: number[]
+  SegmentedPropertyTypeModifierCode?: { CodeMeaning?: string }
 }
 
 /**
@@ -73,7 +74,10 @@ export function segColormap(segments: ReadonlyArray<SidecarSegment>) {
     cmap.B.push(b)
     cmap.A.push(255)
     cmap.I.push(s.LabelValue)
-    cmap.labels.push(s.SegmentLabel ?? String(s.LabelValue))
+    // Paired segments often share a label and differ only by laterality.
+    const side = s.SegmentedPropertyTypeModifierCode?.CodeMeaning
+    const label = s.SegmentLabel ?? String(s.LabelValue)
+    cmap.labels.push(side && !label.includes(side) ? `${side} ${label}` : label)
   }
   return cmap
 }

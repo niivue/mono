@@ -189,12 +189,27 @@ export function clipperSubtractBrush(
 }
 
 /**
- * Area of a polygon's even-odd region (pointInRing's rule), so a self-crossing
- * ring's lobes add instead of cancelling as in a signed shoelace sum.
+ * Area of a polygon as the voxel mask reads it: inside its outer ring by
+ * even-odd (pointInRing's rule, so a self-crossing ring's lobes add instead of
+ * cancelling as in a signed shoelace sum) and inside no hole.
  */
-export function clipperEvenOddArea(rings: AnnotationPoint[][]): number {
+export function clipperRegionArea(
+  outer: AnnotationPoint[],
+  holes: AnnotationPoint[][],
+): number {
   // precision 4: 0.1 um in mm, while scaled products stay exact in doubles.
+  const region = (ring: AnnotationPoint[]) =>
+    booleanOpD(ClipType.Union, [ring], null, FillRule.EvenOdd, 4)
+  // Each ring normalised to winding 1, so NonZero unions overlapping holes.
   return Math.abs(
-    areaPathsD(booleanOpD(ClipType.Union, rings, null, FillRule.EvenOdd, 4)),
+    areaPathsD(
+      booleanOpD(
+        ClipType.Difference,
+        region(outer),
+        holes.flatMap(region),
+        FillRule.NonZero,
+        4,
+      ),
+    ),
   )
 }

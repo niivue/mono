@@ -8,7 +8,7 @@ import type {
   VectorAnnotation,
 } from '@/NVTypes'
 import { getVoxelValue } from '@/volume/utils'
-import { clipperEvenOddArea } from './clipper'
+import { clipperRegionArea } from './clipper'
 import { constrainCircleEnd, isAnnotationErased, isCircleTool } from './shapes'
 import { IN_PLANE_AXES, mmToSlice2D, slice2DToMM } from './sliceProjection'
 
@@ -41,7 +41,7 @@ function projectedArea(annotation: VectorAnnotation): number {
   }
   let a = 0
   for (const poly of annotation.polygons)
-    a += clipperEvenOddArea([poly.outer, ...poly.holes])
+    a += clipperRegionArea(poly.outer, poly.holes)
   return a
 }
 
@@ -66,6 +66,35 @@ function tiltAreaScale(
   const [b0, b1, b2] = col(ax1)
   const n = [a1 * b2 - a2 * b1, a2 * b0 - a0 * b2, a0 * b1 - a1 * b0]
   return Math.hypot(n[0], n[1], n[2]) / Math.abs(n[depthDim] as number)
+}
+
+/**
+ * Sets row `i1`'s voxels inside `ring` to `value`, by pointInRing's rule: x is
+ * inside when an odd number of crossings lie strictly right of it, i.e. x in
+ * [c0, c1), [c2, c3) ...
+ */
+function fillRingRow(
+  ring: readonly AnnotationPoint[],
+  i1: number,
+  row: Uint8Array,
+  r0min: number,
+  r0max: number,
+  value: number,
+  xs: number[],
+): void {
+  xs.length = 0
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i] as AnnotationPoint
+    const b = ring[j] as AnnotationPoint
+    if (a.y > i1 !== b.y > i1)
+      xs.push(((b.x - a.x) * (i1 - a.y)) / (b.y - a.y) + a.x)
+  }
+  xs.sort((p, q) => p - q)
+  for (let k = 0; k + 1 < xs.length; k += 2) {
+    const lo = Math.max(r0min, Math.ceil(xs[k] as number))
+    const hi = Math.min(r0max, Math.ceil(xs[k + 1] as number) - 1)
+    for (let i0 = lo; i0 <= hi; i0++) row[i0 - r0min] = value
+  }
 }
 
 /** An intact ellipse or circle's centre and semi-axes (slice-2D mm), else null. */
@@ -181,7 +210,8 @@ export function computeAnnotationStats(
       y: (e0.x * dy - dx * e0.y) / det,
     }
   }
-  // Every piece of an eraser-split ROI counts; its holes cancel by parity (#115).
+  // Every piece of an eraser-split ROI counts (#115); a voxel inside any of a
+  // piece's holes does not.
   const polygonsVox = annotation.polygons
     .filter((poly) => poly.outer.length >= 3)
     .map((poly) => [poly.outer, ...poly.holes].map((ring) => ring.map(toVox)))
@@ -227,6 +257,7 @@ export function computeAnnotationStats(
   // Scanline fill: per voxel row, where the outline crosses it, then the spans
   // between crossings; rows cost O(edges), not O(voxels x edges).
   const inRow = new Uint8Array(r0max - r0min + 1)
+  const pieceRow = new Uint8Array(inRow.length)
   const xs: number[] = []
   const ras: [number, number, number] = [0, 0, 0]
   ras[depthDim] = depthVox
@@ -250,24 +281,33 @@ export function computeAnnotationStats(
         for (let i0 = lo; i0 <= hi; i0++) inRow[i0 - r0min] = 1
       }
     } else
-      for (const rings of polygonsVox) {
-        // pointInRing's rule: x inside when an odd number of crossings lie
-        // strictly right of it, i.e. x in [c0, c1), [c2, c3) ...
-        xs.length = 0
-        for (const ring of rings) {
-          for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-            const a = ring[i] as AnnotationPoint
-            const b = ring[j] as AnnotationPoint
-            if (a.y > i1 !== b.y > i1)
-              xs.push(((b.x - a.x) * (i1 - a.y)) / (b.y - a.y) + a.x)
-          }
+      for (const [outer, ...holes] of polygonsVox) {
+        if (holes.length === 0) {
+          fillRingRow(
+            outer as AnnotationPoint[],
+            i1,
+            inRow,
+            r0min,
+            r0max,
+            1,
+            xs,
+          )
+          continue
         }
-        xs.sort((p, q) => p - q)
-        for (let k = 0; k + 1 < xs.length; k += 2) {
-          const lo = Math.max(r0min, Math.ceil(xs[k] as number))
-          const hi = Math.min(r0max, Math.ceil(xs[k + 1] as number) - 1)
-          for (let i0 = lo; i0 <= hi; i0++) inRow[i0 - r0min] = 1
-        }
+        pieceRow.fill(0)
+        fillRingRow(
+          outer as AnnotationPoint[],
+          i1,
+          pieceRow,
+          r0min,
+          r0max,
+          1,
+          xs,
+        )
+        for (const hole of holes)
+          fillRingRow(hole, i1, pieceRow, r0min, r0max, 0, xs)
+        for (let k = 0; k < pieceRow.length; k++)
+          inRow[k] |= pieceRow[k] as number
       }
     ras[ax1] = i1
     for (let i0 = r0min; i0 <= r0max; i0++) {

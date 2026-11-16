@@ -382,3 +382,12 @@ test('an intact circle measures the square-constrained circle it draws', () => {
       if ((i - 10) ** 2 + (j - 10) ** 2 <= 25) inside++
   expect(computeAnnotationStats(ann, volume)?.area).toBe(inside)
 })
+
+test('overlapping holes exclude their overlap once, in the mask and the geometric area', () => {
+  // 10x10 outer at (0,0) with 5x5 holes at (2,2) and (4,4): 100 - 25 - 25 + 9.
+  const ann = annotation([
+    { outer: square(0, 0, 10), holes: [square(2, 2, 5), square(4, 4, 5)] },
+  ])
+  expect(computeAnnotationStats(ann, volume)?.area).toBe(59)
+  expect(computeAnnotationStats(ann, volume, true)?.area).toBeCloseTo(59, 6)
+})

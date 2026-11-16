@@ -10,6 +10,7 @@ import {
 } from './commands'
 import {
   applyHangingDisplay,
+  baseKey,
   DEFAULT_OPTIONS,
   hangingKeys,
   settleBase,
@@ -307,4 +308,18 @@ test('removing the protocol window restores the robust range and gray', async ()
   } finally {
     unregisterNiivue('hp')
   }
+})
+
+test('a 2D -> 3D protocol on the same series starts a new base (the SEG reloads on it)', () => {
+  const dso = [{ options: {} }]
+  const twoD = baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso))
+  const threeD = baseKey(
+    'ds',
+    true,
+    hangingKeys({ viewportType: 'volume3d' }, dso),
+  )
+  expect(threeD).not.toBe(twoD)
+  expect(
+    baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso)),
+  ).toBe(twoD)
 })

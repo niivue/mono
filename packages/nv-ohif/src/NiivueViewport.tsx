@@ -146,6 +146,15 @@ export function hangingDisplay(
     : (voiRange(displaySetOptions) ?? dicomWindow(ds, shown))
 }
 
+/** What the load effect keys on: it changes whenever a new base starts loading. */
+export function baseKey(
+  displaySetsKey: string,
+  ready: boolean,
+  keys: { load: string },
+): string {
+  return JSON.stringify([displaySetsKey, ready, keys.load])
+}
+
 /** A new hanging protocol's window / preset on the loaded base, in place. */
 export function applyHangingDisplay(
   entry: NiivueViewportEntry | undefined,
@@ -243,6 +252,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     .join('|')
 
   const keys = hangingKeys(props.viewportOptions, props.displaySetOptions)
+  const base = baseKey(displaySetsKey, ready, keys)
   // The hanging protocol's view and sync groups, on attach and whenever a new
   // protocol changes them for the same viewport and series. Declared before the
   // create effect so unmount leaves the sync groups before nv.destroy().
@@ -463,7 +473,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
   // Load the display set(s) hung in this viewport, once attached / on change.
   // Keyed on displaySetsKey and keys.load (not the array identity) by design — see above.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on displaySetsKey by design
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base key by design
   useEffect(() => {
     const nv = nvRef.current
     const displaySets = displaySetsRef.current
@@ -801,14 +811,14 @@ export function NiivueViewport(props: OhifViewportProps) {
       cancelled = true
       abort.abort()
     }
-  }, [displaySetsKey, ready, keys.load])
+  }, [base])
 
   // After the load effect, so a base and SEG changed together wait on the new base.
   useSegDrawing(
     nvRef,
     seg,
     baseInstalledRef,
-    `${displaySetsKey}|${ready}`,
+    base,
     servicesManager,
     (message) => setStatus({ kind: 'note', message }),
   )

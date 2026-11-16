@@ -230,7 +230,11 @@ test('annotationIsClickToPlace: click-move-click places a shape; drags and the d
     const afterSecond = nv.annotations.length
     // A drag still places a shape in one gesture.
     drag([[220, 220], [260, 260], [300, 300]])
-    return { off, afterFirst, afterSecond, afterDrag: nv.annotations.length, parked: nv._annotationClickStart }
+    const afterDrag = nv.annotations.length
+    // Entering eraser mode drops a parked start, so a later press cannot resume it.
+    click(120, 120)
+    nv.annotationIsErasing = true
+    return { off, afterFirst, afterSecond, afterDrag, parked: nv._annotationClickStart, preview: nv.model._annotationPreview }
   })()`)
 
   expect(r.off).toBe(0)
@@ -238,6 +242,7 @@ test('annotationIsClickToPlace: click-move-click places a shape; drags and the d
   expect(r.afterSecond).toBe(1)
   expect(r.afterDrag).toBe(2)
   expect(r.parked).toBeNull()
+  expect(r.preview).toBeNull()
 })
 
 test('annotationIsClickToPlace: places a shape on an oblique volume; turning it off drops the preview', async ({

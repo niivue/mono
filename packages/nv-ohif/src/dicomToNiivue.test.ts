@@ -158,6 +158,26 @@ describe('convertDisplaySetToNifti', () => {
     expect(inputs.map((f) => f.name)).toEqual(['3.dcm'])
   })
 
+  it('shares a conversion only between identical inputs', async () => {
+    let finish = () => {}
+    result = new Promise((resolve) => {
+      finish = () => resolve({ series: [output('v', 3)] })
+    })
+    const uid = { displaySetInstanceUID: 'ds1' }
+    const one = { ...uid, instances: [{ imageId: `wadors:${frames}` }] }
+    const three = {
+      ...uid,
+      instances: [{ imageId: `wadors:${frames}`, NumberOfFrames: 3 }],
+    }
+    const pending = [one, three, one].map((d) =>
+      convertDisplaySetToNifti(d as OhifDisplaySet),
+    )
+    await Bun.sleep(0)
+    finish()
+    await Promise.all(pending)
+    expect(calls).toHaveLength(2)
+  })
+
   it('is null without instances or reconstructed files', async () => {
     expect(await convertDisplaySetToNifti({} as OhifDisplaySet)).toBeNull()
     stubFetch('other-sop')

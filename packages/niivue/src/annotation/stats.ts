@@ -104,32 +104,6 @@ function intactEllipse(
  * count times the voxel area, or with `isAreaGeometric` the outline's own area
  * ({@link AnnotationConfig.isAreaGeometric}).
  */
-/** The base value at a measurePoint's voxel; null off the image or on no data. */
-function pointStats(
-  annotation: VectorAnnotation,
-  volume: NVImage,
-): AnnotationStats | null {
-  const { shape, slicePosition, sliceType } = annotation
-  const dims = volume.dimsRAS
-  if (!shape || !dims || !volume.matRAS) return null
-  const mm2vox = mat4.invert(
-    mat4.create(),
-    mat4.transpose(mat4.create(), volume.matRAS),
-  )
-  if (!mm2vox) return null
-  const mm = slice2DToMM(shape.end, slicePosition, sliceType)
-  const v = vec4.transformMat4(
-    vec4.create(),
-    vec4.fromValues(mm[0], mm[1], mm[2], 1),
-    mm2vox,
-  )
-  const vox = [0, 1, 2].map((i) => Math.round(v[i] as number))
-  if (vox.some((x, i) => x < 0 || x >= (dims[i + 1] as number))) return null
-  const value = getVoxelValue(volume, vox[0], vox[1], vox[2])
-  if (!Number.isFinite(value)) return null
-  return { area: 0, min: value, mean: value, max: value, stdDev: 0, value }
-}
-
 export function computeAnnotationStats(
   annotation: VectorAnnotation,
   volume: NVImage,
@@ -152,8 +126,6 @@ export function computeAnnotationStats(
     }
   }
 
-  if (shape.type === 'measurePoint') return pointStats(annotation, volume)
-
   const firstPt = annotation.polygons[0]?.outer[0]
   if (!firstPt) return null
 
@@ -172,7 +144,13 @@ export function computeAnnotationStats(
   const mm2vox = mat4.invert(mat4.create(), vox2mm)
   if (!mm2vox) return null
   const tmpVec = vec4.create()
-  const mm0 = slice2DToMM(firstPt, annotation.slicePosition, sliceType)
+  const isPoint = shape.type === 'measurePoint'
+  // A point's plane is its anchor's: on an oblique volume a moved point's
+  // constant-mm depth leaves that voxel plane.
+  const mm0 =
+    isPoint && annotation.anchorMM
+      ? annotation.anchorMM
+      : slice2DToMM(firstPt, annotation.slicePosition, sliceType)
   vec4.transformMat4(
     tmpVec,
     vec4.set(tmpVec, mm0[0], mm0[1], mm0[2], 1),
@@ -207,6 +185,19 @@ export function computeAnnotationStats(
       x: (dx * e1.y - e1.x * dy) / det,
       y: (e0.x * dy - dx * e0.y) / det,
     }
+  }
+  const frame = volume.frame4D ?? 0
+  if (isPoint) {
+    const v = toVox(shape.end)
+    const ras = [0, 0, 0]
+    ras[ax0] = Math.round(v.x)
+    ras[ax1] = Math.round(v.y)
+    ras[depthDim] = depthVox
+    if (ras.some((x, i) => x < 0 || x >= (dims[i + 1] as number))) return null
+    // The displayed 4D frame, as the crosshair readout samples it.
+    const value = getVoxelValue(volume, ras[0], ras[1], ras[2], frame)
+    if (!Number.isFinite(value)) return null
+    return { area: 0, min: value, mean: value, max: value, stdDev: 0, value }
   }
   // Every piece of an eraser-split ROI counts; its holes cancel by parity (#115).
   const polygonsVox = annotation.polygons
@@ -291,7 +282,7 @@ export function computeAnnotationStats(
     for (let i0 = r0min; i0 <= r0max; i0++) {
       if (!inRow[i0 - r0min]) continue
       ras[ax0] = i0
-      const val = getVoxelValue(volume, ras[0], ras[1], ras[2])
+      const val = getVoxelValue(volume, ras[0], ras[1], ras[2], frame)
       // NaN: no data there (float padding, a streamed brick not yet decoded).
       if (!Number.isFinite(val)) continue
       count++

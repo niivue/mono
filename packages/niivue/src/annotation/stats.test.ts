@@ -287,3 +287,50 @@ describe('measurePoint', () => {
     expect(computeAnnotationStats(point(25, 0), volume)).toBeNull()
   })
 })
+
+describe('measurePoint on 4D and oblique volumes (R12 audit)', () => {
+  const n = 20
+  const c = Math.cos(Math.PI / 6)
+  const s = Math.sin(Math.PI / 6)
+  const vol = (img: Float32Array, matRAS: number[], frame4D = 0) =>
+    ({
+      img,
+      hdr: { scl_slope: 1, scl_inter: 0 },
+      dimsRAS: [3, n, n, n],
+      pixDimsRAS: [1, 1, 1, 1],
+      matRAS: new Float32Array(matRAS),
+      img2RASstart: [0, 0, 0],
+      img2RASstep: [1, n, n * n],
+      nVox3D: n * n * n,
+      frame4D,
+    }) as unknown as NVImage
+  const probe = (p: AnnotationPoint, z: number): VectorAnnotation => ({
+    ...annotation(generateShape('measurePoint', p, p, 1)),
+    slicePosition: z,
+    anchorMM: [p.x, p.y, z],
+    shape: { type: 'measurePoint', start: p, end: p },
+  })
+  test('reads the displayed 4D frame', () => {
+    const img = new Float32Array(2 * n * n * n).fill(7, 0, n * n * n)
+    img.fill(101, n * n * n)
+    const id = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    expect(
+      computeAnnotationStats(probe({ x: 4, y: 4 }, 5), vol(img, id, 1))?.value,
+    ).toBe(101)
+  })
+  test('a point moved on an oblique slice stays on its voxel plane', () => {
+    const img = new Float32Array(n * n * n)
+    for (let z = 0; z < n; z++)
+      for (let y = 0; y < n; y++)
+        for (let x = 0; x < n; x++)
+          img[x + y * n + z * n * n] = 10000 * z + 100 * y + x
+    const v = vol(img, [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1])
+    const ann = probe({ x: 4, y: c * 4 - s * 5 }, s * 4 + c * 5)
+    expect(computeAnnotationStats(ann, v)?.value).toBe(50404)
+    // Moved in slice-2D only (an API move keeps the anchor): voxel (4, 12, 5).
+    const end = { x: 4, y: c * 12 - s * 5 }
+    ann.shape = { type: 'measurePoint', start: end, end }
+    ann.polygons = generateShape('measurePoint', end, end, 1)
+    expect(computeAnnotationStats(ann, v)?.value).toBe(51204)
+  })
+})

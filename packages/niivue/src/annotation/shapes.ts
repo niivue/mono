@@ -7,6 +7,21 @@ import type {
 
 const ELLIPSE_SEGMENTS = 64
 
+function ellipseRing(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  n = ELLIPSE_SEGMENTS,
+): PolygonWithHoles[] {
+  const outer: AnnotationPoint[] = []
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2
+    outer.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry })
+  }
+  return [{ outer, holes: [] }]
+}
+
 export function isCircleTool(tool: AnnotationTool): boolean {
   return tool === 'circle' || tool === 'measureCircle'
 }
@@ -20,12 +35,7 @@ function generateEllipse(
   const rx = Math.abs(end.x - start.x) / 2
   const ry = Math.abs(end.y - start.y) / 2
   if (rx < 0.25 && ry < 0.25) return []
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
-    const angle = (i / ELLIPSE_SEGMENTS) * Math.PI * 2
-    outer.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry })
-  }
-  return [{ outer, holes: [] }]
+  return ellipseRing(cx, cy, rx, ry)
 }
 
 function generateRectangle(
@@ -158,22 +168,7 @@ function generateCircle(
   const cy = (start.y + constrained.y) / 2
   const r = Math.abs(constrained.x - start.x) / 2
   if (r < 0.25) return []
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
-    const angle = (i / ELLIPSE_SEGMENTS) * Math.PI * 2
-    outer.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r })
-  }
-  return [{ outer, holes: [] }]
-}
-
-// A dot of radius `r` mm marking a point (measurePoint).
-function generatePoint(p: AnnotationPoint, r: number): PolygonWithHoles[] {
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < 16; i++) {
-    const angle = (i / 16) * Math.PI * 2
-    outer.push({ x: p.x + Math.cos(angle) * r, y: p.y + Math.sin(angle) * r })
-  }
-  return [{ outer, holes: [] }]
+  return ellipseRing(cx, cy, r, r)
 }
 
 const SPLINE_SAMPLES_PER_SEGMENT = 16
@@ -257,7 +252,8 @@ export function generateShape(
     case 'measureCircle':
       return generateCircle(start, end)
     case 'measurePoint':
-      return generatePoint(end, strokeWidth)
+      // A dot of radius strokeWidth mm; 16 sides suffice at that size.
+      return ellipseRing(end.x, end.y, strokeWidth, strokeWidth, 16)
     default:
       return []
   }

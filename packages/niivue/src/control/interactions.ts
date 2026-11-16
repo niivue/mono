@@ -1949,6 +1949,9 @@ export function initInteraction(ctrl: NiiVue): void {
                   start,
                   end: pt2d,
                 }
+                // A point samples where it was released, not the press.
+                if (cfg.tool === 'measurePoint')
+                  newAnn.anchorMM = [mm[0], mm[1], mm[2]]
                 if (
                   cfg.tool === 'line' ||
                   cfg.tool === 'arrow' ||
@@ -2353,6 +2356,9 @@ export function initInteraction(ctrl: NiiVue): void {
           if (polygons.length > 0) {
             ann.shape.start = newBox.start
             ann.shape.end = newBox.end
+            // A moved point samples its picked 3D position (oblique slices).
+            if (ann.shape.type === 'measurePoint')
+              ann.anchorMM = [mm[0], mm[1], mm[2]]
             if (newBox.width !== undefined) ann.shape.width = newBox.width
             ann.polygons = polygons
             ctrl.model._annotationSelection.controlPoints =

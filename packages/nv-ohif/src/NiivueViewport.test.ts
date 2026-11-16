@@ -8,7 +8,11 @@ import {
   initialSliceType,
   trackNiivueWindowLevel,
 } from './commands'
-import { DEFAULT_OPTIONS, hangingKeys } from './NiivueViewport'
+import {
+  applyHangingDisplay,
+  DEFAULT_OPTIONS,
+  hangingKeys,
+} from './NiivueViewport'
 import {
   getNiivueEntry,
   registerNiivue,
@@ -195,7 +199,7 @@ test('a new hanging protocol changes the effect keys; a fresh equal one does not
   expect(mpr()).toEqual(mpr())
   expect(render.view).not.toBe(mpr().view)
   expect(render.load).not.toBe(mpr().load)
-  // Window alone: reload, view kept.
+  // Window alone: applied in place, no reload (it would clear measurements).
   const lung = hangingKeys(
     {
       orientation: 'axial',
@@ -205,5 +209,32 @@ test('a new hanging protocol changes the effect keys; a fresh equal one does not
     [{ options: { voi: { windowWidth: 1500, windowCenter: -600 } } }],
   )
   expect(lung.view).toBe(mpr().view)
-  expect(lung.load).not.toBe(mpr().load)
+  expect(lung.load).toBe(mpr().load)
+  expect(lung.display).not.toBe(mpr().display)
+})
+
+test("a new hanging protocol's window applies to the loaded base in place", async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  const volume = nv.volumes[0]
+  const voi = (windowWidth: number) => [
+    { options: { voi: { windowWidth, windowCenter: 40 } } },
+  ]
+  try {
+    entry.baseLoading = true
+    applyHangingDisplay(entry, { viewportType: 'volume' }, voi(400))
+    expect(nv.volumes[0]?.calMax).not.toBe(240)
+    entry.baseLoading = false
+    applyHangingDisplay(entry, { viewportType: 'volume' }, voi(500))
+    await Promise.resolve()
+    expect(nv.volumes[0]).toBe(volume)
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+  } finally {
+    unregisterNiivue('hp')
+  }
 })

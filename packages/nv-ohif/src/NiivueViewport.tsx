@@ -35,6 +35,7 @@ import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   authHeaders,
   getNiivueEntry,
+  type NiivueViewportEntry,
   ohifServices,
   refreshToolbar,
   registerNiivue,
@@ -43,6 +44,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import type { SliceFrames } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
@@ -106,20 +108,65 @@ interface ToolGroupServiceLike {
 /**
  * Effect keys for the hanging-protocol options, by value (OHIF passes fresh
  * objects each render): `view` for the slice type, render camera and sync
- * groups; `load` for what the base load applies (window, 3D preset).
+ * groups; `load` for what needs a reload (a 3D pane); `display` for the window
+ * and 3D preset, applied in place.
  */
 export function hangingKeys(
   viewportOptions: OhifViewportProps['viewportOptions'],
   displaySetOptions: OhifViewportProps['displaySetOptions'],
-): { view: string; load: string } {
+): { view: string; load: string; display: string } {
   const { orientation, viewportType, syncGroups } = viewportOptions ?? {}
   return {
     view: JSON.stringify([orientation, viewportType, syncGroups]),
-    load: JSON.stringify([
+    load: JSON.stringify(
       initialSliceType(viewportOptions) === SLICE_TYPE.RENDER,
-      displaySetOptions,
-    ]),
+    ),
+    display: JSON.stringify(displaySetOptions ?? null),
   }
+}
+
+/**
+ * The base's display as cornerstone opens it: a 3D pane's volume-rendering
+ * preset (its colormap carries its own window), else the hanging protocol's
+ * window, else the shown instances' DICOM window, else NiiVue's robust range.
+ */
+export function hangingDisplay(
+  viewportOptions: OhifViewportProps['viewportOptions'],
+  displaySetOptions: OhifViewportProps['displaySetOptions'],
+  ds: OhifDisplaySet,
+  shown?: SliceFrames,
+): { colormap: string } | { calMin: number; calMax: number } | undefined {
+  const preset =
+    initialSliceType(viewportOptions) === SLICE_TYPE.RENDER
+      ? displayPresetColormap(displaySetOptions, ds.Modality)
+      : undefined
+  return preset
+    ? { colormap: preset }
+    : (voiRange(displaySetOptions) ?? dicomWindow(ds, shown))
+}
+
+/** A new hanging protocol's window / preset on the loaded base, in place. */
+export function applyHangingDisplay(
+  entry: NiivueViewportEntry | undefined,
+  viewportOptions: OhifViewportProps['viewportOptions'],
+  displaySetOptions: OhifViewportProps['displaySetOptions'],
+): void {
+  const ds = entry?.displaySets[0]
+  // A loading base takes the current options when it installs.
+  if (!entry || entry.baseLoading || !ds || !entry.nv.volumes[0]) return
+  const spec = hangingDisplay(
+    viewportOptions,
+    displaySetOptions,
+    ds,
+    entry.sliceFrames,
+  )
+  // shortcut: no window to apply keeps the current one, not the robust range.
+  if (!spec) return
+  entry.nv
+    .setVolume(0, spec)
+    .catch((err: unknown) =>
+      console.error('[nv-ohif] hanging-protocol window failed', err),
+    )
 }
 
 export function NiivueViewport(props: OhifViewportProps) {
@@ -450,17 +497,11 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     let cancelled = false
     const abort = new AbortController()
-    // Initial window as cornerstone opens it: the hanging protocol's, else (for
-    // DICOM, once converted) the shown instances' DICOM window, else NiiVue's
-    // robust 2-98% range.
-    const voi = voiRange(displaySetOptionsRef.current)
-    // A 3D pane opens with its hanging protocol's volume-rendering preset,
-    // whose colormap carries its own window.
-    const preset =
-      initialSliceType(viewportOptionsRef.current) === SLICE_TYPE.RENDER
-        ? displayPresetColormap(displaySetOptionsRef.current, ds.Modality)
-        : undefined
-    const spec = preset ? { colormap: preset } : voi
+    const spec = hangingDisplay(
+      viewportOptionsRef.current,
+      displaySetOptionsRef.current,
+      ds,
+    )
 
     // The base is installed: show its window, enable the volume toolbar.
     const seedWindowLevel = () => {
@@ -669,10 +710,12 @@ export function NiivueViewport(props: OhifViewportProps) {
         }
         loaded(converted.note)
         // The DICOM window of the instances this output was made of.
-        const dicomSpec = preset
-          ? spec
-          : (voiRange(displaySetOptionsRef.current) ??
-            dicomWindow(ds, converted.sliceFrames))
+        const dicomSpec = hangingDisplay(
+          viewportOptionsRef.current,
+          displaySetOptionsRef.current,
+          ds,
+          converted.sliceFrames,
+        )
         return loadConversion(
           nv,
           viewportId,
@@ -719,6 +762,19 @@ export function NiivueViewport(props: OhifViewportProps) {
   useEffect(() => {
     if (ready) updateNiivueViewport(viewportId, { isVolumeViewport })
   }, [ready, viewportId, isVolumeViewport])
+
+  // A new window / preset for the loaded series: in place, so the volume and
+  // the user's measurements stay. Declared after the load effect, so a new
+  // series (baseLoading) takes it on install instead.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on keys.display by design
+  useEffect(() => {
+    if (!ready) return
+    applyHangingDisplay(
+      getNiivueEntry(viewportId),
+      viewportOptionsRef.current,
+      displaySetOptionsRef.current,
+    )
+  }, [ready, viewportId, keys.display])
 
   // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
   // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.

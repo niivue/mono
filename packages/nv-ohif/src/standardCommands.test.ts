@@ -443,6 +443,30 @@ it('jumpToImage counts the frames of a single multi-frame instance', () => {
   ])
 })
 
+it('jumpToImage counts only the instances the shown output holds', () => {
+  // Coronal + sagittal localizers in one series; the pane shows only sag.
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 0],
+    displaySets: [
+      {
+        instances: ['cor', 'sag'].map((SOPInstanceUID) => ({ SOPInstanceUID })),
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [{ SOPInstanceUID: 'sag', frameNumber: 1 }],
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  expect(calls).toEqual([[5, 6, 0]])
+  // One image: index 1 is out of range.
+  jumpToImage(entry, 1)
+  expect(calls).toHaveLength(1)
+})
+
 it('jumpToImage on a volume viewport counts along the volume', () => {
   const calls: number[][] = []
   const entry = {

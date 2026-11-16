@@ -5,7 +5,7 @@
 import type { CSSProperties } from 'react'
 import { rasToLps } from './commands'
 import type { OhifDisplaySet } from './ohif-types'
-import { frameAt, type SliceFrames } from './sliceFrames'
+import { frameAt, type SliceFrames, shownInstances } from './sliceFrames'
 
 export type WindowLevel = { window: number; level: number }
 export type StackPosition = {
@@ -39,11 +39,14 @@ export function stackPosition(
     rasToLps([mmRas[0] ?? 0, mmRas[1] ?? 0, mmRas[2] ?? 0]),
   ])
   if (!frame) return undefined
-  const instances = (ds.instances ?? []) as Array<{
-    SOPInstanceUID?: string
-    InstanceNumber?: unknown
-    NumberOfFrames?: unknown
-  }>
+  const instances = shownInstances(
+    (ds.instances ?? []) as Array<{
+      SOPInstanceUID?: string
+      InstanceNumber?: unknown
+      NumberOfFrames?: unknown
+    }>,
+    sf,
+  )
   const i = instances.findIndex(
     (inst) => inst.SOPInstanceUID === frame.SOPInstanceUID,
   )

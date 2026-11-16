@@ -1,3 +1,19 @@
+## 1.0.0-rc.209 (2026-11-16)
+
+### Fixes
+
+- **niivue:** ROI stats on the anchor plane, sub-voxel geometric area ([#818](https://github.com/niivue/mono/issues/818))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.214
+- Updated uikit to 1.0.0-rc.212
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.208 (2026-11-16)
 
 ### Fixes

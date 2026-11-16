@@ -130,6 +130,7 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
 
   let vertices: Float32Array | null = null
   let rawOffsets: Uint32Array | null = null
+  let nStreamlinesHeader: number | undefined
   // Names come from the file, so a group called `__proto__` must stay an own key.
   const dpv: Record<string, Float32Array> = Object.create(null)
   const dps: Record<string, Float32Array> = Object.create(null)
@@ -148,13 +149,14 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     const dname = parts[parts.length - 3] ?? ''
     const tag = fname.split('.')[0]
 
-    if (fname.includes('header.json')) {
-      // Header is informational; we don't need it for geometry
-      continue
-    }
-
     const data = await entry.extract?.()
     if (!data) continue
+    if (fname === 'header.json') {
+      nStreamlinesHeader = JSON.parse(
+        new TextDecoder().decode(data),
+      ).NB_STREAMLINES
+      continue
+    }
     const arr = parseArray(fname, data)
     if (!arr) continue
 
@@ -205,11 +207,20 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     throw new Error('Invalid TRX file: missing positions or offsets')
   }
 
-  // Build fence-post offsets: append final vertex count
-  const nStreamlines = rawOffsets.length
-  const offsets = new Uint32Array(nStreamlines + 1)
-  offsets.set(rawOffsets)
-  offsets[nStreamlines] = vertices.length / 3
+  // Older TRX files omit the terminal vertex count. NB_STREAMLINES tells them
+  // apart; without it, an empty last streamline is indistinguishable.
+  const nVertices = vertices.length / 3
+  let offsets = rawOffsets
+  if (
+    nStreamlinesHeader === undefined
+      ? rawOffsets[rawOffsets.length - 1] !== nVertices
+      : rawOffsets.length === nStreamlinesHeader
+  ) {
+    offsets = new Uint32Array(rawOffsets.length + 1)
+    offsets.set(rawOffsets)
+    offsets[rawOffsets.length] = nVertices
+  }
+  const nStreamlines = offsets.length - 1
 
   // Expand dpg (data per group) into dps (data per streamline)
   if (groups.length > 0 && Object.keys(dpgMap).length > 0) {

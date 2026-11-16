@@ -6,10 +6,11 @@ import {
   dicomWindow,
   initialRenderView,
   initialSliceType,
-  trackNiivueWindowLevel,
+  readBaseWindowLevel,
 } from './commands'
 import {
   applyHangingDisplay,
+  baseKey,
   DEFAULT_OPTIONS,
   hangingKeys,
   settleBase,
@@ -20,6 +21,7 @@ import {
   unregisterNiivue,
 } from './niivueRegistry'
 import { buildSliceFrames, frameAt } from './sliceFrames'
+import { acquisitionSliceType } from './standardCommands'
 import { joinSyncGroups } from './viewportSync'
 
 test('the viewport snaps the crosshair to voxel centres', () => {
@@ -154,31 +156,54 @@ test("the windowing drag matches cornerstone's gain and direction", () => {
   ).toBeUndefined()
 })
 
-test("a linked pane's window baseline follows its peer's window", async () => {
+test('the window comes from the instances the shown output was made of', () => {
+  // Orthogonal localizers in one series: different windows, one per output.
+  const ds = {
+    instances: [
+      { SOPInstanceUID: 'cor', WindowWidth: 230, WindowCenter: 100 },
+      { SOPInstanceUID: 'sag', WindowWidth: 320, WindowCenter: 110 },
+    ],
+  } as unknown as Parameters<typeof dicomWindow>[0]
+  expect(dicomWindow(ds)).toBeUndefined()
+  const shown = {
+    origin: [0, 0, 0],
+    normal: [0, 1, 0],
+    frames: [{ SOPInstanceUID: 'cor', frameNumber: 1 }],
+  } as Parameters<typeof dicomWindow>[1]
+  const win = dicomWindow(ds, shown)
+  expect(win && (win.calMin + win.calMax) / 2).toBeCloseTo(100, 0)
+})
+
+test('a single image opens in its acquisition plane', () => {
+  // permRAS: voxel dimension 3 runs along RAS axis 2 (anterior) -> coronal.
+  expect(acquisitionSliceType({ volumes: [{ permRAS: [1, 3, -2] }] })).toBe(
+    SLICE_TYPE.CORONAL,
+  )
+  expect(acquisitionSliceType({ volumes: [] })).toBeUndefined()
+})
+
+test("a linked pane's window readout follows its peer's window", async () => {
   // Core sync writes the target's calMin/calMax and emits only locationChange,
-  // which the viewport routes to trackNiivueWindowLevel.
+  // which the viewport routes to its W/L readout.
   const frames: FrameRequestCallback[] = []
   const raf = globalThis.requestAnimationFrame
   globalThis.requestAnimationFrame = (cb) => frames.push(cb)
   const [a, b] = [new NiiVue(DEFAULT_OPTIONS), new NiiVue(DEFAULT_OPTIONS)]
   for (const nv of [a, b])
     await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
-  registerNiivue('linked-b', b)
-  trackNiivueWindowLevel('linked-b')
-  b.addEventListener('locationChange', () => trackNiivueWindowLevel('linked-b'))
+  let shown: ReturnType<typeof readBaseWindowLevel>
+  b.addEventListener('locationChange', () => {
+    shown = readBaseWindowLevel(b)
+  })
   const voi = [{ type: 'voi', id: 'linked-test' }] // apart from other files' panes
   const leaveA = joinSyncGroups('linked-a', a, voi)
   const leaveB = joinSyncGroups('linked-b', b, voi)
   await a.setVolume(0, { calMin: 10, calMax: 30 })
   a.drawScene() // headless: no view, so no GL update draws
   while (frames.length) frames.shift()?.(0)
-  expect(getNiivueEntry('linked-b')?.windowLevel).toEqual({
-    window: 20,
-    level: 20,
-  })
+  expect(shown).toEqual({ window: 20, level: 20 })
   leaveA()
   leaveB()
-  unregisterNiivue('linked-b')
   globalThis.requestAnimationFrame = raf
 })
 
@@ -283,6 +308,20 @@ test('removing the protocol window restores the robust range and gray', async ()
   } finally {
     unregisterNiivue('hp')
   }
+})
+
+test('a 2D -> 3D protocol on the same series starts a new base (the SEG reloads on it)', () => {
+  const dso = [{ options: {} }]
+  const twoD = baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso))
+  const threeD = baseKey(
+    'ds',
+    true,
+    hangingKeys({ viewportType: 'volume3d' }, dso),
+  )
+  expect(threeD).not.toBe(twoD)
+  expect(
+    baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso)),
+  ).toBe(twoD)
 })
 
 test('removing a render preset keeps the DICOM window and restores gray', async () => {

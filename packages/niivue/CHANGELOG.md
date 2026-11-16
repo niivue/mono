@@ -1,3 +1,17 @@
+## 1.0.0-rc.215 (2026-11-16)
+
+### Fixes
+
+- **niivue:** use TRX NB_STREAMLINES to detect legacy offsets ([#831](https://github.com/niivue/mono/issues/831))
+- **niivue:** preserve TRX terminal streamline offsets ([3c057471](https://github.com/niivue/mono/commit/3c057471))
+- **niivue:** TRK vox_to_ras applied in the wrong order ([62b888f5](https://github.com/niivue/mono/commit/62b888f5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.214 (2026-11-16)
 
 ### Features

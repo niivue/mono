@@ -27,7 +27,6 @@ import {
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
-  trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
@@ -45,7 +44,20 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
+import type { SliceFrames } from './sliceFrames'
+import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
+import { useMeasurementTracking } from './trackingBridge'
+import { ViewportNotification } from './viewportNotification'
+import {
+  type StackPosition,
+  StackPositionReadout,
+  StudyLabel,
+  stackPosition,
+  type WindowLevel,
+  WindowLevelReadout,
+} from './viewportOverlay'
 import { joinSyncGroups } from './viewportSync'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { displayPresetColormap } from './vrPresets'
@@ -117,12 +129,13 @@ export function hangingKeys(
 /**
  * The base's display as cornerstone opens it: a 3D pane's volume-rendering
  * preset (its colormap carries its own window), else the hanging protocol's
- * window, else the series' DICOM window, else (undefined) NiiVue's robust range.
+ * window, else the shown instances' DICOM window, else NiiVue's robust range.
  */
 export function hangingDisplay(
   viewportOptions: OhifViewportProps['viewportOptions'],
   displaySetOptions: OhifViewportProps['displaySetOptions'],
   ds: OhifDisplaySet,
+  shown?: SliceFrames,
 ): { colormap: string } | { calMin: number; calMax: number } | undefined {
   const preset =
     initialSliceType(viewportOptions) === SLICE_TYPE.RENDER
@@ -130,7 +143,16 @@ export function hangingDisplay(
       : undefined
   return preset
     ? { colormap: preset }
-    : (voiRange(displaySetOptions) ?? dicomWindow(ds))
+    : (voiRange(displaySetOptions) ?? dicomWindow(ds, shown))
+}
+
+/** What the load effect keys on: it changes whenever a new base starts loading. */
+export function baseKey(
+  displaySetsKey: string,
+  ready: boolean,
+  keys: { load: string },
+): string {
+  return JSON.stringify([displaySetsKey, ready, keys.load])
 }
 
 /** A new hanging protocol's window / preset on the loaded base, in place. */
@@ -142,7 +164,12 @@ export function applyHangingDisplay(
   const ds = entry?.displaySets[0]
   // A loading base takes the current options in settleBase.
   if (!entry || entry.baseLoading || !ds || !entry.nv.volumes[0]) return
-  const spec = hangingDisplay(viewportOptions, displaySetOptions, ds)
+  const spec = hangingDisplay(
+    viewportOptions,
+    displaySetOptions,
+    ds,
+    entry.sliceFrames,
+  )
   // A window without a preset also drops a removed preset's colormap.
   entry.nv
     .setVolume(0, spec ? { colormap: 'gray', ...spec } : DEFAULT_DISPLAY)
@@ -170,20 +197,37 @@ export function settleBase(
 ): void {
   const entry = getNiivueEntry(viewportId)
   const ds = entry?.displaySets[0]
-  const latest = ds && hangingDisplay(viewportOptions, displaySetOptions, ds)
+  const latest =
+    ds &&
+    hangingDisplay(viewportOptions, displaySetOptions, ds, entry?.sliceFrames)
   if (JSON.stringify(latest) !== JSON.stringify(installed))
     applyHangingDisplay(entry, viewportOptions, displaySetOptions)
 }
 
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId, servicesManager } = props
+  const { viewportId, servicesManager } = props
+  // A hung SEG shows as a drawing over the series it references (segDrawing.ts).
+  const { displaySets, seg } = resolveSegDisplaySetsFor(
+    props.displaySets,
+    servicesManager,
+  )
   const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
+  // Longitudinal (tracking) modes: forward new measurements to OHIF's tracker.
+  useMeasurementTracking(viewportId, servicesManager, props.extensionManager)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVue | null>(null)
   const slideViewRef = useRef<WsiSlideView | null>(null)
   const activeOhifToolRef = useRef<string | undefined>(undefined)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  // The hung display set is on screen: `data-loaded`, a positive signal for tests.
+  const [isLoaded, setIsLoaded] = useState(false)
+  // Resolves once the current load installs its base volume (the SEG's background).
+  const baseInstalledRef = useRef<Promise<boolean>>(Promise.resolve(false))
+  // Base window, shown lower left as cornerstone's viewport overlay does.
+  const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
+  // Instance under the crosshair, for a 2D slice in the acquisition plane.
+  const [stack, setStack] = useState<StackPosition | null>(null)
 
   // OHIF can re-render with fresh displaySets/servicesManager object
   // identities on unrelated state changes (e.g. toolbar interactions). Effects
@@ -207,6 +251,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     .join('|')
 
   const keys = hangingKeys(props.viewportOptions, props.displaySetOptions)
+  const base = baseKey(displaySetsKey, ready, keys)
   // The hanging protocol's view and sync groups, on attach and whenever a new
   // protocol changes them for the same viewport and series. Declared before the
   // create effect so unmount leaves the sync groups before nv.destroy().
@@ -300,20 +345,46 @@ export function NiivueViewport(props: OhifViewportProps) {
     ro.observe(container)
 
     // Core emits volumeUpdated for every base-window change (windowing/contrast
-    // drags, pointercancel, setVolume), and only locationChange when a linked
-    // pane's sync writes calMin/calMax; a transient readout confirms a change
-    // (the baseline diff in commands.ts drops unchanged updates).
-    const onWindowChange = () => {
-      const wl = trackNiivueWindowLevel(viewportId)
-      if (!wl) return
-      const message = `W: ${Math.round(wl.window)}  L: ${Math.round(wl.level)}`
-      flashNote(message)
+    // drags, pointercancel, setVolume); keep the corner readout current.
+    const showWindowLevel = () => {
+      const wl = readBaseWindowLevel(nv)
+      setWindowLevel((shown) =>
+        wl && shown?.window === wl.window && shown.level === wl.level
+          ? shown
+          : (wl ?? null),
+      )
     }
     const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
-      if (e.detail.volumeIndex === 0) onWindowChange()
+      if (e.detail.volumeIndex === 0) showWindowLevel()
     }
     nv.addEventListener('volumeUpdated', onVolumeUpdated)
-    nv.addEventListener('locationChange', onWindowChange)
+    // A linked pane's window arrives through core sync (broadcastTo), which
+    // emits locationChange, not volumeUpdated.
+    nv.addEventListener('locationChange', showWindowLevel)
+    // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
+    // sliceTypeChange carries no position: reuse the last crosshair.
+    const showStack = (e: Event) => {
+      const entry = getNiivueEntry(viewportId)
+      const moved = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
+      if (entry && moved) entry.crosshairMM = moved
+      const mm = moved ?? entry?.crosshairMM
+      const pos =
+        mm && nv.sliceType === acquisitionSliceType(nv)
+          ? stackPosition(
+              entry?.displaySets[0],
+              entry?.sliceFrames,
+              mm,
+              viewportOptionsRef.current?.viewportType === 'volume',
+            )
+          : undefined
+      setStack((shown) =>
+        pos && shown?.index === pos.index && shown.total === pos.total
+          ? shown
+          : (pos ?? null),
+      )
+    }
+    nv.addEventListener('locationChange', showStack)
+    nv.addEventListener('sliceTypeChange', showStack)
 
     // Annotations (Length / ROI / arrow): reflect a completed vector annotation
     // into OHIF's measurement panel, remove its row when the annotation is
@@ -381,7 +452,9 @@ export function NiivueViewport(props: OhifViewportProps) {
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
-      nv.removeEventListener('locationChange', onWindowChange)
+      nv.removeEventListener('locationChange', showWindowLevel)
+      nv.removeEventListener('locationChange', showStack)
+      nv.removeEventListener('sliceTypeChange', showStack)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
@@ -399,7 +472,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
   // Load the display set(s) hung in this viewport, once attached / on change.
   // Keyed on displaySetsKey and keys.load (not the array identity) by design — see above.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on displaySetsKey by design
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base key by design
   useEffect(() => {
     const nv = nvRef.current
     const displaySets = displaySetsRef.current
@@ -414,6 +487,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     // active with nothing overlaid. (No-op on the first load — nothing to clear
     // yet.)
     nv.clearAnnotations()
+    let baseInstalled = (_: boolean) => {}
+    baseInstalledRef.current = new Promise((resolve) => {
+      baseInstalled = resolve
+    })
+    setWindowLevel(null)
+    setStack(null)
     // Keep the registry's view of the base display sets current, so overlay
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
@@ -438,6 +517,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (nv.volumes.length > 0) void nv.removeAllVolumes().catch(() => {})
     }
 
+    setIsLoaded(false)
     // If OHIF hung nothing, stay idle.
     const ds: OhifDisplaySet | undefined = displaySets[0]
     if (!ds) {
@@ -450,7 +530,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const extraNote = extraDisplaySetsNote(displaySets)
     const withExtra = (message?: string) =>
       [message, extraNote].filter(Boolean).join(' ')
-    // Loaded: show any notes briefly; the clear never touches a newer status.
+    // Show any notes briefly; the clear never touches a newer status.
     const loaded = (note?: string) => {
       const message = withExtra(note)
       if (!message) return setStatus({ kind: 'idle' })
@@ -470,20 +550,19 @@ export function NiivueViewport(props: OhifViewportProps) {
       ds,
     )
 
-    // Record the base volume's initial window/level as the readout
-    // baseline, so the first manual contrast drag is detected as a change.
-    const seedWindowLevel = () => {
+    // The base is installed: show its window, enable the volume toolbar.
+    const seedWindowLevel = (installed = spec) => {
       if (cancelled) return
+      baseInstalled(true)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step
-      updateNiivueViewport(viewportId, {
-        windowLevel: readBaseWindowLevel(nv),
-        baseLoading: false,
-      })
+      const wl = readBaseWindowLevel(nv)
+      setWindowLevel(wl ?? null)
+      updateNiivueViewport(viewportId, { baseLoading: false })
       settleBase(
         viewportId,
-        spec,
+        installed,
         viewportOptionsRef.current,
         displaySetOptionsRef.current,
       )
@@ -496,6 +575,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Now that the volume is in (esp. after the async dcm2niix conversion),
       // re-evaluate the toolbar so they enable.
       refreshToolbar(servicesManagerRef.current, viewportId)
+      setIsLoaded(true)
     }
 
     // Phase-1 fast path: a display set that is already a NiiVue volume URL.
@@ -615,6 +695,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             view.setTool(activeOhifToolRef.current)
             updateNiivueViewport(viewportId, { slideView: view })
             refreshToolbar(servicesManager, viewportId)
+            setIsLoaded(true)
             loaded()
           } catch (err) {
             slide.dispose()
@@ -682,14 +763,32 @@ export function NiivueViewport(props: OhifViewportProps) {
           return
         }
         loaded(converted.note)
+        // The DICOM window of the instances this output was made of.
+        const dicomSpec = hangingDisplay(
+          viewportOptionsRef.current,
+          displaySetOptionsRef.current,
+          ds,
+          converted.sliceFrames,
+        )
         return loadConversion(
           nv,
           viewportId,
           converted,
-          spec,
+          dicomSpec,
           () => cancelled,
         ).then((shown) => {
-          if (shown) seedWindowLevel()
+          if (!shown) return
+          // A single image (e.g. a localizer) shows in its own plane, as a
+          // cornerstone stack does, unless the hanging protocol set one.
+          if (
+            nv.volumes[0]?.dims?.[3] === 1 &&
+            initialSliceType(viewportOptionsRef.current) ===
+              SLICE_TYPE.MULTIPLANAR
+          ) {
+            const plane = acquisitionSliceType(nv)
+            if (plane !== undefined) nv.sliceType = plane
+          }
+          seedWindowLevel(dicomSpec)
         })
       })
       .catch((err) => {
@@ -711,7 +810,22 @@ export function NiivueViewport(props: OhifViewportProps) {
       cancelled = true
       abort.abort()
     }
-  }, [displaySetsKey, ready, keys.load])
+  }, [base])
+
+  // After the load effect, so a base and SEG changed together wait on the new base.
+  useSegDrawing(
+    nvRef,
+    seg,
+    baseInstalledRef,
+    base,
+    servicesManager,
+    (message) => setStatus({ kind: 'note', message }),
+  )
+
+  const isVolumeViewport = props.viewportOptions?.viewportType === 'volume'
+  useEffect(() => {
+    if (ready) updateNiivueViewport(viewportId, { isVolumeViewport })
+  }, [ready, viewportId, isVolumeViewport])
 
   // A new window / preset for the loaded series: in place, so the volume and
   // the user's measurements stay. Declared after the load effect, so a new
@@ -763,6 +877,9 @@ export function NiivueViewport(props: OhifViewportProps) {
   return (
     <div
       data-viewport-id={viewportId}
+      // OHIF's viewport attribute (cornerstone sets it): OHIF tooling and specs find panes by it.
+      data-viewportid={viewportId}
+      data-loaded={isLoaded || undefined}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
@@ -784,6 +901,17 @@ export function NiivueViewport(props: OhifViewportProps) {
           {overlay}
         </div>
       ) : null}
+      {props.viewportOptions?.customViewportProps?.hideOverlays ? null : (
+        <>
+          <StudyLabel ds={displaySets[0]} />
+          {windowLevel ? <WindowLevelReadout {...windowLevel} /> : null}
+          {stack ? <StackPositionReadout {...stack} /> : null}
+        </>
+      )}
+      <ViewportNotification
+        viewportId={viewportId}
+        servicesManager={servicesManager}
+      />
     </div>
   )
 }

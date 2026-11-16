@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nvreact",
-  "version": "1.0.0-rc.215",
+  "version": "1.0.0-rc.216",
   "private": false,
   "type": "module",
   "main": "./dist/lib.js",

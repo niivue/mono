@@ -171,7 +171,8 @@ function generateCircle(
   return ellipseRing(cx, cy, r, r)
 }
 
-const SPLINE_SAMPLES_PER_SEGMENT = 16
+// As cornerstone's SplineROI resolution, so spline areas agree.
+const SPLINE_SAMPLES_PER_SEGMENT = 20
 
 // Catmull-Rom interpolation of one segment p1->p2 (p0/p3 are the neighbours).
 function catmullRom(

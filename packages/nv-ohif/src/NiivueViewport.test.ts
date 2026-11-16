@@ -8,7 +8,7 @@ import {
   initialSliceType,
   trackNiivueWindowLevel,
 } from './commands'
-import { DEFAULT_OPTIONS } from './NiivueViewport'
+import { DEFAULT_OPTIONS, hangingKeys } from './NiivueViewport'
 import {
   getNiivueEntry,
   registerNiivue,
@@ -175,4 +175,35 @@ test("a linked pane's window baseline follows its peer's window", async () => {
   leaveB()
   unregisterNiivue('linked-b')
   globalThis.requestAnimationFrame = raf
+})
+
+test('a new hanging protocol changes the effect keys; a fresh equal one does not', () => {
+  const mpr = () =>
+    hangingKeys(
+      {
+        orientation: 'axial',
+        viewportType: 'volume',
+        syncGroups: [{ type: 'voi', id: 'a' }],
+      },
+      [{ options: { voi: { windowWidth: 400, windowCenter: 40 } } }],
+    )
+  const render = hangingKeys(
+    { orientation: 'coronal', viewportType: 'volume3d' },
+    [{ options: { displayPreset: { CT: 'CT-Bone' } } }],
+  )
+  // OHIF re-renders with new objects: same values, same keys (no reload).
+  expect(mpr()).toEqual(mpr())
+  expect(render.view).not.toBe(mpr().view)
+  expect(render.load).not.toBe(mpr().load)
+  // Window alone: reload, view kept.
+  const lung = hangingKeys(
+    {
+      orientation: 'axial',
+      viewportType: 'volume',
+      syncGroups: [{ type: 'voi', id: 'a' }],
+    },
+    [{ options: { voi: { windowWidth: 1500, windowCenter: -600 } } }],
+  )
+  expect(lung.view).toBe(mpr().view)
+  expect(lung.load).not.toBe(mpr().load)
 })

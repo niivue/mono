@@ -191,22 +191,31 @@ export function computeAnnotationStats(
     minV1 = Infinity,
     maxV0 = -Infinity,
     maxV1 = -Infinity
-  for (const [outer] of polygonsVox) {
-    for (const pt of outer as AnnotationPoint[]) {
-      if (pt.x < minV0) minV0 = pt.x
-      if (pt.y < minV1) minV1 = pt.y
-      if (pt.x > maxV0) maxV0 = pt.x
-      if (pt.y > maxV1) maxV1 = pt.y
-    }
-  }
-  // An ellipse's 64-gon can fall short of the curve's extremes in voxel
-  // space (up to ~0.1% of its radius): pad its bounds by a voxel.
   const ell = intactEllipse(annotation)
-  const pad = ell ? 1 : 0
-  const r0min = Math.max(0, Math.floor(minV0) - pad)
-  const r0max = Math.min(dims[ax0 + 1] - 1, Math.ceil(maxV0) + pad)
-  const r1min = Math.max(0, Math.floor(minV1) - pad)
-  const r1max = Math.min(dims[ax1 + 1] - 1, Math.ceil(maxV1) + pad)
+  if (ell) {
+    // Bound the true curve, not its 64-gon: the gon falls short by
+    // r(1 - cos(pi/64)), several voxels on a large shape. toVox is linear, so
+    // the curve's voxel half-extents are the norms of its axes' rows.
+    const c = toVox({ x: ell.cx, y: ell.cy })
+    const h0 = Math.hypot(ell.a * e1.y, ell.b * e1.x) / Math.abs(det)
+    const h1 = Math.hypot(ell.a * e0.y, ell.b * e0.x) / Math.abs(det)
+    minV0 = c.x - h0
+    maxV0 = c.x + h0
+    minV1 = c.y - h1
+    maxV1 = c.y + h1
+  } else
+    for (const [outer] of polygonsVox) {
+      for (const pt of outer as AnnotationPoint[]) {
+        if (pt.x < minV0) minV0 = pt.x
+        if (pt.y < minV1) minV1 = pt.y
+        if (pt.x > maxV0) maxV0 = pt.x
+        if (pt.y > maxV1) maxV1 = pt.y
+      }
+    }
+  const r0min = Math.max(0, Math.floor(minV0))
+  const r0max = Math.min(dims[ax0 + 1] - 1, Math.ceil(maxV0))
+  const r1min = Math.max(0, Math.floor(minV1))
+  const r1max = Math.min(dims[ax1 + 1] - 1, Math.ceil(maxV1))
   // Off the image (e.g. drawn in a zoomed-out canvas margin): nothing to measure.
   if (r0max < r0min || r1max < r1min) return null
 

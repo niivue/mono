@@ -317,3 +317,33 @@ test('isAreaGeometric: a sub-voxel ROI reports its area with no voxel stats', ()
   expect(stats?.area).toBeCloseTo(0.36, 10)
   expect(stats?.mean).toBe(0)
 })
+
+test('a large rotated ellipse counts voxels between its 64-gon and the true curve', () => {
+  // 4001 x 5 voxels rotated pi/64 in-plane: the curve's extreme along i falls
+  // midway between gon vertices, r(1 - cos(pi/64)) ~ 2.2 voxels beyond the gon.
+  const W = 4001
+  const H = 5
+  const c = Math.cos(Math.PI / 64)
+  const s = Math.sin(Math.PI / 64)
+  const img = new Float32Array(W * H)
+  img[2 * W + 200] = -7 // voxel (200, 2): 1800 voxels from the centre, inside r = 1800.1
+  const rotated = {
+    ...volume,
+    img,
+    dimsRAS: [3, W, H, 1],
+    matRAS: new Float32Array([c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+    img2RASstep: [1, W, W * H],
+    nVox3D: W * H,
+  } as unknown as NVImage
+  // Centre at voxel (2000, 2): mm (c i - s j, s i + c j).
+  const cx = c * 2000 - s * 2
+  const cy = s * 2000 + c * 2
+  const r = 1800.1
+  const start = { x: cx - r, y: cy - r }
+  const end = { x: cx + r, y: cy + r }
+  const ann: VectorAnnotation = {
+    ...annotation(generateShape('measureEllipse', start, end, 1)),
+    shape: { type: 'measureEllipse', start, end },
+  }
+  expect(computeAnnotationStats(ann, rotated)?.min).toBe(-7)
+})

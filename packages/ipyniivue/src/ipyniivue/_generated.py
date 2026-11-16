@@ -271,6 +271,8 @@ option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
 pixels times this are canvas pixels."""
     is_animating = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True while an animateTo transition is running."""
+    is_annotation_in_progress = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """A multi-click contour, bidirectional or click-placed shape is half-drawn."""
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_destroyed = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True once {@link destroy} has run. Lets external holders (e.g. an
@@ -501,6 +503,15 @@ and its volumes alive."""
             which properties to sync (default: { '2d': true, '3d': true })
         """
         self.send({"cmd": "broadcastTo", "args": _make_args(targets, opts)})
+
+    async def cancel_annotation_in_progress(self) -> Any:
+        """Drop the half-drawn annotation (as Escape does); false if there was none.
+
+        Returns
+        -------
+        boolean
+        """
+        return await self._request("cancelAnnotationInProgress", [])
 
     async def cancel_pending_frame(self) -> Any:
         """Drop the frame that {@link drawScene} has scheduled but not yet drawn.

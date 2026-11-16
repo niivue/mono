@@ -1555,6 +1555,17 @@
       "doc": "True while an animateTo transition is running."
     },
     {
+      "jsName": "isAnnotationInProgress",
+      "pyName": "is_annotation_in_progress",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "A multi-click contour, bidirectional or click-placed shape is half-drawn."
+    },
+    {
       "jsName": "isAntiAlias",
       "pyName": "is_anti_alias",
       "tsType": "boolean",
@@ -2061,6 +2072,16 @@
       ],
       "returns": "void",
       "doc": "Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "cancelAnnotationInProgress",
+      "pyName": "cancel_annotation_in_progress",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "boolean",
+      "doc": "Drop the half-drawn annotation (as Escape does); false if there was none.",
       "returnsDoc": null
     },
     {

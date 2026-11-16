@@ -2818,6 +2818,23 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /** A multi-click contour, bidirectional or click-placed shape is half-drawn. */
+  get isAnnotationInProgress(): boolean {
+    return Boolean(
+      this._annotationPolyPoints ||
+        this._bidirectionalLong ||
+        this._annotationClickStart,
+    )
+  }
+
+  /** Drop the half-drawn annotation (as Escape does); false if there was none. */
+  cancelAnnotationInProgress(): boolean {
+    if (!this.isAnnotationInProgress) return false
+    this._abandonAnnotationInProgress()
+    this.drawScene()
+    return true
+  }
+
   /** Drop a half-drawn multi-click contour or bidirectional measurement. */
   _abandonAnnotationInProgress(): void {
     // A drag in progress too: pointer-up would otherwise commit it, e.g. a

@@ -155,6 +155,7 @@ const PROPS_RO = [
   ["drawingColormaps", "drawing_colormaps"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],
   ["isAnimating", "is_animating"],
+  ["isAnnotationInProgress", "is_annotation_in_progress"],
   ["isAntiAlias", "is_anti_alias"],
   ["isDestroyed", "is_destroyed"],
   ["meshExtensions", "mesh_extensions"],

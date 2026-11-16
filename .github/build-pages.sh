@@ -48,16 +48,16 @@ echo "==> Building uikit demo"
   && VITE_BASE="${BASE_PATH}uikit/" VITE_IMAGES_BASE="$BASE_PATH" \
     bunx --bun vite build --mode demo)
 
-# 3. Build the docs site while the library dist still exists (step 4 deletes it).
+# 3. Build the docs site.
 # Its demos fetch volumes and embed example pages from this same deployment.
 echo "==> Building docs site"
 DOCS_BASE_URL="${BASE_PATH}docs/" \
   DOCS_EXAMPLES_BASE="https://niivue.com${BASE_PATH}" \
   bunx nx build docs-site
 
-# 4. Build niivue examples last (overwrites packages/niivue/dist)
+# 4. Build niivue examples
 echo "==> Building niivue examples"
-rm -rf packages/niivue/dist
+rm -rf packages/niivue/dist-examples
 (cd packages/niivue \
   && bun run codegen:assets \
   && bun run gen-fixtures \
@@ -75,7 +75,7 @@ rm -rf _site
 mkdir -p _site
 
 # Examples build forms the site root (includes shared dev-images)
-cp -r packages/niivue/dist/* _site/
+cp -r packages/niivue/dist-examples/* _site/
 
 # Landing page
 cp .github/pages/index.html _site/index.html

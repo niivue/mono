@@ -275,17 +275,31 @@ export type {
 } from './slide/slidePlane'
 export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type {
+  NVSlideAnnotationDraft,
   NVSlideControllerOptions,
   NVSlideMeasurement,
   NVSlidePoint,
 } from './slide/slideController'
 export { NVSlideController, windowDragStep } from './slide/slideController'
 export type {
+  SlideAnnotation,
+  SlideAnnotationEvent,
+  SlideAnnotationStats,
+  SlideAnnotationTool,
+} from './slide/slideAnnotations'
+export {
+  NVSlideAnnotations,
+  slideAnnotationStats,
+} from './slide/slideAnnotations'
+export type {
   SlideOverlayContent,
   SlideOverlaySource,
   SlideOverlayStyle,
 } from './slide/slideOverlay'
-export { slideOverlayContent } from './slide/slideOverlay'
+export {
+  slideAnnotationText,
+  slideOverlayContent,
+} from './slide/slideOverlay'
 export type {
   SlideBackendKind,
   SlideRenderBackend,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVSlide } from './NVSlide'
+import { NVSlideAnnotations } from './slideAnnotations'
 import { slideOverlayContent, slideScaleBar } from './slideOverlay'
 
 const slide = (pixelSpacingMM?: [number, number]) =>
@@ -38,6 +39,34 @@ describe('slideOverlayContent', () => {
     expect(r.distance).toBe(0)
     expect(r.label).toBe('50 px')
   })
+})
+
+test('annotations draw as culled device-pixel segments with a label', () => {
+  const annotations = new NVSlideAnnotations(() => [0.001, 0.001])
+  annotations.add(
+    'rectangle',
+    [
+      { x: 10, y: 10 },
+      { x: 20, y: 30 },
+    ],
+    'tumour',
+  )
+  // Off-screen (the screen is 100 css px): culled.
+  annotations.add('freehandLine', [
+    { x: 200, y: 0 },
+    { x: 300, y: 0 },
+  ])
+  const p = { x: 5, y: 5 }
+  const draft = { tool: 'circle' as const, points: [p, p] }
+  const c = slideOverlayContent(slide(), screen, {
+    ...source,
+    annotations,
+    draft,
+  })
+  expect(c.segments).toEqual([
+    20, 20, 40, 20, 40, 20, 40, 60, 40, 60, 20, 60, 20, 60, 20, 20,
+  ])
+  expect(c.labels).toEqual([{ x: 48, y: 20, text: 'tumour 200 um2' }])
 })
 
 describe('slideScaleBar', () => {

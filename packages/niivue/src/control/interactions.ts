@@ -444,6 +444,13 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
+    // Abandon a half-placed angle.
+    if (ctrl._angleState !== 'none') {
+      ctrl._cancelAngle()
+      // End a drag in progress too, or later moves orbit the camera (#471).
+      if (ctrl.isDragging) resetDragState(ctrl)
+      return
+    }
     // Abandon an in-progress multi-click contour (spline / livewire) or a
     // half-placed bidirectional measurement.
     if (ctrl._annotationPolyPoints || ctrl._bidirectionalLong) {
@@ -1062,7 +1069,9 @@ function pinchPointer(
     const px = clientToBoundsPixel(ctrl, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
     const hit = px && ctrl.view?.hitTest(px[0], px[1])
     if (!px || !hit) return false
-    // The first finger's drag gives way to the pinch.
+    // The first finger's drag gives way to the pinch; a half-placed angle is
+    // dropped, not placed at the finger.
+    ctrl._cancelAngle()
     if (ctrl._activeDragMode !== DRAG_MODE.none)
       DragModes.handleDragRelease(ctrl)
     resetDragState(ctrl)
@@ -1671,14 +1680,22 @@ export function initInteraction(ctrl: NiiVue): void {
     // 2D slice tile: dispatch through drag mode system
     if (ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
       const mode = DragModes.getDragModeForButton(ctrl, evt.button)
+      // Another mode, or a press on another tile, drops a half-placed angle
+      // (the latter starts a new one there). Before the mode is set: the
+      // cancel clears an angle mode.
+      if (
+        mode !== DRAG_MODE.angle ||
+        ctrl._angleArm?.hit.tileIndex !== ctrl.activeTileHit.tileIndex
+      ) {
+        ctrl._cancelAngle()
+      }
       ctrl._activeDragMode = mode
       ctrl._crosshairPanDidDrag = false
       ctrl.dragStartXY = [px, py]
       ctrl.dragEndXY = [px, py]
-      // Clear any previous overlay and reset stale angle state
-      ctrl.model._dragOverlay = null
-      if (mode !== DRAG_MODE.angle) {
-        ctrl._angleState = 'none'
+      // A half-placed angle keeps showing while its second arm is placed.
+      if (ctrl._angleState !== 'drawing_second_line') {
+        ctrl.model._dragOverlay = null
       }
       if (mode === DRAG_MODE.crosshair) {
         const mm = NVSliceLayout.screenSlicePick(
@@ -1993,6 +2010,8 @@ export function initInteraction(ctrl: NiiVue): void {
   // streaming pump paused (it is gated on !isDragging) and stall streaming.
   ctrl._eventListeners.pointercancel = (e: Event) => {
     pinchPointer(ctrl, e as PointerEvent, 'up')
+    // The browser took over: drop a half-placed angle rather than place it.
+    ctrl._cancelAngle()
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       // A cancelled crosshair-pan gesture must not place the crosshair: the
       // browser took over (touch scroll, palm rejection), so the release point
@@ -2070,6 +2089,16 @@ export function initInteraction(ctrl: NiiVue): void {
       return
     }
     if (!ctrl.isDragging) {
+      // An angle's second arm follows the pointer until a click places it.
+      if (ctrl._angleState === 'drawing_second_line') {
+        const hover = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+        const tile = hover && ctrl.view?.hitTest(hover[0], hover[1])
+        if (hover && tile?.tileIndex === ctrl._angleArm?.hit.tileIndex) {
+          ctrl.dragEndXY = [hover[0], hover[1]]
+          DragModes.updateDragOverlay(ctrl)
+          ctrl.drawScene()
+        }
+      }
       // Emit high-level slice pointer event for extensions
       const sliceEvt = computeSlicePointerEvent(ctrl, evt)
       if (sliceEvt) {

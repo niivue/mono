@@ -506,11 +506,6 @@ and its volumes alive."""
         """
         self.send({"cmd": "broadcastTo", "args": _make_args(targets, opts)})
 
-    def cancel_drawing_load(self) -> None:
-        """A loadDrawing still reading gives way; the current drawing stays.
-        """
-        self.send({"cmd": "cancelDrawingLoad", "args": []})
-
     async def cancel_pending_frame(self) -> Any:
         """Drop the frame that {@link drawScene} has scheduled but not yet drawn.
 

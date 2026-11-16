@@ -143,13 +143,15 @@ export function startSegDrawing(
     nv.drawIsEnabled = false
     nv.drawOpacity = SEG_FILL_OPACITY
     nv.drawRimOpacity = SEG_RIM_OPACITY
-    stopShown = options.onShown?.(
-      cmap.I.slice(1).map((value, i) => ({
-        value,
-        label: cmap.labels[i + 1] ?? String(value),
-        rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
-      })),
-    )
+    // Without the sidecar's segments the panel has nothing to list.
+    if (cmap.I.length > 1)
+      stopShown = options.onShown?.(
+        cmap.I.slice(1).map((value, i) => ({
+          value,
+          label: cmap.labels[i + 1] ?? String(value),
+          rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
+        })),
+      )
   }
   show().catch((err) => {
     if (cancelled) return

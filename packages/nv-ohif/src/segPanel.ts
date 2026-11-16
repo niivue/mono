@@ -31,7 +31,6 @@ type Style = {
 type Specifier = { segmentationId: string; type: string }
 interface CstSegmentation {
   addSegmentations(input: unknown[]): void
-  removeSegmentation(id: string): void
   removeSegmentationRepresentations(viewportId: string, s: object): void
   state: {
     getSegmentation(
@@ -41,7 +40,6 @@ interface CstSegmentation {
       viewportId: string,
       s: Specifier,
     ): Rep | undefined
-    getViewportIdsWithSegmentation(id: string): string[]
   }
   config: {
     color: {
@@ -349,12 +347,9 @@ export function startSegPanel(
     for (const s of subscriptions) s.unsubscribe()
     if (panels.get(viewportId)?.segmentationId === segmentationId)
       panels.delete(viewportId)
+    // The segmentation stays, as OHIF leaves its own: removing it makes OHIF
+    // strip the SEG display set from every viewport that hangs it.
     cst.removeSegmentationRepresentations(viewportId, { segmentationId })
-    if (
-      cst.state.getSegmentation(segmentationId) &&
-      cst.state.getViewportIdsWithSegmentation(segmentationId).length === 0
-    )
-      cst.removeSegmentation(segmentationId)
   }
 }
 

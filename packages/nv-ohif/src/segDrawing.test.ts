@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import type { OhifDisplaySet } from './ohif-types'
-import { resolveSegDisplaySets, segColormap } from './segDrawing'
+import {
+  resolveSegDisplaySets,
+  segColormap,
+  startSegDrawing,
+} from './segDrawing'
 
 describe('segColormap', () => {
   test('sidecarSegments_becomeLabelColormapWithTransparentZero', () => {
@@ -83,5 +87,79 @@ describe('resolveSegDisplaySets', () => {
     expect(resolveSegDisplaySets([lost], lookup)).toEqual({
       displaySets: [lost],
     })
+  })
+})
+
+describe('startSegDrawing', () => {
+  // A pane whose core loadDrawing waits on `release` (a slow File read).
+  function pane(isShown: boolean) {
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const calls: string[] = []
+    const nv = {
+      loadDrawing: async () => {
+        calls.push('load')
+        await gate
+        return isShown
+      },
+      closeDrawing: () => calls.push('close'),
+      addColormap: (name: string) => {
+        calls.push('colormap')
+        return name
+      },
+      drawColormap: '',
+      drawIsEnabled: true,
+      drawOpacity: 1,
+      drawRimOpacity: -1,
+    }
+    return { nv, calls, release }
+  }
+  const segDs: OhifDisplaySet = {
+    displaySetInstanceUID: 'seg',
+    Modality: 'SEG',
+  }
+  const converted = {
+    image: new File([], 'seg.nii'),
+    json: { Segments: [{ LabelValue: 1, RGB: [1, 2, 3] }] },
+  }
+  const convert = async () => converted
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  test('shown_coloursFromSidecar_penOff_rimOverFill', async () => {
+    const { nv, calls, release } = pane(true)
+    startSegDrawing(nv, segDs, { setNote: () => {}, convert })
+    release()
+    await settle()
+    expect(calls).toEqual(['load', 'colormap'])
+    expect(nv.drawColormap).toBe('seg-seg')
+    expect(nv.drawIsEnabled).toBe(false)
+    expect(nv.drawRimOpacity).toBeGreaterThan(nv.drawOpacity)
+  })
+
+  test('cleanupWhileCoreLoadPending_closesIt_thenTouchesNothing', async () => {
+    const { nv, calls, release } = pane(false) // core gives way once closed
+    const stop = startSegDrawing(nv, segDs, { setNote: () => {}, convert })
+    await settle()
+    stop()
+    release()
+    await settle()
+    expect(calls).toEqual(['load', 'close'])
+    expect(nv.drawIsEnabled).toBe(true)
+  })
+
+  test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {
+    const { nv, calls, release } = pane(false)
+    const notes: string[] = []
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: (m) => notes.push(m),
+      convert,
+    })
+    release()
+    await settle()
+    stop()
+    expect(calls).toEqual(['load'])
+    expect(notes).toHaveLength(1)
   })
 })

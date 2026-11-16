@@ -83,33 +83,70 @@ export function segColormap(segments: ReadonlyArray<SidecarSegment>) {
 }
 
 /**
- * Convert `seg` and load it as `nv`'s drawing, coloured from its sidecar.
- * Resolves false when cancelled or when nothing loaded.
+ * Convert `seg` and show it as `nv`'s drawing, coloured from its sidecar.
+ * Returns the cleanup: it closes the drawing only while this owns it (loading
+ * in core or shown), so it never erases a drawing that replaced it; closing
+ * also makes a core load still reading its file give way.
  */
-export async function loadSegDrawing(
-  nv: NiiVue,
+export function startSegDrawing(
+  nv: Pick<
+    NiiVue,
+    | 'loadDrawing'
+    | 'closeDrawing'
+    | 'addColormap'
+    | 'drawColormap'
+    | 'drawIsEnabled'
+    | 'drawOpacity'
+    | 'drawRimOpacity'
+  >,
   seg: OhifDisplaySet,
   options: {
     headers?: Record<string, string>
-    signal?: AbortSignal
-    cancelled: () => boolean
+    setNote: (message: string) => void
+    convert?: typeof convertDisplaySetToNifti
   },
-): Promise<boolean> {
-  const converted = await convertDisplaySetToNifti(seg, options)
-  if (!converted || options.cancelled()) return false
-  const segments = converted.json?.Segments
-  if (!(await nv.loadDrawing(converted.image)) || options.cancelled())
-    return false
-  if (Array.isArray(segments) && segments.length > 0)
-    nv.drawColormap = nv.addColormap(
-      `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
-      segColormap(segments),
+): () => void {
+  let cancelled = false
+  let isOwned = false
+  const abort = new AbortController()
+  const show = async () => {
+    const convert = options.convert ?? convertDisplaySetToNifti
+    const converted = await convert(seg, {
+      headers: options.headers,
+      signal: abort.signal,
+    })
+    if (!converted || cancelled) return
+    isOwned = true
+    const isShown = await nv.loadDrawing(converted.image)
+    if (cancelled) return
+    if (!isShown) {
+      isOwned = false
+      options.setNote('The segmentation could not be shown.')
+      return
+    }
+    const segments = converted.json?.Segments
+    if (Array.isArray(segments) && segments.length > 0)
+      nv.drawColormap = nv.addColormap(
+        `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
+        segColormap(segments),
+      )
+    // loadDrawing arms the pen; the pane's tools keep the left button.
+    nv.drawIsEnabled = false
+    nv.drawOpacity = SEG_FILL_OPACITY
+    nv.drawRimOpacity = SEG_RIM_OPACITY
+  }
+  show().catch((err) => {
+    if (cancelled) return
+    console.error('[nv-ohif] SEG load failed', err)
+    options.setNote(
+      `Segmentation failed: ${err instanceof Error ? err.message : String(err)}`,
     )
-  // loadDrawing arms the pen; the pane's tools keep the left button.
-  nv.drawIsEnabled = false
-  nv.drawOpacity = SEG_FILL_OPACITY
-  nv.drawRimOpacity = SEG_RIM_OPACITY
-  return true
+  })
+  return () => {
+    cancelled = true
+    abort.abort()
+    if (isOwned) nv.closeDrawing()
+  }
 }
 
 /** Show `seg` as the drawing once the pane's base is loaded; drop it on change. */
@@ -125,29 +162,10 @@ export function useSegDrawing(
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !seg || !isLoaded) return
-    let cancelled = false
-    const abort = new AbortController()
-    loadSegDrawing(nv, seg, {
+    return startSegDrawing(nv, seg, {
       headers: authHeaders(servicesManager),
-      signal: abort.signal,
-      cancelled: () => cancelled,
+      setNote,
     })
-      .then((shown) => {
-        if (!shown && !cancelled)
-          setNote('The segmentation could not be shown.')
-      })
-      .catch((err) => {
-        if (cancelled) return
-        console.error('[nv-ohif] SEG load failed', err)
-        setNote(
-          `Segmentation failed: ${err instanceof Error ? err.message : String(err)}`,
-        )
-      })
-    return () => {
-      cancelled = true
-      abort.abort()
-      if (nv.drawingVolume) nv.closeDrawing()
-    }
   }, [segKey, isLoaded])
 }
 

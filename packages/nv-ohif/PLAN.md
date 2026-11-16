@@ -337,6 +337,8 @@ the differentiators:
   (per-overlay colormap + opacity: `setViewportColormap` with the overlay's
   `displaySetInstanceUID`, in the Overlays dropdown.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
+  (VOI groups link crosshair + calMin/calMax; OHIF's `syncColormap` is not
+  mirrored: core `SyncOpts` has no colormap option.)
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)
 

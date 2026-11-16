@@ -265,6 +265,7 @@ import {
   calculateWorldExtents,
   calMinMaxFrame,
   frameHistogram,
+  remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
   volumeTR,
@@ -7676,6 +7677,14 @@ export default class NiiVue extends EventTarget {
     return this.saveVolume({ filename, isSaveDrawing: true })
   }
 
+  /**
+   * Open a uint8 label image as the drawing over the background (volume 0).
+   * A label image on another grid (dims, axis order, flips or origin) loads
+   * when every voxel centre lands on a background voxel centre, within
+   * `DRAWING_GRID_TOLERANCE` (1e-3 voxel); background voxels outside it are 0.
+   * Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
+   * Resolves false on failure.
+   */
   async loadDrawing(
     source: string | File | ImageFromUrlOptions,
   ): Promise<boolean> {
@@ -7707,16 +7716,7 @@ export default class NiiVue extends EventTarget {
         img instanceof ArrayBuffer
           ? new Uint8Array(img)
           : new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
-      // The drawing's native grid must match the background's: an equal voxel
-      // count with transposed dims would load without error but misplaced.
       const nd = nii.hdr.dims
-      const bd = back.hdr.dims
-      if (!validateDrawingDimensions(nd, bd)) {
-        log.warn(
-          `loadDrawing: drawing dimensions (${nd[1]}x${nd[2]}x${nd[3]}) do not match background (${bd[1]}x${bd[2]}x${bd[3]})`,
-        )
-        return false
-      }
       const drawVoxels = nd[1] * nd[2] * nd[3]
       if (imgData.length < drawVoxels) {
         log.warn(
@@ -7724,8 +7724,21 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
+      // Same dims: today's exact index copy (the affine is not consulted, so a
+      // drawing saved by any tool on this grid loads unchanged). Other grids
+      // (e.g. a DICOM SEG in its frame order) load only if voxel-aligned.
+      const drawImg = validateDrawingDimensions(nd, back.hdr.dims)
+        ? reorientDrawingToRAS(back, imgData)
+        : remapDrawingToRAS(back, imgData, nd, nii.hdr.affine)
+      if (typeof drawImg === 'string') {
+        const bd = back.hdr.dims
+        log.warn(
+          `loadDrawing: drawing grid (${nd[1]}x${nd[2]}x${nd[3]}) is not voxel-aligned with the background (${bd[1]}x${bd[2]}x${bd[3]}): ${drawImg}`,
+        )
+        return false
+      }
       const dv = createDrawingVolume(back)
-      dv.img = reorientDrawingToRAS(back, imgData)
+      dv.img = drawImg
       this.model.drawingVolume = dv
       // Initialize undo
       const cleared = clearAllUndoBitmaps(

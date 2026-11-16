@@ -1116,6 +1116,22 @@ and its volumes alive."""
         self.send({"cmd": "loadDocument", "args": _make_args(source, options)})
 
     async def load_drawing(self, source: Any) -> Any:
+        """Open a uint8 label image as the drawing over the background (volume 0).
+
+        A label image on another grid (dims, axis order, flips or origin) loads
+        when every voxel centre lands on a background voxel centre, within
+        `DRAWING_GRID_TOLERANCE` (1e-3 voxel); background voxels outside it are 0.
+        Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
+        Resolves false on failure.
+
+        Parameters
+        ----------
+        source : string | ImageFromUrlOptions | File
+
+        Returns
+        -------
+        Promise<boolean>
+        """
         return await self._request("loadDrawing", _make_args(source))
 
     def load_image(self, path_or_file: Any, options: Any = _UNSET) -> None:

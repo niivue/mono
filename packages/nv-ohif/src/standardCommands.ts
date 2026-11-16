@@ -1,7 +1,9 @@
 import { SLICE_TYPE } from '@niivue/niivue'
 import {
   applyWindowLevelPreset,
+  invertBase,
   NIIVUE_SLICE_TYPES,
+  rasToLps,
   resetView,
   setViewportColormap,
 } from './commands'
@@ -12,6 +14,7 @@ import {
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
+import { onSlicePlane } from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -40,11 +43,16 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'scaleDownViewport',
   'fitViewportToWindow',
   'setWindowLevelPreset',
+  'invertViewport',
+  'jumpToImage',
   'setViewportColormap',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
-type StandardOptions = Record<string, unknown> & { viewportId?: string }
+type StandardOptions = Record<string, unknown> & {
+  viewportId?: string
+  viewport?: { id?: string }
+}
 
 // Cornerstone scales parallelScale by 0.9 (up) / 1.1 (down); NiiVue's zoom is
 // its inverse. Clamps match NiiVue's own wheel/pinch limits.
@@ -81,6 +89,15 @@ const ACQUISITION_SLICE_TYPES = [
   SLICE_TYPE.AXIAL,
 ]
 
+/** The slice type of a volume's native slice plane (Cornerstone's 'acquisition'). */
+export function acquisitionSliceType(nv: {
+  volumes: ReadonlyArray<{ permRAS?: number[] }>
+}): number | undefined {
+  return ACQUISITION_SLICE_TYPES[
+    nv.volumes[0]?.permRAS?.findIndex((p) => Math.abs(p) === 3) ?? -1
+  ]
+}
+
 function setOrientation(
   entry: NiivueViewportEntry,
   orientation: unknown,
@@ -89,14 +106,35 @@ function setOrientation(
   if (entry.slideView || nv.volumes.length === 0) return
   const sliceType =
     orientation === 'acquisition'
-      ? ACQUISITION_SLICE_TYPES[
-          nv.volumes[0]?.permRAS?.findIndex((p) => Math.abs(p) === 3) ?? -1
-        ]
+      ? acquisitionSliceType(nv)
       : NIIVUE_SLICE_TYPES[String(orientation)]
   if (sliceType !== undefined) nv.sliceType = sliceType
 }
 
 /** No 2D tile to turn or flip: a slide, a render-only or a graph-only view. */
+/**
+ * OHIF's jumpToImage: show the stack's `imageIndex`-th image (display-set
+ * order; negative counts from the end) by moving the crosshair onto that
+ * instance's slice through the slice -> frame map, keeping its in-plane spot.
+ */
+export function jumpToImage(
+  entry: NiivueViewportEntry,
+  imageIndex: unknown,
+): void {
+  const sf = entry.sliceFrames
+  const instances = entry.displaySets[0]?.instances ?? []
+  const i = Number(imageIndex)
+  if (!sf || !Number.isInteger(i) || !entry.crosshairMM) return
+  const sop = (instances.at(i) as { SOPInstanceUID?: string } | undefined)
+    ?.SOPInstanceUID
+  // Unmapped frame slots are undefined too: an unknown SOP must not match them.
+  if (!sop) return
+  const k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
+  if (k < 0) return
+  const [x = 0, y = 0, z = 0] = entry.crosshairMM
+  entry.nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
+}
+
 export function noTiles2D(entry: NiivueViewportEntry): boolean {
   const { sliceType } = entry.nv
   return (
@@ -145,7 +183,11 @@ export function getStandardCommandDefinitions({
       act: (entry: NiivueViewportEntry, opts: StandardOptions) => void,
     ) =>
     (opts: StandardOptions = {}) => {
-      const entry = getActiveNiivueEntry(servicesManager, opts.viewportId)
+      // OHIF passes the target as viewportId, or (jumpToImage) as a grid viewport.
+      const entry = getActiveNiivueEntry(
+        servicesManager,
+        opts.viewportId ?? opts.viewport?.id,
+      )
       if (entry) return act(entry, opts)
       return ohifCommandsManager(commandsManager)?.runCommand?.(
         name,
@@ -179,6 +221,12 @@ export function getStandardCommandDefinitions({
           typeof opts.presetName === 'string' ? opts.presetName : undefined,
           typeof opts.presetIndex === 'number' ? opts.presetIndex : undefined,
         ),
+      ),
+    },
+    invertViewport: { commandFn: route('invertViewport', invertBase) },
+    jumpToImage: {
+      commandFn: route('jumpToImage', (entry, opts) =>
+        jumpToImage(entry, opts.imageIndex),
       ),
     },
     setViewportColormap: {

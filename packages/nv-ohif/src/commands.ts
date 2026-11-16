@@ -507,7 +507,9 @@ function resolveBackingSeries(
 }
 
 // world mm in NIfTI RAS -> DICOM patient LPS (negate x and y).
-function rasToLps(p: [number, number, number]): [number, number, number] {
+export function rasToLps(
+  p: [number, number, number],
+): [number, number, number] {
   return [p[0] === 0 ? 0 : -p[0], p[1] === 0 ? 0 : -p[1], p[2]]
 }
 
@@ -1448,22 +1450,27 @@ export function voiRange(
  */
 export function dicomWindow(
   ds: OhifDisplaySet | undefined,
+  shown?: SliceFrames,
 ): { calMin: number; calMax: number } | undefined {
-  const instances = (ds?.instances ?? []) as Array<{
+  // Only the instances the shown output was made of (a series can convert to
+  // several outputs, e.g. orthogonal localizers), in slice order.
+  const all = (ds?.instances ?? []) as Array<{
+    SOPInstanceUID?: string
     WindowWidth?: unknown
     WindowCenter?: unknown
   }>
+  const sops = shown?.frames.map((f) => f?.SOPInstanceUID).filter(Boolean)
+  // Only first/middle/last are read, so look those up rather than map them all.
+  const at = (i: number) =>
+    sops?.length ? all.find((x) => x.SOPInstanceUID === sops[i]) : all[i]
   const first = (v: unknown) => (Array.isArray(v) ? v[0] : v)
   const key = (i: number) => {
-    const inst = instances[i]
+    const inst = at(i)
     return `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
   }
-  const n = instances.length
+  const n = sops?.length || all.length
   if (key(0) !== key(n >> 1) || key(0) !== key(n - 1)) return undefined
-  return windowRange(
-    first(instances[0]?.WindowWidth),
-    first(instances[0]?.WindowCenter),
-  )
+  return windowRange(first(at(0)?.WindowWidth), first(at(0)?.WindowCenter))
 }
 
 function windowRange(
@@ -1490,10 +1497,20 @@ export function resetView(entry: NiivueViewportEntry): void {
   nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
   nv.renderPan = [...VIEW_DEFAULTS.renderPan]
   centerCrosshair(nv)
-  // Cornerstone's reset also clears rotation and flips.
+  // Cornerstone's reset also clears rotation, flips and inversion.
   nv.rotation2D = 0
   nv.isFlipped2DHorizontal = false
   nv.isFlipped2DVertical = false
+  if (nv.volumes[0]?.isColormapInverted) invertBase(entry)
+}
+
+/** Toggle the base volume's inverted grayscale (OHIF's invertViewport). */
+export function invertBase(entry: NiivueViewportEntry): void {
+  const base = entry.nv.volumes[0]
+  if (entry.slideView || !base) return
+  entry.nv
+    .setVolume(0, { isColormapInverted: !base.isColormapInverted })
+    .catch((err: unknown) => console.error('[nv-ohif] invert failed', err))
 }
 
 /**

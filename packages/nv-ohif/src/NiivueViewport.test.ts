@@ -9,6 +9,7 @@ import {
 } from './commands'
 import { DEFAULT_OPTIONS } from './NiivueViewport'
 import { buildSliceFrames, frameAt } from './sliceFrames'
+import { acquisitionSliceType } from './standardCommands'
 
 test('the viewport snaps the crosshair to voxel centres', () => {
   // So a measurement drawn at a clicked depth lies on a DICOM frame (frameAt).
@@ -128,4 +129,30 @@ test("the windowing drag matches cornerstone's gain and direction", () => {
       robustMax: 0,
     }),
   ).toBeUndefined()
+})
+
+test('the window comes from the instances the shown output was made of', () => {
+  // Orthogonal localizers in one series: different windows, one per output.
+  const ds = {
+    instances: [
+      { SOPInstanceUID: 'cor', WindowWidth: 230, WindowCenter: 100 },
+      { SOPInstanceUID: 'sag', WindowWidth: 320, WindowCenter: 110 },
+    ],
+  } as unknown as Parameters<typeof dicomWindow>[0]
+  expect(dicomWindow(ds)).toBeUndefined()
+  const shown = {
+    origin: [0, 0, 0],
+    normal: [0, 1, 0],
+    frames: [{ SOPInstanceUID: 'cor', frameNumber: 1 }],
+  } as Parameters<typeof dicomWindow>[1]
+  const win = dicomWindow(ds, shown)
+  expect(win && (win.calMin + win.calMax) / 2).toBeCloseTo(100, 0)
+})
+
+test('a single image opens in its acquisition plane', () => {
+  // permRAS: voxel dimension 3 runs along RAS axis 2 (anterior) -> coronal.
+  expect(acquisitionSliceType({ volumes: [{ permRAS: [1, 3, -2] }] })).toBe(
+    SLICE_TYPE.CORONAL,
+  )
+  expect(acquisitionSliceType({ volumes: [] })).toBeUndefined()
 })

@@ -198,6 +198,14 @@ function onSlice(sf: SliceFrames, p: Vec3): number | undefined {
     : undefined
 }
 
+/** `p` (LPS) moved along the slice normal onto slice k's plane. */
+export function onSlicePlane(sf: SliceFrames, p: Vec3, k: number): Vec3 {
+  const n = sf.normal
+  const nn = n[0] * n[0] + n[1] * n[1] + n[2] * n[2]
+  const step = (k - sliceDepth(sf, p)) / nn
+  return [p[0] + step * n[0], p[1] + step * n[1], p[2] + step * n[2]]
+}
+
 /** The frame whose plane all LPS points lie on, else undefined. */
 export function frameAt(
   sf: SliceFrames,

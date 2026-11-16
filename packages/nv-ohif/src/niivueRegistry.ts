@@ -35,6 +35,8 @@ export interface NiivueViewportEntry {
   windowLevel?: { window: number; level: number }
   /** OHIF tool group whose primary tool drives this viewport. */
   toolGroupId?: string
+  /** Last crosshair position (RAS mm), from locationChange. */
+  crosshairMM?: number[]
   /** Base volume slice -> DICOM frame, when converted from DICOM. */
   sliceFrames?: SliceFrames
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */

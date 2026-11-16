@@ -16,12 +16,14 @@ export const NIIVUE_VIEWPORT_NAME = 'niivue'
 export function getNiivueViewportModule({
   servicesManager,
   commandsManager,
+  extensionManager,
 }: OhifExtensionParams = {}): OhifViewportModuleEntry[] {
   function NiivueViewportWithManagers(props: OhifViewportProps) {
     return (
       <NiivueViewport
         servicesManager={servicesManager}
         commandsManager={commandsManager}
+        extensionManager={extensionManager}
         {...props}
       />
     )

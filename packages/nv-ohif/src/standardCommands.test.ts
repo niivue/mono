@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
-import { getNiivueCommandsModule, voiRange } from './commands'
+import { getNiivueCommandsModule, invertBase, voiRange } from './commands'
 import {
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { NIIVUE_STANDARD_COMMANDS } from './standardCommands'
+import { jumpToImage, NIIVUE_STANDARD_COMMANDS } from './standardCommands'
 
 function stubNiivue() {
   const volumeUpdates: Array<Record<string, unknown>> = []
@@ -359,4 +359,62 @@ describe('voiRange', () => {
       voiRange([{ options: { voi: { windowWidth: 0, windowCenter: 40 } } }]),
     ).toBeUndefined()
   })
+})
+
+it('invertViewport toggles the base volume', async () => {
+  const calls: unknown[] = []
+  const base = { isColormapInverted: false }
+  const nv = {
+    volumes: [base],
+    setVolume: async (_i: number, o: { isColormapInverted: boolean }) => {
+      calls.push(o)
+      base.isColormapInverted = o.isColormapInverted
+    },
+  }
+  const entry = { nv } as unknown as Parameters<typeof invertBase>[0]
+  invertBase(entry)
+  await Promise.resolve()
+  invertBase(entry)
+  await Promise.resolve()
+  expect(calls).toEqual([
+    { isColormapInverted: true },
+    { isColormapInverted: false },
+  ])
+})
+
+it('jumpToImage moves to the instance through the slice -> frame map', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 1],
+    // Display-set order runs head-first; the converted volume runs foot-first.
+    displaySets: [
+      {
+        instances: [
+          { SOPInstanceUID: 'top' },
+          { SOPInstanceUID: 'mid' },
+          { SOPInstanceUID: 'bot' },
+        ],
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [
+        { SOPInstanceUID: 'bot', frameNumber: 1 },
+        { SOPInstanceUID: 'mid', frameNumber: 1 },
+        { SOPInstanceUID: 'top', frameNumber: 1 },
+        undefined,
+      ],
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  // Out of range: no SOP, so it must not land on the unmapped slot.
+  jumpToImage(entry, 7)
+  // In-plane (x, y) kept; z on the chosen instance's slice.
+  expect(calls).toEqual([
+    [5, 6, 2],
+    [5, 6, 0],
+  ])
 })

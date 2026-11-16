@@ -696,7 +696,7 @@ export default class NiiVue extends EventTarget {
   _crosshairPanDidDrag = false
   // Annotation transient state (controller-owned, not serialized)
   _annotationUndoStack = Object.assign(new AnnotationUndoStack(), {
-    onPush: () => this.emit('annotationHistoryPush', {}),
+    onPush: (seq: number) => this.emit('annotationHistoryPush', { seq }),
   })
   _annotationBrushPath: AnnotationPoint[] = []
   _frozenLoopPoints: AnnotationPoint[] | null = null
@@ -3007,6 +3007,16 @@ export default class NiiVue extends EventTarget {
       sliceType: isSlicePlane ? type : undefined,
       slicePosition: slicePosition,
     })
+  }
+
+  /** Sequence number of the step annotationUndo would revert (annotationHistoryPush). */
+  get annotationUndoTop(): number | undefined {
+    return this._annotationUndoStack.undoTop
+  }
+
+  /** Sequence number of the step annotationRedo would reapply. */
+  get annotationRedoTop(): number | undefined {
+    return this._annotationUndoStack.redoTop
   }
 
   annotationUndo(): void {

@@ -149,6 +149,8 @@ const PROPS_RW = [
 
 // [jsName, pyName] for read-only properties (JS-to-Python only).
 const PROPS_RO = [
+  ["annotationRedoTop", "annotation_redo_top"],
+  ["annotationUndoTop", "annotation_undo_top"],
   ["backend", "backend"],
   ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],

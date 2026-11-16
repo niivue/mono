@@ -1477,6 +1477,28 @@
   ],
   "readonlyProperties": [
     {
+      "jsName": "annotationRedoTop",
+      "pyName": "annotation_redo_top",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Sequence number of the step annotationRedo would reapply."
+    },
+    {
+      "jsName": "annotationUndoTop",
+      "pyName": "annotation_undo_top",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Sequence number of the step annotationUndo would revert (annotationHistoryPush)."
+    },
+    {
       "jsName": "backend",
       "pyName": "backend",
       "tsType": "BackendType | undefined",
@@ -4806,8 +4828,8 @@
     {
       "jsName": "annotationHistoryPush",
       "pyName": "annotation_history_push",
-      "detailType": "Record<string, never>",
-      "doc": "An annotation undo snapshot was recorded: one step for annotationUndo."
+      "detailType": "{ seq: number; }",
+      "doc": "An annotation undo step was recorded; `seq` names it (annotationUndoTop)."
     },
     {
       "jsName": "annotationRemoved",

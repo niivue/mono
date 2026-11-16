@@ -230,8 +230,8 @@ export interface NVEventMap {
   annotationAdded: AnnotationAddedDetail
   annotationRemoved: AnnotationRemovedDetail
   annotationChanged: AnnotationChangedDetail
-  /** An annotation undo snapshot was recorded: one step for annotationUndo. */
-  annotationHistoryPush: Record<string, never>
+  /** An annotation undo step was recorded; `seq` names it (annotationUndoTop). */
+  annotationHistoryPush: { seq: number }
 
   // Volume ordering
   volumeOrderChanged: VolumeOrderChangedDetail

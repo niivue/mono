@@ -56,6 +56,7 @@ import {
 } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { projectMMToCanvas } from '@/view/sliceUtils'
 import {
   type ClipDrawPlane,
   chunkExplodeEnabled,
@@ -87,18 +88,23 @@ function isNearFirstPoint(
   evt: PointerEvent,
   first: AnnotationPoint,
 ): boolean {
-  const c = ctrl.mmToCanvas(
-    Annotation.slice2DToMM(
-      first,
-      ctrl._annotationPolySlicePosition,
-      ctrl._annotationPolySliceType,
-    ),
+  // Through the clicked tile: the nearest tile to the point may be another
+  // plane through it (a multiplanar layout's crosshair).
+  const tile = ctrl.activeTileHit
+    ? ctrl.view?.screenSlices[ctrl.activeTileHit.tileIndex]
+    : undefined
+  const { mvpMatrix, planeNormal, planePoint, leftTopWidthHeight } = tile ?? {}
+  if (!mvpMatrix || !planeNormal || !planePoint || !leftTopWidthHeight)
+    return false
+  const mm = Annotation.slice2DToMMOnPlane(
+    first,
+    ctrl._annotationPolySliceType,
+    planeNormal,
+    planePoint,
   )
-  if (!c) return false
+  const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
   const [x, y] = clientToCanvasPixel(ctrl, evt.clientX, evt.clientY)
-  return (
-    Math.hypot(x - c.x, y - c.y) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
-  )
+  return Math.hypot(x - cx, y - cy) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
 }
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
@@ -1750,6 +1756,12 @@ export function initInteraction(ctrl: NiiVue): void {
             poly.length >= 3 &&
             isNearFirstPoint(ctrl, evt, poly[0] as AnnotationPoint)
           ) {
+            // Live wire closes along the snapped path back to the first point
+            // (its ends duplicate the last and first vertices), not a chord.
+            if (isLivewireTool(tool)) {
+              const seg = livewireSnappedPath(ctrl, poly[0] as AnnotationPoint)
+              for (let i = 1; i < seg.length - 1; i++) poly.push(seg[i])
+            }
             commitMultiClickContour(ctrl)
             ctrl._abandonAnnotationInProgress()
             ctrl.drawScene()

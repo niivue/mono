@@ -256,6 +256,10 @@ off-window crosshair is brought back."""
     wheel_zoom_anchor = traitlets.Enum(["crosshair", "pointer"], None, allow_none=True).tag(sync=True)
 
     # Read-only properties (synced from JS to Python)
+    annotation_redo_top = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Sequence number of the step annotationRedo would reapply."""
+    annotation_undo_top = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Sequence number of the step annotationUndo would revert (annotationHistoryPush)."""
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
     cinematic_frame_ms = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Mean GPU time (ms) of a cinematic refinement frame, over the first 10

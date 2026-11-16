@@ -363,3 +363,22 @@ test('isAreaGeometric: a self-crossing contour counts both lobes, as its voxel m
   expect(computeAnnotationStats(ann, volume, true)?.area).toBeCloseTo(50, 6)
   expect(computeAnnotationStats(ann, volume)?.area).toBe(50)
 })
+
+test('an intact circle measures the square-constrained circle it draws', () => {
+  // generateCircle squares (5,5)-(15,12) to (5,5)-(15,15): radius 5, centre (10,10).
+  const start = { x: 5, y: 5 }
+  const end = { x: 15, y: 12 }
+  const ann: VectorAnnotation = {
+    ...annotation(generateShape('measureCircle', start, end, 1)),
+    shape: { type: 'measureCircle', start, end },
+  }
+  expect(computeAnnotationStats(ann, volume, true)?.area).toBeCloseTo(
+    Math.PI * 25,
+    6,
+  )
+  let inside = 0
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++)
+      if ((i - 10) ** 2 + (j - 10) ** 2 <= 25) inside++
+  expect(computeAnnotationStats(ann, volume)?.area).toBe(inside)
+})

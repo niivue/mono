@@ -9,7 +9,7 @@ import type {
 } from '@/NVTypes'
 import { getVoxelValue } from '@/volume/utils'
 import { clipperEvenOddArea } from './clipper'
-import { isAnnotationErased, isCircleTool } from './shapes'
+import { constrainCircleEnd, isAnnotationErased, isCircleTool } from './shapes'
 import { IN_PLANE_AXES, mmToSlice2D, slice2DToMM } from './sliceProjection'
 
 export function isMeasureTool(tool: AnnotationTool): boolean {
@@ -83,11 +83,16 @@ function intactEllipse(
     isAnnotationErased(annotation)
   )
     return null
+  const { start } = shape
+  // A circle is drawn in the square its end is constrained to (generateCircle).
+  const end = isCircleTool(shape.type)
+    ? constrainCircleEnd(start, shape.end)
+    : shape.end
   return {
-    cx: (shape.start.x + shape.end.x) / 2,
-    cy: (shape.start.y + shape.end.y) / 2,
-    a: Math.abs(shape.end.x - shape.start.x) / 2,
-    b: Math.abs(shape.end.y - shape.start.y) / 2,
+    cx: (start.x + end.x) / 2,
+    cy: (start.y + end.y) / 2,
+    a: Math.abs(end.x - start.x) / 2,
+    b: Math.abs(end.y - start.y) / 2,
   }
 }
 

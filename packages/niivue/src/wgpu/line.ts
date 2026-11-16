@@ -78,7 +78,7 @@ export class LineRenderer extends NVRenderer {
     if (!this.isReady || lines.length === 0 || !bindGroup || !this.pipeline)
       return
     const n = Math.min(lines.length, maxLines)
-    const allLineData = new Float32Array(maxLines * 12)
+    const allLineData = new Float32Array(n * 12)
     for (let i = 0; i < n; i++) allLineData.set(lines[i].data, i * 12)
     device.queue.writeBuffer(lineStorageBuffer, 0, allLineData)
     pass.setPipeline(this.pipeline)

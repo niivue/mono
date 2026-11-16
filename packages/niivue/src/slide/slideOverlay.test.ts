@@ -56,7 +56,13 @@ test('annotations draw as culled device-pixel segments with a label', () => {
     { x: 200, y: 0 },
     { x: 300, y: 0 },
   ])
-  const c = slideOverlayContent(slide(), screen, { ...source, annotations })
+  const p = { x: 5, y: 5 }
+  const draft = { tool: 'circle' as const, points: [p, p] }
+  const c = slideOverlayContent(slide(), screen, {
+    ...source,
+    annotations,
+    draft,
+  })
   expect(c.segments).toEqual([
     20, 20, 40, 20, 40, 20, 40, 60, 40, 60, 20, 60, 20, 60, 20, 20,
   ])

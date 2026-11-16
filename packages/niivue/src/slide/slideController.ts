@@ -694,12 +694,6 @@ export class NVSlideController {
   }
 
   private _onDoubleClick = (event: MouseEvent): void => {
-    // Closes a polygon: its first click placed the last vertex, the second
-    // fell on it and added none.
-    if (this.draft?.tool === 'polygon') {
-      this._commitDraft(this.draft.points.slice(0, -1))
-      return
-    }
     const slide = this._options.slide()
     const [x, y] = this._local(event as PointerEvent)
     // A widget over the canvas (a minimap) takes its presses before they
@@ -707,10 +701,19 @@ export class NVSlideController {
     const at = this._pressedAt
     if (
       !slide ||
+      !at ||
+      Math.hypot(x - at[0], y - at[1]) > crosshairPanThresholdCssPx
+    )
+      return
+    // Closes a polygon: its first click placed the last vertex, the second
+    // fell on it and added none.
+    if (this.draft?.tool === 'polygon') {
+      this._commitDraft(this.draft.points.slice(0, -1))
+      return
+    }
+    if (
       !this.isDoubleClickZoom ||
       this._annotationTool ||
-      !at ||
-      Math.hypot(x - at[0], y - at[1]) > crosshairPanThresholdCssPx ||
       this.primaryDragMode !== DRAG_MODE.pan
     )
       return

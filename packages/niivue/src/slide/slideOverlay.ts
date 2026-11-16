@@ -20,7 +20,7 @@ import type { NVSlideController, NVSlidePoint } from './slideController'
 
 /** Overlay capacity: lines and glyphs a slide renderer draws per frame. */
 export const SLIDE_OVERLAY_MAX_LINES = 4096
-export const SLIDE_OVERLAY_MAX_GLYPHS = 4096
+export const SLIDE_OVERLAY_MAX_GLYPHS = 2048
 
 /** NiiVue's ruler, scale bar (`isRulerVisible`) and selection-box styling. */
 export type SlideOverlayStyle = Pick<
@@ -178,7 +178,10 @@ export function slideOverlayContent(
       return
     }
     const outline = slideAnnotationOutline(tool, points).map(toDevice)
-    let [px, py] = outline[0] as [number, number]
+    // A press not yet dragged: an ellipse or circle with no size.
+    if (!outline[0]) return
+    const drawn = segments.length
+    let [px, py] = outline[0]
     let right = px
     let top = py
     if (tool === 'point') {
@@ -200,8 +203,13 @@ export function slideOverlayContent(
       segment(px, py, x0, y0)
     }
     const text = stats ? slideAnnotationText(label, stats) : label
-    if (text && right >= 0 && right <= W && top >= 0 && top <= H)
-      labels.push({ x: right + 4 * dpr, y: top, text })
+    // Kept on screen while any of the shape is (zoomed into a large ROI).
+    if (text && segments.length > drawn)
+      labels.push({
+        x: Math.min(right, W) + 4 * dpr,
+        y: Math.max(top, 0),
+        text,
+      })
   }
   for (const a of source.annotations?.list() ?? [])
     shape(a.tool, a.points, a.label, a.stats)

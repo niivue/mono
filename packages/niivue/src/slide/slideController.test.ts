@@ -335,7 +335,7 @@ describe('NVSlideController', () => {
   })
 
   test('annotation tools: drag shapes, click points, polygon closes', () => {
-    const r = rig({ scale: 1 })
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     const added: string[] = []
     r.ctl.annotations.addEventListener('added', (e) =>
       added.push((e as CustomEvent).detail.tool),
@@ -395,6 +395,8 @@ describe('NVSlideController', () => {
     expect(poly?.points).toHaveLength(3)
     expect(poly2?.points).toEqual(poly?.points)
     expect(r.ctl.draft).toBeNull()
+    r.ctl.focusAnnotation(box?.id ?? '')
+    expect(r.viewports.at(-1)).toEqual({ centerX: 25, centerY: 20, scale: 1 })
   })
 
   test('contrast selects a box and reports it on release', () => {

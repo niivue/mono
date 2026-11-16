@@ -336,6 +336,29 @@ test('annotationIsClickToPlace: moving onto the render tile drops the rubber ban
   expect(r.parked).toBe(true)
 })
 
+test('annotationIsClickToPlace: a parked bidirectional axis rubber-bands to the cursor', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'bidirectional'
+    nv.annotationIsClickToPlace = true
+    const click = (x, y) => drag([[x, y]])
+    click(120, 200)
+    ev('pointermove', 280, 200, -1)
+    const long = nv.model._annotationPreview?.shape
+    click(280, 200)
+    click(200, 140)
+    ev('pointermove', 200, 260, -1)
+    const both = nv.model._annotationPreview?.shape
+    return { long: !!long && !long.start2, both: !!both?.start2 }
+  })()`)
+
+  expect(r).toEqual({ long: true, both: true })
+})
+
 test('annotationIsClickToPlace: a parked start beats a selected control point', async ({
   page,
 }) => {

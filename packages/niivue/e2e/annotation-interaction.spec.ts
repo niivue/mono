@@ -280,6 +280,40 @@ test('annotationIsClickToPlace: places a shape on an oblique volume; turning it 
   expect(r.parked).toBeNull()
 })
 
+test('annotationIsClickToPlace: moving onto the render tile drops the rubber band, not the start', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.sliceType = SLICE_TYPE.MULTIPLANAR
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
+    const tileCentre = (match) => {
+      const pts = []
+      for (let y = 5; y < 400; y += 5)
+        for (let x = 5; x < 400; x += 5) {
+          const t = nv.view.hitTest(x, y)
+          if (t && match(t)) pts.push([x, y])
+        }
+      return [0, 1].map((i) =>
+        (Math.min(...pts.map((p) => p[i])) + Math.max(...pts.map((p) => p[i]))) / 2)
+    }
+    const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
+    const [rx, ry] = tileCentre((t) => t.isRender)
+    nv.annotationIsClickToPlace = true
+    drag([[ax, ay]])
+    ev('pointermove', ax + 20, ay + 20, -1)
+    const previewed = !!nv.model._annotationPreview
+    ev('pointermove', rx, ry, -1)
+    return { previewed, preview: nv.model._annotationPreview, parked: !!nv._annotationClickStart }
+  })()`)
+
+  expect(r.previewed).toBe(true)
+  expect(r.preview).toBeNull()
+  expect(r.parked).toBe(true)
+})
+
 test('annotationIsClickToPlace: a parked start beats a selected control point', async ({
   page,
 }) => {

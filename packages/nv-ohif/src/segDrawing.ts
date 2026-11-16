@@ -2,7 +2,12 @@ import type NiiVue from '@niivue/niivue'
 import { type RefObject, useEffect } from 'react'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { authHeaders, ohifServices } from './niivueRegistry'
-import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
+import type {
+  OhifDisplaySet,
+  OhifExtensionManager,
+  OhifServicesManager,
+} from './ohif-types'
+import { type PanelSegment, startSegPanel } from './segPanel'
 
 // A DICOM SEG hung in a NiiVue pane shows as a NiiVue drawing over the series
 // it references: the pane loads that series as its base, and dcm2niix turns the
@@ -104,10 +109,13 @@ export function startSegDrawing(
     headers?: Record<string, string>
     setNote: (message: string) => void
     convert?: typeof convertDisplaySetToNifti
+    /** Called once shown, with the segments; returns its cleanup. */
+    onShown?: (segments: PanelSegment[]) => () => void
   },
 ): () => void {
   let cancelled = false
   let isOwned = false
+  let stopShown: (() => void) | undefined
   const abort = new AbortController()
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
@@ -125,15 +133,23 @@ export function startSegDrawing(
       return
     }
     const segments = converted.json?.Segments
-    if (Array.isArray(segments) && segments.length > 0)
+    const cmap = segColormap(Array.isArray(segments) ? segments : [])
+    if (cmap.I.length > 1)
       nv.drawColormap = nv.addColormap(
         `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
-        segColormap(segments),
+        cmap,
       )
     // loadDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
     nv.drawOpacity = SEG_FILL_OPACITY
     nv.drawRimOpacity = SEG_RIM_OPACITY
+    stopShown = options.onShown?.(
+      cmap.I.slice(1).map((value, i) => ({
+        value,
+        label: cmap.labels[i + 1] ?? String(value),
+        rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
+      })),
+    )
   }
   show().catch((err) => {
     if (cancelled) return
@@ -145,16 +161,24 @@ export function startSegDrawing(
   return () => {
     cancelled = true
     abort.abort()
+    stopShown?.()
     if (isOwned) nv.closeDrawing()
   }
 }
 
-/** Show `seg` as the drawing once the pane's base is loaded; drop it on change. */
+/**
+ * Show `seg` as the drawing once the pane's base is loaded, listed in OHIF's
+ * segmentation panel; drop both on change.
+ */
 export function useSegDrawing(
   nvRef: RefObject<NiiVue | null>,
   seg: OhifDisplaySet | undefined,
   isLoaded: boolean,
-  servicesManager: OhifServicesManager | undefined,
+  managers: {
+    viewportId: string
+    servicesManager?: OhifServicesManager
+    extensionManager?: OhifExtensionManager
+  },
   setNote: (message: string) => void,
 ): void {
   const segKey = seg?.displaySetInstanceUID ?? seg?.SeriesInstanceUID
@@ -163,8 +187,10 @@ export function useSegDrawing(
     const nv = nvRef.current
     if (!nv || !seg || !isLoaded) return
     return startSegDrawing(nv, seg, {
-      headers: authHeaders(servicesManager),
+      headers: authHeaders(managers.servicesManager),
       setNote,
+      onShown: (segments) =>
+        startSegPanel(nv, managers.viewportId, seg, segments, managers),
     })
   }, [segKey, isLoaded])
 }

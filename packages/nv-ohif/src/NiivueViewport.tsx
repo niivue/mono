@@ -149,8 +149,16 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [loadedSeries, setLoadedSeries] = useState<string>()
   // The shown conversion, for stepping through a series' other outputs.
   const [conversion, setConversion] = useState<DicomConversion | null>(null)
-  useSegDrawing(nvRef, seg, isLoaded, servicesManager, (message) =>
-    setStatus({ kind: 'note', message }),
+  useSegDrawing(
+    nvRef,
+    seg,
+    isLoaded,
+    {
+      viewportId,
+      servicesManager,
+      extensionManager: props.extensionManager,
+    },
+    (message) => setStatus({ kind: 'note', message }),
   )
   // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
   useArrowText(ready ? nvRef.current : null, viewportId, props.commandsManager)

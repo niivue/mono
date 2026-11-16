@@ -31,6 +31,7 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
+import { jumpToNiivueSegment } from './segPanel'
 import {
   type FrameRef,
   frameAt,
@@ -2176,6 +2177,33 @@ export function getNiivueCommandsModule({
         return
       ohifCommandsManager(commandsManager)?.runCommand?.(
         'jumpToMeasurementViewport',
+        options,
+        'CORNERSTONE',
+      )
+    },
+
+    /**
+     * The segmentation panel's segment click. Cornerstone's would look for a
+     * cornerstone viewport (none for a NiiVue pane); others go to Cornerstone.
+     */
+    setActiveSegmentAndCenter: (options: {
+      segmentationId: string
+      segmentIndex: number
+    }) => {
+      const grid = ohifServices(servicesManager)?.viewportGridService as
+        | { getActiveViewportId?: () => string }
+        | undefined
+      if (
+        jumpToNiivueSegment(
+          servicesManager,
+          grid?.getActiveViewportId?.(),
+          options.segmentationId,
+          options.segmentIndex,
+        )
+      )
+        return
+      ohifCommandsManager(commandsManager)?.runCommand?.(
+        'setActiveSegmentAndCenter',
         options,
         'CORNERSTONE',
       )

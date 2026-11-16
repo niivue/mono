@@ -27,7 +27,6 @@ import {
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
-  trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
@@ -236,8 +235,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     ro.observe(container)
 
     // Core emits volumeUpdated for every base-window change (windowing/contrast
-    // drags, pointercancel, setVolume); keep the corner readout and the
-    // registry's baseline (used by the W/L commands) current.
+    // drags, pointercancel, setVolume); keep the corner readout current.
     const showWindowLevel = () => {
       const wl = readBaseWindowLevel(nv)
       setWindowLevel((shown) =>
@@ -247,19 +245,19 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
     }
     const onVolumeUpdated = (e: CustomEvent<VolumeUpdatedDetail>) => {
-      if (e.detail.volumeIndex !== 0) return
-      trackNiivueWindowLevel(viewportId)
-      showWindowLevel()
+      if (e.detail.volumeIndex === 0) showWindowLevel()
     }
     nv.addEventListener('volumeUpdated', onVolumeUpdated)
     // A linked pane's window arrives through core sync (broadcastTo), which
     // emits locationChange, not volumeUpdated.
     nv.addEventListener('locationChange', showWindowLevel)
     // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
+    // sliceTypeChange carries no position: reuse the last crosshair.
     const showStack = (e: Event) => {
-      const mm = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
       const entry = getNiivueEntry(viewportId)
-      if (entry && mm) entry.crosshairMM = mm
+      const moved = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
+      if (entry && moved) entry.crosshairMM = moved
+      const mm = moved ?? entry?.crosshairMM
       const pos =
         mm && nv.sliceType === acquisitionSliceType(nv)
           ? stackPosition(
@@ -276,6 +274,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
     }
     nv.addEventListener('locationChange', showStack)
+    nv.addEventListener('sliceTypeChange', showStack)
 
     // Annotations (Length / ROI / arrow): reflect a completed vector annotation
     // into OHIF's measurement panel, remove its row when the annotation is
@@ -346,6 +345,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
       nv.removeEventListener('locationChange', showWindowLevel)
       nv.removeEventListener('locationChange', showStack)
+      nv.removeEventListener('sliceTypeChange', showStack)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
@@ -421,9 +421,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     const extraNote = extraDisplaySetsNote(displaySets)
     const withExtra = (message?: string) =>
       [message, extraNote].filter(Boolean).join(' ')
-    // Loaded: show any notes briefly; the clear never touches a newer status.
+    // Show any notes briefly; the clear never touches a newer status.
     const loaded = (note?: string) => {
-      setIsLoaded(true)
       const message = withExtra(note)
       if (!message) return setStatus({ kind: 'idle' })
       const status: Status = { kind: 'note', message }
@@ -448,8 +447,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         : undefined
     const spec = preset ? { colormap: preset } : voi
 
-    // Record the base volume's initial window/level as the readout
-    // baseline, so the first manual contrast drag is detected as a change.
+    // The base is installed: show its window, enable the volume toolbar.
     const seedWindowLevel = () => {
       if (cancelled) return
       baseInstalled(true)
@@ -458,10 +456,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (step) nv.windowingStep = step
       const wl = readBaseWindowLevel(nv)
       setWindowLevel(wl ?? null)
-      updateNiivueViewport(viewportId, {
-        windowLevel: wl,
-        baseLoading: false,
-      })
+      updateNiivueViewport(viewportId, { baseLoading: false })
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when
       // annotation geometry itself has not changed.
@@ -471,6 +466,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Now that the volume is in (esp. after the async dcm2niix conversion),
       // re-evaluate the toolbar so they enable.
       refreshToolbar(servicesManagerRef.current, viewportId)
+      setIsLoaded(true)
     }
 
     // Phase-1 fast path: a display set that is already a NiiVue volume URL.
@@ -590,6 +586,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             view.setTool(activeOhifToolRef.current)
             updateNiivueViewport(viewportId, { slideView: view })
             refreshToolbar(servicesManager, viewportId)
+            setIsLoaded(true)
             loaded()
           } catch (err) {
             slide.dispose()
@@ -694,6 +691,9 @@ export function NiivueViewport(props: OhifViewportProps) {
           ),
         })
       })
+      // Release the shared conversion once the base settles: NiiVue holds its
+      // own decoded copy, and panes in the same commit have joined already.
+      .finally(() => abort.abort())
 
     return () => {
       cancelled = true

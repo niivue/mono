@@ -122,14 +122,25 @@ export function jumpToImage(
   imageIndex: unknown,
 ): void {
   const sf = entry.sliceFrames
-  const instances = entry.displaySets[0]?.instances ?? []
+  const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
+    SOPInstanceUID?: string
+    NumberOfFrames?: unknown
+  }>
   const i = Number(imageIndex)
   if (!sf || !Number.isInteger(i) || !entry.crosshairMM) return
-  const sop = (instances.at(i) as { SOPInstanceUID?: string } | undefined)
-    ?.SOPInstanceUID
+  // A multi-frame instance is one stack whose images are its frames
+  // (stackPosition counts them so).
+  const nFrames = Number(instances[0]?.NumberOfFrames) || 1
+  const multiFrame = instances.length === 1 && nFrames > 1
+  const sop = (multiFrame ? instances[0] : instances.at(i))?.SOPInstanceUID
+  const frameNumber = multiFrame ? (i < 0 ? nFrames + i : i) + 1 : undefined
   // Unmapped frame slots are undefined too: an unknown SOP must not match them.
   if (!sop) return
-  const k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
+  const k = sf.frames.findIndex(
+    (f) =>
+      f?.SOPInstanceUID === sop &&
+      (frameNumber === undefined || f.frameNumber === frameNumber),
+  )
   if (k < 0) return
   const [x = 0, y = 0, z = 0] = entry.crosshairMM
   entry.nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))

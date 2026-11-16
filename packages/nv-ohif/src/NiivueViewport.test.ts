@@ -6,10 +6,12 @@ import {
   dicomWindow,
   initialRenderView,
   initialSliceType,
+  readBaseWindowLevel,
 } from './commands'
 import { DEFAULT_OPTIONS } from './NiivueViewport'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
+import { joinSyncGroups } from './viewportSync'
 
 test('the viewport snaps the crosshair to voxel centres', () => {
   // So a measurement drawn at a clicked depth lies on a DICOM frame (frameAt).
@@ -98,6 +100,14 @@ test("the series' DICOM window is the fallback initial window", () => {
     ],
   } as unknown as Parameters<typeof dicomWindow>[0]
   expect(dicomWindow(perSlice)).toBeUndefined()
+  // One differing slice off the first/middle/last sample still disqualifies.
+  const oneOff = {
+    instances: [40, 80, 40, 40, 40].map((c) => ({
+      WindowWidth: 400,
+      WindowCenter: c,
+    })),
+  } as unknown as Parameters<typeof dicomWindow>[0]
+  expect(dicomWindow(oneOff)).toBeUndefined()
   expect(dicomWindow(undefined)).toBeUndefined()
 })
 
@@ -105,6 +115,10 @@ test("a 3D pane's hanging-protocol orientation sets the render camera", () => {
   expect(
     initialRenderView({ viewportType: 'volume3d', orientation: 'coronal' }),
   ).toEqual([180, 0])
+  // Cornerstone's sagittal looks from patient left (viewPlaneNormal +x).
+  expect(
+    initialRenderView({ viewportType: 'volume3d', orientation: 'sagittal' }),
+  ).toEqual([90, 0])
   expect(
     initialRenderView({ viewportType: 'volume', orientation: 'coronal' }),
   ).toBeUndefined()
@@ -155,4 +169,29 @@ test('a single image opens in its acquisition plane', () => {
     SLICE_TYPE.CORONAL,
   )
   expect(acquisitionSliceType({ volumes: [] })).toBeUndefined()
+})
+
+test("a linked pane's window readout follows its peer's window", async () => {
+  // Core sync writes the target's calMin/calMax and emits only locationChange,
+  // which the viewport routes to its W/L readout.
+  const frames: FrameRequestCallback[] = []
+  const raf = globalThis.requestAnimationFrame
+  globalThis.requestAnimationFrame = (cb) => frames.push(cb)
+  const [a, b] = [new NiiVue(DEFAULT_OPTIONS), new NiiVue(DEFAULT_OPTIONS)]
+  for (const nv of [a, b])
+    await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  let shown: ReturnType<typeof readBaseWindowLevel>
+  b.addEventListener('locationChange', () => {
+    shown = readBaseWindowLevel(b)
+  })
+  const voi = [{ type: 'voi', id: 'linked-test' }] // apart from other files' panes
+  const leaveA = joinSyncGroups('linked-a', a, voi)
+  const leaveB = joinSyncGroups('linked-b', b, voi)
+  await a.setVolume(0, { calMin: 10, calMax: 30 })
+  a.drawScene() // headless: no view, so no GL update draws
+  while (frames.length) frames.shift()?.(0)
+  expect(shown).toEqual({ window: 20, level: 20 })
+  leaveA()
+  leaveB()
+  globalThis.requestAnimationFrame = raf
 })

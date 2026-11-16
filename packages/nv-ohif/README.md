@@ -82,6 +82,16 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
   overlay), an **Overlays** dropdown (`NiivueOverlayMenu`, see [Overlays](#overlays)),
   and a reset-view button — all with active/disabled state tracked per
   viewport.
+- Draws cornerstone's **corner text**: study date + series description, W/L,
+  and (2D acquisition-plane stack) instance number and image position;
+  `viewportOptions.customViewportProps.hideOverlays` drops it (e.g. a 3D pane).
+  OHIF's viewport prompts (`uiViewportDialogService`) are drawn on the pane.
+- Feeds new measurements to OHIF's **measurement tracking** (longitudinal mode)
+  as TrackedCornerstoneViewport does; inert without the tracking context.
+- A whole-slide pane shows a **minimap** with the visible region boxed.
+- The pane root carries `data-viewportid` (as cornerstone) and `data-loaded`
+  (set once the base volume or slide is shown, absent while loading or after a
+  failure), for tooling and specs.
 - Backs OHIF's full **Measurement** tool group (Length, ellipse / rectangle /
   circle / freehand / spline / livewire ROIs, Bidirectional, ArrowAnnotate) with
   NiiVue annotations, reflected into the Measurements panel with stats and
@@ -123,9 +133,11 @@ It also answers OHIF's standard `resetViewport`, `setViewportOrientation`
 (axial / sagittal / coronal / acquisition), `scaleUpViewport`, `scaleDownViewport`,
 `fitViewportToWindow`, `setWindowLevelPreset`, `setViewportColormap`, `rotateViewportCW`, `rotateViewportCCW`,
 `rotateViewportCWSet`, `flipViewportHorizontal`, `flipViewportVertical`,
-`setViewportHorizontalFlip` and `setViewportVerticalFlip` on a NiiVue viewport
-(`viewportId`, else the active one; rotate and flip apply to 2D tiles, and reset
-clears them) and hands any other viewport to the `CORNERSTONE` context, so
+`setViewportHorizontalFlip`, `setViewportVerticalFlip`, `invertViewport`
+(invert the base grayscale) and `jumpToImage` (`imageIndex` in display-set
+order, a multi-frame instance's frames counted) on a NiiVue viewport
+(`viewportId` or `viewport.id`, else the active one; rotate and flip apply to
+2D tiles, and reset clears them and the inversion) and hands any other viewport to the `CORNERSTONE` context, so
 standard hotkeys work in mixed layouts. This relies on the extension registering
 after cornerstone (newer command contexts win). The `NIIVUE` context is registered
 app-wide, so these names route through nv-ohif in every mode (delegating to

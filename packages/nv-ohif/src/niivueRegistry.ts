@@ -28,11 +28,6 @@ export interface NiivueViewportEntry {
   overlayAbort?: AbortController
   /** Current clip plane preset name ('none' when off). See commands.ts. */
   clipPlane: string
-  /**
-   * Last known base-volume window/level ({ window: width, level: center }).
-   * The baseline for the change readout (commands.ts trackNiivueWindowLevel).
-   */
-  windowLevel?: { window: number; level: number }
   /** OHIF tool group whose primary tool drives this viewport. */
   toolGroupId?: string
   /** Last crosshair position (RAS mm), from locationChange. */
@@ -76,7 +71,6 @@ export function updateNiivueViewport(
       | 'displaySets'
       | 'setStatus'
       | 'slideView'
-      | 'windowLevel'
       | 'overlays'
       | 'baseLoading'
       | 'overlayLoading'

@@ -418,3 +418,27 @@ it('jumpToImage moves to the instance through the slice -> frame map', () => {
     [5, 6, 0],
   ])
 })
+
+it('jumpToImage counts the frames of a single multi-frame instance', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 0],
+    displaySets: [{ instances: [{ SOPInstanceUID: 'mf', NumberOfFrames: 3 }] }],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [1, 2, 3].map((frameNumber) => ({
+        SOPInstanceUID: 'mf',
+        frameNumber,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 1)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 3)
+  expect(calls).toEqual([
+    [5, 6, 1],
+    [5, 6, 2],
+  ])
+})

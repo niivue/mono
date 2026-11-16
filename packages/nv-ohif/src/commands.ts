@@ -364,18 +364,6 @@ export function readBaseWindowLevel(
   return { window: calMax - calMin, level: (calMin + calMax) / 2 }
 }
 
-// Two window/level pairs are the same if within this fraction of the width — a
-// contrast drag moves them well beyond this, crosshair navigation not at all.
-function sameWindowLevel(
-  a: { window: number; level: number },
-  b: { window: number; level: number },
-): boolean {
-  const eps = Math.max(1e-3, Math.abs(a.window) * 1e-3)
-  return (
-    Math.abs(a.window - b.window) < eps && Math.abs(a.level - b.level) < eps
-  )
-}
-
 // The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
 // from a polygon when there is no shape).
 function annotationToolType(a: VectorAnnotation): string | undefined {
@@ -1392,27 +1380,6 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * On a base-window change (volumeUpdated, or locationChange after a linked
- * pane's sync wrote calMin/calMax), record the new window/level on the entry.
- * Returns it when it changed (for a viewport readout), else undefined.
- */
-export function trackNiivueWindowLevel(
-  viewportId: string,
-): { window: number; level: number } | undefined {
-  const entry = getNiivueEntry(viewportId)
-  // A loading base is not a change; seedWindowLevel sets the new baseline.
-  if (!entry || entry.baseLoading) return undefined
-  const wl = readBaseWindowLevel(entry.nv)
-  if (!wl) return undefined
-  // First observation just seeds the baseline (no readout).
-  if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
-    return undefined
-  const seeded = entry.windowLevel !== undefined
-  entry.windowLevel = wl
-  return seeded ? wl : undefined
-}
-
-/**
  * Cornerstone's WindowLevel drag as NiiVue windowingStep: round(dynamic range /
  * 1024) intensity units per pixel for width and center (4 for CT), dragging
  * down raising the center. NiiVue's step is a fraction of the robust range.
@@ -1944,9 +1911,11 @@ export function getNiivueCommandsModule({
       if (!entry || entry.nv.volumes.length === 0) return
       entry.nv
         .recalculateCalMinMax(0)
+        // recalculateCalMinMax emits no volumeUpdated; setVolume does, so the
+        // corner W/L readout follows.
         .then(() => {
-          const wl = readBaseWindowLevel(entry.nv)
-          if (wl) entry.windowLevel = wl
+          const { calMin, calMax } = entry.nv.volumes[0] ?? {}
+          return entry.nv.setVolume(0, { calMin, calMax })
         })
         .catch((err: unknown) =>
           console.error('[nv-ohif] auto window/level failed', err),

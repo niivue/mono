@@ -6,14 +6,9 @@ import {
   dicomWindow,
   initialRenderView,
   initialSliceType,
-  trackNiivueWindowLevel,
+  readBaseWindowLevel,
 } from './commands'
 import { DEFAULT_OPTIONS } from './NiivueViewport'
-import {
-  getNiivueEntry,
-  registerNiivue,
-  unregisterNiivue,
-} from './niivueRegistry'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
 import { joinSyncGroups } from './viewportSync'
@@ -176,30 +171,27 @@ test('a single image opens in its acquisition plane', () => {
   expect(acquisitionSliceType({ volumes: [] })).toBeUndefined()
 })
 
-test("a linked pane's window baseline follows its peer's window", async () => {
+test("a linked pane's window readout follows its peer's window", async () => {
   // Core sync writes the target's calMin/calMax and emits only locationChange,
-  // which the viewport routes to trackNiivueWindowLevel.
+  // which the viewport routes to its W/L readout.
   const frames: FrameRequestCallback[] = []
   const raf = globalThis.requestAnimationFrame
   globalThis.requestAnimationFrame = (cb) => frames.push(cb)
   const [a, b] = [new NiiVue(DEFAULT_OPTIONS), new NiiVue(DEFAULT_OPTIONS)]
   for (const nv of [a, b])
     await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
-  registerNiivue('linked-b', b)
-  trackNiivueWindowLevel('linked-b')
-  b.addEventListener('locationChange', () => trackNiivueWindowLevel('linked-b'))
+  let shown: ReturnType<typeof readBaseWindowLevel>
+  b.addEventListener('locationChange', () => {
+    shown = readBaseWindowLevel(b)
+  })
   const voi = [{ type: 'voi', id: 'linked-test' }] // apart from other files' panes
   const leaveA = joinSyncGroups('linked-a', a, voi)
   const leaveB = joinSyncGroups('linked-b', b, voi)
   await a.setVolume(0, { calMin: 10, calMax: 30 })
   a.drawScene() // headless: no view, so no GL update draws
   while (frames.length) frames.shift()?.(0)
-  expect(getNiivueEntry('linked-b')?.windowLevel).toEqual({
-    window: 20,
-    level: 20,
-  })
+  expect(shown).toEqual({ window: 20, level: 20 })
   leaveA()
   leaveB()
-  unregisterNiivue('linked-b')
   globalThis.requestAnimationFrame = raf
 })

@@ -18,7 +18,8 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
     tool === 'measureLine' ||
     tool === 'measureCircle' ||
     tool === 'measureSpline' ||
-    tool === 'measureLivewire'
+    tool === 'measureLivewire' ||
+    tool === 'measurePoint'
   )
 }
 
@@ -103,6 +104,32 @@ function intactEllipse(
  * count times the voxel area, or with `isAreaGeometric` the outline's own area
  * ({@link AnnotationConfig.isAreaGeometric}).
  */
+/** The base value at a measurePoint's voxel; null off the image or on no data. */
+function pointStats(
+  annotation: VectorAnnotation,
+  volume: NVImage,
+): AnnotationStats | null {
+  const { shape, slicePosition, sliceType } = annotation
+  const dims = volume.dimsRAS
+  if (!shape || !dims || !volume.matRAS) return null
+  const mm2vox = mat4.invert(
+    mat4.create(),
+    mat4.transpose(mat4.create(), volume.matRAS),
+  )
+  if (!mm2vox) return null
+  const mm = slice2DToMM(shape.end, slicePosition, sliceType)
+  const v = vec4.transformMat4(
+    vec4.create(),
+    vec4.fromValues(mm[0], mm[1], mm[2], 1),
+    mm2vox,
+  )
+  const vox = [0, 1, 2].map((i) => Math.round(v[i] as number))
+  if (vox.some((x, i) => x < 0 || x >= (dims[i + 1] as number))) return null
+  const value = getVoxelValue(volume, vox[0], vox[1], vox[2])
+  if (!Number.isFinite(value)) return null
+  return { area: 0, min: value, mean: value, max: value, stdDev: 0, value }
+}
+
 export function computeAnnotationStats(
   annotation: VectorAnnotation,
   volume: NVImage,
@@ -124,6 +151,8 @@ export function computeAnnotationStats(
       length: Math.sqrt(dx * dx + dy * dy),
     }
   }
+
+  if (shape.type === 'measurePoint') return pointStats(annotation, volume)
 
   const firstPt = annotation.polygons[0]?.outer[0]
   if (!firstPt) return null

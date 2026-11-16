@@ -272,3 +272,18 @@ test('on a tilted volume an intact ellipse and the same freehand outline select 
   expect(e - f).toBeGreaterThanOrEqual(0)
   expect(e - f).toBeLessThanOrEqual(4)
 })
+
+describe('measurePoint', () => {
+  const point = (x: number, y: number): VectorAnnotation => ({
+    ...annotation(generateShape('measurePoint', { x, y }, { x, y }, 1)),
+    shape: { type: 'measurePoint', start: { x, y }, end: { x, y } },
+  })
+  test('reads the nearest voxel', () => {
+    const stats = computeAnnotationStats(point(7.4, 3.2), volume)
+    expect(stats?.value).toBe(7)
+    expect(stats?.mean).toBe(7)
+  })
+  test('null off the image', () => {
+    expect(computeAnnotationStats(point(25, 0), volume)).toBeNull()
+  })
+})

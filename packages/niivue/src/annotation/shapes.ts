@@ -166,6 +166,16 @@ function generateCircle(
   return [{ outer, holes: [] }]
 }
 
+// A dot of radius `r` mm marking a point (measurePoint).
+function generatePoint(p: AnnotationPoint, r: number): PolygonWithHoles[] {
+  const outer: AnnotationPoint[] = []
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2
+    outer.push({ x: p.x + Math.cos(angle) * r, y: p.y + Math.sin(angle) * r })
+  }
+  return [{ outer, holes: [] }]
+}
+
 const SPLINE_SAMPLES_PER_SEGMENT = 16
 
 // Catmull-Rom interpolation of one segment p1->p2 (p0/p3 are the neighbours).
@@ -246,6 +256,8 @@ export function generateShape(
     case 'circle':
     case 'measureCircle':
       return generateCircle(start, end)
+    case 'measurePoint':
+      return generatePoint(end, strokeWidth)
     default:
       return []
   }

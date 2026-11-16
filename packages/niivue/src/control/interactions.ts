@@ -1892,7 +1892,10 @@ export function initInteraction(ctrl: NiiVue): void {
             const cfg = ctrl.model.annotation
             let start = ctrl._annotationShapeStart
             const [pressX, pressY] = ctrl._annotationPressClient
-            if (
+            if (cfg.tool === 'measurePoint') {
+              // A point lands where the button is released.
+              start = pt2d
+            } else if (
               cfg.isClickToPlace &&
               !ctrl._annotationClickResumed &&
               Math.hypot(evt.clientX - pressX, evt.clientY - pressY) <= CLICK_PX

@@ -284,6 +284,7 @@ export function buildAnnotation3DRenderData(
 }
 
 function formatAnnotationStats(stats: AnnotationStats, unit: string): string[] {
+  if (stats.value !== undefined) return [stats.value.toFixed(1)]
   if (stats.length !== undefined) {
     // Bidirectional carries both axes: long (length) + short (shortLength).
     if (stats.shortLength !== undefined) {

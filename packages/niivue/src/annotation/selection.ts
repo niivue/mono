@@ -88,6 +88,8 @@ export function getControlPoints(shape: {
         { x: midX + px, y: midY + py }, // 2: width handle
       ]
     }
+    case 'measurePoint':
+      return [{ x: shape.end.x, y: shape.end.y }]
     default:
       return []
   }
@@ -136,6 +138,8 @@ export function updateShapeBounds(
     case 'arrow':
     case 'measureLine':
       return _updateLineArrow(original, controlPointIndex, newPosition)
+    case 'measurePoint':
+      return { start: { ...newPosition }, end: { ...newPosition } }
     default:
       return { start: { ...original.start }, end: { ...original.end } }
   }

@@ -118,6 +118,7 @@ export const ANNOTATION_TOOLS = [
   'measureLivewire',
   'bidirectional',
   'measureBidirectional',
+  'measurePoint',
 ] as const
 
 /** NiiVue's `SlideDrawTool` names. */

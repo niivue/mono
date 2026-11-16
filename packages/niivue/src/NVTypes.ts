@@ -2067,6 +2067,8 @@ export type AnnotationTool =
   // Two perpendicular measured axes (RECIST-style long + short diameters).
   | 'bidirectional'
   | 'measureBidirectional'
+  // A single click: the base volume's value at that voxel (OHIF's Probe).
+  | 'measurePoint'
 
 export type AnnotationStats = {
   area: number
@@ -2077,6 +2079,8 @@ export type AnnotationStats = {
   length?: number
   /** Short-axis length for a bidirectional measurement (long axis in length). */
   shortLength?: number
+  /** measurePoint: the voxel's value (also min/mean/max). */
+  value?: number
 }
 
 export type AnnotationPoint = { x: number; y: number }

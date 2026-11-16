@@ -134,7 +134,8 @@
           "livewire",
           "measureLivewire",
           "bidirectional",
-          "measureBidirectional"
+          "measureBidirectional",
+          "measurePoint"
         ]
       },
       "hasGetter": true,

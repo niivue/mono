@@ -11,7 +11,13 @@ import {
   registerDcm2niixDecoders,
 } from '@niivue/nv-ext-tile/dicom'
 import { loadDefaultFont } from '@niivue/uikit'
-import { useEffect, useRef, useState } from 'react'
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
@@ -83,7 +89,18 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   isRadiological: true,
 }
 
-type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
+export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
+
+/** Show `message` for `ms`; the clear never touches a newer status. */
+export function briefNote(
+  setStatus: Dispatch<SetStateAction<Status>>,
+  message: string,
+  ms = 6000,
+): void {
+  const status: Status = { kind: 'note', message }
+  setStatus(status)
+  setTimeout(() => setStatus((s) => (s === status ? { kind: 'idle' } : s)), ms)
+}
 
 // OHIF's toolbar tools operate on cornerstone viewports; our NiiVue viewport isn't in
 // a cornerstone tool group. Instead we mirror OHIF's active primary mouse tool onto
@@ -530,16 +547,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     const extraNote = extraDisplaySetsNote(displaySets)
     const withExtra = (message?: string) =>
       [message, extraNote].filter(Boolean).join(' ')
-    // Show any notes briefly; the clear never touches a newer status.
     const loaded = (note?: string) => {
       const message = withExtra(note)
       if (!message) return setStatus({ kind: 'idle' })
-      const status: Status = { kind: 'note', message }
-      setStatus(status)
-      window.setTimeout(
-        () => setStatus((s) => (s === status ? { kind: 'idle' } : s)),
-        6000,
-      )
+      briefNote(setStatus, message)
     }
 
     let cancelled = false
@@ -819,7 +830,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     baseInstalledRef,
     base,
     servicesManager,
-    (message) => setStatus({ kind: 'note', message }),
+    (message, brief) =>
+      brief
+        ? briefNote(setStatus, message)
+        : setStatus({ kind: 'note', message }),
   )
 
   const isVolumeViewport = props.viewportOptions?.viewportType === 'volume'

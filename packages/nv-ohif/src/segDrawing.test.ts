@@ -418,9 +418,9 @@ describe('startSegDrawing', () => {
 
   test('shownWithConversionNote_notesIt', async () => {
     const { nv, release } = pane(true)
-    const notes: string[] = []
+    const notes: Array<[string, boolean | undefined]> = []
     startSegDrawing(nv, segDs, {
-      setNote: (m) => notes.push(m),
+      setNote: (m, brief) => notes.push([m, brief]),
       convert: async () => ({
         ...converted,
         note: 'dcm2niix exit 1: incomplete SEG',
@@ -429,7 +429,8 @@ describe('startSegDrawing', () => {
     })
     release()
     await settle()
-    expect(notes).toEqual(['dcm2niix exit 1: incomplete SEG'])
+    // Brief, as the base volume's conversion note.
+    expect(notes).toEqual([['dcm2niix exit 1: incomplete SEG', true]])
   })
 
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {

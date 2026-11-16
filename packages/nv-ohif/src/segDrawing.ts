@@ -113,7 +113,8 @@ export function startSegDrawing(
   seg: OhifDisplaySet,
   options: {
     headers?: Record<string, string>
-    setNote: (message: string) => void
+    // brief: a warning that clears itself, as the base volume's notes do.
+    setNote: (message: string, brief?: boolean) => void
     // Core refuses a drawing without a background: resolves once the base is in.
     whenBase: Promise<boolean>
     convert?: typeof convertDisplaySetToNifti
@@ -155,7 +156,7 @@ export function startSegDrawing(
     }
     installed = nv.drawingVolume
     // dcm2niix warnings (e.g. an incomplete SEG) reach the pane as the base's do.
-    if (converted.note) options.setNote(converted.note)
+    if (converted.note) options.setNote(converted.note, true)
     const prior = {
       drawColormap: nv.drawColormap,
       drawOpacity: nv.drawOpacity,
@@ -219,7 +220,7 @@ export function useSegDrawing(
   baseInstalledRef: RefObject<Promise<boolean>>,
   baseKey: string,
   servicesManager: OhifServicesManager | undefined,
-  setNote: (message: string) => void,
+  setNote: (message: string, brief?: boolean) => void,
 ): void {
   const segKey = seg?.displaySetInstanceUID ?? seg?.SeriesInstanceUID
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID and the base, as the load effect keys on displaySetsKey

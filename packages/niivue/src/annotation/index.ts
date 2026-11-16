@@ -26,13 +26,11 @@ import {
   updateShapeBounds,
 } from './selection'
 import {
-  constrainCircleEnd,
   dragCorners,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
   isAnnotationErased,
-  isCircleTool,
 } from './shapes'
 import { isOnSlice, mmToSlice2D } from './sliceProjection'
 import { computeAnnotationStats, isMeasureTool } from './stats'
@@ -41,7 +39,6 @@ export {
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
-  constrainCircleEnd,
   dragCorners,
   extractLivewireSlice,
   generatePolygonFromPoints,
@@ -51,7 +48,6 @@ export {
   gridToSlice2D,
   hitTestControlPoint,
   isAnnotationErased,
-  isCircleTool,
   isMeasureTool,
   isOnSlice,
   livewireBacktrack,

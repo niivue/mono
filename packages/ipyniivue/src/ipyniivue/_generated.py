@@ -251,6 +251,8 @@ off-window crosshair is brought back."""
     volume_silhouette = traitlets.Float(None, allow_none=True).tag(sync=True)
     volume_transmittance_cutoff = traitlets.Float(None, allow_none=True).tag(sync=True)
     wheel_zoom_anchor = traitlets.Enum(["crosshair", "pointer"], None, allow_none=True).tag(sync=True)
+    windowing_step = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=2, maxlen=2, allow_none=True).tag(sync=True)
+    """Windowing drag gain; see {@link InteractionConfig.windowingStep}."""
 
     # Read-only properties (synced from JS to Python)
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)

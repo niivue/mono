@@ -5,12 +5,12 @@
 #   .github/build-pages.sh          # build into _site/
 #   .github/build-pages.sh --serve  # build then start a local server
 #
-# The BASE_PATH env var controls the URL prefix (default: /mono/).
-# Set BASE_PATH=/ to test without a subpath.
+# The site is published at https://niivue.com/. BASE_PATH sets the URL prefix
+# (default: /).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-BASE_PATH="${BASE_PATH:-/mono/}"
+BASE_PATH="${BASE_PATH:-/}"
 
 # Ensure BASE_PATH ends with /
 [[ "$BASE_PATH" == */ ]] || BASE_PATH="${BASE_PATH}/"
@@ -52,7 +52,7 @@ echo "==> Building uikit demo"
 # Its demos fetch volumes and embed example pages from this same deployment.
 echo "==> Building docs site"
 DOCS_BASE_URL="${BASE_PATH}docs/" \
-  DOCS_EXAMPLES_BASE="https://niivue.github.io${BASE_PATH}" \
+  DOCS_EXAMPLES_BASE="https://niivue.com${BASE_PATH}" \
   bunx nx build docs-site
 
 # 4. Build niivue examples last (overwrites packages/niivue/dist)

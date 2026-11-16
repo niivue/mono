@@ -503,6 +503,9 @@ export default class NVModel {
       ...(options.isPanFollowingCrosshair !== undefined && {
         isPanFollowingCrosshair: options.isPanFollowingCrosshair,
       }),
+      ...(options.windowingStep !== undefined && {
+        windowingStep: options.windowingStep,
+      }),
     }
     // Annotation — flat options mapped to annotation group
     this.annotation = {

@@ -267,6 +267,29 @@ test('annotationIsClickToPlace: places a shape on an oblique volume; turning it 
   expect(r.parked).toBeNull()
 })
 
+test('annotationIsClickToPlace: a parked start beats a selected control point', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationIsClickToPlace = true
+    nv.annotationMergesOverlaps = false
+    drag([[120, 120]])
+    drag([[200, 200]])
+    const id = nv.annotations[0].id
+    // Park a start, select the shape via the API, then press its corner.
+    drag([[260, 120]])
+    nv.selectAnnotation(id)
+    drag([[200, 200]])
+    return { count: nv.annotations.length, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.count).toBe(2)
+  expect(r.parked).toBeNull()
+})
+
 test('annotationIsClickToPlace: Escape drops a parked start; a parked start beats selection; jitter is a click', async ({
   page,
 }) => {

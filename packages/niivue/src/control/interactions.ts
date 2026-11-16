@@ -1663,6 +1663,21 @@ export function initInteraction(ctrl: NiiVue): void {
 
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
+          // A press on the slice of a parked click start ends that shape
+          // (isClickToPlace), ahead of a selected shape's control points; elsewhere it drops it.
+          const parked = ctrl._annotationClickStart
+          ctrl._annotationClickStart = null
+          ctrl._annotationClickResumed =
+            !!parked &&
+            parked.sliceType === sliceType &&
+            isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
+          if (parked && ctrl._annotationClickResumed) {
+            ctrl._annotationShapeStart = parked.start
+            ctrl._annotationSlicePosition = parked.slicePosition
+            ctrl._annotationAnchorMM = parked.anchorMM
+            startAnnotationDrag(ctrl, evt)
+            return
+          }
           // Check control point hit on current selection
           if (ctrl.model._annotationSelection) {
             const cpIdx = Annotation.hitTestControlPoint(
@@ -1692,21 +1707,6 @@ export function initInteraction(ctrl: NiiVue): void {
                 return
               }
             }
-          }
-          // A press on the slice of a parked click start ends that shape
-          // (isClickToPlace), ahead of selection; elsewhere it drops it.
-          const parked = ctrl._annotationClickStart
-          ctrl._annotationClickStart = null
-          ctrl._annotationClickResumed =
-            !!parked &&
-            parked.sliceType === sliceType &&
-            isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
-          if (parked && ctrl._annotationClickResumed) {
-            ctrl._annotationShapeStart = parked.start
-            ctrl._annotationSlicePosition = parked.slicePosition
-            ctrl._annotationAnchorMM = parked.anchorMM
-            startAnnotationDrag(ctrl, evt)
-            return
           }
           // Hit-test existing shape annotations for selection
           const selTile = (ctrl.view?.screenSlices ?? [])[

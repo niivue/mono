@@ -125,11 +125,14 @@ export function startSegDrawing(
   const abort = new AbortController()
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
+    // A drawing loaded during the conversion supersedes the SEG.
+    const atStart = nv.drawingVolume
     const [converted, hasBase] = await Promise.all([
       convert(seg, { headers: options.headers, signal: abort.signal }),
       options.whenBase,
     ])
-    if (!converted || !hasBase || cancelled) return
+    if (!converted || !hasBase || cancelled || nv.drawingVolume !== atStart)
+      return
     isOwned = true
     owned = nv.drawingVolume
     const isShown = await nv.loadDrawing(converted.image)

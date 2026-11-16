@@ -248,6 +248,30 @@ describe('startSegDrawing', () => {
     expect(nv.drawingVolume).toBe(mine)
   })
 
+  test('drawingLoadedDuringConversion_supersedesTheSeg', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    let finish = () => {}
+    const converting = new Promise<void>((r) => {
+      finish = r
+    })
+    startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert: async () => {
+        await converting
+        return { ...converted, image: new File([labels()], 'seg.nii') }
+      },
+      whenBase,
+    })
+    await nv.loadDrawing(new File([labels()], 'mine.nii'))
+    const mine = nv.drawingVolume
+    expect(mine).not.toBeNull()
+    finish()
+    await settle()
+    expect(nv.drawingVolume).toBe(mine)
+  })
+
   test('cleanupAfterAnotherDrawingReplacedTheSeg_keepsIt', async () => {
     globalThis.requestAnimationFrame ??= () => 0
     const nv = new NiiVue(DEFAULT_OPTIONS)

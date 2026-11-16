@@ -39,10 +39,7 @@ function projectedArea(annotation: VectorAnnotation): number {
     const ell = intactEllipse(annotation)
     if (ell) return Math.PI * ell.a * ell.b
   }
-  let a = 0
-  for (const poly of annotation.polygons)
-    a += clipperRegionArea(poly.outer, poly.holes)
-  return a
+  return clipperRegionArea(annotation.polygons)
 }
 
 // Relative tolerance for a voxel centre on an ellipse's curve.

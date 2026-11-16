@@ -391,3 +391,13 @@ test('overlapping holes exclude their overlap once, in the mask and the geometri
   expect(computeAnnotationStats(ann, volume)?.area).toBe(59)
   expect(computeAnnotationStats(ann, volume, true)?.area).toBeCloseTo(59, 6)
 })
+
+test('overlapping pieces count their overlap once, in the mask and the geometric area', () => {
+  // 5x5 pieces at (2,2) and (4,4): 25 + 25 - 9.
+  const ann = annotation([
+    { outer: square(2, 2, 5), holes: [] },
+    { outer: square(4, 4, 5), holes: [] },
+  ])
+  expect(computeAnnotationStats(ann, volume)?.area).toBe(41)
+  expect(computeAnnotationStats(ann, volume, true)?.area).toBeCloseTo(41, 6)
+})

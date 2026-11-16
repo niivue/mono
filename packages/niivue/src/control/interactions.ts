@@ -2903,9 +2903,13 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointerleave = () => {
     ctrl._pointerClient = null
-    if (ctrl.model._annotationCursor) {
+    // A parked start keeps waiting for its second click; only its rubber band goes.
+    const parkedPreview =
+      !!ctrl._annotationClickStart && !!ctrl.model._annotationPreview
+    if (ctrl.model._annotationCursor || parkedPreview) {
       setNextActionTag('pointerleave')
       ctrl.model._annotationCursor = null
+      if (parkedPreview) ctrl.model._annotationPreview = null
       ctrl.drawScene()
     }
     ctrl.emit(

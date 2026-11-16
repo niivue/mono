@@ -26,6 +26,7 @@ import {
   updateShapeBounds,
 } from './selection'
 import {
+  bidirectionalShortAxis,
   constrainCircleEnd,
   dragCorners,
   generatePolygonFromPoints,
@@ -34,10 +35,16 @@ import {
   isAnnotationErased,
   isCircleTool,
 } from './shapes'
-import { isOnSlice, mmToSlice2D } from './sliceProjection'
-import { computeAnnotationStats, isMeasureTool } from './stats'
+import {
+  isOnSlice,
+  mmToSlice2D,
+  slice2DToMM,
+  slice2DToMMOnPlane,
+} from './sliceProjection'
+import { computeAnnotationStats, isMeasureTool, shapeAngle } from './stats'
 
 export {
+  bidirectionalShortAxis,
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
@@ -58,7 +65,10 @@ export {
   livewireField,
   mmToSlice2D,
   resizePolygons,
+  shapeAngle,
   slice2DToGrid,
+  slice2DToMM,
+  slice2DToMMOnPlane,
   updateShapeBounds,
 }
 

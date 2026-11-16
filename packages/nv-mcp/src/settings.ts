@@ -119,6 +119,8 @@ export const ANNOTATION_TOOLS = [
   'bidirectional',
   'measureBidirectional',
   'measurePoint',
+  'measureAngle',
+  'measureCobbAngle',
 ] as const
 
 /** NiiVue's `SlideDrawTool` names. */

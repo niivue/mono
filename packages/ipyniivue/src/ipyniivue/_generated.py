@@ -122,7 +122,7 @@ affect whether annotations *render* — they always do."""
     annotation_is_erasing = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint"], None, allow_none=True).tag(sync=True)
+    annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint", "measureAngle", "measureCobbAngle"], None, allow_none=True).tag(sync=True)
     azimuth = traitlets.Float(None, allow_none=True).tag(sync=True)
     background_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
     clip_plane_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)

@@ -2077,6 +2077,10 @@ export type AnnotationTool =
   | 'measureBidirectional'
   // A single click: the base volume's value at that voxel (OHIF's Probe).
   | 'measurePoint'
+  // Three clicks (p0, vertex, p1): the angle at the vertex (OHIF's Angle).
+  | 'measureAngle'
+  // Four clicks, two lines: the acute angle between them (OHIF's CobbAngle).
+  | 'measureCobbAngle'
 
 export type AnnotationStats = {
   area: number
@@ -2089,6 +2093,8 @@ export type AnnotationStats = {
   shortLength?: number
   /** measurePoint: the voxel's value (also min/mean/max). */
   value?: number
+  /** measureAngle / measureCobbAngle: degrees. */
+  angle?: number
 }
 
 export type AnnotationPoint = { x: number; y: number }
@@ -2121,7 +2127,8 @@ export type VectorAnnotation = {
     start: AnnotationPoint
     end: AnnotationPoint
     width?: number
-    /** Second axis endpoints for a bidirectional measurement (short axis). */
+    /** Second line: a bidirectional's short axis; an angle's second arm
+     * (measureAngle: start2 = end = vertex). */
     start2?: AnnotationPoint
     end2?: AnnotationPoint
   }
@@ -2188,6 +2195,8 @@ export type AnnotationConfig = {
    * axes) may also be placed click-move-click, as cornerstone's tools are: a
    * click (press and release in place) parks the start; the next press on the
    * same slice ends the shape where it is released. Drags work as before.
+   * A bidirectional then commits with its long axis, plus an automatic
+   * perpendicular short axis 2/3 as long through its midpoint.
    */
   isClickToPlace: boolean
   /**

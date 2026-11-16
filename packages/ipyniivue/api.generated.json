@@ -135,7 +135,9 @@
           "measureLivewire",
           "bidirectional",
           "measureBidirectional",
-          "measurePoint"
+          "measurePoint",
+          "measureAngle",
+          "measureCobbAngle"
         ]
       },
       "hasGetter": true,

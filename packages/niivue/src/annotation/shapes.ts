@@ -260,6 +260,25 @@ export function generateShape(
 }
 
 /**
+ * A bidirectional's automatic short axis: perpendicular through the long axis
+ * midpoint, 2/3 its length (cornerstone's default width).
+ */
+export function bidirectionalShortAxis(
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+): { start: AnnotationPoint; end: AnnotationPoint } {
+  const mx = (start.x + end.x) / 2
+  const my = (start.y + end.y) / 2
+  // The long axis rotated 90 degrees, scaled to 1/3 its length per side.
+  const px = -(end.y - start.y) / 3
+  const py = (end.x - start.x) / 3
+  return {
+    start: { x: mx - px, y: my - py },
+    end: { x: mx + px, y: my + py },
+  }
+}
+
+/**
  * True when the eraser has cut into a drawn shape: its polygons no longer match
  * the outline its bounds generate. Only shapes generateShape can rebuild
  * (rect, ellipse, circle, line, arrow) are judged; contours, bidirectional and

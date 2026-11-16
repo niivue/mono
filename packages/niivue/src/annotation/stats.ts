@@ -23,6 +23,49 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
   )
 }
 
+/**
+ * Degrees between a shape's two lines (start->end, start2->end2). measureAngle:
+ * the angle at the shared vertex (0-180); measureCobbAngle: the acute angle
+ * between the line directions (0-90), as cornerstone.
+ */
+export function shapeAngle(
+  shape: {
+    type: AnnotationTool
+    start: AnnotationPoint
+    end: AnnotationPoint
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
+  },
+  // Slice-2D -> world mm on the drawn plane: on an oblique slice the 2D axes
+  // are a projection, so the angle must be taken in 3D.
+  toMM: (p: AnnotationPoint) => ArrayLike<number> = (p) => [p.x, p.y, 0],
+): number {
+  const { start, end, start2 = end, end2 = end } = shape
+  const [s, e, s2, e2] = [start, end, start2, end2].map(toMM) as [
+    ArrayLike<number>,
+    ArrayLike<number>,
+    ArrayLike<number>,
+    ArrayLike<number>,
+  ]
+  // Angle: both arms point away from the vertex (end === start2).
+  const sign = shape.type === 'measureAngle' ? -1 : 1
+  const a = [0, 1, 2].map((i) => sign * ((e[i] as number) - (s[i] as number)))
+  const b = [0, 1, 2].map((i) => (e2[i] as number) - (s2[i] as number))
+  const [ax, ay, az] = a as [number, number, number]
+  const [bx, by, bz] = b as [number, number, number]
+  const dot = ax * bx + ay * by + az * bz
+  const cross = Math.hypot(
+    ay * bz - az * by,
+    az * bx - ax * bz,
+    ax * by - ay * bx,
+  )
+  const rad = Math.atan2(
+    cross,
+    shape.type === 'measureCobbAngle' ? Math.abs(dot) : dot,
+  )
+  return (rad * 180) / Math.PI
+}
+
 /** Shoelace area of a ring in slice-2D mm. */
 function ringArea(ring: readonly AnnotationPoint[]): number {
   let a = 0

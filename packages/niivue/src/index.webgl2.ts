@@ -12,7 +12,8 @@ export {
   makeLabelLut,
 } from './cmap/NVCmaps'
 export { generateShape, isAnnotationErased } from './annotation/shapes'
-export { slice2DToMM } from './annotation/sliceProjection'
+export { mmToSlice2D, slice2DToMM } from './annotation/sliceProjection'
+export { computeAnnotationStats } from './annotation/stats'
 // Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`

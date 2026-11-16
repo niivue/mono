@@ -34,6 +34,7 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "angleCompleted",
     "annotationAdded",
     "annotationChanged",
+    "annotationHistoryPush",
     "annotationRemoved",
     "azimuthElevationChange",
     "change",
@@ -1461,8 +1462,25 @@ and its volumes alive."""
     def remove_all_volumes(self) -> None:
         self.send({"cmd": "removeAllVolumes", "args": []})
 
-    def remove_annotation(self, id: Any) -> None:
-        self.send({"cmd": "removeAnnotation", "args": _make_args(id)})
+    def remove_annotation(self, id: Any, is_undoable: Any = _UNSET) -> None:
+        """Remove an annotation; `isUndoable` records an annotationUndo step first.
+
+        Parameters
+        ----------
+        id : string
+        is_undoable : boolean
+        """
+        self.send({"cmd": "removeAnnotation", "args": _make_args(id, is_undoable)})
+
+    def remove_annotations(self, ids: Any, is_undoable: Any = _UNSET) -> None:
+        """Remove several annotations as one change (one annotationUndo step when `isUndoable`); emits annotationChanged with action 'delete'.
+
+        Parameters
+        ----------
+        ids : readonly string[]
+        is_undoable : boolean
+        """
+        self.send({"cmd": "removeAnnotations", "args": _make_args(ids, is_undoable)})
 
     def remove_measurement(self, index: Any) -> None:
         """Remove a single completed distance measurement by index, emitting `measurementRemoved` before the mutation (so the listener can still reach it) and redrawing.

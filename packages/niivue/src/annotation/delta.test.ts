@@ -104,3 +104,21 @@ test('undo of a removal reports the restored id as added', () => {
     { action: 'undo', added: ['a'], updated: [], removed: [] },
   ])
 })
+
+// A host mirrors each recorded step (annotationHistoryPush) in its own undo
+// history: a batch removal is one step, and one undo brings all back.
+test('undoable batch removal records one step and undoes as one', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.addAnnotation(square('a'))
+  nv.addAnnotation(square('b'))
+  let pushes = 0
+  nv.addEventListener('annotationHistoryPush', () => pushes++)
+  const seen = listen(nv)
+  nv.removeAnnotations(['a', 'b'], true)
+  nv.annotationUndo()
+  expect(pushes).toBe(1)
+  expect(seen.map((d) => [d.action, d.removed, d.added])).toEqual([
+    ['delete', ['a', 'b'], []],
+    ['undo', [], ['a', 'b']],
+  ])
+})

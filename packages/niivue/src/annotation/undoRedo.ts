@@ -4,6 +4,8 @@ export class AnnotationUndoStack {
   private _undoStack: VectorAnnotation[][] = []
   private _redoStack: VectorAnnotation[][] = []
   private _maxSnapshots: number
+  /** Called after each snapshot is recorded (a host mirrors it in its own history). */
+  onPush?: () => void
 
   constructor(maxSnapshots = 32) {
     this._maxSnapshots = maxSnapshots
@@ -15,6 +17,7 @@ export class AnnotationUndoStack {
       this._undoStack.shift()
     }
     this._redoStack.length = 0
+    this.onPush?.()
   }
 
   undo(current: VectorAnnotation[]): VectorAnnotation[] | null {

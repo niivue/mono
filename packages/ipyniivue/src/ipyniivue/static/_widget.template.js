@@ -197,6 +197,7 @@ const EVENTS = [
   "angleCompleted",
   "annotationAdded",
   "annotationChanged",
+  "annotationHistoryPush",
   "annotationRemoved",
   "azimuthElevationChange",
   "canvasResize",

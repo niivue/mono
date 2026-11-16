@@ -55,22 +55,19 @@ export function composeThumbnail(
     h: number,
     x: number,
     y: number,
+    windowRect: boolean,
   ) => {
     const x0 = Math.round(x * k)
     const y0 = Math.round(y * k)
-    ctx.drawImage(
-      src,
-      sx,
-      sy,
-      w,
-      h,
-      x0,
-      y0,
-      Math.round((x + w) * k) - x0,
-      Math.round((y + h) * k) - y0,
-    )
+    const dw = Math.round((x + w) * k) - x0
+    const dh = Math.round((y + h) * k) - y0
+    ctx.drawImage(src, sx, sy, w, h, x0, y0, dw, dh)
+    // As the GPU: window the filtered (scaled) bitmap, not its full-size pixels.
+    if (!windowRect || !windowLut || dw < 1 || dh < 1) return
+    const img = ctx.getImageData(x0, y0, dw, dh)
+    applyWindow(img.data, windowLut)
+    ctx.putImageData(img, x0, y0)
   }
-  let scratch: OffscreenCanvasRenderingContext2D | null = null
   // Per component, an 8-bit value through rgbWindow (c * scale + offset).
   const windowLut = rgbWindow && new Uint8ClampedArray(3 * 256)
   if (windowLut && rgbWindow)
@@ -78,14 +75,16 @@ export function composeThumbnail(
       for (let v = 0; v < 256; v++)
         windowLut[c * 256 + v] =
           v * (rgbWindow[c] as number) + 255 * (rgbWindow[4 + c] as number)
-  // A fused tile is already windowed: beside one, bitmaps window per tile
-  // (as the 2D renderers do); otherwise once after scaling, as the GPU
-  // windows its filtered sample: one pass over the thumbnail, not one per
-  // full-size tile (a W/L drag recomposes it).
+  // A fused tile is already windowed: beside one, bitmaps window per drawn
+  // rect; otherwise in one pass over the thumbnail. Both after scaling, as
+  // the GPU windows its filtered sample.
   const windowTiles =
     !!windowLut && entries.some((e, i) => level.tiles[i] && e && isFuseTile(e))
-  // Tile slot `i` as a drawable and its size, or null.
-  const source = (i: number): [CanvasImageSource, number, number] | null => {
+  let scratch: OffscreenCanvasRenderingContext2D | null = null
+  // Tile slot `i` as a drawable, its size and whether to window it, or null.
+  const source = (
+    i: number,
+  ): [CanvasImageSource, number, number, boolean] | null => {
     const entry = entries[i]
     if (!level.tiles[i] || !entry) return null
     if (isFuseTile(entry)) {
@@ -96,31 +95,22 @@ export function composeThumbnail(
       scratch ??= new OffscreenCanvas(tw, th).getContext('2d')
       if (!scratch) return null
       scratch.putImageData(new ImageData(rgba, w, h), 0, 0)
-      return [scratch.canvas, w, h]
+      return [scratch.canvas, w, h, false]
     }
     const bitmap = entry.bitmap
-    if (!bitmap) return null
-    const { width: w, height: h } = bitmap
-    if (!windowTiles || !windowLut) return [bitmap, w, h]
-    scratch ??= new OffscreenCanvas(tw, th).getContext('2d')
-    if (!scratch) return null
-    scratch.clearRect(0, 0, w, h)
-    scratch.drawImage(bitmap, 0, 0)
-    const img = scratch.getImageData(0, 0, w, h)
-    applyWindow(img.data, windowLut)
-    scratch.putImageData(img, 0, 0)
-    return [scratch.canvas, w, h]
+    return bitmap ? [bitmap, bitmap.width, bitmap.height, windowTiles] : null
   }
   if (placement)
     // ponytail: a tile with two pieces is fused twice; seams inside a tile are rare.
     for (const p of placement.pieces) {
       const src = source(p.tile)
-      if (src) draw(src[0], p.sx, p.sy, p.sw, p.sh, p.dx, p.dy)
+      if (src) draw(src[0], p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, src[3])
     }
   else
     level.tiles.forEach((tile, i) => {
       const src = tile && source(i)
-      if (src) draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th)
+      if (src)
+        draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th, src[3])
     })
   const windowed = windowLut && !windowTiles
   if (lut || windowed) {

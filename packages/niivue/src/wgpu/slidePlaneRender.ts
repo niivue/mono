@@ -1,4 +1,4 @@
-import { colorLutWgsl } from '@/slide/colorLutShader'
+import { colorLutWgsl, rgbWindowWgsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
 import {
   DEFAULT_RAW_POOL_BYTES,
@@ -37,17 +37,19 @@ import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 // in via NVSlide's cache and upload to per-tile GPU textures on demand.
 
 /**
- * The plane shader, with or without the slide's colour table (bind group 2);
- * the `nearest` pipelines sample nearest with the 2D shaders' edge clamp, the
+ * The plane shader, with or without the slide's colour table (bind group 2)
+ * and RGB window (bitmap tiles only: a fused tile was windowed); the `nearest` pipelines sample nearest with the 2D shaders' edge clamp, the
  * `labelBlend` ones add a mixed tile's label texture.
  */
-const shaderCode = (lut: boolean): string => /* wgsl */ `
+const shaderCode = (lut: boolean, rgbWindow: boolean): string => /* wgsl */ `
 override nearest = false;
 // A mixed fused tile's label channels (slideFuse.ts fuseTarget), combined
 // nearest with the intensity: 0 none, 1 max, 2 saturating sum.
 override labelBlend = 0u;
 struct U {
   mvp: mat4x4f,
+  rgbScale: vec4f,
+  rgbOffset: vec4f,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var samp: sampler;
@@ -55,7 +57,7 @@ struct U {
 @group(1) @binding(0) var tileTex: texture_2d<f32>;
 @group(1) @binding(1) var labelTex: texture_2d<f32>;
 ${colorLutWgsl(2, lut)}
-
+${rgbWindowWgsl(rgbWindow)}
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
@@ -84,7 +86,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let l = textureLoad(labelTex, clamp(vec2i(in.uv * vec2f(size)), vec2i(1), size - 2), 0).rgb;
     c = vec4f(select(max(c.rgb, l), min(c.rgb + l, vec3f(1.0)), labelBlend == 2u), c.a);
   }
-  return vec4f(applyColorLut(c.rgb), c.a);
+  return vec4f(applyColorLut(applyRgbWindow(c.rgb)), c.a);
 }
 `
 
@@ -112,12 +114,13 @@ type PlaneTexture = TileTextureGPU & { group?: GPUBindGroup }
 export class SlidePlaneRendererGPU extends NVRenderer {
   /** Sample tiles nearest-neighbour instead of linear (the views set it). */
   isNearestInterpolation = false
-  // By lut, nearest and labelBlend, made on first use; the plain variant
+  // By lut, RGB window, nearest and labelBlend, made on first use; the plain variant
   // serves identity tables, the absent colour and annotations.
   private readonly _pipelines = new Map<number, GPURenderPipeline>()
   private _pipelineFor:
     | ((
         lut: boolean,
+        rgbWindow: boolean,
         nearest: boolean,
         labelBlend: number,
       ) => GPURenderPipeline)
@@ -192,9 +195,11 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     })
     const lutLayout = colorLutLayout(device)
     this._luts = new ColorLutTexturesGPU(device, lutLayout, this._sampler)
-    this._pipelineFor = (lut, nearest, labelBlend) => {
+    this._pipelineFor = (lut, rgbWindow, nearest, labelBlend) => {
       const desc = alphaPipelineDesc(device, {
-        module: device.createShaderModule({ code: shaderCode(lut) }),
+        module: device.createShaderModule({
+          code: shaderCode(lut, rgbWindow),
+        }),
         bindGroupLayouts: [
           this._uniformBGL as GPUBindGroupLayout,
           this._textureBGL as GPUBindGroupLayout,
@@ -230,11 +235,13 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     lut: boolean,
     nearest: boolean,
     labelBlend: number,
+    rgbWindow = false,
   ): GPURenderPipeline | null {
-    const key = (lut ? 6 : 0) + (nearest ? 3 : 0) + labelBlend
+    const key =
+      (rgbWindow ? 12 : 0) + (lut ? 6 : 0) + (nearest ? 3 : 0) + labelBlend
     let pipeline = this._pipelines.get(key)
     if (!pipeline && this._pipelineFor) {
-      pipeline = this._pipelineFor(lut, nearest, labelBlend)
+      pipeline = this._pipelineFor(lut, rgbWindow, nearest, labelBlend)
       this._pipelines.set(key, pipeline)
     }
     return pipeline ?? null
@@ -267,7 +274,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     }
     let slot = this._slots[this._slotsUsed]
     if (!slot) {
-      const uniform = uniformBuffer(device, 64) // mat4
+      const uniform = uniformBuffer(device, 96) // mat4, rgbScale, rgbOffset
       slot = {
         uniform,
         group: device.createBindGroup({
@@ -458,6 +465,13 @@ export class SlidePlaneRendererGPU extends NVRenderer {
     const lut = Boolean(slide.displayColorLut && this._luts)
     if (lut && this._luts && slide.displayColorLut)
       pass.setBindGroup(2, this._luts.group(slide.displayColorLut))
+    const rgbWindow = slide.rgbWindow
+    if (rgbWindow)
+      device.queue.writeBuffer(
+        slot.uniform,
+        64,
+        rgbWindow as Float32Array<ArrayBuffer>,
+      )
     const sum = slide.channelBlend === 'additive' ? 2 : 1
     let current: GPURenderPipeline | null = null
     for (let i = 0; i < tiles.length; i++) {
@@ -476,6 +490,7 @@ export class SlidePlaneRendererGPU extends NVRenderer {
         lut,
         this.isNearestInterpolation || tex.nearest === true,
         tex.labels ? sum : 0,
+        rgbWindow !== null && tex.fused === undefined,
       )
       if (pipeline !== current && pipeline) {
         current = pipeline

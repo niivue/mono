@@ -12,7 +12,8 @@ import { fusePlan, fuseSamples, isFuseTile } from './slideFuse'
  * Composite `level` from its resident tile `entries` (one per `level.tiles`
  * slot) on the CPU, scaled to fit `maxPx` a side. Null without a 2D context.
  * `info` and `selected` (channelInfo, selectedLabel) colour label channels;
- * `lut` (displayColorLut) maps the result to sRGB as the renderers do.
+ * `lut` (displayColorLut) maps the result to sRGB as the renderers do;
+ * `rgbWindow` (NVSlide.rgbWindow) windows bitmap tiles before it, as they do.
  */
 export function composeThumbnail(
   level: NVSlideLevelManifest,
@@ -25,6 +26,7 @@ export function composeThumbnail(
   info?: readonly NVSlideChannelInfo[],
   selected?: { channel: number; id: number } | null,
   lut?: NVSlideColorLut | null,
+  rgbWindow?: Float32Array | null,
 ): ImageBitmap | null {
   // Placed (SRC-20): the placed extent, each piece's crop at its origin.
   const placement = level.placement
@@ -69,11 +71,20 @@ export function composeThumbnail(
     )
   }
   let scratch: OffscreenCanvasRenderingContext2D | null = null
+  let anyFused = false
+  // Per component, an 8-bit value through rgbWindow (c * scale + offset).
+  const windowLut = rgbWindow && new Uint8ClampedArray(3 * 256)
+  if (windowLut && rgbWindow)
+    for (let c = 0; c < 3; c++)
+      for (let v = 0; v < 256; v++)
+        windowLut[c * 256 + v] =
+          v * (rgbWindow[c] as number) + 255 * (rgbWindow[4 + c] as number)
   // Tile slot `i` as a drawable and its size, or null.
   const source = (i: number): [CanvasImageSource, number, number] | null => {
     const entry = entries[i]
     if (!level.tiles[i] || !entry) return null
     if (isFuseTile(entry)) {
+      anyFused = true
       const { samples, width: w, height: h } = entry.samples
       const plan = fusePlan(channels, blend, entry, info, selected)
       const rgba = fuseSamples(samples, w * h, plan)
@@ -98,9 +109,20 @@ export function composeThumbnail(
       const src = tile && source(i)
       if (src) draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th)
     })
-  if (lut) {
+  // Windowed after scaling, as the GPU windows its filtered sample: one pass
+  // over the thumbnail, not one per full-size tile (a W/L drag recomposes it).
+  // ponytail: a slide mixing fused and bitmap tiles shows its bitmaps unwindowed.
+  const windowed = windowLut && !anyFused
+  if (lut || windowed) {
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    applyColorLut(img.data, lut)
+    const d = img.data
+    if (windowed)
+      for (let p = 0; p < d.length; p += 4) {
+        d[p] = windowLut[d[p] as number] as number
+        d[p + 1] = windowLut[256 + (d[p + 1] as number)] as number
+        d[p + 2] = windowLut[512 + (d[p + 2] as number)] as number
+      }
+    if (lut) applyColorLut(d, lut)
     ctx.putImageData(img, 0, 0)
   }
   return canvas.transferToImageBitmap()

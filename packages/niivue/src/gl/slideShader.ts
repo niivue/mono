@@ -1,4 +1,4 @@
-import { colorLutGlsl } from '@/slide/colorLutShader'
+import { colorLutGlsl, rgbWindowGlsl } from '@/slide/colorLutShader'
 
 // One static unit quad (corner 0 or 1 per axis); the rect and UVs are
 // uniforms. A bvec mix selects exactly, so corners land where the CPU put them.
@@ -18,8 +18,11 @@ void main(void) {
 }
 `
 
-/** The slide fragment shader, with or without the colour table lookup. */
-export const slideFragShader = (lut: boolean): string => `#version 300 es
+/** The slide fragment shader, with or without the colour table and RGB window. */
+export const slideFragShader = (
+  lut: boolean,
+  rgbWindow = false,
+): string => `#version 300 es
 precision highp float;
 
 uniform sampler2D slideTexture;
@@ -28,6 +31,7 @@ uniform sampler2D slideTexture;
 uniform sampler2D labelTexture;
 uniform int labelBlend;
 ${colorLutGlsl(lut)}
+${rgbWindowGlsl(rgbWindow)}
 uniform float opacity;
 uniform int isPlaceholder;
 uniform int showGrid;
@@ -53,7 +57,7 @@ void main(void) {
       vec3 l = texelFetch(labelTexture, clamp(ivec2(texel), ivec2(1), ivec2(size) - 2), 0).rgb;
       base.rgb = labelBlend == 2 ? min(base.rgb + l, 1.0) : max(base.rgb, l);
     }
-    base.rgb = applyColorLut(base.rgb);
+    base.rgb = applyColorLut(applyRgbWindow(base.rgb));
   }
   base.a *= opacity;
   if (showGrid == 1) {

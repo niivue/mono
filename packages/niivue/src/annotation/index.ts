@@ -35,7 +35,12 @@ import {
   isAnnotationErased,
   isCircleTool,
 } from './shapes'
-import { isOnSlice, mmToSlice2D } from './sliceProjection'
+import {
+  isOnSlice,
+  mmToSlice2D,
+  slice2DToMM,
+  slice2DToMMOnPlane,
+} from './sliceProjection'
 import { computeAnnotationStats, isMeasureTool, shapeAngle } from './stats'
 
 export {
@@ -62,6 +67,8 @@ export {
   resizePolygons,
   shapeAngle,
   slice2DToGrid,
+  slice2DToMM,
+  slice2DToMMOnPlane,
   updateShapeBounds,
 }
 

@@ -1,0 +1,101 @@
+import { afterAll, expect, spyOn, test } from 'bun:test'
+import { mat4 } from 'gl-matrix'
+import NiiVue from '@/NVControl'
+import * as Layout from '@/view/NVSliceLayout'
+import { initInteraction } from './interactions'
+
+const savedWindow = globalThis.window
+globalThis.window = {
+  addEventListener() {},
+  removeEventListener() {},
+  devicePixelRatio: 1,
+} as never
+let point = [0, 0, 0]
+const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+  () => point as never,
+)
+// Both are process-wide under bun: restore them for later test files.
+afterAll(() => {
+  pick.mockRestore()
+  globalThis.window = savedWindow
+})
+function controller(tool: string, tilt = false) {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  nv.canvas = {
+    width: 200,
+    height: 200,
+    style: {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }),
+    addEventListener() {},
+    removeEventListener() {},
+    setPointerCapture() {},
+    releasePointerCapture() {},
+  } as never
+  nv.view = {
+    hitTest: () => ({ isRender: false, sliceType: 0, tileIndex: 0 }),
+    screenSlices: [],
+    legendLayout: null,
+    graphLayout: null,
+  } as never
+  nv.model.annotation.isEnabled = true
+  nv.model.annotation.tool = tool as never
+  nv.model.annotation.mergesOverlaps = false
+  nv.model.annotation.isClickToPlace = true
+  nv.model.volumes = [
+    { dimsRAS: [3, 100, 100, 100], pixDimsRAS: [1, 1, 1, 1] },
+  ] as never
+  // Inverse rotate around x by 60 degrees, so picked world points share voxel z=0.
+  if (tilt) {
+    nv.model.mm2tex = new Float32Array([
+      1,
+      0,
+      0,
+      0,
+      0,
+      0.5,
+      -Math.sqrt(3) / 2,
+      0,
+      0,
+      Math.sqrt(3) / 2,
+      0.5,
+      0,
+      0,
+      0,
+      0,
+      1,
+    ]) as never
+    nv.model.tex2mm = mat4.invert(
+      mat4.create(),
+      nv.model.mm2tex as mat4,
+    ) as never
+  }
+  initInteraction(nv)
+  return nv
+}
+function press(nv: NiiVue, p: number[]) {
+  point = p
+  const e = {
+    button: 0,
+    pointerType: 'mouse',
+    pointerId: 1,
+    detail: 1,
+    clientX: 50,
+    clientY: 50,
+    shiftKey: false,
+    preventDefault() {},
+  }
+  nv._eventListeners.pointerdown?.(e as never)
+  nv._eventListeners.pointerup?.(e as never)
+}
+
+// R13 audit: on a slice tilted 60° the 2D projection reads 53.13° for a
+// physical right angle; the angle must be measured on the drawn plane.
+test('an angle on an oblique slice is the physical angle', () => {
+  const nv = controller('measureAngle', true)
+  // World arms (10, 5, sqrt(75)) and (10, -5, -sqrt(75)) are orthogonal.
+  press(nv, [10, 5, Math.sqrt(75)])
+  press(nv, [0, 0, 0])
+  press(nv, [10, -5, -Math.sqrt(75)])
+  expect(nv.annotations[0]?.stats?.angle).toBeCloseTo(90, 4)
+})

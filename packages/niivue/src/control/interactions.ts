@@ -1,4 +1,4 @@
-import type { mat4 } from 'gl-matrix'
+import { type mat4, vec4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import { annotationDelta } from '@/annotation/delta'
 import {
@@ -153,9 +153,40 @@ function angleAnnotation(
       mean: 0,
       max: 0,
       stdDev: 0,
-      angle: Annotation.shapeAngle(ann.shape),
+      angle: Annotation.shapeAngle(ann.shape, angleToMM(ctrl, ann)),
     }
   return ann
+}
+
+// Slice-2D -> world mm on the plane the renderer draws the angle on (through
+// its anchor; oblique on a tilted volume), else at its constant depth.
+function angleToMM(
+  ctrl: NiiVue,
+  ann: VectorAnnotation,
+): (p: AnnotationPoint) => ArrayLike<number> {
+  const { mm2tex, tex2mm } = ctrl.model
+  const anchor = ann.anchorMM
+  const plane =
+    mm2tex && tex2mm && anchor
+      ? NVTransforms.slicePlaneEquation(
+          tex2mm,
+          ann.sliceType,
+          vec4.transformMat4(
+            vec4.create(),
+            vec4.fromValues(anchor[0], anchor[1], anchor[2], 1),
+            mm2tex,
+          )[sliceTypeDim(ann.sliceType)] as number,
+        )
+      : null
+  return plane
+    ? (p) =>
+        Annotation.slice2DToMMOnPlane(
+          p,
+          ann.sliceType,
+          plane.normal,
+          plane.point,
+        )
+    : (p) => Annotation.slice2DToMM(p, ann.slicePosition, ann.sliceType)
 }
 
 // Live-wire snapped path (slice-2D points) from the current seed's field to a

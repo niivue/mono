@@ -28,22 +28,37 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
  * the angle at the shared vertex (0-180); measureCobbAngle: the acute angle
  * between the line directions (0-90), as cornerstone.
  */
-export function shapeAngle(shape: {
-  type: AnnotationTool
-  start: AnnotationPoint
-  end: AnnotationPoint
-  start2?: AnnotationPoint
-  end2?: AnnotationPoint
-}): number {
+export function shapeAngle(
+  shape: {
+    type: AnnotationTool
+    start: AnnotationPoint
+    end: AnnotationPoint
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
+  },
+  // Slice-2D -> world mm on the drawn plane: on an oblique slice the 2D axes
+  // are a projection, so the angle must be taken in 3D.
+  toMM: (p: AnnotationPoint) => ArrayLike<number> = (p) => [p.x, p.y, 0],
+): number {
   const { start, end, start2 = end, end2 = end } = shape
+  const [s, e, s2, e2] = [start, end, start2, end2].map(toMM) as [
+    ArrayLike<number>,
+    ArrayLike<number>,
+    ArrayLike<number>,
+    ArrayLike<number>,
+  ]
   // Angle: both arms point away from the vertex (end === start2).
   const sign = shape.type === 'measureAngle' ? -1 : 1
-  const ax = sign * (end.x - start.x)
-  const ay = sign * (end.y - start.y)
-  const bx = end2.x - start2.x
-  const by = end2.y - start2.y
-  const dot = ax * bx + ay * by
-  const cross = Math.abs(ax * by - ay * bx)
+  const a = [0, 1, 2].map((i) => sign * ((e[i] as number) - (s[i] as number)))
+  const b = [0, 1, 2].map((i) => (e2[i] as number) - (s2[i] as number))
+  const [ax, ay, az] = a as [number, number, number]
+  const [bx, by, bz] = b as [number, number, number]
+  const dot = ax * bx + ay * by + az * bz
+  const cross = Math.hypot(
+    ay * bz - az * by,
+    az * bx - ax * bz,
+    ax * by - ay * bx,
+  )
   const rad = Math.atan2(
     cross,
     shape.type === 'measureCobbAngle' ? Math.abs(dot) : dot,

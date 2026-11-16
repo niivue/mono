@@ -140,16 +140,40 @@ export function applyHangingDisplay(
   displaySetOptions: OhifViewportProps['displaySetOptions'],
 ): void {
   const ds = entry?.displaySets[0]
-  // A loading base takes the current options when it installs.
+  // A loading base takes the current options in settleBase.
   if (!entry || entry.baseLoading || !ds || !entry.nv.volumes[0]) return
-  const spec = hangingDisplay(viewportOptions, displaySetOptions, ds)
-  // shortcut: no window to apply keeps the current one, not the robust range.
-  if (!spec) return
   entry.nv
-    .setVolume(0, spec)
+    .setVolume(
+      0,
+      hangingDisplay(viewportOptions, displaySetOptions, ds) ?? DEFAULT_DISPLAY,
+    )
     .catch((err: unknown) =>
       console.error('[nv-ohif] hanging-protocol window failed', err),
     )
+}
+
+// No protocol window or preset: what a load installs, gray at the robust range.
+const DEFAULT_DISPLAY = {
+  colormap: 'gray',
+  calMin: Number.NaN,
+  calMax: Number.NaN,
+}
+
+/**
+ * A base load that installed `installed` has settled: apply a protocol window
+ * changed meanwhile (the display effect skips a loading base).
+ */
+export function settleBase(
+  viewportId: string,
+  installed: ReturnType<typeof hangingDisplay>,
+  viewportOptions: OhifViewportProps['viewportOptions'],
+  displaySetOptions: OhifViewportProps['displaySetOptions'],
+): void {
+  const entry = getNiivueEntry(viewportId)
+  const ds = entry?.displaySets[0]
+  const latest = ds && hangingDisplay(viewportOptions, displaySetOptions, ds)
+  if (JSON.stringify(latest) !== JSON.stringify(installed))
+    applyHangingDisplay(entry, viewportOptions, displaySetOptions)
 }
 
 export function NiivueViewport(props: OhifViewportProps) {
@@ -458,6 +482,12 @@ export function NiivueViewport(props: OhifViewportProps) {
         windowLevel: readBaseWindowLevel(nv),
         baseLoading: false,
       })
+      settleBase(
+        viewportId,
+        spec,
+        viewportOptionsRef.current,
+        displaySetOptionsRef.current,
+      )
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when
       // annotation geometry itself has not changed.
@@ -686,7 +716,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
   // A new window / preset for the loaded series: in place, so the volume and
   // the user's measurements stay. Declared after the load effect, so a new
-  // series (baseLoading) takes it on install instead.
+  // series (baseLoading) takes it in settleBase instead.
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on keys.display by design
   useEffect(() => {
     if (!ready) return

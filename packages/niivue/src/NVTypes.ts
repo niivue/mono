@@ -1536,6 +1536,8 @@ export type NiiVueOptions = {
   annotationMergesOverlaps?: boolean
   /** See AnnotationConfig.isClickToPlace. Default false. */
   annotationIsClickToPlace?: boolean
+  /** See AnnotationConfig.isDrawnFromCenter. Default false. */
+  annotationIsDrawnFromCenter?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -2192,6 +2194,12 @@ export type AnnotationConfig = {
    * same slice ends the shape where it is released. Drags work as before.
    */
   isClickToPlace: boolean
+  /**
+   * Ellipse and circle tools draw from their centre, as OHIF/cornerstone:
+   * an ellipse's second point is a corner of its box, a circle's a point on
+   * its rim. Default false: both points are opposite box corners.
+   */
+  isDrawnFromCenter: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

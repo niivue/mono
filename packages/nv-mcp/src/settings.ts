@@ -381,6 +381,10 @@ export const SETTINGS: readonly Setting[] = [
   num('annotationBrushRadius', 'The radius of the freehand brush.', { min: 0 }),
   bool('annotationIsErasing', 'Whether the annotation brush erases.'),
   bool(
+    'annotationIsDrawnFromCenter',
+    'Whether a two-point shape grows from its first point as the centre.',
+  ),
+  bool(
     'annotationIsVisibleIn3D',
     'Whether annotations are drawn in the render.',
   ),

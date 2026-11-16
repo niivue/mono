@@ -529,6 +529,9 @@ export default class NVModel {
       ...(options.annotationIsClickToPlace !== undefined && {
         isClickToPlace: options.annotationIsClickToPlace,
       }),
+      ...(options.annotationIsDrawnFromCenter !== undefined && {
+        isDrawnFromCenter: options.annotationIsDrawnFromCenter,
+      }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
       }),

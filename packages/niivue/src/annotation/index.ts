@@ -27,6 +27,7 @@ import {
 } from './selection'
 import {
   constrainCircleEnd,
+  dragCorners,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
@@ -40,6 +41,7 @@ export {
   clipperSubtractBrush,
   computeAnnotationStats,
   constrainCircleEnd,
+  dragCorners,
   extractLivewireSlice,
   generatePolygonFromPoints,
   generateShape,

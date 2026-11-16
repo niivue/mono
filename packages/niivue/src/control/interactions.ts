@@ -290,8 +290,12 @@ function updateShapePreview(
   anchorMM: [number, number, number],
 ): void {
   const cfg = ctrl.model.annotation
-  if (Annotation.isCircleTool(cfg.tool))
-    end = Annotation.constrainCircleEnd(start, end)
+  ;[start, end] = Annotation.dragCorners(
+    cfg.tool,
+    start,
+    end,
+    cfg.isDrawnFromCenter,
+  )
   const polygons = Annotation.generateShape(
     cfg.tool,
     start,
@@ -1968,7 +1972,7 @@ export function initInteraction(ctrl: NiiVue): void {
               ctrl._annotationSliceType,
             )
             const cfg = ctrl.model.annotation
-            const start = ctrl._annotationShapeStart
+            let start = ctrl._annotationShapeStart
             const [pressX, pressY] = ctrl._annotationPressClient
             if (
               cfg.isClickToPlace &&
@@ -1982,17 +1986,19 @@ export function initInteraction(ctrl: NiiVue): void {
                 slicePosition: ctrl._annotationSlicePosition,
                 anchorMM: ctrl._annotationAnchorMM,
               }
-            } else if (Annotation.isCircleTool(cfg.tool)) {
-              pt2d = Annotation.constrainCircleEnd(start, pt2d)
+            } else {
+              ;[start, pt2d] = Annotation.dragCorners(
+                cfg.tool,
+                start,
+                pt2d,
+                cfg.isDrawnFromCenter,
+              )
             }
             if (ctrl._annotationClickStart) {
               // Parked: nothing to commit yet.
             } else if (isBidirectionalTool(cfg.tool)) {
               // First drag places the long axis; the second commits the pair.
-              const drag: Axis = {
-                start: ctrl._annotationShapeStart,
-                end: pt2d,
-              }
+              const drag: Axis = { start, end: pt2d }
               if (!ctrl._bidirectionalLong) {
                 ctrl._bidirectionalLong = drag
               } else {
@@ -2002,7 +2008,7 @@ export function initInteraction(ctrl: NiiVue): void {
             } else {
               const polygons = Annotation.generateShape(
                 cfg.tool,
-                ctrl._annotationShapeStart,
+                start,
                 pt2d,
                 cfg.style.strokeWidth,
               )
@@ -2019,7 +2025,7 @@ export function initInteraction(ctrl: NiiVue): void {
                 )
                 const shapeData: typeof newAnn.shape = {
                   type: cfg.tool,
-                  start: ctrl._annotationShapeStart,
+                  start,
                   end: pt2d,
                 }
                 if (

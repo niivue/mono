@@ -20,7 +20,7 @@ export interface AnnotationToolDescriptor {
   labelPrefix: string
   /** Panel row content: none (label only), length / bidirectional (mm), or
    * area + intensity. */
-  readout: 'none' | 'length' | 'bidirectional' | 'area'
+  readout: 'none' | 'length' | 'bidirectional' | 'area' | 'value'
   /** Points come from the single polygon ring, not shape endpoints. */
   contour?: true
 }
@@ -97,6 +97,15 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
     labelPrefix: 'ROI',
     readout: 'area',
     contour: true,
+  },
+  // A click reads the base value at that voxel.
+  measurePoint: {
+    toolName: 'Probe',
+    valueType: POINT_VALUE_TYPE,
+    minPoints: 1,
+    points: 1,
+    labelPrefix: 'Probe',
+    readout: 'value',
   },
   arrow: {
     toolName: 'ArrowAnnotate',

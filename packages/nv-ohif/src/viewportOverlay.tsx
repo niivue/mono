@@ -103,6 +103,26 @@ export function StackPositionReadout({
   )
 }
 
+/** Base intensity at the crosshair, lower right (above I: when that shows). */
+export function CrosshairValueReadout({
+  value,
+  unit,
+  aboveStack,
+}: {
+  value: string
+  unit: string
+  aboveStack: boolean
+}) {
+  return (
+    <div
+      data-cy="niivue-crosshair-value"
+      style={corner({ right: 12, bottom: aboveStack ? 28 : 8 })}
+    >
+      {`Value: ${value}${unit ? ` ${unit}` : ''}`}
+    </div>
+  )
+}
+
 /** Lower-left "W: L:" readout with a contrast glyph, as on cornerstone viewports. */
 export function WindowLevelReadout({ window, level }: WindowLevel) {
   return (

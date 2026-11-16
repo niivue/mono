@@ -1,5 +1,6 @@
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect, useState } from 'react'
+import { probeIndex } from './commands'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
 type Row = {
@@ -9,11 +10,14 @@ type Row = {
   values: Record<string, number | string>
 }
 
-const snapshot = (nv: NiiVue, unit: string): Row[] =>
+const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
   nv.annotations.map((a) => {
     const type = a.shape?.type ?? 'freehand'
     const values: Row['values'] = { ...a.stats }
     if (a.stats && !a.stats.length) values.modalityUnit = unit
+    // Cornerstone's Probe reports the voxel's image index too ("i,j,k").
+    const index = probeIndex(viewportId, a)
+    if (index) values.index = index.join(',')
     // Cornerstone's CircleROI reports its radius too.
     if (a.shape && (type === 'circle' || type === 'measureCircle')) {
       values.radius = Math.abs(a.shape.end.x - a.shape.start.x) / 2
@@ -30,22 +34,24 @@ const snapshot = (nv: NiiVue, unit: string): Row[] =>
  */
 export function MeasurementData({
   nv,
+  viewportId,
   unit = '',
 }: {
   nv: NiiVue | null
+  viewportId: string
   unit?: string
 }) {
   const [rows, setRows] = useState<Row[]>([])
   useEffect(() => {
     if (!nv) return
-    const update = () => setRows(snapshot(nv, unit))
+    const update = () => setRows(snapshot(nv, unit, viewportId))
     update()
     const events = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
     for (const e of events) nv.addEventListener(e, update)
     return () => {
       for (const e of events) nv.removeEventListener(e, update)
     }
-  }, [nv, unit])
+  }, [nv, unit, viewportId])
   return (
     <div hidden data-measurements="">
       {rows.map((r) => (

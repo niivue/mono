@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import { generateShape, type VectorAnnotation } from '@niivue/niivue'
-import { reflectNiivueAnnotation } from './commands'
+import { probeIndex, reflectNiivueAnnotation } from './commands'
 import {
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { buildSliceFrames, frameAt } from './sliceFrames'
+import { buildSliceFrames, frameAt, framePixelIndex } from './sliceFrames'
 
 type Vec3 = [number, number, number]
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [
@@ -371,4 +371,40 @@ describe('reflected measurement identity', () => {
     expect('frameNumber' in m).toBe(false)
     expect('referencedImageId' in m).toBe(false)
   })
+})
+
+it('framePixelIndex: LPS point -> [column, row, k]', () => {
+  const inst = {
+    SOPInstanceUID: 's',
+    ImagePositionPatient: [-100, -50, 7],
+    ImageOrientationPatient: [1, 0, 0, 0, 1, 0],
+    PixelSpacing: [0.5, 0.25],
+  }
+  expect(
+    framePixelIndex(
+      [inst],
+      { SOPInstanceUID: 's', frameNumber: 1 },
+      [-90.1, -40, 7],
+      3,
+    ),
+  ).toEqual([40, 20, 3])
+})
+
+it('probeIndex: k is the displayed stack position, not the frame number', () => {
+  const instances = classic(axial, 'pi', { PixelSpacing: [0.5, 0.5] })
+  registerNiivue('vp-pi', {} as NiiVue)
+  updateNiivueViewport('vp-pi', {
+    displaySets: [{ instances }],
+    sliceFrames: buildSliceFrames(niftiHeader(axial), instances),
+  })
+  // Column 2, row 3 of the second slice (LPS -100.5+1, -120+1.5, 30+2.5).
+  const p = { x: 99.5, y: 118.5 }
+  const probe = {
+    sliceType: 0,
+    slicePosition: 32.5,
+    anchorMM: [99.5, 118.5, 32.5],
+    shape: { type: 'measurePoint', start: p, end: p },
+  } as unknown as VectorAnnotation
+  expect(probeIndex('vp-pi', probe)).toEqual([2, 3, 1])
+  unregisterNiivue('vp-pi')
 })

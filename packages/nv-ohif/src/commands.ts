@@ -30,9 +30,11 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
-import { frameAt, type SliceFrames } from './sliceFrames'
+import { frameAt, framePixelIndex, type SliceFrames } from './sliceFrames'
 import { getStandardCommandDefinitions } from './standardCommands'
+import { petSuvFactor } from './suv'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
+import { stackPosition } from './viewportOverlay'
 
 // Toolbar-facing slice type names -> NiiVue SLICE_TYPE values. String keys keep
 // the toolbar button definitions plain JSON (commandOptions survive OHIF's
@@ -525,6 +527,33 @@ function annotationPointToLps(
   )
 }
 
+/** A measurePoint's DICOM image index, as cornerstone's Probe reports it. */
+export function probeIndex(
+  viewportId: string,
+  annotation: VectorAnnotation,
+): [number, number, number] | undefined {
+  if (annotation.shape?.type !== 'measurePoint') return undefined
+  const entry = getNiivueEntry(viewportId)
+  const sf = entry?.sliceFrames
+  const ds = entry?.displaySets[0]
+  if (!sf || !ds) return undefined
+  // The anchor is the picked 3D point (kept on drag): exact on oblique slices.
+  const ras =
+    annotation.anchorMM ??
+    slice2DToMM(
+      annotation.shape.end,
+      annotation.slicePosition,
+      annotation.sliceType,
+    )
+  const p = rasToLps([ras[0], ras[1], ras[2]])
+  const frame = frameAt(sf, [p])
+  // k: the displayed stack (or volume) position, as cornerstone's getCurrentImageIdIndex.
+  const pos = frame && stackPosition(ds, sf, ras, entry.volumeOrder)
+  return frame && pos
+    ? framePixelIndex(ds.instances ?? [], frame, p, pos.index - 1)
+    : undefined
+}
+
 function annotationPointsLps(
   annotation: VectorAnnotation,
 ): [number, number, number][] {
@@ -751,12 +780,20 @@ function releaseLabelSync(service: object): void {
   labelSyncSubscriptions.delete(service)
 }
 
-/** The intensity unit OHIF shows for a modality ('' when it has none). */
-export const unitForModality = (modality?: string): string =>
-  modality === 'CT' ? 'HU' : modality === 'PT' ? 'SUV' : ''
+/**
+ * The unit of a display set's values as shown ('' when none): PT is SUV only
+ * when dicomToNiivue applied the SUVbw factor, else its own Units.
+ */
+export function unitForDisplaySet(ds?: OhifDisplaySet): string {
+  if (ds?.Modality === 'CT') return 'HU'
+  if (ds?.Modality !== 'PT') return ''
+  if (petSuvFactor(ds)) return 'SUV'
+  const units = ds.instances?.[0]?.Units
+  return units === 'BQML' ? 'Bq/ml' : String(units ?? '')
+}
 
 function modalityUnit(entry: NiivueViewportEntry): string {
-  return unitForModality(baseModality(entry))
+  return unitForDisplaySet(entry.displaySets[0])
 }
 
 /**
@@ -787,6 +824,14 @@ function buildAnnotationDisplay(
     return {
       primary: [`${roundNumber(stats.length)} mm`],
       data: { length: stats.length, unit: 'mm' },
+      label,
+    }
+  }
+  // Probe: the value and its unit, as cornerstone's Probe row.
+  if (readout === 'value' && stats.value !== undefined) {
+    return {
+      primary: [`${roundNumber(stats.value)}${unit ? ` ${unit}` : ''}`],
+      data: { value: stats.value, modalityUnit: unit },
       label,
     }
   }
@@ -910,6 +955,8 @@ function reflectNiivueAnnotationResult(
     annotation.stats,
     unit,
   )
+  const index = probeIndex(viewportId, annotation)
+  if (index) data.index = index
   // The row label is the annotation's own text (applyDefaultAnnotationText seeds a
   // sensible default on add). Do NOT substitute an internal "NiiVue <Tool>"
   // fallback for empty text: reflecting that fallback would echo it back through
@@ -1483,7 +1530,15 @@ export function dicomWindow(
   }
   const n = sops?.length || all.length
   if (key(0) !== key(n >> 1) || key(0) !== key(n - 1)) return undefined
-  return windowRange(first(at(0)?.WindowWidth), first(at(0)?.WindowCenter))
+  const range = windowRange(
+    first(at(0)?.WindowWidth),
+    first(at(0)?.WindowCenter),
+  )
+  // The DICOM window is in the stored units (Bq/ml); the volume may be SUV.
+  const f = petSuvFactor(ds)
+  return range && f
+    ? { calMin: range.calMin * f, calMax: range.calMax * f }
+    : range
 }
 
 function windowRange(

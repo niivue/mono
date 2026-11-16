@@ -6,6 +6,7 @@ import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
 import { sharedTask } from './sharedTask'
 import { buildSliceFrames, type SliceFrames } from './sliceFrames'
+import { petSuvFactor, scaleNifti } from './suv'
 
 // Phase 2 DICOM bridge: turn a DICOMweb display set into a NIfTI volume, then load
 // it with NiiVue. We fetch DICOM Part-10 files (RetrieveInstance, else reconstructed
@@ -132,8 +133,10 @@ async function convertUnshared(
     const cause = log.findLast((l) => /error|warn/i.test(l)) ?? log.at(-1) ?? ''
     notes.push(`dcm2niix exit ${exitCode} (${exitName}): ${cause}`)
   }
+  // PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
+  const suv = petSuvFactor(ds)
   return {
-    image: shown.image,
+    image: suv ? await scaleNifti(shown.image, suv) : shown.image,
     json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames: buildSliceFrames(

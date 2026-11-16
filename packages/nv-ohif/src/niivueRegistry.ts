@@ -39,6 +39,8 @@ export interface NiivueViewportEntry {
   crosshairMM?: number[]
   /** Base volume slice -> DICOM frame, when converted from DICOM. */
   sliceFrames?: SliceFrames
+  /** OHIF hung a volume viewport: positions count along the volume, not the stack. */
+  volumeOrder?: boolean
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
   slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
@@ -82,6 +84,7 @@ export function updateNiivueViewport(
       | 'overlayLoading'
       | 'toolGroupId'
       | 'sliceFrames'
+      | 'volumeOrder'
     >
   >,
 ): void {

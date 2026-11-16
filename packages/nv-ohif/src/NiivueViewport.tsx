@@ -1,5 +1,6 @@
 import type {
   AnnotationChangedDetail,
+  NiiVueLocation,
   NiiVueOptions,
   SlideTileSource,
   VectorAnnotation,
@@ -26,9 +27,10 @@ import {
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
+  roundNumber,
   subscribeOhifLabelSync,
   trackNiivueWindowLevel,
-  unitForModality,
+  unitForDisplaySet,
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
@@ -53,6 +55,7 @@ import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
 import { ViewportNotification } from './viewportNotification'
 import {
+  CrosshairValueReadout,
   type StackPosition,
   StackPositionReadout,
   StudyLabel,
@@ -139,6 +142,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.
   const [stack, setStack] = useState<StackPosition | null>(null)
+  // Base intensity at the crosshair (cornerstone has no such readout; Probe pins one).
+  const [crosshairValue, setCrosshairValue] = useState<string | null>(null)
   // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
   const [isRender, setIsRender] = useState(false)
 
@@ -230,6 +235,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         viewportOptionsRef.current?.syncGroups,
       )
       updateNiivueViewport(viewportId, {
+        volumeOrder: viewportOptionsRef.current?.viewportType === 'volume',
         setStatus: (message, kind = 'note') =>
           setStatus(message === null ? { kind: 'idle' } : { kind, message }),
       })
@@ -269,7 +275,14 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.addEventListener('locationChange', showWindowLevel)
     // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
     const showStack = (e: Event) => {
-      const mm = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
+      const { mm, values } =
+        (e as CustomEvent<Partial<NiiVueLocation>>).detail ?? {}
+      const v = values?.[0]
+      setCrosshairValue(
+        v && Number.isFinite(v.value)
+          ? `${v.approximate ? '~' : ''}${roundNumber(v.value)}`
+          : null,
+      )
       const entry = getNiivueEntry(viewportId)
       if (entry && mm) entry.crosshairMM = mm
       const pos =
@@ -320,11 +333,13 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
       const stats = stored.stats
       if (!added || !stats) return
-      // A measured line reports its length; area tools report area.
+      // A measured line reports its length, a probe its value, area tools area.
       const message =
         stats.length !== undefined
           ? `Length: ${stats.length.toFixed(1)} mm`
-          : `Area: ${stats.area.toFixed(1)} mm²`
+          : stats.value !== undefined
+            ? `Value: ${roundNumber(stats.value)}`
+            : `Area: ${stats.area.toFixed(1)} mm²`
       flashNote(message)
     }
     const onAnnotationRemoved = (e: Event) => {
@@ -402,6 +417,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.clearAnnotations()
     setWindowLevel(null)
     setStack(null)
+    setCrosshairValue(null)
     // Keep the registry's view of the base display sets current, so overlay
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
@@ -783,7 +799,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       ) : null}
       <MeasurementData
         nv={ready ? nvRef.current : null}
-        unit={unitForModality(displaySets[0]?.Modality)}
+        viewportId={viewportId}
+        unit={unitForDisplaySet(displaySets[0])}
       />
       {/* Reconstructable volumes only, as cornerstone's evaluate.orientationMenu:
           a whole slide or a lone/orthogonal image has no other plane. */}
@@ -802,6 +819,13 @@ export function NiivueViewport(props: OhifViewportProps) {
           <StudyLabel ds={displaySets[0]} />
           {windowLevel ? <WindowLevelReadout {...windowLevel} /> : null}
           {stack ? <StackPositionReadout {...stack} /> : null}
+          {crosshairValue !== null ? (
+            <CrosshairValueReadout
+              value={crosshairValue}
+              unit={unitForDisplaySet(displaySets[0])}
+              aboveStack={!!stack}
+            />
+          ) : null}
         </>
       )}
       <ViewportNotification

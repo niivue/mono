@@ -28,11 +28,14 @@ function storedZip(files: Record<string, Uint8Array>): ArrayBuffer {
 const bytes = (a: Float32Array | Uint32Array) => new Uint8Array(a.buffer)
 
 describe('TRX reader', () => {
-  it('keeps names that collide with Object.prototype as own keys', async () => {
+  it.each([
+    { offsets: [0] },
+    { offsets: [0, 2] },
+  ])('reads %j and prototype-named scalars', async ({ offsets }) => {
     const tract = await read(
       storedZip({
         'positions.3.float32': bytes(new Float32Array([0, 0, 0, 1, 1, 1])),
-        'offsets.uint32': bytes(new Uint32Array([0])),
+        'offsets.uint32': bytes(new Uint32Array(offsets)),
         'groups/__proto__.uint32': bytes(new Uint32Array([0])),
         'dpg/__proto__/fa.float32': bytes(new Float32Array([0.5])),
         'dps/constructor.float32': bytes(new Float32Array([2])),
@@ -41,5 +44,7 @@ describe('TRX reader', () => {
     expect(Object.hasOwn(tract.groups, '__proto__')).toBe(true)
     expect(Array.from(tract.groups.__proto__ as Uint32Array)).toEqual([0])
     expect(Object.hasOwn(tract.dps, 'constructor')).toBe(true)
+    expect(Array.from(tract.offsets)).toEqual([0, 2])
+    expect(Array.from(tract.dps['dpg:fa'])).toEqual([0.5])
   })
 })

@@ -205,11 +205,15 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     throw new Error('Invalid TRX file: missing positions or offsets')
   }
 
-  // Build fence-post offsets: append final vertex count
-  const nStreamlines = rawOffsets.length
-  const offsets = new Uint32Array(nStreamlines + 1)
-  offsets.set(rawOffsets)
-  offsets[nStreamlines] = vertices.length / 3
+  // Older TRX files omit the terminal vertex count.
+  const nVertices = vertices.length / 3
+  let offsets = rawOffsets
+  if (rawOffsets[rawOffsets.length - 1] !== nVertices) {
+    offsets = new Uint32Array(rawOffsets.length + 1)
+    offsets.set(rawOffsets)
+    offsets[rawOffsets.length] = nVertices
+  }
+  const nStreamlines = offsets.length - 1
 
   // Expand dpg (data per group) into dps (data per streamline)
   if (groups.length > 0 && Object.keys(dpgMap).length > 0) {

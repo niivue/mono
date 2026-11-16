@@ -15,8 +15,14 @@ type DialogService = {
   hide: () => void
   __nvMirror?: Set<(s: DialogState | null) => void>
 }
+// OHIF's modal dialogs (uiDialogService), e.g. the arrow text input. Some
+// close through the provider itself, so only isEmpty is reliable.
+type ModalService = { isEmpty?: () => boolean }
 
-function mirror(service: DialogService): Set<(s: DialogState | null) => void> {
+function mirror(
+  service: DialogService,
+  modal: ModalService | undefined,
+): Set<(s: DialogState | null) => void> {
   if (service.__nvMirror) return service.__nvMirror
   const listeners = new Set<(s: DialogState | null) => void>()
   const show = service.show.bind(service)
@@ -24,10 +30,18 @@ function mirror(service: DialogService): Set<(s: DialogState | null) => void> {
   // Deliver after the gesture's click, in order: a prompt mounted before that
   // click (a measurement completes on pointerup, a multi-click one on its last
   // press) takes it as an outside click and dismisses itself.
+  // Also held while a modal is open (cornerstone asks an arrow's text before
+  // its measurement completes): clicking the modal would dismiss the prompt.
   let isPressed = false
   let pending: Array<() => void> = []
+  const isModalOpen = () => modal?.isEmpty?.() === false
   const flush = () => {
     isPressed = false
+    // Poll until the modal closes: its close may not pass through the service.
+    if (isModalOpen()) {
+      setTimeout(flush, 100)
+      return
+    }
     const run = pending
     pending = []
     for (const f of run) f()
@@ -41,8 +55,10 @@ function mirror(service: DialogService): Set<(s: DialogState | null) => void> {
     const deliver = () => {
       for (const l of listeners) l(s)
     }
-    if (isPressed) pending.push(deliver)
-    else setTimeout(deliver, 0)
+    if (isPressed || isModalOpen()) {
+      pending.push(deliver)
+      if (!isPressed) setTimeout(flush, 100)
+    } else setTimeout(deliver, 0)
   }
   service.show = (p) => {
     show(p)
@@ -66,14 +82,15 @@ export function ViewportNotification({
   const [state, setState] = useState<DialogState | null>(null)
   const services = ohifServices(servicesManager)
   const dialog = services?.uiViewportDialogService as DialogService | undefined
+  const modal = services?.uiDialogService as ModalService | undefined
   useEffect(() => {
     if (!dialog) return
-    const listeners = mirror(dialog)
+    const listeners = mirror(dialog, modal)
     listeners.add(setState)
     return () => {
       listeners.delete(setState)
     }
-  }, [dialog])
+  }, [dialog, modal])
   const Notification = (
     services?.customizationService as
       | { getCustomization?: (id: string) => unknown }

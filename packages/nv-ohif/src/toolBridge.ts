@@ -20,7 +20,14 @@ export interface AnnotationToolDescriptor {
   labelPrefix: string
   /** Panel row content: none (label only), length / bidirectional (mm), or
    * area + intensity. */
-  readout: 'none' | 'length' | 'bidirectional' | 'area' | 'value' | 'angle'
+  readout:
+    | 'none'
+    | 'length'
+    | 'bidirectional'
+    | 'area'
+    | 'areaOnly'
+    | 'value'
+    | 'angle'
   /** Points come from the single polygon ring, not shape endpoints. */
   contour?: true
 }
@@ -69,7 +76,7 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
     valueType: POLYLINE_VALUE_TYPE,
     minPoints: 2,
     labelPrefix: 'ROI',
-    readout: 'area',
+    readout: 'areaOnly',
     contour: true,
   },
   // Multi-click edge-snapping contour with area/mean stats.
@@ -78,7 +85,7 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
     valueType: POLYLINE_VALUE_TYPE,
     minPoints: 2,
     labelPrefix: 'ROI',
-    readout: 'area',
+    readout: 'areaOnly',
     contour: true,
   },
   // Two perpendicular measured axes (long + short diameters).

@@ -97,8 +97,14 @@ export function StackPositionReadout({
   total,
 }: StackPosition) {
   return (
-    <div style={corner({ right: 12, bottom: 8 })}>
-      {`I:${instanceNumber ?? index} (${index}/${total})`}
+    // OHIF's overlay markers (cornerstone's InstanceNumberOverlayItem).
+    <div
+      data-cy="viewport-overlay-bottom-right"
+      style={corner({ right: 12, bottom: 8 })}
+    >
+      <span title="Instance Number">
+        {`I:${instanceNumber ?? index} (${index}/${total})`}
+      </span>
     </div>
   )
 }

@@ -1502,10 +1502,9 @@ describe('reflectNiivueAnnotation', () => {
     const removedAnnotationIds: string[] = []
     const nv = {
       ...stubNiivue(),
-      removeAnnotation(id: string) {
-        removedAnnotationIds.push(id)
-        const i = nv.annotations.findIndex((a) => a.id === id)
-        if (i >= 0) nv.annotations.splice(i, 1)
+      removeAnnotations(ids: string[]) {
+        removedAnnotationIds.push(...ids)
+        nv.annotations = nv.annotations.filter((a) => !ids.includes(a.id))
       },
     }
     const callbacks = new Map<string, (payload: unknown) => void>()

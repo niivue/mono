@@ -1,5 +1,6 @@
-import type { NiiVue } from '@niivue/niivue'
+import type { NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { useEffect, useState } from 'react'
+import { toCanvas } from './annotationHit'
 import { probeIndex } from './commands'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
@@ -7,7 +8,22 @@ type Row = {
   id: string
   /** OHIF's tool name for this annotation (e.g. Length), as its panel row. */
   toolName?: string
+  /** The annotation's free text, as the row label. */
+  label?: string
+  /** A point on the annotation in canvas CSS px, for a test to click it. */
+  anchor?: { x: number; y: number }
   values: Record<string, number | string>
+}
+
+// A shape's start-end midpoint (on a line, inside an ROI), else its first vertex.
+function anchorOf(nv: NiiVue, a: VectorAnnotation) {
+  const s = a.shape
+  const p = s
+    ? { x: (s.start.x + s.end.x) / 2, y: (s.start.y + s.end.y) / 2 }
+    : a.polygons[0]?.outer[0]
+  const c = p && toCanvas(nv, a, p)
+  const dpr = nv.effectiveDevicePixelRatio
+  return c ? { x: c.x / dpr, y: c.y / dpr } : undefined
 }
 
 const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
@@ -25,7 +41,13 @@ const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
       values.radius = Math.abs(a.shape.end.x - a.shape.start.x) / 2
       values.radiusUnit = 'mm'
     }
-    return { id: a.id, toolName: ANNOTATION_TO_OHIF[type]?.toolName, values }
+    return {
+      id: a.id,
+      toolName: ANNOTATION_TO_OHIF[type]?.toolName,
+      label: a.text,
+      anchor: anchorOf(nv, a),
+      values,
+    }
   })
 
 /**
@@ -50,8 +72,17 @@ export function MeasurementData({
     update()
     const events = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
     for (const e of events) nv.addEventListener(e, update)
+    // Anchors are canvas px: a resized pane (a panel opening) moves them.
+    // NiiVue relays out on its next render, so read them two frames later.
+    const ro = nv.canvas
+      ? new ResizeObserver(() =>
+          requestAnimationFrame(() => requestAnimationFrame(update)),
+        )
+      : undefined
+    if (nv.canvas) ro?.observe(nv.canvas)
     return () => {
       for (const e of events) nv.removeEventListener(e, update)
+      ro?.disconnect()
     }
   }, [nv, unit, viewportId])
   return (
@@ -61,6 +92,9 @@ export function MeasurementData({
           key={r.id}
           data-annotation-id={r.id}
           data-tool-name={r.toolName}
+          data-label={r.label}
+          data-x={r.anchor?.x}
+          data-y={r.anchor?.y}
           {...Object.fromEntries(
             Object.entries(r.values).map(([k, v]) => [
               `data-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,

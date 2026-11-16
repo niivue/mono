@@ -13,6 +13,7 @@ import {
 } from '@niivue/nv-ext-tile/dicom'
 import { loadDefaultFont } from '@niivue/uikit'
 import { useEffect, useRef, useState } from 'react'
+import { useArrowText } from './arrowText'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
@@ -34,8 +35,14 @@ import {
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
-import { convertDisplaySetToNifti, loadConversion } from './dicomToNiivue'
+import { useAnnotationContextMenu } from './contextMenu'
+import {
+  convertDisplaySetToNifti,
+  type DicomConversion,
+  loadConversion,
+} from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import { useAnnotationHistory } from './history'
 import { MeasurementData } from './measurementData'
 import {
   authHeaders,
@@ -49,6 +56,7 @@ import {
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
+import { useOutputStack } from './outputStack'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
 import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
@@ -138,8 +146,27 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [isLoaded, setIsLoaded] = useState(false)
   // The series whose volume is shown: imports must not target an outgoing one.
   const [loadedSeries, setLoadedSeries] = useState<string>()
+  // The shown conversion, for stepping through a series' other outputs.
+  const [conversion, setConversion] = useState<DicomConversion | null>(null)
   useSegDrawing(nvRef, seg, isLoaded, servicesManager, (message) =>
     setStatus({ kind: 'note', message }),
+  )
+  // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
+  useArrowText(ready ? nvRef.current : null, viewportId, props.commandsManager)
+  // Orthogonal localizers: the wheel steps through the series' outputs (outputStack.ts).
+  useOutputStack(
+    ready ? nvRef.current : null,
+    viewportId,
+    displaySets[0],
+    conversion,
+  )
+  // NiiVue edits in OHIF's undo history (history.ts).
+  useAnnotationHistory(ready ? nvRef.current : null, props.extensionManager)
+  // Right-click on an annotation: OHIF's measurement menu (contextMenu.ts).
+  useAnnotationContextMenu(
+    ready ? nvRef.current : null,
+    viewportId,
+    props.commandsManager,
   )
   // Hydrated SR rows on this series become NiiVue measurements (srImport.ts).
   useOhifRowImport(
@@ -453,6 +480,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     setIsLoaded(false)
     setLoadedSeries(undefined)
+    setConversion(null)
     // If OHIF hung nothing, stay idle.
     const ds: OhifDisplaySet | undefined = displaySets[0]
     if (!ds) {
@@ -716,6 +744,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           () => cancelled,
         ).then((shown) => {
           if (!shown) return
+          setConversion(converted)
           // A single image (e.g. a localizer) shows in its own plane, as a
           // cornerstone stack does, unless the hanging protocol set one.
           if (

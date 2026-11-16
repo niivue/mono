@@ -46,8 +46,6 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'invertViewport',
   'jumpToImage',
   'setViewportColormap',
-  'undo',
-  'redo',
   'deleteActiveAnnotation',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
@@ -133,7 +131,11 @@ export function jumpToImage(
   // Unmapped frame slots are undefined too: an unknown SOP must not match them.
   if (!sop) return
   const k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
-  if (k < 0) return
+  // Another output of the series (a localizer of another orientation).
+  if (k < 0) {
+    entry.switchToInstance?.(sop)
+    return
+  }
   const [x = 0, y = 0, z = 0] = entry.crosshairMM
   entry.nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
 }
@@ -227,14 +229,14 @@ export function getStandardCommandDefinitions({
       ),
     },
     invertViewport: { commandFn: route('invertViewport', invertBase) },
-    // ctrl+z / ctrl+y / Delete on a NiiVue pane edit its annotations (cornerstone's
-    // history memo and selection do not see them).
-    undo: { commandFn: route('undo', ({ nv }) => nv.annotationUndo()) },
-    redo: { commandFn: route('redo', ({ nv }) => nv.annotationRedo()) },
+    // Delete on a NiiVue pane removes its selected annotation (undoably; undo
+    // and redo are OHIF's, through its history: history.ts).
     deleteActiveAnnotation: {
       commandFn: route('deleteActiveAnnotation', ({ nv }) => {
+        // A half-drawn contour goes first (Backspace mid-draw), as cornerstone.
+        if (nv.cancelAnnotationInProgress()) return
         const id = nv.selectedAnnotation
-        if (id) nv.removeAnnotation(id)
+        if (id) nv.removeAnnotation(id, true)
       }),
     },
     jumpToImage: {

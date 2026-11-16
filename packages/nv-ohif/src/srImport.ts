@@ -14,6 +14,7 @@ import {
   type VectorAnnotation,
 } from '@niivue/niivue'
 import { useEffect } from 'react'
+import { programmaticAnnotations } from './arrowText'
 import { rasToLps, reflectedRowUid } from './commands'
 import type { OhifServicesManager } from './ohif-types'
 import { acquisitionSliceType } from './standardCommands'
@@ -232,7 +233,13 @@ export function useOhifRowImport(
       if (!annotation) return
       // Replace the source row only once the NiiVue one exists: a failed
       // reflection keeps the original measurement.
-      nv.addAnnotation(annotation)
+      // Marked only for the synchronous add, so no id outlives it.
+      programmaticAnnotations.add(annotation.id)
+      try {
+        nv.addAnnotation(annotation)
+      } finally {
+        programmaticAnnotations.delete(annotation.id)
+      }
       if (reflectedRowUid(annotation.id)) ms.remove?.(row.uid)
       else nv.removeAnnotation(annotation.id)
     }

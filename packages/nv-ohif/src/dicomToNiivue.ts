@@ -75,6 +75,11 @@ export interface DicomConversion {
   sliceFrames?: SliceFrames
   /** dcm2niix's sidecar for `image` (a SEG's names its segments). */
   json?: Record<string, unknown>
+  /**
+   * The other single-slice outputs when `image` is one too (orthogonal
+   * localizers in one series): a cornerstone stack scrolls through them all.
+   */
+  alternates?: Array<{ image: File; sliceFrames?: SliceFrames }>
 }
 
 /**
@@ -124,26 +129,45 @@ async function convertUnshared(
       `dcm2niix produced no image (exit ${exitCode} ${exitName}): ${log.slice(-5).join(' | ')}`,
     )
   const notes: string[] = []
-  if (others.length > 0)
-    notes.push(
-      `Showing ${shown.stem}; also converted: ${others.map((s) => s.stem).join(', ')}.`,
-    )
   if (exitCode !== exitCodes.ok) {
     // The last line is often a summary; the cause is the last error/warning.
     const cause = log.findLast((l) => /error|warn/i.test(l)) ?? log.at(-1) ?? ''
     notes.push(`dcm2niix exit ${exitCode} (${exitName}): ${cause}`)
   }
+  const frameMap = async (o: (typeof outputs)[number]) =>
+    buildSliceFrames(
+      await o.image.slice(0, 348).arrayBuffer(),
+      ds.instances ?? [],
+      { echo: outputEcho(o), part: isPart(o) },
+    )
+  const sliceFrames = await frameMap(shown)
+  const alternates =
+    sliceFrames?.frames.length === 1
+      ? (
+          await Promise.all(
+            others.map(async (o) => ({
+              image: o.image,
+              sliceFrames: await frameMap(o),
+            })),
+          )
+        ).filter((o) => o.sliceFrames?.frames.length === 1)
+      : []
+  // Outputs the stack does not reach are named.
+  const unshown = others.filter(
+    (o) => !alternates.some((a) => a.image === o.image),
+  )
+  if (unshown.length > 0)
+    notes.unshift(
+      `Showing ${shown.stem}; also converted: ${unshown.map((s) => s.stem).join(', ')}.`,
+    )
   // PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
   const suv = petSuvFactor(ds)
   return {
     image: suv ? await scaleNifti(shown.image, suv) : shown.image,
     json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
-    sliceFrames: buildSliceFrames(
-      await shown.image.slice(0, 348).arrayBuffer(),
-      ds.instances ?? [],
-      { echo: outputEcho(shown), part: isPart(shown) },
-    ),
+    sliceFrames,
+    ...(alternates.length > 0 ? { alternates } : {}),
   }
 }
 

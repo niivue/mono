@@ -39,6 +39,13 @@ export interface NiivueViewportEntry {
   crosshairMM?: number[]
   /** Base volume slice -> DICOM frame, when converted from DICOM. */
   sliceFrames?: SliceFrames
+  /**
+   * Shows the output holding a SOP instance, then calls `then` (outputStack.ts);
+   * false if no output holds it.
+   */
+  switchToInstance?: (sop: string, then?: () => void) => boolean
+  /** Every output's slice -> frame map, for measurements on outputs not shown. */
+  outputFrames?: SliceFrames[]
   /** OHIF hung a volume viewport: positions count along the volume, not the stack. */
   volumeOrder?: boolean
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
@@ -85,6 +92,8 @@ export function updateNiivueViewport(
       | 'toolGroupId'
       | 'sliceFrames'
       | 'volumeOrder'
+      | 'switchToInstance'
+      | 'outputFrames'
     >
   >,
 ): void {

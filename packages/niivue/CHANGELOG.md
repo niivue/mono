@@ -1,3 +1,14 @@
+## 1.0.0-rc.209 (2026-11-16)
+
+### Fixes
+
+- **niivue:** a hidden or opacity-0 volume shows no colorbar ([acbc1897](https://github.com/niivue/mono/commit/acbc1897))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.208 (2026-11-16)
 
 ### Features

@@ -265,6 +265,8 @@ import {
   calculateWorldExtents,
   calMinMaxFrame,
   frameHistogram,
+  isSameGrid,
+  remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
   volumeTR,
@@ -679,6 +681,9 @@ export default class NiiVue extends EventTarget {
     min: [number, number, number]
     max: [number, number, number]
   } | null = null
+  // Bumped by every drawing install or close, so a loadDrawing still reading
+  // its file when another drawing call lands gives way to it.
+  _drawingGeneration = 0
   drawPenAutoClose = false
   drawPenFilled = false
   // Undo state (controller-owned — not persisted in documents)
@@ -2576,6 +2581,7 @@ export default class NiiVue extends EventTarget {
       )
       return
     }
+    this._drawingGeneration++
     this.model.drawingVolume = vol
     this.model.draw.isEnabled = true
     const cleared = clearAllUndoBitmaps(
@@ -7518,6 +7524,7 @@ export default class NiiVue extends EventTarget {
   }
 
   createEmptyDrawing(): void {
+    this._drawingGeneration++
     const volumes = this.model.getVolumes()
     if (volumes.length === 0) {
       log.warn('createEmptyDrawing: no background volume loaded')
@@ -7541,6 +7548,7 @@ export default class NiiVue extends EventTarget {
   }
 
   closeDrawing(): void {
+    this._drawingGeneration++
     this.model.drawingVolume = null
     this.model.draw.isEnabled = false
     this.drawUndoBitmaps = []
@@ -7676,6 +7684,17 @@ export default class NiiVue extends EventTarget {
     return this.saveVolume({ filename, isSaveDrawing: true })
   }
 
+  /**
+   * Open a uint8 label image as the drawing over the background (volume 0).
+   * A label image on another grid (dims, axis order, flips or origin) loads
+   * when every voxel centre lands on a background voxel centre, within
+   * 1e-3 voxel at every voxel; background voxels outside it are 0.
+   * Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
+   * A drawing whose header has no spatial transform (qform and sform codes 0)
+   * is placed by index, so it must match the background's dims.
+   * Resolves false on failure, or when a later `loadDrawing`,
+   * `createEmptyDrawing` or `closeDrawing` lands while this one is loading.
+   */
   async loadDrawing(
     source: string | File | ImageFromUrlOptions,
   ): Promise<boolean> {
@@ -7694,7 +7713,16 @@ export default class NiiVue extends EventTarget {
         typeof source === 'string' || source instanceof File
           ? source
           : source.url
+      const generation = ++this._drawingGeneration
       const nii = await NVVolume.loadVolume(url)
+      // A later drawing call, or a new background, supersedes this load.
+      if (
+        generation !== this._drawingGeneration ||
+        this.model.getVolumes()[0] !== back
+      ) {
+        log.debug('loadDrawing: superseded while loading')
+        return false
+      }
       // Validate datatype is uint8
       if (nii.hdr.datatypeCode !== 2) {
         log.warn(
@@ -7707,16 +7735,7 @@ export default class NiiVue extends EventTarget {
         img instanceof ArrayBuffer
           ? new Uint8Array(img)
           : new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
-      // The drawing's native grid must match the background's: an equal voxel
-      // count with transposed dims would load without error but misplaced.
       const nd = nii.hdr.dims
-      const bd = back.hdr.dims
-      if (!validateDrawingDimensions(nd, bd)) {
-        log.warn(
-          `loadDrawing: drawing dimensions (${nd[1]}x${nd[2]}x${nd[3]}) do not match background (${bd[1]}x${bd[2]}x${bd[3]})`,
-        )
-        return false
-      }
       const drawVoxels = nd[1] * nd[2] * nd[3]
       if (imgData.length < drawVoxels) {
         log.warn(
@@ -7724,8 +7743,35 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
+      // Today's exact index copy when the grids match: same dims and the same
+      // affine, or a drawing whose header has no spatial transform (qform and
+      // sform codes 0: raw label arrays, which have always been placed by
+      // index). Any other grid (e.g. a DICOM SEG in its frame order, or a
+      // flipped copy) loads only if voxel-aligned.
+      const hasTransform = nii.hdr.sform_code > 0 || nii.hdr.qform_code > 0
+      const sameDims = validateDrawingDimensions(nd, back.hdr.dims)
+      // A raw label array's affine is made up by the reader: never remap it.
+      if (!hasTransform && !sameDims) {
+        log.warn(
+          'loadDrawing: a drawing without a spatial transform must match the background dims',
+        )
+        return false
+      }
+      const isSame =
+        sameDims &&
+        (!hasTransform || isSameGrid(nii.hdr.affine, back.hdr.affine, nd))
+      const drawImg = isSame
+        ? reorientDrawingToRAS(back, imgData)
+        : remapDrawingToRAS(back, imgData, nd, nii.hdr.affine)
+      if (typeof drawImg === 'string') {
+        const bd = back.hdr.dims
+        log.warn(
+          `loadDrawing: drawing grid (${nd[1]}x${nd[2]}x${nd[3]}) is not voxel-aligned with the background (${bd[1]}x${bd[2]}x${bd[3]}): ${drawImg}`,
+        )
+        return false
+      }
       const dv = createDrawingVolume(back)
-      dv.img = reorientDrawingToRAS(back, imgData)
+      dv.img = drawImg
       this.model.drawingVolume = dv
       // Initialize undo
       const cleared = clearAllUndoBitmaps(
@@ -8494,6 +8540,7 @@ export default class NiiVue extends EventTarget {
         } else {
           dv.img = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         }
+        this._drawingGeneration++ // a loadDrawing still reading loses to this
         this.model.drawingVolume = dv
         this.model.draw.isEnabled = true
         this._drawLut = null

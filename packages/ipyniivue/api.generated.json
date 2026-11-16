@@ -25,6 +25,17 @@
       "doc": null
     },
     {
+      "jsName": "annotationAreaIsGeometric",
+      "pyName": "annotation_area_is_geometric",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isAreaGeometric}. Applies to ROIs measured from now on."
+    },
+    {
       "jsName": "annotationBrushRadius",
       "pyName": "annotation_brush_radius",
       "tsType": "number",
@@ -34,6 +45,28 @@
       "hasGetter": true,
       "hasSetter": true,
       "doc": null
+    },
+    {
+      "jsName": "annotationIsClickToPlace",
+      "pyName": "annotation_is_click_to_place",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isClickToPlace}."
+    },
+    {
+      "jsName": "annotationIsDrawnFromCenter",
+      "pyName": "annotation_is_drawn_from_center",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isDrawnFromCenter}."
     },
     {
       "jsName": "annotationIsEnabled",

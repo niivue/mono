@@ -381,12 +381,24 @@ export const SETTINGS: readonly Setting[] = [
   num('annotationBrushRadius', 'The radius of the freehand brush.', { min: 0 }),
   bool('annotationIsErasing', 'Whether the annotation brush erases.'),
   bool(
+    'annotationIsDrawnFromCenter',
+    'Whether a two-point shape grows from its first point as the centre.',
+  ),
+  bool(
     'annotationIsVisibleIn3D',
     'Whether annotations are drawn in the render.',
   ),
   bool(
+    'annotationAreaIsGeometric',
+    'Whether ROI area is the outline area rather than its voxel count.',
+  ),
+  bool(
     'annotationMergesOverlaps',
     'Whether a new annotation is merged with one it overlaps.',
+  ),
+  bool(
+    'annotationIsClickToPlace',
+    'Whether a click, a move and a second click place a two-point shape.',
   ),
   bool('isAnnotationDrawn', 'Whether annotations are drawn at all.'),
 

@@ -1,3 +1,35 @@
+## 1.0.0-rc.208 (2026-11-16)
+
+### Fixes
+
+- **niivue:** redraw when annotationIsDrawnFromCenter changes; expose it in nv-mcp ([#817](https://github.com/niivue/mono/issues/817))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.213
+- Updated uikit to 1.0.0-rc.211
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.207 (2026-11-16)
+
+### Fixes
+
+- **niivue:** click-to-place ends a shape on an oblique slice; turning it off drops the preview ([#815](https://github.com/niivue/mono/issues/815))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.212
+- Updated uikit to 1.0.0-rc.210
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.206 (2026-11-16)
 
 ### Fixes

@@ -7,6 +7,10 @@ import type {
 
 const ELLIPSE_SEGMENTS = 64
 
+export function isCircleTool(tool: AnnotationTool): boolean {
+  return tool === 'circle' || tool === 'measureCircle'
+}
+
 function generateEllipse(
   start: AnnotationPoint,
   end: AnnotationPoint,
@@ -115,6 +119,34 @@ export function constrainCircleEnd(
     x: start.x + Math.sign(dx || 1) * size,
     y: start.y + Math.sign(dy || 1) * size,
   }
+}
+
+/**
+ * The box corners a drag from `start` to `end` stores for a two-point shape.
+ * Circles are square boxes. With `fromCenter` (OHIF/cornerstone's gesture)
+ * `start` is the centre: an ellipse's `end` is a corner, a circle's a point on
+ * the rim. Shapes stay stored as corners, so selection, resize and erase are
+ * unchanged.
+ */
+export function dragCorners(
+  tool: AnnotationTool,
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+  fromCenter: boolean,
+): [AnnotationPoint, AnnotationPoint] {
+  const circle = isCircleTool(tool)
+  if (
+    !fromCenter ||
+    !(circle || tool === 'ellipse' || tool === 'measureEllipse')
+  )
+    return [start, circle ? constrainCircleEnd(start, end) : end]
+  const r = circle ? Math.hypot(end.x - start.x, end.y - start.y) : 0
+  const dx = circle ? r : Math.abs(end.x - start.x)
+  const dy = circle ? r : Math.abs(end.y - start.y)
+  return [
+    { x: start.x - dx, y: start.y - dy },
+    { x: start.x + dx, y: start.y + dy },
+  ]
 }
 
 function generateCircle(

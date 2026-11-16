@@ -1,3 +1,41 @@
+## 1.0.0-rc.241 (2026-11-16)
+
+### Features
+
+- **nv-ohif:** OHIF multi-viewport layouts with cornerstone's display defaults ([1e675651](https://github.com/niivue/mono/commit/1e675651))
+
+### Fixes
+
+- **nv-ohif:** removing a render preset restores gray under the DICOM window ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** apply a protocol window changed mid-load; restore the default on removal ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** apply a hanging protocol's new window in place, without a reload ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** re-apply a new hanging protocol's view, sync groups and window ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** key shared conversions on headers, release unsignalled holds ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** key shared conversions on every instance and frame count ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** sagittal 3D camera, linked window baseline, release base conversion ([#812](https://github.com/niivue/mono/issues/812))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.240 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.213
+- Updated nv-ext-tile to 1.0.0-rc.122
+- Updated uikit to 1.0.0-rc.211
+
+## 1.0.0-rc.239 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.212
+- Updated nv-ext-tile to 1.0.0-rc.121
+- Updated uikit to 1.0.0-rc.210
+
 ## 1.0.0-rc.238 (2026-11-16)
 
 ### Updated Dependencies

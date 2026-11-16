@@ -27,19 +27,22 @@ import {
 } from './selection'
 import {
   constrainCircleEnd,
+  dragCorners,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
   isAnnotationErased,
+  isCircleTool,
 } from './shapes'
 import { isOnSlice, mmToSlice2D } from './sliceProjection'
-import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
+import { computeAnnotationStats, isMeasureTool } from './stats'
 
 export {
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
   constrainCircleEnd,
+  dragCorners,
   extractLivewireSlice,
   generatePolygonFromPoints,
   generateShape,

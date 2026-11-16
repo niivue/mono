@@ -33,3 +33,33 @@ fn applyColorLut(c: vec3f) -> vec3f {
     : `
 fn applyColorLut(c: vec3f) -> vec3f { return c; }
 `
+
+// An RGB slide's channel windows on its bitmap tiles (NVSlide.rgbWindow), as
+// a scale and offset per component. A variant again, so the default draw is
+// unchanged; fused tiles were windowed on the fuse and draw with the identity.
+// It runs before applyColorLut: the windows are in stored (device) units, as
+// a fused tile's are before the table.
+
+/** GLSL `vec3 applyRgbWindow(vec3)`; with `on`, also `uniform vec4 rgbScale, rgbOffset`. */
+export const rgbWindowGlsl = (on: boolean): string =>
+  on
+    ? `
+uniform vec4 rgbScale;
+uniform vec4 rgbOffset;
+vec3 applyRgbWindow(vec3 c) { return clamp(c * rgbScale.rgb + rgbOffset.rgb, 0.0, 1.0); }
+`
+    : `
+vec3 applyRgbWindow(vec3 c) { return c; }
+`
+
+/** WGSL `applyRgbWindow(vec3f)`; with `on`, reads `u.rgbScale` and `u.rgbOffset`. */
+export const rgbWindowWgsl = (on: boolean): string =>
+  on
+    ? `
+fn applyRgbWindow(c: vec3f) -> vec3f {
+  return clamp(c * u.rgbScale.rgb + u.rgbOffset.rgb, vec3f(0.0), vec3f(1.0));
+}
+`
+    : `
+fn applyRgbWindow(c: vec3f) -> vec3f { return c; }
+`

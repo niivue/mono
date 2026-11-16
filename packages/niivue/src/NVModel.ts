@@ -36,6 +36,7 @@ import type { GraphData } from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import { resolveNegativeRange } from '@/view/NVUILayout'
+import { isVolumeDrawn } from '@/view/NVVolumeVisibility'
 import { loadVolumePrepared } from '@/volume/loadBridge'
 import { resolvePairedImage } from '@/volume/pairedImage'
 import {
@@ -795,7 +796,7 @@ export default class NVModel {
   collectColorbars(): ColorbarInfo[] {
     const bars: ColorbarInfo[] = []
     for (const v of this.volumes) {
-      if (v.isColorbarVisible === false) continue
+      if (v.isColorbarVisible === false || !isVolumeDrawn(v)) continue
       if (v.colormapLabel) continue // Label volumes don't show colorbars
       const ct = v.colormapType ?? COLORMAP_TYPE.MIN_TO_MAX
       const isZeroBased = ct !== COLORMAP_TYPE.MIN_TO_MAX

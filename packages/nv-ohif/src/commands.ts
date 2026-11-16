@@ -45,6 +45,40 @@ export const NIIVUE_SLICE_TYPES: Record<string, number> = {
   render: SLICE_TYPE.RENDER,
 }
 
+/**
+ * The slice type a hanging protocol asks of a viewport: a `volume3d` viewport
+ * renders, an orientation (axial/coronal/sagittal) picks that plane, and
+ * anything else (stack, 'acquisition', unset) keeps the multiplanar default.
+ */
+export function initialSliceType(viewportOptions?: {
+  orientation?: string
+  viewportType?: string
+}): number {
+  if (viewportOptions?.viewportType === 'volume3d') return SLICE_TYPE.RENDER
+  return (
+    NIIVUE_SLICE_TYPES[viewportOptions?.orientation ?? ''] ??
+    SLICE_TYPE.MULTIPLANAR
+  )
+}
+
+/**
+ * The render camera [azimuth, elevation] for a volume3d viewport's hanging-protocol
+ * orientation, matching cornerstone's camera (coronal from the front, sagittal
+ * from patient left, axial from below); undefined keeps NiiVue's default.
+ */
+export function initialRenderView(viewportOptions?: {
+  orientation?: string
+  viewportType?: string
+}): [number, number] | undefined {
+  if (viewportOptions?.viewportType !== 'volume3d') return undefined
+  return (
+    { coronal: [180, 0], sagittal: [90, 0], axial: [180, -90] } as Record<
+      string,
+      [number, number]
+    >
+  )[viewportOptions.orientation ?? '']
+}
+
 // Clip plane presets as NiiVue [depth, azimuth, elevation]. Depth 2 is out of
 // range, which disables the plane (NiiVue's own convention for "off").
 export const NIIVUE_CLIP_PLANES: Record<string, [number, number, number]> = {
@@ -1356,15 +1390,16 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * On a base-volume volumeUpdated, record the new window/level on the entry.
- * Returns it when it changed (for a viewport readout), else undefined. Windows
- * stay per viewport, as in OHIF: nothing is pushed to other viewports.
+ * On a base-window change (volumeUpdated, or locationChange after a linked
+ * pane's sync wrote calMin/calMax), record the new window/level on the entry.
+ * Returns it when it changed (for a viewport readout), else undefined.
  */
 export function trackNiivueWindowLevel(
   viewportId: string,
 ): { window: number; level: number } | undefined {
   const entry = getNiivueEntry(viewportId)
-  if (!entry) return undefined
+  // A loading base is not a change; seedWindowLevel sets the new baseline.
+  if (!entry || entry.baseLoading) return undefined
   const wl = readBaseWindowLevel(entry.nv)
   if (!wl) return undefined
   // First observation just seeds the baseline (no readout).
@@ -1373,6 +1408,24 @@ export function trackNiivueWindowLevel(
   const seeded = entry.windowLevel !== undefined
   entry.windowLevel = wl
   return seeded ? wl : undefined
+}
+
+/**
+ * Cornerstone's WindowLevel drag as NiiVue windowingStep: round(dynamic range /
+ * 1024) intensity units per pixel for width and center (4 for CT), dragging
+ * down raising the center. NiiVue's step is a fraction of the robust range.
+ */
+export function cornerstoneWindowingStep(vol: {
+  globalMin: number
+  globalMax: number
+  robustMin: number
+  robustMax: number
+}): [number, number] | undefined {
+  const ratio = (vol.globalMax - vol.globalMin) / 1024
+  const perPixel = ratio > 1 ? Math.round(ratio) : ratio
+  const robust = vol.robustMax - vol.robustMin
+  if (!(perPixel > 0) || !(robust > 0)) return undefined
+  return [perPixel / robust, -perPixel / robust]
 }
 
 /** A hanging protocol's initial window (`displaySetOptions[0].options.voi`). */
@@ -1384,8 +1437,42 @@ export function voiRange(
   const options = (d?.options ?? d) as
     | { voi?: { windowWidth?: unknown; windowCenter?: unknown } }
     | undefined
-  const width = Number(options?.voi?.windowWidth)
-  const center = Number(options?.voi?.windowCenter)
+  return windowRange(options?.voi?.windowWidth, options?.voi?.windowCenter)
+}
+
+/**
+ * The series' own DICOM window (first WindowWidth/WindowCenter), which
+ * cornerstone opens with when the hanging protocol sets none. Only a window
+ * shared by every instance counts: scanners that store a
+ * per-slice auto window (e.g. Siemens MR) would otherwise window the whole
+ * volume by one edge slice.
+ */
+export function dicomWindow(
+  ds: OhifDisplaySet | undefined,
+): { calMin: number; calMax: number } | undefined {
+  const instances = (ds?.instances ?? []) as Array<{
+    WindowWidth?: unknown
+    WindowCenter?: unknown
+  }>
+  const first = (v: unknown) => (Array.isArray(v) ? v[0] : v)
+  const key = (i: number) => {
+    const inst = instances[i]
+    return `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
+  }
+  // Every instance: a per-slice window can agree at any sampled few.
+  if (!instances.every((_, i) => key(i) === key(0))) return undefined
+  return windowRange(
+    first(instances[0]?.WindowWidth),
+    first(instances[0]?.WindowCenter),
+  )
+}
+
+function windowRange(
+  windowWidth: unknown,
+  windowCenter: unknown,
+): { calMin: number; calMax: number } | undefined {
+  const width = Number(windowWidth)
+  const center = Number(windowCenter)
   if (!(width > 0) || !Number.isFinite(center)) return undefined
   const [calMin, calMax] = windowToRange(width, center)
   return { calMin, calMax }
@@ -1698,6 +1785,9 @@ export function getNiivueCommandsModule({
           entry.overlayLoading = false
           refreshToolbar(servicesManager, viewportId)
         }
+        // The overlay volume is installed (or abandoned): release the shared
+        // conversion, which nothing can abort once overlayAbort is cleared.
+        abort.abort()
       }
     },
 

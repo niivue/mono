@@ -58,6 +58,7 @@ export interface OhifViewportProps {
     orientation?: string
     viewportType?: string
     toolGroupId?: string
+    syncGroups?: ReadonlyArray<{ type?: string; id?: string } | string>
   }
   // Per display set, hanging-protocol options (e.g. `options.voi`).
   displaySetOptions?: ReadonlyArray<Record<string, unknown>>

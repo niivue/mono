@@ -2291,6 +2291,16 @@ describe('trackNiivueWindowLevel', () => {
     expect(trackNiivueWindowLevel('vp-unknown')).toBeUndefined()
   })
 
+  it('ignores a loading base, so a series swap is not a change', () => {
+    const nv = stubNiivue()
+    nv.volumes.push({ calMin: 0, calMax: 100 })
+    register('vp-swap', nv)
+    trackNiivueWindowLevel('vp-swap')
+    updateNiivueViewport('vp-swap', { baseLoading: true })
+    nv.volumes[0] = { calMin: 200, calMax: 600 }
+    expect(trackNiivueWindowLevel('vp-swap')).toBeUndefined()
+  })
+
   it('keeps two viewports of one display set independent (no sibling copy)', () => {
     const a = stubNiivue()
     const b = stubNiivue()

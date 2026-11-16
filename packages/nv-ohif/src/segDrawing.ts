@@ -7,15 +7,17 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
-import { type PanelSegment, startSegPanel } from './segPanel'
+import { startRtDrawing } from './rtDrawing'
+import {
+  type PanelSegment,
+  SEG_FILL_OPACITY,
+  SEG_RIM_OPACITY,
+  startSegPanel,
+} from './segPanel'
 
 // A DICOM SEG hung in a NiiVue pane shows as a NiiVue drawing over the series
 // it references: the pane loads that series as its base, and dcm2niix turns the
 // SEG into a label volume (values = LabelValue) plus a sidecar naming each one.
-
-// As NiiVue's drawing demo: a translucent fill under an opaque rim.
-const SEG_FILL_OPACITY = 0.5
-const SEG_RIM_OPACITY = 1
 
 interface DisplaySetLookup {
   getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined
@@ -23,7 +25,7 @@ interface DisplaySetLookup {
 }
 
 /**
- * The display sets a pane shows, with the first SEG swapped for the series it
+ * The display sets a pane shows, with the first SEG or RTSTRUCT swapped for the series it
  * references (OHIF sets referencedDisplaySetInstanceUID once that series is
  * known; the series UID covers the gap). Without a reference the SEG stays, and
  * classifies as unsupported.
@@ -32,7 +34,9 @@ export function resolveSegDisplaySets(
   hung: ReadonlyArray<OhifDisplaySet>,
   lookup: DisplaySetLookup | undefined,
 ): { displaySets: ReadonlyArray<OhifDisplaySet>; seg?: OhifDisplaySet } {
-  const index = hung.findIndex((ds) => ds.Modality === 'SEG')
+  const index = hung.findIndex(
+    (ds) => ds.Modality === 'SEG' || ds.Modality === 'RTSTRUCT',
+  )
   const seg = hung[index]
   if (!seg) return { displaySets: hung }
   const uid = seg.referencedDisplaySetInstanceUID
@@ -169,7 +173,7 @@ export function startSegDrawing(
 }
 
 /**
- * Show `seg` as the drawing once the pane's base is loaded, listed in OHIF's
+ * Show `seg` (SEG or RTSTRUCT) as the drawing once the pane's base is loaded, listed in OHIF's
  * segmentation panel; drop both on change.
  */
 export function useSegDrawing(
@@ -188,8 +192,23 @@ export function useSegDrawing(
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !seg || !isLoaded) return
+    const headers = authHeaders(managers.servicesManager)
+    if (seg.Modality === 'RTSTRUCT')
+      return startRtDrawing(nv, seg, {
+        headers,
+        setNote,
+        onShown: (segments, stats) =>
+          startSegPanel(
+            nv,
+            managers.viewportId,
+            seg,
+            segments,
+            managers,
+            stats,
+          ),
+      })
     return startSegDrawing(nv, seg, {
-      headers: authHeaders(managers.servicesManager),
+      headers,
       setNote,
       onShown: (segments) =>
         startSegPanel(nv, managers.viewportId, seg, segments, managers),

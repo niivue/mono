@@ -64,6 +64,14 @@ describe('resolveSegDisplaySets', () => {
     })
   })
 
+  test('hungRtstruct_showsItsReferencedSeriesAsBase', () => {
+    const rt = { ...seg, Modality: 'RTSTRUCT' }
+    expect(resolveSegDisplaySets([rt], lookup)).toEqual({
+      displaySets: [mr],
+      seg: rt,
+    })
+  })
+
   test('segLayeredOnItsBase_baseOnce', () => {
     expect(resolveSegDisplaySets([mr, seg], lookup).displaySets).toEqual([mr])
   })

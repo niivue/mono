@@ -87,6 +87,12 @@ interface SegmentationServiceLike {
   setActiveSegment(id: string, index: number): void
 }
 
+// As NiiVue's drawing demo: a translucent fill under an opaque rim.
+export const SEG_FILL_OPACITY = 0.5
+export const SEG_RIM_OPACITY = 1
+
+export type SegmentStats = { count: number; centroid: [number, number, number] }
+
 export interface PanelSegment {
   value: number
   label: string
@@ -111,10 +117,7 @@ export function labelStats(bitmap: Uint8Array, dims: ArrayLike<number>) {
         sy[v] = (sy[v] as number) + y
         sz[v] = (sz[v] as number) + z
       }
-  const stats = new Map<
-    number,
-    { count: number; centroid: [number, number, number] }
-  >()
+  const stats = new Map<number, SegmentStats>()
   for (let v = 1; v < 256; v++) {
     const count = n[v] as number
     if (count)
@@ -223,6 +226,8 @@ export function startSegPanel(
     servicesManager?: OhifServicesManager
     extensionManager?: OhifExtensionManager
   },
+  /** Per-segment stats when the bitmap does not hold them (overlapping RT ROIs). */
+  knownStats?: Map<number, SegmentStats>,
 ): () => void {
   const cst = cornerstoneSegmentation(managers.extensionManager)
   const service = ohifServices(managers.servicesManager)?.segmentationService as
@@ -241,7 +246,7 @@ export function startSegPanel(
     !segmentationId
   )
     return () => {}
-  const stats = labelStats(bitmap, back.dimsRAS.slice(1, 4))
+  const stats = knownStats ?? labelStats(bitmap, back.dimsRAS.slice(1, 4))
   const [, px = 1, py = 1, pz = 1] = back.hdr?.pixDims ?? []
   // A second pane on the same SEG shares the segmentation, with its own colours.
   const lut: Color[] = [[0, 0, 0, 0]]
@@ -254,7 +259,7 @@ export function startSegPanel(
         representation: { type: LABELMAP, data: { imageIds: [] } },
         config: {
           label: seg.SeriesDescription,
-          fallbackLabel: `S:${seg.SeriesNumber ?? ''} SEG`,
+          fallbackLabel: `S:${seg.SeriesNumber ?? ''} ${seg.Modality ?? 'SEG'}`,
           segments: Object.fromEntries(
             segments.map((s) => {
               const count = stats.get(s.value)?.count ?? 0

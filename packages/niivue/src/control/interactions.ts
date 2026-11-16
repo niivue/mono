@@ -367,16 +367,6 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   )
   const bounds = pointsBounds(pts)
   newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
-  if (Annotation.isMeasureTool(cfg.tool)) {
-    const vol = ctrl.model.getVolumes()[0]
-    if (vol)
-      newAnn.stats =
-        Annotation.computeAnnotationStats(
-          newAnn,
-          vol,
-          ctrl.model.annotation.isAreaGeometric,
-        ) ?? undefined
-  }
   commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
   return true
 }
@@ -470,6 +460,22 @@ function commitAnnotation(
     ann,
     mergesOverlaps,
   )
+  // Measure after the store: a merge or a cut changes a measurement's polygons.
+  const vol = ctrl.model.getVolumes()[0]
+  if (vol) {
+    const unchanged = new Set(before)
+    for (const stored of ctrl.model.annotations) {
+      if (unchanged.has(stored) || !stored.shape) continue
+      if (!Annotation.isMeasureTool(stored.shape.type)) continue
+      stored.stats =
+        Annotation.computeAnnotationStats(
+          stored,
+          vol,
+          ctrl.model.annotation.isAreaGeometric,
+        ) ?? undefined
+      if (stored.id === ann.id) ann.stats = stored.stats
+    }
+  }
   ctrl.emit('annotationAdded', { annotation: ann })
   ctrl.emit('annotationChanged', {
     action: 'draw',
@@ -2045,16 +2051,6 @@ export function initInteraction(ctrl: NiiVue): void {
                   shapeData.width = cfg.style.strokeWidth
                 }
                 newAnn.shape = shapeData
-                if (Annotation.isMeasureTool(cfg.tool)) {
-                  const vol = ctrl.model.getVolumes()[0]
-                  if (vol)
-                    newAnn.stats =
-                      Annotation.computeAnnotationStats(
-                        newAnn,
-                        vol,
-                        ctrl.model.annotation.isAreaGeometric,
-                      ) ?? undefined
-                }
                 commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
               }
             }

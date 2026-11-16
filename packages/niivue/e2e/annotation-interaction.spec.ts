@@ -182,6 +182,28 @@ test('erasing a measured ROI in two re-measures both pieces and projects both (#
   expect(r.after).toBeGreaterThan(r.before * 0.6)
 })
 
+test('merging overlapping measured rectangles re-measures the merged ROI', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'measureRect'
+    // Two equal squares, offset by 2/5 of a side: the union is 41/25 of one.
+    drag([[100, 100], [150, 150], [200, 200]])
+    const one = nv.annotations[0].stats.area
+    // Started outside the first, so the press draws instead of selecting it.
+    drag([[240, 240], [190, 190], [140, 140]])
+    return { count: nv.annotations.length, one, merged: nv.annotations[0].stats.area }
+  })()`)
+
+  expect(r.count).toBe(1)
+  // Voxel counts: within a few percent of the exact 41/25.
+  expect(r.merged / r.one).toBeGreaterThan(1.55)
+  expect(r.merged / r.one).toBeLessThan(1.73)
+})
+
 test('an erase keeps annotations the brush did not reach (#486)', async ({
   page,
 }) => {

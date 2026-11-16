@@ -2808,7 +2808,7 @@
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": "Open a uint8 label image as the drawing over the background (volume 0).\nA label image on another grid (dims, axis order, flips or origin) loads\nwhen every voxel centre lands on a background voxel centre, within\n`DRAWING_GRID_TOLERANCE` (1e-3 voxel); background voxels outside it are 0.\nRotated, rescaled or sub-voxel-shifted grids are refused (no resampling).\nA drawing whose header has no spatial transform (qform and sform codes 0)\nis placed by index, so it must match the background's dims.\nResolves false on failure, or when a later `loadDrawing`,\n`createEmptyDrawing` or `closeDrawing` lands while this one is loading.",
+      "doc": "Open a uint8 label image as the drawing over the background (volume 0).\nA label image on another grid (dims, axis order, flips or origin) loads\nwhen every voxel centre lands on a background voxel centre, within\n1e-3 voxel at every voxel; background voxels outside it are 0.\nRotated, rescaled or sub-voxel-shifted grids are refused (no resampling).\nA drawing whose header has no spatial transform (qform and sform codes 0)\nis placed by index, so it must match the background's dims.\nResolves false on failure, or when a later `loadDrawing`,\n`createEmptyDrawing` or `closeDrawing` lands while this one is loading.",
       "returnsDoc": null
     },
     {

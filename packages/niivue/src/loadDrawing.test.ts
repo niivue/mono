@@ -10,9 +10,9 @@ const nii = (affine: number[], img: Uint8Array, name = 'd.nii') =>
   new File([createNiftiArray([3, 2, 2], [1, 1, 1], affine, 2, img)], name)
 const firstVoxel = () => Uint8Array.from({ length: 12 }, (_, i) => +(i === 0))
 
-async function viewer(): Promise<NiiVue> {
+async function viewer(affine = IDENTITY): Promise<NiiVue> {
   const nv = new NiiVue({ backend: 'webgl2' })
-  await nv.loadVolumes([{ url: nii(IDENTITY, new Uint8Array(12), 'b.nii') }])
+  await nv.loadVolumes([{ url: nii(affine, new Uint8Array(12), 'b.nii') }])
   return nv
 }
 
@@ -23,7 +23,11 @@ test('equalDimsFlippedAffine_remapsByPosition', async () => {
 })
 
 test('equalDimsNoSpatialTransform_keepsIndexCopy', async () => {
-  const nv = await viewer()
+  // Background 7 voxels off in y, so no affine the raw file might be given
+  // matches it: only the index-copy branch loads this.
+  const offset = [...IDENTITY]
+  offset[7] = 7
+  const nv = await viewer(offset)
   // A raw label array: qform and sform codes 0, so its affine is meaningless.
   const raw = new Uint8Array(
     createNiftiArray([3, 2, 2], [1, 1, 1], FLIP_X, 2, firstVoxel()),

@@ -207,6 +207,36 @@ export function resolveWindow(
   }
 }
 
+/** {@link rgbBitmapWindow} with every window the default. */
+export const RGB_WINDOW_IDENTITY = new Float32Array([1, 1, 1, 0, 0, 0, 0, 0])
+
+/**
+ * An RGB slide's red, green and blue windows as the shaders' per-component
+ * map of a bitmap tile's 0..1 colour, c * scale + offset: (scale rgb, 0,
+ * offset rgb, 0). Null when every window is the default. Bitmaps are 8-bit,
+ * so a default bound is 0 or 255.
+ */
+export function rgbBitmapWindow(
+  channels: readonly Readonly<NVChannel>[],
+): Float32Array | null {
+  if (
+    channels.every(
+      (ch) => !Number.isFinite(ch.calMin) && !Number.isFinite(ch.calMax),
+    )
+  )
+    return null
+  const w = new Float32Array(8)
+  for (let c = 0; c < 3; c++) {
+    const { calMin, calMax } = resolveWindow(
+      channels[c] as NVSlideWindow,
+      [0, 255],
+    )
+    w[c] = 255 / (calMax - calMin)
+    w[4 + c] = -calMin / (calMax - calMin)
+  }
+  return w
+}
+
 /** Non-highlighted IDs of a highlighted label channel: colour * 77 >> 8 (0.3x). */
 export const LABEL_DIM = 77
 

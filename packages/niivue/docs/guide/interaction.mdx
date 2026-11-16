@@ -24,8 +24,8 @@ sets the right button. Both take a `DRAG_MODE` value:
 | `contrast` | draws a box; on release the display range is set from the intensities inside it (secondary default) |
 | `windowing` | adjusts the window level and width live as you drag (gain and direction: `windowingStep`) |
 | `pan` | pans the 2D view |
-| `measurement` | draws a distance measurement |
-| `angle` | draws two lines and measures the angle between them |
+| `measurement` | drag to draw a distance measurement (a click draws none) |
+| `angle` | drag the first arm to the vertex, then click to place the second arm, which follows the pointer with a live reading; Escape cancels |
 | `roiSelection` | draws a selection box that stays on screen |
 | `slicer3D` | pans and zooms the slice |
 | `callbackOnly` | draws a box and only fires `dragRelease`, for your own handling |

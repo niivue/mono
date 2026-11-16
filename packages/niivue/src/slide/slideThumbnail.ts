@@ -12,7 +12,8 @@ import { fusePlan, fuseSamples, isFuseTile } from './slideFuse'
  * Composite `level` from its resident tile `entries` (one per `level.tiles`
  * slot) on the CPU, scaled to fit `maxPx` a side. Null without a 2D context.
  * `info` and `selected` (channelInfo, selectedLabel) colour label channels;
- * `lut` (displayColorLut) maps the result to sRGB as the renderers do.
+ * `lut` (displayColorLut) maps the result to sRGB as the renderers do;
+ * `rgbWindow` (NVSlide.rgbWindow) windows bitmap tiles before it, as they do.
  */
 export function composeThumbnail(
   level: NVSlideLevelManifest,
@@ -25,6 +26,7 @@ export function composeThumbnail(
   info?: readonly NVSlideChannelInfo[],
   selected?: { channel: number; id: number } | null,
   lut?: NVSlideColorLut | null,
+  rgbWindow?: Float32Array | null,
 ): ImageBitmap | null {
   // Placed (SRC-20): the placed extent, each piece's crop at its origin.
   const placement = level.placement
@@ -53,24 +55,36 @@ export function composeThumbnail(
     h: number,
     x: number,
     y: number,
+    windowRect: boolean,
   ) => {
     const x0 = Math.round(x * k)
     const y0 = Math.round(y * k)
-    ctx.drawImage(
-      src,
-      sx,
-      sy,
-      w,
-      h,
-      x0,
-      y0,
-      Math.round((x + w) * k) - x0,
-      Math.round((y + h) * k) - y0,
-    )
+    const dw = Math.round((x + w) * k) - x0
+    const dh = Math.round((y + h) * k) - y0
+    ctx.drawImage(src, sx, sy, w, h, x0, y0, dw, dh)
+    // As the GPU: window the filtered (scaled) bitmap, not its full-size pixels.
+    if (!windowRect || !windowLut || dw < 1 || dh < 1) return
+    const img = ctx.getImageData(x0, y0, dw, dh)
+    applyWindow(img.data, windowLut)
+    ctx.putImageData(img, x0, y0)
   }
+  // Per component, an 8-bit value through rgbWindow (c * scale + offset).
+  const windowLut = rgbWindow && new Uint8ClampedArray(3 * 256)
+  if (windowLut && rgbWindow)
+    for (let c = 0; c < 3; c++)
+      for (let v = 0; v < 256; v++)
+        windowLut[c * 256 + v] =
+          v * (rgbWindow[c] as number) + 255 * (rgbWindow[4 + c] as number)
+  // A fused tile is already windowed: beside one, bitmaps window per drawn
+  // rect; otherwise in one pass over the thumbnail. Both after scaling, as
+  // the GPU windows its filtered sample.
+  const windowTiles =
+    !!windowLut && entries.some((e, i) => level.tiles[i] && e && isFuseTile(e))
   let scratch: OffscreenCanvasRenderingContext2D | null = null
-  // Tile slot `i` as a drawable and its size, or null.
-  const source = (i: number): [CanvasImageSource, number, number] | null => {
+  // Tile slot `i` as a drawable, its size and whether to window it, or null.
+  const source = (
+    i: number,
+  ): [CanvasImageSource, number, number, boolean] | null => {
     const entry = entries[i]
     if (!level.tiles[i] || !entry) return null
     if (isFuseTile(entry)) {
@@ -81,29 +95,43 @@ export function composeThumbnail(
       scratch ??= new OffscreenCanvas(tw, th).getContext('2d')
       if (!scratch) return null
       scratch.putImageData(new ImageData(rgba, w, h), 0, 0)
-      return [scratch.canvas, w, h]
+      return [scratch.canvas, w, h, false]
     }
-    return entry.bitmap
-      ? [entry.bitmap, entry.bitmap.width, entry.bitmap.height]
-      : null
+    const bitmap = entry.bitmap
+    return bitmap ? [bitmap, bitmap.width, bitmap.height, windowTiles] : null
   }
   if (placement)
     // ponytail: a tile with two pieces is fused twice; seams inside a tile are rare.
     for (const p of placement.pieces) {
       const src = source(p.tile)
-      if (src) draw(src[0], p.sx, p.sy, p.sw, p.sh, p.dx, p.dy)
+      if (src) draw(src[0], p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, src[3])
     }
   else
     level.tiles.forEach((tile, i) => {
       const src = tile && source(i)
-      if (src) draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th)
+      if (src)
+        draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th, src[3])
     })
-  if (lut) {
+  const windowed = windowLut && !windowTiles
+  if (lut || windowed) {
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    applyColorLut(img.data, lut)
+    if (windowed) applyWindow(img.data, windowLut)
+    if (lut) applyColorLut(img.data, lut)
     ctx.putImageData(img, 0, 0)
   }
   return canvas.transferToImageBitmap()
+}
+
+/** `rgba` RGB through the per-component `windowLut` in place. Alpha kept. */
+function applyWindow(
+  rgba: Uint8ClampedArray,
+  windowLut: Uint8ClampedArray,
+): void {
+  for (let p = 0; p < rgba.length; p += 4) {
+    rgba[p] = windowLut[rgba[p] as number] as number
+    rgba[p + 1] = windowLut[256 + (rgba[p + 1] as number)] as number
+    rgba[p + 2] = windowLut[512 + (rgba[p + 2] as number)] as number
+  }
 }
 
 /**

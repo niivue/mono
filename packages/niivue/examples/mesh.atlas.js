@@ -1,6 +1,7 @@
 import NiiVue from '../src/index.ts'
 
 const colorBtn = document.getElementById('colorBtn')
+const cullCheck = document.getElementById('cullCheck')
 const gl1 = document.getElementById('gl1')
 const legendCheck = document.getElementById('legendCheck')
 const shaderSelect = document.getElementById('shaderSelect')
@@ -30,11 +31,17 @@ legendCheck.onchange = async function () {
   await nv1.setMesh(0, { isLegendVisible: this.checked })
 }
 
+// Unticked, hidden regions show the mesh colour instead of vanishing.
+cullCheck.onchange = async function () {
+  await nv1.setMeshLayerProperty(0, 0, { isHiddenLabelCulled: this.checked })
+}
+
 webgpuCheck.onchange = async function () {
   await nv1.reinitializeView({ backend: this.checked ? 'webgpu' : 'webgl2' })
 }
 
-// Click a legend colour box to hide/show that region; the name moves the crosshair.
+// Click a legend colour box to hide/show that region, double-click to show only
+// it; the name moves the crosshair.
 const nv1 = new NiiVue({
   backgroundColor: [0, 0, 0, 1],
   isLegendToggleEnabled: true,

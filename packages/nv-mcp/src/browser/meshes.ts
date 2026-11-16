@@ -61,6 +61,9 @@ function describeLayer(layer: ShownMeshLayer, index: number) {
     ...(layer.hiddenLabels?.length
       ? { hiddenLabels: [...layer.hiddenLabels] }
       : {}),
+    ...(layer.isHiddenLabelCulled === false
+      ? { isHiddenLabelCulled: false }
+      : {}),
   }
 }
 
@@ -498,6 +501,7 @@ export function meshHandlers(host: NiiVueHost): Handlers {
       const layer = (mesh.layers ?? [])[layerAt]
       const update = layerFields(params)
       put(update, 'hiddenLabels', numbers(params, 'hidden_labels'))
+      put(update, 'isHiddenLabelCulled', flag(params, 'cull_hidden_labels'))
       const frame = integer(params, 'frame')
       if (nothingIn(update) && frame === undefined) {
         throw new Error(

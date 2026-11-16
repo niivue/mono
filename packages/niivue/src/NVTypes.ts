@@ -188,7 +188,8 @@ export type NVImage = {
    * restores it. Symmetric with `NVMesh.visible`. */
   visible?: boolean
   modulateAlpha?: number
-  /** Whether to show colorbar for this volume (default: true) */
+  /** Whether to show colorbar for this volume (default: true); a hidden or
+   * opacity-0 volume shows none either way. */
   isColorbarVisible?: boolean
   /** Whether this volume's labels join the legend (default: true; `nv.isLegendVisible` hides the combined volume/mesh legend) */
   isLegendVisible?: boolean
@@ -486,6 +487,12 @@ export type NVMeshLayer = {
   colormapLabel: LUT | null
   /** Label values drawn transparent, as a volume's `hiddenLabels` */
   hiddenLabels?: number[]
+  /**
+   * Remove the triangles of `hiddenLabels`, as hidden voxels vanish; false
+   * shows the mesh colour beneath instead. A triangle takes the label most of
+   * its vertices share (its first vertex's when all differ). Default: true.
+   */
+  isHiddenLabelCulled?: boolean
   /** Outline width (0 = filled, >0 = outline only) */
   outlineWidth: number
   /** Source URL or filename */
@@ -1794,7 +1801,8 @@ export type ImageFromUrlOptions = {
   calMax?: number
   /** Alpha modulation amount */
   modulateAlpha?: number
-  /** Whether to show colorbar for this volume (default: true) */
+  /** Whether to show colorbar for this volume (default: true); a hidden or
+   * opacity-0 volume shows none either way. */
   isColorbarVisible?: boolean
   /** Whether this volume's labels join the legend (default: true) */
   isLegendVisible?: boolean
@@ -1843,6 +1851,8 @@ export type MeshLayerFromUrlOptions = {
   isAdditiveBlend?: boolean
   /** Outline width */
   outlineWidth?: number
+  /** Remove hidden labels' triangles (see {@link NVMeshLayer.isHiddenLabelCulled}). Default: true. */
+  isHiddenLabelCulled?: boolean
 }
 
 /**

@@ -91,6 +91,20 @@ function isOnSliceOf(
   return Math.abs(dt) <= 0.5 / dims[depthDim + 1]
 }
 
+/**
+ * Off any slice: drop the hover cursor and a parked click-to-place start's
+ * rubber band (the start keeps waiting for its second click). True if either
+ * was shown.
+ */
+function clearHover(ctrl: NiiVue): boolean {
+  const parkedPreview =
+    !!ctrl._annotationClickStart && !!ctrl.model._annotationPreview
+  if (!ctrl.model._annotationCursor && !parkedPreview) return false
+  ctrl.model._annotationCursor = null
+  if (parkedPreview) ctrl.model._annotationPreview = null
+  return true
+}
+
 // isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
 // screen space so thick slices or zoom don't change what counts as a click.
 const CLICK_PX = 3
@@ -2245,16 +2259,13 @@ export function initInteraction(ctrl: NiiVue): void {
                 parked.slicePosition,
                 parked.anchorMM,
               )
-            }
+            } else if (parked) ctrl.model._annotationPreview = null
             ctrl.drawScene()
             return
           }
         }
       }
-      if (ctrl.model._annotationCursor) {
-        ctrl.model._annotationCursor = null
-        ctrl.drawScene()
-      }
+      if (clearHover(ctrl)) ctrl.drawScene()
       return
     }
     if (!ctrl.isDragging) {
@@ -2909,13 +2920,8 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointerleave = () => {
     ctrl._pointerClient = null
-    // A parked start keeps waiting for its second click; only its rubber band goes.
-    const parkedPreview =
-      !!ctrl._annotationClickStart && !!ctrl.model._annotationPreview
-    if (ctrl.model._annotationCursor || parkedPreview) {
+    if (clearHover(ctrl)) {
       setNextActionTag('pointerleave')
-      ctrl.model._annotationCursor = null
-      if (parkedPreview) ctrl.model._annotationPreview = null
       ctrl.drawScene()
     }
     ctrl.emit(

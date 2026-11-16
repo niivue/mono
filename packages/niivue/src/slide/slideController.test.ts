@@ -29,6 +29,7 @@ function rig(
   let clamps = 0
   const slide = {
     viewport: { centerX: 0, centerY: 0, scale: options.scale ?? 0.1 },
+    manifest: { pixelSpacingMM: [0.001, 0.001] },
     screenToSlide: (x: number, y: number) => ({ x, y }),
     panByScreenDelta: (dx: number, dy: number) => pans.push([dx, dy]),
     zoomBy: (factor: number) => zooms.push(factor),
@@ -331,6 +332,69 @@ describe('NVSlideController', () => {
       { start: { x: 5, y: 5 }, end: { x: 40, y: 5 } },
     ])
     expect(r.ctl.activeMeasurement).toBeNull()
+  })
+
+  test('annotation tools: drag shapes, click points, polygon closes', () => {
+    const r = rig({ scale: 1 })
+    const added: string[] = []
+    r.ctl.annotations.addEventListener('added', (e) =>
+      added.push((e as CustomEvent).detail.tool),
+    )
+    r.ctl.annotationTool = 'rectangle'
+    r.fire('pointerdown', 10, 10)
+    r.fire('pointerup', 10, 10) // a click draws no box
+    r.fire('pointerdown', 10, 10)
+    r.fire('pointermove', 40, 30)
+    r.fire('pointerup', 40, 30)
+    r.ctl.annotationTool = 'point'
+    r.fire('pointerdown', 7, 8)
+    r.fire('pointerup', 7, 8)
+    r.ctl.annotationTool = 'freehandLine'
+    r.fire('pointerdown', 0, 0)
+    for (const x of [5, 6, 7, 20]) r.fire('pointermove', x, 0)
+    r.fire('pointerup', 20, 0)
+    // Polygon: clicks place vertices; a press near the first closes it.
+    r.ctl.annotationTool = 'polygon'
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [3, 3],
+    ] as const) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    // Double-click closes too; its first press placed the last vertex.
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [50, 50],
+    ] as const) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    r.fire('dblclick', 50, 50)
+    expect(r.zooms).toEqual([])
+    expect(added).toEqual([
+      'rectangle',
+      'point',
+      'freehandLine',
+      'polygon',
+      'polygon',
+    ])
+    const [box, point, free, poly, poly2] = r.ctl.annotations.list()
+    expect(box?.points).toEqual([
+      { x: 10, y: 10 },
+      { x: 40, y: 30 },
+    ])
+    expect(box?.stats.area).toBeCloseTo(600e-6)
+    expect(point?.points).toEqual([{ x: 7, y: 8 }])
+    // Samples 3 CSS px apart at least.
+    expect(free?.points.map((p) => p.x)).toEqual([0, 5, 20])
+    expect(poly?.points).toHaveLength(3)
+    expect(poly2?.points).toEqual(poly?.points)
+    expect(r.ctl.draft).toBeNull()
   })
 
   test('contrast selects a box and reports it on release', () => {

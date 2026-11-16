@@ -1,0 +1,206 @@
+import { generateShape } from '@/annotation/shapes'
+import type { NVSlidePoint } from './slideController'
+
+/**
+ * Slide annotation tools and the points each stores (slide base pixels):
+ * point [p]; line [start, end]; rectangle and ellipse [corner, opposite
+ * corner], axis aligned; circle [centre, rim point]; polygon, freehand
+ * (closed) and freehandLine (open) their vertices.
+ */
+export type SlideAnnotationTool =
+  | 'point'
+  | 'line'
+  | 'rectangle'
+  | 'ellipse'
+  | 'circle'
+  | 'polygon'
+  | 'freehand'
+  | 'freehandLine'
+
+/**
+ * Physical size in `unit` (mm, area mm^2) from the slide's pixel spacing, or
+ * base pixels without it. Open shapes have `length`, closed `area` and
+ * `perimeter`, a point none.
+ */
+export interface SlideAnnotationStats {
+  unit: 'mm' | 'px'
+  length?: number
+  area?: number
+  perimeter?: number
+}
+
+export interface SlideAnnotation {
+  id: string
+  tool: SlideAnnotationTool
+  points: NVSlidePoint[]
+  label: string
+  stats: SlideAnnotationStats
+}
+
+type Spacing = readonly [number, number] | undefined
+
+/** The fewest points each tool needs. */
+export const SLIDE_ANNOTATION_MIN_POINTS: Record<SlideAnnotationTool, number> =
+  {
+    point: 1,
+    line: 2,
+    rectangle: 2,
+    ellipse: 2,
+    circle: 2,
+    polygon: 3,
+    freehand: 3,
+    freehandLine: 2,
+  }
+
+export const isClosedSlideTool = (tool: SlideAnnotationTool): boolean =>
+  tool !== 'point' && tool !== 'line' && tool !== 'freehandLine'
+
+/**
+ * The outline drawn for an annotation, in slide pixels: an ellipse or circle
+ * as a 64-gon (its stats use the true curve), a rectangle as its 4 corners.
+ */
+export function slideAnnotationOutline(
+  tool: SlideAnnotationTool,
+  points: readonly NVSlidePoint[],
+): NVSlidePoint[] {
+  const [a, b] = points as [NVSlidePoint, NVSlidePoint]
+  if (tool === 'rectangle')
+    return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }]
+  if (tool === 'ellipse' || tool === 'circle') {
+    const r = Math.hypot(b.x - a.x, b.y - a.y)
+    const [s, e] =
+      tool === 'circle'
+        ? [
+            { x: a.x - r, y: a.y - r },
+            { x: a.x + r, y: a.y + r },
+          ]
+        : [a, b]
+    return generateShape('ellipse', s, e, 0)[0]?.outer ?? []
+  }
+  return [...points]
+}
+
+function pathLength(
+  points: readonly NVSlidePoint[],
+  closed: boolean,
+  sx: number,
+  sy: number,
+): number {
+  let sum = 0
+  const n = points.length
+  for (let i = closed ? 0 : 1; i < n; i++) {
+    const p = points[(i + n - 1) % n] as NVSlidePoint
+    const q = points[i] as NVSlidePoint
+    sum += Math.hypot((q.x - p.x) * sx, (q.y - p.y) * sy)
+  }
+  return sum
+}
+
+/** An annotation's {@link SlideAnnotationStats}, each axis scaled by its spacing. */
+export function slideAnnotationStats(
+  tool: SlideAnnotationTool,
+  points: readonly NVSlidePoint[],
+  spacingMM?: Spacing,
+): SlideAnnotationStats {
+  const [sx, sy] = spacingMM ?? [1, 1]
+  const unit = spacingMM ? 'mm' : 'px'
+  if (tool === 'point') return { unit }
+  if (!isClosedSlideTool(tool))
+    return { unit, length: pathLength(points, false, sx, sy) }
+  if (tool === 'ellipse' || tool === 'circle') {
+    const [a, b] = points as [NVSlidePoint, NVSlidePoint]
+    const r = Math.hypot(b.x - a.x, b.y - a.y)
+    const [rx, ry] =
+      tool === 'circle'
+        ? [r * sx, r * sy]
+        : [(Math.abs(b.x - a.x) / 2) * sx, (Math.abs(b.y - a.y) / 2) * sy]
+    // Ramanujan's second approximation: exact for a circle, ~1e-5 relative otherwise.
+    const h = ((rx - ry) / (rx + ry || 1)) ** 2
+    const perimeter =
+      Math.PI * (rx + ry) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)))
+    return { unit, area: Math.PI * rx * ry, perimeter }
+  }
+  const ring = slideAnnotationOutline(tool, points)
+  let twice = 0
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const p = ring[j] as NVSlidePoint
+    const q = ring[i] as NVSlidePoint
+    twice += p.x * q.y - q.x * p.y
+  }
+  return {
+    unit,
+    area: (Math.abs(twice) / 2) * sx * sy,
+    perimeter: pathLength(ring, true, sx, sy),
+  }
+}
+
+export type SlideAnnotationEvent = CustomEvent<SlideAnnotation>
+
+/**
+ * A slide's annotations, in base pixels so they hold at every level. Events
+ * `added`, `changed` (label) and `removed` carry the annotation as `detail`.
+ * Stats use the spacing in force when the annotation was added.
+ */
+export class NVSlideAnnotations extends EventTarget {
+  private readonly _items = new Map<string, SlideAnnotation>()
+  private readonly _spacing: () => Spacing
+  private _next = 1
+
+  /** `spacingMM`: the slide's pixel spacing (`manifest.pixelSpacingMM`), if any. */
+  constructor(spacingMM: () => Spacing) {
+    super()
+    this._spacing = spacingMM
+  }
+
+  list(): SlideAnnotation[] {
+    return [...this._items.values()]
+  }
+
+  get(id: string): SlideAnnotation | undefined {
+    return this._items.get(id)
+  }
+
+  /** Add an annotation (e.g. restored from a store); null with too few points. */
+  add(
+    tool: SlideAnnotationTool,
+    points: readonly NVSlidePoint[],
+    label = '',
+  ): SlideAnnotation | null {
+    if (points.length < SLIDE_ANNOTATION_MIN_POINTS[tool]) return null
+    const copy = points.map(({ x, y }) => ({ x, y }))
+    const annotation: SlideAnnotation = {
+      id: `slide-annotation-${this._next++}`,
+      tool,
+      points: copy,
+      label,
+      stats: slideAnnotationStats(tool, copy, this._spacing()),
+    }
+    this._items.set(annotation.id, annotation)
+    this._emit('added', annotation)
+    return annotation
+  }
+
+  remove(id: string): boolean {
+    const annotation = this._items.get(id)
+    if (!annotation) return false
+    this._items.delete(id)
+    this._emit('removed', annotation)
+    return true
+  }
+
+  setLabel(id: string, label: string): boolean {
+    const annotation = this._items.get(id)
+    if (!annotation) return false
+    annotation.label = label
+    this._emit('changed', annotation)
+    return true
+  }
+
+  clear(): void {
+    for (const id of [...this._items.keys()]) this.remove(id)
+  }
+
+  private _emit(type: string, detail: SlideAnnotation): void {
+    this.dispatchEvent(new CustomEvent(type, { detail }))
+  }
+}

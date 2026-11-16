@@ -879,6 +879,13 @@ async function main() {
   els.canvas.addEventListener('pointerdown', onDrawDown)
   els.canvas.addEventListener('pointermove', onDrawMove)
   els.backendSelect.value = view.backend
+  const annotateTool = el('annotateTool')
+  annotateTool.addEventListener('change', () => {
+    view.controller.annotationTool = annotateTool.value || null
+  })
+  view.controller.annotations.addEventListener('added', (e) =>
+    console.log('annotation', e.detail),
+  )
   const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
     requestRender()

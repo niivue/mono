@@ -1,3 +1,19 @@
+## 1.0.0-rc.213 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationIsDrawnFromCenter draws ellipses and circles from their centre ([ca3c6f2c](https://github.com/niivue/mono/commit/ca3c6f2c))
+
+### Fixes
+
+- **niivue:** redraw when annotationIsDrawnFromCenter changes; expose it in nv-mcp ([#817](https://github.com/niivue/mono/issues/817))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.212 (2026-11-16)
 
 ### Features

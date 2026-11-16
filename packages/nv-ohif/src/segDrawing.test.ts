@@ -119,6 +119,7 @@ describe('startSegDrawing', () => {
         return name
       },
       drawColormap: '',
+      drawingVolume: null,
       drawIsEnabled: true,
       drawOpacity: 1,
       drawRimOpacity: -1,
@@ -208,6 +209,26 @@ describe('startSegDrawing', () => {
     release()
     await settle()
     expect(nv.drawingVolume).toBeNull()
+  })
+
+  test('cleanupAfterAnotherDrawingReplacedTheSeg_keepsIt', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert: async () => ({
+        ...converted,
+        image: new File([labels()], 'seg.nii'),
+      }),
+      whenBase,
+    })
+    await settle()
+    expect(nv.drawingVolume).not.toBeNull()
+    await nv.loadDrawing(new File([labels()], 'mine.nii'))
+    const mine = nv.drawingVolume
+    stop()
+    expect(nv.drawingVolume).toBe(mine)
   })
 
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {

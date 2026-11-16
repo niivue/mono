@@ -198,6 +198,21 @@ function onSlice(sf: SliceFrames, p: Vec3): number | undefined {
     : undefined
 }
 
+/**
+ * The display set's instances the shown output holds, in display-set order: a
+ * series converted to several outputs shows only one of them.
+ */
+export function shownInstances<T extends { SOPInstanceUID?: string }>(
+  instances: ReadonlyArray<T>,
+  sf: SliceFrames,
+): T[] {
+  const sops = new Set(sf.frames.map((f) => f?.SOPInstanceUID))
+  return instances.filter(
+    (inst) =>
+      inst.SOPInstanceUID !== undefined && sops.has(inst.SOPInstanceUID),
+  )
+}
+
 /** `p` (LPS) moved along the slice normal onto slice k's plane. */
 export function onSlicePlane(sf: SliceFrames, p: Vec3, k: number): Vec3 {
   const n = sf.normal

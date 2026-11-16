@@ -14,7 +14,7 @@ import {
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { onSlicePlane } from './sliceFrames'
+import { onSlicePlane, shownInstances } from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -142,10 +142,13 @@ export function jumpToImage(
   let k: number
   if (entry.isVolumeViewport) k = i < 0 ? sf.frames.length + i : i
   else {
-    const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
-      SOPInstanceUID?: string
-      NumberOfFrames?: unknown
-    }>
+    const instances = shownInstances(
+      (entry.displaySets[0]?.instances ?? []) as Array<{
+        SOPInstanceUID?: string
+        NumberOfFrames?: unknown
+      }>,
+      sf,
+    )
     // A multi-frame instance is one stack whose images are its frames
     // (stackPosition counts them so).
     const nFrames = Number(instances[0]?.NumberOfFrames) || 1

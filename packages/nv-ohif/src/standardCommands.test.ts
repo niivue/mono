@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
-import { getNiivueCommandsModule, voiRange } from './commands'
+import { getNiivueCommandsModule, invertBase, voiRange } from './commands'
 import {
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { NIIVUE_STANDARD_COMMANDS } from './standardCommands'
+import { jumpToImage, NIIVUE_STANDARD_COMMANDS } from './standardCommands'
 
 function stubNiivue() {
   const volumeUpdates: Array<Record<string, unknown>> = []
@@ -359,4 +359,255 @@ describe('voiRange', () => {
       voiRange([{ options: { voi: { windowWidth: 0, windowCenter: 40 } } }]),
     ).toBeUndefined()
   })
+})
+
+it('invertViewport toggles the base volume', async () => {
+  const calls: unknown[] = []
+  const base = { isColormapInverted: false }
+  const nv = {
+    volumes: [base],
+    setVolume: async (_i: number, o: { isColormapInverted: boolean }) => {
+      calls.push(o)
+      base.isColormapInverted = o.isColormapInverted
+    },
+  }
+  const entry = { nv } as unknown as Parameters<typeof invertBase>[0]
+  invertBase(entry)
+  await Promise.resolve()
+  invertBase(entry)
+  await Promise.resolve()
+  expect(calls).toEqual([
+    { isColormapInverted: true },
+    { isColormapInverted: false },
+  ])
+})
+
+it('jumpToImage moves to the instance through the slice -> frame map', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 1],
+    // Display-set order runs head-first; the converted volume runs foot-first.
+    displaySets: [
+      {
+        instances: [
+          { SOPInstanceUID: 'top' },
+          { SOPInstanceUID: 'mid' },
+          { SOPInstanceUID: 'bot' },
+        ],
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [
+        { SOPInstanceUID: 'bot', frameNumber: 1 },
+        { SOPInstanceUID: 'mid', frameNumber: 1 },
+        { SOPInstanceUID: 'top', frameNumber: 1 },
+        undefined,
+      ],
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  // Out of range: no SOP, so it must not land on the unmapped slot.
+  jumpToImage(entry, 7)
+  // In-plane (x, y) kept; z on the chosen instance's slice.
+  expect(calls).toEqual([
+    [5, 6, 2],
+    [5, 6, 0],
+  ])
+})
+
+it('jumpToImage counts the frames of a single multi-frame instance', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 0],
+    displaySets: [{ instances: [{ SOPInstanceUID: 'mf', NumberOfFrames: 3 }] }],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [1, 2, 3].map((frameNumber) => ({
+        SOPInstanceUID: 'mf',
+        frameNumber,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 1)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 3)
+  expect(calls).toEqual([
+    [5, 6, 1],
+    [5, 6, 2],
+  ])
+})
+
+it('jumpToImage counts only the instances the shown output holds', () => {
+  // Coronal + sagittal localizers in one series; the pane shows only sag.
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 0],
+    displaySets: [
+      {
+        instances: ['cor', 'sag'].map((SOPInstanceUID) => ({ SOPInstanceUID })),
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [{ SOPInstanceUID: 'sag', frameNumber: 1 }],
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  expect(calls).toEqual([[5, 6, 0]])
+  // One image: index 1 is out of range.
+  jumpToImage(entry, 1)
+  expect(calls).toHaveLength(1)
+})
+
+it('jumpToImage counts the shown frames of a split multi-frame instance', () => {
+  // A 4-frame instance whose shown output holds frames 2 and 4.
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 1],
+    displaySets: [{ instances: [{ SOPInstanceUID: 'mf', NumberOfFrames: 4 }] }],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [2, 4].map((frameNumber) => ({
+        SOPInstanceUID: 'mf',
+        frameNumber,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 2)
+  expect(calls).toEqual([
+    [5, 6, 0],
+    [5, 6, 1],
+  ])
+})
+
+it('firstImage and lastImage jump to the ends of the shown stack', () => {
+  const calls: number[][] = []
+  const nv = Object.assign(stubNiivue(), {
+    setCrosshairPos: (p: number[]) => calls.push(p),
+  })
+  register('nv-1', nv)
+  updateNiivueViewport('nv-1', {
+    crosshairMM: [5, 6, 1],
+    displaySets: [
+      {
+        instances: ['a', 'b', 'c'].map((SOPInstanceUID) => ({
+          SOPInstanceUID,
+        })),
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: ['a', 'b', 'c'].map((SOPInstanceUID) => ({
+        SOPInstanceUID,
+        frameNumber: 1,
+      })),
+    },
+  } as unknown as Parameters<typeof updateNiivueViewport>[1])
+  const { run } = fakeHost('nv-1')
+  run('firstImage')
+  run('lastImage')
+  expect(calls).toEqual([
+    [5, 6, 0],
+    [5, 6, 2],
+  ])
+})
+
+it('jumpToImage on a volume viewport counts along the volume', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 1],
+    isVolumeViewport: true,
+    displaySets: [
+      {
+        instances: ['top', 'mid', 'bot'].map((SOPInstanceUID) => ({
+          SOPInstanceUID,
+        })),
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: ['bot', 'mid', 'top'].map((SOPInstanceUID) => ({
+        SOPInstanceUID,
+        frameNumber: 1,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 3)
+  expect(calls).toEqual([
+    [5, 6, 0],
+    [5, 6, 2],
+  ])
+})
+
+it('jumpToImage on a non-DICOM volume steps the voxel slices of the view axis', () => {
+  const calls: number[][] = []
+  const nv = {
+    setCrosshairPos: (p: number[]) => calls.push(p),
+    // 2 mm voxels from (10, 20, 30).
+    vox2mm: (v: number[]) => v.map((c, a) => 10 * (a + 1) + 2 * c),
+    sliceType: SLICE_TYPE.AXIAL as number,
+    volumes: [{ dimsRAS: [3, 3, 2, 4], permRAS: [3, 1, 2] }],
+  }
+  const entry = {
+    nv,
+    crosshairMM: [15, 22, 33],
+    displaySets: [],
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 4)
+  // Not a 2D view: the acquisition (permRAS 3) axis, here x.
+  nv.sliceType = SLICE_TYPE.MULTIPLANAR
+  jumpToImage(entry, 1)
+  expect(calls).toEqual([
+    [15, 22, 30],
+    [15, 22, 36],
+    [12, 22, 33],
+  ])
+})
+
+it.each([
+  true,
+  false,
+])('jumpToImage off the acquisition plane counts along the view axis (volume viewport %p)', (isVolumeViewport) => {
+  const calls: number[][] = []
+  const entry = {
+    nv: {
+      setCrosshairPos: (p: number[]) => calls.push(p),
+      vox2mm: (v: number[]) => v,
+      sliceType: SLICE_TYPE.SAGITTAL as number,
+      volumes: [{ dimsRAS: [3, 3, 3, 3], permRAS: [1, 2, 3] }],
+    },
+    crosshairMM: [2, 1, 1],
+    isVolumeViewport,
+    displaySets: [{ instances: [{ SOPInstanceUID: 'a' }] }],
+    // An axial slice map: it cannot step sagittal slices.
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [1, 2, 3].map((frameNumber) => ({
+        SOPInstanceUID: 'a',
+        frameNumber,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  expect(calls).toEqual([[0, 1, 1]])
 })

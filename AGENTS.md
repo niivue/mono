@@ -214,7 +214,7 @@ spell-checks `packages/niivue` and a failure blocks the PR. Run it locally with
 the same options CI uses (skip generated dirs that aren't in CI's checkout):
 
 ```bash
-codespell --skip './.git,*/dist,*/node_modules,*/coverage,bun.lock' \
+codespell --skip './.git,*/dist,*/dist-examples,*/node_modules,*/coverage,bun.lock' \
   --ignore-words-list aNormal,inout,aLo,hAx,LOD,mater,lod,nd \
   packages/niivue/src packages/niivue/examples packages/niivue/*.md \
   packages/niivue/notes

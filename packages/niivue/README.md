@@ -18,7 +18,7 @@ Documentation: https://niivue.github.io/mono/docs/guide/
 bun install          # Install dependencies
 bun run dev          # Hot-reload dev server
 bun run build        # Library build to ./dist (published npm package), incl. dist/standalone
-bun run deploy       # Production examples-site build to ./dist (GitHub Pages)
+bun run deploy       # Production examples-site build to ./dist-examples (GitHub Pages)
 bun run demo         # Build examples site and serve locally
 bun run lint         # Biome check
 bun run lint:fix     # Biome auto-fix

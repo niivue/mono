@@ -1063,7 +1063,10 @@ export function remapDrawingToRAS(
     let isRotated = false
     let isScaled = false
     for (let q = 0; q < 3; q++) {
-      const term = (m[s * 4 + q] - (q === p ? sign[s] : 0)) * (n[q] - 1)
+      // Scale over the longer grid: a one-voxel background axis has no
+      // extent, yet a scaled multi-slice source puts slices between centres.
+      const extent = q === p ? Math.max(n[q], srcDims[s + 1]) : n[q]
+      const term = (m[s * 4 + q] - (q === p ? sign[s] : 0)) * (extent - 1)
       up += Math.max(0, term)
       down += Math.min(0, term)
       const isOff = Math.abs(term) > DRAWING_GRID_TOLERANCE

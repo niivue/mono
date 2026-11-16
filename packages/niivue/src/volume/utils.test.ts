@@ -569,6 +569,28 @@ describe('remapDrawingToRAS', () => {
     expect(remapDrawingToRAS(back, src, [3, 3, 6, 3], at(1.5))).toBe('scale')
   })
 
+  test('scaledSlicesOnOneVoxelBackgroundAxis_refused', () => {
+    // 2x2x1 unit background, 2x2x2 drawing at 0.5 mm in z: its second slice
+    // lies between background centres and must not be dropped silently.
+    const back = makeOrientedVolume(
+      [2, 2, 1],
+      [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+      ],
+    )
+    const affine = [
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 0.5, 0],
+      [0, 0, 0, 1],
+    ]
+    const src = new Uint8Array(8).fill(1)
+    expect(remapDrawingToRAS(back, src, [3, 2, 2, 2], affine)).toBe('scale')
+  })
+
   test('oneSliceOfOtherThickness_placedByItsCentre', () => {
     const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
     const src = distinctBytes(3 * 6)

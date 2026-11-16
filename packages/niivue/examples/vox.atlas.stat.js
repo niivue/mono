@@ -6,9 +6,11 @@ const colorbarCheck = document.getElementById('colorbarCheck')
 const darkCheck = document.getElementById('darkCheck')
 const gl1 = document.getElementById('gl1')
 const legendCheck = document.getElementById('legendCheck')
+const legendToggleCheck = document.getElementById('legendToggleCheck')
 const nearestCheck = document.getElementById('nearestCheck')
 const opacitySlider = document.getElementById('opacitySlider')
 const opacitySlider2 = document.getElementById('opacitySlider2')
+const outlineSlider = document.getElementById('outlineSlider')
 const webgpuCheck = document.getElementById('webgpuCheck')
 
 // Label volumes default to nearest (NIFTI_INTENT_LABEL or a label colormap);
@@ -24,10 +26,19 @@ opacitySlider.oninput = function () {
     opacity: this.value * 0.01,
   })
 }
+// Opacity 0 also drops the stat colorbar (collectColorbars skips undrawn volumes).
 opacitySlider2.oninput = function () {
   nv1.setVolume(2, {
     opacity: this.value * 0.01,
   })
+}
+legendToggleCheck.onchange = function () {
+  nv1.isLegendToggleEnabled = this.checked
+}
+outlineSlider.oninput = function () {
+  // 0 fills each region; a positive value is the neighbour probe distance in
+  // the atlas' own voxels, so a wider setting draws a thicker border.
+  nv1.setAtlasOutline(parseInt(this.value, 10), 1)
 }
 legendCheck.onchange = async function () {
   await nv1.setVolume(1, { isLegendVisible: this.checked })
@@ -86,3 +97,4 @@ darkCheck.onclick()
 colorbarCheck.onclick() // the box starts checked; show the overlay's colorbar
 //nearestCheck.onclick()
 opacitySlider.oninput()
+opacitySlider2.oninput()

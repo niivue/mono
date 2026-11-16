@@ -178,6 +178,27 @@ describe('convertDisplaySetToNifti', () => {
     expect(calls).toHaveLength(2)
   })
 
+  it('does not share a fetch across request headers', async () => {
+    const auths: (string | null)[] = []
+    const stub = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      auths.push(new Headers(init?.headers).get('Authorization'))
+      return stub(url, init)
+    }) as unknown as typeof fetch
+    let finish = () => {}
+    result = new Promise((resolve) => {
+      finish = () => resolve({ series: [output('h', 3)] })
+    })
+    const pending = ['Bearer old', 'Bearer new'].map((auth) =>
+      convertDisplaySetToNifti(ds, { headers: { Authorization: auth } }),
+    )
+    await Bun.sleep(0)
+    finish()
+    await Promise.all(pending)
+    expect(auths).toContain('Bearer new')
+    expect(calls).toHaveLength(2)
+  })
+
   it('is null without instances or reconstructed files', async () => {
     expect(await convertDisplaySetToNifti({} as OhifDisplaySet)).toBeNull()
     stubFetch('other-sop')

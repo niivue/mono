@@ -88,7 +88,9 @@ export function convertDisplaySetToNifti(
   const refs = instanceRefs(ds)
   if (refs.length === 0) return Promise.resolve(null)
   // Every input (instance URL + frame count): a re-made display set reuses its UID.
-  const key = `${ds.displaySetInstanceUID ?? ''}|${refs.map((r) => `${r.url}#${r.frames}`).join('|')}`
+  // Headers too: a refreshed Authorization must not join a fetch with the old one.
+  const headers = JSON.stringify(Object.entries(options.headers ?? {}).sort())
+  const key = `${ds.displaySetInstanceUID ?? ''}|${headers}|${refs.map((r) => `${r.url}#${r.frames}`).join('|')}`
   return sharedTask(
     key,
     (signal, onProgress) =>

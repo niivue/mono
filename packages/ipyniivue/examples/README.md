@@ -9,19 +9,16 @@ The remaining notebooks are first-pass ports of selected
 | Notebook | Source demo | Notes |
 | --- | --- | --- |
 | `02_vox_basic.ipynb` | `vox.basic.html` | Volume, colormap, orientation, and slice controls |
-| `03_vox_atlas.ipynb` | `vox.atlas.html` | MNI template plus AAL atlas labels |
 | `04_mesh_basic.ipynb` | `mesh.basic.html` | Mesh and shader selection |
 | `05_mesh_layers.ipynb` | `mesh.layers.html` | Cortical mesh with curvature and statistical layers |
 | `06_tract_dsi.ipynb` | `tract.dsi.html` | TinyTrack tractography controls |
 | `07_connectome.ipynb` | `connectome.html` | Dense/sparse connectome controls |
 | `08_clip_planes.ipynb` | `vox.clip.html` | Clip-plane count, cutaway, and color controls |
-| `09_freesurfer_crosscut.ipynb` | `freesurfer.crosscut.html` | FreeSurfer volume plus crosscut mesh shader |
 | `10_vox_4d.ipynb` | `vox.4d.html` | 4D frame, graph, calibration, colorbar, and pixel-ratio controls |
 | `11_vox_stats.ipynb` | `vox.stats.html` | Asymmetric statistical thresholds and clip-plane controls |
 | `12_vox_modulate.ipynb` | `vox.modulate.html` | FA/V1 opacity, modulation, and V1 slice-shader controls |
 | `13_vox_paqd.ipynb` | `vox.paqd.html` | PAQD rendering presets with atlas and statistical overlays |
 | `14_tract_tsf.ipynb` | `tract.tsf.html` | TCK tract with TSF and TXT scalar overlays |
-| `15_tract_group.ipynb` | `tract.group.html` | Single tract-group selection for the Yeh 2022 TRX atlas |
 | `16_tract_groups.ipynb` | `tract.groups.html` | Multi-group tract selection with fixed palette colors |
 | `17_layout.ipynb` | `layout.html` | Multiplanar, mosaic, hero, margin, ruler, and radiological controls |
 | `18_mesh_atlas.ipynb` | `mesh.atlas.html` | Anatomical atlas mesh with shader, legend, and background controls |

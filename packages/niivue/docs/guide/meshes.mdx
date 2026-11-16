@@ -49,7 +49,7 @@ await nv.setMesh(0, { shaderType: 'toon', opacity: 0.5 })
 `nv.meshShaders` lists the built-in shaders: `phong`, `flat`, `matte`,
 `toon`, `outline`, `rim`, `silhouette`, `crevice` and `crosscut`. The
 `crosscut` shader suits slice tiles: it draws the ribbon where the surface
-crosses the slice. See [FreeSurfer crosscut](/gallery/freesurfer-crosscut/).
+crosses the slice. See [FreeSurfer crosscut](/gallery/freesurfer-crosscut-oblique/).
 
 Custom mesh shaders from NiiVue 0.x (`setCustomMeshShader` and friends) are
 not ported yet, and matcap textures (`loadMatcap`) shade volumes, not meshes.
@@ -98,11 +98,11 @@ mesh. See [FreeSurfer clip](/gallery/freesurfer-clip/).
 
 ## Examples
 
-- [Mesh basics](/gallery/mesh-basic/) and [Minimal mesh](/gallery/mesh-min/)
+- [Mesh basics](/gallery/mesh-basic/)
 - [Mesh layers](/gallery/mesh-layers/), with positive and negative thresholds
 - [Mesh atlas](/gallery/mesh-atlas/), a labeled surface with a legend
 - [FreeSurfer clip](/gallery/freesurfer-clip/) and
-  [FreeSurfer crosscut](/gallery/freesurfer-crosscut/)
+  [FreeSurfer crosscut](/gallery/freesurfer-crosscut-oblique/)
 
 Tractography and connectomes load through the same `loadMeshes` call; see
 [Tractography and connectomes](/guide/tracts/).

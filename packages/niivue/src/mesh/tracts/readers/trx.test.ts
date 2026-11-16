@@ -47,4 +47,14 @@ describe('TRX reader', () => {
     expect(Array.from(tract.offsets)).toEqual([0, 2])
     expect(Array.from(tract.dps['dpg:fa'])).toEqual([0.5])
   })
+  it('keeps an empty last streamline in legacy offsets', async () => {
+    const tract = await read(
+      storedZip({
+        'header.json': new TextEncoder().encode('{"NB_STREAMLINES":2}'),
+        'positions.3.float32': bytes(new Float32Array([0, 0, 0, 1, 1, 1])),
+        'offsets.uint32': bytes(new Uint32Array([0, 2])),
+      }),
+    )
+    expect(Array.from(tract.offsets)).toEqual([0, 2, 2])
+  })
 })

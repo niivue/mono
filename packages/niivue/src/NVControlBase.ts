@@ -2784,6 +2784,11 @@ export default class NiiVue extends EventTarget {
   }
   set annotationIsErasing(v: boolean) {
     this.model.annotation.isErasing = v
+    // A parked click-to-place start would otherwise resume on the next shape press.
+    if (v && this._annotationClickStart) {
+      this._abandonAnnotationInProgress()
+      this.drawScene()
+    }
     this.emit('change', { property: 'annotationIsErasing', value: v })
   }
 

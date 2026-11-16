@@ -1,3 +1,39 @@
+## 1.0.0-rc.213 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationIsDrawnFromCenter draws ellipses and circles from their centre ([ca3c6f2c](https://github.com/niivue/mono/commit/ca3c6f2c))
+
+### Fixes
+
+- **niivue:** redraw when annotationIsDrawnFromCenter changes; expose it in nv-mcp ([#817](https://github.com/niivue/mono/issues/817))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.212 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationIsClickToPlace places two-point shapes click-move-click ([7adbd918](https://github.com/niivue/mono/commit/7adbd918))
+
+### Fixes
+
+- **niivue:** a parked click-to-place rubber band clears off its slice ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** pointer leave drops a parked click-to-place rubber band ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** entering eraser mode drops a parked click-to-place start ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** a parked click start beats a selected control point ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** click-to-place ends a shape on an oblique slice; turning it off drops the preview ([#815](https://github.com/niivue/mono/issues/815))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.211 (2026-11-16)
 
 ### Features

@@ -138,12 +138,15 @@ export function computeAnnotationStats(
 
   if (!volume.matRAS) return null
 
-  // The slice's voxel plane: the one the outline's first vertex lies in.
+  // The slice's voxel plane: the one holding the anchor the renderer places
+  // the ROI by (a tilted plane's depth varies across the outline).
   const vox2mm = mat4.transpose(mat4.create(), volume.matRAS)
   const mm2vox = mat4.invert(mat4.create(), vox2mm)
   if (!mm2vox) return null
   const tmpVec = vec4.create()
-  const mm0 = slice2DToMM(firstPt, annotation.slicePosition, sliceType)
+  const mm0 =
+    annotation.anchorMM ??
+    slice2DToMM(firstPt, annotation.slicePosition, sliceType)
   vec4.transformMat4(
     tmpVec,
     vec4.set(tmpVec, mm0[0], mm0[1], mm0[2], 1),
@@ -273,12 +276,13 @@ export function computeAnnotationStats(
     }
   }
 
-  if (count === 0) return null
-
   const area = isAreaGeometric
     ? projectedArea(annotation) *
       tiltAreaScale(volume.matRAS, ax0, ax1, depthDim)
     : count * pixDim0 * pixDim1
+  if (count === 0)
+    // A sub-voxel outline still has a geometric area; no voxels, no intensities.
+    return isAreaGeometric ? { area, min: 0, mean: 0, max: 0, stdDev: 0 } : null
   const mean = sum / count
   const variance = sumSq / count - mean * mean
   const stdDev = Math.sqrt(Math.max(0, variance))

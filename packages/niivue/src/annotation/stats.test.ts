@@ -272,3 +272,48 @@ test('on a tilted volume an intact ellipse and the same freehand outline select 
   expect(e - f).toBeGreaterThanOrEqual(0)
   expect(e - f).toBeLessThanOrEqual(4)
 })
+
+test('a tilted ROI samples the voxel plane of its anchor, not of its first vertex', () => {
+  const M = 40
+  const c = Math.cos(Math.PI / 6)
+  const s = Math.sin(Math.PI / 6)
+  const img = new Float32Array(M * M * M)
+  for (let i = 0; i < img.length; i++) img[i] = Math.floor(i / (M * M)) // = k
+  const tilted = {
+    ...volume,
+    img,
+    dimsRAS: [3, M, M, M],
+    matRAS: new Float32Array([1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1]),
+    img2RASstep: [1, M, M * M],
+    nVox3D: M * M * M,
+  } as unknown as NVImage
+  // Drawn on voxel plane k = 10 through voxel (20, 20, 10); a reversed drag
+  // puts the first vertex far from the anchor along the tilt.
+  const anchorMM: [number, number, number] = [
+    20,
+    20 * c - 10 * s,
+    20 * s + 10 * c,
+  ]
+  const start = { x: 28, y: anchorMM[1] + 8 }
+  const end = { x: 12, y: anchorMM[1] - 8 }
+  const ann: VectorAnnotation = {
+    ...annotation(generateShape('measureRect', start, end, 1)),
+    slicePosition: anchorMM[2],
+    anchorMM,
+    shape: { type: 'measureRect', start, end },
+  }
+  expect(computeAnnotationStats(ann, tilted)?.mean).toBe(10)
+})
+
+test('isAreaGeometric: a sub-voxel ROI reports its area with no voxel stats', () => {
+  const start = { x: 0.2, y: 0.2 } // between voxel centres
+  const end = { x: 0.8, y: 0.8 }
+  const ann: VectorAnnotation = {
+    ...annotation(generateShape('measureRect', start, end, 1)),
+    shape: { type: 'measureRect', start, end },
+  }
+  expect(computeAnnotationStats(ann, volume)).toBeNull()
+  const stats = computeAnnotationStats(ann, volume, true)
+  expect(stats?.area).toBeCloseTo(0.36, 10)
+  expect(stats?.mean).toBe(0)
+})

@@ -2054,6 +2054,9 @@ describe('niivueResetView', () => {
     updateNiivueViewport('vp-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView() {
           resets++
         },
@@ -2081,6 +2084,9 @@ describe('niivueSetWindowLevel on a slide', () => {
     updateNiivueViewport('vp-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView() {},
         zoom() {},
         fit() {},

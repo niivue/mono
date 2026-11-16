@@ -58,6 +58,7 @@ import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
 import { useOutputStack } from './outputStack'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
+import { bindSlideMeasurements } from './slideMeasurements'
 import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
@@ -591,6 +592,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (!container) return
       let slideCanvas: HTMLCanvasElement | null = null
       let view: WsiSlideView | null = null
+      let unbindMeasurements: (() => void) | undefined
       let limitTimeout: number | undefined
       let limitNote: Status | null = null
       const cannotShow = (err: unknown) =>
@@ -633,7 +635,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
           container.appendChild(canvas)
           try {
-            // The ruler draws its length label on the slide itself, so the
+            // Annotations draw their size labels on the slide itself, so the
             // status overlay does not repeat the reading.
             const mounted = await mountWsiSlideView(canvas, slide, {
               // A brief note, cleared early when the requested level fits again.
@@ -661,6 +663,11 @@ export function NiivueViewport(props: OhifViewportProps) {
             view = mounted
             slideViewRef.current = view
             view.setTool(activeOhifToolRef.current)
+            unbindMeasurements = bindSlideMeasurements(
+              view,
+              servicesManager,
+              ds,
+            )
             updateNiivueViewport(viewportId, { slideView: view })
             refreshToolbar(servicesManager, viewportId)
             setIsLoaded(true)
@@ -687,6 +694,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         window.clearTimeout(limitTimeout)
         updateNiivueViewport(viewportId, { slideView: undefined })
         slideViewRef.current = null
+        unbindMeasurements?.()
         view?.dispose()
         if (slideCanvas) {
           slideCanvas.width = 0
@@ -839,6 +847,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       ) : null}
       <MeasurementData
         nv={ready ? nvRef.current : null}
+        slide={isLoaded ? slideViewRef.current?.annotations : undefined}
         viewportId={viewportId}
         unit={unitForDisplaySet(displaySets[0])}
       />

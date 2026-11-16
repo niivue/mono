@@ -188,6 +188,9 @@ describe('standard commands', () => {
     updateNiivueViewport('nv-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView() {},
         zoom: (f) => seen.push(f),
         fit: () => seen.push('fit'),
@@ -318,6 +321,9 @@ describe('rotate and flip commands', () => {
     updateNiivueViewport('nv-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView: () => resets++,
         zoom() {},
         fit() {},

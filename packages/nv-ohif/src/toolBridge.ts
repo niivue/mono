@@ -1,4 +1,8 @@
-import { type AnnotationTool, DRAG_MODE } from '@niivue/niivue'
+import {
+  type AnnotationTool,
+  DRAG_MODE,
+  type SlideAnnotationTool,
+} from '@niivue/niivue'
 
 // OHIF value types (literals, so we do not depend on measurementService.VALUE_TYPES
 // being present at runtime).
@@ -142,6 +146,18 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
     labelPrefix: 'Arrow',
     readout: 'none',
   },
+}
+
+/** OHIF measurement tool -> the slide annotation tool it draws with. */
+export const OHIF_TO_SLIDE_TOOL: Record<string, SlideAnnotationTool> = {
+  Length: 'line',
+  Probe: 'point',
+  RectangleROI: 'rectangle',
+  EllipticalROI: 'ellipse',
+  CircleROI: 'circle',
+  PlanarFreehandROI: 'freehand',
+  SplineROI: 'polygon',
+  LivewireContour: 'polygon',
 }
 
 const OHIF_TO_ANNOTATION = new Map(

@@ -37,6 +37,7 @@ import {
   framePixelIndex,
   type SliceFrames,
 } from './sliceFrames'
+import { SLIDE_UID_PREFIX } from './slideMeasurements'
 import { mirrorNiivueMeasurements } from './srBridge'
 import { getStandardCommandDefinitions } from './standardCommands'
 import { petSuvFactor } from './suv'
@@ -434,7 +435,7 @@ export function applyDefaultAnnotationText(
 interface MeasurementSourceLike {
   uid?: string
 }
-interface MeasurementServiceLike {
+export interface MeasurementServiceLike {
   createSource: (name: string, version: string) => MeasurementSourceLike
   addMapping: (
     source: MeasurementSourceLike,
@@ -471,7 +472,7 @@ interface MeasurementServiceLike {
 // tool (Length + the ROI/arrow shapes) is an annotation in ANNOTATION_TO_OHIF.
 // createSource is idempotent, but addMapping stacks, so register the set once.
 const measurementSources = new WeakMap<object, MeasurementSourceLike>()
-function niivueMeasurementSource(
+export function niivueMeasurementSource(
   measurementService: MeasurementServiceLike,
 ): MeasurementSourceLike {
   const cached = measurementSources.get(measurementService as object)
@@ -2157,14 +2158,19 @@ export function getNiivueCommandsModule({
     /**
      * Cornerstone's global JUMP_TO_MEASUREMENT handler runs this command without
      * a context, so the newest context answers: NIIVUE, when nv-ohif registers
-     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync;
-     * Cornerstone would otherwise re-hang the viewport. Others go to Cornerstone.
+     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync (a
+     * slide row by slideMeasurements); Cornerstone would otherwise re-hang the
+     * viewport. Others go to Cornerstone.
      */
     jumpToMeasurementViewport: (options: {
       measurement?: { uid?: string }
     }) => {
       const uid = options.measurement?.uid
-      if (uid && measurementToAnnotation.has(uid)) return
+      if (
+        uid &&
+        (measurementToAnnotation.has(uid) || uid.startsWith(SLIDE_UID_PREFIX))
+      )
+        return
       ohifCommandsManager(commandsManager)?.runCommand?.(
         'jumpToMeasurementViewport',
         options,

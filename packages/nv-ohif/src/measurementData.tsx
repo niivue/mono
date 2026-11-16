@@ -1,7 +1,12 @@
-import type { NiiVue, VectorAnnotation } from '@niivue/niivue'
+import type {
+  NiiVue,
+  NVSlideAnnotations,
+  VectorAnnotation,
+} from '@niivue/niivue'
 import { useEffect, useState } from 'react'
 import { toCanvas } from './annotationHit'
 import { probeIndex } from './commands'
+import { slideRowTool, slideRowValues } from './slideMeasurements'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
 type Row = {
@@ -50,22 +55,44 @@ const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
     }
   })
 
+// Slide annotations: values in µm (px without pixel spacing), no anchor.
+const slideSnapshot = (slide: NVSlideAnnotations): Row[] =>
+  slide.list().map((a) => ({
+    id: a.id,
+    toolName: slideRowTool(a),
+    label: a.label,
+    values: slideRowValues(a).data,
+  }))
+
 /**
  * Each annotation's measured values as hidden DOM (`data-*` in kebab case, mm
  * and `modalityUnit` intensities), so tests can compare them with
  * cornerstone's: NiiVue draws its labels on the canvas, where nothing can
- * read them.
+ * read them. A slide pane lists its `slide` annotations.
  */
 export function MeasurementData({
   nv,
+  slide,
   viewportId,
   unit = '',
 }: {
   nv: NiiVue | null
+  slide?: NVSlideAnnotations
   viewportId: string
   unit?: string
 }) {
   const [rows, setRows] = useState<Row[]>([])
+  const [slideRows, setSlideRows] = useState<Row[]>([])
+  useEffect(() => {
+    if (!slide) return setSlideRows([])
+    const update = () => setSlideRows(slideSnapshot(slide))
+    update()
+    const events = ['added', 'changed', 'removed']
+    for (const e of events) slide.addEventListener(e, update)
+    return () => {
+      for (const e of events) slide.removeEventListener(e, update)
+    }
+  }, [slide])
   useEffect(() => {
     if (!nv) return
     const update = () => setRows(snapshot(nv, unit, viewportId))
@@ -87,7 +114,7 @@ export function MeasurementData({
   }, [nv, unit, viewportId])
   return (
     <div hidden data-measurements="">
-      {rows.map((r) => (
+      {[...rows, ...slideRows].map((r) => (
         <span
           key={r.id}
           data-annotation-id={r.id}

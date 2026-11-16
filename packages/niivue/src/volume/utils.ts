@@ -1038,6 +1038,21 @@ export function remapDrawingToRAS(
     for (let q = 1; q < 3; q++)
       if (Math.abs(m[s * 4 + q]) > Math.abs(m[s * 4 + p])) p = q
     axis[s] = p
+    if (srcDims[s + 1] === 1) {
+      // One slice (e.g. a one-frame SEG): its thickness is irrelevant, only
+      // its centre must land on a background centre, at RAS index `at`.
+      const a = m[s * 4 + p]
+      const at = -m[s * 4 + 3] / a
+      let tilt = 0
+      for (let q = 0; q < 3; q++)
+        if (q !== p) tilt += Math.abs(m[s * 4 + q] / a) * (n[q] - 1)
+      if (tilt > DRAWING_GRID_TOLERANCE) return 'rotation'
+      if (Math.abs(at - Math.round(at)) > DRAWING_GRID_TOLERANCE)
+        return 'non-integer shift'
+      sign[s] = 1
+      offset[s] = -Math.round(at)
+      continue
+    }
     sign[s] = Math.sign(m[s * 4 + p])
     offset[s] = Math.round(m[s * 4 + 3])
     const shift = m[s * 4 + 3] - offset[s]

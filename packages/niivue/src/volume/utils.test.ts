@@ -572,6 +572,22 @@ describe('remapDrawingToRAS', () => {
     expect(remapDrawingToRAS(back, src, [3, 3, 6, 3], at(1.5))).toBe('scale')
   })
 
+  test('oneSliceOfOtherThickness_placedByItsCentre', () => {
+    const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
+    const src = distinctBytes(3 * 6)
+    const thick = (z: number) => [
+      [-2, 0, 0, 10],
+      [0, 2, 0, -3],
+      [0, 0, 6, z],
+      [0, 0, 0, 1],
+    ]
+    const ras = remapDrawingToRAS(back, src, [3, 3, 6, 1], thick(5))
+    expect(ras).toEqual(remap(2, [10, -3, 5], [3, 6, 1]).ras)
+    expect(remapDrawingToRAS(back, src, [3, 3, 6, 1], thick(6))).toBe(
+      'non-integer shift',
+    )
+  })
+
   test('jitterOf1e-5Voxel_acceptedAndExact', () => {
     const exact = remap(2, [10, -3, 5], [3, 6, 3]).ras
     const jittered = remap(2, [10 + 2e-5, -3 - 2e-5, 5], [3, 6, 3]).ras

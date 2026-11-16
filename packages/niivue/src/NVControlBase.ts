@@ -7715,7 +7715,11 @@ export default class NiiVue extends EventTarget {
           : source.url
       const generation = ++this._drawingGeneration
       const nii = await NVVolume.loadVolume(url)
-      if (generation !== this._drawingGeneration) {
+      // A later drawing call, or a new background, supersedes this load.
+      if (
+        generation !== this._drawingGeneration ||
+        this.model.getVolumes()[0] !== back
+      ) {
         log.debug('loadDrawing: superseded while loading')
         return false
       }

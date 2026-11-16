@@ -75,6 +75,13 @@ describe('resolveSegDisplaySets', () => {
     expect(resolveSegDisplaySets([mr, seg], lookup).displaySets).toEqual([mr])
   })
 
+  test('secondarySegOverAnotherSeries_primaryKeepsThePane', () => {
+    const ct: OhifDisplaySet = { displaySetInstanceUID: 'ct', Modality: 'CT' }
+    expect(resolveSegDisplaySets([ct, seg], lookup)).toEqual({
+      displaySets: [ct, seg],
+    })
+  })
+
   test('referenceUidNotYetSet_fallsBackToSeriesUid', () => {
     const early = { ...seg, referencedDisplaySetInstanceUID: null }
     expect(resolveSegDisplaySets([early], lookup).displaySets).toEqual([mr])
@@ -125,11 +132,12 @@ describe('startSegDrawing', () => {
     json: { Segments: [{ LabelValue: 1, RGB: [1, 2, 3] }] },
   }
   const convert = async () => converted
+  const whenBase = Promise.resolve(true)
   const settle = () => new Promise((r) => setTimeout(r, 0))
 
   test('shown_coloursFromSidecar_penOff_rimOverFill', async () => {
     const { nv, calls, release } = pane(true)
-    startSegDrawing(nv, segDs, { setNote: () => {}, convert })
+    startSegDrawing(nv, segDs, { setNote: () => {}, convert, whenBase })
     release()
     await settle()
     expect(calls).toEqual(['load', 'colormap'])
@@ -138,9 +146,28 @@ describe('startSegDrawing', () => {
     expect(nv.drawRimOpacity).toBeGreaterThan(nv.drawOpacity)
   })
 
+  test('baseNotYetInstalled_waitsForIt_beforeLoadingDrawing', async () => {
+    const { nv, calls, release } = pane(true)
+    let installBase = (_: boolean) => {}
+    const base = new Promise<boolean>((r) => {
+      installBase = r
+    })
+    startSegDrawing(nv, segDs, { setNote: () => {}, convert, whenBase: base })
+    await settle()
+    expect(calls).toEqual([])
+    installBase(true)
+    release()
+    await settle()
+    expect(calls).toEqual(['load', 'colormap'])
+  })
+
   test('cleanupWhileCoreLoadPending_closesIt_thenTouchesNothing', async () => {
     const { nv, calls, release } = pane(false) // core gives way once closed
-    const stop = startSegDrawing(nv, segDs, { setNote: () => {}, convert })
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert,
+      whenBase,
+    })
     await settle()
     stop()
     release()
@@ -155,6 +182,7 @@ describe('startSegDrawing', () => {
     const stop = startSegDrawing(nv, segDs, {
       setNote: (m) => notes.push(m),
       convert,
+      whenBase,
     })
     release()
     await settle()

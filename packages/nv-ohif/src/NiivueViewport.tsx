@@ -123,9 +123,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   // The hung display set is on screen: `data-loaded`, a positive signal for tests.
   const [isLoaded, setIsLoaded] = useState(false)
-  useSegDrawing(nvRef, seg, isLoaded, servicesManager, (message) =>
-    setStatus({ kind: 'note', message }),
-  )
+  // Resolves once the current load installs its base volume (the SEG's background).
+  const baseInstalledRef = useRef<Promise<boolean>>(Promise.resolve(false))
   // Base window, shown lower left as cornerstone's viewport overlay does.
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.
@@ -379,6 +378,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     // active with nothing overlaid. (No-op on the first load — nothing to clear
     // yet.)
     nv.clearAnnotations()
+    let baseInstalled = (_: boolean) => {}
+    baseInstalledRef.current = new Promise((resolve) => {
+      baseInstalled = resolve
+    })
     setWindowLevel(null)
     setStack(null)
     // Keep the registry's view of the base display sets current, so overlay
@@ -449,6 +452,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
+      baseInstalled(true)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step
@@ -696,6 +700,16 @@ export function NiivueViewport(props: OhifViewportProps) {
       abort.abort()
     }
   }, [displaySetsKey, ready])
+
+  // After the load effect, so a base and SEG changed together wait on the new base.
+  useSegDrawing(
+    nvRef,
+    seg,
+    baseInstalledRef,
+    `${displaySetsKey}|${ready}`,
+    servicesManager,
+    (message) => setStatus({ kind: 'note', message }),
+  )
 
   // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
   // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.

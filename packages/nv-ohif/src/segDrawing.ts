@@ -21,7 +21,9 @@ interface DisplaySetLookup {
  * The display sets a pane shows, with the first SEG swapped for the series it
  * references (OHIF sets referencedDisplaySetInstanceUID once that series is
  * known; the series UID covers the gap). Without a reference the SEG stays, and
- * classifies as unsupported.
+ * classifies as unsupported. A SEG behind a primary series it does not
+ * reference also stays, so the primary keeps the pane and the SEG is noted as
+ * not shown.
  */
 export function resolveSegDisplaySets(
   hung: ReadonlyArray<OhifDisplaySet>,
@@ -38,6 +40,11 @@ export function resolveSegDisplaySets(
       ? lookup?.getDisplaySetsForSeries?.(series)?.[0]
       : undefined)
   if (!base) return { displaySets: hung }
+  if (
+    index > 0 &&
+    hung[0]?.displaySetInstanceUID !== base.displaySetInstanceUID
+  )
+    return { displaySets: hung }
   // The base leads (it is what the pane loads); a base also hung stays once.
   const rest = hung.filter(
     (ds, i) =>
@@ -103,6 +110,8 @@ export function startSegDrawing(
   options: {
     headers?: Record<string, string>
     setNote: (message: string) => void
+    // Core refuses a drawing without a background: resolves once the base is in.
+    whenBase: Promise<boolean>
     convert?: typeof convertDisplaySetToNifti
   },
 ): () => void {
@@ -111,11 +120,11 @@ export function startSegDrawing(
   const abort = new AbortController()
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
-    const converted = await convert(seg, {
-      headers: options.headers,
-      signal: abort.signal,
-    })
-    if (!converted || cancelled) return
+    const [converted, hasBase] = await Promise.all([
+      convert(seg, { headers: options.headers, signal: abort.signal }),
+      options.whenBase,
+    ])
+    if (!converted || !hasBase || cancelled) return
     isOwned = true
     const isShown = await nv.loadDrawing(converted.image)
     if (cancelled) return
@@ -149,24 +158,29 @@ export function startSegDrawing(
   }
 }
 
-/** Show `seg` as the drawing once the pane's base is loaded; drop it on change. */
+/**
+ * Show `seg` as the drawing once the pane's base is installed; drop it on
+ * change. `baseKey` changes whenever the load effect starts a new base.
+ */
 export function useSegDrawing(
   nvRef: RefObject<NiiVue | null>,
   seg: OhifDisplaySet | undefined,
-  isLoaded: boolean,
+  baseInstalledRef: RefObject<Promise<boolean>>,
+  baseKey: string,
   servicesManager: OhifServicesManager | undefined,
   setNote: (message: string) => void,
 ): void {
   const segKey = seg?.displaySetInstanceUID ?? seg?.SeriesInstanceUID
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID, as the load effect keys on displaySetsKey
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID and the base, as the load effect keys on displaySetsKey
   useEffect(() => {
     const nv = nvRef.current
-    if (!nv || !seg || !isLoaded) return
+    if (!nv || !seg) return
     return startSegDrawing(nv, seg, {
       headers: authHeaders(servicesManager),
       setNote,
+      whenBase: baseInstalledRef.current,
     })
-  }, [segKey, isLoaded])
+  }, [segKey, baseKey])
 }
 
 /** resolveSegDisplaySets against the app's display set service. */

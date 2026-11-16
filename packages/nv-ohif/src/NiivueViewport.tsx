@@ -103,6 +103,25 @@ interface ToolGroupServiceLike {
  * NiiVue's core is framework-agnostic, so this owns a plain <canvas> + a `NiiVue`
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
+/**
+ * Effect keys for the hanging-protocol options, by value (OHIF passes fresh
+ * objects each render): `view` for the slice type, render camera and sync
+ * groups; `load` for what the base load applies (window, 3D preset).
+ */
+export function hangingKeys(
+  viewportOptions: OhifViewportProps['viewportOptions'],
+  displaySetOptions: OhifViewportProps['displaySetOptions'],
+): { view: string; load: string } {
+  const { orientation, viewportType, syncGroups } = viewportOptions ?? {}
+  return {
+    view: JSON.stringify([orientation, viewportType, syncGroups]),
+    load: JSON.stringify([
+      initialSliceType(viewportOptions) === SLICE_TYPE.RENDER,
+      displaySetOptions,
+    ]),
+  }
+}
+
 export function NiivueViewport(props: OhifViewportProps) {
   const { displaySets, viewportId, servicesManager } = props
   const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
@@ -142,6 +161,24 @@ export function NiivueViewport(props: OhifViewportProps) {
     .map((ds) => String(ds.displaySetInstanceUID ?? ds.SeriesInstanceUID ?? ''))
     .join('|')
 
+  const keys = hangingKeys(props.viewportOptions, props.displaySetOptions)
+  // The hanging protocol's view and sync groups, on attach and whenever a new
+  // protocol changes them for the same viewport and series. Declared before the
+  // create effect so unmount leaves the sync groups before nv.destroy().
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on keys.view by design
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv || !ready) return
+    nv.sliceType = initialSliceType(viewportOptionsRef.current)
+    const view = initialRenderView(viewportOptionsRef.current)
+    if (view) [nv.azimuth, nv.elevation] = view
+    return joinSyncGroups(
+      viewportId,
+      nv,
+      viewportOptionsRef.current?.syncGroups,
+    )
+  }, [ready, viewportId, keys.view])
+
   // Create / tear down the NiiVue instance with the canvas.
   useEffect(() => {
     const container = containerRef.current
@@ -163,7 +200,6 @@ export function NiivueViewport(props: OhifViewportProps) {
     // the font loads); torn down on unmount.
     let annotationOverlay: VolumeAnnotationOverlay | null = null
     let unregisterAnnotation: (() => void) | null = null
-    let leaveSyncGroups: (() => void) | null = null
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%'
@@ -176,9 +212,6 @@ export function NiivueViewport(props: OhifViewportProps) {
     // Catching the chained promise also covers a throw in the ready callback.
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
-      nv.sliceType = initialSliceType(viewportOptionsRef.current)
-      const view = initialRenderView(viewportOptionsRef.current)
-      if (view) [nv.azimuth, nv.elevation] = view
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
       // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
@@ -203,11 +236,6 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
-      leaveSyncGroups = joinSyncGroups(
-        viewportId,
-        nv,
-        viewportOptionsRef.current?.syncGroups,
-      )
       updateNiivueViewport(viewportId, {
         setStatus: (message, kind = 'note') =>
           setStatus(message === null ? { kind: 'idle' } : { kind, message }),
@@ -331,7 +359,6 @@ export function NiivueViewport(props: OhifViewportProps) {
       // the module-level reflection maps would leak across every unmount
       // (StrictMode double-mount, route / layout churn).
       clearNiivueAnnotations(viewportId, servicesManagerRef.current)
-      leaveSyncGroups?.()
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
@@ -354,7 +381,7 @@ export function NiivueViewport(props: OhifViewportProps) {
   }, [viewportId])
 
   // Load the display set(s) hung in this viewport, once attached / on change.
-  // Keyed on displaySetsKey (not the array identity) by design — see above.
+  // Keyed on displaySetsKey and keys.load (not the array identity) by design — see above.
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on displaySetsKey by design
   useEffect(() => {
     const nv = nvRef.current
@@ -686,7 +713,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       cancelled = true
       abort.abort()
     }
-  }, [displaySetsKey, ready])
+  }, [displaySetsKey, ready, keys.load])
 
   const isVolumeViewport = props.viewportOptions?.viewportType === 'volume'
   useEffect(() => {

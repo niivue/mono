@@ -500,3 +500,29 @@ it('jumpToImage on a non-DICOM volume steps the voxel slices of the view axis', 
     [12, 22, 33],
   ])
 })
+
+it('jumpToImage on a volume viewport off its acquisition plane counts along the view axis', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: {
+      setCrosshairPos: (p: number[]) => calls.push(p),
+      vox2mm: (v: number[]) => v,
+      sliceType: SLICE_TYPE.SAGITTAL as number,
+      volumes: [{ dimsRAS: [3, 3, 3, 3], permRAS: [1, 2, 3] }],
+    },
+    crosshairMM: [2, 1, 1],
+    isVolumeViewport: true,
+    displaySets: [],
+    // An axial slice map: it cannot step sagittal slices.
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [1, 2, 3].map((frameNumber) => ({
+        SOPInstanceUID: 'a',
+        frameNumber,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  expect(calls).toEqual([[0, 1, 1]])
+})

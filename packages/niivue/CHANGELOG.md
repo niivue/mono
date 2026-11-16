@@ -1,3 +1,82 @@
+## 1.0.0-rc.211 (2026-11-16)
+
+### Features
+
+- **niivue:** loadDrawing accepts a voxel-aligned label image on another grid ([b10d9740](https://github.com/niivue/mono/commit/b10d9740))
+
+### Fixes
+
+- **niivue:** refuse a scaled drawing on a one-voxel background axis ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** compare drawing grids in background voxels ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** place a one-slice drawing of any thickness by its centre; a new background supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** refuse a raw drawing of other dims; document drawing restore supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** loadDrawing checks the affine on equal dims; a superseded load installs nothing ([ac419167](https://github.com/niivue/mono/commit/ac419167))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.210 (2026-11-16)
+
+### Features
+
+- **slide:** window RGB bitmap tiles through their channel windows ([a04381a6](https://github.com/niivue/mono/commit/a04381a6))
+
+### Fixes
+
+- **niivue:** window thumbnail bitmap tiles after scaling beside fused tiles ([#816](https://github.com/niivue/mono/issues/816))
+- **niivue:** preview serves the examples build in dist-examples ([#822](https://github.com/niivue/mono/issues/822))
+- **niivue:** window thumbnail bitmap tiles beside fused tiles ([#816](https://github.com/niivue/mono/issues/816))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.209 (2026-11-16)
+
+### Fixes
+
+- **niivue:** a hidden or opacity-0 volume shows no colorbar ([acbc1897](https://github.com/niivue/mono/commit/acbc1897))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.208 (2026-11-16)
+
+### Features
+
+- **niivue:** windowingStep sets the windowing drag gain and direction ([1df5de4d](https://github.com/niivue/mono/commit/1df5de4d))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.207 (2026-11-16)
+
+### Features
+
+- cull hidden mesh labels, PAQD hidden labels, legend solo ([eac95fd0](https://github.com/niivue/mono/commit/eac95fd0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.206 (2026-11-16)
+
+### Fixes
+
+- **niivue:** ruler labels clear of ticks, no zero measurements, angle tool rework ([aa3157a5](https://github.com/niivue/mono/commit/aa3157a5))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.205 (2026-11-15)
 
 ### Features

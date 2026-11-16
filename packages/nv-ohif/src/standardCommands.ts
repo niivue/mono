@@ -117,7 +117,8 @@ function setOrientation(
  * from the end), keeping the crosshair's in-plane spot. A stack viewport counts
  * in display-set order, mapped to a slice through the slice -> frame map; a
  * volume viewport counts along the volume, as Cornerstone does; a non-DICOM
- * volume counts its slices along the viewport's axis.
+ * volume, or a volume viewport off its acquisition plane, counts its slices
+ * along the viewport's axis.
  */
 export function jumpToImage(
   entry: NiivueViewportEntry,
@@ -127,8 +128,15 @@ export function jumpToImage(
   const i = Number(imageIndex)
   if (!Number.isInteger(i) || !entry.crosshairMM) return
   const [x = 0, y = 0, z = 0] = entry.crosshairMM
-  if (!sf) {
-    jumpToVoxelSlice(entry.nv, [x, y, z], i)
+  const { nv } = entry
+  // A volume viewport turned off its acquisition plane counts along the view
+  // axis, which the slice -> frame map does not span.
+  const offAxis =
+    entry.isVolumeViewport &&
+    ACQUISITION_SLICE_TYPES.some((t) => t === nv.sliceType) &&
+    nv.sliceType !== acquisitionSliceType(nv)
+  if (!sf || offAxis) {
+    jumpToVoxelSlice(nv, [x, y, z], i)
     return
   }
   let k: number
@@ -153,7 +161,7 @@ export function jumpToImage(
     )
   }
   if (k < 0 || k >= sf.frames.length) return
-  entry.nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
+  nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
 }
 
 type Vec3 = [number, number, number]

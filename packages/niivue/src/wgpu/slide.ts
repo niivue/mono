@@ -1,11 +1,12 @@
 import { ubuntu } from '@/assets/fonts'
-import { colorLutWgsl } from '@/slide/colorLutShader'
+import { colorLutWgsl, rgbWindowWgsl } from '@/slide/colorLutShader'
 import type {
   NVSlide,
   NVSlideScreen,
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
+  RGB_WINDOW_IDENTITY,
   rawPoolBytes,
   SlideBudgetRegistration,
   type SlideRendererOptions,
@@ -37,8 +38,8 @@ import { SceneCapture } from './sceneCapture'
 import { TileFuserGPU } from './tileFuse'
 import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
-/** The slide shader, with or without the colour table lookup (bind group 2). */
-const shaderCode = (lut: boolean): string => /* wgsl */ `
+/** The slide shader, with or without the colour table (bind group 2) and RGB window. */
+const shaderCode = (lut: boolean, rgbWindow = false): string => /* wgsl */ `
 struct SlideUniforms {
   rect: vec4f, // clip-space x0, y0, x1, y1
   uvRect: vec4f, // u0, v0 (top), u1, v1 (bottom)
@@ -51,6 +52,8 @@ struct SlideUniforms {
   // A mixed fused tile's label channels (slideFuse.ts fuseTarget), combined
   // nearest with the intensity: 0 none, 1 max, 2 saturating sum.
   labelBlend: vec4f,
+  rgbScale: vec4f,
+  rgbOffset: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> u: SlideUniforms;
@@ -59,6 +62,7 @@ struct SlideUniforms {
 @group(1) @binding(0) var slideTex: texture_2d<f32>;
 @group(1) @binding(1) var labelTex: texture_2d<f32>;
 ${colorLutWgsl(2, lut)}
+${rgbWindowWgsl(rgbWindow)}
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
@@ -95,7 +99,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
       let l = textureLoad(labelTex, clamp(vec2i(texel), vec2i(1), vec2i(size) - 2), 0).rgb;
       base = vec4f(select(max(base.rgb, l), min(base.rgb + l, vec3f(1.0)), u.labelBlend.x == 2.0), base.a);
     }
-    base = vec4f(applyColorLut(base.rgb), base.a);
+    base = vec4f(applyColorLut(applyRgbWindow(base.rgb)), base.a);
   }
   base.a = base.a * u.opacity;
   if (u.showGrid == 1.0) {
@@ -112,8 +116,9 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `
 
-// 6 vec4: rect, uvRect, (opacity, isPlaceholder, showGrid, isNearest), colours, labelBlend.
-const UNIFORM_BYTES = 96
+// 8 vec4: rect, uvRect, (opacity, isPlaceholder, showGrid, isNearest), colours,
+// labelBlend, rgbScale, rgbOffset.
+const UNIFORM_BYTES = 128
 // Quads the uniform buffer holds at first; it doubles when a frame needs more.
 const INITIAL_QUADS = 64
 
@@ -145,6 +150,9 @@ export class SlideRendererGPU {
   private readonly _context: GPUCanvasContext
   private readonly _pipeline: GPURenderPipeline
   private readonly _lutPipeline: GPURenderPipeline
+  // RGB-windowed, without and with the table, made on first use.
+  private readonly _windowPipelines: (GPURenderPipeline | null)[] = [null, null]
+  private readonly _lutLayout: GPUBindGroupLayout
   private readonly _uniformLayout: GPUBindGroupLayout
   private readonly _textureLayout: GPUBindGroupLayout
   private readonly _luts: ColorLutTexturesGPU
@@ -228,6 +236,7 @@ export class SlideRendererGPU {
       },
     )
     this._luts = new ColorLutTexturesGPU(device, lutLayout, sampler)
+    this._lutLayout = lutLayout
     this._canvas = canvas
     this._device = device
     this._context = context
@@ -477,12 +486,17 @@ export class SlideRendererGPU {
     }
     for (let s = 0; s < plan.slides.length; s++) {
       const slide = plan.slides[s] as NVSlide
-      // The plain pipeline unless the slide has a colour table to apply.
+      // The plain pipeline unless the slide has a colour table or RGB window to apply.
       const lut = slide.displayColorLut
-      if (lut) {
-        pass.setPipeline(this._lutPipeline)
-        pass.setBindGroup(2, this._luts.group(lut))
-      } else pass.setPipeline(this._pipeline)
+      const rgbWindow = slide.rgbWindow
+      pass.setPipeline(
+        rgbWindow
+          ? this._windowPipeline(Boolean(lut))
+          : lut
+            ? this._lutPipeline
+            : this._pipeline,
+      )
+      if (lut) pass.setBindGroup(2, this._luts.group(lut))
       const b = slide.screenRectForSlide(screen)
       let o = quads * slot
       if (writeRectNdc(b.x, b.y, b.width, b.height, width, height, data, o)) {
@@ -531,6 +545,11 @@ export class SlideRendererGPU {
         data.set(slide.placeholderColor, o + 12)
         data.set(slide.gridColor, o + 16)
         data[o + 20] = texture?.labels ? sum : 0
+        if (rgbWindow)
+          data.set(
+            texture?.fused === undefined ? rgbWindow : RGB_WINDOW_IDENTITY,
+            o + 24,
+          )
         if (texture) draw(texture.texture, texture.labels)
         else draw(placeholder)
       }
@@ -576,6 +595,23 @@ export class SlideRendererGPU {
     this._textures.clear()
     this._fuser.clear()
     this._luts.clear()
+  }
+
+  private _windowPipeline(lut: boolean): GPURenderPipeline {
+    const device = this._device
+    this._windowPipelines[lut ? 1 : 0] ??= device.createRenderPipeline(
+      alphaPipelineDesc(device, {
+        module: device.createShaderModule({ code: shaderCode(lut, true) }),
+        bindGroupLayouts: [
+          this._uniformLayout,
+          this._textureLayout,
+          ...(lut ? [this._lutLayout] : []),
+        ],
+        format: this._format,
+        msaaCount: this._sampleCount,
+      }),
+    )
+    return this._windowPipelines[lut ? 1 : 0] as GPURenderPipeline
   }
 
   private _msaaView(width: number, height: number): GPUTextureView | null {

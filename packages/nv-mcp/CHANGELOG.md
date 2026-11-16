@@ -1,3 +1,62 @@
+## 1.0.0-rc.206 (2026-11-16)
+
+### Fixes
+
+- **niivue:** refuse a raw drawing of other dims; document drawing restore supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.211
+- Updated uikit to 1.0.0-rc.209
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.205 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.210
+- Updated uikit to 1.0.0-rc.208
+
+## 1.0.0-rc.204 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.209
+- Updated uikit to 1.0.0-rc.207
+
+## 1.0.0-rc.203 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.208
+- Updated uikit to 1.0.0-rc.206
+
+## 1.0.0-rc.202 (2026-11-16)
+
+### Features
+
+- cull hidden mesh labels, PAQD hidden labels, legend solo ([eac95fd0](https://github.com/niivue/mono/commit/eac95fd0))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.207
+- Updated uikit to 1.0.0-rc.205
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.201 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.206
+- Updated uikit to 1.0.0-rc.204
+
 ## 1.0.0-rc.200 (2026-11-15)
 
 ### Chores

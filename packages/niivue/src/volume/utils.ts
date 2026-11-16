@@ -934,6 +934,32 @@ export function reorientDrawingToRAS(
   return transformBitmap({ inputData: nativeBytes, dims, xlut, ylut, zlut })
 }
 
+/**
+ * Whether two voxel->mm affines place every voxel of a `dims` grid at the same
+ * mm, within `DRAWING_GRID_TOLERANCE` of `b`'s smallest voxel edge.
+ */
+export function isSameGrid(
+  a: number[][],
+  b: number[][],
+  dims: number[],
+): boolean {
+  const edge = Math.min(
+    ...[0, 1, 2].map((c) => Math.hypot(b[0][c], b[1][c], b[2][c])),
+  )
+  for (let r = 0; r < 3; r++) {
+    // Linear in the voxel, so the worst error is at a corner.
+    let up = a[r][3] - b[r][3]
+    let down = up
+    for (let c = 0; c < 3; c++) {
+      const term = (a[r][c] - b[r][c]) * (dims[c + 1] - 1)
+      up += Math.max(0, term)
+      down += Math.min(0, term)
+    }
+    if (Math.max(up, -down) > DRAWING_GRID_TOLERANCE * edge) return false
+  }
+  return true
+}
+
 // The remap's copy: whole runs, one stride add per voxel.
 function copyRuns(
   out: Uint8Array,

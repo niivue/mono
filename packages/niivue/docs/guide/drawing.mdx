@@ -28,7 +28,7 @@ nv.drawIsEnabled = false // look around without painting
 `loadDrawing(url or File)` opens an existing label image as the drawing
 instead (a uint8 image on another grid loads if its voxel centres land on
 the background's, within 1e-3 voxel: axis order, flips and integer offsets
-only), and `closeDrawing()` discards the drawing and turns drawing off.
+only; one with no spatial transform is placed by index), and `closeDrawing()` discards the drawing and turns drawing off.
 
 ## The pen
 

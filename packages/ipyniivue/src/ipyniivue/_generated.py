@@ -1122,7 +1122,10 @@ and its volumes alive."""
         when every voxel centre lands on a background voxel centre, within
         `DRAWING_GRID_TOLERANCE` (1e-3 voxel); background voxels outside it are 0.
         Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
-        Resolves false on failure.
+        A drawing whose header has no spatial transform (qform and sform codes 0)
+        is placed by index, so it must match the background's dims.
+        Resolves false on failure, or when a later `loadDrawing`,
+        `createEmptyDrawing` or `closeDrawing` lands while this one is loading.
 
         Parameters
         ----------

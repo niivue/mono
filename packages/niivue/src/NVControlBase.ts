@@ -265,6 +265,7 @@ import {
   calculateWorldExtents,
   calMinMaxFrame,
   frameHistogram,
+  isSameGrid,
   remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
@@ -680,6 +681,9 @@ export default class NiiVue extends EventTarget {
     min: [number, number, number]
     max: [number, number, number]
   } | null = null
+  // Bumped by every drawing install or close, so a loadDrawing still reading
+  // its file when another drawing call lands gives way to it.
+  _drawingGeneration = 0
   drawPenAutoClose = false
   drawPenFilled = false
   // Undo state (controller-owned — not persisted in documents)
@@ -2577,6 +2581,7 @@ export default class NiiVue extends EventTarget {
       )
       return
     }
+    this._drawingGeneration++
     this.model.drawingVolume = vol
     this.model.draw.isEnabled = true
     const cleared = clearAllUndoBitmaps(
@@ -7519,6 +7524,7 @@ export default class NiiVue extends EventTarget {
   }
 
   createEmptyDrawing(): void {
+    this._drawingGeneration++
     const volumes = this.model.getVolumes()
     if (volumes.length === 0) {
       log.warn('createEmptyDrawing: no background volume loaded')
@@ -7542,6 +7548,7 @@ export default class NiiVue extends EventTarget {
   }
 
   closeDrawing(): void {
+    this._drawingGeneration++
     this.model.drawingVolume = null
     this.model.draw.isEnabled = false
     this.drawUndoBitmaps = []
@@ -7683,7 +7690,10 @@ export default class NiiVue extends EventTarget {
    * when every voxel centre lands on a background voxel centre, within
    * `DRAWING_GRID_TOLERANCE` (1e-3 voxel); background voxels outside it are 0.
    * Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
-   * Resolves false on failure.
+   * A drawing whose header has no spatial transform (qform and sform codes 0)
+   * is placed by index, so it must match the background's dims.
+   * Resolves false on failure, or when a later `loadDrawing`,
+   * `createEmptyDrawing` or `closeDrawing` lands while this one is loading.
    */
   async loadDrawing(
     source: string | File | ImageFromUrlOptions,
@@ -7703,7 +7713,12 @@ export default class NiiVue extends EventTarget {
         typeof source === 'string' || source instanceof File
           ? source
           : source.url
+      const generation = ++this._drawingGeneration
       const nii = await NVVolume.loadVolume(url)
+      if (generation !== this._drawingGeneration) {
+        log.debug('loadDrawing: superseded while loading')
+        return false
+      }
       // Validate datatype is uint8
       if (nii.hdr.datatypeCode !== 2) {
         log.warn(
@@ -7724,10 +7739,16 @@ export default class NiiVue extends EventTarget {
         )
         return false
       }
-      // Same dims: today's exact index copy (the affine is not consulted, so a
-      // drawing saved by any tool on this grid loads unchanged). Other grids
-      // (e.g. a DICOM SEG in its frame order) load only if voxel-aligned.
-      const drawImg = validateDrawingDimensions(nd, back.hdr.dims)
+      // Today's exact index copy when the grids match: same dims and the same
+      // affine, or a drawing whose header has no spatial transform (qform and
+      // sform codes 0: raw label arrays, which have always been placed by
+      // index). Any other grid (e.g. a DICOM SEG in its frame order, or a
+      // flipped copy) loads only if voxel-aligned.
+      const hasTransform = nii.hdr.sform_code > 0 || nii.hdr.qform_code > 0
+      const isSame =
+        validateDrawingDimensions(nd, back.hdr.dims) &&
+        (!hasTransform || isSameGrid(nii.hdr.affine, back.hdr.affine, nd))
+      const drawImg = isSame
         ? reorientDrawingToRAS(back, imgData)
         : remapDrawingToRAS(back, imgData, nd, nii.hdr.affine)
       if (typeof drawImg === 'string') {

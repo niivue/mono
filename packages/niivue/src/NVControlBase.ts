@@ -2772,6 +2772,8 @@ export default class NiiVue extends EventTarget {
   /** See {@link AnnotationConfig.isDrawnFromCenter}. */
   set annotationIsDrawnFromCenter(v: boolean) {
     this.model.annotation.isDrawnFromCenter = v
+    // A parked start's rubber band was built the other way; the next move redraws it.
+    if (this._annotationClickStart) this.model._annotationPreview = null
     this.emit('change', { property: 'annotationIsDrawnFromCenter', value: v })
     this.drawScene()
   }

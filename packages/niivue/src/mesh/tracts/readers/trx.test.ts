@@ -57,4 +57,17 @@ describe('TRX reader', () => {
     )
     expect(Array.from(tract.offsets)).toEqual([0, 2, 2])
   })
+  it.each([
+    '{',
+    '{"NB_STREAMLINES":"1"}',
+  ])('falls back to the offsets heuristic for header %s', async (header) => {
+    const tract = await read(
+      storedZip({
+        'header.json': new TextEncoder().encode(header),
+        'positions.3.float32': bytes(new Float32Array([0, 0, 0, 1, 1, 1])),
+        'offsets.uint32': bytes(new Uint32Array([0])),
+      }),
+    )
+    expect(Array.from(tract.offsets)).toEqual([0, 2])
+  })
 })

@@ -60,6 +60,7 @@ describe('TRX reader', () => {
   it.each([
     '{',
     '{"NB_STREAMLINES":"1"}',
+    '{"NB_STREAMLINES":-1}',
   ])('falls back to the offsets heuristic for header %s', async (header) => {
     const tract = await read(
       storedZip({

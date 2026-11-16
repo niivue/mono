@@ -152,10 +152,10 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     const data = await entry.extract?.()
     if (!data) continue
     if (fname === 'header.json') {
-      // A malformed or non-integer header falls back to the offsets heuristic.
+      // A malformed header or a bad count falls back to the offsets heuristic.
       try {
         const n = JSON.parse(new TextDecoder().decode(data)).NB_STREAMLINES
-        if (Number.isInteger(n)) nStreamlinesHeader = n
+        if (Number.isInteger(n) && n >= 0) nStreamlinesHeader = n
       } catch {}
       continue
     }

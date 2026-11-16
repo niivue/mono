@@ -1,3 +1,13 @@
+## 1.0.0-rc.207 (2026-11-16)
+
+### Features
+
+- cull hidden mesh labels, PAQD hidden labels, legend solo ([eac95fd0](https://github.com/niivue/mono/commit/eac95fd0))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.206 (2026-11-16)
 
 ### Fixes

@@ -47,6 +47,17 @@
       "doc": "See {@link AnnotationConfig.isClickToPlace}."
     },
     {
+      "jsName": "annotationIsDrawnFromCenter",
+      "pyName": "annotation_is_drawn_from_center",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isDrawnFromCenter}."
+    },
+    {
       "jsName": "annotationIsEnabled",
       "pyName": "annotation_is_enabled",
       "tsType": "boolean",

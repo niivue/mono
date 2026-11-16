@@ -109,6 +109,8 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     annotation_brush_radius = traitlets.Float(None, allow_none=True).tag(sync=True)
     annotation_is_click_to_place = traitlets.Bool(None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.isClickToPlace}."""
+    annotation_is_drawn_from_center = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    """See {@link AnnotationConfig.isDrawnFromCenter}."""
     annotation_is_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     """Enable vector annotation editing. Mutually exclusive with
 {@link drawIsEnabled} in practice: with both on, raster drawing intercepts

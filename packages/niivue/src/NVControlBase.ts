@@ -712,6 +712,17 @@ export default class NiiVue extends EventTarget {
   // axis-aligned polygon on the block face. null until the first successful pick.
   _annotation3DFace: ExplodedBlockFace | null = null
   _annotationShapeStart: AnnotationPoint | null = null
+  /** Start parked by a click when annotation.isClickToPlace (survives the drag reset). */
+  _annotationClickStart: {
+    start: AnnotationPoint
+    sliceType: number
+    slicePosition: number
+    anchorMM: [number, number, number]
+  } | null = null
+  /** This press resumed a parked click start: its release always commits. */
+  _annotationClickResumed = false
+  /** Client px of the shape-starting press: a release within CLICK_PX of it is a click. */
+  _annotationPressClient: [number, number] = [0, 0]
   // Multi-click contour (spline / livewire): control points accumulated in
   // slice-2D coords across clicks until the contour is closed (double-click) or
   // cancelled (Escape). null when no multi-click contour is in progress.
@@ -2720,6 +2731,16 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'annotationBrushRadius', value: v })
   }
 
+  get annotationIsClickToPlace(): boolean {
+    return this.model.annotation.isClickToPlace
+  }
+  /** See {@link AnnotationConfig.isClickToPlace}. */
+  set annotationIsClickToPlace(v: boolean) {
+    this.model.annotation.isClickToPlace = v
+    if (!v) this._annotationClickStart = null
+    this.emit('change', { property: 'annotationIsClickToPlace', value: v })
+  }
+
   get annotationMergesOverlaps(): boolean {
     return this.model.annotation.mergesOverlaps
   }
@@ -2765,7 +2786,11 @@ export default class NiiVue extends EventTarget {
     this.model.annotation.tool = v
     this.model._annotationSelection = null
     // Switching tools abandons any half-drawn multi-click / bidirectional shape.
-    if (this._annotationPolyPoints || this._bidirectionalLong)
+    if (
+      this._annotationPolyPoints ||
+      this._bidirectionalLong ||
+      this._annotationClickStart
+    )
       this._abandonAnnotationInProgress()
     this.emit('change', { property: 'annotationTool', value: v })
     this.drawScene()
@@ -2776,6 +2801,7 @@ export default class NiiVue extends EventTarget {
     // A drag in progress too: pointer-up would otherwise commit it, e.g. a
     // half-dragged bidirectional short axis as a new long axis (#471).
     this._annotationShapeStart = null
+    this._annotationClickStart = null
     // A freehand or 3D stroke held mid-drag would commit on pointer-up (#470).
     this._annotationBrushPath = []
     this._frozenLoopPoints = null

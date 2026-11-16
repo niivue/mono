@@ -522,6 +522,9 @@ export default class NVModel {
       ...(options.annotationMergesOverlaps !== undefined && {
         mergesOverlaps: options.annotationMergesOverlaps,
       }),
+      ...(options.annotationIsClickToPlace !== undefined && {
+        isClickToPlace: options.annotationIsClickToPlace,
+      }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
       }),

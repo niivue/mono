@@ -71,7 +71,6 @@ export function composeThumbnail(
     )
   }
   let scratch: OffscreenCanvasRenderingContext2D | null = null
-  let anyFused = false
   // Per component, an 8-bit value through rgbWindow (c * scale + offset).
   const windowLut = rgbWindow && new Uint8ClampedArray(3 * 256)
   if (windowLut && rgbWindow)
@@ -79,12 +78,17 @@ export function composeThumbnail(
       for (let v = 0; v < 256; v++)
         windowLut[c * 256 + v] =
           v * (rgbWindow[c] as number) + 255 * (rgbWindow[4 + c] as number)
+  // A fused tile is already windowed: beside one, bitmaps window per tile
+  // (as the 2D renderers do); otherwise once after scaling, as the GPU
+  // windows its filtered sample: one pass over the thumbnail, not one per
+  // full-size tile (a W/L drag recomposes it).
+  const windowTiles =
+    !!windowLut && entries.some((e, i) => level.tiles[i] && e && isFuseTile(e))
   // Tile slot `i` as a drawable and its size, or null.
   const source = (i: number): [CanvasImageSource, number, number] | null => {
     const entry = entries[i]
     if (!level.tiles[i] || !entry) return null
     if (isFuseTile(entry)) {
-      anyFused = true
       const { samples, width: w, height: h } = entry.samples
       const plan = fusePlan(channels, blend, entry, info, selected)
       const rgba = fuseSamples(samples, w * h, plan)
@@ -94,9 +98,18 @@ export function composeThumbnail(
       scratch.putImageData(new ImageData(rgba, w, h), 0, 0)
       return [scratch.canvas, w, h]
     }
-    return entry.bitmap
-      ? [entry.bitmap, entry.bitmap.width, entry.bitmap.height]
-      : null
+    const bitmap = entry.bitmap
+    if (!bitmap) return null
+    const { width: w, height: h } = bitmap
+    if (!windowTiles || !windowLut) return [bitmap, w, h]
+    scratch ??= new OffscreenCanvas(tw, th).getContext('2d')
+    if (!scratch) return null
+    scratch.clearRect(0, 0, w, h)
+    scratch.drawImage(bitmap, 0, 0)
+    const img = scratch.getImageData(0, 0, w, h)
+    applyWindow(img.data, windowLut)
+    scratch.putImageData(img, 0, 0)
+    return [scratch.canvas, w, h]
   }
   if (placement)
     // ponytail: a tile with two pieces is fused twice; seams inside a tile are rare.
@@ -109,23 +122,26 @@ export function composeThumbnail(
       const src = tile && source(i)
       if (src) draw(src[0], 0, 0, src[1], src[2], tile.x * tw, tile.y * th)
     })
-  // Windowed after scaling, as the GPU windows its filtered sample: one pass
-  // over the thumbnail, not one per full-size tile (a W/L drag recomposes it).
-  // ponytail: a slide mixing fused and bitmap tiles shows its bitmaps unwindowed.
-  const windowed = windowLut && !anyFused
+  const windowed = windowLut && !windowTiles
   if (lut || windowed) {
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    const d = img.data
-    if (windowed)
-      for (let p = 0; p < d.length; p += 4) {
-        d[p] = windowLut[d[p] as number] as number
-        d[p + 1] = windowLut[256 + (d[p + 1] as number)] as number
-        d[p + 2] = windowLut[512 + (d[p + 2] as number)] as number
-      }
-    if (lut) applyColorLut(d, lut)
+    if (windowed) applyWindow(img.data, windowLut)
+    if (lut) applyColorLut(img.data, lut)
     ctx.putImageData(img, 0, 0)
   }
   return canvas.transferToImageBitmap()
+}
+
+/** `rgba` RGB through the per-component `windowLut` in place. Alpha kept. */
+function applyWindow(
+  rgba: Uint8ClampedArray,
+  windowLut: Uint8ClampedArray,
+): void {
+  for (let p = 0; p < rgba.length; p += 4) {
+    rgba[p] = windowLut[rgba[p] as number] as number
+    rgba[p + 1] = windowLut[256 + (rgba[p + 1] as number)] as number
+    rgba[p + 2] = windowLut[512 + (rgba[p + 2] as number)] as number
+  }
 }
 
 /**

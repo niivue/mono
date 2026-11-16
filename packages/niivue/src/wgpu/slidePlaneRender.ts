@@ -38,7 +38,8 @@ import { TileGutterGPU, type TileTextureGPU } from './tileGutter'
 
 /**
  * The plane shader, with or without the slide's colour table (bind group 2)
- * and RGB window (bitmap tiles only: a fused tile was windowed); the `nearest` pipelines sample nearest with the 2D shaders' edge clamp, the
+ * and RGB window (bitmap tiles only: a fused tile was windowed); the
+ * `nearest` pipelines sample nearest with the 2D shaders' edge clamp, the
  * `labelBlend` ones add a mixed tile's label texture.
  */
 const shaderCode = (lut: boolean, rgbWindow: boolean): string => /* wgsl */ `

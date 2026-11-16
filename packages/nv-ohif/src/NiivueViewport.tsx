@@ -50,6 +50,7 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
+import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
@@ -135,8 +136,16 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   // The hung display set is on screen: `data-loaded`, a positive signal for tests.
   const [isLoaded, setIsLoaded] = useState(false)
+  // The series whose volume is shown: imports must not target an outgoing one.
+  const [loadedSeries, setLoadedSeries] = useState<string>()
   useSegDrawing(nvRef, seg, isLoaded, servicesManager, (message) =>
     setStatus({ kind: 'note', message }),
+  )
+  // Hydrated SR rows on this series become NiiVue measurements (srImport.ts).
+  useOhifRowImport(
+    loadedSeries ? nvRef.current : null,
+    loadedSeries,
+    servicesManager,
   )
   // Base window, shown lower left as cornerstone's viewport overlay does.
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
@@ -443,6 +452,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
 
     setIsLoaded(false)
+    setLoadedSeries(undefined)
     // If OHIF hung nothing, stay idle.
     const ds: OhifDisplaySet | undefined = displaySets[0]
     if (!ds) {
@@ -487,6 +497,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (cancelled) return
       // The volume is in (both load routes end here): a positive load signal.
       setIsLoaded(true)
+      setLoadedSeries(ds.SeriesInstanceUID as string | undefined)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step

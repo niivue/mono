@@ -15,6 +15,8 @@ const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
     const type = a.shape?.type ?? 'freehand'
     const values: Row['values'] = { ...a.stats }
     if (a.stats && !a.stats.length) values.modalityUnit = unit
+    // Cornerstone names a bidirectional's short axis its width.
+    if (a.stats?.shortLength !== undefined) values.width = a.stats.shortLength
     // Cornerstone's Probe reports the voxel's image index too ("i,j,k").
     const index = probeIndex(viewportId, a)
     if (index) values.index = index.join(',')

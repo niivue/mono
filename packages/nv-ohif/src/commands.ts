@@ -31,6 +31,7 @@ import type {
   OhifViewportProps,
 } from './ohif-types'
 import { frameAt, framePixelIndex, type SliceFrames } from './sliceFrames'
+import { mirrorNiivueMeasurements } from './srBridge'
 import { getStandardCommandDefinitions } from './standardCommands'
 import { petSuvFactor } from './suv'
 import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
@@ -617,6 +618,12 @@ function annotationPointsLps(
     case 'measureLine':
       points = [start, end]
       break
+    case 'measureAngle':
+      points = [start, end, shape.end2 ?? end]
+      break
+    case 'measureCobbAngle':
+      points = [start, end, shape.start2 ?? end, shape.end2 ?? end]
+      break
     case 'arrow':
       // niivue's shape.end is the arrowHEAD/tip; cornerstone3D ArrowAnnotate reads
       // points[0] as the arrowhead / annotated location, so emit tip first.
@@ -753,6 +760,13 @@ const measurementToAnnotation = new Map<
   { viewportId: string; annotationId: string }
 >()
 
+/** The OHIF row reflecting a NiiVue annotation, if one was made. */
+export function reflectedRowUid(annotationId: string): string | undefined {
+  for (const [uid, ref] of measurementToAnnotation)
+    if (ref.annotationId === annotationId) return uid
+  return undefined
+}
+
 // Measurement uids we are removing from OHIF ourselves (removeNiivueAnnotation ->
 // measurementService.remove). OHIF broadcasts MEASUREMENT_REMOVED synchronously
 // from that call; the reverse-delete handler skips these so our own teardown does
@@ -835,6 +849,14 @@ function buildAnnotationDisplay(
       label,
     }
   }
+  // Angle / CobbAngle: degrees, as cornerstone's rows.
+  if (readout === 'angle' && stats.angle !== undefined) {
+    return {
+      primary: [`${roundNumber(stats.angle)} °`],
+      data: { angle: stats.angle },
+      label,
+    }
+  }
   // Bidirectional carries long + short diameters (mm), not area/intensity.
   if (readout === 'bidirectional' && stats.length !== undefined) {
     const short = stats.shortLength ?? 0
@@ -868,12 +890,18 @@ function buildAnnotationDisplay(
   }
 }
 
+const TWO_LINE_TOOLS = new Set([
+  'bidirectional',
+  'measureBidirectional',
+  'measureAngle',
+  'measureCobbAngle',
+])
+
 // True when the eraser cut a shape OHIF draws from its bounds or endpoints. NiiVue's
-// isAnnotationErased cannot rebuild a bidirectional (two line axes), so do it here.
+// isAnnotationErased cannot rebuild two-line shapes (bidirectional, angles), so do it here.
 function isErasedForOhif(annotation: VectorAnnotation): boolean {
   const s = annotation.shape
-  if (s?.type !== 'measureBidirectional' && s?.type !== 'bidirectional')
-    return isAnnotationErased(annotation)
+  if (!s || !TWO_LINE_TOOLS.has(s.type)) return isAnnotationErased(annotation)
   const w = s.width ?? annotation.style.strokeWidth
   const intact = [
     ...generateShape('measureLine', s.start, s.end, w),
@@ -1624,7 +1652,10 @@ export function applyWindowLevelPreset(
 export function getNiivueCommandsModule({
   servicesManager,
   commandsManager,
+  extensionManager,
 }: OhifExtensionParams) {
+  // NiiVue rows in cornerstone's annotation state, for OHIF's SR export.
+  mirrorNiivueMeasurements(servicesManager, extensionManager)
   const actions = {
     /** Switch the view: axial / coronal / sagittal / multiplanar / render. */
     niivueSetSliceType: ({ sliceType }: { sliceType?: string } = {}) => {

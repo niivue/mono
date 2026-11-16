@@ -46,6 +46,9 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'invertViewport',
   'jumpToImage',
   'setViewportColormap',
+  'undo',
+  'redo',
+  'deleteActiveAnnotation',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
@@ -224,6 +227,16 @@ export function getStandardCommandDefinitions({
       ),
     },
     invertViewport: { commandFn: route('invertViewport', invertBase) },
+    // ctrl+z / ctrl+y / Delete on a NiiVue pane edit its annotations (cornerstone's
+    // history memo and selection do not see them).
+    undo: { commandFn: route('undo', ({ nv }) => nv.annotationUndo()) },
+    redo: { commandFn: route('redo', ({ nv }) => nv.annotationRedo()) },
+    deleteActiveAnnotation: {
+      commandFn: route('deleteActiveAnnotation', ({ nv }) => {
+        const id = nv.selectedAnnotation
+        if (id) nv.removeAnnotation(id)
+      }),
+    },
     jumpToImage: {
       commandFn: route('jumpToImage', (entry, opts) =>
         jumpToImage(entry, opts.imageIndex),

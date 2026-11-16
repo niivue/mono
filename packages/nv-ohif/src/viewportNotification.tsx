@@ -21,13 +21,29 @@ function mirror(service: DialogService): Set<(s: DialogState | null) => void> {
   const listeners = new Set<(s: DialogState | null) => void>()
   const show = service.show.bind(service)
   const hide = service.hide.bind(service)
-  // Deliver one macrotask later, in order: a NiiVue measurement completes on
-  // pointerup, so the prompt it triggers would otherwise mount before that
-  // gesture's click, which its outside-click handler takes as a dismissal.
-  const notify = (s: DialogState | null) =>
-    setTimeout(() => {
+  // Deliver after the gesture's click, in order: a prompt mounted before that
+  // click (a measurement completes on pointerup, a multi-click one on its last
+  // press) takes it as an outside click and dismisses itself.
+  let isPressed = false
+  let pending: Array<() => void> = []
+  const flush = () => {
+    isPressed = false
+    const run = pending
+    pending = []
+    for (const f of run) f()
+  }
+  window.addEventListener('pointerdown', () => (isPressed = true), true)
+  // The click follows pointerup in the same task: run after it.
+  const release = () => setTimeout(flush, 0)
+  window.addEventListener('pointerup', release, true)
+  window.addEventListener('pointercancel', release, true)
+  const notify = (s: DialogState | null) => {
+    const deliver = () => {
       for (const l of listeners) l(s)
-    }, 0)
+    }
+    if (isPressed) pending.push(deliver)
+    else setTimeout(deliver, 0)
+  }
   service.show = (p) => {
     show(p)
     notify(p)

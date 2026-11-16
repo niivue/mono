@@ -20,7 +20,7 @@ export interface AnnotationToolDescriptor {
   labelPrefix: string
   /** Panel row content: none (label only), length / bidirectional (mm), or
    * area + intensity. */
-  readout: 'none' | 'length' | 'bidirectional' | 'area' | 'value'
+  readout: 'none' | 'length' | 'bidirectional' | 'area' | 'value' | 'angle'
   /** Points come from the single polygon ring, not shape endpoints. */
   contour?: true
 }
@@ -107,6 +107,24 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
     labelPrefix: 'Probe',
     readout: 'value',
   },
+  // Three clicks: the angle at the middle one.
+  measureAngle: {
+    toolName: 'Angle',
+    valueType: POLYLINE_VALUE_TYPE,
+    minPoints: 3,
+    points: 3,
+    labelPrefix: 'Angle',
+    readout: 'angle',
+  },
+  // Four clicks, two lines: the acute angle between them.
+  measureCobbAngle: {
+    toolName: 'CobbAngle',
+    valueType: POLYLINE_VALUE_TYPE,
+    minPoints: 4,
+    points: 4,
+    labelPrefix: 'Cobb Angle',
+    readout: 'angle',
+  },
   arrow: {
     toolName: 'ArrowAnnotate',
     valueType: POINT_VALUE_TYPE,
@@ -148,9 +166,6 @@ export function ohifToolToDragMode(tool: string | undefined): number {
       return DRAG_MODE.pan
     case 'Zoom':
       return DRAG_MODE.slicer3D
-    case 'Angle':
-    case 'CobbAngle':
-      return DRAG_MODE.angle
     default:
       // NiiVue's render tile rotates on primary drag independently of the 2D
       // drag mode. Unknown OHIF tools retain safe crosshair navigation in 2D.

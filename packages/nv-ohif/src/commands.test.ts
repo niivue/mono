@@ -449,6 +449,48 @@ describe('reflectNiivueAnnotation', () => {
     ])
   })
 
+  it('adds an OHIF CobbAngle: degrees row, its four points in click order', () => {
+    const [p0, p1, p2, p3] = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 2 },
+      { x: 4, y: 3 },
+    ]
+    const cobb = {
+      ...ellipse('cobb'),
+      polygons: [
+        ...generateShape('measureLine', p0, p1, 1),
+        ...generateShape('measureLine', p2, p3, 1),
+      ],
+      stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, angle: 14.036 },
+      shape: {
+        type: 'measureCobbAngle',
+        start: p0,
+        end: p1,
+        start2: p2,
+        end2: p3,
+      },
+    } as VectorAnnotation
+    const svc = setup('vp-cobb')
+    expect(reflectNiivueAnnotation('vp-cobb', svc.servicesManager, cobb)).toBe(
+      true,
+    )
+    const m = svc.added[0]?.data.schema as {
+      toolName: string
+      displayText: { primary: string[] }
+      points: number[][]
+    }
+    expect(m.toolName).toBe('CobbAngle')
+    // cornerstone's row: roundNumber(angle, 2), a space, the degree sign.
+    expect(m.displayText.primary).toEqual(['14.0 °'])
+    expect(m.points).toEqual([
+      [0, 0, 0],
+      [-4, 0, 0],
+      [0, -2, 0],
+      [-4, -3, 0],
+    ])
+  })
+
   it('reflects freehand as a PlanarFreehandROI polyline', () => {
     const svc = setup('vp-a2')
     const anno = ellipse('b')

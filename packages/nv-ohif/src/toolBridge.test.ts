@@ -7,8 +7,6 @@ describe('ohifToolToDragMode', () => {
     ['WindowLevel', DRAG_MODE.windowing],
     ['Pan', DRAG_MODE.pan],
     ['Zoom', DRAG_MODE.slicer3D],
-    ['Angle', DRAG_MODE.angle],
-    ['CobbAngle', DRAG_MODE.angle],
     ['Crosshairs', DRAG_MODE.crosshair],
     ['TrackballRotate', DRAG_MODE.crosshair],
   ] as const)('maps %s to the matching NiiVue drag mode', (tool, expected) => {
@@ -30,6 +28,8 @@ describe('ohifToolToDragMode', () => {
     'LivewireContour',
     'Bidirectional',
     'ArrowAnnotate',
+    'Angle',
+    'CobbAngle',
   ])('leaves annotation-backed %s to the annotation gate', (tool) => {
     expect(ohifToolToDragMode(tool)).toBe(DRAG_MODE.crosshair)
   })
@@ -46,6 +46,8 @@ describe('ohifToolToAnnotationTool', () => {
     ['LivewireContour', 'measureLivewire'],
     ['Bidirectional', 'measureBidirectional'],
     ['ArrowAnnotate', 'arrow'],
+    ['Angle', 'measureAngle'],
+    ['CobbAngle', 'measureCobbAngle'],
   ] as const)('maps %s to the NiiVue annotation tool %s', (tool, expected) => {
     expect(ohifToolToAnnotationTool(tool)).toBe(expected)
   })

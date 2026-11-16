@@ -158,6 +158,8 @@ export function startSegDrawing(
       return
     }
     installed = nv.drawingVolume
+    // dcm2niix warnings (e.g. an incomplete SEG) reach the pane as the base's do.
+    if (converted.note) options.setNote(converted.note)
     const prior = {
       drawColormap: nv.drawColormap,
       drawOpacity: nv.drawOpacity,

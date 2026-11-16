@@ -413,6 +413,22 @@ describe('startSegDrawing', () => {
     expect(style()).toEqual(['Draw', 0.3, -1])
   })
 
+  test('shownWithConversionNote_notesIt', async () => {
+    const { nv, release } = pane(true)
+    const notes: string[] = []
+    startSegDrawing(nv, segDs, {
+      setNote: (m) => notes.push(m),
+      convert: async () => ({
+        ...converted,
+        note: 'dcm2niix exit 1: incomplete SEG',
+      }),
+      whenBase,
+    })
+    release()
+    await settle()
+    expect(notes).toEqual(['dcm2niix exit 1: incomplete SEG'])
+  })
+
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {
     const { nv, calls, release } = pane(false)
     const notes: string[] = []

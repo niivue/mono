@@ -44,6 +44,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
@@ -105,7 +106,12 @@ interface ToolGroupServiceLike {
  * instance directly (React 18) rather than depending on `@niivue/nvreact` (React 19).
  */
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId, servicesManager } = props
+  const { viewportId, servicesManager } = props
+  // A hung SEG shows as a drawing over the series it references (segDrawing.ts).
+  const { displaySets, seg } = resolveSegDisplaySetsFor(
+    props.displaySets,
+    servicesManager,
+  )
   const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
   // Longitudinal (tracking) modes: forward new measurements to OHIF's tracker.
   useMeasurementTracking(viewportId, servicesManager, props.extensionManager)
@@ -117,6 +123,9 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   // The hung display set is on screen: `data-loaded`, a positive signal for tests.
   const [isLoaded, setIsLoaded] = useState(false)
+  useSegDrawing(nvRef, seg, isLoaded, servicesManager, (message) =>
+    setStatus({ kind: 'note', message }),
+  )
   // Base window, shown lower left as cornerstone's viewport overlay does.
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.

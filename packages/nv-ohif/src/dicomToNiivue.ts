@@ -72,6 +72,8 @@ export interface DicomConversion {
   note?: string
   /** Slice -> source frame of `image`, for measurement identity. */
   sliceFrames?: SliceFrames
+  /** dcm2niix's sidecar for `image` (a SEG's names its segments). */
+  json?: Record<string, unknown>
 }
 
 /**
@@ -132,6 +134,7 @@ async function convertUnshared(
   }
   return {
     image: shown.image,
+    json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames: buildSliceFrames(
       await shown.image.slice(0, 348).arrayBuffer(),

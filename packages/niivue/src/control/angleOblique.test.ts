@@ -1,24 +1,10 @@
-import { afterAll, expect, spyOn, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import NiiVue from '@/NVControl'
 import * as Layout from '@/view/NVSliceLayout'
 import { initInteraction } from './interactions'
 
-const savedWindow = globalThis.window
-globalThis.window = {
-  addEventListener() {},
-  removeEventListener() {},
-  devicePixelRatio: 1,
-} as never
 let point = [0, 0, 0]
-const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
-  () => point as never,
-)
-// Both are process-wide under bun: restore them for later test files.
-afterAll(() => {
-  pick.mockRestore()
-  globalThis.window = savedWindow
-})
 function controller(tool: string, tilt = false) {
   const nv = new NiiVue({ backend: 'webgl2' })
   nv.drawScene = () => {}
@@ -92,10 +78,25 @@ function press(nv: NiiVue, p: number[]) {
 // R13 audit: on a slice tilted 60° the 2D projection reads 53.13° for a
 // physical right angle; the angle must be measured on the drawn plane.
 test('an angle on an oblique slice is the physical angle', () => {
-  const nv = controller('measureAngle', true)
-  // World arms (10, 5, sqrt(75)) and (10, -5, -sqrt(75)) are orthogonal.
-  press(nv, [10, 5, Math.sqrt(75)])
-  press(nv, [0, 0, 0])
-  press(nv, [10, -5, -Math.sqrt(75)])
-  expect(nv.annotations[0]?.stats?.angle).toBeCloseTo(90, 4)
+  // Both stubs are process-wide under bun: restore them for later test files.
+  const savedWindow = globalThis.window
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+  } as never
+  const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+    () => point as never,
+  )
+  try {
+    const nv = controller('measureAngle', true)
+    // World arms (10, 5, sqrt(75)) and (10, -5, -sqrt(75)) are orthogonal.
+    press(nv, [10, 5, Math.sqrt(75)])
+    press(nv, [0, 0, 0])
+    press(nv, [10, -5, -Math.sqrt(75)])
+    expect(nv.annotations[0]?.stats?.angle).toBeCloseTo(90, 4)
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
 })

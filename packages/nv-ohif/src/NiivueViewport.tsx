@@ -44,6 +44,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
 import type { SliceFrames } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
@@ -145,6 +146,15 @@ export function hangingDisplay(
     : (voiRange(displaySetOptions) ?? dicomWindow(ds, shown))
 }
 
+/** What the load effect keys on: it changes whenever a new base starts loading. */
+export function baseKey(
+  displaySetsKey: string,
+  ready: boolean,
+  keys: { load: string },
+): string {
+  return JSON.stringify([displaySetsKey, ready, keys.load])
+}
+
 /** A new hanging protocol's window / preset on the loaded base, in place. */
 export function applyHangingDisplay(
   entry: NiivueViewportEntry | undefined,
@@ -195,7 +205,12 @@ export function settleBase(
 }
 
 export function NiivueViewport(props: OhifViewportProps) {
-  const { displaySets, viewportId, servicesManager } = props
+  const { viewportId, servicesManager } = props
+  // A hung SEG shows as a drawing over the series it references (segDrawing.ts).
+  const { displaySets, seg } = resolveSegDisplaySetsFor(
+    props.displaySets,
+    servicesManager,
+  )
   const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
   // Longitudinal (tracking) modes: forward new measurements to OHIF's tracker.
   useMeasurementTracking(viewportId, servicesManager, props.extensionManager)
@@ -207,6 +222,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   // The hung display set is on screen: `data-loaded`, a positive signal for tests.
   const [isLoaded, setIsLoaded] = useState(false)
+  // Resolves once the current load installs its base volume (the SEG's background).
+  const baseInstalledRef = useRef<Promise<boolean>>(Promise.resolve(false))
   // Base window, shown lower left as cornerstone's viewport overlay does.
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.
@@ -234,6 +251,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     .join('|')
 
   const keys = hangingKeys(props.viewportOptions, props.displaySetOptions)
+  const base = baseKey(displaySetsKey, ready, keys)
   // The hanging protocol's view and sync groups, on attach and whenever a new
   // protocol changes them for the same viewport and series. Declared before the
   // create effect so unmount leaves the sync groups before nv.destroy().
@@ -454,7 +472,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
   // Load the display set(s) hung in this viewport, once attached / on change.
   // Keyed on displaySetsKey and keys.load (not the array identity) by design — see above.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on displaySetsKey by design
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base key by design
   useEffect(() => {
     const nv = nvRef.current
     const displaySets = displaySetsRef.current
@@ -469,6 +487,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     // active with nothing overlaid. (No-op on the first load — nothing to clear
     // yet.)
     nv.clearAnnotations()
+    let baseInstalled = (_: boolean) => {}
+    baseInstalledRef.current = new Promise((resolve) => {
+      baseInstalled = resolve
+    })
     setWindowLevel(null)
     setStack(null)
     // Keep the registry's view of the base display sets current, so overlay
@@ -531,6 +553,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // The base is installed: show its window, enable the volume toolbar.
     const seedWindowLevel = (installed = spec) => {
       if (cancelled) return
+      baseInstalled(true)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step
@@ -787,7 +810,17 @@ export function NiivueViewport(props: OhifViewportProps) {
       cancelled = true
       abort.abort()
     }
-  }, [displaySetsKey, ready, keys.load])
+  }, [base])
+
+  // After the load effect, so a base and SEG changed together wait on the new base.
+  useSegDrawing(
+    nvRef,
+    seg,
+    baseInstalledRef,
+    base,
+    servicesManager,
+    (message) => setStatus({ kind: 'note', message }),
+  )
 
   const isVolumeViewport = props.viewportOptions?.viewportType === 'volume'
   useEffect(() => {

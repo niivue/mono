@@ -260,7 +260,11 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
 - **Partial conversions.** A nonzero dcm2niix exit that still produced images
   loads the choice with a note (dcm2niix's last error or warning line); no image
   is an error with dcm2niix's log tail.
-- **Not converted:** SEG, RTSTRUCT, RTPLAN, RTRECORD, PLAN, SR, PR, KO, REG,
+- **SEG.** A SEG hung in a pane loads the series it references as the base and
+  shows as a NiiVue drawing over it: dcm2niix turns it into a label volume
+  colored by each segment's RGB, half-opaque fill under an opaque rim. Hung
+  behind a primary series it does not reference, it is noted as not shown.
+- **Not converted:** RTSTRUCT, RTPLAN, RTRECORD, PLAN, SR, PR, KO, REG,
   DOC, FID, ECG, HD and AU series (also skipped as overlays). RTDOSE is converted.
 - **One series per viewport.** Only the first display set hung in a viewport
   loads; a note names the rest.

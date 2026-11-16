@@ -14,7 +14,7 @@ import {
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { onSlicePlane, shownInstances } from './sliceFrames'
+import { onSlicePlane, shownImages } from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -45,6 +45,8 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'setWindowLevelPreset',
   'invertViewport',
   'jumpToImage',
+  'firstImage',
+  'lastImage',
   'setViewportColormap',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
@@ -142,25 +144,15 @@ export function jumpToImage(
   let k: number
   if (entry.isVolumeViewport) k = i < 0 ? sf.frames.length + i : i
   else {
-    const instances = shownInstances(
-      (entry.displaySets[0]?.instances ?? []) as Array<{
-        SOPInstanceUID?: string
-        NumberOfFrames?: unknown
-      }>,
-      sf,
-    )
-    // A multi-frame instance is one stack whose images are its frames
-    // (stackPosition counts them so).
-    const nFrames = Number(instances[0]?.NumberOfFrames) || 1
-    const multiFrame = instances.length === 1 && nFrames > 1
-    const sop = (multiFrame ? instances[0] : instances.at(i))?.SOPInstanceUID
-    const frameNumber = multiFrame ? (i < 0 ? nFrames + i : i) + 1 : undefined
-    // Unmapped frame slots are undefined too: an unknown SOP must not match them.
-    if (!sop) return
+    const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
+      SOPInstanceUID?: string
+    }>
+    const image = shownImages(instances, sf).at(i)
+    if (!image) return
     k = sf.frames.findIndex(
       (f) =>
-        f?.SOPInstanceUID === sop &&
-        (frameNumber === undefined || f.frameNumber === frameNumber),
+        f?.SOPInstanceUID === image.SOPInstanceUID &&
+        f.frameNumber === image.frameNumber,
     )
   }
   if (k < 0 || k >= sf.frames.length) return
@@ -304,6 +296,12 @@ export function getStandardCommandDefinitions({
       commandFn: route('jumpToImage', (entry, opts) =>
         jumpToImage(entry, opts.imageIndex),
       ),
+    },
+    firstImage: {
+      commandFn: route('firstImage', (entry) => jumpToImage(entry, 0)),
+    },
+    lastImage: {
+      commandFn: route('lastImage', (entry) => jumpToImage(entry, -1)),
     },
     setViewportColormap: {
       commandFn: route('setViewportColormap', (entry, opts) => {

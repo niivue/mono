@@ -199,17 +199,23 @@ function onSlice(sf: SliceFrames, p: Vec3): number | undefined {
 }
 
 /**
- * The display set's instances the shown output holds, in display-set order: a
- * series converted to several outputs shows only one of them.
+ * The stack's images the shown output holds, in display-set order (a frame of
+ * a multi-frame instance is an image): a series converted to several outputs,
+ * or a multi-frame instance split across them, shows only some.
  */
-export function shownInstances<T extends { SOPInstanceUID?: string }>(
-  instances: ReadonlyArray<T>,
+export function shownImages(
+  instances: ReadonlyArray<{ SOPInstanceUID?: string }>,
   sf: SliceFrames,
-): T[] {
-  const sops = new Set(sf.frames.map((f) => f?.SOPInstanceUID))
-  return instances.filter(
-    (inst) =>
-      inst.SOPInstanceUID !== undefined && sops.has(inst.SOPInstanceUID),
+): FrameRef[] {
+  const order = new Map(instances.map((inst, i) => [inst.SOPInstanceUID, i]))
+  const images = new Map<string, FrameRef>()
+  for (const f of sf.frames)
+    if (f && order.has(f.SOPInstanceUID))
+      images.set(`${f.SOPInstanceUID}#${f.frameNumber}`, f)
+  return [...images.values()].sort(
+    (a, b) =>
+      (order.get(a.SOPInstanceUID) ?? 0) - (order.get(b.SOPInstanceUID) ?? 0) ||
+      a.frameNumber - b.frameNumber,
   )
 }
 

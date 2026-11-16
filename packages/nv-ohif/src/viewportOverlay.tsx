@@ -5,7 +5,7 @@
 import type { CSSProperties } from 'react'
 import { rasToLps } from './commands'
 import type { OhifDisplaySet } from './ohif-types'
-import { frameAt, type SliceFrames, shownInstances } from './sliceFrames'
+import { frameAt, type SliceFrames, shownImages } from './sliceFrames'
 
 export type WindowLevel = { window: number; level: number }
 export type StackPosition = {
@@ -39,35 +39,40 @@ export function stackPosition(
     rasToLps([mmRas[0] ?? 0, mmRas[1] ?? 0, mmRas[2] ?? 0]),
   ])
   if (!frame) return undefined
-  const instances = shownInstances(
-    (ds.instances ?? []) as Array<{
-      SOPInstanceUID?: string
-      InstanceNumber?: unknown
-      NumberOfFrames?: unknown
-    }>,
-    sf,
-  )
-  const i = instances.findIndex(
+  const instances = (ds.instances ?? []) as Array<{
+    SOPInstanceUID?: string
+    InstanceNumber?: unknown
+    NumberOfFrames?: unknown
+  }>
+  const instance = instances.find(
     (inst) => inst.SOPInstanceUID === frame.SOPInstanceUID,
   )
-  if (i < 0) return undefined
-  const frames = Number(instances[i]?.NumberOfFrames) || 1
+  if (!instance) return undefined
+  const instanceNumber = Number(instance.InstanceNumber) || undefined
   // Cornerstone counts a volume viewport's position along the volume
   // (inferior -> superior for axial), a stack viewport's in display-set order.
   if (volumeOrder)
     return {
-      instanceNumber: Number(instances[i]?.InstanceNumber) || undefined,
+      instanceNumber,
       index: sf.frames.indexOf(frame) + 1,
       total: sf.frames.length,
     }
-  // A multi-frame instance is one stack: its frame is the position.
-  return instances.length === 1 && frames > 1
-    ? { index: frame.frameNumber, total: frames }
-    : {
-        instanceNumber: Number(instances[i]?.InstanceNumber) || undefined,
-        index: i + 1,
-        total: instances.length,
-      }
+  const images = shownImages(instances, sf)
+  const index =
+    images.findIndex(
+      (f) =>
+        f.SOPInstanceUID === frame.SOPInstanceUID &&
+        f.frameNumber === frame.frameNumber,
+    ) + 1
+  // The frames of one multi-frame instance carry no instance number of their own.
+  const isMultiFrame =
+    (Number(instance.NumberOfFrames) || 1) > 1 &&
+    images.every((f) => f.SOPInstanceUID === frame.SOPInstanceUID)
+  return {
+    ...(isMultiFrame ? {} : { instanceNumber }),
+    index,
+    total: images.length,
+  }
 }
 
 const corner = (pos: CSSProperties): CSSProperties => ({

@@ -32,9 +32,10 @@ import {
   generateShape,
   generateSplineFromPoints,
   isAnnotationErased,
+  isCircleTool,
 } from './shapes'
 import { isOnSlice, mmToSlice2D } from './sliceProjection'
-import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
+import { computeAnnotationStats, isMeasureTool } from './stats'
 
 export {
   clipperInflatePath,

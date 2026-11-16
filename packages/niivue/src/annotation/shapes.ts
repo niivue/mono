@@ -4,9 +4,12 @@ import type {
   PolygonWithHoles,
   VectorAnnotation,
 } from '@/NVTypes'
-import { isCircleTool } from './stats'
 
 const ELLIPSE_SEGMENTS = 64
+
+export function isCircleTool(tool: AnnotationTool): boolean {
+  return tool === 'circle' || tool === 'measureCircle'
+}
 
 function generateEllipse(
   start: AnnotationPoint,

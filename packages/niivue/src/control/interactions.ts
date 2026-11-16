@@ -281,7 +281,12 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   if (Annotation.isMeasureTool(cfg.tool)) {
     const vol = ctrl.model.getVolumes()[0]
     if (vol)
-      newAnn.stats = Annotation.computeAnnotationStats(newAnn, vol) ?? undefined
+      newAnn.stats =
+        Annotation.computeAnnotationStats(
+          newAnn,
+          vol,
+          ctrl.model.annotation.isAreaGeometric,
+        ) ?? undefined
   }
   commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
   return true
@@ -1848,7 +1853,11 @@ export function initInteraction(ctrl: NiiVue): void {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
                 ann.stats =
-                  Annotation.computeAnnotationStats(ann, vol) ?? undefined
+                  Annotation.computeAnnotationStats(
+                    ann,
+                    vol,
+                    ctrl.model.annotation.isAreaGeometric,
+                  ) ?? undefined
             }
             ctrl.emit('annotationChanged', {
               action: 'resize',
@@ -1949,8 +1958,11 @@ export function initInteraction(ctrl: NiiVue): void {
                   const vol = ctrl.model.getVolumes()[0]
                   if (vol)
                     newAnn.stats =
-                      Annotation.computeAnnotationStats(newAnn, vol) ??
-                      undefined
+                      Annotation.computeAnnotationStats(
+                        newAnn,
+                        vol,
+                        ctrl.model.annotation.isAreaGeometric,
+                      ) ?? undefined
                 }
                 commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
               }
@@ -1990,8 +2002,11 @@ export function initInteraction(ctrl: NiiVue): void {
                   ? {
                       ...ann,
                       stats:
-                        Annotation.computeAnnotationStats(ann, vol) ??
-                        undefined,
+                        Annotation.computeAnnotationStats(
+                          ann,
+                          vol,
+                          ctrl.model.annotation.isAreaGeometric,
+                        ) ?? undefined,
                     }
                   : ann,
               )

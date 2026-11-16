@@ -583,7 +583,10 @@ it('jumpToImage on a non-DICOM volume steps the voxel slices of the view axis', 
   ])
 })
 
-it('jumpToImage on a volume viewport off its acquisition plane counts along the view axis', () => {
+it.each([
+  true,
+  false,
+])('jumpToImage off the acquisition plane counts along the view axis (volume viewport %p)', (isVolumeViewport) => {
   const calls: number[][] = []
   const entry = {
     nv: {
@@ -593,8 +596,8 @@ it('jumpToImage on a volume viewport off its acquisition plane counts along the 
       volumes: [{ dimsRAS: [3, 3, 3, 3], permRAS: [1, 2, 3] }],
     },
     crosshairMM: [2, 1, 1],
-    isVolumeViewport: true,
-    displaySets: [],
+    isVolumeViewport,
+    displaySets: [{ instances: [{ SOPInstanceUID: 'a' }] }],
     // An axial slice map: it cannot step sagittal slices.
     sliceFrames: {
       origin: [0, 0, 0],

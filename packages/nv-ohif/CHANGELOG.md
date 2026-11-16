@@ -1,3 +1,33 @@
+## 1.0.0-rc.243 (2026-11-16)
+
+### Features
+
+- **nv-ohif:** OHIF viewport overlays, tracking, and tool parity ([d22faced](https://github.com/niivue/mono/commit/d22faced))
+
+### Fixes
+
+- **nv-ohif:** forward only measurements on the active NiiVue pane's series ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** jumpToImage on a stack turned off its acquisition plane ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** count a split multi-frame's shown frames; route firstImage and lastImage ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** index and count only the instances the shown output holds ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** jumpToImage along the view axis off the acquisition plane ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** jumpToImage in volume order and on non-DICOM volumes ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** data-loaded after install, multi-frame jumpToImage, stack readout on slice-type change ([#814](https://github.com/niivue/mono/issues/814))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.242 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.214
+- Updated nv-ext-tile to 1.0.0-rc.123
+- Updated uikit to 1.0.0-rc.212
+
 ## 1.0.0-rc.241 (2026-11-16)
 
 ### Features

@@ -1,3 +1,25 @@
+## 1.0.0-rc.214 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationAreaIsGeometric; exact, faster ROI voxel masks ([e2848da7](https://github.com/niivue/mono/commit/e2848da7))
+
+### Fixes
+
+- **niivue:** measure a stored annotation after the merge, not before ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** an ROI's geometric area unions its overlapping pieces ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** a voxel inside any hole is outside the ROI, overlapping holes included ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** an intact circle's stats use its square-constrained box ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** geometric area of a self-crossing contour uses its even-odd region ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** bound an intact ellipse's stats scan by the true curve ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** ROI stats on the anchor plane, sub-voxel geometric area ([#818](https://github.com/niivue/mono/issues/818))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.213 (2026-11-16)
 
 ### Features

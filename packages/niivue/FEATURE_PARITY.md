@@ -481,7 +481,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `niftiArray2NVImage()` | Not planned | No public constructor from raw arrays |
 | `decimateHierarchicalMesh()` on Niivue | Not planned | Outside core scope |
 | Thumbnail / placeholder | ✅ | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` |
-| Legend visibility | ✅ | `isLegendVisible`; large tables wrap into columns, then scroll (wheel, scrollbar track click); per-label hide/show via volume or mesh layer `hiddenLabels` and the opt-in `isLegendToggleEnabled` legend click |
+| Legend visibility | ✅ | `isLegendVisible`; large tables wrap into columns, then scroll (wheel, scrollbar track click); per-label hide/show via volume or mesh layer `hiddenLabels` (a mesh layer removes hidden triangles unless `isHiddenLabelCulled` is false) and the opt-in `isLegendToggleEnabled` legend click (double-click solos a label); PAQD volumes honour `hiddenLabels` |
 | Annotation system (vector) | ✅ | New feature not in old package |
 
 ---

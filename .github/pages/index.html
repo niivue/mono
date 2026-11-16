@@ -6,10 +6,11 @@
     <link rel="icon" href="data:," />
     <title>NiiVue — Demos</title>
     <!-- The published site's front door is the docs site, which lists every
-         demo below in its gallery. Only on GitHub Pages: the local dev server
-         serves this page at / and has no built docs at /docs/. -->
+         demo below in its gallery. Only on the published site: the local dev
+         server serves this page at / and has no built docs at /docs/. -->
     <script>
-      if (location.hostname.endsWith('github.io')) location.replace('./docs/')
+      if (location.hostname === 'niivue.com' || location.hostname.endsWith('github.io'))
+        location.replace('./docs/')
     </script>
     <style>
       body {

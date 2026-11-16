@@ -486,6 +486,12 @@ export type NVMeshLayer = {
   colormapLabel: LUT | null
   /** Label values drawn transparent, as a volume's `hiddenLabels` */
   hiddenLabels?: number[]
+  /**
+   * Remove the triangles of `hiddenLabels`, as hidden voxels vanish; false
+   * shows the mesh colour beneath instead. A triangle takes the label most of
+   * its vertices share (its first vertex's when all differ). Default: true.
+   */
+  isHiddenLabelCulled?: boolean
   /** Outline width (0 = filled, >0 = outline only) */
   outlineWidth: number
   /** Source URL or filename */
@@ -1199,6 +1205,12 @@ export type InteractionConfig = {
   // window stays put and the crosshair may leave it. Explicit pan/zoom
   // gestures are never fought.
   isPanFollowingCrosshair: boolean
+  /**
+   * Windowing drag gain, [width, center], as fractions of the base volume's
+   * robust range per pixel. Default [0.005, 0.005]: right widens, up raises the
+   * center. A negative center step makes dragging down raise it (cornerstone).
+   */
+  windowingStep: [number, number]
 }
 
 // ============================================================
@@ -1506,6 +1518,8 @@ export type NiiVueOptions = {
   wheelZoomAnchor?: WheelZoomAnchor
   isViewModeHotKeyEnabled?: boolean
   isPanFollowingCrosshair?: boolean
+  /** Windowing drag gain. See InteractionConfig.windowingStep. */
+  windowingStep?: [number, number]
   isLegendToggleEnabled?: boolean
 
   // Annotation (prefixed)
@@ -1837,6 +1851,8 @@ export type MeshLayerFromUrlOptions = {
   isAdditiveBlend?: boolean
   /** Outline width */
   outlineWidth?: number
+  /** Remove hidden labels' triangles (see {@link NVMeshLayer.isHiddenLabelCulled}). Default: true. */
+  isHiddenLabelCulled?: boolean
 }
 
 /**

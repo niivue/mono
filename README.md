@@ -110,5 +110,5 @@ Use `--tag next` for prerelease versions (e.g. `1.0.0-rc.1`). Omit `--tag` for s
 Pushing to `main` automatically builds and deploys all examples and demo apps to GitHub Pages. To preview the site locally:
 
 ```bash
-.github/build-pages.sh --serve   # build and serve at http://localhost:8080/mono/
+.github/build-pages.sh --serve   # build and serve at http://localhost:8080/
 ```

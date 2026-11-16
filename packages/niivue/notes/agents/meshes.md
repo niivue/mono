@@ -59,7 +59,7 @@ each; per tile the CPU lists the clusters each plane crosses
 surface a plane crosses ~11% of clusters (21% at 256, 7% at 32), and the CPU
 bounds test is linear in cluster count.
 
-Data: `mesh.indices` in the model keeps file order; the CPU keeps only a
+Data: `mesh.indices` in the model keeps file order (clusters and the GPU index buffer are built from `shownIndices(mesh)`, which drops culled hidden-label triangles); the CPU keeps only a
 permutation (4 B/tri) plus bounds. Both backends upload a separate
 cluster-ordered index copy (12 B/tri) and never rewrite the mesh's own index
 buffer: translucent 3D blending depends on triangle order (an audit caught

@@ -1,4 +1,5 @@
 import { log } from '@/logger'
+import { shownIndices } from '@/mesh/shownIndices'
 import {
   CLUSTER_SIZE,
   clustersCrossingPlanes,
@@ -150,13 +151,14 @@ function createMeshGpu(
     throw new Error('Failed to create mesh index buffer')
   }
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer)
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshData.indices, gl.STATIC_DRAW)
+  const indices = shownIndices(meshData)
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW)
   gl.bindVertexArray(null)
   return {
     vao,
     vertexBuffer,
     indexBuffer,
-    indexCount: meshData.indices.length,
+    indexCount: indices.length,
     vertexBytes: vertexData.byteLength,
   }
 }
@@ -342,7 +344,7 @@ function crosscut2Gpu(
   if (cc.clusters !== clusters) {
     // The main index buffer keeps the file's order: crosscut2 reads its
     // triangles from this texture, so other shaders are left untouched.
-    const sorted = sortedIndices(meshData.indices, clusters.order)
+    const sorted = sortedIndices(shownIndices(meshData), clusters.order)
     if (!uploadWordTexture(gl, cc.triWords, sorted.length, sorted)) {
       log.warn('crosscut2: mesh too large for an index texture')
       _tooLarge.add(gpu)

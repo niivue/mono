@@ -240,6 +240,56 @@ test('annotationIsClickToPlace: click-move-click places a shape; drags and the d
   expect(r.parked).toBeNull()
 })
 
+test('annotationIsClickToPlace: places a shape on an oblique volume; turning it off drops the preview', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    // Tilted: the mm depth varies across one slice, so the slice test is in texture depth.
+    await nv.loadVolumes([{ url: synth({ tilt: [10, 8] }) }])
+    const click = (x, y) => drag([[x, y]])
+    nv.annotationIsClickToPlace = true
+    click(120, 120)
+    click(280, 280)
+    const placed = nv.annotations.length
+    click(120, 120)
+    ev('pointermove', 200, 200, -1)
+    const previewed = !!nv.model._annotationPreview
+    nv.annotationIsClickToPlace = false
+    return { placed, previewed, preview: nv.model._annotationPreview, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.placed).toBe(1)
+  expect(r.previewed).toBe(true)
+  expect(r.preview).toBeNull()
+  expect(r.parked).toBeNull()
+})
+
+test('annotationIsClickToPlace: a parked start beats a selected control point', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationIsClickToPlace = true
+    nv.annotationMergesOverlaps = false
+    drag([[120, 120]])
+    drag([[200, 200]])
+    const id = nv.annotations[0].id
+    // Park a start, select the shape via the API, then press its corner.
+    drag([[260, 120]])
+    nv.selectAnnotation(id)
+    drag([[200, 200]])
+    return { count: nv.annotations.length, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.count).toBe(2)
+  expect(r.parked).toBeNull()
+})
+
 test('annotationIsClickToPlace: Escape drops a parked start; a parked start beats selection; jitter is a click', async ({
   page,
 }) => {

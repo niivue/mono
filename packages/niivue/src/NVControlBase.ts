@@ -2737,7 +2737,10 @@ export default class NiiVue extends EventTarget {
   /** See {@link AnnotationConfig.isClickToPlace}. */
   set annotationIsClickToPlace(v: boolean) {
     this.model.annotation.isClickToPlace = v
-    if (!v) this._annotationClickStart = null
+    if (!v && this._annotationClickStart) {
+      this._abandonAnnotationInProgress()
+      this.drawScene()
+    }
     this.emit('change', { property: 'annotationIsClickToPlace', value: v })
   }
 

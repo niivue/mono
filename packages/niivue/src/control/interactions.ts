@@ -75,6 +75,21 @@ import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
   m[d] * p[0] + m[4 + d] * p[1] + m[8 + d] * p[2] + m[12 + d]
 
+/** Whether `mm` lies on the slice through `anchor` (within half a voxel in
+ * texture depth; on an oblique volume the mm depth varies across one slice). */
+function isOnSliceOf(
+  ctrl: NiiVue,
+  anchor: ArrayLike<number>,
+  mm: ArrayLike<number>,
+  depthDim: number,
+): boolean {
+  const mm2tex = ctrl.model.mm2tex
+  const dims = ctrl.volumes[0]?.dimsRAS
+  if (!mm2tex || !dims) return Math.abs(anchor[depthDim] - mm[depthDim]) <= 1e-3
+  const dt = texDepth(anchor, depthDim, mm2tex) - texDepth(mm, depthDim, mm2tex)
+  return Math.abs(dt) <= 0.5 / dims[depthDim + 1]
+}
+
 // isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
 // screen space so thick slices or zoom don't change what counts as a click.
 const CLICK_PX = 3
@@ -1652,6 +1667,21 @@ export function initInteraction(ctrl: NiiVue): void {
 
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
+          // A press on the slice of a parked click start ends that shape
+          // (isClickToPlace), ahead of a selected shape's control points; elsewhere it drops it.
+          const parked = ctrl._annotationClickStart
+          ctrl._annotationClickStart = null
+          ctrl._annotationClickResumed =
+            !!parked &&
+            parked.sliceType === sliceType &&
+            isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
+          if (parked && ctrl._annotationClickResumed) {
+            ctrl._annotationShapeStart = parked.start
+            ctrl._annotationSlicePosition = parked.slicePosition
+            ctrl._annotationAnchorMM = parked.anchorMM
+            startAnnotationDrag(ctrl, evt)
+            return
+          }
           // Check control point hit on current selection
           if (ctrl.model._annotationSelection) {
             const cpIdx = Annotation.hitTestControlPoint(
@@ -1681,21 +1711,6 @@ export function initInteraction(ctrl: NiiVue): void {
                 return
               }
             }
-          }
-          // A press on the slice of a parked click start ends that shape
-          // (isClickToPlace), ahead of selection; elsewhere it drops it.
-          const parked = ctrl._annotationClickStart
-          ctrl._annotationClickStart = null
-          ctrl._annotationClickResumed =
-            !!parked &&
-            parked.sliceType === sliceType &&
-            Math.abs(parked.slicePosition - slicePosition) <= 1e-3
-          if (parked && ctrl._annotationClickResumed) {
-            ctrl._annotationShapeStart = parked.start
-            ctrl._annotationSlicePosition = parked.slicePosition
-            ctrl._annotationAnchorMM = parked.anchorMM
-            startAnnotationDrag(ctrl, evt)
-            return
           }
           // Hit-test existing shape annotations for selection
           const selTile = (ctrl.view?.screenSlices ?? [])[
@@ -2152,7 +2167,7 @@ export function initInteraction(ctrl: NiiVue): void {
             if (
               parked &&
               parked.sliceType === sliceType &&
-              Math.abs(parked.slicePosition - mm[depthDim]) <= 1e-3 &&
+              isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim) &&
               !isBidirectionalTool(ctrl.model.annotation.tool)
             ) {
               updateShapePreview(

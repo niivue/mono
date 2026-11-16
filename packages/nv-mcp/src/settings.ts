@@ -392,6 +392,10 @@ export const SETTINGS: readonly Setting[] = [
     'annotationMergesOverlaps',
     'Whether a new annotation is merged with one it overlaps.',
   ),
+  bool(
+    'annotationIsClickToPlace',
+    'Whether a click, a move and a second click place a two-point shape.',
+  ),
   bool('isAnnotationDrawn', 'Whether annotations are drawn at all.'),
 
   // Slide (whole-slide) tools

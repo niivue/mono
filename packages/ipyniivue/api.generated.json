@@ -36,6 +36,17 @@
       "doc": null
     },
     {
+      "jsName": "annotationIsClickToPlace",
+      "pyName": "annotation_is_click_to_place",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isClickToPlace}."
+    },
+    {
       "jsName": "annotationIsEnabled",
       "pyName": "annotation_is_enabled",
       "tsType": "boolean",

@@ -1534,6 +1534,8 @@ export type NiiVueOptions = {
    * must retain an independent identity.
    */
   annotationMergesOverlaps?: boolean
+  /** See AnnotationConfig.isClickToPlace. Default false. */
+  annotationIsClickToPlace?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -2183,6 +2185,13 @@ export type AnnotationConfig = {
   activeGroup: string
   brushRadius: number
   mergesOverlaps: boolean
+  /**
+   * Two-point shapes (line, measure, arrow, rect, ellipse, circle, bidirectional
+   * axes) may also be placed click-move-click, as cornerstone's tools are: a
+   * click (press and release in place) parks the start; the next press on the
+   * same slice ends the shape where it is released. Drags work as before.
+   */
+  isClickToPlace: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

@@ -25,6 +25,7 @@ const PROPS_RW = [
   ["annotationActiveGroup", "annotation_active_group"],
   ["annotationActiveLabel", "annotation_active_label"],
   ["annotationBrushRadius", "annotation_brush_radius"],
+  ["annotationIsClickToPlace", "annotation_is_click_to_place"],
   ["annotationIsEnabled", "annotation_is_enabled"],
   ["annotationIsErasing", "annotation_is_erasing"],
   ["annotationIsVisibleIn3D", "annotation_is_visible_in_3d"],

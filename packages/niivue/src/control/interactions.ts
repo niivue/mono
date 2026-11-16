@@ -76,6 +76,39 @@ import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
   m[d] * p[0] + m[4 + d] * p[1] + m[8 + d] * p[2] + m[12 + d]
 
+/** Whether `mm` lies on the slice through `anchor` (within half a voxel in
+ * texture depth; on an oblique volume the mm depth varies across one slice). */
+function isOnSliceOf(
+  ctrl: NiiVue,
+  anchor: ArrayLike<number>,
+  mm: ArrayLike<number>,
+  depthDim: number,
+): boolean {
+  const mm2tex = ctrl.model.mm2tex
+  const dims = ctrl.volumes[0]?.dimsRAS
+  if (!mm2tex || !dims) return Math.abs(anchor[depthDim] - mm[depthDim]) <= 1e-3
+  const dt = texDepth(anchor, depthDim, mm2tex) - texDepth(mm, depthDim, mm2tex)
+  return Math.abs(dt) <= 0.5 / dims[depthDim + 1]
+}
+
+/**
+ * Off any slice: drop the hover cursor and a parked click-to-place start's
+ * rubber band (the start keeps waiting for its second click). True if either
+ * was shown.
+ */
+function clearHover(ctrl: NiiVue): boolean {
+  const parkedPreview =
+    !!ctrl._annotationClickStart && !!ctrl.model._annotationPreview
+  if (!ctrl.model._annotationCursor && !parkedPreview) return false
+  ctrl.model._annotationCursor = null
+  if (parkedPreview) ctrl.model._annotationPreview = null
+  return true
+}
+
+// isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
+// screen space so thick slices or zoom don't change what counts as a click.
+const CLICK_PX = 3
+
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
   ctrl.activeButton = evt.button
@@ -244,6 +277,51 @@ function updateMultiClickPreview(
     ctrl._annotationPolyAnchorMM,
   )
   preview.shape = { type: cfg.tool, start: all[0], end: all[all.length - 1] }
+  ctrl.model._annotationPreview = preview
+}
+
+// Preview a two-point shape from start to end (a drag, or a parked click start).
+function updateShapePreview(
+  ctrl: NiiVue,
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+  sliceType: number,
+  slicePosition: number,
+  anchorMM: [number, number, number],
+): void {
+  const cfg = ctrl.model.annotation
+  if (Annotation.isCircleTool(cfg.tool))
+    end = Annotation.constrainCircleEnd(start, end)
+  const polygons = Annotation.generateShape(
+    cfg.tool,
+    start,
+    end,
+    cfg.style.strokeWidth,
+  )
+  if (polygons.length === 0) {
+    ctrl.model._annotationPreview = null
+    return
+  }
+  const preview = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    sliceType,
+    slicePosition,
+    polygons,
+    cfg.style,
+    anchorMM,
+  )
+  preview.shape = { type: cfg.tool, start, end }
+  if (cfg.tool === 'measureLine') {
+    preview.stats = {
+      area: 0,
+      min: 0,
+      mean: 0,
+      max: 0,
+      stdDev: 0,
+      length: Math.hypot(end.x - start.x, end.y - start.y),
+    }
+  }
   ctrl.model._annotationPreview = preview
 }
 
@@ -511,9 +589,13 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
       if (ctrl.isDragging) resetDragState(ctrl)
       return
     }
-    // Abandon an in-progress multi-click contour (spline / livewire) or a
-    // half-placed bidirectional measurement.
-    if (ctrl._annotationPolyPoints || ctrl._bidirectionalLong) {
+    // Abandon an in-progress multi-click contour (spline / livewire), a
+    // half-placed bidirectional measurement, or a parked click start.
+    if (
+      ctrl._annotationPolyPoints ||
+      ctrl._bidirectionalLong ||
+      ctrl._annotationClickStart
+    ) {
       ctrl._abandonAnnotationInProgress()
       // End a drag in progress too, or the moves before release fall through
       // to the camera orbit (#471).
@@ -1649,6 +1731,21 @@ export function initInteraction(ctrl: NiiVue): void {
 
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
+          // A press on the slice of a parked click start ends that shape
+          // (isClickToPlace), ahead of a selected shape's control points; elsewhere it drops it.
+          const parked = ctrl._annotationClickStart
+          ctrl._annotationClickStart = null
+          ctrl._annotationClickResumed =
+            !!parked &&
+            parked.sliceType === sliceType &&
+            isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
+          if (parked && ctrl._annotationClickResumed) {
+            ctrl._annotationShapeStart = parked.start
+            ctrl._annotationSlicePosition = parked.slicePosition
+            ctrl._annotationAnchorMM = parked.anchorMM
+            startAnnotationDrag(ctrl, evt)
+            return
+          }
           // Check control point hit on current selection
           if (ctrl.model._annotationSelection) {
             const cpIdx = Annotation.hitTestControlPoint(
@@ -1707,9 +1804,10 @@ export function initInteraction(ctrl: NiiVue): void {
               return
             }
           }
-          // No selection hit — clear selection and start new shape
+          // No selection hit — clear selection and start a new shape.
           ctrl.model._annotationSelection = null
           ctrl._annotationShapeStart = pt2d
+          ctrl._annotationPressClient = [evt.clientX, evt.clientY]
           startAnnotationDrag(ctrl, evt)
           return
         }
@@ -1870,13 +1968,26 @@ export function initInteraction(ctrl: NiiVue): void {
               ctrl._annotationSliceType,
             )
             const cfg = ctrl.model.annotation
-            if (Annotation.isCircleTool(cfg.tool)) {
-              pt2d = Annotation.constrainCircleEnd(
-                ctrl._annotationShapeStart,
-                pt2d,
-              )
+            const start = ctrl._annotationShapeStart
+            const [pressX, pressY] = ctrl._annotationPressClient
+            if (
+              cfg.isClickToPlace &&
+              !ctrl._annotationClickResumed &&
+              Math.hypot(evt.clientX - pressX, evt.clientY - pressY) <= CLICK_PX
+            ) {
+              // A click: park the start; the next press ends the shape.
+              ctrl._annotationClickStart = {
+                start,
+                sliceType: ctrl._annotationSliceType,
+                slicePosition: ctrl._annotationSlicePosition,
+                anchorMM: ctrl._annotationAnchorMM,
+              }
+            } else if (Annotation.isCircleTool(cfg.tool)) {
+              pt2d = Annotation.constrainCircleEnd(start, pt2d)
             }
-            if (isBidirectionalTool(cfg.tool)) {
+            if (ctrl._annotationClickStart) {
+              // Parked: nothing to commit yet.
+            } else if (isBidirectionalTool(cfg.tool)) {
               // First drag places the long axis; the second commits the pair.
               const drag: Axis = {
                 start: ctrl._annotationShapeStart,
@@ -2122,15 +2233,33 @@ export function initInteraction(ctrl: NiiVue): void {
               )
               updateMultiClickPreview(ctrl, pt2d)
             }
+            // Parked click start (isClickToPlace): rubber-band to the cursor.
+            // ponytail: bidirectional has no hover preview; add if clicked axes need it.
+            const parked = ctrl._annotationClickStart
+            if (
+              parked &&
+              parked.sliceType === sliceType &&
+              isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim) &&
+              !isBidirectionalTool(ctrl.model.annotation.tool)
+            ) {
+              updateShapePreview(
+                ctrl,
+                parked.start,
+                Annotation.mmToSlice2D(
+                  mm as [number, number, number],
+                  sliceType,
+                ),
+                sliceType,
+                parked.slicePosition,
+                parked.anchorMM,
+              )
+            } else if (parked) ctrl.model._annotationPreview = null
             ctrl.drawScene()
             return
           }
         }
       }
-      if (ctrl.model._annotationCursor) {
-        ctrl.model._annotationCursor = null
-        ctrl.drawScene()
-      }
+      if (clearHover(ctrl)) ctrl.drawScene()
       return
     }
     if (!ctrl.isDragging) {
@@ -2327,56 +2456,23 @@ export function initInteraction(ctrl: NiiVue): void {
         ctrl.activeTileHit,
       )
       if (mm) {
-        let pt2d = Annotation.mmToSlice2D(
+        const pt2d = Annotation.mmToSlice2D(
           mm as [number, number, number],
           ctrl._annotationSliceType,
         )
-        const cfg = ctrl.model.annotation
-        if (isBidirectionalTool(cfg.tool)) {
+        if (isBidirectionalTool(ctrl.model.annotation.tool)) {
           bidirectionalPreview(ctrl, pt2d)
           ctrl.drawScene()
           return
         }
-        if (Annotation.isCircleTool(cfg.tool)) {
-          pt2d = Annotation.constrainCircleEnd(ctrl._annotationShapeStart, pt2d)
-        }
-        const polygons = Annotation.generateShape(
-          cfg.tool,
+        updateShapePreview(
+          ctrl,
           ctrl._annotationShapeStart,
           pt2d,
-          cfg.style.strokeWidth,
+          ctrl._annotationSliceType,
+          ctrl._annotationSlicePosition,
+          ctrl._annotationAnchorMM,
         )
-        if (polygons.length > 0) {
-          const preview = Annotation.createAnnotation(
-            cfg.activeLabel,
-            cfg.activeGroup,
-            ctrl._annotationSliceType,
-            ctrl._annotationSlicePosition,
-            polygons,
-            cfg.style,
-            ctrl._annotationAnchorMM,
-          )
-          preview.shape = {
-            type: cfg.tool,
-            start: ctrl._annotationShapeStart,
-            end: pt2d,
-          }
-          if (cfg.tool === 'measureLine') {
-            const dx = pt2d.x - ctrl._annotationShapeStart.x
-            const dy = pt2d.y - ctrl._annotationShapeStart.y
-            preview.stats = {
-              area: 0,
-              min: 0,
-              mean: 0,
-              max: 0,
-              stdDev: 0,
-              length: Math.sqrt(dx * dx + dy * dy),
-            }
-          }
-          ctrl.model._annotationPreview = preview
-        } else {
-          ctrl.model._annotationPreview = null
-        }
         ctrl.drawScene()
       }
       return
@@ -2818,9 +2914,8 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointerleave = () => {
     ctrl._pointerClient = null
-    if (ctrl.model._annotationCursor) {
+    if (clearHover(ctrl)) {
       setNextActionTag('pointerleave')
-      ctrl.model._annotationCursor = null
       ctrl.drawScene()
     }
     ctrl.emit(

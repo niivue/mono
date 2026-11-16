@@ -467,6 +467,64 @@ it('jumpToImage counts only the instances the shown output holds', () => {
   expect(calls).toHaveLength(1)
 })
 
+it('jumpToImage counts the shown frames of a split multi-frame instance', () => {
+  // A 4-frame instance whose shown output holds frames 2 and 4.
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 1],
+    displaySets: [{ instances: [{ SOPInstanceUID: 'mf', NumberOfFrames: 4 }] }],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [2, 4].map((frameNumber) => ({
+        SOPInstanceUID: 'mf',
+        frameNumber,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 2)
+  expect(calls).toEqual([
+    [5, 6, 0],
+    [5, 6, 1],
+  ])
+})
+
+it('firstImage and lastImage jump to the ends of the shown stack', () => {
+  const calls: number[][] = []
+  const nv = Object.assign(stubNiivue(), {
+    setCrosshairPos: (p: number[]) => calls.push(p),
+  })
+  register('nv-1', nv)
+  updateNiivueViewport('nv-1', {
+    crosshairMM: [5, 6, 1],
+    displaySets: [
+      {
+        instances: ['a', 'b', 'c'].map((SOPInstanceUID) => ({
+          SOPInstanceUID,
+        })),
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: ['a', 'b', 'c'].map((SOPInstanceUID) => ({
+        SOPInstanceUID,
+        frameNumber: 1,
+      })),
+    },
+  } as unknown as Parameters<typeof updateNiivueViewport>[1])
+  const { run } = fakeHost('nv-1')
+  run('firstImage')
+  run('lastImage')
+  expect(calls).toEqual([
+    [5, 6, 0],
+    [5, 6, 2],
+  ])
+})
+
 it('jumpToImage on a volume viewport counts along the volume', () => {
   const calls: number[][] = []
   const entry = {

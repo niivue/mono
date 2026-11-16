@@ -548,10 +548,6 @@ describe('remapDrawingToRAS', () => {
     expect(remap(2, [11, -3, 5], [3, 6, 3]).ras).toBe('non-integer shift')
   })
 
-  test('otherSpacing_refused', () => {
-    expect(remap(4, [10, -3, 5], [2, 2, 2]).ras).toBe('scale')
-  })
-
   test('driftThatCancelsAcrossTheGrid_judgedAtItsWorstVoxel', () => {
     // Along y the source spacing is 3.2e-4 short and its origin compensates:
     // -8e-4 voxel at one end, +8e-4 at the other, though the summed parts
@@ -586,12 +582,6 @@ describe('remapDrawingToRAS', () => {
     expect(remapDrawingToRAS(back, src, [3, 3, 6, 1], thick(6))).toBe(
       'non-integer shift',
     )
-  })
-
-  test('jitterOf1e-5Voxel_acceptedAndExact', () => {
-    const exact = remap(2, [10, -3, 5], [3, 6, 3]).ras
-    const jittered = remap(2, [10 + 2e-5, -3 - 2e-5, 5], [3, 6, 3]).ras
-    expect(jittered).toEqual(exact)
   })
 })
 

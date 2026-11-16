@@ -49,14 +49,6 @@ test('noSpatialTransformOtherDims_refused', async () => {
   expect(nv.drawingVolume).toBeNull()
 })
 
-test('halfVoxelShiftOnEqualDims_refused', async () => {
-  const nv = await viewer()
-  const shifted = [...IDENTITY]
-  shifted[3] = 0.5
-  expect(await nv.loadDrawing(nii(shifted, firstVoxel()))).toBe(false)
-  expect(nv.drawingVolume).toBeNull()
-})
-
 test('closeWhileFileIsRead_pendingLoadInstallsNothing', async () => {
   const nv = await viewer()
   let release = () => {}

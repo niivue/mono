@@ -1,4 +1,6 @@
 import {
+  areaPathsD,
+  booleanOpD,
   booleanOpWithPolyTree,
   ClipType,
   EndType,
@@ -184,4 +186,15 @@ export function clipperSubtractBrush(
     FillRule.EvenOdd,
   )
   return extractPolyTree(tree)
+}
+
+/**
+ * Area of a polygon's even-odd region (pointInRing's rule), so a self-crossing
+ * ring's lobes add instead of cancelling as in a signed shoelace sum.
+ */
+export function clipperEvenOddArea(rings: AnnotationPoint[][]): number {
+  // precision 4: 0.1 um in mm, while scaled products stay exact in doubles.
+  return Math.abs(
+    areaPathsD(booleanOpD(ClipType.Union, rings, null, FillRule.EvenOdd, 4)),
+  )
 }

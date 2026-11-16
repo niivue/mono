@@ -3,7 +3,7 @@ import { mat4 } from 'gl-matrix'
 import { SLICE_TYPE } from '@/NVConstants'
 import type { AnnotationPoint, NVImage, VectorAnnotation } from '@/NVTypes'
 import { pointInRing } from './pointInRing'
-import { generateShape } from './shapes'
+import { generatePolygonFromPoints, generateShape } from './shapes'
 import { computeAnnotationStats } from './stats'
 
 // 20x20x1 axial grid, 1 mm voxels, voxel value = its x index.
@@ -346,4 +346,20 @@ test('a large rotated ellipse counts voxels between its 64-gon and the true curv
     shape: { type: 'measureEllipse', start, end },
   }
   expect(computeAnnotationStats(ann, rotated)?.min).toBe(-7)
+})
+
+test('isAreaGeometric: a self-crossing contour counts both lobes, as its voxel mask', () => {
+  // Bowtie: two 25 mm^2 triangles whose signed shoelace parts cancel.
+  const bowtie = [
+    { x: 5, y: 5 },
+    { x: 15, y: 15 },
+    { x: 5, y: 15 },
+    { x: 15, y: 5 },
+  ]
+  const ann: VectorAnnotation = {
+    ...annotation(generatePolygonFromPoints(bowtie)),
+    shape: { type: 'measureLivewire', start: bowtie[0], end: bowtie[3] },
+  } as VectorAnnotation
+  expect(computeAnnotationStats(ann, volume, true)?.area).toBeCloseTo(50, 6)
+  expect(computeAnnotationStats(ann, volume)?.area).toBe(50)
 })

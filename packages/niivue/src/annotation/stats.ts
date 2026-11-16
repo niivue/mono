@@ -8,6 +8,7 @@ import type {
   VectorAnnotation,
 } from '@/NVTypes'
 import { getVoxelValue } from '@/volume/utils'
+import { clipperEvenOddArea } from './clipper'
 import { isAnnotationErased, isCircleTool } from './shapes'
 import { IN_PLANE_AXES, mmToSlice2D, slice2DToMM } from './sliceProjection'
 
@@ -22,18 +23,11 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
   )
 }
 
-/** Shoelace area of a ring in slice-2D mm. */
-function ringArea(ring: readonly AnnotationPoint[]): number {
-  let a = 0
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
-    a += (ring[j].x + ring[i].x) * (ring[j].y - ring[i].y)
-  return Math.abs(a) / 2
-}
-
 /**
  * The drawn outline's area in mm², as cornerstone reports it: exact for an
  * intact rectangle, ellipse or circle (its polygon is a 64-gon, 0.16% short of
- * pi*a*b), else the polygons' area minus their holes (freehand, eraser cuts).
+ * pi*a*b), else the polygons' even-odd area, as the voxel mask (freehand,
+ * eraser cuts, self-crossing contours).
  * Measured in slice-2D (projected) coordinates; the caller corrects for tilt.
  */
 function projectedArea(annotation: VectorAnnotation): number {
@@ -47,7 +41,7 @@ function projectedArea(annotation: VectorAnnotation): number {
   }
   let a = 0
   for (const poly of annotation.polygons)
-    a += ringArea(poly.outer) - poly.holes.reduce((s, h) => s + ringArea(h), 0)
+    a += clipperEvenOddArea([poly.outer, ...poly.holes])
   return a
 }
 

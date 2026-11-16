@@ -1,7 +1,8 @@
-import { colorLutGlsl } from '@/slide/colorLutShader'
+import { colorLutGlsl, rgbWindowGlsl } from '@/slide/colorLutShader'
 import type { NVSlide, NVSlideCachedTile } from '@/slide/NVSlide'
 import {
   DEFAULT_RAW_POOL_BYTES,
+  RGB_WINDOW_IDENTITY,
   SlideBudgetRegistration,
 } from '@/slide/slideFuse'
 import {
@@ -47,8 +48,8 @@ uniform mat4 mvpMtx;
 out vec2 vUV;
 void main(){ vUV = aUV; gl_Position = mvpMtx * vec4(aPos, 1.0); }`
 
-/** Fragment shader, with or without the slide's colour table lookup. */
-const fragSrc = (lut: boolean): string => `#version 300 es
+/** Fragment shader, with or without the slide's colour table and RGB window. */
+const fragSrc = (lut: boolean, rgbWindow = false): string => `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D tileTex;
@@ -58,6 +59,7 @@ uniform int isNearest;
 uniform sampler2D labelTexture;
 uniform int labelBlend;
 ${colorLutGlsl(lut)}
+${rgbWindowGlsl(rgbWindow)}
 out vec4 outColor;
 void main(){
   vec2 uv = vUV;
@@ -73,8 +75,22 @@ void main(){
     vec3 l = texelFetch(labelTexture, clamp(ivec2(vUV * vec2(size)), ivec2(1), size - 2), 0).rgb;
     c.rgb = labelBlend == 2 ? min(c.rgb + l, 1.0) : max(c.rgb, l);
   }
-  outColor = vec4(applyColorLut(c.rgb), c.a);
+  outColor = vec4(applyColorLut(applyRgbWindow(c.rgb)), c.a);
 }`
+
+// Sampler units are program state: set once (the lookup table is on unit 1).
+function newShader(
+  gl: WebGL2RenderingContext,
+  lut: boolean,
+  rgbWindow: boolean,
+): Shader {
+  const shader = new Shader(gl, vertSrc, fragSrc(lut, rgbWindow))
+  shader.use(gl)
+  gl.uniform1i(shader.uniforms.tileTex ?? null, 0)
+  gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+  gl.uniform1i(shader.uniforms.labelTexture ?? null, 2)
+  return shader
+}
 
 function quadVao(
   gl: WebGL2RenderingContext,
@@ -98,6 +114,8 @@ export class SlidePlaneRenderer extends NVRenderer {
   private _gl: WebGL2RenderingContext | null = null
   private _shader: Shader | null = null // plain: identity tables and annotations
   private _lutShader: Shader | null = null
+  // The RGB-windowed variants, without and with the table, made on first use.
+  private readonly _windowShaders: (Shader | null)[] = [null, null]
   // Tiles: the absent-colour quad (vertices 0-3), then one quad per tile.
   private _vao: WebGLVertexArrayObject | null = null
   private _vbo: WebGLBuffer | null = null
@@ -146,15 +164,8 @@ export class SlidePlaneRenderer extends NVRenderer {
     this._gl = gl
     this._gutter.gl = gl
     this._fuser.gl = gl
-    this._shader = new Shader(gl, vertSrc, fragSrc(false))
-    this._lutShader = new Shader(gl, vertSrc, fragSrc(true))
-    // Sampler units are program state: set once (the lookup table is on unit 1).
-    for (const shader of [this._shader, this._lutShader]) {
-      shader.use(gl)
-      gl.uniform1i(shader.uniforms.tileTex ?? null, 0)
-      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
-      gl.uniform1i(shader.uniforms.labelTexture ?? null, 2)
-    }
+    this._shader = newShader(gl, false, false)
+    this._lutShader = newShader(gl, true, false)
     ;[this._vao, this._vbo] = quadVao(gl)
     ;[this._annVao, this._annVbo] = quadVao(gl)
     this._nearestSampler = gl.createSampler()
@@ -268,9 +279,15 @@ export class SlidePlaneRenderer extends NVRenderer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
     const lut = slide.displayColorLut
-    const shader = (lut && this._lutShader) || this._shader
+    const rgbWindow = slide.rgbWindow
+    let shader = (lut && this._lutShader) || this._shader
+    if (rgbWindow) {
+      const i = lut ? 1 : 0
+      shader = this._windowShaders[i] ??= newShader(gl, Boolean(lut), true)
+    }
     if (lut) this._luts.bind(gl, lut)
     this._begin(gl, shader, mvpMatrix)
+    let quadWindow: Float32Array | null = null
     let nearest = false
     let labelBlend = 0
     // Unit 2's binding before the first label texture (a shared context), restored after.
@@ -295,6 +312,14 @@ export class SlidePlaneRenderer extends NVRenderer {
         nearest = n
         gl.uniform1i(shader.uniforms.isNearest ?? null, n ? 1 : 0)
         gl.bindSampler(0, n ? this._nearestSampler : null)
+      }
+      if (rgbWindow) {
+        const w = tex.fused === undefined ? rgbWindow : RGB_WINDOW_IDENTITY
+        if (w !== quadWindow) {
+          quadWindow = w
+          gl.uniform4fv(shader.uniforms.rgbScale ?? null, w, 0, 4)
+          gl.uniform4fv(shader.uniforms.rgbOffset ?? null, w, 4, 4)
+        }
       }
       const blend = tex.labels ? sum : 0
       if (blend !== labelBlend) {
@@ -409,8 +434,10 @@ export class SlidePlaneRenderer extends NVRenderer {
     for (const b of [this._vbo, this._annVbo]) if (b) gl.deleteBuffer(b)
     gl.deleteSampler(this._nearestSampler)
     if (this._shader?.program) gl.deleteProgram(this._shader.program)
-    if (this._lutShader?.program) gl.deleteProgram(this._lutShader.program)
+    for (const shader of [this._lutShader, ...this._windowShaders])
+      if (shader) gl.deleteProgram(shader.program)
     this._lutShader = null
+    this._windowShaders.fill(null)
     this.isReady = false
     this._shader = null
     this._vao = this._annVao = null

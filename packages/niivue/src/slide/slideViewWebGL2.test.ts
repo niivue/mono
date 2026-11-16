@@ -28,7 +28,7 @@ test('a failed init destroys the renderer and rethrows the init error', async ()
   expect(destroys).toBe(1)
 })
 
-test('destroy deletes both shader programs', () => {
+test('destroy deletes every shader program', () => {
   const deleted: unknown[] = []
   // Every GL call is a no-op; deleteProgram records what it was given.
   const gl = new Proxy(
@@ -41,9 +41,13 @@ test('destroy deletes both shader programs', () => {
   const r = new SlideRenderer()
   Object.assign(r, {
     _gl: gl,
-    _plainShader: { program: 'plain' },
-    _lutShader: { program: 'lut' },
+    _shaders: [
+      { program: 'plain' },
+      { program: 'lut' },
+      null,
+      { program: 'rgb-lut' },
+    ],
   })
   r.destroy()
-  expect(deleted).toEqual(['plain', 'lut'])
+  expect(deleted).toEqual(['plain', 'lut', 'rgb-lut'])
 })

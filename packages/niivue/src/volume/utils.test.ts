@@ -15,6 +15,7 @@ import {
   getTypedArrayConstructor,
   getVoxelValue,
   hdrToArrayBuffer,
+  isSameGrid,
   remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
@@ -582,6 +583,27 @@ describe('remapDrawingToRAS', () => {
     expect(remapDrawingToRAS(back, src, [3, 3, 6, 1], thick(6))).toBe(
       'non-integer shift',
     )
+  })
+})
+
+describe('isSameGrid', () => {
+  test('measuredInBackgroundVoxels_shearedGridShiftRefused', () => {
+    // 9e-4 mm on the second row is 0.9 voxel through this shear: remapDrawingToRAS
+    // calls it a non-integer shift, so the index copy must not take it.
+    const back = [
+      [1, 1, 0, 0],
+      [0, 0.001, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ]
+    const moved = back.map((row) => [...row])
+    moved[1][3] = 0.0009
+    const dims = [3, 4, 4, 4]
+    expect(isSameGrid(back, back, dims)).toBe(true)
+    expect(isSameGrid(moved, back, dims)).toBe(false)
+    // A float32 round trip of the same affine still matches.
+    const f32 = back.map((row) => [...Float32Array.from(row)])
+    expect(isSameGrid(f32, back, dims)).toBe(true)
   })
 })
 

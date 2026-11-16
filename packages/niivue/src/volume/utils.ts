@@ -936,26 +936,28 @@ export function reorientDrawingToRAS(
 
 /**
  * Whether two voxel->mm affines place every voxel of a `dims` grid at the same
- * mm, within `DRAWING_GRID_TOLERANCE` of `b`'s smallest voxel edge.
+ * mm, within `DRAWING_GRID_TOLERANCE` of a `b` voxel (as `remapDrawingToRAS`).
  */
 export function isSameGrid(
   a: number[][],
   b: number[][],
   dims: number[],
 ): boolean {
-  const edge = Math.min(
-    ...[0, 1, 2].map((c) => Math.hypot(b[0][c], b[1][c], b[2][c])),
-  )
+  // Voxel units, not mm: a sheared `b` turns a small mm shift into a large
+  // voxel one. Row-major storage: multiply(a, inv(b)) is (inv(b)·a)ᵀ.
+  const m = Float64Array.from(b.flat())
+  mat4.invert(m, m)
+  mat4.multiply(m, Float64Array.from(a.flat()), m)
   for (let r = 0; r < 3; r++) {
     // Linear in the voxel, so the worst error is at a corner.
-    let up = a[r][3] - b[r][3]
+    let up = m[r * 4 + 3]
     let down = up
     for (let c = 0; c < 3; c++) {
-      const term = (a[r][c] - b[r][c]) * (dims[c + 1] - 1)
+      const term = (m[r * 4 + c] - (r === c ? 1 : 0)) * (dims[c + 1] - 1)
       up += Math.max(0, term)
       down += Math.min(0, term)
     }
-    if (Math.max(up, -down) > DRAWING_GRID_TOLERANCE * edge) return false
+    if (Math.max(up, -down) > DRAWING_GRID_TOLERANCE) return false
   }
   return true
 }

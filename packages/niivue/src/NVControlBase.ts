@@ -2749,6 +2749,7 @@ export default class NiiVue extends EventTarget {
   set annotationIsDrawnFromCenter(v: boolean) {
     this.model.annotation.isDrawnFromCenter = v
     this.emit('change', { property: 'annotationIsDrawnFromCenter', value: v })
+    this.drawScene()
   }
 
   get annotationMergesOverlaps(): boolean {

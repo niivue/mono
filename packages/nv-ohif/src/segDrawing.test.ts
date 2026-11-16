@@ -108,10 +108,13 @@ describe('startSegDrawing', () => {
     })
     const calls: string[] = []
     const nv = {
-      _drawingGeneration: 0,
+      drawingGeneration: 0,
+      cancelDrawingLoad: () => {
+        nv.drawingGeneration++
+      },
       loadDrawing: async () => {
         calls.push('load')
-        nv._drawingGeneration++
+        nv.drawingGeneration++
         await gate
         return isShown
       },
@@ -180,7 +183,7 @@ describe('startSegDrawing', () => {
     release()
     await settle()
     expect(calls).toEqual(['load'])
-    expect(nv._drawingGeneration).toBe(2)
+    expect(nv.drawingGeneration).toBe(2)
     expect(nv.drawIsEnabled).toBe(true)
   })
 

@@ -266,6 +266,9 @@ EXT_disjoint_timer_query_webgl2)."""
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Every registered colormap name, both kinds."""
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    drawing_generation = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Bumped by every drawing load, install or close: compare two reads to tell
+whether any drawing call happened in between."""
     effective_device_pixel_ratio = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """The device pixel ratio the canvas renders at: the `devicePixelRatio`
 option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
@@ -502,6 +505,11 @@ and its volumes alive."""
             which properties to sync (default: { '2d': true, '3d': true })
         """
         self.send({"cmd": "broadcastTo", "args": _make_args(targets, opts)})
+
+    def cancel_drawing_load(self) -> None:
+        """A loadDrawing still reading gives way; the current drawing stays.
+        """
+        self.send({"cmd": "cancelDrawingLoad", "args": []})
 
     async def cancel_pending_frame(self) -> Any:
         """Drop the frame that {@link drawScene} has scheduled but not yet drawn.

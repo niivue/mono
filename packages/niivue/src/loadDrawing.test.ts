@@ -76,6 +76,36 @@ test('closeWhileFileIsRead_pendingLoadInstallsNothing', async () => {
   expect(nv.drawIsEnabled).toBe(false)
 })
 
+test('cancelDrawingLoadWhileFileIsRead_keepsTheCurrentDrawing', async () => {
+  const nv = await viewer()
+  nv.createEmptyDrawing()
+  const current = nv.drawingVolume
+  let release = () => {}
+  const gate = new Promise<void>((r) => {
+    release = r
+  })
+  class SlowFile extends File {
+    override async arrayBuffer() {
+      await gate
+      return super.arrayBuffer()
+    }
+  }
+  const bytes = createNiftiArray(
+    [3, 2, 2],
+    [1, 1, 1],
+    IDENTITY,
+    2,
+    firstVoxel(),
+  )
+  const generation = nv.drawingGeneration
+  const pending = nv.loadDrawing(new SlowFile([bytes], 'slow.nii'))
+  expect(nv.drawingGeneration).toBe(generation + 1)
+  nv.cancelDrawingLoad()
+  release()
+  expect(await pending).toBe(false)
+  expect(nv.drawingVolume).toBe(current)
+})
+
 test('newBackgroundWhileFileIsRead_pendingLoadInstallsNothing', async () => {
   const nv = await viewer()
   let release = () => {}

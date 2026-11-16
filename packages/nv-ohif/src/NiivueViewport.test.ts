@@ -12,6 +12,7 @@ import {
   applyHangingDisplay,
   DEFAULT_OPTIONS,
   hangingKeys,
+  settleBase,
 } from './NiivueViewport'
 import {
   getNiivueEntry,
@@ -258,6 +259,51 @@ test("a new hanging protocol's window applies to the loaded base in place", asyn
     await Promise.resolve()
     expect(nv.volumes[0]).toBe(volume)
     expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('a protocol window changed during the load applies when it settles', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  const voi = (windowWidth: number) => [
+    { options: { voi: { windowWidth, windowCenter: 40 } } },
+  ]
+  await nv.loadVolumes([
+    { url: new File([fourSlices()], 'four.nii'), calMin: -160, calMax: 240 },
+  ])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  try {
+    entry.baseLoading = true
+    applyHangingDisplay(entry, { viewportType: 'volume' }, voi(500))
+    entry.baseLoading = false
+    settleBase('hp', { calMin: -160, calMax: 240 }, {}, voi(500))
+    await Promise.resolve()
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('removing the protocol window restores the robust range and gray', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  const robust = [nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  try {
+    await nv.setVolume(0, { colormap: 'ct_bones' })
+    applyHangingDisplay(entry, { viewportType: 'volume' }, undefined)
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('gray')
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual(robust)
   } finally {
     unregisterNiivue('hp')
   }

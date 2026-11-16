@@ -2681,6 +2681,15 @@ export default class NiiVue extends EventTarget {
     if (v && applyPanFollowsCrosshair(this)) this.drawScene()
   }
 
+  get windowingStep(): [number, number] {
+    return this.model.interaction.windowingStep
+  }
+  /** Windowing drag gain; see {@link InteractionConfig.windowingStep}. */
+  set windowingStep(v: [number, number]) {
+    this.model.interaction.windowingStep = v
+    this.emit('change', { property: 'windowingStep', value: v })
+  }
+
   // --- Annotation Properties ---
 
   get annotationIsEnabled(): boolean {

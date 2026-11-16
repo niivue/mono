@@ -142,6 +142,7 @@ const PROPS_RW = [
   ["volumeSilhouette", "volume_silhouette"],
   ["volumeTransmittanceCutoff", "volume_transmittance_cutoff"],
   ["wheelZoomAnchor", "wheel_zoom_anchor"],
+  ["windowingStep", "windowing_step"],
 ]
 
 // [jsName, pyName] for read-only properties (JS-to-Python only).

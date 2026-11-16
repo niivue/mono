@@ -154,16 +154,15 @@ export function applyHangingDisplay(
   const ds = entry?.displaySets[0]
   // A loading base takes the current options in settleBase.
   if (!entry || entry.baseLoading || !ds || !entry.nv.volumes[0]) return
+  const spec = hangingDisplay(
+    viewportOptions,
+    displaySetOptions,
+    ds,
+    entry.sliceFrames,
+  )
+  // A window without a preset also drops a removed preset's colormap.
   entry.nv
-    .setVolume(
-      0,
-      hangingDisplay(
-        viewportOptions,
-        displaySetOptions,
-        ds,
-        entry.sliceFrames,
-      ) ?? DEFAULT_DISPLAY,
-    )
+    .setVolume(0, spec ? { colormap: 'gray', ...spec } : DEFAULT_DISPLAY)
     .catch((err: unknown) =>
       console.error('[nv-ohif] hanging-protocol window failed', err),
     )

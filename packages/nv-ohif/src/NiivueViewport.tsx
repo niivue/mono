@@ -688,6 +688,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
   }, [displaySetsKey, ready])
 
+  const isVolumeViewport = props.viewportOptions?.viewportType === 'volume'
+  useEffect(() => {
+    if (ready) updateNiivueViewport(viewportId, { isVolumeViewport })
+  }, [ready, viewportId, isVolumeViewport])
+
   // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
   // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.
   useEffect(() => {

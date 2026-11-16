@@ -442,3 +442,61 @@ it('jumpToImage counts the frames of a single multi-frame instance', () => {
     [5, 6, 2],
   ])
 })
+
+it('jumpToImage on a volume viewport counts along the volume', () => {
+  const calls: number[][] = []
+  const entry = {
+    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    crosshairMM: [5, 6, 1],
+    isVolumeViewport: true,
+    displaySets: [
+      {
+        instances: ['top', 'mid', 'bot'].map((SOPInstanceUID) => ({
+          SOPInstanceUID,
+        })),
+      },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: ['bot', 'mid', 'top'].map((SOPInstanceUID) => ({
+        SOPInstanceUID,
+        frameNumber: 1,
+      })),
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 3)
+  expect(calls).toEqual([
+    [5, 6, 0],
+    [5, 6, 2],
+  ])
+})
+
+it('jumpToImage on a non-DICOM volume steps the voxel slices of the view axis', () => {
+  const calls: number[][] = []
+  const nv = {
+    setCrosshairPos: (p: number[]) => calls.push(p),
+    // 2 mm voxels from (10, 20, 30).
+    vox2mm: (v: number[]) => v.map((c, a) => 10 * (a + 1) + 2 * c),
+    sliceType: SLICE_TYPE.AXIAL as number,
+    volumes: [{ dimsRAS: [3, 3, 2, 4], permRAS: [3, 1, 2] }],
+  }
+  const entry = {
+    nv,
+    crosshairMM: [15, 22, 33],
+    displaySets: [],
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 0)
+  jumpToImage(entry, -1)
+  jumpToImage(entry, 4)
+  // Not a 2D view: the acquisition (permRAS 3) axis, here x.
+  nv.sliceType = SLICE_TYPE.MULTIPLANAR
+  jumpToImage(entry, 1)
+  expect(calls).toEqual([
+    [15, 22, 30],
+    [15, 22, 36],
+    [12, 22, 33],
+  ])
+})

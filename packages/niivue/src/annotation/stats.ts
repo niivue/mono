@@ -23,6 +23,34 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
   )
 }
 
+/**
+ * Degrees between a shape's two lines (start->end, start2->end2). measureAngle:
+ * the angle at the shared vertex (0-180); measureCobbAngle: the acute angle
+ * between the line directions (0-90), as cornerstone.
+ */
+export function shapeAngle(shape: {
+  type: AnnotationTool
+  start: AnnotationPoint
+  end: AnnotationPoint
+  start2?: AnnotationPoint
+  end2?: AnnotationPoint
+}): number {
+  const { start, end, start2 = end, end2 = end } = shape
+  // Angle: both arms point away from the vertex (end === start2).
+  const sign = shape.type === 'measureAngle' ? -1 : 1
+  const ax = sign * (end.x - start.x)
+  const ay = sign * (end.y - start.y)
+  const bx = end2.x - start2.x
+  const by = end2.y - start2.y
+  const dot = ax * bx + ay * by
+  const cross = Math.abs(ax * by - ay * bx)
+  const rad = Math.atan2(
+    cross,
+    shape.type === 'measureCobbAngle' ? Math.abs(dot) : dot,
+  )
+  return (rad * 180) / Math.PI
+}
+
 /** Shoelace area of a ring in slice-2D mm. */
 function ringArea(ring: readonly AnnotationPoint[]): number {
   let a = 0

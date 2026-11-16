@@ -4,7 +4,7 @@ import { SLICE_TYPE } from '@/NVConstants'
 import type { AnnotationPoint, NVImage, VectorAnnotation } from '@/NVTypes'
 import { pointInRing } from './pointInRing'
 import { generateShape } from './shapes'
-import { computeAnnotationStats } from './stats'
+import { computeAnnotationStats, shapeAngle } from './stats'
 
 // 20x20x1 axial grid, 1 mm voxels, voxel value = its x index.
 const N = 20
@@ -291,5 +291,30 @@ describe('measurePoint on 4D and oblique volumes (R12 audit)', () => {
     ann.shape = { type: 'measurePoint', start: end, end }
     ann.polygons = generateShape('measurePoint', end, end, 1)
     expect(computeAnnotationStats(ann, v)?.value).toBe(51204)
+  })
+})
+
+// OHIF's Angle and CobbAngle spec clicks, taken as slice-2D points.
+describe('shapeAngle', () => {
+  test('measureAngle: the angle at the vertex', () => {
+    const vertex = { x: 450, y: 250 }
+    const angle = shapeAngle({
+      type: 'measureAngle',
+      start: { x: 550, y: 200 },
+      end: vertex,
+      start2: vertex,
+      end2: { x: 550, y: 300 },
+    })
+    expect(angle).toBeCloseTo(53.1301, 4)
+  })
+  test('measureCobbAngle: the acute angle between the lines', () => {
+    const angle = shapeAngle({
+      type: 'measureCobbAngle',
+      start: { x: 515, y: 212 },
+      end: { x: 616, y: 207 },
+      start2: { x: 527, y: 293 },
+      end2: { x: 625, y: 291 },
+    })
+    expect(angle).toBeCloseTo(1.665, 3)
   })
 })

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AnnotationPoint, VectorAnnotation } from '@/NVTypes'
 import { clipperSubtractBrush } from './clipper'
 import {
+  bidirectionalShortAxis,
   dragCorners,
   generateShape,
   generateSplineFromPoints,
@@ -121,4 +122,17 @@ describe('dragCorners', () => {
     // Other shapes ignore it.
     expect(dragCorners('rectangle', c, e, true)).toEqual([c, e])
   })
+})
+
+test('bidirectionalShortAxis: perpendicular through the midpoint, 2/3 the long axis', () => {
+  // Long axis 195 mm: cornerstone's default width is 130.
+  const start = { x: 0, y: 0 }
+  const end = { x: 117, y: 156 }
+  const short = bidirectionalShortAxis(start, end)
+  const sx = short.end.x - short.start.x
+  const sy = short.end.y - short.start.y
+  expect(Math.hypot(sx, sy)).toBeCloseTo(130, 9)
+  expect(sx * end.x + sy * end.y).toBeCloseTo(0, 9)
+  expect((short.start.x + short.end.x) / 2).toBeCloseTo(58.5, 9)
+  expect((short.start.y + short.end.y) / 2).toBeCloseTo(78, 9)
 })

@@ -1,6 +1,6 @@
 {
   "name": "@niivue/niivue",
-  "version": "1.0.0-rc.205",
+  "version": "1.0.0-rc.206",
   "type": "module",
   "description": "WebGPU/WebGL2 browser-based medical image visualization",
   "main": "./dist/niivue.js",

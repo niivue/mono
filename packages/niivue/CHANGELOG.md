@@ -1,3 +1,13 @@
+## 1.0.0-rc.206 (2026-11-16)
+
+### Fixes
+
+- **niivue:** ruler labels clear of ticks, no zero measurements, angle tool rework ([aa3157a5](https://github.com/niivue/mono/commit/aa3157a5))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.205 (2026-11-15)
 
 ### Features

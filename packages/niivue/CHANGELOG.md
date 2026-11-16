@@ -1,3 +1,23 @@
+## 1.0.0-rc.211 (2026-11-16)
+
+### Features
+
+- **niivue:** loadDrawing accepts a voxel-aligned label image on another grid ([b10d9740](https://github.com/niivue/mono/commit/b10d9740))
+
+### Fixes
+
+- **niivue:** refuse a scaled drawing on a one-voxel background axis ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** compare drawing grids in background voxels ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** place a one-slice drawing of any thickness by its centre; a new background supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** refuse a raw drawing of other dims; document drawing restore supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** loadDrawing checks the affine on equal dims; a superseded load installs nothing ([ac419167](https://github.com/niivue/mono/commit/ac419167))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.210 (2026-11-16)
 
 ### Features

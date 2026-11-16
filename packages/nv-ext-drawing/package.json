@@ -1,6 +1,6 @@
 {
   "name": "@niivue/nv-ext-drawing",
-  "version": "1.0.0-rc.212",
+  "version": "1.0.0-rc.213",
   "type": "module",
   "description": "Drawing interpolation and segmentation tools for NiiVue",
   "main": "./dist/nv-ext-drawing.js",

@@ -1,3 +1,19 @@
+## 1.0.0-rc.206 (2026-11-16)
+
+### Fixes
+
+- **niivue:** refuse a raw drawing of other dims; document drawing restore supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.211
+- Updated uikit to 1.0.0-rc.209
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.205 (2026-11-16)
 
 ### Updated Dependencies

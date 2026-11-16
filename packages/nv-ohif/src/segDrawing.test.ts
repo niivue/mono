@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import NiiVue from '@niivue/niivue'
+import { DEFAULT_OPTIONS } from './NiivueViewport'
 import type { OhifDisplaySet } from './ohif-types'
 import {
   resolveSegDisplaySets,
@@ -176,6 +178,38 @@ describe('startSegDrawing', () => {
     expect(nv.drawIsEnabled).toBe(true)
   })
 
+  test('cleanupWhileRealCoreReadsTheFile_installsNothing', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let reading = () => {}
+    const isReading = new Promise<void>((r) => {
+      reading = r
+    })
+    class SlowFile extends File {
+      override async arrayBuffer() {
+        reading()
+        await gate
+        return super.arrayBuffer()
+      }
+    }
+    const image = new SlowFile([labels()], 'seg.nii')
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert: async () => ({ ...converted, image }),
+      whenBase,
+    })
+    await isReading
+    stop()
+    release()
+    await settle()
+    expect(nv.drawingVolume).toBeNull()
+  })
+
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {
     const { nv, calls, release } = pane(false)
     const notes: string[] = []
@@ -191,3 +225,28 @@ describe('startSegDrawing', () => {
     expect(notes).toHaveLength(1)
   })
 })
+
+// A 2x2x2 uint8 NIfTI-1 (1 mm, identity sform): a base, or a label volume on it.
+function labels(): ArrayBuffer {
+  const view = new DataView(new ArrayBuffer(352 + 8))
+  view.setInt32(0, 348, true)
+  ;[3, 2, 2, 2].forEach((d, i) => {
+    view.setInt16(40 + 2 * i, d, true)
+  })
+  view.setInt16(70, 2, true) // uint8
+  view.setInt16(72, 8, true)
+  ;[1, 1, 1, 1].forEach((d, i) => {
+    view.setFloat32(76 + 4 * i, d, true)
+  })
+  view.setFloat32(108, 352, true)
+  view.setFloat32(112, 1, true) // scl_slope
+  view.setInt16(254, 1, true) // sform_code
+  ;[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0].forEach((v, i) => {
+    view.setFloat32(280 + 4 * i, v, true)
+  })
+  ;[0x6e, 0x2b, 0x31, 0].forEach((b, i) => {
+    view.setUint8(344 + i, b)
+  })
+  view.setUint8(352, 1)
+  return view.buffer
+}

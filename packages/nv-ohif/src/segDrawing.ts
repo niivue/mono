@@ -117,10 +117,11 @@ export function startSegDrawing(
   },
 ): () => void {
   let cancelled = false
-  // While loadDrawing reads, closing supersedes it; once installed, the SEG
-  // owns only the volume it put there (a later loadDrawing may replace it).
+  // The SEG owns the drawing slot while it is unchanged since its load began
+  // (closing then supersedes the read) and, once installed, the volume it put
+  // there. A drawing loaded since has already superseded the SEG in core.
   let isOwned = false
-  let installed: NiiVue['drawingVolume'] = null
+  let owned: NiiVue['drawingVolume'] = null
   const abort = new AbortController()
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
@@ -130,6 +131,7 @@ export function startSegDrawing(
     ])
     if (!converted || !hasBase || cancelled) return
     isOwned = true
+    owned = nv.drawingVolume
     const isShown = await nv.loadDrawing(converted.image)
     if (cancelled) return
     if (!isShown) {
@@ -137,7 +139,7 @@ export function startSegDrawing(
       options.setNote('The segmentation could not be shown.')
       return
     }
-    installed = nv.drawingVolume
+    owned = nv.drawingVolume
     const segments = converted.json?.Segments
     if (Array.isArray(segments) && segments.length > 0)
       nv.drawColormap = nv.addColormap(
@@ -159,8 +161,7 @@ export function startSegDrawing(
   return () => {
     cancelled = true
     abort.abort()
-    if (isOwned && (!installed || nv.drawingVolume === installed))
-      nv.closeDrawing()
+    if (isOwned && nv.drawingVolume === owned) nv.closeDrawing()
   }
 }
 

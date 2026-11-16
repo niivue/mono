@@ -211,6 +211,43 @@ describe('startSegDrawing', () => {
     expect(nv.drawingVolume).toBeNull()
   })
 
+  test('cleanupWhileReadingAfterAnotherDrawingLoaded_keepsIt', async () => {
+    globalThis.requestAnimationFrame ??= () => 0
+    const nv = new NiiVue(DEFAULT_OPTIONS)
+    await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
+    let release = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let reading = () => {}
+    const isReading = new Promise<void>((r) => {
+      reading = r
+    })
+    class SlowFile extends File {
+      override async arrayBuffer() {
+        reading()
+        await gate
+        return super.arrayBuffer()
+      }
+    }
+    const stop = startSegDrawing(nv, segDs, {
+      setNote: () => {},
+      convert: async () => ({
+        ...converted,
+        image: new SlowFile([labels()], 'seg.nii'),
+      }),
+      whenBase,
+    })
+    await isReading
+    await nv.loadDrawing(new File([labels()], 'mine.nii'))
+    const mine = nv.drawingVolume
+    expect(mine).not.toBeNull()
+    stop()
+    release()
+    await settle()
+    expect(nv.drawingVolume).toBe(mine)
+  })
+
   test('cleanupAfterAnotherDrawingReplacedTheSeg_keepsIt', async () => {
     globalThis.requestAnimationFrame ??= () => 0
     const nv = new NiiVue(DEFAULT_OPTIONS)

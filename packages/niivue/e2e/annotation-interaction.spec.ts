@@ -274,3 +274,37 @@ test('annotationIsClickToPlace: Escape drops a parked start; a parked start beat
   expect(r.selected).toBe(false)
   expect(r.parked).toBeNull()
 })
+
+test('annotationIsDrawnFromCenter: ellipse and circle grow from the press point', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationMergesOverlaps = false
+    nv.annotationTool = 'ellipse'
+    drag([[200, 200], [230, 220], [240, 220]])
+    const corner = nv.annotations[0].shape
+    nv.annotationIsDrawnFromCenter = true
+    drag([[200, 200], [230, 220], [240, 220]])
+    const centre = nv.annotations[1].shape
+    nv.annotationTool = 'circle'
+    // Clear of the ellipses: a press on a shape selects it.
+    drag([[100, 320], [130, 330], [130, 320]])
+    const circle = nv.annotations[2].shape
+    const mid = (s) => [(s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2]
+    const size = (s) => [Math.abs(s.end.x - s.start.x), Math.abs(s.end.y - s.start.y)]
+    return { cornerSize: size(corner), centreSize: size(centre), centreMid: mid(centre), press: [corner.start.x, corner.start.y], circleSize: size(circle), circleMid: mid(circle) }
+  })()`)
+
+  // Same drag: the centred ellipse's box is twice as wide and tall, centred on the press.
+  expect(r.centreSize[0]).toBeCloseTo(r.cornerSize[0] * 2, 5)
+  expect(r.centreSize[1]).toBeCloseTo(r.cornerSize[1] * 2, 5)
+  expect(r.centreMid[0]).toBeCloseTo(r.press[0], 5)
+  expect(r.centreMid[1]).toBeCloseTo(r.press[1], 5)
+  // Circle: rim point 30 px right of the press, so a square box centred on it.
+  expect(r.circleSize[0]).toBeCloseTo(r.circleSize[1], 5)
+  // Rim 30 px from the press: the box is 60 px of canvas, twice a corner drag's 30.
+  expect(r.circleSize[0]).toBeCloseTo(r.cornerSize[0] * 1.5, 5)
+})

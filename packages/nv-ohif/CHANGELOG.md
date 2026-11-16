@@ -1,3 +1,28 @@
+## 1.0.0-rc.245 (2026-11-16)
+
+### Features
+
+- **nv-ohif:** SEG colormap labels carry the segment's laterality ([d458daf6](https://github.com/niivue/mono/commit/d458daf6))
+- **nv-ohif:** a DICOM SEG shows as a NiiVue drawing over its referenced series ([f73974ae](https://github.com/niivue/mono/commit/f73974ae))
+
+### Fixes
+
+- **nv-ohif:** show a SEG conversion's dcm2niix note ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** give back the drawing style a SEG replaced ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** track SEG drawing ownership by core's drawing generation ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** a drawing loaded during SEG conversion supersedes the SEG ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** reload the SEG when a protocol change reloads the base ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** stopping a pending SEG keeps a drawing loaded since it began ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** stopping a SEG keeps a drawing that replaced it ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** a SEG drawing waits for its installed base; a secondary SEG keeps the primary ([#820](https://github.com/niivue/mono/issues/820), [#819](https://github.com/niivue/mono/issues/819))
+- **nv-ohif:** a SEG drawing superseded mid-load is closed, never installed late ([45f1d101](https://github.com/niivue/mono/commit/45f1d101))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.244 (2026-11-16)
 
 ### Updated Dependencies

@@ -249,6 +249,8 @@ test('annotationIsClickToPlace: places a shape on an oblique volume; turning it 
     ${setup}
     // Tilted: the mm depth varies across one slice, so the slice test is in texture depth.
     await nv.loadVolumes([{ url: synth({ tilt: [10, 8] }) }])
+    // Let the replaced volume's layout draw before clicking on it.
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
     const click = (x, y) => drag([[x, y]])
     nv.annotationIsClickToPlace = true
     click(120, 120)

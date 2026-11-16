@@ -1,3 +1,21 @@
+## 1.0.0-rc.210 (2026-11-16)
+
+### Features
+
+- **slide:** window RGB bitmap tiles through their channel windows ([a04381a6](https://github.com/niivue/mono/commit/a04381a6))
+
+### Fixes
+
+- **niivue:** window thumbnail bitmap tiles after scaling beside fused tiles ([#816](https://github.com/niivue/mono/issues/816))
+- **niivue:** preview serves the examples build in dist-examples ([#822](https://github.com/niivue/mono/issues/822))
+- **niivue:** window thumbnail bitmap tiles beside fused tiles ([#816](https://github.com/niivue/mono/issues/816))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.209 (2026-11-16)
 
 ### Fixes

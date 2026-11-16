@@ -37,6 +37,18 @@ test('equalDimsNoSpatialTransform_keepsIndexCopy', async () => {
   expect(Array.from(nv.drawingVolume?.img as Uint8Array).indexOf(1)).toBe(0)
 })
 
+test('noSpatialTransformOtherDims_refused', async () => {
+  const nv = await viewer()
+  const raw = new Uint8Array(
+    createNiftiArray([3, 2, 1], [1, 1, 1], IDENTITY, 2, new Uint8Array(6)),
+  )
+  const view = new DataView(raw.buffer)
+  view.setInt16(252, 0, true) // qform_code
+  view.setInt16(254, 0, true) // sform_code
+  expect(await nv.loadDrawing(new File([raw], 'raw.nii'))).toBe(false)
+  expect(nv.drawingVolume).toBeNull()
+})
+
 test('halfVoxelShiftOnEqualDims_refused', async () => {
   const nv = await viewer()
   const shifted = [...IDENTITY]

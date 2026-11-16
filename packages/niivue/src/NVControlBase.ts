@@ -7745,8 +7745,16 @@ export default class NiiVue extends EventTarget {
       // index). Any other grid (e.g. a DICOM SEG in its frame order, or a
       // flipped copy) loads only if voxel-aligned.
       const hasTransform = nii.hdr.sform_code > 0 || nii.hdr.qform_code > 0
+      const sameDims = validateDrawingDimensions(nd, back.hdr.dims)
+      // A raw label array's affine is made up by the reader: never remap it.
+      if (!hasTransform && !sameDims) {
+        log.warn(
+          'loadDrawing: a drawing without a spatial transform must match the background dims',
+        )
+        return false
+      }
       const isSame =
-        validateDrawingDimensions(nd, back.hdr.dims) &&
+        sameDims &&
         (!hasTransform || isSameGrid(nii.hdr.affine, back.hdr.affine, nd))
       const drawImg = isSame
         ? reorientDrawingToRAS(back, imgData)
@@ -8528,6 +8536,7 @@ export default class NiiVue extends EventTarget {
         } else {
           dv.img = decodeRLE(doc.drawingBitmapRLE, doc.drawingBitmapLength)
         }
+        this._drawingGeneration++ // a loadDrawing still reading loses to this
         this.model.drawingVolume = dv
         this.model.draw.isEnabled = true
         this._drawLut = null

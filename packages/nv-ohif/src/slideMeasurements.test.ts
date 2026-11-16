@@ -18,7 +18,9 @@ function fakeMeasurementService() {
       MEASUREMENT_UPDATED: 'u',
       MEASUREMENT_REMOVED: 'r',
       JUMP_TO_MEASUREMENT: 'j',
+      MEASUREMENTS_CLEARED: 'c',
     },
+    getMeasurement: (uid: string) => rows.get(uid),
     createSource: () => ({}),
     addMapping: () => {},
     addRawMeasurement(
@@ -78,6 +80,12 @@ test('slide annotations mirror as µm rows; panel edits flow back', () => {
   expect(focused).toEqual([a.id])
 
   ms.remove(row.uid)
+  expect(annotations.list()).toEqual([])
+
+  // Delete-all clears rows without a remove per row.
+  annotations.add('point', [{ x: 1, y: 1 }])
+  ms.rows.clear()
+  ms.emit('c', [])
   expect(annotations.list()).toEqual([])
 
   annotations.add('point', [{ x: 1, y: 1 }])

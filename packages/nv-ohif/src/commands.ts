@@ -37,11 +37,14 @@ import {
   framePixelIndex,
   type SliceFrames,
 } from './sliceFrames'
-import { SLIDE_UID_PREFIX } from './slideMeasurements'
 import { mirrorNiivueMeasurements } from './srBridge'
 import { getStandardCommandDefinitions } from './standardCommands'
 import { petSuvFactor } from './suv'
-import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
+import {
+  ANNOTATION_TO_OHIF,
+  type AnnotationToolDescriptor,
+  SLIDE_UID_PREFIX,
+} from './toolBridge'
 import { stackPosition } from './viewportOverlay'
 
 // Toolbar-facing slice type names -> NiiVue SLICE_TYPE values. String keys keep

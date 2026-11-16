@@ -11,10 +11,11 @@ import {
 } from './commands'
 import { ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
-import { ANNOTATION_TO_OHIF, OHIF_TO_SLIDE_TOOL } from './toolBridge'
-
-/** Every slide row's uid starts with this. */
-export const SLIDE_UID_PREFIX = 'niivue-slide-'
+import {
+  ANNOTATION_TO_OHIF,
+  OHIF_TO_SLIDE_TOOL,
+  SLIDE_UID_PREFIX,
+} from './toolBridge'
 
 // Default row tool per slide tool (polygon: SplineROI, the first listed).
 const SLIDE_TO_OHIF: Record<SlideAnnotationTool, string> = {
@@ -107,7 +108,11 @@ export function bindSlideMeasurements(
 ): () => void {
   const annotations = view.annotations
   const ms = ohifServices(servicesManager)?.measurementService as
-    | (MeasurementServiceLike & { remove(uid: string): void })
+    | (MeasurementServiceLike & {
+        remove(uid: string): void
+        getMeasurement(uid: string): unknown
+        EVENTS?: { MEASUREMENTS_CLEARED?: string }
+      })
     | undefined
   if (!annotations || !ms?.addRawMeasurement) return () => {}
   const source = niivueMeasurementSource(ms)
@@ -167,14 +172,24 @@ export function bindSlideMeasurements(
   for (const [type, fn] of listeners)
     annotations.addEventListener(type, fn as EventListener)
 
-  const { MEASUREMENT_UPDATED, MEASUREMENT_REMOVED, JUMP_TO_MEASUREMENT } =
-    ms.EVENTS ?? {}
+  const {
+    MEASUREMENT_UPDATED,
+    MEASUREMENT_REMOVED,
+    MEASUREMENTS_CLEARED,
+    JUMP_TO_MEASUREMENT,
+  } = ms.EVENTS ?? {}
   const subscriptions = ms.subscribe
     ? [
         MEASUREMENT_REMOVED &&
           ms.subscribe(MEASUREMENT_REMOVED, ({ measurement }) => {
             const id = idOf(measurement)
             if (id) annotations.remove(id)
+          }),
+        // Delete-all and removeMany broadcast this, not MEASUREMENT_REMOVED.
+        MEASUREMENTS_CLEARED &&
+          ms.subscribe(MEASUREMENTS_CLEARED, () => {
+            for (const a of annotations.list())
+              if (!ms.getMeasurement(prefix + a.id)) annotations.remove(a.id)
           }),
         MEASUREMENT_UPDATED &&
           ms.subscribe(MEASUREMENT_UPDATED, ({ measurement: m }) => {

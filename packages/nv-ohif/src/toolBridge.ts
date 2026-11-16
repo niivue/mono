@@ -148,6 +148,9 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
   },
 }
 
+/** Every slide row's uid starts with this. */
+export const SLIDE_UID_PREFIX = 'niivue-slide-'
+
 /** OHIF measurement tool -> the slide annotation tool it draws with. */
 export const OHIF_TO_SLIDE_TOOL: Record<string, SlideAnnotationTool> = {
   Length: 'line',

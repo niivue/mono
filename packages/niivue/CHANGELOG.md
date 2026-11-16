@@ -1,3 +1,13 @@
+## 1.0.0-rc.208 (2026-11-16)
+
+### Features
+
+- **niivue:** windowingStep sets the windowing drag gain and direction ([1df5de4d](https://github.com/niivue/mono/commit/1df5de4d))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.207 (2026-11-16)
 
 ### Features

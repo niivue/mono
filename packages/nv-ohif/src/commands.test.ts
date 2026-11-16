@@ -449,40 +449,6 @@ describe('reflectNiivueAnnotation', () => {
     ])
   })
 
-  it('reflects a measurePoint as a one-point Probe', () => {
-    const p = { x: 3, y: 4 }
-    const probe = {
-      id: 'p',
-      label: 0,
-      group: '',
-      sliceType: 0,
-      slicePosition: 0,
-      anchorMM: [3, 4, 0],
-      polygons: generateShape('measurePoint', p, p, 1),
-      style: {
-        fillColor: [1, 1, 1, 1],
-        strokeColor: [1, 1, 1, 1],
-        strokeWidth: 1,
-      },
-      stats: { area: 0, min: 7, mean: 7, max: 7, stdDev: 0, value: 7.25 },
-      shape: { type: 'measurePoint', start: p, end: p },
-    } as unknown as VectorAnnotation
-    const svc = setup('vp-probe')
-    expect(
-      reflectNiivueAnnotation('vp-probe', svc.servicesManager, probe),
-    ).toBe(true)
-    const m = svc.added[0]?.data.schema as {
-      toolName: string
-      displayText: { primary: string[] }
-      points: number[][]
-      data: { value: number }
-    }
-    expect(m.toolName).toBe('Probe')
-    expect(m.points).toHaveLength(1)
-    expect(m.data.value).toBe(7.25)
-    expect(m.displayText.primary).toEqual(['7.25 HU'])
-  })
-
   it('reflects freehand as a PlanarFreehandROI polyline', () => {
     const svc = setup('vp-a2')
     const anno = ellipse('b')

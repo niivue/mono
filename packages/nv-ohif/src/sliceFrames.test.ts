@@ -8,7 +8,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { buildSliceFrames, frameAt, framePixelIndex } from './sliceFrames'
+import { buildSliceFrames, frameAt } from './sliceFrames'
 
 type Vec3 = [number, number, number]
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [
@@ -373,31 +373,15 @@ describe('reflected measurement identity', () => {
   })
 })
 
-it('framePixelIndex: LPS point -> [column, row, k]', () => {
-  const inst = {
-    SOPInstanceUID: 's',
-    ImagePositionPatient: [-100, -50, 7],
-    ImageOrientationPatient: [1, 0, 0, 0, 1, 0],
-    PixelSpacing: [0.5, 0.25],
-  }
-  expect(
-    framePixelIndex(
-      [inst],
-      { SOPInstanceUID: 's', frameNumber: 1 },
-      [-90.1, -40, 7],
-      3,
-    ),
-  ).toEqual([40, 20, 3])
-})
-
 it('probeIndex: k is the displayed stack position, not the frame number', () => {
-  const instances = classic(axial, 'pi', { PixelSpacing: [0.5, 0.5] })
+  // Unequal spacing: DICOM PixelSpacing is [between rows, between columns].
+  const instances = classic(axial, 'pi', { PixelSpacing: [0.5, 0.25] })
   registerNiivue('vp-pi', {} as NiiVue)
   updateNiivueViewport('vp-pi', {
     displaySets: [{ instances }],
     sliceFrames: buildSliceFrames(niftiHeader(axial), instances),
   })
-  // Column 2, row 3 of the second slice (LPS -100.5+1, -120+1.5, 30+2.5).
+  // Column 4 (1 mm / 0.25), row 3 (1.5 mm / 0.5) of the second slice.
   const p = { x: 99.5, y: 118.5 }
   const probe = {
     sliceType: 0,
@@ -405,6 +389,6 @@ it('probeIndex: k is the displayed stack position, not the frame number', () => 
     anchorMM: [99.5, 118.5, 32.5],
     shape: { type: 'measurePoint', start: p, end: p },
   } as unknown as VectorAnnotation
-  expect(probeIndex('vp-pi', probe)).toEqual([2, 3, 1])
+  expect(probeIndex('vp-pi', probe)).toEqual([4, 3, 1])
   unregisterNiivue('vp-pi')
 })

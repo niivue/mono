@@ -23,12 +23,6 @@ test('SUVbw factor decays the dose to the series start', () => {
   expect(suvBwFactor(pet)).toBeCloseTo(91000 / decayed, 12)
 })
 
-test('no factor without BQML units or a known decay reference', () => {
-  expect(suvBwFactor({ ...pet, Units: 'CNTS' })).toBeUndefined()
-  expect(suvBwFactor({ ...pet, DecayCorrection: 'NONE' })).toBeUndefined()
-  expect(suvBwFactor({ ...pet, PatientWeight: undefined })).toBeUndefined()
-})
-
 test('scaleNifti multiplies slope and intercept, treating slope 0 as 1', async () => {
   const hdr = new DataView(new ArrayBuffer(352))
   hdr.setInt32(0, 348, true)

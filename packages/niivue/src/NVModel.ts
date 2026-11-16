@@ -532,6 +532,9 @@ export default class NVModel {
       ...(options.annotationIsDrawnFromCenter !== undefined && {
         isDrawnFromCenter: options.annotationIsDrawnFromCenter,
       }),
+      ...(options.annotationAreaIsGeometric !== undefined && {
+        isAreaGeometric: options.annotationAreaIsGeometric,
+      }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
       }),

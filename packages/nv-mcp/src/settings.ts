@@ -389,6 +389,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether annotations are drawn in the render.',
   ),
   bool(
+    'annotationAreaIsGeometric',
+    'Whether ROI area is the outline area rather than its voxel count.',
+  ),
+  bool(
     'annotationMergesOverlaps',
     'Whether a new annotation is merged with one it overlaps.',
   ),

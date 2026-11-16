@@ -1538,6 +1538,8 @@ export type NiiVueOptions = {
   annotationIsClickToPlace?: boolean
   /** See AnnotationConfig.isDrawnFromCenter. Default false. */
   annotationIsDrawnFromCenter?: boolean
+  /** See AnnotationConfig.isAreaGeometric. Default false. */
+  annotationAreaIsGeometric?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -2200,6 +2202,13 @@ export type AnnotationConfig = {
    * its rim. Default false: both points are opposite box corners.
    */
   isDrawnFromCenter: boolean
+  /**
+   * Measured ROI `area` is the outline's own area (exact for rectangles,
+   * ellipses and circles), as cornerstone reports it. Default false: the count
+   * of voxels whose centres are inside times the voxel area, which steps in
+   * whole voxels. Mean/min/max/SD always use those voxels.
+   */
+  isAreaGeometric: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

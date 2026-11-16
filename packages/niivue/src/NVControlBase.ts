@@ -2776,6 +2776,16 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  get annotationAreaIsGeometric(): boolean {
+    return this.model.annotation.isAreaGeometric
+  }
+
+  /** See {@link AnnotationConfig.isAreaGeometric}. Applies to ROIs measured from now on. */
+  set annotationAreaIsGeometric(v: boolean) {
+    this.model.annotation.isAreaGeometric = v
+    this.emit('change', { property: 'annotationAreaIsGeometric', value: v })
+  }
+
   get annotationMergesOverlaps(): boolean {
     return this.model.annotation.mergesOverlaps
   }

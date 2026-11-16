@@ -24,6 +24,7 @@ const IMAGE_PROCESSING_TRANSFORMS = [
 const PROPS_RW = [
   ["annotationActiveGroup", "annotation_active_group"],
   ["annotationActiveLabel", "annotation_active_label"],
+  ["annotationAreaIsGeometric", "annotation_area_is_geometric"],
   ["annotationBrushRadius", "annotation_brush_radius"],
   ["annotationIsClickToPlace", "annotation_is_click_to_place"],
   ["annotationIsDrawnFromCenter", "annotation_is_drawn_from_center"],

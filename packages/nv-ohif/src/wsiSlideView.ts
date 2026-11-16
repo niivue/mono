@@ -84,7 +84,8 @@ export function keepOneRuler(ctl: {
  * WebGL2, redrawn on demand, refitting on resize until the user moves it. The
  * caller uses it for DICOM-WSI (SM) display sets.
  *
- * The active tool runs on every button. With `Length` a drag draws one ruler
+ * The active tool runs on the left and middle buttons; a right drag boxes a
+ * region and zooms to it (the browser menu is suppressed). With `Length` a drag draws one ruler
  * (core's slide overlay; the previous one clears once a new one is dragged;
  * a click without a drag clears it), endpoints in slide coordinates, measured in
  * physical units from the slide's DICOM pixel spacing. `Zoom` drags zoom
@@ -149,15 +150,14 @@ export async function mountWsiSlideView(
     if (!ctl) return
     const mode = dragModeFor(next)
     ctl.primaryDragMode = mode
-    // WindowLevel keeps navigation on the other buttons, as cornerstone binds
-    // them: middle pans, right zooms.
+    // Right drags a box and zooms to it, as NiiVue's slide viewer; WindowLevel
+    // keeps middle-button panning, as cornerstone binds it.
     const windowing = mode === DRAG_MODE.windowing
-    ctl.secondaryDragMode = windowing ? DRAG_MODE.callbackOnly : mode
+    ctl.secondaryDragMode = DRAG_MODE.roiSelection
     ctl.middleDragMode = windowing ? DRAG_MODE.pan : mode
     ctl.otherButtonDragMode = windowing ? DRAG_MODE.pan : mode
   }
   if (ctl) {
-    ctl.isContextMenuBlocked = false
     ctl.wheelZoomRate = 0.001
     // The old view read deltaY raw, whatever its deltaMode, and had one
     // pointer only (no pinch).

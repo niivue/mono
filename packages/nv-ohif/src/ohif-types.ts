@@ -14,6 +14,8 @@ export interface OhifDisplaySet {
   SeriesInstanceUID?: string
   SeriesDescription?: string
   Modality?: string
+  /** OHIF's verdict that the instances stack into a volume (false: lone or orthogonal images). */
+  isReconstructable?: boolean
   // A NIfTI/volume display set may expose a direct URL (data-source dependent).
   url?: string
   // DICOM display sets carry per-instance metadata; a NIfTI-JSON source may put a

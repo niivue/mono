@@ -21,6 +21,7 @@ import {
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   resolveWindowLevel,
+  roundNumber,
   subscribeOhifLabelSync,
   trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
@@ -348,8 +349,8 @@ describe('reflectNiivueAnnotation', () => {
     }
     expect(m.toolName).toBe('EllipticalROI')
     expect(m.referenceSeriesUID).toBe('series-1')
-    expect(m.displayText.primary[0]).toBe('123.4 mm²')
-    expect(m.displayText.primary[1]).toBe('Max: 200.0 HU')
+    // cornerstone's rows: area then max, rounded by OHIF's roundNumber.
+    expect(m.displayText.primary).toEqual(['123 mm²', 'Max: 200 HU'])
     expect(m.data.area).toBe(123.4)
     expect(m.data.mean).toBe(50)
     expect(m.data.areaUnit).toBe('mm²')
@@ -2987,4 +2988,12 @@ describe('flashStatus', () => {
       'Fetching overlay: PERFUSION... 3/10',
     ])
   })
+})
+
+it('roundNumber matches OHIF utils.roundNumber', () => {
+  expect(roundNumber(278.43)).toBe('278')
+  expect(roundNumber(42.17)).toBe('42.2')
+  expect(roundNumber(3.14159)).toBe('3.14')
+  expect(roundNumber(0.123456)).toBe('0.123')
+  expect(roundNumber(-1234.5)).toBe('-1235')
 })

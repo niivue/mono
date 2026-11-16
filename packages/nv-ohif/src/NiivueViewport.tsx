@@ -28,11 +28,13 @@ import {
   removeNiivueAnnotation,
   subscribeOhifLabelSync,
   trackNiivueWindowLevel,
+  unitForModality,
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
 import { convertDisplaySetToNifti, loadConversion } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import { MeasurementData } from './measurementData'
 import {
   authHeaders,
   getNiivueEntry,
@@ -44,6 +46,7 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { OrientationMenu } from './orientationMenu'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
@@ -80,6 +83,12 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   isSnapToVoxelCenters: true,
   // Cornerstone's convention: patient right on screen left, sagittal nose left.
   isRadiological: true,
+  // Cornerstone's tools also place lines and ROIs click-move-click.
+  annotationIsClickToPlace: true,
+  // ...and draw ellipses and circles from their centre.
+  annotationIsDrawnFromCenter: true,
+  // ROI area as cornerstone reports it: the outline's, not a voxel count.
+  annotationAreaIsGeometric: true,
 }
 
 type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -130,6 +139,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.
   const [stack, setStack] = useState<StackPosition | null>(null)
+  // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
+  const [isRender, setIsRender] = useState(false)
 
   // OHIF can re-render with fresh displaySets/servicesManager object
   // identities on unrelated state changes (e.g. toolbar interactions). Effects
@@ -277,6 +288,15 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
     }
     nv.addEventListener('locationChange', showStack)
+    const showRender = (e: Event) => {
+      if (
+        (e as CustomEvent<{ property?: string }>).detail?.property ===
+        'sliceType'
+      )
+        setIsRender(nv.sliceType === SLICE_TYPE.RENDER)
+    }
+    setIsRender(nv.sliceType === SLICE_TYPE.RENDER)
+    nv.addEventListener('change', showRender)
 
     // Annotations (Length / ROI / arrow): reflect a completed vector annotation
     // into OHIF's measurement panel, remove its row when the annotation is
@@ -347,6 +367,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
       nv.removeEventListener('locationChange', showWindowLevel)
       nv.removeEventListener('locationChange', showStack)
+      nv.removeEventListener('change', showRender)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
@@ -420,7 +441,6 @@ export function NiivueViewport(props: OhifViewportProps) {
       [message, extraNote].filter(Boolean).join(' ')
     // Loaded: show any notes briefly; the clear never touches a newer status.
     const loaded = (note?: string) => {
-      setIsLoaded(true)
       const message = withExtra(note)
       if (!message) return setStatus({ kind: 'idle' })
       const status: Status = { kind: 'note', message }
@@ -449,6 +469,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     // baseline, so the first manual contrast drag is detected as a change.
     const seedWindowLevel = () => {
       if (cancelled) return
+      // The volume is in (both load routes end here): a positive load signal.
+      setIsLoaded(true)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step
@@ -586,6 +608,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             view.setTool(activeOhifToolRef.current)
             updateNiivueViewport(viewportId, { slideView: view })
             refreshToolbar(servicesManager, viewportId)
+            setIsLoaded(true)
             loaded()
           } catch (err) {
             slide.dispose()
@@ -758,7 +781,23 @@ export function NiivueViewport(props: OhifViewportProps) {
           {overlay}
         </div>
       ) : null}
-      {props.viewportOptions?.customViewportProps?.hideOverlays ? null : (
+      <MeasurementData
+        nv={ready ? nvRef.current : null}
+        unit={unitForModality(displaySets[0]?.Modality)}
+      />
+      {/* Reconstructable volumes only, as cornerstone's evaluate.orientationMenu:
+          a whole slide or a lone/orthogonal image has no other plane. */}
+      <OrientationMenu
+        nv={
+          isLoaded &&
+          !slideViewRef.current &&
+          displaySets[0]?.isReconstructable !== false
+            ? nvRef.current
+            : null
+        }
+      />
+      {props.viewportOptions?.customViewportProps?.hideOverlays ||
+      isRender ? null : (
         <>
           <StudyLabel ds={displaySets[0]} />
           {windowLevel ? <WindowLevelReadout {...windowLevel} /> : null}

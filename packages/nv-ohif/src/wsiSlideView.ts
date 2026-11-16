@@ -1,5 +1,5 @@
 import type { NVSlide } from '@niivue/niivue'
-import { createSlideView, DRAG_MODE } from '@niivue/niivue'
+import { createSlideView, DRAG_MODE, isRgbSlide } from '@niivue/niivue'
 import { attachSlideMinimap } from '@niivue/uikit'
 
 export interface WsiSlideViewOptions {
@@ -33,7 +33,40 @@ const dragModeFor = (tool: string | undefined): DRAG_MODE =>
     ? DRAG_MODE.measurement
     : tool === 'Zoom'
       ? DRAG_MODE.callbackOnly
-      : DRAG_MODE.pan
+      : tool === 'WindowLevel'
+        ? DRAG_MODE.windowing
+        : DRAG_MODE.pan
+
+/**
+ * Cornerstone's WindowLevel drag on a slide: round(range / 1024) stored units
+ * per CSS px (unrounded below 1, so 8-bit RGB moves 0.25/px), right widens,
+ * down raises the centre. An RGB slide windows its red, green and blue
+ * channels together (brightness/contrast); others only `channel`.
+ */
+export function windowSlideDrag(
+  slide: Pick<NVSlide, 'channels' | 'manifest' | 'setChannel'>,
+  channel: number,
+  dx: number,
+  dy: number,
+): void {
+  const top = 2 ** (slide.manifest.levels[0]?.bitsStored ?? 8) - 1
+  const ratio = top / 1024
+  const perPixel = ratio > 1 ? Math.round(ratio) : ratio
+  const channels = isRgbSlide(slide.manifest)
+    ? slide.channels.map((_, c) => c)
+    : [channel]
+  for (const c of channels) {
+    const ch = slide.channels[c]
+    const lo = Number.isFinite(ch?.calMin) ? (ch?.calMin as number) : 0
+    const hi = Number.isFinite(ch?.calMax) ? (ch?.calMax as number) : top
+    const width = Math.max(perPixel, hi - lo + dx * perPixel)
+    const centre = (lo + hi) / 2 + dy * perPixel
+    slide.setChannel(c, {
+      calMin: centre - width / 2,
+      calMax: centre + width / 2,
+    })
+  }
+}
 
 /** One ruler at a time: the last finished one, none while a new one is dragged. */
 export function keepOneRuler(ctl: {
@@ -88,6 +121,8 @@ export async function mountWsiSlideView(
       secondaryDragMode: DRAG_MODE.pan,
       onDrag: (_dx, dy, x, y) =>
         slide.zoomBy(Math.exp(-dy * 0.01), x, y, view.screen()),
+      onWindow: (dx, dy) =>
+        windowSlideDrag(slide, view.controller?.windowChannel ?? 0, dx, dy),
       onChange: () => {
         if (view.controller) keepOneRuler(view.controller)
       },
@@ -114,9 +149,12 @@ export async function mountWsiSlideView(
     if (!ctl) return
     const mode = dragModeFor(next)
     ctl.primaryDragMode = mode
-    ctl.secondaryDragMode = mode
-    ctl.middleDragMode = mode
-    ctl.otherButtonDragMode = mode
+    // WindowLevel keeps navigation on the other buttons, as cornerstone binds
+    // them: middle pans, right zooms.
+    const windowing = mode === DRAG_MODE.windowing
+    ctl.secondaryDragMode = windowing ? DRAG_MODE.callbackOnly : mode
+    ctl.middleDragMode = windowing ? DRAG_MODE.pan : mode
+    ctl.otherButtonDragMode = windowing ? DRAG_MODE.pan : mode
   }
   if (ctl) {
     ctl.isContextMenuBlocked = false

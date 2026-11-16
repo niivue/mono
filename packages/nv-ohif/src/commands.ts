@@ -751,11 +751,24 @@ function releaseLabelSync(service: object): void {
   labelSyncSubscriptions.delete(service)
 }
 
+/** The intensity unit OHIF shows for a modality ('' when it has none). */
+export const unitForModality = (modality?: string): string =>
+  modality === 'CT' ? 'HU' : modality === 'PT' ? 'SUV' : ''
+
 function modalityUnit(entry: NiivueViewportEntry): string {
-  const modality = baseModality(entry)
-  if (modality === 'CT') return 'HU'
-  if (modality === 'PT') return 'SUV'
-  return ''
+  return unitForModality(baseModality(entry))
+}
+
+/**
+ * OHIF's utils.roundNumber: about `precision` significant decimals, fewer as the
+ * value grows (>= 100: integers), so panel rows read as cornerstone's.
+ */
+export function roundNumber(value: number, precision = 2): string {
+  const a = Math.abs(value)
+  if (a < 0.0001) return `${value}`
+  // One fewer decimal per decade above 1, one more below (>= 100: -2 ... < 0.001: +4).
+  const extra = Math.min(4, Math.max(-2, -Math.floor(Math.log10(a))))
+  return value.toFixed(precision + extra)
 }
 
 // The panel row content + cachedStats for a reflected annotation. Measure tools
@@ -772,7 +785,7 @@ function buildAnnotationDisplay(
   // Length is a single measured line: in-plane distance in mm, no area/intensity.
   if (readout === 'length' && stats.length !== undefined) {
     return {
-      primary: [`${stats.length.toFixed(1)} mm`],
+      primary: [`${roundNumber(stats.length)} mm`],
       data: { length: stats.length, unit: 'mm' },
       label,
     }
@@ -782,20 +795,20 @@ function buildAnnotationDisplay(
     const short = stats.shortLength ?? 0
     return {
       primary: [
-        `L: ${stats.length.toFixed(1)} mm`,
-        `W: ${short.toFixed(1)} mm`,
+        `L: ${roundNumber(stats.length)} mm`,
+        `W: ${roundNumber(short)} mm`,
       ],
       data: { length: stats.length, width: short, unit: 'mm' },
       label,
     }
   }
-  const withUnit = (v: number, key: string) =>
-    unit ? `${key}: ${v.toFixed(1)} ${unit}` : `${key}: ${v.toFixed(1)}`
+  // Area then max, as cornerstone's ROI rows (getStatisticDisplayString).
   return {
     primary: [
-      `${stats.area.toFixed(1)} mm²`,
-      withUnit(stats.max, 'Max'),
-      withUnit(stats.mean, 'Mean'),
+      `${roundNumber(stats.area)} mm²`,
+      unit
+        ? `Max: ${roundNumber(stats.max)} ${unit}`
+        : `Max: ${roundNumber(stats.max)}`,
     ],
     data: {
       area: stats.area,

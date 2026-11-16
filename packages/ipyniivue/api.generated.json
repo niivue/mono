@@ -1470,6 +1470,21 @@
       "hasGetter": true,
       "hasSetter": true,
       "doc": null
+    },
+    {
+      "jsName": "windowingStep",
+      "pyName": "windowing_step",
+      "tsType": "[number, number]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 2
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Windowing drag gain; see {@link InteractionConfig.windowingStep}."
     }
   ],
   "readonlyProperties": [

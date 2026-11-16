@@ -603,6 +603,15 @@ describe('the mesh layers', () => {
     })
   })
 
+  it("keeps hidden labels' triangles when culling is off", async () => {
+    const view = meshView()
+    const { set_mesh_layer } = meshHandlers(hostOf(view))
+    await set_mesh_layer({ cull_hidden_labels: false })
+    expect(view.setMeshLayerProperty).toHaveBeenCalledWith(0, 0, {
+      isHiddenLabelCulled: false,
+    })
+  })
+
   it('passes an empty colormap_negative through, so the layer drops it', async () => {
     const view = meshView()
     const { set_mesh_layer } = meshHandlers(hostOf(view))

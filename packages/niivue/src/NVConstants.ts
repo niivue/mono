@@ -616,6 +616,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isViewModeHotKeyEnabled: false,
   isPanFollowingCrosshair: false,
   isLegendToggleEnabled: false,
+  windowingStep: [0.005, 0.005],
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

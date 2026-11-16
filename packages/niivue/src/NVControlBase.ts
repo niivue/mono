@@ -690,7 +690,11 @@ export default class NiiVue extends EventTarget {
   dragEndXY: [number, number] = [0, 0]
   _activeDragMode: number = DRAG_MODE.none
   _angleState: 'none' | 'drawing_first_line' | 'drawing_second_line' = 'none'
-  _angleFirstLine: number[] = [0, 0, 0, 0]
+  /** The open angle's first arm in mm and the tile it was drawn on. */
+  _angleArm: {
+    mm: [[number, number, number], [number, number, number]]
+    hit: ViewHitTest
+  } | null = null
   _pan2DxyzmmAtDragStart: [number, number, number, number] | null = null
   /** True once a `crosshairPan` gesture has crossed the drag threshold. */
   _crosshairPanDidDrag = false
@@ -2657,8 +2661,10 @@ export default class NiiVue extends EventTarget {
   /**
    * Opt-in: clicking a legend entry's colour box hides or shows that label
    * (the volume's or mesh layer's `hiddenLabels`); clicking its name still
-   * moves the crosshair to the label. Default false: every click moves the
-   * crosshair. Connectome legend entries do not toggle.
+   * moves the crosshair to the label. Double-clicking a colour box shows only
+   * that label (again, when it is the only one shown, shows all). Default
+   * false: every click moves the crosshair. Connectome legend entries do not
+   * toggle.
    */
   get isLegendToggleEnabled(): boolean {
     return this.model.interaction.isLegendToggleEnabled
@@ -2684,6 +2690,15 @@ export default class NiiVue extends EventTarget {
     this.model.interaction.isPanFollowingCrosshair = v
     this.emit('change', { property: 'isPanFollowingCrosshair', value: v })
     if (v && applyPanFollowsCrosshair(this)) this.drawScene()
+  }
+
+  get windowingStep(): [number, number] {
+    return this.model.interaction.windowingStep
+  }
+  /** Windowing drag gain; see {@link InteractionConfig.windowingStep}. */
+  set windowingStep(v: [number, number]) {
+    this.model.interaction.windowingStep = v
+    this.emit('change', { property: 'windowingStep', value: v })
   }
 
   // --- Annotation Properties ---
@@ -2822,6 +2837,8 @@ export default class NiiVue extends EventTarget {
 
   /** Drop a half-drawn multi-click contour or bidirectional measurement. */
   _abandonAnnotationInProgress(): void {
+    // A half-placed angle belongs to the old scene too.
+    this._cancelAngle()
     // A drag in progress too: pointer-up would otherwise commit it, e.g. a
     // half-dragged bidirectional short axis as a new long axis (#471).
     this._annotationShapeStart = null
@@ -7379,8 +7396,20 @@ export default class NiiVue extends EventTarget {
     return measurementApi.pickMeasurement(this, canvasX, canvasY, radiusPx)
   }
 
+  /** Drop a half-placed angle (its first arm and the following second arm). */
+  _cancelAngle(): void {
+    if (this._angleState === 'none') return
+    this._angleState = 'none'
+    this._angleArm = null
+    if (this._activeDragMode === DRAG_MODE.angle)
+      this._activeDragMode = DRAG_MODE.none
+    this.model._dragOverlay = null
+    this.drawScene()
+  }
+
   /** Clear both completed distance measurements and completed angles. */
   clearMeasurements(): void {
+    this._cancelAngle()
     this.model.completedMeasurements = []
     this.model.completedAngles = []
     this.drawScene()
@@ -7388,6 +7417,7 @@ export default class NiiVue extends EventTarget {
 
   /** Clear completed angles only, leaving distance measurements in place. */
   clearAngles(): void {
+    this._cancelAngle()
     this.model.completedAngles = []
     this.drawScene()
   }

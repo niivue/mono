@@ -1,3 +1,33 @@
+## 1.0.0-rc.208 (2026-11-16)
+
+### Features
+
+- **niivue:** windowingStep sets the windowing drag gain and direction ([1df5de4d](https://github.com/niivue/mono/commit/1df5de4d))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.207 (2026-11-16)
+
+### Features
+
+- cull hidden mesh labels, PAQD hidden labels, legend solo ([eac95fd0](https://github.com/niivue/mono/commit/eac95fd0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.206 (2026-11-16)
+
+### Fixes
+
+- **niivue:** ruler labels clear of ticks, no zero measurements, angle tool rework ([aa3157a5](https://github.com/niivue/mono/commit/aa3157a5))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.205 (2026-11-15)
 
 ### Features

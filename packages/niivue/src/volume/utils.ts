@@ -1389,3 +1389,29 @@ export function buildPaqdLut256(
   }
   return out
 }
+
+/**
+ * Remove hidden labels from resampled PAQD voxels (idx1, idx2, prob1, prob2)
+ * as if the file never had them: a hidden primary takes the secondary, and a
+ * freed slot becomes label 0 at probability 0, PAQD's empty slot. Why: see
+ * "Hidden labels" in notes/agents/colormaps-and-drawing.md.
+ */
+export function dropHiddenPaqdLabels(
+  data: Uint8Array,
+  hiddenLabels: number[],
+): void {
+  const isHidden = new Uint8Array(256)
+  for (const value of hiddenLabels) isHidden[value] = 1
+  for (let i = 0; i < data.length; i += 4) {
+    if (isHidden[data[i + 1]]) {
+      data[i + 1] = 0
+      data[i + 3] = 0
+    }
+    if (isHidden[data[i]]) {
+      data[i] = data[i + 3] ? data[i + 1] : 0
+      data[i + 2] = data[i + 3]
+      data[i + 1] = 0
+      data[i + 3] = 0
+    }
+  }
+}

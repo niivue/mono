@@ -486,6 +486,12 @@ export type NVMeshLayer = {
   colormapLabel: LUT | null
   /** Label values drawn transparent, as a volume's `hiddenLabels` */
   hiddenLabels?: number[]
+  /**
+   * Remove the triangles of `hiddenLabels`, as hidden voxels vanish; false
+   * shows the mesh colour beneath instead. A triangle takes the label most of
+   * its vertices share (its first vertex's when all differ). Default: true.
+   */
+  isHiddenLabelCulled?: boolean
   /** Outline width (0 = filled, >0 = outline only) */
   outlineWidth: number
   /** Source URL or filename */
@@ -1835,6 +1841,8 @@ export type MeshLayerFromUrlOptions = {
   isAdditiveBlend?: boolean
   /** Outline width */
   outlineWidth?: number
+  /** Remove hidden labels' triangles (see {@link NVMeshLayer.isHiddenLabelCulled}). Default: true. */
+  isHiddenLabelCulled?: boolean
 }
 
 /**

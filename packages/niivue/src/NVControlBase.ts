@@ -7606,9 +7606,9 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Bumped by every drawing load, install or close: compare two reads to tell
-   * whether any drawing call happened in between. Not in nv-mcp: it
-   * coordinates in-flight loads, not scene state.
+   * whether any drawing call happened in between.
    */
+  // Not in nv-mcp: it coordinates in-flight loads, not scene state.
   get drawingGeneration(): number {
     return this._drawingGeneration
   }

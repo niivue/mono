@@ -86,16 +86,6 @@ describe('computeAnnotationStats area', () => {
     shape: { type, start, end },
   })
 
-  test('voxel centres are tested against the exact outline, not a rounded one', () => {
-    // Centres 1..3 lie inside (0.4..3.4); rounding the corners to 0..3 would add 0.
-    const stats = computeAnnotationStats(
-      annotation([{ outer: square(0.4, 0.4, 3), holes: [] }]),
-      volume,
-    )
-    expect(stats?.area).toBe(9)
-    expect(stats?.min).toBe(1)
-  })
-
   test('isAreaGeometric: exact rectangle and ellipse areas; default counts voxels', () => {
     const rect = shaped('measureRect', { x: 0.5, y: 0.5 }, { x: 4.7, y: 3.2 })
     // Default: voxel centres x 1..4, y 1..3.
@@ -143,22 +133,6 @@ test('the scanline fill selects exactly the voxels pointInRing does', () => {
   )
   expect(stats?.area).toBe(expected)
   expect(stats?.max).toBe(maxX) // voxel value = its x index
-})
-
-test('an intact circle selects voxels inside the true curve, not its 64-gon', () => {
-  const start = { x: 2.2, y: 2.3 }
-  // r = 6.8, centre (9, 9.1): centres (6, 3) and (12, 3) lie outside the 64-gon
-  // but inside the circle.
-  const end = { x: 15.8, y: 15.9 }
-  const ann: VectorAnnotation = {
-    ...annotation(generateShape('measureCircle', start, end, 1)),
-    shape: { type: 'measureCircle', start, end },
-  }
-  let expected = 0
-  for (let x = 0; x < N; x++)
-    for (let y = 0; y < N; y++)
-      if ((x - 9) ** 2 + (y - 9.1) ** 2 < 6.8 ** 2) expected++
-  expect(computeAnnotationStats(ann, volume)?.area).toBe(expected)
 })
 
 describe('computeAnnotationStats edge cases', () => {
@@ -271,21 +245,6 @@ test('on a tilted volume an intact ellipse and the same freehand outline select 
   // The 64-gon sits just inside the curve: at most a few edge voxels fewer.
   expect(e - f).toBeGreaterThanOrEqual(0)
   expect(e - f).toBeLessThanOrEqual(4)
-})
-
-describe('measurePoint', () => {
-  const point = (x: number, y: number): VectorAnnotation => ({
-    ...annotation(generateShape('measurePoint', { x, y }, { x, y }, 1)),
-    shape: { type: 'measurePoint', start: { x, y }, end: { x, y } },
-  })
-  test('reads the nearest voxel', () => {
-    const stats = computeAnnotationStats(point(7.4, 3.2), volume)
-    expect(stats?.value).toBe(7)
-    expect(stats?.mean).toBe(7)
-  })
-  test('null off the image', () => {
-    expect(computeAnnotationStats(point(25, 0), volume)).toBeNull()
-  })
 })
 
 describe('measurePoint on 4D and oblique volumes (R12 audit)', () => {

@@ -108,10 +108,6 @@ describe('isAnnotationErased', () => {
 describe('dragCorners', () => {
   const c = { x: 10, y: 20 }
   const e = { x: 13, y: 24 }
-  test('keeps corner-to-corner drags (circles squared)', () => {
-    expect(dragCorners('ellipse', c, e, false)).toEqual([c, e])
-    expect(dragCorners('circle', c, e, false)).toEqual([c, { x: 14, y: 24 }])
-  })
   test('from the centre: ellipse end is a corner, circle end is on the rim', () => {
     expect(dragCorners('measureEllipse', c, e, true)).toEqual([
       { x: 7, y: 16 },

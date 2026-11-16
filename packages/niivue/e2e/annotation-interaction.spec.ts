@@ -264,12 +264,18 @@ test('annotationIsClickToPlace: places a shape on an oblique volume; turning it 
     click(120, 120)
     ev('pointermove', 200, 200, -1)
     const previewed = !!nv.model._annotationPreview
+    // Leaving the canvas drops the rubber band; the start stays parked.
+    c.dispatchEvent(new PointerEvent('pointerleave'))
+    const leftPreview = nv.model._annotationPreview
+    const leftParked = !!nv._annotationClickStart
     nv.annotationIsClickToPlace = false
-    return { placed, previewed, preview: nv.model._annotationPreview, parked: nv._annotationClickStart }
+    return { placed, previewed, leftPreview, leftParked, preview: nv.model._annotationPreview, parked: nv._annotationClickStart }
   })()`)
 
   expect(r.placed).toBe(1)
   expect(r.previewed).toBe(true)
+  expect(r.leftPreview).toBeNull()
+  expect(r.leftParked).toBe(true)
   expect(r.preview).toBeNull()
   expect(r.parked).toBeNull()
 })

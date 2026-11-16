@@ -525,6 +525,15 @@ export default class NVModel {
       ...(options.annotationMergesOverlaps !== undefined && {
         mergesOverlaps: options.annotationMergesOverlaps,
       }),
+      ...(options.annotationIsClickToPlace !== undefined && {
+        isClickToPlace: options.annotationIsClickToPlace,
+      }),
+      ...(options.annotationIsDrawnFromCenter !== undefined && {
+        isDrawnFromCenter: options.annotationIsDrawnFromCenter,
+      }),
+      ...(options.annotationAreaIsGeometric !== undefined && {
+        isAreaGeometric: options.annotationAreaIsGeometric,
+      }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
       }),

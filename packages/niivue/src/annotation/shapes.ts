@@ -7,6 +7,25 @@ import type {
 
 const ELLIPSE_SEGMENTS = 64
 
+function ellipseRing(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  n = ELLIPSE_SEGMENTS,
+): PolygonWithHoles[] {
+  const outer: AnnotationPoint[] = []
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2
+    outer.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry })
+  }
+  return [{ outer, holes: [] }]
+}
+
+export function isCircleTool(tool: AnnotationTool): boolean {
+  return tool === 'circle' || tool === 'measureCircle'
+}
+
 function generateEllipse(
   start: AnnotationPoint,
   end: AnnotationPoint,
@@ -16,12 +35,7 @@ function generateEllipse(
   const rx = Math.abs(end.x - start.x) / 2
   const ry = Math.abs(end.y - start.y) / 2
   if (rx < 0.25 && ry < 0.25) return []
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
-    const angle = (i / ELLIPSE_SEGMENTS) * Math.PI * 2
-    outer.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry })
-  }
-  return [{ outer, holes: [] }]
+  return ellipseRing(cx, cy, rx, ry)
 }
 
 function generateRectangle(
@@ -117,6 +131,34 @@ export function constrainCircleEnd(
   }
 }
 
+/**
+ * The box corners a drag from `start` to `end` stores for a two-point shape.
+ * Circles are square boxes. With `fromCenter` (OHIF/cornerstone's gesture)
+ * `start` is the centre: an ellipse's `end` is a corner, a circle's a point on
+ * the rim. Shapes stay stored as corners, so selection, resize and erase are
+ * unchanged.
+ */
+export function dragCorners(
+  tool: AnnotationTool,
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+  fromCenter: boolean,
+): [AnnotationPoint, AnnotationPoint] {
+  const circle = isCircleTool(tool)
+  if (
+    !fromCenter ||
+    !(circle || tool === 'ellipse' || tool === 'measureEllipse')
+  )
+    return [start, circle ? constrainCircleEnd(start, end) : end]
+  const r = circle ? Math.hypot(end.x - start.x, end.y - start.y) : 0
+  const dx = circle ? r : Math.abs(end.x - start.x)
+  const dy = circle ? r : Math.abs(end.y - start.y)
+  return [
+    { x: start.x - dx, y: start.y - dy },
+    { x: start.x + dx, y: start.y + dy },
+  ]
+}
+
 function generateCircle(
   start: AnnotationPoint,
   end: AnnotationPoint,
@@ -126,12 +168,7 @@ function generateCircle(
   const cy = (start.y + constrained.y) / 2
   const r = Math.abs(constrained.x - start.x) / 2
   if (r < 0.25) return []
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
-    const angle = (i / ELLIPSE_SEGMENTS) * Math.PI * 2
-    outer.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r })
-  }
-  return [{ outer, holes: [] }]
+  return ellipseRing(cx, cy, r, r)
 }
 
 const SPLINE_SAMPLES_PER_SEGMENT = 16
@@ -214,6 +251,9 @@ export function generateShape(
     case 'circle':
     case 'measureCircle':
       return generateCircle(start, end)
+    case 'measurePoint':
+      // A dot of radius strokeWidth mm; 16 sides suffice at that size.
+      return ellipseRing(end.x, end.y, strokeWidth, strokeWidth, 16)
     default:
       return []
   }

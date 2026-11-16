@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AnnotationPoint, VectorAnnotation } from '@/NVTypes'
 import { clipperSubtractBrush } from './clipper'
 import {
+  dragCorners,
   generateShape,
   generateSplineFromPoints,
   isAnnotationErased,
@@ -101,5 +102,23 @@ describe('isAnnotationErased', () => {
   test('a freehand annotation has no shape to compare', () => {
     const ann = { ...rect(), shape: undefined }
     expect(isAnnotationErased(ann)).toBe(false)
+  })
+})
+
+describe('dragCorners', () => {
+  const c = { x: 10, y: 20 }
+  const e = { x: 13, y: 24 }
+  test('from the centre: ellipse end is a corner, circle end is on the rim', () => {
+    expect(dragCorners('measureEllipse', c, e, true)).toEqual([
+      { x: 7, y: 16 },
+      { x: 13, y: 24 },
+    ])
+    // |e - c| = 5
+    expect(dragCorners('measureCircle', c, e, true)).toEqual([
+      { x: 5, y: 15 },
+      { x: 15, y: 25 },
+    ])
+    // Other shapes ignore it.
+    expect(dragCorners('rectangle', c, e, true)).toEqual([c, e])
   })
 })

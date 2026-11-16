@@ -210,3 +210,101 @@ test('an erase keeps annotations the brush did not reach (#486)', async ({
   expect(r.keptStats).toBe(true)
   expect(r.replacedErased).toBe(true)
 })
+
+test('annotationIsClickToPlace: click-move-click places a shape; drags and the default are unchanged', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    const click = (x, y) => drag([[x, y]])
+    // Default off: a click places nothing.
+    click(120, 120)
+    const off = nv.annotations.length
+    nv.annotationIsClickToPlace = true
+    // Two clicks: one rectangle from the first to the second point.
+    click(120, 120)
+    const afterFirst = nv.annotations.length
+    click(200, 200)
+    const afterSecond = nv.annotations.length
+    // A drag still places a shape in one gesture.
+    drag([[220, 220], [260, 260], [300, 300]])
+    return { off, afterFirst, afterSecond, afterDrag: nv.annotations.length, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.off).toBe(0)
+  expect(r.afterFirst).toBe(0)
+  expect(r.afterSecond).toBe(1)
+  expect(r.afterDrag).toBe(2)
+  expect(r.parked).toBeNull()
+})
+
+test('annotationIsClickToPlace: Escape drops a parked start; a parked start beats selection; jitter is a click', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationIsClickToPlace = true
+    nv.annotationMergesOverlaps = false
+    // 2 px of press/release jitter still parks (screen-space click).
+    drag([[120, 120], [122, 121]])
+    const jitterParked = !!nv._annotationClickStart
+    ev('pointermove', 150, 150, -1)
+    const rubberBand = nv.model._annotationPreview?.shape?.end ?? null
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    const escParked = nv._annotationClickStart
+    drag([[200, 200]])
+    const afterEsc = nv.annotations.length
+    // Finish that shape, then park a new start and end it on the shape's edge:
+    // the press resumes the parked start instead of selecting the shape.
+    drag([[260, 260]])
+    drag([[100, 100]])
+    drag([[200, 230]])
+    return { rubberBand, selected: !!nv.model._annotationSelection, jitterParked, escParked, afterEsc, count: nv.annotations.length, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.jitterParked).toBe(true)
+  expect(r.rubberBand).not.toBeNull()
+  expect(r.escParked).toBeNull()
+  expect(r.afterEsc).toBe(0)
+  expect(r.count).toBe(2)
+  expect(r.selected).toBe(false)
+  expect(r.parked).toBeNull()
+})
+
+test('annotationIsDrawnFromCenter: ellipse and circle grow from the press point', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationMergesOverlaps = false
+    nv.annotationTool = 'ellipse'
+    drag([[200, 200], [230, 220], [240, 220]])
+    const corner = nv.annotations[0].shape
+    nv.annotationIsDrawnFromCenter = true
+    drag([[200, 200], [230, 220], [240, 220]])
+    const centre = nv.annotations[1].shape
+    nv.annotationTool = 'circle'
+    // Clear of the ellipses: a press on a shape selects it.
+    drag([[100, 320], [130, 330], [130, 320]])
+    const circle = nv.annotations[2].shape
+    const mid = (s) => [(s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2]
+    const size = (s) => [Math.abs(s.end.x - s.start.x), Math.abs(s.end.y - s.start.y)]
+    return { cornerSize: size(corner), centreSize: size(centre), centreMid: mid(centre), press: [corner.start.x, corner.start.y], circleSize: size(circle), circleMid: mid(circle) }
+  })()`)
+
+  // Same drag: the centred ellipse's box is twice as wide and tall, centred on the press.
+  expect(r.centreSize[0]).toBeCloseTo(r.cornerSize[0] * 2, 5)
+  expect(r.centreSize[1]).toBeCloseTo(r.cornerSize[1] * 2, 5)
+  expect(r.centreMid[0]).toBeCloseTo(r.press[0], 5)
+  expect(r.centreMid[1]).toBeCloseTo(r.press[1], 5)
+  // Circle: rim point 30 px right of the press, so a square box centred on it.
+  expect(r.circleSize[0]).toBeCloseTo(r.circleSize[1], 5)
+  // Rim 30 px from the press: the box is 60 px of canvas, twice a corner drag's 30.
+  expect(r.circleSize[0]).toBeCloseTo(r.cornerSize[0] * 1.5, 5)
+})

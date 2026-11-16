@@ -27,19 +27,22 @@ import {
 } from './selection'
 import {
   constrainCircleEnd,
+  dragCorners,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
   isAnnotationErased,
+  isCircleTool,
 } from './shapes'
 import { isOnSlice, mmToSlice2D } from './sliceProjection'
-import { computeAnnotationStats, isCircleTool, isMeasureTool } from './stats'
+import { computeAnnotationStats, isMeasureTool } from './stats'
 
 export {
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
   constrainCircleEnd,
+  dragCorners,
   extractLivewireSlice,
   generatePolygonFromPoints,
   generateShape,
@@ -255,7 +258,18 @@ export function storeAnnotation(
   newAnnotation: VectorAnnotation,
   mergesOverlaps: boolean,
 ): VectorAnnotation[] {
-  return mergesOverlaps
+  const isPoint = (a: VectorAnnotation) => a.shape?.type === 'measurePoint'
+  if (!mergesOverlaps || isPoint(newAnnotation))
+    return [...existing, newAnnotation]
+  // A probe marks a voxel, not a region: never unioned or cut.
+  const points = existing.filter(isPoint)
+  return points.length === 0
     ? mergeAnnotations(existing, newAnnotation)
-    : [...existing, newAnnotation]
+    : [
+        ...mergeAnnotations(
+          existing.filter((a) => !isPoint(a)),
+          newAnnotation,
+        ),
+        ...points,
+      ]
 }

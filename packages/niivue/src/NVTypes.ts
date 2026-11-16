@@ -1527,6 +1527,12 @@ export type NiiVueOptions = {
    * must retain an independent identity.
    */
   annotationMergesOverlaps?: boolean
+  /** See AnnotationConfig.isClickToPlace. Default false. */
+  annotationIsClickToPlace?: boolean
+  /** See AnnotationConfig.isDrawnFromCenter. Default false. */
+  annotationIsDrawnFromCenter?: boolean
+  /** See AnnotationConfig.isAreaGeometric. Default false. */
+  annotationAreaIsGeometric?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -2069,6 +2075,8 @@ export type AnnotationTool =
   // Two perpendicular measured axes (RECIST-style long + short diameters).
   | 'bidirectional'
   | 'measureBidirectional'
+  // A single click: the base volume's value at that voxel (OHIF's Probe).
+  | 'measurePoint'
 
 export type AnnotationStats = {
   area: number
@@ -2079,6 +2087,8 @@ export type AnnotationStats = {
   length?: number
   /** Short-axis length for a bidirectional measurement (long axis in length). */
   shortLength?: number
+  /** measurePoint: the voxel's value (also min/mean/max). */
+  value?: number
 }
 
 export type AnnotationPoint = { x: number; y: number }
@@ -2173,6 +2183,26 @@ export type AnnotationConfig = {
   activeGroup: string
   brushRadius: number
   mergesOverlaps: boolean
+  /**
+   * Two-point shapes (line, measure, arrow, rect, ellipse, circle, bidirectional
+   * axes) may also be placed click-move-click, as cornerstone's tools are: a
+   * click (press and release in place) parks the start; the next press on the
+   * same slice ends the shape where it is released. Drags work as before.
+   */
+  isClickToPlace: boolean
+  /**
+   * Ellipse and circle tools draw from their centre, as OHIF/cornerstone:
+   * an ellipse's second point is a corner of its box, a circle's a point on
+   * its rim. Default false: both points are opposite box corners.
+   */
+  isDrawnFromCenter: boolean
+  /**
+   * Measured ROI `area` is the outline's own area (exact for rectangles,
+   * ellipses and circles), as cornerstone reports it. Default false: the count
+   * of voxels whose centres are inside times the voxel area, which steps in
+   * whole voxels. Mean/min/max/SD always use those voxels.
+   */
+  isAreaGeometric: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

@@ -106,7 +106,13 @@ class _GeneratedNiiVue(anywidget.AnyWidget):
     # Reactive properties (read+write, synced)
     annotation_active_group = traitlets.Unicode(None, allow_none=True).tag(sync=True)
     annotation_active_label = traitlets.Float(None, allow_none=True).tag(sync=True)
+    annotation_area_is_geometric = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    """See {@link AnnotationConfig.isAreaGeometric}. Applies to ROIs measured from now on."""
     annotation_brush_radius = traitlets.Float(None, allow_none=True).tag(sync=True)
+    annotation_is_click_to_place = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    """See {@link AnnotationConfig.isClickToPlace}."""
+    annotation_is_drawn_from_center = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    """See {@link AnnotationConfig.isDrawnFromCenter}."""
     annotation_is_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     """Enable vector annotation editing. Mutually exclusive with
 {@link drawIsEnabled} in practice: with both on, raster drawing intercepts
@@ -116,7 +122,7 @@ affect whether annotations *render* — they always do."""
     annotation_is_erasing = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional"], None, allow_none=True).tag(sync=True)
+    annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint"], None, allow_none=True).tag(sync=True)
     azimuth = traitlets.Float(None, allow_none=True).tag(sync=True)
     background_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
     clip_plane_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)

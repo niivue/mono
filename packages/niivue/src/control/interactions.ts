@@ -78,6 +78,28 @@ const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
 // isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
 // screen space so thick slices or zoom don't change what counts as a click.
 const CLICK_PX = 3
+// A multi-click contour closes on a click this close (CSS px) to its first
+// point, as cornerstone's closeContourProximity (10).
+const CLOSE_PX = 10
+
+function isNearFirstPoint(
+  ctrl: NiiVue,
+  evt: PointerEvent,
+  first: AnnotationPoint,
+): boolean {
+  const c = ctrl.mmToCanvas(
+    Annotation.slice2DToMM(
+      first,
+      ctrl._annotationPolySlicePosition,
+      ctrl._annotationPolySliceType,
+    ),
+  )
+  if (!c) return false
+  const [x, y] = clientToCanvasPixel(ctrl, evt.clientX, evt.clientY)
+  return (
+    Math.hypot(x - c.x, y - c.y) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  )
+}
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -1720,6 +1742,19 @@ export function initInteraction(ctrl: NiiVue): void {
             resetLivewire(ctrl)
           }
           const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
+          // isClickToPlace (cornerstone's conventions): a click back near the
+          // first point closes the contour, as a double-click does.
+          if (
+            cfg.isClickToPlace &&
+            !(tool in ANGLE_CLICKS) &&
+            poly.length >= 3 &&
+            isNearFirstPoint(ctrl, evt, poly[0] as AnnotationPoint)
+          ) {
+            commitMultiClickContour(ctrl)
+            ctrl._abandonAnnotationInProgress()
+            ctrl.drawScene()
+            return
+          }
           // The second press of a double-click (which closes the contour via
           // the dblclick handler) and a press coincident with the last placed
           // point must not append: the duplicate point would let a single

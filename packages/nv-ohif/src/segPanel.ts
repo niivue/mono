@@ -6,6 +6,7 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
+import { rasGrid, voxelMM3 } from './quantify'
 import type { Restyle, RtLabels } from './rtDrawing'
 import {
   eraseSegmentValue,
@@ -305,11 +306,14 @@ export function startSegPanel(
     nv.refreshDrawing()
   }
   let stats = rt?.stats ?? labelStats(bitmap, dims)
+  const grid = rasGrid(back)
+  // |det| of the affine: pixDims overstate a sheared grid's voxel.
   const [, px = 1, py = 1, pz = 1] = back.hdr?.pixDims ?? []
+  const voxel = grid ? voxelMM3(grid) : px * py * pz
   const cached = (value: number) => {
     const count = stats.get(value)?.count ?? 0
     // No `center`: OHIF's own jump would then look for a cornerstone viewport.
-    return { count, volume: count * px * py * pz }
+    return { count, volume: count * voxel }
   }
   // A second pane on the same SEG shares the segmentation, with its own
   // colours; segments added later take palette colours.

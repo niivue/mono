@@ -489,7 +489,7 @@ function download(text: string, filename: string): void {
 /** OHIF's createAndDownloadTMTVReport layout. */
 export function tmtvCsv(
   study: Record<string, unknown>,
-  stats: { tmtv: number; segments: NamedStats[] },
+  stats: { tmtv: number; tlg: number; segments: NamedStats[] },
   config: ThresholdConfig,
 ): string {
   const head = [
@@ -530,8 +530,6 @@ export function tmtvCsv(
         .map(csvCell)
         .join(','),
     )
-  // OHIF's total sums the per-segment lesionGlycolysis (mm³ x SUV).
-  const tlg = stats.segments.reduce((t, s) => t + s.lesionGlycolysis, 0)
   csv.push(
     '',
     '',
@@ -541,7 +539,8 @@ export function tmtvCsv(
     '',
   )
   csv.push(`Total Metabolic Tumor Volume,tmtv,${stats.tmtv}`)
-  csv.push(`Total Lesion Glycolysis,tlg,${tlg.toFixed(4)}`)
+  // The panel's total (mL x SUV), not the per-segment mm³ x SUV sum.
+  csv.push(`Total Lesion Glycolysis,tlg,${stats.tlg.toFixed(4)}`)
   csv.push(
     ['Threshold Configuration', ...Object.entries(config).flat()].join(','),
   )

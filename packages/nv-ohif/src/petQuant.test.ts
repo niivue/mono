@@ -148,6 +148,22 @@ it('TMTV CSV quotes a label holding a comma', () => {
     peak: 1,
     lesionGlycolysis: 1,
   }
-  const csv = tmtvCsv({}, { tmtv: 1, segments: [segment] }, {})
+  const csv = tmtvCsv({}, { tmtv: 1, tlg: 1, segments: [segment] }, {})
   expect(csv.split('\n')[1]).toStartWith('1,"left,lung",1,')
+})
+
+it('TMTV CSV total TLG matches the panel (mL x SUV)', () => {
+  const segment = {
+    value: 1,
+    label: 'lesion',
+    count: 1000,
+    volume: 1000,
+    mean: 2,
+    max: 2,
+    min: 2,
+    peak: 2,
+    lesionGlycolysis: 2000,
+  }
+  const csv = tmtvCsv({}, { tmtv: 1, tlg: 2, segments: [segment] }, {})
+  expect(csv).toContain('Total Lesion Glycolysis,tlg,2.0000')
 })

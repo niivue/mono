@@ -60,6 +60,8 @@ export interface OhifViewportProps {
     orientation?: string
     viewportType?: string
     toolGroupId?: string
+    /** Pane background, RGB 0-1 (TMTV's MIP pane). */
+    background?: number[]
     syncGroups?: ReadonlyArray<{ type?: string; id?: string } | string>
     /** Hanging-protocol extras; `hideOverlays` drops the corner text (e.g. a 3D pane). */
     customViewportProps?: { hideOverlays?: boolean }

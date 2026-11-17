@@ -56,6 +56,7 @@ import {
   applyViewportStyle,
   baseStyle,
   isMip,
+  isMipInverted,
   overlayDisplaySets,
   useHungOverlays,
 } from './hangingOptions'
@@ -169,17 +170,22 @@ interface ToolGroupServiceLike {
 /**
  * Effect keys for the hanging-protocol options, by value (OHIF passes fresh
  * objects each render): `view` for the slice type, render camera, sync
- * groups and MIP; `load` for what needs a reload (a 3D pane); `display` for the window
- * and 3D preset, applied in place.
+ * groups and MIP; `style` for the pane background and MIP inversion; `load` for
+ * what needs a reload (a 3D pane); `display` for the window and 3D preset,
+ * applied in place.
  */
 export function hangingKeys(
   viewportOptions: OhifViewportProps['viewportOptions'],
   displaySetOptions: OhifViewportProps['displaySetOptions'],
-): { view: string; load: string; display: string } {
+): { view: string; style: string; load: string; display: string } {
   const { orientation, viewportType, syncGroups } = viewportOptions ?? {}
   const mip = isMip(displaySetOptions)
   return {
     view: JSON.stringify([orientation, viewportType, syncGroups, mip]),
+    style: JSON.stringify([
+      viewportOptions?.background,
+      isMipInverted(displaySetOptions),
+    ]),
     load: JSON.stringify(
       initialSliceType(viewportOptions) === SLICE_TYPE.RENDER,
     ),
@@ -420,7 +426,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       viewportOptionsRef.current,
       displaySetOptionsRef.current,
     )
-  }, [ready, viewportId, keys.view])
+  }, [ready, viewportId, keys.view, keys.style])
 
   // Create / tear down the NiiVue instance with the canvas.
   useEffect(() => {

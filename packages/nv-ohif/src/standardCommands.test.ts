@@ -7,7 +7,11 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { jumpToImage, NIIVUE_STANDARD_COMMANDS } from './standardCommands'
+import {
+  jumpToImage,
+  NIIVUE_STANDARD_COMMANDS,
+  scrollImage,
+} from './standardCommands'
 
 function stubNiivue() {
   const volumeUpdates: Array<Record<string, unknown>> = []
@@ -367,10 +371,14 @@ describe('voiRange', () => {
   })
 })
 
-it('jumpToImage moves to the instance through the slice -> frame map', () => {
+it('jumpToImage and scrollImage move through the slice -> frame map', () => {
   const calls: number[][] = []
   const entry = {
-    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    nv: {
+      setCrosshairPos: (p: number[]) => calls.push(p),
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+    },
     crosshairMM: [5, 6, 1],
     // Display-set order runs head-first; the converted volume runs foot-first.
     displaySets: [
@@ -397,10 +405,15 @@ it('jumpToImage moves to the instance through the slice -> frame map', () => {
   jumpToImage(entry, -1)
   // Out of range: no SOP, so it must not land on the unmapped slot.
   jumpToImage(entry, 7)
+  // From 'mid': next is 'bot' (display-set order), previous 'top'.
+  scrollImage(entry, 1)
+  scrollImage(entry, -1)
   // In-plane (x, y) kept; z on the chosen instance's slice.
   expect(calls).toEqual([
     [5, 6, 2],
     [5, 6, 0],
+    [5, 6, 0],
+    [5, 6, 2],
   ])
 })
 

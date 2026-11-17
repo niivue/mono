@@ -15,7 +15,7 @@ import {
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { onSlicePlane, shownImages } from './sliceFrames'
+import { frameAt, onSlicePlane, shownImages } from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -50,6 +50,9 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'lastImage',
   'setViewportColormap',
   'deleteActiveAnnotation',
+  'nextImage',
+  'previousImage',
+  'showDownloadViewportModal',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
@@ -213,6 +216,40 @@ function jumpToVoxelSlice(
   ])
 }
 
+// RAS voxel axis along each 2D plane's normal (axial z, coronal y, sagittal x).
+const NORMAL_AXIS = [2, 1, 0]
+
+/**
+ * OHIF's nextImage / previousImage (up / down): step `delta` images in
+ * jumpToImage's count (stack order, volume order on a volume viewport); off the
+ * slice -> frame map (a reformat) one voxel along the view axis.
+ */
+export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
+  const { nv, sliceFrames: sf, crosshairMM: p } = entry
+  const frame =
+    sf && p && nv.sliceType === acquisitionSliceType(nv)
+      ? frameAt(sf, [rasToLps([p[0] ?? 0, p[1] ?? 0, p[2] ?? 0])])
+      : undefined
+  if (sf && frame && !entry.switchToInstance) {
+    const order = entry.isVolumeViewport
+      ? sf.frames
+      : shownImages(
+          (entry.displaySets[0]?.instances ?? []) as Array<{
+            SOPInstanceUID?: string
+          }>,
+          sf,
+        )
+    const i = order.indexOf(frame)
+    if (i >= 0) return jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
+  }
+  const axis =
+    NORMAL_AXIS[nv.sliceType] ?? NORMAL_AXIS[acquisitionSliceType(nv) ?? -1]
+  if (axis === undefined) return
+  const step = [0, 0, 0]
+  step[axis] = delta
+  nv.moveCrosshairInVox(step[0] ?? 0, step[1] ?? 0, step[2] ?? 0)
+}
+
 export function noTiles2D(entry: NiivueViewportEntry): boolean {
   const { sliceType } = entry.nv
   return (
@@ -346,11 +383,25 @@ export function getStandardCommandDefinitions({
         jumpToImage(entry, opts.imageIndex),
       ),
     },
+    // Cornerstone's call its own actions directly, so they need shadowing too.
+    nextImage: {
+      commandFn: route('nextImage', (entry) => scrollImage(entry, 1)),
+    },
+    previousImage: {
+      commandFn: route('previousImage', (entry) => scrollImage(entry, -1)),
+    },
     firstImage: {
       commandFn: route('firstImage', (entry) => jumpToImage(entry, 0)),
     },
     lastImage: {
       commandFn: route('lastImage', (entry) => jumpToImage(entry, -1)),
+    },
+    // Capture: the pane as shown, as a PNG.
+    // ponytail: no size/filename form (cornerstone's modal renders off-screen).
+    showDownloadViewportModal: {
+      commandFn: route('showDownloadViewportModal', ({ nv }) => {
+        void nv.saveBitmap('image.png')
+      }),
     },
     setViewportColormap: {
       commandFn: route('setViewportColormap', (entry, opts) => {

@@ -50,6 +50,7 @@ import {
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   applyViewportStyle,
+  isMip,
   baseStyle,
   overlayDisplaySets,
   useHungOverlays,
@@ -157,8 +158,8 @@ interface ToolGroupServiceLike {
  */
 /**
  * Effect keys for the hanging-protocol options, by value (OHIF passes fresh
- * objects each render): `view` for the slice type, render camera and sync
- * groups; `load` for what needs a reload (a 3D pane); `display` for the window
+ * objects each render): `view` for the slice type, render camera, sync
+ * groups and MIP; `load` for what needs a reload (a 3D pane); `display` for the window
  * and 3D preset, applied in place.
  */
 export function hangingKeys(
@@ -166,8 +167,9 @@ export function hangingKeys(
   displaySetOptions: OhifViewportProps['displaySetOptions'],
 ): { view: string; load: string; display: string } {
   const { orientation, viewportType, syncGroups } = viewportOptions ?? {}
+  const mip = isMip(displaySetOptions)
   return {
-    view: JSON.stringify([orientation, viewportType, syncGroups]),
+    view: JSON.stringify([orientation, viewportType, syncGroups, mip]),
     load: JSON.stringify(
       initialSliceType(viewportOptions) === SLICE_TYPE.RENDER,
     ),

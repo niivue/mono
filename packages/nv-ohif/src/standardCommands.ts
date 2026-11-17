@@ -14,7 +14,7 @@ import {
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { onSlicePlane } from './sliceFrames'
+import { onSlicePlane, shownImages } from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -45,6 +45,8 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'setWindowLevelPreset',
   'invertViewport',
   'jumpToImage',
+  'firstImage',
+  'lastImage',
   'setViewportColormap',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
@@ -113,26 +115,91 @@ function setOrientation(
 
 /** No 2D tile to turn or flip: a slide, a render-only or a graph-only view. */
 /**
- * OHIF's jumpToImage: show the stack's `imageIndex`-th image (display-set
- * order; negative counts from the end) by moving the crosshair onto that
- * instance's slice through the slice -> frame map, keeping its in-plane spot.
+ * OHIF's jumpToImage: show the stack's `imageIndex`-th image (negative counts
+ * from the end), keeping the crosshair's in-plane spot. A stack viewport counts
+ * in display-set order, mapped to a slice through the slice -> frame map; a
+ * volume viewport counts along the volume, as Cornerstone does; a non-DICOM
+ * volume, or a viewport turned off its acquisition plane, counts its slices
+ * along the viewport's axis.
  */
 export function jumpToImage(
   entry: NiivueViewportEntry,
   imageIndex: unknown,
 ): void {
   const sf = entry.sliceFrames
-  const instances = entry.displaySets[0]?.instances ?? []
   const i = Number(imageIndex)
-  if (!sf || !Number.isInteger(i) || !entry.crosshairMM) return
-  const sop = (instances.at(i) as { SOPInstanceUID?: string } | undefined)
-    ?.SOPInstanceUID
-  // Unmapped frame slots are undefined too: an unknown SOP must not match them.
-  if (!sop) return
-  const k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
-  if (k < 0) return
+  if (!Number.isInteger(i) || !entry.crosshairMM) return
   const [x = 0, y = 0, z = 0] = entry.crosshairMM
-  entry.nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
+  const { nv } = entry
+  // A viewport turned off its acquisition plane counts along the view axis,
+  // which the slice -> frame map does not span.
+  const offAxis =
+    ACQUISITION_SLICE_TYPES.some((t) => t === nv.sliceType) &&
+    nv.sliceType !== acquisitionSliceType(nv)
+  if (!sf || offAxis) {
+    jumpToVoxelSlice(nv, [x, y, z], i)
+    return
+  }
+  let k: number
+  if (entry.isVolumeViewport) k = i < 0 ? sf.frames.length + i : i
+  else {
+    const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
+      SOPInstanceUID?: string
+    }>
+    const image = shownImages(instances, sf).at(i)
+    if (!image) return
+    k = sf.frames.findIndex(
+      (f) =>
+        f?.SOPInstanceUID === image.SOPInstanceUID &&
+        f.frameNumber === image.frameNumber,
+    )
+  }
+  if (k < 0 || k >= sf.frames.length) return
+  nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
+}
+
+type Vec3 = [number, number, number]
+
+/**
+ * Move RAS point `p` along the base volume's voxel axis onto slice `i` of that
+ * axis: the 2D view's axis, else the acquisition (native slice) axis.
+ */
+function jumpToVoxelSlice(
+  nv: NiivueViewportEntry['nv'],
+  p: Vec3,
+  i: number,
+): void {
+  const vol = nv.volumes[0]
+  const twoD = ACQUISITION_SLICE_TYPES.findIndex((t) => t === nv.sliceType)
+  const axis =
+    twoD >= 0 ? twoD : (vol?.permRAS?.findIndex((d) => Math.abs(d) === 3) ?? -1)
+  const n = vol?.dimsRAS?.[axis + 1]
+  const o = nv.vox2mm([0, 0, 0])
+  if (axis < 0 || !n || !o) return
+  const k = i < 0 ? n + i : i
+  if (k < 0 || k >= n) return
+  // Voxel steps along each RAS axis (an oblique matRAS has off-diagonal terms).
+  const steps = [0, 1, 2].map((a) => {
+    const v = nv.vox2mm([a === 0 ? 1 : 0, a === 1 ? 1 : 0, a === 2 ? 1 : 0])
+    return v ? v.map((c, j) => c - (o[j] ?? 0)) : [0, 0, 0]
+  }) as Vec3[]
+  const step = steps[axis] as Vec3
+  const [u, w] = steps.filter((_, a) => a !== axis) as [Vec3, Vec3]
+  // The slice planes' normal; depth along it counts slices from voxel 0.
+  const normal: Vec3 = [
+    u[1] * w[2] - u[2] * w[1],
+    u[2] * w[0] - u[0] * w[2],
+    u[0] * w[1] - u[1] * w[0],
+  ]
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  const depth =
+    dot([p[0] - o[0], p[1] - o[1], p[2] - o[2]], normal) / dot(step, normal)
+  const t = k - depth
+  nv.setCrosshairPos([
+    p[0] + t * step[0],
+    p[1] + t * step[1],
+    p[2] + t * step[2],
+  ])
 }
 
 export function noTiles2D(entry: NiivueViewportEntry): boolean {
@@ -228,6 +295,12 @@ export function getStandardCommandDefinitions({
       commandFn: route('jumpToImage', (entry, opts) =>
         jumpToImage(entry, opts.imageIndex),
       ),
+    },
+    firstImage: {
+      commandFn: route('firstImage', (entry) => jumpToImage(entry, 0)),
+    },
+    lastImage: {
+      commandFn: route('lastImage', (entry) => jumpToImage(entry, -1)),
     },
     setViewportColormap: {
       commandFn: route('setViewportColormap', (entry, opts) => {

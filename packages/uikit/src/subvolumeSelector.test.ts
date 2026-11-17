@@ -6,7 +6,6 @@ import {
   type SubvolumeSelectorHost,
   sliceAxisAt,
   sliceOutlineRects,
-  subvolumeBox,
   UIKitSubvolumeSelector,
 } from './subvolumeSelector'
 
@@ -21,6 +20,7 @@ function makeVolume(extra: Record<string, unknown> = {}): NVImage {
   return {
     img,
     dimsRAS: [3, 8, 8, 8],
+    nVox3D: 512,
     img2RASstep: [1, 8, 64],
     img2RASstart: [0, 0, 0],
     matRAS: Float32Array.from([
@@ -78,21 +78,6 @@ function makeHost(
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0))
-
-describe('subvolumeBox', () => {
-  it('spans both corners in either order and clamps to the volume', () => {
-    const box = subvolumeBox(makeVolume(), vox(5, 6, 9), vox(2, -3, 4))
-    expect(box?.voxelOrigin).toEqual([2, 0, 4])
-    expect(box?.voxelDims).toEqual([4, 7, 4])
-    // Outer voxel edges: half a voxel (1 mm) past the centres.
-    expect(box?.minMM).toEqual([-7, -21, -23])
-    expect(box?.maxMM).toEqual([1, -7, -15])
-  })
-
-  it('is null when the box misses the volume', () => {
-    expect(subvolumeBox(makeVolume(), vox(9, 0, 0), vox(12, 3, 3))).toBeNull()
-  })
-})
 
 describe('sliceOutlineRects', () => {
   // A 128x128 px axial tile at (10, 20) showing x, y in [-64, 64] mm, at z = 0
@@ -209,6 +194,20 @@ describe('UIKitSubvolumeSelector.attach', () => {
     canvas.dispatchEvent(rightClick())
     await settle()
     expect(sel.pendingCorner).toBeNull()
+  })
+
+  it('drops a depth pick still in flight at reset()', async () => {
+    const sel = new UIKitSubvolumeSelector()
+    const { canvas, host } = makeHost(makeVolume(), {}, true)
+    let resolve: (mm: Vec3) => void = () => {}
+    host.pickAt = () => new Promise((r) => (resolve = r))
+    sel.attach(host)
+    canvas.dispatchEvent(rightClick())
+    sel.reset()
+    resolve(vox(2, 3, 4))
+    await settle()
+    expect(sel.pendingCorner).toBeNull()
+    expect(host.focusBox).toBeNull()
   })
 
   it('leaves the left button and Shift+right-click to the scene', async () => {

@@ -709,7 +709,9 @@ export default class NiiVue extends EventTarget {
   /** True once a `crosshairPan` gesture has crossed the drag threshold. */
   _crosshairPanDidDrag = false
   // Annotation transient state (controller-owned, not serialized)
-  _annotationUndoStack = new AnnotationUndoStack()
+  _annotationUndoStack = Object.assign(new AnnotationUndoStack(), {
+    onPush: (seq: number) => this.emit('annotationHistoryPush', { seq }),
+  })
   _annotationBrushPath: AnnotationPoint[] = []
   _frozenLoopPoints: AnnotationPoint[] | null = null
   _annotationSliceType = 0
@@ -765,8 +767,12 @@ export default class NiiVue extends EventTarget {
     // Kept as drawn: an erased shape's polygons differ from its bounds.
     polygons: VectorAnnotation['polygons']
     isErased: boolean
+    // A Probe drag moves its 3D point too.
+    anchorMM?: [number, number, number]
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
+  /** The annotations before a resize, pushed to undo when it is released. */
+  _resizeUndoSnapshot: VectorAnnotation[] | null = null
   // Sync/broadcast state
   private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
@@ -2853,6 +2859,27 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * A multi-click contour, bidirectional or click-placed shape is half-drawn,
+   * or an annotation is being dragged.
+   */
+  get isAnnotationInProgress(): boolean {
+    return Boolean(
+      this._annotationPolyPoints ||
+        this._bidirectionalLong ||
+        this._annotationClickStart ||
+        this._isAnnotationDrag,
+    )
+  }
+
+  /** Drop the half-drawn annotation (as Escape does); false if there was none. */
+  cancelAnnotationInProgress(): boolean {
+    if (!this.isAnnotationInProgress) return false
+    this._abandonForNewScene()
+    this.drawScene()
+    return true
+  }
+
   /** Drop a half-drawn multi-click contour or bidirectional measurement. */
   _abandonAnnotationInProgress(): void {
     // A half-placed angle belongs to the old scene too.
@@ -2873,6 +2900,7 @@ export default class NiiVue extends EventTarget {
     this._resizingControlPoint = -1
     this._resizingAnnotation = null
     this._resizeOriginalShape = null
+    this._resizeUndoSnapshot = null
     this._annotationPolyPoints = null
     this._bidirectionalLong = null
     this.model._annotationPreview = null
@@ -2880,7 +2908,8 @@ export default class NiiVue extends EventTarget {
     this._livewireField = null
     this._livewireSeed = null
   }
-  private _revertResize(): void {
+  /** Put back a resized shape not released (cancel, pointercancel, pinch). */
+  _revertResize(): void {
     const shape = this._resizingAnnotation?.shape
     const original = this._resizeOriginalShape
     if (!shape || !original || !this._resizingAnnotation) return
@@ -2888,6 +2917,7 @@ export default class NiiVue extends EventTarget {
     shape.end = original.end
     shape.width = original.width
     this._resizingAnnotation.polygons = original.polygons
+    if (original.anchorMM) this._resizingAnnotation.anchorMM = original.anchorMM
     const sel = this.model._annotationSelection
     if (sel) sel.controlPoints = Annotation.getControlPoints(shape)
   }
@@ -2897,12 +2927,16 @@ export default class NiiVue extends EventTarget {
    * before the release do not fall through to the camera orbit (#470). Other
    * drags (crosshair, contrast) are left alone.
    */
-  private _abandonForNewScene(): void {
-    const isAnnotationDrag =
+  private get _isAnnotationDrag(): boolean {
+    return (
       this._annotationShapeStart !== null ||
       this._annotationBrushPath.length > 0 ||
       this._annotation3DActive ||
       this._resizingControlPoint >= 0
+    )
+  }
+  private _abandonForNewScene(): void {
+    const isAnnotationDrag = this._isAnnotationDrag
     this._abandonAnnotationInProgress()
     if (isAnnotationDrag && this.isDragging) resetDragState(this)
   }
@@ -2950,13 +2984,38 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  removeAnnotation(id: string): void {
+  /** Remove an annotation; `isUndoable` records an annotationUndo step first. */
+  removeAnnotation(id: string, isUndoable = false): void {
     const idx = this.model.annotations.findIndex((a) => a.id === id)
     if (idx >= 0) {
+      if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
       this.model.annotations.splice(idx, 1)
       this.emit('annotationRemoved', { id })
       this.drawScene()
     }
+  }
+
+  /**
+   * Remove several annotations as one change (one annotationUndo step when
+   * `isUndoable`); emits annotationChanged with action 'delete'.
+   */
+  removeAnnotations(ids: readonly string[], isUndoable = false): void {
+    const drop = new Set(ids)
+    const removed = this.model.annotations
+      .filter((a) => drop.has(a.id))
+      .map((a) => a.id)
+    if (removed.length === 0) return
+    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
+    this.model.annotations = this.model.annotations.filter(
+      (a) => !drop.has(a.id),
+    )
+    this.emit('annotationChanged', {
+      action: 'delete',
+      added: [],
+      updated: [],
+      removed,
+    })
+    this.drawScene()
   }
 
   clearAnnotations(): void {
@@ -3002,6 +3061,16 @@ export default class NiiVue extends EventTarget {
       sliceType: isSlicePlane ? type : undefined,
       slicePosition: slicePosition,
     })
+  }
+
+  /** Sequence number of the step annotationUndo would revert (annotationHistoryPush). */
+  get annotationUndoTop(): number | undefined {
+    return this._annotationUndoStack.undoTop
+  }
+
+  /** Sequence number of the step annotationRedo would reapply. */
+  get annotationRedoTop(): number | undefined {
+    return this._annotationUndoStack.redoTop
   }
 
   annotationUndo(): void {

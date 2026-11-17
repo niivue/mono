@@ -2,15 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import type { NVImage } from '@/NVTypes'
 import {
   extractChunkBlock,
+  extractRawRegion,
   extractSubVolume,
   subVolumeAffine,
+  subVolumeBox,
 } from './ChunkExtract'
 
 /** Row-major 4x4: 2 mm isotropic, origin at (-10, -20, -30). */
 const PARENT_AFFINE = [2, 0, 0, -10, 0, 2, 0, -20, 0, 0, 2, -30, 0, 0, 0, 1]
 
 /**
- * A volume with just the fields the extractor and `getImageDataRAS` read.
+ * A volume with just the fields the extractor reads.
  * Voxel [x,y,z] holds a unique value so a copy can be checked positionally.
  */
 function makeParent(
@@ -33,6 +35,7 @@ function makeParent(
   return {
     img,
     dimsRAS: [3, dx, dy, dz],
+    nVox3D: dx * dy * dz,
     img2RASstep: [1, dx, dx * dy],
     img2RASstart: [0, 0, 0],
     matRAS: Float32Array.from(opts.affine ?? PARENT_AFFINE),
@@ -95,6 +98,33 @@ describe('extractSubVolume', () => {
     expect(voxels[4]).toBe(2 + 3 * 100 + 5 * 10000)
   })
 
+  test('reads the shown frame through native strides', () => {
+    // 2x1x1 stored x-flipped, two frames: native [b, a] then [d, c].
+    const parent = {
+      ...makeParent([2, 1, 1], { sclSlope: 2 }),
+      img: Uint16Array.from([11, 10, 21, 20]),
+      img2RASstart: [1, 0, 0],
+      img2RASstep: [-1, 2, 2],
+      nVox3D: 2,
+      frame4D: 1,
+    } as unknown as NVImage
+    // Raw keeps the stored type and values; the NIfTI copy is scaled Float32.
+    const raw = extractRawRegion(parent, [0, 0, 0], [2, 1, 1])
+    expect(raw?.data).toEqual(Uint16Array.from([20, 21]))
+    const sub = extractSubVolume(parent, [0, 0, 0], [2, 1, 1])
+    expect(
+      Array.from(
+        new Float32Array(sub?.nifti.buffer ?? new ArrayBuffer(8), 352, 2),
+      ),
+    ).toEqual([40, 42])
+  })
+
+  test('refuses RGB/RGBA rather than copying component bytes as voxels', () => {
+    const parent = makeParent([2, 1, 1])
+    parent.hdr.datatypeCode = 2304
+    expect(extractSubVolume(parent, [0, 0, 0], [2, 1, 1])).toBeNull()
+  })
+
   test('reports the block origin and centroid in the PARENT mm frame', () => {
     const parent = makeParent([8, 8, 8])
     const sub = extractSubVolume(parent, [2, 2, 2], [4, 4, 4])
@@ -120,24 +150,6 @@ describe('extractSubVolume', () => {
     expect(voxels[0]).toBe(1 * 3 + 7)
     expect(sub.calMin).toBe(5)
     expect(sub.calMax).toBe(500)
-  })
-
-  test('copies the displayed 4D frame, read through native strides', () => {
-    // 2x1x1 voxels stored x-flipped (RAS x 0 is native 1), two frames.
-    const parent = {
-      ...makeParent([2, 1, 1]),
-      img: Uint8Array.from([1, 2, 30, 40]),
-      img2RASstep: [-1, 2, 2],
-      img2RASstart: [1, 0, 0],
-      frame4D: 1,
-    } as unknown as NVImage
-    const sub = extractSubVolume(parent, [0, 0, 0], [2, 1, 1])
-    const voxels = new Float32Array(
-      sub?.nifti.buffer ?? new ArrayBuffer(360),
-      352,
-      2,
-    )
-    expect(Array.from(voxels)).toEqual([40, 30])
   })
 
   test('clamps a box that overruns the parent', () => {
@@ -209,5 +221,28 @@ describe('extractChunkBlock', () => {
 
   test('returns null when the volume is not chunked', () => {
     expect(extractChunkBlock(makeParent([4, 4, 4]), 0)).toBeNull()
+  })
+})
+
+describe('subVolumeBox', () => {
+  const vox = (x: number, y: number, z: number) => [
+    -10 + 2 * x,
+    -20 + 2 * y,
+    -30 + 2 * z,
+  ]
+
+  test('spans both corners in either order and clamps to the volume', () => {
+    const box = subVolumeBox(makeParent([8, 8, 8]), vox(5, 6, 9), vox(2, -3, 4))
+    expect(box?.voxelOrigin).toEqual([2, 0, 4])
+    expect(box?.voxelDims).toEqual([4, 7, 4])
+    // Outer voxel edges: half a voxel (1 mm) past the centres.
+    expect(box?.minMM).toEqual([-7, -21, -23])
+    expect(box?.maxMM).toEqual([1, -7, -15])
+  })
+
+  test('is null when the box misses the volume', () => {
+    expect(
+      subVolumeBox(makeParent([8, 8, 8]), vox(9, 0, 0), vox(12, 3, 3)),
+    ).toBeNull()
   })
 })

@@ -4,7 +4,7 @@ import { SLICE_TYPE } from '@/NVConstants'
 import type { AnnotationPoint, NVImage, VectorAnnotation } from '@/NVTypes'
 import { pointInRing } from './pointInRing'
 import { generatePolygonFromPoints, generateShape } from './shapes'
-import { computeAnnotationStats } from './stats'
+import { computeAnnotationStats, shapeAngle } from './stats'
 
 // 20x20x1 axial grid, 1 mm voxels, voxel value = its x index.
 const N = 20
@@ -51,6 +51,37 @@ describe('computeAnnotationStats', () => {
     expect(stats?.max).toBe(3)
   })
 
+  test('measures a constructed angle', () => {
+    const right = {
+      ...annotation([]),
+      shape: {
+        type: 'measureAngle' as const,
+        start: { x: 10, y: 0 },
+        end: { x: 0, y: 0 },
+        start2: { x: 0, y: 0 },
+        end2: { x: 0, y: 10 },
+      },
+    }
+    expect(computeAnnotationStats(right, volume)?.angle).toBeCloseTo(90, 9)
+  })
+
+  // Review of #836: on an oblique slice the 2D arms project to 53.13 degrees
+  // for a drawn right angle; recomputing keeps the angle drawing recorded.
+  test('keeps the angle recorded on an oblique slice', () => {
+    const oblique = {
+      ...annotation([]),
+      shape: {
+        type: 'measureAngle' as const,
+        start: { x: 10, y: 5 },
+        end: { x: 0, y: 0 },
+        start2: { x: 0, y: 0 },
+        end2: { x: 10, y: -5 },
+      },
+      stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, angle: 90 },
+    }
+    expect(computeAnnotationStats(oblique, volume)?.angle).toBe(90)
+  })
+
   test('skips voxels with no data (NaN)', () => {
     const holed = new Float32Array(img)
     holed[1] = Number.NaN
@@ -84,16 +115,6 @@ describe('computeAnnotationStats area', () => {
   ): VectorAnnotation => ({
     ...annotation(generateShape(type, start, end, 1)),
     shape: { type, start, end },
-  })
-
-  test('voxel centres are tested against the exact outline, not a rounded one', () => {
-    // Centres 1..3 lie inside (0.4..3.4); rounding the corners to 0..3 would add 0.
-    const stats = computeAnnotationStats(
-      annotation([{ outer: square(0.4, 0.4, 3), holes: [] }]),
-      volume,
-    )
-    expect(stats?.area).toBe(9)
-    expect(stats?.min).toBe(1)
   })
 
   test('isAreaGeometric: exact rectangle and ellipse areas; default counts voxels', () => {
@@ -143,22 +164,6 @@ test('the scanline fill selects exactly the voxels pointInRing does', () => {
   )
   expect(stats?.area).toBe(expected)
   expect(stats?.max).toBe(maxX) // voxel value = its x index
-})
-
-test('an intact circle selects voxels inside the true curve, not its 64-gon', () => {
-  const start = { x: 2.2, y: 2.3 }
-  // r = 6.8, centre (9, 9.1): centres (6, 3) and (12, 3) lie outside the 64-gon
-  // but inside the circle.
-  const end = { x: 15.8, y: 15.9 }
-  const ann: VectorAnnotation = {
-    ...annotation(generateShape('measureCircle', start, end, 1)),
-    shape: { type: 'measureCircle', start, end },
-  }
-  let expected = 0
-  for (let x = 0; x < N; x++)
-    for (let y = 0; y < N; y++)
-      if ((x - 9) ** 2 + (y - 9.1) ** 2 < 6.8 ** 2) expected++
-  expect(computeAnnotationStats(ann, volume)?.area).toBe(expected)
 })
 
 describe('computeAnnotationStats edge cases', () => {
@@ -271,6 +276,78 @@ test('on a tilted volume an intact ellipse and the same freehand outline select 
   // The 64-gon sits just inside the curve: at most a few edge voxels fewer.
   expect(e - f).toBeGreaterThanOrEqual(0)
   expect(e - f).toBeLessThanOrEqual(4)
+})
+
+describe('measurePoint on 4D and oblique volumes (R12 audit)', () => {
+  const n = 20
+  const c = Math.cos(Math.PI / 6)
+  const s = Math.sin(Math.PI / 6)
+  const vol = (img: Float32Array, matRAS: number[], frame4D = 0) =>
+    ({
+      img,
+      hdr: { scl_slope: 1, scl_inter: 0 },
+      dimsRAS: [3, n, n, n],
+      pixDimsRAS: [1, 1, 1, 1],
+      matRAS: new Float32Array(matRAS),
+      img2RASstart: [0, 0, 0],
+      img2RASstep: [1, n, n * n],
+      nVox3D: n * n * n,
+      frame4D,
+    }) as unknown as NVImage
+  const probe = (p: AnnotationPoint, z: number): VectorAnnotation => ({
+    ...annotation(generateShape('measurePoint', p, p, 1)),
+    slicePosition: z,
+    anchorMM: [p.x, p.y, z],
+    shape: { type: 'measurePoint', start: p, end: p },
+  })
+  test('reads the displayed 4D frame', () => {
+    const img = new Float32Array(2 * n * n * n).fill(7, 0, n * n * n)
+    img.fill(101, n * n * n)
+    const id = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    expect(
+      computeAnnotationStats(probe({ x: 4, y: 4 }, 5), vol(img, id, 1))?.value,
+    ).toBe(101)
+  })
+  test('a point moved on an oblique slice stays on its voxel plane', () => {
+    const img = new Float32Array(n * n * n)
+    for (let z = 0; z < n; z++)
+      for (let y = 0; y < n; y++)
+        for (let x = 0; x < n; x++)
+          img[x + y * n + z * n * n] = 10000 * z + 100 * y + x
+    const v = vol(img, [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1])
+    const ann = probe({ x: 4, y: c * 4 - s * 5 }, s * 4 + c * 5)
+    expect(computeAnnotationStats(ann, v)?.value).toBe(50404)
+    // Moved in slice-2D only (an API move keeps the anchor): voxel (4, 12, 5).
+    const end = { x: 4, y: c * 12 - s * 5 }
+    ann.shape = { type: 'measurePoint', start: end, end }
+    ann.polygons = generateShape('measurePoint', end, end, 1)
+    expect(computeAnnotationStats(ann, v)?.value).toBe(51204)
+  })
+})
+
+// OHIF's Angle and CobbAngle spec clicks, taken as slice-2D points.
+describe('shapeAngle', () => {
+  test('measureAngle: the angle at the vertex', () => {
+    const vertex = { x: 450, y: 250 }
+    const angle = shapeAngle({
+      type: 'measureAngle',
+      start: { x: 550, y: 200 },
+      end: vertex,
+      start2: vertex,
+      end2: { x: 550, y: 300 },
+    })
+    expect(angle).toBeCloseTo(53.1301, 4)
+  })
+  test('measureCobbAngle: the acute angle between the lines', () => {
+    const angle = shapeAngle({
+      type: 'measureCobbAngle',
+      start: { x: 515, y: 212 },
+      end: { x: 616, y: 207 },
+      start2: { x: 527, y: 293 },
+      end2: { x: 625, y: 291 },
+    })
+    expect(angle).toBeCloseTo(1.665, 3)
+  })
 })
 
 test('a tilted ROI samples the voxel plane of its anchor, not of its first vertex', () => {

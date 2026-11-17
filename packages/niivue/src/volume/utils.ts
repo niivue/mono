@@ -1105,6 +1105,10 @@ export function remapDrawingToRAS(
  * Reads a single voxel value from a volume at RAS voxel coordinates.
  * Applies scl_slope and scl_inter scaling.
  *
+ * For one-off reads. Per-sample loops inline the same native index
+ * (`start + r * step + frame * nVox3D`) instead of calling this:
+ * {@link residentPickSampler} and `copyRegion` (ChunkExtract.ts). Keep them in step.
+ *
  * @param volume - The NVImage to read from
  * @param rx - RAS x voxel coordinate (rounded integer)
  * @param ry - RAS y voxel coordinate (rounded integer)
@@ -1312,49 +1316,61 @@ export function reorientRGBA(
 // ============================================================================
 
 /**
- * Index of RAS voxel 0 of the displayed frame in `volume.img`, and the native
- * strides of the RAS axes, so a caller reads voxels in place instead of
- * reordering the volume (getImageDataRAS) for a few of them. Null when the
- * voxels are not on the CPU.
- */
-export function frameRASIndexer(
-  volume: NVImage,
-): { img: NonNullable<NVImage['img']>; base: number; step: number[] } | null {
-  const { img, dimsRAS: d, img2RASstep: step, img2RASstart: start } = volume
-  if (!img || !d || !step || !start) return null
-  const frame = (volume.frame4D ?? 0) * d[1] * d[2] * d[3]
-  return { img, base: start[0] + start[1] + start[2] + frame, step }
-}
-
-/**
- * A CPU pick sampler over a resident volume's displayed frame, shaped like a
- * streamed volume's `pickSampler`: world mm in, the value above the window
- * floor out (0 is transparent). Null when the voxels are not on the CPU.
+ * A CPU pick sampler over a resident volume's voxels, shaped like a streamed
+ * volume's `pickSampler`: world mm in, the value above the window floor out
+ * (0 is transparent). Null when the voxels are not on the CPU.
  */
 export function residentPickSampler(
   volume: NVImage,
 ): ((x: number, y: number, z: number) => number) | null {
-  const at = frameRASIndexer(volume)
-  const d = volume.dimsRAS
-  if (!at || !d || !volume.matRAS) return null
-  const { img, base } = at
-  const [s0, s1, s2] = at.step
-  // matRAS is row-major: transpose to gl-matrix order, then invert.
+  const { img, dimsRAS: d, img2RASstart: start, img2RASstep: step } = volume
+  if (!img || !d || !start || !step || !volume.matRAS) return null
+  // Inverted once here: mm2vox inverts per call, and this runs per ray step.
   const inv = mat4.invert(
     mat4.create(),
     mat4.transpose(mat4.create(), volume.matRAS),
   )
   if (!inv) return null
+  // The frame the renderer shows (chunkFetch.ts reads the same one).
+  const base =
+    start[0] + start[1] + start[2] + (volume.frame4D ?? 0) * volume.nVox3D
   const [, nx, ny, nz] = d
-  const slope = volume.hdr?.scl_slope || 1
-  const inter = volume.hdr?.scl_inter || 0
+  const [s0, s1, s2] = step
+  const dt = volume.hdr.datatypeCode
+  if (dt === NiiDataType.DT_RGB24 || dt === NiiDataType.DT_RGBA32) {
+    // Native voxel index under a mm point, or -1 outside the volume.
+    const nativeAt = (x: number, y: number, z: number): number => {
+      const ix = Math.round(inv[0] * x + inv[4] * y + inv[8] * z + inv[12])
+      const iy = Math.round(inv[1] * x + inv[5] * y + inv[9] * z + inv[13])
+      const iz = Math.round(inv[2] * x + inv[6] * y + inv[10] * z + inv[14])
+      if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz)
+        return -1
+      return base + ix * s0 + iy * s1 + iz * s2
+    }
+    // ponytail: the chunk upload pads RGB24 alpha to 255 (chunkRGBA), so every
+    // voxel in the volume is opaque; follow the renderer if that changes.
+    if (dt === NiiDataType.DT_RGB24)
+      return (x, y, z) => (nativeAt(x, y, z) < 0 ? 0 : 1)
+    // Alpha byte read in place: getVoxelRGBA allocates a view per call.
+    const bytes = new Uint8Array(img.buffer, img.byteOffset, img.byteLength)
+    return (x, y, z) => {
+      const i = nativeAt(x, y, z)
+      return i < 0 ? 0 : bytes[i * 4 + 3]
+    }
+  }
+  const slope = volume.hdr.scl_slope
+  const inter = volume.hdr.scl_inter
+  // Hot loop (once per ray step): this inlines getVoxelValue's native index
+  // rather than calling it. The call, with its per-call checks, measured ~4x
+  // slower on a RAS Float32 volume (1M samples, 22 vs 6 ms), and nativeAt ~2x.
+  // Outside voxels return 0 before windowing: getVoxelValue's 0 sentinel would
+  // become visible under a negative calMin.
   return (x, y, z) => {
     const ix = Math.round(inv[0] * x + inv[4] * y + inv[8] * z + inv[12])
     const iy = Math.round(inv[1] * x + inv[5] * y + inv[9] * z + inv[13])
     const iz = Math.round(inv[2] * x + inv[6] * y + inv[10] * z + inv[14])
     if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return 0
-    const value =
-      Number(img[base + ix * s0 + iy * s1 + iz * s2]) * slope + inter
+    const value = img[base + ix * s0 + iy * s1 + iz * s2] * slope + inter
     // Read the window live: the app may re-window after the pick starts.
     const calMin = volume.calMin ?? 0
     return value > calMin ? value - calMin : 0

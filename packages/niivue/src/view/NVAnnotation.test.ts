@@ -221,6 +221,16 @@ describe('annotation stats labels', () => {
           },
           stats: { ...stats, length: 7 },
         },
+        ...[65535, 0.043219].map((value, i) => ({
+          ...base,
+          id: `p${i}`,
+          shape: {
+            type: 'measurePoint',
+            start: { x: 2, y: 2 },
+            end: { x: 2, y: 2 },
+          },
+          stats: { value },
+        })),
       ],
       _persistedAnnotationScreenShapes: [],
       getVolumes: () => [{ hdr: { xyzt_units: 3 | 8 } }],
@@ -233,7 +243,11 @@ describe('annotation stats labels', () => {
       leftTopWidthHeight: [0, 0, 100, 100],
     } as unknown as SliceTile
     projectAnnotationScreenShapes(model, [tile])
-    const [rect, bidi, line] = model._persistedAnnotationScreenShapes
+    const [rect, bidi, line, probeInt, probeFrac] =
+      model._persistedAnnotationScreenShapes
+    // Probe: integers exact, fractions to 4 significant digits.
+    expect(probeInt?.label?.lines).toEqual(['65535'])
+    expect(probeFrac?.label?.lines).toEqual(['0.04322'])
     expect(rect?.label?.lines[0]).toBe('Area: 16.0 um²')
     expect(bidi?.label?.lines.slice(0, 2)).toEqual(['L: 5.0 um', 'W: 2.0 um'])
     // External overlays (uikit ruler) label the measured line from these.

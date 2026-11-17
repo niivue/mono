@@ -188,7 +188,7 @@ export type {
   SubvolumeSelectorHost,
   UIKitSubvolumeSelectorOptions,
 } from './subvolumeSelector'
-export { subvolumeBox, UIKitSubvolumeSelector } from './subvolumeSelector'
+export { UIKitSubvolumeSelector } from './subvolumeSelector'
 export { loadDefaultFont } from './text/defaultFont'
 export type {
   RawFontFile,

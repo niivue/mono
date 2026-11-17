@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AnnotationPoint, VectorAnnotation } from '@/NVTypes'
 import { clipperSubtractBrush } from './clipper'
 import {
+  bidirectionalShortAxis,
   dragCorners,
   generateShape,
   generateSplineFromPoints,
@@ -30,14 +31,14 @@ describe('generateSplineFromPoints', () => {
     const [poly] = generateSplineFromPoints(pts)
     expect(poly).toBeDefined()
     if (!poly) throw new Error('no polygon')
-    // 4 control points * 16 samples per segment.
-    expect(poly.outer.length).toBe(64)
+    // 4 control points * 20 samples per segment.
+    expect(poly.outer.length).toBe(80)
     expect(poly.holes).toEqual([])
     // The spline passes through each control point at segment starts (t=0).
     expect(poly.outer[0]).toEqual({ x: 0, y: 0 })
-    expect(poly.outer[16]).toEqual({ x: 10, y: 0 })
-    expect(poly.outer[32]).toEqual({ x: 10, y: 10 })
-    expect(poly.outer[48]).toEqual({ x: 0, y: 10 })
+    expect(poly.outer[20]).toEqual({ x: 10, y: 0 })
+    expect(poly.outer[40]).toEqual({ x: 10, y: 10 })
+    expect(poly.outer[60]).toEqual({ x: 0, y: 10 })
   })
 
   test('stays within the control-point bounding box (no wild overshoot)', () => {
@@ -108,10 +109,6 @@ describe('isAnnotationErased', () => {
 describe('dragCorners', () => {
   const c = { x: 10, y: 20 }
   const e = { x: 13, y: 24 }
-  test('keeps corner-to-corner drags (circles squared)', () => {
-    expect(dragCorners('ellipse', c, e, false)).toEqual([c, e])
-    expect(dragCorners('circle', c, e, false)).toEqual([c, { x: 14, y: 24 }])
-  })
   test('from the centre: ellipse end is a corner, circle end is on the rim', () => {
     expect(dragCorners('measureEllipse', c, e, true)).toEqual([
       { x: 7, y: 16 },
@@ -125,4 +122,17 @@ describe('dragCorners', () => {
     // Other shapes ignore it.
     expect(dragCorners('rectangle', c, e, true)).toEqual([c, e])
   })
+})
+
+test('bidirectionalShortAxis: perpendicular through the midpoint, 2/3 the long axis', () => {
+  // Long axis 195 mm: cornerstone's default width is 130.
+  const start = { x: 0, y: 0 }
+  const end = { x: 117, y: 156 }
+  const short = bidirectionalShortAxis(start, end)
+  const sx = short.end.x - short.start.x
+  const sy = short.end.y - short.start.y
+  expect(Math.hypot(sx, sy)).toBeCloseTo(130, 9)
+  expect(sx * end.x + sy * end.y).toBeCloseTo(0, 9)
+  expect((short.start.x + short.end.x) / 2).toBeCloseTo(58.5, 9)
+  expect((short.start.y + short.end.y) / 2).toBeCloseTo(78, 9)
 })

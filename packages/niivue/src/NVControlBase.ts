@@ -671,7 +671,8 @@ export default class NiiVue extends EventTarget {
   _draw3DNeedsUndo = false
   // RAS-ordered sample array of the picked volume, cached for the duration of a
   // 3D draw/vector stroke so pickExplodedDraw doesn't re-reorder the whole volume
-  // on every pointermove. Keyed by volume identity; cleared on pointerup/cancel.
+  // on every pointermove. Keyed by volume and displayed frame; cleared on
+  // pointerup/cancel.
   _draw3DSampleCache: {
     vol: NVImage
     frame: number

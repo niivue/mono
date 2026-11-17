@@ -1316,9 +1316,9 @@ export function reorientRGBA(
 // ============================================================================
 
 /**
- * A CPU pick sampler over a resident volume's voxels, shaped like a streamed
- * volume's `pickSampler`: world mm in, the value above the window floor out
- * (0 is transparent). Null when the voxels are not on the CPU.
+ * A CPU pick sampler over a resident volume's displayed frame, shaped like a
+ * streamed volume's `pickSampler`: world mm in, the value above the window
+ * floor out (0 is transparent). Null when the voxels are not on the CPU.
  */
 export function residentPickSampler(
   volume: NVImage,

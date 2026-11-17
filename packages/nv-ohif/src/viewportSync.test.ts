@@ -105,6 +105,20 @@ test('a VOI group windows the same display set, source to target only', async ()
   expect(pt.volumes[0]).toMatchObject({ calMin: 0, calMax: 5 })
 })
 
+test('a camera group does not move a pane in a same-id VOI group', () => {
+  const tile = {
+    axCorSag: 0,
+    leftTopWidthHeight: [0, 0, 100, 100],
+    screen: { mnMM: [-10, -10], mxMM: [10, 10] },
+  }
+  const src = pane('src', ['CT'], tile)
+  const dst = pane('dst', ['CT'], tile)
+  joinSyncGroups('src', src, [{ type: 'cameraPosition', id: 'shared' }])
+  joinSyncGroups('dst', dst, [{ type: 'voi', id: 'shared' }])
+  src.pan2Dxyzmm = new Float32Array([5, 6, 7, 2])
+  expect([...dst.pan2Dxyzmm]).toEqual([0, 0, 0, 1])
+})
+
 test('preclinical-4d groups: camera per orientation, VOI per ct/pt/fusion', async () => {
   const cam = (id: string) => ({ type: 'cameraPosition', id })
   const voi = (id: string, source = true) => ({ type: 'voi', id, source })

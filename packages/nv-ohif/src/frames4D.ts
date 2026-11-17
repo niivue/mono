@@ -93,6 +93,8 @@ interface Computed {
   saved: Map<NVImage, [number, number]>
 }
 const computedShown = new WeakMap<object, Computed>()
+/** Each volume's last computed upload: a newer one waits for it to land. */
+const uploads = new WeakMap<NVImage, Promise<unknown>>()
 const INT_RANGE = new Map<unknown, [number, number]>([
   [Int8Array, [-128, 127]],
   [Uint8Array, [0, 255]],
@@ -185,9 +187,17 @@ async function installComputed(
     }
     c.raw.set(type, entry)
   }
+  // An older upload landing after this one would leave its voxels under these scales.
+  await uploads.get(v)
+  if (computedShown.get(group) !== c) return
   v.hdr.scl_slope = entry[1]
   v.hdr.scl_inter = entry[2]
-  await nv.updateVolumeData(i, entry[0])
+  const done = nv.updateVolumeData(i, entry[0])
+  uploads.set(
+    v,
+    done.catch(() => {}),
+  )
+  await done
 }
 
 /** Back from a computed volume to the series' shown frame. */
@@ -207,6 +217,7 @@ export async function showFrames(group: object): Promise<void> {
     }
     const signal = new AbortController().signal
     const data = await v.frameSource.load(v.frameSource.frame, signal)
+    await uploads.get(v)
     // A compute shown during the load owns the volumes now.
     if (computedShown.has(group)) return
     await nv.updateVolumeData(i, data)

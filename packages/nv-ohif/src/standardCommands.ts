@@ -399,8 +399,8 @@ export function getStandardCommandDefinitions({
     // Capture: the pane as shown, as a PNG.
     // ponytail: no size/filename form (cornerstone's modal renders off-screen).
     showDownloadViewportModal: {
-      commandFn: route('showDownloadViewportModal', ({ nv }) => {
-        void nv.saveBitmap('image.png')
+      commandFn: route('showDownloadViewportModal', ({ nv, slideView }) => {
+        void (slideView ? slideView.saveBitmap() : nv.saveBitmap('image.png'))
       }),
     },
     setViewportColormap: {

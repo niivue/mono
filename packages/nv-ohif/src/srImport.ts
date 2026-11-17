@@ -283,13 +283,17 @@ export function useOhifRowImport(
       const released = isReleasedRow(row.uid)
       if (row.source?.name === 'NiiVue' && !released) return
       if (row.referenceSeriesUID !== seriesUid) return
+      // Not a pane already swapping to another series (its effect re-runs).
+      const entries = [...niivueEntries()]
+      const own = entries.find((e) => e.nv === nv)
+      if (own?.displaySets[0]?.SeriesInstanceUID !== seriesUid) return
       // Another pane on this series may have taken it already.
       if (ms.getMeasurement && !ms.getMeasurement(row.uid)) return
       const annotation = annotationFromRow(nv, row)
       if (!annotation) return
       // Leave it to a pane on the series showing its plane (MPR), if any.
       if (nv.sliceType !== annotation.sliceType)
-        for (const e of niivueEntries())
+        for (const e of entries)
           if (
             e.nv !== nv &&
             e.nv.sliceType === annotation.sliceType &&

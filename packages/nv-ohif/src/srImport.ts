@@ -2,8 +2,9 @@
 // NiiVue annotations on the pane displaying their series. Each becomes a NiiVue
 // annotation in the acquisition plane and its row is replaced by the NiiVue one
 // (reflected from annotationAdded), so it is edited, exported and deleted like
-// any NiiVue measurement.
-// ponytail: Bidirectional and off-acquisition-plane rows are left to cornerstone.
+// any NiiVue measurement. NiiVue rows a pane released (unmount, series swap)
+// come back the same way under their own uid.
+// ponytail: off-axis (oblique) rows are left to cornerstone.
 import {
   type AnnotationPoint,
   type AnnotationTool,
@@ -16,11 +17,15 @@ import {
 import { useEffect } from 'react'
 import { programmaticAnnotations } from './arrowText'
 import {
+  adoptedRowUids,
+  claimPendingJump,
   isReleasedRow,
-  markImportedAnnotation,
+  jumpToNiivueMeasurement,
+  onRowsReleased,
   rasToLps,
   reflectedRowUid,
 } from './commands'
+import { niivueEntries } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
 import { acquisitionSliceType } from './standardCommands'
 
@@ -36,12 +41,20 @@ export interface OhifRow {
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
 const DEPTH = [2, 1, 0]
 
+// OHIF contour rows: their points are the outline NiiVue stores.
+const CONTOUR_TOOLS: Record<string, AnnotationTool> = {
+  PlanarFreehandROI: 'freehand',
+  SplineROI: 'measureSpline',
+  LivewireContour: 'measureLivewire',
+}
+
 const near = (a: number | undefined, b: number | undefined) =>
   a !== undefined && b !== undefined && Math.abs(a - b) < 1e-3
 
-// Angle (3 points, vertex in the middle) or CobbAngle (two lines): two arms in
-// shape start/end and start2/end2; the angle from the world points.
-function angleFromRow(
+// Angle (3 points, vertex in the middle), CobbAngle or Bidirectional (two
+// lines): two arms in shape start/end and start2/end2; the angle or the axis
+// lengths from the world points.
+function twoLineFromRow(
   nv: Pick<NiiVue, 'annotationStyle'>,
   row: OhifRow,
   ras: [number, number, number][],
@@ -49,17 +62,28 @@ function angleFromRow(
   sliceType: number,
   depth: number,
 ): VectorAnnotation | undefined {
-  const isCobb = row.toolName === 'CobbAngle'
-  const [a, b, c, d] = pts
-  const [A, B, C, D] = ras
-  const arm2 = isCobb ? [c, d] : [b, c]
-  const w2 = isCobb ? [C, D] : [B, C]
-  if (!a || !b || !arm2[0] || !arm2[1] || !A || !B || !w2[0] || !w2[1])
-    return undefined
+  const isAngle = row.toolName === 'Angle'
+  const isBidirectional = row.toolName === 'Bidirectional'
+  let [a, b, c, d] = pts
+  let [A, B, C, D] = ras
   const sub = (p: number[], q: number[]) =>
     p.map((v, i) => v - (q[i] as number))
+  // The long axis first, whatever order the source wrote.
+  if (
+    isBidirectional &&
+    A &&
+    B &&
+    C &&
+    D &&
+    Math.hypot(...sub(C, D)) > Math.hypot(...sub(A, B))
+  )
+    [a, b, c, d, A, B, C, D] = [c, d, a, b, C, D, A, B]
+  const arm2 = isAngle ? [b, c] : [c, d]
+  const w2 = isAngle ? [B, C] : [C, D]
+  if (!a || !b || !arm2[0] || !arm2[1] || !A || !B || !w2[0] || !w2[1])
+    return undefined
   // Angle arms point away from the vertex.
-  const u = isCobb ? sub(B, A) : sub(A, B)
+  const u = isAngle ? sub(A, B) : sub(B, A)
   const v = sub(w2[1], w2[0])
   const dot = u.reduce((s, x, i) => s + x * (v[i] as number), 0)
   const [ux, uy, uz] = u as [number, number, number]
@@ -69,8 +93,12 @@ function angleFromRow(
     uz * vx - ux * vz,
     ux * vy - uy * vx,
   )
-  const angle =
-    (Math.atan2(cross, isCobb ? Math.abs(dot) : dot) * 180) / Math.PI
+  const stats = isBidirectional
+    ? { length: Math.hypot(...u), shortLength: Math.hypot(...v) }
+    : {
+        angle:
+          (Math.atan2(cross, isAngle ? dot : Math.abs(dot)) * 180) / Math.PI,
+      }
   const width = nv.annotationStyle.strokeWidth
   return {
     id: crypto.randomUUID(),
@@ -85,7 +113,11 @@ function angleFromRow(
     ],
     style: structuredClone(nv.annotationStyle),
     shape: {
-      type: isCobb ? 'measureCobbAngle' : 'measureAngle',
+      type: isBidirectional
+        ? 'measureBidirectional'
+        : isAngle
+          ? 'measureAngle'
+          : 'measureCobbAngle',
       start: a,
       end: b,
       start2: arm2[0],
@@ -93,27 +125,37 @@ function angleFromRow(
       width,
     },
     text: row.label || undefined,
-    stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, angle },
+    stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, ...stats },
   }
 }
 
-/** The NiiVue annotation for an OHIF row on `nv`'s acquisition plane, else undefined. */
+/**
+ * The NiiVue annotation for an OHIF row on the axial, coronal or sagittal
+ * plane holding all its points (the acquisition plane first), else undefined.
+ */
 export function annotationFromRow(
   nv: Pick<NiiVue, 'volumes' | 'annotationStyle' | 'annotationAreaIsGeometric'>,
   row: OhifRow,
 ): VectorAnnotation | undefined {
-  const sliceType = acquisitionSliceType(nv)
   const vol = nv.volumes[0]
-  if (sliceType === undefined || !vol || !row.points?.length) return undefined
+  if (!vol || !row.points?.length) return undefined
   // LPS <-> RAS is its own inverse.
   const ras = row.points.map((p) =>
     rasToLps([p[0] ?? 0, p[1] ?? 0, p[2] ?? 0]),
   ) as [number, number, number][]
-  const d = DEPTH[sliceType] as number
-  const depth = ras[0]?.[d] ?? 0
-  // One slice only: an SR row from another plane stays with cornerstone.
-  if (ras.some((p) => Math.abs((p[d] as number) - depth) > 1e-3))
-    return undefined
+  const onPlane = (t: number) =>
+    ras.every(
+      (p) =>
+        Math.abs(
+          (p[DEPTH[t] as number] as number) -
+            (ras[0]?.[DEPTH[t] as number] as number),
+        ) < 1e-3,
+    )
+  const sliceType = [acquisitionSliceType(nv), 0, 1, 2].find(
+    (t) => t !== undefined && onPlane(t),
+  )
+  if (sliceType === undefined) return undefined
+  const depth = ras[0]?.[DEPTH[sliceType] as number] ?? 0
   const pts = ras.map((p) => mmToSlice2D(p, sliceType))
   const bounds = (ps: AnnotationPoint[]) => ({
     start: {
@@ -126,8 +168,12 @@ export function annotationFromRow(
     },
   })
   const p = pts as [AnnotationPoint, ...AnnotationPoint[]]
-  if (row.toolName === 'Angle' || row.toolName === 'CobbAngle')
-    return angleFromRow(nv, row, ras, pts, sliceType, depth)
+  if (
+    row.toolName === 'Angle' ||
+    row.toolName === 'CobbAngle' ||
+    row.toolName === 'Bidirectional'
+  )
+    return twoLineFromRow(nv, row, ras, pts, sliceType, depth)
   let tool: AnnotationTool
   let start: AnnotationPoint
   let end: AnnotationPoint
@@ -169,15 +215,17 @@ export function annotationFromRow(
       break
     }
     case 'PlanarFreehandROI':
+    case 'SplineROI':
+    case 'LivewireContour':
       ;({ start, end } = bounds(pts))
-      tool = 'freehand'
+      tool = CONTOUR_TOOLS[row.toolName] as AnnotationTool
       break
     default:
       return undefined
   }
   const width = nv.annotationStyle.strokeWidth
   const polygons =
-    tool === 'freehand'
+    row.toolName && row.toolName in CONTOUR_TOOLS
       ? [{ outer: pts, holes: [] }]
       : generateShape(tool, start, end, width)
   if (polygons.length === 0) return undefined
@@ -232,27 +280,47 @@ export function useOhifRowImport(
     const take = (row: OhifRow | undefined) => {
       if (!row) return
       // NiiVue rows are this or another pane's, unless released by one.
-      if (row.source?.name === 'NiiVue' && !isReleasedRow(row.uid)) return
+      const released = isReleasedRow(row.uid)
+      if (row.source?.name === 'NiiVue' && !released) return
       if (row.referenceSeriesUID !== seriesUid) return
       // Another pane on this series may have taken it already.
       if (ms.getMeasurement && !ms.getMeasurement(row.uid)) return
       const annotation = annotationFromRow(nv, row)
       if (!annotation) return
+      // Leave it to a pane on the series showing its plane (MPR), if any.
+      if (nv.sliceType !== annotation.sliceType)
+        for (const e of niivueEntries())
+          if (
+            e.nv !== nv &&
+            e.nv.sliceType === annotation.sliceType &&
+            e.displaySets[0]?.SeriesInstanceUID === seriesUid
+          )
+            return
       // Replace the source row only once the NiiVue one exists: a failed
-      // reflection keeps the original measurement.
+      // reflection keeps the original measurement. A released row is
+      // reflected under its own uid, so jumps and tracking keep pointing at it.
       // Marked only for the synchronous add, so no id outlives it.
       programmaticAnnotations.add(annotation.id)
+      if (released) adoptedRowUids.set(annotation.id, row.uid)
       try {
         nv.addAnnotation(annotation)
       } finally {
         programmaticAnnotations.delete(annotation.id)
+        adoptedRowUids.delete(annotation.id)
       }
-      if (reflectedRowUid(annotation.id)) {
-        markImportedAnnotation(annotation.id)
-        ms.remove?.(row.uid)
-      } else nv.removeAnnotation(annotation.id)
+      if (!reflectedRowUid(annotation.id)) nv.removeAnnotation(annotation.id)
+      else if (!released) ms.remove?.(row.uid)
+      else if (claimPendingJump(row.uid))
+        jumpToNiivueMeasurement(row.uid, servicesManager)
     }
-    for (const row of ms.getMeasurements?.() ?? []) take(row)
+    const scan = () => {
+      for (const row of ms.getMeasurements?.() ?? []) take(row)
+    }
+    scan()
+    // Not the releasing pane itself: it is unmounting or swapping series.
+    const unsubscribeReleased = onRowsReleased((from) => {
+      if (from !== nv) scan()
+    })
     const subs = [
       ms.EVENTS?.MEASUREMENT_ADDED,
       ms.EVENTS?.RAW_MEASUREMENT_ADDED,
@@ -260,6 +328,7 @@ export function useOhifRowImport(
       event ? ms.subscribe?.(event, (e) => take(e.measurement)) : undefined,
     )
     return () => {
+      unsubscribeReleased()
       for (const sub of subs) sub?.unsubscribe()
     }
   }, [nv, seriesUid, servicesManager])

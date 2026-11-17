@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
 import {
+  adoptedRowUids,
   applyDefaultAnnotationText,
   applyNiivueAnnotationDelta,
   applyOhifLabelToAnnotation,
@@ -11,7 +12,6 @@ import {
   getNiivueCommandsModule,
   isReleasedRow,
   jumpToNiivueMeasurement,
-  markImportedAnnotation,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -1054,25 +1054,19 @@ describe('reflectNiivueAnnotation', () => {
     })
   })
 
-  it('clearNiivueAnnotations removes every reflected row for the viewport', () => {
+  it('clearNiivueAnnotations releases rows; a re-import keeps their uid', () => {
     const svc = setup('vp-a4')
-    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c1'))
-    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c2'))
+    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('own'))
+    const uid = reflectedRowUid('own') as string
     clearNiivueAnnotations('vp-a4', svc.servicesManager)
-    expect(svc.removed).toHaveLength(2)
-  })
-
-  it('clearNiivueAnnotations releases an imported row instead of removing it', () => {
-    const svc = setup('vp-a5')
-    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('sr'))
-    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('own'))
-    markImportedAnnotation('sr')
-    const uid = reflectedRowUid('sr') as string
-    clearNiivueAnnotations('vp-a5', svc.servicesManager)
-    expect(svc.removed).toHaveLength(1)
-    expect(svc.removed).not.toContain(uid)
+    expect(svc.removed).toHaveLength(0)
     expect(isReleasedRow(uid)).toBe(true)
-    expect(reflectedRowUid('sr')).toBeUndefined()
+    expect(reflectedRowUid('own')).toBeUndefined()
+    adoptedRowUids.set('again', uid)
+    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('again'))
+    adoptedRowUids.clear()
+    expect(reflectedRowUid('again')).toBe(uid)
+    expect(isReleasedRow(uid)).toBe(false)
   })
 
   it('reconcile removes only vanished rows and leaves untouched rows alone', () => {
@@ -1733,58 +1727,6 @@ describe('reflectNiivueAnnotation', () => {
     expect(
       visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
     ).toHaveLength(1)
-  })
-
-  it('does not re-enter on its own remove echoes during teardown (finding 3)', () => {
-    const removedAnnotationIds: string[] = []
-    const nv = {
-      ...stubNiivue(),
-      removeAnnotation(id: string) {
-        removedAnnotationIds.push(id)
-      },
-    }
-    const callbacks = new Map<string, (payload: unknown) => void>()
-    register('vp-clear-echo', nv)
-    updateNiivueViewport('vp-clear-echo', {
-      displaySets: backing as unknown as Parameters<
-        typeof updateNiivueViewport
-      >[1]['displaySets'],
-    })
-    const svc = measurementServices('vp-clear-echo', backing)
-    const measurementService = (
-      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
-    ).services.measurementService as {
-      EVENTS?: Record<string, string>
-      subscribe?: (
-        event: string,
-        callback: (payload: unknown) => void,
-      ) => { unsubscribe: () => void }
-      remove: (uid: string) => void
-    }
-    measurementService.EVENTS = { MEASUREMENT_REMOVED: 'removed' }
-    measurementService.subscribe = (event, callback) => {
-      callbacks.set(event, callback)
-      return { unsubscribe: () => callbacks.delete(event) }
-    }
-    // Real OHIF fires MEASUREMENT_REMOVED synchronously from remove().
-    measurementService.remove = (uid) => {
-      svc.removed.push(uid)
-      callbacks.get('removed')?.({ measurement: uid })
-    }
-    const a = ellipse('c1')
-    const b = ellipse('c2')
-    nv.annotations = [a, b]
-    reflectNiivueAnnotation('vp-clear-echo', svc.servicesManager, a)
-    reflectNiivueAnnotation('vp-clear-echo', svc.servicesManager, b)
-    const release = subscribeOhifLabelSync(svc.servicesManager)
-
-    // Teardown removes both rows while the subscription is still live.
-    clearNiivueAnnotations('vp-clear-echo', svc.servicesManager)
-
-    expect(svc.removed).toHaveLength(2)
-    // The removingUids guard kept the echoes from re-entering nv.removeAnnotation.
-    expect(removedAnnotationIds).toHaveLength(0)
-    release?.()
   })
 
   it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {

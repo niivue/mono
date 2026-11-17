@@ -12,7 +12,7 @@ const nv = {
   annotationAreaIsGeometric: true,
 } as unknown as Parameters<typeof annotationFromRow>[0]
 
-test('an SR angle imports with its world angle; a rotated rectangle stays', () => {
+test('SR angle and bidirectional import from world points; a rotated rectangle stays', () => {
   const angle = annotationFromRow(nv, {
     uid: 'a',
     toolName: 'Angle',
@@ -35,4 +35,20 @@ test('an SR angle imports with its world angle; a rotated rectangle stays', () =
     ],
   })
   expect(rotated).toBeUndefined()
+  // Short axis written first, on a coronal plane (y = 7): long axis leads.
+  const bidi = annotationFromRow(nv, {
+    uid: 'b',
+    toolName: 'Bidirectional',
+    points: [
+      [0, 7, -2],
+      [0, 7, 2],
+      [-5, 7, 0],
+      [5, 7, 0],
+    ],
+  })
+  expect(bidi?.sliceType).toBe(1)
+  expect(bidi?.shape?.type).toBe('measureBidirectional')
+  expect(bidi?.stats?.length).toBeCloseTo(10, 9)
+  expect(bidi?.stats?.shortLength).toBeCloseTo(4, 9)
+  expect(bidi?.polygons).toHaveLength(2)
 })

@@ -785,31 +785,48 @@ const measurementToAnnotation = new Map<
   { viewportId: string; annotationId: string }
 >()
 
-// Annotations taken from another source's row (an SR measurement). A series
-// swap or unmount releases their rows to OHIF instead of removing them: the
+// A series swap or unmount releases a viewport's rows to OHIF instead of
+// removing them, as cornerstone keeps measurements across layout changes: the
 // measurement survives (srBridge keeps it in cornerstone for SR export) and a
-// later NiiVue pane on the series takes it back.
-const importedAnnotations = new Set<string>()
+// later NiiVue pane on the series takes it back under the same uid (srImport.ts).
 const releasedRows = new Set<string>()
-
-export function markImportedAnnotation(annotationId: string): void {
-  importedAnnotations.add(annotationId)
-}
+const releaseListeners = new Set<(from: NiivueViewportEntry['nv']) => void>()
 
 /** A NiiVue row left in OHIF by releaseImportedRows. */
 export const isReleasedRow = (uid: string): boolean => releasedRows.has(uid)
 
-/** Detach a viewport's imported rows from it, leaving them in OHIF. */
+/** Call `listener` with the releasing pane's NiiVue after it releases rows. */
+export function onRowsReleased(
+  listener: (from: NiivueViewportEntry['nv']) => void,
+): () => void {
+  releaseListeners.add(listener)
+  return () => releaseListeners.delete(listener)
+}
+
+// annotation id -> released row uid it takes back (set around nv.addAnnotation).
+export const adoptedRowUids = new Map<string, string>()
+
+// A jump to a released row: Cornerstone re-hangs its series, and the pane that
+// takes the row back finishes the jump (srImport.ts).
+let pendingJumpUid: string | undefined
+export function claimPendingJump(uid: string): boolean {
+  if (pendingJumpUid !== uid) return false
+  pendingJumpUid = undefined
+  return true
+}
+
+/** Detach a viewport's rows from it, leaving them in OHIF. */
 export function releaseImportedRows(viewportId: string): void {
   const byView = reflectedAnnotations.get(viewportId)
   if (!byView) return
-  for (const [id, row] of byView) {
-    if (!importedAnnotations.delete(id)) continue
-    byView.delete(id)
-    if (!row.uid) continue
-    measurementToAnnotation.delete(row.uid)
-    releasedRows.add(row.uid)
+  reflectedAnnotations.delete(viewportId)
+  for (const { uid } of byView.values()) {
+    if (!uid) continue
+    measurementToAnnotation.delete(uid)
+    releasedRows.add(uid)
   }
+  const from = getNiivueEntry(viewportId)?.nv
+  if (from) for (const listener of releaseListeners) listener(from)
 }
 
 /** The OHIF row reflecting a NiiVue annotation, if one was made. */
@@ -1021,6 +1038,7 @@ function reflectNiivueAnnotationResult(
   if (!backing?.SeriesInstanceUID) return { status: 'retryableFailure' }
 
   const source = niivueMeasurementSource(measurementService)
+  existingUid ??= adoptedRowUids.get(annotation.id)
   const uid =
     existingUid ?? `niivue-${mapping.toolName}-${++niivueMeasurementCounter}`
   const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
@@ -1115,6 +1133,7 @@ function reflectNiivueAnnotationResult(
     reflectedAnnotations.set(viewportId, byView)
   }
   byView.set(annotation.id, { uid: acceptedUid, hash })
+  releasedRows.delete(acceptedUid)
   measurementToAnnotation.set(acceptedUid, {
     viewportId,
     annotationId: annotation.id,
@@ -1449,36 +1468,15 @@ export function removeNiivueAnnotation(
   return true
 }
 
-/** Remove every reflected row for a viewport (annotation clear / series swap). */
+/** Release a viewport's rows and drop its bookkeeping (unmount). */
 export function clearNiivueAnnotations(
   viewportId: string,
-  servicesManager: OhifExtensionParams['servicesManager'],
+  // ponytail: unused, kept so NiivueViewport's call (shared with other topics) is unchanged.
+  _servicesManager?: unknown,
 ): void {
   releaseImportedRows(viewportId)
   // A viewport whose every add failed has no rows but may still hold failures.
   mappingFailures.delete(viewportId)
-  const byView = reflectedAnnotations.get(viewportId)
-  if (!byView) return
-  const measurementService = ohifServices(servicesManager)
-    ?.measurementService as MeasurementServiceLike | undefined
-  for (const { uid } of byView.values()) {
-    if (!uid) continue
-    // Guard against our own echo: this runs on unmount BEFORE the MEASUREMENT_REMOVED
-    // subscription is torn down, so remove() synchronously re-enters
-    // applyOhifRemoveToAnnotation. Marking the uid makes that a no-op instead of a
-    // redundant nv.removeAnnotation + drawScene per row (and a mutation of byView
-    // mid-iteration).
-    removingUids.add(uid)
-    try {
-      measurementService?.remove?.(uid)
-    } catch {
-      // Continue clearing the remaining rows and local bookkeeping.
-    } finally {
-      removingUids.delete(uid)
-    }
-    measurementToAnnotation.delete(uid)
-  }
-  reflectedAnnotations.delete(viewportId)
   hiddenAnnotations.delete(viewportId)
 }
 
@@ -2204,6 +2202,7 @@ export function getNiivueCommandsModule({
         (measurementToAnnotation.has(uid) || uid.startsWith(SLIDE_UID_PREFIX))
       )
         return
+      pendingJumpUid = uid && releasedRows.has(uid) ? uid : undefined
       ohifCommandsManager(commandsManager)?.runCommand?.(
         'jumpToMeasurementViewport',
         options,

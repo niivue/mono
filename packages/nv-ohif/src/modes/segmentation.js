@@ -15,6 +15,8 @@ export default niivueMode({
     rightPanels: [cornerstone.labelMapSegmentationPanel],
   },
   initToolGroups: segmentation.initToolGroups,
+  // Not basic's read-only block: the panel's Add Segmentation / Add Segment show.
+  modeCustomizations: { 'panelSegmentation.disableEditing': false },
   hangingProtocol: segmentation.hangingProtocol,
   toolbarButtons: [
     ...segmentation.toolbarButtons,

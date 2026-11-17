@@ -12,7 +12,6 @@ import {
   dicomRT,
   dicomSeg,
   dicomvideo,
-  initToolGroups,
   ohif,
   registerModeToolbar,
 } from '@ohif/mode-basic'
@@ -281,4 +280,3 @@ export function niivueMode({ id, routeName, layout = {}, ...overrides }) {
 }
 
 export default mode
-export { initToolGroups }

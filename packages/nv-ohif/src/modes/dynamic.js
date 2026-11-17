@@ -6,7 +6,7 @@ import { DicomMetadataStore, utils } from '@ohif/core'
 // Deep imports: @ohif/mode-preclinical-4d exports neither from its index.
 import initPreclinicalToolGroups from '@ohif/mode-preclinical-4d/src/initToolGroups'
 import preclinicalButtons from '@ohif/mode-preclinical-4d/src/toolbarButtons'
-import { roiButtons, roiSection } from './tmtv'
+import { roiButtons, roiSection, withToolGroups } from './tmtv'
 import { modeInstance, niivueMode } from './viewer'
 
 const nvPanel = '@niivue/nv-ohif.panelModule.dynamic-volume'
@@ -133,23 +133,7 @@ function onModeEnter(ctx) {
   // Step 3's ROI tools, on the dynamic4D tool groups.
   const groups = ['dynamic4D-pt', 'dynamic4D-ct', 'dynamic4D-fusion']
   toolbarService.register(
-    roiButtons.map((b) =>
-      b.props.commands
-        ? {
-            ...b,
-            props: {
-              ...b.props,
-              commands: {
-                ...b.props.commands,
-                commandOptions: {
-                  ...b.props.commands.commandOptions,
-                  toolGroupIds: groups,
-                },
-              },
-            },
-          }
-        : b,
-    ),
+    roiButtons.map((b) => withToolGroups(b, groups)),
     true,
   )
   ctx.commandsManager.registerCommand(

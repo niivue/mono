@@ -4,6 +4,23 @@ import { classes } from '@ohif/core'
 import { initToolGroups as tmtvToolGroups } from '@ohif/mode-tmtv'
 import { modeInstance, niivue, niivueMode } from './viewer'
 
+const tmtvGroups = ['ctToolGroup', 'ptToolGroup', 'fusionToolGroup']
+/** The button with its setToolActiveToolbar command on `toolGroupIds`. */
+export function withToolGroups(button, toolGroupIds) {
+  const commands = button.props?.commands
+  if (commands?.commandName !== 'setToolActiveToolbar') return button
+  return {
+    ...button,
+    props: {
+      ...button.props,
+      commands: {
+        ...commands,
+        commandOptions: { ...commands.commandOptions, toolGroupIds },
+      },
+    },
+  }
+}
+
 // OHIF's ROI threshold and brush tools as plain tool buttons: tmtv's own sit in
 // a segmentation toolbox gated on a cornerstone segmentation, which NiiVue panes
 // lack (nv-ohif keeps the PT label). Its TMTV panel runs the threshold.
@@ -17,7 +34,7 @@ const tool = (id, label, icon, toolName) => ({
       commandName: 'setToolActiveToolbar',
       commandOptions: {
         toolName,
-        toolGroupIds: ['ctToolGroup', 'ptToolGroup', 'fusionToolGroup'],
+        toolGroupIds: tmtvGroups,
       },
     },
     evaluate: [niivue.unsupportedEvaluator, 'evaluate.cornerstoneTool'],
@@ -55,6 +72,13 @@ export const roiSection = [
 function onModeEnter(ctx) {
   modeInstance.onModeEnter.call(this, ctx)
   const { toolbarService } = ctx.servicesManager.services
+  // The inherited cornerstone tools target the basic tool groups, not TMTV's (as OHIF's TMTV buttons).
+  toolbarService.register(
+    Object.values(toolbarService.getButtons()).map((b) =>
+      withToolGroups(b, tmtvGroups),
+    ),
+    true,
+  )
   toolbarService.register(roiButtons, true)
   toolbarService.updateSection('NvSegmentationTools', roiSection)
   toolbarService.updateSection(toolbarService.sections.primary, [

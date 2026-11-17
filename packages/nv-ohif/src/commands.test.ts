@@ -2185,6 +2185,12 @@ describe('overlayCandidates', () => {
     ).toEqual(['ds-next', 'ds-last'])
   })
 
+  it('keeps a set hung after the base until it is layered (TMTV PT)', () => {
+    const pt = { displaySetInstanceUID: 'ds-pt', url: 'https://x/pt.nii.gz' }
+    const entry = { displaySets: [base, pt], overlays: new Map() }
+    expect(overlayCandidates(entry, [base, pt])).toEqual([pt])
+  })
+
   it('is empty when nothing else is loadable', () => {
     const entry = { displaySets: [base], overlays: new Map() }
     expect(overlayCandidates(entry, [base])).toEqual([])

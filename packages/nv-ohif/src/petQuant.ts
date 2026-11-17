@@ -82,7 +82,8 @@ const setActiveSegment = (value: number) => {
 }
 /** RectangleROIStartEndThreshold start/end slice positions (RAS mm). */
 const roiSlices: { start?: number[]; end?: number[] } = {}
-let thresholdBrush: [number, number] | undefined
+// Panes whose armed brush is OHIF's threshold brush.
+const thresholdPens = new WeakSet<NiiVue>()
 let thresholdRange: [number, number] = [2.5, 50]
 // ponytail: fixed pen size (voxels); OHIF's setBrushSize is not bridged.
 const BRUSH_SIZE = 5
@@ -207,9 +208,10 @@ function pull(entry: NiivueViewportEntry, services: Services): void {
   const img = entry.nv.drawingVolume?.img
   const base = entry.nv.volumes[0] && rasGrid(entry.nv.volumes[0])
   if (!pet || !m || !base || !(img instanceof Uint8Array)) return
-  const next = resampleLabel(img, base, m.grid)
-  const pt = thresholdBrush && sampled(pet.vol)
-  if (pt && thresholdBrush) keepInRange(next, m.label, pt, thresholdBrush)
+  // A pane covering only part of the PT grid leaves the rest of the label.
+  const next = resampleLabel(img, base, m.grid, m.label)
+  const pt = thresholdPens.has(entry.nv) && sampled(pet.vol)
+  if (pt) keepInRange(next, m.label, pt, thresholdRange)
   m.label.set(next)
   showMask(pet.uid, services, pt ? undefined : entry.nv)
   notify()
@@ -248,7 +250,10 @@ export function armBrush(
   const mode = tool ? OHIF_BRUSHES[tool] : undefined
   const entry = niivueEntries().find((e) => e.viewportId === viewportId)
   const pet = mode && entry && paneTarget(entry, services)
-  if (entry) armedPens.delete(entry.nv)
+  if (entry) {
+    armedPens.delete(entry.nv)
+    thresholdPens.delete(entry.nv)
+  }
   if (!entry || !pet || !maskFor(pet)) return false
   showMask(pet.uid, services)
   const { nv } = entry
@@ -256,7 +261,7 @@ export function armBrush(
   if (mode !== 'erase') armedPens.add(nv)
   nv.drawPenShape = PEN_SHAPE.CIRCLE
   nv.drawPenSize = BRUSH_SIZE
-  thresholdBrush = mode === 'threshold' ? thresholdRange : undefined
+  if (mode === 'threshold') thresholdPens.add(nv)
   return true
 }
 
@@ -640,7 +645,6 @@ export function getQuantCommandDefinitions({
       setActiveSegment(segmentIndex),
     niivueSetThresholdRange: ({ range }: { range: [number, number] }) => {
       thresholdRange = range
-      if (thresholdBrush) thresholdBrush = range
       notify()
     },
     /** SUM / AVERAGE / SUBTRACT over 1-based frames start..end; shown unless show: false. */

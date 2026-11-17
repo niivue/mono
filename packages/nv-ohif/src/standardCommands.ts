@@ -230,16 +230,19 @@ export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
     sf && p && nv.sliceType === acquisitionSliceType(nv)
       ? frameAt(sf, [rasToLps([p[0] ?? 0, p[1] ?? 0, p[2] ?? 0])])
       : undefined
-  if (sf && frame && !entry.switchToInstance) {
-    const order = entry.isVolumeViewport
+  if (sf && frame) {
+    const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
+      SOPInstanceUID?: string
+    }>
+    // jumpToImage's count: a split series (outputStack.ts) counts its whole
+    // display set, so a step can switch outputs.
+    const split = !entry.isVolumeViewport && entry.switchToInstance
+    const order: unknown[] = entry.isVolumeViewport
       ? sf.frames
-      : shownImages(
-          (entry.displaySets[0]?.instances ?? []) as Array<{
-            SOPInstanceUID?: string
-          }>,
-          sf,
-        )
-    const i = order.indexOf(frame)
+      : split
+        ? instances.map((x) => x.SOPInstanceUID)
+        : shownImages(instances, sf)
+    const i = order.indexOf(split ? frame.SOPInstanceUID : frame)
     if (i >= 0) {
       jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
       return

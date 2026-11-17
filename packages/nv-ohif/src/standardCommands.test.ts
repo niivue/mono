@@ -406,6 +406,35 @@ it('jumpToImage and scrollImage move through the slice -> frame map', () => {
   ])
 })
 
+it('scrollImage steps a split series across its outputs', () => {
+  // Output A is a lone localizer slice; B is another output.
+  const switched: string[] = []
+  const entry = {
+    nv: {
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+      moveCrosshairInVox: () => {},
+    },
+    crosshairMM: [0, 0, 0],
+    displaySets: [
+      { instances: [{ SOPInstanceUID: 'A' }, { SOPInstanceUID: 'B' }] },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [{ SOPInstanceUID: 'A', frameNumber: 1 }],
+    },
+    switchToInstance: (sop: string) => {
+      switched.push(sop)
+      return Promise.resolve(true)
+    },
+  } as unknown as Parameters<typeof scrollImage>[0]
+  scrollImage(entry, 1)
+  // Clamped, not wrapped to the last instance.
+  scrollImage(entry, -1)
+  expect(switched).toEqual(['B', 'A'])
+})
+
 it('jumpToImage counts the frames of a single multi-frame instance', () => {
   const calls: number[][] = []
   const entry = {

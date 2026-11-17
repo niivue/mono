@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, jest, test } from 'bun:test'
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
   centerCrosshair,
@@ -11,8 +11,10 @@ import {
 import {
   applyHangingDisplay,
   baseKey,
+  briefNote,
   DEFAULT_OPTIONS,
   hangingKeys,
+  type Status,
   settleBase,
 } from './NiivueViewport'
 import {
@@ -351,5 +353,26 @@ test('removing a render preset keeps the DICOM window and restores gray', async 
     expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-160, 240])
   } finally {
     unregisterNiivue('hp')
+  }
+})
+
+test('a brief note clears after 6 s, unless a newer status replaced it', () => {
+  jest.useFakeTimers()
+  try {
+    let status = { kind: 'idle' } as Status
+    const setStatus: Parameters<typeof briefNote>[0] = (next) => {
+      status = typeof next === 'function' ? next(status) : next
+    }
+    briefNote(setStatus, 'incomplete SEG')
+    jest.advanceTimersByTime(5999)
+    expect(status).toEqual({ kind: 'note', message: 'incomplete SEG' })
+    jest.advanceTimersByTime(1)
+    expect(status).toEqual({ kind: 'idle' })
+    briefNote(setStatus, 'old')
+    status = { kind: 'error', message: 'newer' }
+    jest.advanceTimersByTime(6000)
+    expect(status).toEqual({ kind: 'error', message: 'newer' })
+  } finally {
+    jest.useRealTimers()
   }
 })

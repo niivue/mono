@@ -2772,6 +2772,8 @@ export default class NiiVue extends EventTarget {
   /** See {@link AnnotationConfig.isDrawnFromCenter}. */
   set annotationIsDrawnFromCenter(v: boolean) {
     this.model.annotation.isDrawnFromCenter = v
+    // A parked start's rubber band was built the other way; the next move redraws it.
+    if (this._annotationClickStart) this.model._annotationPreview = null
     this.emit('change', { property: 'annotationIsDrawnFromCenter', value: v })
     this.drawScene()
   }
@@ -7600,6 +7602,20 @@ export default class NiiVue extends EventTarget {
     this._drawLut = null
     this.emit('drawingChanged', { action: 'create' })
     this.refreshDrawing()
+  }
+
+  /**
+   * Bumped by every drawing load, install or close: compare two reads to tell
+   * whether any drawing call happened in between.
+   */
+  // Not in nv-mcp: it coordinates in-flight loads, not scene state.
+  get drawingGeneration(): number {
+    return this._drawingGeneration
+  }
+
+  /** A loadDrawing still reading gives way; the current drawing stays. */
+  cancelDrawingLoad(): void {
+    this._drawingGeneration++
   }
 
   closeDrawing(): void {

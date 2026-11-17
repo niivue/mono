@@ -389,6 +389,15 @@ function bidirectionalAnnotation(
   ctrl: NiiVue,
   long: Axis,
   short: Axis | null,
+  at: {
+    sliceType: number
+    slicePosition: number
+    anchorMM: [number, number, number]
+  } = {
+    sliceType: ctrl._annotationSliceType,
+    slicePosition: ctrl._annotationSlicePosition,
+    anchorMM: ctrl._annotationAnchorMM,
+  },
 ): VectorAnnotation | null {
   const cfg = ctrl.model.annotation
   const w = cfg.style.strokeWidth
@@ -402,11 +411,11 @@ function bidirectionalAnnotation(
   const ann = Annotation.createAnnotation(
     cfg.activeLabel,
     cfg.activeGroup,
-    ctrl._annotationSliceType,
-    ctrl._annotationSlicePosition,
+    at.sliceType,
+    at.slicePosition,
     polys,
     cfg.style,
-    ctrl._annotationAnchorMM,
+    at.anchorMM,
   )
   ann.shape = {
     type: cfg.tool,
@@ -2251,25 +2260,35 @@ export function initInteraction(ctrl: NiiVue): void {
               updateMultiClickPreview(ctrl, pt2d)
             }
             // Parked click start (isClickToPlace): rubber-band to the cursor.
-            // ponytail: bidirectional has no hover preview; add if clicked axes need it.
             const parked = ctrl._annotationClickStart
             if (
               parked &&
               parked.sliceType === sliceType &&
-              isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim) &&
-              !isBidirectionalTool(ctrl.model.annotation.tool)
+              isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
             ) {
-              updateShapePreview(
-                ctrl,
-                parked.start,
-                Annotation.mmToSlice2D(
-                  mm as [number, number, number],
-                  sliceType,
-                ),
+              const end = Annotation.mmToSlice2D(
+                mm as [number, number, number],
                 sliceType,
-                parked.slicePosition,
-                parked.anchorMM,
               )
+              if (isBidirectionalTool(ctrl.model.annotation.tool)) {
+                // The parked axis is the long one, or the short one once the long is placed.
+                const axis = { start: parked.start, end }
+                const long = ctrl._bidirectionalLong
+                ctrl.model._annotationPreview = bidirectionalAnnotation(
+                  ctrl,
+                  long ?? axis,
+                  long ? axis : null,
+                  parked,
+                )
+              } else
+                updateShapePreview(
+                  ctrl,
+                  parked.start,
+                  end,
+                  sliceType,
+                  parked.slicePosition,
+                  parked.anchorMM,
+                )
             } else if (parked) ctrl.model._annotationPreview = null
             ctrl.drawScene()
             return

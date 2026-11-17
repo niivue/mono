@@ -1545,6 +1545,17 @@
       "doc": null
     },
     {
+      "jsName": "drawingGeneration",
+      "pyName": "drawing_generation",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Bumped by every drawing load, install or close: compare two reads to tell\nwhether any drawing call happened in between."
+    },
+    {
       "jsName": "effectiveDevicePixelRatio",
       "pyName": "effective_device_pixel_ratio",
       "tsType": "number",
@@ -5082,6 +5093,10 @@
       {
         "jsName": "attachToCanvas",
         "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
+      },
+      {
+        "jsName": "cancelDrawingLoad",
+        "reason": "cannot preempt: the widget command queue runs it after the load_drawing it would cancel"
       },
       {
         "jsName": "createExtensionContext",

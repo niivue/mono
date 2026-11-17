@@ -108,10 +108,13 @@ describe('startSegDrawing', () => {
     })
     const calls: string[] = []
     const nv = {
-      _drawingGeneration: 0,
+      drawingGeneration: 0,
+      cancelDrawingLoad: () => {
+        nv.drawingGeneration++
+      },
       loadDrawing: async () => {
         calls.push('load')
-        nv._drawingGeneration++
+        nv.drawingGeneration++
         await gate
         return isShown
       },
@@ -180,7 +183,7 @@ describe('startSegDrawing', () => {
     release()
     await settle()
     expect(calls).toEqual(['load'])
-    expect(nv._drawingGeneration).toBe(2)
+    expect(nv.drawingGeneration).toBe(2)
     expect(nv.drawIsEnabled).toBe(true)
   })
 
@@ -415,9 +418,9 @@ describe('startSegDrawing', () => {
 
   test('shownWithConversionNote_notesIt', async () => {
     const { nv, release } = pane(true)
-    const notes: string[] = []
+    const notes: Array<[string, boolean | undefined]> = []
     startSegDrawing(nv, segDs, {
-      setNote: (m) => notes.push(m),
+      setNote: (m, brief) => notes.push([m, brief]),
       convert: async () => ({
         ...converted,
         note: 'dcm2niix exit 1: incomplete SEG',
@@ -426,7 +429,8 @@ describe('startSegDrawing', () => {
     })
     release()
     await settle()
-    expect(notes).toEqual(['dcm2niix exit 1: incomplete SEG'])
+    // Brief, as the base volume's conversion note.
+    expect(notes).toEqual([['dcm2niix exit 1: incomplete SEG', true]])
   })
 
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {

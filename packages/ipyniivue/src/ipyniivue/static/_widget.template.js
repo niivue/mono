@@ -154,6 +154,7 @@ const PROPS_RO = [
   ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],
   ["drawingColormaps", "drawing_colormaps"],
+  ["drawingGeneration", "drawing_generation"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],
   ["isAnimating", "is_animating"],
   ["isAntiAlias", "is_anti_alias"],

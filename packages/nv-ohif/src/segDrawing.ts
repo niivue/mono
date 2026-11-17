@@ -101,7 +101,8 @@ export function startSegDrawing(
     | 'closeDrawing'
     | 'addColormap'
     | 'drawingVolume'
-    | '_drawingGeneration'
+    | 'drawingGeneration'
+    | 'cancelDrawingLoad'
     | 'drawColormap'
     | 'drawIsEnabled'
     | 'drawOpacity'
@@ -112,14 +113,15 @@ export function startSegDrawing(
   seg: OhifDisplaySet,
   options: {
     headers?: Record<string, string>
-    setNote: (message: string) => void
+    // brief: a warning that clears itself, as the base volume's notes do.
+    setNote: (message: string, brief?: boolean) => void
     // Core refuses a drawing without a background: resolves once the base is in.
     whenBase: Promise<boolean>
     convert?: typeof convertDisplaySetToNifti
   },
 ): () => void {
   let cancelled = false
-  // Core bumps _drawingGeneration on every drawing load, install or close; a
+  // Core bumps drawingGeneration on every drawing load, install or close; a
   // loadDrawing still reading gives way to a bump. `pending` is the SEG's load
   // generation while it reads; `installed` the volume it put there.
   let pending: number | undefined
@@ -130,26 +132,21 @@ export function startSegDrawing(
   const show = async () => {
     const convert = options.convert ?? convertDisplaySetToNifti
     // Any drawing call during the conversion (even one still reading) wins.
-    const atStart = nv._drawingGeneration
+    const atStart = nv.drawingGeneration
     const [converted, hasBase] = await Promise.all([
       convert(seg, { headers: options.headers, signal: abort.signal }),
       options.whenBase,
     ])
-    if (
-      !converted ||
-      !hasBase ||
-      cancelled ||
-      nv._drawingGeneration !== atStart
-    )
+    if (!converted || !hasBase || cancelled || nv.drawingGeneration !== atStart)
       return
     const load = nv.loadDrawing(converted.image)
-    pending = nv._drawingGeneration
+    pending = nv.drawingGeneration
     const isShown = await load
     const loadGeneration = pending
     pending = undefined
     if (cancelled) {
       // Stopped after core installed it but before this resumed.
-      if (isShown && nv._drawingGeneration === loadGeneration + 1)
+      if (isShown && nv.drawingGeneration === loadGeneration + 1)
         nv.closeDrawing()
       return
     }
@@ -159,7 +156,7 @@ export function startSegDrawing(
     }
     installed = nv.drawingVolume
     // dcm2niix warnings (e.g. an incomplete SEG) reach the pane as the base's do.
-    if (converted.note) options.setNote(converted.note)
+    if (converted.note) options.setNote(converted.note, true)
     const prior = {
       drawColormap: nv.drawColormap,
       drawOpacity: nv.drawOpacity,
@@ -207,7 +204,7 @@ export function startSegDrawing(
     cancelled = true
     abort.abort()
     // A SEG load still reading gives way, keeping the drawing it would replace.
-    if (pending === nv._drawingGeneration) nv._drawingGeneration++
+    if (pending === nv.drawingGeneration) nv.cancelDrawingLoad()
     else if (installed && nv.drawingVolume === installed) nv.closeDrawing()
     restoreStyle?.()
   }
@@ -223,7 +220,7 @@ export function useSegDrawing(
   baseInstalledRef: RefObject<Promise<boolean>>,
   baseKey: string,
   servicesManager: OhifServicesManager | undefined,
-  setNote: (message: string) => void,
+  setNote: (message: string, brief?: boolean) => void,
 ): void {
   const segKey = seg?.displaySetInstanceUID ?? seg?.SeriesInstanceUID
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID and the base, as the load effect keys on displaySetsKey

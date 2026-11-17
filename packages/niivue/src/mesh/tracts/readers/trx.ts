@@ -152,9 +152,11 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     const data = await entry.extract?.()
     if (!data) continue
     if (fname === 'header.json') {
-      nStreamlinesHeader = JSON.parse(
-        new TextDecoder().decode(data),
-      ).NB_STREAMLINES
+      // A malformed header or a bad count falls back to the offsets heuristic.
+      try {
+        const n = JSON.parse(new TextDecoder().decode(data)).NB_STREAMLINES
+        if (Number.isInteger(n) && n >= 0) nStreamlinesHeader = n
+      } catch {}
       continue
     }
     const arr = parseArray(fname, data)

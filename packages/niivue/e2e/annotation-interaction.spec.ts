@@ -336,6 +336,58 @@ test('annotationIsClickToPlace: moving onto the render tile drops the rubber ban
   expect(r.parked).toBe(true)
 })
 
+test('annotationIsClickToPlace: a parked bidirectional axis rubber-bands to the cursor', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'bidirectional'
+    nv.annotationIsClickToPlace = true
+    const click = (x, y) => drag([[x, y]])
+    click(120, 200)
+    ev('pointermove', 280, 200, -1)
+    const long = nv.model._annotationPreview?.shape
+    click(280, 200)
+    click(200, 140)
+    ev('pointermove', 200, 260, -1)
+    const both = nv.model._annotationPreview?.shape
+    return { long: !!long && !long.start2, both: !!both?.start2 }
+  })()`)
+
+  expect(r).toEqual({ long: true, both: true })
+})
+
+test('annotationIsDrawnFromCenter: toggling it drops a parked start stale rubber band', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'ellipse'
+    nv.annotationIsClickToPlace = true
+    drag([[150, 150]])
+    ev('pointermove', 200, 220, -1)
+    const previewed = !!nv.model._annotationPreview
+    nv.annotationIsDrawnFromCenter = true
+    const afterToggle = nv.model._annotationPreview
+    ev('pointermove', 200, 220, -1)
+    const s = nv.model._annotationPreview?.shape
+    const parked = nv._annotationClickStart.start
+    return {
+      previewed,
+      afterToggle,
+      // From the centre: the box is symmetric about the parked point.
+      centred: !!s && Math.abs(s.start.x + s.end.x - 2 * parked.x) < 1e-6 &&
+        Math.abs(s.start.y + s.end.y - 2 * parked.y) < 1e-6,
+    }
+  })()`)
+
+  expect(r).toEqual({ previewed: true, afterToggle: null, centred: true })
+})
+
 test('annotationIsClickToPlace: a parked start beats a selected control point', async ({
   page,
 }) => {

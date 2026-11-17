@@ -19,7 +19,11 @@ import { RoiQuantPanel, TacPanel, TmtvPanel } from './quantPanels'
 // through frames4D. Acts on the active pane's 4D series, else the first shown.
 
 type Services = {
-  viewportGridService?: { getActiveViewportId?: () => string | undefined }
+  viewportGridService?: {
+    getActiveViewportId?: () => string | undefined
+    subscribe?: (event: string, cb: () => void) => { unsubscribe(): void }
+    EVENTS?: Record<string, string>
+  }
   cineService?: CineServiceLike
 }
 
@@ -66,6 +70,15 @@ export function DynamicVolumePanel({
   const { viewportGridService: grid, cineService: cine } = (ohifServices(
     servicesManager,
   ) ?? {}) as Services
+  // The active pane picks the series. Events fire before the grid's state
+  // updates (segHydration.tsx), so the reread waits a tick.
+  useEffect(() => {
+    const event = grid?.EVENTS?.ACTIVE_VIEWPORT_ID_CHANGED
+    const sub = event
+      ? grid?.subscribe?.(event, () => setTimeout(rerender))
+      : undefined
+    return () => sub?.unsubscribe()
+  }, [grid])
   const active = grid?.getActiveViewportId?.()
   const id = paneFrames(active) ? active : anyFramesPane()
   const frames = paneFrames(id)

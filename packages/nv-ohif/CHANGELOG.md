@@ -1,3 +1,88 @@
+## 1.0.0-rc.254 (2026-11-17)
+
+### Features
+
+- **nv-ohif:** pinch with a finger on the lens zooms the lens ([31fcc9e0](https://github.com/niivue/mono/commit/31fcc9e0))
+- **nv-ohif:** ship the NiiVue OHIF modes (viewer, segmentation, microscopy, tmtv, dynamic) ([09ab1027](https://github.com/niivue/mono/commit/09ab1027))
+- **nv-ohif:** SEG editing and export (M8); TMTV quantification and 4D kinetics (M9/M10) ([c980d364](https://github.com/niivue/mono/commit/c980d364))
+- **nv-ohif:** reformat position lower right on coronal/sagittal panes ([2079cca0](https://github.com/niivue/mono/commit/2079cca0))
+- **nv-ohif:** volume-rendering preset menu on CT 3D panes ([10dc6dfb](https://github.com/niivue/mono/commit/10dc6dfb))
+- **nv-ohif:** NiiVue measurement rows in OHIF's CSV export ([5db85206](https://github.com/niivue/mono/commit/5db85206))
+- **nv-ohif:** up/down/home/end and Capture on NiiVue panes ([5ba38419](https://github.com/niivue/mono/commit/5ba38419))
+- **nv-ohif:** cameraPosition sync groups share 2D pan/zoom (4D per-orientation camera sync) ([9c317682](https://github.com/niivue/mono/commit/9c317682))
+- **nv-ohif): 4D series on NiiVue panes (M7:** shared frame source, cine, 4D panel ([9274c9b4](https://github.com/niivue/mono/commit/9274c9b4))
+- **nv-ohif:** SEG/RTSTRUCT hydrate prompt and LOAD badge on NiiVue panes ([fe6061b7](https://github.com/niivue/mono/commit/fe6061b7))
+
+### Fixes
+
+- **nv-ohif:** order each volume's computed uploads so an older one cannot land last ([e4bce2d6](https://github.com/niivue/mono/commit/e4bce2d6))
+- **nv-ohif:** type the MIP volume header's scl_slope ([ad5901ea](https://github.com/niivue/mono/commit/ad5901ea))
+- **nv-ohif:** a stale compute yields to a newer one; SEG export reads enhanced frames ([6ea2f1a7](https://github.com/niivue/mono/commit/6ea2f1a7))
+- **nv-ohif:** unmounting the last 4D pane hides the panel's frame controls ([7fc1b0ec](https://github.com/niivue/mono/commit/7fc1b0ec))
+- **nv-ohif:** settle a base colormap changed mid-load; MIP jump honours a negative slope ([9dbd8ffc](https://github.com/niivue/mono/commit/9dbd8ffc))
+- **nv-ohif:** remove the magnifier lens before the viewer is destroyed ([6ca07231](https://github.com/niivue/mono/commit/6ca07231))
+- **nv-ohif:** threshold strokes read the shown 4D frame; brush size uses in-plane spacing ([501afef7](https://github.com/niivue/mono/commit/501afef7))
+- **nv-ohif:** the Dynamic panel follows the active pane's 4D series ([7d759bce](https://github.com/niivue/mono/commit/7d759bce))
+- **nv-ohif:** restyling a hung overlay off a ramp resets its colormap type ([fabf0974](https://github.com/niivue/mono/commit/fabf0974))
+- **nv-ohif:** an unchanged tool keeps the magnifier lens ([e7f13feb](https://github.com/niivue/mono/commit/e7f13feb))
+- **nv-ohif:** a compute shown while 4D frames restore stays shown ([be103966](https://github.com/niivue/mono/commit/be103966))
+- **nv-ohif:** a sync group links panes only by its own type ([35c1ab99](https://github.com/niivue/mono/commit/35c1ab99))
+- **nv-ohif:** hung PT overlays load, also on a base without a series UID ([ecd80add](https://github.com/niivue/mono/commit/ecd80add))
+- **nv-ohif:** a cancelled touch does not place the AdvancedMagnify glass ([bbcf8439](https://github.com/niivue/mono/commit/bbcf8439))
+- **nv-ohif:** TMTV CSV total TLG in mL x SUV; SEG volume from the affine ([186480b7](https://github.com/niivue/mono/commit/186480b7))
+- **nv-ohif:** land a split-series frame jump after its output switch ([9f7559d4](https://github.com/niivue/mono/commit/9f7559d4))
+- **nv-ohif:** forget a removed SEG's order whichever series is shown ([44424e6c](https://github.com/niivue/mono/commit/44424e6c))
+- **nv-ohif:** restyle the pane when its background or MIP inversion changes ([46431076](https://github.com/niivue/mono/commit/46431076))
+- **nv-ohif:** raise keeps a press in progress; glass follows a held touch to its lift ([a96d786c](https://github.com/niivue/mono/commit/a96d786c))
+- **nv-ohif:** keep the lens still through a pinch ([11c98a6a](https://github.com/niivue/mono/commit/11c98a6a))
+- **nv-ohif:** keep AdvancedMagnify hidden during a pinch ([5ae34b32](https://github.com/niivue/mono/commit/5ae34b32))
+- **nv-ohif:** stop an iOS long-press selecting the pane's canvas ([5c5eb295](https://github.com/niivue/mono/commit/5c5eb295))
+- **nv-ohif:** keep the AdvancedMagnify glass after a touch lifts ([9e573f9c](https://github.com/niivue/mono/commit/9e573f9c))
+- **nv-ohif:** Magnify hands a pinch to core, keeps double-clicks, stays above annotations ([39538111](https://github.com/niivue/mono/commit/39538111))
+- **nv-ohif:** TMTV voxel volume from the affine determinant; quote CSV fields ([35fef95f](https://github.com/niivue/mono/commit/35fef95f))
+- **nv-ohif:** Next/Previous in a split series counts frames, not instances ([db2b0533](https://github.com/niivue/mono/commit/db2b0533))
+- **nv-ohif:** a SEG re-added to the active sets is the newest hydrated ([3f0b9dde](https://github.com/niivue/mono/commit/3f0b9dde))
+- **nv-ohif:** a re-held finished conversion is not evicted while in use ([70329932](https://github.com/niivue/mono/commit/70329932))
+- **nv-ohif:** a hung overlay leaves through niivueRemoveOverlay, refreshing the toolbar ([8507b136](https://github.com/niivue/mono/commit/8507b136))
+- **nv-ohif:** an overlay dropped from the hanging protocol after it loaded is removed ([96485eec](https://github.com/niivue/mono/commit/96485eec))
+- **nv-ohif:** hung MIP and overlays follow hanging-option changes ([4fea8ba4](https://github.com/niivue/mono/commit/4fea8ba4))
+- **nv-ohif:** a new hang reads as not loaded before its load effect runs ([6b83701c](https://github.com/niivue/mono/commit/6b83701c))
+- **nv-ohif:** keep PET labels outside a CT pane's FOV; per-pane threshold brush ([acbb348d](https://github.com/niivue/mono/commit/acbb348d))
+- **nv-ohif:** removing the last 4D volume notifies the frame panel ([0480bf9a](https://github.com/niivue/mono/commit/0480bf9a))
+- **nv-ohif:** a released row is adopted once, not again by its own broadcast ([aae5887e](https://github.com/niivue/mono/commit/aae5887e))
+- **nv-ohif:** leaving the 4D mode drops its pending cine start ([89943e13](https://github.com/niivue/mono/commit/89943e13))
+- **nv-ohif:** the magnifier binding drives its lens without attach() ([4fc1b486](https://github.com/niivue/mono/commit/4fc1b486))
+- **nv-ohif:** an RT pane saved as SEG keeps nested and hidden ROIs ([6da2a170](https://github.com/niivue/mono/commit/6da2a170))
+- **nv-ohif:** a newer SEG, reload or unmount retires the hydrate prompt ([ad7e241a](https://github.com/niivue/mono/commit/ad7e241a))
+- **nv-ohif:** a frame NiiVue changes itself becomes the series frame ([1e478c4b](https://github.com/niivue/mono/commit/1e478c4b))
+- **nv-ohif:** a superseded hung-overlay run adds no more overlays ([c33856dd](https://github.com/niivue/mono/commit/c33856dd))
+- **nv-ohif:** a hydrateseg sync group links no crosshair ([5f565763](https://github.com/niivue/mono/commit/5f565763))
+- **nv-ohif:** a released row is not deferred to the pane releasing it ([76965560](https://github.com/niivue/mono/commit/76965560))
+- **nv-ohif:** M11 audit — editable segmentation panel, TMTV tool groups, mode d.ts ([75588b1b](https://github.com/niivue/mono/commit/75588b1b))
+- **nv-ohif:** recount the stack position once a split series registers ([84505510](https://github.com/niivue/mono/commit/84505510))
+- **nv-ohif:** a split series' overlay counts its whole display set ([5bcd6c08](https://github.com/niivue/mono/commit/5bcd6c08))
+- **nv-ohif:** stack-scroll jump returns nothing (biome noVoidTypeReturn) ([ce0946bd](https://github.com/niivue/mono/commit/ce0946bd))
+- **nv-ohif:** Capture saves a slide pane through its slide view; no row import into a pane mid-swap ([0eb55064](https://github.com/niivue/mono/commit/0eb55064))
+- **nv-ohif:** release the pane's WebGL context on unmount ([958b1566](https://github.com/niivue/mono/commit/958b1566))
+- **nv-ohif:** keep measurement rows across unmount and series swap; re-import them in the new pane ([a6674e34](https://github.com/niivue/mono/commit/a6674e34))
+- **nv-ohif:** a removed SEG/RT forgets its hydration order, so reloading it makes it newest ([c9d00028](https://github.com/niivue/mono/commit/c9d00028))
+- **nv-ohif:** pane shows the latest hydrated SEG/RT on its series, not the first ([e3fb7129](https://github.com/niivue/mono/commit/e3fb7129))
+- **nv-ohif:** 4D cine clock runs only while a pane shows a 4D series ([7ffa7636](https://github.com/niivue/mono/commit/7ffa7636))
+- **nv-ohif:** 4D panel plays/pauses every pane of the series; 2hot starts black ([385f1a1d](https://github.com/niivue/mono/commit/385f1a1d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.222
+- Updated nv-ext-drawing to 1.0.0-rc.224
+- Updated nv-ext-tile to 1.0.0-rc.131
+- Updated uikit to 1.0.0-rc.221
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.253 (2026-11-17)
 
 ### Updated Dependencies

@@ -1312,16 +1312,33 @@ export function reorientRGBA(
 // ============================================================================
 
 /**
- * A CPU pick sampler over a resident volume's voxels, shaped like a streamed
- * volume's `pickSampler`: world mm in, the value above the window floor out
- * (0 is transparent). Null when the voxels are not on the CPU.
+ * Index of RAS voxel 0 of the displayed frame in `volume.img`, and the native
+ * strides of the RAS axes, so a caller reads voxels in place instead of
+ * reordering the volume (getImageDataRAS) for a few of them. Null when the
+ * voxels are not on the CPU.
+ */
+export function frameRASIndexer(
+  volume: NVImage,
+): { img: NonNullable<NVImage['img']>; base: number; step: number[] } | null {
+  const { img, dimsRAS: d, img2RASstep: step, img2RASstart: start } = volume
+  if (!img || !d || !step || !start) return null
+  const frame = (volume.frame4D ?? 0) * d[1] * d[2] * d[3]
+  return { img, base: start[0] + start[1] + start[2] + frame, step }
+}
+
+/**
+ * A CPU pick sampler over a resident volume's displayed frame, shaped like a
+ * streamed volume's `pickSampler`: world mm in, the value above the window
+ * floor out (0 is transparent). Null when the voxels are not on the CPU.
  */
 export function residentPickSampler(
   volume: NVImage,
 ): ((x: number, y: number, z: number) => number) | null {
-  const data = getImageDataRAS(volume)
+  const at = frameRASIndexer(volume)
   const d = volume.dimsRAS
-  if (!data || !d || !volume.matRAS) return null
+  if (!at || !d || !volume.matRAS) return null
+  const { img, base } = at
+  const [s0, s1, s2] = at.step
   // matRAS is row-major: transpose to gl-matrix order, then invert.
   const inv = mat4.invert(
     mat4.create(),
@@ -1336,7 +1353,8 @@ export function residentPickSampler(
     const iy = Math.round(inv[1] * x + inv[5] * y + inv[9] * z + inv[13])
     const iz = Math.round(inv[2] * x + inv[6] * y + inv[10] * z + inv[14])
     if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return 0
-    const value = data[ix + nx * (iy + ny * iz)] * slope + inter
+    const value =
+      Number(img[base + ix * s0 + iy * s1 + iz * s2]) * slope + inter
     // Read the window live: the app may re-window after the pick starts.
     const calMin = volume.calMin ?? 0
     return value > calMin ? value - calMin : 0

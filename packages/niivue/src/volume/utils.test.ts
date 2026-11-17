@@ -901,6 +901,16 @@ describe('residentPickSampler', () => {
     expect(s?.(100, 0, 0)).toBe(0) // outside the volume
   })
 
+  test('samples the displayed 4D frame', () => {
+    const s = residentPickSampler({
+      ...vol,
+      img: Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0]),
+      frame4D: 1,
+    } as unknown as NVImage)
+    // Voxel (1, 1) of frame 1: native index 8 + 1 + 4.
+    expect(s?.(-2, 2, 0)).toBe(20 - 5)
+  })
+
   test('is null without CPU voxels', () => {
     expect(residentPickSampler({ ...vol, img: null } as NVImage)).toBeNull()
   })

@@ -36,7 +36,7 @@ import { NiiDataType } from '@/NVConstants'
 import type { NVImage } from '@/NVTypes'
 import { translatedAffine } from './ChunkExplode'
 import type { Vec3f, Vec3i } from './chunking'
-import { createNiftiArray, getImageDataRAS } from './utils'
+import { createNiftiArray, frameRASIndexer } from './utils'
 
 /** A sub-box of a parent volume, as a loadable NIfTI plus its placement. */
 export interface ExtractedSubVolume {
@@ -143,26 +143,27 @@ export function extractSubVolume(
   const parentDims: Vec3i = [dimsRAS[1], dimsRAS[2], dimsRAS[3]]
   const region = clampRegion(voxelOrigin, voxelDims, parentDims)
   if (!region) return null
-  const src = getImageDataRAS(vol)
-  if (!src) return null
+  // Read the displayed frame in place: no whole-volume reorder for a small box.
+  const at = frameRASIndexer(vol)
+  if (!at) return null
+  const { img: src, base } = at
+  const [s0, s1, s2] = at.step as [number, number, number]
 
   const [dx, dy, dz] = region.size
   const [ox, oy, oz] = region.origin
-  const parentX = parentDims[0]
-  const parentXY = parentDims[0] * parentDims[1]
-  // getImageDataRAS returns RAW values; bake the parent's scaling in so the copy
+  // The source holds RAW values; bake the parent's scaling in so the copy
   // is in display units and can state slope 1 / inter 0.
   const slope = vol.hdr?.scl_slope || 1
   const inter = vol.hdr?.scl_inter || 0
   const img = new Float32Array(dx * dy * dz)
   for (let z = 0; z < dz; z++) {
-    const srcZ = (oz + z) * parentXY
+    const srcZ = base + (oz + z) * s2
     const dstZ = z * dx * dy
     for (let y = 0; y < dy; y++) {
-      const srcRow = srcZ + (oy + y) * parentX + ox
+      const srcRow = srcZ + (oy + y) * s1 + ox * s0
       const dstRow = dstZ + y * dx
       for (let x = 0; x < dx; x++) {
-        img[dstRow + x] = src[srcRow + x] * slope + inter
+        img[dstRow + x] = Number(src[srcRow + x * s0]) * slope + inter
       }
     }
   }

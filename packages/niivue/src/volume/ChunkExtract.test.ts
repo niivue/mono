@@ -122,6 +122,24 @@ describe('extractSubVolume', () => {
     expect(sub.calMax).toBe(500)
   })
 
+  test('copies the displayed 4D frame, read through native strides', () => {
+    // 2x1x1 voxels stored x-flipped (RAS x 0 is native 1), two frames.
+    const parent = {
+      ...makeParent([2, 1, 1]),
+      img: Uint8Array.from([1, 2, 30, 40]),
+      img2RASstep: [-1, 2, 2],
+      img2RASstart: [1, 0, 0],
+      frame4D: 1,
+    } as unknown as NVImage
+    const sub = extractSubVolume(parent, [0, 0, 0], [2, 1, 1])
+    const voxels = new Float32Array(
+      sub?.nifti.buffer ?? new ArrayBuffer(360),
+      352,
+      2,
+    )
+    expect(Array.from(voxels)).toEqual([40, 30])
+  })
+
   test('clamps a box that overruns the parent', () => {
     const parent = makeParent([8, 8, 8])
     const sub = extractSubVolume(parent, [6, 6, 6], [4, 4, 4])

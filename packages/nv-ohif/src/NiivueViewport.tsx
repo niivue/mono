@@ -304,6 +304,9 @@ export function NiivueViewport(props: OhifViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nvRef = useRef<NiiVue | null>(null)
   const slideViewRef = useRef<WsiSlideView | null>(null)
+  const magnifyRef = useRef<ReturnType<typeof createMagnifyBinding> | null>(
+    null,
+  )
   const activeOhifToolRef = useRef<string | undefined>(undefined)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -483,6 +486,8 @@ export function NiivueViewport(props: OhifViewportProps) {
           )
           unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
           nv.isAnnotationDrawn = false
+          // A lens already up must stay above the annotations it magnifies.
+          magnifyRef.current?.raise()
         })
         .catch((err) =>
           console.error('[nv-ohif] annotation font failed to load', err),
@@ -1067,6 +1072,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     if (!svc?.getActivePrimaryMouseButtonTool) return
 
     const magnify = createMagnifyBinding(nv)
+    magnifyRef.current = magnify
     const apply = () => {
       const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
@@ -1095,6 +1101,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     return () => {
       sub?.unsubscribe?.()
       magnify.dispose()
+      magnifyRef.current = null
     }
   }, [ready, servicesManager, toolGroupId, viewportId, props.extensionManager])
 

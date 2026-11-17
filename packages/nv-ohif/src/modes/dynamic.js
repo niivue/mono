@@ -148,6 +148,9 @@ function onModeEnter(ctx) {
   ])
 }
 
+// The pending cine start, dropped if the mode exits before the panes are up.
+let stopCineStart = () => {}
+
 // After hanging-protocol matching, as OHIF's: steps may change the stage.
 function onSetupRouteComplete({ servicesManager }) {
   const { workflowStepsService, cineService, viewportGridService } =
@@ -169,6 +172,12 @@ function onSetupRouteComplete({ servicesManager }) {
       })
     },
   )
+  stopCineStart = unsubscribe
+}
+
+function onModeExit(ctx) {
+  stopCineStart()
+  modeInstance.onModeExit.call(this, ctx)
 }
 
 export default niivueMode({
@@ -214,6 +223,7 @@ export default niivueMode({
     })
   },
   onModeEnter,
+  onModeExit,
   onSetupRouteComplete,
   // As preclinical-4d: OHIF's own 4D test checks the demo study's MRN.
   isValidMode: ({ study }) => ({

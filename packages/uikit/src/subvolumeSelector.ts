@@ -4,8 +4,10 @@
 // point under the pointer on its plane, a 3D render tile depth-picks the first
 // visible voxel (an exploded chunked volume is picked brick by brick); over
 // empty space the second corner goes to the depth of the first. Between
-// the corners a fainter outline follows the pointer. A third right-click
-// starts a new box. Shift+right-click still opens the context menu. Register
+// the corners a fainter outline follows the pointer. When both corners are on
+// one slice orientation the box is that slice's face: a right-click on another
+// slice orientation then sets its depth (again, until a new box starts). Any
+// other right-click starts a new box. Shift+right-click still opens the context menu. Register
 // it as an overlay renderer too (`registerOverlayRenderer`) to outline the
 // box's cross-section on each 2D slice that cuts it.
 //
@@ -127,7 +129,7 @@ export function sliceOutlineRects(
     const ltwh = t.leftTopWidthHeight
     if (!mvp || !n || !pp || !ltwh || t.axCorSag === SLICE_TYPE.RENDER) continue
     const ax = [0, 1, 2]
-    const k = ax.reduce((a, b) => (Math.abs(n[b]) > Math.abs(n[a]) ? b : a))
+    const k = dominantAxis(n)
     // A slice on a voxel edge, as the first corner's own slice can be, sits
     // on the box face give or take float32 rounding.
     if (pp[k] < box.min[k] - 1e-3 || pp[k] > box.max[k] + 1e-3) continue
@@ -194,6 +196,11 @@ export class UIKitSubvolumeSelector {
   color: number[]
   thickness: number
   private first: Vec3 | null = null
+  // The slice axis (world RAS) the first corner was picked across, if a slice.
+  private firstAxis: number | null = null
+  // A box picked on one slice orientation: its corners and that slice's axis.
+  private face: { a: Vec3; b: Vec3; k: number } | null = null
+  private depthPreview = false
   private host: SubvolumeSelectorHost | null = null
   private shown: FocusBox | null = null
   private readonly rects = new UIKitRectOverlay()
@@ -210,19 +217,57 @@ export class UIKitSubvolumeSelector {
     return this.first
   }
 
-  /** Add a picked point: the first starts a box, the second completes it. */
-  addPoint(mm: Vec3): SubvolumeSelection | null {
-    const host = this.host
-    const vol = host?.volumes[0]
-    if (!host || !vol) return null
-    if (!this.first) {
+  /**
+   * Add a picked point: the first starts a box, the second completes it.
+   * `sliceAxis` is the world axis normal to the slice it was picked on.
+   */
+  addPoint(
+    mm: Vec3,
+    sliceAxis: number | null = null,
+  ): SubvolumeSelection | null {
+    if (!this.host?.volumes[0]) return null
+    const first = this.first
+    if (!first) {
       this.first = mm
+      this.firstAxis = sliceAxis
+      this.face = null
       this.preview(mm)
       this.onCorner?.(mm)
       return null
     }
-    const box = subvolumeBox(vol, this.first, mm)
     this.first = null
+    this.face =
+      sliceAxis !== null && sliceAxis === this.firstAxis
+        ? { a: first, b: mm, k: sliceAxis }
+        : null
+    return this.select(first, mm)
+  }
+
+  /** Stretch a one-slice box to `mm` along that slice's axis; null without one. */
+  setDepth(mm: Vec3): SubvolumeSelection | null {
+    const face = this.face
+    if (!face) return null
+    const b: Vec3 = [...face.b]
+    b[face.k] = mm[face.k]
+    face.b = b
+    return this.select(face.a, b)
+  }
+
+  /** The box `face` would have with its depth at `mm`. */
+  private depthBox(mm: Vec3): ReturnType<typeof subvolumeBox> {
+    const face = this.face
+    const vol = this.host?.volumes[0]
+    if (!face || !vol) return null
+    const b: Vec3 = [...face.b]
+    b[face.k] = mm[face.k]
+    return subvolumeBox(vol, face.a, b)
+  }
+
+  private select(a: Vec3, b: Vec3): SubvolumeSelection | null {
+    const vol = this.host?.volumes[0]
+    if (!vol) return null
+    this.depthPreview = false
+    const box = subvolumeBox(vol, a, b)
     if (!box) {
       this.outline(null)
       return null
@@ -248,6 +293,10 @@ export class UIKitSubvolumeSelector {
     if (!host || !vol || !this.first) return
     const box = subvolumeBox(vol, this.first, mm)
     if (!box) return
+    this.faint(box)
+  }
+
+  private faint(box: Pick<SubvolumeSelection, 'minMM' | 'maxMM'>): void {
     this.outline({
       min: box.minMM,
       max: box.maxMM,
@@ -259,6 +308,7 @@ export class UIKitSubvolumeSelector {
   /** Forget a half-picked box and clear the outline. */
   reset(): void {
     this.first = null
+    this.face = null
     this.outline(null)
   }
 
@@ -309,16 +359,27 @@ export class UIKitSubvolumeSelector {
       e.stopImmediatePropagation()
       e.preventDefault()
       const at = ++seq
+      const axis = hit.isRender ? null : sliceAxisAt(host.getScreenTiles(), p)
+      const face = this.face
+      if (!this.first && face && axis !== null && axis !== face.k) {
+        const mm = host.canvasToMM(p[0], p[1])
+        if (mm) this.setDepth(mm)
+        return
+      }
       void this.pick(host, hit.isRender, p, e).then((mm) => {
         // A later press supersedes a slow depth pick.
-        if (mm && at === seq && this.host === host) this.addPoint(mm)
+        if (mm && at === seq && this.host === host) this.addPoint(mm, axis)
       })
     }
     // One depth pick in flight at a time: moves while it runs are dropped.
     let moving = false
     const onMove = (e: PointerEvent): void => {
       const first = this.first
-      if (!first || moving) return
+      if (!first) {
+        this.moveDepth(host, e)
+        return
+      }
+      if (moving) return
       const p = host.clientToCanvas(e.clientX, e.clientY)
       const hit = p && host.hitTest(p[0], p[1])
       if (!p || !hit) return
@@ -342,6 +403,35 @@ export class UIKitSubvolumeSelector {
       canvas.removeEventListener('pointermove', onMove)
       this.reset()
       this.host = null
+    }
+  }
+
+  /** Over another slice orientation, preview a one-slice box's depth. */
+  private moveDepth(host: SubvolumeSelectorHost, e: PointerEvent): void {
+    const face = this.face
+    if (!face) return
+    const p = host.clientToCanvas(e.clientX, e.clientY)
+    const hit = p && host.hitTest(p[0], p[1])
+    const axis =
+      p && hit && !hit.isRender ? sliceAxisAt(host.getScreenTiles(), p) : null
+    const mm =
+      axis !== null && axis !== face.k && p && host.canvasToMM(p[0], p[1])
+    const box = mm ? this.depthBox(mm) : null
+    if (box) {
+      this.depthPreview = true
+      this.faint(box)
+    } else if (this.depthPreview) {
+      // Off the other views: back to the picked box.
+      this.depthPreview = false
+      const vol = host.volumes[0]
+      const picked = vol && subvolumeBox(vol, face.a, face.b)
+      if (picked)
+        this.outline({
+          min: picked.minMM,
+          max: picked.maxMM,
+          color: this.color,
+          thickness: this.thickness,
+        })
     }
   }
 
@@ -383,6 +473,26 @@ export function nearestOnRay(
   const t =
     (to[0] - o[0]) * d[0] + (to[1] - o[1]) * d[1] + (to[2] - o[2]) * d[2]
   return [o[0] + t * d[0], o[1] + t * d[1], o[2] + t * d[2]]
+}
+
+/** The world axis (0 x, 1 y, 2 z) normal to the 2D tile under canvas point `p`. */
+export function sliceAxisAt(
+  tiles: readonly SliceTile[],
+  p: readonly [number, number],
+): number | null {
+  for (const t of tiles) {
+    const r = t.leftTopWidthHeight
+    const n = t.planeNormal
+    if (!r || !n || t.axCorSag === SLICE_TYPE.RENDER) continue
+    if (p[0] < r[0] || p[1] < r[1] || p[0] > r[0] + r[2] || p[1] > r[1] + r[3])
+      continue
+    return dominantAxis(n)
+  }
+  return null
+}
+
+function dominantAxis(n: ArrayLike<number>): number {
+  return [0, 1, 2].reduce((a, b) => (Math.abs(n[b]) > Math.abs(n[a]) ? b : a))
 }
 
 function isExploded(vol: NVImage): boolean {

@@ -4,6 +4,7 @@ import {
   nearestOnRay,
   type SubvolumeSelection,
   type SubvolumeSelectorHost,
+  sliceAxisAt,
   sliceOutlineRects,
   subvolumeBox,
   UIKitSubvolumeSelector,
@@ -67,7 +68,7 @@ function makeHost(
       origin: [0, 0, 100],
       dir: [0, 0, -1],
     }),
-    getScreenTiles: () => [],
+    getScreenTiles: (): readonly SliceTile[] => [],
     pickExplodedBlock: () => {
       const mm = picks.exploded?.shift()
       return mm ? ({ mm } as never) : null
@@ -152,6 +153,20 @@ describe('nearestOnRay', () => {
     const ray = { origin: [0, 0, 0] as Vec3, dir: [1, 0, 0] as Vec3 }
     expect(nearestOnRay(ray, [5, 3, -2])).toEqual([5, 0, 0])
     expect(nearestOnRay(null, [1, 1, 1])).toBeNull()
+  })
+})
+
+// An axial tile at x 0-10 and a coronal one at x 10-20 (canvas px).
+const viewTiles = [
+  { axCorSag: 0, leftTopWidthHeight: [0, 0, 10, 10], planeNormal: [0, 0, 1] },
+  { axCorSag: 1, leftTopWidthHeight: [10, 0, 10, 10], planeNormal: [0, 1, 0] },
+] as unknown as SliceTile[]
+
+describe('sliceAxisAt', () => {
+  it('is the normal axis of the 2D tile under the point', () => {
+    expect(sliceAxisAt(viewTiles, [5, 5])).toBe(2)
+    expect(sliceAxisAt(viewTiles, [15, 5])).toBe(1)
+    expect(sliceAxisAt(viewTiles, [25, 5])).toBeNull()
   })
 })
 
@@ -249,6 +264,65 @@ describe('UIKitSubvolumeSelector.attach', () => {
     // The ray (0, 0, z) cut at the first corner's z: voxel (5, 10->7, 3).
     expect(got[0]?.voxelOrigin).toEqual([1, 2, 3])
     expect(got[0]?.voxelDims).toEqual([5, 6, 1])
+  })
+
+  it('a right-click on another slice orientation sets a one-slice box depth', async () => {
+    const got: SubvolumeSelection[] = []
+    const sel = new UIKitSubvolumeSelector({ onSelect: (s) => got.push(s) })
+    const { canvas, host } = makeHost(makeVolume(), {
+      slice: [vox(1, 2, 3), vox(4, 5, 3), vox(2, 2, 6), vox(0, 0, 1)],
+    })
+    host.getScreenTiles = () => viewTiles
+    sel.attach(host)
+    const axial = () => rightClick('pointerdown', { clientX: 5 })
+    const coronal = (type = 'pointerdown') => rightClick(type, { clientX: 15 })
+    canvas.dispatchEvent(axial())
+    await settle()
+    canvas.dispatchEvent(axial())
+    await settle()
+    expect(got[0]?.voxelDims).toEqual([4, 4, 1])
+    // Hovering the coronal view previews the depth, fainter.
+    host.canvasToMM = () => vox(2, 2, 7)
+    canvas.dispatchEvent(coronal('pointermove'))
+    expect(host.focusBox?.color[3]).toBe(0.5)
+    expect(host.focusBox?.max[2]).toBe(-15)
+    // Back on the axial view: the picked box again.
+    canvas.dispatchEvent(rightClick('pointermove', { clientX: 5 }))
+    expect(host.focusBox?.color[3]).toBe(1)
+    expect(host.focusBox?.max[2]).toBe(-23)
+    host.canvasToMM = () => vox(2, 2, 6)
+    canvas.dispatchEvent(coronal())
+    expect(got[1]?.voxelOrigin).toEqual([1, 2, 3])
+    expect(got[1]?.voxelDims).toEqual([4, 4, 4])
+    // Again, to the other side of the face.
+    host.canvasToMM = () => vox(0, 0, 1)
+    canvas.dispatchEvent(coronal())
+    expect(got[2]?.voxelOrigin).toEqual([1, 2, 1])
+    expect(got[2]?.voxelDims).toEqual([4, 4, 3])
+    // On the face's own orientation: a new box.
+    host.canvasToMM = () => vox(7, 7, 7)
+    canvas.dispatchEvent(axial())
+    await settle()
+    expect(got).toHaveLength(3)
+    expect(sel.pendingCorner).toEqual(vox(7, 7, 7))
+  })
+
+  it('corners on two orientations make no face to deepen', async () => {
+    const got: SubvolumeSelection[] = []
+    const sel = new UIKitSubvolumeSelector({ onSelect: (s) => got.push(s) })
+    const { canvas, host } = makeHost(makeVolume(), {
+      slice: [vox(1, 2, 3), vox(4, 2, 6), vox(5, 5, 5)],
+    })
+    host.getScreenTiles = () => viewTiles
+    sel.attach(host)
+    canvas.dispatchEvent(rightClick('pointerdown', { clientX: 5 }))
+    await settle()
+    canvas.dispatchEvent(rightClick('pointerdown', { clientX: 15 }))
+    await settle()
+    canvas.dispatchEvent(rightClick('pointerdown', { clientX: 15 }))
+    await settle()
+    expect(got).toHaveLength(1)
+    expect(sel.pendingCorner).toEqual(vox(5, 5, 5))
   })
 
   it('picks an exploded chunked volume brick by brick, without an outline', async () => {

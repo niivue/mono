@@ -150,6 +150,32 @@ test('a new window on a layered overlay restyles it in place', async () => {
   unregisterNiivue('vp-style')
 })
 
+test('restyling to a plain colormap resets the colormap type', async () => {
+  const pt = {}
+  const updates: Record<string, unknown>[] = []
+  const nv = {
+    colormaps: ['hot'],
+    volumes: [{ hdr: {} }, { hdr: pt }],
+    setVolume: async (_: number, o: Record<string, unknown>) => {
+      updates.push(o)
+    },
+  }
+  registerNiivue('vp-type', nv as never)
+  getNiivueEntry('vp-type')?.overlays.set('pt', pt as never)
+  useHungOverlays(
+    nv as never,
+    'vp-type',
+    [ds('ct'), ds('pt')] as never,
+    [{}, { options: { colormap: { name: 'hot', opacity: 0.9 } } }],
+    'ct',
+    { runCommand: async () => {} } as never,
+  )
+  effects.pop()?.()
+  await new Promise((r) => setTimeout(r, 0))
+  expect(updates[0]?.colormapType).toBe(0)
+  unregisterNiivue('vp-type')
+})
+
 test('an overlay dropped from the protocol after it loaded is removed', async () => {
   const removed: number[] = []
   const user = {}

@@ -6,6 +6,7 @@ const log: string[] = []
 let endAnimation = (_reason: string) => {}
 let endLoad = () => {}
 let endSettle = () => {}
+let undoTop: number | undefined
 
 class FakeNiiVue {
   registerVolumeTransform() {}
@@ -44,6 +45,12 @@ class FakeNiiVue {
   }
   setOpacity() {
     log.push('setOpacity')
+  }
+  get annotationUndoTop() {
+    return undoTop
+  }
+  annotationUndo() {
+    undoTop = undefined
   }
 }
 
@@ -144,4 +151,16 @@ test('whenChunkStreamSettles holds the queue', async () => {
   endSettle()
   await tick()
   expect(log).toEqual(['settle:start', 'settle:end', 'setOpacity'])
+})
+
+// A read-only property that becomes undefined (an emptied undo stack) syncs None.
+test('read-only property cleared to undefined syncs null', async () => {
+  undoTop = 7
+  const { model } = await mounted()
+  model.send('setOpacity', [0, 0.5])
+  await tick()
+  expect(model.get('annotation_undo_top')).toBe(7)
+  model.send('annotationUndo')
+  await tick()
+  expect(model.get('annotation_undo_top')).toBeNull()
 })

@@ -39,9 +39,11 @@ export const isMip = (dso: DisplaySetOptions): boolean => {
 
 // vtk.js's '2hot' preset (cornerstone's PET colormap in the 4D demo), which
 // NiiVue lacks; interpolated in RGB, not vtk's Lab. Alpha as NiiVue's 'hot'.
+// Starts black, not vtk's dark red: the demo's ramp makes 0 transparent, and
+// a base volume's 2D slice ignores LUT alpha.
 const TWO_HOT = {
   R: [
-    11, 53, 96, 138, 181, 218, 239, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    0, 53, 96, 138, 181, 218, 239, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     255,
   ],
   G: [0, 0, 0, 0, 0, 0, 10, 53, 96, 138, 181, 219, 242, 255, 255, 255, 255],

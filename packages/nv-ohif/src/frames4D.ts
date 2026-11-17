@@ -86,6 +86,10 @@ export function paneFrames(viewportId: string | undefined) {
   )
 }
 
+/** The panes showing the series `group`. */
+export const groupPanes = (group: object): string[] =>
+  [...panes.keys()].filter((id) => paneFrames(id)?.group === group)
+
 /** The first pane showing a 4D series (the panel's fallback target). */
 export const anyFramesPane = (): string | undefined =>
   [...panes.keys()].find((id) => paneFrames(id))

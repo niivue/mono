@@ -1,5 +1,11 @@
 import { useEffect, useReducer } from 'react'
-import { anyFramesPane, onFrame, paneFrames, setFrame } from './frames4D'
+import {
+  anyFramesPane,
+  groupPanes,
+  onFrame,
+  paneFrames,
+  setFrame,
+} from './frames4D'
 import { ohifServices } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
 
@@ -61,10 +67,14 @@ export function DynamicVolumePanel({ servicesManager }: OhifExtensionParams) {
     return (
       <div style={{ padding: 8, color: '#d1d5db' }}>No 4D series shown.</div>
     )
-  const { isPlaying = false, frameRate = 24 } =
-    cine?.getState?.()?.cines?.[id] ?? {}
+  // Cine is per pane, frames per series: control every pane showing it.
+  const ids = groupPanes(frames.group)
+  const cines = cine?.getState?.()?.cines ?? {}
+  const isPlaying = ids.some((i) => cines[i]?.isPlaying)
+  const frameRate = cines[id]?.frameRate ?? 24
   const setCine = (patch: Cine) => {
-    cine?.setCine?.({ id, frameRate, ...patch })
+    for (const i of ids)
+      cine?.setCine?.({ id: i, frameRate, isPlaying, ...patch })
     rerender()
   }
   const toFrame = (f: number) => void setFrame(frames.group, f - 1)

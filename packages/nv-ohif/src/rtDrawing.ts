@@ -215,11 +215,14 @@ export function fillRuns(
   }
 }
 
-/** An ROI's closed planar contours as flat LPS triplets. */
+/**
+ * An ROI's closed planar contours as flat LPS triplets. CLOSEDPLANAR_XOR
+ * contours combine by exclusive-or, which the even-odd fill already does.
+ */
 export function roiContours(roi: RtRoi): Float64Array[] {
   const out: Float64Array[] = []
   for (const c of roi.contourPoints ?? []) {
-    if (c.type !== 'CLOSED_PLANAR') continue
+    if (c.type !== 'CLOSED_PLANAR' && c.type !== 'CLOSEDPLANAR_XOR') continue
     out.push(Float64Array.from(c.points.flatMap((pt) => [pt.x, pt.y, pt.z])))
   }
   return out

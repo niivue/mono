@@ -2,7 +2,7 @@
 // hanging protocols' `displayPreset`) mapped to NiiVue's CT colormaps, which
 // carry their own Hounsfield window. Presets without an analogue (MIP, MR,
 // DTI) keep the default colormap and window.
-const NIIVUE_VR_PRESETS: Record<string, string> = {
+export const NIIVUE_VR_PRESETS: Record<string, string> = {
   'CT-AAA': 'ct_artery',
   'CT-Air': 'ct_airways',
   'CT-Bone': 'ct_bones',

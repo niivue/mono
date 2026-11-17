@@ -1122,7 +1122,17 @@ export function NiivueViewport(props: OhifViewportProps) {
       data-view={viewName(sliceType)}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+      <div
+        ref={containerRef}
+        // iOS long-press otherwise selects the canvas and opens its callout.
+        style={{
+          position: 'absolute',
+          inset: 0,
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none',
+        }}
+      />
       {overlay ? (
         <div
           style={{

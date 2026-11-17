@@ -91,6 +91,30 @@ describe('rasterizeContours', () => {
     expect(bitmap[2 * 400 + 3 * 20 + 7]).toBe(1)
   })
 
+  // Review of #839: overlapping CLOSED_PLANAR rings union; XOR rings cancel.
+  test('overlapping rings union unless CLOSEDPLANAR_XOR', () => {
+    // Centres 2..5 and 4..7 on both axes: 16 + 16 - 4 shared.
+    const a = square(-1.5, -1.5, -5.5, -5.5, 2)
+    const b = square(-3.5, -3.5, -7.5, -7.5, 2)
+    const shared = 2 * 400 + 4 * 20 + 4
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const union = rasterizeContours(dims, identityLps, [a, b])
+    fillRuns(bitmap, union.runs, 1)
+    expect(union.count).toBe(28)
+    expect(bitmap[shared]).toBe(1)
+    const xor = rasterizeContours(dims, identityLps, [a, b], true)
+    expect(xor.count).toBe(24)
+  })
+
+  test('an island inside a hole fills', () => {
+    const { count } = rasterizeContours(dims, identityLps, [
+      square(-1.5, -1.5, -11.5, -11.5, 2),
+      square(-3.5, -3.5, -9.5, -9.5, 2),
+      square(-5.5, -5.5, -7.5, -7.5, 2),
+    ])
+    expect(count).toBe(100 - 36 + 4)
+  })
+
   test('offGridSlice_isSkipped', () => {
     const { count } = rasterizeContours(dims, identityLps, [
       square(-1, -1, -3, -3, 9),

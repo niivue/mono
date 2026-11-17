@@ -130,8 +130,10 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
 }
 
 /**
- * Rasterize `contours` (LPS mm triplets) on a grid of `dims` voxels, even-odd
- * per slice so an inner contour of the same ROI stays a hole. A contour lies on
+ * Rasterize `contours` (LPS mm triplets) on a grid of `dims` voxels. Per slice,
+ * a contour inside an odd number of others is a hole and the rest are unioned,
+ * so overlapping CLOSED_PLANAR rings merge while a nested ring cuts a hole;
+ * `xor` (CLOSEDPLANAR_XOR) fills even-odd instead. A contour lies on
  * the slice its points are nearest across the axis they vary least along;
  * voxels whose centres fall inside are in. A tilted contour (a gantry-tilted
  * or other series' plane) puts each voxel on the slice nearest its plane. Returns their count and centroid
@@ -141,6 +143,7 @@ export function rasterizeContours(
   dims: readonly [number, number, number],
   lps2vox: ReadonlyArray<number>,
   contours: ReadonlyArray<ArrayLike<number>>,
+  xor = false,
 ): SegmentStats & { runs: number[] } {
   const [
     m0 = 0,
@@ -269,7 +272,12 @@ export function rasterizeContours(
       { length: rowLast - rowFirst + 1 },
       () => [],
     )
-    for (const p of group) {
+    // Union mode tags each crossing with its contour: +1 outer, -1 hole.
+    const signed = !xor && group.length > 1
+    const signs = signed ? holeSigns(group, u, v) : []
+    const rowSigns: number[][] = signed ? rowCrossings.map(() => []) : []
+    for (let k = 0; k < group.length; k++) {
+      const p = group[k] as Float64Array
       const n = p.length
       let u0 = p[n - 3 + u] as number
       let v0 = p[n - 3 + v] as number
@@ -281,16 +289,23 @@ export function rasterizeContours(
         const last = Math.min(rowLast, Math.ceil(Math.max(v0, v1)) - 1)
         const slope = (u1 - u0) / (v1 - v0)
         for (let row = first; row <= last; row++) {
-          const crossings = rowCrossings[row - rowFirst] as number[]
-          crossings.push(u0 + (row - v0) * slope)
+          ;(rowCrossings[row - rowFirst] as number[]).push(
+            u0 + (row - v0) * slope,
+          )
+          if (signed) (rowSigns[row - rowFirst] as number[]).push(k)
         }
         u0 = u1
         v0 = v1
       }
     }
     for (let row = rowFirst; row <= rowLast; row++) {
-      const crossings = rowCrossings[row - rowFirst] as number[]
-      crossings.sort((a, b) => a - b)
+      const crossings = signed
+        ? unionSpans(
+            rowCrossings[row - rowFirst] as number[],
+            rowSigns[row - rowFirst] as number[],
+            signs,
+          )
+        : (rowCrossings[row - rowFirst] as number[]).sort((a, b) => a - b)
       const rowBase = base + row * sv
       for (let i = 0; i + 1 < crossings.length; i += 2) {
         const first = Math.max(0, Math.ceil(crossings[i] as number))
@@ -378,17 +393,84 @@ export function fillRuns(
   }
 }
 
+/** Whether point (pu, pv) is inside ring `q` (even-odd, in-plane axes u, v). */
+function pointInRing(
+  q: Float64Array,
+  u: number,
+  v: number,
+  pu: number,
+  pv: number,
+): boolean {
+  let inside = false
+  let u0 = q[q.length - 3 + u] as number
+  let v0 = q[q.length - 3 + v] as number
+  for (let i = 0; i < q.length; i += 3) {
+    const u1 = q[i + u] as number
+    const v1 = q[i + v] as number
+    if (v0 > pv !== v1 > pv && pu < u0 + ((pv - v0) * (u1 - u0)) / (v1 - v0))
+      inside = !inside
+    u0 = u1
+    v0 = v1
+  }
+  return inside
+}
+
 /**
- * An ROI's closed planar contours as flat LPS triplets. CLOSEDPLANAR_XOR
- * contours combine by exclusive-or, which the even-odd fill already does.
+ * -1 for a hole (wholly inside an odd number of the other rings), else +1.
+ * shortcut: vertex containment, not edge crossings; exact for nested rings.
  */
-export function roiContours(roi: RtRoi): Float64Array[] {
-  const out: Float64Array[] = []
+function holeSigns(group: Float64Array[], u: number, v: number): number[] {
+  return group.map((p, k) => {
+    let depth = 0
+    for (let j = 0; j < group.length; j++) {
+      if (j === k) continue
+      const q = group[j] as Float64Array
+      let contained = true
+      for (let i = 0; i < p.length && contained; i += 3)
+        contained = pointInRing(q, u, v, p[i + u] as number, p[i + v] as number)
+      if (contained) depth++
+    }
+    return depth % 2 ? -1 : 1
+  })
+}
+
+/** A row's crossings (tagged by contour) as [enter, exit] pairs of the union. */
+function unionSpans(xs: number[], ks: number[], signs: number[]): number[] {
+  const order = xs
+    .map((_, i) => i)
+    .sort((a, b) => (xs[a] as number) - (xs[b] as number))
+  const inside = new Uint8Array(signs.length)
+  const spans: number[] = []
+  let level = 0
+  for (const i of order) {
+    const k = ks[i] as number
+    const entering = !inside[k]
+    inside[k] = entering ? 1 : 0
+    const was = level
+    level += (entering ? 1 : -1) * (signs[k] as number)
+    if (was > 0 !== level > 0) spans.push(xs[i] as number)
+  }
+  return spans
+}
+
+/**
+ * An ROI's closed planar contours as flat LPS triplets, and whether any is
+ * CLOSEDPLANAR_XOR (filled even-odd, see rasterizeContours).
+ */
+export function roiContours(roi: RtRoi): {
+  contours: Float64Array[]
+  xor: boolean
+} {
+  const contours: Float64Array[] = []
+  let xor = false
   for (const c of roi.contourPoints ?? []) {
     if (c.type !== 'CLOSED_PLANAR' && c.type !== 'CLOSEDPLANAR_XOR') continue
-    out.push(Float64Array.from(c.points.flatMap((pt) => [pt.x, pt.y, pt.z])))
+    xor ||= c.type === 'CLOSEDPLANAR_XOR'
+    contours.push(
+      Float64Array.from(c.points.flatMap((pt) => [pt.x, pt.y, pt.z])),
+    )
   }
-  return out
+  return { contours, xor }
 }
 
 /** An RT drawing's per-ROI stats and its refill showing only `visible` ROIs. */
@@ -418,7 +500,8 @@ export function rasterizeStructureSet(
   >)[] = []
   for (const roi of rois) {
     if (drawn.length === 255) break
-    const r = rasterizeContours(dims, lps2vox, roiContours(roi))
+    const { contours, xor } = roiContours(roi)
+    const r = rasterizeContours(dims, lps2vox, contours, xor)
     if (r.count) drawn.push({ roi, value: drawn.length + 1, ...r })
   }
   const bySize = [...drawn].sort((a, b) => b.count - a.count)

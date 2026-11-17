@@ -43,8 +43,15 @@ import {
   loadConversion,
 } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import {
+  applyViewportStyle,
+  baseStyle,
+  overlayDisplaySets,
+  useHungOverlays,
+} from './hangingOptions'
 import { useAnnotationHistory } from './history'
 import { MeasurementData } from './measurementData'
+import { useMipTools } from './mipTools'
 import {
   authHeaders,
   getNiivueEntry,
@@ -184,6 +191,15 @@ export function NiivueViewport(props: OhifViewportProps) {
     loadedSeries,
     servicesManager,
   )
+  // Display sets 1.. layer over the base (TMTV fusion), as cornerstone's.
+  useHungOverlays(
+    ready ? nvRef.current : null,
+    viewportId,
+    displaySets,
+    props.displaySetOptions,
+    loadedSeries,
+    props.commandsManager,
+  )
   // Base window, shown lower left as cornerstone's viewport overlay does.
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.
@@ -192,6 +208,13 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [crosshairValue, setCrosshairValue] = useState<string | null>(null)
   // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
   const [isRender, setIsRender] = useState(false)
+  // TMTV's MIP pane: wheel rotates, a click jumps to the brightest voxel.
+  useMipTools(
+    ready ? nvRef.current : null,
+    containerRef.current,
+    toolGroupId,
+    servicesManager,
+  )
 
   // OHIF can re-render with fresh displaySets/servicesManager object
   // identities on unrelated state changes (e.g. toolbar interactions). Effects
@@ -251,6 +274,12 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.sliceType = initialSliceType(viewportOptionsRef.current)
       const view = initialRenderView(viewportOptionsRef.current)
       if (view) [nv.azimuth, nv.elevation] = view
+      applyViewportStyle(
+        nv,
+        canvas,
+        viewportOptionsRef.current,
+        displaySetOptionsRef.current,
+      )
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
       // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
@@ -501,7 +530,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
 
     // Every outcome names the display sets not shown.
-    const extraNote = extraDisplaySetsNote(displaySets)
+    const overlays = overlayDisplaySets(displaySets)
+    const extraNote = extraDisplaySetsNote(
+      displaySets.filter((d) => !overlays.includes(d)),
+    )
     const withExtra = (message?: string) =>
       [message, extraNote].filter(Boolean).join(' ')
     // Loaded: show any notes briefly; the clear never touches a newer status.
@@ -528,7 +560,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       initialSliceType(viewportOptionsRef.current) === SLICE_TYPE.RENDER
         ? displayPresetColormap(displaySetOptionsRef.current, ds.Modality)
         : undefined
-    const spec = preset ? { colormap: preset } : voi
+    const style = baseStyle(nv, displaySetOptionsRef.current)
+    const spec = { ...style, ...(preset ? { colormap: preset } : voi) }
 
     // Record the base volume's initial window/level as the readout
     // baseline, so the first manual contrast drag is detected as a change.
@@ -752,8 +785,11 @@ export function NiivueViewport(props: OhifViewportProps) {
         // The DICOM window of the instances this output was made of.
         const dicomSpec = preset
           ? spec
-          : (voiRange(displaySetOptionsRef.current) ??
-            dicomWindow(ds, converted.sliceFrames))
+          : {
+              ...style,
+              ...(voiRange(displaySetOptionsRef.current) ??
+                dicomWindow(ds, converted.sliceFrames)),
+            }
         return loadConversion(
           nv,
           viewportId,

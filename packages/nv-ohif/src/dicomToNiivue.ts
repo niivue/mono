@@ -185,7 +185,14 @@ export async function loadConversion(
   nv: Pick<NiiVue, 'prepareVolume' | 'loadVolumes'>,
   viewportId: string,
   converted: DicomConversion,
-  spec: { calMin?: number; calMax?: number; colormap?: string } | undefined,
+  spec:
+    | {
+        calMin?: number
+        calMax?: number
+        colormap?: string
+        isColormapInverted?: boolean
+      }
+    | undefined,
   cancelled: () => boolean,
 ): Promise<boolean> {
   // The converted file's own name (.nii) lets NiiVue sniff the format.

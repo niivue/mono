@@ -205,7 +205,7 @@ const CORNERSTONE_COLORMAPS: Record<string, string> = {
  * The registered NiiVue colormap for a name or `{ name }` (OHIF passes
  * either), or undefined when NiiVue has no such LUT.
  */
-function niivueColormapName(
+export function niivueColormapName(
   registered: readonly string[],
   colormap: unknown,
 ): string | undefined {
@@ -1632,12 +1632,13 @@ export function cornerstoneWindowingStep(vol: {
   return [perPixel / robust, -perPixel / robust]
 }
 
-/** A hanging protocol's initial window (`displaySetOptions[0].options.voi`). */
+/** A hanging protocol's initial window (`displaySetOptions[i].options.voi`). */
 export function voiRange(
   displaySetOptions: OhifViewportProps['displaySetOptions'],
+  i = 0,
 ): { calMin: number; calMax: number } | undefined {
   // Cornerstone's mapDisplaySetOptions accepts `item.options || item`.
-  const d = displaySetOptions?.[0]
+  const d = displaySetOptions?.[i]
   const options = (d?.options ?? d) as
     | { voi?: { windowWidth?: unknown; windowCenter?: unknown } }
     | undefined
@@ -1860,14 +1861,33 @@ export function getNiivueCommandsModule({
      * Add a series of the study as an overlay on the base (fetch + dcm2niix
      * conversion for DICOM): `displaySetInstanceUID`, else the next loadable
      * one. A load in flight is cancelled first; without a chosen series that
-     * is all a call does (the Overlay toggle's second press).
+     * is all a call does (the Overlay toggle's second press). `viewportId`
+     * (else the active one) and the style options serve hanging protocols.
      */
     niivueAddOverlay: async ({
       displaySetInstanceUID,
+      viewportId: targetViewportId,
+      colormap = OVERLAY_COLORMAP,
+      opacity = OVERLAY_OPACITY,
+      calMin,
+      calMax,
+      colormapType,
     }: {
       displaySetInstanceUID?: string
+      viewportId?: string
+      colormap?: string
+      opacity?: number
+      calMin?: number
+      calMax?: number
+      colormapType?: number
     } = {}) => {
-      const entry = getActiveNiivueEntry(servicesManager)
+      const entry = targetViewportId
+        ? getNiivueEntry(targetViewportId)
+        : getActiveNiivueEntry(servicesManager)
+      const overlayWindow = {
+        ...(calMin === undefined ? {} : { calMin, calMax }),
+        ...(colormapType === undefined ? {} : { colormapType }),
+      }
       if (!entry) return
       // Cancelling releases the entry at once, so a new load can start while
       // the old one tears down.
@@ -1970,8 +1990,9 @@ export function getNiivueCommandsModule({
         if (direct) {
           added = await addOverlayGuarded({
             ...direct,
-            colormap: OVERLAY_COLORMAP,
-            opacity: OVERLAY_OPACITY,
+            colormap,
+            opacity,
+            ...overlayWindow,
           })
         } else {
           writeStatus(entry, `Fetching overlay: ${label}...`, 'loading')
@@ -1996,8 +2017,9 @@ export function getNiivueCommandsModule({
           added = await addOverlayGuarded({
             url: converted.image,
             name: converted.image.name,
-            colormap: OVERLAY_COLORMAP,
-            opacity: OVERLAY_OPACITY,
+            colormap,
+            opacity,
+            ...overlayWindow,
           })
         }
         if (!added || !owns()) return

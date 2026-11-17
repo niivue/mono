@@ -1,3 +1,25 @@
+## 1.0.0-rc.213 (2026-11-17)
+
+### Features
+
+- **niivue:** measureAngle, measureCobbAngle; click-to-place bidirectional short axis ([f3b51b62](https://github.com/niivue/mono/commit/f3b51b62))
+- **niivue:** measurePoint annotation reads the base value at a clicked voxel ([997005a0](https://github.com/niivue/mono/commit/997005a0))
+
+### Fixes
+
+- **niivue:** close-click test in bounds-local pixels; nv-mcp removes several annotations, undoably ([#834](https://github.com/niivue/mono/issues/834))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.218
+- Updated uikit to 1.0.0-rc.216
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.212 (2026-11-17)
 
 ### Updated Dependencies

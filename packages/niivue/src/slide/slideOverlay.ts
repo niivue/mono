@@ -9,10 +9,17 @@ import {
 } from '@/view/NVMeasurement'
 import { chooseRulerSize, scaleBarLines } from '@/view/NVRuler'
 import type { NVSlide, NVSlideScreen } from './NVSlide'
+import {
+  isClosedSlideTool,
+  type SlideAnnotationStats,
+  type SlideAnnotationTool,
+  slideAnnotationOutline,
+  slideAnnotationStats,
+} from './slideAnnotations'
 import type { NVSlideController, NVSlidePoint } from './slideController'
 
 /** Overlay capacity: lines and glyphs a slide renderer draws per frame. */
-export const SLIDE_OVERLAY_MAX_LINES = 1024
+export const SLIDE_OVERLAY_MAX_LINES = 4096
 export const SLIDE_OVERLAY_MAX_GLYPHS = 2048
 
 /** NiiVue's ruler, scale bar (`isRulerVisible`) and selection-box styling. */
@@ -32,11 +39,16 @@ export type SlideOverlayStyle = Pick<
 export type SlideOverlaySource = Pick<
   NVSlideController,
   'measurements' | 'activeMeasurement' | 'selection'
->
+> &
+  Partial<Pick<NVSlideController, 'annotations' | 'draft'>>
 
 /** What a slide renderer draws over the tiles, in device pixels. */
 export interface SlideOverlayContent {
   rulers: ScreenRuler[]
+  /** Annotation outlines as segments, x0 y0 x1 y1 each; off-screen ones culled. */
+  segments: number[]
+  /** Annotation labels: text with its lower-left corner at x, y. */
+  labels: Array<{ x: number; y: number; text: string }>
   box: { x0: number; y0: number; x1: number; y1: number } | null
   scaleBar: {
     x: number
@@ -70,6 +82,35 @@ export function slideScaleBar(
     : null
 }
 
+// Sub-millimetre sizes read in micrometres, the scale most slides live at.
+// ASCII only: the font atlas has no micro or superscript glyphs.
+function formatLength(v: number, unit: 'mm' | 'px'): string {
+  if (unit === 'px') return `${Math.round(v)} px`
+  return v < 1 ? `${(v * 1000).toFixed(1)} um` : `${v.toFixed(2)} mm`
+}
+
+function formatArea(v: number, unit: 'mm' | 'px'): string {
+  if (unit === 'px') return `${Math.round(v)} px2`
+  if (v >= 1) return `${v.toFixed(3)} mm2`
+  const um2 = v * 1e6
+  // Sub-micrometre pixels make areas below 1 um2; whole numbers would read 0.
+  return `${um2 >= 1 || um2 === 0 ? um2.toFixed(0) : um2.toPrecision(2)} um2`
+}
+
+/** An annotation's overlay text: its label, then its area or length. */
+export function slideAnnotationText(
+  label: string,
+  stats: SlideAnnotationStats,
+): string {
+  const size =
+    stats.area !== undefined
+      ? formatArea(stats.area, stats.unit)
+      : stats.length !== undefined
+        ? formatLength(stats.length, stats.unit)
+        : ''
+  return [label, size].filter(Boolean).join(' ')
+}
+
 /**
  * Rulers and the contrast selection box, placed for the slide's current view.
  * Lengths use the slide's `pixelSpacingMM` (a sub-millimetre span reads in
@@ -92,7 +133,13 @@ export function slideOverlayContent(
   const all = source.activeMeasurement
     ? [...source.measurements, source.activeMeasurement]
     : source.measurements
-  const rulers = all.map(({ start, end }): ScreenRuler => {
+  const ruler = ({
+    start,
+    end,
+  }: {
+    start: NVSlidePoint
+    end: NVSlidePoint
+  }) => {
     const [sx, sy] = toDevice(start)
     const [ex, ey] = toDevice(end)
     const dx = end.x - start.x
@@ -105,7 +152,95 @@ export function slideOverlayContent(
     }
     const label = `${Math.round(Math.hypot(dx, dy))} px`
     return { sx, sy, ex, ey, distance: 0, label }
-  })
+  }
+  const rulers: ScreenRuler[] = all.map(ruler)
+  const segments: number[] = []
+  const labels: SlideOverlayContent['labels'] = []
+  const W = screen.widthCss * dpr
+  const H = screen.heightCss * dpr
+  const onScreen = (x0: number, y0: number, x1: number, y1: number) => {
+    if (
+      Math.max(x0, x1) < 0 ||
+      Math.min(x0, x1) > W ||
+      Math.max(y0, y1) < 0 ||
+      Math.min(y0, y1) > H
+    )
+      return false
+    // A diagonal's box can overlap the view while the line passes a corner:
+    // it crosses the view only if the corners are not all on one side of it.
+    const dx = x1 - x0
+    const dy = y1 - y0
+    const side = (x: number, y: number) => dx * (y - y0) - dy * (x - x0)
+    const sides = [side(0, 0), side(W, 0), side(0, H), side(W, H)]
+    return Math.min(...sides) <= 0 && Math.max(...sides) >= 0
+  }
+  const segment = (x0: number, y0: number, x1: number, y1: number) => {
+    if (onScreen(x0, y0, x1, y1)) segments.push(x0, y0, x1, y1)
+  }
+  const shape = (
+    tool: SlideAnnotationTool,
+    points: NVSlidePoint[],
+    label: string,
+    stats: SlideAnnotationStats | null,
+  ) => {
+    if (tool === 'line') {
+      const [start, end] = points as [NVSlidePoint, NVSlidePoint]
+      const r = ruler({ start, end })
+      // Off-screen lines would fill the renderer's line cap before visible ones.
+      if (!onScreen(r.sx, r.sy, r.ex, r.ey)) return
+      rulers.push(r)
+      if (label) labels.push({ x: r.ex + 4 * dpr, y: r.ey, text: label })
+      return
+    }
+    const outline = slideAnnotationOutline(tool, points).map(toDevice)
+    // A press not yet dragged: an ellipse or circle with no size.
+    if (!outline[0]) return
+    const drawn = segments.length
+    let [px, py] = outline[0]
+    let right = px
+    let top = py
+    if (tool === 'point') {
+      const r = 4 * dpr
+      segment(px - r, py, px + r, py)
+      segment(px, py - r, px, py + r)
+    }
+    // Vertices under a device pixel apart add lines, not detail.
+    for (const [x, y] of outline.slice(1)) {
+      if (Math.abs(x - px) < 1 && Math.abs(y - py) < 1) continue
+      segment(px, py, x, y)
+      px = x
+      py = y
+      right = Math.max(right, x)
+      top = Math.min(top, y)
+    }
+    if (isClosedSlideTool(tool)) {
+      const [x0, y0] = outline[0] as [number, number]
+      segment(px, py, x0, y0)
+    }
+    const text = stats ? slideAnnotationText(label, stats) : label
+    // Kept on screen while any of the shape is (zoomed into a large ROI).
+    if (text && segments.length > drawn)
+      labels.push({
+        x: Math.min(right, W) + 4 * dpr,
+        y: Math.max(top, 0),
+        text,
+      })
+  }
+  for (const a of source.annotations?.list() ?? [])
+    shape(a.tool, a.points, a.label, a.stats)
+  const draft = source.draft
+  if (draft) {
+    // A polygon being clicked is an open path until it closes.
+    const isPolygon = draft.tool === 'polygon'
+    shape(
+      isPolygon ? 'freehandLine' : draft.tool,
+      draft.points,
+      '',
+      isPolygon
+        ? null
+        : slideAnnotationStats(draft.tool, draft.points, spacing),
+    )
+  }
   let box: SlideOverlayContent['box'] = null
   if (source.selection) {
     const [x0, y0] = toDevice(source.selection.start)
@@ -130,7 +265,7 @@ export function slideOverlayContent(
         thickness: 4 * dpr,
       }
     : null
-  return { rulers, box, scaleBar, style: fullStyle }
+  return { rulers, segments, labels, box, scaleBar, style: fullStyle }
 }
 
 /** The overlay as line and glyph batches, for either backend's renderers. */
@@ -199,6 +334,24 @@ export function buildSlideOverlay(
       1,
     )
     if (label.count > 0) out.labels.push(label)
+  }
+  // Last: past the line cap, annotations drop before the rulers and the bar.
+  const { measureLineColor, measureTextColor, rulerWidth } = content.style
+  const s = content.segments
+  for (let i = 0; i < s.length; i += 4)
+    out.lines.push(
+      buildLine(
+        s[i] as number,
+        s[i + 1] as number,
+        s[i + 2] as number,
+        s[i + 3] as number,
+        rulerWidth,
+        measureLineColor,
+      ),
+    )
+  for (const { x, y, text } of content.labels) {
+    const batch = buildText(text, x, y, 0.8, measureTextColor, 0, 1)
+    if (batch.count > 0) out.labels.push(batch)
   }
   return out
 }

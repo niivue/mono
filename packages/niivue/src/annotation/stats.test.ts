@@ -51,6 +51,37 @@ describe('computeAnnotationStats', () => {
     expect(stats?.max).toBe(3)
   })
 
+  test('measures a constructed angle', () => {
+    const right = {
+      ...annotation([]),
+      shape: {
+        type: 'measureAngle' as const,
+        start: { x: 10, y: 0 },
+        end: { x: 0, y: 0 },
+        start2: { x: 0, y: 0 },
+        end2: { x: 0, y: 10 },
+      },
+    }
+    expect(computeAnnotationStats(right, volume)?.angle).toBeCloseTo(90, 9)
+  })
+
+  // Review of #836: on an oblique slice the 2D arms project to 53.13 degrees
+  // for a drawn right angle; recomputing keeps the angle drawing recorded.
+  test('keeps the angle recorded on an oblique slice', () => {
+    const oblique = {
+      ...annotation([]),
+      shape: {
+        type: 'measureAngle' as const,
+        start: { x: 10, y: 5 },
+        end: { x: 0, y: 0 },
+        start2: { x: 0, y: 0 },
+        end2: { x: 10, y: -5 },
+      },
+      stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, angle: 90 },
+    }
+    expect(computeAnnotationStats(oblique, volume)?.angle).toBe(90)
+  })
+
   test('skips voxels with no data (NaN)', () => {
     const holed = new Float32Array(img)
     holed[1] = Number.NaN

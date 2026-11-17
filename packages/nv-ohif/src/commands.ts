@@ -1993,6 +1993,7 @@ export function getNiivueCommandsModule({
           added = await addOverlayGuarded({
             url: converted.image,
             name: converted.image.name,
+            frameSource: converted.frames,
             colormap,
             opacity,
             ...overlayWindow,

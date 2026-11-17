@@ -1,6 +1,8 @@
 import type NiiVue from '@niivue/niivue'
+import type { VolumeFrameSource } from '@niivue/niivue'
 import { isPart, outputEcho, rankOutputs } from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
+import { split4D } from './frames4D'
 import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
@@ -73,6 +75,8 @@ export interface DicomConversion {
   note?: string
   /** Slice -> source frame of `image`, for measurement identity. */
   sliceFrames?: SliceFrames
+  /** A 4D series: `image` is frame 0, frames come from here (frames4D.ts). */
+  frames?: VolumeFrameSource
   /** dcm2niix's sidecar for `image` (a SEG's names its segments). */
   json?: Record<string, unknown>
   /**
@@ -183,8 +187,10 @@ async function convertUnshared(
     notes.unshift(
       `Showing ${shown.stem}; also converted: ${unshown.map((s) => s.stem).join(', ')}.`,
     )
+  const split = await split4D(shown.image)
   return {
-    image: shown.image,
+    image: split?.image ?? shown.image,
+    ...(split && { frames: split.frames }),
     json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames,
@@ -218,6 +224,7 @@ export async function loadConversion(
     const volume = await nv.prepareVolume({
       url: image,
       name: image.name,
+      frameSource: converted.frames,
       ...spec,
     })
     // A swapped-away load must not replace the newer base.

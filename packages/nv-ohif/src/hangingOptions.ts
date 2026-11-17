@@ -17,6 +17,7 @@ type Options = {
   colormap?: unknown
   voiInverted?: boolean
   blendMode?: string
+  slabThickness?: unknown
 }
 type DisplaySetOptions = OhifViewportProps['displaySetOptions']
 
@@ -24,9 +25,40 @@ type DisplaySetOptions = OhifViewportProps['displaySetOptions']
 const optionsAt = (dso: DisplaySetOptions, i: number): Options =>
   ((dso?.[i]?.options ?? dso?.[i]) as Options | undefined) ?? {}
 
-/** A full-volume MIP (TMTV's MIP pane): a NiiVue maximum-intensity render. */
-export const isMip = (dso: DisplaySetOptions): boolean =>
-  optionsAt(dso, 0).blendMode === 'MIP'
+/**
+ * A full-volume MIP (TMTV's MIP pane): a NiiVue maximum-intensity render.
+ * Without `slabThickness` cornerstone's MIP spans its minimal slab, a slice
+ * (the 4D demo's PT panes).
+ */
+export const isMip = (dso: DisplaySetOptions): boolean => {
+  const { blendMode, slabThickness } = optionsAt(dso, 0)
+  return (
+    blendMode === 'MIP' && String(slabThickness).toLowerCase() === 'fullvolume'
+  )
+}
+
+// vtk.js's '2hot' preset (cornerstone's PET colormap in the 4D demo), which
+// NiiVue lacks; interpolated in RGB, not vtk's Lab. Alpha as NiiVue's 'hot'.
+const TWO_HOT = {
+  R: [
+    11, 53, 96, 138, 181, 218, 239, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255,
+  ],
+  G: [0, 0, 0, 0, 0, 0, 10, 53, 96, 138, 181, 219, 242, 255, 255, 255, 255],
+  B: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 40, 80, 143, 207, 255],
+  I: [
+    0, 16, 32, 49, 65, 81, 97, 113, 130, 146, 162, 178, 194, 210, 227, 243, 255,
+  ],
+}
+
+/** Register the cornerstone colormaps NiiVue lacks (once; the registry is global). */
+export function addCornerstoneColormaps(nv: NiiVue): void {
+  if (!niivueColormapName(nv.colormaps, '2hot'))
+    nv.addColormap('2hot', {
+      ...TWO_HOT,
+      A: TWO_HOT.I.map((i) => Math.round(i / 2)),
+    })
+}
 
 type Point = { value: number; opacity: number }
 type OverlayStyle = { colormap?: string; opacity?: number; knee?: number }

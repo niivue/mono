@@ -16,6 +16,7 @@ import {
   type Dispatch,
   type SetStateAction,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -30,6 +31,7 @@ import {
   dicomWindow,
   initialRenderView,
   initialSliceType,
+  NIIVUE_SLICE_TYPES,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
@@ -48,7 +50,9 @@ import {
   loadConversion,
 } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import { joinFrames } from './frames4D'
 import {
+  addCornerstoneColormaps,
   applyViewportStyle,
   baseStyle,
   overlayDisplaySets,
@@ -96,6 +100,11 @@ import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { displayPresetColormap } from './vrPresets'
 import { wsiFetch, wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
 import { mountWsiSlideView, type WsiSlideView } from './wsiSlideView'
+
+const viewName = (sliceType: number | undefined) =>
+  Object.keys(NIIVUE_SLICE_TYPES).find(
+    (k) => NIIVUE_SLICE_TYPES[k] === sliceType,
+  )
 
 // Default NiiVue config for the OHIF viewport. Opens multiplanar (set after attach)
 // so an OHIF user sees the three orthogonal planes; the toolbar (later) can switch to
@@ -336,7 +345,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   // Base intensity at the crosshair (cornerstone has no such readout; Probe pins one).
   const [crosshairValue, setCrosshairValue] = useState<string | null>(null)
   // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
-  const [isRender, setIsRender] = useState(false)
+  const [sliceType, setSliceType] = useState<number>()
+  const isRender = sliceType === SLICE_TYPE.RENDER
   // TMTV's MIP pane: wheel rotates, a click jumps to the brightest voxel.
   useMipTools(
     ready ? nvRef.current : null,
@@ -422,6 +432,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // the font loads); torn down on unmount.
     let annotationOverlay: VolumeAnnotationOverlay | null = null
     let unregisterAnnotation: (() => void) | null = null
+    let leaveFrames: (() => void) | null = null
     let unfloorSuv: (() => void) | null = null
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
@@ -435,6 +446,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // Catching the chained promise also covers a throw in the ready callback.
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
+      addCornerstoneColormaps(nv)
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
       // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
@@ -459,6 +471,12 @@ export function NiivueViewport(props: OhifViewportProps) {
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
+      leaveFrames = joinFrames(
+        viewportId,
+        nv,
+        servicesManagerRef.current,
+        container.parentElement,
+      )
       unfloorSuv = floorSuvWindow(
         nv,
         () => unitForDisplaySet(displaySetsRef.current[0]) === 'SUV',
@@ -529,7 +547,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     nv.addEventListener('locationChange', showStack)
     nv.addEventListener('sliceTypeChange', showStack)
-    const showRender = () => setIsRender(nv.sliceType === SLICE_TYPE.RENDER)
+    const showRender = () => setSliceType(nv.sliceType)
     showRender()
     nv.addEventListener('sliceTypeChange', showRender)
 
@@ -598,6 +616,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // the module-level reflection maps would leak across every unmount
       // (StrictMode double-mount, route / layout churn).
       clearNiivueAnnotations(viewportId, servicesManagerRef.current)
+      leaveFrames?.()
       unfloorSuv?.()
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
@@ -1040,6 +1059,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     return () => sub?.unsubscribe?.()
   }, [ready, servicesManager, toolGroupId, viewportId])
 
+  // Per render it would rescan a 4D PET's 9400 instances (SUV decay time) on every frame.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: petSUV edits bump metadataRevision
+  const unit = useMemo(
+    () => unitForDisplaySet(displaySets[0]),
+    [displaySets[0], metadataRevision],
+  )
   const overlay = status.kind === 'idle' ? null : status.message
   return (
     <div
@@ -1047,6 +1072,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       // OHIF's viewport attribute (cornerstone sets it): OHIF tooling and specs find panes by it.
       data-viewportid={viewportId}
       data-loaded={isLoaded || undefined}
+      // The pane's view (axial, ..., render): asserted against the protocol.
+      data-view={viewName(sliceType)}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
@@ -1072,7 +1099,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         nv={ready ? nvRef.current : null}
         slide={isLoaded ? slideViewRef.current?.annotations : undefined}
         viewportId={viewportId}
-        unit={unitForDisplaySet(displaySets[0])}
+        unit={unit}
       />
       {/* Reconstructable volumes only, as cornerstone's evaluate.orientationMenu:
           a whole slide or a lone/orthogonal image has no other plane. */}
@@ -1094,7 +1121,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           {crosshairValue !== null ? (
             <CrosshairValueReadout
               value={crosshairValue}
-              unit={unitForDisplaySet(displaySets[0])}
+              unit={unit}
               aboveStack={!!stack}
             />
           ) : null}

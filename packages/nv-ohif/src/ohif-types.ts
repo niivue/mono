@@ -176,6 +176,7 @@ export interface OhifExtension {
   ) => OhifSopClassHandlerEntry[]
   getCommandsModule?: (context: OhifExtensionParams) => OhifCommandsModule
   getToolbarModule?: (context: OhifExtensionParams) => OhifToolbarModuleEntry[]
+  getPanelModule?: (context: OhifExtensionParams) => unknown[]
   getCustomizationModule?: (
     context: OhifExtensionParams,
   ) => OhifCustomizationModuleEntry[]

@@ -44,12 +44,12 @@
         <div class="pane"><canvas id="parent"></canvas></div>
         <div class="pane"><canvas id="copy"></canvas></div>
       </div>
-      <footer><span id="help">Right-click two corners (on a slice or the 3D render); Shift+right-click keeps the menu.</span><span id="status" data-state="wait">Loading volume...</span></footer>
+      <footer><span id="help">Right-click two corners (on a slice or the 3D render); the steps are in the right pane.</span><span id="status" data-state="wait">Loading volume...</span></footer>
     </div>
 
     <script type="module">
       import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '@niivue/niivue'
-      import { loadDefaultFont, UIKitButtonOverlay, UIKitSubvolumeSelector } from './src/index.ts'
+      import { loadDefaultFont, UIKitButtonOverlay, UIKitSubvolumeSelector, UIKitTextOverlay } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -111,8 +111,40 @@
       })
       selector.attach(nv)
 
+      const font = await loadDefaultFont()
+      // How-to text on the copy pane while it is empty, laid out per frame size.
+      const steps = [
+        ['Select a sub-volume', 1],
+        ['1. Right-click the first corner, on a slice or the 3D render.', 0.8],
+        ['2. Move the pointer: the box follows it.', 0.8],
+        ['3. Right-click the second corner: the box is copied here.', 0.8],
+        ['In 3D, a corner over empty space takes the first corner\'s depth.', 0.75],
+        ['Right-click again for a new box; Clear empties this pane.', 0.75],
+        ['Shift+right-click still opens the context menu.', 0.75],
+      ]
+      const text = new UIKitTextOverlay(font)
+      let laidOut = ''
+      copy.placeholderText = ''
+      copy.registerOverlayRenderer({
+        drawOverlay(frame) {
+          if (copy.volumes.length) return
+          const { x, y, width, height } = frame.bounds
+          const key = `${width}x${height}x${frame.dpr}`
+          if (key !== laidOut) {
+            laidOut = key
+            const size = Math.min(28 * frame.dpr, width / 26)
+            let top = y + height / 2 - 3.5 * size * 1.6
+            text.setItems(steps.map(([str, k]) => {
+              top += size * 1.6
+              return { str, x: x + width / 2, y: top, sizePx: size * k, align: 0.5, color: [0.85, 0.85, 0.9, k === 1 ? 1 : 0.85] }
+            }))
+          }
+          text.drawOverlay(frame)
+        },
+      })
+
       // A Clear button on the copy: forget the box and empty the pane.
-      const buttons = new UIKitButtonOverlay(await loadDefaultFont(), { cssUnits: true })
+      const buttons = new UIKitButtonOverlay(font, { cssUnits: true })
       copy.registerOverlayRenderer(buttons)
       buttons.attach(copy)
       buttons.addButton({

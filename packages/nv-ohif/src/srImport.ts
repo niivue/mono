@@ -273,6 +273,10 @@ type RowService = {
   ) => { unsubscribe: () => void }
 }
 
+// Released rows mid-adoption: adding one broadcasts it synchronously, and it
+// stays released until that add returns.
+const adopting = new Set<string>()
+
 /** Take other sources' rows on `seriesUid` into `nv` once its volume is shown. */
 export function useOhifRowImport(
   nv: NiiVue | null,
@@ -292,6 +296,7 @@ export function useOhifRowImport(
       // NiiVue rows are this or another pane's, unless released by one.
       const released = isReleasedRow(row.uid)
       if (row.source?.name === 'NiiVue' && !released) return
+      if (adopting.has(row.uid)) return
       if (row.referenceSeriesUID !== seriesUid) return
       // Not a pane already swapping to another series (its effect re-runs).
       const entries = [...niivueEntries()]
@@ -316,12 +321,16 @@ export function useOhifRowImport(
       // reflected under its own uid, so jumps and tracking keep pointing at it.
       // Marked only for the synchronous add, so no id outlives it.
       programmaticAnnotations.add(annotation.id)
-      if (released) adoptedRowUids.set(annotation.id, row.uid)
+      if (released) {
+        adoptedRowUids.set(annotation.id, row.uid)
+        adopting.add(row.uid)
+      }
       try {
         nv.addAnnotation(annotation)
       } finally {
         programmaticAnnotations.delete(annotation.id)
         adoptedRowUids.delete(annotation.id)
+        adopting.delete(row.uid)
       }
       if (!reflectedRowUid(annotation.id)) nv.removeAnnotation(annotation.id)
       else if (!released) ms.remove?.(row.uid)

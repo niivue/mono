@@ -545,10 +545,12 @@ export function resampleLabel(
   label: Uint8Array,
   from: RasGrid,
   to: RasGrid,
+  // Values for `to` voxels outside `from` (default 0).
+  outside?: Uint8Array,
 ): Uint8Array {
   const [fx, fy, fz] = from.dims
   const [tx, ty, tz] = to.dims
-  const out = new Uint8Array(tx * ty * tz)
+  const out = outside ? outside.slice() : new Uint8Array(tx * ty * tz)
   const m = compose(invertAffine(from.affine), to.affine)
   if (
     fx === tx &&

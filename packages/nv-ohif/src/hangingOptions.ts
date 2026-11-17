@@ -137,7 +137,12 @@ export function applyViewportStyle(
     ]
     nv.backgroundColor = [r, g, b, 1]
   }
-  if (!mip) return
+  if (!mip) {
+    // Leaving a MIP: the view effect re-sets the slice type and camera.
+    if (nv.volumeRenderMode === VOLUME_RENDER_MODE.MAXIMUM)
+      nv.volumeRenderMode = VOLUME_RENDER_MODE.COMPOSITE
+    return
+  }
   nv.sliceType = SLICE_TYPE.RENDER
   nv.volumeRenderMode = VOLUME_RENDER_MODE.MAXIMUM
   const view = initialRenderView({
@@ -162,50 +167,73 @@ export function useHungOverlays(
 ): void {
   const overlays = overlayDisplaySets(displaySets)
   const key = overlays.map((ds) => ds.displaySetInstanceUID).join('|')
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base load and overlay UIDs
+  const styleKey = JSON.stringify(
+    overlays.map((ds) => optionsAt(dso, displaySets.indexOf(ds))),
+  )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base load and the overlays' UIDs and options
   useEffect(() => {
     if (!nv || !loadedSeries || !commandsManager) return
     // A newer overlay set or base load supersedes this run.
     let stale = false
+    // The load this run started, aborted by the cleanup.
+    let pending: AbortController | undefined
     void (async () => {
       for (const ds of overlays) {
         if (stale) return
         const i = displaySets.indexOf(ds)
+        const uid = String(ds.displaySetInstanceUID)
         const { knee, ...style } = niivueColormap(
           nv,
           optionsAt(dso, i).colormap,
         )
         const voi = voiRange(dso, i)
-        await commandsManager.runCommand(
+        const display = {
+          ...style,
+          ...(knee === undefined
+            ? voi
+            : {
+                colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN,
+              }),
+          ...(knee !== undefined && voi
+            ? {
+                calMin: voi.calMin + knee * (voi.calMax - voi.calMin),
+                calMax: voi.calMax,
+              }
+            : {}),
+        }
+        const entry = getNiivueEntry(viewportId)
+        const loaded = entry?.overlays.get(uid)
+        const index = loaded
+          ? nv.volumes.findIndex((v) => v.hdr === loaded)
+          : -1
+        if (loaded && index > 0) {
+          // Already layered (options changed): restyle in place.
+          await nv.setVolume(index, display)
+          if (knee === undefined) knees.delete(loaded)
+          else knees.set(loaded, knee)
+          continue
+        }
+        const before = entry?.overlayAbort
+        const run = commandsManager.runCommand(
           'niivueAddOverlay',
-          {
-            viewportId,
-            displaySetInstanceUID: ds.displaySetInstanceUID,
-            ...style,
-            ...(knee === undefined
-              ? voi
-              : {
-                  colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN,
-                }),
-            ...(knee !== undefined && voi
-              ? {
-                  calMin: voi.calMin + knee * (voi.calMax - voi.calMin),
-                  calMax: voi.calMax,
-                }
-              : {}),
-          },
+          { viewportId, displaySetInstanceUID: uid, ...display },
           'NIIVUE',
         )
-        const hdr = getNiivueEntry(viewportId)?.overlays.get(
-          String(ds.displaySetInstanceUID),
-        )
+        // niivueAddOverlay installs its controller before its first await.
+        const started = entry?.overlayAbort
+        pending = started === before ? undefined : started
+        await run
+        pending = undefined
+        const hdr = getNiivueEntry(viewportId)?.overlays.get(uid)
         if (hdr && knee !== undefined) knees.set(hdr, knee)
       }
     })()
     return () => {
       stale = true
+      // An overlay dropped (or restyled) mid-load must not install.
+      pending?.abort()
     }
-  }, [nv, loadedSeries, key])
+  }, [nv, loadedSeries, key, styleKey])
 }
 
 /** Display sets after the base that NiiVue layers as overlays. */

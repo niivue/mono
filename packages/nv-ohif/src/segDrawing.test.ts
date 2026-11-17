@@ -116,6 +116,20 @@ describe('resolveSegDisplaySets', () => {
     a.isHydrated = false
     expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
   })
+
+  // Round 21: removal un-hydrates the same object; reloading it makes it newest.
+  test('baseOnly_reloadedSegIsNewest', () => {
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: false }
+    const active = { ...lookup, getActiveDisplaySets: () => [a, b] }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+    b.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    a.isHydrated = false
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    a.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+  })
 })
 
 describe('startSegDrawing', () => {

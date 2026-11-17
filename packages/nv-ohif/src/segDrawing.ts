@@ -54,12 +54,13 @@ export function resolveSegDisplaySets(
     let hydrated: OhifDisplaySet | undefined
     let newest = 0
     for (const ds of baseUid ? (lookup?.getActiveDisplaySets?.() ?? []) : []) {
-      if (
-        !isSegOrRt(ds) ||
-        ds.referencedDisplaySetInstanceUID !== baseUid ||
-        ds.isHydrated !== true
-      )
+      if (!isSegOrRt(ds) || ds.referencedDisplaySetInstanceUID !== baseUid)
         continue
+      // Removal un-hydrates the same object; forget its order so a reload is newest.
+      if (ds.isHydrated !== true) {
+        hydratedOrder.delete(ds)
+        continue
+      }
       const order = hydratedOrder.get(ds) ?? ++hydrations
       hydratedOrder.set(ds, order)
       if (order > newest) [hydrated, newest] = [ds, order]

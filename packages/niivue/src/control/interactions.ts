@@ -754,12 +754,13 @@ interface ExplodedDrawPick {
 // getImageDataRAS reorders the whole volume when its native storage isn't already
 // a Float32Array in RAS order. During a 3D draw/vector stroke it would run on
 // every pointermove, so cache the result for the stroke (keyed by volume
-// identity); the cache is cleared on pointerup/pointercancel.
+// identity and displayed frame); the cache is cleared on pointerup/pointercancel.
 export function strokeSample(ctrl: NiiVue, vol: NVImage): Float32Array | null {
   const cache = ctrl._draw3DSampleCache
-  if (cache && cache.vol === vol) return cache.data
+  const frame = vol.frame4D ?? 0
+  if (cache && cache.vol === vol && cache.frame === frame) return cache.data
   const data = getImageDataRAS(displayedFrame(vol))
-  ctrl._draw3DSampleCache = data ? { vol, data } : null
+  ctrl._draw3DSampleCache = data ? { vol, frame, data } : null
   return data
 }
 

@@ -21,7 +21,7 @@ type Host = UIKitHost & {
 /** Shows a lens on the pane while OHIF's active tool is a magnifier. */
 export function createMagnifyBinding(nv: Host) {
   let detach: (() => void) | null = null
-  let current: string | undefined
+  let reregister: (() => void) | null = null
   const off = () => {
     detach?.()
     detach = null
@@ -29,17 +29,22 @@ export function createMagnifyBinding(nv: Host) {
   return {
     /** Re-register the lens last, after an overlay registered since. */
     raise(): void {
-      if (detach) this.setTool(current)
+      reregister?.()
     },
     setTool(tool: string | undefined): void {
-      current = tool
       off()
       const opts = tool ? LENS[tool] : undefined
       const canvas = nv.canvas
       if (!opts || !canvas) return
       // Registered last, so it magnifies the annotation overlay too.
       const lens = new UIKitMagnifierOverlay(opts)
-      const unregister = nv.registerOverlayRenderer(lens)
+      let unregister = nv.registerOverlayRenderer(lens)
+      // Moves only the overlay, so a press in progress keeps its state.
+      reregister = () => {
+        unregister()
+        unregister = nv.registerOverlayRenderer(lens)
+        nv.drawScene()
+      }
       // Core's pointer handlers bubble on the canvas, and DRAG_MODE.none does
       // not stop them rotating the camera: claim the left-button gesture
       // before they see it; other buttons keep their behavior. The binding
@@ -121,11 +126,9 @@ export function createMagnifyBinding(nv: Host) {
       const up = (e: PointerEvent) => {
         if (touches.delete(e.pointerId)) {
           e.stopImmediatePropagation()
-          // A tap places the glass without waiting.
-          if (wait) {
-            settle()
-            at(e)
-          }
+          settle()
+          // The glass goes where a lone touch lifts; a pinch leaves it put.
+          if (!pinned && !opts.held) at(e)
           pinch = touches.size === 2 ? { span: span(), zoom: lens.zoom } : null
           if (touches.size) return
           pinned = false
@@ -134,6 +137,7 @@ export function createMagnifyBinding(nv: Host) {
           e.stopImmediatePropagation()
           held = false
           if (opts.held) hide()
+          else if (e.pointerType !== 'touch') at(e)
         }
         // Touch fires pointerleave on every lift: the glass stays where it was put.
         if (
@@ -158,6 +162,7 @@ export function createMagnifyBinding(nv: Host) {
         for (const t of ends) canvas.removeEventListener(t, up, o)
       }
       detach = () => {
+        reregister = null
         settle()
         unwire()
         unregister()

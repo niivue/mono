@@ -60,13 +60,13 @@ function controller(tool: string, tilt = false) {
   initInteraction(nv)
   return nv
 }
-function press(nv: NiiVue, p: number[]) {
+function press(nv: NiiVue, p: number[], detail = 1) {
   point = p
   const e = {
     button: 0,
     pointerType: 'mouse',
     pointerId: 1,
-    detail: 1,
+    detail,
     clientX: 50,
     clientY: 50,
     shiftKey: false,
@@ -102,9 +102,7 @@ test('an angle on an oblique slice is the physical angle', () => {
   }
 })
 
-// Review of #834: a first bidirectional drag is in progress; cancelling it
-// ends the drag, so the release commits nothing.
-test('cancelAnnotationInProgress ends a bidirectional drag', () => {
+function withStubs(run: () => void) {
   const savedWindow = globalThis.window
   globalThis.window = {
     addEventListener() {},
@@ -115,6 +113,65 @@ test('cancelAnnotationInProgress ends a bidirectional drag', () => {
     () => point as never,
   )
   try {
+    run()
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
+}
+
+// Review of #827: browsers report detail 2 for a fast second click; an angle
+// has no double-click close, so that click still places its point.
+test('a fast second click places an angle point', () =>
+  withStubs(() => {
+    const nv = controller('measureAngle')
+    press(nv, [2, 2, 0])
+    press(nv, [2, 3, 0], 2)
+    press(nv, [8, 3, 0])
+    expect(nv.annotations).toHaveLength(1)
+  }))
+
+// Review of #824: a probe pressed on a selected region's control point places
+// a probe; it must not start resizing the region.
+test('a probe on a selected ROI handle places a probe', () =>
+  withStubs(() => {
+    const nv = controller('measurePoint')
+    const corner = { x: 5, y: 5 }
+    const roi = {
+      id: 'roi',
+      label: 1,
+      group: '',
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [
+        {
+          outer: [corner, { x: 9, y: 5 }, { x: 9, y: 9 }, { x: 5, y: 9 }],
+          holes: [],
+        },
+      ],
+      style: structuredClone(nv.model.annotation.style),
+      shape: { type: 'measureRect', start: corner, end: { x: 9, y: 9 } },
+    }
+    nv.model.annotations.push(roi as never)
+    nv.model._annotationSelection = {
+      annotationId: 'roi',
+      controlPoints: [corner],
+    } as never
+    press(nv, [5, 5, 0])
+    expect(nv.annotations.map((a) => a.shape?.type).sort()).toEqual([
+      'measurePoint',
+      'measureRect',
+    ])
+    expect(nv.annotations.find((a) => a.id === 'roi')?.shape?.end).toEqual({
+      x: 9,
+      y: 9,
+    })
+  }))
+
+// Review of #834: a first bidirectional drag is in progress; cancelling it
+// ends the drag, so the release commits nothing.
+test('cancelAnnotationInProgress ends a bidirectional drag', () =>
+  withStubs(() => {
     const nv = controller('bidirectional')
     nv.model.annotation.isClickToPlace = false
     const at = (x: number) => ({
@@ -138,11 +195,7 @@ test('cancelAnnotationInProgress ends a bidirectional drag', () => {
     nv._eventListeners.pointerup?.(at(70) as never)
     expect(nv.annotations).toHaveLength(0)
     expect(nv.isAnnotationInProgress).toBe(false)
-  } finally {
-    pick.mockRestore()
-    globalThis.window = savedWindow
-  }
-})
+  }))
 
 // Review of #834: a resize records its undo step on release, so cancelling
 // one leaves no step behind.

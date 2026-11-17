@@ -565,16 +565,22 @@ export function probeIndex(
 /**
  * The source frame of points: the shown output's map first, then the series'
  * other outputs (a measurement on a localizer not now shown keeps its image).
+ * A map holding `sop` there wins: several outputs can hold the points
+ * (coplanar echoes, a shape where localizer planes intersect).
  */
 function outputFrameAt(
   entry: NiivueViewportEntry,
   points: ReadonlyArray<[number, number, number]>,
+  sop?: string,
 ): { frame: FrameRef; sf: SliceFrames } | undefined {
+  let first: { frame: FrameRef; sf: SliceFrames } | undefined
   for (const sf of [entry.sliceFrames, ...(entry.outputFrames ?? [])]) {
     const frame = sf && frameAt(sf, points)
-    if (frame) return { frame, sf }
+    if (!frame) continue
+    if (!sop || frame.SOPInstanceUID === sop) return { frame, sf }
+    first ??= { frame, sf }
   }
-  return undefined
+  return first
 }
 
 function annotationPointsLps(
@@ -1015,7 +1021,7 @@ function reflectNiivueAnnotationResult(
       ).getMeasurement?.(existingUid)
     : undefined
   const frame =
-    outputFrameAt(entry, points)?.frame ??
+    outputFrameAt(entry, points, existing?.SOPInstanceUID)?.frame ??
     (existing?.SOPInstanceUID
       ? {
           SOPInstanceUID: existing.SOPInstanceUID,
@@ -1157,16 +1163,15 @@ export function jumpToNiivueMeasurement(
       | { getMeasurement?: (uid: string) => { SOPInstanceUID?: string } }
       | undefined
   )?.getMeasurement?.(measurementUid)?.SOPInstanceUID
-  if (
-    sop &&
-    !entry.sliceFrames?.frames.some((f) => f?.SOPInstanceUID === sop) &&
-    entry.switchToInstance?.(sop, () =>
-      jumpToNiivueMeasurement(measurementUid, servicesManager),
-    )
-  ) {
+  const switching = sop ? entry.switchToInstance?.(sop) : undefined
+  if (switching) {
     // The new target is selected now: a Delete during the load must not hit
-    // the previous selection.
+    // the previous selection. A later jump or selection wins over this one.
     entry.nv.selectAnnotation(annotation.id)
+    void switching.then((isLatest) => {
+      if (isLatest && entry.nv.selectedAnnotation === annotation.id)
+        jumpToNiivueMeasurement(measurementUid, servicesManager)
+    })
     return
   }
 

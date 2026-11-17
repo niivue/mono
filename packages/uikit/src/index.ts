@@ -183,6 +183,12 @@ export {
   attachSlideMinimap,
   attachSlidePlaneControl,
 } from './slideView'
+export type {
+  SubvolumeSelection,
+  SubvolumeSelectorHost,
+  UIKitSubvolumeSelectorOptions,
+} from './subvolumeSelector'
+export { UIKitSubvolumeSelector } from './subvolumeSelector'
 export { loadDefaultFont } from './text/defaultFont'
 export type {
   RawFontFile,

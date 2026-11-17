@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   fillRuns,
   lpsToVoxel,
+  type Restyle,
   type RtLabels,
   rasterizeContours,
   rasterizeStructureSet,
@@ -90,6 +91,91 @@ describe('rasterizeContours', () => {
     expect(bitmap[2 * 400 + 3 * 20 + 7]).toBe(1)
   })
 
+  // Review of #839: overlapping CLOSED_PLANAR rings union; XOR rings cancel.
+  test('overlapping rings union unless CLOSEDPLANAR_XOR', () => {
+    // Centres 2..5 and 4..7 on both axes: 16 + 16 - 4 shared.
+    const a = square(-1.5, -1.5, -5.5, -5.5, 2)
+    const b = square(-3.5, -3.5, -7.5, -7.5, 2)
+    const shared = 2 * 400 + 4 * 20 + 4
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const union = rasterizeContours(dims, identityLps, [a, b])
+    fillRuns(bitmap, union.runs, 1)
+    expect(union.count).toBe(28)
+    expect(bitmap[shared]).toBe(1)
+    const xor = rasterizeContours(dims, identityLps, [a, b], true)
+    expect(xor.count).toBe(24)
+  })
+
+  // Review of #839: a ring whose vertices sit in a U's arms but whose edges
+  // cross its notch is not a hole.
+  test('a ring bridging a concave notch unions', () => {
+    const lps = (uv: number[]) => uv.flatMap((c, i) => (i % 2 ? [-c, 2] : [-c]))
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const { runs } = rasterizeContours(dims, identityLps, [
+      lps([
+        0.5, 0.5, 10.5, 0.5, 10.5, 10.5, 7.5, 10.5, 7.5, 3.5, 3.5, 3.5, 3.5,
+        10.5, 0.5, 10.5,
+      ]),
+      lps([1.5, 6.5, 9.5, 6.5, 9.5, 8.5, 1.5, 8.5]),
+    ])
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[2 * 400 + 7 * 20 + 5]).toBe(1)
+    expect(bitmap[2 * 400 + 7 * 20 + 2]).toBe(1)
+  })
+
+  // Review of #839: the same bar where the notch walls have vertices at its rows.
+  test('a ring bridging a notch through wall vertices unions', () => {
+    const lps = (uv: number[]) => uv.flatMap((c, i) => (i % 2 ? [-c, 2] : [-c]))
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const { runs } = rasterizeContours(dims, identityLps, [
+      lps([
+        0.5, 0.5, 10.5, 0.5, 10.5, 10.5, 7.5, 10.5, 7.5, 8.5, 7.5, 6.5, 7.5,
+        3.5, 3.5, 3.5, 3.5, 6.5, 3.5, 8.5, 3.5, 10.5, 0.5, 10.5,
+      ]),
+      lps([1.5, 6.5, 9.5, 6.5, 9.5, 8.5, 1.5, 8.5]),
+    ])
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[2 * 400 + 7 * 20 + 5]).toBe(1)
+    expect(bitmap[2 * 400 + 7 * 20 + 2]).toBe(1)
+  })
+
+  test('a nested ring sharing an edge with its outer is a hole', () => {
+    const { count } = rasterizeContours(dims, identityLps, [
+      square(-1.5, -1.5, -11.5, -11.5, 2),
+      square(-1.5, -4.5, -5.5, -8.5, 2),
+    ])
+    expect(count).toBe(100 - 16)
+  })
+
+  // Review of #839: a steep oblique ring spans less along z than along x but
+  // faces x; slicing across z would flatten it to nothing.
+  test('a steep oblique ring slices across the axis it faces', () => {
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const ring = [
+      [1, 0.9],
+      [9, 0.9],
+      [9, 2.1],
+      [1, 2.1],
+    ].flatMap(([y, z]) => [
+      -(2 + 0.2 * (y as number)),
+      -(y as number),
+      z as number,
+    ])
+    const { runs, count } = rasterizeContours(dims, identityLps, [ring])
+    fillRuns(bitmap, runs, 1)
+    expect(count).toBeGreaterThan(0)
+    expect(bitmap[1 * 400 + 5 * 20 + 3]).toBe(1)
+  })
+
+  test('an island inside a hole fills', () => {
+    const { count } = rasterizeContours(dims, identityLps, [
+      square(-1.5, -1.5, -11.5, -11.5, 2),
+      square(-3.5, -3.5, -9.5, -9.5, 2),
+      square(-5.5, -5.5, -7.5, -7.5, 2),
+    ])
+    expect(count).toBe(100 - 36 + 4)
+  })
+
   test('offGridSlice_isSkipped', () => {
     const { count } = rasterizeContours(dims, identityLps, [
       square(-1, -1, -3, -3, 9),
@@ -108,8 +194,7 @@ describe('rasterizeStructureSet', () => {
 
   test('nestedRoi_drawnOverLargerAndKeepsOwnStats', () => {
     const bitmap = new Uint8Array(20 * 20 * 5)
-    const { segments, stats, showOnly } = rasterizeStructureSet(
-      bitmap,
+    const { segments, stats, draw } = rasterizeStructureSet(
       [20, 20, 5],
       identityLps,
       [
@@ -137,17 +222,36 @@ describe('rasterizeStructureSet', () => {
         },
       ],
     )
+    const showOnly = draw(bitmap)
     expect(segments).toEqual([
       { value: 1, label: 'GTV', rgb: [255, 0, 0] },
-      { value: 3, label: 'BODY', rgb: [0, 255, 0] },
+      { value: 2, label: 'BODY', rgb: [0, 255, 0] },
     ])
     expect(stats.get(1)?.count).toBe(4)
-    expect(stats.get(3)?.count).toBe(81)
+    expect(stats.get(2)?.count).toBe(81)
     expect(bitmap[400 + 5 * 20 + 5]).toBe(1)
-    expect(bitmap[400 + 2 * 20 + 2]).toBe(3)
+    expect(bitmap[400 + 2 * 20 + 2]).toBe(2)
     // Hiding the nested ROI uncovers the larger one beneath it.
-    showOnly(new Set([3]))
-    expect(bitmap[400 + 5 * 20 + 5]).toBe(3)
+    showOnly(new Set([2]))
+    expect(bitmap[400 + 5 * 20 + 5]).toBe(2)
+  })
+
+  // Review of #839: empty ROIs must not use up the 255 labels.
+  test('a closed ROI after 255 empty ones is still drawn', () => {
+    const empty = { ROIName: 'empty', contourPoints: [] }
+    const { segments } = rasterizeStructureSet([20, 20, 5], identityLps, [
+      ...Array.from({ length: 255 }, () => empty),
+      {
+        ROIName: 'target',
+        contourPoints: [
+          {
+            type: 'CLOSED_PLANAR',
+            points: pts(square(-0.5, -0.5, -9.5, -9.5, 1)),
+          },
+        ],
+      },
+    ])
+    expect(segments.map((s) => s.label)).toEqual(['target'])
   })
 
   // Review of #839: a contour on the tilted plane z = y/2 crosses voxel
@@ -243,7 +347,7 @@ describe('rasterizeStructureSet', () => {
   // exclusive-or; an inner one cuts a hole.
   test('fills CLOSEDPLANAR_XOR contours by exclusive-or', () => {
     const bitmap = new Uint8Array(20 * 20 * 5)
-    const { stats } = rasterizeStructureSet(bitmap, [20, 20, 5], identityLps, [
+    const { stats, draw } = rasterizeStructureSet([20, 20, 5], identityLps, [
       {
         ROIName: 'ring',
         contourPoints: [
@@ -258,6 +362,7 @@ describe('rasterizeStructureSet', () => {
         ],
       },
     ])
+    draw(bitmap)
     expect(stats.get(1)?.count).toBe(81 - 9)
     expect(bitmap[400 + 2 * 20 + 2]).toBe(1)
     expect(bitmap[400 + 5 * 20 + 5]).toBe(0)
@@ -334,8 +439,15 @@ describe('startRtDrawing', () => {
     expect(nv.drawingVolume).toBeNull()
   })
 
-  // Review of #839: replacing the RT drawing puts the prior style back.
-  test('a replacement drawing gets the prior style back', async () => {
+  // Review of #839: replacing the RT drawing puts the prior style back, but
+  // never over a style the user set.
+  const square4 = [
+    { x: -1, y: -1, z: 1 },
+    { x: -3, y: -1, z: 1 },
+    { x: -3, y: -3, z: 1 },
+    { x: -1, y: -3, z: 1 },
+  ]
+  function styleRig(contourType = 'CLOSED_PLANAR') {
     let onChanged = () => {}
     const nv = {
       volumes: [{ dimsRAS: [3, 5, 5, 2] }],
@@ -371,41 +483,77 @@ describe('startRtDrawing', () => {
         ROIContours: [
           {
             ROIName: 'roi',
-            contourPoints: [
-              {
-                type: 'CLOSED_PLANAR',
-                points: [
-                  { x: -1, y: -1, z: 1 },
-                  { x: -3, y: -1, z: 1 },
-                  { x: -3, y: -3, z: 1 },
-                  { x: -1, y: -3, z: 1 },
-                ],
-              },
-            ],
+            contourPoints: [{ type: contourType, points: square4 }],
           },
         ],
       },
     }
+    return { nv, rt }
+  }
+  async function showWithPanel(nv: unknown, rt: unknown) {
+    let restyle: Restyle = (write) => write()
     await new Promise<void>((resolve) => {
-      startRtDrawing(nv as never, rt, {
+      startRtDrawing(nv as never, rt as never, {
         setNote: () => {},
         whenBase: Promise.resolve(true),
-        onShown: (_segments, _labels, restyle) => {
-          // The seg panel restyles the drawing it lists.
-          restyle(() => {
-            nv.drawColormap = 'seg-panel-pane'
-            nv.drawOpacity = 0.4
-          })
+        onShown: (_segments, _labels, r) => {
+          restyle = r
           resolve()
           return () => {}
         },
       })
     })
-    expect(nv.drawColormap).toBe('seg-panel-pane')
+    return restyle
+  }
+
+  test('a replacement drawing gets the prior style back', async () => {
+    const { nv, rt } = styleRig()
+    const restyle = await showWithPanel(nv, rt)
+    // The seg panel restyles the drawing it lists.
+    restyle(() => {
+      nv.drawColormap = 'seg-panel-pane'
+      nv.drawOpacity = 0.4
+    })
     nv.createEmptyDrawing()
     expect(nv.drawColormap).toBe('gray')
     expect(nv.drawOpacity).toBe(0.8)
     expect(nv.drawRimOpacity).toBe(-1)
+  })
+
+  test("a user's style survives replacement", async () => {
+    const { nv, rt } = styleRig()
+    await showWithPanel(nv, rt)
+    nv.drawColormap = 'user-hot'
+    nv.createEmptyDrawing()
+    expect(nv.drawColormap).toBe('user-hot')
+  })
+
+  test("an unchanged panel sync does not claim the user's style", async () => {
+    const { nv, rt } = styleRig()
+    const restyle = await showWithPanel(nv, rt)
+    nv.drawColormap = 'user-hot'
+    // An unrelated panel event: the style key is unchanged, so it writes nothing.
+    restyle(() => {})
+    nv.createEmptyDrawing()
+    expect(nv.drawColormap).toBe('user-hot')
+    expect(nv.drawOpacity).toBe(0.8)
+  })
+
+  // Review of #839: nothing to show keeps the drawing (and its undo history).
+  test('a structure set with no closed contours keeps the drawing', async () => {
+    const { nv, rt } = styleRig('POINT')
+    const mine = { img: Uint8Array.from([7]) }
+    nv.drawingVolume = mine
+    let note = ''
+    startRtDrawing(nv as never, rt as never, {
+      setNote: (m) => {
+        note = m
+      },
+      whenBase: Promise.resolve(true),
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(note).toContain('no closed contours')
+    expect(nv.drawingVolume).toBe(mine)
   })
 
   // Review of #839: a drawing made while the structure set loads is kept.

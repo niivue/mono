@@ -1773,8 +1773,9 @@ export function initInteraction(ctrl: NiiVue): void {
           // placed point + double-click pass the >= 3-point commit guard as a
           // degenerate contour, and a normally finished spline would carry a
           // coincident closing pair (a Catmull-Rom cusp at the close point).
+          // Angles have no double-click close: a fast second click is a point.
           const append = shouldAppendMultiClickPoint(
-            evt.detail,
+            tool in ANGLE_CLICKS ? 1 : evt.detail,
             poly[poly.length - 1],
             pt2d,
             computeTolerance(ctrl.model),
@@ -1822,7 +1823,11 @@ export function initInteraction(ctrl: NiiVue): void {
               const ann = ctrl.model.annotations.find(
                 (a) => a.id === ctrl.model._annotationSelection?.annotationId,
               )
-              if (ann?.shape) {
+              // A probe lands on a region's handle, as anywhere inside it.
+              if (
+                ann?.shape &&
+                (tool !== 'measurePoint' || ann.shape.type === 'measurePoint')
+              ) {
                 ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 ctrl._resizingControlPoint = cpIdx
                 ctrl._resizeOriginalShape = {

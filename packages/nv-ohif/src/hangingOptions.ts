@@ -210,8 +210,9 @@ export function useHungOverlays(
         const voi = voiRange(dso, i)
         const display = {
           ...style,
+          // A restyle off a ramp must reset the type, not keep the ramp's.
           ...(knee === undefined
-            ? voi
+            ? { colormapType: COLORMAP_TYPE.MIN_TO_MAX, ...voi }
             : {
                 colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN,
               }),

@@ -222,6 +222,15 @@ test('a new hanging protocol changes the effect keys; a fresh equal one does not
   expect(mip('MIP')).not.toBe(mip('COMPOSITE'))
 })
 
+test('MIP inversion or a new background reruns the style effect', () => {
+  const style = (voiInverted: boolean, background?: number[]) =>
+    hangingKeys({ viewportType: 'volume3d', background }, [
+      { options: { blendMode: 'MIP', voiInverted } },
+    ]).style
+  expect(style(true)).not.toBe(style(false))
+  expect(style(false, [1, 1, 1])).not.toBe(style(false, [0, 0, 0]))
+})
+
 test("a new hanging protocol's window applies to the loaded base in place", async () => {
   globalThis.requestAnimationFrame ??= () => 0
   const nv = new NiiVue(DEFAULT_OPTIONS)

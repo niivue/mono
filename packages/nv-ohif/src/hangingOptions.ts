@@ -28,6 +28,10 @@ const optionsAt = (dso: DisplaySetOptions, i: number): Options =>
 export const isMip = (dso: DisplaySetOptions): boolean =>
   optionsAt(dso, 0).blendMode === 'MIP'
 
+/** A MIP shown inverted, as cornerstone's voiInverted MIP pane. */
+export const isMipInverted = (dso: DisplaySetOptions): boolean =>
+  isMip(dso) && optionsAt(dso, 0).voiInverted === true
+
 type Point = { value: number; opacity: number }
 type OverlayStyle = { colormap?: string; opacity?: number; knee?: number }
 
@@ -96,7 +100,7 @@ export function applyViewportStyle(
   dso: DisplaySetOptions,
 ): void {
   const mip = isMip(dso)
-  const inverted = mip && optionsAt(dso, 0).voiInverted === true
+  const inverted = isMipInverted(dso)
   canvas.style.filter = inverted ? 'invert(1)' : ''
   const bg = viewportOptions?.background
   if (bg?.length === 3) {

@@ -1218,12 +1218,17 @@ export function jumpToNiivueMeasurement(
 
   // On another output of the series (a localizer of another orientation):
   // show that output; its single slice holds the measurement.
-  const sop = (
-    services?.measurementService as
-      | { getMeasurement?: (uid: string) => { SOPInstanceUID?: string } }
-      | undefined
-  )?.getMeasurement?.(measurementUid)?.SOPInstanceUID
-  const switching = sop ? entry.switchToInstance?.(sop) : undefined
+  const { SOPInstanceUID: sop, frameNumber } =
+    (
+      services?.measurementService as
+        | {
+            getMeasurement?: (
+              uid: string,
+            ) => { SOPInstanceUID?: string; frameNumber?: number } | undefined
+          }
+        | undefined
+    )?.getMeasurement?.(measurementUid) ?? {}
+  const switching = sop ? entry.switchToInstance?.(sop, frameNumber) : undefined
   if (switching) {
     // The new target is selected now: a Delete during the load must not hit
     // the previous selection. A later jump or selection wins over this one.

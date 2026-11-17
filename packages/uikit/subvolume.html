@@ -59,7 +59,8 @@
 
       const opts = { backend, backgroundColor: [0.05, 0.05, 0.08, 1], isColorbarVisible: false }
       const nv = new NiiVue({ ...opts, sliceType: SLICE_TYPE.MULTIPLANAR })
-      const copy = new NiiVue({ ...opts, sliceType: SLICE_TYPE.MULTIPLANAR })
+      // The copy shows only the 3D render of the selected box.
+      const copy = new NiiVue({ ...opts, sliceType: SLICE_TYPE.RENDER })
       await nv.attachToCanvas(document.getElementById('parent'))
       await copy.attachToCanvas(document.getElementById('copy'))
       document.getElementById('backendSelect').value = nv.backend
@@ -69,7 +70,6 @@
       const view = document.getElementById('viewSelect')
       view.addEventListener('change', () => {
         nv.sliceType = SLICE_TYPE[view.value]
-        copy.sliceType = SLICE_TYPE[view.value]
       })
 
       // mni152 fits one texture, so force bricks to show the multi-brick path.
@@ -90,6 +90,10 @@
 
       let seq = 0
       const selector = new UIKitSubvolumeSelector({
+        onCorner: (mm) => {
+          seq++
+          setStatus(`First corner at (${mm.map((v) => v.toFixed(1)).join(', ')}) mm: right-click the second`, 'wait')
+        },
         onSelect: async (sel) => {
           const at = ++seq
           const [x, y, z] = sel.voxelDims

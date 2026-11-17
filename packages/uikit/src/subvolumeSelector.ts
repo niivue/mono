@@ -2,8 +2,9 @@
 // span becomes an ephemeral copy of that part of the volume, as the block
 // picker (`extractChunkBlock`) does for one brick. A slice tile picks the
 // point under the pointer on its plane, a 3D render tile depth-picks the first
-// visible voxel (an exploded chunked volume is picked brick by brick). A third
-// right-click starts a new box. Shift+right-click still opens the context menu.
+// visible voxel (an exploded chunked volume is picked brick by brick). Between
+// the corners a fainter outline follows the pointer. A third right-click
+// starts a new box. Shift+right-click still opens the context menu.
 //
 // Turn draw and annotation modes off while it is attached: they claim the
 // right button on the render tile too.
@@ -47,6 +48,8 @@ export interface SubvolumeSelection {
 export interface UIKitSubvolumeSelectorOptions {
   /** Called once both corners are picked. */
   onSelect?: (selection: SubvolumeSelection) => void
+  /** Called when the first corner is picked. */
+  onCorner?: (mm: Vec3) => void
   /** Outline color of the picked box. Default yellow. */
   color?: number[]
   /** Outline thickness. Default 2. */
@@ -122,6 +125,7 @@ function mmToVoxel(m: ArrayLike<number>, mm: Vec3): Vec3 {
 
 export class UIKitSubvolumeSelector {
   onSelect: ((selection: SubvolumeSelection) => void) | null
+  onCorner: ((mm: Vec3) => void) | null
   color: number[]
   thickness: number
   private first: Vec3 | null = null
@@ -129,6 +133,7 @@ export class UIKitSubvolumeSelector {
 
   constructor(options: UIKitSubvolumeSelectorOptions = {}) {
     this.onSelect = options.onSelect ?? null
+    this.onCorner = options.onCorner ?? null
     this.color = options.color ?? [1, 1, 0, 1]
     this.thickness = options.thickness ?? 2
   }
@@ -146,6 +151,8 @@ export class UIKitSubvolumeSelector {
     if (!this.first) {
       this.first = mm
       host.focusBox = null
+      this.preview(mm)
+      this.onCorner?.(mm)
       return null
     }
     const box = subvolumeBox(vol, this.first, mm)
@@ -165,6 +172,21 @@ export class UIKitSubvolumeSelector {
     }
     this.onSelect?.(selection)
     return selection
+  }
+
+  /** Outline the box from the first corner to `mm`, fainter than a picked one. */
+  preview(mm: Vec3): void {
+    const host = this.host
+    const vol = host?.volumes[0]
+    if (!host || !vol || !this.first || isExploded(vol)) return
+    const box = subvolumeBox(vol, this.first, mm)
+    if (!box) return
+    host.focusBox = {
+      min: box.minMM,
+      max: box.maxMM,
+      color: [this.color[0], this.color[1], this.color[2], 0.5],
+      thickness: this.thickness,
+    }
   }
 
   /** Forget a half-picked box and clear the outline. */
@@ -193,10 +215,32 @@ export class UIKitSubvolumeSelector {
         if (mm && at === seq && this.host === host) this.addPoint(mm)
       })
     }
+    // One depth pick in flight at a time: moves while it runs are dropped.
+    let moving = false
+    const onMove = (e: PointerEvent): void => {
+      const first = this.first
+      if (!first || moving) return
+      const p = host.clientToCanvas(e.clientX, e.clientY)
+      const hit = p && host.hitTest(p[0], p[1])
+      if (!p || !hit) return
+      if (!hit.isRender) {
+        const mm = host.canvasToMM(p[0], p[1])
+        if (mm) this.preview(mm)
+        return
+      }
+      moving = true
+      void host.pickAt(p[0], p[1]).then((mm) => {
+        moving = false
+        // A press while picking moved on to a new box (or finished this one).
+        if (mm && this.first === first && this.host === host) this.preview(mm)
+      })
+    }
     const opts = { capture: true }
     canvas.addEventListener('pointerdown', onDown, opts)
+    canvas.addEventListener('pointermove', onMove)
     return () => {
       canvas.removeEventListener('pointerdown', onDown, opts)
+      canvas.removeEventListener('pointermove', onMove)
       this.reset()
       this.host = null
     }

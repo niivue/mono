@@ -89,7 +89,11 @@ describe('subvolumeBox', () => {
 describe('UIKitSubvolumeSelector.attach', () => {
   it('two right-clicks on a slice copy the box out and outline it', async () => {
     const got: SubvolumeSelection[] = []
-    const sel = new UIKitSubvolumeSelector({ onSelect: (s) => got.push(s) })
+    const corners: Vec3[] = []
+    const sel = new UIKitSubvolumeSelector({
+      onSelect: (s) => got.push(s),
+      onCorner: (mm) => corners.push(mm),
+    })
     const { canvas, host } = makeHost(makeVolume(), {
       slice: [vox(2, 3, 4), vox(3, 4, 5)],
     })
@@ -99,9 +103,15 @@ describe('UIKitSubvolumeSelector.attach', () => {
     expect(first.defaultPrevented).toBe(true)
     await settle()
     expect(sel.pendingCorner).toEqual(vox(2, 3, 4))
+    // The first corner is outlined, fainter, as one voxel.
+    expect(host.focusBox?.min).toEqual([-7, -15, -23])
+    expect(host.focusBox?.max).toEqual([-5, -13, -21])
+    expect(host.focusBox?.color[3]).toBe(0.5)
     canvas.dispatchEvent(rightClick())
     await settle()
     expect(got).toHaveLength(1)
+    expect(corners).toEqual([vox(2, 3, 4)])
+    expect(host.focusBox?.color[3]).toBe(1)
     const sub = got[0]?.subVolume
     expect(sub?.voxelOrigin).toEqual([2, 3, 4])
     expect(sub?.voxelDims).toEqual([2, 2, 2])
@@ -168,5 +178,25 @@ describe('UIKitSubvolumeSelector.attach', () => {
     await settle()
     expect(got[0]?.voxelDims).toEqual([6, 6, 6])
     expect(host.focusBox).toBeNull()
+  })
+
+  it('between corners the outline follows the pointer', async () => {
+    const sel = new UIKitSubvolumeSelector()
+    const { canvas, host } = makeHost(makeVolume(), {
+      slice: [vox(1, 1, 1), vox(3, 2, 1)],
+      render: [vox(4, 4, 4)],
+    })
+    sel.attach(host)
+    canvas.dispatchEvent(rightClick('pointermove'))
+    expect(host.focusBox).toBeNull()
+    canvas.dispatchEvent(rightClick())
+    await settle()
+    canvas.dispatchEvent(rightClick('pointermove'))
+    expect(host.focusBox?.max).toEqual([-3, -15, -27])
+    expect(host.focusBox?.color[3]).toBe(0.5)
+    host.hitTest = () => ({ isRender: true })
+    canvas.dispatchEvent(rightClick('pointermove'))
+    await settle()
+    expect(host.focusBox?.max).toEqual([-1, -11, -21])
   })
 })

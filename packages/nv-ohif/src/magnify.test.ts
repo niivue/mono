@@ -125,6 +125,48 @@ test('a second finger pinches the lens zoom, not core', () => {
   expect(core).toEqual([])
 })
 
+test('the lens stays put when one pinching finger lifts', () => {
+  const move = spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove')
+  spies.push(move)
+  const { canvas, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  const touch = (type: string, pointerId: number, clientX: number) =>
+    pointer(type, 0, { pointerId, pointerType: 'touch', clientX })
+  canvas.dispatchEvent(touch('pointerdown', 1, 5))
+  canvas.dispatchEvent(touch('pointerdown', 2, 15))
+  canvas.dispatchEvent(touch('pointerup', 1, 5))
+  move.mockClear()
+  canvas.dispatchEvent(touch('pointermove', 2, 40))
+  expect(move).not.toHaveBeenCalled()
+  canvas.dispatchEvent(touch('pointerup', 2, 40))
+  canvas.dispatchEvent(touch('pointerdown', 3, 50))
+  canvas.dispatchEvent(touch('pointerup', 3, 50))
+  binding.dispose()
+  expect(move).toHaveBeenCalledWith(50, 5)
+})
+
+test('AdvancedMagnify waits for a second finger before moving the glass', async () => {
+  const move = spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove')
+  spies.push(move)
+  const { canvas, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  const touch = (type: string, pointerId: number, clientX: number) =>
+    pointer(type, 0, { pointerId, pointerType: 'touch', clientX })
+  canvas.dispatchEvent(touch('pointerdown', 1, 5))
+  canvas.dispatchEvent(touch('pointerdown', 2, 15))
+  await Bun.sleep(200)
+  expect(move).not.toHaveBeenCalled()
+  for (const id of [1, 2]) canvas.dispatchEvent(touch('pointerup', id, 5))
+  // A held single touch moves the glass once the wait ends.
+  canvas.dispatchEvent(touch('pointerdown', 3, 30))
+  expect(move).not.toHaveBeenCalled()
+  await Bun.sleep(200)
+  binding.dispose()
+  expect(move).toHaveBeenCalledWith(30, 5)
+})
+
 test('a double-click on the lens does not reach core', () => {
   const { canvas, core, nv } = host()
   const binding = createMagnifyBinding(nv)

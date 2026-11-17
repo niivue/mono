@@ -52,3 +52,26 @@ test('switching tools destroys the lens', () => {
   binding.setTool('Zoom')
   expect(destroy).toHaveBeenCalledTimes(1)
 })
+
+test('AdvancedMagnify follows the pointer after a click; leaving hides it', () => {
+  const moves: number[][] = []
+  spies.push(
+    spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove').mockImplementation(
+      (x: number, y: number) => {
+        moves.push([x, y])
+      },
+    ),
+  )
+  const { canvas, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  for (const t of ['pointerdown', 'pointerup']) canvas.dispatchEvent(pointer(t))
+  moves.length = 0
+  canvas.dispatchEvent(pointer('pointermove'))
+  canvas.dispatchEvent(pointer('pointerleave'))
+  binding.dispose()
+  expect(moves).toEqual([
+    [5, 5],
+    [-1, -1],
+  ])
+})

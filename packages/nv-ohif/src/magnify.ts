@@ -32,17 +32,18 @@ export function createMagnifyBinding(nv: Host) {
       // Registered last, so it magnifies the annotation overlay too.
       const lens = new UIKitMagnifierOverlay(opts)
       const unregister = nv.registerOverlayRenderer(lens)
-      // attach() listens in capture phase too, registered first, so its lens
-      // still follows the moves claimed below.
-      const unfollow = opts.held ? null : lens.attach(nv)
       // Core's pointer handlers bubble on the canvas, and DRAG_MODE.none does
       // not stop them rotating the camera: claim the left-button gesture
-      // before they see it; other buttons keep their behavior.
+      // before they see it; other buttons keep their behavior. The binding
+      // drives the lens itself: UIKit's attach() exits the lens on a click.
       let held = false
       const at = (e: PointerEvent) => {
-        if (!opts.held) return
         const p = nv.clientToCanvas(e.clientX, e.clientY) ?? [-1, -1]
         lens.pointerMove(p[0], p[1])
+        nv.drawScene()
+      }
+      const hide = () => {
+        lens.pointerMove(-1, -1)
         nv.drawScene()
       }
       const down = (e: PointerEvent) => {
@@ -52,17 +53,16 @@ export function createMagnifyBinding(nv: Host) {
         at(e)
       }
       const move = (e: PointerEvent) => {
-        if (!held) return
-        e.stopImmediatePropagation()
-        at(e)
+        if (held) e.stopImmediatePropagation()
+        if (held || !opts.held) at(e)
       }
       const up = (e: PointerEvent) => {
-        if (!held) return
-        e.stopImmediatePropagation()
-        held = false
-        if (!opts.held) return
-        lens.pointerMove(-1, -1)
-        nv.drawScene()
+        if (held) {
+          e.stopImmediatePropagation()
+          held = false
+          if (opts.held) hide()
+        }
+        if (e.type === 'pointerleave' && !opts.held) hide()
       }
       const ends = ['pointerup', 'pointercancel', 'pointerleave'] as const
       const o = { capture: true }
@@ -70,7 +70,6 @@ export function createMagnifyBinding(nv: Host) {
       canvas.addEventListener('pointermove', move, o)
       for (const t of ends) canvas.addEventListener(t, up, o)
       const unwire = () => {
-        unfollow?.()
         canvas.removeEventListener('pointerdown', down, o)
         canvas.removeEventListener('pointermove', move, o)
         for (const t of ends) canvas.removeEventListener(t, up, o)

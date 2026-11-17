@@ -423,7 +423,13 @@ export function sliceAxisAt(
     const r = t.leftTopWidthHeight
     const n = t.planeNormal
     if (!r || !n || t.axCorSag === SLICE_TYPE.RENDER) continue
-    if (p[0] < r[0] || p[1] < r[1] || p[0] > r[0] + r[2] || p[1] > r[1] + r[3])
+    // Right and bottom edges are exclusive, as in NiiVue's tile hit test.
+    if (
+      p[0] < r[0] ||
+      p[1] < r[1] ||
+      p[0] >= r[0] + r[2] ||
+      p[1] >= r[1] + r[3]
+    )
       continue
     return dominantAxis(n)
   }

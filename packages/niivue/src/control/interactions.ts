@@ -71,7 +71,7 @@ import {
   rayBlockFacePointMM,
 } from '@/volume/ChunkExplode'
 import { chunksNotClippedOut } from '@/volume/ChunkVisibility'
-import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
+import { displayedFrame, getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 
 /** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
 const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
@@ -875,12 +875,13 @@ interface ExplodedDrawPick {
 // getImageDataRAS reorders the whole volume when its native storage isn't already
 // a Float32Array in RAS order. During a 3D draw/vector stroke it would run on
 // every pointermove, so cache the result for the stroke (keyed by volume
-// identity); the cache is cleared on pointerup/pointercancel.
-function strokeSample(ctrl: NiiVue, vol: NVImage): Float32Array | null {
+// identity and displayed frame); the cache is cleared on pointerup/pointercancel.
+export function strokeSample(ctrl: NiiVue, vol: NVImage): Float32Array | null {
   const cache = ctrl._draw3DSampleCache
-  if (cache && cache.vol === vol) return cache.data
-  const data = getImageDataRAS(vol)
-  ctrl._draw3DSampleCache = data ? { vol, data } : null
+  const frame = vol.frame4D ?? 0
+  if (cache && cache.vol === vol && cache.frame === frame) return cache.data
+  const data = getImageDataRAS(displayedFrame(vol))
+  ctrl._draw3DSampleCache = data ? { vol, frame, data } : null
   return data
 }
 

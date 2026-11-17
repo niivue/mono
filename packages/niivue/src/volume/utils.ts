@@ -1316,9 +1316,9 @@ export function reorientRGBA(
 // ============================================================================
 
 /**
- * A CPU pick sampler over a resident volume's voxels, shaped like a streamed
- * volume's `pickSampler`: world mm in, the value above the window floor out
- * (0 is transparent). Null when the voxels are not on the CPU.
+ * A CPU pick sampler over a resident volume's displayed frame, shaped like a
+ * streamed volume's `pickSampler`: world mm in, the value above the window
+ * floor out (0 is transparent). Null when the voxels are not on the CPU.
  */
 export function residentPickSampler(
   volume: NVImage,
@@ -1375,6 +1375,14 @@ export function residentPickSampler(
     const calMin = volume.calMin ?? 0
     return value > calMin ? value - calMin : 0
   }
+}
+
+/** `vol` viewed at its displayed 4D frame (getImageDataRAS reads frame 0). */
+export function displayedFrame(vol: NVImage): NVImage {
+  const n = vol.nVox3D
+  if (!vol.frame4D || !n || !vol.img) return vol
+  const start = vol.frame4D * n
+  return { ...vol, img: vol.img.subarray(start, start + n) } as NVImage
 }
 
 /**

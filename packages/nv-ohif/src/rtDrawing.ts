@@ -18,8 +18,8 @@ type Vox2mm = (vox: [number, number, number]) => number[] | null
 /**
  * Style the installed drawing via `apply`. The returned restore puts the prior
  * colormap and opacities back; it runs itself when another drawing replaces this
- * one. A style the user set since stays; one written through `restyle` (the
- * panel's) counts as the drawing's own.
+ * one, but only for fields still holding the style last applied here (by
+ * `apply` or a `restyle` that changed them); any other value is the user's.
  */
 export function styleDrawing(
   nv: Pick<
@@ -41,10 +41,18 @@ export function styleDrawing(
   })
   const prior = snap()
   apply()
-  let applied = snap()
+  const applied = snap()
   const restyle: Restyle = (write) => {
+    const before = snap()
     write()
-    applied = snap()
+    const after = snap()
+    // Claim only what the write changed: an untouched field may be the user's.
+    if (after.drawColormap !== before.drawColormap)
+      applied.drawColormap = after.drawColormap
+    if (after.drawOpacity !== before.drawOpacity)
+      applied.drawOpacity = after.drawOpacity
+    if (after.drawRimOpacity !== before.drawRimOpacity)
+      applied.drawRimOpacity = after.drawRimOpacity
   }
   let done = false
   const onDrawingChanged = () => {
@@ -68,7 +76,7 @@ export function styleDrawing(
 /** Write the drawing's style as its owner, so a later restore still undoes it. */
 export type Restyle = (write: () => void) => void
 
-export interface RtContour {
+interface RtContour {
   type?: string
   points: ReadonlyArray<{ x: number; y: number; z: number }>
 }
@@ -122,8 +130,10 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
 }
 
 /**
- * Rasterize `contours` (LPS mm triplets) on a grid of `dims` voxels, even-odd
- * per slice so an inner contour of the same ROI stays a hole. A contour lies on
+ * Rasterize `contours` (LPS mm triplets) on a grid of `dims` voxels. Per slice,
+ * a contour inside an odd number of others is a hole and the rest are unioned,
+ * so overlapping CLOSED_PLANAR rings merge while a nested ring cuts a hole;
+ * `xor` (CLOSEDPLANAR_XOR) fills even-odd instead. A contour lies on
  * the slice its points are nearest across the axis they vary least along;
  * voxels whose centres fall inside are in. A tilted contour (a gantry-tilted
  * or other series' plane) puts each voxel on the slice nearest its plane. Returns their count and centroid
@@ -133,6 +143,7 @@ export function rasterizeContours(
   dims: readonly [number, number, number],
   lps2vox: ReadonlyArray<number>,
   contours: ReadonlyArray<ArrayLike<number>>,
+  xor = false,
 ): SegmentStats & { runs: number[] } {
   const [
     m0 = 0,
@@ -179,10 +190,14 @@ export function rasterizeContours(
         if (c > (hi[a] as number)) hi[a] = c
       }
     }
+    // Slice across the axis the plane faces most; a span-based pick collapses a
+    // steep oblique ring whose extent along the faced axis is the larger one.
+    const nrm = newellNormal(vox).map(Math.abs)
     const span = hi.map((h, a) => h - (lo[a] as number))
+    const facing = nrm.some((x) => x > 0) ? nrm : span.map((x) => -x)
     let w: 0 | 1 | 2 = 0
-    if ((span[1] as number) < (span[w] as number)) w = 1
-    if ((span[2] as number) < (span[w] as number)) w = 2
+    if ((facing[1] as number) > (facing[w] as number)) w = 1
+    if ((facing[2] as number) > (facing[w] as number)) w = 2
     const slice = Math.round(((lo[w] as number) + (hi[w] as number)) / 2)
     const [a, b, c] = contourPlane(vox, w)
     // A slope that shows in the key marks the ring tilted even when it spans one
@@ -261,7 +276,12 @@ export function rasterizeContours(
       { length: rowLast - rowFirst + 1 },
       () => [],
     )
-    for (const p of group) {
+    // Union mode tags each crossing with its contour: +1 outer, -1 hole.
+    const signed = !xor && group.length > 1
+    const signs = signed ? holeSigns(group, u, v) : []
+    const rowSigns: number[][] = signed ? rowCrossings.map(() => []) : []
+    for (let k = 0; k < group.length; k++) {
+      const p = group[k] as Float64Array
       const n = p.length
       let u0 = p[n - 3 + u] as number
       let v0 = p[n - 3 + v] as number
@@ -273,16 +293,23 @@ export function rasterizeContours(
         const last = Math.min(rowLast, Math.ceil(Math.max(v0, v1)) - 1)
         const slope = (u1 - u0) / (v1 - v0)
         for (let row = first; row <= last; row++) {
-          const crossings = rowCrossings[row - rowFirst] as number[]
-          crossings.push(u0 + (row - v0) * slope)
+          ;(rowCrossings[row - rowFirst] as number[]).push(
+            u0 + (row - v0) * slope,
+          )
+          if (signed) (rowSigns[row - rowFirst] as number[]).push(k)
         }
         u0 = u1
         v0 = v1
       }
     }
     for (let row = rowFirst; row <= rowLast; row++) {
-      const crossings = rowCrossings[row - rowFirst] as number[]
-      crossings.sort((a, b) => a - b)
+      const crossings = signed
+        ? unionSpans(
+            rowCrossings[row - rowFirst] as number[],
+            rowSigns[row - rowFirst] as number[],
+            signs,
+          )
+        : (rowCrossings[row - rowFirst] as number[]).sort((a, b) => a - b)
       const rowBase = base + row * sv
       for (let i = 0; i + 1 < crossings.length; i += 2) {
         const first = Math.max(0, Math.ceil(crossings[i] as number))
@@ -330,9 +357,8 @@ export function rasterizeContours(
  * two axes in rasterizeContours' order; w varies least, so its normal
  * component is the largest.
  */
-function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
-  const u = w === 0 ? 1 : 0
-  const v = w === 2 ? 1 : 2
+/** A ring's Newell normal (area-weighted; zero for a degenerate ring). */
+function newellNormal(p: Float64Array): number[] {
   const nrm = [0, 0, 0]
   for (let i = 0, j = p.length - 3; i < p.length; j = i, i += 3)
     for (let a = 0; a < 3; a++) {
@@ -343,6 +369,13 @@ function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
         ((p[j + b] as number) - (p[i + b] as number)) *
           ((p[j + c] as number) + (p[i + c] as number))
     }
+  return nrm
+}
+
+function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
+  const u = w === 0 ? 1 : 0
+  const v = w === 2 ? 1 : 2
+  const nrm = newellNormal(p)
   const nw = nrm[w] as number
   if (!nw) return [0, 0, p[w] as number]
   return [
@@ -370,17 +403,159 @@ export function fillRuns(
   }
 }
 
+/** Whether point (pu, pv) is inside ring `q` (even-odd, in-plane axes u, v). */
+function pointInRing(
+  q: Float64Array,
+  u: number,
+  v: number,
+  pu: number,
+  pv: number,
+): boolean {
+  let inside = false
+  let u0 = q[q.length - 3 + u] as number
+  let v0 = q[q.length - 3 + v] as number
+  for (let i = 0; i < q.length; i += 3) {
+    const u1 = q[i + u] as number
+    const v1 = q[i + v] as number
+    if (v0 > pv !== v1 > pv && pu < u0 + ((pv - v0) * (u1 - u0)) / (v1 - v0))
+      inside = !inside
+    u0 = u1
+    v0 = v1
+  }
+  return inside
+}
+
 /**
- * An ROI's closed planar contours as flat LPS triplets. CLOSEDPLANAR_XOR
- * contours combine by exclusive-or, which the even-odd fill already does.
+ * Whether ring `p` lies inside ring `q`: each edge of p, split where it meets
+ * q, has every piece inside q or along its boundary (and at least one inside).
  */
-export function roiContours(roi: RtRoi): Float64Array[] {
-  const out: Float64Array[] = []
+function ringInside(
+  p: Float64Array,
+  q: Float64Array,
+  u: number,
+  v: number,
+): boolean {
+  const eps = 1e-9
+  let interior = false
+  const ts: number[] = []
+  let au = p[p.length - 3 + u] as number
+  let av = p[p.length - 3 + v] as number
+  for (let i = 0; i < p.length; i += 3) {
+    const bu = p[i + u] as number
+    const bv = p[i + v] as number
+    const du = bu - au
+    const dv = bv - av
+    const len2 = du * du + dv * dv
+    ts.length = 0
+    ts.push(0, 1)
+    let cu = q[q.length - 3 + u] as number
+    let cv = q[q.length - 3 + v] as number
+    for (let j = 0; j < q.length; j += 3) {
+      const eu = q[j + u] as number
+      const ev = q[j + v] as number
+      const fu = eu - cu
+      const fv = ev - cv
+      const den = du * fv - dv * fu
+      if (Math.abs(den) > eps) {
+        const t = ((cu - au) * fv - (cv - av) * fu) / den
+        const s = ((cu - au) * dv - (cv - av) * du) / den
+        if (t > 0 && t < 1 && s >= -eps && s <= 1 + eps) ts.push(t)
+      } else if (len2 > 0) {
+        // Parallel: q's endpoints split p's edge where they lie on it.
+        ts.push(((cu - au) * du + (cv - av) * dv) / len2)
+        ts.push(((eu - au) * du + (ev - av) * dv) / len2)
+      }
+      cu = eu
+      cv = ev
+    }
+    ts.sort((x, y) => x - y)
+    for (let k = 1; k < ts.length; k++) {
+      const t0 = Math.max(0, ts[k - 1] as number)
+      const t1 = Math.min(1, ts[k] as number)
+      if (t1 - t0 <= eps) continue
+      const mu = au + ((t0 + t1) / 2) * du
+      const mv = av + ((t0 + t1) / 2) * dv
+      if (onRing(q, u, v, mu, mv)) continue
+      if (!pointInRing(q, u, v, mu, mv)) return false
+      interior = true
+    }
+    au = bu
+    av = bv
+  }
+  return interior
+}
+
+/** Whether (pu, pv) lies on an edge of ring `q`. */
+function onRing(
+  q: Float64Array,
+  u: number,
+  v: number,
+  pu: number,
+  pv: number,
+): boolean {
+  let u0 = q[q.length - 3 + u] as number
+  let v0 = q[q.length - 3 + v] as number
+  for (let i = 0; i < q.length; i += 3) {
+    const u1 = q[i + u] as number
+    const v1 = q[i + v] as number
+    const cross = (u1 - u0) * (pv - v0) - (v1 - v0) * (pu - u0)
+    const dot = (pu - u0) * (u1 - u0) + (pv - v0) * (v1 - v0)
+    const len2 = (u1 - u0) ** 2 + (v1 - v0) ** 2
+    if (Math.abs(cross) <= 1e-9 * Math.max(1, len2) && dot >= 0 && dot <= len2)
+      return true
+    u0 = u1
+    v0 = v1
+  }
+  return false
+}
+
+/** -1 for a hole (inside an odd number of the other rings), else +1. */
+function holeSigns(group: Float64Array[], u: number, v: number): number[] {
+  return group.map((p, k) => {
+    let depth = 0
+    for (let j = 0; j < group.length; j++)
+      if (j !== k && ringInside(p, group[j] as Float64Array, u, v)) depth++
+    return depth % 2 ? -1 : 1
+  })
+}
+
+/** A row's crossings (tagged by contour) as [enter, exit] pairs of the union. */
+function unionSpans(xs: number[], ks: number[], signs: number[]): number[] {
+  const order = xs
+    .map((_, i) => i)
+    .sort((a, b) => (xs[a] as number) - (xs[b] as number))
+  const inside = new Uint8Array(signs.length)
+  const spans: number[] = []
+  let level = 0
+  for (const i of order) {
+    const k = ks[i] as number
+    const entering = !inside[k]
+    inside[k] = entering ? 1 : 0
+    const was = level
+    level += (entering ? 1 : -1) * (signs[k] as number)
+    if (was > 0 !== level > 0) spans.push(xs[i] as number)
+  }
+  return spans
+}
+
+/**
+ * An ROI's closed planar contours as flat LPS triplets, and whether any is
+ * CLOSEDPLANAR_XOR (filled even-odd, see rasterizeContours).
+ */
+function roiContours(roi: RtRoi): {
+  contours: Float64Array[]
+  xor: boolean
+} {
+  const contours: Float64Array[] = []
+  let xor = false
   for (const c of roi.contourPoints ?? []) {
     if (c.type !== 'CLOSED_PLANAR' && c.type !== 'CLOSEDPLANAR_XOR') continue
-    out.push(Float64Array.from(c.points.flatMap((pt) => [pt.x, pt.y, pt.z])))
+    xor ||= c.type === 'CLOSEDPLANAR_XOR'
+    contours.push(
+      Float64Array.from(c.points.flatMap((pt) => [pt.x, pt.y, pt.z])),
+    )
   }
-  return out
+  return { contours, xor }
 }
 
 /** An RT drawing's per-ROI stats and its refill showing only `visible` ROIs. */
@@ -390,38 +565,46 @@ export interface RtLabels {
 }
 
 /**
- * Rasterize every ROI with closed contours into `bitmap`, label = list index + 1
- * (at most 255, the drawing's range). Larger ROIs (by voxel count) are drawn
- * first so nested ones stay visible on top; stats are each ROI's own, and
- * showOnly refills without hidden ROIs, uncovering what they overlapped.
+ * Rasterize the first 255 ROIs with closed contours (the drawing's range),
+ * labelled 1.. in list order; `draw` fills a bitmap and returns its refill.
+ * Larger ROIs (by voxel count) are drawn first so nested ones stay visible on
+ * top; stats are each ROI's own, and the refill without hidden ROIs uncovers
+ * what they overlapped.
  */
 export function rasterizeStructureSet(
-  bitmap: Uint8Array,
   dims: readonly [number, number, number],
   lps2vox: ReadonlyArray<number>,
   rois: ReadonlyArray<RtRoi>,
-): RtLabels & { segments: PanelSegment[] } {
-  const drawn = rois
-    .slice(0, 255)
-    .map((roi, i) => ({
-      roi,
-      value: i + 1,
-      ...rasterizeContours(dims, lps2vox, roiContours(roi)),
-    }))
-    .filter((r) => r.count)
+): Pick<RtLabels, 'stats'> & {
+  segments: PanelSegment[]
+  draw: (bitmap: Uint8Array) => RtLabels['showOnly']
+} {
+  // Cap after dropping empty ROIs, so empty ones never use up labels.
+  const drawn: ({ roi: RtRoi; value: number } & ReturnType<
+    typeof rasterizeContours
+  >)[] = []
+  for (const roi of rois) {
+    if (drawn.length === 255) break
+    const { contours, xor } = roiContours(roi)
+    const r = rasterizeContours(dims, lps2vox, contours, xor)
+    if (r.count) drawn.push({ roi, value: drawn.length + 1, ...r })
+  }
   const bySize = [...drawn].sort((a, b) => b.count - a.count)
   const runs = bySize.map((r) => Int32Array.from(r.runs))
   const stats = new Map<number, SegmentStats>(
     drawn.map((r) => [r.value, { count: r.count, centroid: r.centroid }]),
   )
-  const showOnly = (visible?: ReadonlySet<number>) => {
-    bitmap.fill(0)
-    bySize.forEach((r, i) => {
-      if (!visible || visible.has(r.value))
-        fillRuns(bitmap, runs[i] as Int32Array, r.value)
-    })
+  const draw = (bitmap: Uint8Array) => {
+    const showOnly = (visible?: ReadonlySet<number>) => {
+      bitmap.fill(0)
+      bySize.forEach((r, i) => {
+        if (!visible || visible.has(r.value))
+          fillRuns(bitmap, runs[i] as Int32Array, r.value)
+      })
+    }
+    showOnly()
+    return showOnly
   }
-  showOnly()
   const segments = drawn.map(({ roi, value }) => {
     const [red = 255, green = 255, blue = 255] = roi.colorArray ?? []
     return {
@@ -430,7 +613,7 @@ export function rasterizeStructureSet(
       rgb: [red, green, blue] as [number, number, number],
     }
   })
-  return { segments, stats, showOnly }
+  return { segments, stats, draw }
 }
 
 type RtDisplaySet = OhifDisplaySet & {
@@ -497,22 +680,19 @@ export function startRtDrawing(
       | undefined
     const lps2vox = lpsToVoxel((vox) => nv.vox2mm(vox))
     if (!dims || !lps2vox) return
+    const { segments, stats, draw } = rasterizeStructureSet(dims, lps2vox, rois)
+    // Before createEmptyDrawing: nothing to show must not replace the drawing.
+    if (!segments.length) {
+      options.setNote('The structure set has no closed contours to show.')
+      return
+    }
     nv.createEmptyDrawing()
     const bitmap = nv.drawingVolume?.img
     if (!(bitmap instanceof Uint8Array)) return
     owned = nv.drawingVolume
     // createEmptyDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    const { segments, stats, showOnly } = rasterizeStructureSet(
-      bitmap,
-      dims,
-      lps2vox,
-      rois,
-    )
-    if (!segments.length) {
-      options.setNote('The structure set has no closed contours to show.')
-      return
-    }
+    const showOnly = draw(bitmap)
     const style = styleDrawing(nv, () => {
       nv.drawColormap = nv.addColormap(
         `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,

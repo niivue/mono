@@ -1,3 +1,71 @@
+## 1.0.0-rc.253 (2026-11-17)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.221
+- Updated nv-ext-tile to 1.0.0-rc.130
+- Updated uikit to 1.0.0-rc.220
+
+## 1.0.0-rc.252 (2026-11-17)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.219
+
+## 1.0.0-rc.251 (2026-11-17)
+
+### Features
+
+- **nv-ohif:** OHIF undo history, arrow text, measurement menu, contour closing, localizer stacking ([aad3547e](https://github.com/niivue/mono/commit/aad3547e))
+- **nv-ohif:** undo/redo/delete, DICOM SR export and import, Angle/CobbAngle rows ([29ce6e5b](https://github.com/niivue/mono/commit/29ce6e5b))
+- **nv-ohif:** right-drag on a slide zooms to the boxed region, as NiiVue's slide viewer ([a26e1fd4](https://github.com/niivue/mono/commit/a26e1fd4))
+- **nv-ohif:** OHIF Probe on NiiVue panes; crosshair value; PET in SUVbw ([13be4d5b](https://github.com/niivue/mono/commit/13be4d5b))
+- **nv-ohif:** orientation menu (3D, 3D Cinematic), measurement DOM, cornerstone ROI rows, slide W/L ([8d64915e](https://github.com/niivue/mono/commit/8d64915e))
+
+### Fixes
+
+- **nv-ohif:** slice a contour across the axis its plane faces ([1512ec63](https://github.com/niivue/mono/commit/1512ec63))
+- **nv-ohif:** ring containment by split edges, not vertices ([dc701ca9](https://github.com/niivue/mono/commit/dc701ca9))
+- **nv-ohif:** a ring crossing its encloser is not a hole ([4bae47c4](https://github.com/niivue/mono/commit/4bae47c4))
+- **nv-ohif:** union overlapping CLOSED_PLANAR contours; holes by nesting ([1fe19b53](https://github.com/niivue/mono/commit/1fe19b53))
+- **nv-ohif:** cap RT labels at 255 after dropping empty ROIs ([d1994178](https://github.com/niivue/mono/commit/d1994178))
+- **nv-ohif:** restore claims only restyled fields; empty RT keeps the drawing ([35ab88e4](https://github.com/niivue/mono/commit/35ab88e4))
+- **nv-ohif:** count the seg panel's restyle as the drawing's own style ([3e1aaa5d](https://github.com/niivue/mono/commit/3e1aaa5d))
+- **nv-ohif:** restore the prior drawing style when an RT drawing is replaced ([05ff3380](https://github.com/niivue/mono/commit/05ff3380))
+- **nv-ohif:** group a flat hole with its tilted outer ring; keep a drawing made during RT load ([0886c7b9](https://github.com/niivue/mono/commit/0886c7b9))
+- **nv-ohif:** a one-slice hole on a tilted plane cuts its outer ring ([6b6155dd](https://github.com/niivue/mono/commit/6b6155dd))
+- **nv-ohif:** group tilted RT contours by plane, keep off-volume midpoints ([45ec3a89](https://github.com/niivue/mono/commit/45ec3a89))
+- **nv-ohif:** a tilted RT contour fills the slices its plane crosses ([#839](https://github.com/niivue/mono/issues/839))
+- **nv-ohif:** a probe row's index uses the row's own frame where outputs overlap ([05d1bd1b](https://github.com/niivue/mono/commit/05d1bd1b))
+- **nv-ohif:** R15 round 19 — the latest localizer jump wins; rename keeps the row's own image where outputs overlap ([8e92923b](https://github.com/niivue/mono/commit/8e92923b))
+- **nv-ohif:** draw RTSTRUCT CLOSEDPLANAR_XOR contours ([#839](https://github.com/niivue/mono/issues/839))
+- **nv-ohif:** RT cleanup closes only the drawing it installed ([#839](https://github.com/niivue/mono/issues/839))
+- **nv-ohif:** SUV-scale every PET stack output; holes are not inside ([#835](https://github.com/niivue/mono/issues/835))
+- **nv-ohif:** a series swap or unmount releases imported SR rows ([#828](https://github.com/niivue/mono/issues/828))
+- **nv-ohif:** SUV decays to the earliest acquisition and needs ATTN+DECY ([#825](https://github.com/niivue/mono/issues/825))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.250 (2026-11-17)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.220
+- Updated nv-ext-tile to 1.0.0-rc.129
+- Updated uikit to 1.0.0-rc.218
+
+## 1.0.0-rc.249 (2026-11-17)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.219
+- Updated nv-ext-tile to 1.0.0-rc.128
+- Updated uikit to 1.0.0-rc.217
+
 ## 1.0.0-rc.248 (2026-11-17)
 
 ### Updated Dependencies

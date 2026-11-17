@@ -12,7 +12,7 @@
       "ignoreDependencies": ["http-server"]
     },
     "apps/demo-ext-tile": {
-      "entry": ["scripts/*.ts"]
+      "entry": ["scripts/*.ts", "bench/fetch.mjs"]
     },
     "apps/docs": {
       // Demo.astro loads the demos by name through import.meta.glob; Starlight

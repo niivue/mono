@@ -24,7 +24,7 @@
     <div id="wrap">
       <header>
         <b>UIKit</b>
-        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html" aria-current="page">tiles</a><a href="./buttons.html">buttons</a></nav>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./subvolume.html">subvolume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html" aria-current="page">tiles</a><a href="./buttons.html">buttons</a></nav>
         <label title="Zoom, as a power of two of the fitted view (the wheel moves it too)">zoom <input id="zoom" type="range" min="-1" max="10" step="0.1" value="0" style="vertical-align:middle" /></label>
         <label>font <input id="fontSize" type="range" min="12" max="72" value="24" style="vertical-align:middle" /></label>
         <button id="fit" type="button">Fit</button>
@@ -236,7 +236,9 @@
       let unmagnify = null
       document.getElementById('magnify').addEventListener('change', (ev) => {
         unmagnify?.()
-        unmagnify = ev.target.checked ? attachSlideMagnifier(view) : null
+        // A press exits the lens: untick the toggle, which tears it down.
+        const onExit = () => ev.target.click()
+        unmagnify = ev.target.checked ? attachSlideMagnifier(view, { onExit }) : null
         view.requestRender()
       })
     </script>

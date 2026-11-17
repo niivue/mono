@@ -242,7 +242,9 @@ export class UIKitMagnifierOverlay {
         e.type === 'pointerup' &&
         !touches.size &&
         tap &&
-        e.timeStamp - tap.at < TAP_MS
+        e.timeStamp - tap.at < TAP_MS &&
+        // A drag reported only at release is not a tap either.
+        Math.hypot(e.clientX - tap.x, e.clientY - tap.y) <= TAP_SLOP_CSS
       )
         exit()
       if (!touches.size) tap = null

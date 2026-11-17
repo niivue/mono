@@ -126,6 +126,9 @@ describe('UIKitMagnifierOverlay.attach', () => {
     touch('pointerup', 70, 4, 700) // held: not a tap, and its click is the lens's
     canvas.dispatchEvent(pointer('click', 70, 50, 4))
     expect(exits).toBe(0)
+    touch('pointerdown', 40, 5, 300)
+    touch('pointerup', 80, 5, 400) // a drag seen only at release
+    expect(exits).toBe(0)
     touch('pointerdown', 70, 3, 500)
     touch('pointerup', 72, 3, 600)
     canvas.dispatchEvent(pointer('click', 72, 50, 3))

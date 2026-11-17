@@ -88,6 +88,7 @@ import { useMeasurementTracking } from './trackingBridge'
 import { ViewportNotification } from './viewportNotification'
 import {
   CrosshairValueReadout,
+  reformatPosition,
   type StackPosition,
   StackPositionReadout,
   StudyLabel,
@@ -516,10 +517,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     nv.addEventListener('locationChange', showWindowLevel)
     // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
     // sliceTypeChange carries no position: reuse the last crosshair.
+    let vox: number[] | undefined
     const showStack = (e: Event) => {
       const values = (e as CustomEvent<Partial<NiiVueLocation>>).detail?.values
       if (values) {
         const v = values[0]
+        vox = v?.vox
         setCrosshairValue(
           v && Number.isFinite(v.value)
             ? `${v.approximate ? '~' : ''}${roundNumber(v.value)}`
@@ -538,7 +541,7 @@ export function NiivueViewport(props: OhifViewportProps) {
               mm,
               viewportOptionsRef.current?.viewportType === 'volume',
             )
-          : undefined
+          : reformatPosition(nv.sliceType, vox, nv.volumes[0]?.dimsRAS)
       setStack((shown) =>
         pos && shown?.index === pos.index && shown.total === pos.total
           ? shown

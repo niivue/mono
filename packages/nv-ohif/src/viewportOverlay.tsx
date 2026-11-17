@@ -75,6 +75,23 @@ export function stackPosition(
   }
 }
 
+// RAS voxel axis along each 2D plane's normal (axial z, coronal y, sagittal x).
+const NORMAL_AXIS = [2, 1, 0]
+
+/** A reformat's position along its normal, as cornerstone's "257/512". */
+export function reformatPosition(
+  sliceType: number,
+  vox: ArrayLike<number> | undefined,
+  dimsRAS: ArrayLike<number> | undefined,
+): StackPosition | undefined {
+  const axis = NORMAL_AXIS[sliceType]
+  if (axis === undefined || !vox || !dimsRAS) return undefined
+  const total = dimsRAS[axis + 1] ?? 0
+  return total > 0
+    ? { index: Math.round(vox[axis] ?? 0) + 1, total }
+    : undefined
+}
+
 const corner = (pos: CSSProperties): CSSProperties => ({
   position: 'absolute',
   ...pos,
@@ -111,7 +128,9 @@ export function StackPositionReadout({
       style={corner({ right: 12, bottom: 8 })}
     >
       <span title="Instance Number">
-        {`I:${instanceNumber ?? index} (${index}/${total})`}
+        {instanceNumber === undefined
+          ? `${index}/${total}`
+          : `I:${instanceNumber} (${index}/${total})`}
       </span>
     </div>
   )

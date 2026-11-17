@@ -15,6 +15,59 @@ import {
 
 type Vox2mm = (vox: [number, number, number]) => number[] | null
 
+/**
+ * Style the installed drawing via `apply`. The returned restore puts the prior
+ * colormap and opacities back; it runs itself when another drawing replaces this
+ * one. A style the user set since stays; one written through `restyle` (the
+ * panel's) counts as the drawing's own.
+ */
+export function styleDrawing(
+  nv: Pick<
+    NiiVue,
+    | 'drawingVolume'
+    | 'drawColormap'
+    | 'drawOpacity'
+    | 'drawRimOpacity'
+    | 'addEventListener'
+    | 'removeEventListener'
+  >,
+  apply: () => void,
+): { restore: () => void; restyle: Restyle } {
+  const installed = nv.drawingVolume
+  const snap = () => ({
+    drawColormap: nv.drawColormap,
+    drawOpacity: nv.drawOpacity,
+    drawRimOpacity: nv.drawRimOpacity,
+  })
+  const prior = snap()
+  apply()
+  let applied = snap()
+  const restyle: Restyle = (write) => {
+    write()
+    applied = snap()
+  }
+  let done = false
+  const onDrawingChanged = () => {
+    if (nv.drawingVolume !== installed) restore()
+  }
+  const restore = () => {
+    if (done) return
+    done = true
+    nv.removeEventListener('drawingChanged', onDrawingChanged)
+    if (nv.drawColormap === applied.drawColormap)
+      nv.drawColormap = prior.drawColormap
+    if (nv.drawOpacity === applied.drawOpacity)
+      nv.drawOpacity = prior.drawOpacity
+    if (nv.drawRimOpacity === applied.drawRimOpacity)
+      nv.drawRimOpacity = prior.drawRimOpacity
+  }
+  nv.addEventListener('drawingChanged', onDrawingChanged)
+  return { restore, restyle }
+}
+
+/** Write the drawing's style as its owner, so a later restore still undoes it. */
+export type Restyle = (write: () => void) => void
+
 export interface RtContour {
   type?: string
   points: ReadonlyArray<{ x: number; y: number; z: number }>
@@ -97,10 +150,16 @@ export function rasterizeContours(
   ] = lps2vox
   const strides = [1, dims[0], dims[0] * dims[1]] as const
   // Contours (voxel coordinates) grouped by slice, or by plane when tilted.
-  const slices = new Map<
-    string,
-    { w: 0 | 1 | 2; slice: number; isTilted: boolean; contours: Float64Array[] }
-  >()
+  type Group = {
+    w: 0 | 1 | 2
+    slice: number
+    isTilted: boolean
+    contours: Float64Array[]
+  }
+  const slices = new Map<string, Group>()
+  // Flat rings wait until every tilted plane is known: a hole too small to show
+  // the slope still lies on its outer ring's plane and must share its group.
+  const flat: { vox: Float64Array; w: 0 | 1 | 2; slice: number }[] = []
   for (const lps of contours) {
     const n = Math.floor(lps.length / 3)
     if (n < 3) continue
@@ -125,21 +184,52 @@ export function rasterizeContours(
     if ((span[1] as number) < (span[w] as number)) w = 1
     if ((span[2] as number) < (span[w] as number)) w = 2
     const slice = Math.round(((lo[w] as number) + (hi[w] as number)) / 2)
-    const isTilted = Math.round(lo[w] as number) !== Math.round(hi[w] as number)
-    let key: string
-    if (isTilted) {
-      // Coplanar rings (an outer and its hole) share a plane, not a midpoint.
-      if ((hi[w] as number) < -0.5 || (lo[w] as number) >= dims[w] - 0.5)
-        continue
-      const [a, b, c] = contourPlane(vox, w)
-      key = `${w}:${a.toFixed(3)}:${b.toFixed(3)}:${c.toFixed(1)}`
-    } else {
-      if (slice < 0 || slice >= dims[w]) continue
-      key = `${w}:${slice}`
+    const [a, b, c] = contourPlane(vox, w)
+    // A slope that shows in the key marks the ring tilted even when it spans one
+    // slice, so a small hole on its outer ring's tilted plane groups with it.
+    const isTilted =
+      Math.round(lo[w] as number) !== Math.round(hi[w] as number) ||
+      Math.abs(a) >= 5e-4 ||
+      Math.abs(b) >= 5e-4
+    if (!isTilted) {
+      flat.push({ vox, w, slice })
+      continue
     }
+    // Coplanar rings (an outer and its hole) share a plane, not a midpoint.
+    if ((hi[w] as number) < -0.5 || (lo[w] as number) >= dims[w] - 0.5) continue
+    const key = `${w}:${a.toFixed(3)}:${b.toFixed(3)}:${c.toFixed(1)}`
     const group = slices.get(key)
     if (group) group.contours.push(vox)
     else slices.set(key, { w, slice, isTilted, contours: [vox] })
+  }
+  const tilted = [...slices.values()]
+  for (const { vox, w, slice } of flat) {
+    const u = w === 0 ? 1 : 0
+    const v = w === 2 ? 1 : 2
+    const onPlane = tilted.find((g) => {
+      if (g.w !== w) return false
+      const [a, b, c] = contourPlane(g.contours[0] as Float64Array, w)
+      for (let i = 0; i < vox.length; i += 3)
+        if (
+          Math.abs(
+            a * (vox[i + u] as number) +
+              b * (vox[i + v] as number) +
+              c -
+              (vox[i + w] as number),
+          ) > 0.01
+        )
+          return false
+      return true
+    })
+    if (onPlane) {
+      onPlane.contours.push(vox)
+      continue
+    }
+    if (slice < 0 || slice >= dims[w]) continue
+    const key = `${w}:${slice}`
+    const group = slices.get(key)
+    if (group) group.contours.push(vox)
+    else slices.set(key, { w, slice, isTilted: false, contours: [vox] })
   }
   let count = 0
   const runs: number[] = []
@@ -367,9 +457,12 @@ export function startRtDrawing(
     | 'vox2mm'
     | 'drawIsEnabled'
     | 'addColormap'
+    | 'drawingGeneration'
     | 'drawColormap'
     | 'drawOpacity'
     | 'drawRimOpacity'
+    | 'addEventListener'
+    | 'removeEventListener'
   >,
   rt: OhifDisplaySet,
   options: {
@@ -377,20 +470,27 @@ export function startRtDrawing(
     setNote: (message: string) => void
     // The contours rasterize onto the base's grid: resolves once the base is in.
     whenBase: Promise<boolean>
-    onShown?: (segments: PanelSegment[], labels: RtLabels) => () => void
+    onShown?: (
+      segments: PanelSegment[],
+      labels: RtLabels,
+      restyle: Restyle,
+    ) => () => void
   },
 ): () => void {
   let cancelled = false
   // The drawing this call installed; a later one is not ours to close.
   let owned: unknown = null
   let stopShown: (() => void) | undefined
+  let restoreStyle: (() => void) | undefined
   const show = async () => {
     const ds = rt as RtDisplaySet
+    // A drawing made or loaded while the structure set loads wins.
+    const atStart = nv.drawingGeneration
     const [, hasBase] = await Promise.all([
       ds.load?.({ headers: options.headers, createSegmentation: false }),
       options.whenBase,
     ])
-    if (cancelled || !hasBase) return
+    if (cancelled || !hasBase || nv.drawingGeneration !== atStart) return
     const rois = ds.structureSet?.ROIContours ?? []
     const dims = nv.volumes[0]?.dimsRAS?.slice(1, 4) as
       | [number, number, number]
@@ -413,22 +513,33 @@ export function startRtDrawing(
       options.setNote('The structure set has no closed contours to show.')
       return
     }
-    nv.drawColormap = nv.addColormap(
-      `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
-      panelColormap(
-        segments.map((s) => ({ ...s, color: [...s.rgb, 255], visible: true })),
-      ),
-    )
-    nv.drawOpacity = SEG_FILL_OPACITY
-    nv.drawRimOpacity = SEG_RIM_OPACITY
-    nv.refreshDrawing()
-    stopShown = options.onShown?.(segments, {
-      stats,
-      showOnly: (visible) => {
-        showOnly(visible)
-        nv.refreshDrawing()
-      },
+    const style = styleDrawing(nv, () => {
+      nv.drawColormap = nv.addColormap(
+        `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
+        panelColormap(
+          segments.map((s) => ({
+            ...s,
+            color: [...s.rgb, 255],
+            visible: true,
+          })),
+        ),
+      )
+      nv.drawOpacity = SEG_FILL_OPACITY
+      nv.drawRimOpacity = SEG_RIM_OPACITY
     })
+    restoreStyle = style.restore
+    nv.refreshDrawing()
+    stopShown = options.onShown?.(
+      segments,
+      {
+        stats,
+        showOnly: (visible) => {
+          showOnly(visible)
+          nv.refreshDrawing()
+        },
+      },
+      style.restyle,
+    )
   }
   show().catch((err) => {
     if (cancelled) return
@@ -441,5 +552,6 @@ export function startRtDrawing(
     cancelled = true
     stopShown?.()
     if (owned && nv.drawingVolume === owned) nv.closeDrawing()
+    restoreStyle?.()
   }
 }

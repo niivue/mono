@@ -158,11 +158,22 @@ export function slideOverlayContent(
   const labels: SlideOverlayContent['labels'] = []
   const W = screen.widthCss * dpr
   const H = screen.heightCss * dpr
-  const onScreen = (x0: number, y0: number, x1: number, y1: number) =>
-    Math.max(x0, x1) >= 0 &&
-    Math.min(x0, x1) <= W &&
-    Math.max(y0, y1) >= 0 &&
-    Math.min(y0, y1) <= H
+  const onScreen = (x0: number, y0: number, x1: number, y1: number) => {
+    if (
+      Math.max(x0, x1) < 0 ||
+      Math.min(x0, x1) > W ||
+      Math.max(y0, y1) < 0 ||
+      Math.min(y0, y1) > H
+    )
+      return false
+    // A diagonal's box can overlap the view while the line passes a corner:
+    // it crosses the view only if the corners are not all on one side of it.
+    const dx = x1 - x0
+    const dy = y1 - y0
+    const side = (x: number, y: number) => dx * (y - y0) - dy * (x - x0)
+    const sides = [side(0, 0), side(W, 0), side(0, H), side(W, H)]
+    return Math.min(...sides) <= 0 && Math.max(...sides) >= 0
+  }
   const segment = (x0: number, y0: number, x1: number, y1: number) => {
     if (onScreen(x0, y0, x1, y1)) segments.push(x0, y0, x1, y1)
   }

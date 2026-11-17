@@ -1,4 +1,4 @@
-import type { mat4 } from 'gl-matrix'
+import { type mat4, vec4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import { annotationDelta } from '@/annotation/delta'
 import {
@@ -57,6 +57,7 @@ import {
 } from '@/view/NVLegend'
 import { setNextActionTag } from '@/view/NVPerfMarks'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { projectMMToCanvas } from '@/view/sliceUtils'
 import {
   type ClipDrawPlane,
   chunkExplodeEnabled,
@@ -108,6 +109,38 @@ function clearHover(ctrl: NiiVue): boolean {
 // isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
 // screen space so thick slices or zoom don't change what counts as a click.
 const CLICK_PX = 3
+// A multi-click contour closes on a click this close (CSS px) to its first
+// point, as cornerstone's closeContourProximity (10).
+const CLOSE_PX = 10
+
+function isNearFirstPoint(
+  ctrl: NiiVue,
+  evt: PointerEvent,
+  first: AnnotationPoint,
+): boolean {
+  // Through the clicked tile: the nearest tile to the point may be another
+  // plane through it (a multiplanar layout's crosshair).
+  const tile = ctrl.activeTileHit
+    ? ctrl.view?.screenSlices[ctrl.activeTileHit.tileIndex]
+    : undefined
+  const { mvpMatrix, planeNormal, planePoint, leftTopWidthHeight } = tile ?? {}
+  if (!mvpMatrix || !planeNormal || !planePoint || !leftTopWidthHeight)
+    return false
+  const mm = Annotation.slice2DToMMOnPlane(
+    first,
+    ctrl._annotationPolySliceType,
+    planeNormal,
+    planePoint,
+  )
+  // Tiles are laid out in bounds-local pixels.
+  const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
+  const at = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+  if (!at) return false
+  return (
+    Math.hypot(at[0] - cx, at[1] - cy) <=
+    CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  )
+}
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.isDragging = true
@@ -184,8 +217,98 @@ function isLivewireTool(tool: AnnotationTool): boolean {
   return tool === 'livewire' || tool === 'measureLivewire'
 }
 
+// Fixed-count multi-click tools: they commit on their last click.
+const ANGLE_CLICKS: Partial<Record<AnnotationTool, number>> = {
+  measureAngle: 3,
+  measureCobbAngle: 4,
+}
+
 function isMultiClickTool(tool: AnnotationTool): boolean {
-  return tool === 'spline' || tool === 'measureSpline' || isLivewireTool(tool)
+  return (
+    tool === 'spline' ||
+    tool === 'measureSpline' ||
+    isLivewireTool(tool) ||
+    tool in ANGLE_CLICKS
+  )
+}
+
+// An angle tool's annotation from its clicks so far: two thin-line arms with
+// the clicked points in shape (measureAngle: start, end = start2 = vertex,
+// end2; measureCobbAngle: two lines), and the angle once both arms exist.
+// ponytail: no control points (as bidirectional); add start2/end2 handles if editing is needed.
+function angleAnnotation(
+  ctrl: NiiVue,
+  pts: readonly AnnotationPoint[],
+): VectorAnnotation | null {
+  if (pts.length < 2) return null
+  const cfg = ctrl.model.annotation
+  const [a, b, c, d] = pts
+  const arm2 = cfg.tool === 'measureAngle' ? c && [b, c] : c && d && [c, d]
+  const w = cfg.style.strokeWidth
+  const polys = [
+    ...Annotation.generateShape('measureLine', a, b, w),
+    ...(arm2
+      ? Annotation.generateShape('measureLine', arm2[0], arm2[1], w)
+      : []),
+  ]
+  if (polys.length === 0) return null
+  const ann = Annotation.createAnnotation(
+    cfg.activeLabel,
+    cfg.activeGroup,
+    ctrl._annotationPolySliceType,
+    ctrl._annotationPolySlicePosition,
+    polys,
+    cfg.style,
+    ctrl._annotationPolyAnchorMM,
+  )
+  ann.shape = {
+    type: cfg.tool,
+    start: a,
+    end: b,
+    width: w,
+    ...(arm2 ? { start2: arm2[0], end2: arm2[1] } : {}),
+  }
+  if (arm2)
+    ann.stats = {
+      area: 0,
+      min: 0,
+      mean: 0,
+      max: 0,
+      stdDev: 0,
+      angle: Annotation.shapeAngle(ann.shape, angleToMM(ctrl, ann)),
+    }
+  return ann
+}
+
+// Slice-2D -> world mm on the plane the renderer draws the angle on (through
+// its anchor; oblique on a tilted volume), else at its constant depth.
+function angleToMM(
+  ctrl: NiiVue,
+  ann: VectorAnnotation,
+): (p: AnnotationPoint) => ArrayLike<number> {
+  const { mm2tex, tex2mm } = ctrl.model
+  const anchor = ann.anchorMM
+  const plane =
+    mm2tex && tex2mm && anchor
+      ? NVTransforms.slicePlaneEquation(
+          tex2mm,
+          ann.sliceType,
+          vec4.transformMat4(
+            vec4.create(),
+            vec4.fromValues(anchor[0], anchor[1], anchor[2], 1),
+            mm2tex,
+          )[sliceTypeDim(ann.sliceType)] as number,
+        )
+      : null
+  return plane
+    ? (p) =>
+        Annotation.slice2DToMMOnPlane(
+          p,
+          ann.sliceType,
+          plane.normal,
+          plane.point,
+        )
+    : (p) => Annotation.slice2DToMM(p, ann.slicePosition, ann.sliceType)
 }
 
 // Live-wire snapped path (slice-2D points) from the current seed's field to a
@@ -262,6 +385,10 @@ function updateMultiClickPreview(
       ? [...pts, ...livewireSnappedPath(ctrl, cursor)]
       : [...pts, cursor]
     : pts
+  if (cfg.tool in ANGLE_CLICKS) {
+    ctrl.model._annotationPreview = angleAnnotation(ctrl, all)
+    return
+  }
   const polygons = contourPolygons(ctrl, all)
   if (polygons.length === 0) {
     ctrl.model._annotationPreview = null
@@ -450,7 +577,10 @@ function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
     long = ctrl._annotationShapeStart
       ? { start: ctrl._annotationShapeStart, end: cursor }
       : null
-    short = null
+    short =
+      long && ctrl.model.annotation.isClickToPlace
+        ? Annotation.bidirectionalShortAxis(long.start, long.end)
+        : null
   }
   ctrl.model._annotationPreview = long
     ? bidirectionalAnnotation(ctrl, long, short)
@@ -614,18 +744,9 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
       return
     }
     // Abandon an in-progress multi-click contour (spline / livewire), a
-    // half-placed bidirectional measurement, or a parked click start.
-    if (
-      ctrl._annotationPolyPoints ||
-      ctrl._bidirectionalLong ||
-      ctrl._annotationClickStart
-    ) {
-      ctrl._abandonAnnotationInProgress()
-      // End a drag in progress too, or the moves before release fall through
-      // to the camera orbit (#471).
-      if (ctrl.isDragging) resetDragState(ctrl)
-      ctrl.drawScene()
-    }
+    // half-placed bidirectional measurement, a parked click start or an
+    // annotation drag, ending the drag so later moves do not orbit (#471).
+    ctrl.cancelAnnotationInProgress()
     return
   }
   if (key === 'V') {
@@ -1295,6 +1416,9 @@ function resizedPolygons(
 }
 
 export function resetDragState(ctrl: NiiVue): void {
+  // A resize that pointerup did not finish (pointercancel, pinch, annotation
+  // mode off) is reverted, as a cancel: pointerup alone records its undo step.
+  ctrl._revertResize()
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -1306,6 +1430,7 @@ export function resetDragState(ctrl: NiiVue): void {
   ctrl._resizingControlPoint = -1
   ctrl._resizingAnnotation = null
   ctrl._resizeOriginalShape = null
+  ctrl._resizeUndoSnapshot = null
   ctrl.model._annotationPreview = null
   ctrl.model._annotationErasePreview = null
   // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
@@ -1719,16 +1844,38 @@ export function initInteraction(ctrl: NiiVue): void {
             ctrl._annotationPolySlicePosition = slicePosition
             ctrl._annotationPolyAnchorMM = mm as [number, number, number]
             resetLivewire(ctrl)
+            // As a drag shape does: Delete must not hit an older selection.
+            ctrl.model._annotationSelection = null
           }
           const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
+          // isClickToPlace (cornerstone's conventions): a click back near the
+          // first point closes the contour, as a double-click does.
+          if (
+            cfg.isClickToPlace &&
+            !(tool in ANGLE_CLICKS) &&
+            poly.length >= 3 &&
+            isNearFirstPoint(ctrl, evt, poly[0] as AnnotationPoint)
+          ) {
+            // Live wire closes along the snapped path back to the first point
+            // (its ends duplicate the last and first vertices), not a chord.
+            if (isLivewireTool(tool)) {
+              const seg = livewireSnappedPath(ctrl, poly[0] as AnnotationPoint)
+              for (let i = 1; i < seg.length - 1; i++) poly.push(seg[i])
+            }
+            commitMultiClickContour(ctrl)
+            ctrl._abandonAnnotationInProgress()
+            ctrl.drawScene()
+            return
+          }
           // The second press of a double-click (which closes the contour via
           // the dblclick handler) and a press coincident with the last placed
           // point must not append: the duplicate point would let a single
           // placed point + double-click pass the >= 3-point commit guard as a
           // degenerate contour, and a normally finished spline would carry a
           // coincident closing pair (a Catmull-Rom cusp at the close point).
+          // Angles have no double-click close: a fast second click is a point.
           const append = shouldAppendMultiClickPoint(
-            evt.detail,
+            tool in ANGLE_CLICKS ? 1 : evt.detail,
             poly[poly.length - 1],
             pt2d,
             computeTolerance(ctrl.model),
@@ -1747,6 +1894,16 @@ export function initInteraction(ctrl: NiiVue): void {
             }
           } else if (append) {
             poly.push(pt2d)
+          }
+          if (poly.length === ANGLE_CLICKS[tool]) {
+            const ann = angleAnnotation(ctrl, poly)
+            if (ann) {
+              ctrl._annotationUndoStack.push(ctrl.model.annotations)
+              commitAnnotation(ctrl, ann, cfg.mergesOverlaps)
+            }
+            ctrl._abandonAnnotationInProgress()
+            ctrl.drawScene()
+            return
           }
           updateMultiClickPreview(ctrl, pt2d)
           ctrl.drawScene()
@@ -1781,14 +1938,22 @@ export function initInteraction(ctrl: NiiVue): void {
               const ann = ctrl.model.annotations.find(
                 (a) => a.id === ctrl.model._annotationSelection?.annotationId,
               )
-              if (ann?.shape) {
-                ctrl._annotationUndoStack.push(ctrl.model.annotations)
+              // A probe lands on a region's handle, as anywhere inside it.
+              if (
+                ann?.shape &&
+                (tool !== 'measurePoint' || ann.shape.type === 'measurePoint')
+              ) {
+                // Recorded on release, so a cancelled resize leaves no step.
+                ctrl._resizeUndoSnapshot = structuredClone(
+                  ctrl.model.annotations,
+                )
                 ctrl._resizingControlPoint = cpIdx
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
                   polygons: ann.polygons,
+                  anchorMM: ann.anchorMM,
                   isErased: Annotation.isAnnotationErased(
                     ann,
                     ctrl.model.annotation.style.strokeWidth,
@@ -1968,6 +2133,8 @@ export function initInteraction(ctrl: NiiVue): void {
                     ctrl.model.annotation.isAreaGeometric,
                   ) ?? undefined
             }
+            if (ctrl._resizeUndoSnapshot)
+              ctrl._annotationUndoStack.push(ctrl._resizeUndoSnapshot)
             ctrl.emit('annotationChanged', {
               action: 'resize',
               added: [],
@@ -1978,6 +2145,7 @@ export function initInteraction(ctrl: NiiVue): void {
         }
         ctrl._resizingControlPoint = -1
         ctrl._resizeOriginalShape = null
+        ctrl._resizeUndoSnapshot = null
         ctrl._resizingAnnotation = null
         ctrl.model._annotationPreview = null
         ctrl.drawScene()
@@ -2028,12 +2196,19 @@ export function initInteraction(ctrl: NiiVue): void {
               // Parked: nothing to commit yet.
             } else if (isBidirectionalTool(cfg.tool)) {
               // First drag places the long axis; the second commits the pair.
+              // Click-to-place commits the long axis with an automatic short one.
               const drag: Axis = { start, end: pt2d }
-              if (!ctrl._bidirectionalLong) {
-                ctrl._bidirectionalLong = drag
-              } else {
+              if (ctrl._bidirectionalLong) {
                 commitBidirectional(ctrl, ctrl._bidirectionalLong, drag)
                 ctrl._bidirectionalLong = null
+              } else if (cfg.isClickToPlace) {
+                commitBidirectional(
+                  ctrl,
+                  drag,
+                  Annotation.bidirectionalShortAxis(start, pt2d),
+                )
+              } else {
+                ctrl._bidirectionalLong = drag
               }
             } else {
               const polygons = Annotation.generateShape(
@@ -2281,13 +2456,16 @@ export function initInteraction(ctrl: NiiVue): void {
                 sliceType,
               )
               if (isBidirectionalTool(ctrl.model.annotation.tool)) {
-                // The parked axis is the long one, or the short one once the long is placed.
+                // The parked axis is the long one (click-to-place previews its
+                // automatic short axis), or the short one once the long is placed.
                 const axis = { start: parked.start, end }
                 const long = ctrl._bidirectionalLong
                 ctrl.model._annotationPreview = bidirectionalAnnotation(
                   ctrl,
                   long ?? axis,
-                  long ? axis : null,
+                  long
+                    ? axis
+                    : Annotation.bidirectionalShortAxis(parked.start, end),
                   parked,
                 )
               } else
@@ -2939,6 +3117,8 @@ export function initInteraction(ctrl: NiiVue): void {
     ) {
       const dblTile = ctrl.view?.hitTest(px, py)
       if (!dblTile || dblTile.isRender) return
+      // Angle tools commit on their last click, not a double-click.
+      if (ctrl.model.annotation.tool in ANGLE_CLICKS) return
       commitMultiClickContour(ctrl)
       ctrl._abandonAnnotationInProgress()
       ctrl.drawScene()

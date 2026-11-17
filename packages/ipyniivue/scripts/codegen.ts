@@ -1473,8 +1473,7 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    for (const [jsName, pyName] of PROPS_RO) {')
   lines.push('      try {')
   lines.push('        const v = nv[jsName]')
-  lines.push('        if (v === undefined) continue')
-  lines.push('        const safe = toJsonSafe(v)')
+  lines.push('        const safe = toJsonSafe(v) ?? null')
   lines.push('        if (!sameJsonValue(model.get(pyName), safe)) {')
   lines.push('          model.set(pyName, safe)')
   lines.push('          changed = true')
@@ -1942,6 +1941,11 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    const handler = (e) => {')
   lines.push('      let detail = null')
   lines.push('      try { detail = toJsonSafe(e && e.detail) } catch {}')
+  lines.push(
+    '      // The event can change read-only state (annotation undo top); sync it',
+  )
+  lines.push('      // first so a Python handler reads the new values.')
+  lines.push('      syncReadOnlyProperties()')
   lines.push('      sendToPython({ kind: "event", name: eventName, detail })')
   lines.push('    }')
   lines.push('    state.nv.addEventListener(eventName, handler)')

@@ -135,7 +135,9 @@
           "measureLivewire",
           "bidirectional",
           "measureBidirectional",
-          "measurePoint"
+          "measurePoint",
+          "measureAngle",
+          "measureCobbAngle"
         ]
       },
       "hasGetter": true,
@@ -1490,6 +1492,28 @@
   ],
   "readonlyProperties": [
     {
+      "jsName": "annotationRedoTop",
+      "pyName": "annotation_redo_top",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Sequence number of the step annotationRedo would reapply."
+    },
+    {
+      "jsName": "annotationUndoTop",
+      "pyName": "annotation_undo_top",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Sequence number of the step annotationUndo would revert (annotationHistoryPush)."
+    },
+    {
       "jsName": "backend",
       "pyName": "backend",
       "tsType": "BackendType | undefined",
@@ -1577,6 +1601,17 @@
       "hasGetter": true,
       "hasSetter": false,
       "doc": "True while an animateTo transition is running."
+    },
+    {
+      "jsName": "isAnnotationInProgress",
+      "pyName": "is_annotation_in_progress",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "A multi-click contour, bidirectional or click-placed shape is half-drawn,\nor an annotation is being dragged."
     },
     {
       "jsName": "isAntiAlias",
@@ -2085,6 +2120,16 @@
       ],
       "returns": "void",
       "doc": "Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "cancelAnnotationInProgress",
+      "pyName": "cancel_annotation_in_progress",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [],
+      "returns": "boolean",
+      "doc": "Drop the half-drawn annotation (as Escape does); false if there was none.",
       "returnsDoc": null
     },
     {
@@ -3406,10 +3451,39 @@
           "tsType": "string",
           "optional": false,
           "doc": null
+        },
+        {
+          "name": "isUndoable",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null,
+      "doc": "Remove an annotation; `isUndoable` records an annotationUndo step first.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "removeAnnotations",
+      "pyName": "remove_annotations",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "ids",
+          "tsType": "readonly string[]",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "isUndoable",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Remove several annotations as one change (one annotationUndo step when\n`isUndoable`); emits annotationChanged with action 'delete'.",
       "returnsDoc": null
     },
     {
@@ -4776,6 +4850,12 @@
       "pyName": "annotation_changed",
       "detailType": "AnnotationChangedDetail",
       "doc": null
+    },
+    {
+      "jsName": "annotationHistoryPush",
+      "pyName": "annotation_history_push",
+      "detailType": "{ seq: number; }",
+      "doc": "An annotation undo step was recorded; `seq` names it (annotationUndoTop)."
     },
     {
       "jsName": "annotationRemoved",

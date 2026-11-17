@@ -284,9 +284,13 @@ export function buildAnnotation3DRenderData(
 }
 
 function formatAnnotationStats(stats: AnnotationStats, unit: string): string[] {
-  // 4 significant digits: an SUV of 0.04 must not read 0.0.
-  if (stats.value !== undefined)
-    return [String(Number(stats.value.toPrecision(4)))]
+  // Integers exact (uint16 65535 must not read 65540); else 4 significant
+  // digits so an SUV of 0.04 does not read 0.0.
+  if (stats.value !== undefined) {
+    const v = stats.value
+    return [Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(4)))]
+  }
+  if (stats.angle !== undefined) return [`${stats.angle.toFixed(1)}°`]
   if (stats.length !== undefined) {
     // Bidirectional carries both axes: long (length) + short (shortLength).
     if (stats.shortLength !== undefined) {
@@ -393,13 +397,15 @@ export function buildAnnotationRenderData(
   }
 }
 
-// Line/arrow are open paths; every other tool is an area shape drawn closed.
+// Line/arrow/bidirectional/angle are open paths; every other tool is an area shape drawn closed.
 const OPEN_ANNOTATION_TOOLS: ReadonlySet<AnnotationTool> = new Set([
   'line',
   'arrow',
   'measureLine',
   'bidirectional',
   'measureBidirectional',
+  'measureAngle',
+  'measureCobbAngle',
 ])
 
 /** Free text above the stats lines: the built-in label of every tool. */

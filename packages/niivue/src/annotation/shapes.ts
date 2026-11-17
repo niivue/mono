@@ -171,7 +171,8 @@ function generateCircle(
   return ellipseRing(cx, cy, r, r)
 }
 
-const SPLINE_SAMPLES_PER_SEGMENT = 16
+// As cornerstone's SplineROI resolution, so spline areas agree.
+const SPLINE_SAMPLES_PER_SEGMENT = 20
 
 // Catmull-Rom interpolation of one segment p1->p2 (p0/p3 are the neighbours).
 function catmullRom(
@@ -256,6 +257,25 @@ export function generateShape(
       return ellipseRing(end.x, end.y, strokeWidth, strokeWidth, 16)
     default:
       return []
+  }
+}
+
+/**
+ * A bidirectional's automatic short axis: perpendicular through the long axis
+ * midpoint, 2/3 its length (cornerstone's default width).
+ */
+export function bidirectionalShortAxis(
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+): { start: AnnotationPoint; end: AnnotationPoint } {
+  const mx = (start.x + end.x) / 2
+  const my = (start.y + end.y) / 2
+  // The long axis rotated 90 degrees, scaled to 1/3 its length per side.
+  const px = -(end.y - start.y) / 3
+  const py = (end.x - start.x) / 3
+  return {
+    start: { x: mx - px, y: my - py },
+    end: { x: mx + px, y: my + py },
   }
 }
 

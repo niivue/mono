@@ -150,6 +150,8 @@ const PROPS_RW = [
 
 // [jsName, pyName] for read-only properties (JS-to-Python only).
 const PROPS_RO = [
+  ["annotationRedoTop", "annotation_redo_top"],
+  ["annotationUndoTop", "annotation_undo_top"],
   ["backend", "backend"],
   ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],
@@ -157,6 +159,7 @@ const PROPS_RO = [
   ["drawingGeneration", "drawing_generation"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],
   ["isAnimating", "is_animating"],
+  ["isAnnotationInProgress", "is_annotation_in_progress"],
   ["isAntiAlias", "is_anti_alias"],
   ["isDestroyed", "is_destroyed"],
   ["meshExtensions", "mesh_extensions"],
@@ -199,6 +202,7 @@ const EVENTS = [
   "angleCompleted",
   "annotationAdded",
   "annotationChanged",
+  "annotationHistoryPush",
   "annotationRemoved",
   "azimuthElevationChange",
   "canvasResize",
@@ -389,8 +393,7 @@ async function initialize({ model }) {
     for (const [jsName, pyName] of PROPS_RO) {
       try {
         const v = nv[jsName]
-        if (v === undefined) continue
-        const safe = toJsonSafe(v)
+        const safe = toJsonSafe(v) ?? null
         if (!sameJsonValue(model.get(pyName), safe)) {
           model.set(pyName, safe)
           changed = true
@@ -725,6 +728,9 @@ async function initialize({ model }) {
     const handler = (e) => {
       let detail = null
       try { detail = toJsonSafe(e && e.detail) } catch {}
+      // The event can change read-only state (annotation undo top); sync it
+      // first so a Python handler reads the new values.
+      syncReadOnlyProperties()
       sendToPython({ kind: "event", name: eventName, detail })
     }
     state.nv.addEventListener(eventName, handler)

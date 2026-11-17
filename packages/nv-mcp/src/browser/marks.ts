@@ -16,6 +16,7 @@ import {
   type Params,
   point,
   record,
+  strings,
   text,
 } from './params'
 import type {
@@ -292,10 +293,23 @@ export function markHandlers(host: NiiVueHost): Handlers {
           })
           break
         }
-        case 'remove':
-          if (!view.removeAnnotation) throw missing()
-          view.removeAnnotation(needId())
+        case 'remove': {
+          const ids = strings(params, 'ids')
+          const isUndoable = flag(params, 'is_undoable') ?? false
+          if (!ids) {
+            if (!view.removeAnnotation) throw missing()
+            view.removeAnnotation(needId(), isUndoable)
+            break
+          }
+          if (!view.removeAnnotations) throw missing()
+          const unknown = ids.find(
+            (i) => !annotations().some((a) => a.id === i),
+          )
+          if (unknown !== undefined)
+            throw new Error(`There is no annotation with the id "${unknown}".`)
+          view.removeAnnotations(ids, isUndoable)
           break
+        }
         case 'clear':
           if (!view.clearAnnotations) throw missing()
           view.clearAnnotations()

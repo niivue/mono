@@ -12,7 +12,9 @@ export {
   makeLabelLut,
 } from './cmap/NVCmaps'
 export { generateShape, isAnnotationErased } from './annotation/shapes'
-export { slice2DToMM } from './annotation/sliceProjection'
+export { mmToSlice2D, slice2DToMM } from './annotation/sliceProjection'
+// Measure an annotation built outside the pointer tools (e.g. imported).
+export { computeAnnotationStats } from './annotation/stats'
 // Viewport controller (OpenSeadragon-style smooth pan/zoom on the shared canvas).
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
@@ -306,17 +308,31 @@ export type {
 } from './slide/slidePlane'
 export { axialPlaneTransform, slidePlaneTiles } from './slide/slidePlane'
 export type {
+  NVSlideAnnotationDraft,
   NVSlideControllerOptions,
   NVSlideMeasurement,
   NVSlidePoint,
 } from './slide/slideController'
 export { NVSlideController, windowDragStep } from './slide/slideController'
 export type {
+  SlideAnnotation,
+  SlideAnnotationEvent,
+  SlideAnnotationStats,
+  SlideAnnotationTool,
+} from './slide/slideAnnotations'
+export {
+  NVSlideAnnotations,
+  slideAnnotationStats,
+} from './slide/slideAnnotations'
+export type {
   SlideOverlayContent,
   SlideOverlaySource,
   SlideOverlayStyle,
 } from './slide/slideOverlay'
-export { slideOverlayContent } from './slide/slideOverlay'
+export {
+  slideAnnotationText,
+  slideOverlayContent,
+} from './slide/slideOverlay'
 export type {
   SlideBackendKind,
   SlideRenderBackend,

@@ -147,6 +147,26 @@ describe('rasterizeContours', () => {
     expect(count).toBe(100 - 16)
   })
 
+  // Review of #839: a steep oblique ring spans less along z than along x but
+  // faces x; slicing across z would flatten it to nothing.
+  test('a steep oblique ring slices across the axis it faces', () => {
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const ring = [
+      [1, 0.9],
+      [9, 0.9],
+      [9, 2.1],
+      [1, 2.1],
+    ].flatMap(([y, z]) => [
+      -(2 + 0.2 * (y as number)),
+      -(y as number),
+      z as number,
+    ])
+    const { runs, count } = rasterizeContours(dims, identityLps, [ring])
+    fillRuns(bitmap, runs, 1)
+    expect(count).toBeGreaterThan(0)
+    expect(bitmap[1 * 400 + 5 * 20 + 3]).toBe(1)
+  })
+
   test('an island inside a hole fills', () => {
     const { count } = rasterizeContours(dims, identityLps, [
       square(-1.5, -1.5, -11.5, -11.5, 2),

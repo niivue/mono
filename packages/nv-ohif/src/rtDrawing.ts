@@ -190,10 +190,14 @@ export function rasterizeContours(
         if (c > (hi[a] as number)) hi[a] = c
       }
     }
+    // Slice across the axis the plane faces most; a span-based pick collapses a
+    // steep oblique ring whose extent along the faced axis is the larger one.
+    const nrm = newellNormal(vox).map(Math.abs)
     const span = hi.map((h, a) => h - (lo[a] as number))
+    const facing = nrm.some((x) => x > 0) ? nrm : span.map((x) => -x)
     let w: 0 | 1 | 2 = 0
-    if ((span[1] as number) < (span[w] as number)) w = 1
-    if ((span[2] as number) < (span[w] as number)) w = 2
+    if ((facing[1] as number) > (facing[w] as number)) w = 1
+    if ((facing[2] as number) > (facing[w] as number)) w = 2
     const slice = Math.round(((lo[w] as number) + (hi[w] as number)) / 2)
     const [a, b, c] = contourPlane(vox, w)
     // A slope that shows in the key marks the ring tilted even when it spans one
@@ -353,9 +357,8 @@ export function rasterizeContours(
  * two axes in rasterizeContours' order; w varies least, so its normal
  * component is the largest.
  */
-function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
-  const u = w === 0 ? 1 : 0
-  const v = w === 2 ? 1 : 2
+/** A ring's Newell normal (area-weighted; zero for a degenerate ring). */
+function newellNormal(p: Float64Array): number[] {
   const nrm = [0, 0, 0]
   for (let i = 0, j = p.length - 3; i < p.length; j = i, i += 3)
     for (let a = 0; a < 3; a++) {
@@ -366,6 +369,13 @@ function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
         ((p[j + b] as number) - (p[i + b] as number)) *
           ((p[j + c] as number) + (p[i + c] as number))
     }
+  return nrm
+}
+
+function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
+  const u = w === 0 ? 1 : 0
+  const v = w === 2 ? 1 : 2
+  const nrm = newellNormal(p)
   const nw = nrm[w] as number
   if (!nw) return [0, 0, p[w] as number]
   return [

@@ -5,7 +5,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { armBrush, getQuantCommandDefinitions } from './petQuant'
+import { armBrush, getQuantCommandDefinitions, tmtvCsv } from './petQuant'
 
 // 2x2x2 uint8 NIfTI-1, 1 mm voxels.
 function nifti(): File {
@@ -134,4 +134,20 @@ it('a threshold brush stays armed when another pane arms a plain brush', () => {
   } finally {
     f.done()
   }
+})
+
+it('TMTV CSV quotes a label holding a comma', () => {
+  const segment = {
+    value: 1,
+    label: 'left,lung',
+    count: 1,
+    volume: 1,
+    mean: 1,
+    max: 1,
+    min: 1,
+    peak: 1,
+    lesionGlycolysis: 1,
+  }
+  const csv = tmtvCsv({}, { tmtv: 1, segments: [segment] }, {})
+  expect(csv.split('\n')[1]).toStartWith('1,"left,lung",1,')
 })

@@ -50,8 +50,8 @@ import {
 import { displaySetToNiivue } from './displaySetToNiivue'
 import {
   applyViewportStyle,
-  isMip,
   baseStyle,
+  isMip,
   overlayDisplaySets,
   useHungOverlays,
 } from './hangingOptions'

@@ -15,6 +15,51 @@ import {
 
 type Vox2mm = (vox: [number, number, number]) => number[] | null
 
+/**
+ * Style the installed drawing via `apply`. The returned restore puts the prior
+ * colormap and opacities back; it runs itself when another drawing replaces this
+ * one. A style the user set since stays.
+ */
+export function styleDrawing(
+  nv: Pick<
+    NiiVue,
+    | 'drawingVolume'
+    | 'drawColormap'
+    | 'drawOpacity'
+    | 'drawRimOpacity'
+    | 'addEventListener'
+    | 'removeEventListener'
+  >,
+  apply: () => void,
+): () => void {
+  const installed = nv.drawingVolume
+  const snap = () => ({
+    drawColormap: nv.drawColormap,
+    drawOpacity: nv.drawOpacity,
+    drawRimOpacity: nv.drawRimOpacity,
+  })
+  const prior = snap()
+  apply()
+  const applied = snap()
+  let done = false
+  const onDrawingChanged = () => {
+    if (nv.drawingVolume !== installed) restore()
+  }
+  const restore = () => {
+    if (done) return
+    done = true
+    nv.removeEventListener('drawingChanged', onDrawingChanged)
+    if (nv.drawColormap === applied.drawColormap)
+      nv.drawColormap = prior.drawColormap
+    if (nv.drawOpacity === applied.drawOpacity)
+      nv.drawOpacity = prior.drawOpacity
+    if (nv.drawRimOpacity === applied.drawRimOpacity)
+      nv.drawRimOpacity = prior.drawRimOpacity
+  }
+  nv.addEventListener('drawingChanged', onDrawingChanged)
+  return restore
+}
+
 export interface RtContour {
   type?: string
   points: ReadonlyArray<{ x: number; y: number; z: number }>
@@ -408,6 +453,8 @@ export function startRtDrawing(
     | 'drawColormap'
     | 'drawOpacity'
     | 'drawRimOpacity'
+    | 'addEventListener'
+    | 'removeEventListener'
   >,
   rt: OhifDisplaySet,
   options: {
@@ -422,6 +469,7 @@ export function startRtDrawing(
   // The drawing this call installed; a later one is not ours to close.
   let owned: unknown = null
   let stopShown: (() => void) | undefined
+  let restoreStyle: (() => void) | undefined
   const show = async () => {
     const ds = rt as RtDisplaySet
     // A drawing made or loaded while the structure set loads wins.
@@ -453,14 +501,20 @@ export function startRtDrawing(
       options.setNote('The structure set has no closed contours to show.')
       return
     }
-    nv.drawColormap = nv.addColormap(
-      `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
-      panelColormap(
-        segments.map((s) => ({ ...s, color: [...s.rgb, 255], visible: true })),
-      ),
-    )
-    nv.drawOpacity = SEG_FILL_OPACITY
-    nv.drawRimOpacity = SEG_RIM_OPACITY
+    restoreStyle = styleDrawing(nv, () => {
+      nv.drawColormap = nv.addColormap(
+        `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
+        panelColormap(
+          segments.map((s) => ({
+            ...s,
+            color: [...s.rgb, 255],
+            visible: true,
+          })),
+        ),
+      )
+      nv.drawOpacity = SEG_FILL_OPACITY
+      nv.drawRimOpacity = SEG_RIM_OPACITY
+    })
     nv.refreshDrawing()
     stopShown = options.onShown?.(segments, {
       stats,
@@ -481,5 +535,6 @@ export function startRtDrawing(
     cancelled = true
     stopShown?.()
     if (owned && nv.drawingVolume === owned) nv.closeDrawing()
+    restoreStyle?.()
   }
 }

@@ -283,6 +283,8 @@ describe('startRtDrawing', () => {
       drawIsEnabled: false,
       drawOpacity: 0,
       drawRimOpacity: 0,
+      addEventListener() {},
+      removeEventListener() {},
     }
     const rt = {
       displaySetInstanceUID: 'rt',
@@ -330,6 +332,75 @@ describe('startRtDrawing', () => {
     await new Promise((r) => setTimeout(r, 0))
     again()
     expect(nv.drawingVolume).toBeNull()
+  })
+
+  // Review of #839: replacing the RT drawing puts the prior style back.
+  test('a replacement drawing gets the prior style back', async () => {
+    let onChanged = () => {}
+    const nv = {
+      volumes: [{ dimsRAS: [3, 5, 5, 2] }],
+      vox2mm: ([i, j, k]: [number, number, number]) => [i, j, k],
+      drawingVolume: null as { img: Uint8Array } | null,
+      createEmptyDrawing() {
+        this.drawingVolume = { img: new Uint8Array(50) }
+        onChanged()
+      },
+      closeDrawing() {
+        this.drawingVolume = null
+        onChanged()
+      },
+      refreshDrawing() {},
+      addColormap: (name: string) => name,
+      drawColormap: 'gray',
+      drawIsEnabled: false,
+      drawOpacity: 0.8,
+      drawRimOpacity: -1,
+      drawingGeneration: 0,
+      addEventListener: (_: string, f: () => void) => {
+        onChanged = f
+      },
+      removeEventListener: () => {
+        onChanged = () => {}
+      },
+    }
+    const rt = {
+      displaySetInstanceUID: 'rt',
+      Modality: 'RTSTRUCT',
+      async load() {},
+      structureSet: {
+        ROIContours: [
+          {
+            ROIName: 'roi',
+            contourPoints: [
+              {
+                type: 'CLOSED_PLANAR',
+                points: [
+                  { x: -1, y: -1, z: 1 },
+                  { x: -3, y: -1, z: 1 },
+                  { x: -3, y: -3, z: 1 },
+                  { x: -1, y: -3, z: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    }
+    await new Promise<void>((resolve) => {
+      startRtDrawing(nv as never, rt, {
+        setNote: () => {},
+        whenBase: Promise.resolve(true),
+        onShown: () => {
+          resolve()
+          return () => {}
+        },
+      })
+    })
+    expect(nv.drawColormap).toBe('rt-rt')
+    nv.createEmptyDrawing()
+    expect(nv.drawColormap).toBe('gray')
+    expect(nv.drawOpacity).toBe(0.8)
+    expect(nv.drawRimOpacity).toBe(-1)
   })
 
   // Review of #839: a drawing made while the structure set loads is kept.
@@ -409,6 +480,8 @@ describe('startRtDrawing', () => {
       drawIsEnabled: false,
       drawOpacity: 0,
       drawRimOpacity: 0,
+      addEventListener() {},
+      removeEventListener() {},
     }
     let loadedWith: unknown
     const rt = {

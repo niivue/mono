@@ -7,7 +7,7 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
-import { startRtDrawing } from './rtDrawing'
+import { startRtDrawing, styleDrawing } from './rtDrawing'
 import {
   type PanelSegment,
   SEG_FILL_OPACITY,
@@ -169,22 +169,19 @@ export function startSegDrawing(
     installed = nv.drawingVolume
     // dcm2niix warnings (e.g. an incomplete SEG) reach the pane as the base's do.
     if (converted.note) options.setNote(converted.note, true)
-    const prior = {
-      drawColormap: nv.drawColormap,
-      drawOpacity: nv.drawOpacity,
-      drawRimOpacity: nv.drawRimOpacity,
-    }
     const segments = converted.json?.Segments
     const cmap = segColormap(Array.isArray(segments) ? segments : [])
-    if (cmap.I.length > 1)
-      nv.drawColormap = nv.addColormap(
-        `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
-        cmap,
-      )
     // loadDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    nv.drawOpacity = SEG_FILL_OPACITY
-    nv.drawRimOpacity = SEG_RIM_OPACITY
+    restoreStyle = styleDrawing(nv, () => {
+      if (cmap.I.length > 1)
+        nv.drawColormap = nv.addColormap(
+          `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
+          cmap,
+        )
+      nv.drawOpacity = SEG_FILL_OPACITY
+      nv.drawRimOpacity = SEG_RIM_OPACITY
+    })
     // Without the sidecar's segments the panel has nothing to list.
     if (cmap.I.length > 1)
       stopShown = options.onShown?.(
@@ -194,26 +191,6 @@ export function startSegDrawing(
           rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
         })),
       )
-    const applied = {
-      drawColormap: nv.drawColormap,
-      drawOpacity: nv.drawOpacity,
-      drawRimOpacity: nv.drawRimOpacity,
-    }
-    const onDrawingChanged = () => {
-      if (nv.drawingVolume !== installed) restoreStyle?.()
-    }
-    restoreStyle = () => {
-      restoreStyle = undefined
-      nv.removeEventListener('drawingChanged', onDrawingChanged)
-      // A style the user set since stays.
-      if (nv.drawColormap === applied.drawColormap)
-        nv.drawColormap = prior.drawColormap
-      if (nv.drawOpacity === applied.drawOpacity)
-        nv.drawOpacity = prior.drawOpacity
-      if (nv.drawRimOpacity === applied.drawRimOpacity)
-        nv.drawRimOpacity = prior.drawRimOpacity
-    }
-    nv.addEventListener('drawingChanged', onDrawingChanged)
   }
   show().catch((err) => {
     if (cancelled) return

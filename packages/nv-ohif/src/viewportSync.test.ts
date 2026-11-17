@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
+import { tileVisibleWindowMM } from '@niivue/niivue'
 import {
   getNiivueEntry,
   type NiivueViewportEntry,
@@ -16,7 +17,7 @@ afterEach(() => {
 
 // A pane showing display sets `uids` (base first, then overlays), recording
 // its broadcast targets and the windows set on it.
-const pane = (id: string, uids: string[]) => {
+const pane = (id: string, uids: string[], tile?: object) => {
   const volumes = uids.map((uid) => ({ hdr: { uid }, calMin: 0, calMax: 1 }))
   const listeners: Record<string, ((e: Event) => void)[]> = {}
   const emit = (type: string, detail: unknown) => {
@@ -26,6 +27,7 @@ const pane = (id: string, uids: string[]) => {
   const p = {
     targets: [] as unknown[],
     volumes,
+    view: tile && { screenSlices: [tile] },
     get pan2Dxyzmm() {
       return pan
     },
@@ -97,11 +99,20 @@ test('a VOI group windows the same display set, source to target only', async ()
 test('preclinical-4d groups: camera per orientation, VOI per ct/pt/fusion', async () => {
   const cam = (id: string) => ({ type: 'cameraPosition', id })
   const voi = (id: string, source = true) => ({ type: 'voi', id, source })
-  const ctAx = pane('ctAx', ['CT'])
+  // Axial tiles of D2's unequal fields of view (CT 486 x 0.12471 mm, PET
+  // 112 x 0.4 mm, off-centre) on unequal panes, spans pre-zoom as core's.
+  const axial = (mn: number[], mx: number[], px: number) => ({
+    axCorSag: 0,
+    leftTopWidthHeight: [0, 0, px, px],
+    screen: { mnMM: mn, mxMM: mx },
+  })
+  const ctTile = axial([-30.3, -30.3], [30.3, 30.3], 400)
+  const ptTile = axial([-20, -25], [24.8, 19.8], 300)
+  const ctAx = pane('ctAx', ['CT'], ctTile)
   const ctSag = pane('ctSag', ['CT'])
-  const ptAx = pane('ptAx', ['PT'])
+  const ptAx = pane('ptAx', ['PT'], ptTile)
   const ptSag = pane('ptSag', ['PT'])
-  const fuAx = pane('fuAx', ['CT', 'PT'])
+  const fuAx = pane('fuAx', ['CT', 'PT'], ctTile)
   joinSyncGroups('ctAx', ctAx, [cam('axial'), voi('ctWL')])
   joinSyncGroups('ctSag', ctSag, [cam('sagittal'), voi('ctWL')])
   joinSyncGroups('ptAx', ptAx, [cam('axial'), voi('ptWL')])
@@ -113,8 +124,21 @@ test('preclinical-4d groups: camera per orientation, VOI per ct/pt/fusion', asyn
     voi('ptFusionWL', false),
   ])
   ctAx.pan2Dxyzmm = new Float32Array([5, 6, 7, 2])
-  expect([...fuAx.pan2Dxyzmm]).toEqual([5, 6, 7, 2])
-  expect([...ptAx.pan2Dxyzmm]).toEqual([5, 6, 7, 2])
+  // Same physical camera: world centre and mm per screen px.
+  const view = (tile: typeof ctTile, nv: NiiVue) =>
+    (tileVisibleWindowMM(tile as never, nv.pan2Dxyzmm) ?? [])
+      .slice(0, 2)
+      .flatMap((w) => [
+        ((w?.minMM ?? 0) + (w?.maxMM ?? 0)) / 2,
+        ((w?.maxMM ?? 0) - (w?.minMM ?? 0)) / (tile.leftTopWidthHeight[2] ?? 1),
+      ])
+  const ct = view(ctTile, ctAx)
+  for (const [tile, nv] of [
+    [ptTile, ptAx],
+    [ctTile, fuAx],
+  ] as const)
+    for (const [i, x] of view(tile, nv).entries())
+      expect(x).toBeCloseTo(ct[i] ?? Number.NaN, 5)
   expect([...ctSag.pan2Dxyzmm]).toEqual([0, 0, 0, 1])
   await ctAx.setVolume(0, { calMin: -160, calMax: 240 })
   expect(fuAx.volumes[0]).toMatchObject({ calMin: -160, calMax: 240 })

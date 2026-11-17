@@ -39,12 +39,57 @@ function linkedTargets(viewportId: string, kind: 'voi' | 'camera') {
   )
 }
 
+// A pane's 2D camera frame on its `axCorSag` tile (first 2D tile when
+// undefined): world axes of screen U, V (as core's slicePanUV), their unzoomed
+// centres (mm) and unzoomed mm per screen px (geometric mean: rotation-invariant).
+function frameOf(nv: NiiVue, axCorSag?: number) {
+  const t = nv.view?.screenSlices.find(
+    (t) =>
+      t.space !== 'global3d' &&
+      t.axCorSag <= 2 &&
+      t.axCorSag === (axCorSag ?? t.axCorSag),
+  )
+  const [u0 = 0, v0 = 0] = t?.screen?.mnMM ?? []
+  const [u1 = 0, v1 = 0] = t?.screen?.mxMM ?? []
+  const [, , w = 0, h = 0] = t?.leftTopWidthHeight ?? []
+  const mmPerPx = Math.sqrt(Math.abs(((u1 - u0) * (v1 - v0)) / (w * h)))
+  if (!t || !(mmPerPx > 0 && mmPerPx < Infinity)) return undefined
+  return {
+    axCorSag: t.axCorSag,
+    u: t.axCorSag === 2 ? 1 : 0,
+    v: t.axCorSag === 0 ? 1 : 2,
+    mid: [(u0 + u1) / 2, (v0 + v1) / 2] as const,
+    mmPerPx,
+  }
+}
+
+// pan2Dxyzmm is relative to each pane's fitted bounds (pan from their centre,
+// zoom of their span), so copy the physical camera as cornerstone does: the
+// world centre (bounds centre - pan) and mm per screen px.
 function copyCamera(viewportId: string, nv: NiiVue): void {
   if (copying) return
   copying = true
   try {
-    for (const [, to] of linkedTargets(viewportId, 'camera'))
-      to.nv.pan2Dxyzmm = Float32Array.from(nv.pan2Dxyzmm)
+    const [x = 0, y = 0, z = 0, zoom = 1] = nv.pan2Dxyzmm
+    const from = frameOf(nv)
+    for (const [, to] of linkedTargets(viewportId, 'camera')) {
+      const into = from && frameOf(to.nv, from.axCorSag)
+      if (!from || !into) {
+        to.nv.pan2Dxyzmm = Float32Array.from(nv.pan2Dxyzmm)
+        continue
+      }
+      const shift = [0, 0, 0]
+      shift[from.u] = into.mid[0] - from.mid[0]
+      shift[from.v] = into.mid[1] - from.mid[1]
+      const [dx = 0, dy = 0, dz = 0] = shift
+      const scale = into.mmPerPx / from.mmPerPx
+      to.nv.pan2Dxyzmm = new Float32Array([
+        x + dx,
+        y + dy,
+        z + dz,
+        zoom * scale,
+      ])
+    }
   } finally {
     copying = false
   }

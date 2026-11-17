@@ -28,8 +28,9 @@ const ARRAYS: Record<number, View> = {
 export async function split4D(
   image: File,
 ): Promise<{ image: File; frames: VolumeFrameSource } | null> {
-  const view = new DataView(await image.slice(0, 352).arrayBuffer())
-  if (view.byteLength < 352 || view.getInt32(0, true) !== 348) return null
+  const buf = await image.arrayBuffer()
+  const view = new DataView(buf)
+  if (view.getInt32(0, true) !== 348) return null
   const dim = (i: number) => view.getInt16(40 + 2 * i, true)
   const count = dim(4)
   const View = ARRAYS[view.getInt16(70, true)]
@@ -38,18 +39,21 @@ export async function split4D(
   const bytes = view.getInt16(72, true) / 8
   const voxels = dim(1) * dim(2) * dim(3)
   const frameBytes = voxels * bytes
-  const data = await image.slice(offset).arrayBuffer()
-  const head = await image.slice(0, offset).arrayBuffer()
+  // Frames are views into `buf` (NIfTI-1 vox_offset is a multiple of 16).
+  const head = buf.slice(0, offset)
   const headView = new DataView(head)
   headView.setInt16(40, 3, true)
   headView.setInt16(48, 1, true)
   return {
-    image: new File([head, data.slice(0, frameBytes)], image.name),
+    image: new File([head, buf.slice(offset, offset + frameBytes)], image.name),
     frames: {
-      count: Math.min(count, Math.floor(data.byteLength / frameBytes)),
+      count: Math.min(
+        count,
+        Math.floor((buf.byteLength - offset) / frameBytes),
+      ),
       frame: 0,
       group: {},
-      load: async (f) => new View(data, f * frameBytes, voxels),
+      load: async (f) => new View(buf, offset + f * frameBytes, voxels),
     },
   }
 }
@@ -72,18 +76,13 @@ export function setFrame(group: object, frame: number): Promise<unknown> {
     for (const v of nv.volumes)
       if (v.frameSource?.group === group && v.id)
         steps.push(nv.setFrame4D(v.id, frame))
-  return Promise.all(steps).finally(() => {
-    for (const l of listeners) l()
-  })
+  return Promise.all(steps)
 }
 
 /** The 4D series of a pane (its frame source), when it shows one. */
 export function paneFrames(viewportId: string | undefined) {
   const nv = viewportId === undefined ? undefined : panes.get(viewportId)
-  const source = nv && sourceVolume(nv)?.frameSource
-  return (
-    source && { group: source.group, frame: source.frame, count: source.count }
-  )
+  return nv && sourceVolume(nv)?.frameSource
 }
 
 /** The panes showing the series `group`. */
@@ -94,15 +93,16 @@ export const groupPanes = (group: object): string[] =>
 export const anyFramesPane = (): string | undefined =>
   [...panes.keys()].find((id) => paneFrames(id))
 
-/** Called after every frame step (the panel's readout). */
+/** Called after every frame change, late-pane catch-up included (the panel's readout). */
 export function onFrame(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
 
-type Cine = { isPlaying?: boolean; frameRate?: number }
-interface CineServiceLike {
+export type Cine = { isPlaying?: boolean; frameRate?: number }
+export interface CineServiceLike {
   getState?: () => { cines?: Record<string, Cine> } | undefined
+  setCine?: (c: { id: string } & Cine) => void
 }
 
 // One clock for every 4D pane. OHIF's cineService has no change event for
@@ -149,9 +149,11 @@ export function joinFrames(
   panes.set(viewportId, nv)
   const onFrameChange = () => {
     const source = sourceVolume(nv)?.frameSource
-    if (!element || !source) return
-    element.dataset.frame = String(source.frame)
-    element.dataset.frames = String(source.count)
+    if (element && source) {
+      element.dataset.frame = String(source.frame)
+      element.dataset.frames = String(source.count)
+    }
+    for (const l of listeners) l()
   }
   // A late pane (stage switch, fusion overlay) joins the series' frame.
   const onVolumeLoaded = () => {
@@ -161,7 +163,6 @@ export function joinFrames(
     // The cine clock runs only while some pane shows a 4D series.
     if (v && !raf) raf = requestAnimationFrame(tick)
     onFrameChange()
-    for (const l of listeners) l()
   }
   nv.addEventListener('frameChange', onFrameChange)
   nv.addEventListener('volumeLoaded', onVolumeLoaded)

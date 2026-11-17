@@ -32,9 +32,7 @@ const optionsAt = (dso: DisplaySetOptions, i: number): Options =>
  */
 export const isMip = (dso: DisplaySetOptions): boolean => {
   const { blendMode, slabThickness } = optionsAt(dso, 0)
-  return (
-    blendMode === 'MIP' && String(slabThickness).toLowerCase() === 'fullvolume'
-  )
+  return blendMode === 'MIP' && slabThickness === 'fullVolume'
 }
 
 // vtk.js's '2hot' preset (cornerstone's PET colormap in the 4D demo), which

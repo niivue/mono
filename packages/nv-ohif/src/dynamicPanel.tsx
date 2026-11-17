@@ -1,6 +1,8 @@
 import { useEffect, useReducer } from 'react'
 import {
   anyFramesPane,
+  type Cine,
+  type CineServiceLike,
   groupPanes,
   onFrame,
   paneFrames,
@@ -13,13 +15,9 @@ import type { OhifExtensionParams } from './ohif-types'
 // 1-50) for NiiVue panes: play and fps go through OHIF's cineService, frames
 // through frames4D. Acts on the active pane's 4D series, else the first shown.
 
-type Cine = { isPlaying?: boolean; frameRate?: number }
 type Services = {
   viewportGridService?: { getActiveViewportId?: () => string | undefined }
-  cineService?: {
-    getState?: () => { cines?: Record<string, Cine> } | undefined
-    setCine?: (c: { id: string } & Cine) => void
-  }
+  cineService?: CineServiceLike
 }
 
 const box = { display: 'flex', alignItems: 'center', gap: 6 } as const

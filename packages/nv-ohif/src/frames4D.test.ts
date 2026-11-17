@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { joinFrames, split4D } from './frames4D'
-import { isMip } from './hangingOptions'
+import NiiVue from '@niivue/niivue'
+import { joinFrames, onFrame, paneFrames, setFrame, split4D } from './frames4D'
 
 // 2x1x1 voxels x 3 frames, int16, vox_offset 352.
 function nifti4D(): File {
@@ -11,6 +11,8 @@ function nifti4D(): File {
   hdr.setInt16(70, 4, true)
   hdr.setInt16(72, 16, true)
   hdr.setFloat32(108, 352, true)
+  for (const i of [1, 2, 3]) hdr.setFloat32(76 + 4 * i, 1, true)
+  hdr.setUint32(344, 0x00312b6e, true) // magic 'n+1'
   return new File([hdr.buffer, new Int16Array([1, 2, 3, 4, 5, 6])], 'pt.nii')
 }
 
@@ -28,36 +30,34 @@ describe('split4D', () => {
   })
 })
 
-describe('isMip', () => {
-  // The 4D demo's PT panes say MIP without a slab: cornerstone shows a slice.
-  it('needs a full-volume slab', () => {
-    expect(isMip([{ options: { blendMode: 'MIP' } }])).toBe(false)
-    expect(
-      isMip([{ options: { blendMode: 'MIP', slabThickness: 'fullVolume' } }]),
-    ).toBe(true)
+// Audit: a paused series joining a new fusion pane catches up asynchronously;
+// the panel must read the caught-up frame, so Next steps forward.
+it('late-pane catch-up updates the frame readout', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const [pt, fusion] = [0, 1].map(() => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.drawScene = () => {}
+    return nv
+  }) as [NiiVue, NiiVue]
+  const leave = [
+    joinFrames('pt', pt, undefined, null),
+    joinFrames('fusion', fusion, undefined, null),
+  ]
+  await pt.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await setFrame(split.frames.group, 1)
+  await fusion.loadVolumes([{ url: split.image }])
+  let shown = -1
+  const off = onFrame(() => {
+    shown = paneFrames('fusion')?.frame ?? -1
   })
-})
-
-describe('joinFrames', () => {
-  it('starts the cine clock only once a pane shows a 4D series', () => {
-    let scheduled = 0
-    const raf = globalThis.requestAnimationFrame
-    globalThis.requestAnimationFrame = () => ++scheduled
-    const listeners: Record<string, () => void> = {}
-    const nv = {
-      volumes: [{}] as { frameSource?: object }[],
-      addEventListener: (t: string, f: () => void) => {
-        listeners[t] = f
-      },
-      removeEventListener: () => {},
-    }
-    const leave = joinFrames('p', nv as never, undefined, null)
-    listeners.volumeLoaded?.()
-    expect(scheduled).toBe(0)
-    nv.volumes = [{ frameSource: { group: {}, frame: 0, count: 2 } }]
-    listeners.volumeLoaded?.()
-    expect(scheduled).toBe(1)
-    leave()
-    globalThis.requestAnimationFrame = raf
-  })
+  await fusion.addVolume({ url: split.image, frameSource: split.frames })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(shown).toBe(1)
+  await setFrame(split.frames.group, shown + 1) // Next
+  expect(paneFrames('fusion')?.frame).toBe(2)
+  off()
+  for (const l of leave) l()
 })

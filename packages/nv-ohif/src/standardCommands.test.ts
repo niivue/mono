@@ -439,9 +439,10 @@ it('scrollImage steps a split series across its outputs', () => {
     outputFrames: ['A', 'B'].map((SOPInstanceUID) => ({
       frames: [{ SOPInstanceUID, frameNumber: 1 }],
     })),
+    // Resolves stale: a real switch shows the output, so a retry would stop.
     switchToInstance: (sop: string) => {
       switched.push(sop)
-      return Promise.resolve(true)
+      return Promise.resolve(false)
     },
   } as unknown as Parameters<typeof scrollImage>[0]
   scrollImage(entry, 1)
@@ -481,7 +482,7 @@ it('scrollImage steps through the frames of a split series multi-frame instance'
     // The shown output: no switch for its own frames.
     switchToInstance: (sop: string, frame: number) => {
       switched.push([sop, frame])
-      return sop === 'mf' ? undefined : Promise.resolve(true)
+      return sop === 'mf' ? undefined : Promise.resolve(false)
     },
   } as unknown as Parameters<typeof scrollImage>[0]
   scrollImage(entry, 1)
@@ -491,6 +492,39 @@ it('scrollImage steps through the frames of a split series multi-frame instance'
     ['mf', 2],
     ['B', 1],
   ])
+})
+
+it('jumpToImage selects a split multi-frame frame after switching output', async () => {
+  const calls: number[][] = []
+  const output = (frames: number[]) => ({
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    frames: frames.map((frameNumber) => ({
+      SOPInstanceUID: 'mf',
+      frameNumber,
+    })),
+  })
+  const [a, b] = [output([1]), output([2, 3, 4])]
+  const entry = {
+    nv: {
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+      setCrosshairPos: (p: number[]) => calls.push(p),
+    },
+    crosshairMM: [0, 0, 0],
+    displaySets: [{ instances: [{ SOPInstanceUID: 'mf', NumberOfFrames: 4 }] }],
+    sliceFrames: a,
+    outputFrames: [a, b],
+    switchToInstance: (_sop: string, frame: number) => {
+      const to = frame === 1 ? a : b
+      if (to === entry.sliceFrames) return undefined
+      entry.sliceFrames = to as typeof entry.sliceFrames
+      return Promise.resolve(true)
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 3)
+  await Bun.sleep(0)
+  expect(calls).toEqual([[0, 0, 2]])
 })
 
 it('jumpToImage counts the frames of a single multi-frame instance', () => {

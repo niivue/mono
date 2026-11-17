@@ -174,11 +174,18 @@ export function jumpToImage(
     // (outputStack.ts): another output's image (a localizer of another
     // orientation), or one queued behind a switch still loading, shows centred.
     const image = stackImages(entry, instances, sf).at(i)
-    if (
-      !image ||
-      entry.switchToInstance?.(image.SOPInstanceUID, image.frameNumber)
+    if (!image) return
+    const switching = entry.switchToInstance?.(
+      image.SOPInstanceUID,
+      image.frameNumber,
     )
+    if (switching) {
+      // The output shows centred; then select the frame, unless a later jump won.
+      void switching.then((isLatest) => {
+        if (isLatest) jumpToImage(entry, imageIndex)
+      })
       return
+    }
     k = sf.frames.findIndex(
       (f) =>
         f?.SOPInstanceUID === image.SOPInstanceUID &&

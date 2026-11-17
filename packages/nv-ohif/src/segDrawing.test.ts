@@ -131,6 +131,21 @@ describe('resolveSegDisplaySets', () => {
     expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
   })
 
+  // Removed while another series shows, then reloaded: still newest on its own.
+  test('baseOnly_segReloadedWhileElsewhereIsNewest', () => {
+    const ct: OhifDisplaySet = { displaySetInstanceUID: 'ct', Modality: 'CT' }
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: false }
+    const active = { ...lookup, getActiveDisplaySets: () => [a, b] }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+    b.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    a.isHydrated = false
+    resolveSegDisplaySets([ct], active)
+    a.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+  })
+
   // Removal can drop the set from the active list instead; a re-add is newest.
   test('baseOnly_reAddedSegIsNewest', () => {
     const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }

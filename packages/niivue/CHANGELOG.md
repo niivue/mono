@@ -1,3 +1,21 @@
+## 1.0.0-rc.217 (2026-11-17)
+
+### Features
+
+- **niivue:** public drawingGeneration and cancelDrawingLoad() ([6cbe6fbc](https://github.com/niivue/mono/commit/6cbe6fbc))
+
+### Fixes
+
+- **niivue:** TRX ignores a negative NB_STREAMLINES ([#833](https://github.com/niivue/mono/issues/833))
+- **niivue:** TRX falls back to the offsets heuristic on a bad header.json ([#832](https://github.com/niivue/mono/issues/832))
+- **niivue:** toggling annotationIsDrawnFromCenter drops a parked start's stale preview ([#817](https://github.com/niivue/mono/issues/817))
+- **niivue:** a parked bidirectional axis rubber-bands to the cursor ([#815](https://github.com/niivue/mono/issues/815))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.216 (2026-11-17)
 
 ### Fixes

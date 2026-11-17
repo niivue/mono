@@ -1,3 +1,24 @@
+## 1.0.0-rc.247 (2026-11-17)
+
+### Features
+
+- **niivue:** public drawingGeneration and cancelDrawingLoad() ([6cbe6fbc](https://github.com/niivue/mono/commit/6cbe6fbc))
+
+### Fixes
+
+- **nv-ohif:** clear a SEG conversion note after 6 s, as the base's ([d3eafc44](https://github.com/niivue/mono/commit/d3eafc44))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.217
+- Updated nv-ext-tile to 1.0.0-rc.126
+- Updated uikit to 1.0.0-rc.215
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.246 (2026-11-17)
 
 ### Updated Dependencies

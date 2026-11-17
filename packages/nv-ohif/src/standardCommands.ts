@@ -130,12 +130,11 @@ export function jumpToImage(
     ?.SOPInstanceUID
   // Unmapped frame slots are undefined too: an unknown SOP must not match them.
   if (!sop) return
+  // Another output of the series (a localizer of another orientation), or one
+  // queued behind a switch still loading: it shows centred.
+  if (entry.switchToInstance?.(sop)) return
   const k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
-  // Another output of the series (a localizer of another orientation).
-  if (k < 0) {
-    entry.switchToInstance?.(sop)
-    return
-  }
+  if (k < 0) return
   const [x = 0, y = 0, z = 0] = entry.crosshairMM
   entry.nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
 }

@@ -91,7 +91,10 @@ function formatLength(v: number, unit: 'mm' | 'px'): string {
 
 function formatArea(v: number, unit: 'mm' | 'px'): string {
   if (unit === 'px') return `${Math.round(v)} px2`
-  return v < 1 ? `${(v * 1e6).toFixed(0)} um2` : `${v.toFixed(3)} mm2`
+  if (v >= 1) return `${v.toFixed(3)} mm2`
+  const um2 = v * 1e6
+  // Sub-micrometre pixels make areas below 1 um2; whole numbers would read 0.
+  return `${um2 >= 1 || um2 === 0 ? um2.toFixed(0) : um2.toPrecision(2)} um2`
 }
 
 /** An annotation's overlay text: its label, then its area or length. */

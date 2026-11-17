@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { NVSlide } from './NVSlide'
 import { NVSlideAnnotations } from './slideAnnotations'
-import { slideOverlayContent, slideScaleBar } from './slideOverlay'
+import {
+  slideAnnotationText,
+  slideOverlayContent,
+  slideScaleBar,
+} from './slideOverlay'
 
 const slide = (pixelSpacingMM?: [number, number]) =>
   ({
@@ -146,4 +150,12 @@ describe('slideOverlayContent scale bar', () => {
         .scaleBar,
     ).toBeNull()
   })
+})
+
+// Review of #836: one 0.25 um pixel is 0.0625 um2, not 0.
+test('areas below 1 um2 keep two significant digits', () => {
+  expect(slideAnnotationText('a', { area: 6.25e-8, unit: 'mm' })).toBe(
+    'a 0.063 um2',
+  )
+  expect(slideAnnotationText('a', { area: 2e-4, unit: 'mm' })).toBe('a 200 um2')
 })

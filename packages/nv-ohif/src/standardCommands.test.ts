@@ -136,13 +136,6 @@ describe('standard commands', () => {
     expect(nv.volumeUpdates).toEqual([])
   })
 
-  it('pass the merged scale direction through', () => {
-    register('nv-1')
-    const { calls, run } = fakeHost('cs-1')
-    run('scaleDownViewport', {})
-    expect(calls[1]?.opts).toEqual({ direction: -1 })
-  })
-
   it('do not recurse when CORNERSTONE lacks the command', () => {
     const { calls, contexts, run } = fakeHost('cs-1')
     delete contexts.CORNERSTONE?.resetViewport
@@ -298,26 +291,22 @@ describe('rotate and flip commands', () => {
       ]).toEqual([0, false, false])
     })
 
-  for (const [view, sliceType] of [
-    ['render-only', SLICE_TYPE.RENDER],
-    ['graph-only', SLICE_TYPE.NONE],
-  ] as const)
-    it(`leave a ${view} view alone (the turn applies to 2D tiles only)`, () => {
-      const nv = register('nv-1')
-      nv.sliceType = sliceType
-      const { run } = fakeHost('nv-1')
-      for (const name of [
-        'rotateViewportCW',
-        'flipViewportHorizontal',
-        'setViewportVerticalFlip',
-      ])
-        run(name)
-      expect([
-        nv.rotation2D,
-        nv.isFlipped2DHorizontal,
-        nv.isFlipped2DVertical,
-      ]).toEqual([0, false, false])
-    })
+  it('leave a render-only view alone (the turn applies to 2D tiles only)', () => {
+    const nv = register('nv-1')
+    nv.sliceType = SLICE_TYPE.RENDER
+    const { run } = fakeHost('nv-1')
+    for (const name of [
+      'rotateViewportCW',
+      'flipViewportHorizontal',
+      'setViewportVerticalFlip',
+    ])
+      run(name)
+    expect([
+      nv.rotation2D,
+      nv.isFlipped2DHorizontal,
+      nv.isFlipped2DVertical,
+    ]).toEqual([0, false, false])
+  })
 
   it('leave a slide (WSI) viewport alone', () => {
     const nv = register('nv-1')

@@ -1,5 +1,5 @@
 import type NiiVue from '@niivue/niivue'
-import { getImageDataRAS, PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
+import { PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
 import { historyMemo } from './history'
 import type { OhifExtensionManager } from './ohif-types'
 
@@ -75,17 +75,31 @@ interface Session {
   toolGroupId: string
   locked: ReadonlySet<number>
   extensionManager?: OhifExtensionManager
-  image?: { data: Float32Array; slope: number; inter: number }
   onEdit: () => void
 }
 const sessions = new Map<NiiVue, Session>()
 // The pane's tool before its drawing became editable, applied when it does.
 const lastTool = new WeakMap<NiiVue, { tool?: string; toolGroupId: string }>()
 
-/** NiiVue pen size (voxel diameter) for an OHIF brush radius in mm. */
-export function penSizeFor(radiusMm: number, pixDims: ArrayLike<number>) {
-  const [, x = 1, y = 1, z = 1] = Array.from(pixDims)
-  return Math.max(1, Math.round((2 * radiusMm) / Math.min(x, y, z)))
+/**
+ * NiiVue pen size (voxel diameter) for an OHIF brush radius in mm, from the
+ * RAS spacing in the plane drawn on (any plane in a multiplanar or 3D view).
+ */
+export function penSizeFor(
+  radiusMm: number,
+  pixDimsRAS: ArrayLike<number>,
+  sliceType?: number,
+) {
+  const [, x = 1, y = 1, z = 1] = Array.from(pixDimsRAS)
+  const inPlane =
+    sliceType === SLICE_TYPE.AXIAL
+      ? [x, y]
+      : sliceType === SLICE_TYPE.CORONAL
+        ? [x, z]
+        : sliceType === SLICE_TYPE.SAGITTAL
+          ? [y, z]
+          : [x, y, z]
+  return Math.max(1, Math.round((2 * radiusMm) / Math.min(...inPlane)))
 }
 
 /**
@@ -119,7 +133,7 @@ export function applySegTool(
   nv.drawPenShape = PEN_SHAPE.CIRCLE
   nv.drawPenSize = pen.filled
     ? 1
-    : penSizeFor(radius, nv.volumes[0]?.hdr?.pixDims ?? [])
+    : penSizeFor(radius, nv.volumes[0]?.pixDimsRAS ?? [], nv.sliceType)
   nv.drawPenFilled = !!pen.filled
   nv.drawPenAutoClose = !!pen.filled
   nv.drawIsFillOverwriting = true
@@ -179,6 +193,28 @@ function thresholdRange(
   return t?.range ?? DEFAULT_RANGE
 }
 
+/**
+ * Scaled intensity of `v` at a RAS voxel index, read live: a 4D frame or a
+ * computed volume rewrites the voxels in place. Reads only the edited voxels,
+ * so no full-volume copy.
+ */
+export function rasIntensity(v: NiiVue['volumes'][number]) {
+  const { img, dimsRAS: dims, img2RASstep: step, img2RASstart: start } = v
+  if (!img || !dims || !step || !start) return undefined
+  const slope = v.hdr?.scl_slope || 1
+  const inter = v.hdr?.scl_inter || 0
+  const [, vx = 1, vy = 1] = dims
+  const [s0 = 0, s1 = 0, s2 = 0] = start
+  const [dx = 0, dy = 0, dz = 0] = step
+  const offset = s0 + s1 + s2
+  return (i: number) => {
+    const x = i % vx
+    const y = Math.floor(i / vx) % vy
+    const z = Math.floor(i / (vx * vy))
+    return Number(img[offset + x * dx + y * dy + z * dz]) * slope + inter
+  }
+}
+
 /** Diff, constrain and record the edit since the last commit. */
 function commit(
   nv: NiiVue,
@@ -197,16 +233,7 @@ function commit(
   // The threshold applies to a stroke, not to extension edits (interpolation).
   if (pen?.threshold && isStroke) {
     const back = nv.volumes[0]
-    // RAS copy of the base, once per session (raw values: apply the scaling).
-    const data = session.image?.data ?? (back && getImageDataRAS(back))
-    if (back && data)
-      session.image = {
-        data,
-        slope: back.hdr?.scl_slope || 1,
-        inter: back.hdr?.scl_inter || 0,
-      }
-    const img = session.image
-    if (img) intensity = (i) => (img.data[i] as number) * img.slope + img.inter
+    intensity = back && rasIntensity(back)
   }
   const kept = constrainEdit(
     session.shadow,

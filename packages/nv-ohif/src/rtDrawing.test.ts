@@ -106,6 +106,23 @@ describe('rasterizeContours', () => {
     expect(xor.count).toBe(24)
   })
 
+  // Review of #839: a ring whose vertices sit in a U's arms but whose edges
+  // cross its notch is not a hole.
+  test('a ring bridging a concave notch unions', () => {
+    const lps = (uv: number[]) => uv.flatMap((c, i) => (i % 2 ? [-c, 2] : [-c]))
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const { runs } = rasterizeContours(dims, identityLps, [
+      lps([
+        0.5, 0.5, 10.5, 0.5, 10.5, 10.5, 7.5, 10.5, 7.5, 3.5, 3.5, 3.5, 3.5,
+        10.5, 0.5, 10.5,
+      ]),
+      lps([1.5, 6.5, 9.5, 6.5, 9.5, 8.5, 1.5, 8.5]),
+    ])
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[2 * 400 + 7 * 20 + 5]).toBe(1)
+    expect(bitmap[2 * 400 + 7 * 20 + 2]).toBe(1)
+  })
+
   test('an island inside a hole fills', () => {
     const { count } = rasterizeContours(dims, identityLps, [
       square(-1.5, -1.5, -11.5, -11.5, 2),

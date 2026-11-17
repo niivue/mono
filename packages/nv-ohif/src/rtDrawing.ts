@@ -415,9 +415,52 @@ function pointInRing(
   return inside
 }
 
+/** Whether any edge of ring `p` properly crosses an edge of ring `q`. */
+function ringsCross(
+  p: Float64Array,
+  q: Float64Array,
+  u: number,
+  v: number,
+): boolean {
+  const side = (
+    au: number,
+    av: number,
+    bu: number,
+    bv: number,
+    cu: number,
+    cv: number,
+  ) => Math.sign((bu - au) * (cv - av) - (bv - av) * (cu - au))
+  let pu0 = p[p.length - 3 + u] as number
+  let pv0 = p[p.length - 3 + v] as number
+  for (let i = 0; i < p.length; i += 3) {
+    const pu1 = p[i + u] as number
+    const pv1 = p[i + v] as number
+    let qu0 = q[q.length - 3 + u] as number
+    let qv0 = q[q.length - 3 + v] as number
+    for (let j = 0; j < q.length; j += 3) {
+      const qu1 = q[j + u] as number
+      const qv1 = q[j + v] as number
+      if (
+        side(pu0, pv0, pu1, pv1, qu0, qv0) *
+          side(pu0, pv0, pu1, pv1, qu1, qv1) <
+          0 &&
+        side(qu0, qv0, qu1, qv1, pu0, pv0) *
+          side(qu0, qv0, qu1, qv1, pu1, pv1) <
+          0
+      )
+        return true
+      qu0 = qu1
+      qv0 = qv1
+    }
+    pu0 = pu1
+    pv0 = pv1
+  }
+  return false
+}
+
 /**
- * -1 for a hole (wholly inside an odd number of the other rings), else +1.
- * shortcut: vertex containment, not edge crossings; exact for nested rings.
+ * -1 for a hole (wholly inside an odd number of the other rings: every vertex
+ * inside and no edges crossing), else +1.
  */
 function holeSigns(group: Float64Array[], u: number, v: number): number[] {
   return group.map((p, k) => {
@@ -428,7 +471,7 @@ function holeSigns(group: Float64Array[], u: number, v: number): number[] {
       let contained = true
       for (let i = 0; i < p.length && contained; i += 3)
         contained = pointInRing(q, u, v, p[i + u] as number, p[i + v] as number)
-      if (contained) depth++
+      if (contained && !ringsCross(p, q, u, v)) depth++
     }
     return depth % 2 ? -1 : 1
   })

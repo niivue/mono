@@ -183,6 +183,23 @@ describe('rasterizeStructureSet', () => {
     expect(bitmap[3 * 144 + 6 * 12 + 5]).toBe(1)
   })
 
+  // Review of #839: a hole small enough to sit on one slice is still on its
+  // outer ring's tilted plane, so it cuts a hole rather than filling.
+  test('a one-slice hole on a tilted plane stays empty', () => {
+    const { runs } = rasterizeContours(
+      [30, 30, 5],
+      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+      [
+        [1, 1, 0.1, 20, 1, 0.1, 20, 20, 2, 1, 20, 2],
+        [5, 5, 0.5, 10, 5, 0.5, 10, 9, 0.9, 5, 9, 0.9],
+      ],
+    )
+    const bitmap = new Uint8Array(30 * 30 * 5)
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[900 + 7 * 30 + 7]).toBe(0)
+    expect(bitmap[900 + 14 * 30 + 15]).toBe(1)
+  })
+
   // Review of #839: the plane crosses slice 0 though its midpoint is below it.
   test('a tilted contour with an off-volume midpoint still fills', () => {
     const { count } = rasterizeContours(

@@ -125,13 +125,18 @@ export function rasterizeContours(
     if ((span[1] as number) < (span[w] as number)) w = 1
     if ((span[2] as number) < (span[w] as number)) w = 2
     const slice = Math.round(((lo[w] as number) + (hi[w] as number)) / 2)
-    const isTilted = Math.round(lo[w] as number) !== Math.round(hi[w] as number)
+    const [a, b, c] = contourPlane(vox, w)
+    // A slope that shows in the key marks the ring tilted even when it spans one
+    // slice, so a small hole on its outer ring's tilted plane groups with it.
+    const isTilted =
+      Math.round(lo[w] as number) !== Math.round(hi[w] as number) ||
+      Math.abs(a) >= 5e-4 ||
+      Math.abs(b) >= 5e-4
     let key: string
     if (isTilted) {
       // Coplanar rings (an outer and its hole) share a plane, not a midpoint.
       if ((hi[w] as number) < -0.5 || (lo[w] as number) >= dims[w] - 0.5)
         continue
-      const [a, b, c] = contourPlane(vox, w)
       key = `${w}:${a.toFixed(3)}:${b.toFixed(3)}:${c.toFixed(1)}`
     } else {
       if (slice < 0 || slice >= dims[w]) continue

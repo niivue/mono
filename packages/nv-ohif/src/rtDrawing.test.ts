@@ -123,6 +123,30 @@ describe('rasterizeContours', () => {
     expect(bitmap[2 * 400 + 7 * 20 + 2]).toBe(1)
   })
 
+  // Review of #839: the same bar where the notch walls have vertices at its rows.
+  test('a ring bridging a notch through wall vertices unions', () => {
+    const lps = (uv: number[]) => uv.flatMap((c, i) => (i % 2 ? [-c, 2] : [-c]))
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const { runs } = rasterizeContours(dims, identityLps, [
+      lps([
+        0.5, 0.5, 10.5, 0.5, 10.5, 10.5, 7.5, 10.5, 7.5, 8.5, 7.5, 6.5, 7.5,
+        3.5, 3.5, 3.5, 3.5, 6.5, 3.5, 8.5, 3.5, 10.5, 0.5, 10.5,
+      ]),
+      lps([1.5, 6.5, 9.5, 6.5, 9.5, 8.5, 1.5, 8.5]),
+    ])
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[2 * 400 + 7 * 20 + 5]).toBe(1)
+    expect(bitmap[2 * 400 + 7 * 20 + 2]).toBe(1)
+  })
+
+  test('a nested ring sharing an edge with its outer is a hole', () => {
+    const { count } = rasterizeContours(dims, identityLps, [
+      square(-1.5, -1.5, -11.5, -11.5, 2),
+      square(-1.5, -4.5, -5.5, -8.5, 2),
+    ])
+    expect(count).toBe(100 - 16)
+  })
+
   test('an island inside a hole fills', () => {
     const { count } = rasterizeContours(dims, identityLps, [
       square(-1.5, -1.5, -11.5, -11.5, 2),

@@ -415,64 +415,96 @@ function pointInRing(
   return inside
 }
 
-/** Whether any edge of ring `p` properly crosses an edge of ring `q`. */
-function ringsCross(
+/**
+ * Whether ring `p` lies inside ring `q`: each edge of p, split where it meets
+ * q, has every piece inside q or along its boundary (and at least one inside).
+ */
+function ringInside(
   p: Float64Array,
   q: Float64Array,
   u: number,
   v: number,
 ): boolean {
-  const side = (
-    au: number,
-    av: number,
-    bu: number,
-    bv: number,
-    cu: number,
-    cv: number,
-  ) => Math.sign((bu - au) * (cv - av) - (bv - av) * (cu - au))
-  let pu0 = p[p.length - 3 + u] as number
-  let pv0 = p[p.length - 3 + v] as number
+  const eps = 1e-9
+  let interior = false
+  const ts: number[] = []
+  let au = p[p.length - 3 + u] as number
+  let av = p[p.length - 3 + v] as number
   for (let i = 0; i < p.length; i += 3) {
-    const pu1 = p[i + u] as number
-    const pv1 = p[i + v] as number
-    let qu0 = q[q.length - 3 + u] as number
-    let qv0 = q[q.length - 3 + v] as number
+    const bu = p[i + u] as number
+    const bv = p[i + v] as number
+    const du = bu - au
+    const dv = bv - av
+    const len2 = du * du + dv * dv
+    ts.length = 0
+    ts.push(0, 1)
+    let cu = q[q.length - 3 + u] as number
+    let cv = q[q.length - 3 + v] as number
     for (let j = 0; j < q.length; j += 3) {
-      const qu1 = q[j + u] as number
-      const qv1 = q[j + v] as number
-      if (
-        side(pu0, pv0, pu1, pv1, qu0, qv0) *
-          side(pu0, pv0, pu1, pv1, qu1, qv1) <
-          0 &&
-        side(qu0, qv0, qu1, qv1, pu0, pv0) *
-          side(qu0, qv0, qu1, qv1, pu1, pv1) <
-          0
-      )
-        return true
-      qu0 = qu1
-      qv0 = qv1
+      const eu = q[j + u] as number
+      const ev = q[j + v] as number
+      const fu = eu - cu
+      const fv = ev - cv
+      const den = du * fv - dv * fu
+      if (Math.abs(den) > eps) {
+        const t = ((cu - au) * fv - (cv - av) * fu) / den
+        const s = ((cu - au) * dv - (cv - av) * du) / den
+        if (t > 0 && t < 1 && s >= -eps && s <= 1 + eps) ts.push(t)
+      } else if (len2 > 0) {
+        // Parallel: q's endpoints split p's edge where they lie on it.
+        ts.push(((cu - au) * du + (cv - av) * dv) / len2)
+        ts.push(((eu - au) * du + (ev - av) * dv) / len2)
+      }
+      cu = eu
+      cv = ev
     }
-    pu0 = pu1
-    pv0 = pv1
+    ts.sort((x, y) => x - y)
+    for (let k = 1; k < ts.length; k++) {
+      const t0 = Math.max(0, ts[k - 1] as number)
+      const t1 = Math.min(1, ts[k] as number)
+      if (t1 - t0 <= eps) continue
+      const mu = au + ((t0 + t1) / 2) * du
+      const mv = av + ((t0 + t1) / 2) * dv
+      if (onRing(q, u, v, mu, mv)) continue
+      if (!pointInRing(q, u, v, mu, mv)) return false
+      interior = true
+    }
+    au = bu
+    av = bv
+  }
+  return interior
+}
+
+/** Whether (pu, pv) lies on an edge of ring `q`. */
+function onRing(
+  q: Float64Array,
+  u: number,
+  v: number,
+  pu: number,
+  pv: number,
+): boolean {
+  let u0 = q[q.length - 3 + u] as number
+  let v0 = q[q.length - 3 + v] as number
+  for (let i = 0; i < q.length; i += 3) {
+    const u1 = q[i + u] as number
+    const v1 = q[i + v] as number
+    const cross = (u1 - u0) * (pv - v0) - (v1 - v0) * (pu - u0)
+    const dot = (pu - u0) * (u1 - u0) + (pv - v0) * (v1 - v0)
+    const len2 = (u1 - u0) ** 2 + (v1 - v0) ** 2
+    if (Math.abs(cross) <= 1e-9 * Math.max(1, len2) && dot >= 0 && dot <= len2)
+      return true
+    u0 = u1
+    v0 = v1
   }
   return false
 }
 
-/**
- * -1 for a hole (wholly inside an odd number of the other rings: every vertex
- * inside and no edges crossing), else +1.
- */
+/** -1 for a hole (inside an odd number of the other rings), else +1. */
 function holeSigns(group: Float64Array[], u: number, v: number): number[] {
   return group.map((p, k) => {
     let depth = 0
-    for (let j = 0; j < group.length; j++) {
-      if (j === k) continue
-      const q = group[j] as Float64Array
-      let contained = true
-      for (let i = 0; i < p.length && contained; i += 3)
-        contained = pointInRing(q, u, v, p[i + u] as number, p[i + v] as number)
-      if (contained && !ringsCross(p, q, u, v)) depth++
-    }
+    for (let j = 0; j < group.length; j++)
+      if (j !== k && ringInside(p, group[j] as Float64Array, u, v)) depth++
     return depth % 2 ? -1 : 1
   })
 }

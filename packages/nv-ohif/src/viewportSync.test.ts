@@ -1,11 +1,18 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import {
   getNiivueEntry,
   type NiivueViewportEntry,
   registerNiivue,
+  unregisterNiivue,
 } from './niivueRegistry'
 import { joinSyncGroups } from './viewportSync'
+
+// Panes stay registered otherwise and break suites that need an empty registry.
+const panes: string[] = []
+afterEach(() => {
+  for (const id of panes.splice(0)) unregisterNiivue(id)
+})
 
 // A pane showing display sets `uids` (base first, then overlays), recording
 // its broadcast targets and the windows set on it.
@@ -32,6 +39,7 @@ const pane = (id: string, uids: string[]) => {
   }
   const nv = p as typeof p & NiiVue
   registerNiivue(id, nv)
+  panes.push(id)
   const entry = getNiivueEntry(id) as NiivueViewportEntry
   entry.displaySets = [{ displaySetInstanceUID: uids[0] }]
   for (const v of volumes.slice(1))

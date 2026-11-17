@@ -96,8 +96,11 @@ export function rasterizeContours(
     m11 = 0,
   ] = lps2vox
   const strides = [1, dims[0], dims[0] * dims[1]] as const
-  // Contours grouped by slice (axis * 2^20 + index), in voxel coordinates.
-  const slices = new Map<number, Float64Array[]>()
+  // Contours (voxel coordinates) grouped by slice, or by plane when tilted.
+  const slices = new Map<
+    string,
+    { w: 0 | 1 | 2; slice: number; isTilted: boolean; contours: Float64Array[] }
+  >()
   for (const lps of contours) {
     const n = Math.floor(lps.length / 3)
     if (n < 3) continue
@@ -122,18 +125,26 @@ export function rasterizeContours(
     if ((span[1] as number) < (span[w] as number)) w = 1
     if ((span[2] as number) < (span[w] as number)) w = 2
     const slice = Math.round(((lo[w] as number) + (hi[w] as number)) / 2)
-    if (slice < 0 || slice >= dims[w]) continue
-    const key = w * 2 ** 20 + slice
+    const isTilted = Math.round(lo[w] as number) !== Math.round(hi[w] as number)
+    let key: string
+    if (isTilted) {
+      // Coplanar rings (an outer and its hole) share a plane, not a midpoint.
+      if ((hi[w] as number) < -0.5 || (lo[w] as number) >= dims[w] - 0.5)
+        continue
+      const [a, b, c] = contourPlane(vox, w)
+      key = `${w}:${a.toFixed(3)}:${b.toFixed(3)}:${c.toFixed(1)}`
+    } else {
+      if (slice < 0 || slice >= dims[w]) continue
+      key = `${w}:${slice}`
+    }
     const group = slices.get(key)
-    if (group) group.push(vox)
-    else slices.set(key, [vox])
+    if (group) group.contours.push(vox)
+    else slices.set(key, { w, slice, isTilted, contours: [vox] })
   }
   let count = 0
   const runs: number[] = []
   const sum = [0, 0, 0]
-  for (const [key, group] of slices) {
-    const w = Math.floor(key / 2 ** 20) as 0 | 1 | 2
-    const slice = key - w * 2 ** 20
+  for (const { w, slice, isTilted, contours: group } of slices.values()) {
     // In-plane axes: u (row direction, the lower axis) and v.
     const u = w === 0 ? 1 : 0
     const v = w === 2 ? 1 : 2
@@ -149,37 +160,9 @@ export function rasterizeContours(
         if (c < vmin) vmin = c
         if (c > vmax) vmax = c
       }
-    // The first contour's plane as w = a u + b v + c (Newell normal); w is the
-    // least-varying axis, so its normal component is the largest.
-    const p0 = group[0] as Float64Array
-    const nrm = [0, 0, 0]
-    for (let i = 0, j = p0.length - 3; i < p0.length; j = i, i += 3)
-      for (let a = 0; a < 3; a++) {
-        const b = (a + 1) % 3
-        const c = (a + 2) % 3
-        nrm[a] =
-          (nrm[a] as number) +
-          ((p0[j + b] as number) - (p0[i + b] as number)) *
-            ((p0[j + c] as number) + (p0[i + c] as number))
-      }
-    const nw = nrm[w] as number
-    const tiltU = nw ? -(nrm[u] as number) / nw : 0
-    const tiltV = nw ? -(nrm[v] as number) / nw : 0
-    const tiltC = nw
-      ? ((nrm[0] as number) * (p0[0] as number) +
-          (nrm[1] as number) * (p0[1] as number) +
-          (nrm[2] as number) * (p0[2] as number)) /
-        nw
-      : slice
-    let wmin = Infinity
-    let wmax = -Infinity
-    for (const p of group)
-      for (let i = w; i < p.length; i += 3) {
-        const c = p[i] as number
-        if (c < wmin) wmin = c
-        if (c > wmax) wmax = c
-      }
-    const isTilted = Math.round(wmin) !== Math.round(wmax)
+    const [tiltU, tiltV, tiltC] = isTilted
+      ? contourPlane(group[0] as Float64Array, w)
+      : [0, 0, slice]
     const rowFirst = Math.max(0, Math.ceil(vmin))
     const rowLast = Math.min(dims[v] - 1, Math.floor(vmax))
     if (rowLast < rowFirst) continue
@@ -250,6 +233,36 @@ export function rasterizeContours(
     number,
   ]
   return { count, centroid, runs }
+}
+
+/**
+ * A contour's plane as w = a u + b v + c (Newell normal), u and v the other
+ * two axes in rasterizeContours' order; w varies least, so its normal
+ * component is the largest.
+ */
+function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
+  const u = w === 0 ? 1 : 0
+  const v = w === 2 ? 1 : 2
+  const nrm = [0, 0, 0]
+  for (let i = 0, j = p.length - 3; i < p.length; j = i, i += 3)
+    for (let a = 0; a < 3; a++) {
+      const b = (a + 1) % 3
+      const c = (a + 2) % 3
+      nrm[a] =
+        (nrm[a] as number) +
+        ((p[j + b] as number) - (p[i + b] as number)) *
+          ((p[j + c] as number) + (p[i + c] as number))
+    }
+  const nw = nrm[w] as number
+  if (!nw) return [0, 0, p[w] as number]
+  return [
+    -(nrm[u] as number) / nw,
+    -(nrm[v] as number) / nw,
+    ((nrm[0] as number) * (p[0] as number) +
+      (nrm[1] as number) * (p[1] as number) +
+      (nrm[2] as number) * (p[2] as number)) /
+      nw,
+  ]
 }
 
 /** Set `bitmap` to `label` over rasterizeContours' runs. */

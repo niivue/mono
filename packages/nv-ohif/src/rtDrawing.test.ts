@@ -166,6 +166,33 @@ describe('rasterizeStructureSet', () => {
     expect(bitmap[3 * 144 + 2 * 12 + 5]).toBe(0)
   })
 
+  // Review of #839: a hole on the same tilted plane groups with its outer
+  // ring though their midpoints round to different slices.
+  test('a coplanar tilted hole stays empty', () => {
+    const { runs } = rasterizeContours(
+      [12, 12, 8],
+      [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0],
+      [
+        [-1, -1, 0.5, -9, -1, 0.5, -9, -9, 4.5, -1, -9, 4.5],
+        [-3, -2, 1, -3, -4, 2, -6, -4, 2, -6, -2, 1],
+      ],
+    )
+    const bitmap = new Uint8Array(12 * 12 * 8)
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[2 * 144 + 3 * 12 + 4]).toBe(0)
+    expect(bitmap[3 * 144 + 6 * 12 + 5]).toBe(1)
+  })
+
+  // Review of #839: the plane crosses slice 0 though its midpoint is below it.
+  test('a tilted contour with an off-volume midpoint still fills', () => {
+    const { count } = rasterizeContours(
+      [12, 12, 8],
+      [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0],
+      [[-1, -1, -3.5, -1, -9, 0.5, -9, -9, 0.5, -9, -1, -3.5]],
+    )
+    expect(count).toBeGreaterThan(0)
+  })
+
   // Review of #839: DICOM's CLOSEDPLANAR_XOR contours combine by
   // exclusive-or; an inner one cuts a hole.
   test('fills CLOSEDPLANAR_XOR contours by exclusive-or', () => {

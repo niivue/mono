@@ -726,6 +726,9 @@ async function initialize({ model }) {
     const handler = (e) => {
       let detail = null
       try { detail = toJsonSafe(e && e.detail) } catch {}
+      // The event can change read-only state (annotation undo top); sync it
+      // first so a Python handler reads the new values.
+      syncReadOnlyProperties()
       sendToPython({ kind: "event", name: eventName, detail })
     }
     state.nv.addEventListener(eventName, handler)

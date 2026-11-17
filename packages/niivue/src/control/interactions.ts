@@ -628,18 +628,9 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
     // Abandon an in-progress multi-click contour (spline / livewire), a
-    // half-placed bidirectional measurement, or a parked click start.
-    if (
-      ctrl._annotationPolyPoints ||
-      ctrl._bidirectionalLong ||
-      ctrl._annotationClickStart
-    ) {
-      ctrl._abandonAnnotationInProgress()
-      // End a drag in progress too, or the moves before release fall through
-      // to the camera orbit (#471).
-      if (ctrl.isDragging) resetDragState(ctrl)
-      ctrl.drawScene()
-    }
+    // half-placed bidirectional measurement, a parked click start or an
+    // annotation drag, ending the drag so later moves do not orbit (#471).
+    ctrl.cancelAnnotationInProgress()
     return
   }
   if (key === 'V') {

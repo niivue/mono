@@ -100,3 +100,45 @@ test('an angle on an oblique slice is the physical angle', () => {
     globalThis.window = savedWindow
   }
 })
+
+// Review of #834: a first bidirectional drag is in progress; cancelling it
+// ends the drag, so the release commits nothing.
+test('cancelAnnotationInProgress ends a bidirectional drag', () => {
+  const savedWindow = globalThis.window
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+  } as never
+  const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+    () => point as never,
+  )
+  try {
+    const nv = controller('bidirectional')
+    nv.model.annotation.isClickToPlace = false
+    const at = (x: number) => ({
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      pointerId: 1,
+      detail: 1,
+      clientX: x,
+      clientY: 50,
+      shiftKey: false,
+      preventDefault() {},
+    })
+    point = [0, 0, 0]
+    nv._eventListeners.pointerdown?.(at(50) as never)
+    point = [20, 0, 0]
+    nv._eventListeners.pointermove?.(at(70) as never)
+    expect(nv.isAnnotationInProgress).toBe(true)
+    expect(nv.cancelAnnotationInProgress()).toBe(true)
+    expect(nv.isDragging).toBe(false)
+    nv._eventListeners.pointerup?.(at(70) as never)
+    expect(nv.annotations).toHaveLength(0)
+    expect(nv.isAnnotationInProgress).toBe(false)
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
+})

@@ -2818,19 +2818,23 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  /** A multi-click contour, bidirectional or click-placed shape is half-drawn. */
+  /**
+   * A multi-click contour, bidirectional or click-placed shape is half-drawn,
+   * or an annotation is being dragged.
+   */
   get isAnnotationInProgress(): boolean {
     return Boolean(
       this._annotationPolyPoints ||
         this._bidirectionalLong ||
-        this._annotationClickStart,
+        this._annotationClickStart ||
+        this._isAnnotationDrag,
     )
   }
 
   /** Drop the half-drawn annotation (as Escape does); false if there was none. */
   cancelAnnotationInProgress(): boolean {
     if (!this.isAnnotationInProgress) return false
-    this._abandonAnnotationInProgress()
+    this._abandonForNewScene()
     this.drawScene()
     return true
   }
@@ -2877,12 +2881,16 @@ export default class NiiVue extends EventTarget {
    * before the release do not fall through to the camera orbit (#470). Other
    * drags (crosshair, contrast) are left alone.
    */
-  private _abandonForNewScene(): void {
-    const isAnnotationDrag =
+  private get _isAnnotationDrag(): boolean {
+    return (
       this._annotationShapeStart !== null ||
       this._annotationBrushPath.length > 0 ||
       this._annotation3DActive ||
       this._resizingControlPoint >= 0
+    )
+  }
+  private _abandonForNewScene(): void {
+    const isAnnotationDrag = this._isAnnotationDrag
     this._abandonAnnotationInProgress()
     if (isAnnotationDrag && this.isDragging) resetDragState(this)
   }

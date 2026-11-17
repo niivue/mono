@@ -32,11 +32,12 @@
  * thing in the copy.
  */
 
+import { mm2vox } from '@/math/NVTransforms'
 import { NiiDataType } from '@/NVConstants'
-import type { NVImage } from '@/NVTypes'
+import type { NVImage, TypedVoxelArray } from '@/NVTypes'
 import { translatedAffine } from './ChunkExplode'
 import type { Vec3f, Vec3i } from './chunking'
-import { createNiftiArray, getImageDataRAS } from './utils'
+import { createNiftiArray } from './utils'
 
 /** A sub-box of a parent volume, as a loadable NIfTI plus its placement. */
 export interface ExtractedSubVolume {
@@ -122,6 +123,73 @@ function clampRegion(
   return { origin, size }
 }
 
+/** A RAS-ordered voxel box copied out of a volume (see {@link extractRawRegion}). */
+export interface RawRegion<T extends TypedVoxelArray = TypedVoxelArray> {
+  /** The voxels, x fastest, then y, then z. */
+  data: T
+  /** The box after clamping to the volume, in its RAS voxel grid. */
+  voxelOrigin: Vec3i
+  voxelDims: Vec3i
+}
+
+type VoxelArrayCtor<T extends TypedVoxelArray> = new (length: number) => T
+
+/**
+ * Copy an axis-aligned voxel box of `vol`'s shown frame, RAW: stored values,
+ * no `scl_slope`/`scl_inter`, in the volume's own datatype unless `Out` names
+ * another. The box is clamped as {@link extractSubVolume}'s is. Reads native
+ * storage through the RAS strides, so only the box is copied. Null without CPU
+ * voxels, for an RGB/RGBA volume, or when the box misses the volume.
+ */
+export function extractRawRegion<T extends TypedVoxelArray = TypedVoxelArray>(
+  vol: NVImage,
+  voxelOrigin: readonly [number, number, number],
+  voxelDims: readonly [number, number, number],
+  Out?: VoxelArrayCtor<T>,
+): RawRegion<T> | null {
+  return copyRegion(vol, voxelOrigin, voxelDims, Out, 1, 0)
+}
+
+/**
+ * One pass for both extractors: at (1, 0) values are unchanged (-0 reads as 0).
+ * The per-voxel loop inlines getVoxelValue's native index (utils.ts) rather than
+ * calling it, with row offsets hoisted out of the x loop.
+ */
+function copyRegion<T extends TypedVoxelArray>(
+  vol: NVImage,
+  voxelOrigin: readonly [number, number, number],
+  voxelDims: readonly [number, number, number],
+  Out: VoxelArrayCtor<T> | undefined,
+  slope: number,
+  inter: number,
+): RawRegion<T> | null {
+  const d = vol.dimsRAS as number[] | undefined
+  const src = vol.img
+  const start = vol.img2RASstart
+  const step = vol.img2RASstep
+  if (!d || !src || !start || !step) return null
+  // An RGB/RGBA img holds component bytes, not scalar voxels.
+  const dt = vol.hdr.datatypeCode
+  if (dt === NiiDataType.DT_RGB24 || dt === NiiDataType.DT_RGBA32) return null
+  const region = clampRegion(voxelOrigin, voxelDims, [d[1], d[2], d[3]])
+  if (!region) return null
+  const [dx, dy, dz] = region.size
+  const [ox, oy, oz] = region.origin
+  const Ctor = Out ?? (src.constructor as VoxelArrayCtor<T>)
+  const data = new Ctor(dx * dy * dz)
+  const base = start[0] + start[1] + start[2] + (vol.frame4D ?? 0) * vol.nVox3D
+  let i = 0
+  for (let z = 0; z < dz; z++) {
+    const srcZ = base + (oz + z) * step[2]
+    for (let y = 0; y < dy; y++) {
+      const srcRow = srcZ + (oy + y) * step[1] + ox * step[0]
+      for (let x = 0; x < dx; x++)
+        data[i++] = src[srcRow + x * step[0]] * slope + inter
+    }
+  }
+  return { data, voxelOrigin: region.origin, voxelDims: region.size }
+}
+
 /**
  * Copy an axis-aligned voxel box out of `vol` as a standalone NIfTI.
  *
@@ -129,49 +197,35 @@ function clampRegion(
  * and `pickExplodedBlock` use) and is clamped to the volume, so a brick whose
  * halo runs past the edge still yields the part that exists. Returns null when
  * the volume has no CPU-side voxels (a purely streamed volume — its bytes live
- * in GPU brick textures, see the streaming note in the example) or the box is
- * entirely outside.
+ * in GPU brick textures, see the streaming note in the example), is RGB/RGBA,
+ * or the box is entirely outside.
  */
 export function extractSubVolume(
   vol: NVImage,
   voxelOrigin: readonly [number, number, number],
   voxelDims: readonly [number, number, number],
 ): ExtractedSubVolume | null {
-  const dimsRAS = vol.dimsRAS as number[] | undefined
   const matRAS = vol.matRAS as ArrayLike<number> | undefined
-  if (!dimsRAS || !matRAS) return null
-  const parentDims: Vec3i = [dimsRAS[1], dimsRAS[2], dimsRAS[3]]
-  const region = clampRegion(voxelOrigin, voxelDims, parentDims)
+  if (!matRAS) return null
+  // Float32 with the parent's scaling baked in: the copy is in display units
+  // and states slope 1 / inter 0.
+  const region = copyRegion(
+    vol,
+    voxelOrigin,
+    voxelDims,
+    Float32Array,
+    vol.hdr?.scl_slope || 1,
+    vol.hdr?.scl_inter || 0,
+  )
   if (!region) return null
-  const src = getImageDataRAS(vol)
-  if (!src) return null
+  const { data: img, voxelOrigin: origin, voxelDims: dims } = region
+  const [dx, dy, dz] = dims
 
-  const [dx, dy, dz] = region.size
-  const [ox, oy, oz] = region.origin
-  const parentX = parentDims[0]
-  const parentXY = parentDims[0] * parentDims[1]
-  // getImageDataRAS returns RAW values; bake the parent's scaling in so the copy
-  // is in display units and can state slope 1 / inter 0.
-  const slope = vol.hdr?.scl_slope || 1
-  const inter = vol.hdr?.scl_inter || 0
-  const img = new Float32Array(dx * dy * dz)
-  for (let z = 0; z < dz; z++) {
-    const srcZ = (oz + z) * parentXY
-    const dstZ = z * dx * dy
-    for (let y = 0; y < dy; y++) {
-      const srcRow = srcZ + (oy + y) * parentX + ox
-      const dstRow = dstZ + y * dx
-      for (let x = 0; x < dx; x++) {
-        img[dstRow + x] = src[srcRow + x] * slope + inter
-      }
-    }
-  }
-
-  const affine = subVolumeAffine(matRAS, region.origin)
+  const affine = subVolumeAffine(matRAS, origin)
   const spacingMM = affineSpacing(affine)
   return {
-    voxelOrigin: region.origin,
-    voxelDims: region.size,
+    voxelOrigin: origin,
+    voxelDims: dims,
     affine,
     // Voxel centres run 0..d-1, so the box centre sits at (d-1)/2.
     centroidMM: applyAffine(affine, (dx - 1) / 2, (dy - 1) / 2, (dz - 1) / 2),
@@ -188,6 +242,57 @@ export function extractSubVolume(
       vol.hdr.xyzt_units,
     ),
   }
+}
+
+/** A voxel box of a volume and its outer mm edges. */
+export interface SubVolumeBox {
+  /** First voxel and extent in the volume's RAS voxel grid. */
+  voxelOrigin: Vec3i
+  voxelDims: Vec3i
+  /** Outer edges in world mm (the voxels' corners, not centres). */
+  minMM: Vec3f
+  maxMM: Vec3f
+}
+
+/**
+ * The voxel box of `vol` holding both mm points, with its outer mm edges.
+ * Null when the volume has no RAS grid or the box misses it.
+ */
+export function subVolumeBox(
+  vol: NVImage,
+  aMM: ArrayLike<number>,
+  bMM: ArrayLike<number>,
+): SubVolumeBox | null {
+  const m = vol.matRAS as ArrayLike<number> | undefined
+  const d = vol.dimsRAS as number[] | undefined
+  if (!m || !d) return null
+  const a = mm2vox(vol, aMM, true)
+  const b = mm2vox(vol, bMM, true)
+  const lo: Vec3i = [0, 0, 0]
+  const size: Vec3i = [0, 0, 0]
+  for (let k = 0; k < 3; k++) {
+    lo[k] = Math.round(Math.min(a[k], b[k]))
+    size[k] = Math.round(Math.max(a[k], b[k])) - lo[k] + 1
+  }
+  const region = clampRegion(lo, size, [d[1], d[2], d[3]])
+  if (!region) return null
+  const { origin, size: dims } = region
+  const minMM: Vec3f = [Infinity, Infinity, Infinity]
+  const maxMM: Vec3f = [-Infinity, -Infinity, -Infinity]
+  // Eight corners, so an oblique volume's outline still encloses its voxels.
+  for (let c = 0; c < 8; c++) {
+    const mm = applyAffine(
+      m,
+      origin[0] - 0.5 + (c & 1) * dims[0],
+      origin[1] - 0.5 + ((c >> 1) & 1) * dims[1],
+      origin[2] - 0.5 + ((c >> 2) & 1) * dims[2],
+    )
+    for (let r = 0; r < 3; r++) {
+      minMM[r] = Math.min(minMM[r], mm[r])
+      maxMM[r] = Math.max(maxMM[r], mm[r])
+    }
+  }
+  return { voxelOrigin: origin, voxelDims: dims, minMM, maxMM }
 }
 
 /**

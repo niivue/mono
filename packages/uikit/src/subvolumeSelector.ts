@@ -24,6 +24,8 @@ import {
   projectMMToCanvas,
   SLICE_TYPE,
   type SliceTile,
+  type SubVolumeBox,
+  subVolumeBox,
   type UIKitOverlayFrame,
 } from '@niivue/niivue'
 import type { UIKitHost } from './controls'
@@ -44,16 +46,12 @@ export interface SubvolumeSelectorHost extends UIKitHost {
   getScreenTiles(): readonly SliceTile[]
 }
 
-export interface SubvolumeSelection {
-  /** The box's first voxel and extent in `volumes[0]`'s RAS voxel grid. */
-  voxelOrigin: Vec3
-  voxelDims: Vec3
-  /** The box's outer edges in world mm (its voxels' corners, not centres). */
-  minMM: Vec3
-  maxMM: Vec3
+/** A box of `volumes[0]` (see `subVolumeBox`) and its voxel copy. */
+export interface SubvolumeSelection extends SubVolumeBox {
   /**
    * The copy, or null when the voxels are not on the CPU (a streamed
-   * volume): crop the source to `voxelOrigin`/`voxelDims` instead.
+   * volume: crop the source to `voxelOrigin`/`voxelDims` instead) or are
+   * RGB/RGBA.
    */
   subVolume: ExtractedSubVolume | null
 }
@@ -67,49 +65,6 @@ export interface UIKitSubvolumeSelectorOptions {
   color?: number[]
   /** Outline thickness. Default 2. */
   thickness?: number
-}
-
-/**
- * The voxel box of `vol` holding both mm points, with its outer mm edges.
- * Null when the volume has no RAS grid or the box misses it.
- */
-export function subvolumeBox(
-  vol: NVImage,
-  aMM: Vec3,
-  bMM: Vec3,
-): Omit<SubvolumeSelection, 'subVolume'> | null {
-  const m = vol.matRAS as ArrayLike<number> | undefined
-  const d = vol.dimsRAS as number[] | undefined
-  if (!m || !d) return null
-  const a = mmToVoxel(m, aMM)
-  const b = mmToVoxel(m, bMM)
-  const voxelOrigin: Vec3 = [0, 0, 0]
-  const voxelDims: Vec3 = [0, 0, 0]
-  for (let k = 0; k < 3; k++) {
-    const lo = Math.max(0, Math.round(Math.min(a[k], b[k])))
-    const hi = Math.min(d[k + 1] - 1, Math.round(Math.max(a[k], b[k])))
-    if (hi < lo) return null
-    voxelOrigin[k] = lo
-    voxelDims[k] = hi - lo + 1
-  }
-  const minMM: Vec3 = [Infinity, Infinity, Infinity]
-  const maxMM: Vec3 = [-Infinity, -Infinity, -Infinity]
-  // Eight corners, so an oblique volume's outline still encloses its voxels.
-  for (let c = 0; c < 8; c++) {
-    const v = [0, 1, 2].map(
-      (k) => voxelOrigin[k] - 0.5 + ((c >> k) & 1) * voxelDims[k],
-    )
-    for (let r = 0; r < 3; r++) {
-      const mm =
-        m[r * 4] * v[0] +
-        m[r * 4 + 1] * v[1] +
-        m[r * 4 + 2] * v[2] +
-        m[r * 4 + 3]
-      minMM[r] = Math.min(minMM[r], mm)
-      maxMM[r] = Math.max(maxMM[r], mm)
-    }
-  }
-  return { voxelOrigin, voxelDims, minMM, maxMM }
 }
 
 /**
@@ -166,30 +121,6 @@ export function sliceOutlineRects(
   return out
 }
 
-/** Invert the row-major voxel->mm affine for one point. */
-function mmToVoxel(m: ArrayLike<number>, mm: Vec3): Vec3 {
-  const [a, b, c, e, f, g, h, i, j] = [
-    m[0],
-    m[1],
-    m[2],
-    m[4],
-    m[5],
-    m[6],
-    m[8],
-    m[9],
-    m[10],
-  ]
-  const x = mm[0] - m[3]
-  const y = mm[1] - m[7]
-  const z = mm[2] - m[11]
-  const det = a * (f * j - g * i) - b * (e * j - g * h) + c * (e * i - f * h)
-  return [
-    ((f * j - g * i) * x - (b * j - c * i) * y + (b * g - c * f) * z) / det,
-    (-(e * j - g * h) * x + (a * j - c * h) * y - (a * g - c * e) * z) / det,
-    ((e * i - f * h) * x - (a * i - b * h) * y + (a * f - b * e) * z) / det,
-  ]
-}
-
 export class UIKitSubvolumeSelector {
   onSelect: ((selection: SubvolumeSelection) => void) | null
   onCorner: ((mm: Vec3) => void) | null
@@ -200,6 +131,8 @@ export class UIKitSubvolumeSelector {
   private firstAxis: number | null = null
   // A box picked on one slice orientation: its corners and that slice's axis.
   private face: { a: Vec3; b: Vec3; k: number } | null = null
+  /** Bumped per press and by reset(): a pick resolving under an old value is stale. */
+  private pickSeq = 0
   private depthPreview = false
   private host: SubvolumeSelectorHost | null = null
   private shown: FocusBox | null = null
@@ -254,20 +187,20 @@ export class UIKitSubvolumeSelector {
   }
 
   /** The box `face` would have with its depth at `mm`. */
-  private depthBox(mm: Vec3): ReturnType<typeof subvolumeBox> {
+  private depthBox(mm: Vec3): SubVolumeBox | null {
     const face = this.face
     const vol = this.host?.volumes[0]
     if (!face || !vol) return null
     const b: Vec3 = [...face.b]
     b[face.k] = mm[face.k]
-    return subvolumeBox(vol, face.a, b)
+    return subVolumeBox(vol, face.a, b)
   }
 
   private select(a: Vec3, b: Vec3): SubvolumeSelection | null {
     const vol = this.host?.volumes[0]
     if (!vol) return null
     this.depthPreview = false
-    const box = subvolumeBox(vol, a, b)
+    const box = subVolumeBox(vol, a, b)
     if (!box) {
       this.outline(null)
       return null
@@ -291,7 +224,7 @@ export class UIKitSubvolumeSelector {
     const host = this.host
     const vol = host?.volumes[0]
     if (!host || !vol || !this.first) return
-    const box = subvolumeBox(vol, this.first, mm)
+    const box = subVolumeBox(vol, this.first, mm)
     if (!box) return
     this.faint(box)
   }
@@ -307,6 +240,8 @@ export class UIKitSubvolumeSelector {
 
   /** Forget a half-picked box and clear the outline. */
   reset(): void {
+    // Drop picks still in flight so they cannot restore a corner.
+    this.pickSeq++
     this.first = null
     this.face = null
     this.outline(null)
@@ -349,7 +284,6 @@ export class UIKitSubvolumeSelector {
     const canvas = host.canvas
     if (!canvas) throw new Error('UIKit: host has no canvas to attach to')
     this.host = host
-    let seq = 0
     const onDown = (e: PointerEvent): void => {
       if (e.button !== 2 || e.shiftKey) return
       const p = host.clientToCanvas(e.clientX, e.clientY)
@@ -358,7 +292,7 @@ export class UIKitSubvolumeSelector {
       // Ahead of the scene's own right-drag (clip plane, 3D pen).
       e.stopImmediatePropagation()
       e.preventDefault()
-      const at = ++seq
+      const at = ++this.pickSeq
       const axis = hit.isRender ? null : sliceAxisAt(host.getScreenTiles(), p)
       const face = this.face
       if (!this.first && face && axis !== null && axis !== face.k) {
@@ -368,7 +302,8 @@ export class UIKitSubvolumeSelector {
       }
       void this.pick(host, hit.isRender, p, e).then((mm) => {
         // A later press supersedes a slow depth pick.
-        if (mm && at === seq && this.host === host) this.addPoint(mm, axis)
+        if (mm && at === this.pickSeq && this.host === host)
+          this.addPoint(mm, axis)
       })
     }
     // One depth pick in flight at a time: moves while it runs are dropped.
@@ -389,11 +324,15 @@ export class UIKitSubvolumeSelector {
         return
       }
       moving = true
-      void this.renderPick(host, p).then((mm) => {
-        moving = false
-        // A press while picking moved on to a new box (or finished this one).
-        if (mm && this.first === first && this.host === host) this.preview(mm)
-      })
+      void this.renderPick(host, p)
+        .then((mm) => {
+          // A press while picking moved on to a new box (or finished this one).
+          if (mm && this.first === first && this.host === host) this.preview(mm)
+        })
+        // A failed pick must not drop every later preview.
+        .finally(() => {
+          moving = false
+        })
     }
     const opts = { capture: true }
     canvas.addEventListener('pointerdown', onDown, opts)
@@ -424,7 +363,7 @@ export class UIKitSubvolumeSelector {
       // Off the other views: back to the picked box.
       this.depthPreview = false
       const vol = host.volumes[0]
-      const picked = vol && subvolumeBox(vol, face.a, face.b)
+      const picked = vol && subVolumeBox(vol, face.a, face.b)
       if (picked)
         this.outline({
           min: picked.minMM,

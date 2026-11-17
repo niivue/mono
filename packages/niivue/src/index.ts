@@ -424,11 +424,17 @@ export {
 export type { ExplodedBlockPick } from './control/interactions'
 export { pickExplodedBlock } from './control/interactions'
 export { chunkExplodeEnabled } from './volume/ChunkExplode'
-export type { ExtractedSubVolume } from './volume/ChunkExtract'
+export type {
+  ExtractedSubVolume,
+  RawRegion,
+  SubVolumeBox,
+} from './volume/ChunkExtract'
 export {
   extractChunkBlock,
+  extractRawRegion,
   extractSubVolume,
   subVolumeAffine,
+  subVolumeBox,
 } from './volume/ChunkExtract'
 // MRSI (spatial spectroscopic imaging) volume helpers
 export { buildDerivedScalarVolume, isMrsiVolume } from './volume/mrsi'
@@ -515,6 +521,7 @@ export {
   extractVoxelFid,
   getBitsPerVoxel,
   getImageDataRAS,
+  getVoxelValue,
   NIFTI_UNITS_MICRON,
   robustMinMax,
   withSpatialUnits,

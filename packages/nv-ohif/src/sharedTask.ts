@@ -11,6 +11,7 @@ interface Entry {
   listeners: Set<Listener>
   last?: unknown[]
   evict?: ReturnType<typeof setTimeout>
+  done?: boolean
 }
 
 const entries = new Map<string, Entry>()
@@ -18,9 +19,20 @@ const entries = new Map<string, Entry>()
 // Eviction waits one macrotask after the last holder releases: React unmounts
 // and remounts in the same commit (StrictMode, layout change), so the remount
 // re-holds the task, while an explicit cancel still aborts at once.
-// ponytail: a finished conversion is dropped with its last holder; keep an LRU
-// if re-hanging a series after a layout round-trip proves slow.
 const GRACE_MS = 0
+// Finished tasks outlive their holders so a re-hung series (TMTV stage switch,
+// layout round-trip) is not fetched and converted again.
+// ponytail: count bound (a CT conversion is ~70 MB); bound by bytes if memory bites.
+const KEEP_FINISHED = 4
+const finished: string[] = []
+
+function keepFinished(key: string): void {
+  const i = finished.indexOf(key)
+  if (i >= 0) finished.splice(i, 1)
+  finished.push(key)
+  while (finished.length > KEEP_FINISHED)
+    entries.delete(finished.shift() as string)
+}
 
 /**
  * Run `start` once per `key`. A caller's `signal` aborting rejects that
@@ -49,14 +61,22 @@ export function sharedTask<T, A extends unknown[]>(
       fresh.last = args
       for (const l of fresh.listeners) l(...args)
     })
-    fresh.promise.catch(() => {
-      if (entries.get(key) === fresh) entries.delete(key)
-    })
+    fresh.promise.then(
+      () => {
+        fresh.done = true
+      },
+      () => {
+        if (entries.get(key) === fresh) entries.delete(key)
+      },
+    )
     entries.set(key, fresh)
     entry = fresh
   }
   const held = entry
   clearTimeout(held.evict)
+  // Held again: off the idle list until its holders release.
+  const idle = finished.indexOf(key)
+  if (idle >= 0) finished.splice(idle, 1)
   held.holders++
   if (onProgress) {
     held.listeners.add(onProgress)
@@ -66,7 +86,8 @@ export function sharedTask<T, A extends unknown[]>(
     if (onProgress) held.listeners.delete(onProgress)
     if (--held.holders > 0) return
     held.evict = setTimeout(() => {
-      if (held.holders > 0) return
+      if (held.holders > 0 || entries.get(key) !== held) return
+      if (held.done) return keepFinished(key)
       held.abort.abort()
       if (entries.get(key) === held) entries.delete(key)
     }, GRACE_MS)
@@ -92,4 +113,7 @@ export function sharedTask<T, A extends unknown[]>(
 
 /** Test hooks. */
 export const sharedTaskCount = () => entries.size
-export const clearSharedTasks = () => entries.clear()
+export const clearSharedTasks = () => {
+  entries.clear()
+  finished.length = 0
+}

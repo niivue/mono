@@ -33,6 +33,7 @@ export function stackPosition(
   sf: SliceFrames | undefined,
   mmRas: ArrayLike<number>,
   volumeOrder = false,
+  split = false,
 ): StackPosition | undefined {
   if (!ds || !sf) return undefined
   const frame = frameAt(sf, [
@@ -57,6 +58,14 @@ export function stackPosition(
       index: sf.frames.indexOf(frame) + 1,
       total: sf.frames.length,
     }
+  // A series split into outputs (outputStack.ts) counts its whole display set,
+  // as jumpToImage does and cornerstone's stack shows it.
+  if (split)
+    return {
+      instanceNumber,
+      index: instances.indexOf(instance) + 1,
+      total: instances.length,
+    }
   const images = shownImages(instances, sf)
   const index =
     images.findIndex(
@@ -73,6 +82,23 @@ export function stackPosition(
     index,
     total: images.length,
   }
+}
+
+// RAS voxel axis along each 2D plane's normal (axial z, coronal y, sagittal x).
+const NORMAL_AXIS = [2, 1, 0]
+
+/** A reformat's position along its normal, as cornerstone's "257/512". */
+export function reformatPosition(
+  sliceType: number,
+  vox: ArrayLike<number> | undefined,
+  dimsRAS: ArrayLike<number> | undefined,
+): StackPosition | undefined {
+  const axis = NORMAL_AXIS[sliceType]
+  if (axis === undefined || !vox || !dimsRAS) return undefined
+  const total = dimsRAS[axis + 1] ?? 0
+  return total > 0
+    ? { index: Math.round(vox[axis] ?? 0) + 1, total }
+    : undefined
 }
 
 const corner = (pos: CSSProperties): CSSProperties => ({
@@ -111,7 +137,9 @@ export function StackPositionReadout({
       style={corner({ right: 12, bottom: 8 })}
     >
       <span title="Instance Number">
-        {`I:${instanceNumber ?? index} (${index}/${total})`}
+        {instanceNumber === undefined
+          ? `${index}/${total}`
+          : `I:${instanceNumber} (${index}/${total})`}
       </span>
     </div>
   )

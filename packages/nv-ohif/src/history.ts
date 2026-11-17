@@ -20,7 +20,7 @@ type HistoryMemo = {
 
 const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
 
-function historyMemo(
+export function historyMemo(
   extensionManager: OhifExtensionManager | undefined,
 ): HistoryMemo | undefined {
   const entry = extensionManager?.getModuleEntry(CORNERSTONE_COMMON) as

@@ -20,6 +20,7 @@ import {
   getNiivueEntry,
   registerNiivue,
   unregisterNiivue,
+  updateNiivueViewport,
 } from './niivueRegistry'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
@@ -156,28 +157,33 @@ test('a single image opens in its acquisition plane', () => {
 })
 
 test("a linked pane's window readout follows its peer's window", async () => {
-  // Core sync writes the target's calMin/calMax and emits only locationChange,
-  // which the viewport routes to its W/L readout.
-  const frames: FrameRequestCallback[] = []
-  const raf = globalThis.requestAnimationFrame
-  globalThis.requestAnimationFrame = (cb) => frames.push(cb)
+  // The VOI group copies the window onto the peer's volume showing the same
+  // display set (viewportSync.ts); its volumeUpdated drives the W/L readout.
+  globalThis.requestAnimationFrame ??= () => 0
   const [a, b] = [new NiiVue(DEFAULT_OPTIONS), new NiiVue(DEFAULT_OPTIONS)]
   for (const nv of [a, b])
     await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
   let shown: ReturnType<typeof readBaseWindowLevel>
-  b.addEventListener('locationChange', () => {
-    shown = readBaseWindowLevel(b)
+  b.addEventListener('volumeUpdated', (e) => {
+    if (e.detail.volumeIndex === 0) shown = readBaseWindowLevel(b)
   })
   const voi = [{ type: 'voi', id: 'linked-test' }] // apart from other files' panes
-  const leaveA = joinSyncGroups('linked-a', a, voi)
-  const leaveB = joinSyncGroups('linked-b', b, voi)
-  await a.setVolume(0, { calMin: 10, calMax: 30 })
-  a.drawScene() // headless: no view, so no GL update draws
-  while (frames.length) frames.shift()?.(0)
-  expect(shown).toEqual({ window: 20, level: 20 })
-  leaveA()
-  leaveB()
-  globalThis.requestAnimationFrame = raf
+  const leave = (['linked-a', 'linked-b'] as const).map((id, i) => {
+    registerNiivue(id, i ? b : a)
+    updateNiivueViewport(id, {
+      displaySets: [{ displaySetInstanceUID: 'linked-ds' }],
+    })
+    return joinSyncGroups(id, i ? b : a, voi)
+  })
+  try {
+    await a.setVolume(0, { calMin: 10, calMax: 30 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(shown).toEqual({ window: 20, level: 20 })
+  } finally {
+    for (const l of leave) l()
+    unregisterNiivue('linked-a')
+    unregisterNiivue('linked-b')
+  }
 })
 
 test('a new hanging protocol changes the effect keys; a fresh equal one does not', () => {
@@ -210,6 +216,23 @@ test('a new hanging protocol changes the effect keys; a fresh equal one does not
   expect(lung.view).toBe(mpr().view)
   expect(lung.load).toBe(mpr().load)
   expect(lung.display).not.toBe(mpr().display)
+  // MIP on and off reruns the view and style effects.
+  const mip = (blendMode: string) =>
+    hangingKeys({ viewportType: 'volume3d' }, [
+      { options: { blendMode, slabThickness: 'fullVolume' } },
+    ]).view
+  expect(mip('MIP')).not.toBe(mip('COMPOSITE'))
+})
+
+test('MIP inversion or a new background reruns the style effect', () => {
+  const style = (voiInverted: boolean, background?: number[]) =>
+    hangingKeys({ viewportType: 'volume3d', background }, [
+      {
+        options: { blendMode: 'MIP', slabThickness: 'fullVolume', voiInverted },
+      },
+    ]).style
+  expect(style(true)).not.toBe(style(false))
+  expect(style(false, [1, 1, 1])).not.toBe(style(false, [0, 0, 0]))
 })
 
 test("a new hanging protocol's window applies to the loaded base in place", async () => {
@@ -221,8 +244,14 @@ test("a new hanging protocol's window applies to the loaded base in place", asyn
   if (!entry) throw new Error('not registered')
   entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
   const volume = nv.volumes[0]
+  // The protocol's colormap (a TMTV PT pane's) stays under the new window.
   const voi = (windowWidth: number) => [
-    { options: { voi: { windowWidth, windowCenter: 40 } } },
+    {
+      options: {
+        voi: { windowWidth, windowCenter: 40 },
+        colormap: { name: 'hot' },
+      },
+    },
   ]
   try {
     entry.baseLoading = true
@@ -233,6 +262,7 @@ test("a new hanging protocol's window applies to the loaded base in place", asyn
     await Promise.resolve()
     expect(nv.volumes[0]).toBe(volume)
     expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+    expect(nv.volumes[0]?.colormap).toBe('Hot')
   } finally {
     unregisterNiivue('hp')
   }
@@ -258,6 +288,25 @@ test('a protocol window changed during the load applies when it settles', async 
     settleBase('hp', { calMin: -160, calMax: 240 }, {}, voi(500))
     await Promise.resolve()
     expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('a colormap changed while the base loaded applies once it settles', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  try {
+    settleBase('hp', undefined, {}, [
+      { options: { colormap: { name: 'hot' } } },
+    ])
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('Hot')
   } finally {
     unregisterNiivue('hp')
   }

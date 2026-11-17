@@ -3,14 +3,17 @@ import type {
   OhifExtensionParams,
   OhifToolbarButton,
   OhifToolbarButtonCommand,
+  OhifToolbarEvaluation,
   OhifToolbarModuleEntry,
 } from './ohif-types'
+import { holdsPet } from './petQuant'
+import { SEG_TOOLS } from './segEdit'
 import {
   NIIVUE_ROTATE_FLIP_COMMANDS,
   NIIVUE_STANDARD_COMMANDS,
   noTiles2D,
 } from './standardCommands'
-import { ANNOTATION_TO_OHIF } from './toolBridge'
+import { ANNOTATION_TO_OHIF, OHIF_BRUSHES } from './toolBridge'
 
 export const NIIVUE_UNSUPPORTED_EVALUATOR = 'evaluate.niivue.unsupported'
 
@@ -20,8 +23,20 @@ export const NIIVUE_SUPPORTED_TOOLS: readonly string[] = [
   'WindowLevel',
   'Pan',
   'Zoom',
+  'Magnify',
+  'AdvancedMagnify',
+  ...Object.keys(SEG_TOOLS),
 ]
-const TOOL_COMMANDS = ['setToolActive', 'setToolActiveToolbar']
+// TMTV / 4D ROI tools: only on a pane holding a PT (petQuant.ts).
+const PET_TOOLS: readonly string[] = [
+  'RectangleROIStartEndThreshold',
+  ...Object.keys(OHIF_BRUSHES),
+]
+const TOOL_COMMANDS = [
+  'setToolActive',
+  'setToolActiveToolbar',
+  'toggleActiveDisabledToolbar',
+]
 // Slide gestures: Length draws a ruler, Zoom zooms, anything else pans.
 const SLIDE_SUPPORTED_TOOLS: readonly string[] = ['Length', 'Pan', 'Zoom']
 // Volume-only standard commands that no-op on an NVSlide viewport.
@@ -34,7 +49,76 @@ const SLIDE_UNSUPPORTED = [
 // Host commands that act on display sets or app UI, not the viewport's
 // renderer, so they work on a NiiVue viewport. openDICOMTagViewer: OHIF
 // extensions/default commandsModule reads the grid's displaySetInstanceUIDs.
-const HOST_AGNOSTIC_COMMANDS = ['openDICOMTagViewer']
+// Segmentation tool options set OHIF's segmentation state or tool group
+// configuration, which segEdit.ts reads (brush size, threshold range); the
+// NIIVUE context answers the rest (segCommands.ts).
+const HOST_AGNOSTIC_COMMANDS = [
+  'openDICOMTagViewer',
+  'activateSelectedSegmentationOfType',
+  'setThresholdRange',
+  'setViewportForToolConfiguration',
+  'setBrushSize',
+  'interpolateLabelmap',
+]
+
+export const NIIVUE_SEGMENTATION_EVALUATOR = 'evaluate.niivue.segmentation'
+
+type SegmentationServiceLike = {
+  getSegmentationRepresentations?: (viewportId: string) => unknown[]
+  getActiveSegmentation?: (
+    viewportId: string,
+  ) => { segments?: Record<string, unknown> } | undefined
+}
+type ToolbarServiceLike = {
+  _evaluateFunction?: Record<string, (args: Record<string, unknown>) => unknown>
+}
+
+/**
+ * OHIF's `evaluate.cornerstone.segmentation` for NiiVue panes (which belong to
+ * no cornerstone tool group): enabled once the pane lists a segmentation with
+ * a segment, active when the primary tool is one of `toolNames`. Other panes
+ * get cornerstone's verdict.
+ */
+export function niivueSegmentationEvaluator(
+  servicesManager: OhifExtensionParams['servicesManager'],
+): OhifToolbarModuleEntry {
+  return {
+    name: NIIVUE_SEGMENTATION_EVALUATOR,
+    evaluate: (args) => {
+      const services = ohifServices(servicesManager)
+      const entry = getNiivueEntry(args.viewportId)
+      if (!entry)
+        return (
+          services?.toolbarService as ToolbarServiceLike | undefined
+        )?._evaluateFunction?.['evaluate.cornerstone.segmentation']?.(args) as
+          | OhifToolbarEvaluation
+          | undefined
+      const seg = services?.segmentationService as
+        | SegmentationServiceLike
+        | undefined
+      const viewportId = args.viewportId as string
+      if (!seg?.getSegmentationRepresentations?.(viewportId)?.length)
+        return { disabled: true, disabledText: 'No segmentations available' }
+      const active = seg.getActiveSegmentation?.(viewportId)
+      if (!Object.keys(active?.segments ?? {}).length)
+        return {
+          disabled: true,
+          disabledText: 'Add segment to enable this tool',
+        }
+      const toolNames = args.toolNames as string[] | undefined
+      if (!toolNames) return { disabled: false }
+      const tools = services?.toolGroupService as
+        | {
+            getActivePrimaryMouseButtonTool?: (id: string) => string | undefined
+          }
+        | undefined
+      const tool = tools?.getActivePrimaryMouseButtonTool?.(
+        entry.toolGroupId ?? 'default',
+      )
+      return { disabled: false, isActive: !!tool && toolNames.includes(tool) }
+    },
+  }
+}
 
 /**
  * Prepend {@link NIIVUE_UNSUPPORTED_EVALUATOR} to a button's evaluators. OHIF
@@ -125,7 +209,10 @@ export function niivueSupportEvaluator(
         // no-ops.
         if (toolName !== undefined)
           return (
-            supportedTools.includes(toolName) &&
+            (supportedTools.includes(toolName) ||
+              (PET_TOOLS.includes(toolName) &&
+                !entry.slideView &&
+                holdsPet(entry, servicesManager))) &&
             (c.commandName !== 'setToolActive' ||
               c.commandOptions?.toolGroupId !== undefined)
           )

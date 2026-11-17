@@ -95,7 +95,7 @@ packages/nv-ohif/
     getNiivueViewportModule.tsx
     NiivueViewport.tsx       # React 18 component: owns a <canvas> + a Niivue instance
     sopClassHandler.ts       # SOPClassHandlerModule — which displaySets we claim
-    mode/                    # a demo OHIF mode that hangs series in the NiiVue viewport
+    modes/                   # OHIF modes, one subpath export each (built apart: no NiiVue import)
     data/
       displaySetToNiivue.ts  # displaySet -> NiiVue load (the data bridge; phased)
       cornerstoneVolumeToNVImage.ts  # (phase 2) in-memory cornerstone volume -> NVImage
@@ -115,6 +115,23 @@ typings** (`src/ohif-types.ts`) and externalize `react`. The only deps are
 `@niivue/niivue` (workspace) + a `react` peer of `^18.3.1 || ^19` (so bun reuses the
 monorepo's React 19 for dev; the OHIF host supplies React 18 at runtime). The OHIF /
 react-dom requirement is documented in `README.md`, not enforced via peers.
+
+### Modes (2026-11-17)
+
+- `src/modes/*.js` are five OHIF modes (viewer, segmentation, microscopy,
+  tmtv, dynamic), formerly the ohif-niivue rig's `modes/`. Exports:
+  `@niivue/nv-ohif/modes/<name>`. pluginConfig: README "Enable the NiiVue modes".
+- They are plain JS: OHIF's mode objects are untyped, and `@ohif/*` is external
+  (`build:modes`, resolved from the host). This adds no peers (see above).
+- They reuse OHIF's hanging protocols and tool groups, so nv-ohif ships no HP
+  module. A copy would drift from OHIF's.
+- `niivueMode()` (viewer.js) is the factory the other four use.
+- `@ohif/mode-preclinical-4d` exports neither `initToolGroups` nor
+  `toolbarButtons`, so dynamic.js deep-imports its `src/`. Fragile across
+  OHIF releases; ask OHIF to export them.
+- Consumer check: the rig's `scripts/consumer-check.mjs` packs nv-ohif and runs
+  OHIF's `writePluginImportsFile` on the README's pluginConfig. It then loads
+  each mode as `appInit` does and lists the routes.
 
 ### Consumer packaging — verified end-to-end (2026-07-14)
 

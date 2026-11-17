@@ -11,6 +11,7 @@ import {
   type VectorAnnotation,
 } from '@niivue/niivue'
 import { classifyDisplaySet } from './classifyDisplaySet'
+import { rowReport } from './csvReport'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import { installClearHistory } from './history'
@@ -31,6 +32,8 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
+import { getQuantCommandDefinitions } from './petQuant'
+import { getSegCommandDefinitions } from './segCommands'
 import { jumpToNiivueSegment } from './segPanel'
 import {
   type FrameRef,
@@ -176,16 +179,15 @@ export interface DisplaySetServiceLike {
 }
 
 // The study's display sets NiiVue could load as an overlay of this viewport:
-// neither its base nor already overlaid (SEG/RT and slides classify out).
+// neither its base nor already overlaid (SEG/RT and slides classify out). Sets
+// hung after the base (TMTV's PT) are candidates until layered.
 export function overlayCandidates(
   entry: Pick<NiivueViewportEntry, 'displaySets' | 'overlays'>,
   activeDisplaySets: ReadonlyArray<OhifDisplaySet>,
 ): OhifDisplaySet[] {
   const loaded = new Set<string>(entry.overlays.keys())
-  for (const ds of entry.displaySets) {
-    if (typeof ds.displaySetInstanceUID === 'string')
-      loaded.add(ds.displaySetInstanceUID)
-  }
+  const base = entry.displaySets[0]?.displaySetInstanceUID
+  if (typeof base === 'string') loaded.add(base)
   return activeDisplaySets.filter((ds) => {
     const uid = ds.displaySetInstanceUID
     if (typeof uid !== 'string' || loaded.has(uid)) return false
@@ -205,7 +207,7 @@ const CORNERSTONE_COLORMAPS: Record<string, string> = {
  * The registered NiiVue colormap for a name or `{ name }` (OHIF passes
  * either), or undefined when NiiVue has no such LUT.
  */
-function niivueColormapName(
+export function niivueColormapName(
   registered: readonly string[],
   colormap: unknown,
 ): string | undefined {
@@ -785,31 +787,48 @@ const measurementToAnnotation = new Map<
   { viewportId: string; annotationId: string }
 >()
 
-// Annotations taken from another source's row (an SR measurement). A series
-// swap or unmount releases their rows to OHIF instead of removing them: the
+// A series swap or unmount releases a viewport's rows to OHIF instead of
+// removing them, as cornerstone keeps measurements across layout changes: the
 // measurement survives (srBridge keeps it in cornerstone for SR export) and a
-// later NiiVue pane on the series takes it back.
-const importedAnnotations = new Set<string>()
+// later NiiVue pane on the series takes it back under the same uid (srImport.ts).
 const releasedRows = new Set<string>()
-
-export function markImportedAnnotation(annotationId: string): void {
-  importedAnnotations.add(annotationId)
-}
+const releaseListeners = new Set<(from: NiivueViewportEntry['nv']) => void>()
 
 /** A NiiVue row left in OHIF by releaseImportedRows. */
 export const isReleasedRow = (uid: string): boolean => releasedRows.has(uid)
 
-/** Detach a viewport's imported rows from it, leaving them in OHIF. */
+/** Call `listener` with the releasing pane's NiiVue after it releases rows. */
+export function onRowsReleased(
+  listener: (from: NiivueViewportEntry['nv']) => void,
+): () => void {
+  releaseListeners.add(listener)
+  return () => releaseListeners.delete(listener)
+}
+
+// annotation id -> released row uid it takes back (set around nv.addAnnotation).
+export const adoptedRowUids = new Map<string, string>()
+
+// A jump to a released row: Cornerstone re-hangs its series, and the pane that
+// takes the row back finishes the jump (srImport.ts).
+let pendingJumpUid: string | undefined
+export function claimPendingJump(uid: string): boolean {
+  if (pendingJumpUid !== uid) return false
+  pendingJumpUid = undefined
+  return true
+}
+
+/** Detach a viewport's rows from it, leaving them in OHIF. */
 export function releaseImportedRows(viewportId: string): void {
   const byView = reflectedAnnotations.get(viewportId)
   if (!byView) return
-  for (const [id, row] of byView) {
-    if (!importedAnnotations.delete(id)) continue
-    byView.delete(id)
-    if (!row.uid) continue
-    measurementToAnnotation.delete(row.uid)
-    releasedRows.add(row.uid)
+  reflectedAnnotations.delete(viewportId)
+  for (const { uid } of byView.values()) {
+    if (!uid) continue
+    measurementToAnnotation.delete(uid)
+    releasedRows.add(uid)
   }
+  const from = getNiivueEntry(viewportId)?.nv
+  if (from) for (const listener of releaseListeners) listener(from)
 }
 
 /** The OHIF row reflecting a NiiVue annotation, if one was made. */
@@ -1021,6 +1040,7 @@ function reflectNiivueAnnotationResult(
   if (!backing?.SeriesInstanceUID) return { status: 'retryableFailure' }
 
   const source = niivueMeasurementSource(measurementService)
+  existingUid ??= adoptedRowUids.get(annotation.id)
   const uid =
     existingUid ?? `niivue-${mapping.toolName}-${++niivueMeasurementCounter}`
   const forUID = backing.instances?.[0]?.FrameOfReferenceUID as
@@ -1040,7 +1060,9 @@ function reflectNiivueAnnotationResult(
   const existing = existingUid
     ? (
         measurementService as {
-          getMeasurement?: (uid: string) => Partial<FrameRef> | undefined
+          getMeasurement?: (
+            uid: string,
+          ) => (Partial<FrameRef> & { isVisible?: boolean }) | undefined
         }
       ).getMeasurement?.(existingUid)
     : undefined
@@ -1091,10 +1113,19 @@ function reflectNiivueAnnotationResult(
           FrameOfReferenceUID: forUID,
           ...frame,
           points,
+          // addRawMeasurement replaces the row; keep a hidden row hidden.
+          ...(existing?.isVisible === false ? { isVisible: false } : {}),
           displayText: { primary, secondary: [] },
           data,
+          getReport: rowReport(mapping.toolName, data, points, forUID),
           type: mapping.valueType,
-          metadata: { toolName: mapping.toolName, FrameOfReferenceUID: forUID },
+          // A line lies on two planes: restoring it (srImport.ts) keeps the
+          // tile it was drawn on; depth is in the points.
+          metadata: {
+            toolName: mapping.toolName,
+            FrameOfReferenceUID: forUID,
+            sliceType: annotation.sliceType,
+          },
         },
       },
       (d) => d.measurement,
@@ -1115,10 +1146,14 @@ function reflectNiivueAnnotationResult(
     reflectedAnnotations.set(viewportId, byView)
   }
   byView.set(annotation.id, { uid: acceptedUid, hash })
+  releasedRows.delete(acceptedUid)
   measurementToAnnotation.set(acceptedUid, {
     viewportId,
     annotationId: annotation.id,
   })
+  // An adopted annotation is new to the overlay's hidden set.
+  if (existing?.isVisible === false)
+    applyOhifVisibilityToAnnotation(acceptedUid, false)
   return { status: 'success' }
 }
 
@@ -1182,12 +1217,17 @@ export function jumpToNiivueMeasurement(
 
   // On another output of the series (a localizer of another orientation):
   // show that output; its single slice holds the measurement.
-  const sop = (
-    services?.measurementService as
-      | { getMeasurement?: (uid: string) => { SOPInstanceUID?: string } }
-      | undefined
-  )?.getMeasurement?.(measurementUid)?.SOPInstanceUID
-  const switching = sop ? entry.switchToInstance?.(sop) : undefined
+  const { SOPInstanceUID: sop, frameNumber } =
+    (
+      services?.measurementService as
+        | {
+            getMeasurement?: (
+              uid: string,
+            ) => { SOPInstanceUID?: string; frameNumber?: number } | undefined
+          }
+        | undefined
+    )?.getMeasurement?.(measurementUid) ?? {}
+  const switching = sop ? entry.switchToInstance?.(sop, frameNumber) : undefined
   if (switching) {
     // The new target is selected now: a Delete during the load must not hit
     // the previous selection. A later jump or selection wins over this one.
@@ -1449,36 +1489,15 @@ export function removeNiivueAnnotation(
   return true
 }
 
-/** Remove every reflected row for a viewport (annotation clear / series swap). */
+/** Release a viewport's rows and drop its bookkeeping (unmount). */
 export function clearNiivueAnnotations(
   viewportId: string,
-  servicesManager: OhifExtensionParams['servicesManager'],
+  // ponytail: unused, kept so NiivueViewport's call (shared with other topics) is unchanged.
+  _servicesManager?: unknown,
 ): void {
   releaseImportedRows(viewportId)
   // A viewport whose every add failed has no rows but may still hold failures.
   mappingFailures.delete(viewportId)
-  const byView = reflectedAnnotations.get(viewportId)
-  if (!byView) return
-  const measurementService = ohifServices(servicesManager)
-    ?.measurementService as MeasurementServiceLike | undefined
-  for (const { uid } of byView.values()) {
-    if (!uid) continue
-    // Guard against our own echo: this runs on unmount BEFORE the MEASUREMENT_REMOVED
-    // subscription is torn down, so remove() synchronously re-enters
-    // applyOhifRemoveToAnnotation. Marking the uid makes that a no-op instead of a
-    // redundant nv.removeAnnotation + drawScene per row (and a mutation of byView
-    // mid-iteration).
-    removingUids.add(uid)
-    try {
-      measurementService?.remove?.(uid)
-    } catch {
-      // Continue clearing the remaining rows and local bookkeeping.
-    } finally {
-      removingUids.delete(uid)
-    }
-    measurementToAnnotation.delete(uid)
-  }
-  reflectedAnnotations.delete(viewportId)
   hiddenAnnotations.delete(viewportId)
 }
 
@@ -1609,12 +1628,13 @@ export function cornerstoneWindowingStep(vol: {
   return [perPixel / robust, -perPixel / robust]
 }
 
-/** A hanging protocol's initial window (`displaySetOptions[0].options.voi`). */
+/** A hanging protocol's initial window (`displaySetOptions[i].options.voi`). */
 export function voiRange(
   displaySetOptions: OhifViewportProps['displaySetOptions'],
+  i = 0,
 ): { calMin: number; calMax: number } | undefined {
   // Cornerstone's mapDisplaySetOptions accepts `item.options || item`.
-  const d = displaySetOptions?.[0]
+  const d = displaySetOptions?.[i]
   const options = (d?.options ?? d) as
     | { voi?: { windowWidth?: unknown; windowCenter?: unknown } }
     | undefined
@@ -1836,14 +1856,33 @@ export function getNiivueCommandsModule({
      * Add a series of the study as an overlay on the base (fetch + dcm2niix
      * conversion for DICOM): `displaySetInstanceUID`, else the next loadable
      * one. A load in flight is cancelled first; without a chosen series that
-     * is all a call does (the Overlay toggle's second press).
+     * is all a call does (the Overlay toggle's second press). `viewportId`
+     * (else the active one) and the style options serve hanging protocols.
      */
     niivueAddOverlay: async ({
       displaySetInstanceUID,
+      viewportId: targetViewportId,
+      colormap = OVERLAY_COLORMAP,
+      opacity = OVERLAY_OPACITY,
+      calMin,
+      calMax,
+      colormapType,
     }: {
       displaySetInstanceUID?: string
+      viewportId?: string
+      colormap?: string
+      opacity?: number
+      calMin?: number
+      calMax?: number
+      colormapType?: number
     } = {}) => {
-      const entry = getActiveNiivueEntry(servicesManager)
+      const entry = targetViewportId
+        ? getNiivueEntry(targetViewportId)
+        : getActiveNiivueEntry(servicesManager)
+      const overlayWindow = {
+        ...(calMin === undefined ? {} : { calMin, calMax }),
+        ...(colormapType === undefined ? {} : { colormapType }),
+      }
       if (!entry) return
       // Cancelling releases the entry at once, so a new load can start while
       // the old one tears down.
@@ -1946,8 +1985,9 @@ export function getNiivueCommandsModule({
         if (direct) {
           added = await addOverlayGuarded({
             ...direct,
-            colormap: OVERLAY_COLORMAP,
-            opacity: OVERLAY_OPACITY,
+            colormap,
+            opacity,
+            ...overlayWindow,
           })
         } else {
           writeStatus(entry, `Fetching overlay: ${label}...`, 'loading')
@@ -1972,8 +2012,10 @@ export function getNiivueCommandsModule({
           added = await addOverlayGuarded({
             url: converted.image,
             name: converted.image.name,
-            colormap: OVERLAY_COLORMAP,
-            opacity: OVERLAY_OPACITY,
+            frameSource: converted.frames,
+            colormap,
+            opacity,
+            ...overlayWindow,
           })
         }
         if (!added || !owns()) return
@@ -2059,20 +2101,25 @@ export function getNiivueCommandsModule({
     /** Remove one overlay; the others keep their display-set mapping. */
     niivueRemoveOverlay: ({
       displaySetInstanceUID,
+      viewportId,
     }: {
       displaySetInstanceUID?: string
+      viewportId?: string
     } = {}) => {
-      const entry = getActiveNiivueEntry(servicesManager)
+      const entry = viewportId
+        ? getNiivueEntry(viewportId)
+        : getActiveNiivueEntry(servicesManager)
       if (!entry) return
       const index = overlayVolumeIndex(entry, displaySetInstanceUID)
       if (index === 0) return
       entry.overlays.delete(displaySetInstanceUID as string)
-      entry.nv
+      const removed = entry.nv
         .removeVolume(index)
         .catch((err: unknown) =>
           console.error('[nv-ohif] overlay removal failed', err),
         )
       refreshToolbar(servicesManager, entry.viewportId)
+      return removed
     },
 
     /**
@@ -2176,6 +2223,8 @@ export function getNiivueCommandsModule({
       measurement?: { uid?: string }
     }) => {
       const uid = options.measurement?.uid
+      // Any newer jump supersedes a released row's pending one.
+      pendingJumpUid = uid && releasedRows.has(uid) ? uid : undefined
       if (
         uid &&
         (measurementToAnnotation.has(uid) || uid.startsWith(SLIDE_UID_PREFIX))
@@ -2248,6 +2297,12 @@ export function getNiivueCommandsModule({
       Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
     ),
     ...getStandardCommandDefinitions({ servicesManager, commandsManager }),
+    ...getSegCommandDefinitions({
+      servicesManager,
+      commandsManager,
+      extensionManager,
+    }),
+    ...getQuantCommandDefinitions({ servicesManager }),
   }
 
   return {

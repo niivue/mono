@@ -49,6 +49,46 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 }
 ```
 
+## Enable the NiiVue modes
+
+nv-ohif ships five OHIF modes, one subpath export each. In an OHIF app, add
+`@niivue/nv-ohif` and `@niivue/niivue` to the root `package.json`
+dependencies. Then merge the following into `platform/app/pluginConfig.json`,
+with the extension placed after `@ohif/extension-cornerstone`:
+
+```json
+{
+  "extensions": [{ "packageName": "@niivue/nv-ohif", "default": false }],
+  "modes": [
+    { "packageName": "@niivue/nv-ohif/modes/viewer" },
+    { "packageName": "@niivue/nv-ohif/modes/segmentation" },
+    { "packageName": "@niivue/nv-ohif/modes/microscopy" },
+    { "packageName": "@niivue/nv-ohif/modes/tmtv" },
+    { "packageName": "@niivue/nv-ohif/modes/dynamic" }
+  ]
+}
+```
+
+| Route | Mirrors | Hanging protocol (OHIF's own) |
+|---|---|---|
+| `/niivue-viewer` | longitudinal (tracked series, measurements) | `default` |
+| `/niivue-segmentation` | segmentation (labelmap toolbox and panel) | `@ohif/mnGrid` |
+| `/niivue-microscopy` | microscopy (SM via NVSlide) | `default` |
+| `/niivue-tmtv` | TMTV (petSUV, TMTV panel, ROI tools) | `@ohif/extension-tmtv.hangingProtocolModule.ptCT` |
+| `/niivue-dynamic` | preclinical-4d (4 workflow steps, cine) | `default4D` |
+
+- The modes import `@ohif/mode-basic`, `-segmentation`, `-tmtv`,
+  `-preclinical-4d` (deep `src/` imports) and `@ohif/core` from the host, so
+  those packages must be installed. OHIF's own pluginConfig already lists them.
+- nv-ohif ships no hanging protocols. The modes use OHIF's protocols unchanged.
+  The TMTV mode registers the `getPTVOIRange` attribute, as OHIF's TMTV mode does.
+- The mode chunks do not import NiiVue. The extension loads when a mode is
+  entered.
+- `niivueMode({ id, routeName, displayName, layout, ...modeInstance })` (from
+  `@niivue/nv-ohif/modes/viewer`) builds a custom NiiVue mode. `layout`
+  overrides the route's layout props.
+- Each mode needs its own route: OHIF registers one route per mode.
+
 ## What it does today
 
 - Registers a **React viewport** that owns a `<canvas>` + a NiiVue instance.
@@ -155,7 +195,7 @@ A viewport holds one base series and any number of overlays drawn over it:
 | `niivueAddOverlay` | `displaySetInstanceUID?` | Load that series (else the study's next loadable one) as a warm, 0.5-opacity overlay. Refuses the base, a loaded overlay, and series NiiVue cannot load as a volume (SEG, RTSTRUCT, SR..., slides; RTDOSE is allowed). Does nothing until a newly hung base has loaded (the Overlay buttons are disabled meanwhile). Without a UID, a call while a load runs only cancels it; a UID it accepts replaces that load (one at a time). |
 | `niivueSetOverlayVisible` | `displaySetInstanceUID`, `visible?` | Hide or show it, keeping it loaded and its opacity; toggles without `visible`. |
 | `niivueMoveOverlay` | `displaySetInstanceUID`, `direction: 'up' \| 'down'` | Move it past the next overlay up (drawn over it) or down; the base stays the bottom layer. |
-| `niivueRemoveOverlay` | `displaySetInstanceUID` | Unload it. |
+| `niivueRemoveOverlay` | `displaySetInstanceUID`, `viewportId?` | Unload it (from that pane, else the active one). |
 | `setViewportColormap` | `viewportId?`, `displaySetInstanceUID?`, `colormap`, `opacity?` | OHIF's command: the base (no UID, or the base's) or an overlay; any other UID is a no-op. `colormap` is a NiiVue name (any case) or `Grayscale` / `hot_iron`, as a string or `{ name }`; an unknown name keeps the current one. `opacity` is clamped to 0..1; unlike Cornerstone, omitting it leaves it unchanged. |
 
 The `NiivueOverlayMenu` button (uiType `niivue.overlayMenu`, a component the

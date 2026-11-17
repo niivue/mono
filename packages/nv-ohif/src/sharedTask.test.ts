@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, jest } from 'bun:test'
-import { sharedTask, sharedTaskCount } from './sharedTask'
+import { clearSharedTasks, sharedTask, sharedTaskCount } from './sharedTask'
 
 const deferred = <T>() => {
   let resolve!: (v: T) => void
@@ -97,12 +97,13 @@ describe('sharedTask', () => {
     ).rejects.toThrow('early')
   })
 
-  it('releases a call without a signal once it settles', async () => {
+  it('releases a call without a signal once it settles, into the finished few', async () => {
     jest.useFakeTimers()
-    const before = sharedTaskCount()
-    expect(await sharedTask('k5', () => Promise.resolve('nii'))).toBe('nii')
+    clearSharedTasks()
+    for (const k of ['k5a', 'k5b', 'k5c', 'k5d', 'k5e'])
+      expect(await sharedTask(k, () => Promise.resolve('nii'))).toBe('nii')
     jest.advanceTimersByTime(0)
-    expect(sharedTaskCount()).toBe(before)
+    expect(sharedTaskCount()).toBe(4)
   })
 
   it('drops a rejected task so the next call retries', async () => {
@@ -112,5 +113,46 @@ describe('sharedTask', () => {
     await expect(sharedTask('k3', start)).rejects.toThrow('net')
     expect(await sharedTask('k3', start)).toBe('ok')
     expect(starts).toBe(2)
+  })
+
+  it('keeps the last finished tasks after their holders release (stage switch re-hangs a series)', async () => {
+    jest.useFakeTimers()
+    let starts = 0
+    const hang = async (key: string) => {
+      const abort = new AbortController()
+      await sharedTask(
+        key,
+        async () => {
+          starts++
+          return key
+        },
+        { signal: abort.signal },
+      )
+      abort.abort()
+      jest.runAllTimers()
+    }
+    for (const k of ['f0', 'f1', 'f2', 'f3', 'f4']) await hang(k)
+    await hang('f1')
+    expect(starts).toBe(5)
+    await hang('f0')
+    expect(starts).toBe(6)
+  })
+
+  it('does not evict a finished task while a caller holds it again', async () => {
+    jest.useFakeTimers()
+    clearSharedTasks()
+    let starts = 0
+    const start = async () => {
+      starts++
+      return 'nii'
+    }
+    for (const k of ['h0', 'h1', 'h2', 'h3']) await sharedTask(k, start)
+    jest.runAllTimers()
+    const abort = new AbortController()
+    await sharedTask('h0', start, { signal: abort.signal })
+    await sharedTask('h4', start)
+    jest.runAllTimers()
+    await sharedTask('h0', start)
+    expect(starts).toBe(5)
   })
 })

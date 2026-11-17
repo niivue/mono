@@ -2,16 +2,17 @@ import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
 import {
+  adoptedRowUids,
   applyDefaultAnnotationText,
   applyNiivueAnnotationDelta,
   applyOhifLabelToAnnotation,
   applyOhifVisibilityToAnnotation,
+  claimPendingJump,
   clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
   isReleasedRow,
   jumpToNiivueMeasurement,
-  markImportedAnnotation,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -348,8 +349,20 @@ describe('reflectNiivueAnnotation', () => {
       displayText: { primary: string[] }
       points: number[][]
       data: { area: number; mean: number; unit: string; areaUnit: string }
+      getReport: () => { columns: string[]; values: unknown[] }
     }
     expect(m.toolName).toBe('EllipticalROI')
+    // OHIF's CSV skips a row without getReport; cornerstone's ROI columns.
+    const { columns, values } = m.getReport()
+    expect(columns.slice(0, 6)).toEqual([
+      'AnnotationType',
+      'max (HU)',
+      'mean (HU)',
+      'std (HU)',
+      'Area',
+      'Unit',
+    ])
+    expect(values.slice(1, 6)).toEqual([200, 50, 12, 123.4, 'mm²'])
     expect(m.referenceSeriesUID).toBe('series-1')
     // cornerstone's rows: area then max, rounded by OHIF's roundNumber.
     expect(m.displayText.primary).toEqual(['123 mm²', 'Max: 200 HU'])
@@ -1054,25 +1067,37 @@ describe('reflectNiivueAnnotation', () => {
     })
   })
 
-  it('clearNiivueAnnotations removes every reflected row for the viewport', () => {
+  it('clearNiivueAnnotations releases rows; a re-import keeps their uid', () => {
     const svc = setup('vp-a4')
-    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c1'))
-    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c2'))
+    const rowOf = (uid: string) =>
+      svc.added.findLast((a) => a.data.uid === uid)?.data.schema as {
+        isVisible?: boolean
+      }
+    Object.assign(
+      (svc.servicesManager as { services: { measurementService: object } })
+        .services.measurementService,
+      { getMeasurement: rowOf },
+    )
+    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('own'))
+    const uid = reflectedRowUid('own') as string
+    // Hidden in the panel before the release.
+    rowOf(uid).isVisible = false
+    applyOhifVisibilityToAnnotation(uid, false)
     clearNiivueAnnotations('vp-a4', svc.servicesManager)
-    expect(svc.removed).toHaveLength(2)
-  })
-
-  it('clearNiivueAnnotations releases an imported row instead of removing it', () => {
-    const svc = setup('vp-a5')
-    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('sr'))
-    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('own'))
-    markImportedAnnotation('sr')
-    const uid = reflectedRowUid('sr') as string
-    clearNiivueAnnotations('vp-a5', svc.servicesManager)
-    expect(svc.removed).toHaveLength(1)
-    expect(svc.removed).not.toContain(uid)
+    expect(svc.removed).toHaveLength(0)
     expect(isReleasedRow(uid)).toBe(true)
-    expect(reflectedRowUid('sr')).toBeUndefined()
+    expect(reflectedRowUid('own')).toBeUndefined()
+    adoptedRowUids.set('again', uid)
+    reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('again'))
+    adoptedRowUids.clear()
+    expect(reflectedRowUid('again')).toBe(uid)
+    expect(isReleasedRow(uid)).toBe(false)
+    expect(rowOf(uid).isVisible).toBe(false)
+    expect(
+      visibleAnnotationScreenShapes('vp-a4', [
+        { id: 'again' },
+      ] as unknown as Parameters<typeof visibleAnnotationScreenShapes>[1]),
+    ).toHaveLength(0)
   })
 
   it('reconcile removes only vanished rows and leaves untouched rows alone', () => {
@@ -1342,6 +1367,23 @@ describe('reflectNiivueAnnotation', () => {
     expect(delegated).toEqual([
       ['jumpToMeasurementViewport', other, 'CORNERSTONE'],
     ])
+    // A live-row jump supersedes a released row's pending jump.
+    register('vp-guard-released', stubNiivue())
+    updateNiivueViewport('vp-guard-released', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    reflectNiivueAnnotation(
+      'vp-guard-released',
+      svc.servicesManager,
+      ellipse('r'),
+    )
+    const releasedUid = reflectedRowUid('r') as string
+    clearNiivueAnnotations('vp-guard-released', svc.servicesManager)
+    actions.jumpToMeasurementViewport({ measurement: { uid: releasedUid } })
+    actions.jumpToMeasurementViewport({ measurement: { uid } })
+    expect(claimPendingJump(releasedUid)).toBe(false)
   })
 
   it('jumps to the owning viewport and selects the reflected annotation', () => {
@@ -1733,58 +1775,6 @@ describe('reflectNiivueAnnotation', () => {
     expect(
       visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
     ).toHaveLength(1)
-  })
-
-  it('does not re-enter on its own remove echoes during teardown (finding 3)', () => {
-    const removedAnnotationIds: string[] = []
-    const nv = {
-      ...stubNiivue(),
-      removeAnnotation(id: string) {
-        removedAnnotationIds.push(id)
-      },
-    }
-    const callbacks = new Map<string, (payload: unknown) => void>()
-    register('vp-clear-echo', nv)
-    updateNiivueViewport('vp-clear-echo', {
-      displaySets: backing as unknown as Parameters<
-        typeof updateNiivueViewport
-      >[1]['displaySets'],
-    })
-    const svc = measurementServices('vp-clear-echo', backing)
-    const measurementService = (
-      svc.servicesManager as NonNullable<OhifExtensionParams['servicesManager']>
-    ).services.measurementService as {
-      EVENTS?: Record<string, string>
-      subscribe?: (
-        event: string,
-        callback: (payload: unknown) => void,
-      ) => { unsubscribe: () => void }
-      remove: (uid: string) => void
-    }
-    measurementService.EVENTS = { MEASUREMENT_REMOVED: 'removed' }
-    measurementService.subscribe = (event, callback) => {
-      callbacks.set(event, callback)
-      return { unsubscribe: () => callbacks.delete(event) }
-    }
-    // Real OHIF fires MEASUREMENT_REMOVED synchronously from remove().
-    measurementService.remove = (uid) => {
-      svc.removed.push(uid)
-      callbacks.get('removed')?.({ measurement: uid })
-    }
-    const a = ellipse('c1')
-    const b = ellipse('c2')
-    nv.annotations = [a, b]
-    reflectNiivueAnnotation('vp-clear-echo', svc.servicesManager, a)
-    reflectNiivueAnnotation('vp-clear-echo', svc.servicesManager, b)
-    const release = subscribeOhifLabelSync(svc.servicesManager)
-
-    // Teardown removes both rows while the subscription is still live.
-    clearNiivueAnnotations('vp-clear-echo', svc.servicesManager)
-
-    expect(svc.removed).toHaveLength(2)
-    // The removingUids guard kept the echoes from re-entering nv.removeAnnotation.
-    expect(removedAnnotationIds).toHaveLength(0)
-    release?.()
   })
 
   it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {
@@ -2183,6 +2173,12 @@ describe('overlayCandidates', () => {
         (ds) => ds.displaySetInstanceUID,
       ),
     ).toEqual(['ds-next', 'ds-last'])
+  })
+
+  it('keeps a set hung after the base until it is layered (TMTV PT)', () => {
+    const pt = { displaySetInstanceUID: 'ds-pt', url: 'https://x/pt.nii.gz' }
+    const entry = { displaySets: [base, pt], overlays: new Map() }
+    expect(overlayCandidates(entry, [base, pt])).toEqual([pt])
   })
 
   it('is empty when nothing else is loadable', () => {
@@ -2979,6 +2975,23 @@ describe('per-overlay commands', () => {
     expect(overlayOrder(entry)).toEqual(['ds-a', 'ds-c'])
     setColormap({ displaySetInstanceUID: 'ds-c', opacity: 2 })
     expect(volume('c').opacity).toBe(1)
+  })
+
+  it('remove an overlay from a named pane and refresh the toolbar', async () => {
+    const { names } = withOverlays(['a'])
+    // Another pane is active: the hanging protocol names its own.
+    const sm = services('vp-other', [])
+    let refreshes = 0
+    Object.assign(sm.services, {
+      toolbarService: { refreshToolbarState: () => refreshes++ },
+    })
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    await actions.niivueRemoveOverlay({
+      viewportId: 'vp-1',
+      displaySetInstanceUID: 'ds-a',
+    })
+    expect(names()).toEqual(['base'])
+    expect(refreshes).toBe(1)
   })
 })
 

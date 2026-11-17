@@ -2,6 +2,7 @@ import type { NiiVue } from '@niivue/niivue'
 import { SLICE_TYPE, VOLUME_RENDER_MODE } from '@niivue/niivue'
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { NIIVUE_SLICE_TYPES } from './commands'
+import { NIIVUE_VR_PRESETS } from './vrPresets'
 
 const VIEWS: Array<[label: string, sliceType: string]> = [
   ['Axial', 'axial'],
@@ -52,14 +53,22 @@ const Glyph = () => (
 /**
  * The pane's upper-left orientation menu, as cornerstone's viewport action
  * corner (OHIF draws that only inside its cornerstone viewport): shown while
- * the pointer is over the pane, it sets this pane's view.
+ * the pointer is over the pane, it sets this pane's view. A CT pane in 3D also
+ * lists cornerstone's volume-rendering presets (VIEWPORT_PRESETS names).
  */
-export function OrientationMenu({ nv }: { nv: NiiVue | null }) {
+export function OrientationMenu({
+  nv,
+  isCT,
+}: {
+  nv: NiiVue | null
+  isCT?: boolean
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState(false)
   const [open, setOpen] = useState(false)
   const [sliceType, setSliceType] = useState<number | undefined>(nv?.sliceType)
   const [renderMode, setRenderMode] = useState(0)
+  const [preset, setPreset] = useState<string>()
   useEffect(() => {
     // The menu (and so the ref) mounts only once nv is set.
     const pane = nv && ref.current?.parentElement
@@ -136,6 +145,26 @@ export function OrientationMenu({ nv }: { nv: NiiVue | null }) {
               {label}
             </button>
           ))}
+          {isCT && sliceType === SLICE_TYPE.RENDER
+            ? Object.entries(NIIVUE_VR_PRESETS).map(([name, colormap], i) => (
+                <button
+                  key={name}
+                  type="button"
+                  style={{
+                    ...item(name === preset),
+                    ...(i === 0 ? { borderTop: '1px solid #3a3f99' } : {}),
+                  }}
+                  onClick={() => {
+                    // A CT colormap carries its own Hounsfield window.
+                    void nv.setVolume(0, { colormap })
+                    setPreset(name)
+                    setOpen(false)
+                  }}
+                >
+                  {name}
+                </button>
+              ))
+            : null}
         </div>
       ) : null}
     </div>

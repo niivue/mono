@@ -6,6 +6,7 @@ import {
   NIIVUE_SLICE_TYPES,
 } from './commands'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import { getNiivuePanelModule } from './dynamicPanel'
 import {
   getNiivueViewportModule,
   NIIVUE_VIEWPORT_NAME,
@@ -63,6 +64,7 @@ const niivueOhifExtension: OhifExtension = {
   getSopClassHandlerModule: () => getNiivueSopClassHandlerModule(),
   getCommandsModule: (params) => getNiivueCommandsModule(params),
   getToolbarModule: (params) => getNiivueToolbarModule(params),
+  getPanelModule: (params) => getNiivuePanelModule(params),
   // Auto-registered at default scope; modes pull the packs in by reference
   // ('niivue.toolbarButtons' / 'niivue.toolbarSections').
   getCustomizationModule: () => [

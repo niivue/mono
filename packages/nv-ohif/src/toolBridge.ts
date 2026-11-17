@@ -148,6 +148,16 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
   },
 }
 
+/** OHIF brush tool -> pen mode. Sphere variants paint per slice (NiiVue's pen is 2D). */
+export const OHIF_BRUSHES: Record<string, 'paint' | 'erase' | 'threshold'> = {
+  CircularBrush: 'paint',
+  SphereBrush: 'paint',
+  CircularEraser: 'erase',
+  SphereEraser: 'erase',
+  ThresholdCircularBrush: 'threshold',
+  ThresholdSphereBrush: 'threshold',
+}
+
 /** Every slide row's uid starts with this. */
 export const SLIDE_UID_PREFIX = 'niivue-slide-'
 
@@ -180,6 +190,8 @@ const OHIF_TO_ANNOTATION = new Map(
 export function ohifToolToAnnotationTool(
   tool: string | undefined,
 ): AnnotationTool | null {
+  // TMTV's threshold ROI is a rectangle; its slab and threshold live in petQuant.
+  if (tool === 'RectangleROIStartEndThreshold') return 'measureRect'
   return (tool && OHIF_TO_ANNOTATION.get(tool)) || null
 }
 

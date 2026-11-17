@@ -5,6 +5,8 @@
 // GE series re-stamped after acquisition decays to the earliest acquisition,
 // not GE's private post-injection time). Port calculate-suv's if they matter.
 
+import type { NiiVue, VolumeUpdatedDetail } from '@niivue/niivue'
+
 type Tags = Record<string, unknown>
 
 const first = (v: unknown): Tags | undefined =>
@@ -35,7 +37,8 @@ export function suvBwFactor(
 ): number | undefined {
   const rp = first(inst?.RadiopharmaceuticalInformationSequence)
   if (!inst || !rp || inst.Units !== 'BQML') return undefined
-  const corrected = [inst.CorrectedImage].flat()
+  // Some archives send the multi-value as one backslash-joined string (TCIA D6).
+  const corrected = [inst.CorrectedImage].flat().join('\\').split('\\')
   if (!corrected.includes('ATTN') || !corrected.includes('DECY'))
     return undefined
   const weightG = Number(inst.PatientWeight) * 1000
@@ -84,4 +87,26 @@ export async function scaleNifti(nii: File, f: number): Promise<File> {
   hdr.setFloat32(112, slope * f, le)
   hdr.setFloat32(116, hdr.getFloat32(116, le) * f, le)
   return new File([hdr.buffer, nii.slice(348)], nii.name)
+}
+
+/**
+ * Keep an SUV base volume's window at or above 0, as cornerstone's PT window
+ * tool does: below 0, background (SUV 0) enters the window and a fused PT
+ * overlay paints the whole pane. Re-set through setVolume so VOI sync copies
+ * the floored window.
+ */
+export function floorSuvWindow(
+  nv: Pick<NiiVue, 'addEventListener' | 'removeEventListener' | 'setVolume'>,
+  isSuv: () => boolean,
+): () => void {
+  const onUpdated = (e: Event) => {
+    const { volumeIndex, volume } = (e as CustomEvent<VolumeUpdatedDetail>)
+      .detail
+    if (volumeIndex !== 0 || !(volume.calMin < 0) || !isSuv()) return
+    void nv
+      .setVolume(0, { calMin: 0, calMax: Math.max(volume.calMax, 0.1) })
+      .catch(() => {})
+  }
+  nv.addEventListener('volumeUpdated', onUpdated)
+  return () => nv.removeEventListener('volumeUpdated', onUpdated)
 }

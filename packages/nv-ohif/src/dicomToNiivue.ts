@@ -1,6 +1,8 @@
 import type NiiVue from '@niivue/niivue'
+import type { VolumeFrameSource } from '@niivue/niivue'
 import { isPart, outputEcho, rankOutputs } from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
+import { split4D } from './frames4D'
 import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
@@ -73,6 +75,8 @@ export interface DicomConversion {
   note?: string
   /** Slice -> source frame of `image`, for measurement identity. */
   sliceFrames?: SliceFrames
+  /** A 4D series: `image` is frame 0, frames come from here (frames4D.ts). */
+  frames?: VolumeFrameSource
   /** dcm2niix's sidecar for `image` (a SEG's names its segments). */
   json?: Record<string, unknown>
   /**
@@ -104,7 +108,27 @@ export function convertDisplaySetToNifti(
     (signal, onProgress) =>
       convertUnshared(ds, { ...options, signal, onProgress }),
     options,
-  )
+  ).then((c) => c && inSuv(c, petSuvFactor(ds)))
+}
+
+// PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
+// Applied per call, outside the shared conversion: the petSUV panel edits the
+// instances' weight/dose in place, and a reload must not reuse the old factor.
+async function inSuv(
+  c: DicomConversion,
+  suv: number | undefined,
+): Promise<DicomConversion> {
+  if (!suv) return c
+  const scale = async <T extends { image: File }>(o: T) => ({
+    ...o,
+    image: await scaleNifti(o.image, suv),
+  })
+  return {
+    ...(await scale(c)),
+    ...(c.alternates && {
+      alternates: await Promise.all(c.alternates.map(scale)),
+    }),
+  }
 }
 
 async function convertUnshared(
@@ -163,18 +187,14 @@ async function convertUnshared(
     notes.unshift(
       `Showing ${shown.stem}; also converted: ${unshown.map((s) => s.stem).join(', ')}.`,
     )
-  // PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
-  const suv = petSuvFactor(ds)
-  const inSuv = (image: File) => (suv ? scaleNifti(image, suv) : image)
-  const scaledAlternates = await Promise.all(
-    alternates.map(async (a) => ({ ...a, image: await inSuv(a.image) })),
-  )
+  const split = await split4D(shown.image)
   return {
-    image: await inSuv(shown.image),
+    image: split?.image ?? shown.image,
+    ...(split && { frames: split.frames }),
     json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames,
-    ...(alternates.length > 0 ? { alternates: scaledAlternates } : {}),
+    ...(alternates.length > 0 ? { alternates } : {}),
   }
 }
 
@@ -188,7 +208,14 @@ export async function loadConversion(
   nv: Pick<NiiVue, 'prepareVolume' | 'loadVolumes'>,
   viewportId: string,
   converted: DicomConversion,
-  spec: { calMin?: number; calMax?: number; colormap?: string } | undefined,
+  spec:
+    | {
+        calMin?: number
+        calMax?: number
+        colormap?: string
+        isColormapInverted?: boolean
+      }
+    | undefined,
   cancelled: () => boolean,
 ): Promise<boolean> {
   // The converted file's own name (.nii) lets NiiVue sniff the format.
@@ -197,6 +224,7 @@ export async function loadConversion(
     const volume = await nv.prepareVolume({
       url: image,
       name: image.name,
+      frameSource: converted.frames,
       ...spec,
     })
     // A swapped-away load must not replace the newer base.

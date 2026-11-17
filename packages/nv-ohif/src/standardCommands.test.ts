@@ -7,7 +7,11 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { jumpToImage, NIIVUE_STANDARD_COMMANDS } from './standardCommands'
+import {
+  jumpToImage,
+  NIIVUE_STANDARD_COMMANDS,
+  scrollImage,
+} from './standardCommands'
 
 function stubNiivue() {
   const volumeUpdates: Array<Record<string, unknown>> = []
@@ -132,11 +136,16 @@ describe('standard commands', () => {
     expect(nv.volumeUpdates).toEqual([])
   })
 
-  it('pass the merged scale direction through', () => {
+  it("toggleActiveDisabledToolbar targets a NiiVue pane's tool group", () => {
     register('nv-1')
-    const { calls, run } = fakeHost('cs-1')
-    run('scaleDownViewport', {})
-    expect(calls[1]?.opts).toEqual({ direction: -1 })
+    updateNiivueViewport('nv-1', { toolGroupId: 'mpr' })
+    const { calls, run } = fakeHost('nv-1')
+    run('toggleActiveDisabledToolbar', { itemId: 'AdvancedMagnify' })
+    expect(calls[1]).toEqual({
+      name: 'toggleActiveDisabledToolbar',
+      opts: { itemId: 'AdvancedMagnify', toolGroupId: 'mpr' },
+      context: 'CORNERSTONE',
+    })
   })
 
   it('do not recurse when CORNERSTONE lacks the command', () => {
@@ -294,26 +303,22 @@ describe('rotate and flip commands', () => {
       ]).toEqual([0, false, false])
     })
 
-  for (const [view, sliceType] of [
-    ['render-only', SLICE_TYPE.RENDER],
-    ['graph-only', SLICE_TYPE.NONE],
-  ] as const)
-    it(`leave a ${view} view alone (the turn applies to 2D tiles only)`, () => {
-      const nv = register('nv-1')
-      nv.sliceType = sliceType
-      const { run } = fakeHost('nv-1')
-      for (const name of [
-        'rotateViewportCW',
-        'flipViewportHorizontal',
-        'setViewportVerticalFlip',
-      ])
-        run(name)
-      expect([
-        nv.rotation2D,
-        nv.isFlipped2DHorizontal,
-        nv.isFlipped2DVertical,
-      ]).toEqual([0, false, false])
-    })
+  it('leave a render-only view alone (the turn applies to 2D tiles only)', () => {
+    const nv = register('nv-1')
+    nv.sliceType = SLICE_TYPE.RENDER
+    const { run } = fakeHost('nv-1')
+    for (const name of [
+      'rotateViewportCW',
+      'flipViewportHorizontal',
+      'setViewportVerticalFlip',
+    ])
+      run(name)
+    expect([
+      nv.rotation2D,
+      nv.isFlipped2DHorizontal,
+      nv.isFlipped2DVertical,
+    ]).toEqual([0, false, false])
+  })
 
   it('leave a slide (WSI) viewport alone', () => {
     const nv = register('nv-1')
@@ -367,10 +372,14 @@ describe('voiRange', () => {
   })
 })
 
-it('jumpToImage moves to the instance through the slice -> frame map', () => {
+it('jumpToImage and scrollImage move through the slice -> frame map', () => {
   const calls: number[][] = []
   const entry = {
-    nv: { setCrosshairPos: (p: number[]) => calls.push(p) },
+    nv: {
+      setCrosshairPos: (p: number[]) => calls.push(p),
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+    },
     crosshairMM: [5, 6, 1],
     // Display-set order runs head-first; the converted volume runs foot-first.
     displaySets: [
@@ -397,11 +406,125 @@ it('jumpToImage moves to the instance through the slice -> frame map', () => {
   jumpToImage(entry, -1)
   // Out of range: no SOP, so it must not land on the unmapped slot.
   jumpToImage(entry, 7)
+  // From 'mid': next is 'bot' (display-set order), previous 'top'.
+  scrollImage(entry, 1)
+  scrollImage(entry, -1)
   // In-plane (x, y) kept; z on the chosen instance's slice.
   expect(calls).toEqual([
     [5, 6, 2],
     [5, 6, 0],
+    [5, 6, 0],
+    [5, 6, 2],
   ])
+})
+
+it('scrollImage steps a split series across its outputs', () => {
+  // Output A is a lone localizer slice; B is another output.
+  const switched: string[] = []
+  const entry = {
+    nv: {
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+      moveCrosshairInVox: () => {},
+    },
+    crosshairMM: [0, 0, 0],
+    displaySets: [
+      { instances: [{ SOPInstanceUID: 'A' }, { SOPInstanceUID: 'B' }] },
+    ],
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0, 0, 1],
+      frames: [{ SOPInstanceUID: 'A', frameNumber: 1 }],
+    },
+    outputFrames: ['A', 'B'].map((SOPInstanceUID) => ({
+      frames: [{ SOPInstanceUID, frameNumber: 1 }],
+    })),
+    // Resolves stale: a real switch shows the output, so a retry would stop.
+    switchToInstance: (sop: string) => {
+      switched.push(sop)
+      return Promise.resolve(false)
+    },
+  } as unknown as Parameters<typeof scrollImage>[0]
+  scrollImage(entry, 1)
+  // Clamped, not wrapped to the last instance.
+  scrollImage(entry, -1)
+  expect(switched).toEqual(['B', 'A'])
+})
+
+it('scrollImage steps through the frames of a split series multi-frame instance', () => {
+  const calls: number[][] = []
+  const switched: unknown[][] = []
+  const mf = {
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    frames: [1, 2].map((frameNumber) => ({
+      SOPInstanceUID: 'mf',
+      frameNumber,
+    })),
+  }
+  const entry = {
+    nv: {
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+      setCrosshairPos: (p: number[]) => calls.push(p),
+    },
+    crosshairMM: [0, 0, 0],
+    displaySets: [
+      {
+        instances: [
+          { SOPInstanceUID: 'mf', NumberOfFrames: 2 },
+          { SOPInstanceUID: 'B' },
+        ],
+      },
+    ],
+    sliceFrames: mf,
+    outputFrames: [mf, { frames: [{ SOPInstanceUID: 'B', frameNumber: 1 }] }],
+    // The shown output: no switch for its own frames.
+    switchToInstance: (sop: string, frame: number) => {
+      switched.push([sop, frame])
+      return sop === 'mf' ? undefined : Promise.resolve(false)
+    },
+  } as unknown as Parameters<typeof scrollImage>[0]
+  scrollImage(entry, 1)
+  expect(calls).toEqual([[0, 0, 1]])
+  jumpToImage(entry, 2)
+  expect(switched).toEqual([
+    ['mf', 2],
+    ['B', 1],
+  ])
+})
+
+it('jumpToImage selects a split multi-frame frame after switching output', async () => {
+  const calls: number[][] = []
+  const output = (frames: number[]) => ({
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    frames: frames.map((frameNumber) => ({
+      SOPInstanceUID: 'mf',
+      frameNumber,
+    })),
+  })
+  const [a, b] = [output([1]), output([2, 3, 4])]
+  const entry = {
+    nv: {
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+      setCrosshairPos: (p: number[]) => calls.push(p),
+    },
+    crosshairMM: [0, 0, 0],
+    displaySets: [{ instances: [{ SOPInstanceUID: 'mf', NumberOfFrames: 4 }] }],
+    sliceFrames: a,
+    outputFrames: [a, b],
+    switchToInstance: (_sop: string, frame: number) => {
+      const to = frame === 1 ? a : b
+      if (to === entry.sliceFrames) return undefined
+      entry.sliceFrames = to as typeof entry.sliceFrames
+      return Promise.resolve(true)
+    },
+  } as unknown as Parameters<typeof jumpToImage>[0]
+  jumpToImage(entry, 3)
+  await Bun.sleep(0)
+  expect(calls).toEqual([[0, 0, 2]])
 })
 
 it('jumpToImage counts the frames of a single multi-frame instance', () => {

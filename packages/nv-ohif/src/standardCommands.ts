@@ -11,10 +11,17 @@ import {
   getActiveNiivueEntry,
   type NiivueViewportEntry,
   ohifCommandsManager,
+  ohifServices,
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { onSlicePlane, shownImages } from './sliceFrames'
+import {
+  type FrameRef,
+  frameAt,
+  onSlicePlane,
+  type SliceFrames,
+  shownImages,
+} from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -49,6 +56,9 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'lastImage',
   'setViewportColormap',
   'deleteActiveAnnotation',
+  'nextImage',
+  'previousImage',
+  'showDownloadViewportModal',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
@@ -123,6 +133,19 @@ function setOrientation(
  * volume, or a viewport turned off its acquisition plane, counts its slices
  * along the viewport's axis.
  */
+// jumpToImage's images: a split series (outputStack.ts) counts every output's.
+function stackImages(
+  entry: NiivueViewportEntry,
+  instances: ReadonlyArray<{ SOPInstanceUID?: string }>,
+  sf: SliceFrames,
+): FrameRef[] {
+  const outputs = entry.switchToInstance ? entry.outputFrames : undefined
+  return shownImages(
+    instances,
+    outputs ? { ...sf, frames: outputs.flatMap((o) => o.frames) } : sf,
+  )
+}
+
 export function jumpToImage(
   entry: NiivueViewportEntry,
   imageIndex: unknown,
@@ -147,22 +170,27 @@ export function jumpToImage(
     const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
       SOPInstanceUID?: string
     }>
-    if (entry.switchToInstance) {
-      // A series split into outputs counts its whole display set
-      // (outputStack.ts): another output's image (a localizer of another
-      // orientation), or one queued behind a switch still loading, shows centred.
-      const sop = instances.at(i)?.SOPInstanceUID
-      if (!sop || entry.switchToInstance(sop)) return
-      k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
-    } else {
-      const image = shownImages(instances, sf).at(i)
-      if (!image) return
-      k = sf.frames.findIndex(
-        (f) =>
-          f?.SOPInstanceUID === image.SOPInstanceUID &&
-          f.frameNumber === image.frameNumber,
-      )
+    // A series split into outputs counts its whole display set
+    // (outputStack.ts): another output's image (a localizer of another
+    // orientation), or one queued behind a switch still loading, shows centred.
+    const image = stackImages(entry, instances, sf).at(i)
+    if (!image) return
+    const switching = entry.switchToInstance?.(
+      image.SOPInstanceUID,
+      image.frameNumber,
+    )
+    if (switching) {
+      // The output shows centred; then select the frame, unless a later jump won.
+      void switching.then((isLatest) => {
+        if (isLatest) jumpToImage(entry, imageIndex)
+      })
+      return
     }
+    k = sf.frames.findIndex(
+      (f) =>
+        f?.SOPInstanceUID === image.SOPInstanceUID &&
+        f.frameNumber === image.frameNumber,
+    )
   }
   if (k < 0 || k >= sf.frames.length) return
   nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
@@ -210,6 +238,47 @@ function jumpToVoxelSlice(
     p[1] + t * step[1],
     p[2] + t * step[2],
   ])
+}
+
+// RAS voxel axis along each 2D plane's normal (axial z, coronal y, sagittal x).
+const NORMAL_AXIS = [2, 1, 0]
+
+/**
+ * OHIF's nextImage / previousImage (up / down): step `delta` images in
+ * jumpToImage's count (stack order, volume order on a volume viewport); off the
+ * slice -> frame map (a reformat) one voxel along the view axis.
+ */
+export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
+  const { nv, sliceFrames: sf, crosshairMM: p } = entry
+  const frame =
+    sf && p && nv.sliceType === acquisitionSliceType(nv)
+      ? frameAt(sf, [rasToLps([p[0] ?? 0, p[1] ?? 0, p[2] ?? 0])])
+      : undefined
+  if (sf && frame) {
+    const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
+      SOPInstanceUID?: string
+    }>
+    // jumpToImage's count: a split series (outputStack.ts) counts its whole
+    // display set, so a step can switch outputs.
+    const order: ReadonlyArray<FrameRef | undefined> = entry.isVolumeViewport
+      ? sf.frames
+      : stackImages(entry, instances, sf)
+    const i = order.findIndex(
+      (f) =>
+        f?.SOPInstanceUID === frame.SOPInstanceUID &&
+        f.frameNumber === frame.frameNumber,
+    )
+    if (i >= 0) {
+      jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
+      return
+    }
+  }
+  const axis =
+    NORMAL_AXIS[nv.sliceType] ?? NORMAL_AXIS[acquisitionSliceType(nv) ?? -1]
+  if (axis === undefined) return
+  const step = [0, 0, 0]
+  step[axis] = delta
+  nv.moveCrosshairInVox(step[0] ?? 0, step[1] ?? 0, step[2] ?? 0)
 }
 
 export function noTiles2D(entry: NiivueViewportEntry): boolean {
@@ -281,6 +350,52 @@ export function getStandardCommandDefinitions({
   })
 
   return {
+    // Cornerstone's targets the active pane's Cornerstone tool group, which a
+    // NiiVue pane lacks (AdvancedMagnify's button): target the pane's group.
+    toggleActiveDisabledToolbar: {
+      commandFn: (opts: StandardOptions = {}) => {
+        const entry =
+          opts.toolGroupId === undefined && opts.toolGroupIds === undefined
+            ? getActiveNiivueEntry(servicesManager)
+            : undefined
+        return ohifCommandsManager(commandsManager)?.runCommand?.(
+          'toggleActiveDisabledToolbar',
+          entry
+            ? { ...opts, toolGroupId: entry.toolGroupId ?? 'default' }
+            : opts,
+          'CORNERSTONE',
+        )
+      },
+    },
+    // OHIF's (DEFAULT context) asks cornerstone for the pane's orientation,
+    // which throws on a NiiVue pane; a NiiVue pane only needs the display set
+    // hung after its own (the data overlay menu's Add: a SEG or RTSTRUCT layer).
+    addDisplaySetAsLayer: {
+      commandFn: (opts: StandardOptions = {}) => {
+        const grid = ohifServices(servicesManager)?.viewportGridService as
+          | {
+              getActiveViewportId(): string
+              getDisplaySetsUIDsForViewport(id: string): string[]
+            }
+          | undefined
+        const viewportId = opts.viewportId ?? grid?.getActiveViewportId()
+        const uid = opts.displaySetInstanceUID
+        const commands = ohifCommandsManager(commandsManager)
+        if (
+          !grid ||
+          !viewportId ||
+          !getActiveNiivueEntry(servicesManager, viewportId)
+        )
+          return commands?.runCommand?.('addDisplaySetAsLayer', opts, 'DEFAULT')
+        const uids = grid.getDisplaySetsUIDsForViewport(viewportId) ?? []
+        if (typeof uid !== 'string' || uids.includes(uid)) return
+        commands?.runCommand?.('setDisplaySetsForViewports', {
+          viewportsToUpdate: [
+            { viewportId, displaySetInstanceUIDs: [...uids, uid] },
+          ],
+        })
+      },
+    },
     resetViewport: { commandFn: route('resetViewport', resetView) },
     setViewportOrientation: {
       commandFn: route('setViewportOrientation', (entry, opts) =>
@@ -316,11 +431,25 @@ export function getStandardCommandDefinitions({
         jumpToImage(entry, opts.imageIndex),
       ),
     },
+    // Cornerstone's call its own actions directly, so they need shadowing too.
+    nextImage: {
+      commandFn: route('nextImage', (entry) => scrollImage(entry, 1)),
+    },
+    previousImage: {
+      commandFn: route('previousImage', (entry) => scrollImage(entry, -1)),
+    },
     firstImage: {
       commandFn: route('firstImage', (entry) => jumpToImage(entry, 0)),
     },
     lastImage: {
       commandFn: route('lastImage', (entry) => jumpToImage(entry, -1)),
+    },
+    // Capture: the pane as shown, as a PNG.
+    // ponytail: no size/filename form (cornerstone's modal renders off-screen).
+    showDownloadViewportModal: {
+      commandFn: route('showDownloadViewportModal', ({ nv, slideView }) => {
+        void (slideView ? slideView.saveBitmap() : nv.saveBitmap('image.png'))
+      }),
     },
     setViewportColormap: {
       commandFn: route('setViewportColormap', (entry, opts) => {

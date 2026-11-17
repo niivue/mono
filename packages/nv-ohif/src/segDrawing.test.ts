@@ -89,6 +89,75 @@ describe('resolveSegDisplaySets', () => {
     const early = { ...seg, referencedDisplaySetInstanceUID: null }
     expect(resolveSegDisplaySets([early], lookup).displaySets).toEqual([mr])
   })
+
+  // After hydration the pane hangs only the base (and MPR panes are new).
+  test('baseOnly_takesOnlyAHydratedSegOnIt', () => {
+    const hydrated = { ...seg, displaySetInstanceUID: 'seg2', isHydrated: true }
+    const other = { ...hydrated, referencedDisplaySetInstanceUID: 'ct' }
+    const active = (...ds: OhifDisplaySet[]) => ({
+      ...lookup,
+      getActiveDisplaySets: () => ds,
+    })
+    expect(resolveSegDisplaySets([mr], active(seg, other)).seg).toBeUndefined()
+    expect(resolveSegDisplaySets([mr], active(seg, other, hydrated))).toEqual({
+      displaySets: [mr],
+      seg: hydrated,
+    })
+  })
+
+  test('baseOnly_latestHydratedReplacesEarlier', () => {
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: false }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: true }
+    const active = { ...lookup, getActiveDisplaySets: () => [a, b] }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    // a, listed first, hydrated second: it wins; un-hydrated, b is back.
+    a.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+    a.isHydrated = false
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+  })
+
+  // Round 21: removal un-hydrates the same object; reloading it makes it newest.
+  test('baseOnly_reloadedSegIsNewest', () => {
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: false }
+    const active = { ...lookup, getActiveDisplaySets: () => [a, b] }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+    b.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    a.isHydrated = false
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    a.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+  })
+
+  // Removed while another series shows, then reloaded: still newest on its own.
+  test('baseOnly_segReloadedWhileElsewhereIsNewest', () => {
+    const ct: OhifDisplaySet = { displaySetInstanceUID: 'ct', Modality: 'CT' }
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: false }
+    const active = { ...lookup, getActiveDisplaySets: () => [a, b] }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+    b.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    a.isHydrated = false
+    resolveSegDisplaySets([ct], active)
+    a.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+  })
+
+  // Removal can drop the set from the active list instead; a re-add is newest.
+  test('baseOnly_reAddedSegIsNewest', () => {
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: true }
+    let sets = [a, b]
+    const active = { ...lookup, getActiveDisplaySets: () => sets }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    sets = [b]
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    sets = [a, b]
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+  })
 })
 
 describe('startSegDrawing', () => {

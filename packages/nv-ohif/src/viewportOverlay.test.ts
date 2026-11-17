@@ -60,6 +60,12 @@ test('the stack counts only the instances the shown output holds', () => {
     index: 1,
     total: 1,
   })
+  // Stepped through as outputs (outputStack.ts): the whole series, as cornerstone.
+  expect(stackPosition(ds, sf, [0, 0, 0], false, true)).toEqual({
+    instanceNumber: 2,
+    index: 2,
+    total: 2,
+  })
 })
 
 test('a split multi-frame instance counts only its shown frames', () => {

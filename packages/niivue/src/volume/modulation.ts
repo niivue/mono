@@ -91,13 +91,14 @@ export function buildModulationParams(
   }
 }
 
-/** RAS-order weights for a two-sided modulator: negatives use the |value| window. */
+/** Fill RAS-order `result` for a two-sided modulator: negatives use the |value| window. */
 function magnitudeDataRAS(
+  result: Float32Array,
   mod: NVImage,
   frameOffset: number,
   range: number,
   neg: { min: number; range: number },
-): Float32Array {
+): void {
   const imgData = mod.img as unknown as ArrayLike<number>
   const dims = mod.dimsRAS as number[]
   const start = mod.img2RASstart as number[]
@@ -107,7 +108,6 @@ function magnitudeDataRAS(
   const calMin = mod.calMin
   const negMin = neg.min
   const negRange = neg.range
-  const result = new Float32Array(dims[1] * dims[2] * dims[3])
   let rasIdx = 0
   for (let rz = 0; rz < dims[3]; rz++) {
     for (let ry = 0; ry < dims[2]; ry++) {
@@ -127,7 +127,6 @@ function magnitudeDataRAS(
       }
     }
   }
-  return result
 }
 
 /**
@@ -193,14 +192,15 @@ export function computeModulationData(volumes: NVImage[]): void {
       vol._modulationData = result
       continue
     }
-    const start = mod.img2RASstart
-    const step = mod.img2RASstep
     const frameOffset = (mod.frame4D ?? 0) * mod.nVox3D
-    let rasIdx = 0
     if (neg !== null) {
-      vol._modulationData = magnitudeDataRAS(mod, frameOffset, range, neg)
+      magnitudeDataRAS(result, mod, frameOffset, range, neg)
+      vol._modulationData = result
       continue
     }
+    const start = mod.img2RASstart
+    const step = mod.img2RASstep
+    let rasIdx = 0
     for (let rz = 0; rz < dims[3]; rz++) {
       for (let ry = 0; ry < dims[2]; ry++) {
         for (let rx = 0; rx < dims[1]; rx++) {

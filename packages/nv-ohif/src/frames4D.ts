@@ -339,5 +339,7 @@ export function joinFrames(
       delete element.dataset.frame
       delete element.dataset.frames
     }
+    // destroy() emits no volumeRemoved: an unmounted 4D pane must still hide the panel's controls.
+    for (const l of listeners) l()
   }
 }

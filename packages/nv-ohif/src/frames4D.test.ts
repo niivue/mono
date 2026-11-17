@@ -88,3 +88,23 @@ it('a frame NiiVue changes itself reaches every pane, late ones too', async () =
   expect(paneFrames('late')?.frame).toBe(2)
   for (const l of leave) l()
 })
+
+// The panel hides its frame controls once no pane shows a 4D series.
+it('removing the last 4D volume notifies the panel', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  const leave = joinFrames('solo', nv, undefined, null)
+  await nv.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  let shown: unknown = 'stale'
+  const off = onFrame(() => {
+    shown = paneFrames('solo')
+  })
+  await nv.removeAllVolumes()
+  off()
+  leave()
+  expect(shown).toBeUndefined()
+})

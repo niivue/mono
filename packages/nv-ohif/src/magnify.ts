@@ -22,6 +22,8 @@ type Host = UIKitHost & {
 export function createMagnifyBinding(nv: Host) {
   let detach: (() => void) | null = null
   let reregister: (() => void) | null = null
+  // The lens's tool: OHIF re-sends the active tool on any pane's activation.
+  let active: string | undefined
   const off = () => {
     detach?.()
     detach = null
@@ -32,7 +34,9 @@ export function createMagnifyBinding(nv: Host) {
       reregister?.()
     },
     setTool(tool: string | undefined): void {
+      if (detach && tool === active) return
       off()
+      active = tool
       const opts = tool ? LENS[tool] : undefined
       const canvas = nv.canvas
       if (!opts || !canvas) return
@@ -137,7 +141,8 @@ export function createMagnifyBinding(nv: Host) {
           e.stopImmediatePropagation()
           held = false
           if (opts.held) hide()
-          else if (e.pointerType !== 'touch') at(e)
+          else if (e.pointerType !== 'touch' && e.type !== 'pointercancel')
+            at(e)
         }
         // Touch fires pointerleave on every lift: the glass stays where it was put.
         if (

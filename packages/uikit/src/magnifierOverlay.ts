@@ -231,6 +231,11 @@ export class UIKitMagnifierOverlay {
     const onLeave = (e: PointerEvent): void => {
       if (e.pointerType !== 'touch') this.pointerMove(-1, -1)
     }
+    // A mouse or pen press exits first, so a click here ends a touch gesture
+    // (a held touch or a drag), never meant for the scene.
+    const onClick = (e: Event): void => {
+      e.stopImmediatePropagation()
+    }
     const onWheel = (e: WheelEvent): void => {
       e.preventDefault()
       e.stopImmediatePropagation()
@@ -246,6 +251,7 @@ export class UIKitMagnifierOverlay {
       ['pointerdown', onDown],
       ['pointerup', onUp],
       ['pointercancel', onUp],
+      ['click', onClick],
       ['wheel', onWheel],
     ] as [string, EventListener][]
     for (const [type, fn] of listeners) canvas.addEventListener(type, fn, opts)

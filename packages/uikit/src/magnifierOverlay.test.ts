@@ -120,7 +120,12 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(lens.zoom).toBe(10) // clamped
     touch('pointerup', 1000, 2, 90)
     touch('pointerup', 70, 1, 100)
+    canvas.dispatchEvent(pointer('click', 70, 50, 1))
     expect(exits).toBe(0) // a drag and a pinch are not taps
+    touch('pointerdown', 70, 4, 200)
+    touch('pointerup', 70, 4, 700) // held: not a tap, and its click is the lens's
+    canvas.dispatchEvent(pointer('click', 70, 50, 4))
+    expect(exits).toBe(0)
     touch('pointerdown', 70, 3, 500)
     touch('pointerup', 72, 3, 600)
     canvas.dispatchEvent(pointer('click', 72, 50, 3))

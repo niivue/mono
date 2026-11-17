@@ -74,6 +74,9 @@ export function sharedTask<T, A extends unknown[]>(
   }
   const held = entry
   clearTimeout(held.evict)
+  // Held again: off the idle list until its holders release.
+  const idle = finished.indexOf(key)
+  if (idle >= 0) finished.splice(idle, 1)
   held.holders++
   if (onProgress) {
     held.listeners.add(onProgress)

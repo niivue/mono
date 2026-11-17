@@ -137,4 +137,22 @@ describe('sharedTask', () => {
     await hang('f0')
     expect(starts).toBe(6)
   })
+
+  it('does not evict a finished task while a caller holds it again', async () => {
+    jest.useFakeTimers()
+    clearSharedTasks()
+    let starts = 0
+    const start = async () => {
+      starts++
+      return 'nii'
+    }
+    for (const k of ['h0', 'h1', 'h2', 'h3']) await sharedTask(k, start)
+    jest.runAllTimers()
+    const abort = new AbortController()
+    await sharedTask('h0', start, { signal: abort.signal })
+    await sharedTask('h4', start)
+    jest.runAllTimers()
+    await sharedTask('h0', start)
+    expect(starts).toBe(5)
+  })
 })

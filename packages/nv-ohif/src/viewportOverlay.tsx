@@ -33,6 +33,7 @@ export function stackPosition(
   sf: SliceFrames | undefined,
   mmRas: ArrayLike<number>,
   volumeOrder = false,
+  split = false,
 ): StackPosition | undefined {
   if (!ds || !sf) return undefined
   const frame = frameAt(sf, [
@@ -56,6 +57,14 @@ export function stackPosition(
       instanceNumber,
       index: sf.frames.indexOf(frame) + 1,
       total: sf.frames.length,
+    }
+  // A series split into outputs (outputStack.ts) counts its whole display set,
+  // as jumpToImage does and cornerstone's stack shows it.
+  if (split)
+    return {
+      instanceNumber,
+      index: instances.indexOf(instance) + 1,
+      total: instances.length,
     }
   const images = shownImages(instances, sf)
   const index =

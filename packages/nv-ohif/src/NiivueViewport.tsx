@@ -542,6 +542,7 @@ export function NiivueViewport(props: OhifViewportProps) {
               entry?.sliceFrames,
               mm,
               viewportOptionsRef.current?.viewportType === 'volume',
+              !!entry?.switchToInstance,
             )
           : reformatPosition(nv.sliceType, vox, nv.volumes[0]?.dimsRAS)
       setStack((shown) =>

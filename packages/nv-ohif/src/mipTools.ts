@@ -19,7 +19,12 @@ type ToolGroup = {
 }
 type Volume = {
   img?: ArrayLike<number> | null
-  hdr?: { dims?: number[]; pixDims?: number[]; affine?: number[][] } | null
+  hdr?: {
+    dims?: number[]
+    pixDims?: number[]
+    affine?: number[][]
+    scl_slope?: number
+  } | null
 }
 
 /** NiiVue's camera axis for azimuth/elevation (core sph2cartDeg). */

@@ -81,10 +81,14 @@ export function useOutputStack(
       outputFrames: outputs.flatMap((o) =>
         o.sliceFrames ? [o.sliceFrames] : [],
       ),
-      switchToInstance: (sop) =>
+      switchToInstance: (sop, frameNumber) =>
         show(
           outputs.findIndex((o) =>
-            o.sliceFrames?.frames.some((f) => f?.SOPInstanceUID === sop),
+            o.sliceFrames?.frames.some(
+              (f) =>
+                f?.SOPInstanceUID === sop &&
+                (frameNumber === undefined || f.frameNumber === frameNumber),
+            ),
           ),
         ),
     })

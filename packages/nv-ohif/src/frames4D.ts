@@ -69,7 +69,8 @@ const listeners = new Set<() => void>()
 const current = new WeakMap<object, number>()
 
 /** Show `frame` of the series `group` on every pane holding it. */
-export function setFrame(group: object, frame: number): Promise<unknown> {
+export async function setFrame(group: object, frame: number): Promise<unknown> {
+  if (computedShown.has(group)) await showFrames(group)
   current.set(group, frame)
   const steps: Promise<void>[] = []
   for (const nv of panes.values())
@@ -77,6 +78,135 @@ export function setFrame(group: object, frame: number): Promise<unknown> {
       if (v.frameSource?.group === group && v.id)
         steps.push(nv.setFrame4D(v.id, frame))
   return Promise.all(steps)
+}
+
+// A computed volume (kinetics.ts) shown in place of a series' frame: written
+// into each pane's frame buffer, requantized to its datatype with its own
+// scaling; the series' scaling is kept here until the frame returns. The
+// result stays for panes joining meanwhile.
+interface Computed {
+  data: Float32Array
+  min: number
+  max: number
+  /** Per datatype: requantized samples, slope, intercept. */
+  raw: Map<unknown, [ArrayLike<number>, number, number]>
+  saved: Map<NVImage, [number, number]>
+}
+const computedShown = new WeakMap<object, Computed>()
+const INT_RANGE = new Map<unknown, [number, number]>([
+  [Int8Array, [-128, 127]],
+  [Uint8Array, [0, 255]],
+  [Int16Array, [-32768, 32767]],
+  [Uint16Array, [0, 65535]],
+  [Int32Array, [-(2 ** 31), 2 ** 31 - 1]],
+  [Uint32Array, [0, 2 ** 32 - 1]],
+])
+
+const groupVolumes = (group: object) =>
+  [...panes.values()].flatMap((nv) =>
+    nv.volumes.flatMap((v, i) =>
+      v.frameSource?.group === group ? [{ nv, v, i }] : [],
+    ),
+  )
+
+/** The series' scl_slope/inter (its own while a computed volume is shown). */
+export function frameScale(group: object, v: NVImage): [number, number] {
+  return (
+    computedShown.get(group)?.saved.get(v) ?? [
+      v.hdr?.scl_slope || 1,
+      v.hdr?.scl_inter || 0,
+    ]
+  )
+}
+
+export const isComputedShown = (group: object): boolean =>
+  computedShown.has(group)
+
+/** Show scaled `data` (native order, one frame) on every pane of `group`. */
+export async function showComputed(
+  group: object,
+  data: Float32Array,
+): Promise<void> {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const x of data) {
+    if (x < min) min = x
+    if (x > max) max = x
+  }
+  const saved = computedShown.get(group)?.saved ?? new Map()
+  const c: Computed = { data, min, max, raw: new Map(), saved }
+  computedShown.set(group, c)
+  // Paused as cornerstone's swap to a computed display set stops the cine.
+  for (const id of groupPanes(group))
+    cineService?.setCine?.({ id, isPlaying: false })
+  const volumes = groupVolumes(group)
+  // A frame step still loading would land over the computed samples.
+  for (const { nv, v } of volumes) cancelFrame(nv, v)
+  // The shown frame is the one to return to.
+  const shown = volumes[0]?.v.frameSource?.frame
+  if (shown !== undefined) current.set(group, shown)
+  for (const { nv, v, i } of volumes) await installComputed(group, c, nv, v, i)
+}
+
+/** Abort `v`'s pending frame request (setFrame4D to its own frame does). */
+function cancelFrame(nv: NiiVue, v: NVImage): void {
+  if (v.id && v.frameSource)
+    void nv.setFrame4D(v.id, v.frameSource.frame).catch(() => {})
+}
+
+/** Write `c` into volume `i` of `nv`, keeping its series' scaling. */
+async function installComputed(
+  group: object,
+  c: Computed,
+  nv: NiiVue,
+  v: NVImage,
+  i: number,
+): Promise<void> {
+  if (!v.img || !v.hdr) return
+  if (!c.saved.has(v)) c.saved.set(v, frameScale(group, v))
+  const type = v.img.constructor
+  let entry = c.raw.get(type)
+  if (!entry) {
+    const range = INT_RANGE.get(type)
+    if (!range) entry = [c.data, 1, 0]
+    else {
+      const [lo, hi] = range
+      const { data, min, max } = c
+      const s = max > min ? (max - min) / (hi - lo) : 1
+      const b = min - s * lo
+      const q = new (type as Int16ArrayConstructor)(data.length)
+      for (let k = 0; k < data.length; k++)
+        q[k] = Math.round(((data[k] as number) - b) / s)
+      entry = [q, s, b]
+    }
+    c.raw.set(type, entry)
+  }
+  v.hdr.scl_slope = entry[1]
+  v.hdr.scl_inter = entry[2]
+  await nv.updateVolumeData(i, entry[0])
+}
+
+/** Back from a computed volume to the series' shown frame. */
+export async function showFrames(group: object): Promise<void> {
+  const saved = computedShown.get(group)?.saved
+  computedShown.delete(group)
+  if (!saved) return
+  // The group's frame: a step cancelled midway left panes on their own.
+  const frame = current.get(group)
+  for (const { nv, v, i } of groupVolumes(group)) {
+    const scale = saved.get(v)
+    if (!scale || !v.hdr || !v.frameSource) continue
+    ;[v.hdr.scl_slope, v.hdr.scl_inter] = scale
+    if (frame !== undefined && frame !== v.frameSource.frame && v.id) {
+      await nv.setFrame4D(v.id, frame)
+      continue
+    }
+    const signal = new AbortController().signal
+    await nv.updateVolumeData(
+      i,
+      await v.frameSource.load(v.frameSource.frame, signal),
+    )
+  }
 }
 
 /** The 4D series of a pane (its frame source), when it shows one. */
@@ -120,7 +250,9 @@ function tick(now: number) {
   for (const id of panes.keys()) {
     const cine = cines[id]
     const frames = cine?.isPlaying && paneFrames(id)
-    if (!frames || stepped.has(frames.group)) continue
+    // A computed volume holds until the panel's 4D button or a frame step.
+    if (!frames || stepped.has(frames.group) || computedShown.has(frames.group))
+      continue
     stepped.add(frames.group)
     const period = 1000 / Math.min(50, Math.max(1, cine.frameRate ?? 24))
     const next = due.get(frames.group) ?? now
@@ -133,6 +265,18 @@ function tick(now: number) {
       .finally(() => pending.delete(frames.group))
   }
   for (const g of due.keys()) if (!stepped.has(g)) due.delete(g)
+}
+
+/** Bring a late volume to its series' frame, then its computed volume if shown. */
+async function catchUp(nv: NiiVue, v: NVImage): Promise<void> {
+  const group = v.frameSource?.group
+  if (!group || !v.id) return
+  const f = current.get(group)
+  // The frame first: one landing later would overwrite computed samples.
+  if (f) await nv.setFrame4D(v.id, f)
+  const c = computedShown.get(group)
+  if (c && !c.saved.has(v))
+    await installComputed(group, c, nv, v, nv.volumes.indexOf(v))
 }
 
 /**
@@ -158,8 +302,7 @@ export function joinFrames(
   // A late pane (stage switch, fusion overlay) joins the series' frame.
   const onVolumeLoaded = () => {
     const v = sourceVolume(nv)
-    const f = v?.frameSource && current.get(v.frameSource.group)
-    if (v?.id && f) void nv.setFrame4D(v.id, f).catch(() => {})
+    if (v?.id && v.frameSource) void catchUp(nv, v).catch(() => {})
     // The cine clock runs only while some pane shows a 4D series.
     if (v && !raf) raf = requestAnimationFrame(tick)
     onFrameChange()

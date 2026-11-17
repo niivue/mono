@@ -1,6 +1,9 @@
 import { baseModality, NIIVUE_COLORMAPS, NIIVUE_SLICE_TYPES } from './commands'
 import { getNiivueEntry, type NiivueViewportEntry } from './niivueRegistry'
-import { niivueSupportEvaluator } from './niivueSupport'
+import {
+  niivueSegmentationEvaluator,
+  niivueSupportEvaluator,
+} from './niivueSupport'
 import type {
   OhifExtensionParams,
   OhifToolbarButton,
@@ -426,6 +429,7 @@ export function getNiivueToolbarModule({
 }: OhifExtensionParams = {}): OhifToolbarModuleEntry[] {
   return [
     niivueSupportEvaluator(servicesManager),
+    niivueSegmentationEvaluator(servicesManager),
     {
       name: NIIVUE_OVERLAY_MENU_UI_TYPE,
       defaultComponent: overlayMenuComponent({

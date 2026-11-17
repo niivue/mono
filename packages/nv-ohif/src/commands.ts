@@ -32,6 +32,8 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
+import { getQuantCommandDefinitions } from './petQuant'
+import { getSegCommandDefinitions } from './segCommands'
 import { jumpToNiivueSegment } from './segPanel'
 import {
   type FrameRef,
@@ -2286,6 +2288,12 @@ export function getNiivueCommandsModule({
       Object.entries(actions).map(([name, commandFn]) => [name, { commandFn }]),
     ),
     ...getStandardCommandDefinitions({ servicesManager, commandsManager }),
+    ...getSegCommandDefinitions({
+      servicesManager,
+      commandsManager,
+      extensionManager,
+    }),
+    ...getQuantCommandDefinitions({ servicesManager }),
   }
 
   return {

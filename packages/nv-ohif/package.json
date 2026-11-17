@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@niivue/niivue": "workspace:*",
+    "@niivue/nv-ext-drawing": "workspace:*",
     "@types/bun": "^1.4.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -49,5 +50,6 @@
     "react-dom": "^19",
     "typescript": "^5.9.3",
     "vite": "^8.3.8"
-  }
+  },
+  "comment:nv-ext-drawing": "@niivue/nv-ext-drawing (slice interpolation, worker inlined) is bundled into lib, not externalized: a devDependency, so hosts install nothing extra."
 }

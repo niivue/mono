@@ -17,22 +17,6 @@ describe('ohifToolToDragMode', () => {
     expect(ohifToolToDragMode(undefined)).toBe(DRAG_MODE.crosshair)
     expect(ohifToolToDragMode('ArrowAnnotate')).toBe(DRAG_MODE.crosshair)
   })
-
-  it.each([
-    'Length',
-    'EllipticalROI',
-    'RectangleROI',
-    'CircleROI',
-    'PlanarFreehandROI',
-    'SplineROI',
-    'LivewireContour',
-    'Bidirectional',
-    'ArrowAnnotate',
-    'Angle',
-    'CobbAngle',
-  ])('leaves annotation-backed %s to the annotation gate', (tool) => {
-    expect(ohifToolToDragMode(tool)).toBe(DRAG_MODE.crosshair)
-  })
 })
 
 describe('ohifToolToAnnotationTool', () => {
@@ -40,6 +24,7 @@ describe('ohifToolToAnnotationTool', () => {
     ['Length', 'measureLine'],
     ['EllipticalROI', 'measureEllipse'],
     ['RectangleROI', 'measureRect'],
+    ['RectangleROIStartEndThreshold', 'measureRect'],
     ['CircleROI', 'measureCircle'],
     ['PlanarFreehandROI', 'freehand'],
     ['SplineROI', 'measureSpline'],

@@ -1,11 +1,17 @@
 import type NiiVue from '@niivue/niivue'
-import { ohifServices } from './niivueRegistry'
+import { historyMemo } from './history'
+import { getNiivueEntry, ohifServices } from './niivueRegistry'
 import type {
   OhifDisplaySet,
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
 import type { Restyle, RtLabels } from './rtDrawing'
+import {
+  eraseSegmentValue,
+  setActiveSegmentValue,
+  startSegEditing,
+} from './segEdit'
 
 // OHIF's segmentation panel lists cornerstone's segmentation state for the
 // active viewport id. A NiiVue pane's SEG drawing is entered there as a
@@ -22,7 +28,12 @@ type Rep = {
   visible?: boolean
   segments?: Record<number, { visible?: boolean }>
 }
-type Segment = { label?: string }
+type Segment = {
+  label?: string
+  active?: boolean
+  locked?: boolean
+  cachedStats?: Record<string, unknown>
+}
 type Style = {
   renderFill?: boolean
   renderOutline?: boolean
@@ -71,6 +82,7 @@ interface CstSegmentation {
     setRenderInactiveSegmentations(viewportId: string, v: boolean): void
   }
   triggerSegmentationEvents: {
+    triggerSegmentationModified(id: string): void
     triggerSegmentationRepresentationModified(
       viewportId: string,
       id: string,
@@ -177,10 +189,54 @@ function cornerstoneSegmentation(
   return libs?.cornerstoneTools?.segmentation
 }
 
-const panels = new Map<
-  string,
-  { segmentationId: string; jump(index: number): void }
->()
+/** A distinct colour for segment `i` (golden-angle hues), for segments the source did not colour. */
+export function paletteColor(i: number): Color {
+  const h = ((i * 137.508) % 360) / 60
+  const x = Math.round(255 * (1 - Math.abs((h % 2) - 1)))
+  const rgb = [
+    [255, x, 0],
+    [x, 255, 0],
+    [0, 255, x],
+    [0, x, 255],
+    [x, 0, 255],
+    [255, 0, x],
+  ][Math.floor(h) % 6] as Color
+  return [...rgb, 255]
+}
+
+/** What a pane shows in the panel, for its commands (save, jump). */
+export interface NiivueSegmentationPane {
+  viewportId: string
+  segmentationId: string
+  nv: Pick<NiiVue, 'drawingVolume'>
+  /** The SEG or RTSTRUCT display set shown; synthetic for a new segmentation. */
+  seg: OhifDisplaySet
+  rt?: RtLabels
+  /** The panel's rows: value, label, colour, voxel count and volume. */
+  rows(): Array<{
+    value: number
+    label: string
+    rgb: [number, number, number]
+    count: number
+    volume: number
+    locked: boolean
+    active: boolean
+  }>
+  jump(index: number): void
+  /** The panel's Delete Segment: one undo step, voxels included. */
+  deleteSegment(index: number): void
+}
+
+const panels = new Map<string, NiivueSegmentationPane>()
+
+/** The NiiVue pane showing `segmentationId` in the panel, if any. */
+export function niivueSegmentationPane(
+  segmentationId: string | undefined,
+): NiivueSegmentationPane | undefined {
+  for (const pane of panels.values())
+    if (pane.segmentationId === segmentationId) return pane
+  return undefined
+}
 
 /**
  * The panel's "click segment" on a NiiVue pane: activate it and move the
@@ -205,21 +261,12 @@ export function jumpToNiivueSegment(
 
 /**
  * List `seg`'s segments (shown as `nv`'s drawing) in OHIF's segmentation panel
- * for `viewportId` and mirror panel visibility, colour, label and fill/outline
- * style into the drawing. Returns the cleanup.
+ * for `viewportId` and mirror panel visibility, colour, label, fill/outline
+ * style, active segment, locks and deletions into the drawing; a SEG drawing
+ * is editable with OHIF's labelmap tools (segEdit.ts). Returns the cleanup.
  */
 export function startSegPanel(
-  nv: Pick<
-    NiiVue,
-    | 'addColormap'
-    | 'drawColormap'
-    | 'drawOpacity'
-    | 'drawRimOpacity'
-    | 'drawingVolume'
-    | 'volumes'
-    | 'vox2mm'
-    | 'setCrosshairPos'
-  >,
+  nv: NiiVue,
   viewportId: string,
   seg: OhifDisplaySet,
   segments: ReadonlyArray<PanelSegment>,
@@ -249,13 +296,26 @@ export function startSegPanel(
     !segmentationId
   )
     return () => {}
-  const stats = rt?.stats ?? labelStats(bitmap, back.dimsRAS.slice(1, 4))
+  const dims = back.dimsRAS.slice(1, 4)
+  // A pane joining after edits shows them: the original SEG lacks them.
+  const peer = niivueSegmentationPane(segmentationId)?.nv.drawingVolume?.img
+  if (!rt && peer instanceof Uint8Array && peer.length === bitmap.length) {
+    bitmap.set(peer)
+    nv.refreshDrawing()
+  }
+  let stats = rt?.stats ?? labelStats(bitmap, dims)
   const [, px = 1, py = 1, pz = 1] = back.hdr?.pixDims ?? []
-  // A second pane on the same SEG shares the segmentation, with its own colours.
+  const cached = (value: number) => {
+    const count = stats.get(value)?.count ?? 0
+    // No `center`: OHIF's own jump would then look for a cornerstone viewport.
+    return { count, volume: count * px * py * pz }
+  }
+  // A second pane on the same SEG shares the segmentation, with its own
+  // colours; segments added later take palette colours.
   const lut: Color[] = [[0, 0, 0, 0]]
+  for (let i = 1; i < 256; i++) lut[i] = paletteColor(i)
   for (const s of segments) lut[s.value] = [...s.rgb, 255]
-  for (let i = 0; i < lut.length; i++) lut[i] ??= [0, 0, 0, 0]
-  if (!cst.state.getSegmentation(segmentationId))
+  if (!cst.state.getSegmentation(segmentationId)) {
     cst.addSegmentations([
       {
         segmentationId,
@@ -264,24 +324,28 @@ export function startSegPanel(
           label: seg.SeriesDescription,
           fallbackLabel: `S:${seg.SeriesNumber ?? ''} ${seg.Modality ?? 'SEG'}`,
           segments: Object.fromEntries(
-            segments.map((s) => {
-              const count = stats.get(s.value)?.count ?? 0
-              return [
-                s.value,
-                {
-                  segmentIndex: s.value,
-                  label: s.label,
-                  locked: false,
-                  active: false,
-                  // No `center`: OHIF's own jump would then look for a cornerstone viewport.
-                  cachedStats: { count, volume: count * px * py * pz },
-                },
-              ]
-            }),
+            segments.map((s) => [
+              s.value,
+              {
+                segmentIndex: s.value,
+                label: s.label,
+                locked: false,
+                active: false,
+                cachedStats: cached(s.value),
+              },
+            ]),
           ),
         },
       },
     ])
+    // OHIF offers Save only for a labelmap it can scan in cornerstone's cache
+    // (or a segmentation with no voxel representation); NiiVue keeps the
+    // voxels, so the entry carries none and the save commands read the drawing.
+    const added = cst.state.getSegmentation(segmentationId) as
+      | { representationData?: Record<string, unknown> }
+      | undefined
+    if (added?.representationData) delete added.representationData[LABELMAP]
+  }
   addRepresentation(
     cst,
     viewportId,
@@ -292,38 +356,63 @@ export function startSegPanel(
   const specifier = { segmentationId, type: LABELMAP }
   const colormapName = `seg-panel-${viewportId}`
   let applied = ''
+  let present = new Set(segments.map((s) => s.value))
+  let locked = new Set<number>()
   // RT: the voxels shown, as filled (all ROIs) at first.
   let shown = segments.map((s) => s.value).join()
-  const sync = () =>
+  const readRows = () => {
+    const segmentation = cst.state.getSegmentation(segmentationId)
+    const rep = cst.state.getSegmentationRepresentation(viewportId, specifier)
+    if (!segmentation || !rep) return undefined
+    return Object.entries(segmentation.segments).map(([key, s]) => {
+      const value = Number(key)
+      return {
+        value,
+        label: s.label ?? key,
+        color: cst.config.color.getSegmentIndexColor(
+          viewportId,
+          segmentationId,
+          value,
+        ) ?? [0, 0, 0, 0],
+        visible:
+          rep.visible !== false && rep.segments?.[value]?.visible !== false,
+        active: s.active === true,
+        locked: s.locked === true,
+      }
+    })
+  }
+  const sync = () => {
+    // A segmentation created on this pane since owns its drawing.
+    if (panels.get(viewportId)?.segmentationId !== segmentationId) return
     restyle(() => {
-      const segmentation = cst.state.getSegmentation(segmentationId)
-      const rep = cst.state.getSegmentationRepresentation(viewportId, specifier)
+      const rows = readRows()
       // Deleted or removed from the pane in the panel: hide the drawing.
-      if (!segmentation || !rep) {
+      if (!rows) {
         applied = ''
         nv.drawOpacity = 0
         nv.drawRimOpacity = -1
         return
       }
-      const rows = Object.entries(segmentation.segments).map(([key, s]) => {
-        const value = Number(key)
-        return {
-          value,
-          label: s.label ?? key,
-          color: cst.config.color.getSegmentIndexColor(
-            viewportId,
-            segmentationId,
-            value,
-          ) ?? [0, 0, 0, 0],
-          visible:
-            rep.visible !== false && rep.segments?.[value]?.visible !== false,
-        }
-      })
+      const now = new Set(rows.map((r) => r.value))
+      // A deleted segment's voxels go, as cornerstone clears them.
+      if (!rt)
+        for (const v of present) if (!now.has(v)) eraseSegmentValue(nv, v)
+      present = now
+      locked = new Set(rows.filter((r) => r.locked).map((r) => r.value))
+      // Until the panel activates one, the pen paints the first listed segment.
+      const active = rows.find((r) => r.active) ?? rows[0]
+      if (active && !rt) setActiveSegmentValue(nv, active.value)
       const { fill, rim } = drawOpacities(
         cst.config.style.getStyle({ viewportId, ...specifier }),
       )
       // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
-      const key = JSON.stringify([rows, fill, rim])
+      const visibleRows = rows.map(({ value, label, color, visible }) => ({
+        value,
+        label,
+        color,
+        visible,
+      }))
+      const key = JSON.stringify([visibleRows, fill, rim])
       if (key === applied) return
       applied = key
       const visible = rows.filter((r) => r.visible).map((r) => r.value)
@@ -331,11 +420,86 @@ export function startSegPanel(
         shown = visible.join()
         rt.showOnly(new Set(visible))
       }
-      nv.drawColormap = nv.addColormap(colormapName, panelColormap(rows))
+      nv.drawColormap = nv.addColormap(colormapName, panelColormap(visibleRows))
       nv.drawOpacity = fill
       nv.drawRimOpacity = rim
     })
+  }
+  panels.set(viewportId, {
+    viewportId,
+    segmentationId,
+    nv,
+    seg,
+    rt,
+    rows: () =>
+      (readRows() ?? []).map((r) => ({
+        value: r.value,
+        label: r.label,
+        rgb: [r.color[0] ?? 0, r.color[1] ?? 0, r.color[2] ?? 0],
+        ...cached(r.value),
+        locked: r.locked,
+        active: r.active,
+      })),
+    jump: (index) => {
+      const centroid = stats.get(index)?.centroid
+      const mm = centroid && nv.vox2mm(centroid)
+      if (mm) nv.setCrosshairPos(mm)
+    },
+    // Not cornerstone's removeSegment: it needs the labelmap data this entry
+    // omits so OHIF offers Save.
+    deleteSegment: (index) => {
+      const segment = cst.state.getSegmentation(segmentationId)?.segments[index]
+      if (!segment) return
+      const setSegment = (s?: Segment) => {
+        const segments = cst.state.getSegmentation(segmentationId)?.segments
+        if (!segments) return
+        if (s) segments[index] = s
+        else {
+          delete segments[index]
+          // Its voxels are handled here: spare sync a second erase scan.
+          present.delete(index)
+        }
+        cst.triggerSegmentationEvents.triggerSegmentationModified(
+          segmentationId,
+        )
+      }
+      // Voxels first: the removal's sync would erase them unrecorded.
+      const erased = rt ? undefined : eraseSegmentValue(nv, index)
+      setSegment()
+      historyMemo(managers.extensionManager)?.push({
+        id: crypto.randomUUID(),
+        restoreMemo: (undo) => {
+          // Inert once the segmentation's panes at deletion have all stopped.
+          if (erased && !erased(undo ? index : 0)) return
+          // Not active: the panel may have activated another meanwhile.
+          setSegment(undo ? { ...segment, active: false } : undefined)
+        },
+      })
+    },
+  })
   sync()
+
+  // Edits refresh the panel's statistics.
+  const onEdit = () => {
+    const img = nv.drawingVolume?.img
+    if (!(img instanceof Uint8Array)) return
+    stats = labelStats(img, dims)
+    const segmentation = cst.state.getSegmentation(segmentationId)
+    if (!segmentation) return
+    for (const [key, s] of Object.entries(segmentation.segments))
+      s.cachedStats = { ...s.cachedStats, ...cached(Number(key)) }
+    cst.triggerSegmentationEvents.triggerSegmentationModified(segmentationId)
+  }
+  // ponytail: RT drawings stay read-only (overlapping ROIs share the bitmap).
+  const stopEditing = rt
+    ? () => {}
+    : startSegEditing(nv, {
+        toolGroupId: getNiivueEntry(viewportId)?.toolGroupId,
+        group: segmentationId,
+        extensionManager: managers.extensionManager,
+        locked: () => locked,
+        onEdit,
+      })
 
   const { EVENTS } = service
   const subscriptions = [
@@ -351,16 +515,9 @@ export function startSegPanel(
         if (!e?.segmentationId || e.segmentationId === segmentationId) sync()
       }),
     )
-  panels.set(viewportId, {
-    segmentationId,
-    jump: (index) => {
-      const centroid = stats.get(index)?.centroid
-      const mm = centroid && nv.vox2mm(centroid)
-      if (mm) nv.setCrosshairPos(mm)
-    },
-  })
   return () => {
     for (const s of subscriptions) s.unsubscribe()
+    stopEditing()
     if (panels.get(viewportId)?.segmentationId === segmentationId)
       panels.delete(viewportId)
     // The segmentation stays, as OHIF leaves its own: removing it makes OHIF

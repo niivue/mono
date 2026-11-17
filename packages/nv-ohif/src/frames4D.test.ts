@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'bun:test'
 import NiiVue from '@niivue/niivue'
-import { joinFrames, onFrame, paneFrames, setFrame, split4D } from './frames4D'
+import {
+  joinFrames,
+  onFrame,
+  paneFrames,
+  setFrame,
+  showComputed,
+  showFrames,
+  split4D,
+} from './frames4D'
 
 // 2x1x1 voxels x 3 frames, int16, vox_offset 352.
 function nifti4D(): File {
@@ -59,5 +67,116 @@ it('late-pane catch-up updates the frame readout', async () => {
   await setFrame(split.frames.group, shown + 1) // Next
   expect(paneFrames('fusion')?.frame).toBe(2)
   off()
+  for (const l of leave) l()
+})
+
+// A computed volume is requantized into the frame buffer with its own scaling.
+// The playing cine must not step it (it would restore the frame mid-display),
+// and the next frame step must restore the series' scaling.
+it('shows a computed volume until the next frame step', async () => {
+  let tick: FrameRequestCallback | undefined
+  globalThis.requestAnimationFrame = (cb) => {
+    tick = cb
+    return 1
+  }
+  const paused: unknown[] = []
+  const cineService = {
+    getState: () => ({
+      cines: { computed: { isPlaying: true, frameRate: 50 } },
+    }),
+    setCine: (c: unknown) => paused.push(c),
+  }
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  const leave = joinFrames('computed', nv, { services: { cineService } }, null)
+  await nv.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  const v = nv.volumes[0] as NonNullable<(typeof nv.volumes)[0]>
+  await showComputed(split.frames.group, Float32Array.from([10.5, -3]))
+  expect(paused).toEqual([{ id: 'computed', isPlaying: false }])
+  tick?.(performance.now() + 1000)
+  await new Promise((r) => setTimeout(r, 10))
+  const shown = Array.from(
+    v.img ?? [],
+    (r) => r * v.hdr.scl_slope + v.hdr.scl_inter,
+  )
+  expect(shown[0]).toBeCloseTo(10.5, 3)
+  expect(shown[1]).toBeCloseTo(-3, 3)
+  await setFrame(split.frames.group, 2)
+  expect([v.hdr.scl_slope, ...Array.from(v.img ?? [])]).toEqual([1, 5, 6])
+  leave()
+})
+
+const scaled = (nv: NiiVue) => {
+  const v = nv.volumes[0] as NonNullable<(typeof nv.volumes)[0]>
+  return Array.from(v.img ?? [], (r) => r * v.hdr.scl_slope + v.hdr.scl_inter)
+}
+const pane = () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  return nv
+}
+
+// Audit 22.1: a frame step waiting on the GPU must not land over computed
+// data. Audit 24.2: one pane finished that step, so returning to 4D must bring
+// both panes to one frame.
+it('a pending frame step does not overwrite a computed volume', async () => {
+  globalThis.requestAnimationFrame = () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const [done, nv] = [pane(), pane()]
+  const leave = [
+    joinFrames('done', done, undefined, null),
+    joinFrames('pending', nv, undefined, null),
+  ]
+  for (const p of [done, nv])
+    await p.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  let release = () => {}
+  let updates = 0
+  nv.view = {
+    updateBindGroups: () =>
+      ++updates === 1
+        ? new Promise<void>((r) => {
+            release = r
+          })
+        : Promise.resolve(),
+  } as never
+  const busy = nv.updateGLVolume()
+  const step = setFrame(split.frames.group, 1)
+  await new Promise((r) => setTimeout(r, 0))
+  const frames = [done, nv].map((p) => p.volumes[0]?.frameSource?.frame)
+  expect(frames).toEqual([1, 0])
+  const computed = showComputed(split.frames.group, Float32Array.from([9, 12]))
+  release()
+  await Promise.all([busy, step, computed])
+  expect(scaled(nv).map((x) => Math.round(x * 1e3) / 1e3)).toEqual([9, 12])
+  await showFrames(split.frames.group)
+  expect(scaled(nv)).toEqual(scaled(done))
+  for (const l of leave) l()
+})
+
+// Audit 22.2: a pane joining a computed series shows the computed volume and
+// returns to the series' frame with its own scaling.
+it('a pane joining while computed shows the computed volume', async () => {
+  globalThis.requestAnimationFrame = () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const [a, b] = [pane(), pane()]
+  const leave = [
+    joinFrames('first', a, undefined, null),
+    joinFrames('late', b, undefined, null),
+  ]
+  await a.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await setFrame(split.frames.group, 1)
+  await showComputed(split.frames.group, Float32Array.from([9, 12]))
+  await b.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await new Promise((r) => setTimeout(r, 30))
+  expect(scaled(b).map((x) => Math.round(x * 1e3) / 1e3)).toEqual([9, 12])
+  await showFrames(split.frames.group)
+  expect(scaled(b)).toEqual([3, 4])
   for (const l of leave) l()
 })

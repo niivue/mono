@@ -76,7 +76,9 @@ import {
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
 import { useOutputStack } from './outputStack'
+import { armBrush } from './petQuant'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
+import { applySegTool } from './segEdit'
 import { PaneCorner, useHydratePrompt } from './segHydration'
 import type { SliceFrames } from './sliceFrames'
 import { bindSlideMeasurements } from './slideMeasurements'
@@ -1049,11 +1051,16 @@ export function NiivueViewport(props: OhifViewportProps) {
     const apply = () => {
       const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
+      // Labelmap tools paint the pane's drawing (segEdit.ts).
+      if (applySegTool(nv, tool, toolGroupId, props.extensionManager)) return
       // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
       // etc.); the master gate must be on for a left-drag to draw. Every other
       // tool turns the gate off and maps to a left-drag mode instead.
       const annoTool = ohifToolToAnnotationTool(tool)
-      if (annoTool) {
+      // Brush/Eraser/Threshold paint the PT label (petQuant.ts).
+      nv.drawIsEnabled = armBrush(viewportId, tool, servicesManager)
+      if (nv.drawIsEnabled) nv.annotationIsEnabled = false
+      else if (annoTool) {
         nv.annotationTool = annoTool
         nv.annotationIsEnabled = true
       } else {
@@ -1066,7 +1073,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED
     const sub = event ? svc.subscribe?.(event, apply) : undefined
     return () => sub?.unsubscribe?.()
-  }, [ready, servicesManager, toolGroupId, viewportId])
+  }, [ready, servicesManager, toolGroupId, viewportId, props.extensionManager])
 
   // Per render it would rescan a 4D PET's 9400 instances (SUV decay time) on every frame.
   // biome-ignore lint/correctness/useExhaustiveDependencies: petSUV edits bump metadataRevision

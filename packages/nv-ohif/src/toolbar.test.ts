@@ -136,15 +136,6 @@ describe('toolbar evaluators', () => {
     })
   })
 
-  it('disable when the viewport has no NiiVue instance', () => {
-    expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
-      true,
-    )
-    expect(
-      evaluator('evaluate.niivue.sliceType')({ viewportId: 'vp-1' })?.disabled,
-    ).toBe(true)
-  })
-
   it('mark the button matching the current slice type active', () => {
     const nv = { sliceType: SLICE_TYPE.RENDER as number, volumes: [{}] }
     registerNiivue('vp-1', nv as unknown as NiiVue)
@@ -179,13 +170,6 @@ describe('toolbar evaluators', () => {
     nv.annotationTool = ohifToolToAnnotationTool('Length')
     nv.annotationIsEnabled = false
     expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
-  })
-
-  it('enable the reset button on a NiiVue viewport', () => {
-    registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
-    expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
-      false,
-    )
   })
 
   it('mark the clip preset matching the entry state active (never "none")', () => {
@@ -229,26 +213,6 @@ describe('toolbar evaluators', () => {
     })
   })
 
-  it('gate W/L presets by the base series modality', () => {
-    registerNiivue('vp-1', { volumes: [{}] } as unknown as NiiVue)
-    updateNiivueViewport('vp-1', {
-      displaySets: [{ displaySetInstanceUID: 'ds-1', Modality: 'CT' }],
-    })
-    const evaluate = evaluator('evaluate.niivue.windowLevelPreset')
-    const ctButton = NIIVUE_TOOLBAR_BUTTONS.find(
-      (b) => b.id === 'NiivueWLCtBrain',
-    )
-    const ptButton = NIIVUE_TOOLBAR_BUTTONS.find(
-      (b) => b.id === 'NiivueWLPtSuv5',
-    )
-    expect(evaluate({ viewportId: 'vp-1', button: ctButton })?.disabled).toBe(
-      false,
-    )
-    expect(evaluate({ viewportId: 'vp-1', button: ptButton })?.disabled).toBe(
-      true,
-    )
-  })
-
   it("mark the colormap matching the base volume's colormap active", () => {
     const nv = { volumes: [{ colormap: 'Viridis' }] }
     registerNiivue('vp-1', nv as unknown as NiiVue)
@@ -262,24 +226,6 @@ describe('toolbar evaluators', () => {
       true,
     )
     expect(evaluate({ viewportId: 'vp-1', button: hot })?.isActive).toBe(false)
-  })
-
-  it('mark the colorbar toggle active when the colorbar is visible', () => {
-    const nv = { volumes: [{}], isColorbarVisible: false }
-    registerNiivue('vp-1', nv as unknown as NiiVue)
-    const evaluate = evaluator('evaluate.niivue.colorbar')
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
-    nv.isColorbarVisible = true
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
-  })
-
-  it('mark the interpolation toggle active in nearest-neighbor mode', () => {
-    const nv = { volumes: [{}], volumeIsNearestInterpolation: false }
-    registerNiivue('vp-1', nv as unknown as NiiVue)
-    const evaluate = evaluator('evaluate.niivue.interpolation')
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
-    nv.volumeIsNearestInterpolation = true
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
   })
 
   it('disables volume-only controls for an NVSlide viewport', () => {

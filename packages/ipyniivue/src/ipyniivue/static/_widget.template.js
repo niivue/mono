@@ -391,8 +391,7 @@ async function initialize({ model }) {
     for (const [jsName, pyName] of PROPS_RO) {
       try {
         const v = nv[jsName]
-        if (v === undefined) continue
-        const safe = toJsonSafe(v)
+        const safe = toJsonSafe(v) ?? null
         if (!sameJsonValue(model.get(pyName), safe)) {
           model.set(pyName, safe)
           changed = true

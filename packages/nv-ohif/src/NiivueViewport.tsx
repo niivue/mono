@@ -59,6 +59,7 @@ import {
   useHungOverlays,
 } from './hangingOptions'
 import { useAnnotationHistory } from './history'
+import { createMagnifyBinding } from './magnify'
 import { MeasurementData } from './measurementData'
 import { useMetadataRevision } from './metadataReload'
 import { useMipTools } from './mipTools'
@@ -1054,9 +1055,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       | undefined
     if (!svc?.getActivePrimaryMouseButtonTool) return
 
+    const magnify = createMagnifyBinding(nv)
     const apply = () => {
       const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
+      magnify.setTool(tool)
       // Labelmap tools paint the pane's drawing (segEdit.ts).
       if (applySegTool(nv, tool, toolGroupId, props.extensionManager)) return
       // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
@@ -1078,7 +1081,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     apply()
     const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED
     const sub = event ? svc.subscribe?.(event, apply) : undefined
-    return () => sub?.unsubscribe?.()
+    return () => {
+      sub?.unsubscribe?.()
+      magnify.dispose()
+    }
   }, [ready, servicesManager, toolGroupId, viewportId, props.extensionManager])
 
   // Per render it would rescan a 4D PET's 9400 instances (SUV decay time) on every frame.

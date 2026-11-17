@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, jest } from 'bun:test'
-import { sharedTask, sharedTaskCount } from './sharedTask'
+import { clearSharedTasks, sharedTask, sharedTaskCount } from './sharedTask'
 
 const deferred = <T>() => {
   let resolve!: (v: T) => void
@@ -95,6 +95,15 @@ describe('sharedTask', () => {
     await expect(
       sharedTask('k4', start, { signal: pre.signal }),
     ).rejects.toThrow('early')
+  })
+
+  it('releases a call without a signal once it settles, into the finished few', async () => {
+    jest.useFakeTimers()
+    clearSharedTasks()
+    for (const k of ['k5a', 'k5b', 'k5c', 'k5d', 'k5e'])
+      expect(await sharedTask(k, () => Promise.resolve('nii'))).toBe('nii')
+    jest.advanceTimersByTime(0)
+    expect(sharedTaskCount()).toBe(4)
   })
 
   it('drops a rejected task so the next call retries', async () => {

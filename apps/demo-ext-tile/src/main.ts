@@ -66,6 +66,7 @@ const channelDragModes = ['windowLevel', 'contrastBox'].map(
 const channelsPanel = document.getElementById('channels') as HTMLElement
 const minimapToggle = document.getElementById('minimap') as HTMLInputElement
 const compareSelect = document.getElementById('compare') as HTMLSelectElement
+const lensOption = document.getElementById('lensOption') as HTMLOptionElement
 let compareCanvas = document.getElementById('canvas2') as HTMLCanvasElement
 const compareChannels = document.getElementById('channels2') as HTMLElement
 
@@ -188,6 +189,12 @@ function syncDragModes(slide: NVSlide): void {
     view.controller.selection = null
   }
   requestRender()
+}
+
+// A lens differs from the view beneath it only by its channel set.
+function syncCompareModes(slide: NVSlide): void {
+  lensOption.disabled = isRgbSlide(slide.manifest) || slide.channels.length < 2
+  if (lensOption.selected && lensOption.disabled) compareSelect.value = 'single'
 }
 
 function afterRender(): void {
@@ -391,8 +398,11 @@ async function open(load: Load): Promise<void> {
     const nextSlide = slideFor(next)
     view.setSlide(nextSlide)
     syncDragModes(nextSlide)
+    syncCompareModes(nextSlide)
     shownLoad = load
-    if (compareSelect.value !== 'single') void syncCompare()
+    // Always: it also supersedes a compare still opening for the last slide
+    // (a dropped lens resets the menu without a change event).
+    void syncCompare()
     showCredit(nextSlide.manifest.attribution ?? credits.get(current))
     opening = null
     spin(false)

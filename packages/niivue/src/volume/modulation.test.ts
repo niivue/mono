@@ -119,6 +119,25 @@ describe('computeModulationData', () => {
     expect(data[3]).toBeCloseTo(3 / 7, 4)
   })
 
+  test('negativeColormapModulator_weightsNegativesByMagnitude', () => {
+    const modVol = makeVolume({
+      id: 'mod1',
+      img: new Float32Array([-4, -2, -1, 0, 1, 2, 4, 8]),
+      calMin: 0,
+      calMax: 4,
+      colormapNegative: 'winter',
+    })
+    const targetVol = makeVolume({
+      id: 'target',
+      modulationImage: 'mod1',
+      hdr: makeHeader({ datatypeCode: 2304 }),
+    })
+    computeModulationData([targetVol, modVol])
+    expect(Array.from(targetVol._modulationData ?? [])).toEqual([
+      1, 0.5, 0.25, 0, 0.25, 0.5, 1, 1,
+    ])
+  })
+
   test('modulationImageNotFound_setsNull', () => {
     const vol = makeVolume({ modulationImage: 'nonexistent' })
     computeModulationData([vol])
@@ -226,6 +245,45 @@ describe('computeModulationWeights', () => {
     const first = targetVol._modulationWeight
     computeModulationWeights([targetVol, modVol])
     expect(targetVol._modulationWeight).toBe(first) // same reference (cached)
+  })
+
+  test('negativeValues_weightedByMagnitude_onlyWithNegativeColormap', () => {
+    // A two-sided threshold map: -4 passes a threshold of 4 as surely as +4.
+    const modImg = new Float32Array([-8, -4, -2, 0, 2, 4, 8, -1])
+    const modVol = makeVolume({ id: 'mod1', img: modImg, calMin: 0, calMax: 4 })
+    const targetVol = makeVolume({ id: 'target', modulationImage: 'mod1' })
+    computeModulationWeights([targetVol, modVol])
+    expect(Array.from(targetVol._modulationWeight ?? [])).toEqual([
+      0, 0, 0, 0, 0.5, 1, 1, 0,
+    ])
+    // Setting the negative colormap must invalidate the cached weight.
+    modVol.colormapNegative = 'winter'
+    computeModulationWeights([targetVol, modVol])
+    expect(Array.from(targetVol._modulationWeight ?? [])).toEqual([
+      1, 1, 0.5, 0, 0.5, 1, 1, 0.25,
+    ])
+  })
+
+  test('negativeValues_useTheExplicitNegativeWindow', () => {
+    const modImg = new Float32Array([-8, -6, -4, -2, 0, 2, 4, 8])
+    const modVol = makeVolume({
+      id: 'mod1',
+      img: modImg,
+      calMin: 0,
+      calMax: 4,
+      colormapNegative: 'winter',
+      calMinNeg: -4,
+      calMaxNeg: -8,
+    })
+    const targetVol = makeVolume({
+      id: 'target',
+      modulationImage: 'mod1',
+      modulateAlpha: 2,
+    })
+    computeModulationWeights([targetVol, modVol])
+    expect(Array.from(targetVol._modulationWeight ?? [])).toEqual([
+      1, 0.25, 0, 0, 0, 0.25, 1, 1,
+    ])
   })
 
   test('modulationImageNotFound_setsNull', () => {

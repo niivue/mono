@@ -72,7 +72,8 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
  * Rasterize `contours` (LPS mm triplets) on a grid of `dims` voxels, even-odd
  * per slice so an inner contour of the same ROI stays a hole. A contour lies on
  * the slice its points are nearest across the axis they vary least along;
- * voxels whose centres fall inside are in. Returns their count and centroid
+ * voxels whose centres fall inside are in. A tilted contour (a gantry-tilted
+ * or other series' plane) puts each voxel on the slice nearest its plane. Returns their count and centroid
  * (RAS voxels) and the runs (start index, length, step) for fillRuns.
  */
 export function rasterizeContours(
@@ -95,8 +96,11 @@ export function rasterizeContours(
     m11 = 0,
   ] = lps2vox
   const strides = [1, dims[0], dims[0] * dims[1]] as const
-  // Contours grouped by slice (axis * 2^20 + index), in voxel coordinates.
-  const slices = new Map<number, Float64Array[]>()
+  // Contours (voxel coordinates) grouped by slice, or by plane when tilted.
+  const slices = new Map<
+    string,
+    { w: 0 | 1 | 2; slice: number; isTilted: boolean; contours: Float64Array[] }
+  >()
   for (const lps of contours) {
     const n = Math.floor(lps.length / 3)
     if (n < 3) continue
@@ -121,18 +125,26 @@ export function rasterizeContours(
     if ((span[1] as number) < (span[w] as number)) w = 1
     if ((span[2] as number) < (span[w] as number)) w = 2
     const slice = Math.round(((lo[w] as number) + (hi[w] as number)) / 2)
-    if (slice < 0 || slice >= dims[w]) continue
-    const key = w * 2 ** 20 + slice
+    const isTilted = Math.round(lo[w] as number) !== Math.round(hi[w] as number)
+    let key: string
+    if (isTilted) {
+      // Coplanar rings (an outer and its hole) share a plane, not a midpoint.
+      if ((hi[w] as number) < -0.5 || (lo[w] as number) >= dims[w] - 0.5)
+        continue
+      const [a, b, c] = contourPlane(vox, w)
+      key = `${w}:${a.toFixed(3)}:${b.toFixed(3)}:${c.toFixed(1)}`
+    } else {
+      if (slice < 0 || slice >= dims[w]) continue
+      key = `${w}:${slice}`
+    }
     const group = slices.get(key)
-    if (group) group.push(vox)
-    else slices.set(key, [vox])
+    if (group) group.contours.push(vox)
+    else slices.set(key, { w, slice, isTilted, contours: [vox] })
   }
   let count = 0
   const runs: number[] = []
   const sum = [0, 0, 0]
-  for (const [key, group] of slices) {
-    const w = Math.floor(key / 2 ** 20) as 0 | 1 | 2
-    const slice = key - w * 2 ** 20
+  for (const { w, slice, isTilted, contours: group } of slices.values()) {
     // In-plane axes: u (row direction, the lower axis) and v.
     const u = w === 0 ? 1 : 0
     const v = w === 2 ? 1 : 2
@@ -148,6 +160,9 @@ export function rasterizeContours(
         if (c < vmin) vmin = c
         if (c > vmax) vmax = c
       }
+    const [tiltU, tiltV, tiltC] = isTilted
+      ? contourPlane(group[0] as Float64Array, w)
+      : [0, 0, slice]
     const rowFirst = Math.max(0, Math.ceil(vmin))
     const rowLast = Math.min(dims[v] - 1, Math.floor(vmax))
     if (rowLast < rowFirst) continue
@@ -183,12 +198,32 @@ export function rasterizeContours(
         const first = Math.max(0, Math.ceil(crossings[i] as number))
         const last = Math.min(nu - 1, Math.ceil(crossings[i + 1] as number) - 1)
         if (last < first) continue
-        const run = last - first + 1
-        runs.push(rowBase + first * su, run, su)
-        count += run
-        sum[u] = (sum[u] as number) + ((first + last) * run) / 2
-        sum[v] = (sum[v] as number) + row * run
-        sum[w] = (sum[w] as number) + slice * run
+        if (!isTilted) {
+          const run = last - first + 1
+          runs.push(rowBase + first * su, run, su)
+          count += run
+          sum[u] = (sum[u] as number) + ((first + last) * run) / 2
+          sum[v] = (sum[v] as number) + row * run
+          sum[w] = (sum[w] as number) + slice * run
+          continue
+        }
+        // One run per stretch of the row on the same nearest slice.
+        const rowW = tiltV * row + tiltC
+        for (let col = first; col <= last; ) {
+          const at = Math.round(tiltU * col + rowW)
+          let end = col
+          while (end < last && Math.round(tiltU * (end + 1) + rowW) === at)
+            end++
+          const run = end - col + 1
+          if (at >= 0 && at < dims[w]) {
+            runs.push(at * strides[w] + row * sv + col * su, run, su)
+            count += run
+            sum[u] = (sum[u] as number) + ((col + end) * run) / 2
+            sum[v] = (sum[v] as number) + row * run
+            sum[w] = (sum[w] as number) + at * run
+          }
+          col = end + 1
+        }
       }
     }
   }
@@ -198,6 +233,36 @@ export function rasterizeContours(
     number,
   ]
   return { count, centroid, runs }
+}
+
+/**
+ * A contour's plane as w = a u + b v + c (Newell normal), u and v the other
+ * two axes in rasterizeContours' order; w varies least, so its normal
+ * component is the largest.
+ */
+function contourPlane(p: Float64Array, w: 0 | 1 | 2): [number, number, number] {
+  const u = w === 0 ? 1 : 0
+  const v = w === 2 ? 1 : 2
+  const nrm = [0, 0, 0]
+  for (let i = 0, j = p.length - 3; i < p.length; j = i, i += 3)
+    for (let a = 0; a < 3; a++) {
+      const b = (a + 1) % 3
+      const c = (a + 2) % 3
+      nrm[a] =
+        (nrm[a] as number) +
+        ((p[j + b] as number) - (p[i + b] as number)) *
+          ((p[j + c] as number) + (p[i + c] as number))
+    }
+  const nw = nrm[w] as number
+  if (!nw) return [0, 0, p[w] as number]
+  return [
+    -(nrm[u] as number) / nw,
+    -(nrm[v] as number) / nw,
+    ((nrm[0] as number) * (p[0] as number) +
+      (nrm[1] as number) * (p[1] as number) +
+      (nrm[2] as number) * (p[2] as number)) /
+      nw,
+  ]
 }
 
 /** Set `bitmap` to `label` over rasterizeContours' runs. */
@@ -310,6 +375,8 @@ export function startRtDrawing(
   options: {
     headers?: Record<string, string>
     setNote: (message: string) => void
+    // The contours rasterize onto the base's grid: resolves once the base is in.
+    whenBase: Promise<boolean>
     onShown?: (segments: PanelSegment[], labels: RtLabels) => () => void
   },
 ): () => void {
@@ -319,8 +386,11 @@ export function startRtDrawing(
   let stopShown: (() => void) | undefined
   const show = async () => {
     const ds = rt as RtDisplaySet
-    await ds.load?.({ headers: options.headers, createSegmentation: false })
-    if (cancelled) return
+    const [, hasBase] = await Promise.all([
+      ds.load?.({ headers: options.headers, createSegmentation: false }),
+      options.whenBase,
+    ])
+    if (cancelled || !hasBase) return
     const rois = ds.structureSet?.ROIContours ?? []
     const dims = nv.volumes[0]?.dimsRAS?.slice(1, 4) as
       | [number, number, number]

@@ -1,3 +1,189 @@
+## 1.0.0-rc.217 (2026-11-17)
+
+### Features
+
+- **niivue:** public drawingGeneration and cancelDrawingLoad() ([6cbe6fbc](https://github.com/niivue/mono/commit/6cbe6fbc))
+
+### Fixes
+
+- **niivue:** TRX ignores a negative NB_STREAMLINES ([#833](https://github.com/niivue/mono/issues/833))
+- **niivue:** TRX falls back to the offsets heuristic on a bad header.json ([#832](https://github.com/niivue/mono/issues/832))
+- **niivue:** toggling annotationIsDrawnFromCenter drops a parked start's stale preview ([#817](https://github.com/niivue/mono/issues/817))
+- **niivue:** a parked bidirectional axis rubber-bands to the cursor ([#815](https://github.com/niivue/mono/issues/815))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.216 (2026-11-17)
+
+### Fixes
+
+- **niivue:** draw the overlay outline outside supra-threshold voxels ([a9fb0ff2](https://github.com/niivue/mono/commit/a9fb0ff2))
+- **niivue:** weight negative modulator values by magnitude ([936a379e](https://github.com/niivue/mono/commit/936a379e))
+
+### Performance
+
+- **niivue:** fill caller's RAS array for two-sided modulation ([17396c80](https://github.com/niivue/mono/commit/17396c80))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
+## 1.0.0-rc.215 (2026-11-16)
+
+### Fixes
+
+- **niivue:** use TRX NB_STREAMLINES to detect legacy offsets ([#831](https://github.com/niivue/mono/issues/831))
+- **niivue:** preserve TRX terminal streamline offsets ([3c057471](https://github.com/niivue/mono/commit/3c057471))
+- **niivue:** TRK vox_to_ras applied in the wrong order ([62b888f5](https://github.com/niivue/mono/commit/62b888f5))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.214 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationAreaIsGeometric; exact, faster ROI voxel masks ([e2848da7](https://github.com/niivue/mono/commit/e2848da7))
+
+### Fixes
+
+- **niivue:** measure a stored annotation after the merge, not before ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** an ROI's geometric area unions its overlapping pieces ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** a voxel inside any hole is outside the ROI, overlapping holes included ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** an intact circle's stats use its square-constrained box ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** geometric area of a self-crossing contour uses its even-odd region ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** bound an intact ellipse's stats scan by the true curve ([#818](https://github.com/niivue/mono/issues/818))
+- **niivue:** ROI stats on the anchor plane, sub-voxel geometric area ([#818](https://github.com/niivue/mono/issues/818))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.213 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationIsDrawnFromCenter draws ellipses and circles from their centre ([ca3c6f2c](https://github.com/niivue/mono/commit/ca3c6f2c))
+
+### Fixes
+
+- **niivue:** redraw when annotationIsDrawnFromCenter changes; expose it in nv-mcp ([#817](https://github.com/niivue/mono/issues/817))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.212 (2026-11-16)
+
+### Features
+
+- **niivue:** annotationIsClickToPlace places two-point shapes click-move-click ([7adbd918](https://github.com/niivue/mono/commit/7adbd918))
+
+### Fixes
+
+- **niivue:** a parked click-to-place rubber band clears off its slice ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** pointer leave drops a parked click-to-place rubber band ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** entering eraser mode drops a parked click-to-place start ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** a parked click start beats a selected control point ([#815](https://github.com/niivue/mono/issues/815))
+- **niivue:** click-to-place ends a shape on an oblique slice; turning it off drops the preview ([#815](https://github.com/niivue/mono/issues/815))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.211 (2026-11-16)
+
+### Features
+
+- **niivue:** loadDrawing accepts a voxel-aligned label image on another grid ([b10d9740](https://github.com/niivue/mono/commit/b10d9740))
+
+### Fixes
+
+- **niivue:** refuse a scaled drawing on a one-voxel background axis ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** compare drawing grids in background voxels ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** place a one-slice drawing of any thickness by its centre; a new background supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** refuse a raw drawing of other dims; document drawing restore supersedes a pending loadDrawing ([#819](https://github.com/niivue/mono/issues/819))
+- **niivue:** loadDrawing checks the affine on equal dims; a superseded load installs nothing ([ac419167](https://github.com/niivue/mono/commit/ac419167))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.210 (2026-11-16)
+
+### Features
+
+- **slide:** window RGB bitmap tiles through their channel windows ([a04381a6](https://github.com/niivue/mono/commit/a04381a6))
+
+### Fixes
+
+- **niivue:** window thumbnail bitmap tiles after scaling beside fused tiles ([#816](https://github.com/niivue/mono/issues/816))
+- **niivue:** preview serves the examples build in dist-examples ([#822](https://github.com/niivue/mono/issues/822))
+- **niivue:** window thumbnail bitmap tiles beside fused tiles ([#816](https://github.com/niivue/mono/issues/816))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.209 (2026-11-16)
+
+### Fixes
+
+- **niivue:** a hidden or opacity-0 volume shows no colorbar ([acbc1897](https://github.com/niivue/mono/commit/acbc1897))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.208 (2026-11-16)
+
+### Features
+
+- **niivue:** windowingStep sets the windowing drag gain and direction ([1df5de4d](https://github.com/niivue/mono/commit/1df5de4d))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.207 (2026-11-16)
+
+### Features
+
+- cull hidden mesh labels, PAQD hidden labels, legend solo ([eac95fd0](https://github.com/niivue/mono/commit/eac95fd0))
+
+### Thank You
+
+- neurolabusc
+
+## 1.0.0-rc.206 (2026-11-16)
+
+### Fixes
+
+- **niivue:** ruler labels clear of ticks, no zero measurements, angle tool rework ([aa3157a5](https://github.com/niivue/mono/commit/aa3157a5))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.205 (2026-11-15)
 
 ### Features

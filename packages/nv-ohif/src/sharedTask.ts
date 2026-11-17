@@ -89,7 +89,11 @@ export function sharedTask<T, A extends unknown[]>(
       if (entries.get(key) === held) entries.delete(key)
     }, GRACE_MS)
   }
-  if (!signal) return held.promise as Promise<T>
+  if (!signal) {
+    // No signal to release on: release once settled, so the result is not cached forever.
+    held.promise.then(release, release)
+    return held.promise as Promise<T>
+  }
   // This caller sees its own abort, as if the task were unshared.
   return new Promise<T>((resolve, reject) => {
     signal.addEventListener(

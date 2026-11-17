@@ -1,13 +1,30 @@
-import { expect, test } from 'bun:test'
+import { expect, jest, test } from 'bun:test'
 import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
 import {
   centerCrosshair,
   cornerstoneWindowingStep,
   dicomWindow,
+  initialRenderView,
+  readBaseWindowLevel,
 } from './commands'
-import { DEFAULT_OPTIONS } from './NiivueViewport'
+import {
+  applyHangingDisplay,
+  baseKey,
+  briefNote,
+  DEFAULT_OPTIONS,
+  hangingKeys,
+  type Status,
+  settleBase,
+} from './NiivueViewport'
+import {
+  getNiivueEntry,
+  registerNiivue,
+  unregisterNiivue,
+  updateNiivueViewport,
+} from './niivueRegistry'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
+import { joinSyncGroups } from './viewportSync'
 
 test('the viewport snaps the crosshair to voxel centres', () => {
   // So a measurement drawn at a clicked depth lies on a DICOM frame (frameAt).
@@ -77,6 +94,29 @@ test("the series' DICOM window is the fallback initial window", () => {
     ],
   } as unknown as Parameters<typeof dicomWindow>[0]
   expect(dicomWindow(perSlice)).toBeUndefined()
+  // One differing slice off the first/middle/last sample still disqualifies.
+  const oneOff = {
+    instances: [40, 80, 40, 40, 40].map((c) => ({
+      WindowWidth: 400,
+      WindowCenter: c,
+    })),
+  } as unknown as Parameters<typeof dicomWindow>[0]
+  expect(dicomWindow(oneOff)).toBeUndefined()
+  expect(dicomWindow(undefined)).toBeUndefined()
+})
+
+test("a 3D pane's hanging-protocol orientation sets the render camera", () => {
+  expect(
+    initialRenderView({ viewportType: 'volume3d', orientation: 'coronal' }),
+  ).toEqual([180, 0])
+  // Cornerstone's sagittal looks from patient left (viewPlaneNormal +x).
+  expect(
+    initialRenderView({ viewportType: 'volume3d', orientation: 'sagittal' }),
+  ).toEqual([90, 0])
+  expect(
+    initialRenderView({ viewportType: 'volume', orientation: 'coronal' }),
+  ).toBeUndefined()
+  expect(initialRenderView({ viewportType: 'volume3d' })).toBeUndefined()
 })
 
 test("the windowing drag matches cornerstone's gain and direction", () => {
@@ -114,4 +154,209 @@ test('a single image opens in its acquisition plane', () => {
   expect(acquisitionSliceType({ volumes: [{ permRAS: [1, 3, -2] }] })).toBe(
     SLICE_TYPE.CORONAL,
   )
+})
+
+test("a linked pane's window readout follows its peer's window", async () => {
+  // The VOI group copies the window onto the peer's volume showing the same
+  // display set (viewportSync.ts); its volumeUpdated drives the W/L readout.
+  globalThis.requestAnimationFrame ??= () => 0
+  const [a, b] = [new NiiVue(DEFAULT_OPTIONS), new NiiVue(DEFAULT_OPTIONS)]
+  for (const nv of [a, b])
+    await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  let shown: ReturnType<typeof readBaseWindowLevel>
+  b.addEventListener('volumeUpdated', (e) => {
+    if (e.detail.volumeIndex === 0) shown = readBaseWindowLevel(b)
+  })
+  const voi = [{ type: 'voi', id: 'linked-test' }] // apart from other files' panes
+  const leave = (['linked-a', 'linked-b'] as const).map((id, i) => {
+    registerNiivue(id, i ? b : a)
+    updateNiivueViewport(id, {
+      displaySets: [{ displaySetInstanceUID: 'linked-ds' }],
+    })
+    return joinSyncGroups(id, i ? b : a, voi)
+  })
+  try {
+    await a.setVolume(0, { calMin: 10, calMax: 30 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(shown).toEqual({ window: 20, level: 20 })
+  } finally {
+    for (const l of leave) l()
+    unregisterNiivue('linked-a')
+    unregisterNiivue('linked-b')
+  }
+})
+
+test('a new hanging protocol changes the effect keys; a fresh equal one does not', () => {
+  const mpr = () =>
+    hangingKeys(
+      {
+        orientation: 'axial',
+        viewportType: 'volume',
+        syncGroups: [{ type: 'voi', id: 'a' }],
+      },
+      [{ options: { voi: { windowWidth: 400, windowCenter: 40 } } }],
+    )
+  const render = hangingKeys(
+    { orientation: 'coronal', viewportType: 'volume3d' },
+    [{ options: { displayPreset: { CT: 'CT-Bone' } } }],
+  )
+  // OHIF re-renders with new objects: same values, same keys (no reload).
+  expect(mpr()).toEqual(mpr())
+  expect(render.view).not.toBe(mpr().view)
+  expect(render.load).not.toBe(mpr().load)
+  // Window alone: applied in place, no reload (it would clear measurements).
+  const lung = hangingKeys(
+    {
+      orientation: 'axial',
+      viewportType: 'volume',
+      syncGroups: [{ type: 'voi', id: 'a' }],
+    },
+    [{ options: { voi: { windowWidth: 1500, windowCenter: -600 } } }],
+  )
+  expect(lung.view).toBe(mpr().view)
+  expect(lung.load).toBe(mpr().load)
+  expect(lung.display).not.toBe(mpr().display)
+})
+
+test("a new hanging protocol's window applies to the loaded base in place", async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  const volume = nv.volumes[0]
+  // The protocol's colormap (a TMTV PT pane's) stays under the new window.
+  const voi = (windowWidth: number) => [
+    {
+      options: {
+        voi: { windowWidth, windowCenter: 40 },
+        colormap: { name: 'hot' },
+      },
+    },
+  ]
+  try {
+    entry.baseLoading = true
+    applyHangingDisplay(entry, { viewportType: 'volume' }, voi(400))
+    expect(nv.volumes[0]?.calMax).not.toBe(240)
+    entry.baseLoading = false
+    applyHangingDisplay(entry, { viewportType: 'volume' }, voi(500))
+    await Promise.resolve()
+    expect(nv.volumes[0]).toBe(volume)
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+    expect(nv.volumes[0]?.colormap).toBe('Hot')
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('a protocol window changed during the load applies when it settles', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  const voi = (windowWidth: number) => [
+    { options: { voi: { windowWidth, windowCenter: 40 } } },
+  ]
+  await nv.loadVolumes([
+    { url: new File([fourSlices()], 'four.nii'), calMin: -160, calMax: 240 },
+  ])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  try {
+    entry.baseLoading = true
+    applyHangingDisplay(entry, { viewportType: 'volume' }, voi(500))
+    entry.baseLoading = false
+    settleBase('hp', { calMin: -160, calMax: 240 }, {}, voi(500))
+    await Promise.resolve()
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-210, 290])
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('removing the protocol window restores the robust range and gray', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  const robust = [nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  try {
+    await nv.setVolume(0, { colormap: 'ct_bones' })
+    applyHangingDisplay(entry, { viewportType: 'volume' }, undefined)
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('gray')
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual(robust)
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('a 2D -> 3D protocol on the same series starts a new base (the SEG reloads on it)', () => {
+  const dso = [{ options: {} }]
+  const twoD = baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso))
+  const threeD = baseKey(
+    'ds',
+    true,
+    hangingKeys({ viewportType: 'volume3d' }, dso),
+  )
+  expect(threeD).not.toBe(twoD)
+  expect(
+    baseKey('ds', true, hangingKeys({ viewportType: 'volume' }, dso)),
+  ).toBe(twoD)
+})
+
+test('removing a render preset keeps the DICOM window and restores gray', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [
+    {
+      displaySetInstanceUID: 'ds',
+      Modality: 'CT',
+      instances: [{ WindowWidth: 400, WindowCenter: 40 }],
+    },
+  ]
+  const render = { viewportType: 'volume3d' }
+  try {
+    applyHangingDisplay(entry, render, [
+      { options: { displayPreset: { CT: 'CT-Bone' } } },
+    ])
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('ct_bones')
+    applyHangingDisplay(entry, render, [{ options: {} }])
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('gray')
+    expect([nv.volumes[0]?.calMin, nv.volumes[0]?.calMax]).toEqual([-160, 240])
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
+test('a brief note clears after 6 s, unless a newer status replaced it', () => {
+  jest.useFakeTimers()
+  try {
+    let status = { kind: 'idle' } as Status
+    const setStatus: Parameters<typeof briefNote>[0] = (next) => {
+      status = typeof next === 'function' ? next(status) : next
+    }
+    briefNote(setStatus, 'incomplete SEG')
+    jest.advanceTimersByTime(5999)
+    expect(status).toEqual({ kind: 'note', message: 'incomplete SEG' })
+    jest.advanceTimersByTime(1)
+    expect(status).toEqual({ kind: 'idle' })
+    briefNote(setStatus, 'old')
+    status = { kind: 'error', message: 'newer' }
+    jest.advanceTimersByTime(6000)
+    expect(status).toEqual({ kind: 'error', message: 'newer' })
+  } finally {
+    jest.useRealTimers()
+  }
 })

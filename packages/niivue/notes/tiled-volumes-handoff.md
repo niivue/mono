@@ -1028,7 +1028,7 @@ No `NVViewGL` or call-site changes — the multi-chunk loop is internal to
 ### Verification — and a compositing bug found + fixed
 
 Verified interactively by clamping the WebGL2 device limit so a normal
-volume (`mni152`) is forced through the chunked path — `examples/backend.html`
+volume (`mni152`) is forced through the chunked path — `examples/backend.html` (since merged into `dev.html`)
 on WebGL2, mni152 tiled into a 2x2x2 grid. No chunk seams. But the
 matcap-lit cortex surface showed **concentric ringing** that was absent
 from the non-chunked render.

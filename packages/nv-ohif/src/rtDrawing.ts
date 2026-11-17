@@ -72,7 +72,8 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
  * Rasterize `contours` (LPS mm triplets) on a grid of `dims` voxels, even-odd
  * per slice so an inner contour of the same ROI stays a hole. A contour lies on
  * the slice its points are nearest across the axis they vary least along;
- * voxels whose centres fall inside are in. Returns their count and centroid
+ * voxels whose centres fall inside are in. A tilted contour (a gantry-tilted
+ * or other series' plane) puts each voxel on the slice nearest its plane. Returns their count and centroid
  * (RAS voxels) and the runs (start index, length, step) for fillRuns.
  */
 export function rasterizeContours(
@@ -148,6 +149,37 @@ export function rasterizeContours(
         if (c < vmin) vmin = c
         if (c > vmax) vmax = c
       }
+    // The first contour's plane as w = a u + b v + c (Newell normal); w is the
+    // least-varying axis, so its normal component is the largest.
+    const p0 = group[0] as Float64Array
+    const nrm = [0, 0, 0]
+    for (let i = 0, j = p0.length - 3; i < p0.length; j = i, i += 3)
+      for (let a = 0; a < 3; a++) {
+        const b = (a + 1) % 3
+        const c = (a + 2) % 3
+        nrm[a] =
+          (nrm[a] as number) +
+          ((p0[j + b] as number) - (p0[i + b] as number)) *
+            ((p0[j + c] as number) + (p0[i + c] as number))
+      }
+    const nw = nrm[w] as number
+    const tiltU = nw ? -(nrm[u] as number) / nw : 0
+    const tiltV = nw ? -(nrm[v] as number) / nw : 0
+    const tiltC = nw
+      ? ((nrm[0] as number) * (p0[0] as number) +
+          (nrm[1] as number) * (p0[1] as number) +
+          (nrm[2] as number) * (p0[2] as number)) /
+        nw
+      : slice
+    let wmin = Infinity
+    let wmax = -Infinity
+    for (const p of group)
+      for (let i = w; i < p.length; i += 3) {
+        const c = p[i] as number
+        if (c < wmin) wmin = c
+        if (c > wmax) wmax = c
+      }
+    const isTilted = Math.round(wmin) !== Math.round(wmax)
     const rowFirst = Math.max(0, Math.ceil(vmin))
     const rowLast = Math.min(dims[v] - 1, Math.floor(vmax))
     if (rowLast < rowFirst) continue
@@ -183,12 +215,32 @@ export function rasterizeContours(
         const first = Math.max(0, Math.ceil(crossings[i] as number))
         const last = Math.min(nu - 1, Math.ceil(crossings[i + 1] as number) - 1)
         if (last < first) continue
-        const run = last - first + 1
-        runs.push(rowBase + first * su, run, su)
-        count += run
-        sum[u] = (sum[u] as number) + ((first + last) * run) / 2
-        sum[v] = (sum[v] as number) + row * run
-        sum[w] = (sum[w] as number) + slice * run
+        if (!isTilted) {
+          const run = last - first + 1
+          runs.push(rowBase + first * su, run, su)
+          count += run
+          sum[u] = (sum[u] as number) + ((first + last) * run) / 2
+          sum[v] = (sum[v] as number) + row * run
+          sum[w] = (sum[w] as number) + slice * run
+          continue
+        }
+        // One run per stretch of the row on the same nearest slice.
+        const rowW = tiltV * row + tiltC
+        for (let col = first; col <= last; ) {
+          const at = Math.round(tiltU * col + rowW)
+          let end = col
+          while (end < last && Math.round(tiltU * (end + 1) + rowW) === at)
+            end++
+          const run = end - col + 1
+          if (at >= 0 && at < dims[w]) {
+            runs.push(at * strides[w] + row * sv + col * su, run, su)
+            count += run
+            sum[u] = (sum[u] as number) + ((col + end) * run) / 2
+            sum[v] = (sum[v] as number) + row * run
+            sum[w] = (sum[w] as number) + at * run
+          }
+          col = end + 1
+        }
       }
     }
   }

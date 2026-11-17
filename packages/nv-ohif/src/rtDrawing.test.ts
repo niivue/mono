@@ -150,6 +150,22 @@ describe('rasterizeStructureSet', () => {
     expect(bitmap[400 + 5 * 20 + 5]).toBe(3)
   })
 
+  // Review of #839: a contour on the tilted plane z = y/2 crosses voxel
+  // slices 1 to 4; each voxel lands on the slice nearest the plane.
+  test('a tilted contour fills the slices its plane crosses', () => {
+    const { runs, count } = rasterizeContours(
+      [12, 12, 8],
+      [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0],
+      [[-1, -1, 0.5, -9, -1, 0.5, -9, -9, 4.5, -1, -9, 4.5]],
+    )
+    const bitmap = new Uint8Array(12 * 12 * 8)
+    fillRuns(bitmap, runs, 1)
+    expect(count).toBe(64)
+    expect(bitmap[1 * 144 + 2 * 12 + 5]).toBe(1)
+    expect(bitmap[3 * 144 + 6 * 12 + 5]).toBe(1)
+    expect(bitmap[3 * 144 + 2 * 12 + 5]).toBe(0)
+  })
+
   // Review of #839: DICOM's CLOSEDPLANAR_XOR contours combine by
   // exclusive-or; an inner one cuts a hole.
   test('fills CLOSEDPLANAR_XOR contours by exclusive-or', () => {

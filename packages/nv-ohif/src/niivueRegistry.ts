@@ -40,10 +40,11 @@ export interface NiivueViewportEntry {
   /** Base volume slice -> DICOM frame, when converted from DICOM. */
   sliceFrames?: SliceFrames
   /**
-   * Shows the output holding a SOP instance, then calls `then` (outputStack.ts);
-   * false if no output holds it.
+   * Shows the output holding a SOP instance (outputStack.ts). Resolves true once
+   * shown unless a later switch superseded it; undefined if that output is
+   * already shown with no switch pending, or no output holds the SOP.
    */
-  switchToInstance?: (sop: string, then?: () => void) => boolean
+  switchToInstance?: (sop: string) => Promise<boolean> | undefined
   /** Every output's slice -> frame map, for measurements on outputs not shown. */
   outputFrames?: SliceFrames[]
   /** OHIF hung a volume viewport: positions count along the volume, not the stack. */

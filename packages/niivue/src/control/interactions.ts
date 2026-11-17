@@ -897,6 +897,18 @@ function explodedPickRay(
   // a caller that hit-tested its own point passes it in — see pickExplodedBlock.
   const hit = hitOverride ?? ctrl.activeTileHit
   if (!hit || !vol.chunkPlan) return null
+  return renderPickRay(ctrl, hit, vol.obliqueRAS as mat4 | undefined)
+}
+
+/**
+ * The world ray (origin + unit dir, mm) under a render-tile hit, unprojected
+ * through the render loop's MVP. Null without a tile rect.
+ */
+export function renderPickRay(
+  ctrl: NiiVue,
+  hit: ViewHitTest,
+  obliqueRAS: mat4 | undefined,
+): { origin: [number, number, number]; dir: [number, number, number] } | null {
   const tile = ctrl.view?.screenSlices[hit.tileIndex]
   const ltwh = tile?.leftTopWidthHeight
   if (!ltwh) return null
@@ -908,7 +920,7 @@ function explodedPickRay(
     md._renderPivotMM ?? md.pivot3D,
     md.furthestFromPivot,
     md.scene.scaleMultiplier,
-    vol.obliqueRAS as mat4 | undefined,
+    obliqueRAS,
     md.scene.renderPan,
   )[0] as mat4
   const near = NVTransforms.unprojectScreen(

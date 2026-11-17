@@ -225,7 +225,9 @@ test('a new hanging protocol changes the effect keys; a fresh equal one does not
 test('MIP inversion or a new background reruns the style effect', () => {
   const style = (voiInverted: boolean, background?: number[]) =>
     hangingKeys({ viewportType: 'volume3d', background }, [
-      { options: { blendMode: 'MIP', voiInverted } },
+      {
+        options: { blendMode: 'MIP', slabThickness: 'fullVolume', voiInverted },
+      },
     ]).style
   expect(style(true)).not.toBe(style(false))
   expect(style(false, [1, 1, 1])).not.toBe(style(false, [0, 0, 0]))

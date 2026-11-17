@@ -2878,7 +2878,8 @@ export default class NiiVue extends EventTarget {
     this._livewireField = null
     this._livewireSeed = null
   }
-  private _revertResize(): void {
+  /** Put back a resized shape not released (cancel, pointercancel, pinch). */
+  _revertResize(): void {
     const shape = this._resizingAnnotation?.shape
     const original = this._resizeOriginalShape
     if (!shape || !original || !this._resizingAnnotation) return

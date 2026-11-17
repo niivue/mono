@@ -197,14 +197,14 @@ export function useSegDrawing(
       return startRtDrawing(nv, seg, {
         headers,
         setNote,
-        onShown: (segments, stats) =>
+        onShown: (segments, labels) =>
           startSegPanel(
             nv,
             managers.viewportId,
             seg,
             segments,
             managers,
-            stats,
+            labels,
           ),
       })
     return startSegDrawing(nv, seg, {

@@ -167,8 +167,10 @@ export function rasterizeContours(
         const first = Math.max(rowFirst, Math.ceil(Math.min(v0, v1)))
         const last = Math.min(rowLast, Math.ceil(Math.max(v0, v1)) - 1)
         const slope = (u1 - u0) / (v1 - v0)
-        for (let row = first; row <= last; row++)
-          rowCrossings[row - rowFirst]?.push(u0 + (row - v0) * slope)
+        for (let row = first; row <= last; row++) {
+          const crossings = rowCrossings[row - rowFirst] as number[]
+          crossings.push(u0 + (row - v0) * slope)
+        }
         u0 = u1
         v0 = v1
       }
@@ -201,7 +203,7 @@ export function rasterizeContours(
 /** Set `bitmap` to `label` over rasterizeContours' runs. */
 export function fillRuns(
   bitmap: Uint8Array,
-  runs: ReadonlyArray<number>,
+  runs: ArrayLike<number>,
   label: number,
 ): void {
   for (let i = 0; i < runs.length; i += 3) {
@@ -223,17 +225,24 @@ export function roiContours(roi: RtRoi): Float64Array[] {
   return out
 }
 
+/** An RT drawing's per-ROI stats and its refill showing only `visible` ROIs. */
+export interface RtLabels {
+  stats: Map<number, SegmentStats>
+  showOnly(visible?: ReadonlySet<number>): void
+}
+
 /**
  * Rasterize every ROI with closed contours into `bitmap`, label = list index + 1
  * (at most 255, the drawing's range). Larger ROIs (by voxel count) are drawn
- * first so nested ones stay visible on top; stats are each ROI's own.
+ * first so nested ones stay visible on top; stats are each ROI's own, and
+ * showOnly refills without hidden ROIs, uncovering what they overlapped.
  */
 export function rasterizeStructureSet(
   bitmap: Uint8Array,
   dims: readonly [number, number, number],
   lps2vox: ReadonlyArray<number>,
   rois: ReadonlyArray<RtRoi>,
-): { segments: PanelSegment[]; stats: Map<number, SegmentStats> } {
+): RtLabels & { segments: PanelSegment[] } {
   const drawn = rois
     .slice(0, 255)
     .map((roi, i) => ({
@@ -242,11 +251,19 @@ export function rasterizeStructureSet(
       ...rasterizeContours(dims, lps2vox, roiContours(roi)),
     }))
     .filter((r) => r.count)
-  const stats = new Map<number, SegmentStats>()
-  for (const r of [...drawn].sort((a, b) => b.count - a.count)) {
-    fillRuns(bitmap, r.runs, r.value)
-    stats.set(r.value, { count: r.count, centroid: r.centroid })
+  const bySize = [...drawn].sort((a, b) => b.count - a.count)
+  const runs = bySize.map((r) => Int32Array.from(r.runs))
+  const stats = new Map<number, SegmentStats>(
+    drawn.map((r) => [r.value, { count: r.count, centroid: r.centroid }]),
+  )
+  const showOnly = (visible?: ReadonlySet<number>) => {
+    bitmap.fill(0)
+    bySize.forEach((r, i) => {
+      if (!visible || visible.has(r.value))
+        fillRuns(bitmap, runs[i] as Int32Array, r.value)
+    })
   }
+  showOnly()
   const segments = drawn.map(({ roi, value }) => {
     const [red = 255, green = 255, blue = 255] = roi.colorArray ?? []
     return {
@@ -255,7 +272,7 @@ export function rasterizeStructureSet(
       rgb: [red, green, blue] as [number, number, number],
     }
   })
-  return { segments, stats }
+  return { segments, stats, showOnly }
 }
 
 type RtDisplaySet = OhifDisplaySet & {
@@ -290,10 +307,7 @@ export function startRtDrawing(
   options: {
     headers?: Record<string, string>
     setNote: (message: string) => void
-    onShown?: (
-      segments: PanelSegment[],
-      stats: Map<number, SegmentStats>,
-    ) => () => void
+    onShown?: (segments: PanelSegment[], labels: RtLabels) => () => void
   },
 ): () => void {
   let cancelled = false
@@ -315,7 +329,7 @@ export function startRtDrawing(
     isOwned = true
     // createEmptyDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    const { segments, stats } = rasterizeStructureSet(
+    const { segments, stats, showOnly } = rasterizeStructureSet(
       bitmap,
       dims,
       lps2vox,
@@ -334,7 +348,13 @@ export function startRtDrawing(
     nv.drawOpacity = SEG_FILL_OPACITY
     nv.drawRimOpacity = SEG_RIM_OPACITY
     nv.refreshDrawing()
-    stopShown = options.onShown?.(segments, stats)
+    stopShown = options.onShown?.(segments, {
+      stats,
+      showOnly: (visible) => {
+        showOnly(visible)
+        nv.refreshDrawing()
+      },
+    })
   }
   show().catch((err) => {
     if (cancelled) return

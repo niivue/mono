@@ -5,6 +5,7 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
+import type { RtLabels } from './rtDrawing'
 
 // OHIF's segmentation panel lists cornerstone's segmentation state for the
 // active viewport id. A NiiVue pane's SEG drawing is entered there as a
@@ -226,8 +227,8 @@ export function startSegPanel(
     servicesManager?: OhifServicesManager
     extensionManager?: OhifExtensionManager
   },
-  /** Per-segment stats when the bitmap does not hold them (overlapping RT ROIs). */
-  knownStats?: Map<number, SegmentStats>,
+  /** RT ROIs overlap: the bitmap holds neither their stats nor hidden ones' voxels. */
+  rt?: RtLabels,
 ): () => void {
   const cst = cornerstoneSegmentation(managers.extensionManager)
   const service = ohifServices(managers.servicesManager)?.segmentationService as
@@ -246,7 +247,7 @@ export function startSegPanel(
     !segmentationId
   )
     return () => {}
-  const stats = knownStats ?? labelStats(bitmap, back.dimsRAS.slice(1, 4))
+  const stats = rt?.stats ?? labelStats(bitmap, back.dimsRAS.slice(1, 4))
   const [, px = 1, py = 1, pz = 1] = back.hdr?.pixDims ?? []
   // A second pane on the same SEG shares the segmentation, with its own colours.
   const lut: Color[] = [[0, 0, 0, 0]]
@@ -289,6 +290,8 @@ export function startSegPanel(
   const specifier = { segmentationId, type: LABELMAP }
   const colormapName = `seg-panel-${viewportId}`
   let applied = ''
+  // RT: the voxels shown, as filled (all ROIs) at first.
+  let shown = segments.map((s) => s.value).join()
   const sync = () => {
     const segmentation = cst.state.getSegmentation(segmentationId)
     const rep = cst.state.getSegmentationRepresentation(viewportId, specifier)
@@ -320,6 +323,11 @@ export function startSegPanel(
     const key = JSON.stringify([rows, fill, rim])
     if (key === applied) return
     applied = key
+    const visible = rows.filter((r) => r.visible).map((r) => r.value)
+    if (rt && visible.join() !== shown) {
+      shown = visible.join()
+      rt.showOnly(new Set(visible))
+    }
     nv.drawColormap = nv.addColormap(colormapName, panelColormap(rows))
     nv.drawOpacity = fill
     nv.drawRimOpacity = rim

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   fillRuns,
   lpsToVoxel,
+  type RtLabels,
   rasterizeContours,
   rasterizeStructureSet,
   startRtDrawing,
@@ -107,7 +108,7 @@ describe('rasterizeStructureSet', () => {
 
   test('nestedRoi_drawnOverLargerAndKeepsOwnStats', () => {
     const bitmap = new Uint8Array(20 * 20 * 5)
-    const { segments, stats } = rasterizeStructureSet(
+    const { segments, stats, showOnly } = rasterizeStructureSet(
       bitmap,
       [20, 20, 5],
       identityLps,
@@ -144,6 +145,9 @@ describe('rasterizeStructureSet', () => {
     expect(stats.get(3)?.count).toBe(81)
     expect(bitmap[400 + 5 * 20 + 5]).toBe(1)
     expect(bitmap[400 + 2 * 20 + 2]).toBe(3)
+    // Hiding the nested ROI uncovers the larger one beneath it.
+    showOnly(new Set([3]))
+    expect(bitmap[400 + 5 * 20 + 5]).toBe(3)
   })
 })
 
@@ -195,16 +199,17 @@ describe('startRtDrawing', () => {
         }
       },
     }
-    const shown = new Promise<number>((resolve) => {
+    const shown = new Promise<RtLabels>((resolve) => {
       startRtDrawing(nv as never, rt, {
         setNote: () => {},
-        onShown: (segments, stats) => {
-          resolve(stats.get(segments[0]?.value ?? 0)?.count ?? -1)
+        onShown: (_segments, labels) => {
+          resolve(labels)
           return () => {}
         },
       })
     })
-    expect(await shown).toBe(4)
+    const labels = await shown
+    expect(labels.stats.get(1)?.count).toBe(4)
     expect(loadedWith).toEqual({
       headers: undefined,
       createSegmentation: false,
@@ -212,5 +217,7 @@ describe('startRtDrawing', () => {
     expect(nv.drawIsEnabled).toBe(false)
     expect(nv.drawColormap).toBe('rt-rt')
     expect(img[2 * 400 + 2 * 20 + 2]).toBe(1)
+    labels.showOnly(new Set())
+    expect(img[2 * 400 + 2 * 20 + 2]).toBe(0)
   })
 })

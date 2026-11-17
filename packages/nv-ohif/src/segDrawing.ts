@@ -34,7 +34,8 @@ const isSegOrRt = (ds: OhifDisplaySet) =>
   ds.Modality === 'SEG' || ds.Modality === 'RTSTRUCT'
 
 // OHIF records no hydration time: order SEG/RTs by when first seen hydrated.
-const hydratedOrder = new WeakMap<OhifDisplaySet, number>()
+// A Map, not WeakMap: sets that leave the active list are forgotten, so a re-add is newest.
+const hydratedOrder = new Map<OhifDisplaySet, number>()
 let hydrations = 0
 
 /**
@@ -58,7 +59,11 @@ export function resolveSegDisplaySets(
     // activates the newest segmentation.
     let hydrated: OhifDisplaySet | undefined
     let newest = 0
-    for (const ds of baseUid ? (lookup?.getActiveDisplaySets?.() ?? []) : []) {
+    const active = baseUid ? (lookup?.getActiveDisplaySets?.() ?? []) : []
+    if (baseUid)
+      for (const ds of hydratedOrder.keys())
+        if (!active.includes(ds)) hydratedOrder.delete(ds)
+    for (const ds of active) {
       if (!isSegOrRt(ds) || ds.referencedDisplaySetInstanceUID !== baseUid)
         continue
       // Removal un-hydrates the same object; forget its order so a reload is newest.

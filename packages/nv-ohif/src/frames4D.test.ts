@@ -291,6 +291,39 @@ it('an older compute does not overwrite a newer one on another pane', async () =
   for (const l of leave) l()
 })
 
+it('an older upload landing late does not overwrite a newer compute', async () => {
+  globalThis.requestAnimationFrame = () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const a = pane()
+  const leave = joinFrames('late', a, undefined, null)
+  await a.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  // Hold the computed upload, not the frame cancel's reload.
+  a.setFrame4D = async () => {}
+  const update = a.updateVolumeData.bind(a)
+  let release = () => {}
+  let held = true
+  a.updateVolumeData = async (i, data) => {
+    if (held) {
+      held = false
+      await new Promise<void>((r) => {
+        release = r
+      })
+    }
+    return update(i, data)
+  }
+  // Reversed order: two voxels otherwise quantize to the same raw pair.
+  const older = showComputed(split.frames.group, Float32Array.from([2, 1]))
+  await new Promise((r) => setTimeout(r, 0))
+  const newer = showComputed(split.frames.group, Float32Array.from([10, 25]))
+  await new Promise((r) => setTimeout(r, 0))
+  release()
+  await Promise.all([older, newer])
+  expect(scaled(a).map((x) => Math.round(x * 1e3) / 1e3)).toEqual([10, 25])
+  leave()
+})
+
 it('unmounting the last 4D pane notifies the panel', async () => {
   globalThis.requestAnimationFrame ??= () => 0
   const split = (await split4D(nifti4D())) as NonNullable<

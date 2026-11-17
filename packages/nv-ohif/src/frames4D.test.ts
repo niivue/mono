@@ -253,3 +253,40 @@ it('removing the last 4D volume notifies the panel', async () => {
   leave()
   expect(shown).toBeUndefined()
 })
+
+it('an older compute does not overwrite a newer one on another pane', async () => {
+  globalThis.requestAnimationFrame = () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const [a, b] = [pane(), pane()]
+  const leave = [
+    joinFrames('older', a, undefined, null),
+    joinFrames('newer', b, undefined, null),
+  ]
+  for (const p of [a, b])
+    await p.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  const update = a.updateVolumeData.bind(a)
+  let release = () => {}
+  let held = true
+  a.updateVolumeData = async (i, data) => {
+    if (held) {
+      held = false
+      await new Promise<void>((r) => {
+        release = r
+      })
+    }
+    return update(i, data)
+  }
+  const older = showComputed(split.frames.group, Float32Array.from([1, 2]))
+  await new Promise((r) => setTimeout(r, 0))
+  const newer = showComputed(split.frames.group, Float32Array.from([10, 20]))
+  release()
+  await Promise.all([older, newer])
+  const round = (nv: NiiVue) => scaled(nv).map((x) => Math.round(x * 1e3) / 1e3)
+  expect([round(a), round(b)]).toEqual([
+    [10, 20],
+    [10, 20],
+  ])
+  for (const l of leave) l()
+})

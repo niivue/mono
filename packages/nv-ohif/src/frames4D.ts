@@ -145,7 +145,11 @@ export async function showComputed(
   // The shown frame is the one to return to.
   const shown = volumes[0]?.v.frameSource?.frame
   if (shown !== undefined) current.set(group, shown)
-  for (const { nv, v, i } of volumes) await installComputed(group, c, nv, v, i)
+  for (const { nv, v, i } of volumes) {
+    // A newer compute (or showFrames) took over while a pane updated.
+    if (computedShown.get(group) !== c) return
+    await installComputed(group, c, nv, v, i)
+  }
 }
 
 /** Abort `v`'s pending frame request (setFrame4D to its own frame does). */

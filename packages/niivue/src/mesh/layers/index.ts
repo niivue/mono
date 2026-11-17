@@ -435,6 +435,7 @@ export async function loadLayersFromOptions(
       isColormapInverted: opts.isColormapInverted,
       isAdditiveBlend: opts.isAdditiveBlend,
       outlineWidth: opts.outlineWidth,
+      isHiddenLabelCulled: opts.isHiddenLabelCulled,
       url: urlString,
       name: opts.name ?? urlString,
     })

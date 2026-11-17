@@ -150,6 +150,49 @@ describe('rasterizeStructureSet', () => {
     expect(bitmap[400 + 5 * 20 + 5]).toBe(3)
   })
 
+  // Review of #839: a contour on the tilted plane z = y/2 crosses voxel
+  // slices 1 to 4; each voxel lands on the slice nearest the plane.
+  test('a tilted contour fills the slices its plane crosses', () => {
+    const { runs, count } = rasterizeContours(
+      [12, 12, 8],
+      [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0],
+      [[-1, -1, 0.5, -9, -1, 0.5, -9, -9, 4.5, -1, -9, 4.5]],
+    )
+    const bitmap = new Uint8Array(12 * 12 * 8)
+    fillRuns(bitmap, runs, 1)
+    expect(count).toBe(64)
+    expect(bitmap[1 * 144 + 2 * 12 + 5]).toBe(1)
+    expect(bitmap[3 * 144 + 6 * 12 + 5]).toBe(1)
+    expect(bitmap[3 * 144 + 2 * 12 + 5]).toBe(0)
+  })
+
+  // Review of #839: a hole on the same tilted plane groups with its outer
+  // ring though their midpoints round to different slices.
+  test('a coplanar tilted hole stays empty', () => {
+    const { runs } = rasterizeContours(
+      [12, 12, 8],
+      [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0],
+      [
+        [-1, -1, 0.5, -9, -1, 0.5, -9, -9, 4.5, -1, -9, 4.5],
+        [-3, -2, 1, -3, -4, 2, -6, -4, 2, -6, -2, 1],
+      ],
+    )
+    const bitmap = new Uint8Array(12 * 12 * 8)
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[2 * 144 + 3 * 12 + 4]).toBe(0)
+    expect(bitmap[3 * 144 + 6 * 12 + 5]).toBe(1)
+  })
+
+  // Review of #839: the plane crosses slice 0 though its midpoint is below it.
+  test('a tilted contour with an off-volume midpoint still fills', () => {
+    const { count } = rasterizeContours(
+      [12, 12, 8],
+      [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0],
+      [[-1, -1, -3.5, -1, -9, 0.5, -9, -9, 0.5, -9, -1, -3.5]],
+    )
+    expect(count).toBeGreaterThan(0)
+  })
+
   // Review of #839: DICOM's CLOSEDPLANAR_XOR contours combine by
   // exclusive-or; an inner one cuts a hole.
   test('fills CLOSEDPLANAR_XOR contours by exclusive-or', () => {
@@ -222,6 +265,7 @@ describe('startRtDrawing', () => {
     await new Promise<void>((resolve) => {
       stop = startRtDrawing(nv as never, rt, {
         setNote: () => {},
+        whenBase: Promise.resolve(true),
         onShown: () => {
           resolve()
           return () => {}
@@ -233,7 +277,10 @@ describe('startRtDrawing', () => {
     stop()
     expect(nv.drawingVolume).toBe(replacement)
     nv.createEmptyDrawing()
-    const again = startRtDrawing(nv as never, rt, { setNote: () => {} })
+    const again = startRtDrawing(nv as never, rt, {
+      setNote: () => {},
+      whenBase: Promise.resolve(true),
+    })
     await new Promise((r) => setTimeout(r, 0))
     again()
     expect(nv.drawingVolume).toBeNull()
@@ -289,6 +336,7 @@ describe('startRtDrawing', () => {
     const shown = new Promise<RtLabels>((resolve) => {
       startRtDrawing(nv as never, rt, {
         setNote: () => {},
+        whenBase: Promise.resolve(true),
         onShown: (_segments, labels) => {
           resolve(labels)
           return () => {}

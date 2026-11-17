@@ -3,7 +3,7 @@ import type { NVImage } from '@/NVTypes'
 import { objectId } from '@/volume/dataVersion'
 import { reorientRGBA } from '@/volume/utils'
 
-function computeNegRange(nvimage: NVImage): {
+export function computeNegRange(nvimage: NVImage): {
   mnNeg: number
   mxNeg: number
 } {

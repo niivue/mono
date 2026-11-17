@@ -122,7 +122,7 @@ describe('edit_drawing', () => {
     await expect(
       edit_drawing({ action: 'load', url: 'https://x/other.nii' }),
     ).rejects.toThrow(
-      'The drawing at https://x/other.nii could not be loaded: it does not fit the base volume.',
+      'The drawing at https://x/other.nii could not be loaded: it is not a uint8 label image voxel-aligned with the base volume, or a later drawing call replaced it.',
     )
     await expect(edit_drawing({ action: 'load' })).rejects.toThrow(
       'Loading a drawing needs a url.',

@@ -51,6 +51,8 @@ export default defineConfig({
     format: 'es',
   },
   build: {
+    // Not dist/: that holds the library build workspace consumers resolve.
+    outDir: 'dist-examples',
     rolldownOptions: {
       input,
     },

@@ -220,3 +220,76 @@ describe('handleDragRelease for crosshairPan', () => {
     expect(setCrosshairPos).not.toHaveBeenCalled()
   })
 })
+
+describe('handleDragRelease for measurement', () => {
+  const release = (endXY: [number, number]) => {
+    const { ctrl, raw, emit } = fakeCtrl({ withView: true })
+    Object.assign(raw.model, { completedMeasurements: [] })
+    Object.assign(raw.model.scene, { crosshairPos: [0.5, 0.5, 0.5] })
+    raw._activeDragMode = DRAG_MODE.measurement
+    raw.dragEndXY = endXY
+    handleDragRelease(ctrl)
+    const completed = emit.mock.calls.filter(
+      ([t]) => t === 'measurementCompleted',
+    )
+    return { raw, completed }
+  }
+
+  test('a click without a drag records no measurement', () => {
+    const { raw, completed } = release([10, 10])
+    expect(raw.model).toHaveProperty('completedMeasurements', [])
+    expect(completed).toHaveLength(0)
+    expect(raw._activeDragMode).toBe(DRAG_MODE.none)
+  })
+
+  test('a drag records one measurement of non-zero length', () => {
+    const { completed } = release([60, 10])
+    expect(completed).toHaveLength(1)
+    const m = completed[0][1] as { distance: number }
+    expect(m.distance).toBeGreaterThan(0)
+  })
+})
+
+describe('handleDragRelease for angle', () => {
+  const setup = () => {
+    const { ctrl, raw, emit } = fakeCtrl({ withView: true })
+    Object.assign(raw.model, {
+      completedAngles: [],
+      ui: { measureLineColor: [1, 0, 0, 1], measureTextColor: [1, 0, 0, 1] },
+    })
+    Object.assign(raw.model.scene, { crosshairPos: [0.5, 0.5, 0.5] })
+    raw._activeDragMode = DRAG_MODE.angle
+    raw._angleState = 'drawing_first_line'
+    const angles = () => emit.mock.calls.filter(([t]) => t === 'angleCompleted')
+    /** Press at `from`, release at `to`, as the pointer handlers do. */
+    const gesture = (from: [number, number], to: [number, number]) => {
+      raw._activeDragMode = DRAG_MODE.angle
+      raw.dragStartXY = from
+      raw.dragEndXY = to
+      handleDragRelease(ctrl)
+    }
+    return { raw, angles, gesture }
+  }
+
+  test('a click without a drag starts no angle', () => {
+    const { raw, angles, gesture } = setup()
+    gesture([10, 10], [10, 10])
+    expect(raw._angleState).toBe('none')
+    expect(angles()).toHaveLength(0)
+  })
+
+  test('a zero-length or zero-degree second arm is ignored, then a real one places', () => {
+    const { raw, angles, gesture } = setup()
+    gesture([10, 50], [50, 50]) // first arm, vertex at (50, 50)
+    expect(raw._angleState).toBe('drawing_second_line')
+    gesture([50, 50], [50, 50]) // click on the vertex
+    gesture([20, 50], [20, 50]) // click back along the first arm: 0 degrees
+    expect(raw._angleState).toBe('drawing_second_line')
+    expect(angles()).toHaveLength(0)
+    gesture([50, 20], [50, 20]) // click straight up: 90 degrees
+    expect(raw._angleState).toBe('none')
+    expect(angles()).toHaveLength(1)
+    const a = angles()[0][1] as { angle: number }
+    expect(a.angle).toBeCloseTo(90)
+  })
+})

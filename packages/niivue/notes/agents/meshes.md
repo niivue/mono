@@ -59,7 +59,7 @@ each; per tile the CPU lists the clusters each plane crosses
 surface a plane crosses ~11% of clusters (21% at 256, 7% at 32), and the CPU
 bounds test is linear in cluster count.
 
-Data: `mesh.indices` in the model keeps file order; the CPU keeps only a
+Data: `mesh.indices` in the model keeps file order (clusters and the GPU index buffer are built from `shownIndices(mesh)`, which drops culled hidden-label triangles); the CPU keeps only a
 permutation (4 B/tri) plus bounds. Both backends upload a separate
 cluster-ordered index copy (12 B/tri) and never rewrite the mesh's own index
 buffer: translucent 3D blending depends on triangle order (an audit caught
@@ -122,7 +122,7 @@ Known follow-ups:
 shader for 2D slice tiles independently of the 3D render view. Empty string means
 "inherit `shaderType`" (slices yoked to the render shader); a non-empty name (e.g.
 `'crosscut'`) draws a different shader on slices — e.g. crosscut ribbons on slices
-while the render panel stays phong (see `examples/freesurfer.crosscut.html`). Both
+while the render panel stays phong (see `examples/freesurfer.crosscut.oblique.html`). Both
 backends pick the shader per tile via an `isSlice` flag from `tile.axCorSag`
 (true for AXIAL/CORONAL/SAGITTAL, false for the RENDER tile), in both the main and
 x-ray mesh passes. `setMesh` validates it (empty = inherit; only a non-empty value

@@ -165,8 +165,11 @@ export function useHungOverlays(
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base load and overlay UIDs
   useEffect(() => {
     if (!nv || !loadedSeries || !commandsManager) return
+    // A newer overlay set or base load supersedes this run.
+    let stale = false
     void (async () => {
       for (const ds of overlays) {
+        if (stale) return
         const i = displaySets.indexOf(ds)
         const { knee, ...style } = niivueColormap(
           nv,
@@ -199,6 +202,9 @@ export function useHungOverlays(
         if (hdr && knee !== undefined) knees.set(hdr, knee)
       }
     })()
+    return () => {
+      stale = true
+    }
   }, [nv, loadedSeries, key])
 }
 

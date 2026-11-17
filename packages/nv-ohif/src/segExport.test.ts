@@ -110,3 +110,48 @@ test('RTSS pixel-edge contours re-rasterize to the drawing (hole, lone voxel, di
   fillRuns(back, runs, 1)
   expect(back).toEqual(bitmap)
 })
+
+test('an enhanced multi-frame source exports a frame per functional group', () => {
+  const [nx, ny, nz] = [4, 3, 2]
+  const bitmap = new Uint8Array(nx * ny * nz)
+  bitmap[1 + nx * (2 + ny)] = 1 // (1,2,1): slice 1 only
+  const { lps2vox, instances } = fixture(nx, ny, nz)
+  const {
+    ImagePositionPatient: _p,
+    ImageOrientationPatient: _o,
+    PixelSpacing: _s,
+    ...inst
+  } = instances[0] as (typeof instances)[number]
+  const enhanced = {
+    ...inst,
+    NumberOfFrames: nz,
+    SharedFunctionalGroupsSequence: [
+      {
+        PlaneOrientationSequence: [
+          { ImageOrientationPatient: [1, 0, 0, 0, 1, 0] },
+        ],
+        PixelMeasuresSequence: [{ PixelSpacing: [2, 1] }],
+      },
+    ],
+    PerFrameFunctionalGroupsSequence: [0, 1].map((k) => ({
+      PlanePositionSequence: [{ ImagePositionPatient: [0, 0, 3 * k] }],
+    })),
+  }
+  const frames = frameLabels({
+    bitmap,
+    dims: [nx, ny, nz],
+    lps2vox,
+    instances: [enhanced],
+  })
+  expect(frames.map((f) => f.frame)).toEqual([1, 2])
+  const ds = buildSegDataset(frames, [seg(1)], h, () => [0, 0, 0])
+  const groups = ds?.PerFrameFunctionalGroupsSequence as {
+    DerivationImageSequence: {
+      SourceImageSequence: { ReferencedFrameNumber?: number }
+    }
+  }[]
+  const src = groups.map(
+    (g) => g.DerivationImageSequence.SourceImageSequence.ReferencedFrameNumber,
+  )
+  expect(src).toEqual([2])
+})

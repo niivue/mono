@@ -25,6 +25,8 @@ export interface DrawingSource {
 
 export interface FrameLabels {
   inst: Ds
+  /** 1-based frame of an enhanced multi-frame `inst`. */
+  frame?: number
   rows: number
   cols: number
   ipp: Vec3
@@ -43,7 +45,43 @@ const nums = (v: unknown): number[] =>
       ? v.split('\\').map(Number)
       : []
 
-/** Each classic source instance's pixels, labelled from the drawing (0 off it). */
+const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as Ds | undefined
+
+/** A source frame's geometry: a classic instance's own, or each functional-group frame's. */
+interface Plane {
+  inst: Ds
+  frame?: number
+  ipp: unknown
+  iop: unknown
+  ps: unknown
+}
+
+function planes(inst: Ds): Plane[] {
+  const perFrame = inst.PerFrameFunctionalGroupsSequence
+  if (!perFrame)
+    return [
+      {
+        inst,
+        ipp: inst.ImagePositionPatient,
+        iop: inst.ImageOrientationPatient,
+        ps: inst.PixelSpacing,
+      },
+    ]
+  const shared = first(inst.SharedFunctionalGroupsSequence)
+  const pick = (g: Ds, seq: string, key: string) =>
+    first(g[seq])?.[key] ?? first(shared?.[seq])?.[key]
+  return (Array.isArray(perFrame) ? perFrame : [perFrame]).map(
+    (g: Ds, i: number) => ({
+      inst,
+      frame: i + 1,
+      ipp: pick(g, 'PlanePositionSequence', 'ImagePositionPatient'),
+      iop: pick(g, 'PlaneOrientationSequence', 'ImageOrientationPatient'),
+      ps: pick(g, 'PixelMeasuresSequence', 'PixelSpacing'),
+    }),
+  )
+}
+
+/** Each source frame's pixels, labelled from the drawing (0 off it). */
 export function frameLabels({
   bitmap,
   dims,
@@ -53,10 +91,11 @@ export function frameLabels({
   const [nx, ny, nz] = dims
   const out: FrameLabels[] = []
   const at = (i: number) => m[i] as number
-  for (const inst of instances) {
-    const ipp = nums(inst.ImagePositionPatient)
-    const iop = nums(inst.ImageOrientationPatient)
-    const ps = nums(inst.PixelSpacing)
+  for (const plane of instances.flatMap(planes)) {
+    const { inst, frame } = plane
+    const ipp = nums(plane.ipp)
+    const iop = nums(plane.iop)
+    const ps = nums(plane.ps)
     const rows = Number(inst.Rows)
     const cols = Number(inst.Columns)
     if (ipp.length !== 3 || iop.length !== 6 || ps.length !== 2) continue
@@ -95,6 +134,7 @@ export function frameLabels({
     }
     out.push({
       inst,
+      ...(frame ? { frame } : {}),
       rows,
       cols,
       ipp: ipp as Vec3,
@@ -180,9 +220,10 @@ const code = (
   CodingSchemeDesignator,
   CodeMeaning,
 })
-const ref = (inst: Ds) => ({
+const ref = (inst: Ds, frame?: number) => ({
   ReferencedSOPClassUID: inst.SOPClassUID,
   ReferencedSOPInstanceUID: inst.SOPInstanceUID,
+  ...(frame ? { ReferencedFrameNumber: frame } : {}),
 })
 
 /** Smallest nonzero gap between the frames' positions along their normal. */
@@ -242,7 +283,7 @@ export function buildSegDataset(
         PlanePositionSequence: { ImagePositionPatient: f.ipp },
         DerivationImageSequence: {
           SourceImageSequence: {
-            ...ref(f.inst),
+            ...ref(f.inst, f.frame),
             PurposeOfReferenceCodeSequence: code(
               '121322',
               'DCM',
@@ -333,7 +374,10 @@ export function buildSegDataset(
     PerFrameFunctionalGroupsSequence: perFrame,
     ReferencedSeriesSequence: {
       SeriesInstanceUID: first.inst.SeriesInstanceUID,
-      ReferencedInstanceSequence: all.map((f) => ref(f.inst)),
+      // An enhanced source's frames share one instance: reference it once.
+      ReferencedInstanceSequence: [...new Set(all.map((f) => f.inst))].map(
+        (i) => ref(i),
+      ),
     },
     PixelData: packed.buffer,
   }
@@ -428,7 +472,7 @@ export function buildRtssDataset(
             )
         }
         contours.push({
-          ContourImageSequence: ref(f.inst),
+          ContourImageSequence: ref(f.inst, f.frame),
           ContourGeometricType: 'CLOSED_PLANAR',
           NumberOfContourPoints: data.length / 3,
           ContourData: data,
@@ -454,7 +498,7 @@ export function buildRtssDataset(
         ReferencedSOPInstanceUID: first.inst.StudyInstanceUID,
         RTReferencedSeriesSequence: {
           SeriesInstanceUID: first.inst.SeriesInstanceUID,
-          ContourImageSequence: frames.map((f) => ref(f.inst)),
+          ContourImageSequence: frames.map((f) => ref(f.inst, f.frame)),
         },
       },
     },

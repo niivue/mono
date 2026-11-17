@@ -8,16 +8,47 @@ import { getNiivueEntry } from './niivueRegistry'
 // core broadcastTo). A VOI group also carries the window, as cornerstone's
 // voi synchronizer: from a source pane to target panes, onto the volume
 // showing the same display set there (base or overlay). TMTV relies on both:
-// a PT pane windows the fusion pane's PT overlay, never its CT base.
+// a PT pane windows the fusion pane's PT overlay, never its CT base. A
+// cameraPosition group also carries 2D pan/zoom (pan2Dxyzmm, in mm), as
+// cornerstone's camera synchronizer (4D: one group per orientation).
 
 type SyncGroup =
   | { type?: string; id?: string; source?: boolean; target?: boolean }
   | string
-type Role = { voi: boolean; source: boolean; target: boolean }
+type Role = {
+  voi: boolean
+  camera: boolean
+  source: boolean
+  target: boolean
+}
 
 const members = new Map<string, { nv: NiiVue; groups: Map<string, Role> }>()
-// Set while a window is being copied: copies are not sources themselves.
+// Set while a window or camera is being copied: copies are not sources themselves.
 let copying = false
+
+// Members `kind`-linked from `viewportId` as source to target.
+function linkedTargets(viewportId: string, kind: 'voi' | 'camera') {
+  const from = members.get(viewportId)
+  if (!from) return []
+  return [...members].filter(
+    ([id, to]) =>
+      id !== viewportId &&
+      [...from.groups].some(
+        ([g, r]) => r[kind] && r.source && to.groups.get(g)?.target,
+      ),
+  )
+}
+
+function copyCamera(viewportId: string, nv: NiiVue): void {
+  if (copying) return
+  copying = true
+  try {
+    for (const [, to] of linkedTargets(viewportId, 'camera'))
+      to.nv.pan2Dxyzmm = Float32Array.from(nv.pan2Dxyzmm)
+  } finally {
+    copying = false
+  }
+}
 
 function rewire(): void {
   for (const [id, { nv, groups }] of members) {
@@ -54,18 +85,13 @@ function volumeIndex(viewportId: string, uid: string): number {
 function copyWindow(viewportId: string, detail: VolumeUpdatedDetail): void {
   const { calMin, calMax } = detail.changes
   if (copying || (calMin === undefined && calMax === undefined)) return
-  const from = members.get(viewportId)
   const uid = volumeUid(viewportId, detail.volumeIndex)
-  if (!from || !uid) return
+  if (!uid) return
   const shown = { calMin: detail.volume.calMin, calMax: detail.volume.calMax }
   copying = true
   try {
-    for (const [id, to] of members) {
-      if (id === viewportId) continue
-      const linked: boolean = [...from.groups].some(
-        ([g, r]) => r.voi && r.source && to.groups.get(g)?.target,
-      )
-      const index = linked ? volumeIndex(id, uid) : -1
+    for (const [id, to] of linkedTargets(viewportId, 'voi')) {
+      const index = volumeIndex(id, uid)
       if (index < 0) continue
       const next = windowFor(
         to.nv.volumes[index]?.hdr,
@@ -90,6 +116,7 @@ export function joinSyncGroups(
     if (typeof g !== 'object' || !g?.id) continue
     groups.set(String(g.id), {
       voi: g.type === 'voi',
+      camera: g.type === 'cameraPosition',
       source: g.source !== false,
       target: g.target !== false,
     })
@@ -98,10 +125,19 @@ export function joinSyncGroups(
   members.set(viewportId, { nv, groups })
   const onVolumeUpdated = (e: Event) =>
     copyWindow(viewportId, (e as CustomEvent<VolumeUpdatedDetail>).detail)
+  const onChange = (e: Event) => {
+    if (
+      (e as CustomEvent<{ property?: string }>).detail?.property ===
+      'pan2Dxyzmm'
+    )
+      copyCamera(viewportId, nv)
+  }
   nv.addEventListener('volumeUpdated', onVolumeUpdated)
+  nv.addEventListener('change', onChange)
   rewire()
   return () => {
     nv.removeEventListener('volumeUpdated', onVolumeUpdated)
+    nv.removeEventListener('change', onChange)
     if (members.get(viewportId)?.nv !== nv) return
     members.delete(viewportId)
     nv.broadcastTo()

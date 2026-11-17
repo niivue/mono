@@ -1,8 +1,9 @@
 // PET body-weight SUV, as OHIF's default extension scales PT for cornerstone
 // (@cornerstonejs/calculate-suv); nv-ohif takes no OHIF dependency, so the
 // standard case is computed here from the instance's naturalized tags.
-// ponytail: no vendor quirks (Philips CNTS private factor, GE post-injection
-// series time); those series stay in Bq/ml. Port calculate-suv's if they matter.
+// ponytail: no vendor quirks (Philips CNTS private factor stays in counts; a
+// GE series re-stamped after acquisition decays to the earliest acquisition,
+// not GE's private post-injection time). Port calculate-suv's if they matter.
 
 type Tags = Record<string, unknown>
 
@@ -24,16 +25,33 @@ function seconds(dt: string): number {
   return Date.UTC(y, mo - 1, d, h, mi) / 1000 + s
 }
 
-/** SUVbw per Bq/ml for a decay-corrected BQML PET instance, else undefined. */
-export function suvBwFactor(inst: Tags | undefined): number | undefined {
+/**
+ * SUVbw per Bq/ml for an attenuation- and decay-corrected BQML PET series
+ * (`inst` is its first instance), else undefined.
+ */
+export function suvBwFactor(
+  inst: Tags | undefined,
+  instances: ReadonlyArray<Tags> = inst ? [inst] : [],
+): number | undefined {
   const rp = first(inst?.RadiopharmaceuticalInformationSequence)
   if (!inst || !rp || inst.Units !== 'BQML') return undefined
+  const corrected = [inst.CorrectedImage].flat()
+  if (!corrected.includes('ATTN') || !corrected.includes('DECY'))
+    return undefined
   const weightG = Number(inst.PatientWeight) * 1000
   const dose = Number(rp.RadionuclideTotalDose)
   const halfLife = Number(rp.RadionuclideHalfLife)
   let decay = 1
   if (inst.DecayCorrection === 'START') {
-    const scan = seconds(`${inst.SeriesDate}${inst.SeriesTime}`)
+    // As calculate-suv: the series time, unless a reconstruction stamped it
+    // after the earliest acquisition.
+    let scan = seconds(`${inst.SeriesDate}${inst.SeriesTime}`)
+    for (const i of instances) {
+      const t = seconds(
+        `${i.AcquisitionDate ?? inst.SeriesDate}${i.AcquisitionTime}`,
+      )
+      if (t < scan) scan = t
+    }
     const injected = seconds(
       String(
         rp.RadiopharmaceuticalStartDateTime ??
@@ -54,7 +72,9 @@ export const petSuvFactor = (ds?: {
   Modality?: unknown
   instances?: ReadonlyArray<Tags>
 }): number | undefined =>
-  ds?.Modality === 'PT' ? suvBwFactor(ds.instances?.[0]) : undefined
+  ds?.Modality === 'PT'
+    ? suvBwFactor(ds.instances?.[0], ds.instances)
+    : undefined
 
 /** `nii` with its scl_slope/scl_inter multiplied by `f` (header only). */
 export async function scaleNifti(nii: File, f: number): Promise<File> {

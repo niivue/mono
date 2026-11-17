@@ -4,7 +4,7 @@ import { windowFor } from './hangingOptions'
 import { getNiivueEntry } from './niivueRegistry'
 
 // OHIF hanging protocols link viewports through sync groups. NiiVue panes
-// sharing any group (camera, VOI, segmentation) share the crosshair (in mm,
+// sharing a camera or VOI group share the crosshair (in mm,
 // core broadcastTo). A VOI group also carries the window, as cornerstone's
 // voi synchronizer: from a source pane to target panes, onto the volume
 // showing the same display set there (base or overlay). TMTV relies on both:
@@ -13,7 +13,14 @@ import { getNiivueEntry } from './niivueRegistry'
 type SyncGroup =
   | { type?: string; id?: string; source?: boolean; target?: boolean }
   | string
-type Role = { voi: boolean; source: boolean; target: boolean }
+// hydrateseg only links segmentations: OHIF puts it on every pane of a layout,
+// across frames of reference, so it carries no crosshair.
+type Role = {
+  voi: boolean
+  crosshair: boolean
+  source: boolean
+  target: boolean
+}
 
 const members = new Map<string, { nv: NiiVue; groups: Map<string, Role> }>()
 // Set while a window is being copied: copies are not sources themselves.
@@ -24,7 +31,10 @@ function rewire(): void {
     const peers = [...members]
       .filter(
         ([other, m]) =>
-          other !== id && [...m.groups.keys()].some((g) => groups.has(g)),
+          other !== id &&
+          [...m.groups].some(
+            ([g, r]) => r.crosshair && groups.get(g)?.crosshair,
+          ),
       )
       .map(([, m]) => m.nv)
     if (peers.length) nv.broadcastTo(peers, { crosshair: true })
@@ -90,6 +100,7 @@ export function joinSyncGroups(
     if (typeof g !== 'object' || !g?.id) continue
     groups.set(String(g.id), {
       voi: g.type === 'voi',
+      crosshair: g.type !== 'hydrateseg',
       source: g.source !== false,
       target: g.target !== false,
     })

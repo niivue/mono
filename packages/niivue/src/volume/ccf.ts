@@ -44,7 +44,7 @@ export function allenStructures(graph: {
  * Compact indices for sparse label IDs. `ids` is sorted and starts with 0
  * (background), so compact 0 stays background.
  */
-export function compactLabels(raw: Uint32Array): {
+function compactLabels(raw: Uint32Array): {
   compact: Uint16Array
   ids: Uint32Array
 } {

@@ -79,7 +79,7 @@ import {
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
-import { sceneUnit } from '@/volume/utils'
+import { residentPickSampler, sceneUnit } from '@/volume/utils'
 import { GLBench } from './bench'
 import { BoxLineRenderer } from './boxLine'
 import { CinematicRenderer } from './cinematic'
@@ -2126,7 +2126,9 @@ export default class NVGlview {
       const stack = this._isChannelStack(md.volumes)
       const pickSampler = stack
         ? stackPickSampler(md.volumes)
-        : vol?.pickSampler
+        : // A resident chunked volume has no streamed sampler, but its
+          // voxels are on the CPU: without one the pick stops at its box.
+          (vol?.pickSampler ?? (vol && residentPickSampler(vol)) ?? undefined)
       if (
         vol?.extentsMin &&
         vol?.extentsMax &&

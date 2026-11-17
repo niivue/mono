@@ -49,7 +49,7 @@
 
     <script type="module">
       import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '@niivue/niivue'
-      import { UIKitSubvolumeSelector } from './src/index.ts'
+      import { loadDefaultFont, UIKitButtonOverlay, UIKitSubvolumeSelector } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -105,10 +105,26 @@
           const { nifti, calMin, calMax } = sel.subVolume
           await copy.loadVolumes([{ url: new File([nifti], 'subvolume.nii'), colormap: 'gray', calMin, calMax }])
           if (at !== seq) return
+          buttons.updateButton('clear', { enabled: true })
           setStatus(`${x}x${y}x${z} voxels from [${sel.voxelOrigin.join(', ')}]`, 'ok')
         },
       })
       selector.attach(nv)
+
+      // A Clear button on the copy: forget the box and empty the pane.
+      const buttons = new UIKitButtonOverlay(await loadDefaultFont(), { cssUnits: true })
+      copy.registerOverlayRenderer(buttons)
+      buttons.attach(copy)
+      buttons.addButton({
+        id: 'clear', label: 'Clear', x: 12, y: 12, enabled: false,
+        onClick: async () => {
+          seq++ // drop a copy still loading
+          selector.reset()
+          buttons.updateButton('clear', { enabled: false })
+          await copy.removeAllVolumes()
+          setStatus('Right-click the first corner', 'wait')
+        },
+      })
       nv.registerOverlayRenderer(selector)
     </script>
   </body>

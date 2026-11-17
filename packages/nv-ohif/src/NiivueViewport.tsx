@@ -197,6 +197,15 @@ export function hangingDisplay(
 }
 
 /** What the load effect keys on: it changes whenever a new base starts loading. */
+/**
+ * Whether the display set hung under `key` is on screen. Keyed, so a new hang
+ * reads as not loaded on its first render, before its load effect resets it.
+ */
+export function useLoadedFor(key: string): [boolean, (on: boolean) => void] {
+  const [loadedKey, setLoadedKey] = useState<string>()
+  return [loadedKey === key, (on) => setLoadedKey(on ? key : undefined)]
+}
+
 export function baseKey(
   displaySetsKey: string,
   ready: boolean,
@@ -283,18 +292,10 @@ export function NiivueViewport(props: OhifViewportProps) {
   const activeOhifToolRef = useRef<string | undefined>(undefined)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
-  // The hung display set is on screen: `data-loaded`, a positive signal for tests.
-  const [isLoaded, setIsLoaded] = useState(false)
   // The series whose volume is shown: imports must not target an outgoing one.
   const [loadedSeries, setLoadedSeries] = useState<string>()
   // The shown conversion, for stepping through a series' other outputs.
   const [conversion, setConversion] = useState<DicomConversion | null>(null)
-  useHydratePrompt(seg, isSegPreview, isLoaded, {
-    viewportId,
-    servicesManager,
-    commandsManager: props.commandsManager,
-    extensionManager: props.extensionManager,
-  })
   // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
   useArrowText(ready ? nvRef.current : null, viewportId, props.commandsManager)
   // Orthogonal localizers: the wheel steps through the series' outputs (outputStack.ts).
@@ -371,6 +372,14 @@ export function NiivueViewport(props: OhifViewportProps) {
   const keys = hangingKeys(props.viewportOptions, props.displaySetOptions)
   // A petSUV edit (metadataRevision) is a new base: the SEG reloads on it too.
   const base = `${baseKey(displaySetsKey, ready, keys)}#${metadataRevision}`
+  // The hung display set is on screen: `data-loaded`, a positive signal for tests.
+  const [isLoaded, setIsLoaded] = useLoadedFor(base)
+  useHydratePrompt(seg, isSegPreview, isLoaded, {
+    viewportId,
+    servicesManager,
+    commandsManager: props.commandsManager,
+    extensionManager: props.extensionManager,
+  })
   // The hanging protocol's view and sync groups, on attach and whenever a new
   // protocol changes them for the same viewport and series. Declared before the
   // create effect so unmount leaves the sync groups before nv.destroy().

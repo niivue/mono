@@ -194,6 +194,18 @@ export function computeAnnotationStats(
     }
   }
 
+  if (shape.type === 'measureAngle' || shape.type === 'measureCobbAngle')
+    // Drawing records the angle on its (maybe oblique) plane, which this
+    // signature cannot see; recompute only as a slice-2D fallback.
+    return {
+      area: 0,
+      min: 0,
+      mean: 0,
+      max: 0,
+      stdDev: 0,
+      angle: annotation.stats?.angle ?? shapeAngle(shape),
+    }
+
   const firstPt = annotation.polygons[0]?.outer[0]
   if (!firstPt) return null
 

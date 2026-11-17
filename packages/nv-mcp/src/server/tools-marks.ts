@@ -107,7 +107,7 @@ export const MARK_SCHEMAS = {
         'set_style',
       ])
       .describe(
-        'add one, remove one by id, clear all, select one by id (none without an id), set the ' +
+        'add one, remove one by id (or several by ids), clear all, select one by id (none without an id), set the ' +
           'text of one, undo, redo, load a set from json, or set the style annotations drawn ' +
           'by hand take.',
       ),
@@ -116,6 +116,15 @@ export const MARK_SCHEMAS = {
       .min(1)
       .optional()
       .describe('The annotation, as list_annotations gives ids.'),
+    ids: z
+      .array(z.string().min(1))
+      .min(1)
+      .optional()
+      .describe('For remove: several annotations at once, in place of id.'),
+    is_undoable: z
+      .boolean()
+      .optional()
+      .describe('For remove: record a step undo can restore.'),
     text: z.string().optional().describe('For set_text: the text.'),
     annotation: z
       .record(z.string(), z.unknown())

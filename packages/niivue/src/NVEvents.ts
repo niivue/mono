@@ -105,7 +105,15 @@ export type CanvasResizeDetail = { width: number; height: number }
 export type AnnotationAddedDetail = { annotation: VectorAnnotation }
 export type AnnotationRemovedDetail = { id: string }
 export type AnnotationChangedDetail = {
-  action: 'draw' | 'erase' | 'move' | 'resize' | 'undo' | 'redo' | 'clear'
+  action:
+    | 'draw'
+    | 'erase'
+    | 'move'
+    | 'resize'
+    | 'undo'
+    | 'redo'
+    | 'clear'
+    | 'delete'
   /** Ids of annotations this change added, so a listener need not diff. */
   added: string[]
   /** Ids of annotations whose geometry, stats or text changed. */
@@ -222,6 +230,8 @@ export interface NVEventMap {
   annotationAdded: AnnotationAddedDetail
   annotationRemoved: AnnotationRemovedDetail
   annotationChanged: AnnotationChangedDetail
+  /** An annotation undo step was recorded; `seq` names it (annotationUndoTop). */
+  annotationHistoryPush: { seq: number }
 
   // Volume ordering
   volumeOrderChanged: VolumeOrderChangedDetail

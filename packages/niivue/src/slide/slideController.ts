@@ -1,6 +1,10 @@
 import { crosshairPanThresholdCssPx } from '@/control/dragModes'
 import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideScreen, NVSlideWindow } from './NVSlide'
+import {
+  NVSlideAnnotations,
+  type SlideAnnotationTool,
+} from './slideAnnotations'
 import { isRgbSlide } from './slideChannels'
 
 /** A point in slide base-level pixels. */
@@ -88,6 +92,17 @@ const CONTRAST_GRID = 32
 const isBoxMode = (mode: DRAG_MODE): boolean =>
   mode === DRAG_MODE.contrast || mode === DRAG_MODE.roiSelection
 
+// A polygon closes on a press this near its first vertex.
+const CLOSE_POLYGON_CSS_PX = 8
+// Freehand samples no closer than this: denser only adds overlay lines.
+const FREEHAND_STEP_CSS_PX = 3
+
+/** An annotation being drawn; a polygon's last point follows the pointer. */
+export interface NVSlideAnnotationDraft {
+  tool: SlideAnnotationTool
+  points: NVSlidePoint[]
+}
+
 type Gesture = {
   pointerId: number
   mode: DRAG_MODE
@@ -96,6 +111,7 @@ type Gesture = {
   lastX: number
   lastY: number
   isDrag: boolean
+  isAnnotation: boolean
 }
 
 /**
@@ -114,6 +130,10 @@ export class NVSlideController {
   activeMeasurement: NVSlideMeasurement | null = null
   /** The box a contrast or zoom (`roiSelection`) drag is selecting, or null. */
   selection: NVSlideMeasurement | null = null
+  /** Annotations drawn with {@link annotationTool}, in slide base pixels. */
+  readonly annotations: NVSlideAnnotations
+  /** The annotation being drawn, or null. */
+  draft: NVSlideAnnotationDraft | null = null
   /** The channel the default windowing and contrast handlers set. */
   windowChannel = 0
   /** Double-click zooms in 2x about the pointer (shift: out) while the primary mode is `pan`. */
@@ -132,6 +152,7 @@ export class NVSlideController {
   isWheelDeltaModeScaled = true
 
   private readonly _canvas: HTMLCanvasElement
+  private _annotationTool: SlideAnnotationTool | null = null
   private readonly _options: NVSlideControllerOptions
   private _gesture: Gesture | null = null
   // Touch points down on the canvas, for pinch.
@@ -151,6 +172,11 @@ export class NVSlideController {
     this._options = options
     this.primaryDragMode = options.primaryDragMode ?? DRAG_MODE.crosshairPan
     this.secondaryDragMode = options.secondaryDragMode ?? DRAG_MODE.pan
+    this.annotations = new NVSlideAnnotations(
+      () => options.slide()?.manifest.pixelSpacingMM,
+    )
+    for (const type of ['added', 'changed', 'removed'])
+      this.annotations.addEventListener(type, () => options.onChange?.())
     canvas.addEventListener('pointerdown', this._onDown)
     canvas.addEventListener('pointermove', this._onMove)
     canvas.addEventListener('pointerup', this._onEnd)
@@ -171,6 +197,54 @@ export class NVSlideController {
    */
   cancelGesture(): void {
     if (this._gesture) this._end(this._gesture, false, true)
+    this._dropDraft()
+  }
+
+  /**
+   * The left button's annotation tool, over `primaryDragMode`; null: none.
+   * Point: click. Line, rectangle, ellipse (corner to corner), circle (centre
+   * out): drag. Polygon: click vertices, close near the first or double-click.
+   * Freehand (closed), freehandLine (open): drag. Changing it drops a draft;
+   * setting the current tool again keeps it.
+   * ponytail: no selection or edit handles, and no click-move-click for
+   * two-point tools; add when a host needs them.
+   */
+  get annotationTool(): SlideAnnotationTool | null {
+    return this._annotationTool
+  }
+
+  set annotationTool(tool: SlideAnnotationTool | null) {
+    // Hosts re-apply the active tool on unrelated state changes.
+    if (tool === this._annotationTool) return
+    if (this._gesture?.isAnnotation) this._end(this._gesture, false, true)
+    this._dropDraft()
+    this._annotationTool = tool
+  }
+
+  /** Centre on an annotation and fit it (no finer than native resolution). */
+  focusAnnotation(id: string): boolean {
+    const annotation = this.annotations.get(id)
+    if (!annotation) return false
+    let points = annotation.points
+    // A circle's points are its centre and a rim point: box the whole disc.
+    if (annotation.tool === 'circle') {
+      const [c, rim] = points as [NVSlidePoint, NVSlidePoint]
+      const r = Math.hypot(rim.x - c.x, rim.y - c.y)
+      points = [
+        { x: c.x - r, y: c.y - r },
+        { x: c.x + r, y: c.y + r },
+      ]
+    }
+    const xs = points.map((p) => p.x)
+    const ys = points.map((p) => p.y)
+    this._zoomTo(
+      {
+        start: { x: Math.min(...xs), y: Math.min(...ys) },
+        end: { x: Math.max(...xs), y: Math.max(...ys) },
+      },
+      true,
+    )
+    return true
   }
 
   /** Drop every ruler. */
@@ -249,9 +323,10 @@ export class NVSlideController {
       this._end(live, false)
     // One gesture at a time: a second finger or pen is ignored.
     if (this._gesture) return
-    const mode = this._modeFor(event.button)
+    const isAnnotation = event.button === 0 && this._annotationTool !== null
+    const mode = isAnnotation ? DRAG_MODE.none : this._modeFor(event.button)
     const slide = this._options.slide()
-    if (mode === DRAG_MODE.none || !slide) return
+    if ((mode === DRAG_MODE.none && !isAnnotation) || !slide) return
     const [x, y] = this._local(event)
     this._pressedAt = event.button === 0 ? [x, y] : null
     this._gesture = {
@@ -262,6 +337,11 @@ export class NVSlideController {
       lastX: x,
       lastY: y,
       isDrag: false,
+      isAnnotation,
+    }
+    if (isAnnotation) {
+      this._annotateDown(slide.screenToSlide(x, y, this._options.screen()))
+      return
     }
     if (mode === DRAG_MODE.crosshair) this._crosshairAt(x, y)
     const start = slide.screenToSlide(x, y, this._options.screen())
@@ -281,6 +361,10 @@ export class NVSlideController {
       this._touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
     const g = this._gesture
     if (!g) {
+      if (this.draft?.tool === 'polygon') {
+        const [x, y] = this._local(event)
+        this._annotateMove(x, y)
+      }
       if (this._options.onHover) {
         const [x, y] = this._local(event)
         // One report per frame: a high-rate mouse can fire several moves each.
@@ -312,6 +396,10 @@ export class NVSlideController {
     const dy = y - g.lastY
     g.lastX = x
     g.lastY = y
+    if (g.isAnnotation) {
+      this._annotateMove(x, y)
+      return
+    }
     const slide = this._options.slide()
     switch (g.mode) {
       case DRAG_MODE.pan:
@@ -354,6 +442,9 @@ export class NVSlideController {
     }
     const g = this._gesture
     if (!g || g.pointerId !== event.pointerId) return
+    // The release can land past the last pointermove: end the shape there.
+    if (event.type === 'pointerup' && g.isAnnotation && g.isDrag)
+      this._annotateMove(...this._local(event))
     this._end(g, event.type === 'pointerup')
   }
 
@@ -391,6 +482,10 @@ export class NVSlideController {
     }
     if (!cancelled && g.mode === DRAG_MODE.callbackOnly && g.isDrag)
       this._options.onDrag?.(0, 0, g.lastX, g.lastY, true)
+    if (g.isAnnotation) {
+      this._annotateEnd(g, committed, cancelled)
+      return
+    }
     const box = this._boxFor(g.mode)
     if (!box) return
     this.selection = null
@@ -416,7 +511,10 @@ export class NVSlideController {
    * pixel per device pixel (OHIF's zoom box). It never zooms out; the wheel can
    * zoom past native resolution.
    */
-  private _zoomTo({ start, end }: NVSlideMeasurement): void {
+  private _zoomTo(
+    { start, end }: NVSlideMeasurement,
+    canZoomOut = false,
+  ): void {
     const slide = this._options.slide()
     if (!slide) return
     const screen = this._options.screen()
@@ -426,7 +524,7 @@ export class NVSlideController {
       centerX: (start.x + end.x) / 2,
       centerY: (start.y + end.y) / 2,
       scale: Math.max(
-        slide.viewport.scale,
+        canZoomOut ? 0 : slide.viewport.scale,
         Math.min(
           screen.widthCss / w,
           screen.heightCss / h,
@@ -435,6 +533,85 @@ export class NVSlideController {
       ),
     })
     slide.clampViewport(screen)
+  }
+
+  private _dropDraft(): void {
+    if (!this.draft) return
+    this.draft = null
+    this._options.onChange?.()
+  }
+
+  // Distance in CSS px between slide points: tolerances are on screen.
+  private _cssDistance(a: NVSlidePoint, b: NVSlidePoint): number {
+    const scale = this._options.slide()?.viewport.scale ?? 1
+    return Math.hypot(a.x - b.x, a.y - b.y) * scale
+  }
+
+  private _commitDraft(points: NVSlidePoint[]): void {
+    const tool = this.draft?.tool
+    this.draft = null
+    if (tool && !this.annotations.add(tool, points)) this._options.onChange?.()
+  }
+
+  private _annotateDown(p: NVSlidePoint): void {
+    const tool = this._annotationTool as SlideAnnotationTool
+    const draft = this.draft
+    if (tool === 'polygon' && draft) {
+      const placed = draft.points.slice(0, -1)
+      const first = placed[0] as NVSlidePoint
+      if (
+        placed.length >= 3 &&
+        this._cssDistance(p, first) <= CLOSE_POLYGON_CSS_PX
+      )
+        this._commitDraft(placed)
+      else if (
+        this._cssDistance(p, placed.at(-1) as NVSlidePoint) >
+        crosshairPanThresholdCssPx
+      )
+        draft.points.splice(-1, 1, p, { ...p })
+      this._options.onChange?.()
+      return
+    }
+    if (tool === 'point') return
+    const fresh = tool.startsWith('freehand') ? [p] : [p, { ...p }]
+    this.draft = { tool, points: fresh }
+    this._options.onChange?.()
+  }
+
+  private _annotateMove(x: number, y: number): void {
+    const draft = this.draft
+    const p = this._slidePoint(x, y)
+    if (!draft || !p) return
+    const pts = draft.points
+    if (!draft.tool.startsWith('freehand')) pts[pts.length - 1] = p
+    else if (
+      this._cssDistance(p, pts.at(-1) as NVSlidePoint) >= FREEHAND_STEP_CSS_PX
+    )
+      pts.push(p)
+    else return
+    this._options.onChange?.()
+  }
+
+  private _annotateEnd(
+    g: Gesture,
+    committed: boolean,
+    cancelled: boolean,
+  ): void {
+    const tool = this._annotationTool
+    // A polygon outlives its clicks: only a cancel drops it.
+    if (tool === 'polygon' && !cancelled) return
+    if (!committed || cancelled || !tool) {
+      this._dropDraft()
+      return
+    }
+    if (tool === 'point') {
+      const p = this._slidePoint(g.startX, g.startY)
+      if (p) this.annotations.add('point', [p])
+      return
+    }
+    // A two-point shape needs a drag; a click leaves nothing.
+    if (g.isDrag) this._commitDraft(this.draft?.points ?? [])
+    else this._dropDraft()
   }
 
   private _onWheel = (event: WheelEvent): void => {
@@ -534,9 +711,19 @@ export class NVSlideController {
     const at = this._pressedAt
     if (
       !slide ||
-      !this.isDoubleClickZoom ||
       !at ||
-      Math.hypot(x - at[0], y - at[1]) > crosshairPanThresholdCssPx ||
+      Math.hypot(x - at[0], y - at[1]) > crosshairPanThresholdCssPx
+    )
+      return
+    // Closes a polygon: its first click placed the last vertex, the second
+    // fell on it and added none.
+    if (this.draft?.tool === 'polygon') {
+      this._commitDraft(this.draft.points.slice(0, -1))
+      return
+    }
+    if (
+      !this.isDoubleClickZoom ||
+      this._annotationTool ||
       this.primaryDragMode !== DRAG_MODE.pan
     )
       return

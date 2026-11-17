@@ -62,7 +62,10 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
     else if (e.type === 'pointerup' || e.type === 'pointercancel')
       down.delete(id)
     e.stopImmediatePropagation()
-    if (e.type === 'click') end()
+    if (e.type === 'click') {
+      end()
+      swallowDoubleClick(canvas)
+    }
   }
   // A mouse can release off the canvas: the document still sees it.
   const doc = canvas.ownerDocument as Document | undefined
@@ -81,6 +84,22 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
     canvas.addEventListener(type, stop, { capture: true })
   doc?.addEventListener('pointerup', release, { capture: true })
   doc?.addEventListener('pointercancel', release, { capture: true })
+}
+
+/**
+ * The exiting click can be the first of a double click: its dblclick (after
+ * the next click, which is the scene's) would depth-pick in the scene.
+ */
+function swallowDoubleClick(canvas: HTMLCanvasElement): void {
+  const onClick = (e: Event): void => {
+    canvas.removeEventListener('click', onClick, { capture: true })
+    if ((e as MouseEvent).detail < 2) return
+    canvas.addEventListener('dblclick', (d) => d.stopImmediatePropagation(), {
+      capture: true,
+      once: true,
+    })
+  }
+  canvas.addEventListener('click', onClick, { capture: true })
 }
 
 export class UIKitMagnifierOverlay {

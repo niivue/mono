@@ -215,4 +215,40 @@ describe('UIKitMagnifierOverlay.attach', () => {
     canvas.dispatchEvent(pointer('pointerdown', 40, 50, 3))
     expect(scene).toEqual(['pointerdown:3'])
   })
+
+  it('a double click starting with the exiting press never sends its dblclick', () => {
+    const canvas = Object.assign(new EventTarget(), { style: { cursor: '' } })
+    const host = {
+      canvas: canvas as unknown as HTMLCanvasElement,
+      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
+      drawScene: () => {},
+    }
+    const scene: string[] = []
+    for (const type of ['pointerdown', 'click', 'dblclick'])
+      canvas.addEventListener(type, () => scene.push(type))
+    const lens = new UIKitMagnifierOverlay()
+    lens.attach(host)
+    canvas.dispatchEvent(pointer('pointermove', 40, 50))
+    const click = (detail: number) =>
+      Object.assign(pointer('click', 40, 50), { detail })
+    for (const type of ['pointerdown', 'pointerup'])
+      canvas.dispatchEvent(pointer(type, 40, 50))
+    canvas.dispatchEvent(click(1))
+    for (const type of ['pointerdown', 'pointerup'])
+      canvas.dispatchEvent(pointer(type, 40, 50))
+    canvas.dispatchEvent(click(2))
+    canvas.dispatchEvent(pointer('dblclick', 40, 50))
+    expect(scene).toEqual(['pointerdown', 'click'])
+    // A later, separate double click is the scene's.
+    canvas.dispatchEvent(click(1))
+    canvas.dispatchEvent(click(2))
+    canvas.dispatchEvent(pointer('dblclick', 40, 50))
+    expect(scene).toEqual([
+      'pointerdown',
+      'click',
+      'click',
+      'click',
+      'dblclick',
+    ])
+  })
 })

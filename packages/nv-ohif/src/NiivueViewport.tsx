@@ -291,6 +291,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [isLoaded, setIsLoaded] = useState(false)
   // The series whose volume is shown: imports must not target an outgoing one.
   const [loadedSeries, setLoadedSeries] = useState<string>()
+  // The base display set shown: a NIfTI set may carry no series UID.
+  const [loadedBase, setLoadedBase] = useState<string>()
   // The shown conversion, for stepping through a series' other outputs.
   const [conversion, setConversion] = useState<DicomConversion | null>(null)
   // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
@@ -322,7 +324,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     viewportId,
     displaySets,
     props.displaySetOptions,
-    loadedSeries,
+    loadedBase,
     props.commandsManager,
   )
   // Resolves once the current load installs its base volume (the SEG's background).
@@ -670,6 +672,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     setIsLoaded(false)
     setLoadedSeries(undefined)
+    setLoadedBase(undefined)
     setConversion(null)
     // If OHIF hung nothing, stay idle.
     const ds: OhifDisplaySet | undefined = displaySets[0]
@@ -707,6 +710,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (cancelled) return
       baseInstalled(true)
       setLoadedSeries(ds.SeriesInstanceUID as string | undefined)
+      setLoadedBase(ds.displaySetInstanceUID)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step

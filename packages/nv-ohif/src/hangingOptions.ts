@@ -136,7 +136,7 @@ export function useHungOverlays(
   viewportId: string,
   displaySets: ReadonlyArray<OhifDisplaySet>,
   dso: DisplaySetOptions,
-  loadedSeries: string | undefined,
+  loadedBase: string | undefined,
   commandsManager: OhifCommandsManager | undefined,
 ): void {
   const overlays = overlayDisplaySets(displaySets)
@@ -146,7 +146,7 @@ export function useHungOverlays(
   )
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the base load and the overlays' UIDs and options
   useEffect(() => {
-    if (!nv || !loadedSeries || !commandsManager) return
+    if (!nv || !loadedBase || !commandsManager) return
     // A newer overlay set or base load supersedes this run.
     let stale = false
     // The load this run started, aborted by the cleanup.
@@ -223,7 +223,7 @@ export function useHungOverlays(
       // An overlay dropped (or restyled) mid-load must not install.
       pending?.abort()
     }
-  }, [nv, loadedSeries, key, styleKey])
+  }, [nv, loadedBase, key, styleKey])
 }
 
 /** Display sets after the base that NiiVue layers as overlays. */

@@ -3,7 +3,8 @@ import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
 
 // Per-label visibility in the legend: a colour-box click toggles a label when
-// isLegendToggleEnabled is on (a name click still moves the crosshair),
+// isLegendToggleEnabled is on (a name click still moves the crosshair, a box
+// double-click solos it),
 // documents keep the hidden set, and a hidden label's outline has no seams.
 // That hidden labels stop rendering is the `hidden-labels` scene of
 // render-volume.spec.ts.
@@ -116,6 +117,13 @@ test('legend box click toggles a label, name click moves the crosshair, document
   expect(reloaded).toEqual([at.value])
 
   await page.mouse.click(at.box[0], at.box[1])
+  expect(await hidden()).toEqual([])
+
+  // A box double-click solos the label; again shows every label.
+  const others = [1, 2, 3, 4, 5, 6, 7, 8].filter((v) => v !== at.value)
+  await page.mouse.dblclick(at.box[0], at.box[1])
+  expect(await hidden()).toEqual(others)
+  await page.mouse.dblclick(at.box[0], at.box[1])
   expect(await hidden()).toEqual([])
 
   // Off (the default): a box click navigates instead.

@@ -23,6 +23,7 @@ mock.module('@niivue/dcm2niix', () => ({
 const { convertDisplaySetToNifti, loadConversion } = await import(
   './dicomToNiivue'
 )
+const { clearSharedTasks } = await import('./sharedTask')
 
 // Header-only NIfTI-1 output; the voxel count breaks ties in the policy.
 function output(stem: string, voxels: number): Series {
@@ -51,6 +52,8 @@ function stubFetch(sop = '3') {
 }
 
 beforeEach(() => {
+  // Every test converts the same display set; start each with a cold cache.
+  clearSharedTasks()
   calls = []
   result = Promise.resolve({})
   stubFetch()
@@ -69,7 +72,8 @@ describe('convertDisplaySetToNifti', () => {
     expect(out?.image.name).toBe('s.nii') // no sidecars: echo 1 by stem wins
     expect(out?.note).toBe('Showing s; also converted: s_e2, s_ph.')
     expect(calls[0]?.args).toEqual(['-z', 'n'])
-    expect(calls[0]?.signal).toBe(signal)
+    // The shared conversion owns its signal; the caller's releases its hold.
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('loads the outputs of a nonzero exit with a note', async () => {
@@ -152,6 +156,47 @@ describe('convertDisplaySetToNifti', () => {
       [1, 2, 3].map((n) => frames.replace(/1$/, String(n))),
     )
     expect(inputs.map((f) => f.name)).toEqual(['3.dcm'])
+  })
+
+  it('shares a conversion only between identical inputs', async () => {
+    let finish = () => {}
+    result = new Promise((resolve) => {
+      finish = () => resolve({ series: [output('v', 3)] })
+    })
+    const uid = { displaySetInstanceUID: 'ds1' }
+    const one = { ...uid, instances: [{ imageId: `wadors:${frames}` }] }
+    const three = {
+      ...uid,
+      instances: [{ imageId: `wadors:${frames}`, NumberOfFrames: 3 }],
+    }
+    const pending = [one, three, one].map((d) =>
+      convertDisplaySetToNifti(d as OhifDisplaySet),
+    )
+    await Bun.sleep(0)
+    finish()
+    await Promise.all(pending)
+    expect(calls).toHaveLength(2)
+  })
+
+  it('does not share a fetch across request headers', async () => {
+    const auths: (string | null)[] = []
+    const stub = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      auths.push(new Headers(init?.headers).get('Authorization'))
+      return stub(url, init)
+    }) as unknown as typeof fetch
+    let finish = () => {}
+    result = new Promise((resolve) => {
+      finish = () => resolve({ series: [output('h', 3)] })
+    })
+    const pending = ['Bearer old', 'Bearer new'].map((auth) =>
+      convertDisplaySetToNifti(ds, { headers: { Authorization: auth } }),
+    )
+    await Bun.sleep(0)
+    finish()
+    await Promise.all(pending)
+    expect(auths).toContain('Bearer new')
+    expect(calls).toHaveLength(2)
   })
 
   it('is null without instances or reconstructed files', async () => {

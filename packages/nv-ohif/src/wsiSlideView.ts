@@ -1,5 +1,6 @@
 import type { NVSlide } from '@niivue/niivue'
 import { createSlideView, DRAG_MODE } from '@niivue/niivue'
+import { attachSlideMinimap } from '@niivue/uikit'
 
 export interface WsiSlideViewOptions {
   /**
@@ -60,6 +61,8 @@ export function keepOneRuler(ctl: {
  * included; its `canvas` is the one drawn on. Rejects, leaving the slide with
  * the caller, when neither WebGL2 nor the WebGPU fallback starts.
  */
+const MINIMAP_CORNER = 'bottom-right'
+
 export async function mountWsiSlideView(
   canvas: HTMLCanvasElement,
   slide: NVSlide,
@@ -77,6 +80,8 @@ export async function mountWsiSlideView(
     overlayStyle: {
       measureLineColor: RULER_COLOR,
       measureTextColor: RULER_COLOR,
+      // Scale bar, as OHIF's slide viewer shows one.
+      isRulerVisible: true,
     },
     controller: {
       primaryDragMode: DRAG_MODE.pan,
@@ -99,6 +104,8 @@ export async function mountWsiSlideView(
       options.onLevelLimit?.(limit)
     },
   })
+  // Whole-slide overview with the visible region boxed, as OHIF's slide viewer shows.
+  const detachMinimap = attachSlideMinimap(view, { corner: MINIMAP_CORNER })
   const ctl = view.controller
   const setTool = (next: string | undefined): void => {
     // Switching away from Length mid-drag abandons that ruler, as before.
@@ -175,6 +182,7 @@ export async function mountWsiSlideView(
       view.canvas.removeEventListener('pointerdown', onDown)
       view.canvas.removeEventListener('pointermove', onMove)
       view.canvas.removeEventListener('pointerup', onUp)
+      detachMinimap()
       view.destroy()
     },
   }

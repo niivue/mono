@@ -3629,3 +3629,29 @@ describe('NVSlide request ownership', () => {
     expect([slide.stats.completed, slide.cacheBytes]).toEqual([0, 0])
   })
 })
+
+describe('NVSlide.rgbWindow', () => {
+  it('maps RGB channel windows to a shader scale and offset, null by default', () => {
+    const slide = new NVSlide(makeManifest(1))
+    expect(slide.rgbWindow).toBeNull()
+    slide.setChannel(0, { calMin: 51, calMax: 102 })
+    slide.setChannel(2, { calMax: 127.5 })
+    const w = slide.rgbWindow
+    // Memoised until the channels change.
+    expect(slide.rgbWindow).toBe(w as Float32Array)
+    // c * scale + offset: red maps 51..102 to 0..1, green keeps 0..255, blue 0..127.5.
+    // + 0: a default lower bound gives -0.
+    expect(Array.from(w as Float32Array, (v) => v + 0)).toEqual([
+      5, 1, 2, 0, -1, 0, 0, 0,
+    ])
+    slide.setChannel(0, { calMin: Number.NaN, calMax: Number.NaN })
+    slide.setChannel(2, { calMax: Number.NaN })
+    expect(slide.rgbWindow).toBeNull()
+    // A grey slide's windows are fused, never a bitmap window.
+    const grey = new NVSlide(grayManifest())
+    grey.setChannel(0, { calMin: 10, calMax: 20 })
+    expect(grey.rgbWindow).toBeNull()
+    slide.dispose()
+    grey.dispose()
+  })
+})

@@ -253,6 +253,8 @@ off-window crosshair is brought back."""
     volume_silhouette = traitlets.Float(None, allow_none=True).tag(sync=True)
     volume_transmittance_cutoff = traitlets.Float(None, allow_none=True).tag(sync=True)
     wheel_zoom_anchor = traitlets.Enum(["crosshair", "pointer"], None, allow_none=True).tag(sync=True)
+    windowing_step = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=2, maxlen=2, allow_none=True).tag(sync=True)
+    """Windowing drag gain; see {@link InteractionConfig.windowingStep}."""
 
     # Read-only properties (synced from JS to Python)
     backend = traitlets.Enum(["webgpu", "webgl2"], None, allow_none=True).tag(sync=True, o2py_readonly=True)
@@ -264,6 +266,9 @@ EXT_disjoint_timer_query_webgl2)."""
     colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """Every registered colormap name, both kinds."""
     drawing_colormaps = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    drawing_generation = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
+    """Bumped by every drawing load, install or close: compare two reads to tell
+whether any drawing call happened in between."""
     effective_device_pixel_ratio = traitlets.Float(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """The device pixel ratio the canvas renders at: the `devicePixelRatio`
 option when it is above 0, else `window.devicePixelRatio`. Client (CSS)
@@ -1120,6 +1125,25 @@ and its volumes alive."""
         self.send({"cmd": "loadDocument", "args": _make_args(source, options)})
 
     async def load_drawing(self, source: Any) -> Any:
+        """Open a uint8 label image as the drawing over the background (volume 0).
+
+        A label image on another grid (dims, axis order, flips or origin) loads
+        when every voxel centre lands on a background voxel centre, within
+        1e-3 voxel at every voxel; background voxels outside it are 0.
+        Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
+        A drawing whose header has no spatial transform (qform and sform codes 0)
+        is placed by index, so it must match the background's dims.
+        Resolves false on failure, or when a later `loadDrawing`,
+        `createEmptyDrawing` or `closeDrawing` lands while this one is loading.
+
+        Parameters
+        ----------
+        source : string | ImageFromUrlOptions | File
+
+        Returns
+        -------
+        Promise<boolean>
+        """
         return await self._request("loadDrawing", _make_args(source))
 
     def load_image(self, path_or_file: Any, options: Any = _UNSET) -> None:

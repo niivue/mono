@@ -182,6 +182,28 @@ test('erasing a measured ROI in two re-measures both pieces and projects both (#
   expect(r.after).toBeGreaterThan(r.before * 0.6)
 })
 
+test('merging overlapping measured rectangles re-measures the merged ROI', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'measureRect'
+    // Two equal squares, offset by 2/5 of a side: the union is 41/25 of one.
+    drag([[100, 100], [150, 150], [200, 200]])
+    const one = nv.annotations[0].stats.area
+    // Started outside the first, so the press draws instead of selecting it.
+    drag([[240, 240], [190, 190], [140, 140]])
+    return { count: nv.annotations.length, one, merged: nv.annotations[0].stats.area }
+  })()`)
+
+  expect(r.count).toBe(1)
+  // Voxel counts: within a few percent of the exact 41/25.
+  expect(r.merged / r.one).toBeGreaterThan(1.55)
+  expect(r.merged / r.one).toBeLessThan(1.73)
+})
+
 test('an erase keeps annotations the brush did not reach (#486)', async ({
   page,
 }) => {
@@ -230,13 +252,162 @@ test('annotationIsClickToPlace: click-move-click places a shape; drags and the d
     const afterSecond = nv.annotations.length
     // A drag still places a shape in one gesture.
     drag([[220, 220], [260, 260], [300, 300]])
-    return { off, afterFirst, afterSecond, afterDrag: nv.annotations.length, parked: nv._annotationClickStart }
+    const afterDrag = nv.annotations.length
+    // Entering eraser mode drops a parked start, so a later press cannot resume it.
+    click(120, 120)
+    nv.annotationIsErasing = true
+    return { off, afterFirst, afterSecond, afterDrag, parked: nv._annotationClickStart, preview: nv.model._annotationPreview }
   })()`)
 
   expect(r.off).toBe(0)
   expect(r.afterFirst).toBe(0)
   expect(r.afterSecond).toBe(1)
   expect(r.afterDrag).toBe(2)
+  expect(r.parked).toBeNull()
+  expect(r.preview).toBeNull()
+})
+
+test('annotationIsClickToPlace: places a shape on an oblique volume; turning it off drops the preview', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    // Tilted: the mm depth varies across one slice, so the slice test is in texture depth.
+    await nv.loadVolumes([{ url: synth({ tilt: [10, 8] }) }])
+    // Let the replaced volume's layout draw before clicking on it.
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
+    const click = (x, y) => drag([[x, y]])
+    nv.annotationIsClickToPlace = true
+    click(120, 120)
+    click(280, 280)
+    const placed = nv.annotations.length
+    click(120, 120)
+    ev('pointermove', 200, 200, -1)
+    const previewed = !!nv.model._annotationPreview
+    // Leaving the canvas drops the rubber band; the start stays parked.
+    c.dispatchEvent(new PointerEvent('pointerleave'))
+    const leftPreview = nv.model._annotationPreview
+    const leftParked = !!nv._annotationClickStart
+    nv.annotationIsClickToPlace = false
+    return { placed, previewed, leftPreview, leftParked, preview: nv.model._annotationPreview, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.placed).toBe(1)
+  expect(r.previewed).toBe(true)
+  expect(r.leftPreview).toBeNull()
+  expect(r.leftParked).toBe(true)
+  expect(r.preview).toBeNull()
+  expect(r.parked).toBeNull()
+})
+
+test('annotationIsClickToPlace: moving onto the render tile drops the rubber band, not the start', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.sliceType = SLICE_TYPE.MULTIPLANAR
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
+    const tileCentre = (match) => {
+      const pts = []
+      for (let y = 5; y < 400; y += 5)
+        for (let x = 5; x < 400; x += 5) {
+          const t = nv.view.hitTest(x, y)
+          if (t && match(t)) pts.push([x, y])
+        }
+      return [0, 1].map((i) =>
+        (Math.min(...pts.map((p) => p[i])) + Math.max(...pts.map((p) => p[i]))) / 2)
+    }
+    const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
+    const [rx, ry] = tileCentre((t) => t.isRender)
+    nv.annotationIsClickToPlace = true
+    drag([[ax, ay]])
+    ev('pointermove', ax + 20, ay + 20, -1)
+    const previewed = !!nv.model._annotationPreview
+    ev('pointermove', rx, ry, -1)
+    return { previewed, preview: nv.model._annotationPreview, parked: !!nv._annotationClickStart }
+  })()`)
+
+  expect(r.previewed).toBe(true)
+  expect(r.preview).toBeNull()
+  expect(r.parked).toBe(true)
+})
+
+test('annotationIsClickToPlace: a parked bidirectional axis rubber-bands to the cursor', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'bidirectional'
+    nv.annotationIsClickToPlace = true
+    const click = (x, y) => drag([[x, y]])
+    click(120, 200)
+    ev('pointermove', 280, 200, -1)
+    const long = nv.model._annotationPreview?.shape
+    click(280, 200)
+    click(200, 140)
+    ev('pointermove', 200, 260, -1)
+    const both = nv.model._annotationPreview?.shape
+    return { long: !!long && !long.start2, both: !!both?.start2 }
+  })()`)
+
+  expect(r).toEqual({ long: true, both: true })
+})
+
+test('annotationIsDrawnFromCenter: toggling it drops a parked start stale rubber band', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationTool = 'ellipse'
+    nv.annotationIsClickToPlace = true
+    drag([[150, 150]])
+    ev('pointermove', 200, 220, -1)
+    const previewed = !!nv.model._annotationPreview
+    nv.annotationIsDrawnFromCenter = true
+    const afterToggle = nv.model._annotationPreview
+    ev('pointermove', 200, 220, -1)
+    const s = nv.model._annotationPreview?.shape
+    const parked = nv._annotationClickStart.start
+    return {
+      previewed,
+      afterToggle,
+      // From the centre: the box is symmetric about the parked point.
+      centred: !!s && Math.abs(s.start.x + s.end.x - 2 * parked.x) < 1e-6 &&
+        Math.abs(s.start.y + s.end.y - 2 * parked.y) < 1e-6,
+    }
+  })()`)
+
+  expect(r).toEqual({ previewed: true, afterToggle: null, centred: true })
+})
+
+test('annotationIsClickToPlace: a parked start beats a selected control point', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+
+  const r = await page.evaluate(`(async () => {
+    ${setup}
+    nv.annotationIsClickToPlace = true
+    nv.annotationMergesOverlaps = false
+    drag([[120, 120]])
+    drag([[200, 200]])
+    const id = nv.annotations[0].id
+    // Park a start, select the shape via the API, then press its corner.
+    drag([[260, 120]])
+    nv.selectAnnotation(id)
+    drag([[200, 200]])
+    return { count: nv.annotations.length, parked: nv._annotationClickStart }
+  })()`)
+
+  expect(r.count).toBe(2)
   expect(r.parked).toBeNull()
 })
 

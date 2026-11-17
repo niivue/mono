@@ -934,6 +934,169 @@ export function reorientDrawingToRAS(
   return transformBitmap({ inputData: nativeBytes, dims, xlut, ylut, zlut })
 }
 
+/**
+ * Whether two voxel->mm affines place every voxel of a `dims` grid at the same
+ * mm, within `DRAWING_GRID_TOLERANCE` of a `b` voxel (as `remapDrawingToRAS`).
+ */
+export function isSameGrid(
+  a: number[][],
+  b: number[][],
+  dims: number[],
+): boolean {
+  // Voxel units, not mm: a sheared `b` turns a small mm shift into a large
+  // voxel one. Row-major storage: multiply(a, inv(b)) is (inv(b)·a)ᵀ.
+  const m = Float64Array.from(b.flat())
+  mat4.invert(m, m)
+  mat4.multiply(m, Float64Array.from(a.flat()), m)
+  for (let r = 0; r < 3; r++) {
+    // Linear in the voxel, so the worst error is at a corner.
+    let up = m[r * 4 + 3]
+    let down = up
+    for (let c = 0; c < 3; c++) {
+      const term = (m[r * 4 + c] - (r === c ? 1 : 0)) * (dims[c + 1] - 1)
+      up += Math.max(0, term)
+      down += Math.min(0, term)
+    }
+    if (Math.max(up, -down) > DRAWING_GRID_TOLERANCE) return false
+  }
+  return true
+}
+
+// The remap's copy: whole runs, one stride add per voxel.
+function copyRuns(
+  out: Uint8Array,
+  src: ArrayLike<number>,
+  nx: number,
+  ny: number,
+  base: number,
+  step: number[],
+  lo: number[],
+  hi: number[],
+): void {
+  // Plain reads, not destructuring: destructured bounds made the loop 6x
+  // slower (bun 1.4, 37 vs 6 ms on 128x256x256).
+  const dx = step[0]
+  const dy = step[1]
+  const dz = step[2]
+  const x0 = lo[0]
+  const x1 = hi[0]
+  if (x0 >= x1) return
+  for (let z = lo[2]; z < hi[2]; z++) {
+    for (let y = lo[1]; y < hi[1]; y++) {
+      let i = base + x0 * dx + y * dy + z * dz
+      const row = (z * ny + y) * nx
+      for (let x = x0; x < x1; x++, i += dx) out[row + x] = src[i]
+    }
+  }
+}
+
+/** Voxel misalignment `remapDrawingToRAS` accepts (float32 affines round-trip far inside it). */
+export const DRAWING_GRID_TOLERANCE = 1e-3
+
+/**
+ * Copy a label bitmap on another grid (native order, `srcDims`, voxel->mm
+ * `srcAffine`) onto the background's grid, in the background's RAS voxel order
+ * (the drawing layout), only when that is lossless: every source voxel centre
+ * must land on a background voxel centre, i.e. the background->source voxel
+ * map is a signed axis permutation plus an integer offset, to within
+ * `DRAWING_GRID_TOLERANCE` voxel at every voxel of the grid. Background voxels
+ * outside the source are 0. Otherwise returns why not (rotation, scale or a
+ * non-integer shift).
+ */
+export function remapDrawingToRAS(
+  backgroundVolume: NVImage,
+  srcBytes: ArrayLike<number>,
+  srcDims: number[],
+  srcAffine: number[][],
+): Uint8Array | string {
+  const dims = backgroundVolume.hdr.dims
+  const permRAS = backgroundVolume.permRAS ?? [1, 2, 3]
+  // Row-major 4x4 storage throughout: invert commutes with transpose, and
+  // multiply(a, b) of transposes is (b·a)ᵀ, so m = inv(src)·back·rasToNative.
+  const rasToNative = new Float64Array(16)
+  rasToNative[15] = 1
+  for (let p = 0; p < 3; p++) {
+    const a = Math.abs(permRAS[p]) - 1
+    const isFlip = permRAS[p] < 0
+    rasToNative[a * 4 + p] = isFlip ? -1 : 1
+    rasToNative[a * 4 + 3] = isFlip ? dims[a + 1] - 1 : 0
+  }
+  const backAffine = Float64Array.from(backgroundVolume.hdr.affine.flat())
+  const srcInv = Float64Array.from(srcAffine.flat())
+  mat4.invert(srcInv, srcInv)
+  const m = new Float64Array(16)
+  mat4.multiply(m, rasToNative, backAffine)
+  mat4.multiply(m, m, srcInv)
+
+  const n = [0, 1, 2].map((p) => dims[Math.abs(permRAS[p])])
+  // Source axis s = offset[s] + sign[s] * (RAS axis axis[s]). The error is
+  // linear over the grid, so its worst case is at a corner: the constant part
+  // plus every term pushed the same way.
+  const axis = [0, 0, 0]
+  const sign = [0, 0, 0]
+  const offset = [0, 0, 0]
+  for (let s = 0; s < 3; s++) {
+    let p = 0
+    for (let q = 1; q < 3; q++)
+      if (Math.abs(m[s * 4 + q]) > Math.abs(m[s * 4 + p])) p = q
+    axis[s] = p
+    if (srcDims[s + 1] === 1) {
+      // One slice (e.g. a one-frame SEG): its thickness is irrelevant, only
+      // its centre must land on a background centre, at RAS index `at`.
+      const a = m[s * 4 + p]
+      const at = -m[s * 4 + 3] / a
+      let tilt = 0
+      for (let q = 0; q < 3; q++)
+        if (q !== p) tilt += Math.abs(m[s * 4 + q] / a) * (n[q] - 1)
+      if (tilt > DRAWING_GRID_TOLERANCE) return 'rotation'
+      if (Math.abs(at - Math.round(at)) > DRAWING_GRID_TOLERANCE)
+        return 'non-integer shift'
+      sign[s] = 1
+      offset[s] = -Math.round(at)
+      continue
+    }
+    sign[s] = Math.sign(m[s * 4 + p])
+    offset[s] = Math.round(m[s * 4 + 3])
+    const shift = m[s * 4 + 3] - offset[s]
+    let up = shift
+    let down = shift
+    let isRotated = false
+    let isScaled = false
+    for (let q = 0; q < 3; q++) {
+      // Scale over the longer grid: a one-voxel background axis has no
+      // extent, yet a scaled multi-slice source puts slices between centres.
+      const extent = q === p ? Math.max(n[q], srcDims[s + 1]) : n[q]
+      const term = (m[s * 4 + q] - (q === p ? sign[s] : 0)) * (extent - 1)
+      up += Math.max(0, term)
+      down += Math.min(0, term)
+      const isOff = Math.abs(term) > DRAWING_GRID_TOLERANCE
+      if (q === p) isScaled = isOff
+      else isRotated ||= isOff
+    }
+    if (Math.max(up, -down) <= DRAWING_GRID_TOLERANCE) continue
+    return isRotated ? 'rotation' : isScaled ? 'scale' : 'non-integer shift'
+  }
+  if (new Set(axis).size !== 3) return 'rotation'
+
+  // Per RAS axis: its stride into the source and the run that lands inside it.
+  const srcStride = [1, srcDims[1], srcDims[1] * srcDims[2]]
+  const step = [0, 0, 0]
+  const lo = [0, 0, 0]
+  const hi = [0, 0, 0] // exclusive
+  let base = 0
+  for (let s = 0; s < 3; s++) {
+    const p = axis[s]
+    step[p] = sign[s] * srcStride[s]
+    base += offset[s] * srcStride[s]
+    const first = sign[s] > 0 ? -offset[s] : offset[s] - srcDims[s + 1] + 1
+    lo[p] = Math.max(0, first)
+    hi[p] = Math.min(n[p], first + srcDims[s + 1])
+  }
+  const out = new Uint8Array(n[0] * n[1] * n[2])
+  copyRuns(out, srcBytes, n[0], n[1], base | 0, step, lo, hi)
+  return out
+}
+
 // ============================================================================
 // Voxel Value Lookup
 // ============================================================================
@@ -1388,4 +1551,30 @@ export function buildPaqdLut256(
     }
   }
   return out
+}
+
+/**
+ * Remove hidden labels from resampled PAQD voxels (idx1, idx2, prob1, prob2)
+ * as if the file never had them: a hidden primary takes the secondary, and a
+ * freed slot becomes label 0 at probability 0, PAQD's empty slot. Why: see
+ * "Hidden labels" in notes/agents/colormaps-and-drawing.md.
+ */
+export function dropHiddenPaqdLabels(
+  data: Uint8Array,
+  hiddenLabels: number[],
+): void {
+  const isHidden = new Uint8Array(256)
+  for (const value of hiddenLabels) isHidden[value] = 1
+  for (let i = 0; i < data.length; i += 4) {
+    if (isHidden[data[i + 1]]) {
+      data[i + 1] = 0
+      data[i + 3] = 0
+    }
+    if (isHidden[data[i]]) {
+      data[i] = data[i + 3] ? data[i + 1] : 0
+      data[i + 2] = data[i + 3]
+      data[i + 1] = 0
+      data[i + 3] = 0
+    }
+  }
 }

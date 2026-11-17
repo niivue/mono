@@ -233,7 +233,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `setModulationImage()` | ✅ | Scalar overlays/background: RGB + alpha via GPU prepass (both backends), `examples/vox.modulate.scalar.html`. RGB/RGBA (V1) volumes: RGB only (alpha preserved for sign bits). `modulationImage` + `modulateAlpha` persisted to NVD. Backend parity verified manually (no Playwright). |
 | `isAlphaClipDark` | ✅ | `volumeIsAlphaClipDark` |
 | `setAtlasOutline()` | ✅ | `setAtlasOutline(outline, volumeIndex?)`; per-volume `atlasOutline` is the neighbour probe distance in the atlas's own voxels. Baked in the orient prepass on both backends. Not applied on the chunked path (a chunk's probes would read the neighbouring tile's edge) |
-| `overlayOutlineWidth` | ✅ | `volumeOutlineWidth` |
+| `overlayOutlineWidth` | ✅ | `volumeOutlineWidth`. The band lies wholly outside the supra-threshold voxels and every such voxel is outlined; the old package started it half a voxel further in, at the voxel centres, so its width 1 reaches as far as 0.5 here |
 
 ## 16. Statistical Thresholding
 
@@ -481,7 +481,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `niftiArray2NVImage()` | Not planned | No public constructor from raw arrays |
 | `decimateHierarchicalMesh()` on Niivue | Not planned | Outside core scope |
 | Thumbnail / placeholder | ✅ | `isThumbnailVisible`, `thumbnailUrl`, `placeholderText` |
-| Legend visibility | ✅ | `isLegendVisible`; large tables wrap into columns, then scroll (wheel, scrollbar track click); per-label hide/show via volume or mesh layer `hiddenLabels` and the opt-in `isLegendToggleEnabled` legend click |
+| Legend visibility | ✅ | `isLegendVisible`; large tables wrap into columns, then scroll (wheel, scrollbar track click); per-label hide/show via volume or mesh layer `hiddenLabels` (a mesh layer removes hidden triangles unless `isHiddenLabelCulled` is false) and the opt-in `isLegendToggleEnabled` legend click (double-click solos a label); PAQD volumes honour `hiddenLabels` |
 | Annotation system (vector) | ✅ | New feature not in old package |
 
 ---

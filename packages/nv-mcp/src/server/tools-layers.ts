@@ -267,6 +267,12 @@ export const LAYER_SCHEMAS = {
       .describe(
         'For a label layer (an atlas): the label values to hide, replacing the current list; [] shows every label.',
       ),
+    cull_hidden_labels: z
+      .boolean()
+      .optional()
+      .describe(
+        "True (the default) removes the hidden labels' triangles, as hidden voxels vanish; false shows the mesh colour beneath them instead.",
+      ),
     frame: z
       .number()
       .int()

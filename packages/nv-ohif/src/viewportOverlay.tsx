@@ -17,7 +17,7 @@ export type StackPosition = {
 const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')
 
 /** DICOM DA (YYYYMMDD) as OHIF shows it (22-May-2014); other text as is. */
-export function studyDateLabel(da: unknown): string | undefined {
+function studyDateLabel(da: unknown): string | undefined {
   const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(da ?? ''))
   if (!m) return da ? String(da) : undefined
   return `${m[3]}-${MONTHS[Number(m[2]) - 1] ?? m[2]}-${m[1]}`

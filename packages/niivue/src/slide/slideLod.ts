@@ -46,7 +46,7 @@ export function tileAt(
 
 // A level holds until the device px per level px it gives moves this far past
 // the target, so a zoom resting on a boundary does not flip levels each frame.
-export const LOD_HYSTERESIS = 1.1
+const LOD_HYSTERESIS = 1.1
 
 /**
  * The finest level of `levels` (finest first) giving at least `target` device

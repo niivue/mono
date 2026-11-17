@@ -1,3 +1,18 @@
+## 1.0.0-rc.218 (2026-11-17)
+
+### Fixes
+
+- sample the displayed 4D frame in 3D strokes; exclusive tile seam in sliceAxisAt ([f85b3e07](https://github.com/niivue/mono/commit/f85b3e07))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.220
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.217 (2026-11-17)
 
 ### Features

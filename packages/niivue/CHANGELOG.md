@@ -1,3 +1,16 @@
+## 1.0.0-rc.220 (2026-11-17)
+
+### Fixes
+
+- **niivue:** key the 3D stroke sample cache by displayed frame ([bac2ba14](https://github.com/niivue/mono/commit/bac2ba14))
+- sample the displayed 4D frame in 3D strokes; exclusive tile seam in sliceAxisAt ([f85b3e07](https://github.com/niivue/mono/commit/f85b3e07))
+- **niivue:** read the displayed 4D frame in place for subvolume copy and depth picks ([30fddc6b](https://github.com/niivue/mono/commit/30fddc6b))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.219 (2026-11-17)
 
 ### Features

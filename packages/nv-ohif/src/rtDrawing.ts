@@ -18,8 +18,8 @@ type Vox2mm = (vox: [number, number, number]) => number[] | null
 /**
  * Style the installed drawing via `apply`. The returned restore puts the prior
  * colormap and opacities back; it runs itself when another drawing replaces this
- * one. A style the user set since stays; one written through `restyle` (the
- * panel's) counts as the drawing's own.
+ * one, but only for fields still holding the style last applied here (by
+ * `apply` or a `restyle` that changed them); any other value is the user's.
  */
 export function styleDrawing(
   nv: Pick<
@@ -41,10 +41,18 @@ export function styleDrawing(
   })
   const prior = snap()
   apply()
-  let applied = snap()
+  const applied = snap()
   const restyle: Restyle = (write) => {
+    const before = snap()
     write()
-    applied = snap()
+    const after = snap()
+    // Claim only what the write changed: an untouched field may be the user's.
+    if (after.drawColormap !== before.drawColormap)
+      applied.drawColormap = after.drawColormap
+    if (after.drawOpacity !== before.drawOpacity)
+      applied.drawOpacity = after.drawOpacity
+    if (after.drawRimOpacity !== before.drawRimOpacity)
+      applied.drawRimOpacity = after.drawRimOpacity
   }
   let done = false
   const onDrawingChanged = () => {
@@ -390,17 +398,20 @@ export interface RtLabels {
 }
 
 /**
- * Rasterize every ROI with closed contours into `bitmap`, label = list index + 1
- * (at most 255, the drawing's range). Larger ROIs (by voxel count) are drawn
- * first so nested ones stay visible on top; stats are each ROI's own, and
- * showOnly refills without hidden ROIs, uncovering what they overlapped.
+ * Rasterize every ROI with closed contours, label = list index + 1 (at most
+ * 255, the drawing's range); `draw` fills a bitmap and returns its refill.
+ * Larger ROIs (by voxel count) are drawn first so nested ones stay visible on
+ * top; stats are each ROI's own, and the refill without hidden ROIs uncovers
+ * what they overlapped.
  */
 export function rasterizeStructureSet(
-  bitmap: Uint8Array,
   dims: readonly [number, number, number],
   lps2vox: ReadonlyArray<number>,
   rois: ReadonlyArray<RtRoi>,
-): RtLabels & { segments: PanelSegment[] } {
+): Pick<RtLabels, 'stats'> & {
+  segments: PanelSegment[]
+  draw: (bitmap: Uint8Array) => RtLabels['showOnly']
+} {
   const drawn = rois
     .slice(0, 255)
     .map((roi, i) => ({
@@ -414,14 +425,17 @@ export function rasterizeStructureSet(
   const stats = new Map<number, SegmentStats>(
     drawn.map((r) => [r.value, { count: r.count, centroid: r.centroid }]),
   )
-  const showOnly = (visible?: ReadonlySet<number>) => {
-    bitmap.fill(0)
-    bySize.forEach((r, i) => {
-      if (!visible || visible.has(r.value))
-        fillRuns(bitmap, runs[i] as Int32Array, r.value)
-    })
+  const draw = (bitmap: Uint8Array) => {
+    const showOnly = (visible?: ReadonlySet<number>) => {
+      bitmap.fill(0)
+      bySize.forEach((r, i) => {
+        if (!visible || visible.has(r.value))
+          fillRuns(bitmap, runs[i] as Int32Array, r.value)
+      })
+    }
+    showOnly()
+    return showOnly
   }
-  showOnly()
   const segments = drawn.map(({ roi, value }) => {
     const [red = 255, green = 255, blue = 255] = roi.colorArray ?? []
     return {
@@ -430,7 +444,7 @@ export function rasterizeStructureSet(
       rgb: [red, green, blue] as [number, number, number],
     }
   })
-  return { segments, stats, showOnly }
+  return { segments, stats, draw }
 }
 
 type RtDisplaySet = OhifDisplaySet & {
@@ -497,22 +511,19 @@ export function startRtDrawing(
       | undefined
     const lps2vox = lpsToVoxel((vox) => nv.vox2mm(vox))
     if (!dims || !lps2vox) return
+    const { segments, stats, draw } = rasterizeStructureSet(dims, lps2vox, rois)
+    // Before createEmptyDrawing: nothing to show must not replace the drawing.
+    if (!segments.length) {
+      options.setNote('The structure set has no closed contours to show.')
+      return
+    }
     nv.createEmptyDrawing()
     const bitmap = nv.drawingVolume?.img
     if (!(bitmap instanceof Uint8Array)) return
     owned = nv.drawingVolume
     // createEmptyDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    const { segments, stats, showOnly } = rasterizeStructureSet(
-      bitmap,
-      dims,
-      lps2vox,
-      rois,
-    )
-    if (!segments.length) {
-      options.setNote('The structure set has no closed contours to show.')
-      return
-    }
+    const showOnly = draw(bitmap)
     const style = styleDrawing(nv, () => {
       nv.drawColormap = nv.addColormap(
         `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,

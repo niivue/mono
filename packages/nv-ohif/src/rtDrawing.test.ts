@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   fillRuns,
   lpsToVoxel,
+  type Restyle,
   type RtLabels,
   rasterizeContours,
   rasterizeStructureSet,
@@ -108,8 +109,7 @@ describe('rasterizeStructureSet', () => {
 
   test('nestedRoi_drawnOverLargerAndKeepsOwnStats', () => {
     const bitmap = new Uint8Array(20 * 20 * 5)
-    const { segments, stats, showOnly } = rasterizeStructureSet(
-      bitmap,
+    const { segments, stats, draw } = rasterizeStructureSet(
       [20, 20, 5],
       identityLps,
       [
@@ -137,6 +137,7 @@ describe('rasterizeStructureSet', () => {
         },
       ],
     )
+    const showOnly = draw(bitmap)
     expect(segments).toEqual([
       { value: 1, label: 'GTV', rgb: [255, 0, 0] },
       { value: 3, label: 'BODY', rgb: [0, 255, 0] },
@@ -243,7 +244,7 @@ describe('rasterizeStructureSet', () => {
   // exclusive-or; an inner one cuts a hole.
   test('fills CLOSEDPLANAR_XOR contours by exclusive-or', () => {
     const bitmap = new Uint8Array(20 * 20 * 5)
-    const { stats } = rasterizeStructureSet(bitmap, [20, 20, 5], identityLps, [
+    const { stats, draw } = rasterizeStructureSet([20, 20, 5], identityLps, [
       {
         ROIName: 'ring',
         contourPoints: [
@@ -258,6 +259,7 @@ describe('rasterizeStructureSet', () => {
         ],
       },
     ])
+    draw(bitmap)
     expect(stats.get(1)?.count).toBe(81 - 9)
     expect(bitmap[400 + 2 * 20 + 2]).toBe(1)
     expect(bitmap[400 + 5 * 20 + 5]).toBe(0)
@@ -334,8 +336,15 @@ describe('startRtDrawing', () => {
     expect(nv.drawingVolume).toBeNull()
   })
 
-  // Review of #839: replacing the RT drawing puts the prior style back.
-  test('a replacement drawing gets the prior style back', async () => {
+  // Review of #839: replacing the RT drawing puts the prior style back, but
+  // never over a style the user set.
+  const square4 = [
+    { x: -1, y: -1, z: 1 },
+    { x: -3, y: -1, z: 1 },
+    { x: -3, y: -3, z: 1 },
+    { x: -1, y: -3, z: 1 },
+  ]
+  function styleRig(contourType = 'CLOSED_PLANAR') {
     let onChanged = () => {}
     const nv = {
       volumes: [{ dimsRAS: [3, 5, 5, 2] }],
@@ -371,41 +380,77 @@ describe('startRtDrawing', () => {
         ROIContours: [
           {
             ROIName: 'roi',
-            contourPoints: [
-              {
-                type: 'CLOSED_PLANAR',
-                points: [
-                  { x: -1, y: -1, z: 1 },
-                  { x: -3, y: -1, z: 1 },
-                  { x: -3, y: -3, z: 1 },
-                  { x: -1, y: -3, z: 1 },
-                ],
-              },
-            ],
+            contourPoints: [{ type: contourType, points: square4 }],
           },
         ],
       },
     }
+    return { nv, rt }
+  }
+  async function showWithPanel(nv: unknown, rt: unknown) {
+    let restyle: Restyle = (write) => write()
     await new Promise<void>((resolve) => {
-      startRtDrawing(nv as never, rt, {
+      startRtDrawing(nv as never, rt as never, {
         setNote: () => {},
         whenBase: Promise.resolve(true),
-        onShown: (_segments, _labels, restyle) => {
-          // The seg panel restyles the drawing it lists.
-          restyle(() => {
-            nv.drawColormap = 'seg-panel-pane'
-            nv.drawOpacity = 0.4
-          })
+        onShown: (_segments, _labels, r) => {
+          restyle = r
           resolve()
           return () => {}
         },
       })
     })
-    expect(nv.drawColormap).toBe('seg-panel-pane')
+    return restyle
+  }
+
+  test('a replacement drawing gets the prior style back', async () => {
+    const { nv, rt } = styleRig()
+    const restyle = await showWithPanel(nv, rt)
+    // The seg panel restyles the drawing it lists.
+    restyle(() => {
+      nv.drawColormap = 'seg-panel-pane'
+      nv.drawOpacity = 0.4
+    })
     nv.createEmptyDrawing()
     expect(nv.drawColormap).toBe('gray')
     expect(nv.drawOpacity).toBe(0.8)
     expect(nv.drawRimOpacity).toBe(-1)
+  })
+
+  test("a user's style survives replacement", async () => {
+    const { nv, rt } = styleRig()
+    await showWithPanel(nv, rt)
+    nv.drawColormap = 'user-hot'
+    nv.createEmptyDrawing()
+    expect(nv.drawColormap).toBe('user-hot')
+  })
+
+  test("an unchanged panel sync does not claim the user's style", async () => {
+    const { nv, rt } = styleRig()
+    const restyle = await showWithPanel(nv, rt)
+    nv.drawColormap = 'user-hot'
+    // An unrelated panel event: the style key is unchanged, so it writes nothing.
+    restyle(() => {})
+    nv.createEmptyDrawing()
+    expect(nv.drawColormap).toBe('user-hot')
+    expect(nv.drawOpacity).toBe(0.8)
+  })
+
+  // Review of #839: nothing to show keeps the drawing (and its undo history).
+  test('a structure set with no closed contours keeps the drawing', async () => {
+    const { nv, rt } = styleRig('POINT')
+    const mine = { img: Uint8Array.from([7]) }
+    nv.drawingVolume = mine
+    let note = ''
+    startRtDrawing(nv as never, rt as never, {
+      setNote: (m) => {
+        note = m
+      },
+      whenBase: Promise.resolve(true),
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(note).toContain('no closed contours')
+    expect(nv.drawingVolume).toBe(mine)
   })
 
   // Review of #839: a drawing made while the structure set loads is kept.

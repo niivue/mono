@@ -1,3 +1,46 @@
+## 1.0.0-rc.218 (2026-11-17)
+
+### Features
+
+- **niivue:** cancel a half-drawn annotation from OHIF's menu or Backspace; measurement jump switches localizer output ([d51221b4](https://github.com/niivue/mono/commit/d51221b4))
+- **niivue:** with isClickToPlace a multi-click contour closes on a click near its first point ([d5bf54f0](https://github.com/niivue/mono/commit/d5bf54f0))
+- **niivue:** annotationHistoryPush event; undoable removeAnnotation / removeAnnotations ([507f8ef6](https://github.com/niivue/mono/commit/507f8ef6))
+- **niivue:** measureAngle, measureCobbAngle; click-to-place bidirectional short axis ([f3b51b62](https://github.com/niivue/mono/commit/f3b51b62))
+- **niivue:** export mmToSlice2D and computeAnnotationStats ([e1e33134](https://github.com/niivue/mono/commit/e1e33134))
+- **niivue:** measurePoint annotation reads the base value at a clicked voxel ([997005a0](https://github.com/niivue/mono/commit/997005a0))
+
+### Fixes
+
+- **niivue:** hand out copies of slide annotations ([67365320](https://github.com/niivue/mono/commit/67365320))
+- **niivue:** cull slide lines that miss the view; keep Draw off a measurement press ([7d4c8bf9](https://github.com/niivue/mono/commit/7d4c8bf9))
+- **niivue:** cull off-screen slide line annotations ([4c3401d7](https://github.com/niivue/mono/commit/4c3401d7))
+- **niivue:** slide areas below 1 um2 no longer read 0 ([#836](https://github.com/niivue/mono/issues/836))
+- **niivue:** any unfinished resize reverts where the drag state resets (pinch, annotation mode off), not only on pointercancel ([b40b5901](https://github.com/niivue/mono/commit/b40b5901))
+- **niivue:** R15 round 19 — cancelled probe drag restores its point; pointercancel reverts a resize; a new multi-click shape clears the selection ([460de1fa](https://github.com/niivue/mono/commit/460de1fa))
+- **niivue:** recomputed angle stats keep the angle drawing recorded ([#836](https://github.com/niivue/mono/issues/836))
+- **niivue:** close-click test in bounds-local pixels; nv-mcp removes several annotations, undoably ([#834](https://github.com/niivue/mono/issues/834))
+- **niivue:** slide annotation area at large coordinates; setSlide clears annotations ([#836](https://github.com/niivue/mono/issues/836))
+- **niivue:** a cancelled annotation resize records no undo step ([#834](https://github.com/niivue/mono/issues/834))
+- **niivue:** focusAnnotation centres a slide circle ([#836](https://github.com/niivue/mono/issues/836))
+- **niivue:** an annotation drag is in progress; events sync read-only state ([#834](https://github.com/niivue/mono/issues/834))
+- **niivue:** slide shapes end at the release; same tool keeps a draft ([#836](https://github.com/niivue/mono/issues/836), [#837](https://github.com/niivue/mono/issues/837))
+- **niivue:** computeAnnotationStats measures angle annotations ([#827](https://github.com/niivue/mono/issues/827))
+- **niivue:** probe on a selected ROI handle; fast second angle click ([#824](https://github.com/niivue/mono/issues/824), [#827](https://github.com/niivue/mono/issues/827))
+- **niivue:** angle and line measurements never merge with or cut an ROI ([#827](https://github.com/niivue/mono/issues/827))
+- **niivue:** probe label shows integer voxel values exactly ([#824](https://github.com/niivue/mono/issues/824))
+- **niivue:** R14 audit — history replays only its own step; live-wire closes along its snapped edge; close test uses the clicked tile; spline test at 20 samples ([9a6f2d5a](https://github.com/niivue/mono/commit/9a6f2d5a))
+- **niivue:** splines sample 20 points per segment, as cornerstone's SplineROI ([bdd8ba38](https://github.com/niivue/mono/commit/bdd8ba38))
+- **niivue:** angles are measured on the drawn plane, not its axis projection ([6d36b27a](https://github.com/niivue/mono/commit/6d36b27a))
+- **niivue:** backend entries export mmToSlice2D and computeAnnotationStats too ([223ff9cd](https://github.com/niivue/mono/commit/223ff9cd))
+- **niivue:** probes land inside regions, never merge, keep their width; label has 4 significant digits ([ce15e4d9](https://github.com/niivue/mono/commit/ce15e4d9))
+- **niivue:** a probe samples the displayed 4D frame and its own voxel plane ([221c659c](https://github.com/niivue/mono/commit/221c659c))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.217 (2026-11-17)
 
 ### Features

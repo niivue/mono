@@ -589,7 +589,13 @@ function onDrawDown(event) {
   // click elsewhere (a header link needing two). Pan and zoom go through the
   // view's controller, which captures only once a press becomes a drag.
   // Draw mode paints the slide with the left button (the controller leaves it free).
-  if (event.button === 0 && drawMode && drawing) {
+  // A measurement tool owns the left press: the controller starts its gesture.
+  if (
+    event.button === 0 &&
+    drawMode &&
+    drawing &&
+    !view?.controller.annotationTool
+  ) {
     // Vector tool draws a freehand polygon in slide coords (not the raster).
     if (drawTool === 'vector') {
       const sp = eventToSlide(event)

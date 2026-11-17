@@ -97,19 +97,16 @@ The `examples/` folder also contains notebook ports of selected
 
 ```bash
 packages/ipyniivue/examples/02_vox_basic.ipynb
-packages/ipyniivue/examples/03_vox_atlas.ipynb
 packages/ipyniivue/examples/04_mesh_basic.ipynb
 packages/ipyniivue/examples/05_mesh_layers.ipynb
 packages/ipyniivue/examples/06_tract_dsi.ipynb
 packages/ipyniivue/examples/07_connectome.ipynb
 packages/ipyniivue/examples/08_clip_planes.ipynb
-packages/ipyniivue/examples/09_freesurfer_crosscut.ipynb
 packages/ipyniivue/examples/10_vox_4d.ipynb
 packages/ipyniivue/examples/11_vox_stats.ipynb
 packages/ipyniivue/examples/12_vox_modulate.ipynb
 packages/ipyniivue/examples/13_vox_paqd.ipynb
 packages/ipyniivue/examples/14_tract_tsf.ipynb
-packages/ipyniivue/examples/15_tract_group.ipynb
 packages/ipyniivue/examples/16_tract_groups.ipynb
 packages/ipyniivue/examples/17_layout.ipynb
 packages/ipyniivue/examples/18_mesh_atlas.ipynb

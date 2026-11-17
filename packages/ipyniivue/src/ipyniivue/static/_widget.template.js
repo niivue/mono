@@ -145,6 +145,7 @@ const PROPS_RW = [
   ["volumeSilhouette", "volume_silhouette"],
   ["volumeTransmittanceCutoff", "volume_transmittance_cutoff"],
   ["wheelZoomAnchor", "wheel_zoom_anchor"],
+  ["windowingStep", "windowing_step"],
 ]
 
 // [jsName, pyName] for read-only properties (JS-to-Python only).
@@ -153,6 +154,7 @@ const PROPS_RO = [
   ["cinematicFrameMs", "cinematic_frame_ms"],
   ["colormaps", "colormaps"],
   ["drawingColormaps", "drawing_colormaps"],
+  ["drawingGeneration", "drawing_generation"],
   ["effectiveDevicePixelRatio", "effective_device_pixel_ratio"],
   ["isAnimating", "is_animating"],
   ["isAntiAlias", "is_anti_alias"],

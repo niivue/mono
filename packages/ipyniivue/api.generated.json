@@ -1473,6 +1473,21 @@
       "hasGetter": true,
       "hasSetter": true,
       "doc": null
+    },
+    {
+      "jsName": "windowingStep",
+      "pyName": "windowing_step",
+      "tsType": "[number, number]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Float"
+        },
+        "length": 2
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "Windowing drag gain; see {@link InteractionConfig.windowingStep}."
     }
   ],
   "readonlyProperties": [
@@ -1531,6 +1546,17 @@
       "hasGetter": true,
       "hasSetter": false,
       "doc": null
+    },
+    {
+      "jsName": "drawingGeneration",
+      "pyName": "drawing_generation",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": false,
+      "doc": "Bumped by every drawing load, install or close: compare two reads to tell\nwhether any drawing call happened in between."
     },
     {
       "jsName": "effectiveDevicePixelRatio",
@@ -2829,7 +2855,7 @@
         }
       ],
       "returns": "Promise<boolean>",
-      "doc": null,
+      "doc": "Open a uint8 label image as the drawing over the background (volume 0).\nA label image on another grid (dims, axis order, flips or origin) loads\nwhen every voxel centre lands on a background voxel centre, within\n1e-3 voxel at every voxel; background voxels outside it are 0.\nRotated, rescaled or sub-voxel-shifted grids are refused (no resampling).\nA drawing whose header has no spatial transform (qform and sform codes 0)\nis placed by index, so it must match the background's dims.\nResolves false on failure, or when a later `loadDrawing`,\n`createEmptyDrawing` or `closeDrawing` lands while this one is loading.",
       "returnsDoc": null
     },
     {
@@ -5070,6 +5096,10 @@
       {
         "jsName": "attachToCanvas",
         "reason": "arguments are not JSON-serializable (DOM handle or JS object)"
+      },
+      {
+        "jsName": "cancelDrawingLoad",
+        "reason": "cannot preempt: the widget command queue runs it after the load_drawing it would cancel"
       },
       {
         "jsName": "createExtensionContext",

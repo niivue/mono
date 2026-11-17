@@ -8,6 +8,7 @@ const crosshairCheck = document.getElementById('crosshairCheck')
 const decimationSlide = document.getElementById('decimationSlide')
 const fiberSelect = document.getElementById('fiberSelect')
 const gl1 = document.getElementById('gl1')
+const groupSelect = document.getElementById('groupSelect')
 const meshOpacitySlide = document.getElementById('meshOpacitySlide')
 const meshSelect = document.getElementById('meshSelect')
 const shaderSelect = document.getElementById('shaderSelect')
@@ -145,42 +146,41 @@ colorSelect.onchange = function () {
   nv1.clipPlaneColor = clr
 }
 
-fiberSelect.onchange = async function () {
-  const mode = this.value
-  setThresholdVisible(mode === 'zscore')
+// show* modes pick fixed groups (green, red, blue), so groupSelect is disabled for them
+/** @type {Record<string, number[]>} */
+const shownGroups = { show0: [0], show1: [1], show2: [2], show012: [0, 1, 2] }
+/** @type {[number, number, number, number][]} */
+const shownRGBA = [
+  [0, 255, 0, 255],
+  [255, 0, 0, 255],
+  [25, 25, 255, 255],
+]
 
-  if (mode === 'show0') {
-    // First group only (green)
-    /** @type {Record<string, [number, number, number, number]>} */
-    const groupColors = { [groupNames[0]]: [0, 255, 0, 255] }
-    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
-  } else if (mode === 'show1') {
-    // Second group only (red)
-    /** @type {Record<string, [number, number, number, number]>} */
-    const groupColors = { [groupNames[1]]: [255, 0, 0, 255] }
-    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
-  } else if (mode === 'show2') {
-    // Third group only (blue)
-    /** @type {Record<string, [number, number, number, number]>} */
-    const groupColors = { [groupNames[2]]: [25, 25, 255, 255] }
-    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
-  } else if (mode === 'show012') {
-    // First three groups simultaneously (green, red, blue)
-    /** @type {Record<string, [number, number, number, number]>} */
-    const groupColors = {
-      [groupNames[0]]: [0, 255, 0, 255],
-      [groupNames[1]]: [255, 0, 0, 255],
-      [groupNames[2]]: [25, 25, 255, 255],
-    }
-    await nv1.setTractOptions(0, { groupColors, colorBy: 'fixed' })
-  } else if (mode === 'zscore') {
-    // Per-group z-score scalar coloring (all streamlines visible)
-    await nv1.setTractOptions(0, { groupColors: null, colorBy: 'dps:z_score' })
-  } else {
-    // Direction or fixed color (all streamlines visible)
-    await nv1.setTractOptions(0, { groupColors: null, colorBy: mode })
+async function applyFiberColor() {
+  const mode = fiberSelect.value
+  setThresholdVisible(mode === 'zscore')
+  const shown = shownGroups[mode]
+  groupSelect.disabled = !!shown
+  if (shown) {
+    const groupColors = Object.fromEntries(
+      shown.map((g) => [groupNames[g], shownRGBA[g]]),
+    )
+    await nv1.setTractOptions(0, {
+      groupColors,
+      visibleGroups: null,
+      colorBy: 'fixed',
+    })
+    return
   }
+  // visibleGroups filters without overriding colorBy (groupColors would).
+  await nv1.setTractOptions(0, {
+    groupColors: null,
+    visibleGroups: groupSelect.value ? [groupSelect.value] : null,
+    colorBy: mode === 'zscore' ? 'dps:z_score' : mode,
+  })
 }
+fiberSelect.onchange = applyFiberColor
+groupSelect.onchange = applyFiberColor
 
 const nv1 = new NiiVue({ backgroundColor: [1, 1, 1, 1] })
 await nv1.attachToCanvas(gl1)
@@ -202,6 +202,8 @@ await nv1.loadMeshes([
 
 // Get group names from the loaded tract
 const groupNames = nv1.getTractGroups(0)
+for (const name of groupNames) groupSelect.add(new Option(name, name))
+groupSelect.value = 'IFOF_L'
 
 // Synthesize per-streamline z-score data from group membership
 // (emulates the old dpg.html demo which created synthetic per-group data)
@@ -223,4 +225,4 @@ mesh.trx.dpsMeta.z_score = {
   globalMax: Math.max(...groupZValues),
 }
 // Open on the selected mode (First three groups), so the page shows groups.
-await fiberSelect.onchange()
+await applyFiberColor()

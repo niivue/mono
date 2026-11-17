@@ -1,3 +1,181 @@
+## 1.0.0-rc.247 (2026-11-17)
+
+### Features
+
+- **niivue:** public drawingGeneration and cancelDrawingLoad() ([6cbe6fbc](https://github.com/niivue/mono/commit/6cbe6fbc))
+
+### Fixes
+
+- **nv-ohif:** clear a SEG conversion note after 6 s, as the base's ([d3eafc44](https://github.com/niivue/mono/commit/d3eafc44))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.217
+- Updated nv-ext-tile to 1.0.0-rc.126
+- Updated uikit to 1.0.0-rc.215
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.246 (2026-11-17)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.216
+- Updated nv-ext-tile to 1.0.0-rc.125
+- Updated uikit to 1.0.0-rc.214
+
+## 1.0.0-rc.245 (2026-11-16)
+
+### Features
+
+- **nv-ohif:** SEG colormap labels carry the segment's laterality ([d458daf6](https://github.com/niivue/mono/commit/d458daf6))
+- **nv-ohif:** a DICOM SEG shows as a NiiVue drawing over its referenced series ([f73974ae](https://github.com/niivue/mono/commit/f73974ae))
+
+### Fixes
+
+- **nv-ohif:** show a SEG conversion's dcm2niix note ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** give back the drawing style a SEG replaced ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** track SEG drawing ownership by core's drawing generation ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** a drawing loaded during SEG conversion supersedes the SEG ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** reload the SEG when a protocol change reloads the base ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** stopping a pending SEG keeps a drawing loaded since it began ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** stopping a SEG keeps a drawing that replaced it ([#820](https://github.com/niivue/mono/issues/820))
+- **nv-ohif:** a SEG drawing waits for its installed base; a secondary SEG keeps the primary ([#820](https://github.com/niivue/mono/issues/820), [#819](https://github.com/niivue/mono/issues/819))
+- **nv-ohif:** a SEG drawing superseded mid-load is closed, never installed late ([45f1d101](https://github.com/niivue/mono/commit/45f1d101))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.244 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.215
+- Updated nv-ext-tile to 1.0.0-rc.124
+- Updated uikit to 1.0.0-rc.213
+
+## 1.0.0-rc.243 (2026-11-16)
+
+### Features
+
+- **nv-ohif:** OHIF viewport overlays, tracking, and tool parity ([d22faced](https://github.com/niivue/mono/commit/d22faced))
+
+### Fixes
+
+- **nv-ohif:** forward only measurements on the active NiiVue pane's series ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** jumpToImage on a stack turned off its acquisition plane ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** count a split multi-frame's shown frames; route firstImage and lastImage ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** index and count only the instances the shown output holds ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** jumpToImage along the view axis off the acquisition plane ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** jumpToImage in volume order and on non-DICOM volumes ([#814](https://github.com/niivue/mono/issues/814))
+- **nv-ohif:** data-loaded after install, multi-frame jumpToImage, stack readout on slice-type change ([#814](https://github.com/niivue/mono/issues/814))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.242 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.214
+- Updated nv-ext-tile to 1.0.0-rc.123
+- Updated uikit to 1.0.0-rc.212
+
+## 1.0.0-rc.241 (2026-11-16)
+
+### Features
+
+- **nv-ohif:** OHIF multi-viewport layouts with cornerstone's display defaults ([1e675651](https://github.com/niivue/mono/commit/1e675651))
+
+### Fixes
+
+- **nv-ohif:** removing a render preset restores gray under the DICOM window ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** apply a protocol window changed mid-load; restore the default on removal ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** apply a hanging protocol's new window in place, without a reload ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** re-apply a new hanging protocol's view, sync groups and window ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** key shared conversions on headers, release unsignalled holds ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** key shared conversions on every instance and frame count ([#812](https://github.com/niivue/mono/issues/812))
+- **nv-ohif:** sagittal 3D camera, linked window baseline, release base conversion ([#812](https://github.com/niivue/mono/issues/812))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.240 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.213
+- Updated nv-ext-tile to 1.0.0-rc.122
+- Updated uikit to 1.0.0-rc.211
+
+## 1.0.0-rc.239 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.212
+- Updated nv-ext-tile to 1.0.0-rc.121
+- Updated uikit to 1.0.0-rc.210
+
+## 1.0.0-rc.238 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.211
+- Updated nv-ext-tile to 1.0.0-rc.120
+- Updated uikit to 1.0.0-rc.209
+
+## 1.0.0-rc.237 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.210
+- Updated nv-ext-tile to 1.0.0-rc.119
+- Updated uikit to 1.0.0-rc.208
+
+## 1.0.0-rc.236 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.209
+- Updated nv-ext-tile to 1.0.0-rc.118
+- Updated uikit to 1.0.0-rc.207
+
+## 1.0.0-rc.235 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.208
+- Updated nv-ext-tile to 1.0.0-rc.117
+- Updated uikit to 1.0.0-rc.206
+
+## 1.0.0-rc.234 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.207
+- Updated nv-ext-tile to 1.0.0-rc.116
+- Updated uikit to 1.0.0-rc.205
+
+## 1.0.0-rc.233 (2026-11-16)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.206
+- Updated nv-ext-tile to 1.0.0-rc.115
+- Updated uikit to 1.0.0-rc.204
+
 ## 1.0.0-rc.232 (2026-11-15)
 
 ### Updated Dependencies

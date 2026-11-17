@@ -339,14 +339,15 @@ describe('evaluate.niivue.unsupported', () => {
     const cases: Array<[OhifToolbarButton, unknown]> = [
       [button('Rotate', 'rotateViewportCW'), undefined],
       [button('Flip', 'flipViewportHorizontal'), undefined],
-      [button('Invert', [{ commandName: 'invertViewport' }]), disabled],
+      [button('Invert', [{ commandName: 'invertViewport' }]), undefined],
+      [button('Unknown', [{ commandName: 'csOnlyCommand' }]), disabled],
       [button('Reset', 'resetViewport'), undefined],
       [button('Fit', ['fitViewportToWindow', 'niivueResetView']), undefined],
-      [button('Mixed', ['resetViewport', 'invertViewport']), disabled],
+      [button('Mixed', ['resetViewport', 'csOnlyCommand']), disabled],
       // Section lists, menus and the layout selector carry no commands.
       [button('Empty', undefined), undefined],
       [button('TagBrowser', 'openDICOMTagViewer'), undefined],
-      [button('Tags', ['openDICOMTagViewer', 'invertViewport']), disabled],
+      [button('Tags', ['openDICOMTagViewer', 'csOnlyCommand']), disabled],
       // An explicit Cornerstone context bypasses the NIIVUE shadow.
       [
         button('CsReset', [
@@ -373,7 +374,7 @@ describe('evaluate.niivue.unsupported', () => {
             commandName: 'setToolActiveToolbar',
             commandOptions: { toolName: 'Pan' },
           },
-          'invertViewport',
+          'csOnlyCommand',
         ]),
         disabled,
       ],

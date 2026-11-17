@@ -7,11 +7,11 @@ import { packagesSection } from './src/lib/packageDocs'
 import { fullSidebar } from './src/sidebar'
 import { repoUrl } from './src/site'
 
-// The site is served from the root in dev and from /mono/docs/ on GitHub
-// Pages; build-pages.sh passes DOCS_BASE_URL. With trailingSlash 'always'
-// Astro's BASE_URL ends in a slash, so this one does too.
+// The site is served from the root in dev and from /docs/ on niivue.com;
+// build-pages.sh passes DOCS_BASE_URL. With trailingSlash 'always' Astro's
+// BASE_URL ends in a slash, so this one does too.
 const base = (process.env.DOCS_BASE_URL ?? '/').replace(/\/?$/, '/')
-const site = 'https://niivue.github.io'
+const site = 'https://niivue.com'
 
 export default defineConfig({
   site,
@@ -26,7 +26,7 @@ export default defineConfig({
     processor: satteri({
       hastPlugins: [
         // Astro leaves Markdown links alone; root-relative ones such as
-        // `/gallery/sync/` need the base to work under /mono/docs/.
+        // `/gallery/sync/` need the base to work under /docs/.
         {
           name: 'base-links',
           element: {

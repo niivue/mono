@@ -316,6 +316,10 @@ export function NiivueViewport(props: OhifViewportProps) {
     displaySets[0],
     conversion,
   )
+  // The load's first position predates the split registering: recount it.
+  const showStackRef = useRef<(e: Event) => void>(() => {})
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reruns per conversion by design
+  useEffect(() => showStackRef.current(new Event('outputs')), [conversion])
   // NiiVue edits in OHIF's undo history (history.ts).
   useAnnotationHistory(ready ? nvRef.current : null, props.extensionManager)
   // Right-click on an annotation: OHIF's measurement menu (contextMenu.ts).
@@ -551,6 +555,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           : (pos ?? null),
       )
     }
+    showStackRef.current = showStack
     nv.addEventListener('locationChange', showStack)
     nv.addEventListener('sliceTypeChange', showStack)
     const showRender = () => setSliceType(nv.sliceType)

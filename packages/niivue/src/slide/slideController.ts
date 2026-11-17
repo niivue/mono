@@ -204,7 +204,8 @@ export class NVSlideController {
    * The left button's annotation tool, over `primaryDragMode`; null: none.
    * Point: click. Line, rectangle, ellipse (corner to corner), circle (centre
    * out): drag. Polygon: click vertices, close near the first or double-click.
-   * Freehand (closed), freehandLine (open): drag. Changing it drops a draft.
+   * Freehand (closed), freehandLine (open): drag. Changing it drops a draft;
+   * setting the current tool again keeps it.
    * ponytail: no selection or edit handles, and no click-move-click for
    * two-point tools; add when a host needs them.
    */
@@ -213,6 +214,8 @@ export class NVSlideController {
   }
 
   set annotationTool(tool: SlideAnnotationTool | null) {
+    // Hosts re-apply the active tool on unrelated state changes.
+    if (tool === this._annotationTool) return
     if (this._gesture?.isAnnotation) this._end(this._gesture, false, true)
     this._dropDraft()
     this._annotationTool = tool
@@ -435,6 +438,9 @@ export class NVSlideController {
     }
     const g = this._gesture
     if (!g || g.pointerId !== event.pointerId) return
+    // The release can land past the last pointermove: end the shape there.
+    if (event.type === 'pointerup' && g.isAnnotation && g.isDrag)
+      this._annotateMove(...this._local(event))
     this._end(g, event.type === 'pointerup')
   }
 

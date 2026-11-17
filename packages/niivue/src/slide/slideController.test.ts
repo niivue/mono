@@ -361,6 +361,18 @@ describe('NVSlideController', () => {
     expect(r.ctl.draft?.points.length).toBe(before)
   })
 
+  // Review of #836: focusing a circle centres on its centre, not the rim.
+  test('focusAnnotation centres a circle', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'circle'
+    r.fire('pointerdown', 50, 50)
+    r.fire('pointermove', 60, 50)
+    r.fire('pointerup', 60, 50)
+    const circle = r.ctl.annotations.list()[0]
+    expect(r.ctl.focusAnnotation(circle?.id ?? '')).toBe(true)
+    expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
+  })
+
   test('annotation tools: drag shapes, click points, polygon closes', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     const added: string[] = []

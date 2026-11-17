@@ -223,20 +223,24 @@ export class NVSlideController {
 
   /** Centre on an annotation and fit it (no finer than native resolution). */
   focusAnnotation(id: string): boolean {
-    const points = this.annotations.get(id)?.points
-    if (!points) return false
+    const annotation = this.annotations.get(id)
+    if (!annotation) return false
+    let points = annotation.points
+    // A circle's points are its centre and a rim point: box the whole disc.
+    if (annotation.tool === 'circle') {
+      const [c, rim] = points as [NVSlidePoint, NVSlidePoint]
+      const r = Math.hypot(rim.x - c.x, rim.y - c.y)
+      points = [
+        { x: c.x - r, y: c.y - r },
+        { x: c.x + r, y: c.y + r },
+      ]
+    }
     const xs = points.map((p) => p.x)
     const ys = points.map((p) => p.y)
-    // A circle's points are its centre and a rim point: box the whole disc.
-    const [c, rim] = points as [NVSlidePoint, NVSlidePoint]
-    const r =
-      this.annotations.get(id)?.tool === 'circle'
-        ? Math.hypot(rim.x - c.x, rim.y - c.y)
-        : 0
     this._zoomTo(
       {
-        start: { x: Math.min(...xs) - r, y: Math.min(...ys) - r },
-        end: { x: Math.max(...xs) + r, y: Math.max(...ys) + r },
+        start: { x: Math.min(...xs), y: Math.min(...ys) },
+        end: { x: Math.max(...xs), y: Math.max(...ys) },
       },
       true,
     )

@@ -177,16 +177,15 @@ export interface DisplaySetServiceLike {
 }
 
 // The study's display sets NiiVue could load as an overlay of this viewport:
-// neither its base nor already overlaid (SEG/RT and slides classify out).
+// neither its base nor already overlaid (SEG/RT and slides classify out). Sets
+// hung after the base (TMTV's PT) are candidates until layered.
 export function overlayCandidates(
   entry: Pick<NiivueViewportEntry, 'displaySets' | 'overlays'>,
   activeDisplaySets: ReadonlyArray<OhifDisplaySet>,
 ): OhifDisplaySet[] {
   const loaded = new Set<string>(entry.overlays.keys())
-  for (const ds of entry.displaySets) {
-    if (typeof ds.displaySetInstanceUID === 'string')
-      loaded.add(ds.displaySetInstanceUID)
-  }
+  const base = entry.displaySets[0]?.displaySetInstanceUID
+  if (typeof base === 'string') loaded.add(base)
   return activeDisplaySets.filter((ds) => {
     const uid = ds.displaySetInstanceUID
     if (typeof uid !== 'string' || loaded.has(uid)) return false

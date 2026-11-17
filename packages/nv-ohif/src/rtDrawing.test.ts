@@ -200,6 +200,35 @@ describe('rasterizeStructureSet', () => {
     expect(bitmap[900 + 14 * 30 + 15]).toBe(1)
   })
 
+  // Review of #839: a hole whose slope is too small to measure still lies on its
+  // outer ring's plane, so it cuts a hole rather than filling on its own slice.
+  test('a hole too flat to measure on a tilted plane stays empty', () => {
+    const z = (x: number) => 0.45 + 0.0004 * x
+    const ring = (x0: number, x1: number, y0: number, y1: number) => [
+      x0,
+      y0,
+      z(x0),
+      x1,
+      y0,
+      z(x1),
+      x1,
+      y1,
+      z(x1),
+      x0,
+      y1,
+      z(x0),
+    ]
+    const { runs } = rasterizeContours(
+      [302, 30, 3],
+      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+      [ring(1, 300, 1, 20), ring(50, 80, 5, 10)],
+    )
+    const bitmap = new Uint8Array(302 * 30 * 3)
+    fillRuns(bitmap, runs, 1)
+    expect(bitmap[65 + 7 * 302]).toBe(0)
+    expect(bitmap[20 + 15 * 302]).toBe(1)
+  })
+
   // Review of #839: the plane crosses slice 0 though its midpoint is below it.
   test('a tilted contour with an off-volume midpoint still fills', () => {
     const { count } = rasterizeContours(
@@ -301,6 +330,64 @@ describe('startRtDrawing', () => {
     await new Promise((r) => setTimeout(r, 0))
     again()
     expect(nv.drawingVolume).toBeNull()
+  })
+
+  // Review of #839: a drawing made while the structure set loads is kept.
+  test('a drawing made during the load is not replaced', async () => {
+    let finishLoad = () => {}
+    const loading = new Promise<void>((r) => {
+      finishLoad = r
+    })
+    const nv = {
+      volumes: [{ dimsRAS: [3, 5, 5, 2] }],
+      vox2mm: ([i, j, k]: [number, number, number]) => [i, j, k],
+      drawingGeneration: 0,
+      drawingVolume: null as { img: Uint8Array } | null,
+      createEmptyDrawing() {
+        this.drawingGeneration++
+        this.drawingVolume = { img: new Uint8Array(50) }
+      },
+      refreshDrawing() {},
+      addColormap: (name: string) => name,
+    }
+    const rt = {
+      displaySetInstanceUID: 'rt',
+      Modality: 'RTSTRUCT',
+      load: () => loading,
+      structureSet: {
+        ROIContours: [
+          {
+            ROIName: 'roi',
+            contourPoints: [
+              {
+                type: 'CLOSED_PLANAR',
+                points: [
+                  { x: -1, y: -1, z: 1 },
+                  { x: -3, y: -1, z: 1 },
+                  { x: -3, y: -3, z: 1 },
+                  { x: -1, y: -3, z: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    }
+    let shown = false
+    startRtDrawing(nv as never, rt, {
+      setNote: () => {},
+      whenBase: Promise.resolve(true),
+      onShown: () => {
+        shown = true
+        return () => {}
+      },
+    })
+    nv.createEmptyDrawing()
+    const mine = nv.drawingVolume
+    finishLoad()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(shown).toBe(false)
+    expect(nv.drawingVolume).toBe(mine)
   })
 
   test('loadsStructureSet_fillsDrawingAndListsRois', async () => {

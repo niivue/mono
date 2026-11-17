@@ -236,7 +236,9 @@
       let unmagnify = null
       document.getElementById('magnify').addEventListener('change', (ev) => {
         unmagnify?.()
-        unmagnify = ev.target.checked ? attachSlideMagnifier(view) : null
+        // A press exits the lens: untick the toggle, which tears it down.
+        const onExit = () => ev.target.click()
+        unmagnify = ev.target.checked ? attachSlideMagnifier(view, { onExit }) : null
         view.requestRender()
       })
     </script>

@@ -104,7 +104,11 @@
       let unmagnify = null
       document.getElementById('magnify').addEventListener('change', (ev) => {
         if (ev.target.checked) {
-          const lens = new UIKitMagnifierOverlay({ zoom: 3 })
+          // A press exits the lens: untick the toggle, which tears it down.
+          const lens = new UIKitMagnifierOverlay({
+            zoom: 3,
+            onExit: () => ev.target.click(),
+          })
           const unregister = nv.registerOverlayRenderer(lens)
           const detach = lens.attach(nv)
           unmagnify = () => { detach(); unregister(); lens.destroy() }

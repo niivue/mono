@@ -9,7 +9,7 @@
 // too. A UIKit layer attached before it still gets presses on its own widgets.
 
 import type { UIKitOverlayFrame } from '@niivue/niivue'
-import type { UIKitHost } from './controls'
+import { type UIKitHost, wheelPxPerUnit } from './controls'
 import { layoutMagnifier } from './magnifier'
 import { buildRect } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
@@ -46,11 +46,12 @@ const PRESS_REST = [
   'pointercancel',
   'mouseup',
   'click',
+  'dblclick',
 ] as const
 
-/** Swallow the gesture begun by `pointerId` (none: already up), and any pointer pressed while it lasts. */
-function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
-  const down = new Set(pointerId === undefined ? [] : [pointerId])
+/** Swallow the gesture of the pointers still `down`, and any pointer pressed while it lasts. */
+function swallowPressRest(canvas: HTMLCanvasElement, held: number[]): void {
+  const down = new Set(held)
   const stop = (e: Event): void => {
     const id = (e as PointerEvent).pointerId
     // Only the swallowed pointers' moves: another pointer's hover is the scene's.
@@ -68,7 +69,7 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
     // Another pointer's click mid-gesture: the swallowed press is still down.
     if (e.type === 'click' && !down.size) {
       end()
-      swallowDoubleClick(canvas)
+      swallowDoubleClick(canvas, (e as MouseEvent).detail)
     }
   }
   // A mouse can release off the canvas: the document still sees it.
@@ -76,7 +77,7 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
   const release = (e: Event): void => {
     down.delete((e as PointerEvent).pointerId)
     // Off the canvas no click follows: nothing is left to swallow.
-    if (e.target !== canvas && !down.size) end()
+    if (!e.composedPath().includes(canvas) && !down.size) end()
   }
   const end = (): void => {
     for (const type of PRESS_REST)
@@ -91,19 +92,28 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
 }
 
 /**
- * The exiting click can be the first of a double click: its dblclick (after
- * the next click, which is the scene's) would depth-pick in the scene.
+ * Only a click with `detail` 2 is followed by a dblclick, which would
+ * depth-pick in the scene: the exiting click's own (a held touch then a tap)
+ * or the next click's (the exiting click starts a double click). A third
+ * click has none, so no blocker may stay armed for a later double tap.
  */
-function swallowDoubleClick(canvas: HTMLCanvasElement): void {
+function swallowDoubleClick(canvas: HTMLCanvasElement, detail: number): void {
+  if (detail === 2) {
+    swallowNextDoubleClick(canvas)
+    return
+  }
   const onClick = (e: Event): void => {
     canvas.removeEventListener('click', onClick, { capture: true })
-    if ((e as MouseEvent).detail < 2) return
-    canvas.addEventListener('dblclick', (d) => d.stopImmediatePropagation(), {
-      capture: true,
-      once: true,
-    })
+    if ((e as MouseEvent).detail === 2) swallowNextDoubleClick(canvas)
   }
   canvas.addEventListener('click', onClick, { capture: true })
+}
+
+function swallowNextDoubleClick(canvas: HTMLCanvasElement): void {
+  canvas.addEventListener('dblclick', (d) => d.stopImmediatePropagation(), {
+    capture: true,
+    once: true,
+  })
 }
 
 export class UIKitMagnifierOverlay {
@@ -192,10 +202,10 @@ export class UIKitMagnifierOverlay {
       const p = host.clientToCanvas(e.clientX, e.clientY) ?? [-1, -1]
       this.pointerMove(p[0], p[1])
     }
-    const exit = (pointerId?: number): void => {
+    const exit = (held: number[]): void => {
       this.pointerMove(-1, -1)
       unwire()
-      swallowPressRest(canvas, pointerId)
+      swallowPressRest(canvas, held)
       this.onExit?.()
     }
     // Touch gesture: client positions by pointer, and what a tap must stay.
@@ -206,11 +216,18 @@ export class UIKitMagnifierOverlay {
       const [a, b] = [...touches.values()] as [number, number][]
       return Math.hypot(a[0] - b[0], a[1] - b[1])
     }
+    // A new press or wheel outside a bounded host is a sibling viewer's.
+    const outside = (e: MouseEvent): boolean =>
+      !host.clientToCanvas(e.clientX, e.clientY)
+    const moved = (e: PointerEvent): boolean =>
+      !tap || Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP_CSS
     const onDown = (e: PointerEvent): void => {
+      if (!touches.size && outside(e)) return
       e.preventDefault()
       e.stopImmediatePropagation()
       if (e.pointerType !== 'touch') {
-        exit(e.pointerId)
+        // A finger held on the lens is part of the exiting gesture too.
+        exit([e.pointerId, ...touches.keys()])
         return
       }
       touches.set(e.pointerId, [e.clientX, e.clientY])
@@ -229,11 +246,7 @@ export class UIKitMagnifierOverlay {
       }
       e.stopImmediatePropagation()
       touches.set(e.pointerId, [e.clientX, e.clientY])
-      if (
-        tap &&
-        Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP_CSS
-      )
-        tap = null
+      if (moved(e)) tap = null
       if (touches.size === 1) follow(e)
       else if (pinch && touches.size === 2 && pinch.span > 0)
         this.zoomTo((pinch.zoom * span()) / pinch.span)
@@ -241,30 +254,32 @@ export class UIKitMagnifierOverlay {
     const onUp = (e: PointerEvent): void => {
       if (!touches.delete(e.pointerId)) return
       e.stopImmediatePropagation()
-      pinch = null
+      pinch = touches.size === 2 ? { span: span(), zoom: this.zoom } : null
       if (
         e.type === 'pointerup' &&
         !touches.size &&
         tap &&
         e.timeStamp - tap.at < TAP_MS &&
         // A drag reported only at release is not a tap either.
-        Math.hypot(e.clientX - tap.x, e.clientY - tap.y) <= TAP_SLOP_CSS
+        !moved(e)
       )
-        exit()
+        exit([])
       if (!touches.size) tap = null
     }
     const onLeave = (e: PointerEvent): void => {
       if (e.pointerType !== 'touch') this.pointerMove(-1, -1)
     }
-    // A mouse or pen press exits first, so a click here ends a touch gesture
-    // (a held touch or a drag), never meant for the scene.
-    const onClick = (e: Event): void => {
-      e.stopImmediatePropagation()
+    // A mouse or pen press exits first, so a click (or dblclick) here ends a
+    // touch gesture (a held touch or a drag), never meant for the scene.
+    const onClick = (e: MouseEvent): void => {
+      if (!outside(e)) e.stopImmediatePropagation()
     }
     const onWheel = (e: WheelEvent): void => {
+      if (outside(e)) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      this.zoomTo(this.zoom * Math.exp(-e.deltaY * 0.002))
+      const px = e.deltaY * wheelPxPerUnit(e, canvas.clientHeight || 1)
+      this.zoomTo(this.zoom * Math.exp(-px * 0.002))
     }
     // Capture phase, so a host or layer handler that stops the move still
     // moves the lens when it was attached later, and the lens sees a press
@@ -277,6 +292,7 @@ export class UIKitMagnifierOverlay {
       ['pointerup', onUp],
       ['pointercancel', onUp],
       ['click', onClick],
+      ['dblclick', onClick],
       ['wheel', onWheel],
     ] as [string, EventListener][]
     for (const [type, fn] of listeners) canvas.addEventListener(type, fn, opts)

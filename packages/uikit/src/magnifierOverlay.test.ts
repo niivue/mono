@@ -11,6 +11,18 @@ function pointer(type: string, x: number, y: number, pointerId = 1): Event {
   })
 }
 
+function hostFor(
+  canvas: EventTarget,
+  drawScene: () => void = () => {},
+  clientToCanvas = (x: number, y: number): [number, number] | null => [x, y],
+) {
+  return {
+    canvas: canvas as unknown as HTMLCanvasElement,
+    clientToCanvas,
+    drawScene,
+  }
+}
+
 describe('UIKitMagnifierOverlay.attach', () => {
   const g = globalThis as { window?: EventTarget }
   let savedWindow: EventTarget | undefined
@@ -23,16 +35,9 @@ describe('UIKitMagnifierOverlay.attach', () => {
   })
 
   it('leaves hover and the cursor to another layer on the same canvas', () => {
-    const canvas = Object.assign(new EventTarget(), {
-      style: { cursor: '' },
-      setPointerCapture() {},
-    })
+    const canvas = Object.assign(new EventTarget(), { style: { cursor: '' } })
     let draws = 0
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => draws++,
-    }
+    const host = hostFor(canvas, () => draws++)
     const moves: string[] = []
     const button: UIKitInteractive = {
       hoverCursor: 'pointer',
@@ -60,15 +65,9 @@ describe('UIKitMagnifierOverlay.attach', () => {
   })
 
   it('a press exits the lens and never reaches the scene', () => {
-    const canvas = Object.assign(new EventTarget(), {
-      style: { cursor: '' },
-    })
+    const canvas = new EventTarget()
     let draws = 0
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => draws++,
-    }
+    const host = hostFor(canvas, () => draws++)
     // The scene listens in the bubble phase, registered first as NiiVue is.
     const scene: string[] = []
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'click'])
@@ -93,13 +92,15 @@ describe('UIKitMagnifierOverlay.attach', () => {
 
   it('touch drags the lens, pinches its zoom and exits on a tap', () => {
     const canvas = new EventTarget()
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => {},
-    }
+    const host = hostFor(canvas)
     const scene: string[] = []
-    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'click'])
+    for (const type of [
+      'pointerdown',
+      'pointermove',
+      'pointerup',
+      'click',
+      'dblclick',
+    ])
       canvas.addEventListener(type, () => scene.push(type))
     let exits = 0
     const lens = new UIKitMagnifierOverlay({ onExit: () => exits++ })
@@ -131,37 +132,55 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(exits).toBe(0)
     touch('pointerdown', 70, 3, 500)
     touch('pointerup', 72, 3, 600)
-    canvas.dispatchEvent(pointer('click', 72, 50, 3))
+    // The tap after the held touch is the second click of a double click.
+    canvas.dispatchEvent(
+      Object.assign(pointer('click', 72, 50, 3), { detail: 2 }),
+    )
+    canvas.dispatchEvent(pointer('dblclick', 72, 50, 3))
     expect(exits).toBe(1)
     expect(scene).toEqual([])
   })
 
   it('the wheel zooms the lens, never the scene', () => {
     const canvas = new EventTarget()
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => {},
-    }
+    const host = hostFor(canvas)
     let scrolled = 0
     canvas.addEventListener('wheel', () => scrolled++)
     const lens = new UIKitMagnifierOverlay()
-    const detach = lens.attach(host)
-    const wheel = (deltaY: number) =>
+    lens.attach(host)
+    const wheel = (deltaY: number, deltaMode = 0) =>
       canvas.dispatchEvent(
-        Object.assign(new Event('wheel', { cancelable: true }), { deltaY }),
+        Object.assign(new Event('wheel', { cancelable: true }), {
+          deltaY,
+          deltaMode,
+        }),
       )
     wheel(-100)
     expect(lens.zoom).toBeCloseTo(3 * Math.exp(0.2))
-    wheel(10000)
-    expect(lens.zoom).toBe(1.5)
+    wheel(-3, 1) // 3 lines: 48 px
+    expect(lens.zoom).toBeCloseTo(3 * Math.exp(0.2 + 0.096))
     expect(scrolled).toBe(0)
-    detach()
-    wheel(-100)
-    expect(scrolled).toBe(1)
   })
 
-  // Review of #841: a press released off the canvas does not swallow the next.
+  it('leaves a sibling bounded viewer its presses and wheel', () => {
+    const canvas = new EventTarget()
+    // Bounded to the left half of a shared canvas.
+    const host = hostFor(canvas, undefined, (x, y) => (x < 100 ? [x, y] : null))
+    const scene: string[] = []
+    for (const type of ['pointerdown', 'click', 'wheel'])
+      canvas.addEventListener(type, () => scene.push(type))
+    let exits = 0
+    const lens = new UIKitMagnifierOverlay({ onExit: () => exits++ })
+    lens.attach(host)
+    for (const type of ['pointerdown', 'pointerup', 'click', 'wheel'])
+      canvas.dispatchEvent(
+        Object.assign(pointer(type, 150, 50), { deltaY: -100, deltaMode: 0 }),
+      )
+    expect(scene).toEqual(['pointerdown', 'click', 'wheel'])
+    expect(exits).toBe(0)
+    expect(lens.zoom).toBe(3)
+  })
+
   it('a press released off the canvas leaves the next press to the scene', () => {
     const listening: string[] = []
     class Doc extends EventTarget {
@@ -180,11 +199,7 @@ describe('UIKitMagnifierOverlay.attach', () => {
     }
     const doc = new Doc()
     const canvas = Object.assign(new EventTarget(), { ownerDocument: doc })
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => {},
-    }
+    const host = hostFor(canvas)
     const scene: string[] = []
     canvas.addEventListener('pointerdown', () => scene.push('down'))
     new UIKitMagnifierOverlay().attach(host)
@@ -195,14 +210,9 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(scene).toEqual(['down'])
   })
 
-  // Review of #841: a second touch during the exiting press is swallowed too.
   it('a second touch during the exiting press never reaches the scene', () => {
     const canvas = new EventTarget()
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => {},
-    }
+    const host = hostFor(canvas)
     const scene: string[] = []
     for (const type of [
       'pointerdown',
@@ -226,22 +236,40 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(scene).toEqual(['pointerdown:3'])
   })
 
-  // Review of #841: a second pointer's click must not end the swallow early.
+  it('a finger held on the lens when a mouse press exits it never reaches the scene', () => {
+    const canvas = new EventTarget()
+    const scene: string[] = []
+    for (const type of ['pointermove', 'pointerup', 'click'])
+      canvas.addEventListener(type, () => scene.push(type))
+    new UIKitMagnifierOverlay().attach(hostFor(canvas))
+    const finger = (type: string) =>
+      Object.assign(pointer(type, 40, 50, 1), { pointerType: 'touch' })
+    canvas.dispatchEvent(finger('pointerdown'))
+    for (const type of ['pointerdown', 'pointerup', 'click'])
+      canvas.dispatchEvent(pointer(type, 60, 50, 2))
+    for (const type of ['pointermove', 'pointerup', 'click'])
+      canvas.dispatchEvent(finger(type))
+    expect(scene).toEqual([])
+  })
+
   it('a second pointer clicking during the exiting press never reaches the scene', () => {
     const canvas = new EventTarget()
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => {},
-    }
+    const host = hostFor(canvas)
     const scene: string[] = []
-    for (const type of ['pointerdown', 'pointerup', 'mouseup', 'click'])
+    for (const type of [
+      'pointerdown',
+      'pointerup',
+      'mouseup',
+      'click',
+      'dblclick',
+    ])
       canvas.addEventListener(type, (e) =>
         scene.push(`${type}:${(e as PointerEvent).pointerId}`),
       )
     new UIKitMagnifierOverlay().attach(host)
     canvas.dispatchEvent(pointer('pointerdown', 40, 50, 1))
-    for (const type of ['pointerdown', 'pointerup', 'click'])
+    // Its double tap while the exiting press is held.
+    for (const type of ['pointerdown', 'pointerup', 'click', 'dblclick'])
       canvas.dispatchEvent(pointer(type, 60, 50, 2))
     for (const type of ['pointerup', 'mouseup', 'click'])
       canvas.dispatchEvent(pointer(type, 40, 50, 1))
@@ -249,12 +277,8 @@ describe('UIKitMagnifierOverlay.attach', () => {
   })
 
   it('a double click starting with the exiting press never sends its dblclick', () => {
-    const canvas = Object.assign(new EventTarget(), { style: { cursor: '' } })
-    const host = {
-      canvas: canvas as unknown as HTMLCanvasElement,
-      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
-      drawScene: () => {},
-    }
+    const canvas = new EventTarget()
+    const host = hostFor(canvas)
     const scene: string[] = []
     for (const type of ['pointerdown', 'click', 'dblclick'])
       canvas.addEventListener(type, () => scene.push(type))
@@ -282,5 +306,25 @@ describe('UIKitMagnifierOverlay.attach', () => {
       'click',
       'dblclick',
     ])
+  })
+
+  it('a tap exiting on a third click leaves the next double tap to the scene', () => {
+    const canvas = new EventTarget()
+    const scene: string[] = []
+    for (const type of ['click', 'dblclick'])
+      canvas.addEventListener(type, () => scene.push(type))
+    new UIKitMagnifierOverlay().attach(hostFor(canvas))
+    for (const type of ['pointerdown', 'pointerup'])
+      canvas.dispatchEvent(
+        Object.assign(pointer(type, 40, 50), { pointerType: 'touch' }),
+      )
+    const click = (detail: number) =>
+      canvas.dispatchEvent(Object.assign(pointer('click', 40, 50), { detail }))
+    click(3) // two held touches before it: no dblclick follows
+    expect(scene).toEqual([])
+    click(1)
+    click(2)
+    canvas.dispatchEvent(pointer('dblclick', 40, 50))
+    expect(scene).toEqual(['click', 'click', 'dblclick'])
   })
 })

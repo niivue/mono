@@ -8,6 +8,7 @@
       "options": { "cwd": "{projectRoot}" },
       "inputs": [
         "typescript",
+        "bundledDeps",
         "{projectRoot}/src/**/*",
         "{projectRoot}/tsconfig.build.json"
       ],

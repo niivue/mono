@@ -140,26 +140,22 @@ export async function niivueSegmentationDataset(
       instances,
     })
   const h = { SeriesDescription: label, SeriesNumber: 3000 }
-  if (modality === 'RTSTRUCT') {
-    const { rt } = pane
-    if (!rt) {
-      const frames = read()
-      return buildRtssDataset(() => frames, segments, h)
-    }
-    // Overlapping ROIs: fill each alone, then restore what the panel shows.
-    try {
-      return buildRtssDataset(
-        (s) => {
-          rt.showOnly(new Set([s.value]))
-          return read()
-        },
-        segments,
-        h,
-      )
-    } finally {
-      rt.showOnly(new Set(rows.map((r) => r.value)))
-    }
+  const { rt } = pane
+  const flat = rt ? undefined : read()
+  // Overlapping (or hidden) ROIs: fill each alone, then restore what the panel shows.
+  const framesFor = (s: ExportSegment) => {
+    if (flat) return flat
+    rt?.showOnly(new Set([s.value]))
+    return read()
   }
+  const restore = () =>
+    rt?.showOnly(new Set(rows.filter((r) => r.visible).map((r) => r.value)))
+  if (modality === 'RTSTRUCT')
+    try {
+      return buildRtssDataset(framesFor, segments, h)
+    } finally {
+      restore()
+    }
   const dcmjs = (await import('dcmjs')).default as {
     data: { Colors: { rgb2DICOMLAB(rgb: readonly number[]): number[] } }
   }
@@ -167,13 +163,17 @@ export async function niivueSegmentationDataset(
   const source = (
     (pane.seg.instance ?? pane.seg.instances?.[0]) as Ds | undefined
   )?.SegmentSequence
-  return buildSegDataset(
-    read(),
-    segments,
-    h,
-    (rgb) => dcmjs.data.Colors.rgb2DICOMLAB(rgb).map(Math.round),
-    source === undefined ? undefined : ([source].flat() as Ds[]),
-  )
+  try {
+    return buildSegDataset(
+      framesFor,
+      segments,
+      h,
+      (rgb) => dcmjs.data.Colors.rgb2DICOMLAB(rgb).map(Math.round),
+      source === undefined ? undefined : ([source].flat() as Ds[]),
+    )
+  } finally {
+    restore()
+  }
 }
 
 function segmentationLabel(

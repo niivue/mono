@@ -140,15 +140,33 @@ describe('rasterizeStructureSet', () => {
     const showOnly = draw(bitmap)
     expect(segments).toEqual([
       { value: 1, label: 'GTV', rgb: [255, 0, 0] },
-      { value: 3, label: 'BODY', rgb: [0, 255, 0] },
+      { value: 2, label: 'BODY', rgb: [0, 255, 0] },
     ])
     expect(stats.get(1)?.count).toBe(4)
-    expect(stats.get(3)?.count).toBe(81)
+    expect(stats.get(2)?.count).toBe(81)
     expect(bitmap[400 + 5 * 20 + 5]).toBe(1)
-    expect(bitmap[400 + 2 * 20 + 2]).toBe(3)
+    expect(bitmap[400 + 2 * 20 + 2]).toBe(2)
     // Hiding the nested ROI uncovers the larger one beneath it.
-    showOnly(new Set([3]))
-    expect(bitmap[400 + 5 * 20 + 5]).toBe(3)
+    showOnly(new Set([2]))
+    expect(bitmap[400 + 5 * 20 + 5]).toBe(2)
+  })
+
+  // Review of #839: empty ROIs must not use up the 255 labels.
+  test('a closed ROI after 255 empty ones is still drawn', () => {
+    const empty = { ROIName: 'empty', contourPoints: [] }
+    const { segments } = rasterizeStructureSet([20, 20, 5], identityLps, [
+      ...Array.from({ length: 255 }, () => empty),
+      {
+        ROIName: 'target',
+        contourPoints: [
+          {
+            type: 'CLOSED_PLANAR',
+            points: pts(square(-0.5, -0.5, -9.5, -9.5, 1)),
+          },
+        ],
+      },
+    ])
+    expect(segments.map((s) => s.label)).toEqual(['target'])
   })
 
   // Review of #839: a contour on the tilted plane z = y/2 crosses voxel

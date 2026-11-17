@@ -398,8 +398,8 @@ export interface RtLabels {
 }
 
 /**
- * Rasterize every ROI with closed contours, label = list index + 1 (at most
- * 255, the drawing's range); `draw` fills a bitmap and returns its refill.
+ * Rasterize the first 255 ROIs with closed contours (the drawing's range),
+ * labelled 1.. in list order; `draw` fills a bitmap and returns its refill.
  * Larger ROIs (by voxel count) are drawn first so nested ones stay visible on
  * top; stats are each ROI's own, and the refill without hidden ROIs uncovers
  * what they overlapped.
@@ -412,14 +412,15 @@ export function rasterizeStructureSet(
   segments: PanelSegment[]
   draw: (bitmap: Uint8Array) => RtLabels['showOnly']
 } {
-  const drawn = rois
-    .slice(0, 255)
-    .map((roi, i) => ({
-      roi,
-      value: i + 1,
-      ...rasterizeContours(dims, lps2vox, roiContours(roi)),
-    }))
-    .filter((r) => r.count)
+  // Cap after dropping empty ROIs, so empty ones never use up labels.
+  const drawn: ({ roi: RtRoi; value: number } & ReturnType<
+    typeof rasterizeContours
+  >)[] = []
+  for (const roi of rois) {
+    if (drawn.length === 255) break
+    const r = rasterizeContours(dims, lps2vox, roiContours(roi))
+    if (r.count) drawn.push({ roi, value: drawn.length + 1, ...r })
+  }
   const bySize = [...drawn].sort((a, b) => b.count - a.count)
   const runs = bySize.map((r) => Int32Array.from(r.runs))
   const stats = new Map<number, SegmentStats>(

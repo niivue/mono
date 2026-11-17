@@ -4,7 +4,9 @@
 // point under the pointer on its plane, a 3D render tile depth-picks the first
 // visible voxel (an exploded chunked volume is picked brick by brick). Between
 // the corners a fainter outline follows the pointer. A third right-click
-// starts a new box. Shift+right-click still opens the context menu.
+// starts a new box. Shift+right-click still opens the context menu. Register
+// it as an overlay renderer too (`registerOverlayRenderer`) to outline the
+// box's cross-section on each 2D slice that cuts it.
 //
 // Turn draw and annotation modes off while it is attached: they claim the
 // right button on the render tile too.
@@ -16,8 +18,14 @@ import {
   extractSubVolume,
   type FocusBox,
   type NVImage,
+  projectMMToCanvas,
+  SLICE_TYPE,
+  type SliceTile,
+  type UIKitOverlayFrame,
 } from '@niivue/niivue'
 import type { UIKitHost } from './controls'
+import { buildRect, type UIKitBox } from './rect'
+import { UIKitRectOverlay } from './rectOverlay'
 
 type Vec3 = [number, number, number]
 
@@ -29,6 +37,7 @@ export interface SubvolumeSelectorHost extends UIKitHost {
   canvasToMM(canvasX: number, canvasY: number): Vec3 | null
   pickAt(canvasX: number, canvasY: number): Promise<Vec3 | null>
   pickExplodedBlock(clientX: number, clientY: number): ExplodedBlockPick | null
+  getScreenTiles(): readonly SliceTile[]
 }
 
 export interface SubvolumeSelection {
@@ -99,6 +108,60 @@ export function subvolumeBox(
   return { voxelOrigin, voxelDims, minMM, maxMM }
 }
 
+/**
+ * Canvas rects (backing-store px) of `box`'s cross-section on each 2D tile
+ * whose plane cuts it, at least `minPx` wide and clipped to the tile.
+ * shortcut: the plane is taken along its dominant normal axis, so an oblique
+ * tile gets the box's axis-aligned slab, not its exact polygon.
+ */
+export function sliceOutlineRects(
+  tiles: readonly SliceTile[],
+  box: Pick<FocusBox, 'min' | 'max'>,
+  minPx: number,
+): UIKitBox[] {
+  const out: UIKitBox[] = []
+  for (const t of tiles) {
+    const { mvpMatrix: mvp, planeNormal: n, planePoint: pp } = t
+    const ltwh = t.leftTopWidthHeight
+    if (!mvp || !n || !pp || !ltwh || t.axCorSag === SLICE_TYPE.RENDER) continue
+    const ax = [0, 1, 2]
+    const k = ax.reduce((a, b) => (Math.abs(n[b]) > Math.abs(n[a]) ? b : a))
+    // A slice on a voxel edge, as the first corner's own slice can be, sits
+    // on the box face give or take float32 rounding.
+    if (pp[k] < box.min[k] - 1e-3 || pp[k] > box.max[k] + 1e-3) continue
+    const [u, v] = ax.filter((a) => a !== k)
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    for (let c = 0; c < 4; c++) {
+      const mm: Vec3 = [0, 0, 0]
+      mm[k] = pp[k]
+      mm[u] = c & 1 ? box.max[u] : box.min[u]
+      mm[v] = c & 2 ? box.max[v] : box.min[v]
+      const [x, y] = projectMMToCanvas(mm, mvp, ltwh)
+      x0 = Math.min(x0, x)
+      y0 = Math.min(y0, y)
+      x1 = Math.max(x1, x)
+      y1 = Math.max(y1, y)
+    }
+    // A one-voxel corner can be a pixel across: keep it visible.
+    const grow = (a: number, b: number): [number, number] => {
+      const pad = Math.max(0, (minPx - (b - a)) / 2)
+      return [a - pad, b + pad]
+    }
+    ;[x0, x1] = grow(x0, x1)
+    ;[y0, y1] = grow(y0, y1)
+    x0 = Math.max(x0, ltwh[0])
+    y0 = Math.max(y0, ltwh[1])
+    x1 = Math.min(x1, ltwh[0] + ltwh[2])
+    y1 = Math.min(y1, ltwh[1] + ltwh[3])
+    if (x1 > x0 && y1 > y0)
+      out.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 })
+  }
+  return out
+}
+
 /** Invert the row-major voxel->mm affine for one point. */
 function mmToVoxel(m: ArrayLike<number>, mm: Vec3): Vec3 {
   const [a, b, c, e, f, g, h, i, j] = [
@@ -130,6 +193,8 @@ export class UIKitSubvolumeSelector {
   thickness: number
   private first: Vec3 | null = null
   private host: SubvolumeSelectorHost | null = null
+  private shown: FocusBox | null = null
+  private readonly rects = new UIKitRectOverlay()
 
   constructor(options: UIKitSubvolumeSelectorOptions = {}) {
     this.onSelect = options.onSelect ?? null
@@ -150,22 +215,22 @@ export class UIKitSubvolumeSelector {
     if (!host || !vol) return null
     if (!this.first) {
       this.first = mm
-      host.focusBox = null
       this.preview(mm)
       this.onCorner?.(mm)
       return null
     }
     const box = subvolumeBox(vol, this.first, mm)
     this.first = null
-    if (!box) return null
-    // An exploded volume is drawn brick by brick: no one world box outlines it.
-    if (!isExploded(vol))
-      host.focusBox = {
-        min: box.minMM,
-        max: box.maxMM,
-        color: this.color,
-        thickness: this.thickness,
-      }
+    if (!box) {
+      this.outline(null)
+      return null
+    }
+    this.outline({
+      min: box.minMM,
+      max: box.maxMM,
+      color: this.color,
+      thickness: this.thickness,
+    })
     const selection = {
       ...box,
       subVolume: extractSubVolume(vol, box.voxelOrigin, box.voxelDims),
@@ -178,21 +243,53 @@ export class UIKitSubvolumeSelector {
   preview(mm: Vec3): void {
     const host = this.host
     const vol = host?.volumes[0]
-    if (!host || !vol || !this.first || isExploded(vol)) return
+    if (!host || !vol || !this.first) return
     const box = subvolumeBox(vol, this.first, mm)
     if (!box) return
-    host.focusBox = {
+    this.outline({
       min: box.minMM,
       max: box.maxMM,
       color: [this.color[0], this.color[1], this.color[2], 0.5],
       thickness: this.thickness,
-    }
+    })
   }
 
   /** Forget a half-picked box and clear the outline. */
   reset(): void {
     this.first = null
-    if (this.host) this.host.focusBox = null
+    this.outline(null)
+  }
+
+  /** Outline the box's cross-section on each 2D slice that cuts it. */
+  drawOverlay(frame: UIKitOverlayFrame): void {
+    const box = this.shown
+    if (!box || !this.host) return
+    const tiles = this.host.getScreenTiles()
+    const border = box.thickness * frame.dpr
+    this.rects.setRects(
+      sliceOutlineRects(tiles, box, 6 * frame.dpr).map((r) =>
+        buildRect({
+          ...r,
+          borderWidth: border,
+          fill: [0, 0, 0, 0],
+          border: box.color,
+        }),
+      ),
+    )
+    this.rects.drawOverlay(frame)
+  }
+
+  /** Show `box` on the slices and, unless exploded, the 3D render. */
+  private outline(box: FocusBox | null): void {
+    const host = this.host
+    if (!host) return
+    this.shown = box
+    // An exploded volume is drawn brick by brick: no one world box outlines it.
+    const vol = host.volumes[0]
+    if (box && vol && isExploded(vol)) {
+      host.focusBox = null
+      host.drawScene()
+    } else host.focusBox = box
   }
 
   /** Take right-clicks on the host canvas; returns the unwire function. */

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import type { FocusBox, NVImage } from '@niivue/niivue'
+import type { FocusBox, NVImage, SliceTile } from '@niivue/niivue'
 import {
   type SubvolumeSelection,
   type SubvolumeSelectorHost,
+  sliceOutlineRects,
   subvolumeBox,
   UIKitSubvolumeSelector,
 } from './subvolumeSelector'
@@ -61,6 +62,7 @@ function makeHost(
     hitTest: () => ({ isRender }),
     canvasToMM: () => picks.slice?.shift() ?? null,
     pickAt: async () => picks.render?.shift() ?? null,
+    getScreenTiles: () => [],
     pickExplodedBlock: () => {
       const mm = picks.exploded?.shift()
       return mm ? ({ mm } as never) : null
@@ -83,6 +85,60 @@ describe('subvolumeBox', () => {
 
   it('is null when the box misses the volume', () => {
     expect(subvolumeBox(makeVolume(), vox(9, 0, 0), vox(12, 3, 3))).toBeNull()
+  })
+})
+
+describe('sliceOutlineRects', () => {
+  // A 128x128 px axial tile at (10, 20) showing x, y in [-64, 64] mm, at z = 0
+  // (a power-of-two scale keeps the float32 MVP exact).
+  const mvp = Float32Array.from([
+    1 / 64,
+    0,
+    0,
+    0,
+    0,
+    1 / 64,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+  ])
+  const axial = {
+    axCorSag: 0,
+    leftTopWidthHeight: [10, 20, 128, 128],
+    mvpMatrix: mvp,
+    planeNormal: [0, 0, 1],
+    planePoint: [0, 0, 0],
+  } as unknown as SliceTile
+  const render = { ...axial, axCorSag: 4 } as unknown as SliceTile
+
+  it('outlines the cross-section on a slice that cuts the box', () => {
+    const box = { min: [-10, 0, -5] as Vec3, max: [20, 30, 5] as Vec3 }
+    expect(sliceOutlineRects([axial, render], box, 0)).toEqual([
+      { x: 64, y: 54, width: 30, height: 30 },
+    ])
+  })
+
+  it('skips a slice that misses the box, grows a tiny one, clips to the tile', () => {
+    expect(
+      sliceOutlineRects([axial], { min: [0, 0, 1], max: [5, 5, 3] }, 0),
+    ).toEqual([])
+    // On the box face, off by float32 rounding, still cuts it.
+    expect(
+      sliceOutlineRects([axial], { min: [0, 0, 1e-5], max: [8, 8, 3] }, 0),
+    ).toHaveLength(1)
+    expect(
+      sliceOutlineRects([axial], { min: [0, 0, 0], max: [1, 1, 0] }, 6),
+    ).toEqual([{ x: 71.5, y: 80.5, width: 6, height: 6 }])
+    expect(
+      sliceOutlineRects([axial], { min: [40, 40, 0], max: [90, 90, 0] }, 0),
+    ).toEqual([{ x: 114, y: 20, width: 24, height: 24 }])
   })
 })
 

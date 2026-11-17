@@ -156,12 +156,12 @@ export function useHungOverlays(
       for (const uid of hung) {
         if (keep.has(uid)) continue
         hung.delete(uid)
-        const entry = getNiivueEntry(viewportId)
-        const hdr = entry?.overlays.get(uid)
-        const index = hdr ? nv.volumes.findIndex((v) => v.hdr === hdr) : -1
-        if (index <= 0) continue
-        entry?.overlays.delete(uid)
-        await nv.removeVolume(index)
+        // The command also refreshes the toolbar's overlay list.
+        await commandsManager.runCommand(
+          'niivueRemoveOverlay',
+          { viewportId, displaySetInstanceUID: uid },
+          'NIIVUE',
+        )
       }
       for (const ds of overlays) {
         if (stale) return

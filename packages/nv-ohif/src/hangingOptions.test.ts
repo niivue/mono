@@ -165,8 +165,18 @@ test('an overlay dropped from the protocol after it loaded is removed', async ()
   const entry = getNiivueEntry('vp-drop')
   // A user-added overlay the protocol never hung stays.
   entry?.overlays.set('user', user as never)
+  const removeCalls: unknown[] = []
   const commandsManager = {
-    runCommand: async (_: string, a: { displaySetInstanceUID: string }) => {
+    runCommand: async (
+      name: string,
+      a: { viewportId: string; displaySetInstanceUID: string },
+    ) => {
+      if (name === 'niivueRemoveOverlay') {
+        removeCalls.push(a)
+        const hdr = entry?.overlays.get(a.displaySetInstanceUID)
+        entry?.overlays.delete(a.displaySetInstanceUID)
+        return nv.removeVolume(nv.volumes.findIndex((v) => v.hdr === hdr))
+      }
       const hdr = {}
       nv.volumes.push({ hdr })
       entry?.overlays.set(a.displaySetInstanceUID, hdr as never)
@@ -186,6 +196,10 @@ test('an overlay dropped from the protocol after it loaded is removed', async ()
   }
   await hang(['ct', 'pt'])
   await hang(['ct'])
+  // Through the command, which also refreshes the toolbar.
+  expect(removeCalls).toEqual([
+    { viewportId: 'vp-drop', displaySetInstanceUID: 'pt' },
+  ])
   expect(removed).toEqual([2])
   expect(entry?.overlays.has('pt')).toBe(false)
   expect(entry?.overlays.has('user')).toBe(true)

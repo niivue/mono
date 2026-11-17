@@ -1,3 +1,20 @@
+## 1.0.0-rc.216 (2026-11-17)
+
+### Fixes
+
+- **niivue:** draw the overlay outline outside supra-threshold voxels ([a9fb0ff2](https://github.com/niivue/mono/commit/a9fb0ff2))
+- **niivue:** weight negative modulator values by magnitude ([936a379e](https://github.com/niivue/mono/commit/936a379e))
+
+### Performance
+
+- **niivue:** fill caller's RAS array for two-sided modulation ([17396c80](https://github.com/niivue/mono/commit/17396c80))
+
+### Thank You
+
+- Claude Opus 5.5
+- neurolabusc
+- Taylor Hanayik @hanayik
+
 ## 1.0.0-rc.215 (2026-11-16)
 
 ### Fixes

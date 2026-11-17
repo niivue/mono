@@ -103,7 +103,13 @@ export function createMagnifyBinding(nv: Host) {
           touch = null
           if (opts.held) hide()
         }
-        if (e.type === 'pointerleave' && !opts.held) hide()
+        // Touch fires pointerleave on every lift: the glass stays where it was put.
+        if (
+          e.type === 'pointerleave' &&
+          !opts.held &&
+          e.pointerType !== 'touch'
+        )
+          hide()
       }
       // A double-click on the lens must not depth-pick and move the crosshair.
       const swallow = (e: Event) => e.stopImmediatePropagation()

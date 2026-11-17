@@ -82,6 +82,25 @@ test('AdvancedMagnify follows the pointer after a click; leaving hides it', () =
   ])
 })
 
+test('AdvancedMagnify stays where a touch lifts (touch fires pointerleave)', () => {
+  const moves: number[][] = []
+  spies.push(
+    spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove').mockImplementation(
+      (x: number, y: number) => {
+        moves.push([x, y])
+      },
+    ),
+  )
+  const { canvas, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  const touch = { pointerType: 'touch', pointerId: 1 }
+  for (const t of ['pointerdown', 'pointerup', 'pointerleave'])
+    canvas.dispatchEvent(pointer(t, 0, touch))
+  binding.dispose()
+  expect(moves).toEqual([[5, 5]])
+})
+
 test('a second finger hands both touches to core (pinch)', () => {
   const { canvas, core, nv } = host()
   const binding = createMagnifyBinding(nv)

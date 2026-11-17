@@ -1,3 +1,14 @@
+## 1.0.0-rc.221 (2026-11-17)
+
+### Fixes
+
+- **niivue:** pass each gradient compute entry point only the overrides it reads ([a87896df](https://github.com/niivue/mono/commit/a87896df))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.220 (2026-11-17)
 
 ### Fixes

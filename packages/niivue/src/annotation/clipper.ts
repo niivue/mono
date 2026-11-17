@@ -1,4 +1,6 @@
 import {
+  areaPathsD,
+  booleanOpD,
   booleanOpWithPolyTree,
   ClipType,
   EndType,
@@ -184,4 +186,30 @@ export function clipperSubtractBrush(
     FillRule.EvenOdd,
   )
   return extractPolyTree(tree)
+}
+
+/**
+ * Area of an ROI as the voxel mask reads it: the union of its pieces, each
+ * inside its outer ring by even-odd (pointInRing's rule, so a self-crossing
+ * ring's lobes add instead of cancelling as in a signed shoelace sum) and
+ * inside none of its holes.
+ */
+export function clipperRegionArea(polygons: PolygonWithHoles[]): number {
+  // precision 4: 0.1 um in mm, while scaled products stay exact in doubles.
+  const region = (ring: AnnotationPoint[]) =>
+    booleanOpD(ClipType.Union, [ring], null, FillRule.EvenOdd, 4)
+  // Clipper's output rings wind consistently, so NonZero unions overlapping
+  // holes, and overlapping pieces.
+  const pieces = polygons.flatMap((poly) =>
+    booleanOpD(
+      ClipType.Difference,
+      region(poly.outer),
+      poly.holes.flatMap(region),
+      FillRule.NonZero,
+      4,
+    ),
+  )
+  return Math.abs(
+    areaPathsD(booleanOpD(ClipType.Union, pieces, null, FillRule.NonZero, 4)),
+  )
 }

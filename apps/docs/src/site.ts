@@ -6,7 +6,7 @@ export const repoUrl = 'https://github.com/niivue/mono'
 // published examples site. Point this at a local `bun run dev` server in
 // packages/niivue (http://localhost:5273/) to try unpublished examples.
 export const examplesBase =
-  process.env.DOCS_EXAMPLES_BASE ?? 'https://niivue.github.io/mono/'
+  process.env.DOCS_EXAMPLES_BASE ?? 'https://niivue.com/'
 
 /** `path` under the site's base, e.g. `withBase('gallery/')`. */
 export function withBase(path = ''): string {

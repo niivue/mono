@@ -29,10 +29,13 @@ const webgpuCheck = document.getElementById('webgpuCheck')
 
 const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
 webgpuCheck.checked = backend === 'webgpu'
+// With the legend shown, a colour box click hides/shows that structure; a
+// double-click shows only it.
 const nv1 = new NiiVue({
   backend,
   backgroundColor: [0, 0, 0, 1],
   isLegendVisible: false,
+  isLegendToggleEnabled: true,
 })
 nv1.addEventListener('locationChange', (e) => {
   location.textContent = e.detail.string

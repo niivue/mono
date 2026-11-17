@@ -45,6 +45,40 @@ export const NIIVUE_SLICE_TYPES: Record<string, number> = {
   render: SLICE_TYPE.RENDER,
 }
 
+/**
+ * The slice type a hanging protocol asks of a viewport: a `volume3d` viewport
+ * renders, an orientation (axial/coronal/sagittal) picks that plane, and
+ * anything else (stack, 'acquisition', unset) keeps the multiplanar default.
+ */
+export function initialSliceType(viewportOptions?: {
+  orientation?: string
+  viewportType?: string
+}): number {
+  if (viewportOptions?.viewportType === 'volume3d') return SLICE_TYPE.RENDER
+  return (
+    NIIVUE_SLICE_TYPES[viewportOptions?.orientation ?? ''] ??
+    SLICE_TYPE.MULTIPLANAR
+  )
+}
+
+/**
+ * The render camera [azimuth, elevation] for a volume3d viewport's hanging-protocol
+ * orientation, matching cornerstone's camera (coronal from the front, sagittal
+ * from patient left, axial from below); undefined keeps NiiVue's default.
+ */
+export function initialRenderView(viewportOptions?: {
+  orientation?: string
+  viewportType?: string
+}): [number, number] | undefined {
+  if (viewportOptions?.viewportType !== 'volume3d') return undefined
+  return (
+    { coronal: [180, 0], sagittal: [90, 0], axial: [180, -90] } as Record<
+      string,
+      [number, number]
+    >
+  )[viewportOptions.orientation ?? '']
+}
+
 // Clip plane presets as NiiVue [depth, azimuth, elevation]. Depth 2 is out of
 // range, which disables the plane (NiiVue's own convention for "off").
 export const NIIVUE_CLIP_PLANES: Record<string, [number, number, number]> = {
@@ -330,18 +364,6 @@ export function readBaseWindowLevel(
   return { window: calMax - calMin, level: (calMin + calMax) / 2 }
 }
 
-// Two window/level pairs are the same if within this fraction of the width — a
-// contrast drag moves them well beyond this, crosshair navigation not at all.
-function sameWindowLevel(
-  a: { window: number; level: number },
-  b: { window: number; level: number },
-): boolean {
-  const eps = Math.max(1e-3, Math.abs(a.window) * 1e-3)
-  return (
-    Math.abs(a.window - b.window) < eps && Math.abs(a.level - b.level) < eps
-  )
-}
-
 // The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
 // from a polygon when there is no shape).
 function annotationToolType(a: VectorAnnotation): string | undefined {
@@ -473,7 +495,9 @@ function resolveBackingSeries(
 }
 
 // world mm in NIfTI RAS -> DICOM patient LPS (negate x and y).
-function rasToLps(p: [number, number, number]): [number, number, number] {
+export function rasToLps(
+  p: [number, number, number],
+): [number, number, number] {
   return [p[0] === 0 ? 0 : -p[0], p[1] === 0 ? 0 : -p[1], p[2]]
 }
 
@@ -1356,23 +1380,21 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * On a base-volume volumeUpdated, record the new window/level on the entry.
- * Returns it when it changed (for a viewport readout), else undefined. Windows
- * stay per viewport, as in OHIF: nothing is pushed to other viewports.
+ * Cornerstone's WindowLevel drag as NiiVue windowingStep: round(dynamic range /
+ * 1024) intensity units per pixel for width and center (4 for CT), dragging
+ * down raising the center. NiiVue's step is a fraction of the robust range.
  */
-export function trackNiivueWindowLevel(
-  viewportId: string,
-): { window: number; level: number } | undefined {
-  const entry = getNiivueEntry(viewportId)
-  if (!entry) return undefined
-  const wl = readBaseWindowLevel(entry.nv)
-  if (!wl) return undefined
-  // First observation just seeds the baseline (no readout).
-  if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
-    return undefined
-  const seeded = entry.windowLevel !== undefined
-  entry.windowLevel = wl
-  return seeded ? wl : undefined
+export function cornerstoneWindowingStep(vol: {
+  globalMin: number
+  globalMax: number
+  robustMin: number
+  robustMax: number
+}): [number, number] | undefined {
+  const ratio = (vol.globalMax - vol.globalMin) / 1024
+  const perPixel = ratio > 1 ? Math.round(ratio) : ratio
+  const robust = vol.robustMax - vol.robustMin
+  if (!(perPixel > 0) || !(robust > 0)) return undefined
+  return [perPixel / robust, -perPixel / robust]
 }
 
 /** A hanging protocol's initial window (`displaySetOptions[0].options.voi`). */
@@ -1384,8 +1406,49 @@ export function voiRange(
   const options = (d?.options ?? d) as
     | { voi?: { windowWidth?: unknown; windowCenter?: unknown } }
     | undefined
-  const width = Number(options?.voi?.windowWidth)
-  const center = Number(options?.voi?.windowCenter)
+  return windowRange(options?.voi?.windowWidth, options?.voi?.windowCenter)
+}
+
+/**
+ * The series' own DICOM window (first WindowWidth/WindowCenter), which
+ * cornerstone opens with when the hanging protocol sets none. Only a window
+ * shared by every instance counts: scanners that store a
+ * per-slice auto window (e.g. Siemens MR) would otherwise window the whole
+ * volume by one edge slice.
+ */
+export function dicomWindow(
+  ds: OhifDisplaySet | undefined,
+  shown?: SliceFrames,
+): { calMin: number; calMax: number } | undefined {
+  // Only the instances the shown output was made of (a series can convert to
+  // several outputs, e.g. orthogonal localizers), in slice order.
+  const all = (ds?.instances ?? []) as Array<{
+    SOPInstanceUID?: string
+    WindowWidth?: unknown
+    WindowCenter?: unknown
+  }>
+  const sops = new Set(shown?.frames.map((f) => f?.SOPInstanceUID))
+  sops.delete(undefined)
+  const instances = sops.size
+    ? all.filter((x) => sops.has(x.SOPInstanceUID))
+    : all
+  const first = (v: unknown) => (Array.isArray(v) ? v[0] : v)
+  const key = (inst: (typeof all)[number] | undefined) =>
+    `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
+  // Every instance: a per-slice window can agree at any sampled few.
+  if (!instances.every((x) => key(x) === key(instances[0]))) return undefined
+  return windowRange(
+    first(instances[0]?.WindowWidth),
+    first(instances[0]?.WindowCenter),
+  )
+}
+
+function windowRange(
+  windowWidth: unknown,
+  windowCenter: unknown,
+): { calMin: number; calMax: number } | undefined {
+  const width = Number(windowWidth)
+  const center = Number(windowCenter)
   if (!(width > 0) || !Number.isFinite(center)) return undefined
   const [calMin, calMax] = windowToRange(width, center)
   return { calMin, calMax }
@@ -1404,10 +1467,20 @@ export function resetView(entry: NiivueViewportEntry): void {
   nv.pan2Dxyzmm = [...VIEW_DEFAULTS.pan2Dxyzmm]
   nv.renderPan = [...VIEW_DEFAULTS.renderPan]
   centerCrosshair(nv)
-  // Cornerstone's reset also clears rotation and flips.
+  // Cornerstone's reset also clears rotation, flips and inversion.
   nv.rotation2D = 0
   nv.isFlipped2DHorizontal = false
   nv.isFlipped2DVertical = false
+  if (nv.volumes[0]?.isColormapInverted) invertBase(entry)
+}
+
+/** Toggle the base volume's inverted grayscale (OHIF's invertViewport). */
+export function invertBase(entry: NiivueViewportEntry): void {
+  const base = entry.nv.volumes[0]
+  if (entry.slideView || !base) return
+  entry.nv
+    .setVolume(0, { isColormapInverted: !base.isColormapInverted })
+    .catch((err: unknown) => console.error('[nv-ohif] invert failed', err))
 }
 
 /**
@@ -1698,6 +1771,9 @@ export function getNiivueCommandsModule({
           entry.overlayLoading = false
           refreshToolbar(servicesManager, viewportId)
         }
+        // The overlay volume is installed (or abandoned): release the shared
+        // conversion, which nothing can abort once overlayAbort is cleared.
+        abort.abort()
       }
     },
 
@@ -1835,9 +1911,11 @@ export function getNiivueCommandsModule({
       if (!entry || entry.nv.volumes.length === 0) return
       entry.nv
         .recalculateCalMinMax(0)
+        // recalculateCalMinMax emits no volumeUpdated; setVolume does, so the
+        // corner W/L readout follows.
         .then(() => {
-          const wl = readBaseWindowLevel(entry.nv)
-          if (wl) entry.windowLevel = wl
+          const { calMin, calMax } = entry.nv.volumes[0] ?? {}
+          return entry.nv.setVolume(0, { calMin, calMax })
         })
         .catch((err: unknown) =>
           console.error('[nv-ohif] auto window/level failed', err),

@@ -78,3 +78,19 @@ test('NVSlideAnnotations adds, relabels and removes with events', () => {
     'removed mitosis',
   ])
 })
+
+test('NVSlideAnnotations hands out copies, so callers cannot edit stored geometry', () => {
+  const store = new NVSlideAnnotations(() => undefined)
+  const added = store.add('line', [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+  ])
+  const id = added?.id ?? ''
+  const got = store.get(id)
+  if (got?.points[1]) got.points[1].x = 100
+  const listed = store.list()[0]
+  if (listed?.points[1]) listed.points[1].x = 100
+  if (added?.points[1]) added.points[1].x = 100
+  expect(store.get(id)?.points[1]?.x).toBe(10)
+  expect(store.get(id)?.stats.length).toBe(10)
+})

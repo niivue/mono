@@ -139,6 +139,15 @@ export function slideAnnotationStats(
 
 export type SlideAnnotationEvent = CustomEvent<SlideAnnotation>
 
+// Callers get copies: editing one must not change stored geometry behind stats and events.
+function copyOf(a: SlideAnnotation): SlideAnnotation {
+  return {
+    ...a,
+    points: a.points.map(({ x, y }) => ({ x, y })),
+    stats: { ...a.stats },
+  }
+}
+
 /**
  * A slide's annotations, in base pixels so they hold at every level. Events
  * `added`, `changed` (label) and `removed` carry the annotation as `detail`.
@@ -156,11 +165,12 @@ export class NVSlideAnnotations extends EventTarget {
   }
 
   list(): SlideAnnotation[] {
-    return [...this._items.values()]
+    return [...this._items.values()].map(copyOf)
   }
 
   get(id: string): SlideAnnotation | undefined {
-    return this._items.get(id)
+    const annotation = this._items.get(id)
+    return annotation && copyOf(annotation)
   }
 
   /** Add an annotation (e.g. restored from a store); null with too few points. */
@@ -180,7 +190,7 @@ export class NVSlideAnnotations extends EventTarget {
     }
     this._items.set(annotation.id, annotation)
     this._emit('added', annotation)
-    return annotation
+    return copyOf(annotation)
   }
 
   remove(id: string): boolean {
@@ -204,6 +214,6 @@ export class NVSlideAnnotations extends EventTarget {
   }
 
   private _emit(type: string, detail: SlideAnnotation): void {
-    this.dispatchEvent(new CustomEvent(type, { detail }))
+    this.dispatchEvent(new CustomEvent(type, { detail: copyOf(detail) }))
   }
 }

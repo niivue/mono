@@ -29,8 +29,8 @@ mock.module('@ohif/mode-segmentation', () => ({
   modeInstance: { toolbarButtons: [], toolbarSections: [] },
 }))
 mock.module('@ohif/mode-tmtv', () => ({ initToolGroups: () => {} }))
-const { default: segmentation } = await import('./segmentation.js')
-const { default: tmtv } = await import('./tmtv.js')
+const { default: segmentation } = await import('./modes/segmentation.js')
+const { default: tmtv } = await import('./modes/tmtv.js')
 
 test('segmentation mode does not inherit the basic read-only panel', () => {
   const { modeCustomizations } = segmentation.modeInstance

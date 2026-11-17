@@ -10,7 +10,7 @@
 export type SlideIndexSkipReason =
   | 'not-dicom' // no DICM preamble
   | 'transfer-syntax' // implicit VR, big endian or deflated
-  | 'uncompressed' // native pixel data: no tile codec reads it
+  | 'uncompressed' // unsupported native pixel layout
   | 'malformed' // a header or item that does not parse, or a value out of range
   | 'too-large' // a level of more tiles than the index holds
   | 'not-tiled' // no tile geometry (not WSI)
@@ -33,6 +33,8 @@ export interface SlideIndexInstance {
   transferSyntax: string
   photometric: string
   bitsStored: number
+  /** Native unsigned 8/16-bit monochrome or interleaved 8-bit RGB frames. */
+  native?: 'raw-gray' | 'raw-rgb'
   /** PixelRepresentation 1: two's complement samples. */
   signed?: true
   /** Top-level RescaleSlope/Intercept, when stated and not the identity. */
@@ -264,7 +266,7 @@ const TOP_TAGS = new Set([
   T.absentLab,
   T.eot,
   T.eotLengths,
-  // Associated images with native pixel data (indexInstance).
+  // Native pixel layout (levels and associated images).
   T.samplesPerPixel,
   T.planar,
   T.bitsAllocated,
@@ -1014,8 +1016,20 @@ async function indexInstance(
   const size = file.size
   const readAt: ReadAt = (offset, length) => read(file, offset, length)
   const { b, pixel, top, attributes } = await readHeader(readAt, size)
-  // Each frame needs at least its 8-byte item header after Pixel Data.
-  const g = instanceGeometry(attributes, Math.floor((size - pixel) / 8))
+  const pixelLength = u32(b, pixel + 8)
+  // Native frames have no item headers; even a one-pixel frame is valid.
+  const maxFrames =
+    pixelLength === UNDEFINED_LENGTH
+      ? Math.floor((size - pixel) / 8)
+      : Math.floor(
+          Math.min(pixelLength, size - pixel - 12) /
+            Math.max(
+              1,
+              (attributes.number[T.rows] ?? 1) *
+                (attributes.number[T.columns] ?? 1),
+            ),
+        )
+  const g = instanceGeometry(attributes, maxFrames)
   const instance = {
     ...g.instance,
     file: key,
@@ -1101,7 +1115,7 @@ function spacingOf<C>(
     : undefined
 }
 
-/** Fill `info.offset`/`info.length` from the encapsulated pixel data. */
+/** Fill `info.offset`/`info.length` from native or encapsulated pixel data. */
 async function frameSpans(
   info: InstanceInfo,
   b: Uint8Array,
@@ -1114,8 +1128,48 @@ async function frameSpans(
   const vr = String.fromCharCode(b[pixel + 4] as number, b[pixel + 5] as number)
   if (vr !== 'OB' && vr !== 'OW')
     throw new Skip('malformed', `Pixel Data has VR ${vr}`)
-  if (u32(b, pixel + 8) !== UNDEFINED_LENGTH)
-    throw new Skip('uncompressed', 'native (uncompressed) pixel data')
+  const pixelLength = u32(b, pixel + 8)
+  if (pixelLength !== UNDEFINED_LENGTH) {
+    const view = new DataView(b.buffer, b.byteOffset, b.length)
+    const n = (tag: number) => {
+      const e = top.get(tag)
+      return e ? numberOf(b, view, e) : undefined
+    }
+    const { instance, tileWidth, tileHeight } = info
+    const bits = n(T.bitsAllocated)
+    const samples = n(T.samplesPerPixel)
+    const grey =
+      samples === 1 &&
+      ['MONOCHROME1', 'MONOCHROME2'].includes(instance.photometric)
+    const rgb =
+      samples === 3 &&
+      instance.photometric === 'RGB' &&
+      bits === 8 &&
+      n(T.planar) === 0
+    if (
+      instance.transferSyntax !== '1.2.840.10008.1.2.1' ||
+      (bits !== 8 && bits !== 16) ||
+      instance.bitsStored !== bits ||
+      instance.signed ||
+      !(grey || rgb)
+    )
+      throw new Skip(
+        'uncompressed',
+        'native levels require unsigned 8/16-bit monochrome or interleaved 8-bit RGB',
+      )
+    const frameBytes = tileWidth * tileHeight * (rgb ? 3 : 1) * (bits / 8)
+    if (
+      pixelLength < frameCount * frameBytes ||
+      pixel + 12 + pixelLength > size
+    )
+      throw new Skip('malformed', 'native pixel data is short')
+    instance.native = rgb ? 'raw-rgb' : 'raw-gray'
+    for (let f = 0; f < frameCount; f++) {
+      offset[f] = pixel + 12 + f * frameBytes
+      length[f] = frameBytes
+    }
+    return
+  }
   if (tagOf(u16(b, pixel + 12), u16(b, pixel + 14)) !== T.item)
     throw new Skip('malformed', 'no Basic Offset Table item')
   const botLength = u32(b, pixel + 16)
@@ -1227,7 +1281,7 @@ async function frameSpans(
 /**
  * Index the DICOM-WSI instances among `files` on this thread; the public
  * `indexDicomWsi` runs it in a worker when it can. Files that are not tiled,
- * compressed, explicit-VR DICOM, or that fail to parse, are listed in
+ * supported explicit-VR DICOM, or that fail to parse, are listed in
  * `skipped`; they never cost the other files their slides. Only VOLUME
  * instances make levels; each optical path and focal plane is its own slide.
  * `keys` name the files (default {@link fileKeys}).

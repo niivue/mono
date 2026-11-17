@@ -44,11 +44,11 @@ export async function manifestFromIndex(
       if (slot < 0) continue
       const t = level.tiles[ti] as NVSlideTileManifest
       const k = frames.instance[slot] as number
-      const ranges = await frameRanges(
-        byInstance[k] as File,
-        frames.offset[slot] as number,
-        frames.length[slot] as number,
-      )
+      const offset = frames.offset[slot] as number
+      const length = frames.length[slot] as number
+      const ranges = slide.instances[k]?.native
+        ? { offset, length }
+        : await frameRanges(byInstance[k] as File, offset, length)
       tiles.push({
         ...t,
         ...ranges,

@@ -37,6 +37,14 @@ you indexed.
 Indexing needs a recent browser: Chrome 111, Firefox 128 or Safari 16.4 or
 newer.
 
+Local folders and hosted manifests also support uncompressed unsigned 8/16-bit
+monochrome and interleaved 8-bit RGB slides (Explicit VR Little Endian).
+Grayscale tiles keep their sample precision for windowing; each optical path
+opens as its own slide. A pyramid may mix native and compressed levels.
+Dim fluorescence may need a narrower display window via `slide.setChannel`.
+Other native layouts, including planar RGB and 16-bit RGB components, remain
+unsupported. Native DICOMweb frames are not supported.
+
 ## Showing progress and cancelling
 
 A large folder can take a moment. `onProgress` runs after each file, and a
@@ -57,7 +65,7 @@ const index = await indexDicomWsi(files, {
 Files the index could not use are listed in `index.skipped`, each with a
 `reason` and a readable `message`. The usual reasons are a file that is not
 DICOM, a DICOM file that is not a tiled slide (a CT slice, say), and a
-slide stored uncompressed, which this package does not read. Show the list
+slide with an unsupported pixel layout. Show the list
 to the user when a folder opens no slides.
 
 ## Label and overview pictures

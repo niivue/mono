@@ -106,13 +106,19 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files, { at
 
 - `indexDicomWsi` parses only headers and item tags, never pixel data.
   It uses the Basic or Extended Offset Table when present, and otherwise walks the items.
+  Native unsigned 8/16-bit MONOCHROME1/2 and interleaved 8-bit RGB levels
+  (Explicit VR Little Endian, BitsStored = BitsAllocated) use fixed-size frame
+  spans and reach NVSlide as `raw-gray` or `raw-rgb`, including hosted manifests.
+  uint16 samples retain their precision; padded edge tiles are cropped before display.
   In a page it runs in an inlined worker that reads 1 MiB blocks (`FileReaderSync`), so
   an item walk reads each file through; without a worker (Bun, or a CSP that blocks
   `blob:` workers) it reads with `File.slice` on the calling thread.
 - It handles multi-fragment frames, TILED_SPARSE (holes show the slide's
   `backgroundColor`, from RecommendedAbsentPixelCIELabValue (0048,0015) when
   stated, local or DICOMweb; the 3D slide plane leaves them empty), and
-  concatenations. TILED_FULL frames keep their implicit order; per-frame
+  concatenations. A level's instances must use the same tile codec; mixed-codec
+  concatenations are rejected when opening or exporting a manifest. Pyramid
+  levels may use different codecs. TILED_FULL frames keep their implicit order; per-frame
   positions, when given, win (items holding only other metadata, such as Frame
   Content, do not change the order). A file with no DimensionOrganizationType is
   placed by its per-frame positions (path and plane from per-frame values) when
@@ -161,8 +167,8 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files, { at
   frame's, else top-level, else ImagedVolumeWidth/Height over the total pixel matrix. A
   1\1 PixelSpacing is a placeholder: it yields to the volume size, else the slide has no spacing.
 - Files it cannot index are listed in `index.skipped` with a reason: `not-dicom`,
-  `transfer-syntax` (explicit VR little endian only), `uncompressed` (native pixel
-  data of a level, or of an associated image that is not 8-bit grey or RGB), `malformed`,
+  `transfer-syntax` (explicit VR little endian only), `uncompressed` (native levels
+  outside unsigned 8/16-bit monochrome and interleaved 8-bit RGB, or associated images other than 8-bit grey or RGB), `malformed`,
   `too-large` (a level of more than 2^22 tiles) or `not-tiled`.
 - Undefined-length UN elements (implicit VR sequences, PS3.5 6.2.2) are skipped.
 - Hostile input is bounded: the header read stops at 64 MiB, grown in place in 4 MiB
@@ -184,9 +190,10 @@ const slide = NVSlide.fromSource(new DicomWsiSource(index.slides[0], files, { at
   later with AbortError; the files are the caller's. `attribution` becomes
   `manifest.attribution` (text fields, `url` only when http(s)).
 - **ICC colour management.** `DicomWsiSource`, `DicomWebWsiSource` and `TiffSlideSource` serve the slide's ICC profile (the optical path's (0028,2000), or TIFF tag 34675). `registerDcm2niixDecoders` also registers @niivue/dcm2niix's LittleCMS as NVSlide's ICC transform (unless the host registered one), so a slide with a profile is shown in sRGB unless `colorManagement` is off. Call it before opening slides: a slide bakes its profile when it is created. This needs @niivue/dcm2niix 1.4.20261105-rc.3 or later (`iccLut`), the peer floor. `fetchIccProfile(signal)` stops waiting on abort; disposing the source (or the slide that owns it) cancels the read.
-- `DicomWsiSource` reads one tile at a time and checks each frame's item tag, so a file
+- `DicomWsiSource` reads one tile at a time and checks each compressed frame's item tag, so a file
   that changed since indexing fails rather than decoding garbage.
-- Supported transfer syntaxes: JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
+- Supported transfer syntaxes: native Explicit VR Little Endian (unsigned 8/16-bit monochrome and interleaved 8-bit RGB),
+  JPEG baseline/extended (browser), JPEG 2000 and JPEG-LS
   (`registerDcm2niixDecoders`, with `@niivue/dcm2niix` as an optional peer dependency;
   a decoder the host already registered wins). A dcm2niix pool whose workers die is
   replaced, and the tile or profile retried once.

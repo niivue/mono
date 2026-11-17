@@ -71,6 +71,16 @@ async function expectSameBytes(names: string[]): Promise<NVSlideManifest> {
 }
 
 describe('manifestFromIndex', () => {
+  test('native uint16 and RGB frames are direct ranges of the original files', async () => {
+    for (const [name, codec] of [
+      ['native16.dcm', 'raw-gray'],
+      ['native-rgb.dcm', 'raw-rgb'],
+    ] as const) {
+      const m = await expectSameBytes([name])
+      expect(m.levels[0]?.codec).toBe(codec)
+      expect(m.levels[0]?.tiles.every((t) => t && !t.fragments)).toBe(true)
+    }
+  })
   test('a full level reads by range from the level file', async () => {
     const m = await expectSameBytes(['bot.dcm'])
     expect(m.format).toBe('dicom-wsi-range-v1')

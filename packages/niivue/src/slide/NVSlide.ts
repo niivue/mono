@@ -59,6 +59,7 @@ import { EDGE_ALL } from './tileGutter'
 import { DEFAULT_TILE_TEXTURE_BYTES } from './tileTextureCache'
 
 export type NVSlideTileCodec =
+  | 'raw-rgb'
   | 'raw-rgba'
   | 'raw-gray'
   | 'image/jpeg'
@@ -253,7 +254,7 @@ export interface NVSlideAttribution {
 
 /**
  * Decodes one tile's encoded bytes into an ImageBitmap. The built-in registry
- * handles `raw-rgba`, `raw-gray` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
+ * handles `raw-rgb` (interleaved uint8), `raw-rgba`, `raw-gray` and `image/jpeg`; `image/jp2` (JPEG 2000) has no browser
  * decoder, so a consumer must register one (e.g. @niivue/dcm2niix createFrameDecoder) via
  * {@link NVSlide.registerTileDecoder} — keeping the heavy codec out of the core.
  * A returned bitmap must hold straight (unpremultiplied) alpha, e.g. made with

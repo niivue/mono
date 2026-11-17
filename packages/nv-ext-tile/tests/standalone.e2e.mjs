@@ -450,9 +450,10 @@ const GPU_PAGE = page(`
       c.height = H
       const ctx = c.getContext('2d')
       ctx.drawImage(canvas, 0, 0)
-      const px = (x, y) => ctx.getImageData(x, y, 1, 1).data[0]
+      const rgba = (x, y) => [...ctx.getImageData(x, y, 1, 1).data]
+      const px = (x, y) => rgba(x, y)[0]
       const [s] = await slide.loadSampleAt(2, 2)
-      const out = { W, H, px, stored: s.stored, sampleType: slide.manifest.levels[0].sampleType }
+      const out = { W, H, px, rgba, stored: s.stored, sampleType: slide.manifest.levels[0].sampleType }
       renderer.destroy()
       canvas.remove()
       slide.dispose()
@@ -460,16 +461,26 @@ const GPU_PAGE = page(`
     }
     const files = [new File([await (await fetch('./wsi/monosigned.dcm')).arrayBuffer()], 'monosigned.dcm')]
     const index = await indexDicomWsi(files)
+    const nativeFiles = await Promise.all(['native16.dcm', 'native-rgb.dcm'].map(async name =>
+      new File([await (await fetch('./wsi/' + name)).arrayBuffer()], name)))
+    const nativeIndex = await indexDicomWsi(nativeFiles)
+    const nativeSource = (name) => new DicomWsiSource(nativeIndex.slides.find(s => s.container === name), nativeFiles)
     const cases = {
       i16: [() => TiffSlideSource.fromUrl('./tiff/i16.tif'), { calMin: -1000, calMax: 1000 }],
       f32: [() => TiffSlideSource.fromUrl('./tiff/f32.tif'), { calMin: -1, calMax: 1 }],
       signed: [async () => new DicomWsiSource(index.slides[0], files), { calMin: -128, calMax: 127 }],
+      native16: [async () => nativeSource('native16'), { calMin: 0, calMax: 65535 }],
+      nativeRgb: [async () => nativeSource('native-rgb'), {}],
     }
     const out = { gpu }
     for (const backend of gpu ? ['webgl2', 'webgpu'] : ['webgl2'])
       for (const [name, [open, window]] of Object.entries(cases)) {
         const r = await readback(open, window, backend)
-        out[name + ' ' + backend] = name === 'signed'
+        out[name + ' ' + backend] = name === 'nativeRgb'
+          ? { rgba: [r.rgba(2, 8), r.rgba(7, 8), r.rgba(29, 13)] }
+          : name === 'native16'
+          ? { gray: [r.px(2, 8), r.px(7, 8), r.px(29, 13)] }
+          : name === 'signed'
           ? { gray: r.px(Math.floor(r.W / 2), Math.floor(r.H / 2)), stored: r.stored, sampleType: r.sampleType }
           : { gray: [r.px(2, 8), r.px(7, 8), r.px(13, 8)], stored: r.stored, sampleType: r.sampleType }
       }
@@ -764,6 +775,15 @@ try {
       const i16 = g[`i16 ${backend}`]
       const f32 = g[`f32 ${backend}`]
       const signed = g[`signed ${backend}`]
+      const native16 = g[`native16 ${backend}`]
+      const nativeRgb = g[`nativeRgb ${backend}`]
+      check(
+        native16 &&
+          near(native16.gray, [0, 128, 255], 2) &&
+          JSON.stringify(nativeRgb?.rgba) ===
+            '[[255,0,0,255],[0,255,0,255],[0,0,255,255]]',
+        `gpu ${backend}: native uint16 window and RGB colours, including padded edges ${JSON.stringify({ native16, nativeRgb })}`,
+      )
       check(
         i16?.sampleType === 'i16' &&
           i16.stored === -1000 &&

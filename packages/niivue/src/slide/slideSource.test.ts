@@ -407,6 +407,28 @@ describe('tile decoders', () => {
     expect('samples' in a && Array.from(a.samples)).toEqual([1, 2])
   })
 
+  test('raw-gray edge frames decode at stored size before cropping and orientation', async () => {
+    for (const transpose of [false, true]) {
+      const out = await decodeTileBitmap(
+        level({
+          codec: 'raw-gray',
+          bitsStored: 8,
+          tileWidth: transpose ? 2 : 3,
+          tileHeight: transpose ? 3 : 2,
+          tileOrientation: { transpose, flipX: false, flipY: false },
+        }),
+        { x: 0, y: 0, width: transpose ? 1 : 2, height: transpose ? 2 : 1 },
+        new Uint8Array([1, 2, 99, 99, 99, 99]),
+        new AbortController().signal,
+      )
+      expect(out).toMatchObject({
+        samples: new Uint8Array([1, 2]),
+        width: transpose ? 1 : 2,
+        height: transpose ? 2 : 1,
+      })
+    }
+  })
+
   test('signed monochrome samples are sign-extended from bitsStored (S7)', async () => {
     const lvl = level({
       codec: 'raw-gray',

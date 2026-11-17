@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
-import type { NVSlideTileManifest } from '@niivue/niivue'
+import { NVSlide, type NVSlideTileManifest } from '@niivue/niivue'
 import { indexDicomWsiOnThread, tileMap } from './dicomIndex'
 import { indexDicomWsiMetadata } from './dicomJson'
 import { DicomWsiSource, manifestOf } from './dicomWsiSource'
+import { manifestFromIndex } from './hostedManifest'
 
 const DIR = `${import.meta.dir}/../fixtures/dicom-wsi`
 const files = (...names: string[]) =>
@@ -37,6 +38,56 @@ test('counts wire bytes with the item header', async () => {
   const { level, tile } = first(s)
   const bytes = await s.fetchTileBytes(level, tile, '')
   expect(wire).toBe(bytes.length + 8)
+})
+
+test('native uint16 and RGB frames keep their sample layout and frame stride', async () => {
+  for (const name of ['native16.dcm', 'native-rgb.dcm']) {
+    const s = await sourceOf(name)
+    const { level, tile } = first(s)
+    const rgb = name === 'native-rgb.dcm'
+    expect(level.codec).toBe(rgb ? 'raw-rgb' : 'raw-gray')
+    const bytes = await s.fetchTileBytes(level, tile, '')
+    expect(bytes.length).toBe(16 * 16 * (rgb ? 3 : 2))
+    if (rgb) expect([...bytes.subarray(0, 3)]).toEqual([255, 0, 0])
+    else {
+      const decoded = await NVSlide.tileDecoder('raw-gray')?.(bytes, {
+        width: 16,
+        height: 16,
+        level,
+      })
+      if (!decoded || !('samples' in decoded)) throw new Error('no samples')
+      expect(decoded.samples).toBeInstanceOf(Uint16Array)
+      expect([
+        decoded.samples[2],
+        decoded.samples[7],
+        decoded.samples[13],
+      ]).toEqual([0, 32768, 65535])
+    }
+    const edge = level.tiles[1]
+    if (!edge) throw new Error('no edge tile')
+    const last = await s.fetchTileBytes(level, edge, '')
+    expect([...last.subarray(0, rgb ? 3 : 2)]).toEqual(
+      rgb ? [0, 0, 255] : [255, 255],
+    )
+    s.dispose()
+  }
+})
+
+test('local and hosted sources reject concatenations with mixed tile codecs', async () => {
+  const fs = await files('concat-1.dcm', 'concat-2.dcm')
+  const slide = (await indexDicomWsiOnThread(fs)).slides[0]
+  if (!slide) throw new Error('no concatenated slide')
+  const native = slide.instances[0]
+  if (!native) throw new Error('no instance')
+  native.native = 'raw-gray'
+  native.transferSyntax = '1.2.840.10008.1.2.1'
+  for (const instance of slide.instances) instance.photometric = 'MONOCHROME2'
+  expect(() => new DicomWsiSource(slide, fs)).toThrow(
+    'level 0 mixes tile codecs',
+  )
+  await expect(manifestFromIndex(slide, fs, (i) => i.file)).rejects.toThrow(
+    'level 0 mixes tile codecs',
+  )
 })
 
 test('serves the ICC profile from the level-0 file, and null without one', async () => {

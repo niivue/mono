@@ -8,6 +8,7 @@ without a decoder. Run from this directory: python3 make_fixtures.py
 colors.dcm is the exception: a sparse slide whose tiles are
 real solid-colour JPEGs (encoded by cjpeg), for the browser e2e test in
 apps/demo-ext-tile.
+native16.dcm and native-rgb.dcm contain synthetic intensity/colour bands.
 
 Some instances also get a PS3.18 DICOM JSON sibling (name.json) for the parity
 test, formatted by Biome as the repo is.
@@ -312,3 +313,33 @@ for name, ts in (('implicit', '1.2.840.10008.1.2'), ('bigendian', '1.2.840.10008
     d.save_as(f'{name}.dcm', enforce_file_format=True)
 with open('not-dicom.dcm', 'w') as f:
     f.write('not a DICOM file\n')
+
+
+def native(name: str, bits: int, rgb: bool, sop: str) -> None:
+    ds = base(name, 30, 14, 2, sop=sop)
+    ds.SeriesInstanceUID = series_uid(name)
+    ds.file_meta.TransferSyntaxUID = UID('1.2.840.10008.1.2.1')
+    ds.PhotometricInterpretation = 'RGB' if rgb else 'MONOCHROME2'
+    ds.SamplesPerPixel = 3 if rgb else 1
+    ds.BitsAllocated = ds.BitsStored = bits
+    ds.HighBit = bits - 1
+    if rgb:
+        ds.PlanarConfiguration = 0
+    del ds.OpticalPathSequence[0].ICCProfile
+    pixels = bytearray()
+    for frame in range(2):
+        for _y in range(TILE):
+            for x in range(TILE):
+                column = frame * TILE + x
+                band = 0 if column < 5 else 1 if column < 11 else 2
+                if rgb:
+                    pixels.extend(((255, 0, 0), (0, 255, 0), (0, 0, 255))[band])
+                else:
+                    pixels.extend((0, 32768, 65535)[band].to_bytes(2, 'little'))
+    ds.PixelData = bytes(pixels)
+    ds['PixelData'].VR = 'OB' if bits == 8 else 'OW'
+    ds.save_as(f'{name}.dcm', enforce_file_format=True)
+
+
+native('native16', 16, False, '1.2.3.94')
+native('native-rgb', 8, True, '1.2.3.95')

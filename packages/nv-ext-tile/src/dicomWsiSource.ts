@@ -175,6 +175,11 @@ export class DicomWsiSource implements SlideTileSource {
     const file = this.files[frames.instance[slot] as number] as File
     const offset = frames.offset[slot] as number
     const length = frames.length[slot] as number
+    if (this.slide.instances[frames.instance[slot] as number]?.native) {
+      const bytes = await this.read(file, offset, offset + length, signal)
+      this.host?.addWireBytes(bytes.byteLength)
+      return bytes
+    }
     // Read the item header too: its tag proves the index still matches the file.
     const span = await this.read(file, offset - 8, offset + length, signal)
     this.host?.addWireBytes(span.byteLength)
@@ -225,11 +230,21 @@ export function manifestOf<I extends InstanceCore>(
   const levels = slide.levels.map((level, index): NVSlideLevelManifest => {
     const o = turns[index]
     const inst = slide.instances[level.instances[0] as number] as I
-    const codec = CODEC_BY_TRANSFER_SYNTAX[inst.transferSyntax]
+    const codec = inst.native ?? CODEC_BY_TRANSFER_SYNTAX[inst.transferSyntax]
     if (!codec)
       throw new Error(
         `transfer syntax ${inst.transferSyntax} cannot be decoded (JPEG, JPEG 2000 and JPEG-LS are supported)`,
       )
+    if (
+      level.instances.some((k) => {
+        const other = slide.instances[k] as I
+        return (
+          (other.native ?? CODEC_BY_TRANSFER_SYNTAX[other.transferSyntax]) !==
+          codec
+        )
+      })
+    )
+      throw new Error(`level ${index} mixes tile codecs across instances`)
     // The index caps a level's grid, so this dense array is bounded.
     const g = orientGrid(level, o)
     const tiles: Array<NVSlideTileManifest | null> = Array.from(

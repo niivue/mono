@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
+import { generateShape } from '@/annotation/index'
 import NiiVue from '@/NVControl'
 import * as Layout from '@/view/NVSliceLayout'
 import { initInteraction } from './interactions'
@@ -179,14 +180,14 @@ test('a cancelled resize records no undo step', () => {
         controlPoints: [corner],
       } as never
     }
-    const at = (type: string) =>
+    const at = (type: string, clientX = 50) =>
       nv._eventListeners[type as 'pointerdown']?.({
         button: 0,
         buttons: 1,
         pointerType: 'mouse',
         pointerId: 1,
         detail: 1,
-        clientX: 50,
+        clientX,
         clientY: 50,
         shiftKey: false,
         preventDefault() {},
@@ -202,7 +203,18 @@ test('a cancelled resize records no undo step', () => {
     select()
     at('pointerdown')
     at('pointerup')
-    expect(nv.annotationUndoTop).toBeDefined()
+    const top = nv.annotationUndoTop
+    expect(top).toBeDefined()
+    // pointercancel (touch interrupted) reverts a moved handle, as a cancel.
+    const shape = structuredClone(nv.annotations[0]?.shape)
+    select()
+    at('pointerdown')
+    point = [2, 2, 0]
+    at('pointermove', 60)
+    expect(nv.annotations[0]?.shape).not.toEqual(shape)
+    at('pointercancel')
+    expect(nv.annotations[0]?.shape).toEqual(shape)
+    expect(nv.annotationUndoTop).toBe(top)
   } finally {
     pick.mockRestore()
     globalThis.window = savedWindow
@@ -289,6 +301,92 @@ test('a close click in a bounded viewer commits a spline', () => {
       nv._eventListeners.pointerup?.(e as never)
     }
     expect(nv.annotations).toHaveLength(1)
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
+})
+
+// R15 round 19: a probe drag moves anchorMM too; a cancel restores it.
+test('a cancelled probe drag restores its point', () => {
+  const savedWindow = globalThis.window
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+  } as never
+  const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+    () => point as never,
+  )
+  try {
+    const nv = controller('measurePoint')
+    const p = { x: 5, y: 5 }
+    nv.model.annotations.push({
+      id: 'probe',
+      label: 1,
+      group: '',
+      sliceType: 0,
+      slicePosition: 0,
+      anchorMM: [5, 5, 0],
+      polygons: generateShape('measurePoint', p, p, 1),
+      style: structuredClone(nv.model.annotation.style),
+      shape: { type: 'measurePoint', start: p, end: p, width: 1 },
+    } as never)
+    nv.model._annotationSelection = {
+      annotationId: 'probe',
+      controlPoints: [p],
+    } as never
+    const at = (type: string, clientX = 50) =>
+      nv._eventListeners[type as 'pointerdown']?.({
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        pointerId: 1,
+        detail: 1,
+        clientX,
+        clientY: 50,
+        shiftKey: false,
+        preventDefault() {},
+      } as never)
+    point = [5, 5, 0]
+    at('pointerdown')
+    point = [20, 20, 0]
+    at('pointermove', 70)
+    expect(nv.annotations[0]?.anchorMM).toEqual([20, 20, 0])
+    expect(nv.cancelAnnotationInProgress()).toBe(true)
+    expect(nv.annotations[0]?.anchorMM).toEqual([5, 5, 0])
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
+})
+
+// R15 round 19: a new multi-click shape drops the selection, as a drag shape
+// does, so Delete does not remove an older (jumped-to) annotation.
+test('starting an angle clears the selection', () => {
+  const savedWindow = globalThis.window
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+  } as never
+  const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+    () => point as never,
+  )
+  try {
+    const nv = controller('measureAngle')
+    nv.model.annotations.push({
+      id: 'old',
+      label: 1,
+      group: '',
+      sliceType: 0,
+      slicePosition: 40,
+      polygons: [],
+      style: structuredClone(nv.model.annotation.style),
+    } as never)
+    nv.selectAnnotation('old')
+    press(nv, [10, 0, 0])
+    expect(nv.selectedAnnotation).toBeNull()
   } finally {
     pick.mockRestore()
     globalThis.window = savedWindow

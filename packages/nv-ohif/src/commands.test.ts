@@ -348,8 +348,20 @@ describe('reflectNiivueAnnotation', () => {
       displayText: { primary: string[] }
       points: number[][]
       data: { area: number; mean: number; unit: string; areaUnit: string }
+      getReport: () => { columns: string[]; values: unknown[] }
     }
     expect(m.toolName).toBe('EllipticalROI')
+    // OHIF's CSV skips a row without getReport; cornerstone's ROI columns.
+    const { columns, values } = m.getReport()
+    expect(columns.slice(0, 6)).toEqual([
+      'AnnotationType',
+      'max (HU)',
+      'mean (HU)',
+      'std (HU)',
+      'Area',
+      'Unit',
+    ])
+    expect(values.slice(1, 6)).toEqual([200, 50, 12, 123.4, 'mm²'])
     expect(m.referenceSeriesUID).toBe('series-1')
     // cornerstone's rows: area then max, rounded by OHIF's roundNumber.
     expect(m.displayText.primary).toEqual(['123 mm²', 'Max: 200 HU'])

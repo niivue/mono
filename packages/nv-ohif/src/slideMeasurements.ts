@@ -9,6 +9,7 @@ import {
   niivueMeasurementSource,
   roundNumber,
 } from './commands'
+import { rowReport } from './csvReport'
 import { ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
 import {
@@ -136,6 +137,7 @@ export function bindSlideMeasurements(
     )
     const uid = prefix + a.id
     const { primary, data } = slideRowValues(a)
+    const points = slideRowPoints(a)
     ms.addRawMeasurement(
       source,
       toolName,
@@ -150,9 +152,10 @@ export function bindSlideMeasurements(
           referenceSeriesUID: ds.SeriesInstanceUID,
           referenceStudyUID: ds.StudyInstanceUID,
           displaySetInstanceUID: ds.displaySetInstanceUID,
-          points: slideRowPoints(a),
+          points,
           displayText: { primary, secondary: [] },
           data,
+          getReport: rowReport(toolName, data, points),
           type: mapping?.valueType,
           metadata: { toolName },
         },

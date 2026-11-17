@@ -11,6 +11,7 @@ import {
   type VectorAnnotation,
 } from '@niivue/niivue'
 import { classifyDisplaySet } from './classifyDisplaySet'
+import { rowReport } from './csvReport'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import { installClearHistory } from './history'
@@ -1111,6 +1112,7 @@ function reflectNiivueAnnotationResult(
           points,
           displayText: { primary, secondary: [] },
           data,
+          getReport: rowReport(mapping.toolName, data, points, forUID),
           type: mapping.valueType,
           metadata: { toolName: mapping.toolName, FrameOfReferenceUID: forUID },
         },

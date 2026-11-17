@@ -11,6 +11,7 @@ import {
   getActiveNiivueEntry,
   type NiivueViewportEntry,
   ohifCommandsManager,
+  ohifServices,
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
@@ -209,6 +210,35 @@ export function getStandardCommandDefinitions({
   })
 
   return {
+    // OHIF's (DEFAULT context) asks cornerstone for the pane's orientation,
+    // which throws on a NiiVue pane; a NiiVue pane only needs the display set
+    // hung after its own (the data overlay menu's Add: a SEG or RTSTRUCT layer).
+    addDisplaySetAsLayer: {
+      commandFn: (opts: StandardOptions = {}) => {
+        const grid = ohifServices(servicesManager)?.viewportGridService as
+          | {
+              getActiveViewportId(): string
+              getDisplaySetsUIDsForViewport(id: string): string[]
+            }
+          | undefined
+        const viewportId = opts.viewportId ?? grid?.getActiveViewportId()
+        const uid = opts.displaySetInstanceUID
+        const commands = ohifCommandsManager(commandsManager)
+        if (
+          !grid ||
+          !viewportId ||
+          !getActiveNiivueEntry(servicesManager, viewportId)
+        )
+          return commands?.runCommand?.('addDisplaySetAsLayer', opts, 'DEFAULT')
+        const uids = grid.getDisplaySetsUIDsForViewport(viewportId) ?? []
+        if (typeof uid !== 'string' || uids.includes(uid)) return
+        commands?.runCommand?.('setDisplaySetsForViewports', {
+          viewportsToUpdate: [
+            { viewportId, displaySetInstanceUIDs: [...uids, uid] },
+          ],
+        })
+      },
+    },
     resetViewport: { commandFn: route('resetViewport', resetView) },
     setViewportOrientation: {
       commandFn: route('setViewportOrientation', (entry, opts) =>

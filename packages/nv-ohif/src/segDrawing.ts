@@ -1,5 +1,5 @@
 import type NiiVue from '@niivue/niivue'
-import { type RefObject, useEffect } from 'react'
+import { type RefObject, useEffect, useState } from 'react'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { authHeaders, ohifServices } from './niivueRegistry'
 import type {
@@ -7,7 +7,7 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
-import { startRtDrawing } from './rtDrawing'
+import { type RtLabels, startRtDrawing } from './rtDrawing'
 import {
   type PanelSegment,
   SEG_FILL_OPACITY,
@@ -22,23 +22,42 @@ import {
 interface DisplaySetLookup {
   getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined
   getDisplaySetsForSeries?: (uid: string) => ReadonlyArray<OhifDisplaySet>
+  getActiveDisplaySets?: () => ReadonlyArray<OhifDisplaySet>
 }
+
+const isSegOrRt = (ds: OhifDisplaySet) =>
+  ds.Modality === 'SEG' || ds.Modality === 'RTSTRUCT'
 
 /**
  * The display sets a pane shows, with the first SEG or RTSTRUCT swapped for the series it
  * references (OHIF sets referencedDisplaySetInstanceUID once that series is
  * known; the series UID covers the gap). Without a reference the SEG stays, and
- * classifies as unsupported.
+ * classifies as unsupported. With none hung, a hydrated SEG or RTSTRUCT on the
+ * base series is the pane's, as cornerstone shows it wherever that series is.
  */
 export function resolveSegDisplaySets(
   hung: ReadonlyArray<OhifDisplaySet>,
   lookup: DisplaySetLookup | undefined,
 ): { displaySets: ReadonlyArray<OhifDisplaySet>; seg?: OhifDisplaySet } {
-  const index = hung.findIndex(
-    (ds) => ds.Modality === 'SEG' || ds.Modality === 'RTSTRUCT',
-  )
+  const index = hung.findIndex(isSegOrRt)
   const seg = hung[index]
-  if (!seg) return { displaySets: hung }
+  if (!seg) {
+    const baseUid = hung[0]?.displaySetInstanceUID
+    // ponytail: first hydrated one; a NiiVue pane holds one drawing.
+    const hydrated = baseUid
+      ? lookup
+          ?.getActiveDisplaySets?.()
+          .find(
+            (ds) =>
+              isSegOrRt(ds) &&
+              ds.isHydrated === true &&
+              ds.referencedDisplaySetInstanceUID === baseUid,
+          )
+      : undefined
+    return hydrated
+      ? { displaySets: hung, seg: hydrated }
+      : { displaySets: hung }
+  }
   const uid = seg.referencedDisplaySetInstanceUID
   const series = seg.referencedSeriesInstanceUID
   const base =
@@ -173,12 +192,14 @@ export function startSegDrawing(
 }
 
 /**
- * Show `seg` (SEG or RTSTRUCT) as the drawing once the pane's base is loaded, listed in OHIF's
- * segmentation panel; drop both on change.
+ * Show `seg` (SEG or RTSTRUCT) as the drawing once the pane's base is loaded,
+ * listed in OHIF's segmentation panel unless it is a preview awaiting
+ * hydration (as cornerstone's SEG viewport); drop both on change.
  */
 export function useSegDrawing(
   nvRef: RefObject<NiiVue | null>,
   seg: OhifDisplaySet | undefined,
+  isPreview: boolean,
   isLoaded: boolean,
   managers: {
     viewportId: string
@@ -188,32 +209,41 @@ export function useSegDrawing(
   setNote: (message: string) => void,
 ): void {
   const segKey = seg?.displaySetInstanceUID ?? seg?.SeriesInstanceUID
+  const [shown, setShown] = useState<{
+    segments: PanelSegment[]
+    labels?: RtLabels
+  }>()
+  const onShown = (segments: PanelSegment[], labels?: RtLabels) => {
+    setShown({ segments, labels })
+    return () => setShown(undefined)
+  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID, as the load effect keys on displaySetsKey
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !seg || !isLoaded) return
-    const headers = authHeaders(managers.servicesManager)
-    if (seg.Modality === 'RTSTRUCT')
-      return startRtDrawing(nv, seg, {
-        headers,
-        setNote,
-        onShown: (segments, labels) =>
-          startSegPanel(
-            nv,
-            managers.viewportId,
-            seg,
-            segments,
-            managers,
-            labels,
-          ),
-      })
-    return startSegDrawing(nv, seg, {
-      headers,
+    const options = {
+      headers: authHeaders(managers.servicesManager),
       setNote,
-      onShown: (segments) =>
-        startSegPanel(nv, managers.viewportId, seg, segments, managers),
-    })
+      onShown,
+    }
+    return seg.Modality === 'RTSTRUCT'
+      ? startRtDrawing(nv, seg, options)
+      : startSegDrawing(nv, seg, options)
   }, [segKey, isLoaded])
+  // Hydrating keeps the drawing: only the panel entry starts.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: shown changes with the SEG
+  useEffect(() => {
+    const nv = nvRef.current
+    if (!nv || !seg || !shown || isPreview) return
+    return startSegPanel(
+      nv,
+      managers.viewportId,
+      seg,
+      shown.segments,
+      managers,
+      shown.labels,
+    )
+  }, [shown, isPreview])
 }
 
 /** resolveSegDisplaySets against the app's display set service. */

@@ -67,6 +67,7 @@ import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
 import { useOutputStack } from './outputStack'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
+import { PaneCorner, useHydratePrompt } from './segHydration'
 import { bindSlideMeasurements } from './slideMeasurements'
 import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
@@ -144,6 +145,9 @@ export function NiivueViewport(props: OhifViewportProps) {
     props.displaySets,
     servicesManager,
   )
+  // Hung itself and not yet hydrated: a preview, with OHIF's hydrate prompt.
+  const isSegPreview =
+    !!seg && props.displaySets[0] === seg && seg.isHydrated !== true
   const toolGroupId = props.viewportOptions?.toolGroupId ?? 'default'
   // Longitudinal (tracking) modes: forward new measurements to OHIF's tracker.
   useMeasurementTracking(viewportId, servicesManager, props.extensionManager)
@@ -162,6 +166,7 @@ export function NiivueViewport(props: OhifViewportProps) {
   useSegDrawing(
     nvRef,
     seg,
+    isSegPreview,
     isLoaded,
     {
       viewportId,
@@ -170,6 +175,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     },
     (message) => setStatus({ kind: 'note', message }),
   )
+  useHydratePrompt(seg, isSegPreview, isLoaded, {
+    viewportId,
+    servicesManager,
+    commandsManager: props.commandsManager,
+    extensionManager: props.extensionManager,
+  })
   // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
   useArrowText(ready ? nvRef.current : null, viewportId, props.commandsManager)
   // Orthogonal localizers: the wheel steps through the series' outputs (outputStack.ts).
@@ -933,6 +944,13 @@ export function NiivueViewport(props: OhifViewportProps) {
           ) : null}
         </>
       )}
+      <PaneCorner
+        viewportId={viewportId}
+        displaySetsKey={props.displaySets
+          .map((ds) => ds.displaySetInstanceUID)
+          .join()}
+        servicesManager={servicesManager}
+      />
       <ViewportNotification
         viewportId={viewportId}
         servicesManager={servicesManager}

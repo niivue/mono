@@ -80,6 +80,21 @@ describe('resolveSegDisplaySets', () => {
     const early = { ...seg, referencedDisplaySetInstanceUID: null }
     expect(resolveSegDisplaySets([early], lookup).displaySets).toEqual([mr])
   })
+
+  // After hydration the pane hangs only the base (and MPR panes are new).
+  test('baseOnly_takesOnlyAHydratedSegOnIt', () => {
+    const hydrated = { ...seg, displaySetInstanceUID: 'seg2', isHydrated: true }
+    const other = { ...hydrated, referencedDisplaySetInstanceUID: 'ct' }
+    const active = (...ds: OhifDisplaySet[]) => ({
+      ...lookup,
+      getActiveDisplaySets: () => ds,
+    })
+    expect(resolveSegDisplaySets([mr], active(seg, other)).seg).toBeUndefined()
+    expect(resolveSegDisplaySets([mr], active(seg, other, hydrated))).toEqual({
+      displaySets: [mr],
+      seg: hydrated,
+    })
+  })
 })
 
 describe('startSegDrawing', () => {

@@ -1,3 +1,28 @@
+## 1.0.0-rc.219 (2026-11-17)
+
+### Features
+
+- **uikit:** touch drags and pinch-zooms the magnifier, a tap exits; wheel zooms ([cd11ca79](https://github.com/niivue/mono/commit/cd11ca79))
+- **uikit:** a press exits the magnifier and never reaches the scene ([51ae7ce9](https://github.com/niivue/mono/commit/51ae7ce9))
+
+### Fixes
+
+- **uikit:** magnifier leaves sibling, dblclick and wheel-unit input correct ([e963e47b](https://github.com/niivue/mono/commit/e963e47b))
+- **uikit:** end the magnifier's press swallow only once every swallowed pointer is up ([a759053a](https://github.com/niivue/mono/commit/a759053a))
+- **uikit:** swallow a swallowed pointer's moves during the exiting gesture ([c79aa6a9](https://github.com/niivue/mono/commit/c79aa6a9))
+- **uikit:** a touch drag seen only at release does not exit the magnifier ([14a3f105](https://github.com/niivue/mono/commit/14a3f105))
+- **uikit:** the magnifier's exiting click never starts a scene dblclick ([518bcb31](https://github.com/niivue/mono/commit/518bcb31))
+- **uikit:** a held touch's click stays with the magnifier ([#841](https://github.com/niivue/mono/issues/841))
+- **uikit:** end the magnifier swallow on an off-canvas release ([#841](https://github.com/niivue/mono/issues/841))
+- **uikit:** a magnifier-exiting press released off the canvas ends its swallow ([#841](https://github.com/niivue/mono/issues/841))
+- **uikit:** swallow every touch pressed during the press that exits the magnifier ([#841](https://github.com/niivue/mono/issues/841))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.218 (2026-11-17)
 
 ### Fixes

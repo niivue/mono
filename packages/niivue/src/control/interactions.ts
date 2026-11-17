@@ -1309,6 +1309,7 @@ export function resetDragState(ctrl: NiiVue): void {
   ctrl._resizingControlPoint = -1
   ctrl._resizingAnnotation = null
   ctrl._resizeOriginalShape = null
+  ctrl._resizeUndoSnapshot = null
   ctrl.model._annotationPreview = null
   ctrl.model._annotationErasePreview = null
   // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
@@ -1814,7 +1815,10 @@ export function initInteraction(ctrl: NiiVue): void {
                 (a) => a.id === ctrl.model._annotationSelection?.annotationId,
               )
               if (ann?.shape) {
-                ctrl._annotationUndoStack.push(ctrl.model.annotations)
+                // Recorded on release, so a cancelled resize leaves no step.
+                ctrl._resizeUndoSnapshot = structuredClone(
+                  ctrl.model.annotations,
+                )
                 ctrl._resizingControlPoint = cpIdx
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
@@ -2007,6 +2011,8 @@ export function initInteraction(ctrl: NiiVue): void {
                     ctrl.model.annotation.isAreaGeometric,
                   ) ?? undefined
             }
+            if (ctrl._resizeUndoSnapshot)
+              ctrl._annotationUndoStack.push(ctrl._resizeUndoSnapshot)
             ctrl.emit('annotationChanged', {
               action: 'resize',
               added: [],
@@ -2017,6 +2023,7 @@ export function initInteraction(ctrl: NiiVue): void {
         }
         ctrl._resizingControlPoint = -1
         ctrl._resizeOriginalShape = null
+        ctrl._resizeUndoSnapshot = null
         ctrl._resizingAnnotation = null
         ctrl.model._annotationPreview = null
         ctrl.drawScene()

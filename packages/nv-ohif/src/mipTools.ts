@@ -54,6 +54,8 @@ export function brightestAlongRay(
   const [, sx = 1, sy = 1, sz = 1] = hdr?.pixDims ?? []
   const step = Math.min(sx, sy, sz) / 2
   const reach = Math.hypot(nx * sx, ny * sy, nz * sz)
+  // Brightest as displayed: a negative slope flips the raw order.
+  const slope = hdr?.scl_slope || 1
   let best = -Infinity
   let bestVox: number[] | undefined
   for (let s = -reach; s <= reach; s += step) {
@@ -68,7 +70,7 @@ export function brightestAlongRay(
       ),
     ) as [number, number, number]
     if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) continue
-    const v = img[i + nx * (j + ny * k)] ?? -Infinity
+    const v = (img[i + nx * (j + ny * k)] ?? Number.NaN) * slope
     if (v > best) {
       best = v
       bestVox = [i, j, k]

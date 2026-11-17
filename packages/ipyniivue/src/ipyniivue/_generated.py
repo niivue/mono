@@ -1439,6 +1439,24 @@ and its volumes alive."""
         """
         return await self._request("pickMeasurement", _make_args(canvas_x, canvas_y, radius_px))
 
+    async def pick_ray(self, x: Any, y: Any) -> Any:
+        """The world ray (mm) under canvas pixel `[x, y]` (device pixels, as {@link pickAt}) on the 3D render tile: `origin` on the near plane, unit `dir` into the scene.
+
+        Unlike `pickAt` it answers over empty space, so a
+        caller can place a point at a chosen depth. Null off the render tile and
+        on a mosaic render tile.
+
+        Parameters
+        ----------
+        x : number
+        y : number
+
+        Returns
+        -------
+        { origin: [number, number, number]; dir: [number, number, number]; } | null
+        """
+        return await self._request("pickRay", _make_args(x, y))
+
     def rebake_chunked_overlays(self) -> None:
         """Re-bake the streamed/chunked overlays in place: drop their resident bricks so the next frame re-requests and re-bakes only the blocks in the current view frustum, leaving the base volume resident.
 

@@ -1585,7 +1585,7 @@
       },
       "hasGetter": true,
       "hasSetter": false,
-      "doc": "A multi-click contour, bidirectional or click-placed shape is half-drawn."
+      "doc": "A multi-click contour, bidirectional or click-placed shape is half-drawn,\nor an annotation is being dragged."
     },
     {
       "jsName": "isAntiAlias",

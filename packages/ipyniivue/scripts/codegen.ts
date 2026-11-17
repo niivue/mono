@@ -1937,6 +1937,11 @@ function emitJs(api: ApiDescriptor): string {
   lines.push('    const handler = (e) => {')
   lines.push('      let detail = null')
   lines.push('      try { detail = toJsonSafe(e && e.detail) } catch {}')
+  lines.push(
+    '      // The event can change read-only state (annotation undo top); sync it',
+  )
+  lines.push('      // first so a Python handler reads the new values.')
+  lines.push('      syncReadOnlyProperties()')
   lines.push('      sendToPython({ kind: "event", name: eventName, detail })')
   lines.push('    }')
   lines.push('    state.nv.addEventListener(eventName, handler)')

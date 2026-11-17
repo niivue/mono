@@ -793,7 +793,8 @@ export interface View {
   annotations?: ReadonlyArray<Annotation>
   selectedAnnotation?: string | null
   addAnnotation?(annotation: Annotation): unknown
-  removeAnnotation?(id: string): unknown
+  removeAnnotation?(id: string, isUndoable?: boolean): unknown
+  removeAnnotations?(ids: readonly string[], isUndoable?: boolean): unknown
   clearAnnotations?(): unknown
   selectAnnotation?(id: string | null): unknown
   setAnnotationText?(id: string, text: string): unknown

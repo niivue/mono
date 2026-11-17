@@ -149,6 +149,30 @@ describe('rasterizeStructureSet', () => {
     showOnly(new Set([3]))
     expect(bitmap[400 + 5 * 20 + 5]).toBe(3)
   })
+
+  // Review of #839: DICOM's CLOSEDPLANAR_XOR contours combine by
+  // exclusive-or; an inner one cuts a hole.
+  test('fills CLOSEDPLANAR_XOR contours by exclusive-or', () => {
+    const bitmap = new Uint8Array(20 * 20 * 5)
+    const { stats } = rasterizeStructureSet(bitmap, [20, 20, 5], identityLps, [
+      {
+        ROIName: 'ring',
+        contourPoints: [
+          {
+            type: 'CLOSEDPLANAR_XOR',
+            points: pts(square(-0.5, -0.5, -9.5, -9.5, 1)),
+          },
+          {
+            type: 'CLOSEDPLANAR_XOR',
+            points: pts(square(-3.5, -3.5, -6.5, -6.5, 1)),
+          },
+        ],
+      },
+    ])
+    expect(stats.get(1)?.count).toBe(81 - 9)
+    expect(bitmap[400 + 2 * 20 + 2]).toBe(1)
+    expect(bitmap[400 + 5 * 20 + 5]).toBe(0)
+  })
 })
 
 describe('startRtDrawing', () => {

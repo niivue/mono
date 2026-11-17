@@ -240,7 +240,10 @@ export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
           sf,
         )
     const i = order.indexOf(frame)
-    if (i >= 0) return jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
+    if (i >= 0) {
+      jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
+      return
+    }
   }
   const axis =
     NORMAL_AXIS[nv.sliceType] ?? NORMAL_AXIS[acquisitionSliceType(nv) ?? -1]

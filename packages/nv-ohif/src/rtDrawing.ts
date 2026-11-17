@@ -18,7 +18,8 @@ type Vox2mm = (vox: [number, number, number]) => number[] | null
 /**
  * Style the installed drawing via `apply`. The returned restore puts the prior
  * colormap and opacities back; it runs itself when another drawing replaces this
- * one. A style the user set since stays.
+ * one. A style the user set since stays; one written through `restyle` (the
+ * panel's) counts as the drawing's own.
  */
 export function styleDrawing(
   nv: Pick<
@@ -31,7 +32,7 @@ export function styleDrawing(
     | 'removeEventListener'
   >,
   apply: () => void,
-): () => void {
+): { restore: () => void; restyle: Restyle } {
   const installed = nv.drawingVolume
   const snap = () => ({
     drawColormap: nv.drawColormap,
@@ -40,7 +41,11 @@ export function styleDrawing(
   })
   const prior = snap()
   apply()
-  const applied = snap()
+  let applied = snap()
+  const restyle: Restyle = (write) => {
+    write()
+    applied = snap()
+  }
   let done = false
   const onDrawingChanged = () => {
     if (nv.drawingVolume !== installed) restore()
@@ -57,8 +62,11 @@ export function styleDrawing(
       nv.drawRimOpacity = prior.drawRimOpacity
   }
   nv.addEventListener('drawingChanged', onDrawingChanged)
-  return restore
+  return { restore, restyle }
 }
+
+/** Write the drawing's style as its owner, so a later restore still undoes it. */
+export type Restyle = (write: () => void) => void
 
 export interface RtContour {
   type?: string
@@ -462,7 +470,11 @@ export function startRtDrawing(
     setNote: (message: string) => void
     // The contours rasterize onto the base's grid: resolves once the base is in.
     whenBase: Promise<boolean>
-    onShown?: (segments: PanelSegment[], labels: RtLabels) => () => void
+    onShown?: (
+      segments: PanelSegment[],
+      labels: RtLabels,
+      restyle: Restyle,
+    ) => () => void
   },
 ): () => void {
   let cancelled = false
@@ -501,7 +513,7 @@ export function startRtDrawing(
       options.setNote('The structure set has no closed contours to show.')
       return
     }
-    restoreStyle = styleDrawing(nv, () => {
+    const style = styleDrawing(nv, () => {
       nv.drawColormap = nv.addColormap(
         `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
         panelColormap(
@@ -515,14 +527,19 @@ export function startRtDrawing(
       nv.drawOpacity = SEG_FILL_OPACITY
       nv.drawRimOpacity = SEG_RIM_OPACITY
     })
+    restoreStyle = style.restore
     nv.refreshDrawing()
-    stopShown = options.onShown?.(segments, {
-      stats,
-      showOnly: (visible) => {
-        showOnly(visible)
-        nv.refreshDrawing()
+    stopShown = options.onShown?.(
+      segments,
+      {
+        stats,
+        showOnly: (visible) => {
+          showOnly(visible)
+          nv.refreshDrawing()
+        },
       },
-    })
+      style.restyle,
+    )
   }
   show().catch((err) => {
     if (cancelled) return

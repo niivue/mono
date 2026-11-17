@@ -5,7 +5,7 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
-import type { RtLabels } from './rtDrawing'
+import type { Restyle, RtLabels } from './rtDrawing'
 
 // OHIF's segmentation panel lists cornerstone's segmentation state for the
 // active viewport id. A NiiVue pane's SEG drawing is entered there as a
@@ -229,6 +229,8 @@ export function startSegPanel(
   },
   /** RT ROIs overlap: the bitmap holds neither their stats nor hidden ones' voxels. */
   rt?: RtLabels,
+  /** The drawing's owner records the panel's style as its own (see styleDrawing). */
+  restyle: Restyle = (write) => write(),
 ): () => void {
   const cst = cornerstoneSegmentation(managers.extensionManager)
   const service = ohifServices(managers.servicesManager)?.segmentationService as
@@ -292,46 +294,47 @@ export function startSegPanel(
   let applied = ''
   // RT: the voxels shown, as filled (all ROIs) at first.
   let shown = segments.map((s) => s.value).join()
-  const sync = () => {
-    const segmentation = cst.state.getSegmentation(segmentationId)
-    const rep = cst.state.getSegmentationRepresentation(viewportId, specifier)
-    // Deleted or removed from the pane in the panel: hide the drawing.
-    if (!segmentation || !rep) {
-      applied = ''
-      nv.drawOpacity = 0
-      nv.drawRimOpacity = -1
-      return
-    }
-    const rows = Object.entries(segmentation.segments).map(([key, s]) => {
-      const value = Number(key)
-      return {
-        value,
-        label: s.label ?? key,
-        color: cst.config.color.getSegmentIndexColor(
-          viewportId,
-          segmentationId,
-          value,
-        ) ?? [0, 0, 0, 0],
-        visible:
-          rep.visible !== false && rep.segments?.[value]?.visible !== false,
+  const sync = () =>
+    restyle(() => {
+      const segmentation = cst.state.getSegmentation(segmentationId)
+      const rep = cst.state.getSegmentationRepresentation(viewportId, specifier)
+      // Deleted or removed from the pane in the panel: hide the drawing.
+      if (!segmentation || !rep) {
+        applied = ''
+        nv.drawOpacity = 0
+        nv.drawRimOpacity = -1
+        return
       }
+      const rows = Object.entries(segmentation.segments).map(([key, s]) => {
+        const value = Number(key)
+        return {
+          value,
+          label: s.label ?? key,
+          color: cst.config.color.getSegmentIndexColor(
+            viewportId,
+            segmentationId,
+            value,
+          ) ?? [0, 0, 0, 0],
+          visible:
+            rep.visible !== false && rep.segments?.[value]?.visible !== false,
+        }
+      })
+      const { fill, rim } = drawOpacities(
+        cst.config.style.getStyle({ viewportId, ...specifier }),
+      )
+      // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
+      const key = JSON.stringify([rows, fill, rim])
+      if (key === applied) return
+      applied = key
+      const visible = rows.filter((r) => r.visible).map((r) => r.value)
+      if (rt && visible.join() !== shown) {
+        shown = visible.join()
+        rt.showOnly(new Set(visible))
+      }
+      nv.drawColormap = nv.addColormap(colormapName, panelColormap(rows))
+      nv.drawOpacity = fill
+      nv.drawRimOpacity = rim
     })
-    const { fill, rim } = drawOpacities(
-      cst.config.style.getStyle({ viewportId, ...specifier }),
-    )
-    // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
-    const key = JSON.stringify([rows, fill, rim])
-    if (key === applied) return
-    applied = key
-    const visible = rows.filter((r) => r.visible).map((r) => r.value)
-    if (rt && visible.join() !== shown) {
-      shown = visible.join()
-      rt.showOnly(new Set(visible))
-    }
-    nv.drawColormap = nv.addColormap(colormapName, panelColormap(rows))
-    nv.drawOpacity = fill
-    nv.drawRimOpacity = rim
-  }
   sync()
 
   const { EVENTS } = service

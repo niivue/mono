@@ -390,13 +390,18 @@ describe('startRtDrawing', () => {
       startRtDrawing(nv as never, rt, {
         setNote: () => {},
         whenBase: Promise.resolve(true),
-        onShown: () => {
+        onShown: (_segments, _labels, restyle) => {
+          // The seg panel restyles the drawing it lists.
+          restyle(() => {
+            nv.drawColormap = 'seg-panel-pane'
+            nv.drawOpacity = 0.4
+          })
           resolve()
           return () => {}
         },
       })
     })
-    expect(nv.drawColormap).toBe('rt-rt')
+    expect(nv.drawColormap).toBe('seg-panel-pane')
     nv.createEmptyDrawing()
     expect(nv.drawColormap).toBe('gray')
     expect(nv.drawOpacity).toBe(0.8)

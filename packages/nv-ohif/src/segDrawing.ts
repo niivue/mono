@@ -7,7 +7,7 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
-import { startRtDrawing, styleDrawing } from './rtDrawing'
+import { type Restyle, startRtDrawing, styleDrawing } from './rtDrawing'
 import {
   type PanelSegment,
   SEG_FILL_OPACITY,
@@ -128,7 +128,7 @@ export function startSegDrawing(
     whenBase: Promise<boolean>
     convert?: typeof convertDisplaySetToNifti
     /** Called once shown, with the segments; returns its cleanup. */
-    onShown?: (segments: PanelSegment[]) => () => void
+    onShown?: (segments: PanelSegment[], restyle: Restyle) => () => void
   },
 ): () => void {
   let cancelled = false
@@ -173,7 +173,7 @@ export function startSegDrawing(
     const cmap = segColormap(Array.isArray(segments) ? segments : [])
     // loadDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    restoreStyle = styleDrawing(nv, () => {
+    const style = styleDrawing(nv, () => {
       if (cmap.I.length > 1)
         nv.drawColormap = nv.addColormap(
           `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
@@ -182,6 +182,7 @@ export function startSegDrawing(
       nv.drawOpacity = SEG_FILL_OPACITY
       nv.drawRimOpacity = SEG_RIM_OPACITY
     })
+    restoreStyle = style.restore
     // Without the sidecar's segments the panel has nothing to list.
     if (cmap.I.length > 1)
       stopShown = options.onShown?.(
@@ -190,6 +191,7 @@ export function startSegDrawing(
           label: cmap.labels[i + 1] ?? String(value),
           rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
         })),
+        style.restyle,
       )
   }
   show().catch((err) => {
@@ -238,7 +240,7 @@ export function useSegDrawing(
         headers,
         setNote,
         whenBase: baseInstalledRef.current,
-        onShown: (segments, labels) =>
+        onShown: (segments, labels, restyle) =>
           startSegPanel(
             nv,
             managers.viewportId,
@@ -246,14 +248,23 @@ export function useSegDrawing(
             segments,
             managers,
             labels,
+            restyle,
           ),
       })
     return startSegDrawing(nv, seg, {
       headers,
       setNote,
       whenBase: baseInstalledRef.current,
-      onShown: (segments) =>
-        startSegPanel(nv, managers.viewportId, seg, segments, managers),
+      onShown: (segments, restyle) =>
+        startSegPanel(
+          nv,
+          managers.viewportId,
+          seg,
+          segments,
+          managers,
+          undefined,
+          restyle,
+        ),
     })
   }, [segKey, baseKey])
 }

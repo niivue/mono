@@ -105,4 +105,27 @@ describe('sharedTask', () => {
     expect(await sharedTask('k3', start)).toBe('ok')
     expect(starts).toBe(2)
   })
+
+  it('keeps the last finished tasks after their holders release (stage switch re-hangs a series)', async () => {
+    jest.useFakeTimers()
+    let starts = 0
+    const hang = async (key: string) => {
+      const abort = new AbortController()
+      await sharedTask(
+        key,
+        async () => {
+          starts++
+          return key
+        },
+        { signal: abort.signal },
+      )
+      abort.abort()
+      jest.runAllTimers()
+    }
+    for (const k of ['f0', 'f1', 'f2', 'f3', 'f4']) await hang(k)
+    await hang('f1')
+    expect(starts).toBe(5)
+    await hang('f0')
+    expect(starts).toBe(6)
+  })
 })

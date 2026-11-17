@@ -636,6 +636,12 @@ export function NiivueViewport(props: OhifViewportProps) {
       annotationOverlay?.destroy()
       ro.disconnect()
       nv.destroy()
+      // Free the WebGL context now, not at GC: layout churn would otherwise
+      // hit the browser's ~16 live-context cap (D5-08).
+      canvas
+        .getContext('webgl2')
+        ?.getExtension('WEBGL_lose_context')
+        ?.loseContext()
       canvas.width = 0
       canvas.height = 0
       canvas.remove()

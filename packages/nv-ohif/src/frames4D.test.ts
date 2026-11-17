@@ -108,3 +108,21 @@ it('removing the last 4D volume notifies the panel', async () => {
   leave()
   expect(shown).toBeUndefined()
 })
+
+it('unmounting the last 4D pane notifies the panel', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  const leave = joinFrames('gone', nv, undefined, null)
+  await nv.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  let shown: unknown = 'stale'
+  const off = onFrame(() => {
+    shown = paneFrames('gone')
+  })
+  leave()
+  off()
+  expect(shown).toBeUndefined()
+})

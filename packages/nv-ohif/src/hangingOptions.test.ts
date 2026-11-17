@@ -149,3 +149,45 @@ test('a new window on a layered overlay restyles it in place', async () => {
   ])
   unregisterNiivue('vp-style')
 })
+
+test('an overlay dropped from the protocol after it loaded is removed', async () => {
+  const removed: number[] = []
+  const user = {}
+  const nv = {
+    colormaps: [],
+    volumes: [{ hdr: {} }, { hdr: user }],
+    removeVolume: async (i: number) => {
+      removed.push(i)
+      nv.volumes.splice(i, 1)
+    },
+  }
+  registerNiivue('vp-drop', nv as never)
+  const entry = getNiivueEntry('vp-drop')
+  // A user-added overlay the protocol never hung stays.
+  entry?.overlays.set('user', user as never)
+  const commandsManager = {
+    runCommand: async (_: string, a: { displaySetInstanceUID: string }) => {
+      const hdr = {}
+      nv.volumes.push({ hdr })
+      entry?.overlays.set(a.displaySetInstanceUID, hdr as never)
+    },
+  }
+  const hang = async (uids: string[]) => {
+    useHungOverlays(
+      nv as never,
+      'vp-drop',
+      uids.map(ds) as never,
+      [],
+      'ct',
+      commandsManager as never,
+    )
+    effects.pop()?.()
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  await hang(['ct', 'pt'])
+  await hang(['ct'])
+  expect(removed).toEqual([2])
+  expect(entry?.overlays.has('pt')).toBe(false)
+  expect(entry?.overlays.has('user')).toBe(true)
+  unregisterNiivue('vp-drop')
+})

@@ -199,6 +199,20 @@ test('AdvancedMagnify puts the glass where a held touch lifts', async () => {
   expect(move.mock.calls.at(-1)).toEqual([30, 30])
 })
 
+test('a second dispose (the tool effect after unmount) draws nothing', () => {
+  const { nv } = host()
+  let draws = 0
+  nv.drawScene = () => {
+    draws++
+  }
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('Magnify')
+  binding.dispose()
+  draws = 0
+  binding.dispose()
+  expect(draws).toBe(0)
+})
+
 test('re-sending the same tool keeps the lens and its zoom', () => {
   const { nv, overlays } = host()
   const binding = createMagnifyBinding(nv)

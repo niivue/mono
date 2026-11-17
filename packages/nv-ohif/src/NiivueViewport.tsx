@@ -667,6 +667,10 @@ export function NiivueViewport(props: OhifViewportProps) {
       unsubscribeLabelSync?.()
       unregisterAnnotation?.()
       annotationOverlay?.destroy()
+      // React cleans this effect up before the tool effect's: the lens must
+      // go first, or its dispose draws a destroyed viewer.
+      magnifyRef.current?.dispose()
+      magnifyRef.current = null
       ro.disconnect()
       nv.destroy()
       // Free the WebGL context now, not at GC: layout churn would otherwise

@@ -2082,20 +2082,25 @@ export function getNiivueCommandsModule({
     /** Remove one overlay; the others keep their display-set mapping. */
     niivueRemoveOverlay: ({
       displaySetInstanceUID,
+      viewportId,
     }: {
       displaySetInstanceUID?: string
+      viewportId?: string
     } = {}) => {
-      const entry = getActiveNiivueEntry(servicesManager)
+      const entry = viewportId
+        ? getNiivueEntry(viewportId)
+        : getActiveNiivueEntry(servicesManager)
       if (!entry) return
       const index = overlayVolumeIndex(entry, displaySetInstanceUID)
       if (index === 0) return
       entry.overlays.delete(displaySetInstanceUID as string)
-      entry.nv
+      const removed = entry.nv
         .removeVolume(index)
         .catch((err: unknown) =>
           console.error('[nv-ohif] overlay removal failed', err),
         )
       refreshToolbar(servicesManager, entry.viewportId)
+      return removed
     },
 
     /**

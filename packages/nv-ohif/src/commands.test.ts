@@ -2980,6 +2980,23 @@ describe('per-overlay commands', () => {
     setColormap({ displaySetInstanceUID: 'ds-c', opacity: 2 })
     expect(volume('c').opacity).toBe(1)
   })
+
+  it('remove an overlay from a named pane and refresh the toolbar', async () => {
+    const { names } = withOverlays(['a'])
+    // Another pane is active: the hanging protocol names its own.
+    const sm = services('vp-other', [])
+    let refreshes = 0
+    Object.assign(sm.services, {
+      toolbarService: { refreshToolbarState: () => refreshes++ },
+    })
+    const { actions } = getNiivueCommandsModule({ servicesManager: sm })
+    await actions.niivueRemoveOverlay({
+      viewportId: 'vp-1',
+      displaySetInstanceUID: 'ds-a',
+    })
+    expect(names()).toEqual(['base'])
+    expect(refreshes).toBe(1)
+  })
 })
 
 describe('setViewportColormap', () => {

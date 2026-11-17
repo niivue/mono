@@ -169,6 +169,18 @@ export function computeAnnotationStats(
     }
   }
 
+  if (shape.type === 'measureAngle' || shape.type === 'measureCobbAngle')
+    // shortcut: slice-2D angle, a projection on an oblique slice (as the line
+    // length above); pass the interactive 3D one if hosts measure obliques.
+    return {
+      area: 0,
+      min: 0,
+      mean: 0,
+      max: 0,
+      stdDev: 0,
+      angle: shapeAngle(shape),
+    }
+
   const firstPt = annotation.polygons[0]?.outer[0]
   if (!firstPt) return null
 

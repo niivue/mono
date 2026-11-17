@@ -7,7 +7,12 @@ import type {
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
-import { type RtLabels, startRtDrawing } from './rtDrawing'
+import {
+  type Restyle,
+  type RtLabels,
+  startRtDrawing,
+  styleDrawing,
+} from './rtDrawing'
 import {
   type PanelSegment,
   SEG_FILL_OPACITY,
@@ -156,7 +161,7 @@ export function startSegDrawing(
     whenBase: Promise<boolean>
     convert?: typeof convertDisplaySetToNifti
     /** Called once shown, with the segments; returns its cleanup. */
-    onShown?: (segments: PanelSegment[]) => () => void
+    onShown?: (segments: PanelSegment[], restyle: Restyle) => () => void
   },
 ): () => void {
   let cancelled = false
@@ -197,22 +202,20 @@ export function startSegDrawing(
     installed = nv.drawingVolume
     // dcm2niix warnings (e.g. an incomplete SEG) reach the pane as the base's do.
     if (converted.note) options.setNote(converted.note, true)
-    const prior = {
-      drawColormap: nv.drawColormap,
-      drawOpacity: nv.drawOpacity,
-      drawRimOpacity: nv.drawRimOpacity,
-    }
     const segments = converted.json?.Segments
     const cmap = segColormap(Array.isArray(segments) ? segments : [])
-    if (cmap.I.length > 1)
-      nv.drawColormap = nv.addColormap(
-        `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
-        cmap,
-      )
     // loadDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    nv.drawOpacity = SEG_FILL_OPACITY
-    nv.drawRimOpacity = SEG_RIM_OPACITY
+    const style = styleDrawing(nv, () => {
+      if (cmap.I.length > 1)
+        nv.drawColormap = nv.addColormap(
+          `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
+          cmap,
+        )
+      nv.drawOpacity = SEG_FILL_OPACITY
+      nv.drawRimOpacity = SEG_RIM_OPACITY
+    })
+    restoreStyle = style.restore
     // Without the sidecar's segments the panel has nothing to list.
     if (cmap.I.length > 1)
       stopShown = options.onShown?.(
@@ -221,27 +224,8 @@ export function startSegDrawing(
           label: cmap.labels[i + 1] ?? String(value),
           rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
         })),
+        style.restyle,
       )
-    const applied = {
-      drawColormap: nv.drawColormap,
-      drawOpacity: nv.drawOpacity,
-      drawRimOpacity: nv.drawRimOpacity,
-    }
-    const onDrawingChanged = () => {
-      if (nv.drawingVolume !== installed) restoreStyle?.()
-    }
-    restoreStyle = () => {
-      restoreStyle = undefined
-      nv.removeEventListener('drawingChanged', onDrawingChanged)
-      // A style the user set since stays.
-      if (nv.drawColormap === applied.drawColormap)
-        nv.drawColormap = prior.drawColormap
-      if (nv.drawOpacity === applied.drawOpacity)
-        nv.drawOpacity = prior.drawOpacity
-      if (nv.drawRimOpacity === applied.drawRimOpacity)
-        nv.drawRimOpacity = prior.drawRimOpacity
-    }
-    nv.addEventListener('drawingChanged', onDrawingChanged)
   }
   show().catch((err) => {
     if (cancelled) return
@@ -284,9 +268,14 @@ export function useSegDrawing(
   const [shown, setShown] = useState<{
     segments: PanelSegment[]
     labels?: RtLabels
+    restyle: Restyle
   }>()
-  const onShown = (segments: PanelSegment[], labels?: RtLabels) => {
-    setShown({ segments, labels })
+  const onShown = (
+    segments: PanelSegment[],
+    labels: RtLabels | undefined,
+    restyle: Restyle,
+  ) => {
+    setShown({ segments, labels, restyle })
     return () => setShown(undefined)
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID and the base, as the load effect keys on displaySetsKey
@@ -297,11 +286,13 @@ export function useSegDrawing(
       headers: authHeaders(managers.servicesManager),
       setNote,
       whenBase: baseInstalledRef.current,
-      onShown,
     }
     return seg.Modality === 'RTSTRUCT'
-      ? startRtDrawing(nv, seg, options)
-      : startSegDrawing(nv, seg, options)
+      ? startRtDrawing(nv, seg, { ...options, onShown })
+      : startSegDrawing(nv, seg, {
+          ...options,
+          onShown: (segments, restyle) => onShown(segments, undefined, restyle),
+        })
   }, [segKey, baseKey])
   // Hydrating keeps the drawing: only the panel entry starts.
   // biome-ignore lint/correctness/useExhaustiveDependencies: shown changes with the SEG
@@ -315,6 +306,7 @@ export function useSegDrawing(
       shown.segments,
       managers,
       shown.labels,
+      shown.restyle,
     )
   }, [shown, isPreview])
 }

@@ -79,6 +79,11 @@ test('off-screen line annotations are culled', () => {
     { x: 200, y: 0 },
     { x: 300, y: 0 },
   ])
+  // Its box overlaps the view, but the line passes the bottom-left corner.
+  annotations.add('line', [
+    { x: -10, y: 95 },
+    { x: 95, y: 200 },
+  ])
   annotations.add('line', [
     { x: 10, y: 10 },
     { x: 20, y: 10 },

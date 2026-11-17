@@ -204,15 +204,22 @@ describe('UIKitMagnifierOverlay.attach', () => {
       drawScene: () => {},
     }
     const scene: string[] = []
-    for (const type of ['pointerdown', 'pointerup', 'pointercancel'])
+    for (const type of [
+      'pointerdown',
+      'pointermove',
+      'pointerup',
+      'pointercancel',
+    ])
       canvas.addEventListener(type, (e) =>
         scene.push(`${type}:${(e as PointerEvent).pointerId}`),
       )
     new UIKitMagnifierOverlay().attach(host)
     canvas.dispatchEvent(pointer('pointerdown', 40, 50, 1))
     canvas.dispatchEvent(pointer('pointerdown', 60, 50, 2))
+    canvas.dispatchEvent(pointer('pointermove', 70, 50, 2))
     canvas.dispatchEvent(pointer('pointercancel', 40, 50, 1))
-    canvas.dispatchEvent(pointer('pointerup', 60, 50, 2))
+    canvas.dispatchEvent(pointer('pointermove', 80, 50, 2))
+    canvas.dispatchEvent(pointer('pointerup', 80, 50, 2))
     expect(scene).toEqual([])
     // No click followed: the next press, with both up, is the scene's.
     canvas.dispatchEvent(pointer('pointerdown', 40, 50, 3))

@@ -40,6 +40,7 @@ const TAP_SLOP_CSS = 10
 // The rest of a press gesture, swallowed after the press exits the lens.
 const PRESS_REST = [
   'pointerdown',
+  'pointermove',
   'mousedown',
   'pointerup',
   'pointercancel',
@@ -52,6 +53,8 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
   const down = new Set(pointerId === undefined ? [] : [pointerId])
   const stop = (e: Event): void => {
     const id = (e as PointerEvent).pointerId
+    // Only the swallowed pointers' moves: another pointer's hover is the scene's.
+    if (e.type === 'pointermove' && !down.has(id)) return
     // A press once every swallowed pointer is up is the scene's: a cancelled
     // or multi-touch gesture has no click to end the swallow.
     if (e.type === 'pointerdown' && !down.size) {

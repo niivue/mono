@@ -1118,7 +1118,13 @@ function reflectNiivueAnnotationResult(
           data,
           getReport: rowReport(mapping.toolName, data, points, forUID),
           type: mapping.valueType,
-          metadata: { toolName: mapping.toolName, FrameOfReferenceUID: forUID },
+          // A line lies on two planes: restoring it (srImport.ts) keeps the
+          // tile it was drawn on; depth is in the points.
+          metadata: {
+            toolName: mapping.toolName,
+            FrameOfReferenceUID: forUID,
+            sliceType: annotation.sliceType,
+          },
         },
       },
       (d) => d.measurement,

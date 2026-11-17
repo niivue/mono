@@ -36,6 +36,7 @@ export interface OhifRow {
   points?: number[][]
   referenceSeriesUID?: string
   source?: { name?: string }
+  metadata?: { sliceType?: number }
 }
 
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
@@ -131,7 +132,8 @@ function twoLineFromRow(
 
 /**
  * The NiiVue annotation for an OHIF row on the axial, coronal or sagittal
- * plane holding all its points (the acquisition plane first), else undefined.
+ * plane holding all its points (a NiiVue row's own plane, then the acquisition
+ * plane, first), else undefined.
  */
 export function annotationFromRow(
   nv: Pick<NiiVue, 'volumes' | 'annotationStyle' | 'annotationAreaIsGeometric'>,
@@ -151,9 +153,14 @@ export function annotationFromRow(
             (ras[0]?.[DEPTH[t] as number] as number),
         ) < 1e-3,
     )
-  const sliceType = [acquisitionSliceType(nv), 0, 1, 2].find(
-    (t) => t !== undefined && onPlane(t),
-  )
+  // A NiiVue row's own plane first, then the acquisition plane.
+  const sliceType = [
+    row.metadata?.sliceType,
+    acquisitionSliceType(nv),
+    0,
+    1,
+    2,
+  ].find((t) => t !== undefined && onPlane(t))
   if (sliceType === undefined) return undefined
   const depth = ras[0]?.[DEPTH[sliceType] as number] ?? 0
   const pts = ras.map((p) => mmToSlice2D(p, sliceType))

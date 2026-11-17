@@ -1,3 +1,33 @@
+## 1.0.0-rc.220 (2026-11-17)
+
+### Fixes
+
+- **niivue:** key the 3D stroke sample cache by displayed frame ([bac2ba14](https://github.com/niivue/mono/commit/bac2ba14))
+- sample the displayed 4D frame in 3D strokes; exclusive tile seam in sliceAxisAt ([f85b3e07](https://github.com/niivue/mono/commit/f85b3e07))
+- **niivue:** read the displayed 4D frame in place for subvolume copy and depth picks ([30fddc6b](https://github.com/niivue/mono/commit/30fddc6b))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.219 (2026-11-17)
+
+### Features
+
+- **uikit:** a 3D sub-volume corner over empty space takes the first corner's depth ([ee9b442c](https://github.com/niivue/mono/commit/ee9b442c))
+- **uikit:** right-click sub-volume selector ([b02264ce](https://github.com/niivue/mono/commit/b02264ce))
+
+### Fixes
+
+- **niivue,uikit:** native-stride depth picks at the shown frame; drop stale picks on reset ([df2f18b7](https://github.com/niivue/mono/commit/df2f18b7))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.218 (2026-11-17)
 
 ### Features

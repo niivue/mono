@@ -19,6 +19,7 @@ import {
   remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
+  residentPickSampler,
   robustDisplayWindow,
   robustMinMax,
   temporalUnitScale,
@@ -876,5 +877,64 @@ describe('warnMixedUnits', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0]?.[0])).toContain("'um' is in um")
     warn.mockRestore()
+  })
+})
+
+describe('residentPickSampler', () => {
+  // 4x2x1 voxels, 2 mm, origin (-4, 0, 0); voxel x holds 10x + y.
+  const vol = {
+    img: Float32Array.from([0, 10, 20, 30, 1, 11, 21, 31]),
+    dimsRAS: [3, 4, 2, 1],
+    nVox3D: 8,
+    img2RASstep: [1, 4, 8],
+    img2RASstart: [0, 0, 0],
+    matRAS: Float32Array.from([
+      2, 0, 0, -4, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1,
+    ]),
+    calMin: 5,
+    hdr: { scl_slope: 1, scl_inter: 0 },
+  } as unknown as NVImage
+
+  test('reads the voxel under a mm point above the window floor', () => {
+    const s = residentPickSampler(vol)
+    expect(s?.(0, 2, 0)).toBe(21 - 5)
+    expect(s?.(-4, 0, 0)).toBe(0) // value 0 is under calMin
+    expect(s?.(100, 0, 0)).toBe(0) // outside the volume
+    // Outside stays 0 under a negative window, not 0 - calMin.
+    expect(
+      residentPickSampler({ ...vol, calMin: -500 } as NVImage)?.(100, 0, 0),
+    ).toBe(0)
+  })
+
+  test('reads native storage at the shown frame', () => {
+    // Same grid stored x-flipped as Uint16, frame 1 holding 100 + value.
+    const f0 = [30, 20, 10, 0, 31, 21, 11, 1]
+    const s = residentPickSampler({
+      ...vol,
+      img: Uint16Array.from([...f0, ...f0.map((v) => v + 100)]),
+      img2RASstart: [3, 0, 0],
+      img2RASstep: [-1, 4, 8],
+      frame4D: 1,
+      hdr: { scl_slope: 1, scl_inter: 0, datatypeCode: 512 },
+    } as unknown as NVImage)
+    expect(s?.(0, 2, 0)).toBe(121 - 5)
+  })
+
+  test('an RGBA voxel is visible by its alpha, not its color', () => {
+    // Frame 1 (bytes 32+): voxel 0 transparent red, voxel 1 opaque green.
+    const rgba = new Uint8Array(64)
+    rgba.set([255, 0, 0, 0, 0, 255, 0, 255], 32)
+    const s = residentPickSampler({
+      ...vol,
+      img: rgba,
+      frame4D: 1,
+      hdr: { scl_slope: 1, scl_inter: 0, datatypeCode: 2304 },
+    } as unknown as NVImage)
+    expect(s?.(-4, 0, 0)).toBe(0)
+    expect(s?.(-2, 0, 0)).toBe(255)
+  })
+
+  test('is null without CPU voxels', () => {
+    expect(residentPickSampler({ ...vol, img: null } as NVImage)).toBeNull()
   })
 })

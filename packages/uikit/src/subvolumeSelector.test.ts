@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { FocusBox, NVImage, SliceTile } from '@niivue/niivue'
 import {
+  nearestOnRay,
   type SubvolumeSelection,
   type SubvolumeSelectorHost,
   sliceOutlineRects,
@@ -62,6 +63,10 @@ function makeHost(
     hitTest: () => ({ isRender }),
     canvasToMM: () => picks.slice?.shift() ?? null,
     pickAt: async () => picks.render?.shift() ?? null,
+    pickRay: (): { origin: Vec3; dir: Vec3 } | null => ({
+      origin: [0, 0, 100],
+      dir: [0, 0, -1],
+    }),
     getScreenTiles: () => [],
     pickExplodedBlock: () => {
       const mm = picks.exploded?.shift()
@@ -142,6 +147,14 @@ describe('sliceOutlineRects', () => {
   })
 })
 
+describe('nearestOnRay', () => {
+  it('is the ray point nearest the target, or null without a ray', () => {
+    const ray = { origin: [0, 0, 0] as Vec3, dir: [1, 0, 0] as Vec3 }
+    expect(nearestOnRay(ray, [5, 3, -2])).toEqual([5, 0, 0])
+    expect(nearestOnRay(null, [1, 1, 1])).toBeNull()
+  })
+})
+
 describe('UIKitSubvolumeSelector.attach', () => {
   it('two right-clicks on a slice copy the box out and outline it', async () => {
     const got: SubvolumeSelection[] = []
@@ -210,9 +223,32 @@ describe('UIKitSubvolumeSelector.attach', () => {
     // The first pick was superseded by the second press before it resolved.
     expect(got).toHaveLength(0)
     expect(sel.pendingCorner).toEqual(vox(7, 7, 7))
+    // A miss off the render tile (no ray) places nothing.
+    host.pickRay = () => null
     canvas.dispatchEvent(rightClick())
     await settle()
     expect(got).toHaveLength(0)
+  })
+
+  it('over empty space the second 3D corner takes the first corner depth', async () => {
+    const got: SubvolumeSelection[] = []
+    const sel = new UIKitSubvolumeSelector({ onSelect: (s) => got.push(s) })
+    const { canvas, host } = makeHost(makeVolume(), {}, true)
+    sel.attach(host)
+    // A miss with no first corner places nothing.
+    host.pickAt = async () => null
+    canvas.dispatchEvent(rightClick())
+    await settle()
+    expect(sel.pendingCorner).toBeNull()
+    const picks: (Vec3 | null)[] = [vox(1, 2, 3), null]
+    host.pickAt = async () => picks.shift() ?? null
+    canvas.dispatchEvent(rightClick())
+    await settle()
+    canvas.dispatchEvent(rightClick())
+    await settle()
+    // The ray (0, 0, z) cut at the first corner's z: voxel (5, 10->7, 3).
+    expect(got[0]?.voxelOrigin).toEqual([1, 2, 3])
+    expect(got[0]?.voxelDims).toEqual([5, 6, 1])
   })
 
   it('picks an exploded chunked volume brick by brick, without an outline', async () => {

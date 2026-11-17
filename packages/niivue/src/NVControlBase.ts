@@ -29,6 +29,7 @@ import {
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
+  renderPickRay,
   resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
@@ -5775,6 +5776,27 @@ export default class NiiVue extends EventTarget {
       this._setCrosshairPos(mm, SLICE_TYPE.RENDER)
     else this.drawScene()
     return mm
+  }
+
+  /**
+   * The world ray (mm) under canvas pixel `[x, y]` (device pixels, as
+   * {@link pickAt}) on the 3D render tile: `origin` on the near plane, unit
+   * `dir` into the scene. Unlike `pickAt` it answers over empty space, so a
+   * caller can place a point at a chosen depth. Null off the render tile and
+   * on a mosaic render tile.
+   */
+  pickRay(
+    x: number,
+    y: number,
+  ): {
+    origin: [number, number, number]
+    dir: [number, number, number]
+  } | null {
+    const hit = this.view?.hitTest(x, y)
+    if (!hit?.isRender) return null
+    if (this.view?.screenSlices[hit.tileIndex]?.renderOrientation !== undefined)
+      return null
+    return renderPickRay(this, hit, this.volumes[0]?.obliqueRAS)
   }
 
   /**

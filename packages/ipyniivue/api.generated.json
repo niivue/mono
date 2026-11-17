@@ -3279,6 +3279,29 @@
       "returnsDoc": null
     },
     {
+      "jsName": "pickRay",
+      "pyName": "pick_ray",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "{ origin: [number, number, number]; dir: [number, number, number]; } | null",
+      "doc": "The world ray (mm) under canvas pixel `[x, y]` (device pixels, as\n{@link pickAt}) on the 3D render tile: `origin` on the near plane, unit\n`dir` into the scene. Unlike `pickAt` it answers over empty space, so a\ncaller can place a point at a chosen depth. Null off the render tile and\non a mosaic render tile.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "rebakeChunkedOverlays",
       "pyName": "rebake_chunked_overlays",
       "isAsync": false,

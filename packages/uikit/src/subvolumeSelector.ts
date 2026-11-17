@@ -2,7 +2,8 @@
 // span becomes an ephemeral copy of that part of the volume, as the block
 // picker (`extractChunkBlock`) does for one brick. A slice tile picks the
 // point under the pointer on its plane, a 3D render tile depth-picks the first
-// visible voxel (an exploded chunked volume is picked brick by brick). Between
+// visible voxel (an exploded chunked volume is picked brick by brick); over
+// empty space the second corner goes to the depth of the first. Between
 // the corners a fainter outline follows the pointer. A third right-click
 // starts a new box. Shift+right-click still opens the context menu. Register
 // it as an overlay renderer too (`registerOverlayRenderer`) to outline the
@@ -36,6 +37,7 @@ export interface SubvolumeSelectorHost extends UIKitHost {
   hitTest(canvasX: number, canvasY: number): { isRender: boolean } | null
   canvasToMM(canvasX: number, canvasY: number): Vec3 | null
   pickAt(canvasX: number, canvasY: number): Promise<Vec3 | null>
+  pickRay(canvasX: number, canvasY: number): { origin: Vec3; dir: Vec3 } | null
   pickExplodedBlock(clientX: number, clientY: number): ExplodedBlockPick | null
   getScreenTiles(): readonly SliceTile[]
 }
@@ -326,7 +328,7 @@ export class UIKitSubvolumeSelector {
         return
       }
       moving = true
-      void host.pickAt(p[0], p[1]).then((mm) => {
+      void this.renderPick(host, p).then((mm) => {
         moving = false
         // A press while picking moved on to a new box (or finished this one).
         if (mm && this.first === first && this.host === host) this.preview(mm)
@@ -353,8 +355,34 @@ export class UIKitSubvolumeSelector {
     // The depth pick ray-marches the un-exploded volume, so ask the bricks.
     if (host.volumes.some(isExploded))
       return host.pickExplodedBlock(e.clientX, e.clientY)?.mm ?? null
-    return host.pickAt(p[0], p[1])
+    return this.renderPick(host, p)
   }
+
+  /**
+   * Depth-pick; over empty space with a first corner set, the ray point
+   * nearest that corner, so the second corner can sit off the surface.
+   */
+  private async renderPick(
+    host: SubvolumeSelectorHost,
+    p: [number, number],
+  ): Promise<Vec3 | null> {
+    const mm = await host.pickAt(p[0], p[1])
+    const first = this.first
+    if (mm || !first) return mm
+    return nearestOnRay(host.pickRay(p[0], p[1]), first)
+  }
+}
+
+/** The point on a ray (unit dir) nearest `to`: the ray's cut with the plane through `to` facing the viewer. */
+export function nearestOnRay(
+  ray: { origin: Vec3; dir: Vec3 } | null,
+  to: Vec3,
+): Vec3 | null {
+  if (!ray) return null
+  const { origin: o, dir: d } = ray
+  const t =
+    (to[0] - o[0]) * d[0] + (to[1] - o[1]) * d[1] + (to[2] - o[2]) * d[2]
+  return [o[0] + t * d[0], o[1] + t * d[1], o[2] + t * d[2]]
 }
 
 function isExploded(vol: NVImage): boolean {

@@ -1111,6 +1111,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             ? nvRef.current
             : null
         }
+        isCT={displaySets[0]?.Modality === 'CT'}
       />
       {props.viewportOptions?.customViewportProps?.hideOverlays ||
       isRender ? null : (

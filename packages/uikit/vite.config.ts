@@ -18,6 +18,7 @@ const DEMO_PAGES = [
   'buttons',
   'calipers',
   'volume',
+  'subvolume',
   'slide',
   'slide-wsi',
 ]

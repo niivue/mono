@@ -104,6 +104,18 @@ describe('resolveSegDisplaySets', () => {
       seg: hydrated,
     })
   })
+
+  test('baseOnly_latestHydratedReplacesEarlier', () => {
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: false }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: true }
+    const active = { ...lookup, getActiveDisplaySets: () => [a, b] }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    // a, listed first, hydrated second: it wins; un-hydrated, b is back.
+    a.isHydrated = true
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+    a.isHydrated = false
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+  })
 })
 
 describe('startSegDrawing', () => {

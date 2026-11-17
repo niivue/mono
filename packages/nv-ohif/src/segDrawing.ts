@@ -28,14 +28,18 @@ interface DisplaySetLookup {
 const isSegOrRt = (ds: OhifDisplaySet) =>
   ds.Modality === 'SEG' || ds.Modality === 'RTSTRUCT'
 
+// OHIF records no hydration time: order SEG/RTs by when first seen hydrated.
+const hydratedOrder = new WeakMap<OhifDisplaySet, number>()
+let hydrations = 0
+
 /**
  * The display sets a pane shows, with the first SEG or RTSTRUCT swapped for the series it
  * references (OHIF sets referencedDisplaySetInstanceUID once that series is
  * known; the series UID covers the gap). Without a reference the SEG stays, and
  * classifies as unsupported. A SEG behind a primary series it does not
  * reference also stays, so the primary keeps the pane and the SEG is noted as
- * not shown. With none hung, a hydrated SEG or RTSTRUCT on the base series is
- * the pane's, as cornerstone shows it wherever that series is.
+ * not shown. With none hung, the latest hydrated SEG or RTSTRUCT on the base
+ * series is the pane's, as cornerstone shows it wherever that series is.
  */
 export function resolveSegDisplaySets(
   hung: ReadonlyArray<OhifDisplaySet>,
@@ -45,17 +49,20 @@ export function resolveSegDisplaySets(
   const seg = hung[index]
   if (!seg) {
     const baseUid = hung[0]?.displaySetInstanceUID
-    // ponytail: first hydrated one; a NiiVue pane holds one drawing.
-    const hydrated = baseUid
-      ? lookup
-          ?.getActiveDisplaySets?.()
-          .find(
-            (ds) =>
-              isSegOrRt(ds) &&
-              ds.isHydrated === true &&
-              ds.referencedDisplaySetInstanceUID === baseUid,
-          )
-      : undefined
+    // A NiiVue pane holds one drawing: the latest hydrated, as cornerstone
+    // activates the newest segmentation.
+    let hydrated: OhifDisplaySet | undefined
+    let newest = 0
+    for (const ds of baseUid ? (lookup?.getActiveDisplaySets?.() ?? []) : []) {
+      if (!isSegOrRt(ds) || ds.referencedDisplaySetInstanceUID !== baseUid)
+        continue
+      if (ds.isHydrated !== true) hydratedOrder.delete(ds)
+      else {
+        const order = hydratedOrder.get(ds) ?? ++hydrations
+        hydratedOrder.set(ds, order)
+        if (order > newest) [hydrated, newest] = [ds, order]
+      }
+    }
     return hydrated
       ? { displaySets: hung, seg: hydrated }
       : { displaySets: hung }

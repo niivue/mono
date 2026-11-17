@@ -18,7 +18,7 @@ Documentation: https://niivue.github.io/mono/docs/guide/
 bun install          # Install dependencies
 bun run dev          # Hot-reload dev server
 bun run build        # Library build to ./dist (published npm package), incl. dist/standalone
-bun run deploy       # Production examples-site build to ./dist (GitHub Pages)
+bun run deploy       # Production examples-site build to ./dist-examples (GitHub Pages)
 bun run demo         # Build examples site and serve locally
 bun run lint         # Biome check
 bun run lint:fix     # Biome auto-fix
@@ -71,7 +71,7 @@ in production is one well-predicted branch per call site. See
 ### Development Workflows
 
 - **`bun run dev`** — Serves the `examples/` pages from source with hot reloading at `localhost:5273`. The pages `import '../src/index.ts'` directly, so dev and the deployed build run the same files. On-demand sample data (DICOM-WSI) is downloaded into `public/` if missing.
-- **`bun run demo`** — Builds the examples site to `dist/` and serves it with `vite preview`. Use this to test the actual built output or before deploying to GitHub Pages.
+- **`bun run demo`** — Builds the examples site to `dist-examples/` and serves it with `vite preview`. Use this to test the actual built output or before deploying to GitHub Pages.
 
 ## Usage
 

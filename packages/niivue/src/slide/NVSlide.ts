@@ -12,7 +12,11 @@ import {
   toValue,
   usableWindow,
 } from './slideChannels'
-import { DEFAULT_RAW_POOL_BYTES, type SlideRendererBudget } from './slideFuse'
+import {
+  DEFAULT_RAW_POOL_BYTES,
+  rgbBitmapWindow,
+  type SlideRendererBudget,
+} from './slideFuse'
 import { REQUEST_RANK, type TileLoad, TileLoadQueue } from './slideLoadQueue'
 import {
   clamp,
@@ -779,6 +783,9 @@ export class NVSlide extends EventTarget {
   private _channelBlend: NVSlideChannelBlend = 'max'
   private _selectedLabel: { channel: number; id: number } | null = null
   private readonly _rgb: boolean
+  // rgbWindow, memoised by the (replaced on write) channels array.
+  private _rgbWindow: Float32Array | null = null
+  private _rgbWindowFor: readonly NVChannel[] | null = null
   private _displayGen = 0
   private readonly _thumbs = new Map<
     string,
@@ -1110,10 +1117,23 @@ export class NVSlide extends EventTarget {
   }
 
   /**
+   * An RGB slide's channel windows for its bitmap tiles (slideFuse
+   * rgbBitmapWindow); null when they are the default or the slide is not RGB.
+   * @internal
+   */
+  get rgbWindow(): Float32Array | null {
+    if (this._rgbWindowFor !== this._channels) {
+      this._rgbWindowFor = this._channels
+      this._rgbWindow = this._rgb ? rgbBitmapWindow(this._channels) : null
+    }
+    return this._rgbWindow
+  }
+
+  /**
    * Update channel `c`. Renderers re-fuse cached sample tiles from their kept
    * planes on the next frame; showing a channel they were fetched without
-   * refetches them. Tiles a decoder returned as bitmaps (JPEG, RGBA) are drawn
-   * as decoded.
+   * refetches them. Bitmap tiles (JPEG, RGBA) of an RGB slide draw through the
+   * red, green and blue windows (8-bit units); other bitmaps draw as decoded.
    */
   setChannel(c: number, update: Partial<NVChannel>): void {
     const old = this._channels[c]
@@ -2140,6 +2160,7 @@ export class NVSlide extends EventTarget {
       this.manifest.channelInfo,
       this.selectedLabel,
       lut,
+      this.rgbWindow,
     )
     if (!bitmap) return null
     memo?.bitmap.close()

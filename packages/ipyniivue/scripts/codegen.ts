@@ -44,6 +44,10 @@ const EVENTTARGET_ALLOWLIST = new Set([
 // be invoked or consumed from Python through the command channel.
 const NON_SERIALIZABLE_METHODS = new Map<string, string>([
   [
+    'cancelDrawingLoad',
+    'cannot preempt: the widget command queue runs it after the load_drawing it would cancel',
+  ],
+  [
     'attachToCanvas',
     'arguments are not JSON-serializable (DOM handle or JS object)',
   ],

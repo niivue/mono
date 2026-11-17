@@ -11,6 +11,7 @@ const colorBtn = document.getElementById('colorBtn')
 const colorSelect = document.getElementById('colorSelect')
 const colorbarCheck = document.getElementById('colorbarCheck')
 const colormapSelect = document.getElementById('colormapSelect')
+const cborCheck = document.getElementById('cborCheck')
 const connectomeSlider = document.getElementById('connectomeSlider')
 const crosshairCheck = document.getElementById('crosshairCheck')
 const dprSelect = document.getElementById('dprSelect')
@@ -42,11 +43,13 @@ saveBtn.onclick = () => {
   nv1.saveDocument('myScene.nvd')
 }
 saveMeshBtn.onclick = () => {
-  nv1.saveMesh(0, 'myMesh.iwm.cbor')
+  nv1.saveMesh(0, cborCheck.checked ? 'myMesh.iwm.cbor' : 'myMesh.mz3')
 }
 
 saveVolBtn.onclick = () => {
-  nv1.saveVolume({ filename: 'myImage.iwi.cbor' })
+  nv1.saveVolume({
+    filename: cborCheck.checked ? 'myImage.iwi.cbor' : 'myImage.nii.gz',
+  })
 }
 
 clipSelect.onchange = function () {

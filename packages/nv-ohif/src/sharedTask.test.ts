@@ -97,6 +97,14 @@ describe('sharedTask', () => {
     ).rejects.toThrow('early')
   })
 
+  it('releases a call without a signal once it settles', async () => {
+    jest.useFakeTimers()
+    const before = sharedTaskCount()
+    expect(await sharedTask('k5', () => Promise.resolve('nii'))).toBe('nii')
+    jest.advanceTimersByTime(0)
+    expect(sharedTaskCount()).toBe(before)
+  })
+
   it('drops a rejected task so the next call retries', async () => {
     let starts = 0
     const start = () =>

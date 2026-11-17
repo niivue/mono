@@ -150,7 +150,7 @@ Fast, browser-free checks on `examples/`; `pr_gate.yml` runs all of them.
 bun run typecheck           # also tsc -p examples/tsconfig.json: NiiVue API misuse in demo scripts
 bun run check:demos         # literal /volumes/, /meshes/, /signals/ URLs missing from packages/dev-images;
                             # getElementById ids missing from the page that loads the script
-bun run build:examples      # broken imports (empties dist/)
+bun run build:examples      # broken imports (to dist-examples/)
 bunx nx lint niivue         # Biome; noUndeclaredVariables is on for examples/**/*.js
 ```
 

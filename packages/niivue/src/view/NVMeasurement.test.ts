@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test'
-import { formatDistance, rulerSegments, rulerTickLabels } from './NVMeasurement'
+import {
+  angleLabel,
+  formatDistance,
+  rulerLengthLabel,
+  rulerSegments,
+  rulerTickLabels,
+} from './NVMeasurement'
 
 // A plain baseline (1 segment) plus two long perpendicular end caps.
 const BASELINE_SEGS = 3
@@ -63,6 +69,29 @@ describe('rulerTickLabels', () => {
     expect(labels[0].y).not.toBe(0)
   })
 
+  it('keeps the length clear of the numbers whichever way it was drawn', () => {
+    for (const [sx, ex] of [
+      [0, 100],
+      [100, 0],
+    ]) {
+      // Numbers below a horizontal ruler; the length sits above, bottom-anchored.
+      expect(rulerTickLabels(sx, 50, ex, 50, 12)[0].y).toBeGreaterThan(50)
+      const at = rulerLengthLabel(sx, 50, ex, 50)
+      expect(at.y).toBeLessThan(50)
+      expect([at.anchorX, at.anchorY]).toEqual([0.5, 1])
+    }
+    // Vertical: numbers right, the length to the left, right-anchored.
+    for (const [sy, ey] of [
+      [0, 100],
+      [100, 0],
+    ]) {
+      expect(rulerTickLabels(50, sy, 50, ey, 12)[0].x).toBeGreaterThan(50)
+      const at = rulerLengthLabel(50, sy, 50, ey)
+      expect(at.x).toBeLessThan(50)
+      expect(at.anchorX).toBe(1)
+    }
+  })
+
   it('thins numbers on a long ruler so they do not collide', () => {
     // 150 units over 200 px: every-fifth (30 numbers) would smear, so far fewer
     // are emitted, each still a multiple of 5.
@@ -98,5 +127,28 @@ describe('ruler majors under decimation', () => {
     const lengths = ticks.map(([, y0, , y1]) => Math.abs(y1 - y0))
     expect(ticks).toHaveLength(200)
     expect(lengths.filter((l) => l === 24)).toHaveLength(40)
+  })
+})
+
+describe('angleLabel', () => {
+  it('sits outside the vertex, opposite both arms', () => {
+    // Arms right and up from (50, 50): the label goes down-left of the vertex.
+    const at = angleLabel(100, 50, 50, 50, 50, 0)
+    expect(at.x).toBeLessThan(50)
+    expect(at.y).toBeGreaterThan(50)
+    expect(at.anchorX).toBeGreaterThan(0.5) // text extends left
+    expect(at.anchorY).toBeLessThan(0.5) // and down
+  })
+
+  it('a straight angle puts the label beside the arms, not on them', () => {
+    const flat = angleLabel(0, 50, 50, 50, 100, 50)
+    expect(flat.y).toBeLessThan(50)
+    expect(flat.anchorY).toBe(1)
+    const upright = angleLabel(50, 0, 50, 50, 50, 100)
+    expect(upright.x).toBeLessThan(50)
+    expect(upright.anchorX).toBe(1)
+    // Oblique: the offset is perpendicular to the arms.
+    const tilted = angleLabel(0, 0, 50, 50, 100, 100)
+    expect(tilted.x - 50 + (tilted.y - 50)).toBeCloseTo(0)
   })
 })

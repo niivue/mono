@@ -263,21 +263,25 @@ const DEFAULT_DISPLAY = {
 }
 
 /**
- * A base load that installed `installed` has settled: apply a protocol window
- * changed meanwhile (the display effect skips a loading base).
+ * A base load that installed window `installed` and colormap/inversion
+ * `installedStyle` has settled: apply protocol options changed meanwhile
+ * (the display effect skips a loading base).
  */
 export function settleBase(
   viewportId: string,
   installed: ReturnType<typeof hangingDisplay>,
   viewportOptions: OhifViewportProps['viewportOptions'],
   displaySetOptions: OhifViewportProps['displaySetOptions'],
+  installedStyle: ReturnType<typeof baseStyle> = {},
 ): void {
   const entry = getNiivueEntry(viewportId)
   const ds = entry?.displaySets[0]
-  const latest =
-    ds &&
-    hangingDisplay(viewportOptions, displaySetOptions, ds, entry?.sliceFrames)
-  if (JSON.stringify(latest) !== JSON.stringify(installed))
+  if (!entry || !ds) return
+  const latest = [
+    hangingDisplay(viewportOptions, displaySetOptions, ds, entry.sliceFrames),
+    baseStyle(entry.nv, displaySetOptions),
+  ]
+  if (JSON.stringify(latest) !== JSON.stringify([installed, installedStyle]))
     applyHangingDisplay(entry, viewportOptions, displaySetOptions)
 }
 
@@ -741,6 +745,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         installed,
         viewportOptionsRef.current,
         displaySetOptionsRef.current,
+        style,
       )
       // A reflection may have failed while OHIF's backing series or the converted
       // volume was still becoming ready. Retry after the load boundary even when

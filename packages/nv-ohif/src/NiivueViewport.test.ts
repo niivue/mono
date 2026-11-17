@@ -291,6 +291,25 @@ test('a protocol window changed during the load applies when it settles', async 
   }
 })
 
+test('a colormap changed while the base loaded applies once it settles', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'four.nii') }])
+  registerNiivue('hp', nv)
+  const entry = getNiivueEntry('hp')
+  if (!entry) throw new Error('not registered')
+  entry.displaySets = [{ displaySetInstanceUID: 'ds' }]
+  try {
+    settleBase('hp', undefined, {}, [
+      { options: { colormap: { name: 'hot' } } },
+    ])
+    await Promise.resolve()
+    expect(nv.volumes[0]?.colormap).toBe('Hot')
+  } finally {
+    unregisterNiivue('hp')
+  }
+})
+
 test('removing the protocol window restores the robust range and gray', async () => {
   globalThis.requestAnimationFrame ??= () => 0
   const nv = new NiiVue(DEFAULT_OPTIONS)

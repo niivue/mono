@@ -126,7 +126,7 @@ Fired when any drag interaction completes on a 2D slice.
 #### `measurementCompleted`
 Fired when a distance measurement line is completed — by an interactive drag in
 `DRAG_MODE.measurement` or by a programmatic `addMeasurement` call. Fired after
-the measurement is appended, so it is already in `getMeasurements()`.
+the measurement is appended, so it is already in `getMeasurements()`. A click (zero length) adds nothing.
 
 | Field | Type | Description |
 |-------|------|-------------|

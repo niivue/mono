@@ -28,19 +28,14 @@ export interface NiivueViewportEntry {
   overlayAbort?: AbortController
   /** Current clip plane preset name ('none' when off). See commands.ts. */
   clipPlane: string
-  /**
-   * Last known base-volume window/level ({ window: width, level: center }).
-   * The baseline for the change readout (commands.ts trackNiivueWindowLevel).
-   */
-  windowLevel?: { window: number; level: number }
   /** OHIF tool group whose primary tool drives this viewport. */
   toolGroupId?: string
   /** Last crosshair position (RAS mm), from locationChange. */
   crosshairMM?: number[]
   /** Base volume slice -> DICOM frame, when converted from DICOM. */
   sliceFrames?: SliceFrames
-  /** OHIF hung a volume viewport: positions count along the volume, not the stack. */
-  volumeOrder?: boolean
+  /** OHIF viewportType 'volume': image positions count along the volume, not the stack. */
+  isVolumeViewport?: boolean
   /** Visible NVSlide view when this viewport is showing a whole-slide series. */
   slideView?: WsiSlideView
   /** Viewport-provided sink so commands can surface progress text (null = clear). */
@@ -78,13 +73,12 @@ export function updateNiivueViewport(
       | 'displaySets'
       | 'setStatus'
       | 'slideView'
-      | 'windowLevel'
       | 'overlays'
       | 'baseLoading'
       | 'overlayLoading'
       | 'toolGroupId'
       | 'sliceFrames'
-      | 'volumeOrder'
+      | 'isVolumeViewport'
     >
   >,
 ): void {

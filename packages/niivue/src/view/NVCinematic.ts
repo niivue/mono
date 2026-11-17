@@ -605,7 +605,8 @@ export function findLabelVolume(volumes: readonly NVImage[]): NVImage | null {
   if (!base?.dimsRAS || !base.frac2mm) return null
   for (let i = 1; i < volumes.length; i++) {
     const v = volumes[i]
-    if (!v.colormapLabel || drawnOpacity(v) <= 0) continue
+    // PAQD voxels are RGBA label/probability pairs, not label ids.
+    if (!v.colormapLabel || isPaqd(v.hdr) || drawnOpacity(v) <= 0) continue
     if (!v.dimsRAS || !v.frac2mm) continue
     const sameDims = [1, 2, 3].every(
       (d) => v.dimsRAS?.[d] === base.dimsRAS?.[d],

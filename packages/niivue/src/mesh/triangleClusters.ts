@@ -6,6 +6,7 @@
 // unaffected. The input order does not matter (FreeSurfer's, for one, is not
 // spatially coherent).
 
+import { shownIndices } from '@/mesh/shownIndices'
 import type { NVMesh } from '@/NVTypes'
 
 // 64 balances GPU and CPU work: on a pial surface a plane crosses ~11% of
@@ -208,14 +209,16 @@ function hashPositions(positions: ArrayLike<number>): number {
 export function meshClusters(mesh: NVMesh): TriangleClusters {
   const positionsVersion = mesh._positionsVersion ?? 0
   const dataVersion = mesh._dataVersion ?? 0
+  // Culled hidden labels give a new array, so they rebuild like new indices.
+  const indices = shownIndices(mesh)
   const hit = _cache.get(mesh)
-  if (hit && hit.indices === mesh.indices && hit.positions === mesh.positions) {
+  if (hit && hit.indices === indices && hit.positions === mesh.positions) {
     let isCurrent = true
     let isMoved = hit.positionsVersion !== positionsVersion
     let positionsHash: number | null = null
     if (hit.dataVersion !== dataVersion) {
       hit.dataVersion = dataVersion
-      isCurrent = hashIndices(mesh.indices) === hit.indicesHash
+      isCurrent = hashIndices(indices) === hit.indicesHash
       if (isCurrent) {
         positionsHash = hashPositions(mesh.positions)
         if (positionsHash !== hit.positionsHash) isMoved = true
@@ -225,7 +228,7 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
       if (isMoved) {
         updateClusterBounds(
           mesh.positions,
-          mesh.indices,
+          indices,
           hit.clusters.order,
           hit.clusters.bounds,
         )
@@ -237,14 +240,14 @@ export function meshClusters(mesh: NVMesh): TriangleClusters {
       return hit.clusters
     }
   }
-  const clusters = buildTriangleClusters(mesh.positions, mesh.indices)
+  const clusters = buildTriangleClusters(mesh.positions, indices)
   _cache.set(mesh, {
     clusters,
-    indices: mesh.indices,
+    indices,
     positions: mesh.positions,
     positionsVersion,
     dataVersion,
-    indicesHash: hashIndices(mesh.indices),
+    indicesHash: hashIndices(indices),
     positionsHash: hashPositions(mesh.positions),
   })
   return clusters

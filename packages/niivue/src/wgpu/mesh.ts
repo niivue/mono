@@ -1,4 +1,5 @@
 import { log } from '@/logger'
+import { shownIndices } from '@/mesh/shownIndices'
 import {
   CLUSTER_SIZE,
   clustersCrossingPlanes,
@@ -37,12 +38,13 @@ export function uploadMeshGPU(
   })
   new Uint8Array(vertexBuffer.getMappedRange()).set(new Uint8Array(vertexData))
   vertexBuffer.unmap()
+  const indices = shownIndices(meshData)
   const indexBuffer = device.createBuffer({
-    size: meshData.indices.byteLength,
+    size: indices.byteLength,
     usage: GPUBufferUsage.INDEX,
     mappedAtCreation: true,
   })
-  new Uint32Array(indexBuffer.getMappedRange()).set(meshData.indices)
+  new Uint32Array(indexBuffer.getMappedRange()).set(indices)
   indexBuffer.unmap()
   // Create per-mesh uniform buffer (144 bytes to match meshParams)
   const uniformBuffer = device.createBuffer({
@@ -53,7 +55,7 @@ export function uploadMeshGPU(
     vertexBuffer,
     indexBuffer,
     uniformBuffer,
-    indexCount: meshData.indices.length,
+    indexCount: indices.length,
     bindGroup: null,
     alignedMeshSize: alignedMeshSize,
     shaderType,
@@ -233,7 +235,7 @@ function crosscut2Gpu(
   let triBuffer = cc?.triBuffer
   if (!triBuffer || cc?.clusters !== clusters) {
     triBuffer?.destroy()
-    const sorted = sortedIndices(meshData.indices, clusters.order)
+    const sorted = sortedIndices(shownIndices(meshData), clusters.order)
     triBuffer = device.createBuffer({
       size: sorted.byteLength,
       usage: GPUBufferUsage.STORAGE,

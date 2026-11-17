@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef } from 'react'
-import { ohifServices } from './niivueRegistry'
+import { getNiivueEntry, ohifServices } from './niivueRegistry'
 import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 
 // OHIF's measurement tracking (longitudinal mode) learns of new measurements
@@ -20,16 +20,26 @@ interface MeasurementServiceLike {
   ) => { unsubscribe: () => void }
 }
 
-/** Forward one added measurement to the tracker, from the active pane only. */
+/**
+ * Forward one added measurement on a series the pane shows (`shownSeries`) to
+ * the tracker, from the active pane only.
+ */
 export function forwardMeasurement(
   send: Send | undefined,
   activeViewportId: string | undefined,
   viewportId: string,
+  shownSeries: ReadonlyArray<unknown>,
   measurement: Record<string, unknown>,
 ): void {
-  // Every pane hears the event; only the active one forwards it, once.
-  if (!send || activeViewportId !== viewportId) return
   const SeriesInstanceUID = measurement.referenceSeriesUID
+  // Every pane hears the event, also for another pane's series; only the
+  // active pane showing that series forwards it, once.
+  if (
+    !send ||
+    activeViewportId !== viewportId ||
+    !shownSeries.includes(SeriesInstanceUID)
+  )
+    return
   send('SET_DIRTY', { SeriesInstanceUID })
   send('TRACK_SERIES', {
     viewportId,
@@ -75,6 +85,9 @@ export function useMeasurementTracking(
         sendRef.current,
         grid?.getState().activeViewportId,
         viewportId,
+        (getNiivueEntry(viewportId)?.displaySets ?? []).map(
+          (ds) => ds.SeriesInstanceUID,
+        ),
         measurement,
       )
     const subs = [ms.EVENTS.MEASUREMENT_ADDED, ms.EVENTS.RAW_MEASUREMENT_ADDED]

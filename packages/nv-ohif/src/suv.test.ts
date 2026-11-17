@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { dicomWindow, unitForDisplaySet } from './commands'
-import { scaleNifti, suvBwFactor } from './suv'
+import { floorSuvWindow, scaleNifti, suvBwFactor } from './suv'
 
 // OHIF D6 (TMTV) PET AC: 91 kg, 588.8 MBq FDG at 07:21, series 09:59:47.
 const pet = {
@@ -100,4 +100,28 @@ test('PT unit and DICOM window follow whether SUV was applied', () => {
       ds({ ...pet, Units: 'CNTS', WindowWidth: 14000, WindowCenter: 7000 }),
     )?.calMax,
   ).toBe(14000)
+})
+
+test('an SUV window dragged below 0 is floored at 0, other units are not', () => {
+  const calls: unknown[] = []
+  const nv = Object.assign(new EventTarget(), {
+    setVolume: async (i: number, o: object) => void calls.push([i, o]),
+  })
+  let suv = true
+  floorSuvWindow(nv as never, () => suv)
+  const drag = (calMin: number, calMax: number) =>
+    nv.dispatchEvent(
+      new CustomEvent('volumeUpdated', {
+        detail: { volumeIndex: 0, volume: { calMin, calMax } },
+      }),
+    )
+  drag(-1.5, 3.5)
+  drag(-2, -0.5)
+  drag(0.5, 3)
+  suv = false
+  drag(-1, 4)
+  expect(calls).toEqual([
+    [0, { calMin: 0, calMax: 3.5 }],
+    [0, { calMin: 0, calMax: 0.1 }],
+  ])
 })

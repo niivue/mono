@@ -69,6 +69,7 @@ import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
 import { bindSlideMeasurements } from './slideMeasurements'
 import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
+import { floorSuvWindow } from './suv'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
 import { ViewportNotification } from './viewportNotification'
@@ -259,6 +260,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     let annotationOverlay: VolumeAnnotationOverlay | null = null
     let unregisterAnnotation: (() => void) | null = null
     let leaveSyncGroups: (() => void) | null = null
+    let unfloorSuv: (() => void) | null = null
     const canvas = document.createElement('canvas')
     canvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%'
@@ -308,6 +310,10 @@ export function NiivueViewport(props: OhifViewportProps) {
         viewportId,
         nv,
         viewportOptionsRef.current?.syncGroups,
+      )
+      unfloorSuv = floorSuvWindow(
+        nv,
+        () => unitForDisplaySet(displaySetsRef.current[0]) === 'SUV',
       )
       updateNiivueViewport(viewportId, {
         volumeOrder: viewportOptionsRef.current?.viewportType === 'volume',
@@ -452,6 +458,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // (StrictMode double-mount, route / layout churn).
       clearNiivueAnnotations(viewportId, servicesManagerRef.current)
       leaveSyncGroups?.()
+      unfloorSuv?.()
       unregisterNiivue(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)

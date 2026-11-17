@@ -40,17 +40,16 @@ export interface SlideAnnotation {
 type Spacing = readonly [number, number] | undefined
 
 /** The fewest points each tool needs. */
-export const SLIDE_ANNOTATION_MIN_POINTS: Record<SlideAnnotationTool, number> =
-  {
-    point: 1,
-    line: 2,
-    rectangle: 2,
-    ellipse: 2,
-    circle: 2,
-    polygon: 3,
-    freehand: 3,
-    freehandLine: 2,
-  }
+const SLIDE_ANNOTATION_MIN_POINTS: Record<SlideAnnotationTool, number> = {
+  point: 1,
+  line: 2,
+  rectangle: 2,
+  ellipse: 2,
+  circle: 2,
+  polygon: 3,
+  freehand: 3,
+  freehandLine: 2,
+}
 
 export const isClosedSlideTool = (tool: SlideAnnotationTool): boolean =>
   tool !== 'point' && tool !== 'line' && tool !== 'freehandLine'

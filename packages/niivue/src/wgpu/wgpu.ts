@@ -21,22 +21,20 @@ function ensureComputePipelines(device: GPUDevice): GradientPipelines {
   let cached = _deviceCache.get(device)
   if (cached) return cached
   const module = device.createShaderModule({ code: sobelWGSL })
-  const pipeline = (entryPoint: 'blur' | 'sobel') =>
+  // Pipeline-overridable constants rather than string-interpolated literals,
+  // so this and the GLSL in gl/gradient.ts read the same numbers from
+  // view/NVGradient.ts by construction.
+  const blurConstants = { sobelRadius: SOBEL_RADIUS }
+  const pipeline = (
+    entryPoint: 'blur' | 'sobel',
+    constants: Record<string, number>,
+  ) =>
     device.createComputePipeline({
       layout: 'auto',
-      compute: {
-        module,
-        entryPoint,
-        // Pipeline-overridable constants rather than string-interpolated
-        // literals, so this and the GLSL in gl/gradient.ts read the same
-        // numbers from view/NVGradient.ts by construction.
-        constants: {
-          sobelRadius: SOBEL_RADIUS,
-          gradEps: GRAD_EPS,
-          gradShift: GRAD_SHIFT,
-          gradScale: GRAD_SCALE,
-        },
-      },
+      // Only the overrides this entry point reads: macOS 26 system WebKit
+      // (WKWebView) fails the pipeline ("Compute library failed creation")
+      // when given one it does not.
+      compute: { module, entryPoint, constants },
     })
   // LINEAR + clamp-to-edge, matching the filtering and wrap gl/gradient.ts
   // sets on its input texture. The filtering makes each fractional corner tap
@@ -49,8 +47,13 @@ function ensureComputePipelines(device: GPUDevice): GradientPipelines {
     addressModeW: 'clamp-to-edge',
   })
   cached = {
-    blurPipeline: pipeline('blur'),
-    sobelPipeline: pipeline('sobel'),
+    blurPipeline: pipeline('blur', blurConstants),
+    sobelPipeline: pipeline('sobel', {
+      ...blurConstants,
+      gradEps: GRAD_EPS,
+      gradShift: GRAD_SHIFT,
+      gradScale: GRAD_SCALE,
+    }),
     sampler,
   }
   _deviceCache.set(device, cached)

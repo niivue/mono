@@ -57,7 +57,7 @@ const pane = (id: string, uids: string[], tile?: object) => {
   return nv
 }
 
-test('panes sharing any group share the crosshair; others stay out', () => {
+test('panes sharing a camera or VOI group share the crosshair; others stay out', () => {
   const [ax, cor, vr] = [
     pane('ax', ['ct']),
     pane('cor', ['ct']),
@@ -74,6 +74,15 @@ test('panes sharing any group share the crosshair; others stay out', () => {
   expect(vr.targets).toEqual([])
   leaveAx()
   expect(cor.targets).toEqual([])
+})
+
+// OHIF puts hydrateseg on every pane, across frames of reference.
+test('a shared hydrateseg group alone links no crosshair', () => {
+  const [a, b] = [pane('a', ['ct']), pane('b', ['mr'])]
+  joinSyncGroups('a', a, [{ type: 'hydrateseg', id: 'sameFORId' }])
+  joinSyncGroups('b', b, [{ type: 'hydrateseg', id: 'sameFORId' }])
+  expect(a.targets).toEqual([])
+  expect(b.targets).toEqual([])
 })
 
 test('a VOI group windows the same display set, source to target only', async () => {

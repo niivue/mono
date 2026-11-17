@@ -1,3 +1,75 @@
+## 1.0.0-rc.220 (2026-11-17)
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.221
+
+## 1.0.0-rc.219 (2026-11-17)
+
+### Features
+
+- **uikit:** touch drags and pinch-zooms the magnifier, a tap exits; wheel zooms ([cd11ca79](https://github.com/niivue/mono/commit/cd11ca79))
+- **uikit:** a press exits the magnifier and never reaches the scene ([51ae7ce9](https://github.com/niivue/mono/commit/51ae7ce9))
+
+### Fixes
+
+- **uikit:** magnifier leaves sibling, dblclick and wheel-unit input correct ([e963e47b](https://github.com/niivue/mono/commit/e963e47b))
+- **uikit:** end the magnifier's press swallow only once every swallowed pointer is up ([a759053a](https://github.com/niivue/mono/commit/a759053a))
+- **uikit:** swallow a swallowed pointer's moves during the exiting gesture ([c79aa6a9](https://github.com/niivue/mono/commit/c79aa6a9))
+- **uikit:** a touch drag seen only at release does not exit the magnifier ([14a3f105](https://github.com/niivue/mono/commit/14a3f105))
+- **uikit:** the magnifier's exiting click never starts a scene dblclick ([518bcb31](https://github.com/niivue/mono/commit/518bcb31))
+- **uikit:** a held touch's click stays with the magnifier ([#841](https://github.com/niivue/mono/issues/841))
+- **uikit:** end the magnifier swallow on an off-canvas release ([#841](https://github.com/niivue/mono/issues/841))
+- **uikit:** a magnifier-exiting press released off the canvas ends its swallow ([#841](https://github.com/niivue/mono/issues/841))
+- **uikit:** swallow every touch pressed during the press that exits the magnifier ([#841](https://github.com/niivue/mono/issues/841))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
+## 1.0.0-rc.218 (2026-11-17)
+
+### Fixes
+
+- sample the displayed 4D frame in 3D strokes; exclusive tile seam in sliceAxisAt ([f85b3e07](https://github.com/niivue/mono/commit/f85b3e07))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.220
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
+## 1.0.0-rc.217 (2026-11-17)
+
+### Features
+
+- **uikit:** set a one-slice sub-volume's depth from another slice view ([c19f6764](https://github.com/niivue/mono/commit/c19f6764))
+- **uikit:** selection steps on the sub-volume demo's empty copy pane ([bd3c0dd9](https://github.com/niivue/mono/commit/bd3c0dd9))
+- **uikit:** a 3D sub-volume corner over empty space takes the first corner's depth ([ee9b442c](https://github.com/niivue/mono/commit/ee9b442c))
+- **uikit:** a Clear button on the sub-volume demo's copy pane ([5ebce3fd](https://github.com/niivue/mono/commit/5ebce3fd))
+- **uikit:** outline the sub-volume box on the 2D slices that cut it ([9e45b43c](https://github.com/niivue/mono/commit/9e45b43c))
+- **uikit:** outline the sub-volume box while picking its second corner ([4bfc9f5c](https://github.com/niivue/mono/commit/4bfc9f5c))
+- **uikit:** right-click sub-volume selector ([b02264ce](https://github.com/niivue/mono/commit/b02264ce))
+
+### Fixes
+
+- **niivue,uikit:** native-stride depth picks at the shown frame; drop stale picks on reset ([df2f18b7](https://github.com/niivue/mono/commit/df2f18b7))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.219
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.216 (2026-11-17)
 
 ### Updated Dependencies

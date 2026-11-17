@@ -25,7 +25,7 @@ import {
   rasToLps,
   reflectedRowUid,
 } from './commands'
-import { niivueEntries } from './niivueRegistry'
+import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
 import { acquisitionSliceType } from './standardCommands'
 
@@ -284,7 +284,10 @@ export function useOhifRowImport(
       | RowService
       | undefined
     if (!nv || !seriesUid || !ms?.remove) return
-    const take = (row: OhifRow | undefined) => {
+    const take = (
+      row: OhifRow | undefined,
+      releasing?: NiivueViewportEntry['nv'],
+    ) => {
       if (!row) return
       // NiiVue rows are this or another pane's, unless released by one.
       const released = isReleasedRow(row.uid)
@@ -303,6 +306,7 @@ export function useOhifRowImport(
         for (const e of entries)
           if (
             e.nv !== nv &&
+            e.nv !== releasing &&
             e.nv.sliceType === annotation.sliceType &&
             e.displaySets[0]?.SeriesInstanceUID === seriesUid
           )
@@ -324,13 +328,13 @@ export function useOhifRowImport(
       else if (claimPendingJump(row.uid))
         jumpToNiivueMeasurement(row.uid, servicesManager)
     }
-    const scan = () => {
-      for (const row of ms.getMeasurements?.() ?? []) take(row)
+    const scan = (releasing?: NiivueViewportEntry['nv']) => {
+      for (const row of ms.getMeasurements?.() ?? []) take(row, releasing)
     }
     scan()
     // Not the releasing pane itself: it is unmounting or swapping series.
     const unsubscribeReleased = onRowsReleased((from) => {
-      if (from !== nv) scan()
+      if (from !== nv) scan(from)
     })
     const subs = [
       ms.EVENTS?.MEASUREMENT_ADDED,

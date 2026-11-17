@@ -91,8 +91,11 @@ export function useHydratePrompt(
       return
     }
     if (!dialog) return
+    // A newer SEG, a reload or unmount retires this prompt.
+    let live = true
     const isRt = seg.Modality === 'RTSTRUCT'
     const answer = (response: number) => {
+      if (!live) return
       dialog.hide()
       if (response === HYDRATE) hydrate()
     }
@@ -118,6 +121,10 @@ export function useHydratePrompt(
         if (e.key === 'Enter') answer(HYDRATE)
       },
     })
+    return () => {
+      live = false
+      dialog.hide()
+    }
   }, [segKey, isPreview, isLoaded, isActive])
 }
 

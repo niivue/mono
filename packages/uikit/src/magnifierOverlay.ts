@@ -65,7 +65,8 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
     else if (e.type === 'pointerup' || e.type === 'pointercancel')
       down.delete(id)
     e.stopImmediatePropagation()
-    if (e.type === 'click') {
+    // Another pointer's click mid-gesture: the swallowed press is still down.
+    if (e.type === 'click' && !down.size) {
       end()
       swallowDoubleClick(canvas)
     }

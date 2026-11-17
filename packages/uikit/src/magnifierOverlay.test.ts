@@ -226,6 +226,28 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(scene).toEqual(['pointerdown:3'])
   })
 
+  // Review of #841: a second pointer's click must not end the swallow early.
+  it('a second pointer clicking during the exiting press never reaches the scene', () => {
+    const canvas = new EventTarget()
+    const host = {
+      canvas: canvas as unknown as HTMLCanvasElement,
+      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
+      drawScene: () => {},
+    }
+    const scene: string[] = []
+    for (const type of ['pointerdown', 'pointerup', 'mouseup', 'click'])
+      canvas.addEventListener(type, (e) =>
+        scene.push(`${type}:${(e as PointerEvent).pointerId}`),
+      )
+    new UIKitMagnifierOverlay().attach(host)
+    canvas.dispatchEvent(pointer('pointerdown', 40, 50, 1))
+    for (const type of ['pointerdown', 'pointerup', 'click'])
+      canvas.dispatchEvent(pointer(type, 60, 50, 2))
+    for (const type of ['pointerup', 'mouseup', 'click'])
+      canvas.dispatchEvent(pointer(type, 40, 50, 1))
+    expect(scene).toEqual([])
+  })
+
   it('a double click starting with the exiting press never sends its dblclick', () => {
     const canvas = Object.assign(new EventTarget(), { style: { cursor: '' } })
     const host = {

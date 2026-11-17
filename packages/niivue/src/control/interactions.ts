@@ -102,9 +102,14 @@ function isNearFirstPoint(
     planeNormal,
     planePoint,
   )
+  // Tiles are laid out in bounds-local pixels.
   const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
-  const [x, y] = clientToCanvasPixel(ctrl, evt.clientX, evt.clientY)
-  return Math.hypot(x - cx, y - cy) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  const at = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+  if (!at) return false
+  return (
+    Math.hypot(at[0] - cx, at[1] - cy) <=
+    CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  )
 }
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
@@ -628,18 +633,9 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
     // Abandon an in-progress multi-click contour (spline / livewire), a
-    // half-placed bidirectional measurement, or a parked click start.
-    if (
-      ctrl._annotationPolyPoints ||
-      ctrl._bidirectionalLong ||
-      ctrl._annotationClickStart
-    ) {
-      ctrl._abandonAnnotationInProgress()
-      // End a drag in progress too, or the moves before release fall through
-      // to the camera orbit (#471).
-      if (ctrl.isDragging) resetDragState(ctrl)
-      ctrl.drawScene()
-    }
+    // half-placed bidirectional measurement, a parked click start or an
+    // annotation drag, ending the drag so later moves do not orbit (#471).
+    ctrl.cancelAnnotationInProgress()
     return
   }
   if (key === 'V') {
@@ -1318,6 +1314,7 @@ export function resetDragState(ctrl: NiiVue): void {
   ctrl._resizingControlPoint = -1
   ctrl._resizingAnnotation = null
   ctrl._resizeOriginalShape = null
+  ctrl._resizeUndoSnapshot = null
   ctrl.model._annotationPreview = null
   ctrl.model._annotationErasePreview = null
   // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
@@ -1746,6 +1743,8 @@ export function initInteraction(ctrl: NiiVue): void {
             ctrl._annotationPolySlicePosition = slicePosition
             ctrl._annotationPolyAnchorMM = mm as [number, number, number]
             resetLivewire(ctrl)
+            // As a drag shape does: Delete must not hit an older selection.
+            ctrl.model._annotationSelection = null
           }
           const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
           // isClickToPlace (cornerstone's conventions): a click back near the
@@ -1823,13 +1822,17 @@ export function initInteraction(ctrl: NiiVue): void {
                 (a) => a.id === ctrl.model._annotationSelection?.annotationId,
               )
               if (ann?.shape) {
-                ctrl._annotationUndoStack.push(ctrl.model.annotations)
+                // Recorded on release, so a cancelled resize leaves no step.
+                ctrl._resizeUndoSnapshot = structuredClone(
+                  ctrl.model.annotations,
+                )
                 ctrl._resizingControlPoint = cpIdx
                 ctrl._resizeOriginalShape = {
                   start: { ...ann.shape.start },
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
                   polygons: ann.polygons,
+                  anchorMM: ann.anchorMM,
                   isErased: Annotation.isAnnotationErased(
                     ann,
                     ctrl.model.annotation.style.strokeWidth,
@@ -2016,6 +2019,8 @@ export function initInteraction(ctrl: NiiVue): void {
                     ctrl.model.annotation.isAreaGeometric,
                   ) ?? undefined
             }
+            if (ctrl._resizeUndoSnapshot)
+              ctrl._annotationUndoStack.push(ctrl._resizeUndoSnapshot)
             ctrl.emit('annotationChanged', {
               action: 'resize',
               added: [],
@@ -2026,6 +2031,7 @@ export function initInteraction(ctrl: NiiVue): void {
         }
         ctrl._resizingControlPoint = -1
         ctrl._resizeOriginalShape = null
+        ctrl._resizeUndoSnapshot = null
         ctrl._resizingAnnotation = null
         ctrl.model._annotationPreview = null
         ctrl.drawScene()
@@ -2277,6 +2283,9 @@ export function initInteraction(ctrl: NiiVue): void {
       DragModes.handleDragRelease(ctrl)
     }
     try {
+      // An interrupted resize is reverted, as a cancel does: pointerup alone
+      // records its undo step and annotationChanged.
+      if (ctrl._resizingControlPoint >= 0) ctrl.cancelAnnotationInProgress()
       // Commit the stroke, as pointerup does. A raster stroke paints incrementally
       // so its voxels already survive a cancel; a vector stroke only exists in the
       // accumulator, and dropping it here would silently lose a finished polygon

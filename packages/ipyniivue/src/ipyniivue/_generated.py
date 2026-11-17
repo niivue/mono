@@ -278,7 +278,8 @@ pixels times this are canvas pixels."""
     is_animating = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True while an animateTo transition is running."""
     is_annotation_in_progress = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
-    """A multi-click contour, bidirectional or click-placed shape is half-drawn."""
+    """A multi-click contour, bidirectional or click-placed shape is half-drawn,
+or an annotation is being dragged."""
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_destroyed = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True once {@link destroy} has run. Lets external holders (e.g. an

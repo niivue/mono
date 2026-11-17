@@ -49,6 +49,46 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 }
 ```
 
+## Enable the NiiVue modes
+
+nv-ohif ships five OHIF modes, one subpath export each. In an OHIF app, add
+`@niivue/nv-ohif` and `@niivue/niivue` to the root `package.json`
+dependencies. Then merge the following into `platform/app/pluginConfig.json`,
+with the extension placed after `@ohif/extension-cornerstone`:
+
+```json
+{
+  "extensions": [{ "packageName": "@niivue/nv-ohif", "default": false }],
+  "modes": [
+    { "packageName": "@niivue/nv-ohif/modes/viewer" },
+    { "packageName": "@niivue/nv-ohif/modes/segmentation" },
+    { "packageName": "@niivue/nv-ohif/modes/microscopy" },
+    { "packageName": "@niivue/nv-ohif/modes/tmtv" },
+    { "packageName": "@niivue/nv-ohif/modes/dynamic" }
+  ]
+}
+```
+
+| Route | Mirrors | Hanging protocol (OHIF's own) |
+|---|---|---|
+| `/niivue-viewer` | longitudinal (tracked series, measurements) | `default` |
+| `/niivue-segmentation` | segmentation (labelmap toolbox and panel) | `@ohif/mnGrid` |
+| `/niivue-microscopy` | microscopy (SM via NVSlide) | `default` |
+| `/niivue-tmtv` | TMTV (petSUV, TMTV panel, ROI tools) | `@ohif/extension-tmtv.hangingProtocolModule.ptCT` |
+| `/niivue-dynamic` | preclinical-4d (4 workflow steps, cine) | `default4D` |
+
+- The modes import `@ohif/mode-basic`, `-segmentation`, `-tmtv`,
+  `-preclinical-4d` (deep `src/` imports) and `@ohif/core` from the host, so
+  those packages must be installed. OHIF's own pluginConfig already lists them.
+- nv-ohif ships no hanging protocols. The modes use OHIF's protocols unchanged.
+  The TMTV mode registers the `getPTVOIRange` attribute, as OHIF's TMTV mode does.
+- The mode chunks do not import NiiVue. The extension loads when a mode is
+  entered.
+- `niivueMode({ id, routeName, displayName, layout, ...modeInstance })` (from
+  `@niivue/nv-ohif/modes/viewer`) builds a custom NiiVue mode. `layout`
+  overrides the route's layout props.
+- Each mode needs its own route: OHIF registers one route per mode.
+
 ## What it does today
 
 - Registers a **React viewport** that owns a `<canvas>` + a NiiVue instance.

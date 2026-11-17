@@ -44,3 +44,94 @@ it('segment change retargets an armed brush pen, not an eraser', async () => {
   expect(nv.drawPenValue).toBe(0)
   unregisterNiivue('pet')
 })
+
+// A CT pane narrower than the PT grid (2 vs 3 voxels) with the PT overlaid.
+function fusion() {
+  const affine = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
+  const vol = (n: number, hdr: object) => ({
+    img: new Float32Array(n),
+    dimsRAS: [3, n, 1, 1],
+    img2RASstep: [1, n, n],
+    img2RASstart: [0, 0, 0],
+    matRAS: affine,
+    hdr,
+  })
+  const pane = (volumes: object[]) =>
+    Object.assign(new EventTarget(), {
+      volumes,
+      drawingVolume: undefined as undefined | { img: Uint8Array },
+      drawIsEnabled: false,
+      createEmptyDrawing() {
+        this.drawingVolume = {
+          img: new Uint8Array((volumes[0] as { img: Float32Array }).img.length),
+        }
+      },
+      refreshDrawing() {},
+    })
+  const ptHdr = {}
+  const pt = pane([vol(3, ptHdr)])
+  const ct = pane([vol(2, {}), vol(3, ptHdr)])
+  registerNiivue('fpt', pt as never)
+  registerNiivue('fct', ct as never)
+  updateNiivueViewport('fpt', {
+    displaySets: [{ displaySetInstanceUID: 'pet', Modality: 'PT' }] as never,
+  })
+  updateNiivueViewport('fct', {
+    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
+    overlays: new Map([['pet', ptHdr]]) as never,
+  })
+  const services = {
+    services: {
+      displaySetService: {
+        getDisplaySetByUID: () => ({
+          displaySetInstanceUID: 'pet',
+          Modality: 'PT',
+        }),
+      },
+    },
+  } as never
+  armBrush('fpt', 'CircularBrush', services)
+  const cmd = getQuantCommandDefinitions({
+    servicesManager: services,
+  } as never) as unknown as Record<string, { commandFn: () => unknown }>
+  const mask = (cmd.niivueGetLabelmap?.commandFn() as { label: Uint8Array })
+    .label
+  const stroke = () => {
+    if (!ct.drawingVolume) throw new Error('no CT drawing')
+    ct.drawingVolume.img[0] = 2
+    ct.dispatchEvent(
+      new CustomEvent('drawingChanged', { detail: { action: 'stroke' } }),
+    )
+  }
+  const done = () => {
+    unregisterNiivue('fpt')
+    unregisterNiivue('fct')
+  }
+  return { services, mask, stroke, done }
+}
+
+it('a CT pane stroke keeps PET labels outside the CT field of view', () => {
+  const f = fusion()
+  try {
+    f.mask.set([1, 1, 1])
+    armBrush('fct', 'CircularBrush', f.services)
+    f.stroke()
+    expect([...f.mask]).toEqual([2, 1, 1])
+  } finally {
+    f.done()
+  }
+})
+
+it('a threshold brush stays armed when another pane arms a plain brush', () => {
+  const f = fusion()
+  try {
+    f.mask.fill(0)
+    armBrush('fct', 'ThresholdCircularBrush', f.services)
+    armBrush('fpt', 'CircularBrush', f.services)
+    // PT is 0 everywhere, below the default [2.5, 50] range.
+    f.stroke()
+    expect([...f.mask]).toEqual([0, 0, 0])
+  } finally {
+    f.done()
+  }
+})

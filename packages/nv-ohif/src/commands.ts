@@ -2199,12 +2199,13 @@ export function getNiivueCommandsModule({
       measurement?: { uid?: string }
     }) => {
       const uid = options.measurement?.uid
+      // Any newer jump supersedes a released row's pending one.
+      pendingJumpUid = uid && releasedRows.has(uid) ? uid : undefined
       if (
         uid &&
         (measurementToAnnotation.has(uid) || uid.startsWith(SLIDE_UID_PREFIX))
       )
         return
-      pendingJumpUid = uid && releasedRows.has(uid) ? uid : undefined
       ohifCommandsManager(commandsManager)?.runCommand?.(
         'jumpToMeasurementViewport',
         options,

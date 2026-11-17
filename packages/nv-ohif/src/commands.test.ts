@@ -7,6 +7,7 @@ import {
   applyNiivueAnnotationDelta,
   applyOhifLabelToAnnotation,
   applyOhifVisibilityToAnnotation,
+  claimPendingJump,
   clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
@@ -1348,6 +1349,23 @@ describe('reflectNiivueAnnotation', () => {
     expect(delegated).toEqual([
       ['jumpToMeasurementViewport', other, 'CORNERSTONE'],
     ])
+    // A live-row jump supersedes a released row's pending jump.
+    register('vp-guard-released', stubNiivue())
+    updateNiivueViewport('vp-guard-released', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    reflectNiivueAnnotation(
+      'vp-guard-released',
+      svc.servicesManager,
+      ellipse('r'),
+    )
+    const releasedUid = reflectedRowUid('r') as string
+    clearNiivueAnnotations('vp-guard-released', svc.servicesManager)
+    actions.jumpToMeasurementViewport({ measurement: { uid: releasedUid } })
+    actions.jumpToMeasurementViewport({ measurement: { uid } })
+    expect(claimPendingJump(releasedUid)).toBe(false)
   })
 
   it('jumps to the owning viewport and selects the reflected annotation', () => {

@@ -1059,7 +1059,9 @@ function reflectNiivueAnnotationResult(
   const existing = existingUid
     ? (
         measurementService as {
-          getMeasurement?: (uid: string) => Partial<FrameRef> | undefined
+          getMeasurement?: (
+            uid: string,
+          ) => (Partial<FrameRef> & { isVisible?: boolean }) | undefined
         }
       ).getMeasurement?.(existingUid)
     : undefined
@@ -1110,6 +1112,8 @@ function reflectNiivueAnnotationResult(
           FrameOfReferenceUID: forUID,
           ...frame,
           points,
+          // addRawMeasurement replaces the row; keep a hidden row hidden.
+          ...(existing?.isVisible === false ? { isVisible: false } : {}),
           displayText: { primary, secondary: [] },
           data,
           getReport: rowReport(mapping.toolName, data, points, forUID),
@@ -1140,6 +1144,9 @@ function reflectNiivueAnnotationResult(
     viewportId,
     annotationId: annotation.id,
   })
+  // An adopted annotation is new to the overlay's hidden set.
+  if (existing?.isVisible === false)
+    applyOhifVisibilityToAnnotation(acceptedUid, false)
   return { status: 'success' }
 }
 

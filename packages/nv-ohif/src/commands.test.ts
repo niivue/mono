@@ -1069,8 +1069,20 @@ describe('reflectNiivueAnnotation', () => {
 
   it('clearNiivueAnnotations releases rows; a re-import keeps their uid', () => {
     const svc = setup('vp-a4')
+    const rowOf = (uid: string) =>
+      svc.added.findLast((a) => a.data.uid === uid)?.data.schema as {
+        isVisible?: boolean
+      }
+    Object.assign(
+      (svc.servicesManager as { services: { measurementService: object } })
+        .services.measurementService,
+      { getMeasurement: rowOf },
+    )
     reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('own'))
     const uid = reflectedRowUid('own') as string
+    // Hidden in the panel before the release.
+    rowOf(uid).isVisible = false
+    applyOhifVisibilityToAnnotation(uid, false)
     clearNiivueAnnotations('vp-a4', svc.servicesManager)
     expect(svc.removed).toHaveLength(0)
     expect(isReleasedRow(uid)).toBe(true)
@@ -1080,6 +1092,12 @@ describe('reflectNiivueAnnotation', () => {
     adoptedRowUids.clear()
     expect(reflectedRowUid('again')).toBe(uid)
     expect(isReleasedRow(uid)).toBe(false)
+    expect(rowOf(uid).isVisible).toBe(false)
+    expect(
+      visibleAnnotationScreenShapes('vp-a4', [
+        { id: 'again' },
+      ] as unknown as Parameters<typeof visibleAnnotationScreenShapes>[1]),
+    ).toHaveLength(0)
   })
 
   it('reconcile removes only vanished rows and leaves untouched rows alone', () => {

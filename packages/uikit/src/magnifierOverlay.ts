@@ -30,22 +30,35 @@ export interface UIKitMagnifierOverlayOptions {
 }
 
 // The rest of a press gesture, swallowed after the press exits the lens.
-const PRESS_REST = ['mousedown', 'pointerup', 'mouseup', 'click'] as const
+const PRESS_REST = [
+  'pointerdown',
+  'mousedown',
+  'pointerup',
+  'pointercancel',
+  'mouseup',
+  'click',
+] as const
 
-function swallowPressRest(canvas: HTMLCanvasElement): void {
+/** Swallow the gesture begun by `pointerId`, and any pointer pressed while it lasts. */
+function swallowPressRest(canvas: HTMLCanvasElement, pointerId: number): void {
+  const down = new Set([pointerId])
   const stop = (e: Event): void => {
+    const id = (e as PointerEvent).pointerId
+    // A press once every swallowed pointer is up is the scene's: a cancelled
+    // or multi-touch gesture has no click to end the swallow.
+    if (e.type === 'pointerdown' && !down.size) return end()
+    if (e.type === 'pointerdown') down.add(id)
+    else if (e.type === 'pointerup' || e.type === 'pointercancel')
+      down.delete(id)
     e.stopImmediatePropagation()
     if (e.type === 'click') end()
   }
-  // A cancelled press has no click: the next press ends the swallow instead.
   const end = (): void => {
     for (const type of PRESS_REST)
       canvas.removeEventListener(type, stop, { capture: true })
-    canvas.removeEventListener('pointerdown', end, { capture: true })
   }
   for (const type of PRESS_REST)
     canvas.addEventListener(type, stop, { capture: true })
-  canvas.addEventListener('pointerdown', end, { capture: true })
 }
 
 export class UIKitMagnifierOverlay {
@@ -134,7 +147,7 @@ export class UIKitMagnifierOverlay {
       e.stopImmediatePropagation()
       this.pointerMove(-1, -1)
       unwire()
-      swallowPressRest(canvas)
+      swallowPressRest(canvas, e.pointerId)
       this.onExit?.()
     }
     // Capture phase, so a host or layer handler that stops the move still

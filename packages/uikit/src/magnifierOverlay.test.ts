@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { UIKitControls, type UIKitInteractive } from './controls'
 import { UIKitMagnifierOverlay } from './magnifierOverlay'
 
-function pointer(type: string, x: number, y: number): Event {
+function pointer(type: string, x: number, y: number, pointerId = 1): Event {
   return Object.assign(new Event(type, { cancelable: true }), {
     button: 0,
     clientX: x,
     clientY: y,
-    pointerId: 1,
+    pointerId,
   })
 }
 
@@ -89,5 +89,29 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(draws).toBe(2)
     expect(scene).toEqual(['pointerdown', 'pointerup'])
     detach()
+  })
+
+  // Review of #841: a second touch during the exiting press is swallowed too.
+  it('a second touch during the exiting press never reaches the scene', () => {
+    const canvas = new EventTarget()
+    const host = {
+      canvas: canvas as unknown as HTMLCanvasElement,
+      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
+      drawScene: () => {},
+    }
+    const scene: string[] = []
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel'])
+      canvas.addEventListener(type, (e) =>
+        scene.push(`${type}:${(e as PointerEvent).pointerId}`),
+      )
+    new UIKitMagnifierOverlay().attach(host)
+    canvas.dispatchEvent(pointer('pointerdown', 40, 50, 1))
+    canvas.dispatchEvent(pointer('pointerdown', 60, 50, 2))
+    canvas.dispatchEvent(pointer('pointercancel', 40, 50, 1))
+    canvas.dispatchEvent(pointer('pointerup', 60, 50, 2))
+    expect(scene).toEqual([])
+    // No click followed: the next press, with both up, is the scene's.
+    canvas.dispatchEvent(pointer('pointerdown', 40, 50, 3))
+    expect(scene).toEqual(['pointerdown:3'])
   })
 })

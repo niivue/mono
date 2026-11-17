@@ -301,6 +301,9 @@ export function joinFrames(
     if (element && source) {
       element.dataset.frame = String(source.frame)
       element.dataset.frames = String(source.count)
+    } else if (element) {
+      delete element.dataset.frame
+      delete element.dataset.frames
     }
     for (const l of listeners) l()
   }
@@ -321,9 +324,12 @@ export function joinFrames(
   }
   nv.addEventListener('frameChange', onFrameChange)
   nv.addEventListener('volumeLoaded', onVolumeLoaded)
+  // Removing the last 4D volume must hide the panel's frame controls.
+  nv.addEventListener('volumeRemoved', onFrameChange)
   return () => {
     nv.removeEventListener('frameChange', onFrameChange)
     nv.removeEventListener('volumeLoaded', onVolumeLoaded)
+    nv.removeEventListener('volumeRemoved', onFrameChange)
     if (panes.get(viewportId) === nv) panes.delete(viewportId)
     if (element) {
       delete element.dataset.frame

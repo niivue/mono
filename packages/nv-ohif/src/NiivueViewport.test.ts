@@ -216,6 +216,10 @@ test('a new hanging protocol changes the effect keys; a fresh equal one does not
   expect(lung.view).toBe(mpr().view)
   expect(lung.load).toBe(mpr().load)
   expect(lung.display).not.toBe(mpr().display)
+  // MIP on and off reruns the view and style effects.
+  const mip = (blendMode: string) =>
+    hangingKeys({ viewportType: 'volume3d' }, [{ options: { blendMode } }]).view
+  expect(mip('MIP')).not.toBe(mip('COMPOSITE'))
 })
 
 test("a new hanging protocol's window applies to the loaded base in place", async () => {

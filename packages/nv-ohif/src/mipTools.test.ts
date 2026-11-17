@@ -22,3 +22,18 @@ test('the brightest voxel along the view axis, either side of the pick', () => {
     2, -2, 0,
   ])
 })
+
+test('a negative slope picks the brightest as displayed, not raw', () => {
+  const img = new Float32Array([1, 9])
+  const affine = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1],
+  ]
+  const vol = {
+    img,
+    hdr: { dims: [3, 2, 1, 1], pixDims: [1, 1, 1, 1], affine, scl_slope: -1 },
+  }
+  expect(brightestAlongRay(vol, [1, 0, 0], [1, 0, 0])).toEqual([0, 0, 0])
+})

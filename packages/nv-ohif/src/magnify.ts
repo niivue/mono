@@ -43,13 +43,16 @@ export function createMagnifyBinding(nv: Host) {
       // before they see it; other buttons keep their behavior. The binding
       // drives the lens itself: UIKit's attach() exits the lens on a click.
       let held = false
-      // The touch holding the lens: a second finger hands both to core's pinch.
-      let touch: {
-        pointerId: number
-        clientX: number
-        clientY: number
-      } | null = null
-      let replaying = false
+      // Touches on the lens by pointer: a second finger pinches the lens zoom.
+      const touches = new Map<number, [number, number]>()
+      let pinch: { span: number; zoom: number } | null = null
+      const span = () => {
+        const [a, b] = [...touches.values()] as [
+          [number, number],
+          [number, number],
+        ]
+        return Math.hypot(a[0] - b[0], a[1] - b[1])
+      }
       const at = (e: PointerEvent) => {
         const p = nv.clientToCanvas(e.clientX, e.clientY) ?? [-1, -1]
         lens.pointerMove(p[0], p[1])
@@ -60,48 +63,47 @@ export function createMagnifyBinding(nv: Host) {
         nv.drawScene()
       }
       const down = (e: PointerEvent) => {
-        if (replaying) return
-        if (touch && e.pointerType === 'touch') {
-          // Core never saw the first finger: replay its down, then let this one through.
-          const first = touch
-          held = false
-          touch = null
-          hide()
-          replaying = true
-          canvas.dispatchEvent(
-            Object.assign(new Event('pointerdown', { bubbles: true }), {
-              ...first,
-              pointerType: 'touch',
-              button: 0,
-              buttons: 1,
-            }),
-          )
-          replaying = false
+        if (touches.size && e.pointerType === 'touch') {
+          e.stopImmediatePropagation()
+          touches.set(e.pointerId, [e.clientX, e.clientY])
+          pinch = touches.size === 2 ? { span: span(), zoom: lens.zoom } : null
           return
         }
         if (e.button !== 0) return
         e.stopImmediatePropagation()
         held = true
         if (e.pointerType === 'touch')
-          touch = {
-            pointerId: e.pointerId,
-            clientX: e.clientX,
-            clientY: e.clientY,
-          }
+          touches.set(e.pointerId, [e.clientX, e.clientY])
         at(e)
       }
       const move = (e: PointerEvent) => {
-        if (touch?.pointerId === e.pointerId)
-          touch = { ...touch, clientX: e.clientX, clientY: e.clientY }
+        if (touches.has(e.pointerId)) {
+          e.stopImmediatePropagation()
+          touches.set(e.pointerId, [e.clientX, e.clientY])
+          if (touches.size === 1) at(e)
+          else if (pinch && pinch.span > 0) {
+            // UIKit's own lens pinch range.
+            lens.zoom = Math.min(
+              10,
+              Math.max(1.5, (pinch.zoom * span()) / pinch.span),
+            )
+            nv.drawScene()
+          }
+          return
+        }
         if (held) e.stopImmediatePropagation()
-        // Touch has no hover: an unheld touch move is core's pinch.
+        // Touch has no hover: an unheld touch move is not the lens's.
         if (held || (!opts.held && e.pointerType !== 'touch')) at(e)
       }
       const up = (e: PointerEvent) => {
+        if (touches.delete(e.pointerId)) {
+          e.stopImmediatePropagation()
+          pinch = touches.size === 2 ? { span: span(), zoom: lens.zoom } : null
+          if (touches.size) return
+        }
         if (held) {
           e.stopImmediatePropagation()
           held = false
-          touch = null
           if (opts.held) hide()
         }
         // Touch fires pointerleave on every lift: the glass stays where it was put.

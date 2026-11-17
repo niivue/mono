@@ -101,47 +101,28 @@ test('AdvancedMagnify stays where a touch lifts (touch fires pointerleave)', () 
   expect(moves).toEqual([[5, 5]])
 })
 
-test('a second finger hands both touches to core (pinch)', () => {
+test('a second finger pinches the lens zoom, not core', () => {
+  const zoom = spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove')
+  spies.push(zoom)
   const { canvas, core, nv } = host()
   const binding = createMagnifyBinding(nv)
-  binding.setTool('Magnify')
-  const touch = (pointerId: number) =>
-    pointer('pointerdown', 0, { pointerId, pointerType: 'touch' })
-  canvas.dispatchEvent(touch(1))
-  canvas.dispatchEvent(touch(2))
-  binding.dispose()
-  expect(core).toEqual(['pointerdown:0', 'pointerdown:0'])
-})
-
-test('AdvancedMagnify stays hidden while core pinches', () => {
-  const moves: number[][] = []
-  spies.push(
-    spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove').mockImplementation(
-      (x: number, y: number) => {
-        moves.push([x, y])
-      },
-    ),
-  )
-  const { canvas, nv } = host()
-  const binding = createMagnifyBinding(nv)
   binding.setTool('AdvancedMagnify')
-  canvas.dispatchEvent(
-    pointer('pointerdown', 0, { pointerType: 'touch', pointerId: 1 }),
-  )
-  canvas.dispatchEvent(
-    pointer('pointerdown', 0, { pointerType: 'touch', pointerId: 2 }),
-  )
-  moves.length = 0
-  canvas.dispatchEvent(
-    pointer('pointermove', 0, {
-      pointerType: 'touch',
-      pointerId: 1,
-      clientX: 10,
-      clientY: 10,
-    }),
-  )
+  const touch = (type: string, pointerId: number, clientX: number) =>
+    pointer(type, 0, { pointerId, pointerType: 'touch', clientX })
+  canvas.dispatchEvent(touch('pointerdown', 1, 5))
+  canvas.dispatchEvent(touch('pointerdown', 2, 15))
+  zoom.mockClear()
+  canvas.dispatchEvent(touch('pointermove', 2, 25))
+  const lens = (nv as unknown as { overlays: UIKitMagnifierOverlay[] })
+    .overlays[0]
+  // Span 10 -> 20 doubles AdvancedMagnify's 3; a big spread clamps at 10.
+  expect(lens?.zoom).toBe(6)
+  canvas.dispatchEvent(touch('pointermove', 2, 205))
+  expect(lens?.zoom).toBe(10)
+  expect(zoom).not.toHaveBeenCalled()
+  for (const id of [2, 1]) canvas.dispatchEvent(touch('pointerup', id, 5))
   binding.dispose()
-  expect(moves).toEqual([])
+  expect(core).toEqual([])
 })
 
 test('a double-click on the lens does not reach core', () => {

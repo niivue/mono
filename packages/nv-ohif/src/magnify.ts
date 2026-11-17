@@ -128,7 +128,7 @@ export function createMagnifyBinding(nv: Host) {
           e.stopImmediatePropagation()
           settle()
           // The glass goes where a lone touch lifts; a pinch leaves it put.
-          if (!pinned && !opts.held) at(e)
+          if (!pinned && !opts.held && e.type !== 'pointercancel') at(e)
           pinch = touches.size === 2 ? { span: span(), zoom: lens.zoom } : null
           if (touches.size) return
           pinned = false

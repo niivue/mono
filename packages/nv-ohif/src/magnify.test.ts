@@ -199,6 +199,37 @@ test('AdvancedMagnify puts the glass where a held touch lifts', async () => {
   expect(move.mock.calls.at(-1)).toEqual([30, 30])
 })
 
+test('a cancelled AdvancedMagnify touch does not place the glass', () => {
+  const move = spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove')
+  spies.push(move)
+  const { canvas, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  const touch = (type: string) =>
+    pointer(type, 0, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 50,
+      clientY: 50,
+    })
+  canvas.dispatchEvent(touch('pointerdown'))
+  canvas.dispatchEvent(touch('pointercancel'))
+  binding.dispose()
+  expect(move).not.toHaveBeenCalled()
+})
+
+test('raise keeps the same lens, so its zoom', () => {
+  const { nv, overlays } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  const lens = overlays.at(-1) as UIKitMagnifierOverlay
+  lens.zoom = 6
+  binding.raise()
+  expect(overlays.at(-1)).toBe(lens)
+  expect(lens.zoom).toBe(6)
+  binding.dispose()
+})
+
 test('a double-click on the lens does not reach core', () => {
   const { canvas, core, nv } = host()
   const binding = createMagnifyBinding(nv)

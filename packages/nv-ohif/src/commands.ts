@@ -13,6 +13,7 @@ import {
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import { installClearHistory } from './history'
 import {
   authHeaders,
   getActiveNiivue,
@@ -30,9 +31,22 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
-import { frameAt, type SliceFrames } from './sliceFrames'
+import { jumpToNiivueSegment } from './segPanel'
+import {
+  type FrameRef,
+  frameAt,
+  framePixelIndex,
+  type SliceFrames,
+} from './sliceFrames'
+import { mirrorNiivueMeasurements } from './srBridge'
 import { getStandardCommandDefinitions } from './standardCommands'
-import { ANNOTATION_TO_OHIF, type AnnotationToolDescriptor } from './toolBridge'
+import { petSuvFactor } from './suv'
+import {
+  ANNOTATION_TO_OHIF,
+  type AnnotationToolDescriptor,
+  SLIDE_UID_PREFIX,
+} from './toolBridge'
+import { stackPosition } from './viewportOverlay'
 
 // Toolbar-facing slice type names -> NiiVue SLICE_TYPE values. String keys keep
 // the toolbar button definitions plain JSON (commandOptions survive OHIF's
@@ -413,7 +427,7 @@ export function applyDefaultAnnotationText(
 interface MeasurementSourceLike {
   uid?: string
 }
-interface MeasurementServiceLike {
+export interface MeasurementServiceLike {
   createSource: (name: string, version: string) => MeasurementSourceLike
   addMapping: (
     source: MeasurementSourceLike,
@@ -450,7 +464,7 @@ interface MeasurementServiceLike {
 // tool (Length + the ROI/arrow shapes) is an annotation in ANNOTATION_TO_OHIF.
 // createSource is idempotent, but addMapping stacks, so register the set once.
 const measurementSources = new WeakMap<object, MeasurementSourceLike>()
-function niivueMeasurementSource(
+export function niivueMeasurementSource(
   measurementService: MeasurementServiceLike,
 ): MeasurementSourceLike {
   const cached = measurementSources.get(measurementService as object)
@@ -511,6 +525,59 @@ function annotationPointToLps(
   return rasToLps(
     slice2DToMM(point, annotation.slicePosition, annotation.sliceType),
   )
+}
+
+/**
+ * A measurePoint's DICOM image index, as cornerstone's Probe reports it; on the
+ * row's own frame `sop` when its output holds the point (see outputFrameAt).
+ */
+export function probeIndex(
+  viewportId: string,
+  annotation: VectorAnnotation,
+  sop?: string,
+): [number, number, number] | undefined {
+  if (annotation.shape?.type !== 'measurePoint') return undefined
+  const entry = getNiivueEntry(viewportId)
+  const sf = entry?.sliceFrames
+  const ds = entry?.displaySets[0]
+  if (!sf || !ds) return undefined
+  // The anchor is the picked 3D point (kept on drag): exact on oblique slices.
+  const ras =
+    annotation.anchorMM ??
+    slice2DToMM(
+      annotation.shape.end,
+      annotation.slicePosition,
+      annotation.sliceType,
+    )
+  const p = rasToLps([ras[0], ras[1], ras[2]])
+  const hit = outputFrameAt(entry, [p], sop)
+  const frame = hit?.frame
+  // k: the displayed stack (or volume) position, as cornerstone's getCurrentImageIdIndex.
+  const pos = hit && stackPosition(ds, hit.sf, ras, entry.isVolumeViewport)
+  return frame && pos
+    ? framePixelIndex(ds.instances ?? [], frame, p, pos.index - 1)
+    : undefined
+}
+
+/**
+ * The source frame of points: the shown output's map first, then the series'
+ * other outputs (a measurement on a localizer not now shown keeps its image).
+ * A map holding `sop` there wins: several outputs can hold the points
+ * (coplanar echoes, a shape where localizer planes intersect).
+ */
+function outputFrameAt(
+  entry: NiivueViewportEntry,
+  points: ReadonlyArray<[number, number, number]>,
+  sop?: string,
+): { frame: FrameRef; sf: SliceFrames } | undefined {
+  let first: { frame: FrameRef; sf: SliceFrames } | undefined
+  for (const sf of [entry.sliceFrames, ...(entry.outputFrames ?? [])]) {
+    const frame = sf && frameAt(sf, points)
+    if (!frame) continue
+    if (!sop || frame.SOPInstanceUID === sop) return { frame, sf }
+    first ??= { frame, sf }
+  }
+  return first
 }
 
 function annotationPointsLps(
@@ -575,6 +642,12 @@ function annotationPointsLps(
       break
     case 'measureLine':
       points = [start, end]
+      break
+    case 'measureAngle':
+      points = [start, end, shape.end2 ?? end]
+      break
+    case 'measureCobbAngle':
+      points = [start, end, shape.start2 ?? end, shape.end2 ?? end]
       break
     case 'arrow':
       // niivue's shape.end is the arrowHEAD/tip; cornerstone3D ArrowAnnotate reads
@@ -712,6 +785,40 @@ const measurementToAnnotation = new Map<
   { viewportId: string; annotationId: string }
 >()
 
+// Annotations taken from another source's row (an SR measurement). A series
+// swap or unmount releases their rows to OHIF instead of removing them: the
+// measurement survives (srBridge keeps it in cornerstone for SR export) and a
+// later NiiVue pane on the series takes it back.
+const importedAnnotations = new Set<string>()
+const releasedRows = new Set<string>()
+
+export function markImportedAnnotation(annotationId: string): void {
+  importedAnnotations.add(annotationId)
+}
+
+/** A NiiVue row left in OHIF by releaseImportedRows. */
+export const isReleasedRow = (uid: string): boolean => releasedRows.has(uid)
+
+/** Detach a viewport's imported rows from it, leaving them in OHIF. */
+export function releaseImportedRows(viewportId: string): void {
+  const byView = reflectedAnnotations.get(viewportId)
+  if (!byView) return
+  for (const [id, row] of byView) {
+    if (!importedAnnotations.delete(id)) continue
+    byView.delete(id)
+    if (!row.uid) continue
+    measurementToAnnotation.delete(row.uid)
+    releasedRows.add(row.uid)
+  }
+}
+
+/** The OHIF row reflecting a NiiVue annotation, if one was made. */
+export function reflectedRowUid(annotationId: string): string | undefined {
+  for (const [uid, ref] of measurementToAnnotation)
+    if (ref.annotationId === annotationId) return uid
+  return undefined
+}
+
 // Measurement uids we are removing from OHIF ourselves (removeNiivueAnnotation ->
 // measurementService.remove). OHIF broadcasts MEASUREMENT_REMOVED synchronously
 // from that call; the reverse-delete handler skips these so our own teardown does
@@ -739,11 +846,32 @@ function releaseLabelSync(service: object): void {
   labelSyncSubscriptions.delete(service)
 }
 
+/**
+ * The unit of a display set's values as shown ('' when none): PT is SUV only
+ * when dicomToNiivue applied the SUVbw factor, else its own Units.
+ */
+export function unitForDisplaySet(ds?: OhifDisplaySet): string {
+  if (ds?.Modality === 'CT') return 'HU'
+  if (ds?.Modality !== 'PT') return ''
+  if (petSuvFactor(ds)) return 'SUV'
+  const units = ds.instances?.[0]?.Units
+  return units === 'BQML' ? 'Bq/ml' : String(units ?? '')
+}
+
 function modalityUnit(entry: NiivueViewportEntry): string {
-  const modality = baseModality(entry)
-  if (modality === 'CT') return 'HU'
-  if (modality === 'PT') return 'SUV'
-  return ''
+  return unitForDisplaySet(entry.displaySets[0])
+}
+
+/**
+ * OHIF's utils.roundNumber: about `precision` significant decimals, fewer as the
+ * value grows (>= 100: integers), so panel rows read as cornerstone's.
+ */
+export function roundNumber(value: number, precision = 2): string {
+  const a = Math.abs(value)
+  if (a < 0.0001) return `${value}`
+  // One fewer decimal per decade above 1, one more below (>= 100: -2 ... < 0.001: +4).
+  const extra = Math.min(4, Math.max(-2, -Math.floor(Math.log10(a))))
+  return value.toFixed(precision + extra)
 }
 
 // The panel row content + cachedStats for a reflected annotation. Measure tools
@@ -760,8 +888,24 @@ function buildAnnotationDisplay(
   // Length is a single measured line: in-plane distance in mm, no area/intensity.
   if (readout === 'length' && stats.length !== undefined) {
     return {
-      primary: [`${stats.length.toFixed(1)} mm`],
+      primary: [`${roundNumber(stats.length)} mm`],
       data: { length: stats.length, unit: 'mm' },
+      label,
+    }
+  }
+  // Probe: the value and its unit, as cornerstone's Probe row.
+  if (readout === 'value' && stats.value !== undefined) {
+    return {
+      primary: [`${roundNumber(stats.value)}${unit ? ` ${unit}` : ''}`],
+      data: { value: stats.value, modalityUnit: unit },
+      label,
+    }
+  }
+  // Angle / CobbAngle: degrees, as cornerstone's rows.
+  if (readout === 'angle' && stats.angle !== undefined) {
+    return {
+      primary: [`${roundNumber(stats.angle)} °`],
+      data: { angle: stats.angle },
       label,
     }
   }
@@ -770,20 +914,27 @@ function buildAnnotationDisplay(
     const short = stats.shortLength ?? 0
     return {
       primary: [
-        `L: ${stats.length.toFixed(1)} mm`,
-        `W: ${short.toFixed(1)} mm`,
+        `L: ${roundNumber(stats.length)} mm`,
+        `W: ${roundNumber(short)} mm`,
       ],
       data: { length: stats.length, width: short, unit: 'mm' },
       label,
     }
   }
-  const withUnit = (v: number, key: string) =>
-    unit ? `${key}: ${v.toFixed(1)} ${unit}` : `${key}: ${v.toFixed(1)}`
+  // Spline and live-wire contours list their area only, as cornerstone's rows.
+  if (readout === 'areaOnly')
+    return {
+      primary: [`${roundNumber(stats.area)} mm²`],
+      data: { area: stats.area, areaUnit: 'mm²' },
+      label,
+    }
+  // Area then max, as cornerstone's ROI rows (getStatisticDisplayString).
   return {
     primary: [
-      `${stats.area.toFixed(1)} mm²`,
-      withUnit(stats.max, 'Max'),
-      withUnit(stats.mean, 'Mean'),
+      `${roundNumber(stats.area)} mm²`,
+      unit
+        ? `Max: ${roundNumber(stats.max)} ${unit}`
+        : `Max: ${roundNumber(stats.max)}`,
     ],
     data: {
       area: stats.area,
@@ -798,12 +949,18 @@ function buildAnnotationDisplay(
   }
 }
 
+const TWO_LINE_TOOLS = new Set([
+  'bidirectional',
+  'measureBidirectional',
+  'measureAngle',
+  'measureCobbAngle',
+])
+
 // True when the eraser cut a shape OHIF draws from its bounds or endpoints. NiiVue's
-// isAnnotationErased cannot rebuild a bidirectional (two line axes), so do it here.
+// isAnnotationErased cannot rebuild two-line shapes (bidirectional, angles), so do it here.
 function isErasedForOhif(annotation: VectorAnnotation): boolean {
   const s = annotation.shape
-  if (s?.type !== 'measureBidirectional' && s?.type !== 'bidirectional')
-    return isAnnotationErased(annotation)
+  if (!s || !TWO_LINE_TOOLS.has(s.type)) return isAnnotationErased(annotation)
   const w = s.width ?? annotation.style.strokeWidth
   const intact = [
     ...generateShape('measureLine', s.start, s.end, w),
@@ -878,13 +1035,34 @@ function reflectNiivueAnnotationResult(
   // SOPInstanceUID / frameNumber / referencedImageId when the shape lies on one
   // acquired frame; MeasurementService rejects keys outside its schema, so an
   // unmapped shape omits them rather than sending undefined.
-  const frame = entry.sliceFrames && frameAt(entry.sliceFrames, points)
+  // An update keeps the row's image when no output map holds the shape any
+  // more (it was drawn on an output not now shown): the row owns its frame.
+  const existing = existingUid
+    ? (
+        measurementService as {
+          getMeasurement?: (uid: string) => Partial<FrameRef> | undefined
+        }
+      ).getMeasurement?.(existingUid)
+    : undefined
+  const frame =
+    outputFrameAt(entry, points, existing?.SOPInstanceUID)?.frame ??
+    (existing?.SOPInstanceUID
+      ? {
+          SOPInstanceUID: existing.SOPInstanceUID,
+          frameNumber: existing.frameNumber ?? 1,
+          ...(existing.referencedImageId
+            ? { referencedImageId: existing.referencedImageId }
+            : {}),
+        }
+      : undefined)
   const unit = modalityUnit(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping,
     annotation.stats,
     unit,
   )
+  const index = probeIndex(viewportId, annotation, frame?.SOPInstanceUID)
+  if (index) data.index = index
   // The row label is the annotation's own text (applyDefaultAnnotationText seeds a
   // sensible default on add). Do NOT substitute an internal "NiiVue <Tool>"
   // fallback for empty text: reflecting that fallback would echo it back through
@@ -1002,6 +1180,25 @@ export function jumpToNiivueMeasurement(
     | undefined
   viewportGridService?.setActiveViewportId?.(ref.viewportId)
 
+  // On another output of the series (a localizer of another orientation):
+  // show that output; its single slice holds the measurement.
+  const sop = (
+    services?.measurementService as
+      | { getMeasurement?: (uid: string) => { SOPInstanceUID?: string } }
+      | undefined
+  )?.getMeasurement?.(measurementUid)?.SOPInstanceUID
+  const switching = sop ? entry.switchToInstance?.(sop) : undefined
+  if (switching) {
+    // The new target is selected now: a Delete during the load must not hit
+    // the previous selection. A later jump or selection wins over this one.
+    entry.nv.selectAnnotation(annotation.id)
+    void switching.then((isLatest) => {
+      if (isLatest && entry.nv.selectedAnnotation === annotation.id)
+        jumpToNiivueMeasurement(measurementUid, servicesManager)
+    })
+    return
+  }
+
   // Navigate to the shape's annotated location, in mm (setCrosshairPos takes mm):
   // an arrow's tip (its target), otherwise the shape/contour CENTER. anchorMM is
   // only the drag-START corner (an arrow's tail), so it lands off-center — use it
@@ -1045,20 +1242,34 @@ export function jumpToNiivueMeasurement(
  */
 function applyOhifRemoveToAnnotation(measurementUid: string): void {
   if (removingUids.has(measurementUid)) return
-  const ref = measurementToAnnotation.get(measurementUid)
-  if (!ref) return
-  // Drop our bookkeeping BEFORE removing the annotation. nv.removeAnnotation
-  // emits annotationRemoved, which drives onAnnotationRemoved ->
-  // removeNiivueAnnotation; with the row already gone that is a clean no-op and
-  // never calls measurementService.remove for the already-deleted measurement.
-  const byView = reflectedAnnotations.get(ref.viewportId)
-  byView?.delete(ref.annotationId)
-  if (byView && byView.size === 0) reflectedAnnotations.delete(ref.viewportId)
-  measurementToAnnotation.delete(measurementUid)
-  clearHiddenAnnotation(ref.viewportId, ref.annotationId)
-  // removeAnnotation splices the annotation out and calls drawScene, so the
-  // viewport re-renders without it.
-  getNiivueEntry(ref.viewportId)?.nv.removeAnnotation(ref.annotationId)
+  removeAnnotationsForRows([measurementUid])
+}
+
+/**
+ * Remove the NiiVue annotations behind OHIF rows OHIF has already removed, one
+ * undoable step per viewport (core records it; history.ts mirrors it in OHIF's
+ * undo history). Bookkeeping goes first, so the annotationChanged echo finds
+ * no row and never calls measurementService.remove again.
+ */
+export function removeAnnotationsForRows(
+  measurementUids: readonly string[],
+): void {
+  const byViewport = new Map<string, string[]>()
+  for (const uid of measurementUids) {
+    const ref = measurementToAnnotation.get(uid)
+    if (!ref) continue
+    const byView = reflectedAnnotations.get(ref.viewportId)
+    byView?.delete(ref.annotationId)
+    if (byView && byView.size === 0) reflectedAnnotations.delete(ref.viewportId)
+    measurementToAnnotation.delete(uid)
+    clearHiddenAnnotation(ref.viewportId, ref.annotationId)
+    byViewport.set(ref.viewportId, [
+      ...(byViewport.get(ref.viewportId) ?? []),
+      ref.annotationId,
+    ])
+  }
+  for (const [viewportId, ids] of byViewport)
+    getNiivueEntry(viewportId)?.nv.removeAnnotations(ids, true)
 }
 
 /** Drop a hidden-annotation entry (annotation gone / row torn down). */
@@ -1243,6 +1454,7 @@ export function clearNiivueAnnotations(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
+  releaseImportedRows(viewportId)
   // A viewport whose every add failed has no rows but may still hold failures.
   mappingFailures.delete(viewportId)
   const byView = reflectedAnnotations.get(viewportId)
@@ -1437,10 +1649,15 @@ export function dicomWindow(
     `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
   // Every instance: a per-slice window can agree at any sampled few.
   if (!instances.every((x) => key(x) === key(instances[0]))) return undefined
-  return windowRange(
+  const range = windowRange(
     first(instances[0]?.WindowWidth),
     first(instances[0]?.WindowCenter),
   )
+  // The DICOM window is in the stored units (Bq/ml); the volume may be SUV.
+  const f = petSuvFactor(ds)
+  return range && f
+    ? { calMin: range.calMin * f, calMax: range.calMax * f }
+    : range
 }
 
 function windowRange(
@@ -1526,8 +1743,17 @@ export function applyWindowLevelPreset(
 export function getNiivueCommandsModule({
   servicesManager,
   commandsManager,
+  extensionManager,
 }: OhifExtensionParams) {
+  // NiiVue rows in cornerstone's annotation state, for OHIF's SR export.
+  mirrorNiivueMeasurements(servicesManager, extensionManager)
+  // "Delete all" removes NiiVue rows' annotations, undoably (history.ts).
+  installClearHistory(servicesManager, extensionManager)
   const actions = {
+    /** Drop the active pane's half-drawn annotation (its context menu's Delete). */
+    niivueCancelAnnotation: () => {
+      getActiveNiivue(servicesManager)?.cancelAnnotationInProgress()
+    },
     /** Switch the view: axial / coronal / sagittal / multiplanar / render. */
     niivueSetSliceType: ({ sliceType }: { sliceType?: string } = {}) => {
       const nv = getActiveNiivue(servicesManager)
@@ -1942,16 +2168,48 @@ export function getNiivueCommandsModule({
     /**
      * Cornerstone's global JUMP_TO_MEASUREMENT handler runs this command without
      * a context, so the newest context answers: NIIVUE, when nv-ohif registers
-     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync;
-     * Cornerstone would otherwise re-hang the viewport. Others go to Cornerstone.
+     * after cornerstone. A NiiVue row is navigated by subscribeOhifLabelSync (a
+     * slide row by slideMeasurements); Cornerstone would otherwise re-hang the
+     * viewport. Others go to Cornerstone.
      */
     jumpToMeasurementViewport: (options: {
       measurement?: { uid?: string }
     }) => {
       const uid = options.measurement?.uid
-      if (uid && measurementToAnnotation.has(uid)) return
+      if (
+        uid &&
+        (measurementToAnnotation.has(uid) || uid.startsWith(SLIDE_UID_PREFIX))
+      )
+        return
       ohifCommandsManager(commandsManager)?.runCommand?.(
         'jumpToMeasurementViewport',
+        options,
+        'CORNERSTONE',
+      )
+    },
+
+    /**
+     * The segmentation panel's segment click. Cornerstone's would look for a
+     * cornerstone viewport (none for a NiiVue pane); others go to Cornerstone.
+     */
+    setActiveSegmentAndCenter: (options: {
+      segmentationId: string
+      segmentIndex: number
+    }) => {
+      const grid = ohifServices(servicesManager)?.viewportGridService as
+        | { getActiveViewportId?: () => string }
+        | undefined
+      if (
+        jumpToNiivueSegment(
+          servicesManager,
+          grid?.getActiveViewportId?.(),
+          options.segmentationId,
+          options.segmentIndex,
+        )
+      )
+        return
+      ohifCommandsManager(commandsManager)?.runCommand?.(
+        'setActiveSegmentAndCenter',
         options,
         'CORNERSTONE',
       )

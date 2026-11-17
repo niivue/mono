@@ -9,7 +9,9 @@ import {
   clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
+  isReleasedRow,
   jumpToNiivueMeasurement,
+  markImportedAnnotation,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -18,9 +20,11 @@ import {
   overlayOrder,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
+  reflectedRowUid,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   resolveWindowLevel,
+  roundNumber,
   subscribeOhifLabelSync,
   visibleAnnotationScreenShapes,
 } from './commands'
@@ -347,8 +351,8 @@ describe('reflectNiivueAnnotation', () => {
     }
     expect(m.toolName).toBe('EllipticalROI')
     expect(m.referenceSeriesUID).toBe('series-1')
-    expect(m.displayText.primary[0]).toBe('123.4 mm²')
-    expect(m.displayText.primary[1]).toBe('Max: 200.0 HU')
+    // cornerstone's rows: area then max, rounded by OHIF's roundNumber.
+    expect(m.displayText.primary).toEqual(['123 mm²', 'Max: 200 HU'])
     expect(m.data.area).toBe(123.4)
     expect(m.data.mean).toBe(50)
     expect(m.data.areaUnit).toBe('mm²')
@@ -444,6 +448,48 @@ describe('reflectNiivueAnnotation', () => {
     expect(m.points).toEqual([
       [0, 0, 0],
       [-3, -4, 0],
+    ])
+  })
+
+  it('adds an OHIF CobbAngle: degrees row, its four points in click order', () => {
+    const [p0, p1, p2, p3] = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 2 },
+      { x: 4, y: 3 },
+    ]
+    const cobb = {
+      ...ellipse('cobb'),
+      polygons: [
+        ...generateShape('measureLine', p0, p1, 1),
+        ...generateShape('measureLine', p2, p3, 1),
+      ],
+      stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, angle: 14.036 },
+      shape: {
+        type: 'measureCobbAngle',
+        start: p0,
+        end: p1,
+        start2: p2,
+        end2: p3,
+      },
+    } as VectorAnnotation
+    const svc = setup('vp-cobb')
+    expect(reflectNiivueAnnotation('vp-cobb', svc.servicesManager, cobb)).toBe(
+      true,
+    )
+    const m = svc.added[0]?.data.schema as {
+      toolName: string
+      displayText: { primary: string[] }
+      points: number[][]
+    }
+    expect(m.toolName).toBe('CobbAngle')
+    // cornerstone's row: roundNumber(angle, 2), a space, the degree sign.
+    expect(m.displayText.primary).toEqual(['14.0 °'])
+    expect(m.points).toEqual([
+      [0, 0, 0],
+      [-4, 0, 0],
+      [0, -2, 0],
+      [-4, -3, 0],
     ])
   })
 
@@ -1016,6 +1062,19 @@ describe('reflectNiivueAnnotation', () => {
     expect(svc.removed).toHaveLength(2)
   })
 
+  it('clearNiivueAnnotations releases an imported row instead of removing it', () => {
+    const svc = setup('vp-a5')
+    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('sr'))
+    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('own'))
+    markImportedAnnotation('sr')
+    const uid = reflectedRowUid('sr') as string
+    clearNiivueAnnotations('vp-a5', svc.servicesManager)
+    expect(svc.removed).toHaveLength(1)
+    expect(svc.removed).not.toContain(uid)
+    expect(isReleasedRow(uid)).toBe(true)
+    expect(reflectedRowUid('sr')).toBeUndefined()
+  })
+
   it('reconcile removes only vanished rows and leaves untouched rows alone', () => {
     const nv = stubNiivue()
     register('vp-a6', nv)
@@ -1243,14 +1302,14 @@ describe('reflectNiivueAnnotation', () => {
       ...stubNiivue(),
       setAnnotationText: (id: string, text: string) => texts.push({ id, text }),
     }
-    register('vp-a5', nv)
-    updateNiivueViewport('vp-a5', {
+    register('vp-label', nv)
+    updateNiivueViewport('vp-label', {
       displaySets: backing as unknown as Parameters<
         typeof updateNiivueViewport
       >[1]['displaySets'],
     })
-    const svc = measurementServices('vp-a5', backing)
-    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('lbl'))
+    const svc = measurementServices('vp-label', backing)
+    reflectNiivueAnnotation('vp-label', svc.servicesManager, ellipse('lbl'))
     const uid = (svc.added[0]?.data.schema as { uid: string }).uid
     applyOhifLabelToAnnotation(uid, 'Tumor A')
     expect(texts).toEqual([{ id: 'lbl', text: 'Tumor A' }])
@@ -1458,10 +1517,9 @@ describe('reflectNiivueAnnotation', () => {
     const removedAnnotationIds: string[] = []
     const nv = {
       ...stubNiivue(),
-      removeAnnotation(id: string) {
-        removedAnnotationIds.push(id)
-        const i = nv.annotations.findIndex((a) => a.id === id)
-        if (i >= 0) nv.annotations.splice(i, 1)
+      removeAnnotations(ids: string[]) {
+        removedAnnotationIds.push(...ids)
+        nv.annotations = nv.annotations.filter((a) => !ids.includes(a.id))
       },
     }
     const callbacks = new Map<string, (payload: unknown) => void>()
@@ -2011,6 +2069,9 @@ describe('niivueResetView', () => {
     updateNiivueViewport('vp-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView() {
           resets++
         },
@@ -2038,6 +2099,9 @@ describe('niivueSetWindowLevel on a slide', () => {
     updateNiivueViewport('vp-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView() {},
         zoom() {},
         fit() {},
@@ -2972,4 +3036,12 @@ describe('flashStatus', () => {
       'Fetching overlay: PERFUSION... 3/10',
     ])
   })
+})
+
+it('roundNumber matches OHIF utils.roundNumber', () => {
+  expect(roundNumber(278.43)).toBe('278')
+  expect(roundNumber(42.17)).toBe('42.2')
+  expect(roundNumber(3.14159)).toBe('3.14')
+  expect(roundNumber(0.123456)).toBe('0.123')
+  expect(roundNumber(-1234.5)).toBe('-1235')
 })

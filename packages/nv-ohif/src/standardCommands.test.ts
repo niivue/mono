@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
-import { getNiivueCommandsModule, invertBase, voiRange } from './commands'
+import { getNiivueCommandsModule, voiRange } from './commands'
 import {
   registerNiivue,
   unregisterNiivue,
@@ -188,6 +188,9 @@ describe('standard commands', () => {
     updateNiivueViewport('nv-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView() {},
         zoom: (f) => seen.push(f),
         fit: () => seen.push('fit'),
@@ -318,6 +321,9 @@ describe('rotate and flip commands', () => {
     updateNiivueViewport('nv-1', {
       slideView: {
         setTool() {},
+        tool: undefined,
+        annotations: undefined,
+        focusAnnotation() {},
         resetView: () => resets++,
         zoom() {},
         fit() {},
@@ -359,27 +365,6 @@ describe('voiRange', () => {
       voiRange([{ options: { voi: { windowWidth: 0, windowCenter: 40 } } }]),
     ).toBeUndefined()
   })
-})
-
-it('invertViewport toggles the base volume', async () => {
-  const calls: unknown[] = []
-  const base = { isColormapInverted: false }
-  const nv = {
-    volumes: [base],
-    setVolume: async (_i: number, o: { isColormapInverted: boolean }) => {
-      calls.push(o)
-      base.isColormapInverted = o.isColormapInverted
-    },
-  }
-  const entry = { nv } as unknown as Parameters<typeof invertBase>[0]
-  invertBase(entry)
-  await Promise.resolve()
-  invertBase(entry)
-  await Promise.resolve()
-  expect(calls).toEqual([
-    { isColormapInverted: true },
-    { isColormapInverted: false },
-  ])
 })
 
 it('jumpToImage moves to the instance through the slice -> frame map', () => {

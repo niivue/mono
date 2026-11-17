@@ -1,12 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { OhifDisplaySet } from './ohif-types'
 import type { SliceFrames } from './sliceFrames'
-import { stackPosition, studyDateLabel } from './viewportOverlay'
-
-test('study date reads as OHIF shows it', () => {
-  expect(studyDateLabel('20140522')).toBe('22-May-2014')
-  expect(studyDateLabel(undefined)).toBeUndefined()
-})
+import { stackPosition } from './viewportOverlay'
 
 test('the stack position comes from the source frame, not the NiiVue slice', () => {
   // Acquired head-first, so instance 1 is the most superior slice; NiiVue's

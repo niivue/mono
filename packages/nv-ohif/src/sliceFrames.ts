@@ -248,3 +248,29 @@ export function frameAt(
   }
   return hi - lo > ON_PLANE ? undefined : sf.frames[k]
 }
+
+/**
+ * `p` (LPS) as [column, row] on `frame`'s classic instance, plus the given
+ * slice index `k`: cornerstone ProbeTool's `index`. Undefined without geometry.
+ * ponytail: classic instances only; enhanced multi-frame needs per-frame groups.
+ */
+export function framePixelIndex(
+  instances: ReadonlyArray<Record<string, unknown>>,
+  frame: FrameRef,
+  p: Vec3,
+  k: number,
+): Vec3 | undefined {
+  const inst = instances.find((i) => i.SOPInstanceUID === frame.SOPInstanceUID)
+  const ipp = vec3(inst?.ImagePositionPatient)
+  const row = vec3(inst?.ImageOrientationPatient)
+  const col = vec3(inst?.ImageOrientationPatient, 3)
+  const ps = inst?.PixelSpacing as unknown[] | undefined
+  if (!ipp || !row || !col || !ps) return undefined
+  const d: Vec3 = [p[0] - ipp[0], p[1] - ipp[1], p[2] - ipp[2]]
+  // PixelSpacing is [between rows, between columns].
+  return [
+    Math.round(dot(d, row) / Number(ps[1])),
+    Math.round(dot(d, col) / Number(ps[0])),
+    k,
+  ]
+}

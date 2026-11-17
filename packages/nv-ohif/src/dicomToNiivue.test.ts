@@ -98,6 +98,9 @@ describe('convertDisplaySetToNifti', () => {
 
   it('rejects with convert() rejection (abort, worker failure)', async () => {
     result = Promise.reject(new DOMException('cancelled', 'AbortError'))
+    // Handled until convert() awaits it: as the first test, the fetches outlast
+    // bun's unhandled-rejection check.
+    result.catch(() => {})
     await expect(convertDisplaySetToNifti(ds)).rejects.toThrow('cancelled')
   })
 
@@ -156,6 +159,58 @@ describe('convertDisplaySetToNifti', () => {
       [1, 2, 3].map((n) => frames.replace(/1$/, String(n))),
     )
     expect(inputs.map((f) => f.name)).toEqual(['3.dcm'])
+  })
+
+  // Review of #835: every output of a PET stack is in SUV, not just the first.
+  it('scales stacked PET outputs to SUV', async () => {
+    // One axial slice at the origin, identity sform: each output maps to SOP 3.
+    const placed = (stem: string): Series => {
+      const v = new DataView(new ArrayBuffer(352))
+      v.setInt32(0, 348, true)
+      // dim[0..3] = 3, 2, 1, 1; sform_code 1.
+      for (const [at, n] of [
+        [40, 3],
+        [42, 2],
+        [44, 1],
+        [46, 1],
+        [254, 1],
+      ] as const)
+        v.setInt16(at, n, true)
+      v.setFloat32(112, 1, true) // scl_slope
+      for (let r = 0; r < 3; r++) v.setFloat32(280 + 20 * r, 1, true) // srow
+      const name = `${stem}.nii`
+      const image = Object.assign(new File([v.buffer], name), {
+        relativePath: name,
+      })
+      return { stem, image }
+    }
+    result = Promise.resolve({ series: [placed('a'), placed('b')] })
+    const pet = {
+      Modality: 'PT',
+      instances: [
+        {
+          imageId: `wadors:${frames}`,
+          SOPInstanceUID: '3',
+          ImagePositionPatient: [0, 0, 0],
+          ImageOrientationPatient: [1, 0, 0, 0, 1, 0],
+          Units: 'BQML',
+          CorrectedImage: ['ATTN', 'DECY'],
+          DecayCorrection: 'ADMIN',
+          PatientWeight: 70,
+          RadiopharmaceuticalInformationSequence: {
+            RadionuclideTotalDose: 140000,
+            RadionuclideHalfLife: 1000,
+          },
+        },
+      ],
+    } as unknown as OhifDisplaySet
+    const out = await convertDisplaySetToNifti(pet)
+    const slope = async (f?: Blob) =>
+      f &&
+      new DataView(await f.slice(0, 348).arrayBuffer()).getFloat32(112, true)
+    expect(out?.alternates).toHaveLength(1)
+    expect(await slope(out?.image)).toBe(0.5)
+    expect(await slope(out?.alternates?.[0]?.image)).toBe(0.5)
   })
 
   it('shares a conversion only between identical inputs', async () => {

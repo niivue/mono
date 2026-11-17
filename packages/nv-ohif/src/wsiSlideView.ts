@@ -1,6 +1,7 @@
-import type { NVSlide } from '@niivue/niivue'
-import { createSlideView, DRAG_MODE } from '@niivue/niivue'
+import type { NVSlide, NVSlideAnnotations } from '@niivue/niivue'
+import { createSlideView, DRAG_MODE, isRgbSlide } from '@niivue/niivue'
 import { attachSlideMinimap } from '@niivue/uikit'
+import { OHIF_TO_SLIDE_TOOL } from './toolBridge'
 
 export interface WsiSlideViewOptions {
   /**
@@ -12,10 +13,16 @@ export interface WsiSlideViewOptions {
 
 export interface WsiSlideView {
   setTool(tool: string | undefined): void
+  /** The active OHIF tool. */
+  readonly tool: string | undefined
+  /** Annotations drawn by the measurement tools, in slide base pixels. */
+  readonly annotations: NVSlideAnnotations | undefined
+  /** Centre on an annotation and fit it. */
+  focusAnnotation(id: string): void
   resetView(): void
   /** Zoom about the canvas centre (factor > 1 zooms in). */
   zoom(factor: number): void
-  /** Fit the whole slide, keeping the ruler. */
+  /** Fit the whole slide, keeping annotations. */
   fit(): void
   /** Monochrome display window (stored sample values); colour slides ignore it. */
   setWindow(calMin: number, calMax: number): void
@@ -23,27 +30,47 @@ export interface WsiSlideView {
   dispose(): void
 }
 
-// Core's ruler in the old UIKit ruler's yellow.
+// Annotations in the old UIKit ruler's yellow.
 const RULER_COLOR: [number, number, number, number] = [1, 0.85, 0, 1]
 
-// The OHIF tool runs on every button, as before; any tool but Length and
-// Zoom pans.
+// Zoom and WindowLevel run on every button but right; any other tool pans
+// (an annotation tool takes the left button over this).
 const dragModeFor = (tool: string | undefined): DRAG_MODE =>
-  tool === 'Length'
-    ? DRAG_MODE.measurement
-    : tool === 'Zoom'
-      ? DRAG_MODE.callbackOnly
+  tool === 'Zoom'
+    ? DRAG_MODE.callbackOnly
+    : tool === 'WindowLevel'
+      ? DRAG_MODE.windowing
       : DRAG_MODE.pan
 
-/** One ruler at a time: the last finished one, none while a new one is dragged. */
-export function keepOneRuler(ctl: {
-  measurements: unknown[]
-  activeMeasurement: unknown
-}): void {
-  ctl.measurements.splice(
-    0,
-    ctl.measurements.length - (ctl.activeMeasurement ? 0 : 1),
-  )
+/**
+ * Cornerstone's WindowLevel drag on a slide: round(range / 1024) stored units
+ * per CSS px (unrounded below 1, so 8-bit RGB moves 0.25/px), right widens,
+ * down raises the centre. An RGB slide windows its red, green and blue
+ * channels together (brightness/contrast); others only `channel`.
+ */
+export function windowSlideDrag(
+  slide: Pick<NVSlide, 'channels' | 'manifest' | 'setChannel'>,
+  channel: number,
+  dx: number,
+  dy: number,
+): void {
+  const top = 2 ** (slide.manifest.levels[0]?.bitsStored ?? 8) - 1
+  const ratio = top / 1024
+  const perPixel = ratio > 1 ? Math.round(ratio) : ratio
+  const channels = isRgbSlide(slide.manifest)
+    ? slide.channels.map((_, c) => c)
+    : [channel]
+  for (const c of channels) {
+    const ch = slide.channels[c]
+    const lo = Number.isFinite(ch?.calMin) ? (ch?.calMin as number) : 0
+    const hi = Number.isFinite(ch?.calMax) ? (ch?.calMax as number) : top
+    const width = Math.max(perPixel, hi - lo + dx * perPixel)
+    const centre = (lo + hi) / 2 + dy * perPixel
+    slide.setChannel(c, {
+      calMin: centre - width / 2,
+      calMax: centre + width / 2,
+    })
+  }
 }
 
 /**
@@ -51,11 +78,11 @@ export function keepOneRuler(ctl: {
  * WebGL2, redrawn on demand, refitting on resize until the user moves it. The
  * caller uses it for DICOM-WSI (SM) display sets.
  *
- * The active tool runs on every button. With `Length` a drag draws one ruler
- * (core's slide overlay; the previous one clears once a new one is dragged;
- * a click without a drag clears it), endpoints in slide coordinates, measured in
- * physical units from the slide's DICOM pixel spacing. `Zoom` drags zoom
- * about the pointer; any other tool pans. The wheel zooms.
+ * A measurement tool (OHIF_TO_SLIDE_TOOL) draws annotations with the left
+ * button, measured from the slide's DICOM pixel spacing; other buttons pan.
+ * `Zoom` drags zoom about the pointer, `WindowLevel` windows; any other tool
+ * pans. A right drag boxes a region and zooms to it (the browser menu is
+ * suppressed). The wheel zooms.
  *
  * Resolves to a handle whose `dispose()` tears everything down, the slide
  * included; its `canvas` is the one drawn on. Rejects, leaving the slide with
@@ -88,9 +115,8 @@ export async function mountWsiSlideView(
       secondaryDragMode: DRAG_MODE.pan,
       onDrag: (_dx, dy, x, y) =>
         slide.zoomBy(Math.exp(-dy * 0.01), x, y, view.screen()),
-      onChange: () => {
-        if (view.controller) keepOneRuler(view.controller)
-      },
+      onWindow: (dx, dy) =>
+        windowSlideDrag(slide, view.controller?.windowChannel ?? 0, dx, dy),
     },
     onRender: (screen) => {
       const { level, requestedLevel } =
@@ -108,18 +134,20 @@ export async function mountWsiSlideView(
   const detachMinimap = attachSlideMinimap(view, { corner: MINIMAP_CORNER })
   const ctl = view.controller
   const setTool = (next: string | undefined): void => {
-    // Switching away from Length mid-drag abandons that ruler, as before.
-    if (tool === 'Length' && next !== 'Length') ctl?.cancelGesture()
     tool = next
     if (!ctl) return
+    // Setting it drops a draft of the previous tool.
+    ctl.annotationTool = OHIF_TO_SLIDE_TOOL[next ?? ''] ?? null
     const mode = dragModeFor(next)
     ctl.primaryDragMode = mode
-    ctl.secondaryDragMode = mode
-    ctl.middleDragMode = mode
-    ctl.otherButtonDragMode = mode
+    // Right drags a box and zooms to it, as NiiVue's slide viewer; WindowLevel
+    // keeps middle-button panning, as cornerstone binds it.
+    const windowing = mode === DRAG_MODE.windowing
+    ctl.secondaryDragMode = DRAG_MODE.roiSelection
+    ctl.middleDragMode = windowing ? DRAG_MODE.pan : mode
+    ctl.otherButtonDragMode = windowing ? DRAG_MODE.pan : mode
   }
   if (ctl) {
-    ctl.isContextMenuBlocked = false
     ctl.wheelZoomRate = 0.001
     // The old view read deltaY raw, whatever its deltaMode, and had one
     // pointer only (no pinch).
@@ -129,31 +157,17 @@ export async function mountWsiSlideView(
     ctl.isDoubleClickZoom = false
   }
   setTool(tool)
-  // A Length press released without moving clears the ruler; a drag that
-  // comes back near its start still measures, as before.
-  let press: { x: number; y: number; moved: boolean } | null = null
-  const onDown = (e: PointerEvent): void => {
-    press = { x: e.clientX, y: e.clientY, moved: false }
-  }
-  const onMove = (e: PointerEvent): void => {
-    if (press && (e.clientX !== press.x || e.clientY !== press.y))
-      press.moved = true
-  }
-  const onUp = (): void => {
-    const was = press
-    press = null
-    if (tool === 'Length' && was && !was.moved) ctl?.clearMeasurements()
-  }
-  view.canvas.addEventListener('pointerdown', onDown)
-  view.canvas.addEventListener('pointermove', onMove)
-  view.canvas.addEventListener('pointerup', onUp)
   return {
     canvas: view.canvas,
     setTool,
-    resetView() {
-      ctl?.clearMeasurements()
-      view.fit()
+    get tool() {
+      return tool
     },
+    annotations: ctl?.annotations,
+    focusAnnotation(id) {
+      ctl?.focusAnnotation(id)
+    },
+    resetView: view.fit,
     zoom(factor) {
       const screen = view.screen()
       slide.zoomBy(factor, screen.widthCss / 2, screen.heightCss / 2, screen)
@@ -179,9 +193,6 @@ export async function mountWsiSlideView(
     dispose() {
       if (disposed) return
       disposed = true
-      view.canvas.removeEventListener('pointerdown', onDown)
-      view.canvas.removeEventListener('pointermove', onMove)
-      view.canvas.removeEventListener('pointerup', onUp)
       detachMinimap()
       view.destroy()
     },

@@ -20,8 +20,6 @@ export const NIIVUE_SUPPORTED_TOOLS: readonly string[] = [
   'WindowLevel',
   'Pan',
   'Zoom',
-  'Angle',
-  'CobbAngle',
 ]
 const TOOL_COMMANDS = ['setToolActive', 'setToolActiveToolbar']
 // Slide gestures: Length draws a ruler, Zoom zooms, anything else pans.

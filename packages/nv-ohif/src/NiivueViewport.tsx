@@ -1,5 +1,6 @@
 import type {
   AnnotationChangedDetail,
+  NiiVueLocation,
   NiiVueOptions,
   SlideTileSource,
   VectorAnnotation,
@@ -18,6 +19,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useArrowText } from './arrowText'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
@@ -31,13 +33,23 @@ import {
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
+  releaseImportedRows,
   removeNiivueAnnotation,
+  roundNumber,
   subscribeOhifLabelSync,
+  unitForDisplaySet,
   visibleAnnotationScreenShapes,
   voiRange,
 } from './commands'
-import { convertDisplaySetToNifti, loadConversion } from './dicomToNiivue'
+import { useAnnotationContextMenu } from './contextMenu'
+import {
+  convertDisplaySetToNifti,
+  type DicomConversion,
+  loadConversion,
+} from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
+import { useAnnotationHistory } from './history'
+import { MeasurementData } from './measurementData'
 import {
   authHeaders,
   getNiivueEntry,
@@ -50,13 +62,18 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import { OrientationMenu } from './orientationMenu'
+import { useOutputStack } from './outputStack'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
 import type { SliceFrames } from './sliceFrames'
+import { bindSlideMeasurements } from './slideMeasurements'
+import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
 import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
 import { ViewportNotification } from './viewportNotification'
 import {
+  CrosshairValueReadout,
   type StackPosition,
   StackPositionReadout,
   StudyLabel,
@@ -87,6 +104,12 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   isSnapToVoxelCenters: true,
   // Cornerstone's convention: patient right on screen left, sagittal nose left.
   isRadiological: true,
+  // Cornerstone's tools also place lines and ROIs click-move-click.
+  annotationIsClickToPlace: true,
+  // ...and draw ellipses and circles from their centre.
+  annotationIsDrawnFromCenter: true,
+  // ROI area as cornerstone reports it: the outline's, not a voxel count.
+  annotationAreaIsGeometric: true,
 }
 
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -239,12 +262,43 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   // The hung display set is on screen: `data-loaded`, a positive signal for tests.
   const [isLoaded, setIsLoaded] = useState(false)
+  // The series whose volume is shown: imports must not target an outgoing one.
+  const [loadedSeries, setLoadedSeries] = useState<string>()
+  // The shown conversion, for stepping through a series' other outputs.
+  const [conversion, setConversion] = useState<DicomConversion | null>(null)
+  // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
+  useArrowText(ready ? nvRef.current : null, viewportId, props.commandsManager)
+  // Orthogonal localizers: the wheel steps through the series' outputs (outputStack.ts).
+  useOutputStack(
+    ready ? nvRef.current : null,
+    viewportId,
+    displaySets[0],
+    conversion,
+  )
+  // NiiVue edits in OHIF's undo history (history.ts).
+  useAnnotationHistory(ready ? nvRef.current : null, props.extensionManager)
+  // Right-click on an annotation: OHIF's measurement menu (contextMenu.ts).
+  useAnnotationContextMenu(
+    ready ? nvRef.current : null,
+    viewportId,
+    props.commandsManager,
+  )
+  // Hydrated SR rows on this series become NiiVue measurements (srImport.ts).
+  useOhifRowImport(
+    loadedSeries ? nvRef.current : null,
+    loadedSeries,
+    servicesManager,
+  )
   // Resolves once the current load installs its base volume (the SEG's background).
   const baseInstalledRef = useRef<Promise<boolean>>(Promise.resolve(false))
   // Base window, shown lower left as cornerstone's viewport overlay does.
   const [windowLevel, setWindowLevel] = useState<WindowLevel | null>(null)
   // Instance under the crosshair, for a 2D slice in the acquisition plane.
   const [stack, setStack] = useState<StackPosition | null>(null)
+  // Base intensity at the crosshair (cornerstone has no such readout; Probe pins one).
+  const [crosshairValue, setCrosshairValue] = useState<string | null>(null)
+  // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
+  const [isRender, setIsRender] = useState(false)
 
   // OHIF can re-render with fresh displaySets/servicesManager object
   // identities on unrelated state changes (e.g. toolbar interactions). Effects
@@ -381,6 +435,15 @@ export function NiivueViewport(props: OhifViewportProps) {
     // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
     // sliceTypeChange carries no position: reuse the last crosshair.
     const showStack = (e: Event) => {
+      const values = (e as CustomEvent<Partial<NiiVueLocation>>).detail?.values
+      if (values) {
+        const v = values[0]
+        setCrosshairValue(
+          v && Number.isFinite(v.value)
+            ? `${v.approximate ? '~' : ''}${roundNumber(v.value)}`
+            : null,
+        )
+      }
       const entry = getNiivueEntry(viewportId)
       const moved = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
       if (entry && moved) entry.crosshairMM = moved
@@ -402,6 +465,9 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
     nv.addEventListener('locationChange', showStack)
     nv.addEventListener('sliceTypeChange', showStack)
+    const showRender = () => setIsRender(nv.sliceType === SLICE_TYPE.RENDER)
+    showRender()
+    nv.addEventListener('sliceTypeChange', showRender)
 
     // Annotations (Length / ROI / arrow): reflect a completed vector annotation
     // into OHIF's measurement panel, remove its row when the annotation is
@@ -425,11 +491,13 @@ export function NiivueViewport(props: OhifViewportProps) {
       )
       const stats = stored.stats
       if (!added || !stats) return
-      // A measured line reports its length; area tools report area.
+      // A measured line reports its length, a probe its value, area tools area.
       const message =
         stats.length !== undefined
           ? `Length: ${stats.length.toFixed(1)} mm`
-          : `Area: ${stats.area.toFixed(1)} mm²`
+          : stats.value !== undefined
+            ? `Value: ${roundNumber(stats.value)}`
+            : `Area: ${stats.area.toFixed(1)} mm²`
       flashNote(message)
     }
     const onAnnotationRemoved = (e: Event) => {
@@ -472,6 +540,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('locationChange', showWindowLevel)
       nv.removeEventListener('locationChange', showStack)
       nv.removeEventListener('sliceTypeChange', showStack)
+      nv.removeEventListener('sliceTypeChange', showRender)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
@@ -503,6 +572,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // and ROIs re-project onto the new anatomy, and the Overlay button reads
     // active with nothing overlaid. (No-op on the first load — nothing to clear
     // yet.)
+    releaseImportedRows(viewportId)
     nv.clearAnnotations()
     let baseInstalled = (_: boolean) => {}
     baseInstalledRef.current = new Promise((resolve) => {
@@ -510,6 +580,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     })
     setWindowLevel(null)
     setStack(null)
+    setCrosshairValue(null)
     // Keep the registry's view of the base display sets current, so overlay
     // commands know what is already loaded and W/L-preset buttons can gate on
     // the base modality (see commands.ts). Refresh the toolbar so those
@@ -535,6 +606,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     }
 
     setIsLoaded(false)
+    setLoadedSeries(undefined)
+    setConversion(null)
     // If OHIF hung nothing, stay idle.
     const ds: OhifDisplaySet | undefined = displaySets[0]
     if (!ds) {
@@ -565,6 +638,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const seedWindowLevel = (installed = spec) => {
       if (cancelled) return
       baseInstalled(true)
+      setLoadedSeries(ds.SeriesInstanceUID as string | undefined)
       centerCrosshair(nv)
       const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
       if (step) nv.windowingStep = step
@@ -634,6 +708,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (!container) return
       let slideCanvas: HTMLCanvasElement | null = null
       let view: WsiSlideView | null = null
+      let unbindMeasurements: (() => void) | undefined
       let limitTimeout: number | undefined
       let limitNote: Status | null = null
       const cannotShow = (err: unknown) =>
@@ -676,7 +751,7 @@ export function NiivueViewport(props: OhifViewportProps) {
             'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none'
           container.appendChild(canvas)
           try {
-            // The ruler draws its length label on the slide itself, so the
+            // Annotations draw their size labels on the slide itself, so the
             // status overlay does not repeat the reading.
             const mounted = await mountWsiSlideView(canvas, slide, {
               // A brief note, cleared early when the requested level fits again.
@@ -704,6 +779,11 @@ export function NiivueViewport(props: OhifViewportProps) {
             view = mounted
             slideViewRef.current = view
             view.setTool(activeOhifToolRef.current)
+            unbindMeasurements = bindSlideMeasurements(
+              view,
+              servicesManager,
+              ds,
+            )
             updateNiivueViewport(viewportId, { slideView: view })
             refreshToolbar(servicesManager, viewportId)
             setIsLoaded(true)
@@ -730,6 +810,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         window.clearTimeout(limitTimeout)
         updateNiivueViewport(viewportId, { slideView: undefined })
         slideViewRef.current = null
+        unbindMeasurements?.()
         view?.dispose()
         if (slideCanvas) {
           slideCanvas.width = 0
@@ -789,6 +870,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           () => cancelled,
         ).then((shown) => {
           if (!shown) return
+          setConversion(converted)
           // A single image (e.g. a localizer) shows in its own plane, as a
           // cornerstone stack does, unless the hanging protocol set one.
           if (
@@ -829,7 +911,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     seg,
     baseInstalledRef,
     base,
-    servicesManager,
+    { viewportId, servicesManager, extensionManager: props.extensionManager },
     (message, brief) =>
       brief
         ? briefNote(setStatus, message)
@@ -915,11 +997,36 @@ export function NiivueViewport(props: OhifViewportProps) {
           {overlay}
         </div>
       ) : null}
-      {props.viewportOptions?.customViewportProps?.hideOverlays ? null : (
+      <MeasurementData
+        nv={ready ? nvRef.current : null}
+        slide={isLoaded ? slideViewRef.current?.annotations : undefined}
+        viewportId={viewportId}
+        unit={unitForDisplaySet(displaySets[0])}
+      />
+      {/* Reconstructable volumes only, as cornerstone's evaluate.orientationMenu:
+          a whole slide or a lone/orthogonal image has no other plane. */}
+      <OrientationMenu
+        nv={
+          isLoaded &&
+          !slideViewRef.current &&
+          displaySets[0]?.isReconstructable !== false
+            ? nvRef.current
+            : null
+        }
+      />
+      {props.viewportOptions?.customViewportProps?.hideOverlays ||
+      isRender ? null : (
         <>
           <StudyLabel ds={displaySets[0]} />
           {windowLevel ? <WindowLevelReadout {...windowLevel} /> : null}
           {stack ? <StackPositionReadout {...stack} /> : null}
+          {crosshairValue !== null ? (
+            <CrosshairValueReadout
+              value={crosshairValue}
+              unit={unitForDisplaySet(displaySets[0])}
+              aboveStack={!!stack}
+            />
+          ) : null}
         </>
       )}
       <ViewportNotification

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import { generateShape, type VectorAnnotation } from '@niivue/niivue'
-import { reflectNiivueAnnotation } from './commands'
+import { probeIndex, reflectNiivueAnnotation } from './commands'
 import {
   registerNiivue,
   unregisterNiivue,
@@ -371,4 +371,24 @@ describe('reflected measurement identity', () => {
     expect('frameNumber' in m).toBe(false)
     expect('referencedImageId' in m).toBe(false)
   })
+})
+
+it('probeIndex: k is the displayed stack position, not the frame number', () => {
+  // Unequal spacing: DICOM PixelSpacing is [between rows, between columns].
+  const instances = classic(axial, 'pi', { PixelSpacing: [0.5, 0.25] })
+  registerNiivue('vp-pi', {} as NiiVue)
+  updateNiivueViewport('vp-pi', {
+    displaySets: [{ instances }],
+    sliceFrames: buildSliceFrames(niftiHeader(axial), instances),
+  })
+  // Column 4 (1 mm / 0.25), row 3 (1.5 mm / 0.5) of the second slice.
+  const p = { x: 99.5, y: 118.5 }
+  const probe = {
+    sliceType: 0,
+    slicePosition: 32.5,
+    anchorMM: [99.5, 118.5, 32.5],
+    shape: { type: 'measurePoint', start: p, end: p },
+  } as unknown as VectorAnnotation
+  expect(probeIndex('vp-pi', probe)).toEqual([4, 3, 1])
+  unregisterNiivue('vp-pi')
 })

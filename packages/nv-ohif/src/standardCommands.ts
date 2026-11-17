@@ -48,6 +48,7 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'firstImage',
   'lastImage',
   'setViewportColormap',
+  'deleteActiveAnnotation',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
@@ -146,13 +147,22 @@ export function jumpToImage(
     const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
       SOPInstanceUID?: string
     }>
-    const image = shownImages(instances, sf).at(i)
-    if (!image) return
-    k = sf.frames.findIndex(
-      (f) =>
-        f?.SOPInstanceUID === image.SOPInstanceUID &&
-        f.frameNumber === image.frameNumber,
-    )
+    if (entry.switchToInstance) {
+      // A series split into outputs counts its whole display set
+      // (outputStack.ts): another output's image (a localizer of another
+      // orientation), or one queued behind a switch still loading, shows centred.
+      const sop = instances.at(i)?.SOPInstanceUID
+      if (!sop || entry.switchToInstance(sop)) return
+      k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
+    } else {
+      const image = shownImages(instances, sf).at(i)
+      if (!image) return
+      k = sf.frames.findIndex(
+        (f) =>
+          f?.SOPInstanceUID === image.SOPInstanceUID &&
+          f.frameNumber === image.frameNumber,
+      )
+    }
   }
   if (k < 0 || k >= sf.frames.length) return
   nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
@@ -291,6 +301,16 @@ export function getStandardCommandDefinitions({
       ),
     },
     invertViewport: { commandFn: route('invertViewport', invertBase) },
+    // Delete on a NiiVue pane removes its selected annotation (undoably; undo
+    // and redo are OHIF's, through its history: history.ts).
+    deleteActiveAnnotation: {
+      commandFn: route('deleteActiveAnnotation', ({ nv }) => {
+        // A half-drawn contour goes first (Backspace mid-draw), as cornerstone.
+        if (nv.cancelAnnotationInProgress()) return
+        const id = nv.selectedAnnotation
+        if (id) nv.removeAnnotation(id, true)
+      }),
+    },
     jumpToImage: {
       commandFn: route('jumpToImage', (entry, opts) =>
         jumpToImage(entry, opts.imageIndex),

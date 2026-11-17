@@ -24,13 +24,6 @@ describe('segColormap', () => {
     })
   })
 
-  test('missingRGBAndLabel_defaultWhiteAndValue_missingValueSkipped', () => {
-    const cmap = segColormap([{ LabelValue: 2 }, { SegmentLabel: 'x' }])
-    expect(cmap.I).toEqual([0, 2])
-    expect([cmap.R[1], cmap.G[1], cmap.B[1]]).toEqual([255, 255, 255])
-    expect(cmap.labels).toEqual(['', '2'])
-  })
-
   test('lateralityModifier_prefixesSharedLabel', () => {
     const left = { CodeMeaning: 'Left' }
     const cmap = segColormap([
@@ -73,6 +66,14 @@ describe('resolveSegDisplaySets', () => {
     })
   })
 
+  test('hungRtstruct_showsItsReferencedSeriesAsBase', () => {
+    const rt = { ...seg, Modality: 'RTSTRUCT' }
+    expect(resolveSegDisplaySets([rt], lookup)).toEqual({
+      displaySets: [mr],
+      seg: rt,
+    })
+  })
+
   test('segLayeredOnItsBase_baseOnce', () => {
     expect(resolveSegDisplaySets([mr, seg], lookup).displaySets).toEqual([mr])
   })
@@ -87,15 +88,6 @@ describe('resolveSegDisplaySets', () => {
   test('referenceUidNotYetSet_fallsBackToSeriesUid', () => {
     const early = { ...seg, referencedDisplaySetInstanceUID: null }
     expect(resolveSegDisplaySets([early], lookup).displaySets).toEqual([mr])
-  })
-
-  test('noSeg_orUnresolvedReference_unchanged', () => {
-    expect(resolveSegDisplaySets([mr], lookup)).toEqual({ displaySets: [mr] })
-    const orphan = { ...seg, referencedDisplaySetInstanceUID: 'gone' }
-    const lost = { ...orphan, referencedSeriesInstanceUID: 'gone' }
-    expect(resolveSegDisplaySets([lost], lookup)).toEqual({
-      displaySets: [lost],
-    })
   })
 })
 

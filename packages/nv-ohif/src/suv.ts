@@ -37,7 +37,8 @@ export function suvBwFactor(
 ): number | undefined {
   const rp = first(inst?.RadiopharmaceuticalInformationSequence)
   if (!inst || !rp || inst.Units !== 'BQML') return undefined
-  const corrected = [inst.CorrectedImage].flat()
+  // Some archives send the multi-value as one backslash-joined string (TCIA D6).
+  const corrected = [inst.CorrectedImage].flat().join('\\').split('\\')
   if (!corrected.includes('ATTN') || !corrected.includes('DECY'))
     return undefined
   const weightG = Number(inst.PatientWeight) * 1000

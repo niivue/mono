@@ -39,6 +39,9 @@ test('decay runs to the earliest acquisition when the series time is later', () 
 test('a series not attenuation and decay corrected stays in Bq/ml', () => {
   expect(suvBwFactor({ ...pet, CorrectedImage: 'DECY' })).toBeUndefined()
   expect(suvBwFactor({ ...pet, CorrectedImage: undefined })).toBeUndefined()
+  expect(suvBwFactor({ ...pet, CorrectedImage: 'DECY\\ATTN' })).toBe(
+    suvBwFactor(pet),
+  )
 })
 
 test('scaleNifti multiplies slope and intercept, treating slope 0 as 1', async () => {

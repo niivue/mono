@@ -94,7 +94,8 @@ export function createMagnifyBinding(nv: Host) {
         if (touch?.pointerId === e.pointerId)
           touch = { ...touch, clientX: e.clientX, clientY: e.clientY }
         if (held) e.stopImmediatePropagation()
-        if (held || !opts.held) at(e)
+        // Touch has no hover: an unheld touch move is core's pinch.
+        if (held || (!opts.held && e.pointerType !== 'touch')) at(e)
       }
       const up = (e: PointerEvent) => {
         if (held) {

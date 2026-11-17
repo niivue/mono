@@ -113,6 +113,37 @@ test('a second finger hands both touches to core (pinch)', () => {
   expect(core).toEqual(['pointerdown:0', 'pointerdown:0'])
 })
 
+test('AdvancedMagnify stays hidden while core pinches', () => {
+  const moves: number[][] = []
+  spies.push(
+    spyOn(UIKitMagnifierOverlay.prototype, 'pointerMove').mockImplementation(
+      (x: number, y: number) => {
+        moves.push([x, y])
+      },
+    ),
+  )
+  const { canvas, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('AdvancedMagnify')
+  canvas.dispatchEvent(
+    pointer('pointerdown', 0, { pointerType: 'touch', pointerId: 1 }),
+  )
+  canvas.dispatchEvent(
+    pointer('pointerdown', 0, { pointerType: 'touch', pointerId: 2 }),
+  )
+  moves.length = 0
+  canvas.dispatchEvent(
+    pointer('pointermove', 0, {
+      pointerType: 'touch',
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    }),
+  )
+  binding.dispose()
+  expect(moves).toEqual([])
+})
+
 test('a double-click on the lens does not reach core', () => {
   const { canvas, core, nv } = host()
   const binding = createMagnifyBinding(nv)

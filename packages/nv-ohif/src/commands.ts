@@ -539,10 +539,14 @@ function annotationPointToLps(
   )
 }
 
-/** A measurePoint's DICOM image index, as cornerstone's Probe reports it. */
+/**
+ * A measurePoint's DICOM image index, as cornerstone's Probe reports it; on the
+ * row's own frame `sop` when its output holds the point (see outputFrameAt).
+ */
 export function probeIndex(
   viewportId: string,
   annotation: VectorAnnotation,
+  sop?: string,
 ): [number, number, number] | undefined {
   if (annotation.shape?.type !== 'measurePoint') return undefined
   const entry = getNiivueEntry(viewportId)
@@ -558,7 +562,7 @@ export function probeIndex(
       annotation.sliceType,
     )
   const p = rasToLps([ras[0], ras[1], ras[2]])
-  const hit = outputFrameAt(entry, [p])
+  const hit = outputFrameAt(entry, [p], sop)
   const frame = hit?.frame
   // k: the displayed stack (or volume) position, as cornerstone's getCurrentImageIdIndex.
   const pos = hit && stackPosition(ds, hit.sf, ras, entry.volumeOrder)
@@ -1042,7 +1046,7 @@ function reflectNiivueAnnotationResult(
     annotation.stats,
     unit,
   )
-  const index = probeIndex(viewportId, annotation)
+  const index = probeIndex(viewportId, annotation, frame?.SOPInstanceUID)
   if (index) data.index = index
   // The row label is the annotation's own text (applyDefaultAnnotationText seeds a
   // sensible default on add). Do NOT substitute an internal "NiiVue <Tool>"

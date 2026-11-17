@@ -153,6 +153,24 @@ describe('UIKitMagnifierOverlay.attach', () => {
     expect(scrolled).toBe(1)
   })
 
+  // Review of #841: a press released off the canvas does not swallow the next.
+  it('a press released off the canvas leaves the next press to the scene', () => {
+    const doc = new EventTarget()
+    const canvas = Object.assign(new EventTarget(), { ownerDocument: doc })
+    const host = {
+      canvas: canvas as unknown as HTMLCanvasElement,
+      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
+      drawScene: () => {},
+    }
+    const scene: string[] = []
+    canvas.addEventListener('pointerdown', () => scene.push('down'))
+    new UIKitMagnifierOverlay().attach(host)
+    canvas.dispatchEvent(pointer('pointerdown', 40, 50))
+    doc.dispatchEvent(pointer('pointerup', 900, 50))
+    canvas.dispatchEvent(pointer('pointerdown', 40, 50))
+    expect(scene).toEqual(['down'])
+  })
+
   // Review of #841: a second touch during the exiting press is swallowed too.
   it('a second touch during the exiting press never reaches the scene', () => {
     const canvas = new EventTarget()

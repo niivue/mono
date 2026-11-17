@@ -64,12 +64,21 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
     e.stopImmediatePropagation()
     if (e.type === 'click') end()
   }
+  // A mouse can release off the canvas: the document still sees it.
+  const doc = canvas.ownerDocument as Document | undefined
+  const release = (e: Event): void => {
+    down.delete((e as PointerEvent).pointerId)
+  }
   const end = (): void => {
     for (const type of PRESS_REST)
       canvas.removeEventListener(type, stop, { capture: true })
+    doc?.removeEventListener('pointerup', release, { capture: true })
+    doc?.removeEventListener('pointercancel', release, { capture: true })
   }
   for (const type of PRESS_REST)
     canvas.addEventListener(type, stop, { capture: true })
+  doc?.addEventListener('pointerup', release, { capture: true })
+  doc?.addEventListener('pointercancel', release, { capture: true })
 }
 
 export class UIKitMagnifierOverlay {

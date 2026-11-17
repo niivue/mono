@@ -202,10 +202,10 @@ export async function showFrames(group: object): Promise<void> {
       continue
     }
     const signal = new AbortController().signal
-    await nv.updateVolumeData(
-      i,
-      await v.frameSource.load(v.frameSource.frame, signal),
-    )
+    const data = await v.frameSource.load(v.frameSource.frame, signal)
+    // A compute shown during the load owns the volumes now.
+    if (computedShown.has(group)) return
+    await nv.updateVolumeData(i, data)
   }
 }
 

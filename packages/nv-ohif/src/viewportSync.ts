@@ -36,9 +36,10 @@ function linkedTargets(viewportId: string, kind: 'voi' | 'camera') {
   return [...members].filter(
     ([id, to]) =>
       id !== viewportId &&
-      [...from.groups].some(
-        ([g, r]) => r[kind] && r.source && to.groups.get(g)?.target,
-      ),
+      [...from.groups].some(([g, r]) => {
+        const t = to.groups.get(g)
+        return r[kind] && r.source && t?.[kind] && t.target
+      }),
   )
 }
 

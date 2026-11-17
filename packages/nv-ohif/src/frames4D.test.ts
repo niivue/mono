@@ -158,6 +158,32 @@ it('a pending frame step does not overwrite a computed volume', async () => {
   for (const l of leave) l()
 })
 
+it('a compute shown while frames restore stays shown', async () => {
+  globalThis.requestAnimationFrame = () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const nv = pane()
+  const leave = joinFrames('slow', nv, undefined, null)
+  await nv.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await showComputed(split.frames.group, Float32Array.from([9, 12]))
+  const load = split.frames.load
+  let release = () => {}
+  split.frames.load = async (f, signal) => {
+    await new Promise<void>((r) => {
+      release = r
+    })
+    return load(f, signal)
+  }
+  const restore = showFrames(split.frames.group)
+  await showComputed(split.frames.group, Float32Array.from([50, 20]))
+  release()
+  await restore
+  split.frames.load = load
+  expect(scaled(nv).map((x) => Math.round(x * 1e3) / 1e3)).toEqual([50, 20])
+  leave()
+})
+
 // Audit 22.2: a pane joining a computed series shows the computed volume and
 // returns to the series' frame with its own scaling.
 it('a pane joining while computed shows the computed volume', async () => {

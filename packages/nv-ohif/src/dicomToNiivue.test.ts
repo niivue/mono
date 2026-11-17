@@ -98,6 +98,9 @@ describe('convertDisplaySetToNifti', () => {
 
   it('rejects with convert() rejection (abort, worker failure)', async () => {
     result = Promise.reject(new DOMException('cancelled', 'AbortError'))
+    // Handled until convert() awaits it: as the first test, the fetches outlast
+    // bun's unhandled-rejection check.
+    result.catch(() => {})
     await expect(convertDisplaySetToNifti(ds)).rejects.toThrow('cancelled')
   })
 

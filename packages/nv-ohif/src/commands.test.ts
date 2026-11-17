@@ -1302,14 +1302,14 @@ describe('reflectNiivueAnnotation', () => {
       ...stubNiivue(),
       setAnnotationText: (id: string, text: string) => texts.push({ id, text }),
     }
-    register('vp-a5', nv)
-    updateNiivueViewport('vp-a5', {
+    register('vp-label', nv)
+    updateNiivueViewport('vp-label', {
       displaySets: backing as unknown as Parameters<
         typeof updateNiivueViewport
       >[1]['displaySets'],
     })
-    const svc = measurementServices('vp-a5', backing)
-    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('lbl'))
+    const svc = measurementServices('vp-label', backing)
+    reflectNiivueAnnotation('vp-label', svc.servicesManager, ellipse('lbl'))
     const uid = (svc.added[0]?.data.schema as { uid: string }).uid
     applyOhifLabelToAnnotation(uid, 'Tumor A')
     expect(texts).toEqual([{ id: 'lbl', text: 'Tumor A' }])

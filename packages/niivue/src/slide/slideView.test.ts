@@ -286,6 +286,25 @@ describe('createSlideView', () => {
     expect(b.disposed).toBe(1)
   })
 
+  // Review of #836: the old slide's annotations do not carry to the new one.
+  test('setSlide clears the controller annotations', async () => {
+    const view = await createSlideViewWith(
+      [backend('webgl2', () => fakeRenderer())],
+      fakeCanvas(),
+      { slide: fakeSlide() },
+    )
+    const removed: string[] = []
+    const store = view.controller?.annotations
+    store?.addEventListener('removed', (e) =>
+      removed.push((e as CustomEvent<{ label: string }>).detail.label),
+    )
+    store?.add('point', [{ x: 1, y: 1 }], 'slide A')
+    view.setSlide(fakeSlide())
+    expect(store?.list()).toEqual([])
+    expect(removed).toEqual(['slide A'])
+    view.destroy()
+  })
+
   test('slide changes schedule one frame', async () => {
     const r = fakeRenderer()
     const slide = fakeSlide()

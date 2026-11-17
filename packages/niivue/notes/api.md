@@ -305,7 +305,7 @@ Used by `loadVolumes()`, `addVolume()`, and `setVolume()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `opacity`, `visible` (hide without changing `opacity`), `modulateAlpha`, `isNearestInterpolation` (2D sampling; unset = nearest for label data, linear otherwise)
 - UI: `isColorbarVisible`, `isLegendVisible` (default true; `nv.isLegendVisible` gates the combined legend; a large table wraps into columns at a fixed font, then scrolls: wheel over the legend, or click the scrollbar track to page)
-- Labels: `atlasOutline`, `hiddenLabels` (label values drawn transparent, on volumes and mesh layers; `nv.isLegendToggleEnabled` lets a legend colour-box click toggle them; hidden labels show as an outlined legend box)
+- Labels: `atlasOutline`, `hiddenLabels` (label values hidden: transparent on volumes, triangles removed on mesh layers unless `isHiddenLabelCulled` is false; `nv.isLegendToggleEnabled` lets a legend colour-box click toggle them and a double-click solo one; PAQD volumes honour them too; hidden labels show as an outlined legend box)
 - 4D: `frame4D`, `limitFrames4D`
 
 ### Mesh Options
@@ -318,6 +318,7 @@ Used by `addMeshLayer()` and `setMeshLayerProperty()`:
 - Display: `calMin`, `calMax`, `calMinNeg`, `calMaxNeg`, `colormap`, `colormapNegative`, `colormapType`
 - Behavior: `isTransparentBelowCalMin`, `isAdditiveBlend`, `isColormapInverted`, `opacity`
 - UI: `isColorbarVisible`, `outlineWidth`
+- Labels: `hiddenLabels` (their triangles are removed), `isHiddenLabelCulled` (default true; false shows the mesh colour beneath instead)
 
 ### Tract Options
 Used by `setTractOptions()`:

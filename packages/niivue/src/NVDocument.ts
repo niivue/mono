@@ -201,6 +201,7 @@ export type NVDocumentMeshLayer = {
   frame4D?: number
   outlineWidth?: number
   hiddenLabels?: number[]
+  isHiddenLabelCulled?: boolean
   /** Embedded scalar data (Float32Array as bytes) */
   data?: Uint8Array
   /** Label colormap LUT for atlas/parcellation layers */
@@ -632,6 +633,8 @@ export function serialize(
         }
         if (layer.hiddenLabels?.length)
           docLayer.hiddenLabels = [...layer.hiddenLabels]
+        if (layer.isHiddenLabelCulled === false)
+          docLayer.isHiddenLabelCulled = false
         return docLayer
       })
     }
@@ -1148,6 +1151,8 @@ export async function reconstructMesh(
             }
             if (docLayer.hiddenLabels?.length)
               layer.hiddenLabels = [...docLayer.hiddenLabels]
+            if (docLayer.isHiddenLabelCulled === false)
+              layer.isHiddenLabelCulled = false
             layers.push(layer)
           }
         }

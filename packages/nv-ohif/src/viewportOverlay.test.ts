@@ -41,3 +41,40 @@ test('the stack position comes from the source frame, not the NiiVue slice', () 
   // Between slices (a reformat or off-plane point): no stack position.
   expect(stackPosition(ds, sf, [0, 0, 0.5])).toBeUndefined()
 })
+
+test('the stack counts only the instances the shown output holds', () => {
+  // Coronal + sagittal localizers in one series; the pane shows only sag.
+  const ds = {
+    instances: [
+      { SOPInstanceUID: 'cor', InstanceNumber: 1 },
+      { SOPInstanceUID: 'sag', InstanceNumber: 2 },
+    ],
+  } as unknown as OhifDisplaySet
+  const sf: SliceFrames = {
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    frames: [{ SOPInstanceUID: 'sag', frameNumber: 1 }],
+  }
+  expect(stackPosition(ds, sf, [0, 0, 0])).toEqual({
+    instanceNumber: 2,
+    index: 1,
+    total: 1,
+  })
+})
+
+test('a split multi-frame instance counts only its shown frames', () => {
+  // A 4-frame instance whose shown output holds frames 2 and 4.
+  const ds = {
+    instances: [{ SOPInstanceUID: 'mf', InstanceNumber: 1, NumberOfFrames: 4 }],
+  } as unknown as OhifDisplaySet
+  const sf: SliceFrames = {
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    frames: [2, 4].map((frameNumber) => ({
+      SOPInstanceUID: 'mf',
+      frameNumber,
+    })),
+  }
+  expect(stackPosition(ds, sf, [0, 0, 0])).toEqual({ index: 1, total: 2 })
+  expect(stackPosition(ds, sf, [0, 0, 1])).toEqual({ index: 2, total: 2 })
+})

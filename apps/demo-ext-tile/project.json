@@ -62,6 +62,7 @@
       "options": {
         "cwd": "{projectRoot}"
       },
+      "dependsOn": ["^build"],
       "inputs": ["typescript"]
     },
     "typecheck": {

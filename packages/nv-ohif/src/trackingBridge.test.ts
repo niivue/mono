@@ -11,10 +11,12 @@ test('the active pane forwards a new measurement to OHIF tracking', () => {
     referenceStudyUID: 'st',
     referenceSeriesUID: 'se',
   }
-  forwardMeasurement(send, 'other', 'vp', m)
-  forwardMeasurement(undefined, 'vp', 'vp', m)
+  forwardMeasurement(send, 'other', 'vp', ['se'], m)
+  forwardMeasurement(undefined, 'vp', 'vp', ['se'], m)
+  // Another pane's series, while this pane is active.
+  forwardMeasurement(send, 'vp', 'vp', ['mine'], m)
   expect(sent).toEqual([])
-  forwardMeasurement(send, 'vp', 'vp', m)
+  forwardMeasurement(send, 'vp', 'vp', ['se'], m)
   expect(sent).toEqual([
     ['SET_DIRTY', { SeriesInstanceUID: 'se' }],
     [

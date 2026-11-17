@@ -182,7 +182,7 @@ export function markHandlers(host: NiiVueHost): Handlers {
           }
           if (!ok)
             throw new Error(
-              `The drawing at ${url} could not be loaded: it does not fit the base volume.`,
+              `The drawing at ${url} could not be loaded: it is not a uint8 label image voxel-aligned with the base volume, or a later drawing call replaced it.`,
             )
           break
         }

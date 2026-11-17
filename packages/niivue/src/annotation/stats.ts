@@ -19,8 +19,52 @@ export function isMeasureTool(tool: AnnotationTool): boolean {
     tool === 'measureLine' ||
     tool === 'measureCircle' ||
     tool === 'measureSpline' ||
-    tool === 'measureLivewire'
+    tool === 'measureLivewire' ||
+    tool === 'measurePoint'
   )
+}
+
+/**
+ * Degrees between a shape's two lines (start->end, start2->end2). measureAngle:
+ * the angle at the shared vertex (0-180); measureCobbAngle: the acute angle
+ * between the line directions (0-90), as cornerstone.
+ */
+export function shapeAngle(
+  shape: {
+    type: AnnotationTool
+    start: AnnotationPoint
+    end: AnnotationPoint
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
+  },
+  // Slice-2D -> world mm on the drawn plane: on an oblique slice the 2D axes
+  // are a projection, so the angle must be taken in 3D.
+  toMM: (p: AnnotationPoint) => ArrayLike<number> = (p) => [p.x, p.y, 0],
+): number {
+  const { start, end, start2 = end, end2 = end } = shape
+  const [s, e, s2, e2] = [start, end, start2, end2].map(toMM) as [
+    ArrayLike<number>,
+    ArrayLike<number>,
+    ArrayLike<number>,
+    ArrayLike<number>,
+  ]
+  // Angle: both arms point away from the vertex (end === start2).
+  const sign = shape.type === 'measureAngle' ? -1 : 1
+  const a = [0, 1, 2].map((i) => sign * ((e[i] as number) - (s[i] as number)))
+  const b = [0, 1, 2].map((i) => (e2[i] as number) - (s2[i] as number))
+  const [ax, ay, az] = a as [number, number, number]
+  const [bx, by, bz] = b as [number, number, number]
+  const dot = ax * bx + ay * by + az * bz
+  const cross = Math.hypot(
+    ay * bz - az * by,
+    az * bx - ax * bz,
+    ax * by - ay * bx,
+  )
+  const rad = Math.atan2(
+    cross,
+    shape.type === 'measureCobbAngle' ? Math.abs(dot) : dot,
+  )
+  return (rad * 180) / Math.PI
 }
 
 /**
@@ -150,6 +194,18 @@ export function computeAnnotationStats(
     }
   }
 
+  if (shape.type === 'measureAngle' || shape.type === 'measureCobbAngle')
+    // Drawing records the angle on its (maybe oblique) plane, which this
+    // signature cannot see; recompute only as a slice-2D fallback.
+    return {
+      area: 0,
+      min: 0,
+      mean: 0,
+      max: 0,
+      stdDev: 0,
+      angle: annotation.stats?.angle ?? shapeAngle(shape),
+    }
+
   const firstPt = annotation.polygons[0]?.outer[0]
   if (!firstPt) return null
 
@@ -169,6 +225,7 @@ export function computeAnnotationStats(
   const mm2vox = mat4.invert(mat4.create(), vox2mm)
   if (!mm2vox) return null
   const tmpVec = vec4.create()
+  const isPoint = shape.type === 'measurePoint'
   const mm0 =
     annotation.anchorMM ??
     slice2DToMM(firstPt, annotation.slicePosition, sliceType)
@@ -206,6 +263,19 @@ export function computeAnnotationStats(
       x: (dx * e1.y - e1.x * dy) / det,
       y: (e0.x * dy - dx * e0.y) / det,
     }
+  }
+  const frame = volume.frame4D ?? 0
+  if (isPoint) {
+    const v = toVox(shape.end)
+    const ras = [0, 0, 0]
+    ras[ax0] = Math.round(v.x)
+    ras[ax1] = Math.round(v.y)
+    ras[depthDim] = depthVox
+    if (ras.some((x, i) => x < 0 || x >= (dims[i + 1] as number))) return null
+    // The displayed 4D frame, as the crosshair readout samples it.
+    const value = getVoxelValue(volume, ras[0], ras[1], ras[2], frame)
+    if (!Number.isFinite(value)) return null
+    return { area: 0, min: value, mean: value, max: value, stdDev: 0, value }
   }
   // Every piece of an eraser-split ROI counts (#115); a voxel inside any of a
   // piece's holes does not.
@@ -310,7 +380,7 @@ export function computeAnnotationStats(
     for (let i0 = r0min; i0 <= r0max; i0++) {
       if (!inRow[i0 - r0min]) continue
       ras[ax0] = i0
-      const val = getVoxelValue(volume, ras[0], ras[1], ras[2])
+      const val = getVoxelValue(volume, ras[0], ras[1], ras[2], frame)
       // NaN: no data there (float padding, a streamed brick not yet decoded).
       if (!Number.isFinite(val)) continue
       count++

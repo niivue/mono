@@ -46,6 +46,13 @@ function markView(overrides: Partial<View> = {}) {
         1,
       )
     }),
+    removeAnnotations: mock((ids: readonly string[]) => {
+      for (const id of ids)
+        annotations.splice(
+          annotations.findIndex((a) => a.id === id),
+          1,
+        )
+    }),
     clearAnnotations: mock(() => {
       annotations.splice(0)
     }),
@@ -276,6 +283,22 @@ describe('edit_annotations', () => {
     ).toThrow('no style')
   })
 
+  it('removes several by ids, undoable when asked', () => {
+    const view = markView()
+    const { edit_annotations } = markHandlers(hostOf(view))
+    expect(() =>
+      edit_annotations({ action: 'remove', ids: ['a1', 'zz'] }),
+    ).toThrow('There is no annotation with the id "zz".')
+    expect(
+      edit_annotations({
+        action: 'remove',
+        ids: ['a1', 'a2'],
+        is_undoable: true,
+      }),
+    ).toMatchObject({ action: 'remove', count: 0 })
+    expect(view.removeAnnotations).toHaveBeenLastCalledWith(['a1', 'a2'], true)
+  })
+
   it('adds, selects, retitles, removes, clears, undoes, redoes and loads', () => {
     const view = markView()
     const { edit_annotations } = markHandlers(hostOf(view))
@@ -301,6 +324,7 @@ describe('edit_annotations', () => {
       id: 'a2',
       count: 2,
     })
+    expect(view.removeAnnotation).toHaveBeenLastCalledWith('a2', false)
     edit_annotations({ action: 'undo' })
     edit_annotations({ action: 'redo' })
     expect(view.annotationUndo).toHaveBeenCalledTimes(1)

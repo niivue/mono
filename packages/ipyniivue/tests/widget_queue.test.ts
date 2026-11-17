@@ -6,10 +6,15 @@ const log: string[] = []
 let endAnimation = (_reason: string) => {}
 let endLoad = () => {}
 let endSettle = () => {}
+let undoTop: number | undefined
+
+const listeners: Record<string, (e: unknown) => void> = {}
 
 class FakeNiiVue {
   registerVolumeTransform() {}
-  addEventListener() {}
+  addEventListener(name: string, h: (e: unknown) => void) {
+    listeners[name] = h
+  }
   removeEventListener() {}
   attachToCanvas() {
     return Promise.resolve()
@@ -45,6 +50,12 @@ class FakeNiiVue {
   setOpacity() {
     log.push('setOpacity')
   }
+  get annotationUndoTop() {
+    return undoTop
+  }
+  annotationUndo() {
+    undoTop = undefined
+  }
 }
 
 mock.module('@niivue/niivue', () => ({ default: FakeNiiVue }))
@@ -74,6 +85,7 @@ function fakeModel() {
   const values: Record<string, unknown> = { _anywidget_id: crypto.randomUUID() }
   const handlers: Record<string, Handler[]> = {}
   const responses: { req_id: number; ok: boolean; result?: unknown }[] = []
+  const events: [string, unknown][] = []
   let seq = 0
   const model = {
     get: (k: string) => values[k],
@@ -82,6 +94,11 @@ function fakeModel() {
       const body = (v as { body?: { kind?: string } })?.body
       if (k === '_msg_outbox' && body?.kind === 'response')
         responses.push(body as (typeof responses)[number])
+      if (k === '_msg_outbox' && body?.kind === 'event')
+        events.push([
+          (body as { name: string }).name,
+          values.annotation_undo_top,
+        ])
     },
     save_changes() {},
     on: (evt: string, h: Handler) => {
@@ -96,16 +113,16 @@ function fakeModel() {
       return seq
     },
   }
-  return { model, responses }
+  return { model, responses, events }
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 5))
 
 async function mounted() {
-  const { model, responses } = fakeModel()
+  const { model, responses, events } = fakeModel()
   await widget.initialize({ model })
   await widget.render({ model, el: { appendChild() {} } })
-  return { model, responses }
+  return { model, responses, events }
 }
 
 test('stopAnimation runs while animateTo is pending', async () => {
@@ -144,4 +161,25 @@ test('whenChunkStreamSettles holds the queue', async () => {
   endSettle()
   await tick()
   expect(log).toEqual(['settle:start', 'settle:end', 'setOpacity'])
+})
+
+// A read-only property that becomes undefined (an emptied undo stack) syncs None.
+test('read-only property cleared to undefined syncs null', async () => {
+  undoTop = 7
+  const { model } = await mounted()
+  model.send('setOpacity', [0, 0.5])
+  await tick()
+  expect(model.get('annotation_undo_top')).toBe(7)
+  model.send('annotationUndo')
+  await tick()
+  expect(model.get('annotation_undo_top')).toBeNull()
+})
+
+// Review of #834: a Python event handler reads read-only state the event changed.
+test('an event syncs read-only properties before it reaches Python', async () => {
+  undoTop = undefined
+  const { events } = await mounted()
+  undoTop = 3
+  listeners.annotationAdded?.({ detail: { id: 'a' } })
+  expect(events).toContainEqual(['annotationAdded', 3])
 })

@@ -147,6 +147,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'annotations',
     'addAnnotation',
     'removeAnnotation',
+    'removeAnnotations',
     'selectAnnotation',
     'setAnnotationText',
     'annotationUndo',

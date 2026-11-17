@@ -87,9 +87,8 @@ export class LineRenderer extends NVRenderer {
       !this._shader
     )
       return
-    // Prepare line data
-    const allLineData = new Float32Array(maxLines * FLOATS_PER_LINE)
     const lineCount = Math.min(lines.length, maxLines)
+    const allLineData = new Float32Array(lineCount * FLOATS_PER_LINE)
     for (let i = 0; i < lineCount; i++) {
       const line = lines[i]
       if (!line) continue

@@ -7,6 +7,21 @@ import type {
 
 const ELLIPSE_SEGMENTS = 64
 
+function ellipseRing(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  n = ELLIPSE_SEGMENTS,
+): PolygonWithHoles[] {
+  const outer: AnnotationPoint[] = []
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2
+    outer.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry })
+  }
+  return [{ outer, holes: [] }]
+}
+
 export function isCircleTool(tool: AnnotationTool): boolean {
   return tool === 'circle' || tool === 'measureCircle'
 }
@@ -20,12 +35,7 @@ function generateEllipse(
   const rx = Math.abs(end.x - start.x) / 2
   const ry = Math.abs(end.y - start.y) / 2
   if (rx < 0.25 && ry < 0.25) return []
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
-    const angle = (i / ELLIPSE_SEGMENTS) * Math.PI * 2
-    outer.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry })
-  }
-  return [{ outer, holes: [] }]
+  return ellipseRing(cx, cy, rx, ry)
 }
 
 function generateRectangle(
@@ -158,15 +168,11 @@ function generateCircle(
   const cy = (start.y + constrained.y) / 2
   const r = Math.abs(constrained.x - start.x) / 2
   if (r < 0.25) return []
-  const outer: AnnotationPoint[] = []
-  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
-    const angle = (i / ELLIPSE_SEGMENTS) * Math.PI * 2
-    outer.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r })
-  }
-  return [{ outer, holes: [] }]
+  return ellipseRing(cx, cy, r, r)
 }
 
-const SPLINE_SAMPLES_PER_SEGMENT = 16
+// As cornerstone's SplineROI resolution, so spline areas agree.
+const SPLINE_SAMPLES_PER_SEGMENT = 20
 
 // Catmull-Rom interpolation of one segment p1->p2 (p0/p3 are the neighbours).
 function catmullRom(
@@ -246,8 +252,30 @@ export function generateShape(
     case 'circle':
     case 'measureCircle':
       return generateCircle(start, end)
+    case 'measurePoint':
+      // A dot of radius strokeWidth mm; 16 sides suffice at that size.
+      return ellipseRing(end.x, end.y, strokeWidth, strokeWidth, 16)
     default:
       return []
+  }
+}
+
+/**
+ * A bidirectional's automatic short axis: perpendicular through the long axis
+ * midpoint, 2/3 its length (cornerstone's default width).
+ */
+export function bidirectionalShortAxis(
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+): { start: AnnotationPoint; end: AnnotationPoint } {
+  const mx = (start.x + end.x) / 2
+  const my = (start.y + end.y) / 2
+  // The long axis rotated 90 degrees, scaled to 1/3 its length per side.
+  const px = -(end.y - start.y) / 3
+  const py = (end.x - start.x) / 3
+  return {
+    start: { x: mx - px, y: my - py },
+    end: { x: mx + px, y: my + py },
   }
 }
 

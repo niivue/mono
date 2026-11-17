@@ -1896,6 +1896,8 @@ export class VolumeRenderer extends ChunkStreamRenderer<
     }
     blendOver(gl)
 
+    // Do not override filtering for later passes (cinematic uses unit 7).
+    gl.bindSampler(7, null)
     // Cleanup
     gl.bindVertexArray(null)
   }

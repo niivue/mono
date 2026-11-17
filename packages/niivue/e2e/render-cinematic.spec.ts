@@ -404,15 +404,14 @@ const SCENES: Scene[] = [
     },
   },
   {
-    // A label volume survives a hidden background; with nothing visible the
-    // tile is released.
+    // Labels survive a late switch from COMPOSITE and a hidden background;
+    // with nothing visible the tile is released.
     name: 'cinematic-labels',
     options: {
       sliceType: RENDER,
-      volumeRenderMode: CINEMATIC,
       volumeCinematic: { maxFrames: 2 },
     },
-    setup: async ({ nv, view, p, check, settle }) => {
+    setup: async ({ nv, view, lib, p, check, settle }) => {
       nv.addColormap('e2eOctants', {
         R: [0, 230, 0, 0, 230, 230, 0, 255, 128],
         G: [0, 25, 200, 0, 230, 0, 230, 128, 128],
@@ -425,6 +424,8 @@ const SCENES: Scene[] = [
         { url: p.anatomy() },
         { url: p.labels(), colormap: 'e2eOctants' },
       ])
+      await settle()
+      nv.volumeRenderMode = lib.VOLUME_RENDER_MODE.CINEMATIC
       await nv.setVolume(0, { visible: false })
       await settle()
       const frames = [...view().cinematicRenderer.tiles.values()].map(

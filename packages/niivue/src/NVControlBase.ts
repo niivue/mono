@@ -753,6 +753,8 @@ export default class NiiVue extends EventTarget {
     // Kept as drawn: an erased shape's polygons differ from its bounds.
     polygons: VectorAnnotation['polygons']
     isErased: boolean
+    // A Probe drag moves its 3D point too.
+    anchorMM?: [number, number, number]
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   /** The annotations before a resize, pushed to undo when it is released. */
@@ -2884,6 +2886,7 @@ export default class NiiVue extends EventTarget {
     shape.end = original.end
     shape.width = original.width
     this._resizingAnnotation.polygons = original.polygons
+    if (original.anchorMM) this._resizingAnnotation.anchorMM = original.anchorMM
     const sel = this.model._annotationSelection
     if (sel) sel.controlPoints = Annotation.getControlPoints(shape)
   }

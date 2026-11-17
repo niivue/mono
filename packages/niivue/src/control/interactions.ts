@@ -102,9 +102,14 @@ function isNearFirstPoint(
     planeNormal,
     planePoint,
   )
+  // Tiles are laid out in bounds-local pixels.
   const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
-  const [x, y] = clientToCanvasPixel(ctrl, evt.clientX, evt.clientY)
-  return Math.hypot(x - cx, y - cy) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  const at = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+  if (!at) return false
+  return (
+    Math.hypot(at[0] - cx, at[1] - cy) <=
+    CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  )
 }
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
@@ -1738,6 +1743,8 @@ export function initInteraction(ctrl: NiiVue): void {
             ctrl._annotationPolySlicePosition = slicePosition
             ctrl._annotationPolyAnchorMM = mm as [number, number, number]
             resetLivewire(ctrl)
+            // As a drag shape does: Delete must not hit an older selection.
+            ctrl.model._annotationSelection = null
           }
           const poly = ctrl._annotationPolyPoints as AnnotationPoint[]
           // isClickToPlace (cornerstone's conventions): a click back near the
@@ -1830,6 +1837,7 @@ export function initInteraction(ctrl: NiiVue): void {
                   end: { ...ann.shape.end },
                   width: ann.shape.width,
                   polygons: ann.polygons,
+                  anchorMM: ann.anchorMM,
                   isErased: Annotation.isAnnotationErased(
                     ann,
                     ctrl.model.annotation.style.strokeWidth,
@@ -2280,6 +2288,9 @@ export function initInteraction(ctrl: NiiVue): void {
       DragModes.handleDragRelease(ctrl)
     }
     try {
+      // An interrupted resize is reverted, as a cancel does: pointerup alone
+      // records its undo step and annotationChanged.
+      if (ctrl._resizingControlPoint >= 0) ctrl.cancelAnnotationInProgress()
       // Commit the stroke, as pointerup does. A raster stroke paints incrementally
       // so its voxels already survive a cancel; a vector stroke only exists in the
       // accumulator, and dropping it here would silently lose a finished polygon

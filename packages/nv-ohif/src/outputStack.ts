@@ -30,53 +30,62 @@ export function useOutputStack(
       (a, b) => order(a) - order(b),
     )
     let at = outputs.indexOf(conversion)
-    let busy = false
+    // Requests queue behind the load in flight; only the latest one loads.
+    let latest = 0
+    let queue: Promise<void> | undefined
     // Set on cleanup (a new series): a pending load must not install over it.
     let cancelled = false
-    updateNiivueViewport(viewportId, {
-      outputFrames: outputs.flatMap((o) =>
-        o.sliceFrames ? [o.sliceFrames] : [],
-      ),
-    })
-    const show = (i: number, then?: () => void): boolean => {
+    const load = async (i: number, request: number) => {
       const o = outputs[i]
-      if (busy || i === at || !o) return false
-      busy = true
+      if (!o || cancelled || request !== latest || i === at) return
       // Keep the window the user has.
       const calMin = nv.volumes[0]?.cal_min as number | undefined
       const calMax = nv.volumes[0]?.cal_max as number | undefined
-      void nv
-        .prepareVolume({ url: o.image, name: o.image.name, calMin, calMax })
-        .then((v) => (cancelled ? undefined : nv.loadVolumes([v])))
+      const v = await nv.prepareVolume({
+        url: o.image,
+        name: o.image.name,
+        calMin,
+        calMax,
+      })
+      if (cancelled) return
+      await nv.loadVolumes([v])
+      if (cancelled) return
+      at = i
+      updateNiivueViewport(viewportId, { sliceFrames: o.sliceFrames })
+      const plane = acquisitionSliceType(nv)
+      if (plane !== undefined) nv.sliceType = plane
+      centerCrosshair(nv)
+    }
+    // Resolves true once output i is shown, if no later request came meanwhile.
+    const show = (i: number): Promise<boolean> | undefined => {
+      if (!outputs[i] || (i === at && !queue)) return undefined
+      const request = ++latest
+      const done = queue ? queue.then(() => load(i, request)) : load(i, request)
+      const tail: Promise<void> = done
+        .catch(() => {})
         .then(() => {
-          if (cancelled) return
-          at = i
-          updateNiivueViewport(viewportId, { sliceFrames: o.sliceFrames })
-          const plane = acquisitionSliceType(nv)
-          if (plane !== undefined) nv.sliceType = plane
-          centerCrosshair(nv)
-          then?.()
+          if (queue === tail) queue = undefined
         })
-        .finally(() => {
-          busy = false
-        })
-      return true
+      queue = tail
+      return done.then(() => !cancelled && request === latest)
     }
     const onWheel = (e: WheelEvent) => {
       // A single slice has nowhere to scroll: step to the next output.
       if (nv.volumes[0]?.dims?.[3] !== 1 || !e.deltaY) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      show(at + Math.sign(e.deltaY))
+      void show(at + Math.sign(e.deltaY))
     }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
     updateNiivueViewport(viewportId, {
-      switchToInstance: (sop, then) =>
+      outputFrames: outputs.flatMap((o) =>
+        o.sliceFrames ? [o.sliceFrames] : [],
+      ),
+      switchToInstance: (sop) =>
         show(
           outputs.findIndex((o) =>
             o.sliceFrames?.frames.some((f) => f?.SOPInstanceUID === sop),
           ),
-          then,
         ),
     })
     return () => {

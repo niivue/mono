@@ -195,7 +195,7 @@ A viewport holds one base series and any number of overlays drawn over it:
 | `niivueAddOverlay` | `displaySetInstanceUID?` | Load that series (else the study's next loadable one) as a warm, 0.5-opacity overlay. Refuses the base, a loaded overlay, and series NiiVue cannot load as a volume (SEG, RTSTRUCT, SR..., slides; RTDOSE is allowed). Does nothing until a newly hung base has loaded (the Overlay buttons are disabled meanwhile). Without a UID, a call while a load runs only cancels it; a UID it accepts replaces that load (one at a time). |
 | `niivueSetOverlayVisible` | `displaySetInstanceUID`, `visible?` | Hide or show it, keeping it loaded and its opacity; toggles without `visible`. |
 | `niivueMoveOverlay` | `displaySetInstanceUID`, `direction: 'up' \| 'down'` | Move it past the next overlay up (drawn over it) or down; the base stays the bottom layer. |
-| `niivueRemoveOverlay` | `displaySetInstanceUID` | Unload it. |
+| `niivueRemoveOverlay` | `displaySetInstanceUID`, `viewportId?` | Unload it (from that pane, else the active one). |
 | `setViewportColormap` | `viewportId?`, `displaySetInstanceUID?`, `colormap`, `opacity?` | OHIF's command: the base (no UID, or the base's) or an overlay; any other UID is a no-op. `colormap` is a NiiVue name (any case) or `Grayscale` / `hot_iron`, as a string or `{ name }`; an unknown name keeps the current one. `opacity` is clamped to 0..1; unlike Cornerstone, omitting it leaves it unchanged. |
 
 The `NiivueOverlayMenu` button (uiType `niivue.overlayMenu`, a component the

@@ -46,7 +46,10 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId: number): void {
     const id = (e as PointerEvent).pointerId
     // A press once every swallowed pointer is up is the scene's: a cancelled
     // or multi-touch gesture has no click to end the swallow.
-    if (e.type === 'pointerdown' && !down.size) return end()
+    if (e.type === 'pointerdown' && !down.size) {
+      end()
+      return
+    }
     if (e.type === 'pointerdown') down.add(id)
     else if (e.type === 'pointerup' || e.type === 'pointercancel')
       down.delete(id)

@@ -100,6 +100,11 @@ export function updateNiivueViewport(
   Object.assign(entry, patch)
 }
 
+/** Every registered pane. */
+export const niivueEntries = (): NiivueViewportEntry[] => [
+  ...instances.values(),
+]
+
 export function getNiivueEntry(
   viewportId: string | undefined,
 ): NiivueViewportEntry | undefined {

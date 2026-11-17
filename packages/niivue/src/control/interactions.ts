@@ -1303,6 +1303,9 @@ function resizedPolygons(
 }
 
 export function resetDragState(ctrl: NiiVue): void {
+  // A resize that pointerup did not finish (pointercancel, pinch, annotation
+  // mode off) is reverted, as a cancel: pointerup alone records its undo step.
+  ctrl._revertResize()
   // Vector (annotation) stroke state.
   ctrl._annotation3DActive = false
   ctrl._annotation3DMMPath = []
@@ -2288,9 +2291,6 @@ export function initInteraction(ctrl: NiiVue): void {
       DragModes.handleDragRelease(ctrl)
     }
     try {
-      // An interrupted resize is reverted, as a cancel does: pointerup alone
-      // records its undo step and annotationChanged.
-      if (ctrl._resizingControlPoint >= 0) ctrl.cancelAnnotationInProgress()
       // Commit the stroke, as pointerup does. A raster stroke paints incrementally
       // so its voxels already survive a cancel; a vector stroke only exists in the
       // accumulator, and dropping it here would silently lose a finished polygon

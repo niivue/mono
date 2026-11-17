@@ -29,6 +29,7 @@ import {
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
+  renderPickRay,
   resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
@@ -670,8 +671,13 @@ export default class NiiVue extends EventTarget {
   _draw3DNeedsUndo = false
   // RAS-ordered sample array of the picked volume, cached for the duration of a
   // 3D draw/vector stroke so pickExplodedDraw doesn't re-reorder the whole volume
-  // on every pointermove. Keyed by volume identity; cleared on pointerup/cancel.
-  _draw3DSampleCache: { vol: NVImage; data: Float32Array } | null = null
+  // on every pointermove. Keyed by volume and displayed frame; cleared on
+  // pointerup/cancel.
+  _draw3DSampleCache: {
+    vol: NVImage
+    frame: number
+    data: Float32Array
+  } | null = null
   _drawLut: LUT | null = null
   _drawingDirty = false
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set
@@ -5844,6 +5850,27 @@ export default class NiiVue extends EventTarget {
       this._setCrosshairPos(mm, SLICE_TYPE.RENDER)
     else this.drawScene()
     return mm
+  }
+
+  /**
+   * The world ray (mm) under canvas pixel `[x, y]` (device pixels, as
+   * {@link pickAt}) on the 3D render tile: `origin` on the near plane, unit
+   * `dir` into the scene. Unlike `pickAt` it answers over empty space, so a
+   * caller can place a point at a chosen depth. Null off the render tile and
+   * on a mosaic render tile.
+   */
+  pickRay(
+    x: number,
+    y: number,
+  ): {
+    origin: [number, number, number]
+    dir: [number, number, number]
+  } | null {
+    const hit = this.view?.hitTest(x, y)
+    if (!hit?.isRender) return null
+    if (this.view?.screenSlices[hit.tileIndex]?.renderOrientation !== undefined)
+      return null
+    return renderPickRay(this, hit, this.volumes[0]?.obliqueRAS)
   }
 
   /**

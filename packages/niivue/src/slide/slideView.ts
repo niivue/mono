@@ -28,7 +28,7 @@ export interface SlideRenderBackend {
 
 export type SlideBackendKind = 'webgpu' | 'webgl2'
 
-export interface SlideBackendOptions extends SlideRendererOptions {
+interface SlideBackendOptions extends SlideRendererOptions {
   antialias: boolean
   preserveDrawingBuffer?: boolean
 }

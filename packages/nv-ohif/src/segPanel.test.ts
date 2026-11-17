@@ -206,6 +206,28 @@ describe('segmentation editing', () => {
     expect(niivueSegmentationPane(next)).toBeUndefined()
   })
 
+  test('volume_onAShearedGrid_isTheAffineDeterminant', async () => {
+    const { managers } = host()
+    const nv = await viewer([2, 2, 1], [1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
+    // The header's pixDims are the column norms: [1, sqrt 2, 1].
+    const pixDims = nv.volumes[0]?.hdr?.pixDims as number[]
+    pixDims[2] = Math.SQRT2
+    nv.createEmptyDrawing()
+    img(nv).set([1, 0, 0, 0])
+    registerNiivue('shear', nv)
+    const stop = startSegPanel(
+      nv,
+      'shear',
+      { displaySetInstanceUID: 'shear', Modality: 'SEG' },
+      [segment(1)],
+      managers,
+    )
+    expect(niivueSegmentationPane('shear')?.rows()[0]?.volume).toBeCloseTo(1)
+    stop()
+    unregisterNiivue('shear')
+    nv.destroy()
+  })
+
   test('twoPanesOnOneSeg_shareAnEdit_itsUndo_andTheSavedCount', async () => {
     const { managers, memos } = host()
     const pane = async (viewportId: string, drawn: number[]) => {

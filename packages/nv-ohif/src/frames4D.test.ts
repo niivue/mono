@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { split4D } from './frames4D'
+import { joinFrames, split4D } from './frames4D'
 import { isMip } from './hangingOptions'
 
 // 2x1x1 voxels x 3 frames, int16, vox_offset 352.
@@ -35,5 +35,29 @@ describe('isMip', () => {
     expect(
       isMip([{ options: { blendMode: 'MIP', slabThickness: 'fullVolume' } }]),
     ).toBe(true)
+  })
+})
+
+describe('joinFrames', () => {
+  it('starts the cine clock only once a pane shows a 4D series', () => {
+    let scheduled = 0
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = () => ++scheduled
+    const listeners: Record<string, () => void> = {}
+    const nv = {
+      volumes: [{}] as { frameSource?: object }[],
+      addEventListener: (t: string, f: () => void) => {
+        listeners[t] = f
+      },
+      removeEventListener: () => {},
+    }
+    const leave = joinFrames('p', nv as never, undefined, null)
+    listeners.volumeLoaded?.()
+    expect(scheduled).toBe(0)
+    nv.volumes = [{ frameSource: { group: {}, frame: 0, count: 2 } }]
+    listeners.volumeLoaded?.()
+    expect(scheduled).toBe(1)
+    leave()
+    globalThis.requestAnimationFrame = raf
   })
 })

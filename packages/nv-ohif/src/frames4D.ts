@@ -114,7 +114,7 @@ const due = new Map<object, number>()
 const pending = new Set<object>()
 
 function tick(now: number) {
-  raf = panes.size ? requestAnimationFrame(tick) : 0
+  raf = anyFramesPane() ? requestAnimationFrame(tick) : 0
   const cines = cineService?.getState?.()?.cines ?? {}
   const stepped = new Set<object>()
   for (const id of panes.keys()) {
@@ -158,12 +158,13 @@ export function joinFrames(
     const v = sourceVolume(nv)
     const f = v?.frameSource && current.get(v.frameSource.group)
     if (v?.id && f) void nv.setFrame4D(v.id, f).catch(() => {})
+    // The cine clock runs only while some pane shows a 4D series.
+    if (v && !raf) raf = requestAnimationFrame(tick)
     onFrameChange()
     for (const l of listeners) l()
   }
   nv.addEventListener('frameChange', onFrameChange)
   nv.addEventListener('volumeLoaded', onVolumeLoaded)
-  if (!raf) raf = requestAnimationFrame(tick)
   return () => {
     nv.removeEventListener('frameChange', onFrameChange)
     nv.removeEventListener('volumeLoaded', onVolumeLoaded)

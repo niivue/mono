@@ -261,3 +261,89 @@ test('a cancelled resize records no undo step', () => {
     globalThis.window = savedWindow
   }
 })
+
+// Review of #834: tiles are bounds-local, so the close click must be too.
+test('a close click in a bounded viewer commits a spline', () => {
+  const savedWindow = globalThis.window
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+  } as never
+  const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+    () => point as never,
+  )
+  try {
+    const nv = new NiiVue({
+      backend: 'webgl2',
+      bounds: [
+        [0.25, 0],
+        [0.75, 1],
+      ],
+    })
+    nv.drawScene = () => {}
+    nv.canvas = {
+      width: 400,
+      height: 200,
+      style: {},
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 400,
+        height: 200,
+      }),
+      addEventListener() {},
+      removeEventListener() {},
+      setPointerCapture() {},
+      releasePointerCapture() {},
+    } as never
+    nv.view = {
+      hitTest: () => ({ isRender: false, sliceType: 0, tileIndex: 0 }),
+      screenSlices: [
+        {
+          mvpMatrix: mat4.create(),
+          planeNormal: [0, 0, 1],
+          planePoint: [0, 0, 0],
+          leftTopWidthHeight: [0, 0, 200, 200],
+        },
+      ],
+      legendLayout: null,
+      graphLayout: null,
+    } as never
+    nv.model.annotation.isEnabled = true
+    nv.model.annotation.tool = 'spline'
+    nv.model.annotation.isClickToPlace = true
+    nv.model.annotation.mergesOverlaps = false
+    nv.model.volumes = [
+      { dimsRAS: [3, 100, 100, 100], pixDimsRAS: [1, 1, 1, 1] },
+    ] as never
+    initInteraction(nv)
+    // Client x 200 is bounds-local 100, the tile centre: world (0, 0).
+    const clicks = [
+      [200, 100, [0, 0, 0]],
+      [230, 100, [30, 0, 0]],
+      [230, 70, [30, 30, 0]],
+      [200, 100, [0, 0, 0]],
+    ] as const
+    for (const [x, y, p] of clicks) {
+      point = [...p]
+      const e = {
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        pointerId: 1,
+        detail: 1,
+        clientX: x,
+        clientY: y,
+        shiftKey: false,
+        preventDefault() {},
+      }
+      nv._eventListeners.pointerdown?.(e as never)
+      nv._eventListeners.pointerup?.(e as never)
+    }
+    expect(nv.annotations).toHaveLength(1)
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
+})

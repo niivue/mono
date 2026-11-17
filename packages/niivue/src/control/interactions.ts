@@ -102,9 +102,14 @@ function isNearFirstPoint(
     planeNormal,
     planePoint,
   )
+  // Tiles are laid out in bounds-local pixels.
   const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
-  const [x, y] = clientToCanvasPixel(ctrl, evt.clientX, evt.clientY)
-  return Math.hypot(x - cx, y - cy) <= CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  const at = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+  if (!at) return false
+  return (
+    Math.hypot(at[0] - cx, at[1] - cy) <=
+    CLOSE_PX * ctrl.effectiveDevicePixelRatio
+  )
 }
 
 function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {

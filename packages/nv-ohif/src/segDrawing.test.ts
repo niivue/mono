@@ -130,6 +130,19 @@ describe('resolveSegDisplaySets', () => {
     a.isHydrated = true
     expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
   })
+
+  // Removal can drop the set from the active list instead; a re-add is newest.
+  test('baseOnly_reAddedSegIsNewest', () => {
+    const a = { ...seg, displaySetInstanceUID: 'a', isHydrated: true }
+    const b = { ...seg, displaySetInstanceUID: 'b', isHydrated: true }
+    let sets = [a, b]
+    const active = { ...lookup, getActiveDisplaySets: () => sets }
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    sets = [b]
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(b)
+    sets = [a, b]
+    expect(resolveSegDisplaySets([mr], active).seg).toBe(a)
+  })
 })
 
 describe('startSegDrawing', () => {

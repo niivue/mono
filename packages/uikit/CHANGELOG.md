@@ -1,3 +1,29 @@
+## 1.0.0-rc.217 (2026-11-17)
+
+### Features
+
+- **uikit:** set a one-slice sub-volume's depth from another slice view ([c19f6764](https://github.com/niivue/mono/commit/c19f6764))
+- **uikit:** selection steps on the sub-volume demo's empty copy pane ([bd3c0dd9](https://github.com/niivue/mono/commit/bd3c0dd9))
+- **uikit:** a 3D sub-volume corner over empty space takes the first corner's depth ([ee9b442c](https://github.com/niivue/mono/commit/ee9b442c))
+- **uikit:** a Clear button on the sub-volume demo's copy pane ([5ebce3fd](https://github.com/niivue/mono/commit/5ebce3fd))
+- **uikit:** outline the sub-volume box on the 2D slices that cut it ([9e45b43c](https://github.com/niivue/mono/commit/9e45b43c))
+- **uikit:** outline the sub-volume box while picking its second corner ([4bfc9f5c](https://github.com/niivue/mono/commit/4bfc9f5c))
+- **uikit:** right-click sub-volume selector ([b02264ce](https://github.com/niivue/mono/commit/b02264ce))
+
+### Fixes
+
+- **niivue,uikit:** native-stride depth picks at the shown frame; drop stale picks on reset ([df2f18b7](https://github.com/niivue/mono/commit/df2f18b7))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.219
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.216 (2026-11-17)
 
 ### Updated Dependencies

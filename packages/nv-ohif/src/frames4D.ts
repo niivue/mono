@@ -147,8 +147,13 @@ export function joinFrames(
 ): () => void {
   cineService = servicesManager?.services?.cineService as CineServiceLike
   panes.set(viewportId, nv)
+  // Set while this pane catches up to the series frame after a load.
+  let catchingUp = false
   const onFrameChange = () => {
     const source = sourceVolume(nv)?.frameSource
+    // A frame NiiVue changed itself (hotkey, graph click) becomes the series frame.
+    if (source && !catchingUp && current.get(source.group) !== source.frame)
+      void setFrame(source.group, source.frame).catch(() => {})
     if (element && source) {
       element.dataset.frame = String(source.frame)
       element.dataset.frames = String(source.count)
@@ -159,7 +164,15 @@ export function joinFrames(
   const onVolumeLoaded = () => {
     const v = sourceVolume(nv)
     const f = v?.frameSource && current.get(v.frameSource.group)
-    if (v?.id && f) void nv.setFrame4D(v.id, f).catch(() => {})
+    if (v?.id && f) {
+      catchingUp = true
+      void nv
+        .setFrame4D(v.id, f)
+        .catch(() => {})
+        .finally(() => {
+          catchingUp = false
+        })
+    }
     // The cine clock runs only while some pane shows a 4D series.
     if (v && !raf) raf = requestAnimationFrame(tick)
     onFrameChange()

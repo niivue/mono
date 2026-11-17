@@ -88,6 +88,8 @@ export function niivueColormap(nv: NiiVue, colormap: unknown): OverlayStyle {
 
 // Overlay hdr -> knee, so a synced window keeps the ramp's transparent foot.
 const knees = new WeakMap<object, number>()
+// Overlays the hanging protocol added, per viewer: only these leave with it.
+const hungBy = new WeakMap<NiiVue, Set<string>>()
 
 /** The NiiVue window for OHIF window [lo, hi] on a volume (knee-aware). */
 export function windowFor(
@@ -178,6 +180,21 @@ export function useHungOverlays(
     // The load this run started, aborted by the cleanup.
     let pending: AbortController | undefined
     void (async () => {
+      const hung = hungBy.get(nv) ?? new Set<string>()
+      hungBy.set(nv, hung)
+      const keep = new Set(
+        overlays.map((ds) => String(ds.displaySetInstanceUID)),
+      )
+      for (const uid of hung) {
+        if (keep.has(uid)) continue
+        hung.delete(uid)
+        const entry = getNiivueEntry(viewportId)
+        const hdr = entry?.overlays.get(uid)
+        const index = hdr ? nv.volumes.findIndex((v) => v.hdr === hdr) : -1
+        if (index <= 0) continue
+        entry?.overlays.delete(uid)
+        await nv.removeVolume(index)
+      }
       for (const ds of overlays) {
         if (stale) return
         const i = displaySets.indexOf(ds)
@@ -225,6 +242,7 @@ export function useHungOverlays(
         await run
         pending = undefined
         const hdr = getNiivueEntry(viewportId)?.overlays.get(uid)
+        if (hdr) hung.add(uid)
         if (hdr && knee !== undefined) knees.set(hdr, knee)
       }
     })()

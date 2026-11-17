@@ -1,5 +1,6 @@
 // The NiiVue annotation under the pointer, in canvas pixels: inside its
-// outline or within a few CSS px of an edge (a line's thin rectangle).
+// outline (not in a hole) or within a few CSS px of an edge (a line's thin
+// rectangle).
 
 import {
   type AnnotationPoint,
@@ -58,19 +59,20 @@ export function annotationAt(
     const a = byId.get(shape.id)
     if (!a || !accept(a)) continue
     for (const poly of shape.polygons) {
-      const ring = poly.outer
       let inside = false
       let d = Number.POSITIVE_INFINITY
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const p = ring[i] as AnnotationPoint
-        const q = ring[j] as AnnotationPoint
-        if (
-          p.y > py !== q.y > py &&
-          px < ((q.x - p.x) * (py - p.y)) / (q.y - p.y) + p.x
-        )
-          inside = !inside
-        d = Math.min(d, segmentDistance(px, py, p, q))
-      }
+      // Even-odd over the outline and its holes: inside a hole is outside.
+      for (const ring of [poly.outer, ...poly.holes])
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const p = ring[i] as AnnotationPoint
+          const q = ring[j] as AnnotationPoint
+          if (
+            p.y > py !== q.y > py &&
+            px < ((q.x - p.x) * (py - p.y)) / (q.y - p.y) + p.x
+          )
+            inside = !inside
+          d = Math.min(d, segmentDistance(px, py, p, q))
+        }
       if (inside) d = 0
       if (d <= HIT_CSS_PX * dpr && (!best || d < best.d)) best = { a, d }
     }

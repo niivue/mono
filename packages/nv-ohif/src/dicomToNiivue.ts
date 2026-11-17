@@ -162,12 +162,16 @@ async function convertUnshared(
     )
   // PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
   const suv = petSuvFactor(ds)
+  const inSuv = (image: File) => (suv ? scaleNifti(image, suv) : image)
+  const scaledAlternates = await Promise.all(
+    alternates.map(async (a) => ({ ...a, image: await inSuv(a.image) })),
+  )
   return {
-    image: suv ? await scaleNifti(shown.image, suv) : shown.image,
+    image: await inSuv(shown.image),
     json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames,
-    ...(alternates.length > 0 ? { alternates } : {}),
+    ...(alternates.length > 0 ? { alternates: scaledAlternates } : {}),
   }
 }
 

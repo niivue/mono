@@ -2,8 +2,10 @@
 // frame under it enlarged. Register it after the overlays it should magnify
 // (on WebGPU its capture ends the overlay pass and continues in a new one),
 // then `attach(host)` so it sees pointer moves. It is not a control-layer
-// widget: it only watches moves, never claims hover, a press or the cursor,
-// so the scene and other UIKit layers keep their own pointer handling.
+// widget: it never claims hover or the cursor. A press on the canvas exits
+// it: the lens hides, stops following the pointer, and the press (through
+// its click) never reaches the scene. A UIKit layer attached before it still
+// gets presses on its own widgets.
 
 import type { UIKitOverlayFrame } from '@niivue/niivue'
 import type { UIKitHost } from './controls'
@@ -23,6 +25,27 @@ export interface UIKitMagnifierOverlayOptions {
   borderColor?: readonly number[]
   /** Shown where the lens reaches past the frame. Default opaque black. */
   fillColor?: readonly number[]
+  /** Called when a press exits the lens, e.g. to untick the host's toggle. */
+  onExit?: () => void
+}
+
+// The rest of a press gesture, swallowed after the press exits the lens.
+const PRESS_REST = ['mousedown', 'pointerup', 'mouseup', 'click'] as const
+
+function swallowPressRest(canvas: HTMLCanvasElement): void {
+  const stop = (e: Event): void => {
+    e.stopImmediatePropagation()
+    if (e.type === 'click') end()
+  }
+  // A cancelled press has no click: the next press ends the swallow instead.
+  const end = (): void => {
+    for (const type of PRESS_REST)
+      canvas.removeEventListener(type, stop, { capture: true })
+    canvas.removeEventListener('pointerdown', end, { capture: true })
+  }
+  for (const type of PRESS_REST)
+    canvas.addEventListener(type, stop, { capture: true })
+  canvas.addEventListener('pointerdown', end, { capture: true })
 }
 
 export class UIKitMagnifierOverlay {
@@ -31,6 +54,7 @@ export class UIKitMagnifierOverlay {
   borderCss: number
   borderColor: readonly number[]
   fillColor: readonly number[]
+  onExit: (() => void) | undefined
   private x = -1
   private y = -1
   private redraw: (() => void) | null = null
@@ -44,6 +68,7 @@ export class UIKitMagnifierOverlay {
     this.borderCss = options.borderCss ?? 2
     this.borderColor = options.borderColor ?? [1, 1, 1, 0.9]
     this.fillColor = options.fillColor ?? [0, 0, 0, 1]
+    this.onExit = options.onExit
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -91,7 +116,10 @@ export class UIKitMagnifierOverlay {
     if (wasShown || (x >= 0 && y >= 0)) this.redraw?.()
   }
 
-  /** Follow the host canvas's pointer; returns the unwire function. */
+  /**
+   * Follow the host canvas's pointer until a press exits the lens; returns
+   * the unwire function.
+   */
   attach(host: UIKitHost): () => void {
     const canvas = host.canvas
     if (!canvas) throw new Error('UIKit: host has no canvas to attach to')
@@ -101,16 +129,28 @@ export class UIKitMagnifierOverlay {
       this.pointerMove(p[0], p[1])
     }
     const onLeave = (): void => this.pointerMove(-1, -1)
+    const onDown = (e: PointerEvent): void => {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      this.pointerMove(-1, -1)
+      unwire()
+      swallowPressRest(canvas)
+      this.onExit?.()
+    }
     // Capture phase, so a host or layer handler that stops the move still
-    // moves the lens when it was attached later.
+    // moves the lens when it was attached later, and the lens sees a press
+    // before the scene's own (bubble-phase) handlers.
     const opts = { capture: true }
     canvas.addEventListener('pointermove', onMove, opts)
     canvas.addEventListener('pointerleave', onLeave, opts)
-    return () => {
+    canvas.addEventListener('pointerdown', onDown, opts)
+    const unwire = (): void => {
       canvas.removeEventListener('pointermove', onMove, opts)
       canvas.removeEventListener('pointerleave', onLeave, opts)
+      canvas.removeEventListener('pointerdown', onDown, opts)
       this.redraw = null
     }
+    return unwire
   }
 
   destroy(): void {

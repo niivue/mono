@@ -58,4 +58,36 @@ describe('UIKitMagnifierOverlay.attach', () => {
     detachLens()
     detachButton()
   })
+
+  it('a press exits the lens and never reaches the scene', () => {
+    const canvas = Object.assign(new EventTarget(), {
+      style: { cursor: '' },
+    })
+    let draws = 0
+    const host = {
+      canvas: canvas as unknown as HTMLCanvasElement,
+      clientToCanvas: (x: number, y: number): [number, number] => [x, y],
+      drawScene: () => draws++,
+    }
+    // The scene listens in the bubble phase, registered first as NiiVue is.
+    const scene: string[] = []
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'click'])
+      canvas.addEventListener(type, () => scene.push(type))
+    let exits = 0
+    const lens = new UIKitMagnifierOverlay({ onExit: () => exits++ })
+    const detach = lens.attach(host)
+    canvas.dispatchEvent(pointer('pointermove', 40, 50))
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'click'])
+      canvas.dispatchEvent(pointer(type, 40, 50))
+    expect(scene).toEqual([])
+    expect(exits).toBe(1)
+    expect(draws).toBe(2) // shown, then hidden by the press
+    // Exited: moves no longer show the lens and the next press is the scene's.
+    canvas.dispatchEvent(pointer('pointermove', 60, 50))
+    canvas.dispatchEvent(pointer('pointerdown', 60, 50))
+    canvas.dispatchEvent(pointer('pointerup', 60, 50))
+    expect(draws).toBe(2)
+    expect(scene).toEqual(['pointerdown', 'pointerup'])
+    detach()
+  })
 })

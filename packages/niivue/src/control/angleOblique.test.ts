@@ -195,3 +195,69 @@ test('cancelAnnotationInProgress ends a bidirectional drag', () =>
     expect(nv.annotations).toHaveLength(0)
     expect(nv.isAnnotationInProgress).toBe(false)
   }))
+
+// Review of #834: a resize records its undo step on release, so cancelling
+// one leaves no step behind.
+test('a cancelled resize records no undo step', () => {
+  const savedWindow = globalThis.window
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    devicePixelRatio: 1,
+  } as never
+  const pick = spyOn(Layout, 'screenSlicePick').mockImplementation(
+    () => point as never,
+  )
+  try {
+    const nv = controller('measureRect')
+    const corner = { x: 5, y: 5 }
+    nv.model.annotations.push({
+      id: 'roi',
+      label: 1,
+      group: '',
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [
+        {
+          outer: [corner, { x: 9, y: 5 }, { x: 9, y: 9 }, { x: 5, y: 9 }],
+          holes: [],
+        },
+      ],
+      style: structuredClone(nv.model.annotation.style),
+      shape: { type: 'measureRect', start: corner, end: { x: 9, y: 9 } },
+    } as never)
+    const select = () => {
+      nv.model._annotationSelection = {
+        annotationId: 'roi',
+        controlPoints: [corner],
+      } as never
+    }
+    const at = (type: string) =>
+      nv._eventListeners[type as 'pointerdown']?.({
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        pointerId: 1,
+        detail: 1,
+        clientX: 50,
+        clientY: 50,
+        shiftKey: false,
+        preventDefault() {},
+      } as never)
+    point = [5, 5, 0]
+    select()
+    at('pointerdown')
+    expect(nv.isAnnotationInProgress).toBe(true)
+    expect(nv.cancelAnnotationInProgress()).toBe(true)
+    at('pointerup')
+    expect(nv.annotationUndoTop).toBeUndefined()
+    // A released resize still records one.
+    select()
+    at('pointerdown')
+    at('pointerup')
+    expect(nv.annotationUndoTop).toBeDefined()
+  } finally {
+    pick.mockRestore()
+    globalThis.window = savedWindow
+  }
+})

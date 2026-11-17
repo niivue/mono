@@ -28,6 +28,22 @@ describe('slideAnnotationStats', () => {
     expect(box.unit).toBe('mm')
   })
 
+  // Review of #836: far from the origin, the shoelace products cancel.
+  test('area holds at large base-pixel coordinates', () => {
+    const at = 1e9
+    const square = slideAnnotationStats(
+      'polygon',
+      [
+        { x: at, y: at },
+        { x: at + 10, y: at },
+        { x: at + 10, y: at + 10 },
+        { x: at, y: at + 10 },
+      ],
+      undefined,
+    )
+    expect(square.area).toBe(100)
+  })
+
   test('ellipse and circle use the true curve', () => {
     const e = slideAnnotationStats('ellipse', [
       { x: 0, y: 0 },

@@ -755,6 +755,8 @@ export default class NiiVue extends EventTarget {
     isErased: boolean
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
+  /** The annotations before a resize, pushed to undo when it is released. */
+  _resizeUndoSnapshot: VectorAnnotation[] | null = null
   // Sync/broadcast state
   private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
@@ -2866,6 +2868,7 @@ export default class NiiVue extends EventTarget {
     this._resizingControlPoint = -1
     this._resizingAnnotation = null
     this._resizeOriginalShape = null
+    this._resizeUndoSnapshot = null
     this._annotationPolyPoints = null
     this._bidirectionalLong = null
     this.model._annotationPreview = null

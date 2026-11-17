@@ -68,6 +68,8 @@ function swallowPressRest(canvas: HTMLCanvasElement, pointerId?: number): void {
   const doc = canvas.ownerDocument as Document | undefined
   const release = (e: Event): void => {
     down.delete((e as PointerEvent).pointerId)
+    // Off the canvas no click follows: nothing is left to swallow.
+    if (e.target !== canvas && !down.size) end()
   }
   const end = (): void => {
     for (const type of PRESS_REST)

@@ -51,6 +51,7 @@ import {
 } from './hangingOptions'
 import { useAnnotationHistory } from './history'
 import { MeasurementData } from './measurementData'
+import { useMetadataRevision } from './metadataReload'
 import { useMipTools } from './mipTools'
 import {
   authHeaders,
@@ -237,6 +238,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const displaySetsKey = displaySets
     .map((ds) => String(ds.displaySetInstanceUID ?? ds.SeriesInstanceUID ?? ''))
     .join('|')
+  // petSUV panel edits (metadataReload.ts) reload this pane, overlays included.
+  const metadataRevision = useMetadataRevision(servicesManager, displaySetsKey)
 
   // Create / tear down the NiiVue instance with the canvas.
   useEffect(() => {
@@ -835,7 +838,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       cancelled = true
       abort.abort()
     }
-  }, [displaySetsKey, ready])
+  }, [displaySetsKey, ready, metadataRevision])
 
   // Mirror OHIF's active primary tool onto NiiVue's matching left-drag mode, so
   // windowing, pan, zoom, measurements, angles and ROI tools drive this viewport.

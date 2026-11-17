@@ -101,7 +101,27 @@ export function convertDisplaySetToNifti(
     (signal, onProgress) =>
       convertUnshared(ds, { ...options, signal, onProgress }),
     options,
-  )
+  ).then((c) => c && inSuv(c, petSuvFactor(ds)))
+}
+
+// PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
+// Applied per call, outside the shared conversion: the petSUV panel edits the
+// instances' weight/dose in place, and a reload must not reuse the old factor.
+async function inSuv(
+  c: DicomConversion,
+  suv: number | undefined,
+): Promise<DicomConversion> {
+  if (!suv) return c
+  const scale = async <T extends { image: File }>(o: T) => ({
+    ...o,
+    image: await scaleNifti(o.image, suv),
+  })
+  return {
+    ...(await scale(c)),
+    ...(c.alternates && {
+      alternates: await Promise.all(c.alternates.map(scale)),
+    }),
+  }
 }
 
 async function convertUnshared(
@@ -160,18 +180,12 @@ async function convertUnshared(
     notes.unshift(
       `Showing ${shown.stem}; also converted: ${unshown.map((s) => s.stem).join(', ')}.`,
     )
-  // PET in SUVbw, as OHIF scales it for cornerstone (window presets, readouts).
-  const suv = petSuvFactor(ds)
-  const inSuv = (image: File) => (suv ? scaleNifti(image, suv) : image)
-  const scaledAlternates = await Promise.all(
-    alternates.map(async (a) => ({ ...a, image: await inSuv(a.image) })),
-  )
   return {
-    image: await inSuv(shown.image),
+    image: shown.image,
     json: shown.json,
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames,
-    ...(alternates.length > 0 ? { alternates: scaledAlternates } : {}),
+    ...(alternates.length > 0 ? { alternates } : {}),
   }
 }
 

@@ -208,6 +208,11 @@ describe('convertDisplaySetToNifti', () => {
     expect(out?.alternates).toHaveLength(1)
     expect(await slope(out?.image)).toBe(0.5)
     expect(await slope(out?.alternates?.[0]?.image)).toBe(0.5)
+    // The petSUV panel edits the weight in place: a reload of the cached
+    // conversion takes the new factor.
+    ;(pet.instances?.[0] as { PatientWeight: number }).PatientWeight = 140
+    expect(await slope((await convertDisplaySetToNifti(pet))?.image)).toBe(1)
+    expect(calls).toHaveLength(1)
   })
 
   it('is null without instances or reconstructed files', async () => {

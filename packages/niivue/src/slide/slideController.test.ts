@@ -373,6 +373,18 @@ describe('NVSlideController', () => {
     expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
   })
 
+  // Review of #836: a very long freehand path must not overflow the stack.
+  test('focusAnnotation boxes a 2M-point freehand path', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    const pts = Array.from({ length: 2_000_000 }, (_, i) => ({
+      x: 40 + (i % 21),
+      y: 40 + ((i * 5) % 21),
+    }))
+    const line = r.ctl.annotations.add('freehand', pts)
+    expect(r.ctl.focusAnnotation(line?.id ?? '')).toBe(true)
+    expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
+  })
+
   test('annotation tools: drag shapes, click points, polygon closes', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     const added: string[] = []

@@ -235,15 +235,16 @@ export class NVSlideController {
         { x: c.x + r, y: c.y + r },
       ]
     }
-    const xs = points.map((p) => p.x)
-    const ys = points.map((p) => p.y)
-    this._zoomTo(
-      {
-        start: { x: Math.min(...xs), y: Math.min(...ys) },
-        end: { x: Math.max(...xs), y: Math.max(...ys) },
-      },
-      true,
-    )
+    // A loop, not Math.min(...xs): spreading a long freehand path overflows the stack.
+    const start = { x: Infinity, y: Infinity }
+    const end = { x: -Infinity, y: -Infinity }
+    for (const { x, y } of points) {
+      if (x < start.x) start.x = x
+      if (y < start.y) start.y = y
+      if (x > end.x) end.x = x
+      if (y > end.y) end.y = y
+    }
+    this._zoomTo({ start, end }, true)
     return true
   }
 

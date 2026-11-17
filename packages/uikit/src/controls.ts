@@ -30,6 +30,11 @@
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 
+/** CSS px per wheel delta unit: lines (Firefox, some mice) are 16 px, pages `pageCss`. */
+export function wheelPxPerUnit(e: WheelEvent, pageCss: number): number {
+  return e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? pageCss : 1
+}
+
 /** What `attach` needs from a host: a NiiVue controller satisfies it as-is. */
 export interface UIKitHost {
   canvas: HTMLCanvasElement | null
@@ -411,13 +416,7 @@ export class UIKitControls implements UIKitOverlayRenderer, UIKitRedrawSource {
     const onWheel = (e: WheelEvent): void => {
       const p = host.clientToCanvas(e.clientX, e.clientY)
       if (!p) return
-      // Lines and pages become pixels so widgets see one unit.
-      const k =
-        e.deltaMode === 1
-          ? 16
-          : e.deltaMode === 2
-            ? canvas.clientHeight || 1
-            : 1
+      const k = wheelPxPerUnit(e, canvas.clientHeight || 1)
       if (!this.wheel(p[0], p[1], e.deltaX * k, e.deltaY * k)) return
       consume(e)
       syncCursor()

@@ -29,7 +29,7 @@ const SLIDE_TO_OHIF: Record<SlideAnnotationTool, string> = {
 } as Record<SlideAnnotationTool, string>
 
 /** Row points (slide base px, z 0) in the layout OHIF's mapping of the tool reads. */
-export function slideRowPoints({
+function slideRowPoints({
   tool,
   points,
 }: Pick<SlideAnnotation, 'tool' | 'points'>): [number, number, number][] {

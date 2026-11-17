@@ -77,7 +77,7 @@ export interface VolumeUpdate {
 }
 
 /** NiiVue's `VolumeHistogram`. */
-export interface VolumeHistogram {
+interface VolumeHistogram {
   counts: ArrayLike<number>
   min: number
   max: number

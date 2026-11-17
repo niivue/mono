@@ -215,19 +215,23 @@ function sliceStep(frames: ReadonlyArray<FrameLabels>): number | undefined {
  * when nothing is drawn.
  */
 export function buildSegDataset(
-  frames: ReadonlyArray<FrameLabels>,
+  // A function reads each segment alone (overlapping RTSTRUCT ROIs).
+  frames:
+    | ReadonlyArray<FrameLabels>
+    | ((s: ExportSegment) => ReadonlyArray<FrameLabels>),
   segments: ReadonlyArray<ExportSegment>,
   h: SeriesHeader,
   toLab: (rgb: readonly number[]) => number[],
   source?: ReadonlyArray<Ds>,
 ): Ds | undefined {
-  const first = frames[0]
-  if (!first) return undefined
+  const framesFor = typeof frames === 'function' ? frames : () => frames
   const sorted = [...segments].sort((a, b) => a.value - b.value)
+  let all: ReadonlyArray<FrameLabels> = []
   const perFrame: Ds[] = []
   const bits: Uint8Array[] = []
   sorted.forEach((s, i) => {
-    frames.forEach((f, k) => {
+    all = framesFor(s)
+    all.forEach((f, k) => {
       if (!f.labels.includes(s.value)) return
       const mask = new Uint8Array(f.labels.length)
       for (let p = 0; p < mask.length; p++)
@@ -251,7 +255,8 @@ export function buildSegDataset(
       })
     })
   })
-  if (!bits.length) return undefined
+  const first = all[0]
+  if (!first || !bits.length) return undefined
   const n = first.rows * first.cols
   // Frames pack contiguously, first pixel in the low bit (PS3.5 8.1.1).
   const packed = new Uint8Array(Math.ceil((bits.length * n) / 8))
@@ -263,7 +268,7 @@ export function buildSegDataset(
       }
   })
   const dimOrg = newUid()
-  const step = sliceStep(frames)
+  const step = sliceStep(all)
   const ds: Ds = {
     ...header(first.inst, '1.2.840.10008.5.1.4.1.1.66.4', 'SEG', h),
     _vrMap: { PixelData: 'OB' },
@@ -328,7 +333,7 @@ export function buildSegDataset(
     PerFrameFunctionalGroupsSequence: perFrame,
     ReferencedSeriesSequence: {
       SeriesInstanceUID: first.inst.SeriesInstanceUID,
-      ReferencedInstanceSequence: frames.map((f) => ref(f.inst)),
+      ReferencedInstanceSequence: all.map((f) => ref(f.inst)),
     },
     PixelData: packed.buffer,
   }

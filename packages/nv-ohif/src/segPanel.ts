@@ -221,6 +221,7 @@ export interface NiivueSegmentationPane {
     volume: number
     locked: boolean
     active: boolean
+    visible: boolean
   }>
   jump(index: number): void
   /** The panel's Delete Segment: one undo step, voxels included. */
@@ -439,6 +440,7 @@ export function startSegPanel(
         ...cached(r.value),
         locked: r.locked,
         active: r.active,
+        visible: r.visible,
       })),
     jump: (index) => {
       const centroid = stats.get(index)?.centroid

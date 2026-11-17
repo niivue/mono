@@ -180,3 +180,30 @@ it('a pane joining while computed shows the computed volume', async () => {
   expect(scaled(b)).toEqual([3, 4])
   for (const l of leave) l()
 })
+
+// A frame hotkey or graph click calls setFrame4D on one pane directly.
+it('a frame NiiVue changes itself reaches every pane, late ones too', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const split = (await split4D(nifti4D())) as NonNullable<
+    Awaited<ReturnType<typeof split4D>>
+  >
+  const [a, b, late] = [0, 1, 2].map(() => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.drawScene = () => {}
+    return nv
+  }) as [NiiVue, NiiVue, NiiVue]
+  const leave = [
+    joinFrames('a', a, undefined, null),
+    joinFrames('b', b, undefined, null),
+  ]
+  await a.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await b.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await a.setFrame4D(a.volumes[0]?.id as string, 2)
+  await new Promise((r) => setTimeout(r, 30))
+  expect(paneFrames('b')?.frame).toBe(2)
+  leave.push(joinFrames('late', late, undefined, null))
+  await late.loadVolumes([{ url: split.image, frameSource: split.frames }])
+  await new Promise((r) => setTimeout(r, 30))
+  expect(paneFrames('late')?.frame).toBe(2)
+  for (const l of leave) l()
+})

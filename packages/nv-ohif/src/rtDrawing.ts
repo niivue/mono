@@ -311,7 +311,8 @@ export function startRtDrawing(
   },
 ): () => void {
   let cancelled = false
-  let isOwned = false
+  // The drawing this call installed; a later one is not ours to close.
+  let owned: unknown = null
   let stopShown: (() => void) | undefined
   const show = async () => {
     const ds = rt as RtDisplaySet
@@ -326,7 +327,7 @@ export function startRtDrawing(
     nv.createEmptyDrawing()
     const bitmap = nv.drawingVolume?.img
     if (!(bitmap instanceof Uint8Array)) return
-    isOwned = true
+    owned = nv.drawingVolume
     // createEmptyDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
     const { segments, stats, showOnly } = rasterizeStructureSet(
@@ -366,6 +367,6 @@ export function startRtDrawing(
   return () => {
     cancelled = true
     stopShown?.()
-    if (isOwned) nv.closeDrawing()
+    if (owned && nv.drawingVolume === owned) nv.closeDrawing()
   }
 }

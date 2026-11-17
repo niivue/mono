@@ -152,6 +152,69 @@ describe('rasterizeStructureSet', () => {
 })
 
 describe('startRtDrawing', () => {
+  // Review of #839: cleanup closes only the drawing it installed.
+  test('cleanup leaves a drawing installed after the RT one', async () => {
+    const nv = {
+      volumes: [{ dimsRAS: [3, 5, 5, 2] }],
+      vox2mm: ([i, j, k]: [number, number, number]) => [i, j, k],
+      drawingVolume: null as { img: Uint8Array } | null,
+      createEmptyDrawing() {
+        this.drawingVolume = { img: new Uint8Array(50) }
+      },
+      closeDrawing() {
+        this.drawingVolume = null
+      },
+      refreshDrawing() {},
+      addColormap: (name: string) => name,
+      drawColormap: '',
+      drawIsEnabled: false,
+      drawOpacity: 0,
+      drawRimOpacity: 0,
+    }
+    const rt = {
+      displaySetInstanceUID: 'rt',
+      Modality: 'RTSTRUCT',
+      async load() {},
+      structureSet: {
+        ROIContours: [
+          {
+            ROIName: 'roi',
+            contourPoints: [
+              {
+                type: 'CLOSED_PLANAR',
+                points: [
+                  { x: -1, y: -1, z: 1 },
+                  { x: -3, y: -1, z: 1 },
+                  { x: -3, y: -3, z: 1 },
+                  { x: -1, y: -3, z: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    }
+    let stop = () => {}
+    await new Promise<void>((resolve) => {
+      stop = startRtDrawing(nv as never, rt, {
+        setNote: () => {},
+        onShown: () => {
+          resolve()
+          return () => {}
+        },
+      })
+    })
+    const replacement = { img: new Uint8Array(50) }
+    nv.drawingVolume = replacement
+    stop()
+    expect(nv.drawingVolume).toBe(replacement)
+    nv.createEmptyDrawing()
+    const again = startRtDrawing(nv as never, rt, { setNote: () => {} })
+    await new Promise((r) => setTimeout(r, 0))
+    again()
+    expect(nv.drawingVolume).toBeNull()
+  })
+
   test('loadsStructureSet_fillsDrawingAndListsRois', async () => {
     const img = new Uint8Array(20 * 20 * 5)
     const nv = {

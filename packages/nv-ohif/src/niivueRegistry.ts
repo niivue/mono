@@ -39,7 +39,11 @@ export interface NiivueViewportEntry {
    * shown unless a later switch superseded it; undefined if that output is
    * already shown with no switch pending, or no output holds the SOP.
    */
-  switchToInstance?: (sop: string) => Promise<boolean> | undefined
+  // frameNumber: a multi-frame instance may be split across outputs.
+  switchToInstance?: (
+    sop: string,
+    frameNumber?: number,
+  ) => Promise<boolean> | undefined
   /** Every output's slice -> frame map, for measurements on outputs not shown. */
   outputFrames?: SliceFrames[]
   /** OHIF viewportType 'volume': image positions count along the volume, not the stack. */

@@ -167,9 +167,14 @@ export const spacing = (g: RasGrid): [number, number, number] =>
     ),
   ) as [number, number, number]
 
+/** Voxel volume (mm³): |det| of the affine, exact for a sheared grid too. */
 export const voxelMM3 = (g: RasGrid): number => {
-  const [x, y, z] = spacing(g)
-  return x * y * z
+  const m = (r: number, c: number) => g.affine[4 * r + c] as number
+  return Math.abs(
+    m(0, 0) * (m(1, 1) * m(2, 2) - m(1, 2) * m(2, 1)) -
+      m(0, 1) * (m(1, 0) * m(2, 2) - m(1, 2) * m(2, 0)) +
+      m(0, 2) * (m(1, 0) * m(2, 1) - m(1, 1) * m(2, 0)),
+  )
 }
 
 /**

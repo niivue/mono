@@ -5,6 +5,7 @@ import { frameScale, showComputed, showFrames } from './frames4D'
 import {
   type ComputeOp,
   computeVolume,
+  csvCell,
   type Frames,
   timeActivity,
   timePoints,
@@ -525,7 +526,9 @@ export function tmtvCsv(
         study.StudyInstanceUID,
         study.SeriesInstanceUID,
         study.StudyDate,
-      ].join(','),
+      ]
+        .map(csvCell)
+        .join(','),
     )
   // OHIF's total sums the per-segment lesionGlycolysis (mm³ x SUV).
   const tlg = stats.segments.reduce((t, s) => t + s.lesionGlycolysis, 0)
@@ -533,8 +536,8 @@ export function tmtvCsv(
     '',
     '',
     '',
-    `Patient ID,${study.PatientID}`,
-    `Study Date,${study.StudyDate}`,
+    `Patient ID,${csvCell(study.PatientID)}`,
+    `Study Date,${csvCell(study.StudyDate)}`,
     '',
   )
   csv.push(`Total Metabolic Tumor Volume,tmtv,${stats.tmtv}`)

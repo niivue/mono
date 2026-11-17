@@ -15,7 +15,12 @@ import {
 } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { programmaticAnnotations } from './arrowText'
-import { rasToLps, reflectedRowUid } from './commands'
+import {
+  isReleasedRow,
+  markImportedAnnotation,
+  rasToLps,
+  reflectedRowUid,
+} from './commands'
 import type { OhifServicesManager } from './ohif-types'
 import { acquisitionSliceType } from './standardCommands'
 
@@ -225,7 +230,9 @@ export function useOhifRowImport(
       | undefined
     if (!nv || !seriesUid || !ms?.remove) return
     const take = (row: OhifRow | undefined) => {
-      if (!row || row.source?.name === 'NiiVue') return
+      if (!row) return
+      // NiiVue rows are this or another pane's, unless released by one.
+      if (row.source?.name === 'NiiVue' && !isReleasedRow(row.uid)) return
       if (row.referenceSeriesUID !== seriesUid) return
       // Another pane on this series may have taken it already.
       if (ms.getMeasurement && !ms.getMeasurement(row.uid)) return
@@ -240,8 +247,10 @@ export function useOhifRowImport(
       } finally {
         programmaticAnnotations.delete(annotation.id)
       }
-      if (reflectedRowUid(annotation.id)) ms.remove?.(row.uid)
-      else nv.removeAnnotation(annotation.id)
+      if (reflectedRowUid(annotation.id)) {
+        markImportedAnnotation(annotation.id)
+        ms.remove?.(row.uid)
+      } else nv.removeAnnotation(annotation.id)
     }
     for (const row of ms.getMeasurements?.() ?? []) take(row)
     const subs = [

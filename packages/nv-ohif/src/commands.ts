@@ -787,6 +787,33 @@ const measurementToAnnotation = new Map<
   { viewportId: string; annotationId: string }
 >()
 
+// Annotations taken from another source's row (an SR measurement). A series
+// swap or unmount releases their rows to OHIF instead of removing them: the
+// measurement survives (srBridge keeps it in cornerstone for SR export) and a
+// later NiiVue pane on the series takes it back.
+const importedAnnotations = new Set<string>()
+const releasedRows = new Set<string>()
+
+export function markImportedAnnotation(annotationId: string): void {
+  importedAnnotations.add(annotationId)
+}
+
+/** A NiiVue row left in OHIF by releaseImportedRows. */
+export const isReleasedRow = (uid: string): boolean => releasedRows.has(uid)
+
+/** Detach a viewport's imported rows from it, leaving them in OHIF. */
+export function releaseImportedRows(viewportId: string): void {
+  const byView = reflectedAnnotations.get(viewportId)
+  if (!byView) return
+  for (const [id, row] of byView) {
+    if (!importedAnnotations.delete(id)) continue
+    byView.delete(id)
+    if (!row.uid) continue
+    measurementToAnnotation.delete(row.uid)
+    releasedRows.add(row.uid)
+  }
+}
+
 /** The OHIF row reflecting a NiiVue annotation, if one was made. */
 export function reflectedRowUid(annotationId: string): string | undefined {
   for (const [uid, ref] of measurementToAnnotation)
@@ -1430,6 +1457,7 @@ export function clearNiivueAnnotations(
   viewportId: string,
   servicesManager: OhifExtensionParams['servicesManager'],
 ): void {
+  releaseImportedRows(viewportId)
   // A viewport whose every add failed has no rows but may still hold failures.
   mappingFailures.delete(viewportId)
   const byView = reflectedAnnotations.get(viewportId)

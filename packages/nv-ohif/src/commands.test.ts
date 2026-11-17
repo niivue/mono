@@ -9,7 +9,9 @@ import {
   clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
+  isReleasedRow,
   jumpToNiivueMeasurement,
+  markImportedAnnotation,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -18,6 +20,7 @@ import {
   overlayOrder,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
+  reflectedRowUid,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
   resolveWindowLevel,
@@ -1058,6 +1061,19 @@ describe('reflectNiivueAnnotation', () => {
     reflectNiivueAnnotation('vp-a4', svc.servicesManager, ellipse('c2'))
     clearNiivueAnnotations('vp-a4', svc.servicesManager)
     expect(svc.removed).toHaveLength(2)
+  })
+
+  it('clearNiivueAnnotations releases an imported row instead of removing it', () => {
+    const svc = setup('vp-a5')
+    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('sr'))
+    reflectNiivueAnnotation('vp-a5', svc.servicesManager, ellipse('own'))
+    markImportedAnnotation('sr')
+    const uid = reflectedRowUid('sr') as string
+    clearNiivueAnnotations('vp-a5', svc.servicesManager)
+    expect(svc.removed).toHaveLength(1)
+    expect(svc.removed).not.toContain(uid)
+    expect(isReleasedRow(uid)).toBe(true)
+    expect(reflectedRowUid('sr')).toBeUndefined()
   })
 
   it('reconcile removes only vanished rows and leaves untouched rows alone', () => {

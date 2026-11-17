@@ -27,6 +27,7 @@ import {
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
   reflectNiivueAnnotation,
+  releaseImportedRows,
   removeNiivueAnnotation,
   roundNumber,
   subscribeOhifLabelSync,
@@ -459,6 +460,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // and ROIs re-project onto the new anatomy, and the Overlay button reads
     // active with nothing overlaid. (No-op on the first load — nothing to clear
     // yet.)
+    releaseImportedRows(viewportId)
     nv.clearAnnotations()
     setWindowLevel(null)
     setStack(null)

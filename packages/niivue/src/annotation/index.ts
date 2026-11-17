@@ -268,18 +268,29 @@ export function storeAnnotation(
   newAnnotation: VectorAnnotation,
   mergesOverlaps: boolean,
 ): VectorAnnotation[] {
-  const isPoint = (a: VectorAnnotation) => a.shape?.type === 'measurePoint'
-  if (!mergesOverlaps || isPoint(newAnnotation))
+  const isMark = (a: VectorAnnotation) =>
+    UNMERGED_SHAPES.has(a.shape?.type ?? '')
+  if (!mergesOverlaps || isMark(newAnnotation))
     return [...existing, newAnnotation]
-  // A probe marks a voxel, not a region: never unioned or cut.
-  const points = existing.filter(isPoint)
-  return points.length === 0
+  const marks = existing.filter(isMark)
+  return marks.length === 0
     ? mergeAnnotations(existing, newAnnotation)
     : [
         ...mergeAnnotations(
-          existing.filter((a) => !isPoint(a)),
+          existing.filter((a) => !isMark(a)),
           newAnnotation,
         ),
-        ...points,
+        ...marks,
       ]
 }
+
+// Probes and line-style measurements mark points and lengths, not regions:
+// never unioned with or cut by an ROI, in either direction.
+const UNMERGED_SHAPES = new Set<string>([
+  'measurePoint',
+  'measureLine',
+  'measureAngle',
+  'measureCobbAngle',
+  'bidirectional',
+  'measureBidirectional',
+])

@@ -121,11 +121,14 @@ export function slideAnnotationStats(
     return { unit, area: Math.PI * rx * ry, perimeter }
   }
   const ring = slideAnnotationOutline(tool, points)
+  // Relative to the first vertex: products of large base-pixel coordinates
+  // cancel catastrophically.
+  const o = ring[0] ?? { x: 0, y: 0 }
   let twice = 0
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const p = ring[j] as NVSlidePoint
     const q = ring[i] as NVSlidePoint
-    twice += p.x * q.y - q.x * p.y
+    twice += (p.x - o.x) * (q.y - o.y) - (q.x - o.x) * (p.y - o.y)
   }
   return {
     unit,

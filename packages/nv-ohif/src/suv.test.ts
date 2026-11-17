@@ -5,6 +5,7 @@ import { scaleNifti, suvBwFactor } from './suv'
 // OHIF D6 (TMTV) PET AC: 91 kg, 588.8 MBq FDG at 07:21, series 09:59:47.
 const pet = {
   Units: 'BQML',
+  CorrectedImage: ['DECY', 'ATTN', 'SCAT'],
   DecayCorrection: 'START',
   PatientWeight: 91,
   SeriesDate: '19600116',
@@ -21,6 +22,23 @@ const pet = {
 test('SUVbw factor decays the dose to the series start', () => {
   const decayed = 588802304 * 2 ** (-(2 * 3600 + 38 * 60 + 47) / 6588)
   expect(suvBwFactor(pet)).toBeCloseTo(91000 / decayed, 12)
+})
+
+test('decay runs to the earliest acquisition when the series time is later', () => {
+  // Reconstructed 1 h after acquisition: SeriesTime 10:59:47, acquired 09:59:47.
+  const recon = (t: string) => ({
+    ...pet,
+    SeriesTime: '105947.00',
+    AcquisitionTime: t,
+  })
+  expect(suvBwFactor(recon('095947'), [recon('100500'), recon('095947')])).toBe(
+    suvBwFactor(pet),
+  )
+})
+
+test('a series not attenuation and decay corrected stays in Bq/ml', () => {
+  expect(suvBwFactor({ ...pet, CorrectedImage: 'DECY' })).toBeUndefined()
+  expect(suvBwFactor({ ...pet, CorrectedImage: undefined })).toBeUndefined()
 })
 
 test('scaleNifti multiplies slope and intercept, treating slope 0 as 1', async () => {

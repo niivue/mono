@@ -334,6 +334,45 @@ describe('NVSlideController', () => {
     expect(r.ctl.activeMeasurement).toBeNull()
   })
 
+  // Review of #836: the release, not the last move, ends a dragged shape.
+  test('a dragged annotation ends where the pointer is released', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'line'
+    r.fire('pointerdown', 0, 0)
+    r.fire('pointermove', 10, 0)
+    r.fire('pointerup', 30, 0)
+    expect(r.ctl.annotations.list()[0]?.points).toEqual([
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+    ])
+  })
+
+  // Review of #837: OHIF re-applies the active tool; a polygon in progress stays.
+  test('setting the current tool again keeps a polygon draft', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    for (const x of [0, 50]) {
+      r.fire('pointerdown', x, 0)
+      r.fire('pointerup', x, 0)
+    }
+    const before = r.ctl.draft?.points.length
+    r.ctl.annotationTool = 'polygon'
+    expect(before).toBeGreaterThan(1)
+    expect(r.ctl.draft?.points.length).toBe(before)
+  })
+
+  // Review of #836: focusing a circle centres on its centre, not the rim.
+  test('focusAnnotation centres a circle', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'circle'
+    r.fire('pointerdown', 50, 50)
+    r.fire('pointermove', 60, 50)
+    r.fire('pointerup', 60, 50)
+    const circle = r.ctl.annotations.list()[0]
+    expect(r.ctl.focusAnnotation(circle?.id ?? '')).toBe(true)
+    expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
+  })
+
   test('annotation tools: drag shapes, click points, polygon closes', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     const added: string[] = []

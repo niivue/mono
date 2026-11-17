@@ -86,7 +86,7 @@ export function initialRenderView(viewportOptions?: {
 }): [number, number] | undefined {
   if (viewportOptions?.viewportType !== 'volume3d') return undefined
   return (
-    { coronal: [180, 0], sagittal: [270, 0], axial: [180, -90] } as Record<
+    { coronal: [180, 0], sagittal: [90, 0], axial: [180, -90] } as Record<
       string,
       [number, number]
     >
@@ -378,18 +378,6 @@ export function readBaseWindowLevel(
   return { window: calMax - calMin, level: (calMin + calMax) / 2 }
 }
 
-// Two window/level pairs are the same if within this fraction of the width — a
-// contrast drag moves them well beyond this, crosshair navigation not at all.
-function sameWindowLevel(
-  a: { window: number; level: number },
-  b: { window: number; level: number },
-): boolean {
-  const eps = Math.max(1e-3, Math.abs(a.window) * 1e-3)
-  return (
-    Math.abs(a.window - b.window) < eps && Math.abs(a.level - b.level) < eps
-  )
-}
-
 // The NiiVue annotation tool for an annotation (shape.type, or freehand inferred
 // from a polygon when there is no shape).
 function annotationToolType(a: VectorAnnotation): string | undefined {
@@ -565,7 +553,7 @@ export function probeIndex(
   const hit = outputFrameAt(entry, [p], sop)
   const frame = hit?.frame
   // k: the displayed stack (or volume) position, as cornerstone's getCurrentImageIdIndex.
-  const pos = hit && stackPosition(ds, hit.sf, ras, entry.volumeOrder)
+  const pos = hit && stackPosition(ds, hit.sf, ras, entry.isVolumeViewport)
   return frame && pos
     ? framePixelIndex(ds.instances ?? [], frame, p, pos.index - 1)
     : undefined
@@ -1576,26 +1564,6 @@ export function reconcileNiivueAnnotations(
 }
 
 /**
- * On a base-volume volumeUpdated, record the new window/level on the entry.
- * Returns it when it changed (for a viewport readout), else undefined. Windows
- * stay per viewport, as in OHIF: nothing is pushed to other viewports.
- */
-export function trackNiivueWindowLevel(
-  viewportId: string,
-): { window: number; level: number } | undefined {
-  const entry = getNiivueEntry(viewportId)
-  if (!entry) return undefined
-  const wl = readBaseWindowLevel(entry.nv)
-  if (!wl) return undefined
-  // First observation just seeds the baseline (no readout).
-  if (entry.windowLevel && sameWindowLevel(entry.windowLevel, wl))
-    return undefined
-  const seeded = entry.windowLevel !== undefined
-  entry.windowLevel = wl
-  return seeded ? wl : undefined
-}
-
-/**
  * Cornerstone's WindowLevel drag as NiiVue windowingStep: round(dynamic range /
  * 1024) intensity units per pixel for width and center (4 for CT), dragging
  * down raising the center. NiiVue's step is a fraction of the robust range.
@@ -1628,7 +1596,7 @@ export function voiRange(
 /**
  * The series' own DICOM window (first WindowWidth/WindowCenter), which
  * cornerstone opens with when the hanging protocol sets none. Only a window
- * shared by the first, middle and last instance counts: scanners that store a
+ * shared by every instance counts: scanners that store a
  * per-slice auto window (e.g. Siemens MR) would otherwise window the whole
  * volume by one edge slice.
  */
@@ -1643,20 +1611,19 @@ export function dicomWindow(
     WindowWidth?: unknown
     WindowCenter?: unknown
   }>
-  const sops = shown?.frames.map((f) => f?.SOPInstanceUID).filter(Boolean)
-  // Only first/middle/last are read, so look those up rather than map them all.
-  const at = (i: number) =>
-    sops?.length ? all.find((x) => x.SOPInstanceUID === sops[i]) : all[i]
+  const sops = new Set(shown?.frames.map((f) => f?.SOPInstanceUID))
+  sops.delete(undefined)
+  const instances = sops.size
+    ? all.filter((x) => sops.has(x.SOPInstanceUID))
+    : all
   const first = (v: unknown) => (Array.isArray(v) ? v[0] : v)
-  const key = (i: number) => {
-    const inst = at(i)
-    return `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
-  }
-  const n = sops?.length || all.length
-  if (key(0) !== key(n >> 1) || key(0) !== key(n - 1)) return undefined
+  const key = (inst: (typeof all)[number] | undefined) =>
+    `${first(inst?.WindowWidth)}/${first(inst?.WindowCenter)}`
+  // Every instance: a per-slice window can agree at any sampled few.
+  if (!instances.every((x) => key(x) === key(instances[0]))) return undefined
   const range = windowRange(
-    first(at(0)?.WindowWidth),
-    first(at(0)?.WindowCenter),
+    first(instances[0]?.WindowWidth),
+    first(instances[0]?.WindowCenter),
   )
   // The DICOM window is in the stored units (Bq/ml); the volume may be SUV.
   const f = petSuvFactor(ds)
@@ -2142,9 +2109,11 @@ export function getNiivueCommandsModule({
       if (!entry || entry.nv.volumes.length === 0) return
       entry.nv
         .recalculateCalMinMax(0)
+        // recalculateCalMinMax emits no volumeUpdated; setVolume does, so the
+        // corner W/L readout follows.
         .then(() => {
-          const wl = readBaseWindowLevel(entry.nv)
-          if (wl) entry.windowLevel = wl
+          const { calMin, calMax } = entry.nv.volumes[0] ?? {}
+          return entry.nv.setVolume(0, { calMin, calMax })
         })
         .catch((err: unknown) =>
           console.error('[nv-ohif] auto window/level failed', err),

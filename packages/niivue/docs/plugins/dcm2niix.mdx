@@ -1,6 +1,6 @@
 ---
 title: dcm2niix
-description: "Convert DICOM to NIfTI in the browser with @niivue/dcm2niix and show the result in NiiVue: classic series, enhanced DICOM and local folders."
+description: "Convert DICOM to NIfTI in the browser with @niivue/dcm2niix and show the result in NiiVue: classic series, enhanced DICOM and local files."
 ---
 
 import Demo from '@site/components/Demo.astro'
@@ -10,7 +10,8 @@ converts it to NIfTI, and `@niivue/dcm2niix` runs it as WebAssembly in the
 browser. It is a separate package: NiiVue loads the NIfTI it returns.
 
 The demo converts a single-file enhanced DICOM T1w scan, a classic series of
-120 slice files, or a folder you choose. Nothing leaves your computer.
+120 slice files, or files you choose or drop on it. Nothing leaves your
+computer.
 
 <Demo name="dcm2niix" />
 

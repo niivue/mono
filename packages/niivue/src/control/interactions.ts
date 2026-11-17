@@ -50,6 +50,7 @@ import { type GraphLayout, graphHitTest } from '@/view/NVGraph'
 import {
   isInLegend,
   isLegendScrollable,
+  type LegendEntry,
   type LegendLayout,
   legendHitTest,
   legendScrollHit,
@@ -75,6 +76,35 @@ import { getImageDataRAS, voxelSizeMM } from '@/volume/utils'
 /** Texture-space coordinate `d` of a world-mm point: its slice along `d`. */
 const texDepth = (p: ArrayLike<number>, d: number, m: mat4): number =>
   m[d] * p[0] + m[4 + d] * p[1] + m[8 + d] * p[2] + m[12 + d]
+
+/** Whether `mm` lies on the slice through `anchor` (within half a voxel in
+ * texture depth; on an oblique volume the mm depth varies across one slice). */
+function isOnSliceOf(
+  ctrl: NiiVue,
+  anchor: ArrayLike<number>,
+  mm: ArrayLike<number>,
+  depthDim: number,
+): boolean {
+  const mm2tex = ctrl.model.mm2tex
+  const dims = ctrl.volumes[0]?.dimsRAS
+  if (!mm2tex || !dims) return Math.abs(anchor[depthDim] - mm[depthDim]) <= 1e-3
+  const dt = texDepth(anchor, depthDim, mm2tex) - texDepth(mm, depthDim, mm2tex)
+  return Math.abs(dt) <= 0.5 / dims[depthDim + 1]
+}
+
+/**
+ * Off any slice: drop the hover cursor and a parked click-to-place start's
+ * rubber band (the start keeps waiting for its second click). True if either
+ * was shown.
+ */
+function clearHover(ctrl: NiiVue): boolean {
+  const parkedPreview =
+    !!ctrl._annotationClickStart && !!ctrl.model._annotationPreview
+  if (!ctrl.model._annotationCursor && !parkedPreview) return false
+  ctrl.model._annotationCursor = null
+  if (parkedPreview) ctrl.model._annotationPreview = null
+  return true
+}
 
 // isClickToPlace: a press and release this close (CSS px) is a click, not a drag;
 // screen space so thick slices or zoom don't change what counts as a click.
@@ -118,6 +148,65 @@ function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.lastPointerX = evt.clientX
   ctrl.lastPointerY = evt.clientY
   ctrl.canvas?.setPointerCapture(evt.pointerId)
+}
+
+// --- Legend label visibility ---------------------------------------------------
+
+/**
+ * Replace the hidden labels of the volume or mesh layer a legend entry belongs
+ * to with `next(current)`. Reads the live list: the legend's isHidden lags a
+ * frame, so a quick double-click would otherwise act on stale state. False
+ * when the entry has no label source (a connectome).
+ */
+function updateLegendHidden(
+  ctrl: NiiVue,
+  entry: LegendEntry,
+  next: (hidden: number[]) => number[],
+): boolean {
+  const failed = (e: unknown) => log.error('legend label toggle failed', e)
+  const { volumeIndex, meshIndex, layerIndex } = entry
+  if (volumeIndex !== undefined) {
+    const hidden = ctrl.volumes[volumeIndex]?.hiddenLabels ?? []
+    ctrl.setVolume(volumeIndex, { hiddenLabels: next(hidden) }).catch(failed)
+    return true
+  }
+  if (meshIndex !== undefined && layerIndex !== undefined) {
+    const layer = ctrl.model.getMeshes()[meshIndex]?.layers?.[layerIndex]
+    ctrl
+      .setMeshLayerProperty(meshIndex, layerIndex, {
+        hiddenLabels: next(layer?.hiddenLabels ?? []),
+      })
+      .catch(failed)
+    return true
+  }
+  return false
+}
+
+/**
+ * Show only the entry's label among its volume's or layer's legend labels, or
+ * show them all when it is already the only one shown. The double-click's two
+ * single clicks toggle the label and back first, so this sees the state from
+ * before the gesture.
+ */
+function soloLegendLabel(ctrl: NiiVue, entry: LegendEntry): void {
+  const value = entry.labelValue
+  if (value === undefined) return
+  const others = ctrl.model
+    .collectLegendEntries()
+    .flatMap((e) =>
+      e.volumeIndex === entry.volumeIndex &&
+      e.meshIndex === entry.meshIndex &&
+      e.layerIndex === entry.layerIndex &&
+      e.labelValue !== undefined &&
+      e.labelValue !== value
+        ? [e.labelValue]
+        : [],
+    )
+  updateLegendHidden(ctrl, entry, (hidden) =>
+    !hidden.includes(value) && others.every((v) => hidden.includes(v))
+      ? []
+      : others,
+  )
 }
 
 // --- Multi-click contour tools (spline / livewire) --------------------------
@@ -405,16 +494,6 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   )
   const bounds = pointsBounds(pts)
   newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
-  if (Annotation.isMeasureTool(cfg.tool)) {
-    const vol = ctrl.model.getVolumes()[0]
-    if (vol)
-      newAnn.stats =
-        Annotation.computeAnnotationStats(
-          newAnn,
-          vol,
-          ctrl.model.annotation.isAreaGeometric,
-        ) ?? undefined
-  }
   commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
   return true
 }
@@ -437,6 +516,15 @@ function bidirectionalAnnotation(
   ctrl: NiiVue,
   long: Axis,
   short: Axis | null,
+  at: {
+    sliceType: number
+    slicePosition: number
+    anchorMM: [number, number, number]
+  } = {
+    sliceType: ctrl._annotationSliceType,
+    slicePosition: ctrl._annotationSlicePosition,
+    anchorMM: ctrl._annotationAnchorMM,
+  },
 ): VectorAnnotation | null {
   const cfg = ctrl.model.annotation
   const w = cfg.style.strokeWidth
@@ -450,11 +538,11 @@ function bidirectionalAnnotation(
   const ann = Annotation.createAnnotation(
     cfg.activeLabel,
     cfg.activeGroup,
-    ctrl._annotationSliceType,
-    ctrl._annotationSlicePosition,
+    at.sliceType,
+    at.slicePosition,
     polys,
     cfg.style,
-    ctrl._annotationAnchorMM,
+    at.anchorMM,
   )
   ann.shape = {
     type: cfg.tool,
@@ -511,6 +599,22 @@ function commitAnnotation(
     ann,
     mergesOverlaps,
   )
+  // Measure after the store: a merge or a cut changes a measurement's polygons.
+  const vol = ctrl.model.getVolumes()[0]
+  if (vol) {
+    const unchanged = new Set(before)
+    for (const stored of ctrl.model.annotations) {
+      if (unchanged.has(stored) || !stored.shape) continue
+      if (!Annotation.isMeasureTool(stored.shape.type)) continue
+      stored.stats =
+        Annotation.computeAnnotationStats(
+          stored,
+          vol,
+          ctrl.model.annotation.isAreaGeometric,
+        ) ?? undefined
+      if (stored.id === ann.id) ann.stats = stored.stats
+    }
+  }
   ctrl.emit('annotationAdded', { annotation: ann })
   ctrl.emit('annotationChanged', {
     action: 'draw',
@@ -632,6 +736,13 @@ function handleKeydown(ctrl: NiiVue, e: KeyboardEvent): void {
   setNextActionTag('keydown')
   const key = e.key.toUpperCase()
   if (key === 'ESCAPE') {
+    // Abandon a half-placed angle.
+    if (ctrl._angleState !== 'none') {
+      ctrl._cancelAngle()
+      // End a drag in progress too, or later moves orbit the camera (#471).
+      if (ctrl.isDragging) resetDragState(ctrl)
+      return
+    }
     // Abandon an in-progress multi-click contour (spline / livewire), a
     // half-placed bidirectional measurement, a parked click start or an
     // annotation drag, ending the drag so later moves do not orbit (#471).
@@ -1245,7 +1356,9 @@ function pinchPointer(
     const px = clientToBoundsPixel(ctrl, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
     const hit = px && ctrl.view?.hitTest(px[0], px[1])
     if (!px || !hit) return false
-    // The first finger's drag gives way to the pinch.
+    // The first finger's drag gives way to the pinch; a half-placed angle is
+    // dropped, not placed at the finger.
+    ctrl._cancelAngle()
     if (ctrl._activeDragMode !== DRAG_MODE.none)
       DragModes.handleDragRelease(ctrl)
     resetDragState(ctrl)
@@ -1460,33 +1573,18 @@ export function initInteraction(ctrl: NiiVue): void {
     if (legendHit) {
       const { entry, isOnBox } = legendHit
       log.info(`Legend clicked: ${entry.label}`)
-      const { volumeIndex, meshIndex, layerIndex, labelValue: value } = entry
+      const value = entry.labelValue
       if (
         isOnBox &&
         ctrl.model.interaction.isLegendToggleEnabled &&
         value !== undefined
       ) {
-        // Decide from the live list: the legend's isHidden lags a frame, so
-        // a quick double-click would otherwise add the value twice.
-        const toggled = (hidden: number[] = []) =>
+        const hasLabelSource = updateLegendHidden(ctrl, entry, (hidden) =>
           hidden.includes(value)
             ? hidden.filter((v) => v !== value)
-            : [...hidden, value]
-        const failed = (e: unknown) =>
-          log.error('legend label toggle failed', e)
-        if (volumeIndex !== undefined) {
-          const hiddenLabels = toggled(ctrl.volumes[volumeIndex]?.hiddenLabels)
-          ctrl.setVolume(volumeIndex, { hiddenLabels }).catch(failed)
-          return
-        }
-        if (meshIndex !== undefined && layerIndex !== undefined) {
-          const layer = ctrl.model.getMeshes()[meshIndex]?.layers?.[layerIndex]
-          const hiddenLabels = toggled(layer?.hiddenLabels)
-          ctrl
-            .setMeshLayerProperty(meshIndex, layerIndex, { hiddenLabels })
-            .catch(failed)
-          return
-        }
+            : [...hidden, value],
+        )
+        if (hasLabelSource) return
       }
       const centroid = entry.centroid?.()
       if (centroid) ctrl.setCrosshairPos(centroid)
@@ -1775,8 +1873,9 @@ export function initInteraction(ctrl: NiiVue): void {
           // placed point + double-click pass the >= 3-point commit guard as a
           // degenerate contour, and a normally finished spline would carry a
           // coincident closing pair (a Catmull-Rom cusp at the close point).
+          // Angles have no double-click close: a fast second click is a point.
           const append = shouldAppendMultiClickPoint(
-            evt.detail,
+            tool in ANGLE_CLICKS ? 1 : evt.detail,
             poly[poly.length - 1],
             pt2d,
             computeTolerance(ctrl.model),
@@ -1813,6 +1912,21 @@ export function initInteraction(ctrl: NiiVue): void {
 
         // A) Selection/resize check for shape annotations
         if (!cfg.isErasing && tool !== 'freehand') {
+          // A press on the slice of a parked click start ends that shape
+          // (isClickToPlace), ahead of a selected shape's control points; elsewhere it drops it.
+          const parked = ctrl._annotationClickStart
+          ctrl._annotationClickStart = null
+          ctrl._annotationClickResumed =
+            !!parked &&
+            parked.sliceType === sliceType &&
+            isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
+          if (parked && ctrl._annotationClickResumed) {
+            ctrl._annotationShapeStart = parked.start
+            ctrl._annotationSlicePosition = parked.slicePosition
+            ctrl._annotationAnchorMM = parked.anchorMM
+            startAnnotationDrag(ctrl, evt)
+            return
+          }
           // Check control point hit on current selection
           if (ctrl.model._annotationSelection) {
             const cpIdx = Annotation.hitTestControlPoint(
@@ -1824,7 +1938,11 @@ export function initInteraction(ctrl: NiiVue): void {
               const ann = ctrl.model.annotations.find(
                 (a) => a.id === ctrl.model._annotationSelection?.annotationId,
               )
-              if (ann?.shape) {
+              // A probe lands on a region's handle, as anywhere inside it.
+              if (
+                ann?.shape &&
+                (tool !== 'measurePoint' || ann.shape.type === 'measurePoint')
+              ) {
                 // Recorded on release, so a cancelled resize leaves no step.
                 ctrl._resizeUndoSnapshot = structuredClone(
                   ctrl.model.annotations,
@@ -1846,21 +1964,6 @@ export function initInteraction(ctrl: NiiVue): void {
                 return
               }
             }
-          }
-          // A press on the slice of a parked click start ends that shape
-          // (isClickToPlace), ahead of selection; elsewhere it drops it.
-          const parked = ctrl._annotationClickStart
-          ctrl._annotationClickStart = null
-          ctrl._annotationClickResumed =
-            !!parked &&
-            parked.sliceType === sliceType &&
-            Math.abs(parked.slicePosition - slicePosition) <= 1e-3
-          if (parked && ctrl._annotationClickResumed) {
-            ctrl._annotationShapeStart = parked.start
-            ctrl._annotationSlicePosition = parked.slicePosition
-            ctrl._annotationAnchorMM = parked.anchorMM
-            startAnnotationDrag(ctrl, evt)
-            return
           }
           // Hit-test existing shape annotations for selection
           const selTile = (ctrl.view?.screenSlices ?? [])[
@@ -1912,14 +2015,22 @@ export function initInteraction(ctrl: NiiVue): void {
     // 2D slice tile: dispatch through drag mode system
     if (ctrl.activeTileHit && !ctrl.activeTileHit.isRender) {
       const mode = DragModes.getDragModeForButton(ctrl, evt.button)
+      // Another mode, or a press on another tile, drops a half-placed angle
+      // (the latter starts a new one there). Before the mode is set: the
+      // cancel clears an angle mode.
+      if (
+        mode !== DRAG_MODE.angle ||
+        ctrl._angleArm?.hit.tileIndex !== ctrl.activeTileHit.tileIndex
+      ) {
+        ctrl._cancelAngle()
+      }
       ctrl._activeDragMode = mode
       ctrl._crosshairPanDidDrag = false
       ctrl.dragStartXY = [px, py]
       ctrl.dragEndXY = [px, py]
-      // Clear any previous overlay and reset stale angle state
-      ctrl.model._dragOverlay = null
-      if (mode !== DRAG_MODE.angle) {
-        ctrl._angleState = 'none'
+      // A half-placed angle keeps showing while its second arm is placed.
+      if (ctrl._angleState !== 'drawing_second_line') {
+        ctrl.model._dragOverlay = null
       }
       if (mode === DRAG_MODE.crosshair) {
         const mm = NVSliceLayout.screenSlicePick(
@@ -2134,16 +2245,6 @@ export function initInteraction(ctrl: NiiVue): void {
                   shapeData.width = cfg.style.strokeWidth
                 }
                 newAnn.shape = shapeData
-                if (Annotation.isMeasureTool(cfg.tool)) {
-                  const vol = ctrl.model.getVolumes()[0]
-                  if (vol)
-                    newAnn.stats =
-                      Annotation.computeAnnotationStats(
-                        newAnn,
-                        vol,
-                        ctrl.model.annotation.isAreaGeometric,
-                      ) ?? undefined
-                }
                 commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
               }
             }
@@ -2276,6 +2377,8 @@ export function initInteraction(ctrl: NiiVue): void {
   // streaming pump paused (it is gated on !isDragging) and stall streaming.
   ctrl._eventListeners.pointercancel = (e: Event) => {
     pinchPointer(ctrl, e as PointerEvent, 'up')
+    // The browser took over: drop a half-placed angle rather than place it.
+    ctrl._cancelAngle()
     if (ctrl._activeDragMode !== DRAG_MODE.none) {
       // A cancelled crosshair-pan gesture must not place the crosshair: the
       // browser took over (touch scroll, palm rejection), so the release point
@@ -2346,19 +2449,26 @@ export function initInteraction(ctrl: NiiVue): void {
             if (
               parked &&
               parked.sliceType === sliceType &&
-              Math.abs(parked.slicePosition - mm[depthDim]) <= 1e-3
+              isOnSliceOf(ctrl, parked.anchorMM, mm, depthDim)
             ) {
               const end = Annotation.mmToSlice2D(
                 mm as [number, number, number],
                 sliceType,
               )
               if (isBidirectionalTool(ctrl.model.annotation.tool)) {
+                // The parked axis is the long one (click-to-place previews its
+                // automatic short axis), or the short one once the long is placed.
+                const axis = { start: parked.start, end }
+                const long = ctrl._bidirectionalLong
                 ctrl.model._annotationPreview = bidirectionalAnnotation(
                   ctrl,
-                  { start: parked.start, end },
-                  Annotation.bidirectionalShortAxis(parked.start, end),
+                  long ?? axis,
+                  long
+                    ? axis
+                    : Annotation.bidirectionalShortAxis(parked.start, end),
+                  parked,
                 )
-              } else {
+              } else
                 updateShapePreview(
                   ctrl,
                   parked.start,
@@ -2367,20 +2477,26 @@ export function initInteraction(ctrl: NiiVue): void {
                   parked.slicePosition,
                   parked.anchorMM,
                 )
-              }
-            }
+            } else if (parked) ctrl.model._annotationPreview = null
             ctrl.drawScene()
             return
           }
         }
       }
-      if (ctrl.model._annotationCursor) {
-        ctrl.model._annotationCursor = null
-        ctrl.drawScene()
-      }
+      if (clearHover(ctrl)) ctrl.drawScene()
       return
     }
     if (!ctrl.isDragging) {
+      // An angle's second arm follows the pointer until a click places it.
+      if (ctrl._angleState === 'drawing_second_line') {
+        const hover = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+        const tile = hover && ctrl.view?.hitTest(hover[0], hover[1])
+        if (hover && tile?.tileIndex === ctrl._angleArm?.hit.tileIndex) {
+          ctrl.dragEndXY = [hover[0], hover[1]]
+          DragModes.updateDragOverlay(ctrl)
+          ctrl.drawScene()
+        }
+      }
       // Emit high-level slice pointer event for extensions
       const sliceEvt = computeSlicePointerEvent(ctrl, evt)
       if (sliceEvt) {
@@ -2967,6 +3083,15 @@ export function initInteraction(ctrl: NiiVue): void {
     if (!dblHit) return // outside this instance's bounds
     setNextActionTag('dblclick')
     const [px, py] = dblHit
+    // Double-clicking a legend colour box solos that label; any legend
+    // double-click is consumed so it never depth-picks behind the panel.
+    const legendLayout = ctrl.view?.legendLayout ?? null
+    if (isInLegend(px, py, legendLayout)) {
+      const legendHit = legendHitTest(px, py, legendLayout)
+      if (legendHit?.isOnBox && ctrl.model.interaction.isLegendToggleEnabled)
+        soloLegendLabel(ctrl, legendHit.entry)
+      return
+    }
     // Double-clicking the zoom-out ("-") button jumps straight to the full view
     // (the one-click way back from a deep zoom). The reset is restricted to that
     // button: a double-click on "+"/"<"/">" must keep its single-click action
@@ -3018,9 +3143,8 @@ export function initInteraction(ctrl: NiiVue): void {
   }
   ctrl._eventListeners.pointerleave = () => {
     ctrl._pointerClient = null
-    if (ctrl.model._annotationCursor) {
+    if (clearHover(ctrl)) {
       setNextActionTag('pointerleave')
-      ctrl.model._annotationCursor = null
       ctrl.drawScene()
     }
     ctrl.emit(

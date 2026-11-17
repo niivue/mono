@@ -1,7 +1,12 @@
 import { shownLabelLut } from '@/cmap/NVCmaps'
 import * as NVTransforms from '@/math/NVTransforms'
 import type { NVImage } from '@/NVTypes'
-import { buildPaqdLut256, paqdResampleRaw, reorientRGBA } from '@/volume/utils'
+import {
+  buildPaqdLut256,
+  dropHiddenPaqdLabels,
+  paqdResampleRaw,
+  reorientRGBA,
+} from '@/volume/utils'
 
 export function isRgbaDatatype(datatypeCode: number): boolean {
   return datatypeCode === 128 || datatypeCode === 2304
@@ -37,6 +42,7 @@ export function preparePaqdOverlayData(
   }
   const ovDims = [vol.dimsRAS[1], vol.dimsRAS[2], vol.dimsRAS[3]]
   const paqdData = paqdResampleRaw(raw, dimsOut, ovDims, mtx as Float32Array)
+  if (vol.hiddenLabels?.length) dropHiddenPaqdLabels(paqdData, vol.hiddenLabels)
   // `??` only narrows the type: colormapLabel is set on this path.
   const label = shownLabelLut(vol) ?? vol.colormapLabel
   return {

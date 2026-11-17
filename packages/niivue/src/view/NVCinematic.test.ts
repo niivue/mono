@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import { addColormap } from '@/cmap/NVCmaps'
-import { NiiDataType, VOLUME_DEFAULTS } from '@/NVConstants'
+import { NiiDataType, NiiIntentCode, VOLUME_DEFAULTS } from '@/NVConstants'
 import type { ColorMap, NVImage } from '@/NVTypes'
 import {
   bakeTransferFunction,
@@ -294,6 +294,15 @@ describe('findLabelVolume', () => {
     const labels = volume(new Float32Array(8), 2, { colormapLabel: lut })
     expect(findLabelVolume([base, hidden, other, labels])).toBe(labels)
     expect(findLabelVolume([base, other])).toBeNull()
+    // PAQD holds label/probability pairs, not label ids.
+    const paqd = volume(new Float32Array(8), 2, {
+      colormapLabel: lut,
+      hdr: {
+        intent_code: NiiIntentCode.NIFTI_INTENT_LABEL,
+        datatypeCode: NiiDataType.DT_RGBA32,
+      } as NVImage['hdr'],
+    })
+    expect(findLabelVolume([base, paqd])).toBeNull()
   })
 })
 

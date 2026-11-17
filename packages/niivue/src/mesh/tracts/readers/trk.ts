@@ -47,15 +47,9 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     dpsNames.push(name || `property_${i}`)
   }
 
-  // Build vox→mm transformation matrix
-  // zoomMat: scale by 1/voxel_size, offset by -0.5
   const vsx = reader.getFloat32(12, true)
   const vsy = reader.getFloat32(16, true)
   const vsz = reader.getFloat32(20, true)
-  // zoomMat is column-major: [1/vsx, 0, 0, 0, 0, 1/vsy, 0, 0, 0, 0, 1/vsz, 0, -0.5, -0.5, -0.5, 1]
-  // But the reference code treats it as row-major with mat4.fromValues
-  // The actual multiplication is: out = vox2ras @ zoom @ point
-  // Let's build it the same way as the reference code
 
   // Read vox_to_ras 4x4 matrix (16 floats at offset 440)
   const vox2ras = new Float32Array(16)
@@ -70,34 +64,17 @@ export async function read(buffer: ArrayBufferLike): Promise<NVTractData> {
     vox2ras[15] = 1
   }
 
-  // Combined transform: multiply zoomMat (row-major) by vox2ras (row-major)
-  // zoomMat rows: [1/vsx, 0, 0, -0.5], [0, 1/vsy, 0, -0.5], [0, 0, 1/vsz, -0.5], [0, 0, 0, 1]
-  // Result M = zoomMat * vox2ras, then point_mm = M * point_vox
+  // Points are voxmm with the origin at a voxel corner (TrackVis), so
+  // mm = vox_to_ras · (p / voxel_size − 0.5), i.e. m = vox_to_ras · zoom.
+  const zoom = [1 / vsx, 1 / vsy, 1 / vsz]
   const m = new Float32Array(16)
-  const z0 = 1 / vsx,
-    z5 = 1 / vsy,
-    z10 = 1 / vsz,
-    zt = -0.5
-  // Row 0: z0*vox2ras[0..3] + zt*vox2ras[12..15]
-  m[0] = z0 * vox2ras[0] + zt * vox2ras[12]
-  m[1] = z0 * vox2ras[1] + zt * vox2ras[13]
-  m[2] = z0 * vox2ras[2] + zt * vox2ras[14]
-  m[3] = z0 * vox2ras[3] + zt * vox2ras[15]
-  // Row 1
-  m[4] = z5 * vox2ras[4] + zt * vox2ras[12]
-  m[5] = z5 * vox2ras[5] + zt * vox2ras[13]
-  m[6] = z5 * vox2ras[6] + zt * vox2ras[14]
-  m[7] = z5 * vox2ras[7] + zt * vox2ras[15]
-  // Row 2
-  m[8] = z10 * vox2ras[8] + zt * vox2ras[12]
-  m[9] = z10 * vox2ras[9] + zt * vox2ras[13]
-  m[10] = z10 * vox2ras[10] + zt * vox2ras[14]
-  m[11] = z10 * vox2ras[11] + zt * vox2ras[15]
-  // Row 3
-  m[12] = vox2ras[12]
-  m[13] = vox2ras[13]
-  m[14] = vox2ras[14]
-  m[15] = vox2ras[15]
+  for (let r = 0; r < 16; r += 4) {
+    m[r] = vox2ras[r] * zoom[0]
+    m[r + 1] = vox2ras[r + 1] * zoom[1]
+    m[r + 2] = vox2ras[r + 2] * zoom[2]
+    m[r + 3] =
+      vox2ras[r + 3] - 0.5 * (vox2ras[r] + vox2ras[r + 1] + vox2ras[r + 2])
+  }
 
   // Parse streamline data: views on the original buffer, no copy
   const nWords = (buffer.byteLength - hdr_sz) >> 2

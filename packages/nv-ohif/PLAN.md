@@ -337,6 +337,8 @@ the differentiators:
   (per-overlay colormap + opacity: `setViewportColormap` with the overlay's
   `displaySetInstanceUID`, in the Overlays dropdown.)
 - Sync: crosshair / camera sync with other OHIF viewports where it makes sense.
+  (VOI groups link crosshair + calMin/calMax; OHIF's `syncColormap` is not
+  mirrored: core `SyncOpts` has no colormap option.)
 - Respect OHIF's active tool, measurement, and layout where feasible.
   (Primary-tool mirroring onto NiiVue left-drag: DONE for Window/Level + Pan.)
 
@@ -369,12 +371,10 @@ The extension now exposes the full OHIF module set for toolbar integration:
   and `niivueAutoWindowLevel` (recalculateCalMinMax(0), robust 2-98%). Toolbar
   `NiivueWindowLevel` dropdown: Auto + 5 CT presets + 3 PT presets, each preset
   modality-gated.
-- **W/L readout**: NiiVue emits no intensity event (parity doc confirms), so the
-  viewport reads the base volume's calMin/calMax on canvas `pointerup`
-  (`trackNiivueWindowLevel`); a change vs the entry's last window/level is shown
-  as a transient "W: .. L: .." readout. Windows stay independent per viewport (no
-  copy to same-series siblings); the initial window comes from
-  `displaySetOptions[0].options.voi`. Unchanged releases are silent.
+- **W/L readout**: a lower-left corner readout of the base calMin/calMax,
+  refreshed on volumeUpdated and on locationChange (core sync from a linked
+  pane). Windows stay independent per viewport outside a VOI sync group; the
+  initial window comes from `displaySetOptions[0].options.voi`.
 - `niivueRegistry.ts` — viewportId -> **entry** map (nv instance + base
   displaySets + overlays + clip preset + windowLevel + a status sink). The
   viewport registers on attach and keeps displaySets/status current;

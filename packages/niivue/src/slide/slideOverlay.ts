@@ -91,7 +91,10 @@ function formatLength(v: number, unit: 'mm' | 'px'): string {
 
 function formatArea(v: number, unit: 'mm' | 'px'): string {
   if (unit === 'px') return `${Math.round(v)} px2`
-  return v < 1 ? `${(v * 1e6).toFixed(0)} um2` : `${v.toFixed(3)} mm2`
+  if (v >= 1) return `${v.toFixed(3)} mm2`
+  const um2 = v * 1e6
+  // Sub-micrometre pixels make areas below 1 um2; whole numbers would read 0.
+  return `${um2 >= 1 || um2 === 0 ? um2.toFixed(0) : um2.toPrecision(2)} um2`
 }
 
 /** An annotation's overlay text: its label, then its area or length. */
@@ -155,14 +158,13 @@ export function slideOverlayContent(
   const labels: SlideOverlayContent['labels'] = []
   const W = screen.widthCss * dpr
   const H = screen.heightCss * dpr
+  const onScreen = (x0: number, y0: number, x1: number, y1: number) =>
+    Math.max(x0, x1) >= 0 &&
+    Math.min(x0, x1) <= W &&
+    Math.max(y0, y1) >= 0 &&
+    Math.min(y0, y1) <= H
   const segment = (x0: number, y0: number, x1: number, y1: number) => {
-    if (
-      Math.max(x0, x1) >= 0 &&
-      Math.min(x0, x1) <= W &&
-      Math.max(y0, y1) >= 0 &&
-      Math.min(y0, y1) <= H
-    )
-      segments.push(x0, y0, x1, y1)
+    if (onScreen(x0, y0, x1, y1)) segments.push(x0, y0, x1, y1)
   }
   const shape = (
     tool: SlideAnnotationTool,
@@ -173,6 +175,8 @@ export function slideOverlayContent(
     if (tool === 'line') {
       const [start, end] = points as [NVSlidePoint, NVSlidePoint]
       const r = ruler({ start, end })
+      // Off-screen lines would fill the renderer's line cap before visible ones.
+      if (!onScreen(r.sx, r.sy, r.ex, r.ey)) return
       rulers.push(r)
       if (label) labels.push({ x: r.ex + 4 * dpr, y: r.ey, text: label })
       return

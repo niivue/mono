@@ -92,6 +92,72 @@ export function rulerSegments(
   return segs
 }
 
+/**
+ * Unit perpendicular pointing down the screen (right for a vertical ruler),
+ * whichever way the ruler was drawn, so numbers and length never share a side.
+ */
+function downPerp(dx: number, dy: number, len: number): [number, number] {
+  const s = dx > 0 || (dx === 0 && dy < 0) ? 1 : -1
+  return [(-dy / len) * s, (dx / len) * s]
+}
+
+/** Where the length label goes: past the major ticks, opposite the numbers. */
+export function rulerLengthLabel(
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+  tickLength = 6,
+): { x: number; y: number; anchorX: number; anchorY: number } {
+  const len = Math.hypot(ex - sx, ey - sy)
+  const [px, py] = len > 0 ? downPerp(ex - sx, ey - sy, len) : [0, 1]
+  const gap = tickLength * 2 + 3
+  return {
+    x: (sx + ex) * 0.5 - px * gap,
+    y: (sy + ey) * 0.5 - py * gap,
+    // The text extends away from the ruler: above it, or beside a vertical one.
+    anchorX: 0.5 + 0.5 * px,
+    anchorY: 0.5 + 0.5 * py,
+  }
+}
+
+/**
+ * Where an angle's label goes: just outside the vertex `v`, opposite the
+ * bisector of arms `a` and `b`, so it never lies on either arm.
+ */
+export function angleLabel(
+  ax: number,
+  ay: number,
+  vx: number,
+  vy: number,
+  bx: number,
+  by: number,
+  gap = 8,
+): { x: number; y: number; anchorX: number; anchorY: number } {
+  const la = Math.hypot(ax - vx, ay - vy) || 1
+  const lb = Math.hypot(bx - vx, by - vy) || 1
+  let dx = -((ax - vx) / la + (bx - vx) / lb)
+  let dy = -((ay - vy) / la + (by - vy) / lb)
+  let len = Math.hypot(dx, dy)
+  if (len < 1e-3) {
+    // A straight angle has no bisector: go perpendicular to the arms, up (left
+    // of a vertical one).
+    ;[dx, dy] = downPerp(ax - vx, ay - vy, la)
+    dx = -dx
+    dy = -dy
+    len = 1
+  }
+  dx /= len
+  dy /= len
+  return {
+    x: vx + dx * gap,
+    y: vy + dy * gap,
+    // The text extends away from the vertex, along the outward direction.
+    anchorX: 0.5 - 0.5 * dx,
+    anchorY: 0.5 - 0.5 * dy,
+  }
+}
+
 /** A ruler graduation number and where to draw it (canvas pixels). */
 export type RulerTickLabel = { str: string; x: number; y: number }
 
@@ -120,9 +186,8 @@ export function rulerTickLabels(
   const len = Math.hypot(dx, dy)
   if (len === 0 || units <= 0) return []
 
-  // Same perpendicular the ticks use; numbers sit just beyond the major tick.
-  const px = -dy / len
-  const py = dx / len
+  // Numbers sit just beyond the major tick, on the screen-down side.
+  const [px, py] = downPerp(dx, dy, len)
   const off = tickLength * 2 + tickLength
   const marks = Math.floor(units)
   const step = tickStep(marks)
@@ -218,14 +283,15 @@ export function buildRulers(
     }
     const label =
       text ?? formatDistance(distance, style.isMeasureUnitsVisible, unit)
+    const at = rulerLengthLabel(sx, sy, ex, ey)
     const batch = buildText(
       label,
-      (sx + ex) * 0.5,
-      (sy + ey) * 0.5,
+      at.x,
+      at.y,
       0.8,
       textColor,
-      0.5,
-      1,
+      at.anchorX,
+      at.anchorY,
       textBack,
     )
     if (batch.count > 0) labels.push(batch)
@@ -373,14 +439,15 @@ export function buildPersistedMeasurements(
 
       // Angle text at intersection
       const angleStr = `${a.angle.toFixed(1)}\u00B0`
+      const at = angleLabel(x0, y0, x1, y1, x2, y2)
       const batch = buildText(
         angleStr,
-        x1,
-        y1,
+        at.x,
+        at.y,
         0.8,
         textColor,
-        0.5,
-        1,
+        at.anchorX,
+        at.anchorY,
         textBack,
       )
       if (batch.count > 0) labels.push(batch)

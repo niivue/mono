@@ -1,5 +1,6 @@
 import { calculateOverlayTransformMatrix } from '@/math/NVTransforms'
 import type { NVImage } from '@/NVTypes'
+import { computeNegRange } from '@/view/NVOrient'
 import { isRgbaDatatype } from '@/view/NVRenderVolumeData'
 import { objectId } from './dataVersion'
 import { getTypedArrayConstructor } from './utils'
@@ -22,6 +23,18 @@ function isRgbaTarget(vol: NVImage): boolean {
  * modulation block, so modulation has no visual effect on them. */
 function isLabelTarget(vol: NVImage): boolean {
   return vol.colormapLabel !== null && vol.colormapLabel !== undefined
+}
+
+/**
+ * Window on |value| for a modulator's negative voxels, or null when it has no
+ * negative colormap (negatives then sit below the positive window). As in
+ * NiiVue 0.x, a two-sided threshold map modulates by magnitude.
+ */
+function negativeWindow(mod: NVImage): { min: number; range: number } | null {
+  if (!mod.colormapNegative) return null
+  const { mnNeg, mxNeg } = computeNegRange(mod)
+  const range = mxNeg - mnNeg
+  return range > 0 ? { min: -mxNeg, range } : null
 }
 
 /**
@@ -78,6 +91,44 @@ export function buildModulationParams(
   }
 }
 
+/** Fill RAS-order `result` for a two-sided modulator: negatives use the |value| window. */
+function magnitudeDataRAS(
+  result: Float32Array,
+  mod: NVImage,
+  frameOffset: number,
+  range: number,
+  neg: { min: number; range: number },
+): void {
+  const imgData = mod.img as unknown as ArrayLike<number>
+  const dims = mod.dimsRAS as number[]
+  const start = mod.img2RASstart as number[]
+  const step = mod.img2RASstep as number[]
+  const slope = mod.hdr.scl_slope
+  const inter = mod.hdr.scl_inter
+  const calMin = mod.calMin
+  const negMin = neg.min
+  const negRange = neg.range
+  let rasIdx = 0
+  for (let rz = 0; rz < dims[3]; rz++) {
+    for (let ry = 0; ry < dims[2]; ry++) {
+      for (let rx = 0; rx < dims[1]; rx++) {
+        const nativeIndex =
+          start[0] +
+          rx * step[0] +
+          start[1] +
+          ry * step[1] +
+          start[2] +
+          rz * step[2]
+        const scaled = (imgData[nativeIndex + frameOffset] ?? 0) * slope + inter
+        const w =
+          scaled < 0 ? (-scaled - negMin) / negRange : (scaled - calMin) / range
+        result[rasIdx] = w > 0 ? (w > 1 ? 1 : w) : 0
+        rasIdx++
+      }
+    }
+  }
+}
+
 /**
  * Compute RAS-order modulation data for RGB/RGBA (V1 tensor) targets. Consumed
  * CPU-side in `prepareRGBAData`. Scalar overlays use {@link computeModulationWeights}
@@ -103,6 +154,7 @@ export function computeModulationData(volumes: NVImage[]): void {
       vol._modulationDataKey = undefined
       continue
     }
+    const neg = negativeWindow(mod)
     // Everything the loop below reads. An unchanged key keeps the array, so
     // caches keyed on its identity (rgbaTextureKey) are not invalidated on
     // every GPU update.
@@ -121,6 +173,8 @@ export function computeModulationData(volumes: NVImage[]): void {
       hdr.scl_inter,
       mod.calMin,
       mod.calMax,
+      neg?.min,
+      neg?.range,
       mod.frame4D ?? 0,
     ].join(':')
     if (vol._modulationData && vol._modulationDataKey === key) continue
@@ -138,9 +192,14 @@ export function computeModulationData(volumes: NVImage[]): void {
       vol._modulationData = result
       continue
     }
+    const frameOffset = (mod.frame4D ?? 0) * mod.nVox3D
+    if (neg !== null) {
+      magnitudeDataRAS(result, mod, frameOffset, range, neg)
+      vol._modulationData = result
+      continue
+    }
     const start = mod.img2RASstart
     const step = mod.img2RASstep
-    const frameOffset = (mod.frame4D ?? 0) * mod.nVox3D
     let rasIdx = 0
     for (let rz = 0; rz < dims[3]; rz++) {
       for (let ry = 0; ry < dims[2]; ry++) {
@@ -168,6 +227,29 @@ export function computeModulationData(volumes: NVImage[]): void {
   }
 }
 
+/** Fill `weight` for a two-sided modulator: negatives use the |value| window. */
+function magnitudeWeights(
+  weight: Float32Array,
+  imgData: ArrayLike<number>,
+  frameOffset: number,
+  slope: number,
+  inter: number,
+  calMin: number,
+  range: number,
+  neg: { min: number; range: number },
+  pow: number,
+): void {
+  const negMin = neg.min
+  const negRange = neg.range
+  for (let i = 0; i < weight.length; i++) {
+    const scaled = (imgData[i + frameOffset] ?? 0) * slope + inter
+    const w =
+      scaled < 0 ? (-scaled - negMin) / negRange : (scaled - calMin) / range
+    const clamped = w > 0 ? (w > 1 ? 1 : w) : 0
+    weight[i] = pow === 1 ? clamped : clamped ** pow
+  }
+}
+
 /**
  * Compute the scalar-overlay modulation weight for every volume that has
  * `modulationImage` set. Unlike {@link computeModulationData} (RAS order, used
@@ -178,7 +260,9 @@ export function computeModulationData(volumes: NVImage[]): void {
  * correct for any co-registered grid.
  *
  * Weight = clamp((mod*slope+inter - calMin) / (calMax - calMin), 0, 1) ^ pow,
- * where pow = max(1, |modulateAlpha|) (matching the original NiiVue). The result
+ * where pow = max(1, |modulateAlpha|) (matching the original NiiVue). When the
+ * modulator has a negative colormap, a negative value is weighted by its
+ * magnitude within the negative window instead. The result
  * is cached on `vol._modulationWeight` keyed by `vol._modulationWeightKey`; the
  * computation is skipped when the key is unchanged.
  */
@@ -199,6 +283,7 @@ export function computeModulationWeights(volumes: NVImage[]): void {
     }
     const hdr = mod.hdr
     const pow = Math.max(1, Math.abs(vol.modulateAlpha ?? 0))
+    const neg = negativeWindow(mod)
     // Key on the modulator's data identity (buffer + offset, not just length,
     // plus the in-place edit counter), datatype, native dims, scaling, frame, window, and exponent — so a
     // swapped/rescaled/re-windowed modulator invalidates the cached weight and
@@ -217,6 +302,8 @@ export function computeModulationWeights(volumes: NVImage[]): void {
       hdr.scl_inter,
       mod.calMin,
       mod.calMax,
+      neg?.min,
+      neg?.range,
       mod.frame4D ?? 0,
       pow,
     ].join(':')
@@ -239,7 +326,7 @@ export function computeModulationWeights(volumes: NVImage[]): void {
     // `!(range > 0)` also catches NaN windows (range<=0 alone would let NaN through).
     if (!(range > 0)) {
       weight.fill(1)
-    } else {
+    } else if (neg === null) {
       for (let i = 0; i < nVox3D; i++) {
         const scaled = (imgData[i + frameOffset] ?? 0) * slope + inter
         // NaN voxel (common in processed float overlays) -> 0, not NaN.
@@ -247,6 +334,18 @@ export function computeModulationWeights(volumes: NVImage[]): void {
         const clamped = w > 0 ? (w > 1 ? 1 : w) : 0
         weight[i] = pow === 1 ? clamped : clamped ** pow
       }
+    } else {
+      magnitudeWeights(
+        weight,
+        imgData,
+        frameOffset,
+        slope,
+        inter,
+        mod.calMin,
+        range,
+        neg,
+        pow,
+      )
     }
     vol._modulationWeight = weight
     vol._modulationWeightKey = key

@@ -5,6 +5,7 @@ import type {
   NVSlideVisibleTile,
 } from '@/slide/NVSlide'
 import {
+  RGB_WINDOW_IDENTITY,
   rawPoolBytes,
   SlideBudgetRegistration,
   type SlideRendererOptions,
@@ -41,8 +42,8 @@ import { TileGutterGL, type TileTextureGL } from './tileGutter'
 // `init`, so it has no `draw(gl, ...)`.
 export class SlideRenderer {
   private _isReady = false
-  private _plainShader: Shader | null = null
-  private _lutShader: Shader | null = null
+  // By colour table (1) and RGB window (2); the windowed ones made on first use.
+  private readonly _shaders: (Shader | null)[] = [null, null, null, null]
   private _vao: WebGLVertexArrayObject | null = null
   private _vertexBuffer: WebGLBuffer | null = null
   private _placeholderTexture: WebGLTexture | null = null
@@ -120,15 +121,8 @@ export class SlideRenderer {
     this._lines.init(gl)
     // The atlas loads asynchronously; labels draw from the frame after.
     void this._font.init(gl, ubuntu)
-    this._plainShader = new Shader(gl, slideVertShader, slideFragShader(false))
-    this._lutShader = new Shader(gl, slideVertShader, slideFragShader(true))
-    // Sampler units are program state: set once (the lookup table is on unit 1).
-    for (const shader of [this._plainShader, this._lutShader]) {
-      shader.use(gl)
-      gl.uniform1i(shader.uniforms.slideTexture, 0)
-      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
-      gl.uniform1i(shader.uniforms.labelTexture ?? null, 2)
-    }
+    this._shader(gl, 0)
+    this._shader(gl, 1)
     this._vao = gl.createVertexArray()
     if (!this._vao) throw new Error('Failed to create slide VAO')
     this._vertexBuffer = gl.createBuffer()
@@ -177,7 +171,7 @@ export class SlideRenderer {
     this._budget.sync(slides)
     const gl = this._gl
     const placeholder = this._placeholderTexture
-    if (!gl || !this._plainShader || !this._vao || !placeholder) return
+    if (!gl || !this._vao || !placeholder) return
     const [dpr, width, height] = screenPixels(screen)
     const nearest = this.isNearestInterpolation
     const plan = this._plan
@@ -220,6 +214,7 @@ export class SlideRenderer {
       const slide = plan.slides[s] as NVSlide
       const shader = this.useShader(gl, slide)
       const u = shader.uniforms
+      const rgbWindow = slide.rgbWindow
       gl.uniform1f(u.opacity, slide.opacity)
       const b = slide.screenRectForSlide(screen)
       if (writeRectNdc(b.x, b.y, b.width, b.height, width, height, ndc, 0)) {
@@ -236,6 +231,7 @@ export class SlideRenderer {
       const sum = slide.channelBlend === 'additive' ? 2 : 1
       let quadNearest: boolean | null = null
       let quadLabels = -1
+      let quadWindow: Float32Array | null = null
       for (
         let q = plan.slideStart[s] as number;
         q < (plan.slideEnd[s] as number);
@@ -261,6 +257,15 @@ export class SlideRenderer {
         )
           continue
         writeTileUv(tile, uv, 0)
+        if (rgbWindow) {
+          const w =
+            texture?.fused === undefined ? rgbWindow : RGB_WINDOW_IDENTITY
+          if (w !== quadWindow) {
+            quadWindow = w
+            gl.uniform4fv(u.rgbScale ?? null, w, 0, 4)
+            gl.uniform4fv(u.rgbOffset ?? null, w, 4, 4)
+          }
+        }
         const labels = texture?.labels ? sum : 0
         if (labels !== quadLabels) {
           quadLabels = labels
@@ -327,10 +332,29 @@ export class SlideRenderer {
     this._luts.clear(this._gl)
   }
 
-  // The plain shader unless the slide has a colour table to apply.
+  // Variant `i` (see _shaders), compiled on first use.
+  private _shader(gl: WebGL2RenderingContext, i: number): Shader {
+    let shader = this._shaders[i]
+    if (!shader) {
+      shader = new Shader(
+        gl,
+        slideVertShader,
+        slideFragShader((i & 1) !== 0, (i & 2) !== 0),
+      )
+      // Sampler units are program state: set once (the lookup table is on unit 1).
+      shader.use(gl)
+      gl.uniform1i(shader.uniforms.slideTexture, 0)
+      gl.uniform1i(shader.uniforms.colorLut ?? null, 1)
+      gl.uniform1i(shader.uniforms.labelTexture ?? null, 2)
+      this._shaders[i] = shader
+    }
+    return shader
+  }
+
+  // The plain shader unless the slide has a colour table or RGB window to apply.
   private useShader(gl: WebGL2RenderingContext, slide: NVSlide): Shader {
     const lut = slide.displayColorLut
-    const shader = (lut && this._lutShader) || (this._plainShader as Shader)
+    const shader = this._shader(gl, (lut ? 1 : 0) | (slide.rgbWindow ? 2 : 0))
     shader.use(gl)
     if (lut) this._luts.bind(gl, lut)
     return shader
@@ -350,15 +374,14 @@ export class SlideRenderer {
       if (this._vertexBuffer) gl.deleteBuffer(this._vertexBuffer)
       if (this._vao) gl.deleteVertexArray(this._vao)
       gl.deleteSampler(this._nearestSampler)
-      for (const shader of [this._plainShader, this._lutShader])
+      for (const shader of this._shaders)
         if (shader) gl.deleteProgram(shader.program)
     }
     this._nearestSampler = null
     this._placeholderTexture = null
     this._vertexBuffer = null
     this._vao = null
-    this._plainShader = null
-    this._lutShader = null
+    this._shaders.fill(null)
     this._gl = null
     this._isReady = false
   }

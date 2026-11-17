@@ -58,6 +58,9 @@ export interface OhifViewportProps {
     orientation?: string
     viewportType?: string
     toolGroupId?: string
+    syncGroups?: ReadonlyArray<{ type?: string; id?: string } | string>
+    /** Hanging-protocol extras; `hideOverlays` drops the corner text (e.g. a 3D pane). */
+    customViewportProps?: { hideOverlays?: boolean }
   }
   // Per display set, hanging-protocol options (e.g. `options.voi`).
   displaySetOptions?: ReadonlyArray<Record<string, unknown>>
@@ -67,6 +70,7 @@ export interface OhifViewportProps {
   onElementEnabled?: (evt?: unknown) => void
   servicesManager?: OhifServicesManager
   commandsManager?: OhifCommandsManager
+  extensionManager?: OhifExtensionManager
 }
 
 // What getViewportModule returns: a named viewport component entry.

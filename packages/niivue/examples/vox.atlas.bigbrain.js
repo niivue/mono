@@ -47,7 +47,8 @@ aboutBtn.onclick = () => {
 function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }
-// Click a legend colour box to hide/show that region; the name moves the crosshair.
+// Click a legend colour box to hide/show that region, double-click to show only
+// it; the name moves the crosshair.
 const nv1 = new NiiVue({
   backgroundColor: [0.3, 0.3, 0.5, 1],
   isLegendToggleEnabled: true,

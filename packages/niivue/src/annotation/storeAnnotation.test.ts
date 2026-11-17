@@ -66,4 +66,19 @@ describe('storeAnnotation', () => {
     expect(stored.map((a) => a.id)).toEqual(['roi2', 'probe'])
     expect(stored[1]).toBe(probe)
   })
+
+  test.each([
+    'measureLine',
+    'measureAngle',
+    'measureCobbAngle',
+    'bidirectional',
+  ])('never merges or cuts with a %s', (type) => {
+    const mark = {
+      ...square('mark', 5, 20),
+      shape: { type, start: { x: 5, y: 5 }, end: { x: 20, y: 20 } },
+    } as VectorAnnotation
+    const roi = square('roi', 0, 10)
+    expect(storeAnnotation([roi], mark, true)).toEqual([roi, mark])
+    expect(storeAnnotation([mark], roi, true)).toEqual([roi, mark])
+  })
 })

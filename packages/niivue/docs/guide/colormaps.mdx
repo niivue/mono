@@ -65,7 +65,8 @@ await nv.setVolume(1, { colormap: 'redyell', colormapNegative: 'winter' })
 
 `nv.isColorbarVisible` turns the colorbars on for the whole viewer. Each
 volume can opt out with its own `isColorbarVisible: false`, which is the
-usual setting for an anatomical background.
+usual setting for an anatomical background. A hidden volume, or one at opacity 0,
+shows no colorbar.
 
 ## Custom colormaps
 

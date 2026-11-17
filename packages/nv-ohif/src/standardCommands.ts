@@ -325,6 +325,23 @@ export function getStandardCommandDefinitions({
   })
 
   return {
+    // Cornerstone's targets the active pane's Cornerstone tool group, which a
+    // NiiVue pane lacks (AdvancedMagnify's button): target the pane's group.
+    toggleActiveDisabledToolbar: {
+      commandFn: (opts: StandardOptions = {}) => {
+        const entry =
+          opts.toolGroupId === undefined && opts.toolGroupIds === undefined
+            ? getActiveNiivueEntry(servicesManager)
+            : undefined
+        return ohifCommandsManager(commandsManager)?.runCommand?.(
+          'toggleActiveDisabledToolbar',
+          entry
+            ? { ...opts, toolGroupId: entry.toolGroupId ?? 'default' }
+            : opts,
+          'CORNERSTONE',
+        )
+      },
+    },
     // OHIF's (DEFAULT context) asks cornerstone for the pane's orientation,
     // which throws on a NiiVue pane; a NiiVue pane only needs the display set
     // hung after its own (the data overlay menu's Add: a SEG or RTSTRUCT layer).

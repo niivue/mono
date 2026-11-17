@@ -204,10 +204,6 @@ export function ohifToolToDragMode(tool: string | undefined): number {
       return DRAG_MODE.pan
     case 'Zoom':
       return DRAG_MODE.slicer3D
-    // The lens owns the left button (magnify.ts).
-    case 'Magnify':
-    case 'AdvancedMagnify':
-      return DRAG_MODE.none
     default:
       // NiiVue's render tile rotates on primary drag independently of the 2D
       // drag mode. Unknown OHIF tools retain safe crosshair navigation in 2D.

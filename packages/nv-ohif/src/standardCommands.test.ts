@@ -136,6 +136,18 @@ describe('standard commands', () => {
     expect(nv.volumeUpdates).toEqual([])
   })
 
+  it("toggleActiveDisabledToolbar targets a NiiVue pane's tool group", () => {
+    register('nv-1')
+    updateNiivueViewport('nv-1', { toolGroupId: 'mpr' })
+    const { calls, run } = fakeHost('nv-1')
+    run('toggleActiveDisabledToolbar', { itemId: 'AdvancedMagnify' })
+    expect(calls[1]).toEqual({
+      name: 'toggleActiveDisabledToolbar',
+      opts: { itemId: 'AdvancedMagnify', toolGroupId: 'mpr' },
+      context: 'CORNERSTONE',
+    })
+  })
+
   it('do not recurse when CORNERSTONE lacks the command', () => {
     const { calls, contexts, run } = fakeHost('cs-1')
     delete contexts.CORNERSTONE?.resetViewport

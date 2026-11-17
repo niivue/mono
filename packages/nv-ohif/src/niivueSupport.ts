@@ -23,6 +23,8 @@ export const NIIVUE_SUPPORTED_TOOLS: readonly string[] = [
   'WindowLevel',
   'Pan',
   'Zoom',
+  'Magnify',
+  'AdvancedMagnify',
   ...Object.keys(SEG_TOOLS),
 ]
 // TMTV / 4D ROI tools: only on a pane holding a PT (petQuant.ts).
@@ -30,7 +32,11 @@ const PET_TOOLS: readonly string[] = [
   'RectangleROIStartEndThreshold',
   ...Object.keys(OHIF_BRUSHES),
 ]
-const TOOL_COMMANDS = ['setToolActive', 'setToolActiveToolbar']
+const TOOL_COMMANDS = [
+  'setToolActive',
+  'setToolActiveToolbar',
+  'toggleActiveDisabledToolbar',
+]
 // Slide gestures: Length draws a ruler, Zoom zooms, anything else pans.
 const SLIDE_SUPPORTED_TOOLS: readonly string[] = ['Length', 'Pan', 'Zoom']
 // Volume-only standard commands that no-op on an NVSlide viewport.

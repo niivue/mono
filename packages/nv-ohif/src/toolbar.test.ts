@@ -342,6 +342,15 @@ describe('evaluate.niivue.unsupported', () => {
         button('Length', 'setToolActiveToolbar'),
         { disabled: false, isActive: false },
       ],
+      // The host's magnifier buttons (AdvancedMagnify toggles).
+      [
+        button('Magnify', 'setToolActiveToolbar'),
+        { disabled: false, isActive: false },
+      ],
+      [
+        button('AdvancedMagnify', 'toggleActiveDisabledToolbar'),
+        { disabled: false, isActive: false },
+      ],
       [
         button('X', [
           {
@@ -428,7 +437,13 @@ describe('evaluate.niivue.unsupported', () => {
           { commandName: 'setToolActiveToolbar', commandOptions: { toolName } },
         ]),
       })
-    for (const name of ['RectangleROI', 'Angle', 'CobbAngle', 'WindowLevel'])
+    for (const name of [
+      'RectangleROI',
+      'Angle',
+      'CobbAngle',
+      'WindowLevel',
+      'Magnify',
+    ])
       expect(tool(name)).toEqual(disabled)
     for (const name of ['Length', 'Pan', 'Zoom'])
       expect(tool(name)).toMatchObject({ disabled: false })

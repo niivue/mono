@@ -26,7 +26,6 @@ import {
   resolveWindowLevel,
   roundNumber,
   subscribeOhifLabelSync,
-  trackNiivueWindowLevel,
   visibleAnnotationScreenShapes,
 } from './commands'
 import * as dicomToNiivue from './dicomToNiivue'
@@ -2339,22 +2338,7 @@ describe('readBaseWindowLevel', () => {
   })
 })
 
-describe('trackNiivueWindowLevel', () => {
-  it('seeds the baseline silently, then reports changes only', () => {
-    const nv = stubNiivue()
-    nv.volumes.push({ calMin: 0, calMax: 100 }) // W 100 / L 50
-    register('vp-1', nv)
-    expect(trackNiivueWindowLevel('vp-1')).toBeUndefined()
-    expect(getNiivueEntryForViewport('vp-1')?.windowLevel).toEqual({
-      window: 100,
-      level: 50,
-    })
-    nv.volumes[0] = { calMin: 200, calMax: 600 }
-    expect(trackNiivueWindowLevel('vp-1')).toEqual({ window: 400, level: 400 })
-    expect(trackNiivueWindowLevel('vp-1')).toBeUndefined()
-    expect(trackNiivueWindowLevel('vp-unknown')).toBeUndefined()
-  })
-
+describe('niivueSetWindowLevel with a sibling viewport', () => {
   it('keeps two viewports of one display set independent (no sibling copy)', () => {
     const a = stubNiivue()
     const b = stubNiivue()
@@ -2384,11 +2368,7 @@ describe('trackNiivueWindowLevel', () => {
       servicesManager: sm,
       commandsManager: { runCommand: (name: string) => ran.push(name) },
     })
-    trackNiivueWindowLevel('vp-a')
-    trackNiivueWindowLevel('vp-b')
     actions.niivueSetWindowLevel({ window: 400, level: 40 })
-    a.volumes[0] = { calMin: -160, calMax: 240 }
-    expect(trackNiivueWindowLevel('vp-a')).toEqual({ window: 400, level: 40 })
     expect(a.volumeUpdates).toHaveLength(1)
     expect(b.volumeUpdates).toEqual([])
     expect(ran).toEqual([])
@@ -2476,15 +2456,20 @@ describe('niivueToggleCrosshair', () => {
 })
 
 describe('niivueAutoWindowLevel', () => {
-  it('recomputes the robust window on the base volume', () => {
+  it('recomputes the robust window on the base volume', async () => {
     const nv = stubNiivue()
-    nv.volumes.push({ name: 'base' })
+    nv.volumes.push({ name: 'base', calMin: 1, calMax: 9 })
     register('vp-1', nv)
     const { actions } = getNiivueCommandsModule({
       servicesManager: services('vp-1'),
     })
     actions.niivueAutoWindowLevel()
     expect(nv.recalculated).toEqual([0])
+    // Then a volumeUpdated (setVolume), so the W/L readout refreshes.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(nv.volumeUpdates).toEqual([
+      { index: 0, opts: { calMin: 1, calMax: 9 } },
+    ])
   })
 })
 

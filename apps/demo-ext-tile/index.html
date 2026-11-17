@@ -15,6 +15,10 @@
       main[data-compare='side'] { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
       main[data-compare='lens'] #canvas2 { position: absolute; inset: 0; }
       #channels2 { position: absolute; bottom: 2.5rem; left: 0.75rem; max-height: 40%; overflow: auto; padding: 0.25rem 0.5rem; background: rgba(5, 8, 8, 0.85); border-radius: 6px; font-size: 0.8rem; }
+      /* Side by side: each channel panel sits over the view it controls. */
+      main[data-compare='side'] #channels, main[data-compare='side'] #channels2 { top: auto; bottom: 2.5rem; left: auto; max-height: calc(100% - 15rem); }
+      main[data-compare='side'] #channels { right: calc(50% + 0.75rem); }
+      main[data-compare='side'] #channels2 { right: 0.75rem; }
       #channels2 fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
       main.drop { outline: 3px dashed #74d4cf; outline-offset: -3px; }
       canvas { display: block; width: 100%; height: 100%; touch-action: none; }
@@ -54,7 +58,7 @@
       <label title="Show or hide the info panel (I)"><input id="hudToggle" type="checkbox" checked autocomplete="off" /> HUD</label>
       <label title="Whole-slide overview; click or drag it to jump"><input id="minimap" type="checkbox" checked autocomplete="off" /> Minimap</label>
       <label title="What a left drag does (middle drag always pans; windowing and contrast set the channel picked in the channel panel)">Drag <select id="drag" autocomplete="off"><option value="3">pan</option><option value="9" id="windowLevel">window/level</option><option value="1" id="contrastBox">contrast box</option></select></label>
- <label title="A second view of the slide, linked in physical units, with its own channels: beside this one, or through a lens that follows the pointer">Compare <select id="compare" autocomplete="off"><option value="single">off</option><option value="side">side by side</option><option value="lens">lens</option></select></label>
+ <label title="Compare two channel sets of this slide, linked in pan and zoom; each view has its own channel panel">Compare <select id="compare" title="Compare two channel sets of this slide, linked in pan and zoom; each view has its own channel panel" autocomplete="off"><option value="single">off</option><option value="side" title="A second view beside this one">side by side</option><option value="lens" id="lensOption" title="The second channel set inside a lens that follows the pointer (multichannel slides only)">lens</option></select></label>
       <span id="planes" hidden></span>
       <span id="status" role="status">Pick a slide.</span>
       <span class="backend">

@@ -210,6 +210,47 @@ describe('convertDisplaySetToNifti', () => {
     expect(await slope(out?.alternates?.[0]?.image)).toBe(0.5)
   })
 
+  it('shares a conversion only between identical inputs', async () => {
+    let finish = () => {}
+    result = new Promise((resolve) => {
+      finish = () => resolve({ series: [output('v', 3)] })
+    })
+    const uid = { displaySetInstanceUID: 'ds1' }
+    const one = { ...uid, instances: [{ imageId: `wadors:${frames}` }] }
+    const three = {
+      ...uid,
+      instances: [{ imageId: `wadors:${frames}`, NumberOfFrames: 3 }],
+    }
+    const pending = [one, three, one].map((d) =>
+      convertDisplaySetToNifti(d as OhifDisplaySet),
+    )
+    await Bun.sleep(0)
+    finish()
+    await Promise.all(pending)
+    expect(calls).toHaveLength(2)
+  })
+
+  it('does not share a fetch across request headers', async () => {
+    const auths: (string | null)[] = []
+    const stub = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      auths.push(new Headers(init?.headers).get('Authorization'))
+      return stub(url, init)
+    }) as unknown as typeof fetch
+    let finish = () => {}
+    result = new Promise((resolve) => {
+      finish = () => resolve({ series: [output('h', 3)] })
+    })
+    const pending = ['Bearer old', 'Bearer new'].map((auth) =>
+      convertDisplaySetToNifti(ds, { headers: { Authorization: auth } }),
+    )
+    await Bun.sleep(0)
+    finish()
+    await Promise.all(pending)
+    expect(auths).toContain('Bearer new')
+    expect(calls).toHaveLength(2)
+  })
+
   it('is null without instances or reconstructed files', async () => {
     expect(await convertDisplaySetToNifti({} as OhifDisplaySet)).toBeNull()
     stubFetch('other-sop')

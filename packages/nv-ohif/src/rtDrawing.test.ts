@@ -265,6 +265,7 @@ describe('startRtDrawing', () => {
     await new Promise<void>((resolve) => {
       stop = startRtDrawing(nv as never, rt, {
         setNote: () => {},
+        whenBase: Promise.resolve(true),
         onShown: () => {
           resolve()
           return () => {}
@@ -276,7 +277,10 @@ describe('startRtDrawing', () => {
     stop()
     expect(nv.drawingVolume).toBe(replacement)
     nv.createEmptyDrawing()
-    const again = startRtDrawing(nv as never, rt, { setNote: () => {} })
+    const again = startRtDrawing(nv as never, rt, {
+      setNote: () => {},
+      whenBase: Promise.resolve(true),
+    })
     await new Promise((r) => setTimeout(r, 0))
     again()
     expect(nv.drawingVolume).toBeNull()
@@ -332,6 +336,7 @@ describe('startRtDrawing', () => {
     const shown = new Promise<RtLabels>((resolve) => {
       startRtDrawing(nv as never, rt, {
         setNote: () => {},
+        whenBase: Promise.resolve(true),
         onShown: (_segments, labels) => {
           resolve(labels)
           return () => {}

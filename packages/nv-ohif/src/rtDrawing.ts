@@ -375,6 +375,8 @@ export function startRtDrawing(
   options: {
     headers?: Record<string, string>
     setNote: (message: string) => void
+    // The contours rasterize onto the base's grid: resolves once the base is in.
+    whenBase: Promise<boolean>
     onShown?: (segments: PanelSegment[], labels: RtLabels) => () => void
   },
 ): () => void {
@@ -384,8 +386,11 @@ export function startRtDrawing(
   let stopShown: (() => void) | undefined
   const show = async () => {
     const ds = rt as RtDisplaySet
-    await ds.load?.({ headers: options.headers, createSegmentation: false })
-    if (cancelled) return
+    const [, hasBase] = await Promise.all([
+      ds.load?.({ headers: options.headers, createSegmentation: false }),
+      options.whenBase,
+    ])
+    if (cancelled || !hasBase) return
     const rois = ds.structureSet?.ROIContours ?? []
     const dims = nv.volumes[0]?.dimsRAS?.slice(1, 4) as
       | [number, number, number]

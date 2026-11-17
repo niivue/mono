@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { log } from '@/logger'
-import { calculateRAS } from '@/math/NVTransforms'
+import { calculateRAS, vox2mm } from '@/math/NVTransforms'
 import { NiiDataType } from '@/NVConstants'
 import type { NIFTIHeader, NVImage } from '@/NVTypes'
 import {
@@ -15,6 +15,8 @@ import {
   getTypedArrayConstructor,
   getVoxelValue,
   hdrToArrayBuffer,
+  isSameGrid,
+  remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
   robustDisplayWindow,
@@ -498,6 +500,132 @@ describe('reorientDrawingToRAS', () => {
     const ras = reorientDrawingToRAS(back, native)
 
     expect(reorientDrawingToNative(back, ras)).toEqual(native)
+  })
+})
+
+describe('remapDrawingToRAS', () => {
+  // Axial source grid of spacing `step` mm (x running right to left), origin
+  // `o`, on the sagittal 2 mm background: permuted, flipped and offset.
+  function remap(step: number, o: number[], srcDims: number[]) {
+    const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
+    const [sx, sy, sz] = srcDims
+    const src = distinctBytes(sx * sy * sz)
+    const affine = [
+      [-step, 0, 0, o[0]],
+      [0, step, 0, o[1]],
+      [0, 0, step, o[2]],
+      [0, 0, 0, 1],
+    ]
+    const ras = remapDrawingToRAS(back, src, [3, sx, sy, sz], affine)
+    return { back, src, ras }
+  }
+
+  test('permutedFlippedOffsetGrid_eachVoxelLandsOnItsMM_outsideIsZero', () => {
+    const o = [10, -3, 5]
+    const { back, src, ras } = remap(2, o, [3, 6, 3])
+    if (typeof ras === 'string') throw new Error(ras)
+    // Oracle: each background RAS voxel's own mm (matRAS, from calculateRAS)
+    // names the source voxel at that mm.
+    const [, nx, ny, nz] = back.dimsRAS as number[]
+    const matRAS = back.matRAS as NonNullable<NVImage['matRAS']>
+    let hits = 0
+    for (let z = 0; z < nz; z++)
+      for (let y = 0; y < ny; y++)
+        for (let x = 0; x < nx; x++) {
+          const mm = vox2mm(null, [x, y, z], matRAS)
+          const i = Math.round((o[0] - mm[0]) / 2)
+          const [j, k] = [1, 2].map((a) => Math.round((mm[a] - o[a]) / 2))
+          const isIn = i >= 0 && i < 3 && j >= 0 && j < 6 && k >= 0 && k < 3
+          const want = isIn ? src[i + j * 3 + k * 18] : 0
+          hits += want ? 1 : 0
+          expect(ras[x + y * nx + z * nx * ny]).toBe(want)
+        }
+    // Partly off the background, which also overhangs it.
+    expect(hits).toBeGreaterThan(0)
+    expect(hits).toBeLessThan(3 * 6 * 3)
+  })
+
+  test('halfVoxelShift_refused', () => {
+    expect(remap(2, [11, -3, 5], [3, 6, 3]).ras).toBe('non-integer shift')
+  })
+
+  test('driftThatCancelsAcrossTheGrid_judgedAtItsWorstVoxel', () => {
+    // Along y the source spacing is 3.2e-4 short and its origin compensates:
+    // -8e-4 voxel at one end, +8e-4 at the other, though the summed parts
+    // (1.6e-3 + 8e-4) exceed the tolerance. 1.5x the drift is refused.
+    const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
+    const src = distinctBytes(3 * 6 * 3)
+    const at = (k: number) => {
+      const e = 3.2e-4 * k
+      return [
+        [-2, 0, 0, 10],
+        [0, 2 / (1 + e), 0, -5 + (2.5 * e * 2) / (1 + e)],
+        [0, 0, 2, 5],
+        [0, 0, 0, 1],
+      ]
+    }
+    const exact = remapDrawingToRAS(back, src, [3, 3, 6, 3], at(0))
+    expect(remapDrawingToRAS(back, src, [3, 3, 6, 3], at(1))).toEqual(exact)
+    expect(remapDrawingToRAS(back, src, [3, 3, 6, 3], at(1.5))).toBe('scale')
+  })
+
+  test('scaledSlicesOnOneVoxelBackgroundAxis_refused', () => {
+    // 2x2x1 unit background, 2x2x2 drawing at 0.5 mm in z: its second slice
+    // lies between background centres and must not be dropped silently.
+    const back = makeOrientedVolume(
+      [2, 2, 1],
+      [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+      ],
+    )
+    const affine = [
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 0.5, 0],
+      [0, 0, 0, 1],
+    ]
+    const src = new Uint8Array(8).fill(1)
+    expect(remapDrawingToRAS(back, src, [3, 2, 2, 2], affine)).toBe('scale')
+  })
+
+  test('oneSliceOfOtherThickness_placedByItsCentre', () => {
+    const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
+    const src = distinctBytes(3 * 6)
+    const thick = (z: number) => [
+      [-2, 0, 0, 10],
+      [0, 2, 0, -3],
+      [0, 0, 6, z],
+      [0, 0, 0, 1],
+    ]
+    const ras = remapDrawingToRAS(back, src, [3, 3, 6, 1], thick(5))
+    expect(ras).toEqual(remap(2, [10, -3, 5], [3, 6, 1]).ras)
+    expect(remapDrawingToRAS(back, src, [3, 3, 6, 1], thick(6))).toBe(
+      'non-integer shift',
+    )
+  })
+})
+
+describe('isSameGrid', () => {
+  test('measuredInBackgroundVoxels_shearedGridShiftRefused', () => {
+    // 9e-4 mm on the second row is 0.9 voxel through this shear: remapDrawingToRAS
+    // calls it a non-integer shift, so the index copy must not take it.
+    const back = [
+      [1, 1, 0, 0],
+      [0, 0.001, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ]
+    const moved = back.map((row) => [...row])
+    moved[1][3] = 0.0009
+    const dims = [3, 4, 4, 4]
+    expect(isSameGrid(back, back, dims)).toBe(true)
+    expect(isSameGrid(moved, back, dims)).toBe(false)
+    // A float32 round trip of the same affine still matches.
+    const f32 = back.map((row) => [...Float32Array.from(row)])
+    expect(isSameGrid(f32, back, dims)).toBe(true)
   })
 })
 

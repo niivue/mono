@@ -237,7 +237,10 @@ colormapped scalar overlays — but `modulateAlpha` means different things per t
 The two code paths are mutually exclusive by target datatype (each compute
 function early-returns for the other's datatype, so only one of `_modulationData`
 / `_modulationWeight` is built per target). Both window by the modulator's own
-`calMin/calMax`:
+`calMin/calMax`. When the modulator has a `colormapNegative`, a negative value
+is weighted by its magnitude within the negative window (`calMinNeg/calMaxNeg`,
+else the mirrored positive window), as in NiiVue 0.x, so a two-sided threshold
+map (AFNI's QC viewer) keeps both tails:
 
 - **RGB/RGBA (V1) path:** `computeModulationData()` -> `_modulationData`
   (`Float32Array`, RAS order), applied CPU-side in `prepareRGBAData()`. Only RGB

@@ -27,13 +27,11 @@ import {
 } from './selection'
 import {
   bidirectionalShortAxis,
-  constrainCircleEnd,
   dragCorners,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
   isAnnotationErased,
-  isCircleTool,
 } from './shapes'
 import {
   isOnSlice,
@@ -48,7 +46,6 @@ export {
   clipperInflatePath,
   clipperSubtractBrush,
   computeAnnotationStats,
-  constrainCircleEnd,
   dragCorners,
   extractLivewireSlice,
   generatePolygonFromPoints,
@@ -58,7 +55,6 @@ export {
   gridToSlice2D,
   hitTestControlPoint,
   isAnnotationErased,
-  isCircleTool,
   isMeasureTool,
   isOnSlice,
   livewireBacktrack,

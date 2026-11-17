@@ -4,10 +4,7 @@ description: "Tools, platforms and research projects that build on NiiVue."
 ---
 
 These teams build on NiiVue, from browser tools and desktop apps to the
-viewers inside large analysis suites and data platforms. The list started
-as the one in the original package's
-[README](https://github.com/niivue/niivue#projects-using-niivue). To add a
-project, open a pull request that edits this page.
+viewers inside large analysis suites and data platforms.
 
 - [AFIDs Validator](https://validator.afids.io/) checks anatomical fiducial placements against the AFIDs protocol ([source](https://github.com/afids/afids-validator))
 - [Analysis of Functional NeuroImages (AFNI)](https://afni.nimh.nih.gov/) neuroimaging analysis suite that uses NiiVue for [afni_proc.py](https://pubmed.ncbi.nlm.nih.gov/39257641/)

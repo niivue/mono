@@ -136,7 +136,7 @@ const SLOW: Record<string, number> = {
 const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(siteDir, '../..')
 const outDir = path.join(siteDir, 'public/img/gallery')
-const base = process.env.DOCS_EXAMPLES_BASE ?? 'https://niivue.github.io/mono/'
+const base = process.env.DOCS_EXAMPLES_BASE ?? 'https://niivue.com/'
 
 const only = new Set(process.argv.slice(2))
 const examples = collectGallery(repoRoot, buildGraph(repoRoot)).filter(

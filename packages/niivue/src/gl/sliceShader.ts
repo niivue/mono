@@ -87,6 +87,14 @@ vec3 applyGamma(vec3 rgb, float e) {
     return pow(max(rgb, vec3(0.0)), vec3(e));
 }
 
+// Overlay alpha of the voxel holding pos. The outline classifies whole voxels:
+// interpolated alpha reaches 1.0 only between supra-threshold voxel centres,
+// which is a zero-width line for a cluster one voxel wide.
+float overlayVoxelAlpha(vec3 pos) {
+  ivec3 dims = textureSize(overlay, 0);
+  return texelFetch(overlay, clamp(ivec3(pos * vec3(dims)), ivec3(0), dims - 1), 0).a;
+}
+
 // PAQD easing function — piecewise linear alpha from primary probability.
 float paqdEaseAlpha(float alpha, vec4 pu) {
     float t0 = pu[0];
@@ -167,7 +175,8 @@ void main() {
         // colour — a pow() there would bend the encoded vector.
         ocolor.rgb = applyGamma(ocolor.rgb, invGamma);
       }
-      // Overlay outline: draw black border at threshold boundary
+      // Overlay outline: a black border just outside the supra-threshold
+      // voxels, so the outline never covers them
       if (overlayOutlineWidth > 0.0) {
         vec3 vx = overlayOutlineWidth / vec3(textureSize(overlay, 0));
         vec3 vxR = vec3(volPos.x+vx.x, volPos.y, volPos.z);
@@ -176,24 +185,17 @@ void main() {
         vec3 vxP = vec3(volPos.x, volPos.y-vx.y, volPos.z);
         vec3 vxS = vec3(volPos.x, volPos.y, volPos.z+vx.z);
         vec3 vxI = vec3(volPos.x, volPos.y, volPos.z-vx.z);
-        if (ocolor.a < 1.0) {
+        if (overlayVoxelAlpha(volPos) < 1.0) {
           // Sub-threshold voxel: check if any in-plane neighbor is supra-threshold
           float na = 0.0;
-          if (axCorSag != 2) { na = max(na, texture(overlay, vxR).a); na = max(na, texture(overlay, vxL).a); }
-          if (axCorSag != 1) { na = max(na, texture(overlay, vxA).a); na = max(na, texture(overlay, vxP).a); }
-          if (axCorSag != 0) { na = max(na, texture(overlay, vxS).a); na = max(na, texture(overlay, vxI).a); }
+          if (axCorSag != 2) { na = max(na, overlayVoxelAlpha(vxR)); na = max(na, overlayVoxelAlpha(vxL)); }
+          if (axCorSag != 1) { na = max(na, overlayVoxelAlpha(vxA)); na = max(na, overlayVoxelAlpha(vxP)); }
+          if (axCorSag != 0) { na = max(na, overlayVoxelAlpha(vxS)); na = max(na, overlayVoxelAlpha(vxI)); }
           // In-plane diagonal corners
-          if (axCorSag == 0) { na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y+vx.y, volPos.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y+vx.y, volPos.z)).a); na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y-vx.y, volPos.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y-vx.y, volPos.z)).a); }
-          if (axCorSag == 1) { na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x+vx.x, volPos.y, volPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x-vx.x, volPos.y, volPos.z-vx.z)).a); }
-          if (axCorSag == 2) { na = max(na, texture(overlay, vec3(volPos.x, volPos.y+vx.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x, volPos.y-vx.y, volPos.z+vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x, volPos.y+vx.y, volPos.z-vx.z)).a); na = max(na, texture(overlay, vec3(volPos.x, volPos.y-vx.y, volPos.z-vx.z)).a); }
+          if (axCorSag == 0) { na = max(na, overlayVoxelAlpha(vec3(volPos.x+vx.x, volPos.y+vx.y, volPos.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x-vx.x, volPos.y+vx.y, volPos.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x+vx.x, volPos.y-vx.y, volPos.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x-vx.x, volPos.y-vx.y, volPos.z))); }
+          if (axCorSag == 1) { na = max(na, overlayVoxelAlpha(vec3(volPos.x+vx.x, volPos.y, volPos.z+vx.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x-vx.x, volPos.y, volPos.z+vx.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x+vx.x, volPos.y, volPos.z-vx.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x-vx.x, volPos.y, volPos.z-vx.z))); }
+          if (axCorSag == 2) { na = max(na, overlayVoxelAlpha(vec3(volPos.x, volPos.y+vx.y, volPos.z+vx.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x, volPos.y-vx.y, volPos.z+vx.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x, volPos.y+vx.y, volPos.z-vx.z))); na = max(na, overlayVoxelAlpha(vec3(volPos.x, volPos.y-vx.y, volPos.z-vx.z))); }
           if (na >= 1.0) { ocolor = vec4(0.0, 0.0, 0.0, 1.0); }
-        } else {
-          // Supra-threshold voxel: check if any in-plane neighbor is sub-threshold
-          float na = 1.0;
-          if (axCorSag != 2) { na = min(na, texture(overlay, vxR).a); na = min(na, texture(overlay, vxL).a); }
-          if (axCorSag != 1) { na = min(na, texture(overlay, vxA).a); na = min(na, texture(overlay, vxP).a); }
-          if (axCorSag != 0) { na = min(na, texture(overlay, vxS).a); na = min(na, texture(overlay, vxI).a); }
-          if (na < 1.0) { ocolor = vec4(0.0, 0.0, 0.0, 1.0); }
         }
       }
       float a = color.a + ocolor.a * (1.0 - color.a);

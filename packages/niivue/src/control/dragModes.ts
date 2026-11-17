@@ -1,4 +1,5 @@
 import { vec3 } from 'gl-matrix'
+import { isOnSlice } from '@/annotation/sliceProjection'
 import {
   emitPan2DChange,
   emitScaleMultiplierChange,
@@ -8,13 +9,17 @@ import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
+import { computeTolerance } from '@/view/NVAnnotation'
 import {
+  angleLabel,
   formatDistance,
   measureTextBack,
+  rulerLengthLabel,
   rulerSegments,
   rulerTickLabels,
 } from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
+import { projectMMToCanvas, tilePlane } from '@/view/sliceUtils'
 import { sceneUnit } from '@/volume/utils'
 
 /**
@@ -278,21 +283,19 @@ export function updateDragOverlay(ctrl: NiiVue): void {
         ui.isMeasureUnitsVisible,
         sceneUnit(ctrl.model).label,
       )
-      const mx = (sx + ex) * 0.5
-      const my = (sy + ey) * 0.5
       overlay.text?.push({
         str: label,
-        x: mx,
-        y: my,
+        ...rulerLengthLabel(sx, sy, ex, ey),
         scale: 0.8,
         color: textColor,
-        anchorX: 0.5,
-        anchorY: 1,
         backColor: textBack,
       })
     }
     ctrl.model._dragOverlay = overlay
-  } else if (mode === DRAG_MODE.angle) {
+  } else if (
+    mode === DRAG_MODE.angle ||
+    ctrl._angleState === 'drawing_second_line'
+  ) {
     const overlay: DragOverlay = { lines: [], text: [] }
     if (ctrl._angleState === 'drawing_first_line') {
       overlay.lines?.push({
@@ -302,7 +305,11 @@ export function updateDragOverlay(ctrl: NiiVue): void {
         thickness: lineWidth,
       })
     } else if (ctrl._angleState === 'drawing_second_line') {
-      const fl = ctrl._angleFirstLine
+      const fl = angleArmOnScreen(ctrl)
+      if (!fl) {
+        ctrl.model._dragOverlay = null
+        return
+      }
       overlay.lines?.push(
         {
           startXY: [fl[0], fl[1]],
@@ -317,19 +324,17 @@ export function updateDragOverlay(ctrl: NiiVue): void {
           thickness: lineWidth,
         },
       )
-      // Angle text at intersection
-      const line2 = [fl[2], fl[3], ex, ey]
-      const angle = calculateAngleBetweenLines(fl, line2)
-      overlay.text?.push({
-        str: `${angle.toFixed(1)}\u00B0`,
-        x: fl[2],
-        y: fl[3],
-        scale: 0.8,
-        color: textColor,
-        anchorX: 0.5,
-        anchorY: 1,
-        backColor: textBack,
-      })
+      // Live reading once the second arm can be placed.
+      const placed = placeableAngle(ctrl, ex, ey)
+      if (placed) {
+        overlay.text?.push({
+          str: `${placed.angle.toFixed(1)}\u00B0`,
+          ...angleLabel(fl[0], fl[1], fl[2], fl[3], ex, ey),
+          scale: 0.8,
+          color: textColor,
+          backColor: textBack,
+        })
+      }
     }
     ctrl.model._dragOverlay = overlay
   } else {
@@ -361,46 +366,67 @@ export function handleDragRelease(ctrl: NiiVue): void {
     if (mm) ctrl.setCrosshairPos(mm)
   }
 
-  // Angle state machine
+  // Angle: drag the first arm to the vertex, then the second arm follows the
+  // pointer and a click (or drag release) places it. A release that would give
+  // a zero-length arm or a zero angle is ignored, so the user keeps placing.
   if (mode === DRAG_MODE.angle) {
+    const [sx, sy] = ctrl.dragStartXY
+    const [ex, ey] = ctrl.dragEndXY
     if (ctrl._angleState === 'drawing_first_line') {
-      ctrl._angleFirstLine = [
-        ctrl.dragStartXY[0],
-        ctrl.dragStartXY[1],
-        ctrl.dragEndXY[0],
-        ctrl.dragEndXY[1],
-      ]
+      // The first arm is fixed in mm on its own tile, so a later click, scroll
+      // or zoom cannot move it.
+      const a = screenSlicePickAt(ctrl, sx, sy)
+      const v = screenSlicePickAt(ctrl, ex, ey)
+      const hit = ctrl.activeTileHit
+      if (
+        !a ||
+        !v ||
+        !hit ||
+        Math.hypot(ex - sx, ey - sy) < crosshairPanThresholdPx(ctrl)
+      ) {
+        ctrl._angleState = 'none'
+        fireDragRelease(ctrl)
+        clearDragState(ctrl)
+        return
+      }
+      ctrl._angleArm = { mm: [a, v], hit }
       ctrl._angleState = 'drawing_second_line'
-      // Keep dragging for second line — don't clear
+      // Other gestures must not run this release until the second arm's press.
+      ctrl._activeDragMode = DRAG_MODE.none
+      updateDragOverlay(ctrl)
+      ctrl.drawScene()
       return
     }
-    if (ctrl._angleState === 'drawing_second_line') {
-      ctrl._angleState = 'none'
-      // Save completed angle in mm-space
-      const fl = ctrl._angleFirstLine
-      const fl0 = screenSlicePickAt(ctrl, fl[0], fl[1])
-      const fl1 = screenSlicePickAt(ctrl, fl[2], fl[3])
-      const sl0 = screenSlicePickAt(ctrl, fl[2], fl[3])
-      const sl1 = screenSlicePickAt(ctrl, ctrl.dragEndXY[0], ctrl.dragEndXY[1])
-      if (fl0 && fl1 && sl0 && sl1) {
-        const line2 = [fl[2], fl[3], ctrl.dragEndXY[0], ctrl.dragEndXY[1]]
-        const angle = calculateAngleBetweenLines(fl, line2)
-        const sliceInfo = getSliceInfo(ctrl)
-        const completedAngle = {
-          firstLine: {
-            startMM: [...fl0] as [number, number, number],
-            endMM: [...fl1] as [number, number, number],
-          },
-          secondLine: {
-            startMM: [...sl0] as [number, number, number],
-            endMM: [...sl1] as [number, number, number],
-          },
-          angle,
-          ...sliceInfo,
+    const arm = ctrl._angleArm
+    if (ctrl._angleState === 'drawing_second_line' && arm) {
+      const placed = placeableAngle(ctrl, ex, ey)
+      if (!placed) {
+        // Dropped (the slice moved under it): end the gesture as the first
+        // arm's abort does. Otherwise the angle stays open for another click.
+        if (!ctrl._angleArm) {
+          fireDragRelease(ctrl)
+          clearDragState(ctrl)
+          return
         }
-        ctrl.model.completedAngles.push(completedAngle)
-        ctrl.emit('angleCompleted', completedAngle)
+        ctrl._activeDragMode = DRAG_MODE.none
+        updateDragOverlay(ctrl)
+        ctrl.drawScene()
+        return
       }
+      const [a, v] = arm.mm
+      const completedAngle = {
+        firstLine: { startMM: a, endMM: v },
+        secondLine: {
+          startMM: [...v] as [number, number, number],
+          endMM: placed.end,
+        },
+        angle: placed.angle,
+        ...getSliceInfo(ctrl),
+      }
+      ctrl._angleState = 'none'
+      ctrl._angleArm = null
+      ctrl.model.completedAngles.push(completedAngle)
+      ctrl.emit('angleCompleted', completedAngle)
       fireDragRelease(ctrl)
       clearDragState(ctrl)
       return
@@ -441,15 +467,17 @@ export function handleDragRelease(ctrl: NiiVue): void {
         vec3.fromValues(startMM[0], startMM[1], startMM[2]),
         vec3.fromValues(endMM[0], endMM[1], endMM[2]),
       )
-      const sliceInfo = getSliceInfo(ctrl)
-      const completedMeasurement = {
-        startMM: [...startMM] as [number, number, number],
-        endMM: [...endMM] as [number, number, number],
-        distance: dist,
-        ...sliceInfo,
+      // A click without a drag (or a degenerate span) measures nothing.
+      if (dist > 0 && Number.isFinite(dist)) {
+        const completedMeasurement = {
+          startMM: [...startMM] as [number, number, number],
+          endMM: [...endMM] as [number, number, number],
+          distance: dist,
+          ...getSliceInfo(ctrl),
+        }
+        ctrl.model.completedMeasurements.push(completedMeasurement)
+        ctrl.emit('measurementCompleted', completedMeasurement)
       }
-      ctrl.model.completedMeasurements.push(completedMeasurement)
-      ctrl.emit('measurementCompleted', completedMeasurement)
     }
   }
 
@@ -597,18 +625,64 @@ function getSliceInfo(ctrl: NiiVue): {
   return { sliceIndex, sliceType, slicePosition }
 }
 
-/** Calculate angle between two lines (in degrees). */
-function calculateAngleBetweenLines(line1: number[], line2: number[]): number {
-  const ix = line1[2]
-  const iy = line1[3]
-  const v1x = line1[0] - ix
-  const v1y = line1[1] - iy
-  const v2x = line2[2] - ix
-  const v2y = line2[3] - iy
-  const dot = v1x * v2x + v1y * v2y
-  const mag1 = Math.sqrt(v1x * v1x + v1y * v1y)
-  const mag2 = Math.sqrt(v2x * v2x + v2y * v2y)
-  if (mag1 === 0 || mag2 === 0) return 0
-  const cosAngle = Math.max(-1, Math.min(1, dot / (mag1 * mag2)))
-  return Math.acos(cosAngle) * (180 / Math.PI)
+/**
+ * The open angle's first arm in canvas pixels, projected from mm through its
+ * tile's current view, so a zoom or pan since it was drawn moves it with the
+ * image.
+ */
+function angleArmOnScreen(ctrl: NiiVue): number[] | null {
+  const arm = ctrl._angleArm
+  if (!arm) return null
+  const tile = ctrl.view?.screenSlices[arm.hit.tileIndex]
+  const plane = tile && tilePlane(tile)
+  // A slice scroll or layout change took the arm off that tile's plane: drop
+  // the angle rather than mix two planes (as saved, it would not show there).
+  if (
+    !plane ||
+    tile.axCorSag !== arm.hit.sliceType ||
+    !isOnSlice(arm.mm[1], plane.pn, plane.pp, computeTolerance(ctrl.model))
+  ) {
+    ctrl._cancelAngle()
+    return null
+  }
+  const { mvp, ltwh } = plane
+  return [
+    ...projectMMToCanvas(arm.mm[0], mvp, ltwh),
+    ...projectMMToCanvas(arm.mm[1], mvp, ltwh),
+  ]
+}
+
+/**
+ * The open angle with its second arm ending at canvas (ex, ey): the end in mm
+ * and the angle in degrees, measured in mm on the slice (a sheared or oblique
+ * slice is not the screen's plane). Null while that arm is too short, the
+ * angle would read 0.0, or the point is off the first arm's tile.
+ */
+function placeableAngle(
+  ctrl: NiiVue,
+  ex: number,
+  ey: number,
+): { end: [number, number, number]; angle: number } | null {
+  const arm = ctrl._angleArm
+  const fl = angleArmOnScreen(ctrl)
+  if (!arm || !fl || !ctrl.view) return null
+  if (Math.hypot(ex - fl[2], ey - fl[3]) < crosshairPanThresholdPx(ctrl))
+    return null
+  const end = NVSliceLayout.screenSlicePick(
+    ctrl.view.screenSlices,
+    ctrl.model,
+    ex,
+    ey,
+    arm.hit,
+  )
+  if (!end) return null
+  const [a, v] = arm.mm
+  const angle =
+    (vec3.angle(
+      vec3.sub(vec3.create(), a, v),
+      vec3.sub(vec3.create(), end, v),
+    ) *
+      180) /
+    Math.PI
+  return angle < 0.05 ? null : { end, angle }
 }

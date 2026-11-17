@@ -3,7 +3,7 @@
 The NiiVue documentation site: Markdown guides with live demos, plus a
 gallery of the example pages and demo apps. Built with
 [Astro](https://astro.build/) and [Starlight](https://starlight.astro.build/)
-and deployed to `/mono/docs/` by `.github/build-pages.sh`.
+and deployed to `https://niivue.com/docs/` by `.github/build-pages.sh`.
 
 ```bash
 bunx nx dev docs-site     # dev server
@@ -37,4 +37,4 @@ Environment variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DOCS_BASE_URL` | `/` | URL prefix of the site |
-| `DOCS_EXAMPLES_BASE` | `https://niivue.github.io/mono/` | where demos fetch images and the gallery embeds example pages |
+| `DOCS_EXAMPLES_BASE` | `https://niivue.com/` | where demos fetch images and the gallery embeds example pages |

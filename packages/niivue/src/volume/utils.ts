@@ -1361,6 +1361,14 @@ export function residentPickSampler(
   }
 }
 
+/** `vol` viewed at its displayed 4D frame (getImageDataRAS reads frame 0). */
+export function displayedFrame(vol: NVImage): NVImage {
+  const n = vol.nVox3D
+  if (!vol.frame4D || !n || !vol.img) return vol
+  const start = vol.frame4D * n
+  return { ...vol, img: vol.img.subarray(start, start + n) } as NVImage
+}
+
 /**
  * Return the volume's 3D voxel data as a Float32Array in RAS voxel order.
  *

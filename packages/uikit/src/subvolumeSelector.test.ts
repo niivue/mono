@@ -166,6 +166,7 @@ describe('sliceAxisAt', () => {
   it('is the normal axis of the 2D tile under the point', () => {
     expect(sliceAxisAt(viewTiles, [5, 5])).toBe(2)
     expect(sliceAxisAt(viewTiles, [15, 5])).toBe(1)
+    expect(sliceAxisAt(viewTiles, [10, 5])).toBe(1) // seam: the right tile owns it
     expect(sliceAxisAt(viewTiles, [25, 5])).toBeNull()
   })
 })

@@ -133,7 +133,7 @@ export interface SlideIndex {
 }
 
 /** The key a file is indexed and looked up by: `webkitRelativePath` when set, else `name`. */
-export const fileKey = (f: File): string => f.webkitRelativePath || f.name
+const fileKey = (f: File): string => f.webkitRelativePath || f.name
 
 /** Each file's {@link fileKey}, a repeat made unique by position: `a.dcm`, `a.dcm (2)`. */
 export function fileKeys(files: readonly File[]): string[] {

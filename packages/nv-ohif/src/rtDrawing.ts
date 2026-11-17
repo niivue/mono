@@ -76,7 +76,7 @@ export function styleDrawing(
 /** Write the drawing's style as its owner, so a later restore still undoes it. */
 export type Restyle = (write: () => void) => void
 
-export interface RtContour {
+interface RtContour {
   type?: string
   points: ReadonlyArray<{ x: number; y: number; z: number }>
 }
@@ -542,7 +542,7 @@ function unionSpans(xs: number[], ks: number[], signs: number[]): number[] {
  * An ROI's closed planar contours as flat LPS triplets, and whether any is
  * CLOSEDPLANAR_XOR (filled even-odd, see rasterizeContours).
  */
-export function roiContours(roi: RtRoi): {
+function roiContours(roi: RtRoi): {
   contours: Float64Array[]
   xor: boolean
 } {

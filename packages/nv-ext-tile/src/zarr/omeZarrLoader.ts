@@ -802,7 +802,7 @@ function framePrefetch(
 }
 
 /** Default {@link OmeZarrLoadOptions.frameCacheBytes}. */
-export const OME_ZARR_FRAME_CACHE_BYTES = 256 * 2 ** 20
+const OME_ZARR_FRAME_CACHE_BYTES = 256 * 2 ** 20
 
 /**
  * Decoded frames keyed by channel and timepoint, least recently used evicted

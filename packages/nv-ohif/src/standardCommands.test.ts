@@ -436,6 +436,9 @@ it('scrollImage steps a split series across its outputs', () => {
       normal: [0, 0, 1],
       frames: [{ SOPInstanceUID: 'A', frameNumber: 1 }],
     },
+    outputFrames: ['A', 'B'].map((SOPInstanceUID) => ({
+      frames: [{ SOPInstanceUID, frameNumber: 1 }],
+    })),
     switchToInstance: (sop: string) => {
       switched.push(sop)
       return Promise.resolve(true)
@@ -445,6 +448,49 @@ it('scrollImage steps a split series across its outputs', () => {
   // Clamped, not wrapped to the last instance.
   scrollImage(entry, -1)
   expect(switched).toEqual(['B', 'A'])
+})
+
+it('scrollImage steps through the frames of a split series multi-frame instance', () => {
+  const calls: number[][] = []
+  const switched: unknown[][] = []
+  const mf = {
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    frames: [1, 2].map((frameNumber) => ({
+      SOPInstanceUID: 'mf',
+      frameNumber,
+    })),
+  }
+  const entry = {
+    nv: {
+      sliceType: 0,
+      volumes: [{ permRAS: [1, 2, 3] }],
+      setCrosshairPos: (p: number[]) => calls.push(p),
+    },
+    crosshairMM: [0, 0, 0],
+    displaySets: [
+      {
+        instances: [
+          { SOPInstanceUID: 'mf', NumberOfFrames: 2 },
+          { SOPInstanceUID: 'B' },
+        ],
+      },
+    ],
+    sliceFrames: mf,
+    outputFrames: [mf, { frames: [{ SOPInstanceUID: 'B', frameNumber: 1 }] }],
+    // The shown output: no switch for its own frames.
+    switchToInstance: (sop: string, frame: number) => {
+      switched.push([sop, frame])
+      return sop === 'mf' ? undefined : Promise.resolve(true)
+    },
+  } as unknown as Parameters<typeof scrollImage>[0]
+  scrollImage(entry, 1)
+  expect(calls).toEqual([[0, 0, 1]])
+  jumpToImage(entry, 2)
+  expect(switched).toEqual([
+    ['mf', 2],
+    ['B', 1],
+  ])
 })
 
 it('jumpToImage counts the frames of a single multi-frame instance', () => {

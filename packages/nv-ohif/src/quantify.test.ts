@@ -164,3 +164,14 @@ it('resamples labels to a finer grid and back by nearest voxel', () => {
   expect([...fine.subarray(0, 6)]).toEqual([1, 1, 2, 2, 3, 3])
   expect([...resampleLabel(fine, ct, pet)]).toEqual([...label])
 })
+
+it('voxel volume of a sheared grid is the affine determinant', () => {
+  const grid: RasGrid = {
+    dims: [1, 1, 1],
+    start: 0,
+    step: [1, 1, 1],
+    affine: [1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+  }
+  const pt = { data: new Float32Array([2]), grid, slope: 1, inter: 0 }
+  expect(segmentStats(new Uint8Array([1]), pt, 1)?.volume).toBe(1)
+})

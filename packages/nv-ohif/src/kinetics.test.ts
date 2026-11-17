@@ -1,5 +1,10 @@
 import { expect, it } from 'bun:test'
-import { computeVolume, timeActivity, timePoints } from './kinetics'
+import {
+  computeVolume,
+  timeActivity,
+  timePoints,
+  timeReportCsv,
+} from './kinetics'
 
 const frames = (raw: number[][]) => ({
   count: raw.length,
@@ -49,4 +54,19 @@ it('time axis: distinct FrameReferenceTime, rescaled while most points exceed th
     FrameReferenceTime,
   }))
   expect(timePoints(t)).toEqual({ points: [0, 60, 120], unit: 's' })
+})
+
+it('time report CSV quotes a label holding a comma', () => {
+  const curve = {
+    value: 1,
+    label: 'left,lung',
+    count: 1,
+    mean: [1],
+    std: [0],
+    min: [1],
+    max: [1],
+    voxels: new Int32Array([0]),
+    ras: new Int32Array([0, 0, 0]),
+  }
+  expect(timeReportCsv({}, [curve], true, 1)).toContain('Mean,"left,lung",1')
 })

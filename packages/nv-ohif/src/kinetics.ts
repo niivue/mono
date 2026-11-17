@@ -185,6 +185,12 @@ export function timePoints(instances: ReadonlyArray<Record<string, unknown>>): {
   return { points, unit }
 }
 
+/** A CSV field, quoted when it holds a comma, quote or newline (RFC 4180). */
+export const csvCell = (v: unknown): string => {
+  const t = String(v ?? '')
+  return /[",\r\n]/.test(t) ? `"${t.replaceAll('"', '""')}"` : t
+}
+
 /** OHIF's exportTimeReportCSV: per-voxel Time Data, or the ROI Stats summary. */
 export function timeReportCsv(
   study: Record<string, unknown>,
@@ -194,11 +200,11 @@ export function timeReportCsv(
   values?: (c: Curve, voxel: number) => number[],
 ): string {
   const csv = [
-    `Patient ID,${study.PatientID},`,
-    `Study Date,${study.StudyDate},`,
-    `StudyInstanceUID,${study.StudyInstanceUID},`,
-    `StudyDescription,${study.StudyDescription},`,
-    `SeriesInstanceUID,${study.SeriesInstanceUID},`,
+    `Patient ID,${csvCell(study.PatientID)},`,
+    `Study Date,${csvCell(study.StudyDate)},`,
+    `StudyInstanceUID,${csvCell(study.StudyInstanceUID)},`,
+    `StudyDescription,${csvCell(study.StudyDescription)},`,
+    `SeriesInstanceUID,${csvCell(study.SeriesInstanceUID)},`,
     '',
     '',
   ]
@@ -207,18 +213,19 @@ export function timeReportCsv(
     (_, t) => `,Time Point ${t}`,
   ).join('')
   for (const c of curves) {
+    const label = csvCell(c.label)
     if (summary) {
       csv.push(`Operation,Segmentation Label ID${times}`)
-      csv.push(`Mean,${c.label},${c.mean.join(',')}`)
-      csv.push(`Standard Deviation,${c.label},${c.std.join(',')}`)
-      csv.push(`Min,${c.label},${c.min.join(',')}`)
-      csv.push(`Max,${c.label},${c.max.join(',')}`)
+      csv.push(`Mean,${label},${c.mean.join(',')}`)
+      csv.push(`Standard Deviation,${label},${c.std.join(',')}`)
+      csv.push(`Min,${label},${c.min.join(',')}`)
+      csv.push(`Max,${label},${c.max.join(',')}`)
       continue
     }
     csv.push(`Pixel Identifier (IJK),Segmentation Label ID${times}`)
     for (let k = 0; k < c.count; k++) {
       const ijk = `${c.ras[3 * k]}_${c.ras[3 * k + 1]}_${c.ras[3 * k + 2]}`
-      csv.push(`${ijk},${c.label},${values?.(c, k).join(',') ?? ''}`)
+      csv.push(`${ijk},${label},${values?.(c, k).join(',') ?? ''}`)
     }
   }
   return csv.join('\n')

@@ -15,7 +15,13 @@ import {
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { frameAt, onSlicePlane, shownImages } from './sliceFrames'
+import {
+  type FrameRef,
+  frameAt,
+  onSlicePlane,
+  type SliceFrames,
+  shownImages,
+} from './sliceFrames'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -127,6 +133,19 @@ function setOrientation(
  * volume, or a viewport turned off its acquisition plane, counts its slices
  * along the viewport's axis.
  */
+// jumpToImage's images: a split series (outputStack.ts) counts every output's.
+function stackImages(
+  entry: NiivueViewportEntry,
+  instances: ReadonlyArray<{ SOPInstanceUID?: string }>,
+  sf: SliceFrames,
+): FrameRef[] {
+  const outputs = entry.switchToInstance ? entry.outputFrames : undefined
+  return shownImages(
+    instances,
+    outputs ? { ...sf, frames: outputs.flatMap((o) => o.frames) } : sf,
+  )
+}
+
 export function jumpToImage(
   entry: NiivueViewportEntry,
   imageIndex: unknown,
@@ -151,22 +170,20 @@ export function jumpToImage(
     const instances = (entry.displaySets[0]?.instances ?? []) as Array<{
       SOPInstanceUID?: string
     }>
-    if (entry.switchToInstance) {
-      // A series split into outputs counts its whole display set
-      // (outputStack.ts): another output's image (a localizer of another
-      // orientation), or one queued behind a switch still loading, shows centred.
-      const sop = instances.at(i)?.SOPInstanceUID
-      if (!sop || entry.switchToInstance(sop)) return
-      k = sf.frames.findIndex((f) => f?.SOPInstanceUID === sop)
-    } else {
-      const image = shownImages(instances, sf).at(i)
-      if (!image) return
-      k = sf.frames.findIndex(
-        (f) =>
-          f?.SOPInstanceUID === image.SOPInstanceUID &&
-          f.frameNumber === image.frameNumber,
-      )
-    }
+    // A series split into outputs counts its whole display set
+    // (outputStack.ts): another output's image (a localizer of another
+    // orientation), or one queued behind a switch still loading, shows centred.
+    const image = stackImages(entry, instances, sf).at(i)
+    if (
+      !image ||
+      entry.switchToInstance?.(image.SOPInstanceUID, image.frameNumber)
+    )
+      return
+    k = sf.frames.findIndex(
+      (f) =>
+        f?.SOPInstanceUID === image.SOPInstanceUID &&
+        f.frameNumber === image.frameNumber,
+    )
   }
   if (k < 0 || k >= sf.frames.length) return
   nv.setCrosshairPos(rasToLps(onSlicePlane(sf, rasToLps([x, y, z]), k)))
@@ -236,13 +253,14 @@ export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
     }>
     // jumpToImage's count: a split series (outputStack.ts) counts its whole
     // display set, so a step can switch outputs.
-    const split = !entry.isVolumeViewport && entry.switchToInstance
-    const order: unknown[] = entry.isVolumeViewport
+    const order: ReadonlyArray<FrameRef | undefined> = entry.isVolumeViewport
       ? sf.frames
-      : split
-        ? instances.map((x) => x.SOPInstanceUID)
-        : shownImages(instances, sf)
-    const i = order.indexOf(split ? frame.SOPInstanceUID : frame)
+      : stackImages(entry, instances, sf)
+    const i = order.findIndex(
+      (f) =>
+        f?.SOPInstanceUID === frame.SOPInstanceUID &&
+        f.frameNumber === frame.frameNumber,
+    )
     if (i >= 0) {
       jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
       return

@@ -73,6 +73,24 @@ test('annotations draw as culled device-pixel segments with a label', () => {
   expect(c.labels).toEqual([{ x: 48, y: 20, text: 'tumour 200 um2' }])
 })
 
+test('off-screen line annotations are culled', () => {
+  const annotations = new NVSlideAnnotations(() => [0.001, 0.001])
+  annotations.add('line', [
+    { x: 200, y: 0 },
+    { x: 300, y: 0 },
+  ])
+  annotations.add('line', [
+    { x: 10, y: 10 },
+    { x: 20, y: 10 },
+  ])
+  const c = slideOverlayContent(slide(), screen, {
+    ...source,
+    measurements: [],
+    annotations,
+  })
+  expect(c.rulers).toHaveLength(1)
+})
+
 describe('slideScaleBar', () => {
   test('picks a nice length that fits a quarter of the view', () => {
     // 0.5 um/px at 1 device px per base pixel, 1000 px wide: 100 um = 200 px.

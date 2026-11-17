@@ -158,14 +158,13 @@ export function slideOverlayContent(
   const labels: SlideOverlayContent['labels'] = []
   const W = screen.widthCss * dpr
   const H = screen.heightCss * dpr
+  const onScreen = (x0: number, y0: number, x1: number, y1: number) =>
+    Math.max(x0, x1) >= 0 &&
+    Math.min(x0, x1) <= W &&
+    Math.max(y0, y1) >= 0 &&
+    Math.min(y0, y1) <= H
   const segment = (x0: number, y0: number, x1: number, y1: number) => {
-    if (
-      Math.max(x0, x1) >= 0 &&
-      Math.min(x0, x1) <= W &&
-      Math.max(y0, y1) >= 0 &&
-      Math.min(y0, y1) <= H
-    )
-      segments.push(x0, y0, x1, y1)
+    if (onScreen(x0, y0, x1, y1)) segments.push(x0, y0, x1, y1)
   }
   const shape = (
     tool: SlideAnnotationTool,
@@ -176,6 +175,8 @@ export function slideOverlayContent(
     if (tool === 'line') {
       const [start, end] = points as [NVSlidePoint, NVSlidePoint]
       const r = ruler({ start, end })
+      // Off-screen lines would fill the renderer's line cap before visible ones.
+      if (!onScreen(r.sx, r.sy, r.ex, r.ey)) return
       rulers.push(r)
       if (label) labels.push({ x: r.ex + 4 * dpr, y: r.ey, text: label })
       return

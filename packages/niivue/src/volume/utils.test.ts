@@ -19,6 +19,7 @@ import {
   remapDrawingToRAS,
   reorientDrawingToNative,
   reorientDrawingToRAS,
+  residentPickSampler,
   robustDisplayWindow,
   robustMinMax,
   temporalUnitScale,
@@ -876,5 +877,31 @@ describe('warnMixedUnits', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0]?.[0])).toContain("'um' is in um")
     warn.mockRestore()
+  })
+})
+
+describe('residentPickSampler', () => {
+  // 4x2x1 voxels, 2 mm, origin (-4, 0, 0); voxel x holds 10x + y.
+  const vol = {
+    img: Float32Array.from([0, 10, 20, 30, 1, 11, 21, 31]),
+    dimsRAS: [3, 4, 2, 1],
+    img2RASstep: [1, 4, 8],
+    img2RASstart: [0, 0, 0],
+    matRAS: Float32Array.from([
+      2, 0, 0, -4, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1,
+    ]),
+    calMin: 5,
+    hdr: { scl_slope: 1, scl_inter: 0 },
+  } as unknown as NVImage
+
+  test('reads the voxel under a mm point above the window floor', () => {
+    const s = residentPickSampler(vol)
+    expect(s?.(0, 2, 0)).toBe(21 - 5)
+    expect(s?.(-4, 0, 0)).toBe(0) // value 0 is under calMin
+    expect(s?.(100, 0, 0)).toBe(0) // outside the volume
+  })
+
+  test('is null without CPU voxels', () => {
+    expect(residentPickSampler({ ...vol, img: null } as NVImage)).toBeNull()
   })
 })

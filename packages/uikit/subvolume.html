@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Sub-volume selector</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      #panes { flex: 1; display: flex; }
+      .pane { flex: 1; position: relative; }
+      .pane + .pane { border-left: 1px solid #333; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+    </style>
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit</b>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./subvolume.html" aria-current="page">subvolume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a></nav>
+        <label>view <select id="viewSelect" autocomplete="off">
+          <option value="MULTIPLANAR">multiplanar</option>
+          <option value="AXIAL">axial</option>
+          <option value="RENDER">render</option>
+        </select></label>
+        <label title="Split the volume into bricks">bricks <select id="gridSelect" autocomplete="off">
+          <option value="0">one texture</option>
+          <option value="2">2x2x2</option>
+          <option value="4">4x4x4</option>
+        </select></label>
+        <label><input id="explode" type="checkbox" autocomplete="off" /> explode</label>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
+      </header>
+      <div id="panes">
+        <div class="pane"><canvas id="parent"></canvas></div>
+        <div class="pane"><canvas id="copy"></canvas></div>
+      </div>
+      <footer><span id="help">Right-click two corners (on a slice or the 3D render); Shift+right-click keeps the menu.</span><span id="status" data-state="wait">Loading volume...</span></footer>
+    </div>
+
+    <script type="module">
+      import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '@niivue/niivue'
+      import { UIKitSubvolumeSelector } from './src/index.ts'
+      import { setStatus } from './statusBar.js'
+      import { urlParamSelect } from './urlParamSelect.js'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+
+      const opts = { backend, backgroundColor: [0.05, 0.05, 0.08, 1], isColorbarVisible: false }
+      const nv = new NiiVue({ ...opts, sliceType: SLICE_TYPE.MULTIPLANAR })
+      const copy = new NiiVue({ ...opts, sliceType: SLICE_TYPE.MULTIPLANAR })
+      await nv.attachToCanvas(document.getElementById('parent'))
+      await copy.attachToCanvas(document.getElementById('copy'))
+      document.getElementById('backendSelect').value = nv.backend
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
+      setStatus('Right-click the first corner', 'wait')
+
+      const view = document.getElementById('viewSelect')
+      view.addEventListener('change', () => {
+        nv.sliceType = SLICE_TYPE[view.value]
+        copy.sliceType = SLICE_TYPE[view.value]
+      })
+
+      // mni152 fits one texture, so force bricks to show the multi-brick path.
+      const grid = document.getElementById('gridSelect')
+      const explode = document.getElementById('explode')
+      const applyBricks = async () => {
+        const vol = nv.volumes[0]
+        const n = Number(grid.value)
+        const d = vol.dimsRAS
+        vol.chunkPlan = n ? chunkVolumeGrid([d[1], d[2], d[3]], [n, n, n], 4096, [3, 3, 3]) : undefined
+        vol.chunkExplode = n && explode.checked ? { enabled: true, scale: [1.4, 1.4, 1.4] } : { enabled: false }
+        // The old box no longer matches what is drawn.
+        selector.reset()
+        await nv.updateGLVolume()
+      }
+      grid.addEventListener('change', applyBricks)
+      explode.addEventListener('change', applyBricks)
+
+      let seq = 0
+      const selector = new UIKitSubvolumeSelector({
+        onSelect: async (sel) => {
+          const at = ++seq
+          const [x, y, z] = sel.voxelDims
+          if (!sel.subVolume) {
+            setStatus(`${x}x${y}x${z} voxels, but this volume has no CPU copy to extract`, 'error')
+            return
+          }
+          // A fresh File each pick: the copy is ephemeral, rebuilt on the next box.
+          const { nifti, calMin, calMax } = sel.subVolume
+          await copy.loadVolumes([{ url: new File([nifti], 'subvolume.nii'), colormap: 'gray', calMin, calMax }])
+          if (at !== seq) return
+          setStatus(`${x}x${y}x${z} voxels from [${sel.voxelOrigin.join(', ')}]`, 'ok')
+        },
+      })
+      selector.attach(nv)
+    </script>
+  </body>
+</html>

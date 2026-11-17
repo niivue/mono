@@ -1312,6 +1312,38 @@ export function reorientRGBA(
 // ============================================================================
 
 /**
+ * A CPU pick sampler over a resident volume's voxels, shaped like a streamed
+ * volume's `pickSampler`: world mm in, the value above the window floor out
+ * (0 is transparent). Null when the voxels are not on the CPU.
+ */
+export function residentPickSampler(
+  volume: NVImage,
+): ((x: number, y: number, z: number) => number) | null {
+  const data = getImageDataRAS(volume)
+  const d = volume.dimsRAS
+  if (!data || !d || !volume.matRAS) return null
+  // matRAS is row-major: transpose to gl-matrix order, then invert.
+  const inv = mat4.invert(
+    mat4.create(),
+    mat4.transpose(mat4.create(), volume.matRAS),
+  )
+  if (!inv) return null
+  const [, nx, ny, nz] = d
+  const slope = volume.hdr?.scl_slope || 1
+  const inter = volume.hdr?.scl_inter || 0
+  return (x, y, z) => {
+    const ix = Math.round(inv[0] * x + inv[4] * y + inv[8] * z + inv[12])
+    const iy = Math.round(inv[1] * x + inv[5] * y + inv[9] * z + inv[13])
+    const iz = Math.round(inv[2] * x + inv[6] * y + inv[10] * z + inv[14])
+    if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return 0
+    const value = data[ix + nx * (iy + ny * iz)] * slope + inter
+    // Read the window live: the app may re-window after the pick starts.
+    const calMin = volume.calMin ?? 0
+    return value > calMin ? value - calMin : 0
+  }
+}
+
+/**
  * Return the volume's 3D voxel data as a Float32Array in RAS voxel order.
  *
  * When the volume's native storage order already matches RAS (identity

@@ -423,6 +423,7 @@ export {
 // brick out as a standalone volume that keeps the parent's anatomical frame.
 export type { ExplodedBlockPick } from './control/interactions'
 export { pickExplodedBlock } from './control/interactions'
+export { chunkExplodeEnabled } from './volume/ChunkExplode'
 export type { ExtractedSubVolume } from './volume/ChunkExtract'
 export {
   extractChunkBlock,

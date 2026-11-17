@@ -7,7 +7,7 @@ import { mat4 } from 'gl-matrix'
 import { colormapKey, lookupColorMap } from '@/cmap/NVCmaps'
 import { invGamma, isPaqd, NiiDataType } from '@/NVConstants'
 import type { CinematicOptions, ColorMap, NVImage } from '@/NVTypes'
-import { getImageDataRAS } from '@/volume/utils'
+import { displayedFrame, getImageDataRAS } from '@/volume/utils'
 import { drawnOpacity } from './NVVolumeVisibility'
 
 /** Transfer function table: intensity (x) by sqrt-spaced gradient magnitude (y). */
@@ -487,14 +487,6 @@ export class CinematicFrameTimer {
   }
 }
 
-/** `vol` viewed at its displayed 4D frame (getImageDataRAS reads frame 0). */
-function frameOf(vol: NVImage): NVImage {
-  const n = vol.nVox3D
-  if (!vol.frame4D || !n || !vol.img) return vol
-  const start = vol.frame4D * n
-  return { ...vol, img: vol.img.subarray(start, start + n) } as NVImage
-}
-
 /** Half-float bits; hand-rounded where Float16Array is missing (pre-2025). */
 export function halfFloatBits(f: Float32Array): Uint16Array {
   if (typeof Float16Array !== 'undefined')
@@ -724,7 +716,7 @@ export class CinematicCpuCache {
     this._rawLabels = null
     this.labelProblem = ''
     if (!labelVol) return null
-    const raw = getImageDataRAS(frameOf(labelVol))
+    const raw = getImageDataRAS(displayedFrame(labelVol))
     if (!raw) return null
     const scaled = scaledIntensities(
       raw,
@@ -773,7 +765,7 @@ export class CinematicCpuCache {
       labelCmap?.normalize,
     ]
     if (!sameKey(intensityKey, this._intensityKey)) {
-      const raw = getImageDataRAS(frameOf(vol))
+      const raw = getImageDataRAS(displayedFrame(vol))
       if (!raw) return null
       this._intensityKey = intensityKey
       const dims: [number, number, number] = [

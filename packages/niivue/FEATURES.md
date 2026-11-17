@@ -388,8 +388,8 @@ auto-download path on iOS.
 | `context.registerVolumeTransform(t)` / `applyVolumeTransform(name, vol, opts?)` | Method | |
 | `context.dispose()` | Method | Releases listeners |
 
-Exported helpers: `computeSlicePointerEvent`, `getImageDataRAS(volume)` (RAS
-voxel-order `Float32Array`, zero-copy when possible).
+Exported helpers: `getImageDataRAS(volume)` (RAS voxel-order `Float32Array`,
+zero-copy when possible), `getVoxelValue(volume, x, y, z, frame)` (one scaled voxel).
 
 ## 19. Volume Transforms
 
@@ -439,7 +439,9 @@ From the package root (`@niivue/niivue`):
   `SlicePointerEvent`.
 - **Volume transforms:** `OptionField`, `ResultDefaults`, `TransformInfo`,
   `TransformOptions`, `VolumeTransform`.
-- **Utilities:** `getImageDataRAS`, `NVWorker`, `computeSlicePointerEvent`.
+- **Utilities:** `getImageDataRAS`, `getVoxelValue`, `NVWorker`.
+- **Sub-volume:** `extractSubVolume` (scaled Float32 NIfTI), `extractRawRegion`
+  (raw typed voxels), `extractChunkBlock`, `subVolumeBox`, `subVolumeAffine`.
 - **Writer options:** `WriteOptions`.
 - **Logger:** `LogLevel`.
 

@@ -45,15 +45,17 @@ export async function split4D(
   const headView = new DataView(head)
   headView.setInt16(40, 3, true)
   headView.setInt16(48, 1, true)
+  const frames = Math.min(
+    count,
+    Math.floor((buf.byteLength - offset) / frameBytes),
+  )
   return {
     image: new File([head, buf.slice(offset, offset + frameBytes)], image.name),
     frames: {
-      count: Math.min(
-        count,
-        Math.floor((buf.byteLength - offset) / frameBytes),
-      ),
+      count: frames,
       frame: 0,
-      group: seriesGroup(series),
+      // A refreshed display set may have another frame count: its own group.
+      group: seriesGroup(series && `${series}:${frames}`),
       load: async (f) => new View(buf, offset + f * frameBytes, voxels),
     },
   }
@@ -357,6 +359,8 @@ export function joinFrames(
           catchingUp = false
         })
     }
+    // loadVolumes emits volumeRemoved before its swap lands: prune after it.
+    pruneGroups()
     // The cine clock runs only while some pane shows a 4D series.
     if (v && !raf) raf = requestAnimationFrame(tick)
     onFrameChange()

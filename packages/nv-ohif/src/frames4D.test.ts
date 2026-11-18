@@ -11,18 +11,19 @@ import {
   split4D,
 } from './frames4D'
 
-// 2x1x1 voxels x 3 frames, int16, vox_offset 352.
-function nifti4D(): File {
+// 2x1x1 voxels x `frames` frames, int16, vox_offset 352.
+function nifti4D(frames = 3): File {
   const hdr = new DataView(new ArrayBuffer(352))
   hdr.setInt32(0, 348, true)
-  for (const [i, d] of [4, 2, 1, 1, 3].entries())
+  for (const [i, d] of [4, 2, 1, 1, frames].entries())
     hdr.setInt16(40 + 2 * i, d, true)
   hdr.setInt16(70, 4, true)
   hdr.setInt16(72, 16, true)
   hdr.setFloat32(108, 352, true)
   for (const i of [1, 2, 3]) hdr.setFloat32(76 + 4 * i, 1, true)
   hdr.setUint32(344, 0x00312b6e, true) // magic 'n+1'
-  return new File([hdr.buffer, new Int16Array([1, 2, 3, 4, 5, 6])], 'pt.nii')
+  const data = Int16Array.from({ length: 2 * frames }, (_, i) => i + 1)
+  return new File([hdr.buffer, data], 'pt.nii')
 }
 
 describe('split4D', () => {
@@ -360,6 +361,8 @@ it('a reconverted series rejoins its frame group while shown', async () => {
   const shown = [
     (await split('ds1')).frames.group === first.frames.group,
     (await split('ds2')).frames.group === first.frames.group,
+    // A refresh with another frame count steps on its own.
+    (await split4D(nifti4D(2), 'ds1'))?.frames.group === first.frames.group,
   ]
   await nv.removeVolume(0)
   const afterRemove = (await split('ds1')).frames.group
@@ -368,6 +371,7 @@ it('a reconverted series rejoins its frame group while shown', async () => {
   expect(afterRemove).not.toBe(first.frames.group)
   expect([...shown, reopened === first.frames.group]).toEqual([
     true,
+    false,
     false,
     false,
   ])

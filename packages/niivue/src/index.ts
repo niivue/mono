@@ -321,7 +321,9 @@ export type {
   SlideAnnotationTool,
 } from './slide/slideAnnotations'
 export {
+  isClosedSlideTool,
   NVSlideAnnotations,
+  slideAnnotationOutline,
   slideAnnotationStats,
 } from './slide/slideAnnotations'
 export type {

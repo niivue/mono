@@ -13,7 +13,11 @@ import {
   NIIVUE_STANDARD_COMMANDS,
   noTiles2D,
 } from './standardCommands'
-import { ANNOTATION_TO_OHIF, OHIF_BRUSHES } from './toolBridge'
+import {
+  ANNOTATION_TO_OHIF,
+  OHIF_BRUSHES,
+  OHIF_TO_SLIDE_TOOL,
+} from './toolBridge'
 
 export const NIIVUE_UNSUPPORTED_EVALUATOR = 'evaluate.niivue.unsupported'
 
@@ -40,7 +44,12 @@ const TOOL_COMMANDS = [
   'toggleActiveDisabledToolbar',
 ]
 // Slide gestures: Length draws a ruler, Zoom zooms, anything else pans.
-const SLIDE_SUPPORTED_TOOLS: readonly string[] = ['Length', 'Pan', 'Zoom']
+const SLIDE_SUPPORTED_TOOLS: readonly string[] = [
+  'Pan',
+  'Zoom',
+  // OHIF measurement tools the slide view draws (toolBridge OHIF_TO_SLIDE_TOOL).
+  ...Object.keys(OHIF_TO_SLIDE_TOOL),
+]
 // Volume-only standard commands that no-op on an NVSlide viewport.
 const SLIDE_UNSUPPORTED = [
   'setViewportOrientation',

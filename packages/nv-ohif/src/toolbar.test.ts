@@ -427,7 +427,7 @@ describe('evaluate.niivue.unsupported', () => {
     ).toBeUndefined()
   })
 
-  it('enables only Length, Pan and Zoom on a slide viewport', () => {
+  it('enables only Pan, Zoom and the slide measurement tools on a slide viewport', () => {
     registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
     updateNiivueViewport('vp-1', { slideView: {} as WsiSlideView })
     const tool = (toolName: string) =>
@@ -437,15 +437,9 @@ describe('evaluate.niivue.unsupported', () => {
           { commandName: 'setToolActiveToolbar', commandOptions: { toolName } },
         ]),
       })
-    for (const name of [
-      'RectangleROI',
-      'Angle',
-      'CobbAngle',
-      'WindowLevel',
-      'Magnify',
-    ])
+    for (const name of ['Angle', 'CobbAngle', 'WindowLevel', 'Magnify'])
       expect(tool(name)).toEqual(disabled)
-    for (const name of ['Length', 'Pan', 'Zoom'])
+    for (const name of ['Length', 'RectangleROI', 'Pan', 'Zoom'])
       expect(tool(name)).toMatchObject({ disabled: false })
   })
 

@@ -1,3 +1,31 @@
+## 1.0.0-rc.262 (2026-11-18)
+
+### Fixes
+
+- **nv-ohif:** bidirectional refines a zero minor too ([d995dcc2](https://github.com/niivue/mono/commit/d995dcc2))
+- **nv-ohif:** bidirectional grid on a sheared affine ([2211f57f](https://github.com/niivue/mono/commit/2211f57f))
+- **nv-ohif:** bidirectional grid covers each voxel's whole cell ([2d7b054c](https://github.com/niivue/mono/commit/2d7b054c))
+- **nv-ohif:** bidirectional grid follows the voxel columns; superseded plane load keeps the pen ([1df7071b](https://github.com/niivue/mono/commit/1df7071b))
+- **nv-ohif:** an oriented top output stays the pick; off-plane wheel steps outputs ([78d2ccf6](https://github.com/niivue/mono/commit/78d2ccf6))
+- **nv-ohif:** an overlay plane leaves the pen off ([0c96b432](https://github.com/niivue/mono/commit/0c96b432))
+- **nv-ohif:** Segment Bidirectional samples the segment on world planes ([#863](https://github.com/niivue/mono/issues/863))
+- **nv-ohif:** the wheel on an unmapped slice moves a slice, not outputs ([4f222c25](https://github.com/niivue/mono/commit/4f222c25))
+- **nv-ohif:** split-series outputs order by first instance; cine waits for a switch ([d2bb6a5e](https://github.com/niivue/mono/commit/d2bb6a5e))
+- **nv-ohif:** bidirectional minor bins in-plane; wheel switches outputs in a volume viewport ([85bbce02](https://github.com/niivue/mono/commit/85bbce02))
+- **nv-ohif:** Segment Bidirectional slabs follow the volume origin ([bf1651c3](https://github.com/niivue/mono/commit/bf1651c3))
+- **nv-ohif:** Segment Bidirectional searches in-plane edges only ([3d6c41ec](https://github.com/niivue/mono/commit/3d6c41ec))
+- **nv-ohif:** the wheel enters a multi-slice output on its adjacent image; an overlay load cannot overwrite a new segmentation ([b9e2ee22](https://github.com/niivue/mono/commit/b9e2ee22))
+- **nv-ohif:** a mixed series opens on its oriented output, stacks multi-frame outputs and shows inline overlay planes ([a3afb374](https://github.com/niivue/mono/commit/a3afb374))
+- **nv-ohif:** Segment Bidirectional measures in world-plane slabs (oblique grids keep endpoints on the segment) ([f9620af8](https://github.com/niivue/mono/commit/f9620af8))
+- **nv-ohif:** Segment Bidirectional on a tilted grid projects onto the nearest world plane ([1663694d](https://github.com/niivue/mono/commit/1663694d))
+- **nv-ohif:** Segment Label reads SegmentLabelTool; slide measurement tools enabled on slides; a non-reconstructable series opens in its acquired plane ([4d852f9b](https://github.com/niivue/mono/commit/4d852f9b))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.261 (2026-11-18)
 
 ### Fixes

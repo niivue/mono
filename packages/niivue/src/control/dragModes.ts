@@ -6,7 +6,7 @@ import {
 } from '@/control/cameraEvents'
 import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
-import { DRAG_MODE, SLICE_TYPE } from '@/NVConstants'
+import { DRAG_MODE, SLICE_TYPE, sliceTypeDim } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
 import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
@@ -48,10 +48,51 @@ export function isCrosshairPanDrag(
  * canvas' backing-store-to-CSS ratio (1:1 without a canvas).
  */
 export function crosshairPanThresholdPx(ctrl: NiiVue): number {
+  return cssToCanvasPx(ctrl, crosshairPanThresholdCssPx)
+}
+
+function cssToCanvasPx(ctrl: NiiVue, cssPx: number): number {
   const canvas = ctrl.canvas
-  if (!canvas) return crosshairPanThresholdCssPx
+  if (!canvas) return cssPx
   const cssWidth = Math.max(canvas.getBoundingClientRect().width, 1)
-  return crosshairPanThresholdCssPx * (canvas.width / cssWidth)
+  return cssPx * (canvas.width / cssWidth)
+}
+
+/** Vertical drag (CSS pixels) per slice step of `DRAG_MODE.slice`. */
+export const sliceDragCssPx = 4
+
+/**
+ * Step the crosshair `delta` slices through a 2D tile of `sliceType`, as one
+ * wheel notch per slice does.
+ */
+export function stepSlice(ctrl: NiiVue, sliceType: number, delta: number) {
+  const depthAxis = sliceTypeDim(sliceType)
+  if (ctrl.model.getVolumes().length > 0) {
+    const step: [number, number, number] = [0, 0, 0]
+    step[depthAxis] = delta
+    ctrl.moveCrosshairInVox(step[0], step[1], step[2])
+    return
+  }
+  // Mesh-only: step in scene fraction via mm
+  const mm = ctrl.model.scene2mm(ctrl.model.scene.crosshairPos)
+  const range =
+    ctrl.model.extentsMax[depthAxis] - ctrl.model.extentsMin[depthAxis]
+  mm[depthAxis] += delta * range * 0.01
+  ctrl.setCrosshairPos([mm[0], mm[1], mm[2]])
+}
+
+/**
+ * `DRAG_MODE.slice`: step one slice per `sliceDragCssPx` of vertical drag.
+ * The drag start advances by the distance consumed, so slow drags add up.
+ */
+export function dragForSlice(ctrl: NiiVue): void {
+  const hit = ctrl.activeTileHit
+  if (!hit) return
+  const perStep = cssToCanvasPx(ctrl, sliceDragCssPx)
+  const steps = Math.trunc((ctrl.dragEndXY[1] - ctrl.dragStartXY[1]) / perStep)
+  if (!steps) return
+  ctrl.dragStartXY[1] += steps * perStep
+  stepSlice(ctrl, hit.sliceType, steps)
 }
 
 /**
@@ -159,7 +200,10 @@ function calculateNewRange(
     }
   }
   if (lo >= hi) return null
-  return { calMin: lo * slope + inter, calMax: hi * slope + inter }
+  // A negative slope maps the raw max to the scaled min.
+  const a = lo * slope + inter
+  const b = hi * slope + inter
+  return { calMin: Math.min(a, b), calMax: Math.max(a, b) }
 }
 
 /** Build DragReleaseInfo from current drag state. */
@@ -559,18 +603,23 @@ export function dragForWindowing(
   if (!vol) return
 
   const range = vol.robustMax - vol.robustMin
-  const [widthGain, centerGain] = ctrl.model.interaction.windowingStep
+  const { windowingStep, isWindowingUpperBoundOnly } = ctrl.model.interaction
+  const [widthGain, centerGain] = windowingStep
   const widthStep = range * widthGain
   const centerStep = range * centerGain
 
-  const width = vol.calMax - vol.calMin
-  const center = (vol.calMax + vol.calMin) * 0.5
+  if (isWindowingUpperBoundOnly) {
+    vol.calMax = Math.max(vol.calMin, vol.calMax - deltaY * centerStep)
+  } else {
+    const width = vol.calMax - vol.calMin
+    const center = (vol.calMax + vol.calMin) * 0.5
 
-  const newWidth = Math.max(1, width + deltaX * widthStep)
-  const newCenter = center - deltaY * centerStep
+    const newWidth = Math.max(1, width + deltaX * widthStep)
+    const newCenter = center - deltaY * centerStep
 
-  vol.calMin = newCenter - newWidth * 0.5
-  vol.calMax = newCenter + newWidth * 0.5
+    vol.calMin = newCenter - newWidth * 0.5
+    vol.calMax = newCenter + newWidth * 0.5
+  }
   ctrl.emit('volumeUpdated', {
     volumeIndex: 0,
     volume: vol,

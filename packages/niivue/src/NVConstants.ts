@@ -25,6 +25,11 @@ export enum DRAG_MODE {
    * Single-button "click to locate, drag to pan" for touch and trackpads.
    */
   crosshairPan = 10,
+  /**
+   * Vertical drag steps through slices like the mouse wheel: one slice per
+   * `sliceDragCssPx` CSS pixels, dragging down goes where wheeling down goes.
+   */
+  slice = 11,
 }
 
 /**
@@ -168,6 +173,11 @@ export enum PEN_SHAPE {
   RECTANGLE = 0,
   /** Round brush: voxels farther than `penSize / 2` from the centre are skipped. */
   CIRCLE = 1,
+  /**
+   * 3D ball across slices, `penSize` voxels wide along the finest axis and
+   * round in mm on anisotropic voxels.
+   */
+  SPHERE = 2,
 }
 
 export const NiiIntentCode = Object.freeze({
@@ -599,6 +609,7 @@ export const DRAW_DEFAULTS: DrawConfig = {
   isFillOverwriting: true,
   opacity: 0.8,
   rimOpacity: -1,
+  rimWidth: 1,
   colormap: 'Draw',
   isClickToSegment: false,
   clickToSegmentTolerance: 0.05,
@@ -617,6 +628,7 @@ export const INTERACTION_DEFAULTS: InteractionConfig = {
   isPanFollowingCrosshair: false,
   isLegendToggleEnabled: false,
   windowingStep: [0.005, 0.005],
+  isWindowingUpperBoundOnly: false,
 }
 
 export const ANNOTATION_DEFAULTS: AnnotationConfig = {

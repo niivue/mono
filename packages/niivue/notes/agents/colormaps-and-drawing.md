@@ -37,4 +37,6 @@ Voxel-level drawing/annotation on 2D slices, visible in both 2D and 3D views. Mo
 
 **`draw.isFillOverwriting`** (default `true`): Controls whether pen/fill overwrite existing non-zero voxels. When `false`, skip already-colored voxels (eraser always works).
 
+**3D pen and shape fills:** `PEN_SHAPE.SPHERE` makes `drawPoint`/`drawLine` stamp `drawSphere` (per-axis voxel radii from `pixDimsRAS`: `penSize` voxels wide on the finest axis, round in mm); the stroke keeps the 2D pen's single undo snapshot at pointer-down. `drawShapeFill(shape, startMm, endMm, sliceType)` fills a circle/rectangle (slice plane) or sphere as one undo step and emits `drawingChanged` `update`. `drawSphere` walks x-runs clipped to the volume (`fill` when overwriting). `benchmarks/pen-bench.ts` times the pen and fills.
+
 **`draw.isEnabled` vs `closeDrawing()`**: `draw.isEnabled = false` disables pen but keeps drawing visible. `closeDrawing()` destroys drawingVolume and GPU textures.

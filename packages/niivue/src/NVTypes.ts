@@ -233,6 +233,11 @@ export type NVImage = {
    */
   atlasOutline?: number
   /**
+   * Overlay only: keep the colormap's per-entry alpha (an opacity ramp) instead
+   * of drawing every in-window voxel opaque. Default false.
+   */
+  isColormapAlphaKept?: boolean
+  /**
    * Label values (calibrated IDs, not LUT rows) drawn transparent in 2D and 3D
    * on both backends. They stay listed in the legend, drawn as an outlined box.
    * Ignored unless {@link colormap} is a label colormap.
@@ -1167,6 +1172,8 @@ export type DrawConfig = {
   isFillOverwriting: boolean
   opacity: number
   rimOpacity: number
+  /** Rim width in device pixels (drawn only while rimOpacity >= 0). Default 1. */
+  rimWidth: number
   colormap: string
   // Click-to-segment ("magic wand"): when on, a draw click grows a 3D region of
   // intensity-similar voxels from the seed instead of painting a pen stroke.
@@ -1212,6 +1219,11 @@ export type InteractionConfig = {
    * center. A negative center step makes dragging down raise it (cornerstone).
    */
   windowingStep: [number, number]
+  /**
+   * Windowing drag moves only calMax (vertical, at windowingStep[1]); calMin
+   * stays and calMax never drops below it. Cornerstone's PET window. Default false.
+   */
+  isWindowingUpperBoundOnly: boolean
 }
 
 // ============================================================
@@ -1508,6 +1520,7 @@ export type NiiVueOptions = {
   drawIsFillOverwriting?: boolean
   drawOpacity?: number
   drawRimOpacity?: number
+  drawRimWidth?: number
   drawColormap?: string
 
   // Interaction
@@ -1521,6 +1534,8 @@ export type NiiVueOptions = {
   isPanFollowingCrosshair?: boolean
   /** Windowing drag gain. See InteractionConfig.windowingStep. */
   windowingStep?: [number, number]
+  /** See InteractionConfig.isWindowingUpperBoundOnly. */
+  isWindowingUpperBoundOnly?: boolean
   isLegendToggleEnabled?: boolean
 
   // Annotation (prefixed)
@@ -1764,6 +1779,8 @@ export type ImageFromUrlOptions = {
   isColormapInverted?: boolean
   /** Outline width for a label/atlas volume, in its own voxels (default 0 = filled) */
   atlasOutline?: number
+  /** Overlay: keep the colormap's per-entry alpha (default: false = opaque) */
+  isColormapAlphaKept?: boolean
   /** Label values of a label/atlas volume to hide (default: none) */
   hiddenLabels?: number[]
   /** Label IDs to highlight; the others draw at a quarter alpha (default: none) */

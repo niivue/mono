@@ -27,6 +27,7 @@ struct SliceUniforms {
     // chunkSubSize's trailing pad lane (float 55).
     isChannelStack: i32,
     chunkDataOrigin: vec3f,
+    drawRimWidth: f32,            // rim probe distance in pixels, chunkDataOrigin's pad lane (float 59)
     chunkDataSize: vec3f,
     volumeTexDimsFull: vec3f,     // full volume voxel dims (texture-size-independent)
     fadeAlpha: f32,               // streaming cross-fade weight [0,1]; 1 = fully present
@@ -258,8 +259,10 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     // Sampled through volPos so a chunked drawing layer reads its per-chunk
     // texture (volPos is the identity transform for non-chunked volumes).
     // dpdx/dpdy must be in uniform control flow, so compute before branching
-    let drawOffsetX = dpdx(volPos);
-    let drawOffsetY = dpdy(volPos);
+    // Probing one point drawRimWidth pixels out keeps the rim at 4 taps; a
+    // region thinner than the width can be stepped over (no rim there).
+    let drawOffsetX = dpdx(volPos) * u.drawRimWidth;
+    let drawOffsetY = dpdy(volPos) * u.drawRimWidth;
     let drawDims = vec3i(textureDimensions(drawing, 0));
     let drawCoord = vec3i(volPos * vec3f(drawDims));
     let drawColor = textureLoad(drawing, clamp(drawCoord, vec3i(0), drawDims - 1), 0);

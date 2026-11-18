@@ -430,6 +430,12 @@ export const CORE_SCHEMAS = {
       .describe(
         'Nearest-neighbour sampling instead of linear, for label maps.',
       ),
+    colormap_alpha: z
+      .boolean()
+      .optional()
+      .describe(
+        "An overlay keeps its colormap's alpha (an opacity ramp) instead of drawing opaque.",
+      ),
     atlas_outline: z
       .number()
       .min(0)

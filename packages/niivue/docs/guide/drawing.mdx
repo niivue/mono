@@ -36,6 +36,11 @@ only; one with no spatial transform is placed by index), and `closeDrawing()` di
   is red, 2 is green and 3 is blue. A value of 0 erases.
 - `drawPenSize` is the brush width in voxels, and `drawPenShape` picks
   `PEN_SHAPE.RECTANGLE` (default) or `PEN_SHAPE.CIRCLE` for wide brushes.
+  `PEN_SHAPE.SPHERE` paints a 3D ball across slices, `drawPenSize` voxels wide
+  along the finest axis and round in mm on anisotropic voxels.
+- `drawShapeFill(shape, startMm, endMm, sliceType)` fills a circle or
+  rectangle in a slice plane, or a sphere, from world-mm drag points (centre
+  and edge, or opposite corners) as one undo step.
 - `drawPenFilled = true` fills the area enclosed by each stroke. Pair it with
   `drawPenAutoClose = true` so a stroke that does not quite meet its start is
   closed for you.
@@ -54,7 +59,8 @@ nv.drawPenAutoClose = true
 `drawOpacity` (0 to 1, default 0.8) sets how strongly the drawing covers the
 image. `drawRimOpacity` gives the edge of each region its own opacity, so a
 low `drawOpacity` with a rim of 1 shows outlined regions; the default of -1
-turns the rim off. `drawColormap` picks the
+turns the rim off. `drawRimWidth` sets the rim's width in device pixels
+(default 1). `drawColormap` picks the
 label colors: any label colormap whose codes fit in 0 to 255.
 `nv.drawingColormaps` lists the names you can use.
 

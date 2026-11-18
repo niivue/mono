@@ -268,6 +268,7 @@ describe('core tool schemas', () => {
       'chunk_grid',
       'colorbar',
       'colormap',
+      'colormap_alpha',
       'colormap_negative',
       'colormap_type',
       'frame',

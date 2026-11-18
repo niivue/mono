@@ -71,6 +71,7 @@ export interface VolumeUpdate {
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
   isNearestInterpolation?: boolean
+  isColormapAlphaKept?: boolean
   atlasOutline?: number
   hiddenLabels?: number[]
   selectedLabels?: number[]
@@ -125,6 +126,7 @@ export interface ShownVolume {
   isColorbarVisible?: boolean
   isLegendVisible?: boolean
   isNearestInterpolation?: boolean
+  isColormapAlphaKept?: boolean
   atlasOutline?: number
   hiddenLabels?: number[]
   selectedLabels?: number[]

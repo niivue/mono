@@ -1766,6 +1766,7 @@ export function initInteraction(ctrl: NiiVue): void {
             penShape: ctrl.model.draw.penShape,
             penAxCorSag: ctrl._drawPenAxCorSag,
             penOverwrites: ctrl.model.draw.isFillOverwriting,
+            pixDims: vol.pixDimsRAS,
           })
           ctrl.markDrawDirty(pt[0], pt[1], pt[2], ctrl.model.draw.penSize)
           ctrl.refreshDrawing()
@@ -2100,6 +2101,7 @@ export function initInteraction(ctrl: NiiVue): void {
               penSize: ctrl.model.draw.penSize,
               penAxCorSag: ctrl._drawPenAxCorSag,
               penOverwrites: ctrl.model.draw.isFillOverwriting,
+              pixDims: vol.pixDimsRAS,
             })
           }
           if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
@@ -2614,6 +2616,7 @@ export function initInteraction(ctrl: NiiVue): void {
               penSize: ctrl.model.draw.penSize,
               penAxCorSag: ctrl._drawPenAxCorSag,
               penOverwrites: ctrl.model.draw.isFillOverwriting,
+              pixDims: vol.pixDimsRAS,
             })
             const penSize = ctrl.model.draw.penSize
             ctrl.markDrawDirty(
@@ -2918,6 +2921,9 @@ export function initInteraction(ctrl: NiiVue): void {
           DragModes.dragForWindowing(ctrl, deltaX, deltaY)
           ctrl.drawScene()
           break
+        case DRAG_MODE.slice:
+          DragModes.dragForSlice(ctrl)
+          break
         case DRAG_MODE.contrast:
         case DRAG_MODE.measurement:
         case DRAG_MODE.callbackOnly:
@@ -2941,6 +2947,33 @@ export function initInteraction(ctrl: NiiVue): void {
         dae[2],
         ctrl.activeClipPlaneIndex,
       )
+      ctrl.drawScene()
+      return
+    }
+    // Pan / zoom as the primary drag move the 3D view rather than rotate it.
+    const renderMode =
+      ctrl.activeButton === 0
+        ? ctrl.model.interaction.primaryDragMode
+        : DRAG_MODE.none
+    if (renderMode === DRAG_MODE.pan || renderMode === DRAG_MODE.slicer3D) {
+      if (renderMode === DRAG_MODE.pan) {
+        const tile =
+          ctrl.view?.screenSlices?.[ctrl.activeTileHit?.tileIndex ?? -1]
+        const [, , w = 1, h = 1] = tile?.leftTopWidthHeight ?? []
+        // renderPan is clip space: a tile spans 2 units.
+        const dpr = ctrl.effectiveDevicePixelRatio
+        const p = ctrl.model.scene.renderPan
+        ctrl.renderPan = [
+          p[0] + (2 * deltaX * dpr) / w,
+          p[1] - (2 * deltaY * dpr) / h,
+        ]
+      }
+      // ponytail: 2D zoom not yoked here (pinch yokes it); add if asked.
+      else
+        ctrl.scaleMultiplier = clampScale3D(
+          ctrl.model.scene.scaleMultiplier * Math.exp(-deltaY * 0.01),
+          ctrl.model.scene.scaleMultiplier,
+        )
       ctrl.drawScene()
       return
     }
@@ -3040,22 +3073,7 @@ export function initInteraction(ctrl: NiiVue): void {
         ctrl.drawScene()
         return
       }
-      const delta = evt.deltaY > 0 ? 1 : -1
-      const volumes = ctrl.model.getVolumes()
-      if (volumes.length > 0) {
-        const depthAxis = sliceTypeDim(hit.sliceType)
-        const step: [number, number, number] = [0, 0, 0]
-        step[depthAxis] = delta
-        ctrl.moveCrosshairInVox(step[0], step[1], step[2])
-      } else {
-        // Mesh-only: step in scene fraction via mm
-        const depthDim = sliceTypeDim(hit.sliceType)
-        const mm = ctrl.model.scene2mm(ctrl.model.scene.crosshairPos)
-        const range =
-          ctrl.model.extentsMax[depthDim] - ctrl.model.extentsMin[depthDim]
-        mm[depthDim] += delta * range * 0.01
-        ctrl.setCrosshairPos([mm[0], mm[1], mm[2]])
-      }
+      DragModes.stepSlice(ctrl, hit.sliceType, evt.deltaY > 0 ? 1 : -1)
       return
     }
     const dae = ctrl.getClipPlaneDepthAziElev(ctrl.activeClipPlaneIndex)

@@ -1,4 +1,5 @@
-import { generateShape } from '@/annotation/shapes'
+import { ellipseRing } from '@/annotation/shapes'
+import type { PolygonWithHoles } from '@/NVTypes'
 import type { NVSlidePoint } from './slideController'
 
 /**
@@ -68,14 +69,19 @@ export function slideAnnotationOutline(
     return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }]
   if (tool === 'ellipse' || tool === 'circle') {
     const r = Math.hypot(b.x - a.x, b.y - a.y)
-    const [s, e] =
+    const [cx, cy, rx, ry] =
       tool === 'circle'
-        ? [
-            { x: a.x - r, y: a.y - r },
-            { x: a.x + r, y: a.y + r },
+        ? [a.x, a.y, r, r]
+        : [
+            (a.x + b.x) / 2,
+            (a.y + b.y) / 2,
+            Math.abs(b.x - a.x) / 2,
+            Math.abs(b.y - a.y) / 2,
           ]
-        : [a, b]
-    return generateShape('ellipse', s, e, 0)[0]?.outer ?? []
+    if (rx + ry === 0) return []
+    // Not generateShape: it drops sub-pixel ellipses, which at deep slide
+    // zoom are drawn and measured.
+    return (ellipseRing(cx, cy, rx, ry)[0] as PolygonWithHoles).outer
   }
   return [...points]
 }

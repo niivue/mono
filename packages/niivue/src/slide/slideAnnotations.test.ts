@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { NVSlideAnnotations, slideAnnotationStats } from './slideAnnotations'
+import {
+  NVSlideAnnotations,
+  slideAnnotationOutline,
+  slideAnnotationStats,
+} from './slideAnnotations'
 
 const sp = [0.002, 0.001] as const
 
@@ -57,6 +61,14 @@ describe('slideAnnotationStats', () => {
     ])
     expect(c.area).toBeCloseTo(Math.PI * 25)
     expect(c.perimeter).toBeCloseTo(Math.PI * 10)
+  })
+
+  test('a sub-pixel ellipse still has an outline', () => {
+    const ring = slideAnnotationOutline('ellipse', [
+      { x: 0, y: 0 },
+      { x: 0.3, y: 0.2 },
+    ])
+    expect(ring.length).toBeGreaterThan(2)
   })
 })
 

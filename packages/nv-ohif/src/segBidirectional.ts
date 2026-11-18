@@ -20,7 +20,8 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 
 /**
  * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing. The
- * segment's surface voxels (a 6-neighbour outside it) are grouped into slabs
+ * segment's edge voxels (an in-plane 4-neighbour outside it; the voxel axis
+ * nearest `depth` is through-plane) are grouped into slabs
  * one voxel thick across world (RAS mm) axis `depth`, the normal of the view's
  * plane, and projected onto their slab's plane: on an oblique grid a voxel
  * slice is not a world plane, which NiiVue's annotations lie on. In each slab
@@ -46,7 +47,11 @@ export function largestBidirectional(
     return sub(vox2mm(v), o)
   })
   // Slab thickness: the voxel step most aligned with the view's normal.
-  const dz = Math.max(...cols.map((c) => Math.abs(c[depth] ?? 0)))
+  const steps = cols.map((c) => Math.abs(c[depth] ?? 0))
+  const dz = Math.max(...steps)
+  // Through-plane neighbours stay out: a 6-neighbour surface puts every voxel
+  // of a segment's end slices into the O(n^2) search (100x slower at r=100).
+  const through = steps.indexOf(dz)
   const bin = Math.min(...cols.map((c) => Math.hypot(...c)))
   const normal: Vec3 = [0, 0, 0]
   normal[depth] = 1
@@ -59,14 +64,14 @@ export function largestBidirectional(
     for (let y = 0; y < ny; y++)
       for (let x = 0; x < nx; x++) {
         if (at(x, y, z) !== value) continue
-        const surface =
-          at(x - 1, y, z) !== value ||
-          at(x + 1, y, z) !== value ||
-          at(x, y - 1, z) !== value ||
-          at(x, y + 1, z) !== value ||
-          at(x, y, z - 1) !== value ||
-          at(x, y, z + 1) !== value
-        if (!surface) continue
+        const edge =
+          (through !== 0 &&
+            (at(x - 1, y, z) !== value || at(x + 1, y, z) !== value)) ||
+          (through !== 1 &&
+            (at(x, y - 1, z) !== value || at(x, y + 1, z) !== value)) ||
+          (through !== 2 &&
+            (at(x, y, z - 1) !== value || at(x, y, z + 1) !== value))
+        if (!edge) continue
         const p = vox2mm([x, y, z])
         const k = Math.round(p[depth] / dz)
         p[depth] = k * dz
@@ -117,6 +122,12 @@ export function largestBidirectional(
 // World (RAS mm) axis normal to each 2D view (axial z, coronal y, sagittal x).
 const WORLD_DEPTH = [2, 1, 0] as const
 
+/**
+ * OHIF's runSegmentBidirectional on a NiiVue pane: the active segment's
+ * largest bidirectional on the acquisition plane, added as a Bidirectional
+ * measurement and shown. False when the segment has no voxels.
+ * ponytail: the panel's segment statistics do not list it (cornerstone's do).
+ */
 export function addSegmentBidirectional(nv: NiiVue): boolean {
   const img = nv.drawingVolume?.img
   const d = nv.volumes[0]?.dimsRAS

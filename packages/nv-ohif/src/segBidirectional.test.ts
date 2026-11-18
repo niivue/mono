@@ -18,3 +18,17 @@ it('largest bidirectional: farthest pair, then widest perpendicular chord', () =
   ])
   expect(largestBidirectional(img, [9, 9, 2], (v) => v, 3, 2)).toBeUndefined()
 })
+
+// Only in-plane edges enter the O(n^2) search: a 5x5x3 block has 16 edge
+// voxels per slice, while a 6-neighbour surface would add the 9 interior
+// voxels of each end slice.
+it('largest bidirectional: through-plane faces are not edges', () => {
+  const img = new Uint8Array(5 * 5 * 3).fill(1)
+  let calls = 0
+  const vox2mm = (v: [number, number, number]) => {
+    calls++
+    return v
+  }
+  largestBidirectional(img, [5, 5, 3], vox2mm, 1, 2)
+  expect(calls).toBe(4 + 16 * 3)
+})

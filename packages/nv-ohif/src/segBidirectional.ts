@@ -211,11 +211,15 @@ export function largestBidirectional(
     }
     return best
   }
-  // A segment thinner than the grid on an oblique plane can leave each plane
-  // one sample (no major): refine until one shows, to an eighth of a voxel.
+  // A segment thinner than the grid on an oblique (or sheared) plane can
+  // leave each plane, or each chord bin, one sample (no major or no minor):
+  // refine until both show, to an eighth of a voxel.
+  let last: [Vec3, Vec3, Vec3, Vec3] | undefined
   for (let f = 1; ; f /= 2) {
     const ends = measure(f)
-    if (ends || f <= 1 / 8) return ends
+    if (ends && Math.hypot(...sub(ends[2], ends[3])) > 0) return ends
+    last = ends ?? last
+    if (f <= 1 / 8) return last
   }
 }
 

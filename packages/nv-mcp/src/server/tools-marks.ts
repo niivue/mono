@@ -333,7 +333,8 @@ export function registerMarkTools(
     description:
       'Outlines boxes on the 3D render (not the slices), each from its two corners in ' +
       'world units: one focus box, a set of boxes, or both. They are not saved with the ' +
-      'document. Reports the focus box and how many boxes the set has.',
+      'document. The focus box is shared with the page (a subvolume selector ' +
+      'replaces it when its selection changes). Reports the focus box and how many boxes the set has.',
     inputSchema: MARK_SCHEMAS.set_boxes,
   })
 

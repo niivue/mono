@@ -995,7 +995,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Transient world-space box outlined as 12 edges on the 3D render view (e.g. a
    * focused subvolume). `min`/`max` are in the scene's world-mm space. Set null
-   * to clear. Not serialized.
+   * to clear. Not serialized. One box, last writer wins: UIKit's subvolume
+   * selector and nv-mcp `set_boxes` both set it.
    */
   get focusBox(): FocusBox | null {
     return this.model._focusBox

@@ -1,3 +1,23 @@
+## 1.0.0-rc.136 (2026-11-18)
+
+### Features
+
+- **nv-ext-tile:** support native DICOM WSI grayscale and RGB ([2e38d1d5](https://github.com/niivue/mono/commit/2e38d1d5))
+
+### Fixes
+
+- **nv-ext-tile:** native RGB without PlanarConfiguration; mixed native samples ([cb2e4f18](https://github.com/niivue/mono/commit/cb2e4f18))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.227
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.135 (2026-11-18)
 
 ### Updated Dependencies

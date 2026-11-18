@@ -1,3 +1,13 @@
+## 1.0.0-rc.227 (2026-11-18)
+
+### Features
+
+- **nv-ext-tile:** support native DICOM WSI grayscale and RGB ([2e38d1d5](https://github.com/niivue/mono/commit/2e38d1d5))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.226 (2026-11-18)
 
 ### Fixes

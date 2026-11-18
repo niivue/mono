@@ -719,7 +719,9 @@ export class NVSlideController {
     // Closes a polygon: its first click placed the last vertex, the second
     // fell on it and added none.
     if (this.draft?.tool === 'polygon') {
-      this._commitDraft(this.draft.points.slice(0, -1))
+      const placed = this.draft.points.slice(0, -1)
+      // Under three vertices encloses nothing: keep drawing.
+      if (placed.length >= 3) this._commitDraft(placed)
       return
     }
     if (

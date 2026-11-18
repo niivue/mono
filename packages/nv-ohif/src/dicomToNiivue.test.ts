@@ -129,6 +129,19 @@ describe('convertDisplaySetToNifti', () => {
       instances: [instance('3', 0), instance('4', 0)],
     } as unknown as OhifDisplaySet)
     expect(surview?.image.name).toBe('surview.nii')
+    // A cine (frames at one position, unmapped) outranks one stray mapped
+    // slice: the policy pick stands.
+    clearSharedTasks()
+    result = Promise.resolve({
+      series: [axial('cine', 0, 10), axial('loc', 50, 1)],
+    })
+    const cine = await convertDisplaySetToNifti({
+      instances: [
+        ...Array.from({ length: 10 }, (_, i) => instance(`c${i}`, 0)),
+        instance('l', 50),
+      ],
+    } as unknown as OhifDisplaySet)
+    expect(cine?.image.name).toBe('cine.nii')
   })
 
   it('loads the outputs of a nonzero exit with a note', async () => {

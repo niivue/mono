@@ -378,8 +378,11 @@ test('the wheel enters a multi-slice output on its adjacent image', async () => 
 })
 
 // Review of bf1651c3: a volume viewport counts one output's frames, so at a
-// single-slice output's end the wheel must switch outputs, not clamp.
-test('the wheel steps single-slice outputs on a volume viewport', async () => {
+// single-slice output's end the wheel must switch outputs, not clamp. Viewed
+// across (coronal), it must not just move the crosshair in the slice.
+test.each([
+  0, 1,
+])('the wheel steps single-slice outputs on a volume viewport (sliceType %d)', async (sliceType) => {
   const sf = (sop: string) => ({
     origin: [0, 0, 0] as [number, number, number],
     normal: [0, 0, 1] as [number, number, number],
@@ -396,7 +399,7 @@ test('the wheel steps single-slice outputs on a volume viewport', async () => {
   const nv = {
     canvas: new EventTarget(),
     volumes: [a],
-    sliceType: 0,
+    sliceType,
     prepareVolume: async (o: { name: string }) => (o.name === 'A' ? a : b),
     loadVolumes: async (v: (typeof a)[]) => {
       nv.volumes = v
@@ -404,6 +407,10 @@ test('the wheel steps single-slice outputs on a volume viewport', async () => {
     vox2frac: (v: number[]) => v,
     crosshairPos: [0, 0, 0],
     setCrosshairPos: () => {},
+    moveCrosshairInVox: (x: number, y: number, z: number) => {
+      const [px = 0, py = 0, pz = 0] = nv.crosshairPos
+      nv.crosshairPos = [px + x, py + y, pz + z]
+    },
   }
   const ds = {
     instances: [{ SOPInstanceUID: 'A' }, { SOPInstanceUID: 'B' }],

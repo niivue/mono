@@ -109,11 +109,13 @@ export function useOutputStack(
     const onWheel = (e: WheelEvent) => {
       if (!e.deltaY) return
       const isSingle = nv.volumes[0]?.dims?.[3] === 1
+      const offPlane = nv.sliceType !== acquisitionSliceType(nv)
       // Off the acquisition plane NiiVue scrolls its own slices.
-      if (!isSingle && nv.sliceType !== acquisitionSliceType(nv)) return
+      if (!isSingle && offPlane) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      const entry = getNiivueEntry(viewportId)
+      // A single slice viewed across: no frame to step, so step outputs.
+      const entry = offPlane ? undefined : getNiivueEntry(viewportId)
       const step = Math.sign(e.deltaY)
       if (entry) {
         const before = String(nv.crosshairPos)

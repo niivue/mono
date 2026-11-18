@@ -211,13 +211,15 @@ async function convertUnshared(
       return { o, sf, isMapped: Boolean(sf?.frames.some(Boolean)) }
     }),
   )
-  // The policy pick among the outputs mapped to the instances, else among the
-  // oriented ones (frames sharing one position, a 4D surview, stay unmapped): a
-  // series mixing a surview with orientation-less summary pages opens on the
-  // surview, as cornerstone does. Every mapped output, multi-frame ones too,
+  // The policy pick when oriented (frames sharing one position, a 4D cine or
+  // surview, stay unmapped but win on size); past orientation-less summary
+  // pages, the first mapped output, else the first oriented one, as
+  // cornerstone opens a surview. Every mapped output, multi-frame ones too,
   // joins the stack (outputStack.ts).
-  const pick =
-    mapped.find((m) => m.isMapped) ?? mapped.find((m) => m.sf) ?? mapped[0]
+  const top = mapped[0]
+  const pick = top?.sf
+    ? top
+    : (mapped.find((m) => m.isMapped) ?? mapped.find((m) => m.sf) ?? top)
   if (!pick) throw new Error('dcm2niix produced no image')
   const shown = pick.o
   const sliceFrames = pick.sf

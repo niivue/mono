@@ -322,8 +322,13 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   Segment Bidirectional samples the active segment on world planes of the
   shown view (oblique grids included); `SegmentLabelTool` names the segment
   under the pointer.
-- **Not converted:** RTSTRUCT, RTPLAN, RTRECORD, PLAN, SR, PR, KO, REG,
-  DOC, FID, ECG, HD and AU series (also skipped as overlays). RTDOSE is converted.
+- **RTSTRUCT.** Hung in a pane, it shows as a drawing over the CT it
+  references: each ROI's closed planar contours filled onto the base grid, one
+  label per ROI.
+- **SR.** Not converted: a hydrated SR's measurement rows become NiiVue
+  annotations (see [Workflows](#workflows)).
+- **Not converted:** RTPLAN, RTRECORD, PLAN, PR, KO, REG, DOC, FID, ECG, HD
+  and AU series (RTSTRUCT and SR are skipped as overlays too). RTDOSE is converted.
 - **One series per viewport.** Only the first display set hung in a viewport
   loads; a note names the rest.
 - A second Overlay press (or another `niivueAddOverlay`) while an overlay converts
@@ -383,6 +388,42 @@ reflected into the Measurements panel.
 `mountWsiSlideView` (nothing passed it). A NVSlide path for
 2-D single-frame images is still a TODO (see `PLAN.md`).
 
+## Workflows
+
+Each follows the OHIF mode's own tools and panels (`modes/`: viewer, dynamic,
+tmtv, segmentation, microscopy).
+
+- **4D (dynamic PET).** A dynamic series converts to one 4D NIfTI; every pane
+  shows the current frame from one shared buffer. OHIF's 4D panel (play,
+  frame, fps) and Cine drive it; Cine on a 3D pane plays a slice clip.
+  Computed volumes (sum / average / subtract over a frame range) and
+  per-segment time-activity curves (`kinetics.ts`).
+- **PET quantification (TMTV).** Body-weight SUV from the instance tags (no
+  vendor quirks). One label per PT series on the PT grid, shown on every pane
+  holding it (resampled on fusion panes); brush, threshold brush and ROI
+  threshold tools; TMTV / TLG and per-segment stats, CSV export. A mode exit
+  drops the labels.
+- **MIP pane.** `VolumeRotateMouseWheel` and `MIPJumpToClickTool` (crosshair to
+  the brightest voxel along the clicked ray).
+- **Segmentation.** A SEG or RTSTRUCT drawing is entered in OHIF's
+  segmentation panel and panel edits mirror back. OHIF's labelmap tools drive
+  NiiVue's pen (threshold range and segment locks enforced); each edit is one
+  OHIF undo step. Export writes DICOM SEG or RTSTRUCT on the source series'
+  own frames.
+- **SR.** NiiVue measurement rows are mirrored as cornerstone annotations, so
+  OHIF's SR export includes them; a hydrated SR's rows show as NiiVue
+  annotations (axis-aligned only). Slide rows save and load as OHIF's
+  microscopy SR (`slideSR.ts`).
+- **Undo.** NiiVue annotation and segmentation edits join OHIF's undo history,
+  so OHIF's buttons and hotkeys undo both viewers in one order.
+- **Reference lines and sync.** Other panes show where the active pane's
+  slice cuts them. Camera and VOI sync groups share the crosshair; a VOI group
+  carries the window, a camera group 2D pan and zoom.
+- **Hanging options.** Per display set colormap, voi, voiInverted and
+  blendMode (MIP), per viewport background.
+- **Magnify.** `Magnify` (while the button is held) and `AdvancedMagnify` (a
+  glass following the pointer).
+
 ## Compatibility
 
 - **OHIF**: tested on 3.13.14 and 3.14.0-beta.70 (developed against 3.12.6).
@@ -398,5 +439,6 @@ See `PLAN.md`. Landed: NIfTI + DICOM rendering, a toolbar for views / clip plane
 overlay / window-level / colormap, the full **Measurement** tool
 group (see [Measurement tools](#measurement-tools)), and **NVSlide whole-slide (SM)
 rendering** for JPEG, JPEG 2000 and JPEG-LS slides (see [Whole-slide imaging](#whole-slide-imaging)).
-Next: segmentation overlays, mesh/surface overlay, and **NVSlide for 2-D** single-frame series (see the
+SEG, RTSTRUCT, SR, 4D and TMTV landed too (see [Workflows](#workflows)).
+Next: mesh/surface overlay, and **NVSlide for 2-D** single-frame series (see the
 `## TODO — NVSlide for 2D` section in `PLAN.md`).

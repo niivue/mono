@@ -1,14 +1,14 @@
-// A series dcm2niix converts to several single-slice outputs (orthogonal
-// localizers) shows one at a time; as a cornerstone stack, the wheel steps
-// through them in instance order and a jump to an image in another one
-// switches to it.
+// A series dcm2niix converts to several outputs (orthogonal localizers, a
+// multi-frame surview) shows one at a time; as a cornerstone stack, the wheel
+// steps through every image in instance order, switching outputs at an
+// output's end, and a jump to an image in another one switches to it.
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect, useRef } from 'react'
 import { centerCrosshair } from './commands'
 import type { DicomConversion } from './dicomToNiivue'
-import { updateNiivueViewport } from './niivueRegistry'
+import { getNiivueEntry, updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
-import { acquisitionSliceType } from './standardCommands'
+import { acquisitionSliceType, scrollImage } from './standardCommands'
 
 /**
  * Cornerstone draws an image as stored. NiiVue's radiological view (patient
@@ -43,10 +43,13 @@ export function useOutputStack(
     const instances = (ds?.instances ?? []) as Array<{
       SOPInstanceUID?: string
     }>
-    const order = (o: { sliceFrames?: DicomConversion['sliceFrames'] }) =>
-      instances.findIndex(
-        (i) => i.SOPInstanceUID === o.sliceFrames?.frames[0]?.SOPInstanceUID,
+    // An output's place is its first instance: its first slice may be unmapped.
+    const order = (o: { sliceFrames?: DicomConversion['sliceFrames'] }) => {
+      const sops = new Set(
+        o.sliceFrames?.frames.flatMap((f) => (f ? [f.SOPInstanceUID] : [])),
       )
+      return instances.findIndex((i) => sops.has(i.SOPInstanceUID ?? ''))
+    }
     const outputs = [conversion, ...conversion.alternates].sort(
       (a, b) => order(a) - order(b),
     )
@@ -104,11 +107,28 @@ export function useOutputStack(
       )
     }
     const onWheel = (e: WheelEvent) => {
-      // A single slice has nowhere to scroll: step to the next output.
-      if (nv.volumes[0]?.dims?.[3] !== 1 || !e.deltaY) return
+      if (!e.deltaY) return
+      const isSingle = nv.volumes[0]?.dims?.[3] === 1
+      const offPlane = nv.sliceType !== acquisitionSliceType(nv)
+      // Off the acquisition plane NiiVue scrolls its own slices.
+      if (!isSingle && offPlane) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      void show(at + Math.sign(e.deltaY))
+      // A single slice viewed across: no frame to step, so step outputs.
+      const entry = offPlane ? undefined : getNiivueEntry(viewportId)
+      const step = Math.sign(e.deltaY)
+      if (entry) {
+        const before = String(nv.crosshairPos)
+        // By frame: entering a multi-slice output lands on its adjacent image.
+        if (scrollImage(entry, step)) return
+        // Off the frame map scrollImage moves the crosshair a slice.
+        if (String(nv.crosshairPos) !== before) return
+        // At an end. A stack counts the whole series, so that is the series'
+        // end; a volume viewport counts one output, so step outputs.
+        if (entry.sliceFrames?.frames.some(Boolean) && !entry.isVolumeViewport)
+          return
+      }
+      void show(at + step)
     }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
     updateNiivueViewport(viewportId, {

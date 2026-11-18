@@ -252,7 +252,11 @@ const NORMAL_AXIS = [2, 1, 0]
  * jumpToImage's count (stack order, volume order on a volume viewport); off the
  * slice -> frame map (a reformat) one voxel along the view axis.
  */
-export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
+/** True when it moved to another frame (false off the map or at an end). */
+export function scrollImage(
+  entry: NiivueViewportEntry,
+  delta: number,
+): boolean {
   const { nv, sliceFrames: sf, crosshairMM: p } = entry
   const frame =
     sf && p && nv.sliceType === acquisitionSliceType(nv)
@@ -273,16 +277,18 @@ export function scrollImage(entry: NiivueViewportEntry, delta: number): void {
         f.frameNumber === frame.frameNumber,
     )
     if (i >= 0) {
-      jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
-      return
+      const j = clamp(i + delta, 0, order.length - 1)
+      jumpToImage(entry, j)
+      return j !== i
     }
   }
   const axis =
     NORMAL_AXIS[nv.sliceType] ?? NORMAL_AXIS[acquisitionSliceType(nv) ?? -1]
-  if (axis === undefined) return
+  if (axis === undefined) return false
   const step = [0, 0, 0]
   step[axis] = delta
   nv.moveCrosshairInVox(step[0] ?? 0, step[1] ?? 0, step[2] ?? 0)
+  return false
 }
 
 export function noTiles2D(entry: NiivueViewportEntry): boolean {

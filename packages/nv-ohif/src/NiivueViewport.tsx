@@ -1076,8 +1076,12 @@ export function NiivueViewport(props: OhifViewportProps) {
           // previous series left (a coronal scout's).
           matchStoredOrientation(nv)
           const initial = initialSliceType(viewportOptionsRef.current)
+          // OHIF marks unequal slice spacing (or orthogonal localizers) not
+          // reconstructable: only the acquired plane is faithful.
           const plane =
-            nv.volumes[0]?.dims?.[3] === 1 && initial === SLICE_TYPE.MULTIPLANAR
+            (nv.volumes[0]?.dims?.[3] === 1 ||
+              ds.isReconstructable === false) &&
+            initial === SLICE_TYPE.MULTIPLANAR
               ? acquisitionSliceType(nv)
               : undefined
           nv.sliceType = plane ?? initial

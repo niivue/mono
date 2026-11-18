@@ -75,6 +75,75 @@ describe('convertDisplaySetToNifti', () => {
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
   })
 
+  // R26 C38: a multi-frame output (a surview) beside a single-slice one was
+  // left out of the stack, and an orientation-less page shown first hid both.
+  it('stacks every mapped output and opens on one', async () => {
+    // Axial outputs at z (LPS), dims 2 x 1 x nz; sform_code 0 without orientation.
+    const axial = (stem: string, z: number, nz: number, code = 1) => {
+      const v = new DataView(new ArrayBuffer(352))
+      v.setInt32(0, 348, true)
+      for (const [at, n] of [
+        [40, 3],
+        [42, 2],
+        [44, 1],
+        [46, nz],
+        [254, code],
+      ] as const)
+        v.setInt16(at, n, true)
+      for (let r = 0; r < 3; r++) v.setFloat32(280 + 20 * r, 1, true)
+      v.setFloat32(324, z, true) // srow_z[3]
+      const name = `${stem}.nii`
+      return {
+        stem,
+        image: Object.assign(new File([v.buffer], name), {
+          relativePath: name,
+        }),
+      }
+    }
+    result = Promise.resolve({
+      series: [
+        axial('page', 0, 9, 0),
+        axial('one', 0, 1),
+        axial('two', 5, 2),
+        axial('resampled_Eq_1', 0.5, 2),
+      ],
+    })
+    const instance = (sop: string, z: number) => ({
+      imageId: `wadors:${frames}`,
+      SOPInstanceUID: sop,
+      ImagePositionPatient: [0, 0, z],
+      ImageOrientationPatient: [1, 0, 0, 0, 1, 0],
+    })
+    const out = await convertDisplaySetToNifti({
+      instances: [instance('3', 0), instance('4', 5), instance('5', 6)],
+    } as unknown as OhifDisplaySet)
+    expect(out?.image.name).toBe('two.nii')
+    expect(out?.alternates?.map((a) => a.image.name)).toEqual(['one.nii'])
+    // Two frames at one position (a 4D surview) map no slice: still shown
+    // before the orientation-less page.
+    clearSharedTasks()
+    result = Promise.resolve({
+      series: [axial('page', 0, 9, 0), axial('surview', 0, 1)],
+    })
+    const surview = await convertDisplaySetToNifti({
+      instances: [instance('3', 0), instance('4', 0)],
+    } as unknown as OhifDisplaySet)
+    expect(surview?.image.name).toBe('surview.nii')
+    // A cine (frames at one position, unmapped) outranks one stray mapped
+    // slice: the policy pick stands.
+    clearSharedTasks()
+    result = Promise.resolve({
+      series: [axial('cine', 0, 10), axial('loc', 50, 1)],
+    })
+    const cine = await convertDisplaySetToNifti({
+      instances: [
+        ...Array.from({ length: 10 }, (_, i) => instance(`c${i}`, 0)),
+        instance('l', 50),
+      ],
+    } as unknown as OhifDisplaySet)
+    expect(cine?.image.name).toBe('cine.nii')
+  })
+
   it('loads the outputs of a nonzero exit with a note', async () => {
     result = Promise.resolve({
       series: [output('a', 2)],

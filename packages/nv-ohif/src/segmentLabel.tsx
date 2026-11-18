@@ -39,7 +39,8 @@ export function SegmentLabel({
         toolMode(
           extensionManager,
           entry.toolGroupId ?? 'default',
-          'SegmentLabel',
+          // cornerstoneTools.SegmentLabelTool.toolName
+          'SegmentLabelTool',
         ) === 'Active'
       const value = on ? drawingValueAt(nv, e.clientX, e.clientY) : 0
       const text = value ? segmentLabel(nv.drawColormap, value) : undefined

@@ -5,6 +5,8 @@ import { annotationFromRow } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
 
 type Vec3 = [number, number, number]
+type Axis = 0 | 1 | 2
+const AXES = [0, 1, 2] as const
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -19,98 +21,210 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 ]
 
 /**
- * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing: on each
- * slice across RAS voxel axis `axis`, the segment's boundary voxel centres
- * (mm); the major axis is the farthest pair, the minor the widest chord
- * perpendicular to it (boundary points binned along the major by one voxel).
- * Returns [major start, major end, minor start, minor end] (RAS mm) of the
- * slice with the longest major, or undefined without voxels.
- * ponytail: O(n^2) farthest pair per slice; a convex hull first if a large
- * segment makes it slow.
+ * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing. NiiVue's
+ * annotations lie on world (RAS mm) planes across axis `depth`, the normal of
+ * the view's plane, and on an oblique grid a voxel slice is not one: so the
+ * segment is sampled on world planes one voxel apart (a grid at the finest
+ * voxel spacing, aligned to voxel 0, each point testing its nearest voxel), and
+ * each plane's boundary samples (a 4-neighbour outside) are its contour, every
+ * point inside the segment. In each plane the major axis is the farthest pair;
+ * the minor is the widest chord perpendicular to it (points binned along the
+ * major by one voxel). Returns [major start, major end, minor start, minor
+ * end] (RAS mm) of the plane with the longest major, or undefined without
+ * voxels. Where voxel slices are world planes the samples are voxel centres.
+ * ponytail: O(n^2) farthest pair over a plane's contour; a convex hull first
+ * if a large segment makes it slow.
  */
 export function largestBidirectional(
   img: ArrayLike<number>,
   dims: readonly [number, number, number],
   vox2mm: (v: Vec3) => Vec3,
   value: number,
-  axis: number,
+  depth: 0 | 1 | 2,
 ): [Vec3, Vec3, Vec3, Vec3] | undefined {
   const [nx, ny, nz] = dims
-  const n = [nx, ny, nz]
-  // In-plane voxel axes.
-  const [ua, va] = [0, 1, 2].filter((a) => a !== axis) as [number, number]
   const o = vox2mm([0, 0, 0])
-  const unit = (a: number) => {
+  const cols = [0, 1, 2].map((a) => {
     const v: Vec3 = [0, 0, 0]
     v[a] = 1
     return sub(vox2mm(v), o)
+  }) as [Vec3, Vec3, Vec3]
+  // Plane spacing: the voxel step most aligned with the view's normal.
+  const steps = cols.map((c) => Math.abs(c[depth]))
+  const dz = Math.max(...steps)
+  // The grid steps along the in-plane voxel columns projected onto the plane:
+  // on a grid rotated in-plane (or anisotropic) the samples are voxel centres.
+  const through = steps.indexOf(dz)
+  const [ia, ib] = AXES.filter((a) => a !== depth) as [Axis, Axis]
+  const pairs = AXES.map(
+    (t) =>
+      cols
+        .filter((_, a) => a !== t)
+        .map((c) => {
+          const q: Vec3 = [c[0], c[1], c[2]]
+          q[depth] = 0
+          return q
+        }) as [Vec3, Vec3],
+  )
+  const sine = ([p, q]: [Vec3, Vec3]) =>
+    Math.abs(p[ia] * q[ib] - p[ib] * q[ia]) /
+    (Math.hypot(...p) * Math.hypot(...q) || 1)
+  // A sheared affine can project the in-plane columns near parallel: then the
+  // least skewed pair.
+  const pair = pairs[through] as [Vec3, Vec3]
+  const [u, v] =
+    sine(pair) > 0.1
+      ? pair
+      : pairs.reduce((a, b) => (sine(b) > sine(a) ? b : a))
+  const bin = Math.min(Math.hypot(...u), Math.hypot(...v))
+  const normal: Vec3 = [0, 0, 0]
+  normal[depth] = 1
+  // mm -> voxel: the inverse of [cols] (vox2mm is affine).
+  const [c0, c1, c2] = cols
+  const r0 = cross(c1, c2)
+  const r1 = cross(c2, c0)
+  const r2 = cross(c0, c1)
+  const det = dot(c0, r0)
+  if (!det) return undefined
+  const label = (p: Vec3) => {
+    const d = sub(p, o)
+    const x = Math.round(dot(d, r0) / det)
+    const y = Math.round(dot(d, r1) / det)
+    const z = Math.round(dot(d, r2) / det)
+    return x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz
+      ? undefined
+      : img[x + nx * (y + ny * z)]
   }
-  const normal = norm(unit(axis))
-  const bin = Math.min(Math.hypot(...unit(ua)), Math.hypot(...unit(va)))
-  const at = (v: Vec3) => img[v[0] + nx * (v[1] + ny * v[2])]
-  let best: [Vec3, Vec3, Vec3, Vec3] | undefined
-  let bestLength = 0
-  for (let k = 0; k < (n[axis] as number); k++) {
-    const pts: Vec3[] = []
-    for (let j = 0; j < (n[va] as number); j++)
-      for (let i = 0; i < (n[ua] as number); i++) {
-        const v: Vec3 = [0, 0, 0]
-        v[axis] = k
-        v[ua] = i
-        v[va] = j
-        if (at(v) !== value) continue
-        const edge = [
-          [ua, -1],
-          [ua, 1],
-          [va, -1],
-          [va, 1],
-        ].some(([a, d]) => {
-          const w: Vec3 = [...v]
-          const c = (w[a as number] as number) + (d as number)
-          w[a as number] = c
-          return c < 0 || c >= (n[a as number] as number) || at(w) !== value
-        })
-        if (edge) pts.push(vox2mm(v))
-      }
-    let major: [Vec3, Vec3] | undefined
-    let length = bestLength
-    for (let p = 0; p < pts.length; p++)
-      for (let q = p + 1; q < pts.length; q++) {
-        const d = Math.hypot(...sub(pts[p] as Vec3, pts[q] as Vec3))
-        if (d > length) {
-          length = d
-          major = [pts[p] as Vec3, pts[q] as Vec3]
+  // The segment's bounds in grid units (k plane, i along u, j along v), from
+  // its voxel centres.
+  const det2 = u[ia] * v[ib] - u[ib] * v[ia]
+  if (!det2) return undefined
+  const toGrid = (d: Vec3): Vec3 => [
+    d[depth] / dz,
+    (d[ia] * v[ib] - d[ib] * v[ia]) / det2,
+    (d[ib] * u[ia] - d[ia] * u[ib]) / det2,
+  ]
+  const lo: Vec3 = [Infinity, Infinity, Infinity]
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (let z = 0; z < nz; z++)
+    for (let y = 0; y < ny; y++)
+      for (let x = 0; x < nx; x++) {
+        if (img[x + nx * (y + ny * z)] !== value) continue
+        const g = toGrid([
+          c0[0] * x + c1[0] * y + c2[0] * z,
+          c0[1] * x + c1[1] * y + c2[1] * z,
+          c0[2] * x + c1[2] * y + c2[2] * z,
+        ])
+        for (const a of AXES) {
+          if (g[a] < lo[a]) lo[a] = g[a]
+          if (g[a] > hi[a]) hi[a] = g[a]
         }
       }
-    if (!major) continue
-    const [A, B] = major
-    const along = norm(sub(B, A))
-    const across = norm(cross(normal, along))
-    const bins = new Map<number, [Vec3, number, Vec3, number]>()
-    for (const p of pts) {
-      const d = sub(p, A)
-      const t = Math.round(dot(d, along) / bin)
-      const s = dot(d, across)
-      const b = bins.get(t)
-      if (!b) bins.set(t, [p, s, p, s])
-      else if (s < b[1]) bins.set(t, [p, s, b[2], b[3]])
-      else if (s > b[3]) bins.set(t, [b[0], b[1], p, s])
+  if (lo[0] > hi[0]) return undefined
+  // Grid steps from voxel 0 over each voxel's whole cell: on an oblique grid a
+  // cell reaches past half a step from its centre.
+  const pad = [0, 1, 2].map(
+    (a) => 0.5 * cols.reduce((sum, c) => sum + Math.abs(toGrid(c)[a] ?? 0), 0),
+  ) as Vec3
+  const range = (a: Axis, f: number) => [
+    Math.floor((lo[a] - pad[a]) / f),
+    Math.ceil((hi[a] + pad[a]) / f),
+  ]
+  const [k0, k1] = range(0, 1) as [number, number]
+  // f: the grid step as a fraction of a voxel.
+  const measure = (f: number): [Vec3, Vec3, Vec3, Vec3] | undefined => {
+    const step = bin * f
+    const [i0, i1] = range(1, f) as [number, number]
+    const [j0, j1] = range(2, f) as [number, number]
+    const ni = i1 - i0 + 1
+    const nj = j1 - j0 + 1
+    const slabs: Vec3[][] = []
+    const inside = new Uint8Array(ni * nj)
+    const at = (k: number, i: number, j: number): Vec3 => {
+      const si = (i0 + i) * f
+      const sj = (j0 + j) * f
+      const q: Vec3 = [
+        o[0] + si * u[0] + sj * v[0],
+        o[1] + si * u[1] + sj * v[1],
+        o[2] + si * u[2] + sj * v[2],
+      ]
+      q[depth] = o[depth] + k * dz
+      return q
     }
-    let minor: [Vec3, Vec3] = [A, A]
-    let width = -1
-    for (const [lo, sLo, hi, sHi] of bins.values())
-      if (sHi - sLo > width) {
-        width = sHi - sLo
-        minor = [lo, hi]
+    for (let k = k0; k <= k1; k++) {
+      for (let j = 0; j < nj; j++)
+        for (let i = 0; i < ni; i++)
+          inside[i + ni * j] = label(at(k, i, j)) === value ? 1 : 0
+      const pts: Vec3[] = []
+      const isIn = (i: number, j: number) =>
+        i >= 0 && j >= 0 && i < ni && j < nj && inside[i + ni * j] === 1
+      for (let j = 0; j < nj; j++)
+        for (let i = 0; i < ni; i++) {
+          if (!isIn(i, j)) continue
+          if (
+            isIn(i - 1, j) &&
+            isIn(i + 1, j) &&
+            isIn(i, j - 1) &&
+            isIn(i, j + 1)
+          )
+            continue
+          pts.push(at(k, i, j))
+        }
+      if (pts.length > 0) slabs.push(pts)
+    }
+    let best: [Vec3, Vec3, Vec3, Vec3] | undefined
+    let bestLength = 0
+    for (const pts of slabs) {
+      let major: [Vec3, Vec3] | undefined
+      let length = bestLength
+      for (let p = 0; p < pts.length; p++)
+        for (let q = p + 1; q < pts.length; q++) {
+          const d = Math.hypot(...sub(pts[p] as Vec3, pts[q] as Vec3))
+          if (d > length) {
+            length = d
+            major = [pts[p] as Vec3, pts[q] as Vec3]
+          }
+        }
+      if (!major) continue
+      const [A, B] = major
+      const along = norm(sub(B, A))
+      const across = norm(cross(normal, along))
+      const bins = new Map<number, [Vec3, number, Vec3, number]>()
+      for (const p of pts) {
+        const d = sub(p, A)
+        const t = Math.round(dot(d, along) / step)
+        const s = dot(d, across)
+        const b = bins.get(t)
+        if (!b) bins.set(t, [p, s, p, s])
+        else if (s < b[1]) bins.set(t, [p, s, b[2], b[3]])
+        else if (s > b[3]) bins.set(t, [b[0], b[1], p, s])
       }
-    bestLength = length
-    best = [A, B, minor[0], minor[1]]
+      let minor: [Vec3, Vec3] = [A, A]
+      let width = -1
+      for (const [lo, sLo, hi, sHi] of bins.values())
+        if (sHi - sLo > width) {
+          width = sHi - sLo
+          minor = [lo, hi]
+        }
+      bestLength = length
+      best = [A, B, minor[0], minor[1]]
+    }
+    return best
   }
-  return best
+  // A segment thinner than the grid on an oblique (or sheared) plane can
+  // leave each plane, or each chord bin, one sample (no major or no minor):
+  // refine until both show, to an eighth of a voxel.
+  let last: [Vec3, Vec3, Vec3, Vec3] | undefined
+  for (let f = 1; ; f /= 2) {
+    const ends = measure(f)
+    if (ends && Math.hypot(...sub(ends[2], ends[3])) > 0) return ends
+    last = ends ?? last
+    if (f <= 1 / 8) return last
+  }
 }
 
-// RAS voxel axis normal to each 2D view (axial z, coronal y, sagittal x).
-const NORMAL_AXIS = [2, 1, 0]
+// World (RAS mm) axis normal to each 2D view (axial z, coronal y, sagittal x).
+const WORLD_DEPTH = [2, 1, 0] as const
 
 /**
  * OHIF's runSegmentBidirectional on a NiiVue pane: the active segment's
@@ -128,7 +242,7 @@ export function addSegmentBidirectional(nv: NiiVue): boolean {
     [d[1], d[2], d[3]] as Vec3,
     (v) => nv.vox2mm(v) ?? [0, 0, 0],
     activeSegmentValue(nv),
-    NORMAL_AXIS[sliceType] ?? 2,
+    WORLD_DEPTH[sliceType] ?? 2,
   )
   const annotation =
     ends &&

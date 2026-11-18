@@ -1,3 +1,13 @@
+## 1.0.0-rc.226 (2026-11-18)
+
+### Fixes
+
+- release volume sampler before cinematic rendering ([6b4f7799](https://github.com/niivue/mono/commit/6b4f7799))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.225 (2026-11-18)
 
 ### Fixes

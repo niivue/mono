@@ -295,11 +295,13 @@ function tick(now: number) {
 
 /** Bring a late volume to its series' frame, then its computed volume if shown. */
 async function catchUp(nv: NiiVue, v: NVImage): Promise<void> {
-  const group = v.frameSource?.group
-  if (!group || !v.id) return
+  const source = v.frameSource
+  const group = source?.group
+  if (!source || !group || !v.id) return
   const f = current.get(group)
   // The frame first: one landing later would overwrite computed samples.
-  if (f) await nv.setFrame4D(v.id, f)
+  // A reload of the display set may have fewer frames than the one remembered.
+  if (f && f < source.count) await nv.setFrame4D(v.id, f)
   const c = computedShown.get(group)
   if (c && !c.saved.has(v))
     await installComputed(group, c, nv, v, nv.volumes.indexOf(v))

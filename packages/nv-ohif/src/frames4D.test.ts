@@ -350,3 +350,39 @@ it('a reconverted series rejoins its frame group', async () => {
   expect(await group('ds1')).toBe(first)
   expect(await group('ds2')).not.toBe(first)
 })
+
+// Review of #855: the group outlives its panes, so a shorter reload must not
+// be sent the old series' frame.
+it('a reload with fewer frames skips a frame it lacks', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const load = async () =>
+    (await split4D(nifti4D(), 'ds-short')) as NonNullable<
+      Awaited<ReturnType<typeof split4D>>
+    >
+  const pane = () => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.drawScene = () => {}
+    return nv
+  }
+  const first = await load()
+  const a = pane()
+  const leaveA = joinFrames('short-a', a, undefined, null)
+  await a.loadVolumes([{ url: first.image, frameSource: first.frames }])
+  await setFrame(first.frames.group, 2)
+  leaveA()
+  const second = await load()
+  const b = pane()
+  const asked: number[] = []
+  const setFrame4D = b.setFrame4D.bind(b)
+  b.setFrame4D = (id, f) => {
+    asked.push(f)
+    return setFrame4D(id, f)
+  }
+  const leaveB = joinFrames('short-b', b, undefined, null)
+  await b.loadVolumes([
+    { url: second.image, frameSource: { ...second.frames, count: 2 } },
+  ])
+  await new Promise((r) => setTimeout(r, 30))
+  expect(asked).toEqual([])
+  leaveB()
+})

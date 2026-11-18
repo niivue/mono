@@ -94,7 +94,7 @@ export interface DicomConversion {
   /** dcm2niix's sidecar for `image` (a SEG's names its segments). */
   json?: Record<string, unknown>
   /**
-   * The other single-slice outputs when `image` is one too (orthogonal
+   * The other outputs mapped to the display set's instances (orthogonal
    * localizers in one series): a cornerstone stack scrolls through them all.
    */
   alternates?: Array<{
@@ -186,11 +186,10 @@ async function convertUnshared(
     args: ['-z', 'n'],
     signal: options.signal,
   })
-  const outputs = await rankOutputs(series)
-  const [shown, ...others] = outputs
+  const ranked = await rankOutputs(series)
   const exitName =
     Object.entries(exitCodes).find(([, v]) => v === exitCode)?.[0] ?? 'unknown'
-  if (!shown)
+  if (!ranked[0])
     throw new Error(
       `dcm2niix produced no image (exit ${exitCode} ${exitName}): ${log.slice(-5).join(' | ')}`,
     )
@@ -200,25 +199,46 @@ async function convertUnshared(
     const cause = log.findLast((l) => /error|warn/i.test(l)) ?? log.at(-1) ?? ''
     notes.push(`dcm2niix exit ${exitCode} (${exitName}): ${cause}`)
   }
-  const frameMap = async (o: (typeof outputs)[number]) =>
-    buildSliceFrames(
-      await o.image.slice(0, 348).arrayBuffer(),
-      ds.instances ?? [],
-      { echo: outputEcho(o), part: isPart(o) },
-    )
-  const sliceFrames = await frameMap(shown)
-  const alternates =
-    sliceFrames?.frames.length === 1
-      ? (
-          await Promise.all(
-            others.map(async (o) => ({
-              image: o.image,
-              sliceFrames: await frameMap(o),
-              ...overlayPlanesOf(series, o.stem),
-            })),
-          )
-        ).filter((o) => o.sliceFrames?.frames.length === 1)
-      : []
+  const mapped = await Promise.all(
+    ranked.map(async (o) => {
+      const sf = buildSliceFrames(
+        await o.image.slice(0, 348).arrayBuffer(),
+        ds.instances ?? [],
+        { echo: outputEcho(o), part: isPart(o) },
+      )
+      // Only an output holding an acquired frame has a place in the stack: not
+      // a resampled _Tilt/_Eq one, nor an image without orientation.
+      return { o, sf, isMapped: Boolean(sf?.frames.some(Boolean)) }
+    }),
+  )
+  // The policy pick among the outputs mapped to the instances, else among the
+  // oriented ones (frames sharing one position, a 4D surview, stay unmapped): a
+  // series mixing a surview with orientation-less summary pages opens on the
+  // surview, as cornerstone does. Every mapped output, multi-frame ones too,
+  // joins the stack (outputStack.ts).
+  const pick =
+    mapped.find((m) => m.isMapped) ?? mapped.find((m) => m.sf) ?? mapped[0]
+  if (!pick) throw new Error('dcm2niix produced no image')
+  const shown = pick.o
+  const sliceFrames = pick.sf
+  const others = mapped.filter((m) => m !== pick).map((m) => m.o)
+  const alternates = pick.sf
+    ? mapped
+        // Another echo or image part shares the slices: the stack would swap
+        // volumes on every wheel step. It stays named, as before.
+        .filter(
+          (m) =>
+            m !== pick &&
+            m.isMapped &&
+            outputEcho(m.o) === outputEcho(shown) &&
+            isPart(m.o) === isPart(shown),
+        )
+        .map((m) => ({
+          image: m.o.image,
+          sliceFrames: m.sf,
+          ...overlayPlanesOf(series, m.o.stem),
+        }))
+    : []
   // Outputs the stack does not reach are named.
   const unshown = others.filter(
     (o) => !alternates.some((a) => a.image === o.image),

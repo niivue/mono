@@ -40,6 +40,12 @@ function sanitizeDataset(source: JsonDataset): JsonDataset {
     // dcmjs then treats them as binary UN and throws. Drop them — none are needed
     // for dcm2niix's geometry.
     if (typeof el.vr !== 'string' || el.vr.length !== 2) continue
+    // Overlay Data (60xx,3000) inline is an image dcm2niix converts (_ROI<n>).
+    // ponytail: inline only; a BulkDataURI overlay is dropped (fetch it if a server sends one).
+    if (isOverlayData(tag) && typeof el.InlineBinary === 'string') {
+      out[tag] = { vr: el.vr, Value: [decodeBase64(el.InlineBinary)] }
+      continue
+    }
     if (el.Value === undefined) continue
     if (el.vr === 'SQ' && Array.isArray(el.Value)) {
       out[tag] = {
@@ -55,6 +61,16 @@ function sanitizeDataset(source: JsonDataset): JsonDataset {
     out[tag] = el
   }
   return out
+}
+
+// Even groups 6000-601E (PS3.5 7.6).
+const isOverlayData = (tag: string) => /^60[01][02468ACE]3000$/i.test(tag)
+
+function decodeBase64(text: string): ArrayBuffer {
+  const bin = atob(text)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return bytes.buffer
 }
 
 /** Series `/metadata` URL derived from an instance URL. */

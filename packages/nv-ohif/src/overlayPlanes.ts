@@ -1,4 +1,5 @@
 import type NiiVue from '@niivue/niivue'
+import { split4D } from './frames4D'
 import type { OhifExtensionManager } from './ohif-types'
 import { toolMode } from './segEdit'
 
@@ -6,7 +7,10 @@ import { toolMode } from './segEdit'
 // DICOM image's overlay planes (60xx). dcm2niix writes each as a uint8
 // `<stem>_ROI<n>.nii` on the image grid; the pane shows the first as its
 // drawing while the tool is Enabled in its group and no SEG holds the drawing.
+// A 4D image's plane is 4D too (one volume per frame, a two-frame surview):
+// the pane shows the first frame, so the plane's first volume.
 // ponytail: first plane only (one is typical); merge planes if a study needs it.
+// ponytail: first frame's overlay only; follow the frame if a study steps them.
 
 const planes = new WeakMap<NiiVue, File[]>()
 const shown = new WeakSet<NiiVue>()
@@ -21,7 +25,7 @@ export async function refreshOverlayPlanes(
   if (!file) return
   const on = toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'
   if (on && !nv.drawingVolume) {
-    if (!(await nv.loadDrawing(file))) return
+    if (!(await nv.loadDrawing((await split4D(file))?.image ?? file))) return
     if (
       planes.get(nv)?.[0] === file &&
       toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'

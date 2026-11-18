@@ -1,14 +1,14 @@
-// A series dcm2niix converts to several single-slice outputs (orthogonal
-// localizers) shows one at a time; as a cornerstone stack, the wheel steps
-// through them in instance order and a jump to an image in another one
-// switches to it.
+// A series dcm2niix converts to several outputs (orthogonal localizers, a
+// multi-frame surview) shows one at a time; as a cornerstone stack, the wheel
+// steps through every image in instance order, switching outputs at an
+// output's end, and a jump to an image in another one switches to it.
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect, useRef } from 'react'
 import { centerCrosshair } from './commands'
 import type { DicomConversion } from './dicomToNiivue'
-import { updateNiivueViewport } from './niivueRegistry'
+import { getNiivueEntry, updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
-import { acquisitionSliceType } from './standardCommands'
+import { acquisitionSliceType, scrollImage } from './standardCommands'
 
 /**
  * Cornerstone draws an image as stored. NiiVue's radiological view (patient
@@ -104,11 +104,16 @@ export function useOutputStack(
       )
     }
     const onWheel = (e: WheelEvent) => {
-      // A single slice has nowhere to scroll: step to the next output.
-      if (nv.volumes[0]?.dims?.[3] !== 1 || !e.deltaY) return
+      if (!e.deltaY) return
+      const isSingle = nv.volumes[0]?.dims?.[3] === 1
+      // Off the acquisition plane NiiVue scrolls its own slices.
+      if (!isSingle && nv.sliceType !== acquisitionSliceType(nv)) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      void show(at + Math.sign(e.deltaY))
+      const entry = getNiivueEntry(viewportId)
+      // A single slice has nowhere to scroll: step to the next output.
+      if (isSingle || !entry) void show(at + Math.sign(e.deltaY))
+      else scrollImage(entry, Math.sign(e.deltaY))
     }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
     updateNiivueViewport(viewportId, {

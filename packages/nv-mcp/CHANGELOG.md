@@ -1,3 +1,14 @@
+## 1.0.0-rc.219 (2026-11-18)
+
+### Features
+
+- **nv-mcp:** tools for a slide viewer's annotations ([dcf83428](https://github.com/niivue/mono/commit/dcf83428))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.218 (2026-11-17)
 
 ### Updated Dependencies

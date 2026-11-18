@@ -139,4 +139,23 @@ describe('NVSlideAnnotations.setPoints', () => {
     // Nor an undo step that would revert nothing.
     expect(a.annotationUndoTop).toBeUndefined()
   })
+  test('an abandoned setPoints keeps the redo history', () => {
+    const a = new NVSlideAnnotations(spacing)
+    const box = [
+      { x: 0, y: 0 },
+      { x: 2, y: 2 },
+    ]
+    const keep = a.add('rectangle', box)?.id ?? ''
+    const gone = a.add('rectangle', box)?.id ?? ''
+    a.setPoints(keep, [
+      { x: 0, y: 0 },
+      { x: 3, y: 3 },
+    ])
+    a.annotationUndo()
+    const redo = a.annotationRedoTop
+    expect(redo).toBeDefined()
+    a.addEventListener('annotationHistoryPush', () => a.remove(gone))
+    expect(a.setPoints(gone, box)).toBe(false)
+    expect(a.annotationRedoTop).toBe(redo)
+  })
 })

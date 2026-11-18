@@ -6,6 +6,8 @@ type Entry<T> = { seq: number; snapshot: T }
 export class AnnotationUndoStack<T = VectorAnnotation[]> {
   private _undoStack: Entry<T>[] = []
   private _redoStack: Entry<T>[] = []
+  // The redo steps the last push cleared, restored if that push is discarded.
+  private _clearedRedo: Entry<T>[] = []
   private _maxSnapshots: number
   private _seq = 0
   /**
@@ -26,7 +28,8 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
     if (this._undoStack.length > this._maxSnapshots) {
       this._undoStack.shift()
     }
-    this._redoStack.length = 0
+    this._clearedRedo = this._redoStack
+    this._redoStack = []
     this.onPush?.(seq)
     return seq
   }
@@ -46,14 +49,17 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
     return top.snapshot
   }
 
-  /** Drop step `seq` if it is still on top (an edit abandoned after its push). */
+  /** Undo push `seq`, called right after it (an edit abandoned after its push). */
   discard(seq: number): void {
-    if (this.undoTop === seq) this._undoStack.pop()
+    if (this.undoTop !== seq) return
+    this._undoStack.pop()
+    this._redoStack = this._clearedRedo
   }
 
   clear(): void {
     this._undoStack.length = 0
     this._redoStack.length = 0
+    this._clearedRedo = []
   }
 
   get canUndo(): boolean {

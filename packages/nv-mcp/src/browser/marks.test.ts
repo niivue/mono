@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
+import { NVSlideAnnotations } from '@niivue/niivue'
 
 import { baseView, hostOf } from '../testing/fake-view'
 import { markHandlers } from './marks'
@@ -682,5 +683,104 @@ describe('set_plane_outlines', () => {
     expect(() =>
       markHandlers(hostOf(baseView())).set_plane_outlines({ outlines: [] }),
     ).toThrow('cannot outline rectangles')
+  })
+})
+
+describe('list_slide_annotations and edit_slide_annotations', () => {
+  const slideHost = () => {
+    const store = new NVSlideAnnotations(() => [0.5, 0.5])
+    return {
+      store,
+      handlers: markHandlers({
+        ...hostOf(baseView()),
+        slideAnnotations: store,
+      }),
+    }
+  }
+
+  it('adds, labels, lists and removes on the real NVSlideAnnotations', () => {
+    const { store, handlers } = slideHost()
+    const added = handlers.edit_slide_annotations({
+      action: 'add',
+      tool: 'rectangle',
+      points: [
+        [0, 0],
+        [10, 20],
+      ],
+      label: 'tumour',
+    }) as { annotation: { id: string; stats: { area: number } }; count: number }
+    expect(added.count).toBe(1)
+    expect(added.annotation.stats.area).toBeCloseTo(50)
+    const { id } = added.annotation
+    handlers.edit_slide_annotations({
+      action: 'set_label',
+      id,
+      label: 'margin',
+    })
+    expect(store.get(id)?.label).toBe('margin')
+    expect(handlers.list_slide_annotations({ points: true })).toEqual({
+      annotations: [
+        {
+          id,
+          tool: 'rectangle',
+          label: 'margin',
+          stats: store.list()[0]?.stats,
+          points: [
+            [0, 0],
+            [10, 20],
+          ],
+        },
+      ],
+    })
+    expect(handlers.edit_slide_annotations({ action: 'remove', id })).toEqual({
+      count: 0,
+    })
+  })
+
+  it('clears them all', () => {
+    const { handlers } = slideHost()
+    handlers.edit_slide_annotations({
+      action: 'add',
+      tool: 'point',
+      points: [[1, 2]],
+    })
+    handlers.edit_slide_annotations({
+      action: 'add',
+      tool: 'point',
+      points: [[3, 4]],
+    })
+    expect(handlers.edit_slide_annotations({ action: 'clear' })).toEqual({
+      count: 0,
+    })
+  })
+
+  it('refuses in words', () => {
+    const { handlers } = slideHost()
+    const edit = handlers.edit_slide_annotations
+    expect(() =>
+      edit({
+        action: 'add',
+        tool: 'polygon',
+        points: [
+          [0, 0],
+          [1, 1],
+        ],
+      }),
+    ).toThrow('Too few points for a polygon.')
+    expect(() =>
+      edit({ action: 'add', tool: 'line', points: [[0, Number.NaN]] }),
+    ).toThrow('points must be a list of [x, y] in slide base pixels.')
+    expect(() => edit({ action: 'add', points: [[0, 0]] })).toThrow(
+      'Adding needs tool',
+    )
+    expect(() => edit({ action: 'remove', id: 'nope' })).toThrow(
+      'There is no slide annotation with the id "nope".',
+    )
+    expect(() => edit({ action: 'set_label', id: 'nope' })).toThrow(
+      'set_label needs label.',
+    )
+    expect(() =>
+      markHandlers(hostOf(baseView())).list_slide_annotations({}),
+    ).toThrow('This page has no slide annotations.')
   })
 })

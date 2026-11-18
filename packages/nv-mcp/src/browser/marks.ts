@@ -6,7 +6,7 @@
  */
 
 import { MAX_BOXES, MAX_PLANE_OUTLINES } from '../limits'
-import { nameFor, SLICE_TYPES } from '../views'
+import { nameFor, SLICE_TYPES, SLIDE_ANNOTATION_TOOLS } from '../views'
 import {
   choice,
   color,
@@ -27,6 +27,7 @@ import type {
   MeasurementOptions,
   NiiVueHost,
   PlaneOutline,
+  SlideAnnotation,
 } from './view'
 import { worldUnit } from './view'
 
@@ -42,6 +43,37 @@ const ANNOTATION_ACTIONS = [
   'load',
   'set_style',
 ] as const
+const SLIDE_ANNOTATION_ACTIONS = [
+  'add',
+  'remove',
+  'set_label',
+  'clear',
+] as const
+
+/** Slide base pixels from [[x, y], ...]. */
+function slidePoints(params: Params): { x: number; y: number }[] {
+  const value = params?.points
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some(
+      (p) =>
+        !Array.isArray(p) ||
+        p.length !== 2 ||
+        !p.every((v) => typeof v === 'number' && Number.isFinite(v)),
+    )
+  )
+    throw new Error('points must be a list of [x, y] in slide base pixels.')
+  return value.map(([x, y]) => ({ x, y }))
+}
+
+const describeSlideAnnotation = (a: SlideAnnotation, full: boolean) => ({
+  id: a.id,
+  tool: a.tool,
+  label: a.label,
+  stats: a.stats,
+  ...(full ? { points: a.points.map(({ x, y }) => [x, y]) } : {}),
+})
 
 /** NiiVue's colour for a picked brick, for a box given none. */
 const BOX_COLOR = [1, 0.83, 0.28, 1]
@@ -138,6 +170,11 @@ function describeAnnotation(a: Annotation, full: boolean) {
 export function markHandlers(host: NiiVueHost): Handlers {
   const { view } = host
 
+  const slideAnnotations = () => {
+    if (!host.slideAnnotations)
+      throw new Error('This page has no slide annotations.')
+    return host.slideAnnotations
+  }
   const annotations = () => {
     if (!view.annotations)
       throw new Error("This page's NiiVue has no annotations.")
@@ -418,6 +455,62 @@ export function markHandlers(host: NiiVueHost): Handlers {
       // leaves the scene as it was. NiiVue's setter redraws.
       view.planeOutlines = list.map((o, i) => outlineFrom(o, `outlines[${i}]`))
       return { outlines: view.planeOutlines.length }
+    },
+
+    list_slide_annotations(params: Params) {
+      host.beforeAnswer?.()
+      const full = flag(params, 'points') ?? false
+      return {
+        annotations: slideAnnotations()
+          .list()
+          .map((a) => describeSlideAnnotation(a, full)),
+      }
+    },
+
+    edit_slide_annotations(params: Params) {
+      host.beforeAnswer?.()
+      const store = slideAnnotations()
+      const action = choice(params, 'action', SLIDE_ANNOTATION_ACTIONS)
+      if (!action)
+        throw new Error(
+          `edit_slide_annotations needs an action: one of ${SLIDE_ANNOTATION_ACTIONS.join(', ')}.`,
+        )
+      const label = params?.label
+      if (label !== undefined && typeof label !== 'string')
+        throw new Error('label must be text.')
+      const id = text(params, 'id')
+      const out: Record<string, unknown> = {}
+      switch (action) {
+        case 'add': {
+          const tool = choice(params, 'tool', SLIDE_ANNOTATION_TOOLS)
+          if (!tool)
+            throw new Error(
+              `Adding needs tool: one of ${SLIDE_ANNOTATION_TOOLS.join(', ')}.`,
+            )
+          const made = store.add(tool, slidePoints(params), label)
+          if (!made) throw new Error(`Too few points for a ${tool}.`)
+          out.annotation = describeSlideAnnotation(made, false)
+          break
+        }
+        case 'remove':
+        case 'set_label': {
+          if (!id)
+            throw new Error(`Action ${action} needs the annotation's id.`)
+          if (action === 'set_label' && label === undefined)
+            throw new Error('set_label needs label.')
+          const found =
+            action === 'remove'
+              ? store.remove(id)
+              : store.setLabel(id, label as string)
+          if (!found)
+            throw new Error(`There is no slide annotation with the id "${id}".`)
+          break
+        }
+        case 'clear':
+          store.clear()
+      }
+      out.count = store.list().length
+      return out
     },
 
     list_measurements() {

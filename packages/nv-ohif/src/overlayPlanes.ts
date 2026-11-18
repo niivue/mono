@@ -27,7 +27,12 @@ export async function refreshOverlayPlanes(
     // Straight to loadDrawing (no await before it): core's drawing generation
     // guard starts there, so a segmentation made meanwhile is not overwritten.
     // A 4D plane shows its first volume.
-    if (!(await nv.loadDrawing(file))) return
+    // loadDrawing arms the pen; an overlay plane is display only, so a drag on
+    // the pane must not paint into it.
+    const armed = nv.drawIsEnabled
+    const loaded = await nv.loadDrawing(file)
+    if (!armed) nv.drawIsEnabled = false
+    if (!loaded) return
     if (
       planes.get(nv)?.[0] === file &&
       toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'

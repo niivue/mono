@@ -161,13 +161,16 @@ export function drawOpacities(style: Style): {
   fill: number
   rim: number
   width: number
+  outlineOnly: boolean
 } {
   const fill = style.renderFill === false ? 0 : (style.fillAlpha ?? 0.5)
   const rim = style.renderOutline === false ? -1 : (style.outlineOpacity ?? 1)
+  const outlineOnly = rim > 0 && fill === 0
   return {
-    fill: rim > 0 && fill === 0 ? 1 / 255 : fill,
+    fill: outlineOnly ? 1 / 255 : fill,
     rim,
     width: style.outlineWidth ?? 1,
+    outlineOnly,
   }
 }
 
@@ -420,12 +423,11 @@ export function startSegPanel(
       // Until the panel activates one, the pen paints the first listed segment.
       const active = rows.find((r) => r.active) ?? rows[0]
       if (active && !rt) setActiveSegmentValue(nv, active.value)
-      const { fill, rim, width } = drawOpacities(
+      const { fill, rim, width, outlineOnly } = drawOpacities(
         cst.config.style.getStyle({ viewportId, ...specifier }),
       )
       // Outline only: the rim ignores colour alpha, but a faint colour would
       // round the 1/255 fill's texel alpha to 0, which hides the rim too.
-      const outlineOnly = rim > 0 && fill === 1 / 255
       // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
       const visibleRows = rows.map(({ value, label, color, visible }) => ({
         value,

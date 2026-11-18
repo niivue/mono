@@ -111,9 +111,11 @@ export function useOutputStack(
       e.preventDefault()
       e.stopImmediatePropagation()
       const entry = getNiivueEntry(viewportId)
-      // A single slice has nowhere to scroll: step to the next output.
-      if (isSingle || !entry) void show(at + Math.sign(e.deltaY))
-      else scrollImage(entry, Math.sign(e.deltaY))
+      const step = Math.sign(e.deltaY)
+      // By frame: entering a multi-slice output lands on its adjacent image.
+      if (entry && (scrollImage(entry, step) || !isSingle)) return
+      // No frame here (unmapped image): step outputs.
+      void show(at + step)
     }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
     updateNiivueViewport(viewportId, {

@@ -1,5 +1,4 @@
 import type NiiVue from '@niivue/niivue'
-import { split4D } from './frames4D'
 import type { OhifExtensionManager } from './ohif-types'
 import { toolMode } from './segEdit'
 
@@ -8,7 +7,7 @@ import { toolMode } from './segEdit'
 // `<stem>_ROI<n>.nii` on the image grid; the pane shows the first as its
 // drawing while the tool is Enabled in its group and no SEG holds the drawing.
 // A 4D image's plane is 4D too (one volume per frame, a two-frame surview):
-// the pane shows the first frame, so the plane's first volume.
+// loadDrawing keeps its first volume, the frame the pane shows first.
 // ponytail: first plane only (one is typical); merge planes if a study needs it.
 // ponytail: first frame's overlay only; follow the frame if a study steps them.
 
@@ -25,7 +24,10 @@ export async function refreshOverlayPlanes(
   if (!file) return
   const on = toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'
   if (on && !nv.drawingVolume) {
-    if (!(await nv.loadDrawing((await split4D(file))?.image ?? file))) return
+    // Straight to loadDrawing (no await before it): core's drawing generation
+    // guard starts there, so a segmentation made meanwhile is not overwritten.
+    // A 4D plane shows its first volume.
+    if (!(await nv.loadDrawing(file))) return
     if (
       planes.get(nv)?.[0] === file &&
       toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'

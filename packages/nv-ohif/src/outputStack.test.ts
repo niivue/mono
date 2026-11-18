@@ -299,3 +299,79 @@ test('a superseded output load fails without a note', async () => {
   cleanup?.()
   unregisterNiivue('vs')
 })
+
+// Review of 167ecb0a: a wheel from a single-slice output into a multi-slice
+// one landed on its centre slice (B2), skipping B1.
+test('the wheel enters a multi-slice output on its adjacent image', async () => {
+  const sf = (sops: string[], z: number) => ({
+    origin: [0, 0, z] as [number, number, number],
+    normal: [0, 0, 1] as [number, number, number],
+    frames: sops.map((SOPInstanceUID) => ({ SOPInstanceUID, frameNumber: 1 })),
+  })
+  const a = {
+    name: 'A',
+    dims: [3, 2, 2, 1],
+    dimsRAS: [3, 2, 2, 1],
+    permRAS: [1, 2, 3],
+  }
+  const b = {
+    name: 'B',
+    dims: [3, 2, 2, 3],
+    dimsRAS: [3, 2, 2, 3],
+    permRAS: [1, 2, 3],
+  }
+  let z = 0
+  const nv = {
+    canvas: new EventTarget(),
+    volumes: [a],
+    sliceType: 0,
+    prepareVolume: async (o: { name: string }) => (o.name === 'A' ? a : b),
+    loadVolumes: async (v: (typeof a)[]) => {
+      nv.volumes = v
+    },
+    vox2frac: (v: number[]) => v,
+    set crosshairPos(v: number[]) {
+      nv.setCrosshairPos([0, 0, (nv.volumes[0] === a ? 0 : 10) + (v[2] ?? 0)])
+    },
+    setCrosshairPos: (p: number[]) => {
+      z = p[2] ?? 0
+      const entry = getNiivueEntry('vw')
+      if (entry) entry.crosshairMM = p
+    },
+  }
+  const ds = {
+    instances: ['A', 'B1', 'B2', 'B3'].map((SOPInstanceUID) => ({
+      SOPInstanceUID,
+    })),
+  } as unknown as OhifDisplaySet
+  registerNiivue('vw', nv as unknown as NiiVue)
+  updateNiivueViewport('vw', { displaySets: [ds], sliceFrames: sf(['A'], 0) })
+  const entry = getNiivueEntry('vw')
+  if (entry) entry.crosshairMM = [0, 0, 0]
+  useOutputStack(
+    nv as unknown as NiiVue,
+    'vw',
+    ds,
+    {
+      image: { name: 'A' },
+      sliceFrames: sf(['A'], 0),
+      alternates: [
+        { image: { name: 'B' }, sliceFrames: sf(['B1', 'B2', 'B3'], 10) },
+      ],
+    } as unknown as DicomConversion,
+    () => {},
+  )
+  const cleanup = effects.pop()?.()
+  const wheel = async () => {
+    nv.canvas.dispatchEvent(
+      Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 1 }),
+    )
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  await wheel()
+  expect([nv.volumes[0]?.name, z]).toEqual(['B', 10])
+  await wheel()
+  expect(z).toBe(11)
+  cleanup?.()
+  unregisterNiivue('vw')
+})

@@ -97,8 +97,10 @@ export function DynamicVolumePanel({
     rerender()
   }
   const toFrame = (f: number) => void setFrame(frames.group, f - 1)
-  // OHIF's computed-image range, 1-based, defaulting to every frame.
-  const [first, last] = [range[0], range[1] || frames.count]
+  // OHIF's computed-image range, 1-based, defaulting to every frame; clamped
+  // because it outlives a switch to a shorter series.
+  const last = Math.min(range[1] || frames.count, frames.count)
+  const first = Math.min(range[0], last - 1)
   const run = (name: string, options?: Record<string, unknown>) =>
     ohifCommandsManager(commandsManager)?.runCommand?.(name, options)
   return (

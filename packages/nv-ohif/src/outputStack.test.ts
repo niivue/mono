@@ -507,3 +507,69 @@ test.each([
   cleanup?.()
   unregisterNiivue('vo')
 })
+
+// Review of d2bb6a5e: on a slice without a frame, the wheel moved the
+// crosshair and also switched outputs.
+test('the wheel moves through unmapped slices without switching', async () => {
+  const vol = (name: string, n: number) => ({
+    name,
+    dims: [3, 2, 2, n],
+    dimsRAS: [3, 2, 2, n],
+    permRAS: [1, 2, 3],
+  })
+  const a = vol('A', 1)
+  const b = vol('B', 3)
+  const nv = {
+    canvas: new EventTarget(),
+    volumes: [b],
+    sliceType: 0,
+    prepareVolume: async (o: { name: string }) => (o.name === 'A' ? a : b),
+    loadVolumes: async (v: (typeof a)[]) => {
+      nv.volumes = v
+    },
+    vox2frac: (v: number[]) => v,
+    crosshairPos: [0, 0, 1],
+    setCrosshairPos: () => {},
+    moveCrosshairInVox: (x: number, y: number, z: number) => {
+      const [px = 0, py = 0, pz = 0] = nv.crosshairPos
+      nv.crosshairPos = [px + x, py + y, pz + z]
+    },
+  }
+  const frame = (SOPInstanceUID: string) => ({ SOPInstanceUID, frameNumber: 1 })
+  const sf = (frames: Array<ReturnType<typeof frame> | undefined>) => ({
+    origin: [0, 0, 0] as [number, number, number],
+    normal: [0, 0, 1] as [number, number, number],
+    frames,
+  })
+  const ds = {
+    instances: [{ SOPInstanceUID: 'B' }, { SOPInstanceUID: 'A' }],
+  } as unknown as OhifDisplaySet
+  const bFrames = sf([undefined, undefined, frame('B')])
+  registerNiivue('vu', nv as unknown as NiiVue)
+  updateNiivueViewport('vu', {
+    displaySets: [ds],
+    sliceFrames: bFrames,
+    isVolumeViewport: true,
+  })
+  const entry = getNiivueEntry('vu')
+  if (entry) entry.crosshairMM = [0, 0, 1]
+  useOutputStack(
+    nv as unknown as NiiVue,
+    'vu',
+    ds,
+    {
+      image: { name: 'B' },
+      sliceFrames: bFrames,
+      alternates: [{ image: { name: 'A' }, sliceFrames: sf([frame('A')]) }],
+    } as unknown as DicomConversion,
+    () => {},
+  )
+  const cleanup = effects.pop()?.()
+  nv.canvas.dispatchEvent(
+    Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 1 }),
+  )
+  await new Promise((r) => setTimeout(r, 0))
+  expect([nv.volumes[0]?.name, nv.crosshairPos[2]]).toEqual(['B', 2])
+  cleanup?.()
+  unregisterNiivue('vu')
+})

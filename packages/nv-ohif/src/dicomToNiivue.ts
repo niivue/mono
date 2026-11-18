@@ -158,9 +158,17 @@ async function inSuv(
  */
 export const frameGroupKey = (ds: OhifDisplaySet): string | undefined =>
   ds.displaySetInstanceUID &&
-  `${ds.displaySetInstanceUID}|${instanceRefs(ds)
-    .map((r) => r.url)
-    .join('|')}`
+  `${ds.displaySetInstanceUID}|${urlDigest(instanceRefs(ds).map((r) => r.url))}`
+
+// FNV-1a over the joined URLs: frames4D keeps every key for the session, and
+// a 4D series can have thousands of instances.
+function urlDigest(urls: string[]): string {
+  let h = 0x811c9dc5
+  const s = urls.join('|')
+  for (let i = 0; i < s.length; i++)
+    h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return `${urls.length}:${(h >>> 0).toString(36)}`
+}
 
 async function convertUnshared(
   ds: OhifDisplaySet,

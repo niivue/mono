@@ -426,12 +426,12 @@ export function startSegPanel(
       const { fill, rim, width, outlineOnly } = drawOpacities(
         cst.config.style.getStyle({ viewportId, ...specifier }),
       )
-      // Outline only: the rim ignores colour alpha, but a faint colour would
-      // round the 1/255 fill's texel alpha to 0, which hides the rim too.
       // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
       const visibleRows = rows.map(({ value, label, color, visible }) => ({
         value,
         label,
+        // Outline only: the rim ignores colour alpha, but a faint colour would
+        // round the 1/255 fill's texel alpha to 0, which hides the rim too.
         color: outlineOnly ? ([...color.slice(0, 3), 255] as Color) : color,
         visible,
       }))

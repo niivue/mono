@@ -123,4 +123,18 @@ test('the SR save wrapper takes slide rows and hands other saves to OHIF', async
   expect(stored).toEqual([])
   await save('niivue-slide-1-1')
   expect(stored).toHaveLength(1)
+  // A slide row that cannot be written stores nothing, OHIF's rows included.
+  let ohifSaves = 0
+  contexts.storeMeasurements = { commandFn: () => ohifSaves++ }
+  routeSlideSR(commands as never, () => undefined)
+  await expect(
+    contexts.storeMeasurements.commandFn({
+      measurementData: [
+        { uid: 'volume-1', points: [[1, 1, 0]] },
+        { uid: 'niivue-slide-1-1', points: [[1, 1, 0]] },
+      ],
+      dataSource: 'download',
+    }) as Promise<unknown>,
+  ).rejects.toThrow()
+  expect(ohifSaves).toBe(0)
 })

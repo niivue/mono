@@ -2228,6 +2228,8 @@ export default class NiiVue extends EventTarget {
     return this.view?.cinematicRenderer.frameMs ?? null
   }
 
+  /** Black outline around 2D overlay voxels above threshold (0 = off). Not
+   * drawn while an overlay has `isColormapAlphaKept`. */
   get volumeOutlineWidth(): number {
     return this.model.volume.outlineWidth
   }

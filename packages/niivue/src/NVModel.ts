@@ -581,6 +581,14 @@ export default class NVModel {
     return this.volumes
   }
 
+  /** The 2D overlay outline width: off while an overlay keeps its colormap
+   * alpha, since the outline takes alpha < 1 as below threshold. */
+  overlayOutlineWidth(): number {
+    return this.volumes.some((v, i) => i > 0 && v.isColormapAlphaKept)
+      ? 0
+      : this.volume.outlineWidth
+  }
+
   getSignals(): NVSignal[] {
     return this.signals
   }

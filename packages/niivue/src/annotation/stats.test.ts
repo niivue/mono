@@ -166,6 +166,22 @@ test('the scanline fill selects exactly the voxels pointInRing does', () => {
   expect(stats?.max).toBe(maxX) // voxel value = its x index
 })
 
+test('an intact circle selects voxels inside the true curve, not its 64-gon', () => {
+  const start = { x: 2.2, y: 2.3 }
+  // r = 6.8, centre (9, 9.1): centres (6, 3) and (12, 3) lie outside the 64-gon
+  // but inside the circle.
+  const end = { x: 15.8, y: 15.9 }
+  const ann: VectorAnnotation = {
+    ...annotation(generateShape('measureCircle', start, end, 1)),
+    shape: { type: 'measureCircle', start, end },
+  }
+  let expected = 0
+  for (let x = 0; x < N; x++)
+    for (let y = 0; y < N; y++)
+      if ((x - 9) ** 2 + (y - 9.1) ** 2 < 6.8 ** 2) expected++
+  expect(computeAnnotationStats(ann, volume)?.area).toBe(expected)
+})
+
 describe('computeAnnotationStats edge cases', () => {
   const rect = (
     start: AnnotationPoint,

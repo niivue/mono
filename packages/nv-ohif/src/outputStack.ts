@@ -72,7 +72,8 @@ export function useOutputStack(
       return done.then(
         () => !cancelled && request === latest,
         (err) => {
-          if (!cancelled)
+          // A superseded request's failure is not what the user now waits on.
+          if (!cancelled && request === latest)
             note(
               `Switching output failed: ${err instanceof Error ? err.message : String(err)}`,
             )

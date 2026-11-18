@@ -262,3 +262,39 @@ test('rename keeps the image of a measurement on a coplanar output', () => {
   expect(rows[reflectedRowUid('R') as string]?.SOPInstanceUID).toBe('sop-b')
   unregisterNiivue('vr')
 })
+
+test('a superseded output load fails without a note', async () => {
+  let calls = 0
+  let rejectFirst: (e: Error) => void = () => {}
+  const fake = {
+    canvas: new EventTarget(),
+    volumes: [{ name: 'a', dims: [3, 2, 2, 1] }],
+    prepareVolume: () =>
+      ++calls === 1
+        ? new Promise((_, reject) => {
+            rejectFirst = reject
+          })
+        : Promise.reject(new Error('new failure')),
+  }
+  const notes: string[] = []
+  const conversion = {
+    image: { name: 'a' },
+    sliceFrames: frames('a'),
+    alternates: [{ image: { name: 'b' }, sliceFrames: frames('b') }],
+  } as unknown as DicomConversion
+  const ds = {
+    instances: [{ SOPInstanceUID: 'a' }, { SOPInstanceUID: 'b' }],
+  } as unknown as OhifDisplaySet
+  registerNiivue('vs', fake as unknown as NiiVue)
+  useOutputStack(fake as unknown as NiiVue, 'vs', ds, conversion, (m) =>
+    notes.push(m),
+  )
+  const cleanup = effects.pop()?.()
+  const first = getNiivueEntry('vs')?.switchToInstance?.('b')
+  const second = getNiivueEntry('vs')?.switchToInstance?.('b')
+  rejectFirst(new Error('old failure'))
+  expect([await first, await second]).toEqual([false, false])
+  expect(notes).toEqual(['Switching output failed: new failure'])
+  cleanup?.()
+  unregisterNiivue('vs')
+})

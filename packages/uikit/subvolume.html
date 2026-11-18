@@ -89,6 +89,7 @@
       explode.addEventListener('change', applyBricks)
 
       let seq = 0
+      let saveName = ''
       const selector = new UIKitSubvolumeSelector({
         onCorner: (mm) => {
           seq++
@@ -105,7 +106,9 @@
           const { nifti, calMin, calMax } = sel.subVolume
           await copy.loadVolumes([{ url: new File([nifti], 'subvolume.nii'), colormap: 'gray', calMin, calMax }])
           if (at !== seq) return
+          saveName = `subvolume_${sel.voxelOrigin.join('-')}_${x}x${y}x${z}.nii`
           buttons.updateButton('clear', { enabled: true })
+          buttons.updateButton('save', { enabled: true })
           setStatus(`${x}x${y}x${z} voxels from [${sel.voxelOrigin.join(', ')}]${z === 1 || y === 1 || x === 1 ? ': right-click another slice view to set the depth' : ''}`, 'ok')
         },
       })
@@ -120,7 +123,7 @@
         ['3. Right-click the second corner: the box is copied here.', 0.8],
         ['4. Corners on one slice? Right-click another slice view for depth.', 0.8],
         ['In 3D, a corner over empty space takes the first corner\'s depth.', 0.75],
-        ['Right-click the same view or 3D for a new box; Clear empties this pane.', 0.75],
+        ['Right-click the same view or 3D for a new box; Clear empties this pane, Save downloads it.', 0.75],
         ['Shift+right-click still opens the context menu.', 0.75],
       ]
       const text = new UIKitTextOverlay(font)
@@ -154,9 +157,15 @@
           seq++ // drop a copy still loading
           selector.reset()
           buttons.updateButton('clear', { enabled: false })
+          buttons.updateButton('save', { enabled: false })
           await copy.removeAllVolumes()
           setStatus('Right-click the first corner', 'wait')
         },
+      })
+      // Save downloads the copy as NIfTI, its header placing it where the box was.
+      buttons.addButton({
+        id: 'save', label: 'Save', x: 96, y: 12, enabled: false,
+        onClick: () => copy.saveVolume({ filename: saveName }),
       })
       nv.registerOverlayRenderer(selector)
     </script>

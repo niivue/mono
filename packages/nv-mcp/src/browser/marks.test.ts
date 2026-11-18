@@ -131,6 +131,63 @@ describe('edit_drawing', () => {
     expect(view.drawScene).toHaveBeenCalledTimes(4)
   })
 
+  it('fills a shape in the drawing', async () => {
+    const view = baseView({ drawShapeFill: mock(() => true) })
+    const { edit_drawing } = markHandlers(hostOf(view))
+    expect(
+      await edit_drawing({
+        action: 'fill',
+        shape: 'sphere',
+        start_mm: [1, 2, 3],
+        end_mm: [1, 2, 13],
+      }),
+    ).toEqual({ action: 'fill' })
+    await edit_drawing({
+      action: 'fill',
+      shape: 'rectangle',
+      start_mm: [0, 0, 0],
+      end_mm: [5, 5, 0],
+      slice: 'coronal',
+    })
+    expect(view.drawShapeFill).toHaveBeenNthCalledWith(
+      1,
+      2,
+      [1, 2, 3],
+      [1, 2, 13],
+      0,
+    )
+    expect(view.drawShapeFill).toHaveBeenNthCalledWith(
+      2,
+      0,
+      [0, 0, 0],
+      [5, 5, 0],
+      1,
+    )
+    await expect(
+      edit_drawing({ action: 'fill', start_mm: [0, 0, 0], end_mm: [1, 1, 1] }),
+    ).rejects.toThrow(
+      'Filling needs a shape: one of rectangle, circle, sphere.',
+    )
+    await expect(
+      edit_drawing({
+        action: 'fill',
+        shape: 'circle',
+        start_mm: [0, 0, 0],
+        end_mm: [1, 1, 1],
+        slice: 'render',
+      }),
+    ).rejects.toThrow('A fill lies in an axial, coronal or sagittal slice.')
+    const none = baseView({ drawShapeFill: mock(() => false) })
+    await expect(
+      markHandlers(hostOf(none)).edit_drawing({
+        action: 'fill',
+        shape: 'circle',
+        start_mm: [0, 0, 0],
+        end_mm: [1, 1, 1],
+      }),
+    ).rejects.toThrow('There is no drawing to fill. Create or load one first.')
+  })
+
   it('traces the drawing as svg for a slice', async () => {
     const view = baseView({
       drawingToSVG: mock((sliceType?: number, index?: number) =>
@@ -155,7 +212,7 @@ describe('edit_drawing', () => {
   it('refuses no action, no volume, and a page that cannot draw', async () => {
     const { edit_drawing } = markHandlers(hostOf(baseView()))
     await expect(edit_drawing({})).rejects.toThrow(
-      'edit_drawing needs an action: one of create, load, undo, close, svg.',
+      'edit_drawing needs an action: one of create, load, undo, close, svg, fill.',
     )
     await expect(edit_drawing({ action: 'create' })).rejects.toThrow(
       "This page's NiiVue cannot create a drawing.",

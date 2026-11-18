@@ -1070,18 +1070,19 @@ export function NiivueViewport(props: OhifViewportProps) {
             props.extensionManager,
             getNiivueEntry(viewportId)?.toolGroupId ?? 'default',
           )
-          // A single image (e.g. a localizer) shows in its own plane, as a
-          // cornerstone stack does, unless the hanging protocol set one; any
-          // other series gets the pane's initial view, not the one the
-          // previous series left (a coronal scout's).
+          // Each series gets its own view, not the one the previous series
+          // left (a coronal scout's).
           matchStoredOrientation(nv)
           const initial = initialSliceType(viewportOptionsRef.current)
-          // OHIF marks unequal slice spacing (or orthogonal localizers) not
-          // reconstructable: only the acquired plane is faithful.
+          // A series opens in its acquired plane, as a cornerstone stack does,
+          // unless the hanging protocol names a view. OHIF marks unequal slice
+          // spacing (or orthogonal localizers) not reconstructable: only the
+          // acquired plane is faithful there, even under a multiplanar protocol.
           const plane =
-            (nv.volumes[0]?.dims?.[3] === 1 ||
-              ds.isReconstructable === false) &&
-            initial === SLICE_TYPE.MULTIPLANAR
+            initial === SLICE_TYPE.MULTIPLANAR &&
+            (!viewportOptionsRef.current?.orientation ||
+              nv.volumes[0]?.dims?.[3] === 1 ||
+              ds.isReconstructable === false)
               ? acquisitionSliceType(nv)
               : undefined
           nv.sliceType = plane ?? initial

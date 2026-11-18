@@ -149,11 +149,22 @@ test('the window comes from the instances the shown output was made of', () => {
   expect(win && (win.calMin + win.calMax) / 2).toBeCloseTo(100, 0)
 })
 
-test('a single image opens in its acquisition plane', () => {
+test('a series opens in its acquisition plane', () => {
   // permRAS: voxel dimension 3 runs along RAS axis 2 (anterior) -> coronal.
-  expect(acquisitionSliceType({ volumes: [{ permRAS: [1, 3, -2] }] })).toBe(
-    SLICE_TYPE.CORONAL,
-  )
+  const nv = { volumes: [{ permRAS: [1, 2, 3] }] }
+  expect(acquisitionSliceType(nv)).toBe(SLICE_TYPE.AXIAL)
+  // User report: a sagittal T1 that dcm2niix turned toward RAS (axial NIfTI
+  // slices) opened axial; its DICOM frames lie in sagittal planes.
+  registerNiivue('acq', nv as unknown as NiiVue)
+  updateNiivueViewport('acq', {
+    sliceFrames: {
+      origin: [0, 0, 0],
+      normal: [0.98, 0.2, 0],
+      frames: [{ SOPInstanceUID: 's', frameNumber: 1 }],
+    },
+  })
+  expect(acquisitionSliceType(nv)).toBe(SLICE_TYPE.SAGITTAL)
+  unregisterNiivue('acq')
 })
 
 test("a linked pane's window readout follows its peer's window", async () => {

@@ -9,6 +9,7 @@ import {
 import {
   armBrush,
   getQuantCommandDefinitions,
+  resetQuant,
   showPaneLabel,
   tmtvCsv,
 } from './petQuant'
@@ -49,6 +50,14 @@ it('segment change retargets an armed brush pen, not an eraser', async () => {
   armBrush('pet', 'CircularEraser', services, () => 5)
   cmd.niivueSetActiveSegment?.commandFn({ segmentIndex: 1 })
   expect(nv.drawPenValue).toBe(0)
+  // Holistic review H16: a mode exit drops the masks and the segment list.
+  armBrush('pet', 'CircularBrush', services, () => 5)
+  cmd.niivueAddSegment?.commandFn({})
+  expect(nv.drawPenValue).toBe(3)
+  resetQuant()
+  expect(nv.drawPenValue).toBe(1)
+  cmd.niivueAddSegment?.commandFn({})
+  expect(nv.drawPenValue).toBe(2)
   unregisterNiivue('pet')
 })
 

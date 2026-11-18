@@ -104,6 +104,16 @@ const notify = () => {
   for (const fn of listeners) fn()
 }
 
+/** Drop every PT label and the tool state: a mode exit leaves no study's
+ * masks (a full label grid per brushed PT series) behind. */
+export function resetQuant(): void {
+  masks.clear()
+  thresholdRange = [2.5, 50]
+  roiSlices.start = roiSlices.end = undefined
+  lastConfig = DEFAULT_THRESHOLD
+  setActiveSegment(1) // notifies
+}
+
 const displaySet = (services: Services, uid: string) =>
   (
     ohifServices(services)?.displaySetService as

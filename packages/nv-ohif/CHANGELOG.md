@@ -1,3 +1,22 @@
+## 1.0.0-rc.263 (2026-11-18)
+
+### Features
+
+- **nv-ohif:** a series opens in its acquired plane, from the DICOM frames ([e4254ef2](https://github.com/niivue/mono/commit/e4254ef2))
+
+### Fixes
+
+- **nv-ohif:** a direct NIfTI display set opens its acquired plane too ([1c4bd7c7](https://github.com/niivue/mono/commit/1c4bd7c7))
+- **nv-ohif:** resolve 'acquisition' on a protocol change too ([60e8c370](https://github.com/niivue/mono/commit/60e8c370))
+- **nv-ohif:** open the acquired plane under orientation 'acquisition' ([0f62e7b8](https://github.com/niivue/mono/commit/0f62e7b8))
+- **nv-ohif:** volume viewports enter an output at its near end; bidirectional grid floor; malformed overlay data ([f440f379](https://github.com/niivue/mono/commit/f440f379))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.262 (2026-11-18)
 
 ### Fixes

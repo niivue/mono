@@ -81,6 +81,25 @@ test('slide line and polygon rows write SCOORD3D that loadSR reads back', async 
   ).toEqual(['cut', 'gland'])
 })
 
+// Review of #857: a row without slide geometry fails the save, not vanishes.
+test('a slide row without geometry fails the SR build', () => {
+  const row = (uid: string) => ({
+    uid,
+    points: [
+      [0.5, 0.5, 0],
+      [4.5, 0.5, 0],
+    ],
+    metadata: { slideTool: 'line' },
+  })
+  expect(() =>
+    buildSlideSR(
+      [row('niivue-slide-1-1'), row('niivue-slide-2-1')],
+      (r) => (r.uid === 'niivue-slide-1-1' ? sm : undefined),
+      {},
+    ),
+  ).toThrow('1 of 2')
+})
+
 test('the SR save wrapper takes slide rows and hands other saves to OHIF', async () => {
   const contexts: Record<string, { commandFn: (o: object) => unknown }> = {
     storeMeasurements: { commandFn: () => 'cornerstone' },

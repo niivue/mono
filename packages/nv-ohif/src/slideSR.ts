@@ -101,7 +101,8 @@ const ucum = (unit: string, meaning: string) => ({
 /**
  * A Comprehensive 3D SR of `rows` (TID 1500, laid out as dcmjs' templates);
  * `smOf` gives each row's base-level SM instance (its frame of reference and
- * transform). Undefined when no row has complete slide geometry.
+ * transform). Throws when a row lacks slide geometry, so a save never drops
+ * rows silently.
  */
 // ponytail: hand-built: dcmjs' sr.templates (constructSR's) throw on
 // TrackingIdentifier, an Array subclass whose filter() re-runs its constructor.
@@ -115,6 +116,11 @@ export function buildSlideSR(
     const toFrame = sm && slideToFrame(sm)
     return sm && toFrame ? [{ row, sm, toFrame }] : []
   })
+  const missing = rows.length - placed.length
+  if (missing)
+    throw new Error(
+      `No slide metadata for ${missing} of ${rows.length} measurements`,
+    )
   const sm0 = placed[0]?.sm
   if (!sm0) return undefined
   const specimen = first(sm0.SpecimenDescriptionSequence)

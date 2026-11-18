@@ -328,8 +328,9 @@ export class NVSlideAnnotations extends EventTarget {
         annotation &&
         (points.length !== annotation.points.length ||
           points.some(
-          (p, i) =>
-            p.x !== annotation.points[i]?.x || p.y !== annotation.points[i]?.y,
+            (p, i) =>
+              p.x !== annotation.points[i]?.x ||
+              p.y !== annotation.points[i]?.y,
           ))
       )
         this._setPoints(annotation, points)

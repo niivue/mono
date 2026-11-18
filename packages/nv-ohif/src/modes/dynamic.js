@@ -153,8 +153,15 @@ let stopCineStart = () => {}
 
 // After hanging-protocol matching, as OHIF's: steps may change the stage.
 function onSetupRouteComplete({ servicesManager }) {
-  const { workflowStepsService, cineService, viewportGridService } =
-    servicesManager.services
+  const {
+    workflowStepsService,
+    cineService,
+    viewportGridService,
+    hangingProtocolService,
+  } = servicesManager.services
+  // A study the server lacks: OHIF redirects to notfoundstudy, and a step's
+  // protocol switch would throw on the missing study.
+  if (!hangingProtocolService.getState().activeStudyUID) return
   workflowStepsService.addWorkflowSteps(steps)
   workflowStepsService.setActiveWorkflowStep(steps[0].id)
   // OHIF auto-plays the active pane at 24 fps once its volume loads; NiiVue

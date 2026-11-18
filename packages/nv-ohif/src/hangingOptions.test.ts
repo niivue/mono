@@ -141,7 +141,7 @@ test('a new window on a layered overlay restyles it in place', async () => {
   const updates: Array<[number, Record<string, unknown>]> = []
   const nv = {
     colormaps: [],
-    volumes: [{ hdr: base }, { hdr: pt }],
+    volumes: [{ hdr: base }, { hdr: pt, robustMin: 0, robustMax: 100 }],
     setVolume: async (i: number, o: Record<string, unknown>) => {
       updates.push([i, o])
     },
@@ -152,14 +152,18 @@ test('a new window on a layered overlay restyles it in place', async () => {
   const commandsManager = {
     runCommand: async (...a: unknown[]) => added.push(a),
   }
-  const hang = (width: number) => {
+  const hang = (width?: number) => {
     useHungOverlays(
       nv as never,
       'vp-style',
       [ds('ct'), ds('pt')] as never,
       [
         {},
-        { options: { voi: { windowWidth: width, windowCenter: width / 2 } } },
+        {
+          options: width
+            ? { voi: { windowWidth: width, windowCenter: width / 2 } }
+            : { colormap: { name: 'gray' } },
+        },
       ],
       'ct',
       commandsManager as never,
@@ -170,11 +174,15 @@ test('a new window on a layered overlay restyles it in place', async () => {
   hang(10)
   await new Promise((r) => setTimeout(r, 0))
   const [narrow, wide] = effectDeps.slice(-2)
+  // Dropping the protocol's window falls back to the volume's own.
+  hang()
+  await new Promise((r) => setTimeout(r, 0))
   expect(narrow).not.toEqual(wide)
   expect(added).toEqual([])
   expect(updates.map(([i, o]) => [i, o.calMin, o.calMax])).toEqual([
     [1, 0, 5],
     [1, 0, 10],
+    [1, 0, 100],
   ])
   unregisterNiivue('vp-style')
 })
@@ -262,4 +270,44 @@ test('an overlay dropped from the protocol after it loaded is removed', async ()
   expect(entry?.overlays.has('pt')).toBe(false)
   expect(entry?.overlays.has('user')).toBe(true)
   unregisterNiivue('vp-drop')
+})
+
+test('a protocol without a background returns the pane to black', () => {
+  const nv = { backgroundColor: [0, 0, 0, 1], volumeRenderMode: 0 }
+  const canvas = { style: { filter: '' } }
+  applyViewportStyle(
+    nv as never,
+    canvas as never,
+    { background: [1, 1, 1] },
+    [],
+  )
+  expect(nv.backgroundColor).toEqual([1, 1, 1, 1])
+  applyViewportStyle(nv as never, canvas as never, {}, [])
+  expect(nv.backgroundColor).toEqual([0, 0, 0, 1])
+})
+
+test('restyling without a protocol colormap falls back to the load defaults', async () => {
+  const pt = {}
+  const updates: Record<string, unknown>[] = []
+  const nv = {
+    colormaps: ['hot'],
+    volumes: [{ hdr: {} }, { hdr: pt }],
+    setVolume: async (_: number, o: Record<string, unknown>) => {
+      updates.push(o)
+    },
+  }
+  registerNiivue('vp-plain', nv as never)
+  getNiivueEntry('vp-plain')?.overlays.set('pt', pt as never)
+  useHungOverlays(
+    nv as never,
+    'vp-plain',
+    [ds('ct'), ds('pt')] as never,
+    [{}, {}],
+    'ct',
+    { runCommand: async () => {} } as never,
+  )
+  effects.pop()?.()
+  await new Promise((r) => setTimeout(r, 0))
+  expect([updates[0]?.colormap, updates[0]?.opacity]).toEqual(['warm', 0.5])
+  unregisterNiivue('vp-plain')
 })

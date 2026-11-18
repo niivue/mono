@@ -50,6 +50,7 @@ describe('segPanel', () => {
       rim: -1,
       width: 1,
     })
+    expect(drawOpacities({ renderFill: false, outlineOpacity: 0 }).fill).toBe(0)
     expect(drawOpacities({ outlineWidth: 3 }).width).toBe(3)
   })
 
@@ -91,10 +92,11 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
 
 // Cornerstone's segmentation state and OHIF's service and history, as far as
 // the panel uses them; modified events reach the panel synchronously.
-function host() {
+function host(style: object = {}, color = [255, 0, 0, 255]) {
   type Seg = { segments: Record<string, object> }
   const segs = new Map<string, Seg>()
   const reps = new Map<string, object>()
+  const luts = new Set<number>()
   const listeners = new Set<(e: { segmentationId?: string }) => void>()
   const memos: Array<{ restoreMemo: (undo?: boolean) => void }> = []
   const segmentation = {
@@ -105,6 +107,9 @@ function host() {
       s: { segmentationId: string },
     ) => reps.delete(vp + s.segmentationId),
     state: {
+      removeColorLUT: (i: number) => luts.delete(i),
+      // Index 0 is cornerstone's default LUT.
+      getColorLUT: (i: number) => i === 0 || luts.has(i),
       getSegmentation: (id: string) => segs.get(id),
       getSegmentationRepresentation: (
         vp: string,
@@ -113,10 +118,13 @@ function host() {
     },
     config: {
       color: {
-        addColorLUT: () => 0,
-        getSegmentIndexColor: () => [255, 0, 0, 255],
+        addColorLUT: (_: unknown, i: number) => {
+          luts.add(i)
+          return i
+        },
+        getSegmentIndexColor: () => color,
       },
-      style: { getStyle: () => ({}) },
+      style: { getStyle: () => style },
     },
     defaultSegmentationStateManager: {
       updateState: (fn: (s: object) => void) =>
@@ -167,7 +175,7 @@ function host() {
     servicesManager: { services: { segmentationService: service } },
     extensionManager,
   } as never
-  return { managers, memos, segs }
+  return { managers, memos, segs, luts }
 }
 
 async function viewer(dims = [2, 2, 1], srow = IDENTITY) {
@@ -211,6 +219,51 @@ describe('segmentation editing', () => {
     unregisterNiivue('created')
     nv.destroy()
     expect(niivueSegmentationPane(next)).toBeUndefined()
+  })
+
+  test('a closed panel removes its colour LUT and the next reuses its index', async () => {
+    const { managers, luts } = host()
+    const used: number[][] = []
+    for (let i = 0; i < 3; i++) {
+      const nv = await viewer()
+      registerNiivue('lut', nv)
+      updateNiivueViewport('lut', {
+        displaySets: [{ displaySetInstanceUID: 'a' }],
+      })
+      getSegCommandDefinitions(managers).createLabelmapForViewport.commandFn({
+        viewportId: 'lut',
+      })
+      used.push([...luts])
+      unregisterNiivue('lut')
+      nv.destroy()
+    }
+    expect([used, luts.size]).toEqual([[[1], [1], [1]], 0])
+  })
+
+  test('outline only draws a faint segment with an opaque colour', async () => {
+    const { managers } = host({ renderFill: false }, [255, 0, 0, 102])
+    const nv = await viewer()
+    nv.createEmptyDrawing()
+    img(nv).set([1, 0, 0, 0])
+    const alphas: number[] = []
+    const addColormap = nv.addColormap.bind(nv)
+    nv.addColormap = (name, cmap) => {
+      alphas.push(cmap.A?.[1] ?? -1)
+      return addColormap(name, cmap)
+    }
+    registerNiivue('faint', nv)
+    const stop = startSegPanel(
+      nv,
+      'faint',
+      { displaySetInstanceUID: 'faint', Modality: 'SEG' },
+      [segment(1)],
+      managers,
+    )
+    // round(alpha * 1/255) must stay 1: the shader draws a rim only there.
+    expect([alphas.at(-1), nv.drawOpacity]).toEqual([255, 1 / 255])
+    stop()
+    unregisterNiivue('faint')
+    nv.destroy()
   })
 
   test('volume_onAShearedGrid_isTheAffineDeterminant', async () => {

@@ -192,6 +192,22 @@ describe('niivueRegistry', () => {
   })
 })
 
+it('a rebuilt commands module mirrors measurements once', () => {
+  const live = new Set<object>()
+  const measurementService = {
+    EVENTS: { MEASUREMENT_ADDED: 'added' },
+    subscribe: () => {
+      const sub = { unsubscribe: () => live.delete(sub) }
+      live.add(sub)
+      return sub
+    },
+  }
+  const servicesManager = { services: { measurementService } } as never
+  getNiivueCommandsModule({ servicesManager })
+  getNiivueCommandsModule({ servicesManager })
+  expect(live.size).toBe(1)
+})
+
 describe('niivueSetMeasurementMode', () => {
   it("activates OHIF's Length tool so the tool bridge drives measurement mode", () => {
     const nv = stubNiivue()

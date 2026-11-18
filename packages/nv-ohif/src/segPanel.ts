@@ -47,6 +47,8 @@ interface CstSegmentation {
   addSegmentations(input: unknown[]): void
   removeSegmentationRepresentations(viewportId: string, s: object): void
   state: {
+    removeColorLUT(index: number): void
+    getColorLUT(index: number): unknown
     getSegmentation(
       id: string,
     ): { segments: Record<string, Segment> } | undefined
@@ -57,7 +59,7 @@ interface CstSegmentation {
   }
   config: {
     color: {
-      addColorLUT(lut: Color[]): number
+      addColorLUT(lut: Color[], index?: number): number
       getSegmentIndexColor(
         viewportId: string,
         id: string,
@@ -163,7 +165,7 @@ export function drawOpacities(style: Style): {
   const fill = style.renderFill === false ? 0 : (style.fillAlpha ?? 0.5)
   const rim = style.renderOutline === false ? -1 : (style.outlineOpacity ?? 1)
   return {
-    fill: rim >= 0 && fill === 0 ? 1 / 255 : fill,
+    fill: rim > 0 && fill === 0 ? 1 / 255 : fill,
     rim,
     width: style.outlineWidth ?? 1,
   }
@@ -363,12 +365,11 @@ export function startSegPanel(
       | undefined
     if (added?.representationData) delete added.representationData[LABELMAP]
   }
-  addRepresentation(
-    cst,
-    viewportId,
-    segmentationId,
-    cst.config.color.addColorLUT(lut),
-  )
+  // removeColorLUT leaves a hole and addColorLUT appends by default: fill the first hole.
+  let freeIndex = 0
+  while (cst.state.getColorLUT(freeIndex)) freeIndex++
+  const lutIndex = cst.config.color.addColorLUT(lut, freeIndex)
+  addRepresentation(cst, viewportId, segmentationId, lutIndex)
 
   const specifier = { segmentationId, type: LABELMAP }
   const colormapName = `seg-panel-${viewportId}`
@@ -422,11 +423,14 @@ export function startSegPanel(
       const { fill, rim, width } = drawOpacities(
         cst.config.style.getStyle({ viewportId, ...specifier }),
       )
+      // Outline only: the rim ignores colour alpha, but a faint colour would
+      // round the 1/255 fill's texel alpha to 0, which hides the rim too.
+      const outlineOnly = rim > 0 && fill === 1 / 255
       // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
       const visibleRows = rows.map(({ value, label, color, visible }) => ({
         value,
         label,
-        color,
+        color: outlineOnly ? ([...color.slice(0, 3), 255] as Color) : color,
         visible,
       }))
       const key = JSON.stringify([visibleRows, fill, rim, width])
@@ -542,6 +546,8 @@ export function startSegPanel(
     // The segmentation stays, as OHIF leaves its own: removing it makes OHIF
     // strip the SEG display set from every viewport that hangs it.
     cst.removeSegmentationRepresentations(viewportId, { segmentationId })
+    // Each start adds one: without this, toggling a SEG grows cornerstone's LUT list.
+    cst.state.removeColorLUT(lutIndex)
   }
 }
 

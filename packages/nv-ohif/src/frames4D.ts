@@ -22,11 +22,12 @@ const ARRAYS: Record<number, View> = {
 
 /**
  * Split a 4D uncompressed NIfTI-1 (little-endian, as dcm2niix writes) into a
- * 3D file of frame 0 and a frame source over all frames. Null when `image` is
- * not 4D.
+ * 3D file of frame 0 and a frame source over all frames, grouped by `series`.
+ * Null when `image` is not 4D.
  */
 export async function split4D(
   image: File,
+  series?: string,
 ): Promise<{ image: File; frames: VolumeFrameSource } | null> {
   const buf = await image.arrayBuffer()
   const view = new DataView(buf)
@@ -44,19 +45,42 @@ export async function split4D(
   const headView = new DataView(head)
   headView.setInt16(40, 3, true)
   headView.setInt16(48, 1, true)
+  const frames = Math.min(
+    count,
+    Math.floor((buf.byteLength - offset) / frameBytes),
+  )
   return {
     image: new File([head, buf.slice(offset, offset + frameBytes)], image.name),
     frames: {
-      count: Math.min(
-        count,
-        Math.floor((buf.byteLength - offset) / frameBytes),
-      ),
+      count: frames,
       frame: 0,
-      group: {},
+      // A refreshed display set may have another shape: its own group.
+      group: seriesGroup(
+        series && `${series}:${dim(1)}x${dim(2)}x${dim(3)}x${frames}`,
+      ),
       load: async (f) => new View(buf, offset + f * frameBytes, voxels),
     },
   }
 }
+
+// One group per display set: a reconversion (the conversion cache keeps four)
+// must rejoin the panes already showing that series. A group no pane shows is
+// not rejoined, so a reopen starts fresh: its frame and computed result are
+// stale. Weak, so a group (and the buffers its computed result holds) lives
+// only as long as a volume or a pending load holds it; eager pruning raced
+// loadVolumes, which emits volumeRemoved before its new volume is shown.
+const groups = new Map<string, WeakRef<object>>()
+const seriesGroup = (series: string | undefined): object => {
+  if (series === undefined) return {}
+  const old = groups.get(series)?.deref()
+  const group = old && isShown(old) ? old : {}
+  groups.set(series, new WeakRef(group))
+  return group
+}
+const isShown = (group: object): boolean =>
+  [...panes.values()].some((nv) =>
+    nv.volumes.some((v) => v.frameSource?.group === group),
+  )
 
 /** The frame-source volume (base or overlay) a pane shows, if any. */
 const sourceVolume = (nv: NiiVue): NVImage | undefined =>
@@ -287,11 +311,13 @@ function tick(now: number) {
 
 /** Bring a late volume to its series' frame, then its computed volume if shown. */
 async function catchUp(nv: NiiVue, v: NVImage): Promise<void> {
-  const group = v.frameSource?.group
-  if (!group || !v.id) return
+  const source = v.frameSource
+  const group = source?.group
+  if (!source || !group || !v.id) return
   const f = current.get(group)
   // The frame first: one landing later would overwrite computed samples.
-  if (f) await nv.setFrame4D(v.id, f)
+  // A reload of the display set may have fewer frames than the one remembered.
+  if (f && f < source.count) await nv.setFrame4D(v.id, f)
   const c = computedShown.get(group)
   if (c && !c.saved.has(v))
     await installComputed(group, c, nv, v, nv.volumes.indexOf(v))

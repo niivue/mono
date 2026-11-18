@@ -254,6 +254,26 @@ describe('rasterizeStructureSet', () => {
     expect(segments.map((s) => s.label)).toEqual(['target'])
   })
 
+  test('ROIs past the 255th are reported as left out', () => {
+    const roi = {
+      ROIName: 'r',
+      contourPoints: [
+        {
+          type: 'CLOSED_PLANAR',
+          points: pts(square(-0.5, -0.5, -9.5, -9.5, 1)),
+        },
+      ],
+    }
+    const at = (n: number) =>
+      rasterizeStructureSet([20, 20, 5], identityLps, Array(n).fill(roi))
+        .truncated
+    const trailingEmpty = rasterizeStructureSet([20, 20, 5], identityLps, [
+      ...Array(255).fill(roi),
+      { ROIName: 'empty', contourPoints: [] },
+    ]).truncated
+    expect([at(255), at(256), trailingEmpty]).toEqual([false, true, false])
+  })
+
   // Review of #839: a contour on the tilted plane z = y/2 crosses voxel
   // slices 1 to 4; each voxel lands on the slice nearest the plane.
   test('a tilted contour fills the slices its plane crosses', () => {
@@ -556,6 +576,20 @@ describe('startRtDrawing', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(note).toContain('no closed contours')
     expect(nv.drawingVolume).toBe(mine)
+  })
+
+  test('a base without an orientation says why nothing shows', async () => {
+    const { nv, rt } = styleRig()
+    nv.volumes = [{} as never]
+    let note = ''
+    startRtDrawing(nv as never, rt as never, {
+      setNote: (m) => {
+        note = m
+      },
+      whenBase: Promise.resolve(true),
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(note).toContain('orientation')
   })
 
   // Review of #839: a drawing made while the structure set loads is kept.

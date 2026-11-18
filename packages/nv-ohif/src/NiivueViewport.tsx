@@ -15,6 +15,7 @@ import { loadDefaultFont } from '@niivue/uikit'
 import {
   type Dispatch,
   type SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -339,11 +340,16 @@ export function NiivueViewport(props: OhifViewportProps) {
   // An arrow's text through OHIF's dialog, as cornerstone asks (arrowText.ts).
   useArrowText(ready ? nvRef.current : null, viewportId, props.commandsManager)
   // Orthogonal localizers: the wheel steps through the series' outputs (outputStack.ts).
+  const outputNote = useCallback(
+    (message: string) => briefNote(setStatus, message),
+    [],
+  )
   useOutputStack(
     ready ? nvRef.current : null,
     viewportId,
     displaySets[0],
     conversion,
+    outputNote,
     (o) => {
       const nv = nvRef.current
       if (nv)

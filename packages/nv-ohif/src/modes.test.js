@@ -122,6 +122,7 @@ test('leaving the 4D mode before its panes are up starts no cine', () => {
         return { unsubscribe: () => listeners.delete(f) }
       },
     },
+    hangingProtocolService: { getState: () => ({ activeStudyUID: '1.2' }) },
   }
   const mode = dynamic.modeInstance
   mode.onSetupRouteComplete({ servicesManager: { services } })
@@ -138,4 +139,21 @@ test('leaving the 4D mode before its panes are up starts no cine', () => {
   })
   for (const f of [...listeners]) f()
   expect(cine).toEqual([])
+})
+
+// OHIF still runs route setup for a study the server lacks, then redirects.
+test('a missing study sets no 4D workflow step', () => {
+  const steps = []
+  dynamic.modeInstance.onSetupRouteComplete({
+    servicesManager: {
+      services: {
+        workflowStepsService: {
+          addWorkflowSteps: () => steps.push('add'),
+          setActiveWorkflowStep: () => steps.push('set'),
+        },
+        hangingProtocolService: { getState: () => ({}) },
+      },
+    },
+  })
+  expect(steps).toEqual([])
 })

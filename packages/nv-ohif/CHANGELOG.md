@@ -1,3 +1,13 @@
+## 1.0.0-rc.256 (2026-11-18)
+
+### Features
+
+- **nv-ohif:** OHIF parity closeout ([bb19b4a9](https://github.com/niivue/mono/commit/bb19b4a9))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.255 (2026-11-18)
 
 ### Updated Dependencies

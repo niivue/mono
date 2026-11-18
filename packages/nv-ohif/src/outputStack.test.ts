@@ -64,7 +64,7 @@ test('a pending output load does not overwrite a replacement series', async () =
   const ds = {
     instances: [{ SOPInstanceUID: 'old-a' }, { SOPInstanceUID: 'old-b' }],
   } as unknown as OhifDisplaySet
-  useOutputStack(nv, 'vp', ds, conversion)
+  useOutputStack(nv, 'vp', ds, conversion, () => {})
   const cleanup = effects.pop()?.()
   expect(getNiivueEntry('vp')?.switchToInstance?.('old-b')).toBeDefined()
   cleanup?.()
@@ -77,6 +77,34 @@ test('a pending output load does not overwrite a replacement series', async () =
     'new-series',
   )
   unregisterNiivue('vp')
+})
+
+test('a failed output load becomes a note', async () => {
+  const fake = {
+    canvas: new EventTarget(),
+    volumes: [{ name: 'a', dims: [3, 2, 2, 1] }],
+    prepareVolume: async () => {
+      throw new Error('bad file')
+    },
+  }
+  const notes: string[] = []
+  const conversion = {
+    image: { name: 'a' },
+    sliceFrames: frames('a'),
+    alternates: [{ image: { name: 'b' }, sliceFrames: frames('b') }],
+  } as unknown as DicomConversion
+  const ds = {
+    instances: [{ SOPInstanceUID: 'a' }, { SOPInstanceUID: 'b' }],
+  } as unknown as OhifDisplaySet
+  registerNiivue('vf', fake as unknown as NiiVue)
+  useOutputStack(fake as unknown as NiiVue, 'vf', ds, conversion, (m) =>
+    notes.push(m),
+  )
+  const cleanup = effects.pop()?.()
+  expect(await getNiivueEntry('vf')?.switchToInstance?.('b')).toBe(false)
+  expect(notes).toEqual(['Switching output failed: bad file'])
+  cleanup?.()
+  unregisterNiivue('vf')
 })
 
 // R15 round 19: three localizer outputs a, b, c with measurements A, B, C.
@@ -136,7 +164,13 @@ function jumpRig() {
     })),
   } as unknown as DicomConversion
   // biome-ignore lint/correctness/useHookAtTopLevel: useEffect is mocked
-  useOutputStack(nv as unknown as NiiVue, 'vj', ds as never, conversion)
+  useOutputStack(
+    nv as unknown as NiiVue,
+    'vj',
+    ds as never,
+    conversion,
+    () => {},
+  )
   effects.pop()?.()
   const uid = (id: string) => reflectedRowUid(id) as string
   for (const a of nv.annotations) {

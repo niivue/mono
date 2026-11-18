@@ -15,6 +15,7 @@ export function useOutputStack(
   viewportId: string,
   ds: OhifDisplaySet | undefined,
   conversion: DicomConversion | null,
+  note: (message: string) => void,
 ): void {
   useEffect(() => {
     const canvas = nv?.canvas
@@ -67,7 +68,17 @@ export function useOutputStack(
           if (queue === tail) queue = undefined
         })
       queue = tail
-      return done.then(() => !cancelled && request === latest)
+      // Callers void this promise: a failed load becomes a note, not a rejection.
+      return done.then(
+        () => !cancelled && request === latest,
+        (err) => {
+          if (!cancelled)
+            note(
+              `Switching output failed: ${err instanceof Error ? err.message : String(err)}`,
+            )
+          return false
+        },
+      )
     }
     const onWheel = (e: WheelEvent) => {
       // A single slice has nowhere to scroll: step to the next output.
@@ -100,5 +111,5 @@ export function useOutputStack(
         outputFrames: undefined,
       })
     }
-  }, [nv, viewportId, ds, conversion])
+  }, [nv, viewportId, ds, conversion, note])
 }

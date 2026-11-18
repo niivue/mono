@@ -11,6 +11,7 @@ mock.module('react', () => ({
   useRef: <T>(current: T) => ({ current }),
 }))
 const { useOutputStack } = await import('./outputStack')
+const { cineStep } = await import('./sliceCine')
 const {
   applyNiivueAnnotationDelta,
   jumpToNiivueMeasurement,
@@ -434,4 +435,75 @@ test('the wheel steps single-slice outputs on a volume viewport', async () => {
   expect(nv.volumes[0]?.name).toBe('B')
   cleanup?.()
   unregisterNiivue('vv')
+})
+
+// Review of 85bbce02: outputs sorted by their first slice put B, whose first
+// slice is unmapped, before A, so the wheel could not reach it; and cine
+// wrapped instead of waiting for the switch into B.
+test.each([
+  'wheel',
+  'cine',
+] as const)('outputs order by first instance; %s steps across them', async (run) => {
+  const vol = (name: string, n: number) => ({
+    name,
+    dims: [3, 2, 2, n],
+    dimsRAS: [3, 2, 2, n],
+    permRAS: [1, 2, 3],
+  })
+  const a = vol('A', 1)
+  const b = vol('B', 2)
+  const nv = {
+    canvas: new EventTarget(),
+    volumes: [a],
+    sliceType: 0,
+    prepareVolume: async (o: { name: string }) => (o.name === 'A' ? a : b),
+    loadVolumes: async (v: (typeof a)[]) => {
+      nv.volumes = v
+    },
+    vox2frac: (v: number[]) => v,
+    crosshairPos: [0, 0, 0],
+    setCrosshairPos: () => {},
+    moveCrosshairInVox: () => {},
+  }
+  const frame = (SOPInstanceUID: string) => ({ SOPInstanceUID, frameNumber: 1 })
+  const sf = (frames: Array<ReturnType<typeof frame> | undefined>) => ({
+    origin: [0, 0, 0] as [number, number, number],
+    normal: [0, 0, 1] as [number, number, number],
+    frames,
+  })
+  const ds = {
+    instances: [{ SOPInstanceUID: 'A' }, { SOPInstanceUID: 'B' }],
+  } as unknown as OhifDisplaySet
+  nv.volumes = [a]
+  registerNiivue('vo', nv as unknown as NiiVue)
+  updateNiivueViewport('vo', {
+    displaySets: [ds],
+    sliceFrames: sf([frame('A')]),
+    isVolumeViewport: run === 'wheel',
+  })
+  const entry = getNiivueEntry('vo')
+  if (entry) entry.crosshairMM = [0, 0, 0]
+  useOutputStack(
+    nv as unknown as NiiVue,
+    'vo',
+    ds,
+    {
+      image: { name: 'A' },
+      sliceFrames: sf([frame('A')]),
+      alternates: [
+        { image: { name: 'B' }, sliceFrames: sf([undefined, frame('B')]) },
+      ],
+    } as unknown as DicomConversion,
+    () => {},
+  )
+  const cleanup = effects.pop()?.()
+  if (run === 'wheel')
+    nv.canvas.dispatchEvent(
+      Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 1 }),
+    )
+  else if (entry) cineStep(entry)
+  await new Promise((r) => setTimeout(r, 0))
+  expect([run, nv.volumes[0]?.name]).toEqual([run, 'B'])
+  cleanup?.()
+  unregisterNiivue('vo')
 })

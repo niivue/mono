@@ -43,10 +43,13 @@ export function useOutputStack(
     const instances = (ds?.instances ?? []) as Array<{
       SOPInstanceUID?: string
     }>
-    const order = (o: { sliceFrames?: DicomConversion['sliceFrames'] }) =>
-      instances.findIndex(
-        (i) => i.SOPInstanceUID === o.sliceFrames?.frames[0]?.SOPInstanceUID,
+    // An output's place is its first instance: its first slice may be unmapped.
+    const order = (o: { sliceFrames?: DicomConversion['sliceFrames'] }) => {
+      const sops = new Set(
+        o.sliceFrames?.frames.flatMap((f) => (f ? [f.SOPInstanceUID] : [])),
       )
+      return instances.findIndex((i) => sops.has(i.SOPInstanceUID ?? ''))
+    }
     const outputs = [conversion, ...conversion.alternates].sort(
       (a, b) => order(a) - order(b),
     )

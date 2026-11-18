@@ -23,7 +23,9 @@ type CineService = Omit<CineServiceLike, 'getState'> & {
 /** One image forward; past the last, back to the first (cornerstone's loop). */
 export function cineStep(entry: NiivueViewportEntry): void {
   const before = Array.from(entry.nv.crosshairPos).join()
-  scrollImage(entry, 1)
+  // A step into another output switches asynchronously: the crosshair has
+  // not moved yet, but it is no wrap.
+  if (scrollImage(entry, 1)) return
   if (Array.from(entry.nv.crosshairPos).join() === before)
     scrollImage(entry, -Number.MAX_SAFE_INTEGER)
 }

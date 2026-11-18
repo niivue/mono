@@ -52,7 +52,11 @@ export function largestBidirectional(
   // Through-plane neighbours stay out: a 6-neighbour surface puts every voxel
   // of a segment's end slices into the O(n^2) search (100x slower at r=100).
   const through = steps.indexOf(dz)
-  const bin = Math.min(...cols.map((c) => Math.hypot(...c)))
+  // Bin along the major by the in-plane step: a thin slice step would split
+  // every chord into single points.
+  const bin = Math.min(
+    ...cols.filter((_, a) => a !== through).map((c) => Math.hypot(...c)),
+  )
   const normal: Vec3 = [0, 0, 0]
   normal[depth] = 1
   const at = (x: number, y: number, z: number) =>

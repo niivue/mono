@@ -375,3 +375,63 @@ test('the wheel enters a multi-slice output on its adjacent image', async () => 
   cleanup?.()
   unregisterNiivue('vw')
 })
+
+// Review of bf1651c3: a volume viewport counts one output's frames, so at a
+// single-slice output's end the wheel must switch outputs, not clamp.
+test('the wheel steps single-slice outputs on a volume viewport', async () => {
+  const sf = (sop: string) => ({
+    origin: [0, 0, 0] as [number, number, number],
+    normal: [0, 0, 1] as [number, number, number],
+    frames: [{ SOPInstanceUID: sop, frameNumber: 1 }],
+  })
+  const vol = (name: string) => ({
+    name,
+    dims: [3, 2, 2, 1],
+    dimsRAS: [3, 2, 2, 1],
+    permRAS: [1, 2, 3],
+  })
+  const a = vol('A')
+  const b = vol('B')
+  const nv = {
+    canvas: new EventTarget(),
+    volumes: [a],
+    sliceType: 0,
+    prepareVolume: async (o: { name: string }) => (o.name === 'A' ? a : b),
+    loadVolumes: async (v: (typeof a)[]) => {
+      nv.volumes = v
+    },
+    vox2frac: (v: number[]) => v,
+    crosshairPos: [0, 0, 0],
+    setCrosshairPos: () => {},
+  }
+  const ds = {
+    instances: [{ SOPInstanceUID: 'A' }, { SOPInstanceUID: 'B' }],
+  } as unknown as OhifDisplaySet
+  registerNiivue('vv', nv as unknown as NiiVue)
+  updateNiivueViewport('vv', {
+    displaySets: [ds],
+    sliceFrames: sf('A'),
+    isVolumeViewport: true,
+  })
+  const entry = getNiivueEntry('vv')
+  if (entry) entry.crosshairMM = [0, 0, 0]
+  useOutputStack(
+    nv as unknown as NiiVue,
+    'vv',
+    ds,
+    {
+      image: { name: 'A' },
+      sliceFrames: sf('A'),
+      alternates: [{ image: { name: 'B' }, sliceFrames: sf('B') }],
+    } as unknown as DicomConversion,
+    () => {},
+  )
+  const cleanup = effects.pop()?.()
+  nv.canvas.dispatchEvent(
+    Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 1 }),
+  )
+  await new Promise((r) => setTimeout(r, 0))
+  expect(nv.volumes[0]?.name).toBe('B')
+  cleanup?.()
+  unregisterNiivue('vv')
+})

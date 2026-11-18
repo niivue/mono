@@ -252,7 +252,7 @@ const NORMAL_AXIS = [2, 1, 0]
  * jumpToImage's count (stack order, volume order on a volume viewport); off the
  * slice -> frame map (a reformat) one voxel along the view axis.
  */
-/** True when it stepped by frame (the stack's images, switching outputs). */
+/** True when it moved to another frame (false off the map or at an end). */
 export function scrollImage(
   entry: NiivueViewportEntry,
   delta: number,
@@ -277,8 +277,9 @@ export function scrollImage(
         f.frameNumber === frame.frameNumber,
     )
     if (i >= 0) {
-      jumpToImage(entry, clamp(i + delta, 0, order.length - 1))
-      return true
+      const j = clamp(i + delta, 0, order.length - 1)
+      jumpToImage(entry, j)
+      return j !== i
     }
   }
   const axis =

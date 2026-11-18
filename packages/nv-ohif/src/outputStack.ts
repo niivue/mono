@@ -112,9 +112,15 @@ export function useOutputStack(
       e.stopImmediatePropagation()
       const entry = getNiivueEntry(viewportId)
       const step = Math.sign(e.deltaY)
-      // By frame: entering a multi-slice output lands on its adjacent image.
-      if (entry && (scrollImage(entry, step) || !isSingle)) return
-      // No frame here (unmapped image): step outputs.
+      if (entry) {
+        // By frame: entering a multi-slice output lands on its adjacent image.
+        if (scrollImage(entry, step)) return
+        // At an end. A stack counts the whole series, so that is the series'
+        // end; a volume viewport counts one output, so step outputs. Unmapped:
+        // scrollImage moved the crosshair through a multi-slice output.
+        const mapped = entry.sliceFrames?.frames.some(Boolean)
+        if (mapped ? !entry.isVolumeViewport : !isSingle) return
+      }
       void show(at + step)
     }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })

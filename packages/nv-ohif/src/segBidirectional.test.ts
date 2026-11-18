@@ -47,3 +47,19 @@ it('largest bidirectional: slabs follow the volume origin', () => {
   for (const p of ends ?? []) expect([1, 3]).toContain(p[2])
   expect(ends).toBeDefined()
 })
+
+// A slice step thinner than the pixels must not bin the major by it: the L's
+// short diameter is one pixel, not zero.
+it('largest bidirectional: binned by the in-plane step', () => {
+  const img = new Uint8Array(4)
+  img[0] = img[1] = img[2] = 1
+  const ends = largestBidirectional(
+    img,
+    [2, 2, 1],
+    ([x, y, z]) => [x, y, z * 0.1],
+    1,
+    2,
+  )
+  const [, , c, d] = ends ?? []
+  expect(c && d && Math.hypot(c[0] - d[0], c[1] - d[1])).toBe(1)
+})

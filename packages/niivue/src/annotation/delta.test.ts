@@ -134,3 +134,16 @@ test('removing the selected annotation clears the selection', () => {
   nv.removeAnnotations(['b'])
   expect([afterOne, nv.selectedAnnotation]).toEqual([null, null])
 })
+
+test('clear and undo drop a selection whose annotation is gone', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.addAnnotation(square('a'))
+  nv.selectAnnotation('a')
+  nv.clearAnnotations()
+  const afterClear = nv.selectedAnnotation
+  nv._annotationUndoStack.push(nv.model.annotations)
+  nv.addAnnotation(square('b'))
+  nv.selectAnnotation('b')
+  nv.annotationUndo()
+  expect([afterClear, nv.selectedAnnotation]).toEqual([null, null])
+})

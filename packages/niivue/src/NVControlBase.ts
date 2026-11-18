@@ -3029,6 +3029,7 @@ export default class NiiVue extends EventTarget {
     const removed = this.model.annotations.map((a) => a.id)
     this.model.annotations.length = 0
     this._annotationUndoStack.clear()
+    this.model._annotationSelection = null
     this.emit('annotationChanged', {
       action: 'clear',
       added: [],
@@ -3085,6 +3086,8 @@ export default class NiiVue extends EventTarget {
     if (restored) {
       const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
+      if (!restored.some((a) => a.id === this.selectedAnnotation))
+        this.model._annotationSelection = null
       this.emit('annotationChanged', { action: 'undo', ...delta })
       this.drawScene()
     }
@@ -3095,6 +3098,8 @@ export default class NiiVue extends EventTarget {
     if (restored) {
       const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
+      if (!restored.some((a) => a.id === this.selectedAnnotation))
+        this.model._annotationSelection = null
       this.emit('annotationChanged', { action: 'redo', ...delta })
       this.drawScene()
     }

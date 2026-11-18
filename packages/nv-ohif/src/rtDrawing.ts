@@ -587,13 +587,15 @@ export function rasterizeStructureSet(
   >)[] = []
   let truncated = false
   for (const roi of rois) {
+    const { contours, xor } = roiContours(roi)
+    const r = rasterizeContours(dims, lps2vox, contours, xor)
+    if (!r.count) continue
+    // Truncated only once a 256th drawable ROI exists, not on trailing empty ones.
     if (drawn.length === 255) {
       truncated = true
       break
     }
-    const { contours, xor } = roiContours(roi)
-    const r = rasterizeContours(dims, lps2vox, contours, xor)
-    if (r.count) drawn.push({ roi, value: drawn.length + 1, ...r })
+    drawn.push({ roi, value: drawn.length + 1, ...r })
   }
   const bySize = [...drawn].sort((a, b) => b.count - a.count)
   const runs = bySize.map((r) => Int32Array.from(r.runs))

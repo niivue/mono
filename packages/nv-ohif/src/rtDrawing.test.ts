@@ -267,7 +267,11 @@ describe('rasterizeStructureSet', () => {
     const at = (n: number) =>
       rasterizeStructureSet([20, 20, 5], identityLps, Array(n).fill(roi))
         .truncated
-    expect([at(255), at(256)]).toEqual([false, true])
+    const trailingEmpty = rasterizeStructureSet([20, 20, 5], identityLps, [
+      ...Array(255).fill(roi),
+      { ROIName: 'empty', contourPoints: [] },
+    ]).truncated
+    expect([at(255), at(256), trailingEmpty]).toEqual([false, true, false])
   })
 
   // Review of #839: a contour on the tilted plane z = y/2 crosses voxel

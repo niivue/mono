@@ -1760,13 +1760,17 @@ export function applyWindowLevelPreset(
  * Toolbar buttons (see toolbar.ts) reference these by name; they are also
  * runnable from any OHIF surface via `commandsManager.runCommand(...)`.
  */
+// A rebuilt module would otherwise mirror each row twice.
+let stopMirror = () => {}
+
 export function getNiivueCommandsModule({
   servicesManager,
   commandsManager,
   extensionManager,
 }: OhifExtensionParams) {
   // NiiVue rows in cornerstone's annotation state, for OHIF's SR export.
-  mirrorNiivueMeasurements(servicesManager, extensionManager)
+  stopMirror()
+  stopMirror = mirrorNiivueMeasurements(servicesManager, extensionManager)
   // "Delete all" removes NiiVue rows' annotations, undoably (history.ts).
   installClearHistory(servicesManager, extensionManager)
   const actions = {

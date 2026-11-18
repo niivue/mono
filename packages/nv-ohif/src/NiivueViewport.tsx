@@ -886,6 +886,13 @@ export function NiivueViewport(props: OhifViewportProps) {
         .then(async (image) => {
           if (cancelled) return
           await nv.loadVolumes([image])
+          if (cancelled) return
+          // The view effect ran before any volume was open.
+          nv.sliceType = openingSliceType(
+            nv,
+            viewportOptionsRef.current,
+            ds.isReconstructable,
+          )
           seedWindowLevel()
         })
         .catch(() => {

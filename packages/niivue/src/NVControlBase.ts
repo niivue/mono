@@ -2991,6 +2991,7 @@ export default class NiiVue extends EventTarget {
     if (idx >= 0) {
       if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
       this.model.annotations.splice(idx, 1)
+      if (this.selectedAnnotation === id) this.model._annotationSelection = null
       this.emit('annotationRemoved', { id })
       this.drawScene()
     }
@@ -3010,6 +3011,8 @@ export default class NiiVue extends EventTarget {
     this.model.annotations = this.model.annotations.filter(
       (a) => !drop.has(a.id),
     )
+    if (drop.has(this.selectedAnnotation ?? ''))
+      this.model._annotationSelection = null
     this.emit('annotationChanged', {
       action: 'delete',
       added: [],

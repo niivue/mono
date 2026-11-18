@@ -122,3 +122,15 @@ test('undoable batch removal records one step and undoes as one', () => {
     ['undo', [], ['a', 'b']],
   ])
 })
+
+test('removing the selected annotation clears the selection', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.addAnnotation(square('a'))
+  nv.addAnnotation(square('b'))
+  nv.selectAnnotation('a')
+  nv.removeAnnotation('a')
+  const afterOne = nv.selectedAnnotation
+  nv.selectAnnotation('b')
+  nv.removeAnnotations(['b'])
+  expect([afterOne, nv.selectedAnnotation]).toEqual([null, null])
+})

@@ -212,7 +212,9 @@ function copyOf(a: SlideAnnotation): SlideAnnotation {
  * `added`, `changed` (label or points) and `removed` carry the annotation as
  * `detail`. Stats use the spacing in force when the points were last set.
  * Point edits are undoable steps, announced as NiiVue's are
- * (`annotationHistoryPush`, `annotationUndoTop`, `annotationUndo`).
+ * (`annotationHistoryPush`, `annotationUndoTop`, `annotationUndo`). Unlike
+ * NiiVue's volume annotations, add and remove are not steps: a host merging
+ * both histories (nv-ohif) undoes a slide add or remove by its own means.
  */
 export class NVSlideAnnotations extends EventTarget {
   private readonly _items = new Map<string, SlideAnnotation>()

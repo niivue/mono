@@ -86,30 +86,36 @@ export function largestBidirectional(
   // its voxel centres.
   const det2 = u[ia] * v[ib] - u[ib] * v[ia]
   if (!det2) return undefined
+  const toGrid = (d: Vec3): Vec3 => [
+    d[depth] / dz,
+    (d[ia] * v[ib] - d[ib] * v[ia]) / det2,
+    (d[ib] * u[ia] - d[ia] * u[ib]) / det2,
+  ]
   const lo: Vec3 = [Infinity, Infinity, Infinity]
   const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
   for (let z = 0; z < nz; z++)
     for (let y = 0; y < ny; y++)
       for (let x = 0; x < nx; x++) {
         if (img[x + nx * (y + ny * z)] !== value) continue
-        const d = (a: Axis) => c0[a] * x + c1[a] * y + c2[a] * z
-        const da = d(ia)
-        const db = d(ib)
-        const g: Vec3 = [
-          d(depth) / dz,
-          (da * v[ib] - db * v[ia]) / det2,
-          (db * u[ia] - da * u[ib]) / det2,
-        ]
+        const g = toGrid([
+          c0[0] * x + c1[0] * y + c2[0] * z,
+          c0[1] * x + c1[1] * y + c2[1] * z,
+          c0[2] * x + c1[2] * y + c2[2] * z,
+        ])
         for (const a of AXES) {
           if (g[a] < lo[a]) lo[a] = g[a]
           if (g[a] > hi[a]) hi[a] = g[a]
         }
       }
   if (lo[0] > hi[0]) return undefined
-  // Grid steps from voxel 0, half a step beyond the centres on every side.
+  // Grid steps from voxel 0 over each voxel's whole cell: on an oblique grid a
+  // cell reaches past half a step from its centre.
+  const pad = [0, 1, 2].map(
+    (a) => 0.5 * cols.reduce((sum, c) => sum + Math.abs(toGrid(c)[a] ?? 0), 0),
+  ) as Vec3
   const range = (a: Axis, f: number) => [
-    Math.floor(lo[a] / f - 0.5),
-    Math.ceil(hi[a] / f + 0.5),
+    Math.floor((lo[a] - pad[a]) / f),
+    Math.ceil((hi[a] + pad[a]) / f),
   ]
   const [k0, k1] = range(0, 1) as [number, number]
   // f: the grid step as a fraction of a voxel.
@@ -196,7 +202,7 @@ export function largestBidirectional(
   // one sample (no major): refine until one shows, to an eighth of a voxel.
   for (let f = 1; ; f /= 2) {
     const ends = measure(f)
-    if (ends || f < 1 / 8) return ends
+    if (ends || f <= 1 / 8) return ends
   }
 }
 

@@ -120,3 +120,27 @@ it.each([
     p && q ? Math.round(Math.hypot(p[0] - q[0], p[1] - q[1]) * 100) / 100 : 0
   expect([len(a, b), len(d, e)]).toEqual([...want])
 })
+
+// Review of #863: on an oblique grid a voxel's cell reaches past half a step,
+// so a grid padded by half a step clipped a one-slice segment (3.22 mm).
+it('largest bidirectional samples whole cells on an oblique grid', () => {
+  const n = 40
+  const img = new Uint8Array(n * n * 30)
+  for (let z = 0; z < 30; z++)
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++)
+        if (
+          ((x - 15.5) / 3) ** 2 + ((y - 20) / 2) ** 2 + ((z - 10) / 0.6) ** 2 <=
+          1
+        )
+          img[x + n * (y + n * z)] = 1
+  const c = Math.cos(Math.PI / 3)
+  const s = Math.sin(Math.PI / 3)
+  const vox2mm = ([x, y, z]: [number, number, number]): [
+    number,
+    number,
+    number,
+  ] => [0.8 * c * x + 5 * s * z, 0.8 * y, -0.8 * s * x + 5 * c * z]
+  const [a, b] = largestBidirectional(img, [n, n, 30], vox2mm, 1, 2) ?? []
+  expect(a && b && Math.hypot(a[0] - b[0], a[1] - b[1])).toBeCloseTo(5.44, 2)
+})

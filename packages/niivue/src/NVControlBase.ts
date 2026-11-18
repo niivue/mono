@@ -3081,13 +3081,18 @@ export default class NiiVue extends EventTarget {
     return this._annotationUndoStack.redoTop
   }
 
+  // The selected id may survive with a different shape: rebuild its handles.
+  private _reselectAfterRestore(restored: VectorAnnotation[]): void {
+    const kept = restored.find((a) => a.id === this.selectedAnnotation)
+    this.model._annotationSelection = kept ? getAnnotationSelection(kept) : null
+  }
+
   annotationUndo(): void {
     const restored = this._annotationUndoStack.undo(this.model.annotations)
     if (restored) {
       const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
-      if (!restored.some((a) => a.id === this.selectedAnnotation))
-        this.model._annotationSelection = null
+      this._reselectAfterRestore(restored)
       this.emit('annotationChanged', { action: 'undo', ...delta })
       this.drawScene()
     }
@@ -3098,8 +3103,7 @@ export default class NiiVue extends EventTarget {
     if (restored) {
       const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
-      if (!restored.some((a) => a.id === this.selectedAnnotation))
-        this.model._annotationSelection = null
+      this._reselectAfterRestore(restored)
       this.emit('annotationChanged', { action: 'redo', ...delta })
       this.drawScene()
     }

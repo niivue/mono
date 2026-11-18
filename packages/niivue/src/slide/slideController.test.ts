@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, setSystemTime, test } from 'bun:test'
 import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideViewport } from './NVSlide'
 import { NVSlideController, windowDragStep } from './slideController'
@@ -387,6 +387,25 @@ describe('NVSlideController', () => {
     }
     r.fire('dblclick', 1, 1)
     expect([r.ctl.draft, r.ctl.annotations.list().length]).toEqual([null, 1])
+  })
+
+  test('a slow press at a closed polygon starts a new one', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    setSystemTime(new Date(0))
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [1, 1],
+    ]) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    setSystemTime(new Date(600))
+    r.fire('pointerdown', 1, 1)
+    setSystemTime()
+    expect(r.ctl.draft?.points[0]).toEqual({ x: 1, y: 1 })
   })
 
   // Review of #836: focusing a circle centres on its centre, not the rim.

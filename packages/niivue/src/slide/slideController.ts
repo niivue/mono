@@ -94,6 +94,8 @@ const isBoxMode = (mode: DRAG_MODE): boolean =>
 
 // A polygon closes on a press this near its first vertex.
 const CLOSE_POLYGON_CSS_PX = 8
+// Typical OS double-click interval: only a press this soon after closing is its second click.
+const DOUBLE_CLICK_MS = 500
 // Freehand samples no closer than this: denser only adds overlay lines.
 const FREEHAND_STEP_CSS_PX = 3
 
@@ -162,7 +164,7 @@ export class NVSlideController {
   private _pressedAt: [number, number] | null = null
   // Where a press closed a polygon: a double-click's second press lands there
   // and must not start a new one.
-  private _polygonClosedAt: NVSlidePoint | null = null
+  private _polygonClosedAt: { p: NVSlidePoint; t: number } | null = null
   private _hoverFrame = 0
   private _hoverPoint: NVSlidePoint | null = null
   private _windowDrag: {
@@ -570,7 +572,7 @@ export class NVSlideController {
         this._cssDistance(p, first) <= CLOSE_POLYGON_CSS_PX
       ) {
         this._commitDraft(placed)
-        this._polygonClosedAt = p
+        this._polygonClosedAt = { p, t: Date.now() }
       } else if (
         this._cssDistance(p, placed.at(-1) as NVSlidePoint) >
         crosshairPanThresholdCssPx
@@ -583,7 +585,8 @@ export class NVSlideController {
     if (
       tool === 'polygon' &&
       closedAt &&
-      this._cssDistance(p, closedAt) <= crosshairPanThresholdCssPx
+      Date.now() - closedAt.t <= DOUBLE_CLICK_MS &&
+      this._cssDistance(p, closedAt.p) <= crosshairPanThresholdCssPx
     )
       return
     const fresh = tool.startsWith('freehand') ? [p] : [p, { ...p }]

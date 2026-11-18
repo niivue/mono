@@ -147,3 +147,20 @@ test('clear and undo drop a selection whose annotation is gone', () => {
   nv.annotationUndo()
   expect([afterClear, nv.selectedAnnotation]).toEqual([null, null])
 })
+
+test('undo rebuilds the handles of a selection that survives', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const rect = (x: number): VectorAnnotation => ({
+    ...square('a'),
+    shape: { type: 'rectangle', start: { x, y: 0 }, end: { x: x + 10, y: 10 } },
+  })
+  nv.addAnnotation(rect(0))
+  nv._annotationUndoStack.push(nv.model.annotations)
+  nv.model.annotations = [rect(20)]
+  nv.selectAnnotation('a')
+  nv.annotationUndo()
+  expect(nv.model._annotationSelection?.controlPoints[0]).toEqual({
+    x: 0,
+    y: 0,
+  })
+})

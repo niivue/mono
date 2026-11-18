@@ -13,6 +13,7 @@ import {
   briefNote,
   DEFAULT_OPTIONS,
   hangingKeys,
+  openingSliceType,
   type Status,
   settleBase,
 } from './NiivueViewport'
@@ -165,6 +166,18 @@ test('a series opens in its acquisition plane', () => {
   })
   expect(acquisitionSliceType(nv)).toBe(SLICE_TYPE.SAGITTAL)
   unregisterNiivue('acq')
+})
+
+test('a series opens in its acquired plane unless the protocol names a view', () => {
+  const nv = { volumes: [{ permRAS: [1, 2, 3], dims: [3, 2, 2, 4] }] }
+  const open = (orientation?: string, isReconstructable?: boolean) =>
+    openingSliceType(nv, { orientation }, isReconstructable)
+  expect(open()).toBe(SLICE_TYPE.AXIAL)
+  // Cornerstone's name for the acquired plane, not a request for multiplanar.
+  expect(open('acquisition')).toBe(SLICE_TYPE.AXIAL)
+  expect(open('coronal')).toBe(SLICE_TYPE.CORONAL)
+  expect(open('multiplanar')).toBe(SLICE_TYPE.MULTIPLANAR)
+  expect(open('multiplanar', false)).toBe(SLICE_TYPE.AXIAL)
 })
 
 test("a linked pane's window readout follows its peer's window", async () => {

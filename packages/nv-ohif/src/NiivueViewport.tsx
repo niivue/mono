@@ -150,6 +150,32 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
 
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
+/**
+ * A series opens in its acquired plane, as a cornerstone stack does, unless the
+ * hanging protocol names a view ('acquisition' names that plane). OHIF marks
+ * unequal slice spacing (or orthogonal localizers) not reconstructable: only
+ * the acquired plane is faithful there, even under a multiplanar protocol.
+ */
+export function openingSliceType(
+  nv: Parameters<typeof acquisitionSliceType>[0] & {
+    volumes: ReadonlyArray<{ dims?: number[] }>
+  },
+  viewportOptions: { orientation?: string } | undefined,
+  isReconstructable: boolean | undefined,
+): number {
+  const initial = initialSliceType(viewportOptions)
+  const orientation = viewportOptions?.orientation
+  const plane =
+    initial === SLICE_TYPE.MULTIPLANAR &&
+    (!orientation ||
+      orientation === 'acquisition' ||
+      nv.volumes[0]?.dims?.[3] === 1 ||
+      isReconstructable === false)
+      ? acquisitionSliceType(nv)
+      : undefined
+  return plane ?? initial
+}
+
 /** Show `message` for `ms`; the clear never touches a newer status. */
 export function briefNote(
   setStatus: Dispatch<SetStateAction<Status>>,
@@ -1073,19 +1099,11 @@ export function NiivueViewport(props: OhifViewportProps) {
           // Each series gets its own view, not the one the previous series
           // left (a coronal scout's).
           matchStoredOrientation(nv)
-          const initial = initialSliceType(viewportOptionsRef.current)
-          // A series opens in its acquired plane, as a cornerstone stack does,
-          // unless the hanging protocol names a view. OHIF marks unequal slice
-          // spacing (or orthogonal localizers) not reconstructable: only the
-          // acquired plane is faithful there, even under a multiplanar protocol.
-          const plane =
-            initial === SLICE_TYPE.MULTIPLANAR &&
-            (!viewportOptionsRef.current?.orientation ||
-              nv.volumes[0]?.dims?.[3] === 1 ||
-              ds.isReconstructable === false)
-              ? acquisitionSliceType(nv)
-              : undefined
-          nv.sliceType = plane ?? initial
+          nv.sliceType = openingSliceType(
+            nv,
+            viewportOptionsRef.current,
+            ds.isReconstructable,
+          )
           seedWindowLevel(dicomSpec)
         })
       })

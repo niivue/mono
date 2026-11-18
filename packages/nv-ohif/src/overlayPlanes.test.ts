@@ -65,3 +65,28 @@ test('a shown overlay plane leaves the pen off', async () => {
   expect(nv.drawingVolume).not.toBeNull()
   expect(nv.drawIsEnabled).toBe(false)
 })
+
+// Review of #863: a segmentation made during the plane's load keeps its pen.
+test('a superseded plane load leaves the pen armed', async () => {
+  let finish = () => {}
+  const nv = {
+    drawingVolume: null as unknown,
+    drawIsEnabled: false,
+    loadDrawing: () =>
+      new Promise<boolean>((resolve) => {
+        finish = () => resolve(false)
+      }),
+    closeDrawing: () => {},
+  }
+  const pending = setOverlayPlanes(
+    nv as unknown as NiiVue,
+    [new File([], 'x_ROI1.nii')],
+    em,
+    'g',
+  )
+  nv.drawingVolume = {}
+  nv.drawIsEnabled = true
+  finish()
+  await pending
+  expect(nv.drawIsEnabled).toBe(true)
+})

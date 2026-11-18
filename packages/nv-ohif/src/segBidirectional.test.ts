@@ -75,3 +75,48 @@ it('largest bidirectional keeps every endpoint inside an oblique segment', () =>
     expect(img[i + n * (j + n * k)]).toBe(1)
   }
 })
+
+// Review of #863: a three-voxel line tilted 10 degrees gives each world plane
+// one sample at the voxel step, so no plane had a major axis.
+it('largest bidirectional finds a thin oblique segment', () => {
+  const n = 7
+  const img = new Uint8Array(n * n * n)
+  for (let x = 2; x <= 4; x++) img[x + n * (3 + n * 3)] = 1
+  const c = Math.cos(Math.PI / 18)
+  const s = Math.sin(Math.PI / 18)
+  const vox2mm = ([x, y, z]: [number, number, number]): [
+    number,
+    number,
+    number,
+  ] => [c * x - s * z, y, s * x + c * z]
+  expect(largestBidirectional(img, [n, n, n], vox2mm, 1, 2)).toBeDefined()
+})
+
+// Review of #863: a grid sampled along world axes shortened an ellipse rotated
+// in-plane (17.09 x 10.77) and grew one end on anisotropic pixels (12.5).
+it.each([
+  ['rotated 30 degrees in-plane', Math.PI / 6, 1, [18, 12]],
+  ['0.5 x 1 mm pixels', 0, 0.5, [12, 9]],
+] as const)('largest bidirectional is exact on a grid %s', (_, angle, sx, want) => {
+  const n = 30
+  const img = new Uint8Array(n * n * 10)
+  for (let z = 0; z < 10; z++)
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++)
+        if (((x - 14) / 9) ** 2 + ((y - 15) / 6) ** 2 + ((z - 5) / 4) ** 2 <= 1)
+          img[x + n * (y + n * z)] = 1
+  const c = Math.cos(angle)
+  const s = Math.sin(angle)
+  const vox2mm = ([x, y, z]: [number, number, number]): [
+    number,
+    number,
+    number,
+  ] => [c * sx * x - s * y, s * sx * x + c * y, 3 * z]
+  const [a, b, d, e] = largestBidirectional(img, [n, n, 10], vox2mm, 1, 2) ?? []
+  const len = (
+    p?: readonly [number, number, number],
+    q?: readonly [number, number, number],
+  ) =>
+    p && q ? Math.round(Math.hypot(p[0] - q[0], p[1] - q[1]) * 100) / 100 : 0
+  expect([len(a, b), len(d, e)]).toEqual([...want])
+})

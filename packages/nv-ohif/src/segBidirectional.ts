@@ -31,7 +31,7 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
  * the minor is the widest chord perpendicular to it (points binned along the
  * major by one voxel). Returns [major start, major end, minor start, minor
  * end] (RAS mm) of the plane with the longest major, or undefined without
- * voxels. On an axis-aligned grid the samples are the voxel centres.
+ * voxels. Where voxel slices are world planes the samples are voxel centres.
  * ponytail: O(n^2) farthest pair over a plane's contour; a convex hull first
  * if a large segment makes it slow.
  */
@@ -52,12 +52,17 @@ export function largestBidirectional(
   // Plane spacing: the voxel step most aligned with the view's normal.
   const steps = cols.map((c) => Math.abs(c[depth]))
   const dz = Math.max(...steps)
-  // Grid and chord bins at the in-plane step: a thin slice step would only
-  // oversample the plane.
+  // The grid steps along the in-plane voxel columns projected onto the plane:
+  // on a grid rotated in-plane (or anisotropic) the samples are voxel centres.
   const through = steps.indexOf(dz)
-  const bin = Math.min(
-    ...cols.filter((_, a) => a !== through).map((c) => Math.hypot(...c)),
-  )
+  const [u, v] = cols
+    .filter((_, a) => a !== through)
+    .map((c) => {
+      const q: Vec3 = [c[0], c[1], c[2]]
+      q[depth] = 0
+      return q
+    }) as [Vec3, Vec3]
+  const bin = Math.min(Math.hypot(...u), Math.hypot(...v))
   const [ia, ib] = AXES.filter((a) => a !== depth) as [Axis, Axis]
   const normal: Vec3 = [0, 0, 0]
   normal[depth] = 1
@@ -77,100 +82,122 @@ export function largestBidirectional(
       ? undefined
       : img[x + nx * (y + ny * z)]
   }
-  // The segment's world bounds, from its voxel centres.
+  // The segment's bounds in grid units (k plane, i along u, j along v), from
+  // its voxel centres.
+  const det2 = u[ia] * v[ib] - u[ib] * v[ia]
+  if (!det2) return undefined
   const lo: Vec3 = [Infinity, Infinity, Infinity]
   const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
   for (let z = 0; z < nz; z++)
     for (let y = 0; y < ny; y++)
       for (let x = 0; x < nx; x++) {
         if (img[x + nx * (y + ny * z)] !== value) continue
+        const d = (a: Axis) => c0[a] * x + c1[a] * y + c2[a] * z
+        const da = d(ia)
+        const db = d(ib)
+        const g: Vec3 = [
+          d(depth) / dz,
+          (da * v[ib] - db * v[ia]) / det2,
+          (db * u[ia] - da * u[ib]) / det2,
+        ]
         for (const a of AXES) {
-          const v = o[a] + c0[a] * x + c1[a] * y + c2[a] * z
-          if (v < lo[a]) lo[a] = v
-          if (v > hi[a]) hi[a] = v
+          if (g[a] < lo[a]) lo[a] = g[a]
+          if (g[a] > hi[a]) hi[a] = g[a]
         }
       }
   if (lo[0] > hi[0]) return undefined
-  // Grid steps from voxel 0, half a voxel beyond the centres on every side.
-  const range = (a: Axis, step: number) => [
-    Math.floor((lo[a] - o[a]) / step - 0.5),
-    Math.ceil((hi[a] - o[a]) / step + 0.5),
+  // Grid steps from voxel 0, half a step beyond the centres on every side.
+  const range = (a: Axis, f: number) => [
+    Math.floor(lo[a] / f - 0.5),
+    Math.ceil(hi[a] / f + 0.5),
   ]
-  const [k0, k1] = range(depth, dz) as [number, number]
-  const [i0, i1] = range(ia, bin) as [number, number]
-  const [j0, j1] = range(ib, bin) as [number, number]
-  const ni = i1 - i0 + 1
-  const nj = j1 - j0 + 1
-  const slabs: Vec3[][] = []
-  const inside = new Uint8Array(ni * nj)
-  for (let k = k0; k <= k1; k++) {
-    const p: Vec3 = [0, 0, 0]
-    p[depth] = o[depth] + k * dz
-    for (let j = 0; j < nj; j++)
-      for (let i = 0; i < ni; i++) {
-        p[ia] = o[ia] + (i0 + i) * bin
-        p[ib] = o[ib] + (j0 + j) * bin
-        inside[i + ni * j] = label(p) === value ? 1 : 0
-      }
-    const pts: Vec3[] = []
-    const isIn = (i: number, j: number) =>
-      i >= 0 && j >= 0 && i < ni && j < nj && inside[i + ni * j] === 1
-    for (let j = 0; j < nj; j++)
-      for (let i = 0; i < ni; i++) {
-        if (!isIn(i, j)) continue
-        if (
-          isIn(i - 1, j) &&
-          isIn(i + 1, j) &&
-          isIn(i, j - 1) &&
-          isIn(i, j + 1)
-        )
-          continue
-        const q: Vec3 = [0, 0, 0]
-        q[depth] = o[depth] + k * dz
-        q[ia] = o[ia] + (i0 + i) * bin
-        q[ib] = o[ib] + (j0 + j) * bin
-        pts.push(q)
-      }
-    if (pts.length > 0) slabs.push(pts)
-  }
-  let best: [Vec3, Vec3, Vec3, Vec3] | undefined
-  let bestLength = 0
-  for (const pts of slabs) {
-    let major: [Vec3, Vec3] | undefined
-    let length = bestLength
-    for (let p = 0; p < pts.length; p++)
-      for (let q = p + 1; q < pts.length; q++) {
-        const d = Math.hypot(...sub(pts[p] as Vec3, pts[q] as Vec3))
-        if (d > length) {
-          length = d
-          major = [pts[p] as Vec3, pts[q] as Vec3]
-        }
-      }
-    if (!major) continue
-    const [A, B] = major
-    const along = norm(sub(B, A))
-    const across = norm(cross(normal, along))
-    const bins = new Map<number, [Vec3, number, Vec3, number]>()
-    for (const p of pts) {
-      const d = sub(p, A)
-      const t = Math.round(dot(d, along) / bin)
-      const s = dot(d, across)
-      const b = bins.get(t)
-      if (!b) bins.set(t, [p, s, p, s])
-      else if (s < b[1]) bins.set(t, [p, s, b[2], b[3]])
-      else if (s > b[3]) bins.set(t, [b[0], b[1], p, s])
+  const [k0, k1] = range(0, 1) as [number, number]
+  // f: the grid step as a fraction of a voxel.
+  const measure = (f: number): [Vec3, Vec3, Vec3, Vec3] | undefined => {
+    const step = bin * f
+    const [i0, i1] = range(1, f) as [number, number]
+    const [j0, j1] = range(2, f) as [number, number]
+    const ni = i1 - i0 + 1
+    const nj = j1 - j0 + 1
+    const slabs: Vec3[][] = []
+    const inside = new Uint8Array(ni * nj)
+    const at = (k: number, i: number, j: number): Vec3 => {
+      const si = (i0 + i) * f
+      const sj = (j0 + j) * f
+      const q: Vec3 = [
+        o[0] + si * u[0] + sj * v[0],
+        o[1] + si * u[1] + sj * v[1],
+        o[2] + si * u[2] + sj * v[2],
+      ]
+      q[depth] = o[depth] + k * dz
+      return q
     }
-    let minor: [Vec3, Vec3] = [A, A]
-    let width = -1
-    for (const [lo, sLo, hi, sHi] of bins.values())
-      if (sHi - sLo > width) {
-        width = sHi - sLo
-        minor = [lo, hi]
+    for (let k = k0; k <= k1; k++) {
+      for (let j = 0; j < nj; j++)
+        for (let i = 0; i < ni; i++)
+          inside[i + ni * j] = label(at(k, i, j)) === value ? 1 : 0
+      const pts: Vec3[] = []
+      const isIn = (i: number, j: number) =>
+        i >= 0 && j >= 0 && i < ni && j < nj && inside[i + ni * j] === 1
+      for (let j = 0; j < nj; j++)
+        for (let i = 0; i < ni; i++) {
+          if (!isIn(i, j)) continue
+          if (
+            isIn(i - 1, j) &&
+            isIn(i + 1, j) &&
+            isIn(i, j - 1) &&
+            isIn(i, j + 1)
+          )
+            continue
+          pts.push(at(k, i, j))
+        }
+      if (pts.length > 0) slabs.push(pts)
+    }
+    let best: [Vec3, Vec3, Vec3, Vec3] | undefined
+    let bestLength = 0
+    for (const pts of slabs) {
+      let major: [Vec3, Vec3] | undefined
+      let length = bestLength
+      for (let p = 0; p < pts.length; p++)
+        for (let q = p + 1; q < pts.length; q++) {
+          const d = Math.hypot(...sub(pts[p] as Vec3, pts[q] as Vec3))
+          if (d > length) {
+            length = d
+            major = [pts[p] as Vec3, pts[q] as Vec3]
+          }
+        }
+      if (!major) continue
+      const [A, B] = major
+      const along = norm(sub(B, A))
+      const across = norm(cross(normal, along))
+      const bins = new Map<number, [Vec3, number, Vec3, number]>()
+      for (const p of pts) {
+        const d = sub(p, A)
+        const t = Math.round(dot(d, along) / step)
+        const s = dot(d, across)
+        const b = bins.get(t)
+        if (!b) bins.set(t, [p, s, p, s])
+        else if (s < b[1]) bins.set(t, [p, s, b[2], b[3]])
+        else if (s > b[3]) bins.set(t, [b[0], b[1], p, s])
       }
-    bestLength = length
-    best = [A, B, minor[0], minor[1]]
+      let minor: [Vec3, Vec3] = [A, A]
+      let width = -1
+      for (const [lo, sLo, hi, sHi] of bins.values())
+        if (sHi - sLo > width) {
+          width = sHi - sLo
+          minor = [lo, hi]
+        }
+      bestLength = length
+      best = [A, B, minor[0], minor[1]]
+    }
+    return best
   }
-  return best
+  // A segment thinner than the grid on an oblique plane can leave each plane
+  // one sample (no major): refine until one shows, to an eighth of a voxel.
+  for (let f = 1; ; f /= 2) {
+    const ends = measure(f)
+    if (ends || f < 1 / 8) return ends
+  }
 }
 
 // World (RAS mm) axis normal to each 2D view (axial z, coronal y, sagittal x).

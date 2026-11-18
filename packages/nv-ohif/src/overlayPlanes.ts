@@ -30,9 +30,9 @@ export async function refreshOverlayPlanes(
     // loadDrawing arms the pen; an overlay plane is display only, so a drag on
     // the pane must not paint into it.
     const armed = nv.drawIsEnabled
-    const loaded = await nv.loadDrawing(file)
+    // Not loaded: a segmentation superseded it and owns the pen.
+    if (!(await nv.loadDrawing(file))) return
     if (!armed) nv.drawIsEnabled = false
-    if (!loaded) return
     if (
       planes.get(nv)?.[0] === file &&
       toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'

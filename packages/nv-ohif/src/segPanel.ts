@@ -155,7 +155,7 @@ export function labelStats(bitmap: Uint8Array, dims: ArrayLike<number>) {
 export function drawOpacities(style: Style): { fill: number; rim: number } {
   const fill = style.renderFill === false ? 0 : (style.fillAlpha ?? 0.5)
   const rim = style.renderOutline === false ? -1 : (style.outlineOpacity ?? 1)
-  return { fill: rim >= 0 && fill === 0 ? 1 / 255 : fill, rim }
+  return { fill: rim > 0 && fill === 0 ? 1 / 255 : fill, rim }
 }
 
 /** Label colormap of the panel's segments; a hidden one gets alpha 0. */
@@ -407,11 +407,14 @@ export function startSegPanel(
       const { fill, rim } = drawOpacities(
         cst.config.style.getStyle({ viewportId, ...specifier }),
       )
+      // Outline only: the rim ignores colour alpha, but a faint colour would
+      // round the 1/255 fill's texel alpha to 0, which hides the rim too.
+      const outlineOnly = rim > 0 && fill === 1 / 255
       // Events fire for unrelated edits too; rebuilding the drawing texture is not free.
       const visibleRows = rows.map(({ value, label, color, visible }) => ({
         value,
         label,
-        color,
+        color: outlineOnly ? ([...color.slice(0, 3), 255] as Color) : color,
         visible,
       }))
       const key = JSON.stringify([visibleRows, fill, rim])

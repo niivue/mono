@@ -46,6 +46,7 @@ describe('segPanel', () => {
       fill: 0,
       rim: -1,
     })
+    expect(drawOpacities({ renderFill: false, outlineOpacity: 0 }).fill).toBe(0)
   })
 
   test('panelColormap_hiddenSegmentIsTransparent', () => {
@@ -86,7 +87,7 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
 
 // Cornerstone's segmentation state and OHIF's service and history, as far as
 // the panel uses them; modified events reach the panel synchronously.
-function host() {
+function host(style: object = {}, color = [255, 0, 0, 255]) {
   type Seg = { segments: Record<string, object> }
   const segs = new Map<string, Seg>()
   const reps = new Map<string, object>()
@@ -115,9 +116,9 @@ function host() {
           luts.add(++lutCount)
           return lutCount
         },
-        getSegmentIndexColor: () => [255, 0, 0, 255],
+        getSegmentIndexColor: () => color,
       },
-      style: { getStyle: () => ({}) },
+      style: { getStyle: () => style },
     },
     defaultSegmentationStateManager: {
       updateState: (fn: (s: object) => void) =>
@@ -226,6 +227,32 @@ describe('segmentation editing', () => {
     unregisterNiivue('lut')
     nv.destroy()
     expect(luts.size).toBe(0)
+  })
+
+  test('outline only draws a faint segment with an opaque colour', async () => {
+    const { managers } = host({ renderFill: false }, [255, 0, 0, 102])
+    const nv = await viewer()
+    nv.createEmptyDrawing()
+    img(nv).set([1, 0, 0, 0])
+    const alphas: number[] = []
+    const addColormap = nv.addColormap.bind(nv)
+    nv.addColormap = (name, cmap) => {
+      alphas.push(cmap.A?.[1] ?? -1)
+      return addColormap(name, cmap)
+    }
+    registerNiivue('faint', nv)
+    const stop = startSegPanel(
+      nv,
+      'faint',
+      { displaySetInstanceUID: 'faint', Modality: 'SEG' },
+      [segment(1)],
+      managers,
+    )
+    // round(alpha * 1/255) must stay 1: the shader draws a rim only there.
+    expect([alphas.at(-1), nv.drawOpacity]).toEqual([255, 1 / 255])
+    stop()
+    unregisterNiivue('faint')
+    nv.destroy()
   })
 
   test('volume_onAShearedGrid_isTheAffineDeterminant', async () => {

@@ -1,4 +1,5 @@
 import { SLICE_TYPE } from '@niivue/niivue'
+import { showCaptureForm } from './captureForm'
 import {
   applyWindowLevelPreset,
   invertBase,
@@ -10,11 +11,13 @@ import {
 import {
   getActiveNiivueEntry,
   type NiivueViewportEntry,
+  niivueEntries,
   ohifCommandsManager,
   ohifServices,
   refreshToolbar,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
+import { refreshOverlayPlanes } from './overlayPlanes'
 import {
   type FrameRef,
   frameAt,
@@ -22,6 +25,7 @@ import {
   type SliceFrames,
   shownImages,
 } from './sliceFrames'
+import { toggleSliceSync } from './viewportSync'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -322,6 +326,7 @@ function flip(
 export function getStandardCommandDefinitions({
   servicesManager,
   commandsManager,
+  extensionManager,
 }: OhifExtensionParams) {
   const route =
     (
@@ -350,6 +355,38 @@ export function getStandardCommandDefinitions({
   })
 
   return {
+    // Reference Lines / Image Overlay: cornerstone's targets the active pane's
+    // cornerstone tool group; a NiiVue pane's group holds the mode its overlays
+    // read (referenceLines.tsx, overlayPlanes.ts).
+    toggleEnabledDisabledToolbar: {
+      commandFn: (opts: StandardOptions = {}) => {
+        const entry = getActiveNiivueEntry(servicesManager)
+        const toolGroupId = entry?.toolGroupId ?? 'default'
+        const result = ohifCommandsManager(commandsManager)?.runCommand?.(
+          'toggleEnabledDisabledToolbar',
+          entry && opts.toolGroupId === undefined
+            ? { ...opts, toolGroupId }
+            : opts,
+          'CORNERSTONE',
+        )
+        if (entry && (opts.itemId ?? opts.value) === 'ImageOverlayViewer')
+          for (const e of niivueEntries())
+            if ((e.toolGroupId ?? 'default') === toolGroupId)
+              void refreshOverlayPlanes(e.nv, extensionManager, toolGroupId)
+        return result
+      },
+    },
+    // Image Slice Sync: cornerstone's synchronizer links only its own viewports.
+    toggleSynchronizer: {
+      commandFn: (opts: StandardOptions = {}) => {
+        if (opts.type === 'imageSlice') toggleSliceSync()
+        return ohifCommandsManager(commandsManager)?.runCommand?.(
+          'toggleSynchronizer',
+          opts,
+          'CORNERSTONE',
+        )
+      },
+    },
     // Cornerstone's targets the active pane's Cornerstone tool group, which a
     // NiiVue pane lacks (AdvancedMagnify's button): target the pane's group.
     toggleActiveDisabledToolbar: {
@@ -447,9 +484,9 @@ export function getStandardCommandDefinitions({
     // Capture: the pane as shown, as a PNG.
     // ponytail: no size/filename form (cornerstone's modal renders off-screen).
     showDownloadViewportModal: {
-      commandFn: route('showDownloadViewportModal', ({ nv, slideView }) => {
-        void (slideView ? slideView.saveBitmap() : nv.saveBitmap('image.png'))
-      }),
+      commandFn: route('showDownloadViewportModal', (entry) =>
+        showCaptureForm(entry, ohifServices(servicesManager)),
+      ),
     },
     setViewportColormap: {
       commandFn: route('setViewportColormap', (entry, opts) => {

@@ -227,7 +227,9 @@ export function overlayMenuComponent({
                   }
                 >
                   {NIIVUE_COLORMAPS.some((c) => c.name === colormap) ? null : (
-                    <option value={colormap}>{o.colormap}</option>
+                    <option value={colormap}>
+                      {o.colormap.split('_ramp_')[0]}
+                    </option>
                   )}
                   {NIIVUE_COLORMAPS.map((c) => (
                     <option key={c.name} value={c.name}>

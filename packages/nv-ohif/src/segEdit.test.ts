@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { constrainEdit, penSizeFor, rasIntensity } from './segEdit'
+import {
+  constrainEdit,
+  dynamicRange,
+  penSizeFor,
+  rasIntensity,
+} from './segEdit'
 
 test('constrainEdit keeps locked segments and paints threshold voxels only in range', () => {
   // Voxel 0: paint over locked 2; 1: paint in range; 2: paint out of range;
@@ -48,4 +53,22 @@ test('the brush diameter uses the spacing in the drawn plane', () => {
   // Sagittal: y and z in plane; the 0.5 mm x spacing is through-plane.
   expect(penSizeFor(5, [1, 0.5, 2, 2], 2)).toBe(5)
   expect(penSizeFor(5, [1, 0.5, 2, 2], 0)).toBe(20)
+})
+
+// cornerstone's dynamic threshold: an in-plane radius-3 disk at the first
+// centre, then each later centre's value. Values = x + 9y on a 9x9 slice.
+test('dynamic threshold range: disk at the first centre, then later centres', () => {
+  const at = (i: number) => (i % 9) + 9 * Math.floor(i / 9)
+  expect(dynamicRange(at, [9, 9, 1], [[4, 4, 0]], 2)).toEqual([13, 67])
+  expect(
+    dynamicRange(
+      at,
+      [9, 9, 1],
+      [
+        [4, 4, 0],
+        [0, 0, 0],
+      ],
+      2,
+    ),
+  ).toEqual([0, 67])
 })

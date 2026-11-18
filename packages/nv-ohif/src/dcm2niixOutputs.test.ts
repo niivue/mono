@@ -107,13 +107,13 @@ describe('rankOutputs (owner Q5)', () => {
       ['me', 'me_e2'],
     ],
     [
-      'most voxels, then stem; _Tilt/_Eq get no preference',
+      'the raw output over its interpolated _Tilt/_Eq resamples',
       [
-        series('ct_Tilt_1', [8, 8, 8], primary),
-        series('ct', [8, 8, 9], primary),
-        series('ct_Eq_1', [8, 8, 8], primary),
+        series('ct_Tilt_1', [8, 9, 9], primary),
+        series('ct', [8, 8, 8], primary),
+        series('ct_Eq_1', [8, 8, 9], primary),
       ],
-      ['ct', 'ct_Eq_1', 'ct_Tilt_1'],
+      ['ct', 'ct_Tilt_1', 'ct_Eq_1'],
     ],
   ])('%s', async (_name, list, expected) => {
     expect(await stems(list)).toEqual(expected)
@@ -128,4 +128,11 @@ describe('rankOutputs (owner Q5)', () => {
     }
     expect(await stems([nrrd, series('a', [2, 2, 2])])).toEqual(['a'])
   })
+})
+
+// dcm2niix writes DICOM overlay planes (60xx) as <stem>_ROI<n>: never the image.
+it('rankOutputs leaves out overlay plane outputs', async () => {
+  expect(
+    await stems([series('a_ROI1', [8, 8, 1]), series('a', [8, 8, 1], primary)]),
+  ).toEqual(['a'])
 })

@@ -12,6 +12,7 @@ import {
 import { rowReport } from './csvReport'
 import { ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
+import { type CommandsLike, routeSlideSR, type SlideRow } from './slideSR'
 import {
   ANNOTATION_TO_OHIF,
   OHIF_TO_SLIDE_TOOL,
@@ -87,11 +88,14 @@ export function slideRowValues({ stats }: Pick<SlideAnnotation, 'stats'>): {
 }
 
 let bindings = 0
-const rowTools = new WeakMap<SlideAnnotation, string>()
+// By annotation id: events and list() hand out copies.
+const rowTools = new WeakMap<NVSlideAnnotations, Map<string, string>>()
 
 /** The OHIF tool of an annotation's row (that drew it), once bound. */
-export const slideRowTool = (a: SlideAnnotation): string | undefined =>
-  rowTools.get(a)
+export const slideRowTool = (
+  slide: NVSlideAnnotations,
+  a: SlideAnnotation,
+): string | undefined => rowTools.get(slide)?.get(a.id)
 
 /**
  * Mirror a slide's annotations as 'NiiVue' rows in OHIF's MeasurementService,
@@ -106,9 +110,24 @@ export function bindSlideMeasurements(
   },
   servicesManager: OhifExtensionParams['servicesManager'],
   ds: OhifDisplaySet,
+  commandsManager?: CommandsLike,
 ): () => void {
   const annotations = view.annotations
-  const ms = ohifServices(servicesManager)?.measurementService as
+  const services = ohifServices(servicesManager)
+  const displaySets = services?.displaySetService as
+    | { getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined }
+    | undefined
+  // A row's base level: its series' largest total pixel matrix.
+  const smOf = (row: SlideRow) =>
+    displaySets
+      ?.getDisplaySetByUID?.(row.displaySetInstanceUID ?? '')
+      ?.instances?.reduce((a, b) =>
+        Number(b.TotalPixelMatrixColumns) > Number(a.TotalPixelMatrixColumns)
+          ? b
+          : a,
+      )
+  routeSlideSR(commandsManager, smOf)
+  const ms = services?.measurementService as
     | (MeasurementServiceLike & {
         remove(uid: string): void
         getMeasurement(uid: string): unknown
@@ -117,6 +136,8 @@ export function bindSlideMeasurements(
     | undefined
   if (!annotations || !ms?.addRawMeasurement) return () => {}
   const source = niivueMeasurementSource(ms)
+  const tools = new Map<string, string>()
+  rowTools.set(annotations, tools)
   // Annotation ids restart per slide: a binding prefix keeps uids unique.
   const prefix = `${SLIDE_UID_PREFIX}${++bindings}-`
   const idOf = (uid: unknown) =>
@@ -125,12 +146,12 @@ export function bindSlideMeasurements(
       : undefined
 
   const upsert = ({ detail: a }: CustomEvent<SlideAnnotation>): void => {
-    let toolName = rowTools.get(a)
+    let toolName = tools.get(a.id)
     if (!toolName) {
       const active = view.tool ?? ''
       toolName =
         OHIF_TO_SLIDE_TOOL[active] === a.tool ? active : SLIDE_TO_OHIF[a.tool]
-      rowTools.set(a, toolName)
+      tools.set(a.id, toolName)
     }
     const mapping = Object.values(ANNOTATION_TO_OHIF).find(
       (m) => m.toolName === toolName,
@@ -157,7 +178,7 @@ export function bindSlideMeasurements(
           data,
           getReport: rowReport(toolName, data, points),
           type: mapping?.valueType,
-          metadata: { toolName },
+          metadata: { toolName, slideTool: a.tool },
         },
       },
       (d) => d.measurement,

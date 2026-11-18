@@ -7,7 +7,10 @@ import {
   ohifServices,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
+import { refreshBrushSizes, tmtvExport } from './petQuant'
+import { rasGrid } from './quantify'
 import { lpsToVoxel } from './rtDrawing'
+import { addSegmentBidirectional } from './segBidirectional'
 import { interpolateDrawing, refreshSegTools } from './segEdit'
 import {
   buildRtssDataset,
@@ -100,6 +103,29 @@ function createSegmentation(
   return segmentationId
 }
 
+/** dcmjs' sRGB (0..1) -> DICOM CIELab. */
+async function dicomLab() {
+  const dcmjs = (await import('dcmjs')).default as {
+    data: { Colors: { rgb2DICOMLAB(rgb: readonly number[]): number[] } }
+  }
+  return (rgb: readonly number[]) =>
+    dcmjs.data.Colors.rgb2DICOMLAB(rgb).map(Math.round)
+}
+
+/** The SEG or RTSTRUCT dataset of the TMTV PT label; undefined if empty. */
+export async function tmtvDataset(
+  services: OhifExtensionParams['servicesManager'],
+  modality: string,
+  label: string,
+): Promise<Ds | undefined> {
+  const src = tmtvExport(services)
+  if (!src) return undefined
+  const h = { SeriesDescription: label, SeriesNumber: 3000 }
+  return modality === 'RTSTRUCT'
+    ? buildRtssDataset(() => src.frames, src.segments, h)
+    : buildSegDataset(src.frames, src.segments, h, await dicomLab())
+}
+
 /** The SEG or RTSTRUCT dataset of a pane's segmentation; undefined if empty. */
 export async function niivueSegmentationDataset(
   pane: NiivueSegmentationPane,
@@ -156,9 +182,7 @@ export async function niivueSegmentationDataset(
     } finally {
       restore()
     }
-  const dcmjs = (await import('dcmjs')).default as {
-    data: { Colors: { rgb2DICOMLAB(rgb: readonly number[]): number[] } }
-  }
+  const toLab = await dicomLab()
   // A re-saved SEG keeps its segments' codes.
   const source = (
     (pane.seg.instance ?? pane.seg.instances?.[0]) as Ds | undefined
@@ -168,7 +192,7 @@ export async function niivueSegmentationDataset(
       framesFor,
       segments,
       h,
-      (rgb) => dcmjs.data.Colors.rgb2DICOMLAB(rgb).map(Math.round),
+      toLab,
       source === undefined ? undefined : ([source].flat() as Ds[]),
     )
   } finally {
@@ -206,12 +230,19 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
   const back = (name: string, opts: Options, context = 'CORNERSTONE') =>
     commands()?.runCommand?.(name, opts, context)
   // Writes the dataset: to the active data source when it stores DICOM, else a download.
-  const save = async (opts: Options, onlyDownload: boolean) => {
+  // No pane: the TMTV PT label, named as cornerstone's save dialog defaults.
+  const save = async (opts: Options, onlyDownload: boolean, tmtv = false) => {
     const pane = niivueSegmentationPane(opts.segmentationId)
-    if (!pane) return undefined
+    if (!pane && !tmtv) return undefined
     const modality = opts.modality === 'RTSTRUCT' ? 'RTSTRUCT' : 'SEG'
-    const label = segmentationLabel(servicesManager, pane)
-    const dataset = await niivueSegmentationDataset(pane, modality, label)
+    const label = pane
+      ? segmentationLabel(servicesManager, pane)
+      : modality === 'RTSTRUCT'
+        ? 'Contours'
+        : 'Segmentation'
+    const dataset = pane
+      ? await niivueSegmentationDataset(pane, modality, label)
+      : await tmtvDataset(servicesManager, modality, label)
     if (!dataset) throw new Error('Nothing is drawn in this segmentation')
     const name = (extensionManager as { activeDataSourceName?: string })
       ?.activeDataSourceName
@@ -254,6 +285,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
           commandFn: (opts: Options = {}) => {
             const result = back(name, opts)
             refreshSegTools()
+            refreshBrushSizes()
             return result
           },
         },
@@ -265,6 +297,24 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
         return pane
           ? pane.deleteSegment(Number(opts.segmentIndex))
           : back('deleteSegment', opts)
+      },
+    },
+    runSegmentBidirectional: {
+      commandFn: (opts: Options = {}) => {
+        const nv: NiiVue | undefined = getActiveNiivueEntry(
+          servicesManager,
+          opts.viewportId,
+        )?.nv
+        if (!nv) return back('runSegmentBidirectional', opts)
+        const notify = ohifServices(servicesManager)?.uiNotificationService as
+          | { show?: (n: object) => void }
+          | undefined
+        if (!addSegmentBidirectional(nv))
+          notify?.show?.({
+            title: 'Segment Bidirectional',
+            message: 'Draw a segment before using bidirectional measurement',
+            type: 'warning',
+          })
       },
     },
     interpolateLabelmap: {
@@ -295,6 +345,41 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
         niivueSegmentationPane(opts.segmentationId)
           ? save({ ...opts, modality: 'RTSTRUCT' }, true)
           : back('downloadRTSS', opts),
+    },
+    // The TMTV panel's DICOM SEG / RTSS buttons: the PT label stored as the
+    // panel's Save stores a segmentation, with createReportAsync's toast.
+    niivueStoreTMTVSegmentation: {
+      commandFn: async (opts: Options = {}) => {
+        const ui = ohifServices(servicesManager)?.uiNotificationService as
+          | { show?: (o: Record<string, string>) => void }
+          | undefined
+        try {
+          const dataset = await save(opts, false, true)
+          ui?.show?.({
+            title: 'Create Report',
+            message: 'Segmentation saved successfully',
+            type: 'success',
+          })
+          return dataset
+        } catch (e) {
+          ui?.show?.({
+            title: 'Create Report',
+            message: (e as Error).message,
+            type: 'error',
+          })
+        }
+      },
+    },
+    /** A pane's drawing (RAS order) with its RAS voxel -> mm affine, as niivueGetLabelmap. */
+    niivueGetDrawing: {
+      commandFn: (opts: Options = {}) => {
+        const nv = getActiveNiivueEntry(servicesManager, opts.viewportId)?.nv
+        const img = nv?.drawingVolume?.img
+        const grid = nv?.volumes[0] && rasGrid(nv.volumes[0])
+        return img instanceof Uint8Array && grid
+          ? { label: img.slice(), dims: grid.dims, affine: grid.affine }
+          : undefined
+      },
     },
     downloadCSVSegmentationReport: {
       commandFn: (opts: Options = {}) => {

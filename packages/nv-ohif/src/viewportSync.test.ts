@@ -7,7 +7,7 @@ import {
   registerNiivue,
   unregisterNiivue,
 } from './niivueRegistry'
-import { joinSyncGroups } from './viewportSync'
+import { joinSyncGroups, toggleSliceSync } from './viewportSync'
 
 // Panes stay registered otherwise and break suites that need an empty registry.
 const panes: string[] = []
@@ -74,6 +74,29 @@ test('panes sharing a camera or VOI group share the crosshair; others stay out',
   expect(vr.targets).toEqual([])
   leaveAx()
   expect(cor.targets).toEqual([])
+})
+
+test('Image Slice Sync links reconstructable panes without a shared group', () => {
+  const [a, b, scout] = [
+    pane('s1', ['ct']),
+    pane('s2', ['ct2']),
+    pane('s3', ['sc']),
+  ]
+  ;(getNiivueEntry('s3') as NiivueViewportEntry).displaySets = [
+    { displaySetInstanceUID: 'sc', isReconstructable: false },
+  ]
+  const leave = [
+    joinSyncGroups('s1', a, undefined),
+    joinSyncGroups('s2', b, undefined),
+    joinSyncGroups('s3', scout, undefined),
+  ]
+  expect(a.targets).toEqual([])
+  expect(toggleSliceSync()).toBe(true)
+  expect(a.targets).toEqual([b])
+  expect(scout.targets).toEqual([])
+  expect(toggleSliceSync()).toBe(false)
+  expect(a.targets).toEqual([])
+  for (const l of leave) l()
 })
 
 // OHIF puts hydrateseg on every pane, across frames of reference.

@@ -39,6 +39,9 @@ import {
   spacing,
   thresholdBox,
 } from './quantify'
+import { lpsToVoxel } from './rtDrawing'
+import { type ExportSegment, frameLabels } from './segExport'
+import { paletteColor } from './segPanel'
 import { OHIF_BRUSHES } from './toolBridge'
 
 // OHIF's TMTV (extension-tmtv) and 4D ROI workflow (cornerstone-dynamic-volume)
@@ -65,6 +68,8 @@ interface Mask {
   grid: RasGrid
   /** Segment names by value. */
   names: string[]
+  /** Bumped on every label write: panes showing an older revision re-show it. */
+  rev: number
 }
 
 const masks = new Map<string, Mask>()
@@ -86,8 +91,8 @@ const roiSlices: { start?: number[]; end?: number[] } = {}
 // Panes whose armed brush is OHIF's threshold brush.
 const thresholdPens = new WeakSet<NiiVue>()
 let thresholdRange: [number, number] = [2.5, 50]
-// ponytail: fixed pen size (voxels); OHIF's setBrushSize is not bridged.
-const BRUSH_SIZE = 5
+// Armed panes' pen size (OHIF's brush size), re-read by refreshBrushSizes.
+const penSizes = new WeakMap<NiiVue, () => number>()
 // cornerstone's RectangleROIStartEndThreshold default depth (numSlicesToPropagate).
 const ROI_SLICES = 10
 
@@ -167,22 +172,42 @@ function maskFor(pet: Pet): Mask | undefined {
   const n = grid.dims[0] * grid.dims[1] * grid.dims[2]
   let m = masks.get(pet.uid)
   if (m?.label.length !== n) {
-    m = { label: new Uint8Array(n), grid, names: ['', 'Segment 1'] }
+    m = { label: new Uint8Array(n), grid, names: ['', 'Segment 1'], rev: 0 }
     masks.set(pet.uid, m)
   }
   return m
 }
 
 const hooked = new WeakSet<NiiVue>()
+// The label and drawing each pane last got: a resample onto a CT grid costs
+// ~0.5 s, so arming a pen or a pane joining re-shows only panes not current.
+const shownIn = new WeakMap<NiiVue, [Mask, number, NVImage]>()
 
-/** Show series `uid`'s label as the drawing of every pane holding it (but `skip`). */
-function showMask(uid: string, services: Services, skip?: NiiVue): void {
+/**
+ * Show series `uid`'s label as the drawing of every pane holding it (but
+ * `skip`); `stale`: only panes not showing it yet.
+ */
+function showMask(
+  uid: string,
+  services: Services,
+  skip?: NiiVue,
+  stale = false,
+): void {
   const m = masks.get(uid)
   if (!m) return
+  let empty: boolean | undefined
   for (const { entry } of panesOf(uid)) {
     const { nv } = entry
     const grid = nv.volumes[0] && rasGrid(nv.volumes[0])
     if (nv === skip || !grid) continue
+    const shown = shownIn.get(nv)
+    if (
+      stale &&
+      shown?.[0] === m &&
+      shown[1] === m.rev &&
+      shown[2] === nv.drawingVolume
+    )
+      continue
     if (!nv.drawingVolume) {
       // createEmptyDrawing arms the pen; the pane's tool decides.
       const armed = nv.drawIsEnabled
@@ -191,8 +216,12 @@ function showMask(uid: string, services: Services, skip?: NiiVue): void {
     }
     const img = nv.drawingVolume?.img
     if (!(img instanceof Uint8Array)) continue
-    img.set(resampleLabel(m.label, m.grid, grid))
+    // A new label (first pen armed) is empty: nothing to resample.
+    empty ??= m.label.every((x) => x === 0)
+    if (empty) img.fill(0)
+    else img.set(resampleLabel(m.label, m.grid, grid))
     nv.refreshDrawing()
+    shownIn.set(nv, [m, m.rev, nv.drawingVolume as NVImage])
     if (hooked.has(nv)) continue
     hooked.add(nv)
     nv.addEventListener('drawingChanged', (e) => {
@@ -200,6 +229,15 @@ function showMask(uid: string, services: Services, skip?: NiiVue): void {
       if (action === 'stroke' || action === 'undo') pull(entry, services)
     })
   }
+}
+
+/** Show the label of a pane's PT series once it holds one (a late or re-hung pane). */
+export function showPaneLabel(
+  entry: NiivueViewportEntry,
+  services: Services,
+): void {
+  const pet = paneTarget(entry, services)
+  if (pet) showMask(pet.uid, services, undefined, true)
 }
 
 /** Read a pane's brushed drawing back into its series' label. */
@@ -214,6 +252,7 @@ function pull(entry: NiivueViewportEntry, services: Services): void {
   const pt = thresholdPens.has(entry.nv) && sampled(pet.vol)
   if (pt) keepInRange(next, m.label, pt, thresholdRange)
   m.label.set(next)
+  m.rev++
   showMask(pet.uid, services, pt ? undefined : entry.nv)
   notify()
 }
@@ -247,6 +286,7 @@ export function armBrush(
   viewportId: string,
   tool: string | undefined,
   services: Services,
+  penSize: () => number,
 ): boolean {
   const mode = tool ? OHIF_BRUSHES[tool] : undefined
   const entry = niivueEntries().find((e) => e.viewportId === viewportId)
@@ -254,16 +294,28 @@ export function armBrush(
   if (entry) {
     armedPens.delete(entry.nv)
     thresholdPens.delete(entry.nv)
+    penSizes.delete(entry.nv)
   }
   if (!entry || !pet || !maskFor(pet)) return false
-  showMask(pet.uid, services)
+  showMask(pet.uid, services, undefined, true)
   const { nv } = entry
   nv.drawPenValue = mode === 'erase' ? 0 : activeSegment
   if (mode !== 'erase') armedPens.add(nv)
-  nv.drawPenShape = PEN_SHAPE.CIRCLE
-  nv.drawPenSize = BRUSH_SIZE
+  nv.drawPenShape = tool?.includes('Sphere')
+    ? PEN_SHAPE.SPHERE
+    : PEN_SHAPE.CIRCLE
+  penSizes.set(nv, penSize)
+  nv.drawPenSize = penSize()
   if (mode === 'threshold') thresholdPens.add(nv)
   return true
+}
+
+/** Re-read armed panes' pen size (OHIF's brush size changed). */
+export function refreshBrushSizes(): void {
+  for (const { nv } of niivueEntries()) {
+    const size = penSizes.get(nv)
+    if (size) nv.drawPenSize = size()
+  }
 }
 
 // --- RectangleROIStartEndThreshold -------------------------------------------
@@ -438,6 +490,7 @@ export function runThreshold(
   const value = opts.segmentIndex ?? activeSegment
   m.names[value] ??= `Segment ${value}`
   const count = thresholdBox(m.label, pt, box, lower, upper, value, ct)
+  m.rev++
   // Start/end belong to the rectangle just run, not the next one drawn.
   roiSlices.start = roiSlices.end = undefined
   lastConfig =
@@ -475,6 +528,42 @@ export function tmtvStats(services: Services) {
   const tmtv = segments.reduce((t, s) => t + s.volume * 1e-3, 0)
   const tlg = segments.reduce((t, s) => t + s.volume * 1e-3 * s.mean, 0)
   return { tmtv, tlg, segments }
+}
+
+/** The PT label's segments on the PT series' own frames, for SEG / RTSS export. */
+export function tmtvExport(services: Services) {
+  const pet = findPet(services)
+  const m = pet && masks.get(pet.uid)
+  const a = m?.grid.affine
+  const at = (i: number) => a?.[i] as number
+  const lps2vox =
+    a &&
+    lpsToVoxel(([x, y, z]) =>
+      [0, 1, 2].map(
+        (r) =>
+          at(4 * r) * x + at(4 * r + 1) * y + at(4 * r + 2) * z + at(4 * r + 3),
+      ),
+    )
+  const instances = pet?.ds?.instances
+  if (!m || !lps2vox || !instances) return undefined
+  const segments: ExportSegment[] = [...new Set(m.label)]
+    .filter((v) => v > 0)
+    .sort((p, q) => p - q)
+    .map((value) => {
+      const [r = 0, g = 0, b = 0] = paletteColor(value)
+      return {
+        value,
+        label: m.names[value] ?? `Segment ${value}`,
+        rgb: [r, g, b],
+      }
+    })
+  const frames = frameLabels({
+    bitmap: m.label,
+    dims: m.grid.dims,
+    lps2vox,
+    instances,
+  })
+  return { frames, segments }
 }
 
 function download(text: string, filename: string): void {
@@ -632,6 +721,8 @@ export function getQuantCommandDefinitions({
     niivueGetLabelmap: () => {
       const pet = findPet(services)
       const m = pet && masks.get(pet.uid)
+      // The caller may write the label: panes re-show it on the next arm.
+      if (m) m.rev++
       return m && { label: m.label, dims: m.grid.dims, affine: m.grid.affine }
     },
     niivueAddSegment: ({ label }: { label?: string } = {}) => {

@@ -66,11 +66,9 @@ function sformLps(header: ArrayBuffer) {
     (r < 2 ? -1 : 1) * view.getFloat32(280 + 16 * r + 4 * c, le)
   const col = (c: number): Vec3 => [at(0, c), at(1, c), at(2, c)]
   return {
-    ci: col(0),
-    cj: col(1),
-    ck: col(2),
+    cols: [col(0), col(1), col(2)],
     origin: col(3),
-    slices: Math.max(1, view.getInt16(46, le)),
+    dims: [42, 44, 46].map((o) => Math.max(1, view.getInt16(o, le))),
   }
 }
 
@@ -153,27 +151,34 @@ export function buildSliceFrames(
 ): SliceFrames | undefined {
   const sform = sformLps(header)
   if (!sform) return undefined
-  const { ci, cj, ck } = sform
-  const perp = cross(ci, cj)
-  const perpLen = Math.hypot(...perp)
-  const step = dot(ck, perp)
-  if (!perpLen || !step) return undefined
+  const frames = instanceFrames(instances, filter)
+  // Only a frame lying in a slice is its source: not a tilted or resampled
+  // (_Tilt, _Eq) neighbour. The negated test also drops a degenerate IOP.
+  const inPlane = (normal: Vec3, perp: Vec3) =>
+    Math.abs(dot(normal, perp)) >
+    PARALLEL * Math.hypot(...perp) * Math.hypot(...normal)
+  // The slice axis: k, unless more frames lie across i or j (dcm2niix stores a
+  // 3D sagittal or coronal acquisition near axial). k wins ties: a single-slice
+  // output among orthogonal localizers has one frame across each axis.
+  const perps = [0, 1, 2].map((a) =>
+    cross(sform.cols[(a + 1) % 3] as Vec3, sform.cols[(a + 2) % 3] as Vec3),
+  )
+  const across = perps.map(
+    (p) => frames.filter((f) => inPlane(f.normal, p)).length,
+  )
+  let axis = 2
+  for (const a of [0, 1]) if ((across[a] ?? 0) > (across[axis] ?? 0)) axis = a
+  const perp = perps[axis] as Vec3
+  const step = dot(sform.cols[axis] as Vec3, perp)
+  if (!Math.hypot(...perp) || !step) return undefined
   const sf: SliceFrames = {
     origin: sform.origin,
     normal: [perp[0] / step, perp[1] / step, perp[2] / step],
-    frames: new Array(sform.slices).fill(undefined),
+    frames: new Array(sform.dims[axis]).fill(undefined),
   }
   const claimed = new Set<number>()
-  for (const { ref, position, normal } of instanceFrames(instances, filter)) {
-    // Only a frame lying in a slice is its source: not a tilted or resampled
-    // (_Tilt, _Eq) neighbour. The negated test also drops a degenerate IOP.
-    if (
-      !(
-        Math.abs(dot(normal, perp)) >
-        PARALLEL * perpLen * Math.hypot(...normal)
-      )
-    )
-      continue
+  for (const { ref, position, normal } of frames) {
+    if (!inPlane(normal, perp)) continue
     const k = onSlice(sf, position)
     if (k === undefined) continue
     // Two frames at one position (another echo or image type) stay unmapped.

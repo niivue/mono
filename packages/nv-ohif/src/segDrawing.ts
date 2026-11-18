@@ -156,6 +156,7 @@ export function startSegDrawing(
     | 'drawIsEnabled'
     | 'drawOpacity'
     | 'drawRimOpacity'
+    | 'drawRimWidth'
     | 'addEventListener'
     | 'removeEventListener'
   >,

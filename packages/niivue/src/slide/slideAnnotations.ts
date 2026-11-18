@@ -1,6 +1,7 @@
 import { getControlPoints, updateShapeBounds } from '@/annotation/selection'
-import { generateShape } from '@/annotation/shapes'
+import { ellipseRing } from '@/annotation/shapes'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
+import type { PolygonWithHoles } from '@/NVTypes'
 import type { NVSlidePoint } from './slideController'
 
 /**
@@ -22,7 +23,8 @@ export type SlideAnnotationTool =
 /**
  * Physical size in `unit` (mm, area mm^2) from the slide's pixel spacing, or
  * base pixels without it. Open shapes have `length`, closed `area` and
- * `perimeter`, a point none.
+ * `perimeter`, a point none. A self-intersecting path's area is the signed
+ * shoelace sum (a figure eight's lobes subtract).
  */
 export interface SlideAnnotationStats {
   unit: 'mm' | 'px'
@@ -69,14 +71,19 @@ export function slideAnnotationOutline(
     return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }]
   if (tool === 'ellipse' || tool === 'circle') {
     const r = Math.hypot(b.x - a.x, b.y - a.y)
-    const [s, e] =
+    const [cx, cy, rx, ry] =
       tool === 'circle'
-        ? [
-            { x: a.x - r, y: a.y - r },
-            { x: a.x + r, y: a.y + r },
+        ? [a.x, a.y, r, r]
+        : [
+            (a.x + b.x) / 2,
+            (a.y + b.y) / 2,
+            Math.abs(b.x - a.x) / 2,
+            Math.abs(b.y - a.y) / 2,
           ]
-        : [a, b]
-    return generateShape('ellipse', s, e, 0)[0]?.outer ?? []
+    if (rx + ry === 0) return []
+    // Not generateShape: it drops sub-pixel ellipses, which at deep slide
+    // zoom are drawn and measured.
+    return (ellipseRing(cx, cy, rx, ry)[0] as PolygonWithHoles).outer
   }
   return [...points]
 }

@@ -101,6 +101,8 @@ const isBoxMode = (mode: DRAG_MODE): boolean =>
 // A press this near a polygon's first vertex closes it, near a handle or an
 // outline picks it.
 const PICK_CSS_PX = 8
+// Typical OS double-click interval: only a press this soon after closing is its second click.
+const DOUBLE_CLICK_MS = 500
 // Freehand samples no closer than this: denser only adds overlay lines.
 const FREEHAND_STEP_CSS_PX = 3
 
@@ -181,6 +183,9 @@ export class NVSlideController {
   private _pinch = false
   // Where the last left press that started a gesture here was (CSS px).
   private _pressedAt: [number, number] | null = null
+  // Where a press closed a polygon: a double-click's second press lands there
+  // and must not start a new one.
+  private _polygonClosedAt: { p: NVSlidePoint; t: number } | null = null
   private _hoverFrame = 0
   private _hoverPoint: NVSlidePoint | null = null
   private _windowDrag: {
@@ -284,15 +289,16 @@ export class NVSlideController {
         { x: c.x + r, y: c.y + r },
       ]
     }
-    const xs = points.map((p) => p.x)
-    const ys = points.map((p) => p.y)
-    this._zoomTo(
-      {
-        start: { x: Math.min(...xs), y: Math.min(...ys) },
-        end: { x: Math.max(...xs), y: Math.max(...ys) },
-      },
-      true,
-    )
+    // A loop, not Math.min(...xs): spreading a long freehand path overflows the stack.
+    const start = { x: Infinity, y: Infinity }
+    const end = { x: -Infinity, y: -Infinity }
+    for (const { x, y } of points) {
+      if (x < start.x) start.x = x
+      if (y < start.y) start.y = y
+      if (x > end.x) end.x = x
+      if (y > end.y) end.y = y
+    }
+    this._zoomTo({ start, end }, true)
     return true
   }
 
@@ -656,12 +662,15 @@ export class NVSlideController {
       this._picked = !!hit
       if (hit) return
     }
+    const closedAt = this._polygonClosedAt
+    this._polygonClosedAt = null
     if (tool === 'polygon' && draft) {
       const placed = draft.points.slice(0, -1)
       const first = placed[0] as NVSlidePoint
-      if (placed.length >= 3 && this._cssDistance(p, first) <= PICK_CSS_PX)
+      if (placed.length >= 3 && this._cssDistance(p, first) <= PICK_CSS_PX) {
         this._commitDraft(placed)
-      else if (
+        this._polygonClosedAt = { p, t: Date.now() }
+      } else if (
         this._cssDistance(p, placed.at(-1) as NVSlidePoint) >
         crosshairPanThresholdCssPx
       )
@@ -670,6 +679,13 @@ export class NVSlideController {
       return
     }
     if (tool === 'point') return
+    if (
+      tool === 'polygon' &&
+      closedAt &&
+      Date.now() - closedAt.t <= DOUBLE_CLICK_MS &&
+      this._cssDistance(p, closedAt.p) <= crosshairPanThresholdCssPx
+    )
+      return
     const fresh = tool.startsWith('freehand') ? [p] : [p, { ...p }]
     this.draft = { tool, points: fresh }
     this._options.onChange?.()
@@ -835,7 +851,9 @@ export class NVSlideController {
     // Closes a polygon: its first click placed the last vertex, the second
     // fell on it and added none.
     if (this.draft?.tool === 'polygon') {
-      this._commitDraft(this.draft.points.slice(0, -1))
+      const placed = this.draft.points.slice(0, -1)
+      // Under three vertices encloses nothing: keep drawing.
+      if (placed.length >= 3) this._commitDraft(placed)
       return
     }
     if (

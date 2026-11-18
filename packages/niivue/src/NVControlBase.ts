@@ -754,6 +754,8 @@ export default class NiiVue extends EventTarget {
   _livewireSlice: LivewireSlice | null = null
   _livewireField: Int32Array | null = null
   _livewireSeed: { x: number; y: number } | null = null
+  // Clicks placed on the live wire contour: its points are the snapped path.
+  _livewireClicks = 0
   // Last pointer position over the canvas (client px); hotkeys only act when
   // it lies within this instance's bounds, as in NiiVue 0.6.
   _pointerClient: [number, number] | null = null
@@ -2929,6 +2931,7 @@ export default class NiiVue extends EventTarget {
     this._livewireSlice = null
     this._livewireField = null
     this._livewireSeed = null
+    this._livewireClicks = 0
   }
   /** Put back a resized shape not released (cancel, pointercancel, pinch). */
   _revertResize(): void {
@@ -3012,6 +3015,7 @@ export default class NiiVue extends EventTarget {
     if (idx >= 0) {
       if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
       this.model.annotations.splice(idx, 1)
+      if (this.selectedAnnotation === id) this.model._annotationSelection = null
       this.emit('annotationRemoved', { id })
       this.drawScene()
     }
@@ -3031,6 +3035,8 @@ export default class NiiVue extends EventTarget {
     this.model.annotations = this.model.annotations.filter(
       (a) => !drop.has(a.id),
     )
+    if (drop.has(this.selectedAnnotation ?? ''))
+      this.model._annotationSelection = null
     this.emit('annotationChanged', {
       action: 'delete',
       added: [],
@@ -3044,6 +3050,7 @@ export default class NiiVue extends EventTarget {
     const removed = this.model.annotations.map((a) => a.id)
     this.model.annotations.length = 0
     this._annotationUndoStack.clear()
+    this.model._annotationSelection = null
     this.emit('annotationChanged', {
       action: 'clear',
       added: [],
@@ -3095,11 +3102,18 @@ export default class NiiVue extends EventTarget {
     return this._annotationUndoStack.redoTop
   }
 
+  // The selected id may survive with a different shape: rebuild its handles.
+  private _reselectAfterRestore(restored: VectorAnnotation[]): void {
+    const kept = restored.find((a) => a.id === this.selectedAnnotation)
+    this.model._annotationSelection = kept ? getAnnotationSelection(kept) : null
+  }
+
   annotationUndo(): void {
     const restored = this._annotationUndoStack.undo(this.model.annotations)
     if (restored) {
       const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
+      this._reselectAfterRestore(restored)
       this.emit('annotationChanged', { action: 'undo', ...delta })
       this.drawScene()
     }
@@ -3110,6 +3124,7 @@ export default class NiiVue extends EventTarget {
     if (restored) {
       const delta = annotationDelta(this.model.annotations, restored)
       this.model.annotations = restored
+      this._reselectAfterRestore(restored)
       this.emit('annotationChanged', { action: 'redo', ...delta })
       this.drawScene()
     }

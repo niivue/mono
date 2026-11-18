@@ -348,6 +348,7 @@ function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
     g.y,
   )
   ctrl._livewireSeed = g
+  ctrl._livewireClicks++
   return true
 }
 
@@ -355,6 +356,7 @@ function resetLivewire(ctrl: NiiVue): void {
   ctrl._livewireSlice = null
   ctrl._livewireField = null
   ctrl._livewireSeed = null
+  ctrl._livewireClicks = 0
 }
 
 // The contour polygon for the active tool: spline smooths through the control
@@ -1867,7 +1869,7 @@ export function initInteraction(ctrl: NiiVue): void {
           if (
             cfg.isClickToPlace &&
             !(tool in ANGLE_CLICKS) &&
-            poly.length >= 3 &&
+            (isLivewireTool(tool) ? ctrl._livewireClicks : poly.length) >= 3 &&
             isNearFirstPoint(ctrl, evt, poly[0] as AnnotationPoint)
           ) {
             // Live wire closes along the snapped path back to the first point

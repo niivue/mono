@@ -122,3 +122,45 @@ test('undoable batch removal records one step and undoes as one', () => {
     ['undo', [], ['a', 'b']],
   ])
 })
+
+test('removing the selected annotation clears the selection', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.addAnnotation(square('a'))
+  nv.addAnnotation(square('b'))
+  nv.selectAnnotation('a')
+  nv.removeAnnotation('a')
+  const afterOne = nv.selectedAnnotation
+  nv.selectAnnotation('b')
+  nv.removeAnnotations(['b'])
+  expect([afterOne, nv.selectedAnnotation]).toEqual([null, null])
+})
+
+test('clear and undo drop a selection whose annotation is gone', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.addAnnotation(square('a'))
+  nv.selectAnnotation('a')
+  nv.clearAnnotations()
+  const afterClear = nv.selectedAnnotation
+  nv._annotationUndoStack.push(nv.model.annotations)
+  nv.addAnnotation(square('b'))
+  nv.selectAnnotation('b')
+  nv.annotationUndo()
+  expect([afterClear, nv.selectedAnnotation]).toEqual([null, null])
+})
+
+test('undo rebuilds the handles of a selection that survives', () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  const rect = (x: number): VectorAnnotation => ({
+    ...square('a'),
+    shape: { type: 'rectangle', start: { x, y: 0 }, end: { x: x + 10, y: 10 } },
+  })
+  nv.addAnnotation(rect(0))
+  nv._annotationUndoStack.push(nv.model.annotations)
+  nv.model.annotations = [rect(20)]
+  nv.selectAnnotation('a')
+  nv.annotationUndo()
+  expect(nv.model._annotationSelection?.controlPoints[0]).toEqual({
+    x: 0,
+    y: 0,
+  })
+})

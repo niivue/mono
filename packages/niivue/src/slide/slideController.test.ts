@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, setSystemTime, test } from 'bun:test'
 import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideViewport } from './NVSlide'
 import { NVSlideController, windowDragStep } from './slideController'
@@ -361,6 +361,53 @@ describe('NVSlideController', () => {
     expect(r.ctl.draft?.points.length).toBe(before)
   })
 
+  test('a double-click on a two-vertex polygon keeps the draft', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    for (const x of [0, 50, 50]) {
+      r.fire('pointerdown', x, 0)
+      r.fire('pointerup', x, 0)
+    }
+    r.fire('dblclick', 50, 0)
+    expect(r.ctl.draft?.tool).toBe('polygon')
+  })
+
+  test('a double-click that closes a polygon starts no new one', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [1, 1],
+      [1, 1],
+    ]) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    r.fire('dblclick', 1, 1)
+    expect([r.ctl.draft, r.ctl.annotations.list().length]).toEqual([null, 1])
+  })
+
+  test('a slow press at a closed polygon starts a new one', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    setSystemTime(new Date(0))
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [1, 1],
+    ]) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    setSystemTime(new Date(600))
+    r.fire('pointerdown', 1, 1)
+    setSystemTime()
+    expect(r.ctl.draft?.points[0]).toEqual({ x: 1, y: 1 })
+  })
+
   // Review of #836: focusing a circle centres on its centre, not the rim.
   test('focusAnnotation centres a circle', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
@@ -370,6 +417,18 @@ describe('NVSlideController', () => {
     r.fire('pointerup', 60, 50)
     const circle = r.ctl.annotations.list()[0]
     expect(r.ctl.focusAnnotation(circle?.id ?? '')).toBe(true)
+    expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
+  })
+
+  // Review of #836: a very long freehand path must not overflow the stack.
+  test('focusAnnotation boxes a 2M-point freehand path', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    const pts = Array.from({ length: 2_000_000 }, (_, i) => ({
+      x: 40 + (i % 21),
+      y: 40 + ((i * 5) % 21),
+    }))
+    const line = r.ctl.annotations.add('freehand', pts)
+    expect(r.ctl.focusAnnotation(line?.id ?? '')).toBe(true)
     expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
   })
 

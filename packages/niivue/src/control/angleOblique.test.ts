@@ -1,6 +1,8 @@
 import { expect, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
+import * as Annotation from '@/annotation'
 import { generateShape } from '@/annotation/index'
+import { buildLivewireCost } from '@/annotation/livewire'
 import NiiVue from '@/NVControl'
 import * as Layout from '@/view/NVSliceLayout'
 import { initInteraction } from './interactions'
@@ -445,3 +447,48 @@ test('starting an angle clears the selection', () => {
     globalThis.window = savedWindow
   }
 })
+
+// Review of #834: live wire's points are its snapped path, so the close test
+// counts clicks: A, B, back near A retraces one edge and must not close.
+test('live wire needs three clicks to close', () =>
+  withStubs(() => {
+    const w = 20
+    const id = mat4.create()
+    const slice = spyOn(Annotation, 'extractLivewireSlice').mockReturnValue({
+      image: new Float32Array(w * w),
+      cost: buildLivewireCost(new Float32Array(w * w), w, w),
+      width: w,
+      height: w,
+      ax0: 0,
+      ax1: 1,
+      depthDim: 2,
+      depthVox: 0,
+      sliceType: 0,
+      slicePosition: 0,
+      mm2vox: id,
+      vox2mm: id,
+    } as never)
+    try {
+      const nv = controller('livewire')
+      // Every point projects to the press position: each click is near A.
+      const toCentre = new Float32Array(16)
+      toCentre[15] = 1
+      ;(nv.view as { screenSlices: unknown }).screenSlices = [
+        {
+          mvpMatrix: toCentre,
+          planeNormal: [0, 0, 1],
+          planePoint: [0, 0, 0],
+          leftTopWidthHeight: [0, 0, 100, 100],
+        },
+      ] as never
+      press(nv, [2, 2, 0])
+      press(nv, [12, 2, 0])
+      press(nv, [2.2, 2, 0])
+      expect(nv.annotations).toHaveLength(0)
+      // A third click placed: the next press near A closes.
+      press(nv, [2, 2, 0])
+      expect(nv.annotations).toHaveLength(1)
+    } finally {
+      slice.mockRestore()
+    }
+  }))

@@ -217,6 +217,17 @@ describe('resizePolygons', () => {
     end: { x: x1, y: y1 },
   })
 
+  // Review of #824: an erased probe's move goes through its zero-size box.
+  test('moves a zero-size box', () => {
+    const dot = [{ outer: [{ x: 1, y: 2 }], holes: [] }]
+    expect(
+      resizePolygons('measurePoint', box(1, 2, 1, 2), box(4, 6, 4, 6), dot),
+    ).toEqual([{ outer: [{ x: 4, y: 6 }], holes: [] }])
+    expect(
+      resizePolygons('measurePoint', box(1, 2, 1, 2), box(4, 6, 5, 6), dot),
+    ).toBeNull()
+  })
+
   test('carries an intact shape onto the shape drawn at the new bounds', () => {
     for (const type of ['measureRect', 'ellipse', 'circle'] as const) {
       const o = box(0, 0, 10, 10)

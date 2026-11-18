@@ -7,7 +7,7 @@ import type {
 
 const ELLIPSE_SEGMENTS = 64
 
-function ellipseRing(
+export function ellipseRing(
   cx: number,
   cy: number,
   rx: number,

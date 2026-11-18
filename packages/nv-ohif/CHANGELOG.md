@@ -1,3 +1,21 @@
+## 1.0.0-rc.261 (2026-11-18)
+
+### Fixes
+
+- **nv-ohif:** a 53-bit digest keys 4D frame groups ([e9004685](https://github.com/niivue/mono/commit/e9004685))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.228
+- Updated nv-ext-drawing to 1.0.0-rc.230
+- Updated nv-ext-tile to 1.0.0-rc.137
+- Updated uikit to 1.0.0-rc.227
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.260 (2026-11-18)
 
 ### Updated Dependencies

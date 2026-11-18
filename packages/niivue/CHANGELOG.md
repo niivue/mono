@@ -1,3 +1,17 @@
+## 1.0.0-rc.228 (2026-11-18)
+
+### Fixes
+
+- **niivue:** a discarded push restores the step it evicted ([23a3cb54](https://github.com/niivue/mono/commit/23a3cb54))
+- **niivue:** an abandoned setPoints keeps the redo history ([8a984a83](https://github.com/niivue/mono/commit/8a984a83))
+- **niivue:** a live wire without a slice guards coincident clicks ([3a78cb2d](https://github.com/niivue/mono/commit/3a78cb2d))
+- **niivue:** an abandoned slide setPoints leaves no undo step ([aa100c8d](https://github.com/niivue/mono/commit/aa100c8d))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.227 (2026-11-18)
 
 ### Features

@@ -245,7 +245,12 @@ test('an overlay dropped from the protocol after it loaded is removed', async ()
 test('a protocol without a background returns the pane to black', () => {
   const nv = { backgroundColor: [0, 0, 0, 1], volumeRenderMode: 0 }
   const canvas = { style: { filter: '' } }
-  applyViewportStyle(nv as never, canvas as never, { background: [1, 1, 1] }, [])
+  applyViewportStyle(
+    nv as never,
+    canvas as never,
+    { background: [1, 1, 1] },
+    [],
+  )
   expect(nv.backgroundColor).toEqual([1, 1, 1, 1])
   applyViewportStyle(nv as never, canvas as never, {}, [])
   expect(nv.backgroundColor).toEqual([0, 0, 0, 1])

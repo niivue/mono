@@ -40,10 +40,7 @@ const buttons = (n: unknown): Array<() => void> => {
   if (Array.isArray(n)) return n.flatMap(buttons)
   const props = (n as Node)?.props
   if (!props) return []
-  return [
-    ...(props.onClick ? [props.onClick] : []),
-    ...buttons(props.children),
-  ]
+  return [...(props.onClick ? [props.onClick] : []), ...buttons(props.children)]
 }
 
 test('a range from a longer series clamps to the shown one', () => {

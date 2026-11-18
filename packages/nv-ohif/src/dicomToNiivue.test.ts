@@ -20,9 +20,8 @@ mock.module('@niivue/dcm2niix', () => ({
     return { series: [], log: [], exitCode: 0, ...(await result) }
   },
 }))
-const { convertDisplaySetToNifti, loadConversion } = await import(
-  './dicomToNiivue'
-)
+const { convertDisplaySetToNifti, frameGroupKey, loadConversion } =
+  await import('./dicomToNiivue')
 const { clearSharedTasks } = await import('./sharedTask')
 
 // Header-only NIfTI-1 output; the voxel count breaks ties in the policy.
@@ -340,5 +339,19 @@ describe('loadConversion', () => {
       await loadConversion(nv, 'vp-lc', converted, undefined, () => true),
     ).toBe(false)
     expect(installs).toBe(0)
+  })
+})
+
+describe('frameGroupKey', () => {
+  it('a re-made display set with other instances keys another 4D group', () => {
+    const uid = { displaySetInstanceUID: 'ds1' }
+    const other = {
+      ...uid,
+      instances: [{ imageId: `wadors:${frames.replace('/3/', '/4/')}` }],
+    } as OhifDisplaySet
+    const key = frameGroupKey({ ...ds, ...uid })
+    expect(key).toBe(frameGroupKey({ ...ds, ...uid }))
+    expect(key).not.toBe(frameGroupKey(other))
+    expect(frameGroupKey(ds)).toBeUndefined()
   })
 })

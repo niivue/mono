@@ -122,7 +122,7 @@ test('a new window on a layered overlay restyles it in place', async () => {
   const updates: Array<[number, Record<string, unknown>]> = []
   const nv = {
     colormaps: [],
-    volumes: [{ hdr: base }, { hdr: pt }],
+    volumes: [{ hdr: base }, { hdr: pt, robustMin: 0, robustMax: 100 }],
     setVolume: async (i: number, o: Record<string, unknown>) => {
       updates.push([i, o])
     },
@@ -133,14 +133,18 @@ test('a new window on a layered overlay restyles it in place', async () => {
   const commandsManager = {
     runCommand: async (...a: unknown[]) => added.push(a),
   }
-  const hang = (width: number) => {
+  const hang = (width?: number) => {
     useHungOverlays(
       nv as never,
       'vp-style',
       [ds('ct'), ds('pt')] as never,
       [
         {},
-        { options: { voi: { windowWidth: width, windowCenter: width / 2 } } },
+        {
+          options: width
+            ? { voi: { windowWidth: width, windowCenter: width / 2 } }
+            : { colormap: { name: 'gray' } },
+        },
       ],
       'ct',
       commandsManager as never,
@@ -151,11 +155,15 @@ test('a new window on a layered overlay restyles it in place', async () => {
   hang(10)
   await new Promise((r) => setTimeout(r, 0))
   const [narrow, wide] = effectDeps.slice(-2)
+  // Dropping the protocol's window falls back to the volume's own.
+  hang()
+  await new Promise((r) => setTimeout(r, 0))
   expect(narrow).not.toEqual(wide)
   expect(added).toEqual([])
   expect(updates.map(([i, o]) => [i, o.calMin, o.calMax])).toEqual([
     [1, 0, 5],
     [1, 0, 10],
+    [1, 0, 100],
   ])
   unregisterNiivue('vp-style')
 })

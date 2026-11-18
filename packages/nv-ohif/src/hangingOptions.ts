@@ -233,9 +233,13 @@ export function useHungOverlays(
         if (loaded && index > 0) {
           // Already layered (options changed): restyle in place, falling back
           // to a new load's defaults for whatever the protocol no longer sets.
+          const vol = nv.volumes[index]
           await nv.setVolume(index, {
             colormap: OVERLAY_COLORMAP,
             opacity: OVERLAY_OPACITY,
+            ...(vol && !voi
+              ? { calMin: vol.robustMin, calMax: vol.robustMax }
+              : {}),
             ...display,
           })
           if (knee === undefined) knees.delete(loaded)

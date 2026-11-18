@@ -321,10 +321,11 @@ export class NVSlideAnnotations extends EventTarget {
       const annotation = this._items.get(id)
       if (
         annotation &&
-        points.some(
+        (points.length !== annotation.points.length ||
+          points.some(
           (p, i) =>
             p.x !== annotation.points[i]?.x || p.y !== annotation.points[i]?.y,
-        )
+          ))
       )
         this._setPoints(annotation, points)
     }

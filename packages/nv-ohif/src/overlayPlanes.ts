@@ -21,7 +21,18 @@ export async function refreshOverlayPlanes(
   if (!file) return
   const on = toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'
   if (on && !nv.drawingVolume) {
-    if (await nv.loadDrawing(file)) shown.add(nv)
+    if (!(await nv.loadDrawing(file))) return
+    if (
+      planes.get(nv)?.[0] === file &&
+      toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'
+    ) {
+      shown.add(nv)
+      return
+    }
+    // Superseded mid-load (another image, or the tool turned off): drop it
+    // and show what holds now.
+    nv.closeDrawing()
+    return refreshOverlayPlanes(nv, em, toolGroupId)
   } else if (!on && shown.has(nv)) {
     nv.closeDrawing()
     shown.delete(nv)

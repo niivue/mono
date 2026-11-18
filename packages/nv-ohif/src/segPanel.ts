@@ -46,6 +46,7 @@ interface CstSegmentation {
   addSegmentations(input: unknown[]): void
   removeSegmentationRepresentations(viewportId: string, s: object): void
   state: {
+    removeColorLUT(index: number): void
     getSegmentation(
       id: string,
     ): { segments: Record<string, Segment> } | undefined
@@ -351,12 +352,8 @@ export function startSegPanel(
       | undefined
     if (added?.representationData) delete added.representationData[LABELMAP]
   }
-  addRepresentation(
-    cst,
-    viewportId,
-    segmentationId,
-    cst.config.color.addColorLUT(lut),
-  )
+  const lutIndex = cst.config.color.addColorLUT(lut)
+  addRepresentation(cst, viewportId, segmentationId, lutIndex)
 
   const specifier = { segmentationId, type: LABELMAP }
   const colormapName = `seg-panel-${viewportId}`
@@ -529,6 +526,8 @@ export function startSegPanel(
     // The segmentation stays, as OHIF leaves its own: removing it makes OHIF
     // strip the SEG display set from every viewport that hangs it.
     cst.removeSegmentationRepresentations(viewportId, { segmentationId })
+    // Each start adds one: without this, toggling a SEG grows cornerstone's LUT list.
+    cst.state.removeColorLUT(lutIndex)
   }
 }
 

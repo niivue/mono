@@ -90,6 +90,8 @@ function host() {
   type Seg = { segments: Record<string, object> }
   const segs = new Map<string, Seg>()
   const reps = new Map<string, object>()
+  const luts = new Set<number>()
+  let lutCount = 0
   const listeners = new Set<(e: { segmentationId?: string }) => void>()
   const memos: Array<{ restoreMemo: (undo?: boolean) => void }> = []
   const segmentation = {
@@ -100,6 +102,7 @@ function host() {
       s: { segmentationId: string },
     ) => reps.delete(vp + s.segmentationId),
     state: {
+      removeColorLUT: (i: number) => luts.delete(i),
       getSegmentation: (id: string) => segs.get(id),
       getSegmentationRepresentation: (
         vp: string,
@@ -108,7 +111,10 @@ function host() {
     },
     config: {
       color: {
-        addColorLUT: () => 0,
+        addColorLUT: () => {
+          luts.add(++lutCount)
+          return lutCount
+        },
         getSegmentIndexColor: () => [255, 0, 0, 255],
       },
       style: { getStyle: () => ({}) },
@@ -160,7 +166,7 @@ function host() {
     servicesManager: { services: { segmentationService: service } },
     extensionManager,
   } as never
-  return { managers, memos, segs }
+  return { managers, memos, segs, luts }
 }
 
 async function viewer(dims = [2, 2, 1], srow = IDENTITY) {
@@ -204,6 +210,22 @@ describe('segmentation editing', () => {
     unregisterNiivue('created')
     nv.destroy()
     expect(niivueSegmentationPane(next)).toBeUndefined()
+  })
+
+  test('a closed panel removes its colour LUT', async () => {
+    const { managers, luts } = host()
+    const nv = await viewer()
+    registerNiivue('lut', nv)
+    updateNiivueViewport('lut', {
+      displaySets: [{ displaySetInstanceUID: 'a' }],
+    })
+    getSegCommandDefinitions(managers).createLabelmapForViewport.commandFn({
+      viewportId: 'lut',
+    })
+    expect(luts.size).toBe(1)
+    unregisterNiivue('lut')
+    nv.destroy()
+    expect(luts.size).toBe(0)
   })
 
   test('volume_onAShearedGrid_isTheAffineDeterminant', async () => {

@@ -92,7 +92,6 @@ function host(style: object = {}, color = [255, 0, 0, 255]) {
   const segs = new Map<string, Seg>()
   const reps = new Map<string, object>()
   const luts = new Set<number>()
-  let lutCount = 0
   const listeners = new Set<(e: { segmentationId?: string }) => void>()
   const memos: Array<{ restoreMemo: (undo?: boolean) => void }> = []
   const segmentation = {
@@ -104,6 +103,8 @@ function host(style: object = {}, color = [255, 0, 0, 255]) {
     ) => reps.delete(vp + s.segmentationId),
     state: {
       removeColorLUT: (i: number) => luts.delete(i),
+      // Index 0 is cornerstone's default LUT.
+      getColorLUT: (i: number) => i === 0 || luts.has(i),
       getSegmentation: (id: string) => segs.get(id),
       getSegmentationRepresentation: (
         vp: string,
@@ -112,9 +113,9 @@ function host(style: object = {}, color = [255, 0, 0, 255]) {
     },
     config: {
       color: {
-        addColorLUT: () => {
-          luts.add(++lutCount)
-          return lutCount
+        addColorLUT: (_: unknown, i: number) => {
+          luts.add(i)
+          return i
         },
         getSegmentIndexColor: () => color,
       },
@@ -213,20 +214,23 @@ describe('segmentation editing', () => {
     expect(niivueSegmentationPane(next)).toBeUndefined()
   })
 
-  test('a closed panel removes its colour LUT', async () => {
+  test('a closed panel removes its colour LUT and the next reuses its index', async () => {
     const { managers, luts } = host()
-    const nv = await viewer()
-    registerNiivue('lut', nv)
-    updateNiivueViewport('lut', {
-      displaySets: [{ displaySetInstanceUID: 'a' }],
-    })
-    getSegCommandDefinitions(managers).createLabelmapForViewport.commandFn({
-      viewportId: 'lut',
-    })
-    expect(luts.size).toBe(1)
-    unregisterNiivue('lut')
-    nv.destroy()
-    expect(luts.size).toBe(0)
+    const used: number[][] = []
+    for (let i = 0; i < 3; i++) {
+      const nv = await viewer()
+      registerNiivue('lut', nv)
+      updateNiivueViewport('lut', {
+        displaySets: [{ displaySetInstanceUID: 'a' }],
+      })
+      getSegCommandDefinitions(managers).createLabelmapForViewport.commandFn({
+        viewportId: 'lut',
+      })
+      used.push([...luts])
+      unregisterNiivue('lut')
+      nv.destroy()
+    }
+    expect([used, luts.size]).toEqual([[[1], [1], [1]], 0])
   })
 
   test('outline only draws a faint segment with an opaque colour', async () => {

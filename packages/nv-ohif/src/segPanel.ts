@@ -47,6 +47,7 @@ interface CstSegmentation {
   removeSegmentationRepresentations(viewportId: string, s: object): void
   state: {
     removeColorLUT(index: number): void
+    getColorLUT(index: number): unknown
     getSegmentation(
       id: string,
     ): { segments: Record<string, Segment> } | undefined
@@ -57,7 +58,7 @@ interface CstSegmentation {
   }
   config: {
     color: {
-      addColorLUT(lut: Color[]): number
+      addColorLUT(lut: Color[], index?: number): number
       getSegmentIndexColor(
         viewportId: string,
         id: string,
@@ -352,7 +353,10 @@ export function startSegPanel(
       | undefined
     if (added?.representationData) delete added.representationData[LABELMAP]
   }
-  const lutIndex = cst.config.color.addColorLUT(lut)
+  // removeColorLUT leaves a hole and addColorLUT appends by default: fill the first hole.
+  let freeIndex = 0
+  while (cst.state.getColorLUT(freeIndex)) freeIndex++
+  const lutIndex = cst.config.color.addColorLUT(lut, freeIndex)
   addRepresentation(cst, viewportId, segmentationId, lutIndex)
 
   const specifier = { segmentationId, type: LABELMAP }

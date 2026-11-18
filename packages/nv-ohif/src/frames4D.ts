@@ -22,11 +22,12 @@ const ARRAYS: Record<number, View> = {
 
 /**
  * Split a 4D uncompressed NIfTI-1 (little-endian, as dcm2niix writes) into a
- * 3D file of frame 0 and a frame source over all frames. Null when `image` is
- * not 4D.
+ * 3D file of frame 0 and a frame source over all frames, grouped by `series`.
+ * Null when `image` is not 4D.
  */
 export async function split4D(
   image: File,
+  series?: string,
 ): Promise<{ image: File; frames: VolumeFrameSource } | null> {
   const buf = await image.arrayBuffer()
   const view = new DataView(buf)
@@ -52,10 +53,20 @@ export async function split4D(
         Math.floor((buf.byteLength - offset) / frameBytes),
       ),
       frame: 0,
-      group: {},
+      group: seriesGroup(series),
       load: async (f) => new View(buf, offset + f * frameBytes, voxels),
     },
   }
+}
+
+// One group per display set: a reconversion (the conversion cache keeps four)
+// must rejoin the panes already showing that series.
+const groups = new Map<string, object>()
+const seriesGroup = (series: string | undefined): object => {
+  if (series === undefined) return {}
+  const group = groups.get(series) ?? {}
+  groups.set(series, group)
+  return group
 }
 
 /** The frame-source volume (base or overlay) a pane shows, if any. */

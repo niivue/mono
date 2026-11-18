@@ -341,3 +341,12 @@ it('unmounting the last 4D pane notifies the panel', async () => {
   off()
   expect(shown).toBeUndefined()
 })
+
+// The conversion cache evicts: a reconversion must rejoin the series' panes.
+it('a reconverted series rejoins its frame group', async () => {
+  const group = async (series: string) =>
+    (await split4D(nifti4D(), series))?.frames.group
+  const first = await group('ds1')
+  expect(await group('ds1')).toBe(first)
+  expect(await group('ds2')).not.toBe(first)
+})

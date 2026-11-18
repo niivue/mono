@@ -187,7 +187,7 @@ async function convertUnshared(
     notes.unshift(
       `Showing ${shown.stem}; also converted: ${unshown.map((s) => s.stem).join(', ')}.`,
     )
-  const split = await split4D(shown.image)
+  const split = await split4D(shown.image, ds.displaySetInstanceUID)
   return {
     image: split?.image ?? shown.image,
     ...(split && { frames: split.frames }),

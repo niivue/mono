@@ -19,7 +19,8 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
     this._maxSnapshots = maxSnapshots
   }
 
-  push(snapshot: T): void {
+  /** Record a step; returns its sequence number. */
+  push(snapshot: T): number {
     const seq = ++this._seq
     this._undoStack.push({ seq, snapshot: structuredClone(snapshot) })
     if (this._undoStack.length > this._maxSnapshots) {
@@ -27,6 +28,7 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
     }
     this._redoStack.length = 0
     this.onPush?.(seq)
+    return seq
   }
 
   undo(current: T): T | null {
@@ -42,6 +44,11 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
     if (!top) return null
     this._undoStack.push({ seq: top.seq, snapshot: structuredClone(current) })
     return top.snapshot
+  }
+
+  /** Drop step `seq` if it is still on top (an edit abandoned after its push). */
+  discard(seq: number): void {
+    if (this.undoTop === seq) this._undoStack.pop()
   }
 
   clear(): void {

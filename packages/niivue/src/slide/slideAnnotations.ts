@@ -281,9 +281,12 @@ export class NVSlideAnnotations extends EventTarget {
       points.length < SLIDE_ANNOTATION_MIN_POINTS[annotation.tool]
     )
       return false
-    this._history.push(this.list())
-    // An annotationHistoryPush listener may have removed it.
-    if (this._items.get(id) !== annotation) return false
+    const seq = this._history.push(this.list())
+    // An annotationHistoryPush listener may have removed it: no edit, no step.
+    if (this._items.get(id) !== annotation) {
+      this._history.discard(seq)
+      return false
+    }
     this._setPoints(annotation, points)
     return true
   }

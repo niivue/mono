@@ -136,5 +136,7 @@ describe('NVSlideAnnotations.setPoints', () => {
     ]
     expect(a.setPoints(id, moved)).toBe(false)
     expect(changed).toEqual([])
+    // Nor an undo step that would revert nothing.
+    expect(a.annotationUndoTop).toBeUndefined()
   })
 })

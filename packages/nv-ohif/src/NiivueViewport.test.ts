@@ -180,6 +180,23 @@ test('a series opens in its acquired plane unless the protocol names a view', ()
   expect(open('multiplanar', false)).toBe(SLICE_TYPE.AXIAL)
 })
 
+// #864 r5: the calls after a direct NIfTI load and on a same-series protocol
+// change, on a loaded NiiVue (four axial slices: acquired plane axial).
+test('a loaded series follows the protocol view, acquisition included', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const nv = new NiiVue(DEFAULT_OPTIONS)
+  const open = (orientation: string) =>
+    (nv.sliceType = openingSliceType(nv, { orientation }, undefined))
+  open('acquisition') // the view effect, before any volume is open
+  await nv.loadVolumes([{ url: new File([fourSlices()], 'axial.nii') }])
+  open('acquisition') // the direct load's call
+  expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
+  open('coronal') // a protocol change for the same series
+  expect(nv.sliceType).toBe(SLICE_TYPE.CORONAL)
+  open('acquisition')
+  expect(nv.sliceType).toBe(SLICE_TYPE.AXIAL)
+})
+
 test("a linked pane's window readout follows its peer's window", async () => {
   // The VOI group copies the window onto the peer's volume showing the same
   // display set (viewportSync.ts); its volumeUpdated drives the W/L readout.

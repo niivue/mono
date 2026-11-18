@@ -1095,7 +1095,10 @@ function renderOverlayCache(
   if (uniforms.overlayOpacity)
     gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity)
   if (uniforms.keepColormapAlpha)
-    gl.uniform1i(uniforms.keepColormapAlpha, keepColormapAlpha ? 1 : 0)
+    gl.uniform1i(
+      uniforms.keepColormapAlpha,
+      keepColormapAlpha || nvimage.isColormapAlphaKept ? 1 : 0,
+    )
   if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, mtx)
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)
@@ -1452,7 +1455,10 @@ export function overlay2Texture(
   if (uniforms.overlayOpacity)
     gl.uniform1f(uniforms.overlayOpacity, u.overlayOpacity)
   if (uniforms.keepColormapAlpha)
-    gl.uniform1i(uniforms.keepColormapAlpha, keepColormapAlpha ? 1 : 0)
+    gl.uniform1i(
+      uniforms.keepColormapAlpha,
+      keepColormapAlpha || nvimage.isColormapAlphaKept ? 1 : 0,
+    )
   if (uniforms.mtx) gl.uniformMatrix4fv(uniforms.mtx, false, mtx)
   if (uniforms.isLabel) gl.uniform1i(uniforms.isLabel, u.isLabel)
   if (uniforms.labelMin) gl.uniform1f(uniforms.labelMin, u.labelMin)

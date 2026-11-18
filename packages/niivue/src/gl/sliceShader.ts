@@ -54,6 +54,7 @@ uniform int isColormapAlphaOn2D;  // >0 = background's baked colormap alpha scal
 uniform float numVolumes;  // number of loaded volumes (1 = no overlay, 2+ = has overlay)
 uniform highp sampler3D drawing;
 uniform float drawRimOpacity;
+uniform float drawRimWidth;
 uniform float numPaqd;
 uniform vec4 paqdUniforms;
 uniform highp sampler3D paqd;
@@ -254,8 +255,9 @@ void main() {
   if (drawColor.a > 0.0) {
     float da = drawColor.a;
     if (drawRimOpacity >= 0.0) {
-      vec3 offsetX = dFdx(volPos);
-      vec3 offsetY = dFdy(volPos);
+      // One probe drawRimWidth pixels out: a region thinner than that may get no rim.
+      vec3 offsetX = dFdx(volPos) * drawRimWidth;
+      vec3 offsetY = dFdy(volPos) * drawRimWidth;
       vec3 L = texture(drawing, volPos - offsetX).rgb;
       vec3 R = texture(drawing, volPos + offsetX).rgb;
       vec3 T = texture(drawing, volPos - offsetY).rgb;

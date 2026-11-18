@@ -889,9 +889,10 @@ async function main() {
   annotateTool.addEventListener('change', () => {
     view.controller.annotationTool = annotateTool.value || null
   })
-  view.controller.annotations.addEventListener('added', (e) =>
-    console.log('annotation', e.detail),
-  )
+  for (const type of ['added', 'changed'])
+    view.controller.annotations.addEventListener(type, (e) =>
+      console.log(`annotation ${type}`, e.detail),
+    )
   const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
     requestRender()

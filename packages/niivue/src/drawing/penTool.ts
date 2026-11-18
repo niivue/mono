@@ -19,6 +19,8 @@ export interface DrawPointParams {
   penShape?: PEN_SHAPE
   penAxCorSag: number
   penOverwrites?: boolean
+  // NIfTI-style [_, mmX, mmY, mmZ] (RAS) for PEN_SHAPE.SPHERE; default 1 mm.
+  pixDims?: readonly number[]
 }
 
 export interface DrawLineParams {
@@ -31,6 +33,8 @@ export interface DrawLineParams {
   penShape?: PEN_SHAPE
   penAxCorSag: number
   penOverwrites?: boolean
+  // NIfTI-style [_, mmX, mmY, mmZ] (RAS) for PEN_SHAPE.SPHERE; default 1 mm.
+  pixDims?: readonly number[]
 }
 
 interface FloodFillSectionParams {
@@ -73,43 +77,133 @@ export interface DrawSphereParams {
   x: number
   y: number
   z: number
-  radius: number
+  // Voxels: one number is an isotropic radius (floored); a triple gives per-axis
+  // radii (an ellipsoid in voxels, i.e. a ball in mm on anisotropic voxels; 0 on
+  // an axis flattens it to a disc in that plane).
+  radius: number | readonly number[]
   penValue: number
   drawBitmap: Uint8Array
   dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
   penOverwrites: boolean
 }
 
+// Fill bitmap[start..end] (inclusive) with v; skip non-zero voxels when `keep`.
+function fillRun(
+  bmp: Uint8Array,
+  start: number,
+  end: number,
+  v: number,
+  keep: boolean,
+): void {
+  if (!keep) {
+    bmp.fill(v, start, end + 1)
+    return
+  }
+  for (let i = start; i <= end; i++) if (bmp[i] === 0) bmp[i] = v
+}
+
 /**
- * Paint a solid voxel ball of `radius` centred at (x,y,z). Unlike `drawPoint`
- * (a disk on a 2D slice plane), this is a true 3D brush — used when drawing
- * directly on a 3D render (e.g. exploded blocks), where there is no slice plane.
- * radius 0 paints a single voxel. Honors `penOverwrites` (skip non-zero voxels
- * when false and not erasing).
+ * Paint a solid voxel ball centred at integer voxel (x,y,z). Unlike `drawPoint`
+ * (a disk on a 2D slice plane), this is a true 3D brush: the ball pen
+ * (`PEN_SHAPE.SPHERE`), sphere/circle fills, and drawing directly on a 3D render
+ * (e.g. exploded blocks), where there is no slice plane. Radius 0 paints a
+ * single voxel. Honors `penOverwrites` (skip non-zero voxels when false and not
+ * erasing). Walks x-runs clipped to the volume, so no per-voxel bounds test.
  */
 export function drawSphere(params: DrawSphereParams): void {
+  const { x, y, z, radius, penValue, drawBitmap } = params
   const dx = params.dims[1]
   const dy = params.dims[2]
   const dz = params.dims[3]
-  const r = Math.max(0, Math.floor(params.radius))
-  const skip = params.penOverwrites === false && params.penValue !== 0
-  const r2 = r * r
-  for (let kz = -r; kz <= r; kz++) {
-    for (let ky = -r; ky <= r; ky++) {
-      for (let kx = -r; kx <= r; kx++) {
-        if (kx * kx + ky * ky + kz * kz > r2) continue
-        const vx = params.x + kx
-        const vy = params.y + ky
-        const vz = params.z + kz
-        if (vx < 0 || vy < 0 || vz < 0 || vx >= dx || vy >= dy || vz >= dz) {
-          continue
-        }
-        const idx = voxelIndex(vx, vy, vz, dx, dy)
-        if (skip && params.drawBitmap[idx] !== 0) continue
-        params.drawBitmap[idx] = params.penValue
-      }
+  const r = typeof radius === 'number' ? Math.max(0, Math.floor(radius)) : 0
+  const [rx, ry, rz] = typeof radius === 'number' ? [r, r, r] : radius
+  const keep = params.penOverwrites === false && penValue !== 0
+  const iy = Math.floor(ry)
+  const iz = Math.floor(rz)
+  const z1 = Math.min(dz - 1, z + iz)
+  const y0 = Math.max(0, y - iy)
+  const y1 = Math.min(dy - 1, y + iy)
+  for (let vz = Math.max(0, z - iz); vz <= z1; vz++) {
+    const tz = rz > 0 ? ((vz - z) / rz) ** 2 : 0
+    for (let vy = y0; vy <= y1; vy++) {
+      const rest = 1 - tz - (ry > 0 ? ((vy - y) / ry) ** 2 : 0)
+      // 1e-9: keep on-surface voxels that rounding puts a hair outside, e.g.
+      // (0,3,4) at radius 5 gives rest = -5.6e-17.
+      if (rest < -1e-9) continue
+      const hx = Math.floor(rx * Math.sqrt(Math.max(0, rest)) + 1e-9)
+      const x0 = Math.max(0, x - hx)
+      const x1 = Math.min(dx - 1, x + hx)
+      if (x0 > x1) continue
+      const row = (vy + vz * dy) * dx
+      fillRun(drawBitmap, row + x0, row + x1, penValue, keep)
     }
   }
+}
+
+export interface DrawShapeFillParams {
+  shape: PEN_SHAPE
+  // Voxel coordinates (RAS). Circle/sphere: a = centre, b = a point on the
+  // edge. Rectangle: opposite corners, in the plane through a.
+  a: ArrayLike<number>
+  b: ArrayLike<number>
+  // Plane of a circle or rectangle (PEN_SLICE_TYPE); ignored by a sphere.
+  sliceType: number
+  penValue: number
+  drawBitmap: Uint8Array
+  dims: number[] // NIfTI-style [ndim, dimX, dimY, dimZ]
+  pixDims: readonly number[] // NIfTI-style [_, mmX, mmY, mmZ], RAS
+  penOverwrites: boolean
+}
+
+/**
+ * Fill a circle (slice plane), rectangle (slice plane) or sphere. Radii are
+ * measured in mm, so circles and spheres stay round on anisotropic voxels.
+ * Returns the largest per-axis voxel radius (the dirty-box margin around `a`).
+ */
+export function drawShapeFill(p: DrawShapeFillParams): number {
+  const a = [Math.round(p.a[0]), Math.round(p.a[1]), Math.round(p.a[2])]
+  const normal = 2 - p.sliceType // axial -> z, coronal -> y, sagittal -> x
+  if (p.shape === PEN_SHAPE.RECTANGLE) {
+    const lo = [0, 0, 0]
+    const hi = [0, 0, 0]
+    for (let i = 0; i < 3; i++) {
+      const b = i === normal ? a[i] : Math.round(p.b[i])
+      lo[i] = Math.max(0, Math.min(a[i], b))
+      hi[i] = Math.min(p.dims[i + 1] - 1, Math.max(a[i], b))
+    }
+    const dx = p.dims[1]
+    const dy = p.dims[2]
+    const keep = p.penOverwrites === false && p.penValue !== 0
+    if (lo[0] > hi[0]) return 0
+    for (let z = lo[2]; z <= hi[2]; z++) {
+      for (let y = lo[1]; y <= hi[1]; y++) {
+        const row = (y + z * dy) * dx
+        fillRun(p.drawBitmap, row + lo[0], row + hi[0], p.penValue, keep)
+      }
+    }
+    return 0
+  }
+  const isCircle = p.shape === PEN_SHAPE.CIRCLE
+  let r2 = 0
+  for (let i = 0; i < 3; i++) {
+    if (isCircle && i === normal) continue
+    r2 += ((p.b[i] - p.a[i]) * p.pixDims[i + 1]) ** 2
+  }
+  const rMm = Math.sqrt(r2)
+  const radius = [0, 1, 2].map((i) =>
+    isCircle && i === normal ? 0 : rMm / p.pixDims[i + 1],
+  )
+  drawSphere({
+    x: a[0],
+    y: a[1],
+    z: a[2],
+    radius,
+    penValue: p.penValue,
+    drawBitmap: p.drawBitmap,
+    dims: p.dims,
+    penOverwrites: p.penOverwrites,
+  })
+  return Math.max(...radius)
 }
 
 export interface FloodFill3DParams {
@@ -289,6 +383,23 @@ export function drawPoint(params: DrawPointParams): void {
   const y = clampToDimension(inputY, dy)
   const z = clampToDimension(inputZ, dz)
 
+  if (penShape === PEN_SHAPE.SPHERE) {
+    // Diameter: penSize voxels along the finest axis, so the ball is round in mm.
+    const [, sx = 1, sy = 1, sz = 1] = params.pixDims ?? []
+    const r = (penSize * Math.min(sx, sy, sz)) / 2
+    drawSphere({
+      x,
+      y,
+      z,
+      radius: [r / sx, r / sy, r / sz],
+      penValue,
+      drawBitmap,
+      dims,
+      penOverwrites: penOverwrites !== false,
+    })
+    return
+  }
+
   const idx = voxelIndex(x, y, z, dx, dy)
   if (!skip || drawBitmap[idx] === 0) {
     drawBitmap[idx] = penValue
@@ -346,6 +457,7 @@ export function drawLine(params: DrawLineParams): void {
     penShape,
     penAxCorSag,
     penOverwrites,
+    pixDims,
   } = params
 
   const dx = Math.abs(ptA[0] - ptB[0])
@@ -375,6 +487,7 @@ export function drawLine(params: DrawLineParams): void {
     penShape,
     penAxCorSag,
     penOverwrites,
+    pixDims,
   }
 
   if (dx >= dy && dx >= dz) {

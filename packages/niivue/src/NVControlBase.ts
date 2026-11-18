@@ -66,6 +66,7 @@ import {
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
 import { drawingSliceToSVG } from '@/drawing/drawingSvg'
+import { drawShapeFill } from '@/drawing/penTool'
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import { drawUndo, setDrawingBitmap } from '@/drawing/undo'
 import { NVExtensionContext } from '@/extension/context'
@@ -2492,7 +2493,8 @@ export default class NiiVue extends EventTarget {
   }
   /**
    * Footprint of the pen when `drawPenSize` is greater than one: a square
-   * (`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`).
+   * (`PEN_SHAPE.RECTANGLE`, the default), a round brush (`PEN_SHAPE.CIRCLE`) or
+   * a 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm).
    */
   set drawPenShape(v: PEN_SHAPE) {
     this.model.draw.penShape = v
@@ -2551,6 +2553,16 @@ export default class NiiVue extends EventTarget {
   set drawRimOpacity(v: number) {
     this.model.draw.rimOpacity = v
     this.emit('change', { property: 'drawRimOpacity', value: v })
+    this.drawScene()
+  }
+
+  /** Drawing rim width in device pixels (default 1); shown while {@link drawRimOpacity} >= 0. */
+  get drawRimWidth(): number {
+    return this.model.draw.rimWidth
+  }
+  set drawRimWidth(v: number) {
+    this.model.draw.rimWidth = v
+    this.emit('change', { property: 'drawRimWidth', value: v })
     this.drawScene()
   }
 
@@ -2717,6 +2729,15 @@ export default class NiiVue extends EventTarget {
   set windowingStep(v: [number, number]) {
     this.model.interaction.windowingStep = v
     this.emit('change', { property: 'windowingStep', value: v })
+  }
+
+  get isWindowingUpperBoundOnly(): boolean {
+    return this.model.interaction.isWindowingUpperBoundOnly
+  }
+  /** See {@link InteractionConfig.isWindowingUpperBoundOnly}. */
+  set isWindowingUpperBoundOnly(v: boolean) {
+    this.model.interaction.isWindowingUpperBoundOnly = v
+    this.emit('change', { property: 'isWindowingUpperBoundOnly', value: v })
   }
 
   // --- Annotation Properties ---
@@ -7419,6 +7440,7 @@ export default class NiiVue extends EventTarget {
         crosshair: DRAG_MODE.crosshair,
         windowing: DRAG_MODE.windowing,
         crosshairPan: DRAG_MODE.crosshairPan,
+        slice: DRAG_MODE.slice,
       }
       const val = map[mode]
       if (val !== undefined) this.model.interaction.secondaryDragMode = val
@@ -7752,6 +7774,51 @@ export default class NiiVue extends EventTarget {
     this.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
     if (undoResult.drawBitmap)
       setDrawingBitmap(drawingVol, undoResult.drawBitmap)
+  }
+
+  /**
+   * Fill a shape in the drawing with `drawPenValue` as one undo step, honouring
+   * `drawIsFillOverwriting`. World-mm geometry, as from a drag:
+   * `PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the
+   * edge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`
+   * takes opposite corners. A circle or rectangle lies in the `sliceType` plane
+   * through `startMm`. Emits `drawingChanged` (`update`); false without a
+   * drawing.
+   * @example nv1.drawShapeFill(PEN_SHAPE.SPHERE, [0, 0, 0], [0, 0, 20])
+   */
+  drawShapeFill(
+    shape: PEN_SHAPE,
+    startMm: ArrayLike<number>,
+    endMm: ArrayLike<number>,
+    sliceType: number = SLICE_TYPE.AXIAL,
+  ): boolean {
+    const drawingVol = this.model.drawingVolume
+    const vol = this.model.getVolumes()[0]
+    if (!drawingVol || !vol?.dimsRAS || !vol.pixDimsRAS) return false
+    const a = NVTransforms.mm2vox(vol, startMm, true)
+    const b = NVTransforms.mm2vox(vol, endMm, true)
+    this.drawAddUndoBitmap()
+    const radius = drawShapeFill({
+      shape,
+      a,
+      b,
+      sliceType,
+      penValue: this.model.draw.penValue,
+      drawBitmap: getDrawingBitmap(drawingVol),
+      dims: vol.dimsRAS,
+      pixDims: vol.pixDimsRAS,
+      penOverwrites: this.model.draw.isFillOverwriting,
+    })
+    this.markDrawDirty(
+      Math.round(a[0]),
+      Math.round(a[1]),
+      Math.round(a[2]),
+      radius,
+    )
+    this.markDrawDirty(Math.round(b[0]), Math.round(b[1]), Math.round(b[2]))
+    this.refreshDrawing()
+    this.emit('drawingChanged', { action: 'update' })
+    return true
   }
 
   drawUndo(): void {

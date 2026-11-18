@@ -13,6 +13,7 @@ import {
   isClosedSlideTool,
   type SlideAnnotationStats,
   type SlideAnnotationTool,
+  slideAnnotationHandles,
   slideAnnotationOutline,
   slideAnnotationStats,
 } from './slideAnnotations'
@@ -40,7 +41,12 @@ export type SlideOverlaySource = Pick<
   NVSlideController,
   'measurements' | 'activeMeasurement' | 'selection'
 > &
-  Partial<Pick<NVSlideController, 'annotations' | 'draft'>>
+  Partial<
+    Pick<
+      NVSlideController,
+      'annotations' | 'draft' | 'edit' | 'selectedAnnotation'
+    >
+  >
 
 /** What a slide renderer draws over the tiles, in device pixels. */
 export interface SlideOverlayContent {
@@ -49,6 +55,8 @@ export interface SlideOverlayContent {
   segments: number[]
   /** Annotation labels: text with its lower-left corner at x, y. */
   labels: Array<{ x: number; y: number; text: string }>
+  /** The selected annotation's edit handles: x, y, half-size each. */
+  handles: number[]
   box: { x0: number; y0: number; x1: number; y1: number } | null
   scaleBar: {
     x: number
@@ -226,8 +234,22 @@ export function slideOverlayContent(
         text,
       })
   }
-  for (const a of source.annotations?.list() ?? [])
-    shape(a.tool, a.points, a.label, a.stats)
+  const edit = source.edit
+  const handles: number[] = []
+  for (const a of source.annotations?.list() ?? []) {
+    const points = edit?.id === a.id ? edit.points : a.points
+    shape(
+      a.tool,
+      points,
+      a.label,
+      points === a.points
+        ? a.stats
+        : slideAnnotationStats(a.tool, points, spacing),
+    )
+    if (a.id === source.selectedAnnotation)
+      for (const h of slideAnnotationHandles(a.tool, points))
+        handles.push(...toDevice(h), 4 * dpr)
+  }
   const draft = source.draft
   if (draft) {
     // A polygon being clicked is an open path until it closes.
@@ -265,7 +287,15 @@ export function slideOverlayContent(
         thickness: 4 * dpr,
       }
     : null
-  return { rulers, segments, labels, box, scaleBar, style: fullStyle }
+  return {
+    rulers,
+    segments,
+    labels,
+    handles,
+    box,
+    scaleBar,
+    style: fullStyle,
+  }
 }
 
 /** The overlay as line and glyph batches, for either backend's renderers. */
@@ -334,6 +364,15 @@ export function buildSlideOverlay(
       1,
     )
     if (label.count > 0) out.labels.push(label)
+  }
+  // Handles as NiiVue's: white squares edged dark.
+  const h = content.handles
+  for (let i = 0; i < h.length; i += 3) {
+    const [x, y, r] = [h[i] as number, h[i + 1] as number, h[i + 2] as number]
+    out.lines.push(
+      buildLine(x - r - 1, y, x + r + 1, y, 2 * r + 2, [0.2, 0.2, 0.2, 1]),
+      buildLine(x - r, y, x + r, y, 2 * r, [1, 1, 1, 0.9]),
+    )
   }
   // Last: past the line cap, annotations drop before the rulers and the bar.
   const { measureLineColor, measureTextColor, rulerWidth } = content.style

@@ -150,12 +150,14 @@ first such interaction warns). Turn one off before turning the other on.
 `false` stops editing but keeps the drawing visible; see `closeDrawing()`."""
     draw_is_fill_overwriting = traitlets.Bool(None, allow_none=True).tag(sync=True)
     draw_opacity = traitlets.Float(None, allow_none=True).tag(sync=True)
-    draw_pen_shape = traitlets.Enum([0, 1], None, allow_none=True).tag(sync=True)
+    draw_pen_shape = traitlets.Enum([0, 1, 2], None, allow_none=True).tag(sync=True)
     """Footprint of the pen when `drawPenSize` is greater than one: a square
-(`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`)."""
+(`PEN_SHAPE.RECTANGLE`, the default), a round brush (`PEN_SHAPE.CIRCLE`) or
+a 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm)."""
     draw_pen_size = traitlets.Float(None, allow_none=True).tag(sync=True)
     draw_pen_value = traitlets.Float(None, allow_none=True).tag(sync=True)
     draw_rim_opacity = traitlets.Float(None, allow_none=True).tag(sync=True)
+    draw_rim_width = traitlets.Float(None, allow_none=True).tag(sync=True)
     elevation = traitlets.Float(None, allow_none=True).tag(sync=True)
     font_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     font_min_size = traitlets.Float(None, allow_none=True).tag(sync=True)
@@ -203,6 +205,8 @@ off-window crosshair is brought back."""
     is_snap_to_voxel_centers = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_thumbnail_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_view_mode_hot_key_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_windowing_upper_bound_only = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    """See {@link InteractionConfig.isWindowingUpperBoundOnly}."""
     is_yoked_3d_to_2d_zoom = traitlets.Bool(None, allow_none=True).tag(sync=True)
     layout_inset = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
     measure_line_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
@@ -815,6 +819,29 @@ and its volumes alive."""
 
     def draw_scene(self, needs_sync: Any = _UNSET) -> None:
         self.send({"cmd": "drawScene", "args": _make_args(needs_sync)})
+
+    async def draw_shape_fill(self, shape: Any, start_mm: Any, end_mm: Any, slice_type: Any = _UNSET) -> Any:
+        """Fill a shape in the drawing with `drawPenValue` as one undo step, honouring `drawIsFillOverwriting`.
+
+        World-mm geometry, as from a drag:
+        `PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the
+        edge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`
+        takes opposite corners. A circle or rectangle lies in the `sliceType` plane
+        through `startMm`. Emits `drawingChanged` (`update`); false without a
+        drawing.
+
+        Parameters
+        ----------
+        shape : PEN_SHAPE
+        start_mm : ArrayLike<number>
+        end_mm : ArrayLike<number>
+        slice_type : number
+
+        Returns
+        -------
+        boolean
+        """
+        return await self._request("drawShapeFill", _make_args(shape, start_mm, end_mm, slice_type))
 
     def draw_undo(self) -> None:
         self.send({"cmd": "drawUndo", "args": []})

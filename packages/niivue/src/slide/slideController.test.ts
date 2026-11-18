@@ -373,6 +373,43 @@ describe('NVSlideController', () => {
     expect(r.viewports.at(-1)).toMatchObject({ centerX: 50, centerY: 50 })
   })
 
+  // D7-03: slide annotations edit as volume ones do: select, drag a handle,
+  // one undo step on release, a cancelled drag leaves nothing.
+  test('a selected annotation reshapes by its handles, undoably', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'rectangle'
+    r.fire('pointerdown', 10, 10)
+    r.fire('pointermove', 40, 30)
+    r.fire('pointerup', 40, 30)
+    const id = r.ctl.annotations.list()[0]?.id ?? ''
+    const log: string[] = []
+    for (const t of ['changed', 'annotationHistoryPush'])
+      r.ctl.annotations.addEventListener(t, () => log.push(t))
+    // A click on the outline selects; the drag from its corner reshapes.
+    r.fire('pointerdown', 25, 10)
+    r.fire('pointerup', 25, 10)
+    expect(r.ctl.selectedAnnotation).toBe(id)
+    expect(r.ctl.annotations.list()).toHaveLength(1)
+    r.fire('pointerdown', 40, 30)
+    r.fire('pointermove', 60, 50)
+    expect(r.ctl.annotations.get(id)?.stats.area).toBeCloseTo(600e-6)
+    r.fire('pointerup', 60, 50)
+    expect(r.ctl.annotations.get(id)?.points).toEqual([
+      { x: 10, y: 10 },
+      { x: 60, y: 50 },
+    ])
+    expect(r.ctl.annotations.get(id)?.stats.area).toBeCloseTo(2000e-6)
+    expect(log).toEqual(['annotationHistoryPush', 'changed'])
+    r.fire('pointerdown', 60, 50)
+    r.fire('pointermove', 90, 90)
+    r.ctl.cancelGesture()
+    expect(r.ctl.edit).toBeNull()
+    expect(r.ctl.annotations.get(id)?.stats.area).toBeCloseTo(2000e-6)
+    r.ctl.annotations.annotationUndo()
+    expect(r.ctl.annotations.get(id)?.stats.area).toBeCloseTo(600e-6)
+    expect(r.ctl.annotations.annotationUndoTop).toBeUndefined()
+  })
+
   test('annotation tools: drag shapes, click points, polygon closes', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     const added: string[] = []

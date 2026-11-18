@@ -63,10 +63,11 @@ export const DRAG_MODES = {
   crosshair: 8,
   windowing: 9,
   crosshairPan: 10,
+  slice: 11,
 } as const
 
 /** NiiVue's `PEN_SHAPE`. */
-export const PEN_SHAPES = { rectangle: 0, circle: 1 } as const
+export const PEN_SHAPES = { rectangle: 0, circle: 1, sphere: 2 } as const
 
 /** NiiVue's `VOLUME_RENDER_MODE`. */
 export const RENDER_MODES = {
@@ -250,6 +251,10 @@ export const SETTINGS: readonly Setting[] = [
   bool('isPanFollowingCrosshair', 'Whether the 2D pan follows the crosshair.'),
   bool('isSnapToVoxelCenters', 'Whether the crosshair snaps to voxel centres.'),
   bool('isYoked3DTo2DZoom', 'Whether zooming a 2D tile zooms the render too.'),
+  bool(
+    'isWindowingUpperBoundOnly',
+    'Whether a windowing drag moves only the upper bound (PET).',
+  ),
   bool('isDragDropEnabled', 'Whether files dropped on the canvas are loaded.'),
   bool('isViewModeHotKeyEnabled', 'Whether the V key cycles the view mode.'),
   bool(
@@ -349,6 +354,7 @@ export const SETTINGS: readonly Setting[] = [
       max: 1,
     },
   ),
+  num('drawRimWidth', 'The width of that rim, in device pixels.', { min: 0 }),
   int('drawPenValue', 'The label the pen draws; 0 erases.', { min: 0 }),
   int('drawPenSize', 'The width of the pen, in voxels.', { min: 1 }),
   setting('drawPenShape', 'enum', 'The shape of the pen.', {

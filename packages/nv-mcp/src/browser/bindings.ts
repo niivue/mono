@@ -173,6 +173,7 @@ const VOLUME_PROPS: Record<
   colorbar: { field: 'isColorbarVisible', shape: 'boolean' },
   legend: { field: 'isLegendVisible', shape: 'boolean' },
   nearest: { field: 'isNearestInterpolation', shape: 'boolean' },
+  colormap_alpha: { field: 'isColormapAlphaKept', shape: 'boolean' },
   transparent_below_cal_min: {
     field: 'isTransparentBelowCalMin',
     shape: 'boolean',

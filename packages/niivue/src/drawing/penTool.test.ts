@@ -4,6 +4,7 @@ import {
   clampToDimension,
   drawLine,
   drawPoint,
+  drawShapeFill,
   drawSphere,
   floodFill3D,
   floodFillSection,
@@ -89,6 +90,65 @@ describe('drawSphere', () => {
     })
     expect(bmp[idx(2, 2, 2)]).toBe(9) // preserved
     expect(bmp[idx(1, 2, 2)]).toBe(3) // empty neighbour painted
+  })
+
+  test('radius 5 keeps exact surface voxels such as (0,3,4)', () => {
+    const bmp = new Uint8Array(11 ** 3)
+    drawSphere({
+      ...{ x: 5, y: 5, z: 5, radius: 5, penValue: 1, drawBitmap: bmp },
+      ...{ dims: [3, 11, 11, 11], penOverwrites: true },
+    })
+    // 515 lattice points satisfy x² + y² + z² <= 25
+    expect(bmp.reduce((a, b) => a + b, 0)).toBe(515)
+    expect(bmp[voxelIndex(5, 8, 9, 11, 11)]).toBe(1)
+  })
+})
+
+describe('3D ball pen and shape fills', () => {
+  const dims = [3, 11, 11, 11]
+  const idx = (x: number, y: number, z: number) => voxelIndex(x, y, z, 11, 11)
+  const count = (b: Uint8Array) => b.reduce((n, v) => n + (v ? 1 : 0), 0)
+
+  test('SPHERE pen is round in mm on anisotropic voxels', () => {
+    const bmp = new Uint8Array(11 ** 3)
+    // 5 voxels of 1 mm wide: radius 2.5 mm = 2.5 voxels in x/y, 1 slice in z.
+    drawPoint({
+      ...{ x: 5, y: 5, z: 5, penValue: 1, drawBitmap: bmp, dims },
+      penSize: 5,
+      penShape: PEN_SHAPE.SPHERE,
+      penAxCorSag: PEN_SLICE_TYPE.AXIAL,
+      pixDims: [3, 1, 1, 2.5],
+    })
+    expect(bmp[idx(7, 5, 5)]).toBe(1)
+    expect(bmp[idx(8, 5, 5)]).toBe(0)
+    expect(bmp[idx(5, 5, 6)]).toBe(1) // 2.5 mm above: on the surface
+    expect(bmp[idx(6, 5, 6)]).toBe(0)
+    expect(bmp[idx(5, 5, 7)]).toBe(0)
+    // 21-voxel disc (2D circle pen of size 5) on z=5, one voxel on z=4 and z=6.
+    expect(count(bmp)).toBe(23)
+  })
+
+  test('circle and rectangle fills stay in the slice plane', () => {
+    const fill = (shape: PEN_SHAPE, b: number[]) => {
+      const bmp = new Uint8Array(11 ** 3)
+      drawShapeFill({
+        ...{ shape, a: [5, 5, 5], b, penValue: 2, drawBitmap: bmp, dims },
+        sliceType: PEN_SLICE_TYPE.CORONAL,
+        pixDims: [3, 1, 1, 2],
+        penOverwrites: true,
+      })
+      return bmp
+    }
+    // Radius 4 mm (edge point off-plane in y is ignored): 4 voxels in x, 2 in z.
+    const circle = fill(PEN_SHAPE.CIRCLE, [9, 8, 5])
+    expect(circle[idx(9, 5, 5)]).toBe(2)
+    expect(circle[idx(5, 5, 7)]).toBe(2)
+    expect(circle[idx(5, 5, 8)]).toBe(0)
+    expect(circle[idx(5, 6, 5)]).toBe(0)
+    // Corner b's y is replaced by a's: a 3 x 4 voxel patch on y = 5.
+    const rect = fill(PEN_SHAPE.RECTANGLE, [7, 9, 2])
+    expect(count(rect)).toBe(12)
+    expect(rect[idx(7, 5, 2)]).toBe(2)
   })
 })
 

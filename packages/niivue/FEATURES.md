@@ -50,6 +50,7 @@ Source of truth: `packages/niivue/src/index.ts` (package exports),
 | `recalculateCalMinMax(volumeIndex, frame?, percentiles?)` | Method | Yes | Reset window/level from data; `percentiles` `[low, high]` (default `[2, 98]`) | "Auto window" button |
 | `volumeHistogram(volumeIndex, { bins?, frame? })` | Method | No | Counts with `coverage` (`volume`, a streamed volume's coarsest `level`, or a `sample` crop), cached per generation | Histogram widget |
 | `setVolume(i, { selectedLabels })` | Method | Yes | Highlight label IDs; the other labels draw at a quarter alpha (2D, 3D, cinematic) | |
+| `setVolume(i, { isColormapAlphaKept })` | Method | Yes | Overlay keeps its colormap's per-entry alpha (an opacity ramp) instead of opaque; 2D and 3D, both backends | |
 | Streamed readout | — | — | A streamed volume reads exact values from its decoded bricks; where none is decoded it reads the coarse floor, flagged `approximate` in `locationChange` values (`~` in the string) | |
 | `volumes` | Prop (get) | No | `readonly NVImage[]` | Observable list for SwiftUI |
 | `useLoader(…)` | Method | No | Register custom format reader | Usually unused from native |
@@ -204,15 +205,16 @@ The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volum
 | `drawIsEnabled` | Prop | No | Pen on/off |
 | `drawPenValue` | Prop | No | Label index |
 | `drawPenSize` | Prop | No | |
-| `drawPenShape` | Prop | No | `PEN_SHAPE.RECTANGLE` (default) or `PEN_SHAPE.CIRCLE` brush footprint |
+| `drawPenShape` | Prop | No | `PEN_SHAPE.RECTANGLE` (default), `PEN_SHAPE.CIRCLE` brush footprint, or `PEN_SHAPE.SPHERE` 3D ball (round in mm) |
 | `drawIsFillOverwriting` | Prop | No | |
-| `drawOpacity`, `drawRimOpacity` | Prop | No | |
+| `drawOpacity`, `drawRimOpacity`, `drawRimWidth` | Prop | No | Rim width in device pixels |
 | `drawColormap` | Prop | No | Label colormap with IDs 0..255; throws otherwise |
 | `drawingVolume` | Prop (get/set) | No | `NVImage \| null` |
 | `drawingColormaps` | Prop (get) | No | Label colormaps with IDs 0..255 |
 | `createEmptyDrawing()` | Method | No | |
 | `closeDrawing()` | Method | No | Destroys drawingVolume |
 | `drawUndo()` | Method | No | Circular undo buffer |
+| `drawShapeFill(shape, startMm, endMm, sliceType?)` | Method | No | Circle/rectangle (slice plane) or sphere from mm drag points; one undo step |
 | `refreshDrawing()` | Method | No | Force GPU upload |
 | `saveDrawing(filename?)` | Method | Yes | Returns `Uint8Array` or triggers download |
 | `loadDrawing(…)` | Method | Yes | |
@@ -254,9 +256,10 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 
 | Feature | Kind | Notes |
 |---|---|---|
-| `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)`, `crosshairPan(10)` (click sets crosshair, drag past 4 CSS px pans) |
+| `primaryDragMode`, `secondaryDragMode` | Prop | `DRAG_MODE` enum: `none(0)`, `contrast(1)`, `measurement(2)`, `pan(3)`, `slicer3D(4)`, `callbackOnly(5)`, `roiSelection(6)`, `angle(7)`, `crosshair(8)`, `windowing(9)`, `crosshairPan(10)` (click sets crosshair, drag past 4 CSS px pans), `slice(11)` (vertical drag steps slices like the wheel) |
 | `setDragMode(modeOrString)` | Method | Convenience |
 | `isSnapToVoxelCenters` | Prop | |
+| `windowingStep`, `isWindowingUpperBoundOnly` | Prop | Windowing drag gain `[width, center]`; upper-bound-only moves just calMax (PET) |
 | `pickAt(x, y, { moveCrosshair? })` | Method | Depth-pick a canvas pixel as a double-click does; on a channel stack any drawn channel answers |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |

@@ -11,6 +11,7 @@
  */
 
 import type { RegionSummary } from '../protocol'
+import type { SlideAnnotationTool } from '../views'
 import type { HostedControls } from './controls'
 import type { DataPalette } from './data'
 
@@ -972,6 +973,30 @@ export interface NiiVueHost {
   data?: DataPalette
   /** `@niivue/nv-ext-tile/zarr`, typically `() => import('@niivue/nv-ext-tile/zarr')`; a page without it declines `load_ome_zarr`. */
   omeZarr?: () => Promise<OmeZarrLoaders>
+  /** A slide viewer's annotations (NiiVue's `NVSlideController.annotations`); a page without them declines the slide annotation tools. */
+  slideAnnotations?: SlideAnnotations
+}
+
+/** A slide annotation, as NiiVue's `SlideAnnotation`: points in slide base pixels. */
+export interface SlideAnnotation {
+  id: string
+  tool: SlideAnnotationTool
+  points: { x: number; y: number }[]
+  label: string
+  stats: { unit: string; length?: number; area?: number; perimeter?: number }
+}
+
+/** NiiVue's `NVSlideAnnotations`, as the tools use it. */
+export interface SlideAnnotations {
+  list(): SlideAnnotation[]
+  add(
+    tool: SlideAnnotationTool,
+    points: readonly { x: number; y: number }[],
+    label?: string,
+  ): SlideAnnotation | null
+  remove(id: string): boolean
+  setLabel(id: string, label: string): boolean
+  clear(): void
 }
 
 /** A slide plane channel, as NiiVue's `NVChannel`; a default bound is NaN. */

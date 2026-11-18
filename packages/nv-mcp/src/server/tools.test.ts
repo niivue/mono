@@ -199,6 +199,7 @@ describe('core tool schemas', () => {
     expect(required('load_signal')).toEqual(['url'])
     expect(required('edit_drawing')).toEqual(['action'])
     expect(required('edit_annotations')).toEqual(['action'])
+    expect(required('edit_slide_annotations')).toEqual(['action'])
     expect(required('edit_measurements')).toEqual(['action'])
     expect(required('save')).toEqual(['what'])
     expect(required('sample_slide')).toEqual(['x', 'y'])

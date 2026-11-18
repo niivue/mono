@@ -19,20 +19,6 @@ it('largest bidirectional: farthest pair, then widest perpendicular chord', () =
   expect(largestBidirectional(img, [9, 9, 2], (v) => v, 3, 2)).toBeUndefined()
 })
 
-// Only in-plane edges enter the O(n^2) search: a 5x5x3 block has 16 edge
-// voxels per slice, while a 6-neighbour surface would add the 9 interior
-// voxels of each end slice.
-it('largest bidirectional: through-plane faces are not edges', () => {
-  const img = new Uint8Array(5 * 5 * 3).fill(1)
-  let calls = 0
-  const vox2mm = (v: [number, number, number]) => {
-    calls++
-    return v
-  }
-  largestBidirectional(img, [5, 5, 3], vox2mm, 1, 2)
-  expect(calls).toBe(4 + 16 * 3)
-})
-
 // A volume origin off a multiple of the slice step keeps the endpoints on
 // their voxel-centre plane.
 it('largest bidirectional: slabs follow the volume origin', () => {
@@ -62,4 +48,30 @@ it('largest bidirectional: binned by the in-plane step', () => {
   )
   const [, , c, d] = ends ?? []
   expect(c && d && Math.hypot(c[0] - d[0], c[1] - d[1])).toBe(1)
+})
+
+// Review of #863: on an oblique anisotropic grid (spacing 1,1,5; 20 degree
+// tilt about y) projecting surface voxels onto the world plane put the major
+// endpoints outside the segment (nearest voxels (8,2,1), (8,12,1): label 0).
+it('largest bidirectional keeps every endpoint inside an oblique segment', () => {
+  const n = 15
+  const img = new Uint8Array(n * n * 3)
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++)
+      if ((x - 7) ** 2 + (y - 7) ** 2 <= 25) img[x + n * (y + n)] = 1
+  const c = Math.cos(Math.PI / 9)
+  const s = Math.sin(Math.PI / 9)
+  const vox2mm = ([x, y, z]: [number, number, number]): [
+    number,
+    number,
+    number,
+  ] => [c * x - 5 * s * z, y, s * x + 5 * c * z]
+  const ends = largestBidirectional(img, [n, n, 3], vox2mm, 1, 2)
+  expect(ends).toBeDefined()
+  for (const [x, y, z] of ends ?? []) {
+    const [i, j, k] = [c * x + s * z, y, (-s * x + c * z) / 5].map(
+      Math.round,
+    ) as [number, number, number]
+    expect(img[i + n * (j + n * k)]).toBe(1)
+  }
 })

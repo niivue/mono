@@ -5,6 +5,8 @@ import { annotationFromRow } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
 
 type Vec3 = [number, number, number]
+type Axis = 0 | 1 | 2
+const AXES = [0, 1, 2] as const
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -19,18 +21,19 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 ]
 
 /**
- * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing. The
- * segment's edge voxels (an in-plane 4-neighbour outside it; the voxel axis
- * nearest `depth` is through-plane) are grouped into slabs
- * one voxel thick across world (RAS mm) axis `depth`, the normal of the view's
- * plane, and projected onto their slab's plane: on an oblique grid a voxel
- * slice is not a world plane, which NiiVue's annotations lie on. In each slab
- * the major axis is the farthest pair; the minor is the widest chord
- * perpendicular to it (points binned along the major by one voxel). Returns
- * [major start, major end, minor start, minor end] (RAS mm) of the slab with
- * the longest major, or undefined without voxels.
- * ponytail: O(n^2) farthest pair per slab; a convex hull first if a large
- * segment makes it slow.
+ * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing. NiiVue's
+ * annotations lie on world (RAS mm) planes across axis `depth`, the normal of
+ * the view's plane, and on an oblique grid a voxel slice is not one: so the
+ * segment is sampled on world planes one voxel apart (a grid at the finest
+ * voxel spacing, aligned to voxel 0, each point testing its nearest voxel), and
+ * each plane's boundary samples (a 4-neighbour outside) are its contour, every
+ * point inside the segment. In each plane the major axis is the farthest pair;
+ * the minor is the widest chord perpendicular to it (points binned along the
+ * major by one voxel). Returns [major start, major end, minor start, minor
+ * end] (RAS mm) of the plane with the longest major, or undefined without
+ * voxels. On an axis-aligned grid the samples are the voxel centres.
+ * ponytail: O(n^2) farthest pair over a plane's contour; a convex hull first
+ * if a large segment makes it slow.
  */
 export function largestBidirectional(
   img: ArrayLike<number>,
@@ -45,48 +48,94 @@ export function largestBidirectional(
     const v: Vec3 = [0, 0, 0]
     v[a] = 1
     return sub(vox2mm(v), o)
-  })
-  // Slab thickness: the voxel step most aligned with the view's normal.
-  const steps = cols.map((c) => Math.abs(c[depth] ?? 0))
+  }) as [Vec3, Vec3, Vec3]
+  // Plane spacing: the voxel step most aligned with the view's normal.
+  const steps = cols.map((c) => Math.abs(c[depth]))
   const dz = Math.max(...steps)
-  // Through-plane neighbours stay out: a 6-neighbour surface puts every voxel
-  // of a segment's end slices into the O(n^2) search (100x slower at r=100).
+  // Grid and chord bins at the in-plane step: a thin slice step would only
+  // oversample the plane.
   const through = steps.indexOf(dz)
-  // Bin along the major by the in-plane step: a thin slice step would split
-  // every chord into single points.
   const bin = Math.min(
     ...cols.filter((_, a) => a !== through).map((c) => Math.hypot(...c)),
   )
+  const [ia, ib] = AXES.filter((a) => a !== depth) as [Axis, Axis]
   const normal: Vec3 = [0, 0, 0]
   normal[depth] = 1
-  const at = (x: number, y: number, z: number) =>
-    x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz
+  // mm -> voxel: the inverse of [cols] (vox2mm is affine).
+  const [c0, c1, c2] = cols
+  const r0 = cross(c1, c2)
+  const r1 = cross(c2, c0)
+  const r2 = cross(c0, c1)
+  const det = dot(c0, r0)
+  if (!det) return undefined
+  const label = (p: Vec3) => {
+    const d = sub(p, o)
+    const x = Math.round(dot(d, r0) / det)
+    const y = Math.round(dot(d, r1) / det)
+    const z = Math.round(dot(d, r2) / det)
+    return x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz
       ? undefined
       : img[x + nx * (y + ny * z)]
-  const slabs = new Map<number, Vec3[]>()
+  }
+  // The segment's world bounds, from its voxel centres.
+  const lo: Vec3 = [Infinity, Infinity, Infinity]
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
   for (let z = 0; z < nz; z++)
     for (let y = 0; y < ny; y++)
       for (let x = 0; x < nx; x++) {
-        if (at(x, y, z) !== value) continue
-        const edge =
-          (through !== 0 &&
-            (at(x - 1, y, z) !== value || at(x + 1, y, z) !== value)) ||
-          (through !== 1 &&
-            (at(x, y - 1, z) !== value || at(x, y + 1, z) !== value)) ||
-          (through !== 2 &&
-            (at(x, y, z - 1) !== value || at(x, y, z + 1) !== value))
-        if (!edge) continue
-        const p = vox2mm([x, y, z])
-        // Slabs centred on voxel planes through the origin, not world zero.
-        const k = Math.round((p[depth] - o[depth]) / dz)
-        p[depth] = o[depth] + k * dz
-        const list = slabs.get(k)
-        if (list) list.push(p)
-        else slabs.set(k, [p])
+        if (img[x + nx * (y + ny * z)] !== value) continue
+        for (const a of AXES) {
+          const v = o[a] + c0[a] * x + c1[a] * y + c2[a] * z
+          if (v < lo[a]) lo[a] = v
+          if (v > hi[a]) hi[a] = v
+        }
       }
+  if (lo[0] > hi[0]) return undefined
+  // Grid steps from voxel 0, half a voxel beyond the centres on every side.
+  const range = (a: Axis, step: number) => [
+    Math.floor((lo[a] - o[a]) / step - 0.5),
+    Math.ceil((hi[a] - o[a]) / step + 0.5),
+  ]
+  const [k0, k1] = range(depth, dz) as [number, number]
+  const [i0, i1] = range(ia, bin) as [number, number]
+  const [j0, j1] = range(ib, bin) as [number, number]
+  const ni = i1 - i0 + 1
+  const nj = j1 - j0 + 1
+  const slabs: Vec3[][] = []
+  const inside = new Uint8Array(ni * nj)
+  for (let k = k0; k <= k1; k++) {
+    const p: Vec3 = [0, 0, 0]
+    p[depth] = o[depth] + k * dz
+    for (let j = 0; j < nj; j++)
+      for (let i = 0; i < ni; i++) {
+        p[ia] = o[ia] + (i0 + i) * bin
+        p[ib] = o[ib] + (j0 + j) * bin
+        inside[i + ni * j] = label(p) === value ? 1 : 0
+      }
+    const pts: Vec3[] = []
+    const isIn = (i: number, j: number) =>
+      i >= 0 && j >= 0 && i < ni && j < nj && inside[i + ni * j] === 1
+    for (let j = 0; j < nj; j++)
+      for (let i = 0; i < ni; i++) {
+        if (!isIn(i, j)) continue
+        if (
+          isIn(i - 1, j) &&
+          isIn(i + 1, j) &&
+          isIn(i, j - 1) &&
+          isIn(i, j + 1)
+        )
+          continue
+        const q: Vec3 = [0, 0, 0]
+        q[depth] = o[depth] + k * dz
+        q[ia] = o[ia] + (i0 + i) * bin
+        q[ib] = o[ib] + (j0 + j) * bin
+        pts.push(q)
+      }
+    if (pts.length > 0) slabs.push(pts)
+  }
   let best: [Vec3, Vec3, Vec3, Vec3] | undefined
   let bestLength = 0
-  for (const pts of slabs.values()) {
+  for (const pts of slabs) {
     let major: [Vec3, Vec3] | undefined
     let length = bestLength
     for (let p = 0; p < pts.length; p++)

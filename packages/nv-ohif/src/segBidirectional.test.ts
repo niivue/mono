@@ -160,3 +160,21 @@ it('largest bidirectional measures on a sheared grid', () => {
     c && d && Math.hypot(c[0] - d[0], c[1] - d[1], c[2] - d[2]),
   ).toBeGreaterThan(0)
 })
+
+// Review of 0c96b432: on an aligned grid with unequal pixels (1 x 2 mm) the
+// grid stepped both axes by 1 mm, sampling outside the voxel centres: a 2x2
+// block measured sqrt(10), not its centres' diagonal sqrt(5).
+it('largest bidirectional samples voxel centres on unequal pixels', () => {
+  const ends = largestBidirectional(
+    new Uint8Array(4).fill(1),
+    [2, 2, 1],
+    ([x, y, z]) => [x, 2 * y, z],
+    1,
+    2,
+  )
+  const [a, b] = ends ?? []
+  expect(a && b && Math.hypot(a[0] - b[0], a[1] - b[1])).toBeCloseTo(
+    Math.sqrt(5),
+    6,
+  )
+})

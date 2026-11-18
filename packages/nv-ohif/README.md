@@ -292,11 +292,25 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
 - **Output choice.** When a series converts to several NIfTI images, the viewport
   shows one: ORIGINAL/PRIMARY (sidecar `ImageType`) first, then magnitude over
   phase/real/imaginary (sidecar `ImageType`, else the `_ph`/`_real`/`_imaginary`
-  stem), the lowest `EchoNumber`, the most voxels, the stem name. A note names
-  the others.
+  stem), the lowest `EchoNumber`, the most voxels, the stem name, among the
+  outputs mapped to the series' instances, else the oriented ones (a surview
+  mixed with orientation-less pages opens on the surview). A note names the
+  others.
+- **Output stack.** Every other mapped output of the shown echo and part,
+  multi-frame ones included, joins a cornerstone-style stack: on the
+  acquisition plane the wheel steps through every image in instance order,
+  switching outputs at an output's end, and `jumpToImage` switches to the
+  output holding the image.
+- **Acquired plane.** A series OHIF marks not reconstructable (unequal slice
+  spacing, orthogonal localizers), or a single slice, opens in its acquired
+  plane rather than multiplanar.
+- **Overlay planes (60xx).** While `ImageOverlayViewer` is Enabled and no SEG
+  holds the drawing, the first overlay plane shows as the pane's drawing,
+  display only (the pen stays off). First plane and first frame only.
 - **Fetching.** Each instance is retrieved whole (WADO-RS RetrieveInstance) when
   the server allows it; otherwise it is rebuilt from `/metadata` plus frames
   1..NumberOfFrames, so enhanced/multi-frame instances convert as one file.
+  Inline Overlay Data is kept; a BulkDataURI overlay is dropped.
 - **Partial conversions.** A nonzero dcm2niix exit that still produced images
   loads the choice with a note (dcm2niix's last error or warning line); no image
   is an error with dcm2niix's log tail.
@@ -304,6 +318,9 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   shows as a NiiVue drawing over it: dcm2niix turns it into a label volume
   colored by each segment's RGB, half-opaque fill under an opaque rim. Hung
   behind a primary series it does not reference, it is noted as not shown.
+  Segment Bidirectional samples the active segment on world planes of the
+  shown view (oblique grids included); `SegmentLabelTool` names the segment
+  under the pointer.
 - **Not converted:** RTSTRUCT, RTPLAN, RTRECORD, PLAN, SR, PR, KO, REG,
   DOC, FID, ECG, HD and AU series (also skipped as overlays). RTDOSE is converted.
 - **One series per viewport.** Only the first display set hung in a viewport
@@ -352,8 +369,10 @@ Support boundary:
   - A slide with no tiled (VOLUME) pyramid levels.
 
 The slide viewport is core's `createSlideView` (WebGL2): pan, the Zoom tool's
-drag, the wheel, and one Length ruler (core's slide overlay, in yellow; a
-sub-millimetre length reads with one decimal, "180.0 um").
+drag, the wheel, and OHIF's Length, Probe, RectangleROI, EllipticalROI,
+CircleROI, PlanarFreehandROI, SplineROI and LivewireContour tools (core's slide
+overlay; a sub-millimetre length reads with one decimal, "180.0 um"),
+reflected into the Measurements panel.
 `mountWsiSlideView(canvas, slide, options)` returns a Promise of the view handle
 (`setTool`, `resetView`, `zoom`, `fit`, `setWindow`, `saveBitmap`, `dispose`,
 `canvas`).

@@ -234,23 +234,22 @@ async function convertUnshared(
   const shown = pick.o
   const sliceFrames = pick.sf
   const others = mapped.filter((m) => m !== pick).map((m) => m.o)
-  const alternates = pick.sf
-    ? mapped
-        // Another echo or image part shares the slices: the stack would swap
-        // volumes on every wheel step. It stays named, as before.
-        .filter(
-          (m) =>
-            m !== pick &&
-            m.isMapped &&
-            outputEcho(m.o) === outputEcho(shown) &&
-            isPart(m.o) === isPart(shown),
-        )
-        .map((m) => ({
-          image: m.o.image,
-          sliceFrames: m.sf,
-          ...overlayPlanesOf(series, m.o.stem),
-        }))
-    : []
+  // Mapped outputs only: a pick without orientation means none is mapped.
+  const alternates = mapped
+    // Another echo or image part shares the slices: the stack would swap
+    // volumes on every wheel step. It stays named, as before.
+    .filter(
+      (m) =>
+        m !== pick &&
+        m.isMapped &&
+        outputEcho(m.o) === outputEcho(shown) &&
+        isPart(m.o) === isPart(shown),
+    )
+    .map((m) => ({
+      image: m.o.image,
+      sliceFrames: m.sf,
+      ...overlayPlanesOf(series, m.o.stem),
+    }))
   // Outputs the stack does not reach are named.
   const unshown = others.filter(
     (o) => !alternates.some((a) => a.image === o.image),

@@ -43,7 +43,10 @@ function sanitizeDataset(source: JsonDataset): JsonDataset {
     // Overlay Data (60xx,3000) inline is an image dcm2niix converts (_ROI<n>).
     // ponytail: inline only; a BulkDataURI overlay is dropped (fetch it if a server sends one).
     if (isOverlayData(tag) && typeof el.InlineBinary === 'string') {
-      out[tag] = { vr: el.vr, Value: [decodeBase64(el.InlineBinary)] }
+      // Malformed base64 drops the overlay, as before, not the series.
+      try {
+        out[tag] = { vr: el.vr, Value: [decodeBase64(el.InlineBinary)] }
+      } catch {}
       continue
     }
     if (el.Value === undefined) continue

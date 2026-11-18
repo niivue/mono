@@ -474,7 +474,13 @@ export function NiivueViewport(props: OhifViewportProps) {
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !ready) return
-    nv.sliceType = initialSliceType(viewportOptionsRef.current)
+    // Before the first load no volume is open, so this is the protocol's own
+    // type; the load then picks the acquired plane.
+    nv.sliceType = openingSliceType(
+      nv,
+      viewportOptionsRef.current,
+      displaySets[0]?.isReconstructable,
+    )
     const view = initialRenderView(viewportOptionsRef.current)
     if (view) [nv.azimuth, nv.elevation] = view
     return joinSyncGroups(

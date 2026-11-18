@@ -20,7 +20,8 @@ export type SlideAnnotationTool =
 /**
  * Physical size in `unit` (mm, area mm^2) from the slide's pixel spacing, or
  * base pixels without it. Open shapes have `length`, closed `area` and
- * `perimeter`, a point none.
+ * `perimeter`, a point none. A self-intersecting path's area is the signed
+ * shoelace sum (a figure eight's lobes subtract).
  */
 export interface SlideAnnotationStats {
   unit: 'mm' | 'px'

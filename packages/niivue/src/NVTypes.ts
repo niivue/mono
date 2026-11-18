@@ -2129,6 +2129,10 @@ export type VectorAnnotation = {
   anchorMM?: [number, number, number]
   polygons: PolygonWithHoles[]
   style: AnnotationStyle
+  /**
+   * Measured when drawn, resized or erased, on the 4D frame displayed then:
+   * not refreshed by setFrame4D.
+   */
   stats?: AnnotationStats
   /** Optional user-entered free-text label shown with the annotation. */
   text?: string
@@ -2204,9 +2208,10 @@ export type AnnotationConfig = {
    * Two-point shapes (line, measure, arrow, rect, ellipse, circle, bidirectional
    * axes) may also be placed click-move-click, as cornerstone's tools are: a
    * click (press and release in place) parks the start; the next press on the
-   * same slice ends the shape where it is released. Drags work as before.
-   * A bidirectional then commits with its long axis, plus an automatic
-   * perpendicular short axis 2/3 as long through its midpoint. A multi-click
+   * same slice ends the shape where it is released. Other drags work as
+   * before; a bidirectional, clicked or dragged, commits with its long axis
+   * plus an automatic perpendicular short axis 2/3 as long through its
+   * midpoint; turn this off to drag a custom short axis. A multi-click
    * contour (spline, live wire) also closes on a click near its first point.
    */
   isClickToPlace: boolean

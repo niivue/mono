@@ -73,8 +73,9 @@ export function largestBidirectional(
             (at(x, y, z - 1) !== value || at(x, y, z + 1) !== value))
         if (!edge) continue
         const p = vox2mm([x, y, z])
-        const k = Math.round(p[depth] / dz)
-        p[depth] = k * dz
+        // Slabs centred on voxel planes through the origin, not world zero.
+        const k = Math.round((p[depth] - o[depth]) / dz)
+        p[depth] = o[depth] + k * dz
         const list = slabs.get(k)
         if (list) list.push(p)
         else slabs.set(k, [p])

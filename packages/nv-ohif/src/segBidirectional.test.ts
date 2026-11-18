@@ -32,3 +32,18 @@ it('largest bidirectional: through-plane faces are not edges', () => {
   largestBidirectional(img, [5, 5, 3], vox2mm, 1, 2)
   expect(calls).toBe(4 + 16 * 3)
 })
+
+// A volume origin off a multiple of the slice step keeps the endpoints on
+// their voxel-centre plane.
+it('largest bidirectional: slabs follow the volume origin', () => {
+  const img = new Uint8Array(8).fill(1)
+  const ends = largestBidirectional(
+    img,
+    [2, 2, 2],
+    ([x, y, z]) => [x, y, 1 + 2 * z],
+    1,
+    2,
+  )
+  for (const p of ends ?? []) expect([1, 3]).toContain(p[2])
+  expect(ends).toBeDefined()
+})

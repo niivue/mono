@@ -2,7 +2,13 @@ import type NiiVue from '@niivue/niivue'
 import { COLORMAP_TYPE, SLICE_TYPE, VOLUME_RENDER_MODE } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { classifyDisplaySet } from './classifyDisplaySet'
-import { initialRenderView, niivueColormapName, voiRange } from './commands'
+import {
+  initialRenderView,
+  niivueColormapName,
+  OVERLAY_COLORMAP,
+  OVERLAY_OPACITY,
+  voiRange,
+} from './commands'
 import { getNiivueEntry } from './niivueRegistry'
 import type {
   OhifCommandsManager,
@@ -135,14 +141,10 @@ export function applyViewportStyle(
   const inverted = isMipInverted(dso)
   canvas.style.filter = inverted ? 'invert(1)' : ''
   const bg = viewportOptions?.background
-  if (bg?.length === 3) {
-    const [r, g, b] = (inverted ? bg.map((c) => 1 - c) : bg) as [
-      number,
-      number,
-      number,
-    ]
-    nv.backgroundColor = [r, g, b, 1]
-  }
+  // A protocol without one returns the reused pane to its default black.
+  const [r = 0, g = 0, b = 0] =
+    bg?.length === 3 ? (inverted ? bg.map((c) => 1 - c) : bg) : []
+  nv.backgroundColor = [r, g, b, 1]
   if (!mip) {
     // Leaving a MIP: the view effect re-sets the slice type and camera.
     if (nv.volumeRenderMode === VOLUME_RENDER_MODE.MAXIMUM)
@@ -229,8 +231,13 @@ export function useHungOverlays(
           ? nv.volumes.findIndex((v) => v.hdr === loaded)
           : -1
         if (loaded && index > 0) {
-          // Already layered (options changed): restyle in place.
-          await nv.setVolume(index, display)
+          // Already layered (options changed): restyle in place, falling back
+          // to a new load's defaults for whatever the protocol no longer sets.
+          await nv.setVolume(index, {
+            colormap: OVERLAY_COLORMAP,
+            opacity: OVERLAY_OPACITY,
+            ...display,
+          })
           if (knee === undefined) knees.delete(loaded)
           else knees.set(loaded, knee)
           continue

@@ -36,7 +36,8 @@ export function historyMemo(
   return libs?.cornerstone?.utilities?.HistoryMemo?.DefaultHistoryMemo
 }
 
-/** A recorder of annotation steps: a NiiVue, or a slide's NVSlideAnnotations. */
+/** A recorder of annotation steps: a NiiVue, or a slide's NVSlideAnnotations
+ * (point edits only: its adds and removes are not steps). */
 type StepSource = Pick<
   NiiVue,
   | 'annotationUndoTop'

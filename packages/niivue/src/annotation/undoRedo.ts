@@ -6,8 +6,9 @@ type Entry<T> = { seq: number; snapshot: T }
 export class AnnotationUndoStack<T = VectorAnnotation[]> {
   private _undoStack: Entry<T>[] = []
   private _redoStack: Entry<T>[] = []
-  // The redo steps the last push cleared, restored if that push is discarded.
+  // What the last push cleared and evicted, restored if that push is discarded.
   private _clearedRedo: Entry<T>[] = []
+  private _evicted: Entry<T> | undefined
   private _maxSnapshots: number
   private _seq = 0
   /**
@@ -25,9 +26,10 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
   push(snapshot: T): number {
     const seq = ++this._seq
     this._undoStack.push({ seq, snapshot: structuredClone(snapshot) })
-    if (this._undoStack.length > this._maxSnapshots) {
-      this._undoStack.shift()
-    }
+    this._evicted =
+      this._undoStack.length > this._maxSnapshots
+        ? this._undoStack.shift()
+        : undefined
     this._clearedRedo = this._redoStack
     this._redoStack = []
     this.onPush?.(seq)
@@ -53,6 +55,7 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
   discard(seq: number): void {
     if (this.undoTop !== seq) return
     this._undoStack.pop()
+    if (this._evicted) this._undoStack.unshift(this._evicted)
     this._redoStack = this._clearedRedo
   }
 
@@ -60,6 +63,7 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
     this._undoStack.length = 0
     this._redoStack.length = 0
     this._clearedRedo = []
+    this._evicted = undefined
   }
 
   get canUndo(): boolean {

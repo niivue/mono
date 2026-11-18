@@ -288,12 +288,14 @@ function boxMap(o: ShapeBoundsUpdate, n: ShapeBoundsUpdate): PointMap | null {
   const oy = Math.min(o.start.y, o.end.y)
   const ow = Math.abs(o.end.x - o.start.x)
   const oh = Math.abs(o.end.y - o.start.y)
-  if (ow === 0 || oh === 0) return null
+  const nw = Math.abs(n.end.x - n.start.x)
+  const nh = Math.abs(n.end.y - n.start.y)
   const nx = Math.min(n.start.x, n.end.x)
   const ny = Math.min(n.start.y, n.end.y)
-  const sx = Math.abs(n.end.x - n.start.x) / ow
-  const sy = Math.abs(n.end.y - n.start.y) / oh
-  // A collapsed box could not be expanded again.
+  // A zero-size axis (a probe) can only move; a collapsed box could not be
+  // expanded again.
+  const sx = ow === 0 ? Number(nw === 0) : nw / ow
+  const sy = oh === 0 ? Number(nh === 0) : nh / oh
   if (sx === 0 || sy === 0) return null
   return (p) => ({ x: nx + (p.x - ox) * sx, y: ny + (p.y - oy) * sy })
 }

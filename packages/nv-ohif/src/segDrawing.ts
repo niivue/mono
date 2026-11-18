@@ -2,6 +2,7 @@ import type NiiVue from '@niivue/niivue'
 import { type RefObject, useEffect, useState } from 'react'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { authHeaders, ohifServices } from './niivueRegistry'
+import { holdOverlayPlanes } from './overlayPlanes'
 import type {
   OhifDisplaySet,
   OhifExtensionManager,
@@ -295,12 +296,19 @@ export function useSegDrawing(
       setNote,
       whenBase: baseInstalledRef.current,
     }
-    return seg.Modality === 'RTSTRUCT'
-      ? startRtDrawing(nv, seg, { ...options, onShown })
-      : startSegDrawing(nv, seg, {
-          ...options,
-          onShown: (segments, restyle) => onShown(segments, undefined, restyle),
-        })
+    const release = holdOverlayPlanes(nv)
+    const stop =
+      seg.Modality === 'RTSTRUCT'
+        ? startRtDrawing(nv, seg, { ...options, onShown })
+        : startSegDrawing(nv, seg, {
+            ...options,
+            onShown: (segments, restyle) =>
+              onShown(segments, undefined, restyle),
+          })
+    return () => {
+      stop()
+      release()
+    }
   }, [segKey, baseKey])
   // Hydrating keeps the drawing: only the panel entry starts.
   // biome-ignore lint/correctness/useExhaustiveDependencies: shown changes with the SEG

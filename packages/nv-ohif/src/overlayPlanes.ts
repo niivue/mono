@@ -11,8 +11,39 @@ import { toolMode } from './segEdit'
 // ponytail: first plane only (one is typical); merge planes if a study needs it.
 // ponytail: first frame's overlay only; follow the frame if a study steps them.
 
-const planes = new WeakMap<NiiVue, File[]>()
-const shown = new WeakSet<NiiVue>()
+type Planes = {
+  files: File[]
+  em: OhifExtensionManager | undefined
+  toolGroupId: string
+}
+const planes = new WeakMap<NiiVue, Planes>()
+// The plane drawing each pane shows; a drawing that replaced it is not ours.
+const shown = new WeakMap<NiiVue, NiiVue['drawingVolume']>()
+// drawingGeneration of a plane load still reading.
+const pending = new WeakMap<NiiVue, number>()
+// Panes whose drawing a SEG or RTSTRUCT owns: planes stay off.
+const held = new WeakSet<NiiVue>()
+
+function closeOwn(nv: NiiVue): void {
+  if (pending.get(nv) === nv.drawingGeneration) nv.cancelDrawingLoad()
+  pending.delete(nv)
+  if (shown.has(nv) && nv.drawingVolume === shown.get(nv)) nv.closeDrawing()
+  shown.delete(nv)
+}
+
+/**
+ * Give `nv`'s drawing to a SEG/RT: drops the plane synchronously, before the
+ * SEG reads drawingGeneration. The release shows the planes again.
+ */
+export function holdOverlayPlanes(nv: NiiVue): () => void {
+  held.add(nv)
+  closeOwn(nv)
+  return () => {
+    held.delete(nv)
+    const p = planes.get(nv)
+    if (p) void refreshOverlayPlanes(nv, p.em, p.toolGroupId)
+  }
+}
 
 /** Show or hide `nv`'s overlay planes by the tool's mode in its group. */
 export async function refreshOverlayPlanes(
@@ -20,8 +51,8 @@ export async function refreshOverlayPlanes(
   em: OhifExtensionManager | undefined,
   toolGroupId: string,
 ): Promise<void> {
-  const file = planes.get(nv)?.[0]
-  if (!file) return
+  const file = planes.get(nv)?.files[0]
+  if (!file || held.has(nv)) return
   const on = toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'
   if (on && !nv.drawingVolume) {
     // Straight to loadDrawing (no await before it): core's drawing generation
@@ -30,24 +61,27 @@ export async function refreshOverlayPlanes(
     // loadDrawing arms the pen; an overlay plane is display only, so a drag on
     // the pane must not paint into it.
     const armed = nv.drawIsEnabled
+    const load = nv.loadDrawing(file)
+    const generation = nv.drawingGeneration
+    pending.set(nv, generation)
     // Not loaded: a segmentation superseded it and owns the pen.
-    if (!(await nv.loadDrawing(file))) return
+    const loaded = await load
+    if (pending.get(nv) === generation) pending.delete(nv)
+    if (!loaded) return
     if (!armed) nv.drawIsEnabled = false
     if (
-      planes.get(nv)?.[0] === file &&
+      planes.get(nv)?.files[0] === file &&
+      !held.has(nv) &&
       toolMode(em, toolGroupId, 'ImageOverlayViewer') === 'Enabled'
     ) {
-      shown.add(nv)
+      shown.set(nv, nv.drawingVolume)
       return
     }
     // Superseded mid-load (another image, or the tool turned off): drop it
     // and show what holds now.
     nv.closeDrawing()
     return refreshOverlayPlanes(nv, em, toolGroupId)
-  } else if (!on && shown.has(nv)) {
-    nv.closeDrawing()
-    shown.delete(nv)
-  }
+  } else if (!on) closeOwn(nv)
 }
 
 /** The overlay planes of the image `nv` now shows (none clears them). */
@@ -57,10 +91,7 @@ export function setOverlayPlanes(
   em: OhifExtensionManager | undefined,
   toolGroupId: string,
 ): Promise<void> {
-  if (shown.has(nv) && planes.get(nv) !== files) {
-    nv.closeDrawing()
-    shown.delete(nv)
-  }
-  planes.set(nv, files ?? [])
+  if (planes.get(nv)?.files !== files) closeOwn(nv)
+  planes.set(nv, { files: files ?? [], em, toolGroupId })
   return refreshOverlayPlanes(nv, em, toolGroupId)
 }

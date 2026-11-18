@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
 import dcmjs from 'dcmjs'
 import { fillRuns, lpsToVoxel, rasterizeContours } from './rtDrawing'
-import { buildRtssDataset, buildSegDataset, frameLabels } from './segExport'
+import {
+  buildRtssDataset,
+  buildSegDataset,
+  frameLabels,
+  segmentationCsv,
+} from './segExport'
 
 // Axial source frames (rows along LPS y at 2 mm, columns along x at 1 mm,
 // slices 3 mm apart) under a RAS grid flipped in x and y: voxel (i,j,k) is
@@ -154,4 +159,11 @@ test('an enhanced multi-frame source exports a frame per functional group', () =
     (g) => g.DerivationImageSequence.SourceImageSequence.ReferencedFrameNumber,
   )
   expect(src).toEqual([2])
+})
+
+test('a CSV label with a carriage return stays one cell', () => {
+  const csv = segmentationCsv({ id: 's' }, {} as never, [
+    { label: 'left\rright', value: 1, count: 1, volume: 1 } as never,
+  ])
+  expect(csv).toContain('Label,"left\rright"')
 })

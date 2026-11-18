@@ -564,7 +564,7 @@ export function segmentationCsv(
       row
         .map((cell) => {
           const s = String(cell ?? '')
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+          return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
         })
         .join(','),
     )

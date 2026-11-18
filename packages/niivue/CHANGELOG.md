@@ -1,3 +1,15 @@
+## 1.0.0-rc.225 (2026-11-18)
+
+### Fixes
+
+- **niivue:** live wire counts each placed click, seeded or not ([8c45862b](https://github.com/niivue/mono/commit/8c45862b))
+- **niivue:** slide setPoints validates first; a shape pick clears the polygon double-click ([3d82d1fa](https://github.com/niivue/mono/commit/3d82d1fa))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.224 (2026-11-18)
 
 ### Fixes

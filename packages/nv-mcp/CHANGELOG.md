@@ -1,3 +1,19 @@
+## 1.0.0-rc.222 (2026-11-18)
+
+### Features
+
+- **nv-mcp:** edit_drawing fill drives drawShapeFill ([ab416eda](https://github.com/niivue/mono/commit/ab416eda))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.225
+- Updated uikit to 1.0.0-rc.224
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.221 (2026-11-18)
 
 ### Updated Dependencies

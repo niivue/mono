@@ -1,3 +1,25 @@
+## 1.0.0-rc.258 (2026-11-18)
+
+### Fixes
+
+- **nv-ohif:** build the slide SR before storing OHIF's rows; digest the 4D group key ([74a94d28](https://github.com/niivue/mono/commit/74a94d28))
+- **nv-ohif:** key a 4D frame group on the display set's instances ([23945f2b](https://github.com/niivue/mono/commit/23945f2b))
+- **nv-ohif:** outline-only comes from the style, not a 1/255 fill ([9454f7d8](https://github.com/niivue/mono/commit/9454f7d8))
+- **nv-ohif:** a slide SR save fails on a row without slide geometry ([1741119f](https://github.com/niivue/mono/commit/1741119f))
+- **nv-ohif:** drop an overlay plane superseded while it loads ([4f1a26e6](https://github.com/niivue/mono/commit/4f1a26e6))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.225
+- Updated nv-ext-drawing to 1.0.0-rc.227
+- Updated nv-ext-tile to 1.0.0-rc.134
+- Updated uikit to 1.0.0-rc.224
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.257 (2026-11-18)
 
 ### Fixes

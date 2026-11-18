@@ -471,10 +471,9 @@ test('live wire needs three clicks to close', () =>
     try {
       const nv = controller('livewire')
       // Every point projects to the press position: each click is near A.
-      const toCentre = mat4.create()
-      toCentre.fill(0)
+      const toCentre = new Float32Array(16)
       toCentre[15] = 1
-      nv.view.screenSlices = [
+      ;(nv.view as { screenSlices: unknown }).screenSlices = [
         {
           mvpMatrix: toCentre,
           planeNormal: [0, 0, 1],

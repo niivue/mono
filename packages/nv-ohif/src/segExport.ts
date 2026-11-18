@@ -3,6 +3,7 @@
 // (RAS voxels) through the base volume's LPS->voxel map, so frames, positions
 // and references are the source's own and dcm2niix rebuilds the same grid.
 // Builders return naturalized datasets (OHIF's store functions write them).
+import { csvCell } from './kinetics'
 
 type Ds = Record<string, unknown>
 type Vec3 = [number, number, number]
@@ -48,7 +49,7 @@ const nums = (v: unknown): number[] =>
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as Ds | undefined
 
 /** A source frame's geometry: a classic instance's own, or each functional-group frame's. */
-interface Plane {
+export interface Plane {
   inst: Ds
   frame?: number
   ipp: unknown
@@ -56,7 +57,7 @@ interface Plane {
   ps: unknown
 }
 
-function planes(inst: Ds): Plane[] {
+export function framePlanes(inst: Ds): Plane[] {
   const perFrame = inst.PerFrameFunctionalGroupsSequence
   if (!perFrame)
     return [
@@ -91,7 +92,7 @@ export function frameLabels({
   const [nx, ny, nz] = dims
   const out: FrameLabels[] = []
   const at = (i: number) => m[i] as number
-  for (const plane of instances.flatMap(planes)) {
+  for (const plane of instances.flatMap(framePlanes)) {
     const { inst, frame } = plane
     const ipp = nums(plane.ipp)
     const iop = nums(plane.iop)
@@ -571,14 +572,5 @@ export function segmentationCsv(
     ['Voxels', ...segments.map((s) => s.count)],
     ['Volume (mm³)', ...segments.map((s) => s.volume)],
   ]
-  return rows
-    .map((row) =>
-      row
-        .map((cell) => {
-          const s = String(cell ?? '')
-          return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-        })
-        .join(','),
-    )
-    .join('\n')
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n')
 }

@@ -2,12 +2,12 @@ import type NiiVue from '@niivue/niivue'
 import { type RefObject, useEffect, useState } from 'react'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { authHeaders, ohifServices } from './niivueRegistry'
-import { holdOverlayPlanes } from './overlayPlanes'
 import type {
   OhifDisplaySet,
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
+import { holdOverlayPlanes } from './overlayPlanes'
 import {
   type Restyle,
   type RtLabels,

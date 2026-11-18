@@ -137,4 +137,25 @@ describe('AnnotationUndoStack', () => {
     const stack = new AnnotationUndoStack()
     expect(stack.redo([])).toBeNull()
   })
+
+  test('discard_restoresEvictedStepAndRedo', () => {
+    const stack = new AnnotationUndoStack<string>(2)
+    stack.push('first')
+    stack.push('second')
+    stack.undo('now')
+    stack.push('second')
+    const redo = stack.redoTop
+    stack.discard(stack.push('third'))
+    expect(stack.redoTop).toBe(redo)
+    expect(stack.undo('now')).toBe('second')
+    expect(stack.undo('now')).toBe('first')
+  })
+
+  test('discard_withoutEviction_keepsStack', () => {
+    const stack = new AnnotationUndoStack<string>(3)
+    stack.push('first')
+    stack.discard(stack.push('second'))
+    expect(stack.undo('now')).toBe('first')
+    expect(stack.undo('now')).toBeNull()
+  })
 })

@@ -516,6 +516,9 @@ test('live wire without a slice closes near its first click', () =>
       press(nv, [12, 12, 0])
       press(nv, [2, 2, 0])
       expect(nv.annotations).toHaveLength(1)
+      // Clicks on one spot place one point, so no degenerate contour closes.
+      for (let i = 0; i < 4; i++) press(nv, [40, 40, 0])
+      expect(nv.annotations).toHaveLength(1)
     } finally {
       slice.mockRestore()
     }

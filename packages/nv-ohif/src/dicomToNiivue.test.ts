@@ -354,4 +354,16 @@ describe('frameGroupKey', () => {
     expect(key).not.toBe(frameGroupKey(other))
     expect(frameGroupKey(ds)).toBeUndefined()
   })
+  it('keys apart URLs that collide under 32-bit FNV-1a', () => {
+    const at = (sop: string) =>
+      frameGroupKey({
+        displaySetInstanceUID: 'ds1',
+        instances: [
+          {
+            imageId: `wadors:${frames.replace(/instances\/[^/]+/, `instances/${sop}`)}`,
+          },
+        ],
+      } as OhifDisplaySet)
+    expect(at('1.2.3.579599')).not.toBe(at('1.2.3.762382'))
+  })
 })

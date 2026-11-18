@@ -1897,8 +1897,8 @@ export function initInteraction(ctrl: NiiVue): void {
           )
           if (isLivewireTool(tool)) {
             // Counted per placed click, seeded or not: without a slice the
-            // contour still places straight points and must still close.
-            if (fresh || !ctrl._livewireSeed) {
+            // contour still places straight points (guarded as any click) and must still close.
+            if (fresh || (!ctrl._livewireSeed && append)) {
               seedLivewire(ctrl, pt2d)
               poly.push(pt2d)
               ctrl._livewireClicks++

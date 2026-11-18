@@ -93,7 +93,8 @@ with the extension placed after `@ohif/extension-cornerstone`:
 
 - Registers a **React viewport** that owns a `<canvas>` + a NiiVue instance.
 - Loads a display set whose URL is a NiiVue-readable volume (`.nii/.nii.gz`, `.nrrd`,
-  `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in multiplanar.
+  `.mgz`, `.mha`, `.mif`, …) via `nv.loadVolumes(...)`, opening in its acquired plane unless the hanging protocol
+  names a view.
 - Loads a **DICOM** series by fetching it and converting to NIfTI with
   `@niivue/dcm2niix` (see [DICOM support](#dicom-support)).
 - Renders **whole-slide (SM)** series with **NVSlide** (tiled deep-zoom) on its own

@@ -109,8 +109,10 @@ export function largestBidirectional(
   return best
 }
 
-// RAS voxel axis normal to each 2D view (axial z, coronal y, sagittal x).
+// RAS voxel axis normal to each 2D view (axial z, coronal y, sagittal x),
+// and the world (RAS mm) axis normal to it.
 const NORMAL_AXIS = [2, 1, 0]
+const WORLD_DEPTH = [2, 1, 0]
 
 /**
  * OHIF's runSegmentBidirectional on a NiiVue pane: the active segment's
@@ -130,14 +132,24 @@ export function addSegmentBidirectional(nv: NiiVue): boolean {
     activeSegmentValue(nv),
     NORMAL_AXIS[sliceType] ?? 2,
   )
-  const annotation =
-    ends &&
+  const row = (points: Vec3[]) =>
     annotationFromRow(nv, {
       uid: crypto.randomUUID(),
       toolName: 'Bidirectional',
-      points: ends.map((p) => rasToLps(p)),
+      points: points.map((p) => rasToLps(p)),
       metadata: { sliceType },
     })
+  // A tilted grid's voxel slice is not a world plane, which NiiVue's
+  // annotations live on: project the ends onto the nearest one (their mean
+  // depth). ponytail: the tilted axis then reads up to 1 - cos(tilt) short.
+  const depth = (WORLD_DEPTH[sliceType] ?? 2) as 0 | 1 | 2
+  const mean = ends ? ends.reduce((a, p) => a + p[depth], 0) / ends.length : 0
+  const flat = (p: Vec3): Vec3 => {
+    const q: Vec3 = [p[0], p[1], p[2]]
+    q[depth] = mean
+    return q
+  }
+  const annotation = ends && (row(ends) ?? row(ends.map(flat)))
   if (!ends || !annotation) return false
   nv.addAnnotation(annotation)
   nv.setCrosshairPos(ends[0])

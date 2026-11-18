@@ -4,6 +4,7 @@ import { DEFAULT_OPTIONS } from './NiivueViewport'
 import type { OhifExtensionManager } from './ohif-types'
 import {
   holdOverlayPlanes,
+  planeFrame,
   refreshOverlayPlanes,
   setOverlayPlanes,
 } from './overlayPlanes'
@@ -34,9 +35,14 @@ const em = toolGroup()
 // after it. `finish` settles the latest load.
 function fakeCore(options: { autoFinish?: boolean } = {}) {
   let finish: () => void = () => {}
+  let onFrame: () => void = () => {}
   const nv = {
     drawingVolume: null as unknown,
     drawingGeneration: 0,
+    volumes: [] as { frame4D?: number }[],
+    addEventListener: (_type: string, fn: () => void) => {
+      onFrame = fn
+    },
     drawIsEnabled: false,
     loadDrawing: () => {
       const generation = ++nv.drawingGeneration
@@ -59,7 +65,15 @@ function fakeCore(options: { autoFinish?: boolean } = {}) {
       nv.drawingVolume = null
     },
   }
-  return { nv, as: nv as unknown as NiiVue, finish: () => finish() }
+  return {
+    nv,
+    as: nv as unknown as NiiVue,
+    finish: () => finish(),
+    stepFrame: (frame: number) => {
+      nv.volumes = [{ frame4D: frame }]
+      onFrame()
+    },
+  }
 }
 const plane = () => [new File([], 'x_ROI1.nii')]
 
@@ -178,4 +192,48 @@ test('a SEG over a series with overlay planes is shown', async () => {
   expect(nv.drawColormap.toLowerCase()).toBe('seg-seg')
   stop()
   release()
+})
+
+// A uint8 NIfTI-1 plane of `frames` 2x1x1 volumes; volume t holds t + 1.
+function plane4D(frames: number): File {
+  const hdr = new DataView(new ArrayBuffer(352))
+  hdr.setInt32(0, 348, true)
+  for (const [i, v] of [4, 2, 1, 1, frames].entries())
+    hdr.setInt16(40 + 2 * i, v, true)
+  hdr.setInt16(70, 2, true)
+  hdr.setFloat32(108, 352, true)
+  const data = Uint8Array.from({ length: 2 * frames }, (_, i) => (i >> 1) + 1)
+  return new File([hdr.buffer, data], 'x_ROI1.nii')
+}
+
+// Review of #863: a 4D plane showed its first frame whatever the pane showed.
+test('planeFrame cuts volume t of a 4D plane as a 3D plane', async () => {
+  const cut = new DataView(
+    await (await planeFrame(plane4D(3), 2)).arrayBuffer(),
+  )
+  expect(cut.getInt16(40, true)).toBe(3)
+  expect(cut.getInt16(48, true)).toBe(1)
+  expect([cut.getUint8(352), cut.getUint8(353)]).toEqual([3, 3])
+  expect(cut.byteLength).toBe(354)
+  const flat = plane4D(1)
+  expect(await planeFrame(flat, 1)).toBe(flat)
+})
+
+test('a 4D plane reloads for the frame the pane steps to', async () => {
+  const core = fakeCore({ autoFinish: true })
+  const loads: File[] = []
+  const load = core.nv.loadDrawing
+  core.nv.loadDrawing = ((f: File) => {
+    loads.push(f)
+    return load()
+  }) as typeof core.nv.loadDrawing
+  const file = plane4D(2)
+  await setOverlayPlanes(core.as, [file], em, 'g')
+  expect(loads).toEqual([file])
+  core.stepFrame(1)
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(loads.length).toBe(2)
+  expect(new Uint8Array(await (loads[1] as File).arrayBuffer())[352]).toBe(2)
+  expect(core.nv.drawingVolume).not.toBeNull()
 })

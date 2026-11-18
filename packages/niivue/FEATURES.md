@@ -261,6 +261,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `isSnapToVoxelCenters` | Prop | |
 | `windowingStep`, `isWindowingUpperBoundOnly` | Prop | Windowing drag gain `[width, center]`; upper-bound-only moves just calMax (PET) |
 | `pickAt(x, y, { moveCrosshair? })` | Method | Depth-pick a canvas pixel as a double-click does; on a channel stack any drawn channel answers |
+| `pickRay(x, y)` | Method | World ray `{ origin, dir }` (mm) under a canvas pixel on the 3D render tile, answering over empty space too; null off it. Not an MCP tool (canvas pixels) |
 | `isYoked3DTo2DZoom` | Prop | |
 | `isViewModeHotKeyEnabled` | Prop | V key cycles `sliceType` of the viewer under the pointer; off by default |
 | `isLegendToggleEnabled` | Prop | Legend colour-box click hides/shows a volume label (`hiddenLabels`); hidden labels show as a colour outline; name click still moves the crosshair; off by default |

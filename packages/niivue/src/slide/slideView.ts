@@ -55,8 +55,10 @@ export interface SlideViewOptions extends SlideRendererOptions {
   slide?: NVSlide | null
   /** Gestures (`NVSlideController`); false attaches none. */
   controller?: Omit<NVSlideControllerOptions, 'slide' | 'screen'> | false
-  /** Draw the controller's rulers and boxes (core's overlay). Default true;
-   * false for a host drawing its own (UIKit ruler) from the controller state. */
+  /** Draw the controller's rulers, boxes and annotations (core's overlay).
+   * Default true; false for a host drawing its own (UIKit ruler) from the
+   * controller state. A scale bar (`overlayStyle.isRulerVisible`) is drawn
+   * either way. */
   controllerOverlay?: boolean
   /** Ruler, scale bar and selection-box style for the controller's overlay. */
   overlayStyle?: Partial<SlideOverlayStyle>

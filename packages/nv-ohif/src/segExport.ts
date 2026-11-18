@@ -182,7 +182,12 @@ export interface SeriesHeader {
 }
 
 /** The new series' identity, with patient/study copied from `src`. */
-function header(src: Ds, sopClass: string, modality: string, h: SeriesHeader) {
+export function header(
+  src: Ds,
+  sopClass: string,
+  modality: string,
+  h: SeriesHeader,
+) {
   const { date, time } = dicomNow()
   const sop = newUid()
   const out: Ds = {
@@ -211,7 +216,7 @@ function header(src: Ds, sopClass: string, modality: string, h: SeriesHeader) {
   return out
 }
 
-const code = (
+export const code = (
   CodeValue: string,
   CodingSchemeDesignator: string,
   CodeMeaning: string,
@@ -472,7 +477,7 @@ export function buildRtssDataset(
             )
         }
         contours.push({
-          ContourImageSequence: ref(f.inst, f.frame),
+          ContourImageSequence: [ref(f.inst, f.frame)],
           ContourGeometricType: 'CLOSED_PLANAR',
           NumberOfContourPoints: data.length / 3,
           ContourData: data,
@@ -491,17 +496,24 @@ export function buildRtssDataset(
     StructureSetName: h.SeriesDescription,
     StructureSetDate: date,
     StructureSetTime: time,
-    ReferencedFrameOfReferenceSequence: {
-      FrameOfReferenceUID: forUid,
-      RTReferencedStudySequence: {
-        ReferencedSOPClassUID: '1.2.840.10008.3.1.2.3.1',
-        ReferencedSOPInstanceUID: first.inst.StudyInstanceUID,
-        RTReferencedSeriesSequence: {
-          SeriesInstanceUID: first.inst.SeriesInstanceUID,
-          ContourImageSequence: frames.map((f) => ref(f.inst, f.frame)),
-        },
+    // Arrays: OHIF reads the stored dataset itself (its RT handler forEach-es these).
+    ReferencedFrameOfReferenceSequence: [
+      {
+        FrameOfReferenceUID: forUid,
+        RTReferencedStudySequence: [
+          {
+            ReferencedSOPClassUID: '1.2.840.10008.3.1.2.3.1',
+            ReferencedSOPInstanceUID: first.inst.StudyInstanceUID,
+            RTReferencedSeriesSequence: [
+              {
+                SeriesInstanceUID: first.inst.SeriesInstanceUID,
+                ContourImageSequence: frames.map((f) => ref(f.inst, f.frame)),
+              },
+            ],
+          },
+        ],
       },
-    },
+    ],
     StructureSetROISequence: rois.map(({ s }) => ({
       ROINumber: s.value,
       ReferencedFrameOfReferenceUID: forUid,

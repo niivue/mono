@@ -1,3 +1,13 @@
+## 1.0.0-rc.223 (2026-11-18)
+
+### Features
+
+- **niivue:** OHIF parity closeout core ([5d0a933f](https://github.com/niivue/mono/commit/5d0a933f))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.222 (2026-11-17)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

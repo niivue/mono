@@ -1,3 +1,4 @@
+import type NiiVue from '@niivue/niivue'
 import {
   type AnnotationChangedDetail,
   type AnnotationPoint,
@@ -5,11 +6,13 @@ import {
   type AnnotationStats,
   generateShape,
   isAnnotationErased,
+  lookupColorMap,
   type NVImage,
   SLICE_TYPE,
   slice2DToMM,
   type VectorAnnotation,
 } from '@niivue/niivue'
+import { showCaptureForm } from './captureForm'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { rowReport } from './csvReport'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
@@ -32,7 +35,7 @@ import type {
   OhifExtensionParams,
   OhifViewportProps,
 } from './ohif-types'
-import { getQuantCommandDefinitions } from './petQuant'
+import { getQuantCommandDefinitions, showPaneLabel } from './petQuant'
 import { getSegCommandDefinitions } from './segCommands'
 import { jumpToNiivueSegment } from './segPanel'
 import {
@@ -221,6 +224,57 @@ export function niivueColormapName(
   return registered.find((n) => n.toLowerCase() === name)
 }
 
+type RampPoint = { value: number; opacity: number }
+const RAMP = '_ramp_'
+
+// Piecewise-linear y(x) through sorted xs, held flat beyond either end.
+function lerp(xs: number[], ys: number[], x: number): number {
+  let i = 1
+  while (i < xs.length - 1 && (xs[i] as number) < x) i++
+  const x0 = xs[i - 1] as number
+  const x1 = xs[i] as number
+  const y0 = ys[i - 1] as number
+  const y1 = ys[i] as number
+  const t = Math.min(1, Math.max(0, (x - x0) / (x1 - x0 || 1)))
+  return y0 + t * (y1 - y0)
+}
+
+/**
+ * `name`'s colours with alpha from an OHIF opacity ramp (value 0..1 across the
+ * window), registered as its own colormap. A node at every colour and ramp
+ * point, so NiiVue's linear LUT build reproduces both.
+ */
+export function rampColormap(
+  nv: Pick<NiiVue, 'addColormap'>,
+  name: string,
+  ramp: RampPoint[],
+): string {
+  const cm = lookupColorMap(name)
+  if (!cm) return name
+  const xs = ramp.map((p) => p.value * 255)
+  const I = [...new Set([...cm.I, ...xs.map(Math.round)])].sort((a, b) => a - b)
+  const at = (ys: number[]) => I.map((i) => Math.round(lerp(cm.I, ys, i)))
+  const alpha = ramp.map((p) => p.opacity * 255)
+  const key = ramp.map((p) => `${p.value}_${p.opacity}`).join('_')
+  return nv.addColormap(`${name}${RAMP}${key}`, {
+    R: at(cm.R),
+    G: at(cm.G),
+    B: at(cm.B),
+    A: I.map((i) => Math.round(lerp(xs, alpha, i))),
+    I,
+  })
+}
+
+/** The opacity ramp a rampColormap name carries, or undefined. */
+function rampOf(colormap?: string): RampPoint[] | undefined {
+  const v = colormap?.split(RAMP)[1]?.split('_').map(Number)
+  if (!v) return undefined
+  const ramp: RampPoint[] = []
+  for (let k = 0; k + 1 < v.length; k += 2)
+    ramp.push({ value: v[k] as number, opacity: v[k + 1] as number })
+  return ramp
+}
+
 /**
  * OHIF's setViewportColormap on a NiiVue viewport: targets the base (no
  * `displaySetInstanceUID`, or the base's) or an overlay; any other display set
@@ -239,7 +293,10 @@ export function setViewportColormap(
     uid === undefined || uid === entry.displaySets[0]?.displaySetInstanceUID
   const index = isBase ? 0 : overlayVolumeIndex(entry, uid as string)
   if ((!isBase && index === 0) || !nv.volumes[index]) return
-  const name = niivueColormapName(nv.colormaps, colormap)
+  const picked = niivueColormapName(nv.colormaps, colormap)
+  // A ramped overlay keeps its opacity ramp on the new colours.
+  const ramp = isBase ? undefined : rampOf(nv.volumes[index]?.colormap)
+  const name = picked && ramp ? rampColormap(nv, picked, ramp) : picked
   const alpha = Number.isFinite(opacity)
     ? Math.min(1, Math.max(0, opacity as number))
     : undefined
@@ -316,7 +373,7 @@ interface CustomizationServiceLike {
 }
 
 /** OHIF's window/level presets (customization first, built-in fallback). */
-function windowLevelPresets(
+export function windowLevelPresets(
   servicesManager: OhifExtensionParams['servicesManager'],
 ): Record<string, WindowLevelPreset[]> {
   const svc = ohifServices(servicesManager)?.customizationService as
@@ -1628,6 +1685,20 @@ export function cornerstoneWindowingStep(vol: {
   return [perPixel / robust, -perPixel / robust]
 }
 
+/**
+ * Cornerstone's WindowLevel drag on SUV PET: only the upper bound moves (with
+ * isWindowingUpperBoundOnly), 5 SUV per pane height, dragging down lowering it.
+ * ponytail: gain fixed at load; re-derive on resize if panes resize mid-read.
+ */
+export function cornerstonePetWindowingStep(
+  vol: { robustMin: number; robustMax: number },
+  paneHeight: number,
+): [number, number] | undefined {
+  const robust = vol.robustMax - vol.robustMin
+  if (!(robust > 0) || !(paneHeight > 0)) return undefined
+  return [0, 5 / paneHeight / robust]
+}
+
 /** A hanging protocol's initial window (`displaySetOptions[i].options.voi`). */
 export function voiRange(
   displaySetOptions: OhifViewportProps['displaySetOptions'],
@@ -1813,14 +1884,10 @@ export function getNiivueCommandsModule({
     },
 
     /** Download the visible NiiVue volume or NVSlide canvas as a PNG. */
-    niivueSaveBitmap: async () => {
+    // Capture: OHIF's download form (name, type), as cornerstone's.
+    niivueSaveBitmap: () => {
       const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry) return
-      if (entry.slideView) {
-        await entry.slideView.saveBitmap()
-        return
-      }
-      await entry.nv.saveBitmap('niivue.png')
+      if (entry) showCaptureForm(entry, ohifServices(servicesManager))
     },
 
     /** Set (or clear, plane: 'none') the 3D render clip plane. */
@@ -1867,6 +1934,7 @@ export function getNiivueCommandsModule({
       calMin,
       calMax,
       colormapType,
+      isColormapAlphaKept,
     }: {
       displaySetInstanceUID?: string
       viewportId?: string
@@ -1875,6 +1943,7 @@ export function getNiivueCommandsModule({
       calMin?: number
       calMax?: number
       colormapType?: number
+      isColormapAlphaKept?: boolean
     } = {}) => {
       const entry = targetViewportId
         ? getNiivueEntry(targetViewportId)
@@ -1882,6 +1951,7 @@ export function getNiivueCommandsModule({
       const overlayWindow = {
         ...(calMin === undefined ? {} : { calMin, calMax }),
         ...(colormapType === undefined ? {} : { colormapType }),
+        ...(isColormapAlphaKept ? { isColormapAlphaKept } : {}),
       }
       if (!entry) return
       // Cancelling releases the entry at once, so a new load can start while
@@ -2020,6 +2090,7 @@ export function getNiivueCommandsModule({
         }
         if (!added || !owns()) return
         entry.overlays.set(uid, added)
+        showPaneLabel(entry, servicesManager)
         if (note) flashStatus(entry, note)
         else writeStatus(entry, null)
       } catch (err) {

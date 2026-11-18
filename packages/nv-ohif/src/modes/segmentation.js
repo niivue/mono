@@ -13,6 +13,8 @@ export default niivueMode({
     leftPanels: [ohif.thumbnailList],
     // ponytail: no contour panel; contour tools are an M8 gap (scorecard D1-21).
     rightPanels: [cornerstone.labelMapSegmentationPanel],
+    // As OHIF's segmentation layout (basic's starts closed).
+    rightPanelClosed: false,
   },
   initToolGroups: segmentation.initToolGroups,
   // Not basic's read-only block: the panel's Add Segmentation / Add Segment show.
@@ -26,13 +28,13 @@ export default niivueMode({
     ...segmentation.toolbarSections,
     { $reference: 'niivue.toolbarSections' },
     {
+      // OHIF's segmentation primary bar (segmentationModeToolbarSections);
       // NiiVue's capture and crosshair replace cornerstone's, as in the viewer mode.
       primary: [
         'WindowLevel',
         'Pan',
         'Zoom',
-        'NiivueWindowLevel',
-        'NiivueColormap',
+        'TrackballRotate',
         'NiivueCapture',
         'Layout',
         'NiivueCrosshair',

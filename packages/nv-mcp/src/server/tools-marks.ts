@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { MAX_BOXES, MAX_PLANE_OUTLINES } from '../limits'
-import { SLICE_NAMES } from '../views'
+import { SLICE_NAMES, SLIDE_ANNOTATION_TOOLS } from '../views'
 import { registerSimple, rgba, triple } from './args'
 import { TAB_ARG, type ToolContext } from './context'
 
@@ -156,6 +156,42 @@ export const MARK_SCHEMAS = {
           'pixels. A field left out keeps its value; list_annotations reports the style.',
       ),
   },
+  list_slide_annotations: {
+    ...TAB_ARG,
+    points: z
+      .boolean()
+      .optional()
+      .describe("Include each annotation's points. Only its stats otherwise."),
+  },
+  edit_slide_annotations: {
+    ...TAB_ARG,
+    action: z
+      .enum(['add', 'remove', 'set_label', 'clear'])
+      .describe(
+        'add one, remove one by id, set the label of one, or clear all.',
+      ),
+    tool: z
+      .enum(SLIDE_ANNOTATION_TOOLS)
+      .optional()
+      .describe(
+        'For add: the shape. point takes 1 point; line [start, end]; rectangle and ellipse ' +
+          'two opposite corners; circle [centre, rim]; polygon and freehand (closed, 3 or more) ' +
+          'and freehandLine (open, 2 or more) their vertices.',
+      ),
+    points: z
+      .array(z.tuple([z.number(), z.number()]))
+      .min(1)
+      .optional()
+      .describe('For add: [x, y] points in slide base (level 0) pixels.'),
+    id: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'For remove and set_label: the annotation, as list_slide_annotations gives ids.',
+      ),
+    label: z.string().optional().describe('For add and set_label: the label.'),
+  },
   list_measurements: { ...TAB_ARG },
   edit_measurements: {
     ...TAB_ARG,
@@ -239,6 +275,25 @@ export function registerMarkTools(
       'undoes or redoes, loads a set from JSON, or sets the style annotations drawn by hand ' +
       'take. Reports how many there are afterwards.',
     inputSchema: MARK_SCHEMAS.edit_annotations,
+  })
+
+  registerSimple(server, context, 'list_slide_annotations', {
+    title: 'List the slide annotations',
+    description:
+      "Lists the annotations on the page's whole-slide viewer, each with its id, tool, label and " +
+      'stats (length, area and perimeter in mm, or base pixels without a pixel spacing); with ' +
+      'their points when asked. These are not the slice annotations of list_annotations.',
+    inputSchema: MARK_SCHEMAS.list_slide_annotations,
+    readOnly: true,
+  })
+
+  registerSimple(server, context, 'edit_slide_annotations', {
+    title: 'Edit the slide annotations',
+    description:
+      "Adds an annotation to the page's whole-slide viewer (a point, line, rectangle, ellipse, " +
+      'circle, polygon, freehand shape or freehand line, in slide base pixels), removes one or ' +
+      'sets its label by id, or clears them. Reports how many there are afterwards.',
+    inputSchema: MARK_SCHEMAS.edit_slide_annotations,
   })
 
   registerSimple(server, context, 'list_measurements', {

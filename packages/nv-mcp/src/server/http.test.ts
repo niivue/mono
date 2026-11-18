@@ -61,6 +61,8 @@ const CORE_TOOLS = [
   'edit_drawing',
   'list_annotations',
   'edit_annotations',
+  'list_slide_annotations',
+  'edit_slide_annotations',
   'list_measurements',
   'edit_measurements',
   'set_boxes',

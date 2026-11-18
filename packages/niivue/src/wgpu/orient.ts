@@ -336,7 +336,11 @@ export function writeOrientUniforms(
   for (let i = 0; i < 16; i++) dv.setFloat32(112 + i * 4, modMtx[i], true)
   dv.setFloat32(176, mod ? mod.mode : 0, true)
   dv.setFloat32(180, outline ? u.atlasOutline : 0, true)
-  dv.setFloat32(184, keepColormapAlpha ? 1 : 0, true)
+  dv.setFloat32(
+    184,
+    keepColormapAlpha || nvimage.isColormapAlphaKept ? 1 : 0,
+    true,
+  )
   device.queue.writeBuffer(uniformBuffer, 0, ab)
 }
 

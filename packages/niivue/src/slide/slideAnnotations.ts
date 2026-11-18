@@ -1,4 +1,6 @@
+import { getControlPoints, updateShapeBounds } from '@/annotation/selection'
 import { ellipseRing } from '@/annotation/shapes'
+import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import type { PolygonWithHoles } from '@/NVTypes'
 import type { NVSlidePoint } from './slideController'
 
@@ -86,6 +88,51 @@ export function slideAnnotationOutline(
   return [...points]
 }
 
+// Rectangle, ellipse and circle as the volume shapes' boxes, so their handles
+// and drags are the volume annotations'.
+type BoxTool = 'rectangle' | 'ellipse' | 'circle'
+const isBoxTool = (tool: SlideAnnotationTool): tool is BoxTool =>
+  tool === 'rectangle' || tool === 'ellipse' || tool === 'circle'
+
+function boxOf(type: BoxTool, points: readonly NVSlidePoint[]) {
+  const [a, b] = points as [NVSlidePoint, NVSlidePoint]
+  if (type !== 'circle') return { type, start: a, end: b }
+  const r = Math.hypot(b.x - a.x, b.y - a.y)
+  return {
+    type,
+    start: { x: a.x - r, y: a.y - r },
+    end: { x: a.x + r, y: a.y + r },
+  }
+}
+
+/**
+ * Edit handles in slide pixels: a rectangle's corners and sides, an ellipse's
+ * or circle's cardinal points (as volume annotations), a point's, line's or
+ * polygon's own points; none for freehand.
+ */
+export function slideAnnotationHandles(
+  tool: SlideAnnotationTool,
+  points: readonly NVSlidePoint[],
+): NVSlidePoint[] {
+  if (isBoxTool(tool)) return getControlPoints(boxOf(tool, points))
+  return tool.startsWith('freehand') ? [] : points.map(({ x, y }) => ({ x, y }))
+}
+
+/** `points` with handle `index` (of {@link slideAnnotationHandles}) dragged to `to`. */
+export function dragSlideAnnotationHandle(
+  tool: SlideAnnotationTool,
+  points: readonly NVSlidePoint[],
+  index: number,
+  to: NVSlidePoint,
+): NVSlidePoint[] {
+  if (!isBoxTool(tool))
+    return points.map((p, i) => (i === index ? { ...to } : { ...p }))
+  const { start, end } = updateShapeBounds(tool, boxOf(tool, points), index, to)
+  if (tool !== 'circle') return [start, end]
+  const c = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+  return [c, { x: c.x + Math.abs(end.x - start.x) / 2, y: c.y }]
+}
+
 function pathLength(
   points: readonly NVSlidePoint[],
   closed: boolean,
@@ -156,13 +203,24 @@ function copyOf(a: SlideAnnotation): SlideAnnotation {
 
 /**
  * A slide's annotations, in base pixels so they hold at every level. Events
- * `added`, `changed` (label) and `removed` carry the annotation as `detail`.
- * Stats use the spacing in force when the annotation was added.
+ * `added`, `changed` (label or points) and `removed` carry the annotation as
+ * `detail`. Stats use the spacing in force when the points were last set.
+ * Point edits are undoable steps, announced as NiiVue's are
+ * (`annotationHistoryPush`, `annotationUndoTop`, `annotationUndo`).
  */
 export class NVSlideAnnotations extends EventTarget {
   private readonly _items = new Map<string, SlideAnnotation>()
   private readonly _spacing: () => Spacing
   private _next = 1
+  private readonly _history = Object.assign(
+    new AnnotationUndoStack<SlideAnnotation[]>(),
+    {
+      onPush: (seq: number) =>
+        this.dispatchEvent(
+          new CustomEvent('annotationHistoryPush', { detail: { seq } }),
+        ),
+    },
+  )
 
   /** `spacingMM`: the slide's pixel spacing (`manifest.pixelSpacingMM`), if any. */
   constructor(spacingMM: () => Spacing) {
@@ -215,8 +273,65 @@ export class NVSlideAnnotations extends EventTarget {
     return true
   }
 
+  /** Replace an annotation's points (an edit), recorded as one undo step. */
+  setPoints(id: string, points: readonly NVSlidePoint[]): boolean {
+    const annotation = this._items.get(id)
+    if (!annotation) return false
+    this._history.push(this.list())
+    this._setPoints(annotation, points)
+    return true
+  }
+
+  /** Sequence number of the step annotationUndo would revert. */
+  get annotationUndoTop(): number | undefined {
+    return this._history.undoTop
+  }
+
+  /** Sequence number of the step annotationRedo would reapply. */
+  get annotationRedoTop(): number | undefined {
+    return this._history.redoTop
+  }
+
+  annotationUndo(): void {
+    this._restore(this._history.undo(this.list()))
+  }
+
+  annotationRedo(): void {
+    this._restore(this._history.redo(this.list()))
+  }
+
   clear(): void {
     for (const id of [...this._items.keys()]) this.remove(id)
+    this._history.clear()
+  }
+
+  // Only edits are steps: points go back by id, so annotations added or
+  // removed since are left as they are.
+  private _restore(snapshot: SlideAnnotation[] | null): void {
+    for (const { id, points } of snapshot ?? []) {
+      const annotation = this._items.get(id)
+      if (
+        annotation &&
+        points.some(
+          (p, i) =>
+            p.x !== annotation.points[i]?.x || p.y !== annotation.points[i]?.y,
+        )
+      )
+        this._setPoints(annotation, points)
+    }
+  }
+
+  private _setPoints(
+    annotation: SlideAnnotation,
+    points: readonly NVSlidePoint[],
+  ): void {
+    annotation.points = points.map(({ x, y }) => ({ x, y }))
+    annotation.stats = slideAnnotationStats(
+      annotation.tool,
+      annotation.points,
+      this._spacing(),
+    )
+    this._emit('changed', annotation)
   }
 
   private _emit(type: string, detail: SlideAnnotation): void {

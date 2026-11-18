@@ -1,10 +1,11 @@
 import type { Series } from '@niivue/dcm2niix'
 
 // Which dcm2niix output a viewport shows when one series converts to several
-// (multi-echo, magnitude + phase, scout + acquisition, ...). Order: acquired
+// (multi-echo, magnitude + phase, scout + acquisition, ...). Order: the raw
+// images over _Tilt/_Eq (gantry-tilt and equidistant resamples are
+// interpolated: OHIF shows the acquired pixels, owner 2026-11-18), acquired
 // ORIGINAL/PRIMARY images, the base stem over phase/real/imaginary parts, the
-// lowest echo, the most voxels, then the stem. _Tilt/_Eq (gantry-tilt and
-// equidistant resamples) get no preference (owner), so the voxel key may pick one.
+// lowest echo, the most voxels, then the stem.
 
 const PART_SUFFIX = /_(ph|real|imaginary)(_|$)/
 // dcm2niix sidecars spell the parts both ways (P/R/I and PHASE/REAL/IMAGINARY).
@@ -52,14 +53,18 @@ export function outputEcho(s: Series): number | undefined {
   return n === undefined ? undefined : Number(n)
 }
 
+/** dcm2niix's DICOM overlay plane (60xx) output: `<stem>_ROI<n>`, a uint8 mask. */
+export const isOverlayPlane = (s: Series): boolean => /_ROI\d+$/.test(s.stem)
+
 /** NIfTI image outputs, best first by the policy above. */
 export async function rankOutputs(series: Series[]): Promise<Series[]> {
   const ranked = await Promise.all(
     series
-      .filter((s) => /\.nii(\.gz)?$/i.test(s.image.name))
+      .filter((s) => /\.nii(\.gz)?$/i.test(s.image.name) && !isOverlayPlane(s))
       .map(async (s) => ({
         s,
         key: [
+          /_(Tilt|Eq)_\d+$/.test(s.stem) ? 1 : 0,
           isOriginalPrimary(s) ? 0 : 1,
           isPart(s) ? 1 : 0,
           outputEcho(s) ?? 1,

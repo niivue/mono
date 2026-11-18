@@ -1,10 +1,11 @@
 import type { VectorAnnotation } from '@/NVTypes'
 
-type Entry = { seq: number; snapshot: VectorAnnotation[] }
+type Entry<T> = { seq: number; snapshot: T }
 
-export class AnnotationUndoStack {
-  private _undoStack: Entry[] = []
-  private _redoStack: Entry[] = []
+/** Snapshots of an annotation list (volume, or a slide's `SlideAnnotation[]`). */
+export class AnnotationUndoStack<T = VectorAnnotation[]> {
+  private _undoStack: Entry<T>[] = []
+  private _redoStack: Entry<T>[] = []
   private _maxSnapshots: number
   private _seq = 0
   /**
@@ -18,7 +19,7 @@ export class AnnotationUndoStack {
     this._maxSnapshots = maxSnapshots
   }
 
-  push(snapshot: VectorAnnotation[]): void {
+  push(snapshot: T): void {
     const seq = ++this._seq
     this._undoStack.push({ seq, snapshot: structuredClone(snapshot) })
     if (this._undoStack.length > this._maxSnapshots) {
@@ -28,7 +29,7 @@ export class AnnotationUndoStack {
     this.onPush?.(seq)
   }
 
-  undo(current: VectorAnnotation[]): VectorAnnotation[] | null {
+  undo(current: T): T | null {
     const top = this._undoStack.pop()
     if (!top) return null
     // The step keeps its number on the redo side.
@@ -36,7 +37,7 @@ export class AnnotationUndoStack {
     return top.snapshot
   }
 
-  redo(current: VectorAnnotation[]): VectorAnnotation[] | null {
+  redo(current: T): T | null {
     const top = this._redoStack.pop()
     if (!top) return null
     this._undoStack.push({ seq: top.seq, snapshot: structuredClone(current) })

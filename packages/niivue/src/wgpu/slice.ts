@@ -518,6 +518,7 @@ export class SliceRenderer extends NVRenderer {
       isAlphaClipDark?: boolean
       isColormapAlphaOn2D?: boolean
       drawRimOpacity?: number
+      drawRimWidth?: number
       isV1SliceShader?: boolean
       isChannelStack?: boolean
     },
@@ -639,6 +640,7 @@ export class SliceRenderer extends NVRenderer {
     uniformData[56] = ct.dataOrigin[0]
     uniformData[57] = ct.dataOrigin[1]
     uniformData[58] = ct.dataOrigin[2]
+    uniformData[59] = md.drawRimWidth ?? 1 // f32 drawRimWidth (pad lane)
     uniformData[60] = ct.dataSize[0]
     uniformData[61] = ct.dataSize[1]
     uniformData[62] = ct.dataSize[2]

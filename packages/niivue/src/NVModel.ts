@@ -470,6 +470,9 @@ export default class NVModel {
       ...(options.drawRimOpacity !== undefined && {
         rimOpacity: options.drawRimOpacity,
       }),
+      ...(options.drawRimWidth !== undefined && {
+        rimWidth: options.drawRimWidth,
+      }),
       ...(options.drawColormap !== undefined && {
         colormap: options.drawColormap,
       }),
@@ -506,6 +509,9 @@ export default class NVModel {
       }),
       ...(options.windowingStep !== undefined && {
         windowingStep: options.windowingStep,
+      }),
+      ...(options.isWindowingUpperBoundOnly !== undefined && {
+        isWindowingUpperBoundOnly: options.isWindowingUpperBoundOnly,
       }),
     }
     // Annotation — flat options mapped to annotation group

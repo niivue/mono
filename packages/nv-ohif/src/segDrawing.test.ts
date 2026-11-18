@@ -189,6 +189,7 @@ describe('startSegDrawing', () => {
       drawIsEnabled: true,
       drawOpacity: 1,
       drawRimOpacity: -1,
+      drawRimWidth: 1,
       addEventListener: () => {},
       removeEventListener: () => {},
     }

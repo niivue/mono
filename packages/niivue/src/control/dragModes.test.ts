@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { describe, expect, mock, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import { DRAG_MODE } from '@/NVConstants'
 import type NiiVueGPU from '@/NVControlBase'
@@ -7,6 +7,7 @@ import {
   crosshairPanThresholdCssPx,
   crosshairPanThresholdPx,
   dragForCrosshairPan,
+  dragForSlice,
   handleDragRelease,
   isCrosshairPanDrag,
 } from './dragModes'
@@ -292,4 +293,55 @@ describe('handleDragRelease for angle', () => {
     const a = angles()[0][1] as { angle: number }
     expect(a.angle).toBeCloseTo(90)
   })
+})
+
+test('dragForSlice: vertical drag steps slices, slow drags add up', () => {
+  const moves: number[][] = []
+  const ctrl = {
+    canvas: null,
+    activeTileHit: { sliceType: 1 }, // coronal: depth is y
+    dragStartXY: [0, 0],
+    dragEndXY: [0, 0],
+    model: { getVolumes: () => [{}] },
+    moveCrosshairInVox: (x: number, y: number, z: number) =>
+      moves.push([x, y, z]),
+  } as unknown as NiiVueGPU
+  const dragTo = (y: number) => {
+    ctrl.dragEndXY = [0, y]
+    dragForSlice(ctrl)
+  }
+  for (let y = 1; y <= 9; y++) dragTo(y) // 1 px moves: steps at 4 and 8 px
+  dragTo(0) // back up 8 px from the consumed start (8): two slices back
+  expect(moves).toEqual([
+    [0, 1, 0],
+    [0, 1, 0],
+    [0, -2, 0],
+  ])
+})
+
+test('contrast box orders the window for a negative rescale slope', () => {
+  const { ctrl, raw } = fakeCtrl({ withView: true })
+  const vol = {
+    img: Uint8Array.from({ length: 16 }, (_, i) => i),
+    dimsRAS: [3, 4, 4, 1],
+    img2RASstart: [0, 0, 0],
+    img2RASstep: [1, 4, 16],
+    matRAS: mat4.create(),
+    hdr: { scl_slope: -2, scl_inter: 100 },
+    nVox3D: 16,
+    calMin: 0,
+    calMax: 0,
+  }
+  Object.assign(raw, { _updateGLChanged: async () => {} })
+  raw.model.getVolumes = () => [vol] as never
+  raw._activeDragMode = DRAG_MODE.contrast
+  raw.dragStartXY = [20, 20]
+  raw.dragEndXY = [60, 60]
+  const pick = spyOn(NVSliceLayout, 'screenSlicePick').mockImplementation(
+    (_s, _m, x, y) => [x / 20, y / 20, 0],
+  )
+  handleDragRelease(ctrl)
+  pick.mockRestore()
+  // raw 5..15 -> 90..70
+  expect([vol.calMin, vol.calMax]).toEqual([70, 90])
 })

@@ -12,6 +12,7 @@ const demo: Demo = async (canvas, { ui, asset }) => {
       ['crosshair', String(DRAG_MODE.crosshair)],
       ['crosshairPan', String(DRAG_MODE.crosshairPan)],
       ['pan', String(DRAG_MODE.pan)],
+      ['slice', String(DRAG_MODE.slice)],
       ['contrast', String(DRAG_MODE.contrast)],
       ['measurement', String(DRAG_MODE.measurement)],
       ['angle', String(DRAG_MODE.angle)],

@@ -22,12 +22,13 @@ sets the right button. Both take a `DRAG_MODE` value:
 | `crosshair` | moves the crosshair (primary default) |
 | `crosshairPan` | a click moves the crosshair, a drag pans; handy for touch and trackpads |
 | `contrast` | draws a box; on release the display range is set from the intensities inside it (secondary default) |
-| `windowing` | adjusts the window level and width live as you drag (gain and direction: `windowingStep`) |
-| `pan` | pans the 2D view |
+| `windowing` | adjusts the window level and width live as you drag (gain and direction: `windowingStep`; `isWindowingUpperBoundOnly` moves only the upper bound, as a PET window) |
+| `pan` | pans the 2D view; as the primary mode it also pans a 3D render tile |
+| `slice` | a vertical drag steps through slices like the wheel (one slice per 4 CSS px) |
 | `measurement` | drag to draw a distance measurement (a click draws none) |
 | `angle` | drag the first arm to the vertex, then click to place the second arm, which follows the pointer with a live reading; Escape cancels |
 | `roiSelection` | draws a selection box that stays on screen |
-| `slicer3D` | pans and zooms the slice |
+| `slicer3D` | pans and zooms the slice; as the primary mode a vertical drag on a 3D render tile zooms it |
 | `callbackOnly` | draws a box and only fires `dragRelease`, for your own handling |
 | `none` | nothing |
 

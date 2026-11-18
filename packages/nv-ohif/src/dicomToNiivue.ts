@@ -160,14 +160,24 @@ export const frameGroupKey = (ds: OhifDisplaySet): string | undefined =>
   ds.displaySetInstanceUID &&
   `${ds.displaySetInstanceUID}|${urlDigest(instanceRefs(ds).map((r) => r.url))}`
 
-// FNV-1a over the joined URLs: frames4D keeps every key for the session, and
-// a 4D series can have thousands of instances.
+// cyrb53 over the joined URLs: frames4D keeps every key for the session, and
+// a 4D series can have thousands of instances. 32-bit FNV-1a collided (test).
 function urlDigest(urls: string[]): string {
-  let h = 0x811c9dc5
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
   const s = urls.join('|')
-  for (let i = 0; i < s.length; i++)
-    h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
-  return `${urls.length}:${(h >>> 0).toString(36)}`
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 2654435761)
+    h2 = Math.imul(h2 ^ c, 1597334677)
+  }
+  h1 =
+    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+    Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 =
+    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+    Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return `${urls.length}:${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)}`
 }
 
 async function convertUnshared(

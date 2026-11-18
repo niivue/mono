@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import NiiVue from '@niivue/niivue'
 import {
+  isComputedShown,
   joinFrames,
   onFrame,
   paneFrames,
@@ -343,12 +344,31 @@ it('unmounting the last 4D pane notifies the panel', async () => {
 })
 
 // The conversion cache evicts: a reconversion must rejoin the series' panes.
-it('a reconverted series rejoins its frame group', async () => {
-  const group = async (series: string) =>
-    (await split4D(nifti4D(), series))?.frames.group
-  const first = await group('ds1')
-  expect(await group('ds1')).toBe(first)
-  expect(await group('ds2')).not.toBe(first)
+// Review of #855: a reopen after the last pane closed starts fresh instead.
+it('a reconverted series rejoins its frame group while shown', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const split = async (series: string) =>
+    (await split4D(nifti4D(), series)) as NonNullable<
+      Awaited<ReturnType<typeof split4D>>
+    >
+  const first = await split('ds1')
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  const leave = joinFrames('rejoin', nv, undefined, null)
+  await nv.loadVolumes([{ url: first.image, frameSource: first.frames }])
+  await showComputed(first.frames.group, Float32Array.from([9, 12]))
+  const shown = [
+    (await split('ds1')).frames.group === first.frames.group,
+    (await split('ds2')).frames.group === first.frames.group,
+  ]
+  leave()
+  const reopened = (await split('ds1')).frames.group
+  expect([...shown, reopened === first.frames.group]).toEqual([
+    true,
+    false,
+    false,
+  ])
+  expect(isComputedShown(reopened)).toBe(false)
 })
 
 // Review of #855: the group outlives its panes, so a shorter reload must not

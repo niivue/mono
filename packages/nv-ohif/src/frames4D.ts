@@ -60,14 +60,20 @@ export async function split4D(
 }
 
 // One group per display set: a reconversion (the conversion cache keeps four)
-// must rejoin the panes already showing that series.
+// must rejoin the panes already showing that series. A group no pane shows is
+// dropped, so a reopen starts fresh: its frame and computed result are stale.
 const groups = new Map<string, object>()
 const seriesGroup = (series: string | undefined): object => {
   if (series === undefined) return {}
-  const group = groups.get(series) ?? {}
+  const old = groups.get(series)
+  const group = old && isShown(old) ? old : {}
   groups.set(series, group)
   return group
 }
+const isShown = (group: object): boolean =>
+  [...panes.values()].some((nv) =>
+    nv.volumes.some((v) => v.frameSource?.group === group),
+  )
 
 /** The frame-source volume (base or overlay) a pane shows, if any. */
 const sourceVolume = (nv: NiiVue): NVImage | undefined =>
@@ -359,6 +365,9 @@ export function joinFrames(
     nv.removeEventListener('volumeLoaded', onVolumeLoaded)
     nv.removeEventListener('volumeRemoved', onFrameChange)
     if (panes.get(viewportId) === nv) panes.delete(viewportId)
+    // Frees a closed series' buffers (held by its computed result).
+    for (const [series, group] of groups)
+      if (!isShown(group)) groups.delete(series)
     if (element) {
       delete element.dataset.frame
       delete element.dataset.frames

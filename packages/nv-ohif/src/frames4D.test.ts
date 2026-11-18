@@ -419,3 +419,23 @@ it('a reload with fewer frames skips a frame it lacks', async () => {
   expect(asked).toEqual([])
   leaveB()
 })
+
+// Review of #855: loadVolumes emits volumeRemoved before its swap lands, so a
+// series switched in must keep its group for a later reconversion.
+it('a series switched into a pane keeps its frame group', async () => {
+  globalThis.requestAnimationFrame ??= () => 0
+  const split = async (series: string) =>
+    (await split4D(nifti4D(), series)) as NonNullable<
+      Awaited<ReturnType<typeof split4D>>
+    >
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  const leave = joinFrames('switch', nv, undefined, null)
+  const old = await split('switch-old')
+  await nv.loadVolumes([{ url: old.image, frameSource: old.frames }])
+  const fresh = await split('switch-fresh')
+  await nv.loadVolumes([{ url: fresh.image, frameSource: fresh.frames }])
+  const again = (await split('switch-fresh')).frames.group
+  leave()
+  expect(again).toBe(fresh.frames.group)
+})

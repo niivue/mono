@@ -65,24 +65,22 @@ export async function split4D(
 
 // One group per display set: a reconversion (the conversion cache keeps four)
 // must rejoin the panes already showing that series. A group no pane shows is
-// dropped, so a reopen starts fresh: its frame and computed result are stale.
-const groups = new Map<string, object>()
+// not rejoined, so a reopen starts fresh: its frame and computed result are
+// stale. Weak, so a group (and the buffers its computed result holds) lives
+// only as long as a volume or a pending load holds it; eager pruning raced
+// loadVolumes, which emits volumeRemoved before its new volume is shown.
+const groups = new Map<string, WeakRef<object>>()
 const seriesGroup = (series: string | undefined): object => {
   if (series === undefined) return {}
-  const old = groups.get(series)
+  const old = groups.get(series)?.deref()
   const group = old && isShown(old) ? old : {}
-  groups.set(series, group)
+  groups.set(series, new WeakRef(group))
   return group
 }
 const isShown = (group: object): boolean =>
   [...panes.values()].some((nv) =>
     nv.volumes.some((v) => v.frameSource?.group === group),
   )
-// Frees a closed series' buffers (held by its computed result).
-const pruneGroups = () => {
-  for (const [series, group] of groups)
-    if (!isShown(group)) groups.delete(series)
-}
 
 /** The frame-source volume (base or overlay) a pane shows, if any. */
 const sourceVolume = (nv: NiiVue): NVImage | undefined =>
@@ -361,8 +359,6 @@ export function joinFrames(
           catchingUp = false
         })
     }
-    // loadVolumes emits volumeRemoved before its swap lands: prune after it.
-    pruneGroups()
     // The cine clock runs only while some pane shows a 4D series.
     if (v && !raf) raf = requestAnimationFrame(tick)
     onFrameChange()
@@ -370,17 +366,12 @@ export function joinFrames(
   nv.addEventListener('frameChange', onFrameChange)
   nv.addEventListener('volumeLoaded', onVolumeLoaded)
   // Removing the last 4D volume must hide the panel's frame controls.
-  const onVolumeRemoved = () => {
-    pruneGroups()
-    onFrameChange()
-  }
-  nv.addEventListener('volumeRemoved', onVolumeRemoved)
+  nv.addEventListener('volumeRemoved', onFrameChange)
   return () => {
     nv.removeEventListener('frameChange', onFrameChange)
     nv.removeEventListener('volumeLoaded', onVolumeLoaded)
-    nv.removeEventListener('volumeRemoved', onVolumeRemoved)
+    nv.removeEventListener('volumeRemoved', onFrameChange)
     if (panes.get(viewportId) === nv) panes.delete(viewportId)
-    pruneGroups()
     if (element) {
       delete element.dataset.frame
       delete element.dataset.frames

@@ -106,3 +106,35 @@ test('NVSlideAnnotations hands out copies, so callers cannot edit stored geometr
   expect(store.get(id)?.points[1]?.x).toBe(10)
   expect(store.get(id)?.stats.length).toBe(10)
 })
+
+// Review of #856: setPoints validates before it records an undo step.
+describe('NVSlideAnnotations.setPoints', () => {
+  const spacing = () => undefined
+  test('too few points leave the annotation and history alone', () => {
+    const a = new NVSlideAnnotations(spacing)
+    const r = a.add('rectangle', [
+      { x: 0, y: 0 },
+      { x: 2, y: 2 },
+    ])
+    expect(a.setPoints(r?.id ?? '', [])).toBe(false)
+    expect(a.annotationUndoTop).toBeUndefined()
+    expect(a.get(r?.id ?? '')?.points).toHaveLength(2)
+  })
+  test('a history listener that removes it gets no change', () => {
+    const a = new NVSlideAnnotations(spacing)
+    const id =
+      a.add('rectangle', [
+        { x: 0, y: 0 },
+        { x: 2, y: 2 },
+      ])?.id ?? ''
+    const changed: string[] = []
+    a.addEventListener('annotationHistoryPush', () => a.remove(id))
+    a.addEventListener('changed', () => changed.push(id))
+    const moved = [
+      { x: 0, y: 0 },
+      { x: 4, y: 4 },
+    ]
+    expect(a.setPoints(id, moved)).toBe(false)
+    expect(changed).toEqual([])
+  })
+})

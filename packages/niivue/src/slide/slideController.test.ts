@@ -408,6 +408,29 @@ describe('NVSlideController', () => {
     expect(r.ctl.draft?.points[0]).toEqual({ x: 1, y: 1 })
   })
 
+  // Review of #858: a shape tool's pick between two presses is not a double-click.
+  test('a polygon press after a shape-tool pick starts a new polygon', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    setSystemTime(new Date(0))
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [1, 1],
+    ]) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    r.ctl.annotationTool = 'rectangle'
+    r.fire('pointerdown', 1, 1)
+    r.fire('pointerup', 1, 1)
+    r.ctl.annotationTool = 'polygon'
+    r.fire('pointerdown', 1, 1)
+    setSystemTime()
+    expect(r.ctl.draft?.points[0]).toEqual({ x: 1, y: 1 })
+  })
+
   // Review of #836: focusing a circle centres on its centre, not the rim.
   test('focusAnnotation centres a circle', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })

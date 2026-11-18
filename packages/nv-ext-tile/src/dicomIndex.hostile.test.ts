@@ -377,6 +377,17 @@ describe('indexDicomWsiOnThread on hostile input', () => {
           dicom({ ...mono, ...over }, el(0x7fe0, 0x0010, 'OB', pixels)),
         ),
       ).toEqual(['uncompressed'])
+    // Interleaved RGB without PlanarConfiguration (Type 1C, often omitted).
+    const rgb = {
+      ...mono,
+      samples: el(0x0028, 0x0002, 'US', le(3, 2)),
+      photometric: el(0x0028, 0x0004, 'CS', str('RGB')),
+    }
+    expect(
+      await reasons(
+        dicom(rgb, el(0x7fe0, 0x0010, 'OB', new Uint8Array(3 * pixels.length))),
+      ),
+    ).toEqual([])
   })
 
   test('a text value over 1 KiB is malformed, never decoded', async () => {

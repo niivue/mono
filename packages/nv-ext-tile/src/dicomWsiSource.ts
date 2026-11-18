@@ -240,7 +240,11 @@ export function manifestOf<I extends InstanceCore>(
         const other = slide.instances[k] as I
         return (
           (other.native ?? CODEC_BY_TRANSFER_SYNTAX[other.transferSyntax]) !==
-          codec
+            codec ||
+          // The manifest takes a native level's sample format from its first instance.
+          (inst.native !== undefined &&
+            (other.bitsStored !== inst.bitsStored ||
+              other.photometric !== inst.photometric))
         )
       })
     )

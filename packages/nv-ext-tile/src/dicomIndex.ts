@@ -1145,7 +1145,8 @@ async function frameSpans(
       samples === 3 &&
       instance.photometric === 'RGB' &&
       bits === 8 &&
-      n(T.planar) === 0
+      // Type 1C: some writers omit it for interleaved RGB.
+      (n(T.planar) ?? 0) === 0
     if (
       instance.transferSyntax !== '1.2.840.10008.1.2.1' ||
       (bits !== 8 && bits !== 16) ||

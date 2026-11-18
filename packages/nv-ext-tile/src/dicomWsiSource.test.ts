@@ -88,6 +88,15 @@ test('local and hosted sources reject concatenations with mixed tile codecs', as
   await expect(manifestFromIndex(slide, fs, (i) => i.file)).rejects.toThrow(
     'level 0 mixes tile codecs',
   )
+  // Native on both, but 8-bit and 16-bit samples.
+  for (const [k, instance] of slide.instances.entries()) {
+    instance.native = 'raw-gray'
+    instance.transferSyntax = '1.2.840.10008.1.2.1'
+    instance.bitsStored = k === 0 ? 8 : 16
+  }
+  expect(() => new DicomWsiSource(slide, fs)).toThrow(
+    'level 0 mixes tile codecs',
+  )
 })
 
 test('serves the ICC profile from the level-0 file, and null without one', async () => {

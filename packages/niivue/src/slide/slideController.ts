@@ -160,6 +160,9 @@ export class NVSlideController {
   private _pinch = false
   // Where the last left press that started a gesture here was (CSS px).
   private _pressedAt: [number, number] | null = null
+  // Where a press closed a polygon: a double-click's second press lands there
+  // and must not start a new one.
+  private _polygonClosedAt: NVSlidePoint | null = null
   private _hoverFrame = 0
   private _hoverPoint: NVSlidePoint | null = null
   private _windowDrag: {
@@ -557,15 +560,18 @@ export class NVSlideController {
   private _annotateDown(p: NVSlidePoint): void {
     const tool = this._annotationTool as SlideAnnotationTool
     const draft = this.draft
+    const closedAt = this._polygonClosedAt
+    this._polygonClosedAt = null
     if (tool === 'polygon' && draft) {
       const placed = draft.points.slice(0, -1)
       const first = placed[0] as NVSlidePoint
       if (
         placed.length >= 3 &&
         this._cssDistance(p, first) <= CLOSE_POLYGON_CSS_PX
-      )
+      ) {
         this._commitDraft(placed)
-      else if (
+        this._polygonClosedAt = p
+      } else if (
         this._cssDistance(p, placed.at(-1) as NVSlidePoint) >
         crosshairPanThresholdCssPx
       )
@@ -574,6 +580,12 @@ export class NVSlideController {
       return
     }
     if (tool === 'point') return
+    if (
+      tool === 'polygon' &&
+      closedAt &&
+      this._cssDistance(p, closedAt) <= crosshairPanThresholdCssPx
+    )
+      return
     const fresh = tool.startsWith('freehand') ? [p] : [p, { ...p }]
     this.draft = { tool, points: fresh }
     this._options.onChange?.()

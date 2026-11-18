@@ -372,6 +372,23 @@ describe('NVSlideController', () => {
     expect(r.ctl.draft?.tool).toBe('polygon')
   })
 
+  test('a double-click that closes a polygon starts no new one', () => {
+    const r = rig({ scale: 1, primary: DRAG_MODE.pan })
+    r.ctl.annotationTool = 'polygon'
+    for (const [x, y] of [
+      [0, 0],
+      [50, 0],
+      [50, 50],
+      [1, 1],
+      [1, 1],
+    ]) {
+      r.fire('pointerdown', x, y)
+      r.fire('pointerup', x, y)
+    }
+    r.fire('dblclick', 1, 1)
+    expect([r.ctl.draft, r.ctl.annotations.list().length]).toEqual([null, 1])
+  })
+
   // Review of #836: focusing a circle centres on its centre, not the rim.
   test('focusAnnotation centres a circle', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })

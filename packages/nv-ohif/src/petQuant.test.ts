@@ -1,5 +1,6 @@
 import { expect, it } from 'bun:test'
 import NiiVue from '@niivue/niivue'
+import { getNiivueCommandsModule } from './commands'
 import {
   getNiivueEntry,
   registerNiivue,
@@ -362,3 +363,32 @@ it('a pane leaving its PT series gives its overlay planes back', async () => {
   resetQuant()
   unregisterNiivue('swap')
 })
+
+// Review of #866 r2: removing the PT overlay kept its label and plane hold.
+for (const how of ['remove', 'toggle'] as const)
+  it(`removing a PT overlay (${how}) gives the pane's planes back`, async () => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.drawScene = () => {}
+    await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
+    registerNiivue('rm', nv)
+    const petDs = { displaySetInstanceUID: 'pet', Modality: 'PT' }
+    updateNiivueViewport('rm', {
+      displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
+      overlays: new Map([['pet', nv.volumes[1]?.hdr]]) as never,
+    })
+    const services = {
+      services: {
+        displaySetService: { getDisplaySetByUID: () => petDs },
+        viewportGridService: { getActiveViewportId: () => 'rm' },
+      },
+    } as never
+    expect(armBrush('rm', 'CircularBrush', services, () => 5)).toBe(true)
+    const { actions } = getNiivueCommandsModule({ servicesManager: services })
+    if (how === 'remove')
+      await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
+    else await actions.niivueToggleOverlay()
+    await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], planesOn(), 'g')
+    expect(nv.drawingVolume?.img?.[0]).toBe(9)
+    resetQuant()
+    unregisterNiivue('rm')
+  })

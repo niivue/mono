@@ -6,6 +6,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
+import { setOverlayPlanes } from './overlayPlanes'
 import {
   armBrush,
   getQuantCommandDefinitions,
@@ -15,8 +16,8 @@ import {
 } from './petQuant'
 import { tmtvDataset } from './segCommands'
 
-// 2x2x2 uint8 NIfTI-1, 1 mm voxels.
-function nifti(): File {
+// 2x2x2 uint8 NIfTI-1, 1 mm voxels, every voxel `fill`.
+function nifti(fill = 5, name = 'pet.nii'): File {
   const hdr = new DataView(new ArrayBuffer(352))
   hdr.setInt32(0, 348, true)
   for (const [i, d] of [3, 2, 2, 2].entries()) hdr.setInt16(40 + 2 * i, d, true)
@@ -25,7 +26,7 @@ function nifti(): File {
   hdr.setFloat32(108, 352, true)
   for (const i of [1, 2, 3]) hdr.setFloat32(76 + 4 * i, 1, true)
   hdr.setUint32(344, 0x00312b6e, true) // magic 'n+1'
-  return new File([hdr.buffer, new Uint8Array(8).fill(5)], 'pet.nii')
+  return new File([hdr.buffer, new Uint8Array(8).fill(fill)], name)
 }
 
 // Audit 22.3: Add Segment / segment selection must retarget an armed brush;
@@ -291,4 +292,44 @@ it('TMTV SEG and RTSS reference the PT series and keep segment voxel counts', as
   } finally {
     f.done()
   }
+})
+
+// Holistic review (nv-ohif): a label shown in a pane with a 60xx plane wrote
+// TMTV into the plane's drawing. The label takes the drawing; mode exit gives
+// it back.
+it('a label replaces a shown overlay plane until mode exit', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti() }])
+  registerNiivue('plane', nv)
+  updateNiivueViewport('plane', {
+    displaySets: [{ displaySetInstanceUID: 'pt', Modality: 'PT' } as never],
+  })
+  const em = {
+    getModuleEntry: () => ({
+      exports: {
+        getCornerstoneLibraries: () => ({
+          cornerstoneTools: {
+            ToolGroupManager: {
+              getToolGroup: () => ({
+                getToolInstance: () => ({ mode: 'Enabled' }),
+              }),
+            },
+          },
+        }),
+      },
+    }),
+  } as never
+  await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], em, 'g')
+  expect(nv.drawingVolume?.img?.[0]).toBe(9)
+  const services = {
+    services: { viewportGridService: { getActiveViewportId: () => 'plane' } },
+  } as never
+  expect(armBrush('plane', 'CircularBrush', services, () => 5)).toBe(true)
+  expect([...(nv.drawingVolume?.img ?? [])].every((v) => v === 0)).toBe(true)
+  resetQuant()
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(nv.drawingVolume?.img?.[0]).toBe(9)
+  unregisterNiivue('plane')
 })

@@ -61,7 +61,8 @@ export async function planeFrame(file: File, t: number): Promise<File> {
 }
 
 function closeOwn(nv: NiiVue): void {
-  if (pending.get(nv) === nv.drawingGeneration) nv.cancelDrawingLoad()
+  if (pending.has(nv) && pending.get(nv) === nv.drawingGeneration)
+    nv.cancelDrawingLoad()
   pending.delete(nv)
   if (shown.has(nv) && nv.drawingVolume === shown.get(nv)) nv.closeDrawing()
   shown.delete(nv)

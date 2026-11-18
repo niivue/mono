@@ -23,6 +23,7 @@ import type {
   OhifExtensionParams,
   OhifServicesManager,
 } from './ohif-types'
+import { holdOverlayPlanes } from './overlayPlanes'
 import {
   boxAround,
   boxMax,
@@ -90,6 +91,8 @@ const setActiveSegment = (value: number) => {
 const roiSlices: { start?: number[]; end?: number[] } = {}
 // Panes whose armed brush is OHIF's threshold brush.
 const thresholdPens = new WeakSet<NiiVue>()
+// Panes whose drawing a label holds, with the overlay planes' release.
+const planeHolds = new Map<NiiVue, () => void>()
 let thresholdRange: [number, number] = [2.5, 50]
 // Armed panes' pen size (OHIF's brush size), re-read by refreshBrushSizes.
 const penSizes = new WeakMap<NiiVue, () => number>()
@@ -107,6 +110,16 @@ const notify = () => {
 /** Drop every PT label and the tool state: a mode exit leaves no study's
  * masks (a full label grid per brushed PT series) behind. */
 export function resetQuant(): void {
+  // Panes still mounted drop the label and get their planes back; the rest
+  // are destroyed.
+  const live = new Set(niivueEntries().map((e) => e.nv))
+  for (const [nv, release] of planeHolds) {
+    if (!live.has(nv)) continue
+    if (nv.drawingVolume && shownIn.get(nv)?.[2] === nv.drawingVolume)
+      nv.closeDrawing()
+    release()
+  }
+  planeHolds.clear()
   masks.clear()
   thresholdRange = [2.5, 50]
   roiSlices.start = roiSlices.end = undefined
@@ -218,6 +231,8 @@ function showMask(
       shown[2] === nv.drawingVolume
     )
       continue
+    // A shown 60xx plane is display only: the label replaces it.
+    if (!planeHolds.has(nv)) planeHolds.set(nv, holdOverlayPlanes(nv))
     if (!nv.drawingVolume) {
       // createEmptyDrawing arms the pen; the pane's tool decides.
       const armed = nv.drawIsEnabled

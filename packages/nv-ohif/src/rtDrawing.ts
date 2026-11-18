@@ -578,13 +578,19 @@ export function rasterizeStructureSet(
 ): Pick<RtLabels, 'stats'> & {
   segments: PanelSegment[]
   draw: (bitmap: Uint8Array) => RtLabels['showOnly']
+  // ROIs past the 255th were left out.
+  truncated: boolean
 } {
   // Cap after dropping empty ROIs, so empty ones never use up labels.
   const drawn: ({ roi: RtRoi; value: number } & ReturnType<
     typeof rasterizeContours
   >)[] = []
+  let truncated = false
   for (const roi of rois) {
-    if (drawn.length === 255) break
+    if (drawn.length === 255) {
+      truncated = true
+      break
+    }
     const { contours, xor } = roiContours(roi)
     const r = rasterizeContours(dims, lps2vox, contours, xor)
     if (r.count) drawn.push({ roi, value: drawn.length + 1, ...r })
@@ -613,7 +619,7 @@ export function rasterizeStructureSet(
       rgb: [red, green, blue] as [number, number, number],
     }
   })
-  return { segments, stats, draw }
+  return { segments, stats, draw, truncated }
 }
 
 type RtDisplaySet = OhifDisplaySet & {
@@ -679,8 +685,19 @@ export function startRtDrawing(
       | [number, number, number]
       | undefined
     const lps2vox = lpsToVoxel((vox) => nv.vox2mm(vox))
-    if (!dims || !lps2vox) return
-    const { segments, stats, draw } = rasterizeStructureSet(dims, lps2vox, rois)
+    if (!dims || !lps2vox) {
+      options.setNote('The base image has no usable orientation for contours.')
+      return
+    }
+    const { segments, stats, draw, truncated } = rasterizeStructureSet(
+      dims,
+      lps2vox,
+      rois,
+    )
+    if (truncated)
+      options.setNote(
+        `Showing the first 255 of ${rois.length} ROIs (the drawing's label range).`,
+      )
     // Before createEmptyDrawing: nothing to show must not replace the drawing.
     if (!segments.length) {
       options.setNote('The structure set has no closed contours to show.')

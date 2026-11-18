@@ -75,6 +75,28 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 // tile drew colour x alpha^2 there while WebGPU drew colour x alpha.
 const STRAIGHT: ImageBitmapOptions = { premultiplyAlpha: 'none' }
 
+/** Native DICOM edge frames retain the full stored tile; decodeTileBitmap crops them. */
+function paddedTileSize(
+  bytes: Uint8Array,
+  width: number,
+  height: number,
+  bytesPerPixel: number,
+  level: NVSlideLevelManifest,
+): [number, number] {
+  const [storedWidth, storedHeight] = level.tileOrientation?.transpose
+    ? [level.tileHeight ?? width, level.tileWidth ?? height]
+    : [level.tileWidth ?? width, level.tileHeight ?? height]
+  if (
+    storedWidth < width ||
+    storedHeight < height ||
+    bytes.byteLength !== storedWidth * storedHeight * bytesPerPixel
+  )
+    throw new Error(
+      `Expected ${width}x${height} ${bytesPerPixel * 8}-bit samples, received ${bytes.byteLength} bytes`,
+    )
+  return [storedWidth, storedHeight]
+}
+
 export const tileDecoders = new Map<string, SlideTileDecoder>([
   [
     'image/jpeg',
@@ -85,6 +107,21 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
         ...STRAIGHT,
         colorSpaceConversion: 'none',
       }),
+  ],
+  [
+    'raw-rgb',
+    (bytes, { width, height, level }) => {
+      if (bytes.byteLength !== width * height * 3)
+        [width, height] = paddedTileSize(bytes, width, height, 3, level)
+      const rgba = new Uint8ClampedArray(width * height * 4)
+      for (let s = 0, d = 0; s < bytes.length; s += 3, d += 4) {
+        rgba[d] = bytes[s]
+        rgba[d + 1] = bytes[s + 1]
+        rgba[d + 2] = bytes[s + 2]
+        rgba[d + 3] = 255
+      }
+      return createImageBitmap(new ImageData(rgba, width, height), STRAIGHT)
+    },
   ],
   [
     'raw-rgba',
@@ -126,11 +163,14 @@ export const tileDecoders = new Map<string, SlideTileDecoder>([
           : sampleType === 'i16' || bitsStored > 8
             ? 2
             : 1
-      if (bytes.byteLength !== width * height * bytesPerSample) {
-        throw new Error(
-          `Expected ${width}x${height} ${bytesPerSample * 8}-bit samples, received ${bytes.byteLength} bytes`,
+      if (bytes.byteLength !== width * height * bytesPerSample)
+        [width, height] = paddedTileSize(
+          bytes,
+          width,
+          height,
+          bytesPerSample,
+          level,
         )
-      }
       const { buffer } = copyUint8(bytes)
       const samples =
         sampleType === 'f32'

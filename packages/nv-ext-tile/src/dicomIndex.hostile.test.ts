@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { NVSlide } from '@niivue/niivue'
 import {
   indexDicomWsiOnThread,
   type SlideIndexLevel,
@@ -6,6 +7,7 @@ import {
   tileMap,
 } from './dicomIndex'
 import { DicomWsiSource } from './dicomWsiSource'
+import { manifestFromIndex } from './hostedManifest'
 
 // Hostile and malformed inputs, built byte by byte here (explicit VR little
 // endian), so each test states exactly what is wrong with its file.
@@ -271,6 +273,121 @@ describe('indexDicomWsiOnThread on hostile input', () => {
     // Encapsulated Pixel Data cut before its offset-table item is truncated.
     const cut = cat(pre, el(0x7fe0, 0x0010, 'OB', new Uint8Array(0), UNDEF))
     expect(await reasons(new File([cut], 'h.dcm'))).toEqual(['malformed'])
+  })
+
+  test('native frames read as grey samples locally and by hosted ranges, with padding only at the end', async () => {
+    const file = dicom(
+      {
+        syntax: el(0x0002, 0x0010, 'UI', str('1.2.840.10008.1.2.1', '\0')),
+        photometric: el(0x0028, 0x0004, 'CS', str('MONOCHROME2')),
+        samples: el(0x0028, 0x0002, 'US', le(1, 2)),
+        allocated: el(0x0028, 0x0100, 'US', le(8, 2)),
+        frames: el(0x0028, 0x0008, 'IS', str('3')),
+        rows: el(0x0028, 0x0010, 'US', le(1, 2)),
+        columns: el(0x0028, 0x0011, 'US', le(3, 2)),
+        totalColumns: el(0x0048, 0x0006, 'UL', le(9, 4)),
+        totalRows: el(0x0048, 0x0007, 'UL', le(1, 4)),
+      },
+      el(
+        0x7fe0,
+        0x0010,
+        'OB',
+        new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 255, 0]),
+      ),
+    )
+    const index = await indexDicomWsiOnThread([file])
+    expect(index.skipped).toEqual([])
+    const slide = index.slides[0]
+    if (!slide) throw new Error('no native slide')
+    const source = new DicomWsiSource(slide, [file])
+    const level = source.manifest.levels[0]
+    if (!level) throw new Error('no native level')
+    expect(level.codec).toBe('raw-gray')
+    expect(source.manifest.channelInfo).toEqual([
+      { name: 'gray', active: true },
+    ])
+    const hosted = await manifestFromIndex(slide, [file], () => 'native.dcm')
+    expect(hosted.levels[0]?.codec).toBe('raw-gray')
+    let wire = 0
+    source.bind({ addWireBytes: (n: number) => (wire += n) } as never)
+    for (const [i, tile] of level.tiles.entries()) {
+      if (!tile) throw new Error('missing native tile')
+      const bytes = await source.fetchTileBytes(level, tile, '')
+      const want = i === 2 ? [6, 7, 255] : [i * 3, i * 3 + 1, i * 3 + 2]
+      expect([...bytes]).toEqual(want)
+      const decoded = await NVSlide.tileDecoder('raw-gray')?.(bytes, {
+        width: 3,
+        height: 1,
+        level,
+      })
+      expect(decoded).toMatchObject({
+        samples: new Uint8Array(want),
+        width: 3,
+        height: 1,
+        bitsStored: 8,
+      })
+      const range = hosted.levels[0]?.tiles[i]
+      if (range?.offset === undefined || range.length === undefined)
+        throw new Error('no native range')
+      expect(range.fragments).toBeUndefined()
+      expect([
+        ...new Uint8Array(
+          await file
+            .slice(range.offset, range.offset + range.length)
+            .arrayBuffer(),
+        ),
+      ]).toEqual([...bytes])
+    }
+    expect(wire).toBe(9)
+    source.dispose()
+    const tile = level.tiles[0]
+    if (!tile) throw new Error('no tile')
+    await expect(source.fetchTileBytes(level, tile, '')).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+  })
+
+  test('native levels reject short data and unsupported sample layouts', async () => {
+    const mono = {
+      syntax: el(0x0002, 0x0010, 'UI', str('1.2.840.10008.1.2.1', '\0')),
+      photometric: el(0x0028, 0x0004, 'CS', str('MONOCHROME2')),
+      samples: el(0x0028, 0x0002, 'US', le(1, 2)),
+      allocated: el(0x0028, 0x0100, 'US', le(8, 2)),
+    }
+    const pixels = new Uint8Array(4 * 16 * 16)
+    for (const [data, length] of [
+      [pixels.subarray(1), pixels.length - 1],
+      [pixels, pixels.length + 2],
+    ] as const)
+      expect(
+        await reasons(dicom(mono, el(0x7fe0, 0x0010, 'OB', data, length))),
+      ).toEqual(['malformed'])
+    const unsupported: Record<string, Uint8Array>[] = [
+      { allocated: el(0x0028, 0x0100, 'US', le(32, 2)) },
+      { signed: el(0x0028, 0x0103, 'US', le(1, 2)) },
+      {
+        samples: el(0x0028, 0x0002, 'US', le(3, 2)),
+        photometric: el(0x0028, 0x0004, 'CS', str('RGB')),
+        planar: el(0x0028, 0x0006, 'US', le(1, 2)),
+      },
+    ]
+    for (const over of unsupported)
+      expect(
+        await reasons(
+          dicom({ ...mono, ...over }, el(0x7fe0, 0x0010, 'OB', pixels)),
+        ),
+      ).toEqual(['uncompressed'])
+    // Interleaved RGB without PlanarConfiguration (Type 1C, often omitted).
+    const rgb = {
+      ...mono,
+      samples: el(0x0028, 0x0002, 'US', le(3, 2)),
+      photometric: el(0x0028, 0x0004, 'CS', str('RGB')),
+    }
+    expect(
+      await reasons(
+        dicom(rgb, el(0x7fe0, 0x0010, 'OB', new Uint8Array(3 * pixels.length))),
+      ),
+    ).toEqual([])
   })
 
   test('a text value over 1 KiB is malformed, never decoded', async () => {

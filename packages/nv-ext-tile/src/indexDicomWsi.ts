@@ -7,7 +7,7 @@ import {
 
 /**
  * Index the DICOM-WSI instances among `files` (e.g. an `<input webkitdirectory>`
- * selection). Files that are not tiled, compressed, explicit-VR DICOM, or that
+ * selection). Files that are not tiled, supported explicit-VR DICOM, or that
  * fail to parse, are listed in `skipped`; they never cost the other files their
  * slides. Only VOLUME instances make levels; each optical path and focal plane
  * is its own slide; label, overview and thumbnail images are in `associated`.

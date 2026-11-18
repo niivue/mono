@@ -27,6 +27,7 @@ import {
   applyNiivueAnnotationDelta,
   centerCrosshair,
   clearNiivueAnnotations,
+  cornerstonePetWindowingStep,
   cornerstoneWindowingStep,
   dicomWindow,
   initialRenderView,
@@ -49,6 +50,7 @@ import {
   type DicomConversion,
   loadConversion,
 } from './dicomToNiivue'
+import { DisplayMenu } from './displayMenu'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import { joinFrames } from './frames4D'
 import {
@@ -60,7 +62,7 @@ import {
   overlayDisplaySets,
   useHungOverlays,
 } from './hangingOptions'
-import { useAnnotationHistory } from './history'
+import { mirrorAnnotationHistory, useAnnotationHistory } from './history'
 import { createMagnifyBinding } from './magnify'
 import { MeasurementData } from './measurementData'
 import { useMetadataRevision } from './metadataReload'
@@ -78,17 +80,25 @@ import {
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
-import { useOutputStack } from './outputStack'
-import { armBrush } from './petQuant'
+import { matchStoredOrientation, useOutputStack } from './outputStack'
+import { setOverlayPlanes } from './overlayPlanes'
+import { armBrush, showPaneLabel } from './petQuant'
+import { ReferenceLines } from './referenceLines'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
-import { applySegTool } from './segEdit'
+import { applySegTool, ohifPenSize } from './segEdit'
 import { PaneCorner, useHydratePrompt } from './segHydration'
+import { SegmentLabel } from './segmentLabel'
+import { SliceCine } from './sliceCine'
 import type { SliceFrames } from './sliceFrames'
 import { bindSlideMeasurements } from './slideMeasurements'
 import { useOhifRowImport } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
 import { floorSuvWindow } from './suv'
-import { ohifToolToAnnotationTool, ohifToolToDragMode } from './toolBridge'
+import {
+  measureFreehand,
+  ohifToolToAnnotationTool,
+  ohifToolToDragMode,
+} from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
 import { ViewportNotification } from './viewportNotification'
 import {
@@ -334,6 +344,16 @@ export function NiivueViewport(props: OhifViewportProps) {
     viewportId,
     displaySets[0],
     conversion,
+    (o) => {
+      const nv = nvRef.current
+      if (nv)
+        void setOverlayPlanes(
+          nv,
+          o.overlayPlanes,
+          props.extensionManager,
+          getNiivueEntry(viewportId)?.toolGroupId ?? 'default',
+        )
+    },
   )
   // The load's first position predates the split registering: recount it.
   const showStackRef = useRef<(e: Event) => void>(() => {})
@@ -606,6 +626,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // (round-2 review R2-5). Fall back to the event object if not found.
       const stored =
         nv.annotations.find((a) => a.id === annotation.id) ?? annotation
+      measureFreehand(nv, stored)
       const added = reflectNiivueAnnotation(
         viewportId,
         servicesManagerRef.current,
@@ -630,6 +651,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     // the set with no annotationRemoved event; its id arrives in `removed`.
     const onAnnotationChanged = (e: Event) => {
       const detail = (e as CustomEvent<AnnotationChangedDetail>).detail
+      // An edit (erase, merge, undo) changes a freehand ROI's stats too.
+      for (const a of nv.annotations) measureFreehand(nv, a)
       if (detail)
         applyNiivueAnnotationDelta(
           viewportId,
@@ -781,7 +804,15 @@ export function NiivueViewport(props: OhifViewportProps) {
       setLoadedSeries(ds.SeriesInstanceUID as string | undefined)
       setLoadedBase(ds.displaySetInstanceUID)
       centerCrosshair(nv)
-      const step = nv.volumes[0] && cornerstoneWindowingStep(nv.volumes[0])
+      const vol = nv.volumes[0]
+      const suv = unitForDisplaySet(ds) === 'SUV'
+      const step =
+        vol &&
+        (suv
+          ? cornerstonePetWindowingStep(vol, nv.canvas?.clientHeight ?? 0)
+          : cornerstoneWindowingStep(vol))
+      // Set on every load: a PT pane reloaded as CT must drop it.
+      nv.isWindowingUpperBoundOnly = suv && !!step
       if (step) nv.windowingStep = step
       const wl = readBaseWindowLevel(nv)
       setWindowLevel(wl ?? null)
@@ -797,6 +828,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       // volume was still becoming ready. Retry after the load boundary even when
       // annotation geometry itself has not changed.
       reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
+      const entry = getNiivueEntry(viewportId)
+      if (entry) showPaneLabel(entry, servicesManagerRef.current)
       // The volume-gated toolbar buttons (Views, Clip, W/L, ...) were evaluated
       // at attach time when no volume was loaded yet, so they came up disabled.
       // Now that the volume is in (esp. after the async dcm2niix conversion),
@@ -921,11 +954,23 @@ export function NiivueViewport(props: OhifViewportProps) {
             view = mounted
             slideViewRef.current = view
             view.setTool(activeOhifToolRef.current)
-            unbindMeasurements = bindSlideMeasurements(
+            const unbindRows = bindSlideMeasurements(
               view,
               servicesManager,
               ds,
+              props.commandsManager,
             )
+            // Handle edits are undoable steps, as NiiVue's.
+            const unbindHistory = view.annotations
+              ? mirrorAnnotationHistory(
+                  view.annotations,
+                  props.extensionManager,
+                )
+              : undefined
+            unbindMeasurements = () => {
+              unbindHistory?.()
+              unbindRows()
+            }
             updateNiivueViewport(viewportId, { slideView: view })
             refreshToolbar(servicesManager, viewportId)
             setIsLoaded(true)
@@ -1013,16 +1058,23 @@ export function NiivueViewport(props: OhifViewportProps) {
         ).then((shown) => {
           if (!shown) return
           setConversion(converted)
+          void setOverlayPlanes(
+            nv,
+            converted.overlayPlanes,
+            props.extensionManager,
+            getNiivueEntry(viewportId)?.toolGroupId ?? 'default',
+          )
           // A single image (e.g. a localizer) shows in its own plane, as a
-          // cornerstone stack does, unless the hanging protocol set one.
-          if (
-            nv.volumes[0]?.dims?.[3] === 1 &&
-            initialSliceType(viewportOptionsRef.current) ===
-              SLICE_TYPE.MULTIPLANAR
-          ) {
-            const plane = acquisitionSliceType(nv)
-            if (plane !== undefined) nv.sliceType = plane
-          }
+          // cornerstone stack does, unless the hanging protocol set one; any
+          // other series gets the pane's initial view, not the one the
+          // previous series left (a coronal scout's).
+          matchStoredOrientation(nv)
+          const initial = initialSliceType(viewportOptionsRef.current)
+          const plane =
+            nv.volumes[0]?.dims?.[3] === 1 && initial === SLICE_TYPE.MULTIPLANAR
+              ? acquisitionSliceType(nv)
+              : undefined
+          nv.sliceType = plane ?? initial
           seedWindowLevel(dicomSpec)
         })
       })
@@ -1103,10 +1155,15 @@ export function NiivueViewport(props: OhifViewportProps) {
       // tool turns the gate off and maps to a left-drag mode instead.
       const annoTool = ohifToolToAnnotationTool(tool)
       // Brush/Eraser/Threshold paint the PT label (petQuant.ts).
-      nv.drawIsEnabled = armBrush(viewportId, tool, servicesManager)
+      nv.drawIsEnabled = armBrush(viewportId, tool, servicesManager, () =>
+        ohifPenSize(nv, toolGroupId, props.extensionManager),
+      )
       if (nv.drawIsEnabled) nv.annotationIsEnabled = false
       else if (annoTool) {
         nv.annotationTool = annoTool
+        // A closed freehand path is a filled ROI (cornerstone's
+        // PlanarFreehandROI), core's polygon mode, not a brush stroke.
+        if (annoTool === 'freehand') nv.annotationBrushRadius = 1
         nv.annotationIsEnabled = true
       } else {
         nv.annotationIsEnabled = false
@@ -1208,6 +1265,27 @@ export function NiivueViewport(props: OhifViewportProps) {
         displaySetsKey={props.displaySets
           .map((ds) => ds.displaySetInstanceUID)
           .join()}
+        servicesManager={servicesManager}
+      />
+      <ReferenceLines
+        viewportId={viewportId}
+        isLoaded={isLoaded && !slideViewRef.current}
+        servicesManager={servicesManager}
+        extensionManager={props.extensionManager}
+      />
+      <SegmentLabel
+        viewportId={viewportId}
+        isLoaded={isLoaded && !slideViewRef.current}
+        extensionManager={props.extensionManager}
+      />
+      <DisplayMenu
+        viewportId={viewportId}
+        isLoaded={isLoaded && !slideViewRef.current && !isRender}
+        servicesManager={servicesManager}
+      />
+      <SliceCine
+        viewportId={viewportId}
+        isLoaded={isLoaded && !slideViewRef.current && !isRender}
         servicesManager={servicesManager}
       />
       <ViewportNotification

@@ -1,7 +1,9 @@
 import type NiiVue from '@niivue/niivue'
-import { PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
+import type { DragReleaseInfo } from '@niivue/niivue'
+import { DRAG_MODE, PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
 import { historyMemo } from './history'
 import type { OhifExtensionManager } from './ohif-types'
+import { lpsToVoxel } from './rtDrawing'
 
 // OHIF's labelmap tools on a NiiVue pane drive NiiVue's drawing pen (value =
 // the active segment). Each finished edit is diffed against the previous
@@ -10,38 +12,129 @@ import type { OhifExtensionManager } from './ohif-types'
 // redo run from OHIF's buttons and hotkeys in one order with annotations.
 
 interface Pen {
+  /** 3D ball across slices instead of the slice disc. */
+  ball?: true
   erase?: true
   /** Fill the closed freehand stroke (lasso). */
   filled?: true
+  /** Scissor: a drag (centre to edge, or corner to corner) fills this shape. */
+  shape?: PEN_SHAPE
   threshold?: true
+  /** The range is sampled at the stroke (cornerstone's isDynamic). */
+  dynamic?: true
 }
 
 /**
- * OHIF tool name -> pen. ponytail: the sphere variants paint the current slice
- * (core's 2D pen is a disc); circle/rectangle/sphere scissors are a lasso
- * fill; dynamic threshold uses the configured range, not one sampled at the
- * click. Add each when a reviewer needs it.
+ * OHIF tool name -> pen. ponytail: a scissor drag previews as NiiVue's
+ * selection box (circle/sphere: the box from centre to edge).
  */
 export const SEG_TOOLS: Readonly<Record<string, Pen>> = {
   CircularBrush: {},
-  SphereBrush: {},
+  SphereBrush: { ball: true },
   CircularEraser: { erase: true },
-  SphereEraser: { erase: true },
+  SphereEraser: { erase: true, ball: true },
   ThresholdCircularBrush: { threshold: true },
-  ThresholdSphereBrush: { threshold: true },
-  ThresholdCircularBrushDynamic: { threshold: true },
-  ThresholdSphereBrushDynamic: { threshold: true },
-  CircleScissor: { filled: true },
-  RectangleScissor: { filled: true },
-  SphereScissor: { filled: true },
+  ThresholdSphereBrush: { threshold: true, ball: true },
+  ThresholdCircularBrushDynamic: { threshold: true, dynamic: true },
+  ThresholdSphereBrushDynamic: { threshold: true, ball: true, dynamic: true },
+  CircleScissor: { shape: PEN_SHAPE.CIRCLE },
+  RectangleScissor: { shape: PEN_SHAPE.RECTANGLE },
+  SphereScissor: { shape: PEN_SHAPE.SPHERE },
   LabelMapEditWithContour: { filled: true },
 }
 
 // OHIF's threshold option default (segmentationToolbarCustomization).
 const DEFAULT_RANGE: [number, number] = [50, 600]
+// OHIF's threshold.dynamicRadius (voxels) for the dynamic brushes.
+const DYNAMIC_RADIUS = 3
+
+// RAS voxel axis normal to each 2D view (axial z, coronal y, sagittal x).
+const FIXED_AXIS = [2, 1, 0]
+
+/** Row-major 3x4 RAS mm -> RAS voxel of the pane's base (inverse vox2mm). */
+function rasToVoxel(nv: NiiVue): number[] | null {
+  const m = lpsToVoxel((v) => nv.vox2mm(v))
+  // lpsToVoxel takes LPS mm: negate its x and y columns to take RAS.
+  if (m) for (const i of [0, 1, 4, 5, 8, 9]) m[i] = -(m[i] as number)
+  return m
+}
+
+/** The RAS voxel of the pane's base under a client point (2D tiles only). */
+function rasVoxelAt(
+  nv: NiiVue,
+  clientX: number,
+  clientY: number,
+): [number, number, number] | undefined {
+  const xy = nv.clientToCanvas(clientX, clientY)
+  const mm = xy && nv.canvasToMM(xy[0], xy[1])
+  const m = mm && rasToVoxel(nv)
+  if (!mm || !m) return undefined
+  return [0, 1, 2].map((r) =>
+    Math.round(
+      (m[r * 4] as number) * mm[0] +
+        (m[r * 4 + 1] as number) * mm[1] +
+        (m[r * 4 + 2] as number) * mm[2] +
+        (m[r * 4 + 3] as number),
+    ),
+  ) as [number, number, number]
+}
+
+/** The drawing's value under a client point (0 off the drawing). */
+export function drawingValueAt(
+  nv: NiiVue,
+  clientX: number,
+  clientY: number,
+): number {
+  const img = nv.drawingVolume?.img
+  const dims = nv.volumes[0]?.dimsRAS
+  const v = img && dims && rasVoxelAt(nv, clientX, clientY)
+  if (!v || !dims) return 0
+  const [, nx = 0, ny = 0, nz = 0] = dims
+  const [x, y, z] = v
+  if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return 0
+  return Number(img?.[x + nx * (y + ny * z)] ?? 0)
+}
+
+/**
+ * cornerstone's dynamic threshold: min/max over the in-plane disk (radius
+ * DYNAMIC_RADIUS voxels, `fixed` = the RAS axis normal to the view) around the
+ * stroke's first centre, widened by the value under every later centre.
+ * `centers` are RAS voxel indices; `dims` the RAS grid.
+ */
+export function dynamicRange(
+  intensity: (i: number) => number,
+  dims: readonly [number, number, number],
+  centers: ReadonlyArray<readonly [number, number, number]>,
+  fixed: number,
+): [number, number] | undefined {
+  const [first, ...rest] = centers
+  if (!first) return undefined
+  const [nx, ny, nz] = dims
+  const range: [number, number] = [Infinity, -Infinity]
+  const add = (x: number, y: number, z: number) => {
+    const g = intensity(x + nx * (y + ny * z))
+    if (g < range[0]) range[0] = g
+    if (g > range[1]) range[1] = g
+  }
+  const r = DYNAMIC_RADIUS
+  const lo = first.map((c, a) => (a === fixed ? c : Math.max(0, c - r)))
+  const hi = first.map((c, a) =>
+    a === fixed ? c : Math.min([nx, ny, nz][a] as number, c + r + 1) - 1,
+  )
+  for (let z = lo[2] as number; z <= (hi[2] as number); z++)
+    for (let y = lo[1] as number; y <= (hi[1] as number); y++)
+      for (let x = lo[0] as number; x <= (hi[0] as number); x++) {
+        const d =
+          (x - first[0]) ** 2 + (y - first[1]) ** 2 + (z - first[2]) ** 2
+        if (d <= r * r) add(x, y, z)
+      }
+  for (const [x, y, z] of rest) add(x, y, z)
+  return range
+}
 
 type ToolGroup = {
   getToolConfiguration?: (tool: string, key: string) => unknown
+  getToolInstance?: (tool: string) => { mode?: string } | undefined
 }
 type CstLibs = {
   cornerstoneTools?: {
@@ -52,6 +145,17 @@ type CstLibs = {
     }
     ToolGroupManager?: { getToolGroup?: (id: string) => ToolGroup | undefined }
   }
+}
+
+/** Cornerstone tool `tool`'s mode in tool group `toolGroupId` ('Active', 'Enabled', ...). */
+export function toolMode(
+  em: OhifExtensionManager | undefined,
+  toolGroupId: string,
+  tool: string,
+): string | undefined {
+  const group =
+    cstLibs(em)?.cornerstoneTools?.ToolGroupManager?.getToolGroup?.(toolGroupId)
+  return group?.getToolInstance?.(tool)?.mode
 }
 
 function cstLibs(em: OhifExtensionManager | undefined): CstLibs | undefined {
@@ -74,6 +178,8 @@ interface Session {
   tool?: string
   toolGroupId: string
   locked: ReadonlySet<number>
+  /** The stroke's brush centres (RAS voxels), for a dynamic threshold. */
+  centers: Array<[number, number, number]>
   extensionManager?: OhifExtensionManager
   onEdit: () => void
 }
@@ -102,6 +208,21 @@ export function penSizeFor(
   return Math.max(1, Math.round((2 * radiusMm) / Math.min(...inPlane)))
 }
 
+/** `nv`'s pen size for OHIF's brush size of `toolGroupId` (default 25 mm). */
+export function ohifPenSize(
+  nv: NiiVue,
+  toolGroupId: string,
+  extensionManager: OhifExtensionManager | undefined,
+): number {
+  const radius =
+    cstLibs(
+      extensionManager,
+    )?.cornerstoneTools?.utilities?.segmentation?.getBrushSizeForToolGroup?.(
+      toolGroupId,
+    ) ?? 25
+  return penSizeFor(radius, nv.volumes[0]?.pixDimsRAS ?? [], nv.sliceType)
+}
+
 /**
  * Point `nv`'s pen at OHIF tool `tool`: true when it is a labelmap tool and
  * the pane has a drawing to edit (the drawing then owns the left button).
@@ -123,27 +244,31 @@ export function applySegTool(
     if (nv.drawIsEnabled) nv.drawIsEnabled = false
     return false
   }
-  const radius =
-    cstLibs(
-      extensionManager,
-    )?.cornerstoneTools?.utilities?.segmentation?.getBrushSizeForToolGroup?.(
-      toolGroupId,
-    ) ?? 25
   nv.annotationIsEnabled = false
-  nv.drawPenShape = PEN_SHAPE.CIRCLE
+  if (pen.erase) nv.drawPenValue = 0
+  else if (nv.drawPenValue === 0) nv.drawPenValue = activeValue.get(nv) ?? 1
+  // Scissors: the left drag reports its box (dragRelease, below), no pen.
+  if (pen.shape !== undefined) {
+    nv.drawIsEnabled = false
+    nv.primaryDragMode = DRAG_MODE.callbackOnly
+    return true
+  }
+  nv.drawPenShape = pen.ball ? PEN_SHAPE.SPHERE : PEN_SHAPE.CIRCLE
   nv.drawPenSize = pen.filled
     ? 1
-    : penSizeFor(radius, nv.volumes[0]?.pixDimsRAS ?? [], nv.sliceType)
+    : ohifPenSize(nv, toolGroupId, extensionManager)
   nv.drawPenFilled = !!pen.filled
   nv.drawPenAutoClose = !!pen.filled
   nv.drawIsFillOverwriting = true
-  if (pen.erase) nv.drawPenValue = 0
-  else if (nv.drawPenValue === 0) nv.drawPenValue = activeValue.get(nv) ?? 1
   nv.drawIsEnabled = true
   return true
 }
 
 const activeValue = new WeakMap<NiiVue, number>()
+
+/** The panel's active segment on `nv` (the pen's value before any). */
+export const activeSegmentValue = (nv: NiiVue): number =>
+  activeValue.get(nv) ?? (nv.drawPenValue || 1)
 
 /** The segment the pen paints (the panel's active segment). */
 export function setActiveSegmentValue(nv: NiiVue, value: number) {
@@ -235,12 +360,23 @@ function commit(
     const back = nv.volumes[0]
     intensity = back && rasIntensity(back)
   }
+  const dims = nv.volumes[0]?.dimsRAS
+  const range =
+    intensity && pen?.dynamic && dims
+      ? dynamicRange(
+          intensity,
+          [dims[1], dims[2], dims[3]] as [number, number, number],
+          session.centers,
+          FIXED_AXIS[nv.sliceType] ?? 2,
+        )
+      : undefined
+  session.centers = []
   const kept = constrainEdit(
     session.shadow,
     bitmap,
     session.locked,
     intensity,
-    intensity ? thresholdRange(session, em) : undefined,
+    intensity ? (range ?? thresholdRange(session, em)) : undefined,
   )
   if (!kept.length) {
     nv.refreshDrawing()
@@ -321,6 +457,7 @@ export function startSegEditing(
     stroked: false,
     toolGroupId: options.toolGroupId ?? 'default',
     locked: new Set(),
+    centers: [],
     extensionManager: options.extensionManager,
     onEdit: options.onEdit,
   }
@@ -347,8 +484,33 @@ export function startSegEditing(
   const onPointerUp = () => {
     if (session.stroked) run(true)
   }
+  // A primary scissor drag fills its shape; drawShapeFill's 'update' commits
+  // it. dragRelease carries no button and fires for every drag mode.
+  let button = 0
+  // A dynamic threshold samples where the brush goes (RAS voxel per event).
+  const onPointerMove = (e: PointerEvent) => {
+    const tool = session.tool ? SEG_TOOLS[session.tool] : undefined
+    if (!tool?.dynamic || !(e.buttons & 1)) return
+    const v = rasVoxelAt(nv, e.clientX, e.clientY)
+    if (!v) return
+    const last = session.centers.at(-1)
+    if (!last || last.some((c, a) => c !== v[a])) session.centers.push(v)
+  }
+  const onPointerDown = (e: PointerEvent) => {
+    button = e.button
+    session.centers = []
+    onPointerMove(e)
+  }
+  const onDragRelease = (e: Event) => {
+    const shape = session.tool ? SEG_TOOLS[session.tool]?.shape : undefined
+    const info = (e as CustomEvent<DragReleaseInfo>).detail
+    if (shape === undefined || button !== 0 || !info?.mmLength) return
+    nv.drawIsFillOverwriting = true
+    nv.drawShapeFill(shape, info.mmStart, info.mmEnd, info.axCorSag)
+  }
   nv.addEventListener('drawingChanged', onDrawing)
   nv.addEventListener('pointerUp', onPointerUp)
+  nv.addEventListener('dragRelease', onDragRelease)
   // Core keeps a cancelled pen stroke's voxels but emits neither pointerUp
   // nor its stroke event.
   const onPointerCancel = () => {
@@ -356,12 +518,19 @@ export function startSegEditing(
   }
   const { canvas } = nv
   canvas?.addEventListener('pointercancel', onPointerCancel)
+  canvas?.addEventListener('pointerdown', onPointerDown, true)
+  canvas?.addEventListener('pointermove', onPointerMove)
   return () => {
+    canvas?.removeEventListener('pointermove', onPointerMove)
     nv.removeEventListener('drawingChanged', onDrawing)
     nv.removeEventListener('pointerUp', onPointerUp)
+    nv.removeEventListener('dragRelease', onDragRelease)
     canvas?.removeEventListener('pointercancel', onPointerCancel)
+    canvas?.removeEventListener('pointerdown', onPointerDown, true)
     if (sessions.get(nv) === session) sessions.delete(nv)
     nv.drawIsEnabled = false
+    if (nv.primaryDragMode === DRAG_MODE.callbackOnly)
+      nv.primaryDragMode = DRAG_MODE.crosshair
   }
 }
 
@@ -402,7 +571,7 @@ export function eraseSegmentValue(
 /**
  * OHIF's InterpolateLabelmap on a NiiVue pane: fill the slices between drawn
  * ones (nv-ext-drawing), along the pane's 2D view (axial otherwise), as one
- * undoable edit. ponytail: interpolates every segment, not only the active one.
+ * undoable edit. As cornerstone, only the active segment, into empty voxels.
  */
 export async function interpolateDrawing(nv: NiiVue): Promise<boolean> {
   const draw = nv.drawingVolume
@@ -415,8 +584,9 @@ export async function interpolateDrawing(nv: NiiVue): Promise<boolean> {
     view === SLICE_TYPE.CORONAL || view === SLICE_TYPE.SAGITTAL
       ? view
       : SLICE_TYPE.AXIAL
+  const active = activeSegmentValue(nv)
   const filled = await interpolateMaskSlices(
-    draw.img,
+    draw.img.map((v) => (v === active ? v : 0)),
     {
       dimX: dims[1] as number,
       dimY: dims[2] as number,
@@ -429,7 +599,9 @@ export async function interpolateDrawing(nv: NiiVue): Promise<boolean> {
     { sliceType: sliceType as 0 | 1 | 2 },
   )
   if (nv.drawingVolume !== draw) return false
-  draw.img.set(filled)
+  const img = draw.img
+  for (let i = 0; i < img.length; i++)
+    if (filled[i] === active && img[i] === 0) img[i] = active
   nv.refreshDrawing()
   nv.emit('drawingChanged', { action: 'update' })
   return true

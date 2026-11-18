@@ -118,9 +118,14 @@ export function StudyLabel({ ds }: { ds: OhifDisplaySet | undefined }) {
   )
   if (!date && !ds?.SeriesDescription) return null
   return (
-    <div style={corner({ left: 12, top: 40 })}>
-      {date ? <div>{date}</div> : null}
-      {ds?.SeriesDescription ? <div>{ds.SeriesDescription}</div> : null}
+    <div
+      data-cy="viewport-overlay-top-left"
+      style={corner({ left: 12, top: 40 })}
+    >
+      {date ? <div title="Study date">{date}</div> : null}
+      {ds?.SeriesDescription ? (
+        <div title="Series description">{ds.SeriesDescription}</div>
+      ) : null}
     </div>
   )
 }
@@ -168,8 +173,11 @@ export function CrosshairValueReadout({
 /** Lower-left "W: L:" readout with a contrast glyph, as on cornerstone viewports. */
 export function WindowLevelReadout({ window, level }: WindowLevel) {
   return (
-    <div style={corner({ left: 12, bottom: 8 })}>
-      <div>{`W: ${Math.round(window)}  L: ${Math.round(level)}`}</div>
+    <div
+      data-cy="viewport-overlay-bottom-left"
+      style={corner({ left: 12, bottom: 8 })}
+    >
+      <div title="Window Level">{`W: ${Math.round(window)}  L: ${Math.round(level)}`}</div>
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
         <circle
           cx="9"

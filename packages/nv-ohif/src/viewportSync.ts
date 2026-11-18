@@ -1,6 +1,5 @@
 import type NiiVue from '@niivue/niivue'
 import type { VolumeUpdatedDetail } from '@niivue/niivue'
-import { windowFor } from './hangingOptions'
 import { getNiivueEntry } from './niivueRegistry'
 
 // OHIF hanging protocols link viewports through sync groups. NiiVue panes
@@ -26,6 +25,13 @@ type Role = {
 }
 
 const members = new Map<string, { nv: NiiVue; groups: Map<string, Role> }>()
+// OHIF's ImageSliceSync (toggleSynchronizer type imageSlice): every
+// reconstructable pane shares the crosshair, so stacks show the same position.
+let isSliceSync = false
+const isReconstructable = (id: string) => {
+  const ds = getNiivueEntry(id)?.displaySets[0]
+  return !!ds && ds.isReconstructable !== false
+}
 // Set while a window or camera is being copied: copies are not sources themselves.
 let copying = false
 
@@ -105,9 +111,10 @@ function rewire(): void {
       .filter(
         ([other, m]) =>
           other !== id &&
-          [...m.groups].some(
-            ([g, r]) => r.crosshair && groups.get(g)?.crosshair,
-          ),
+          ((isSliceSync && isReconstructable(id) && isReconstructable(other)) ||
+            [...m.groups].some(
+              ([g, r]) => r.crosshair && groups.get(g)?.crosshair,
+            )),
       )
       .map(([, m]) => m.nv)
     if (peers.length) nv.broadcastTo(peers, { crosshair: true })
@@ -145,16 +152,18 @@ function copyWindow(viewportId: string, detail: VolumeUpdatedDetail): void {
     for (const [id, to] of linkedTargets(viewportId, 'voi')) {
       const index = volumeIndex(id, uid)
       if (index < 0) continue
-      const next = windowFor(
-        to.nv.volumes[index]?.hdr,
-        shown.calMin,
-        shown.calMax,
-      )
-      void to.nv.setVolume(index, next).catch(() => {})
+      void to.nv.setVolume(index, shown).catch(() => {})
     }
   } finally {
     copying = false
   }
+}
+
+/** Toggle ImageSliceSync across NiiVue panes; returns the new state. */
+export function toggleSliceSync(): boolean {
+  isSliceSync = !isSliceSync
+  rewire()
+  return isSliceSync
 }
 
 /** Join the sync groups in `syncGroups`; the returned function leaves them. */
@@ -174,7 +183,7 @@ export function joinSyncGroups(
       target: g.target !== false,
     })
   }
-  if (groups.size === 0) return () => {}
+  // Panes without groups still join: ImageSliceSync links them.
   members.set(viewportId, { nv, groups })
   const onVolumeUpdated = (e: Event) =>
     copyWindow(viewportId, (e as CustomEvent<VolumeUpdatedDetail>).detail)

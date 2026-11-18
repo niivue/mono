@@ -8,6 +8,7 @@ const effects: Array<() => () => void> = []
 mock.module('react', () => ({
   ...React,
   useEffect: (fn: () => () => void) => effects.push(fn),
+  useRef: <T>(current: T) => ({ current }),
 }))
 const { useOutputStack } = await import('./outputStack')
 const {

@@ -21,6 +21,8 @@ export const NIIVUE_UNSUPPORTED_EVALUATOR = 'evaluate.niivue.unsupported'
 export const NIIVUE_SUPPORTED_TOOLS: readonly string[] = [
   ...Object.values(ANNOTATION_TO_OHIF).map((d) => d.toolName),
   'WindowLevel',
+  'WindowLevelRegion',
+  'StackScroll',
   'Pan',
   'Zoom',
   'Magnify',
@@ -59,6 +61,14 @@ const HOST_AGNOSTIC_COMMANDS = [
   'setViewportForToolConfiguration',
   'setBrushSize',
   'interpolateLabelmap',
+  // Service state only (cineService, every tool group's SegmentLabel mode);
+  // the pane reads it (sliceCine.tsx, segmentLabel.tsx).
+  'toggleCine',
+  'toggleSegmentLabel',
+  // Shadowed in the NIIVUE context (standardCommands.ts, segCommands.ts).
+  'toggleEnabledDisabledToolbar',
+  'toggleSynchronizer',
+  'runSegmentBidirectional',
 ]
 
 export const NIIVUE_SEGMENTATION_EVALUATOR = 'evaluate.niivue.segmentation'

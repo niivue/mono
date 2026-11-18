@@ -16,4 +16,10 @@ test('the 2D overlay outline is off while an overlay keeps its colormap alpha', 
   await nv.setVolume(0, { isColormapAlphaKept: true })
   await nv.setVolume(1, { isColormapAlphaKept: false })
   expect(nv.model.overlayOutlineWidth()).toBe(2) // the base is not an overlay
+  // Review of #865: a hidden overlay is not drawn, so it does not turn the
+  // outline off for the rest.
+  await nv.setVolume(1, { isColormapAlphaKept: true, visible: false })
+  expect(nv.model.overlayOutlineWidth()).toBe(2)
+  await nv.setVolume(1, { visible: true, opacity: 0 })
+  expect(nv.model.overlayOutlineWidth()).toBe(2)
 })

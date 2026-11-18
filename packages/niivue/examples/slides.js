@@ -275,12 +275,27 @@ function afterRender(screen) {
 // frame; the state tracks add/undo/clear/source-switch without extra wiring.
 // The vector shapes plus the measure annotations' outlines.
 function exportShapes() {
-  const measured = (view?.controller.annotations.list() ?? []).map((a) => ({
-    kind: isClosedSlideTool(a.tool) ? 'polygon' : 'polyline',
-    points: slideAnnotationOutline(a.tool, a.points).map((q) => [q.x, q.y]),
-    color: '#ffd400',
-    strokeWidth: 2,
-  }))
+  const measured = (view?.controller.annotations.list() ?? []).map((a) => {
+    const points = slideAnnotationOutline(a.tool, a.points).map((q) => [
+      q.x,
+      q.y,
+    ])
+    // A one-point polyline draws nothing: a point exports as a small square.
+    const [x, y] = points[0] ?? [0, 0]
+    const marker = [
+      [x - 4, y - 4],
+      [x + 4, y - 4],
+      [x + 4, y + 4],
+      [x - 4, y + 4],
+    ]
+    const point = points.length === 1
+    return {
+      kind: point || isClosedSlideTool(a.tool) ? 'polygon' : 'polyline',
+      points: point ? marker : points,
+      color: '#ffd400',
+      strokeWidth: 2,
+    }
+  })
   return [...(vector?.shapes ?? []), ...measured]
 }
 

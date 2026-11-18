@@ -823,7 +823,7 @@ describe('list_slide_annotations and edit_slide_annotations', () => {
           [1, 1],
         ],
       }),
-    ).toThrow('Too few points for a polygon.')
+    ).toThrow('Wrong number of points for a polygon.')
     expect(() =>
       edit({ action: 'add', tool: 'line', points: [[0, Number.NaN]] }),
     ).toThrow('points must be a list of [x, y] in slide base pixels.')

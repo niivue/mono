@@ -194,7 +194,9 @@ export const MARK_SCHEMAS = {
       .array(z.tuple([z.number(), z.number()]))
       .min(1)
       .optional()
-      .describe('For add: [x, y] points in slide base (level 0) pixels.'),
+      .describe(
+        'For add: [x, y] points in slide base (level 0) pixels. point takes 1; line, rectangle, ellipse and circle exactly 2; polygon and freehand 3 or more; freehandLine 2 or more.',
+      ),
     id: z
       .string()
       .min(1)

@@ -55,6 +55,12 @@ const SLIDE_ANNOTATION_MIN_POINTS: Record<SlideAnnotationTool, number> = {
   freehandLine: 2,
 }
 
+// Point lists of any length: the rest take exactly their minimum.
+const hasPointCount = (tool: SlideAnnotationTool, n: number): boolean =>
+  tool === 'polygon' || tool.startsWith('freehand')
+    ? n >= SLIDE_ANNOTATION_MIN_POINTS[tool]
+    : n === SLIDE_ANNOTATION_MIN_POINTS[tool]
+
 export const isClosedSlideTool = (tool: SlideAnnotationTool): boolean =>
   tool !== 'point' && tool !== 'line' && tool !== 'freehandLine'
 
@@ -237,13 +243,13 @@ export class NVSlideAnnotations extends EventTarget {
     return annotation && copyOf(annotation)
   }
 
-  /** Add an annotation (e.g. restored from a store); null with too few points. */
+  /** Add an annotation (e.g. restored from a store); null with the wrong point count. */
   add(
     tool: SlideAnnotationTool,
     points: readonly NVSlidePoint[],
     label = '',
   ): SlideAnnotation | null {
-    if (points.length < SLIDE_ANNOTATION_MIN_POINTS[tool]) return null
+    if (!hasPointCount(tool, points.length)) return null
     const copy = points.map(({ x, y }) => ({ x, y }))
     const annotation: SlideAnnotation = {
       id: `slide-annotation-${this._next++}`,
@@ -276,10 +282,7 @@ export class NVSlideAnnotations extends EventTarget {
   /** Replace an annotation's points (an edit), recorded as one undo step. */
   setPoints(id: string, points: readonly NVSlidePoint[]): boolean {
     const annotation = this._items.get(id)
-    if (
-      !annotation ||
-      points.length < SLIDE_ANNOTATION_MIN_POINTS[annotation.tool]
-    )
+    if (!annotation || !hasPointCount(annotation.tool, points.length))
       return false
     const seq = this._history.push(this.list())
     // An annotationHistoryPush listener may have removed it: no edit, no step.

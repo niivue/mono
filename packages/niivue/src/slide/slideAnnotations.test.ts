@@ -120,6 +120,19 @@ describe('NVSlideAnnotations.setPoints', () => {
     expect(a.annotationUndoTop).toBeUndefined()
     expect(a.get(r?.id ?? '')?.points).toHaveLength(2)
   })
+  // Holistic review H6: a line with 3 points measured one length, drew another.
+  test('fixed-count tools take exactly their points', () => {
+    const a = new NVSlideAnnotations(spacing)
+    const three = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ]
+    expect(a.add('line', three)).toBeNull()
+    const id = a.add('line', three.slice(0, 2))?.id ?? ''
+    expect(a.setPoints(id, three)).toBe(false)
+    expect(a.add('freehandLine', three)).not.toBeNull()
+  })
   test('a history listener that removes it gets no change', () => {
     const a = new NVSlideAnnotations(spacing)
     const id =

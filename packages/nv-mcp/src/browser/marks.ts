@@ -521,7 +521,7 @@ export function markHandlers(host: NiiVueHost): Handlers {
               `Adding needs tool: one of ${SLIDE_ANNOTATION_TOOLS.join(', ')}.`,
             )
           const made = store.add(tool, slidePoints(params), label)
-          if (!made) throw new Error(`Too few points for a ${tool}.`)
+          if (!made) throw new Error(`Wrong number of points for a ${tool}.`)
           out.annotation = describeSlideAnnotation(made, false)
           break
         }

@@ -112,6 +112,7 @@ type MeasurementEvent = {
 }
 type Subscribable = {
   EVENTS?: Record<string, string>
+  getMeasurements?: () => MirroredMeasurement[]
   subscribe?: (
     event: string,
     cb: (e: MeasurementEvent) => void,
@@ -166,6 +167,8 @@ export function mirrorNiivueMeasurements(
       }),
     MEASUREMENTS_CLEARED && ms.subscribe(MEASUREMENTS_CLEARED, clear),
   ]
+  // Rows made before this mirror: a rebuilt commands module stopped the old one, which removed them.
+  for (const m of ms.getMeasurements?.() ?? []) upsert({ measurement: m })
   return () => {
     for (const s of subs) if (s) s.unsubscribe()
     clear()

@@ -31,7 +31,16 @@ import type {
 } from './view'
 import { worldUnit } from './view'
 
-const DRAWING_ACTIONS = ['create', 'load', 'undo', 'close', 'svg'] as const
+const DRAWING_ACTIONS = [
+  'create',
+  'load',
+  'undo',
+  'close',
+  'svg',
+  'fill',
+] as const
+// NiiVue's PEN_SHAPE values.
+const FILL_SHAPES = { rectangle: 0, circle: 1, sphere: 2 } as const
 const ANNOTATION_ACTIONS = [
   'add',
   'remove',
@@ -231,6 +240,30 @@ export function markHandlers(host: NiiVueHost): Handlers {
           if (!view.closeDrawing) throw missing()
           view.closeDrawing()
           break
+        case 'fill': {
+          if (!view.drawShapeFill) throw missing()
+          const shape = choice(params, 'shape', Object.keys(FILL_SHAPES))
+          if (!shape)
+            throw new Error(
+              `Filling needs a shape: one of ${Object.keys(FILL_SHAPES).join(', ')}.`,
+            )
+          const plane = sliceType(params, 'slice') ?? SLICE_TYPES.axial
+          if (plane > SLICE_TYPES.sagittal)
+            throw new Error(
+              'A fill lies in an axial, coronal or sagittal slice.',
+            )
+          const filled = view.drawShapeFill(
+            FILL_SHAPES[shape as keyof typeof FILL_SHAPES],
+            point(params, 'start_mm'),
+            point(params, 'end_mm'),
+            plane,
+          )
+          if (!filled)
+            throw new Error(
+              'There is no drawing to fill. Create or load one first.',
+            )
+          break
+        }
         case 'svg': {
           if (!view.drawingToSVG)
             throw new Error("This page's NiiVue cannot trace a drawing as SVG.")

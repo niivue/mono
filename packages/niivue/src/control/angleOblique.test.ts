@@ -492,3 +492,31 @@ test('live wire needs three clicks to close', () =>
       slice.mockRestore()
     }
   }))
+
+// Review of #858: with no live-wire slice the clicks still count toward a close.
+test('live wire without a slice closes near its first click', () =>
+  withStubs(() => {
+    const slice = spyOn(Annotation, 'extractLivewireSlice').mockReturnValue(
+      null,
+    )
+    try {
+      const nv = controller('livewire')
+      const toCentre = new Float32Array(16)
+      toCentre[15] = 1
+      ;(nv.view as { screenSlices: unknown }).screenSlices = [
+        {
+          mvpMatrix: toCentre,
+          planeNormal: [0, 0, 1],
+          planePoint: [0, 0, 0],
+          leftTopWidthHeight: [0, 0, 100, 100],
+        },
+      ] as never
+      press(nv, [2, 2, 0])
+      press(nv, [12, 2, 0])
+      press(nv, [12, 12, 0])
+      press(nv, [2, 2, 0])
+      expect(nv.annotations).toHaveLength(1)
+    } finally {
+      slice.mockRestore()
+    }
+  }))

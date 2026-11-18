@@ -142,6 +142,7 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'loadDrawing',
     'saveDrawing',
     'drawingToSVG',
+    'drawShapeFill',
   ],
   annotations: [
     'annotations',

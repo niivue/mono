@@ -793,6 +793,12 @@ export interface View {
   loadDrawing?(url: string): Promise<boolean>
   saveDrawing?(filename?: string): Promise<unknown>
   drawingToSVG?(sliceType?: number, sliceIndex?: number): string | null
+  drawShapeFill?(
+    shape: number,
+    startMm: ArrayLike<number>,
+    endMm: ArrayLike<number>,
+    sliceType?: number,
+  ): boolean
 
   // Vector annotations.
   annotations?: ReadonlyArray<Annotation>

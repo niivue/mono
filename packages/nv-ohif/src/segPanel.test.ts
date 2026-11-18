@@ -33,25 +33,31 @@ describe('segPanel', () => {
       fill: 0.3,
       rim: 0.8,
       width: 1,
+      outlineOnly: false,
     })
     expect(drawOpacities({ renderOutline: false, fillAlpha: 0.3 })).toEqual({
       fill: 0.3,
       rim: -1,
       width: 1,
+      outlineOnly: false,
     })
     // Outline only: a nonzero fill keeps the shader drawing the rim.
     expect(drawOpacities({ renderFill: false })).toEqual({
       fill: 1 / 255,
       rim: 1,
       width: 1,
+      outlineOnly: true,
     })
     expect(drawOpacities({ renderFill: false, renderOutline: false })).toEqual({
       fill: 0,
       rim: -1,
       width: 1,
+      outlineOnly: false,
     })
     expect(drawOpacities({ renderFill: false, outlineOpacity: 0 }).fill).toBe(0)
     expect(drawOpacities({ outlineWidth: 3 }).width).toBe(3)
+    // Review of #855: a 1/255 fill the style asks for is not outline only.
+    expect(drawOpacities({ fillAlpha: 1 / 255 }).outlineOnly).toBe(false)
   })
 
   test('panelColormap_hiddenSegmentIsTransparent', () => {

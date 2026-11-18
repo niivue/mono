@@ -348,7 +348,6 @@ function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
     g.y,
   )
   ctrl._livewireSeed = g
-  ctrl._livewireClicks++
   return true
 }
 
@@ -1897,9 +1896,12 @@ export function initInteraction(ctrl: NiiVue): void {
             computeTolerance(ctrl.model),
           )
           if (isLivewireTool(tool)) {
+            // Counted per placed click, seeded or not: without a slice the
+            // contour still places straight points and must still close.
             if (fresh || !ctrl._livewireSeed) {
               seedLivewire(ctrl, pt2d)
               poly.push(pt2d)
+              ctrl._livewireClicks++
             } else if (append) {
               // Commit the snapped path from the last seed to this click (drop
               // its first point, a duplicate of the last committed one), then
@@ -1907,6 +1909,7 @@ export function initInteraction(ctrl: NiiVue): void {
               const seg = livewireSnappedPath(ctrl, pt2d)
               for (let i = 1; i < seg.length; i++) poly.push(seg[i])
               seedLivewire(ctrl, pt2d)
+              ctrl._livewireClicks++
             }
           } else if (append) {
             poly.push(pt2d)

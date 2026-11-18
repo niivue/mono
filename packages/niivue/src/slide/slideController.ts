@@ -645,6 +645,8 @@ export class NVSlideController {
   private _annotateDown(p: NVSlidePoint): void {
     const tool = this._annotationTool as SlideAnnotationTool
     const draft = this.draft
+    const closedAt = this._polygonClosedAt
+    this._polygonClosedAt = null
     // Shape tools pick and edit, as NiiVue's: polygon and freehand only draw.
     if (!draft && tool !== 'polygon' && !tool.startsWith('freehand')) {
       const handle = this._handleAt(p)
@@ -662,8 +664,6 @@ export class NVSlideController {
       this._picked = !!hit
       if (hit) return
     }
-    const closedAt = this._polygonClosedAt
-    this._polygonClosedAt = null
     if (tool === 'polygon' && draft) {
       const placed = draft.points.slice(0, -1)
       const first = placed[0] as NVSlidePoint

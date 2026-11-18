@@ -151,6 +151,25 @@ async function inSuv(
   }
 }
 
+/**
+ * The 4D frame group a conversion joins: its display set and inputs, so a
+ * re-made display set (same UID, other instances) does not join panes still
+ * showing the old data.
+ */
+export const frameGroupKey = (ds: OhifDisplaySet): string | undefined =>
+  ds.displaySetInstanceUID &&
+  `${ds.displaySetInstanceUID}|${urlDigest(instanceRefs(ds).map((r) => r.url))}`
+
+// FNV-1a over the joined URLs: frames4D keeps every key for the session, and
+// a 4D series can have thousands of instances.
+function urlDigest(urls: string[]): string {
+  let h = 0x811c9dc5
+  const s = urls.join('|')
+  for (let i = 0; i < s.length; i++)
+    h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return `${urls.length}:${(h >>> 0).toString(36)}`
+}
+
 async function convertUnshared(
   ds: OhifDisplaySet,
   options: DicomConvertOptions,
@@ -208,7 +227,7 @@ async function convertUnshared(
     notes.unshift(
       `Showing ${shown.stem}; also converted: ${unshown.map((s) => s.stem).join(', ')}.`,
     )
-  const split = await split4D(shown.image, ds.displaySetInstanceUID)
+  const split = await split4D(shown.image, frameGroupKey(ds))
   return {
     image: split?.image ?? shown.image,
     ...(split && { frames: split.frames }),

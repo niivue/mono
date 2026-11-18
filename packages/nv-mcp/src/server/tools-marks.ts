@@ -46,11 +46,20 @@ export const MARK_SCHEMAS = {
   edit_drawing: {
     ...TAB_ARG,
     action: z
-      .enum(['create', 'load', 'undo', 'close', 'svg'])
+      .enum(['create', 'load', 'undo', 'close', 'svg', 'fill'])
       .describe(
         'create an empty drawing over the base volume, load one from a url, undo the last stroke, ' +
-          'close the drawing, or trace it as svg.',
+          'close the drawing, trace it as svg, or fill a shape in it with the pen value.',
       ),
+    shape: z
+      .enum(['rectangle', 'circle', 'sphere'])
+      .optional()
+      .describe(
+        'For fill: a rectangle (start_mm and end_mm are opposite corners), or a circle or sphere ' +
+          '(start_mm is the centre, end_mm a point on the edge).',
+      ),
+    start_mm: triple('For fill: the first point, in world units.').optional(),
+    end_mm: triple('For fill: the second point, in world units.').optional(),
     url: z
       .string()
       .min(1)
@@ -254,8 +263,10 @@ export function registerMarkTools(
     title: 'Edit the drawing',
     description:
       'Works on the voxel drawing over the base volume: creates an empty one, loads one from an ' +
-      'address, undoes the last stroke, closes it, or traces a slice of it as SVG. Pen strokes ' +
-      'themselves are made by hand on the page; the pen settings are in set_options.',
+      'address, undoes the last stroke, closes it, traces a slice of it as SVG, or fills a ' +
+      'rectangle, circle or sphere with the pen value as one undo step (a rectangle or circle in ' +
+      'the axial plane unless slice says otherwise). Freehand strokes are made by hand on the ' +
+      'page; the pen settings are in set_options.',
     inputSchema: MARK_SCHEMAS.edit_drawing,
   })
 

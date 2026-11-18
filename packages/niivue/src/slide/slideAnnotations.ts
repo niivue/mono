@@ -276,8 +276,14 @@ export class NVSlideAnnotations extends EventTarget {
   /** Replace an annotation's points (an edit), recorded as one undo step. */
   setPoints(id: string, points: readonly NVSlidePoint[]): boolean {
     const annotation = this._items.get(id)
-    if (!annotation) return false
+    if (
+      !annotation ||
+      points.length < SLIDE_ANNOTATION_MIN_POINTS[annotation.tool]
+    )
+      return false
     this._history.push(this.list())
+    // An annotationHistoryPush listener may have removed it.
+    if (this._items.get(id) !== annotation) return false
     this._setPoints(annotation, points)
     return true
   }

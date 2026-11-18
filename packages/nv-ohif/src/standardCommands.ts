@@ -106,10 +106,20 @@ const ACQUISITION_SLICE_TYPES = [
   SLICE_TYPE.AXIAL,
 ]
 
-/** The slice type of a volume's native slice plane (Cornerstone's 'acquisition'). */
+/**
+ * The slice type of a volume's native slice plane (Cornerstone's
+ * 'acquisition'): the DICOM frames' plane where the pane maps them, since
+ * dcm2niix turns a 3D acquisition toward RAS (a sagittal T1 stored with axial
+ * slices); else the NIfTI slice axis.
+ */
 export function acquisitionSliceType(nv: {
   volumes: ReadonlyArray<{ permRAS?: number[] }>
 }): number | undefined {
+  const sf = niivueEntries().find((e) => e.nv === nv)?.sliceFrames
+  if (sf?.frames.some(Boolean)) {
+    const n = sf.normal.map(Math.abs)
+    return ACQUISITION_SLICE_TYPES[n.indexOf(Math.max(...n))]
+  }
   return ACQUISITION_SLICE_TYPES[
     nv.volumes[0]?.permRAS?.findIndex((p) => Math.abs(p) === 3) ?? -1
   ]

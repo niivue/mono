@@ -72,10 +72,22 @@ export function largestBidirectional(
   // A sheared affine can project the in-plane columns near parallel: then the
   // least skewed pair.
   const pair = pairs[through] as [Vec3, Vec3]
-  const [u, v] =
+  const [pu, pv] =
     sine(pair) > 0.1
       ? pair
       : pairs.reduce((a, b) => (sine(b) > sine(a) ? b : a))
+  // Never a step finer than half the smallest voxel edge (half its pitch, all
+  // a sample resolves): a slight tilt projects a column to a sliver (6 degrees,
+  // 0.5 mm pixels, 5 mm slices: 0.05 mm steps, 10 s for 128x128x12).
+  const floor = 0.5 * Math.min(...cols.map((c) => Math.hypot(...c)))
+  const atLeast = (q: Vec3): Vec3 => {
+    const l = Math.hypot(...q)
+    return l >= floor
+      ? q
+      : [(q[0] * floor) / l, (q[1] * floor) / l, (q[2] * floor) / l]
+  }
+  const u = atLeast(pu)
+  const v = atLeast(pv)
   const bin = Math.min(Math.hypot(...u), Math.hypot(...v))
   const normal: Vec3 = [0, 0, 0]
   normal[depth] = 1

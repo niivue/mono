@@ -150,6 +150,32 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
 
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
+/**
+ * A series opens in its acquired plane, as a cornerstone stack does, unless the
+ * hanging protocol names a view ('acquisition' names that plane). OHIF marks
+ * unequal slice spacing (or orthogonal localizers) not reconstructable: only
+ * the acquired plane is faithful there, even under a multiplanar protocol.
+ */
+export function openingSliceType(
+  nv: Parameters<typeof acquisitionSliceType>[0] & {
+    volumes: ReadonlyArray<{ dims?: number[] }>
+  },
+  viewportOptions: { orientation?: string } | undefined,
+  isReconstructable: boolean | undefined,
+): number {
+  const initial = initialSliceType(viewportOptions)
+  const orientation = viewportOptions?.orientation
+  const plane =
+    initial === SLICE_TYPE.MULTIPLANAR &&
+    (!orientation ||
+      orientation === 'acquisition' ||
+      nv.volumes[0]?.dims?.[3] === 1 ||
+      isReconstructable === false)
+      ? acquisitionSliceType(nv)
+      : undefined
+  return plane ?? initial
+}
+
 /** Show `message` for `ms`; the clear never touches a newer status. */
 export function briefNote(
   setStatus: Dispatch<SetStateAction<Status>>,
@@ -448,7 +474,13 @@ export function NiivueViewport(props: OhifViewportProps) {
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !ready) return
-    nv.sliceType = initialSliceType(viewportOptionsRef.current)
+    // Before the first load no volume is open, so this is the protocol's own
+    // type; the load then picks the acquired plane.
+    nv.sliceType = openingSliceType(
+      nv,
+      viewportOptionsRef.current,
+      displaySets[0]?.isReconstructable,
+    )
     const view = initialRenderView(viewportOptionsRef.current)
     if (view) [nv.azimuth, nv.elevation] = view
     return joinSyncGroups(
@@ -854,6 +886,13 @@ export function NiivueViewport(props: OhifViewportProps) {
         .then(async (image) => {
           if (cancelled) return
           await nv.loadVolumes([image])
+          if (cancelled) return
+          // The view effect ran before any volume was open.
+          nv.sliceType = openingSliceType(
+            nv,
+            viewportOptionsRef.current,
+            ds.isReconstructable,
+          )
           seedWindowLevel()
         })
         .catch(() => {
@@ -1070,21 +1109,14 @@ export function NiivueViewport(props: OhifViewportProps) {
             props.extensionManager,
             getNiivueEntry(viewportId)?.toolGroupId ?? 'default',
           )
-          // A single image (e.g. a localizer) shows in its own plane, as a
-          // cornerstone stack does, unless the hanging protocol set one; any
-          // other series gets the pane's initial view, not the one the
-          // previous series left (a coronal scout's).
+          // Each series gets its own view, not the one the previous series
+          // left (a coronal scout's).
           matchStoredOrientation(nv)
-          const initial = initialSliceType(viewportOptionsRef.current)
-          // OHIF marks unequal slice spacing (or orthogonal localizers) not
-          // reconstructable: only the acquired plane is faithful.
-          const plane =
-            (nv.volumes[0]?.dims?.[3] === 1 ||
-              ds.isReconstructable === false) &&
-            initial === SLICE_TYPE.MULTIPLANAR
-              ? acquisitionSliceType(nv)
-              : undefined
-          nv.sliceType = plane ?? initial
+          nv.sliceType = openingSliceType(
+            nv,
+            viewportOptionsRef.current,
+            ds.isReconstructable,
+          )
           seedWindowLevel(dicomSpec)
         })
       })

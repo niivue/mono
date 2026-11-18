@@ -8,7 +8,11 @@ import { centerCrosshair } from './commands'
 import type { DicomConversion } from './dicomToNiivue'
 import { getNiivueEntry, updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
-import { acquisitionSliceType, scrollImage } from './standardCommands'
+import {
+  acquisitionSliceType,
+  jumpToImage,
+  scrollImage,
+} from './standardCommands'
 
 /**
  * Cornerstone draws an image as stored. NiiVue's radiological view (patient
@@ -128,7 +132,12 @@ export function useOutputStack(
         if (entry.sliceFrames?.frames.some(Boolean) && !entry.isVolumeViewport)
           return
       }
-      void show(at + step)
+      // Entering the next output, a volume viewport starts at its near end
+      // (it counts its own slices); a superseded switch selects nothing.
+      void show(at + step)?.then((isLatest) => {
+        if (isLatest && entry?.isVolumeViewport)
+          jumpToImage(entry, step > 0 ? 0 : -1)
+      })
     }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
     updateNiivueViewport(viewportId, {

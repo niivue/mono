@@ -103,6 +103,8 @@ describe('assemblePart10', () => {
       '00189306': { vr: 'OB', InlineBinary: 'AAAA' },
       // ...except Overlay Data, which dcm2niix converts: decoded and kept.
       '60003000': { vr: 'OB', InlineBinary: 'AQID' },
+      // Malformed base64: dropped, not fatal.
+      '60023000': { vr: 'OB', InlineBinary: '!!' },
       // Element missing its `vr` (some servers omit it) -> dcmjs treats as UN and
       // throws; must be dropped.
       '00083002': { Value: ['1.2.840.10008.1.2.4.80'] },
@@ -126,6 +128,7 @@ describe('assemblePart10', () => {
     )
     const readBack = DicomMessage.readFile(buffer)
     expect(readBack.dict['00189306']).toBeUndefined()
+    expect(readBack.dict['60023000']).toBeUndefined()
     const overlay = (readBack.dict['60003000'] as { Value: ArrayBuffer[] })
       .Value[0]
     expect([...new Uint8Array(overlay as ArrayBuffer)].slice(0, 3)).toEqual([

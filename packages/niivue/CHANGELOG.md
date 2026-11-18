@@ -1,3 +1,22 @@
+## 1.0.0-rc.224 (2026-11-18)
+
+### Fixes
+
+- **niivue:** undo rebuilds selection handles; polygon double-click guard expires ([c0c2ebdd](https://github.com/niivue/mono/commit/c0c2ebdd))
+- **niivue:** a double-click that closes a slide polygon starts no new one ([3eaf2f35](https://github.com/niivue/mono/commit/3eaf2f35))
+- **niivue:** clearing or undoing away the selected annotation clears the selection ([e3f8fa32](https://github.com/niivue/mono/commit/e3f8fa32))
+- **niivue:** a zero-size box (an erased probe) can move ([7086d08e](https://github.com/niivue/mono/commit/7086d08e))
+- **niivue:** a sub-pixel slide ellipse or circle keeps its outline ([f39c0477](https://github.com/niivue/mono/commit/f39c0477))
+- **niivue:** live wire closes on a click near its start only after three clicks ([125ed7bd](https://github.com/niivue/mono/commit/125ed7bd))
+- **niivue:** a double-click on a polygon under three vertices keeps the draft ([13b1c98c](https://github.com/niivue/mono/commit/13b1c98c))
+- **niivue:** removing the selected annotation clears the selection ([2400cb5c](https://github.com/niivue/mono/commit/2400cb5c))
+- **niivue:** focusAnnotation bounds by loop, not spread ([#836](https://github.com/niivue/mono/issues/836))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.223 (2026-11-18)
 
 ### Features

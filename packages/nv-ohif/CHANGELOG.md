@@ -1,3 +1,42 @@
+## 1.0.0-rc.257 (2026-11-18)
+
+### Fixes
+
+- **nv-ohif:** hold 4D frame groups weakly instead of pruning them ([8d01d56f](https://github.com/niivue/mono/commit/8d01d56f))
+- **nv-ohif:** key 4D frame groups on dimensions, not voxel count ([1044419e](https://github.com/niivue/mono/commit/1044419e))
+- **nv-ohif:** key 4D frame groups on voxel count as well ([c0a347f1](https://github.com/niivue/mono/commit/c0a347f1))
+- **nv-ohif:** key 4D frame groups on frame count; prune after a load swap ([822e4632](https://github.com/niivue/mono/commit/822e4632))
+- **nv-ohif:** removing a 4D volume drops its unshown frame group ([05235f6d](https://github.com/niivue/mono/commit/05235f6d))
+- **nv-ohif:** a 4D series no pane shows drops its frame group ([3131e3cc](https://github.com/niivue/mono/commit/3131e3cc))
+- **nv-ohif:** a shorter 4D reload skips a remembered frame it lacks ([d54905ac](https://github.com/niivue/mono/commit/d54905ac))
+- **nv-ohif:** dropping a protocol overlay VOI restores the volume's own window ([eb8cbde9](https://github.com/niivue/mono/commit/eb8cbde9))
+- **nv-ohif:** trailing empty RT ROIs do not mark the drawing truncated ([abe9cc1a](https://github.com/niivue/mono/commit/abe9cc1a))
+- **nv-ohif:** a superseded output switch fails without a note ([bd3deec7](https://github.com/niivue/mono/commit/bd3deec7))
+- **nv-ohif:** a reopened SEG panel reuses its freed colour LUT index ([c8c40ef7](https://github.com/niivue/mono/commit/c8c40ef7))
+- **nv-ohif:** a new SR mirror re-adds existing NiiVue rows ([c88e7b26](https://github.com/niivue/mono/commit/c88e7b26))
+- **nv-ohif:** keep faint segments' outlines and hide a zero outline ([19fcadbb](https://github.com/niivue/mono/commit/19fcadbb))
+- **nv-ohif:** note a failed localizer output switch instead of rejecting ([8bd9e036](https://github.com/niivue/mono/commit/8bd9e036))
+- **nv-ohif:** drop the previous measurement mirror when the commands module rebuilds ([a1037274](https://github.com/niivue/mono/commit/a1037274))
+- **nv-ohif:** remove a segmentation panel's colour LUT on close ([a47d716a](https://github.com/niivue/mono/commit/a47d716a))
+- **nv-ohif:** note RT ROIs past 255 and a base without an orientation ([64c6763f](https://github.com/niivue/mono/commit/64c6763f))
+- **nv-ohif:** key 4D frame groups on the display set ([4b10bed6](https://github.com/niivue/mono/commit/4b10bed6))
+- **nv-ohif:** quote carriage returns in segmentation CSV cells ([67313b7a](https://github.com/niivue/mono/commit/67313b7a))
+- **nv-ohif:** skip the dynamic mode's workflow steps on a missing study ([cda96a82](https://github.com/niivue/mono/commit/cda96a82))
+- **nv-ohif:** clamp the 4D compute range to the shown series ([5c70fbb1](https://github.com/niivue/mono/commit/5c70fbb1))
+- **nv-ohif:** reset pane background and overlay defaults the protocol drops ([20c8b927](https://github.com/niivue/mono/commit/20c8b927))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.224
+- Updated nv-ext-drawing to 1.0.0-rc.226
+- Updated nv-ext-tile to 1.0.0-rc.133
+- Updated uikit to 1.0.0-rc.223
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.256 (2026-11-18)
 
 ### Features

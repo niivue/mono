@@ -753,6 +753,8 @@ export default class NiiVue extends EventTarget {
   _livewireSlice: LivewireSlice | null = null
   _livewireField: Int32Array | null = null
   _livewireSeed: { x: number; y: number } | null = null
+  // Clicks placed on the live wire contour: its points are the snapped path.
+  _livewireClicks = 0
   // Last pointer position over the canvas (client px); hotkeys only act when
   // it lies within this instance's bounds, as in NiiVue 0.6.
   _pointerClient: [number, number] | null = null
@@ -2908,6 +2910,7 @@ export default class NiiVue extends EventTarget {
     this._livewireSlice = null
     this._livewireField = null
     this._livewireSeed = null
+    this._livewireClicks = 0
   }
   /** Put back a resized shape not released (cancel, pointercancel, pinch). */
   _revertResize(): void {

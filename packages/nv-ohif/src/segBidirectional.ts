@@ -19,13 +19,16 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 ]
 
 /**
- * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing: on each
- * slice across RAS voxel axis `axis`, the segment's boundary voxel centres
- * (mm); the major axis is the farthest pair, the minor the widest chord
- * perpendicular to it (boundary points binned along the major by one voxel).
- * Returns [major start, major end, minor start, minor end] (RAS mm) of the
- * slice with the longest major, or undefined without voxels.
- * ponytail: O(n^2) farthest pair per slice; a convex hull first if a large
+ * cornerstone's getSegmentLargestBidirectional on a NiiVue drawing. The
+ * segment's surface voxels (a 6-neighbour outside it) are grouped into slabs
+ * one voxel thick across world (RAS mm) axis `depth`, the normal of the view's
+ * plane, and projected onto their slab's plane: on an oblique grid a voxel
+ * slice is not a world plane, which NiiVue's annotations lie on. In each slab
+ * the major axis is the farthest pair; the minor is the widest chord
+ * perpendicular to it (points binned along the major by one voxel). Returns
+ * [major start, major end, minor start, minor end] (RAS mm) of the slab with
+ * the longest major, or undefined without voxels.
+ * ponytail: O(n^2) farthest pair per slab; a convex hull first if a large
  * segment makes it slow.
  */
 export function largestBidirectional(
@@ -33,45 +36,47 @@ export function largestBidirectional(
   dims: readonly [number, number, number],
   vox2mm: (v: Vec3) => Vec3,
   value: number,
-  axis: number,
+  depth: 0 | 1 | 2,
 ): [Vec3, Vec3, Vec3, Vec3] | undefined {
   const [nx, ny, nz] = dims
-  const n = [nx, ny, nz]
-  // In-plane voxel axes.
-  const [ua, va] = [0, 1, 2].filter((a) => a !== axis) as [number, number]
   const o = vox2mm([0, 0, 0])
-  const unit = (a: number) => {
+  const cols = [0, 1, 2].map((a) => {
     const v: Vec3 = [0, 0, 0]
     v[a] = 1
     return sub(vox2mm(v), o)
-  }
-  const normal = norm(unit(axis))
-  const bin = Math.min(Math.hypot(...unit(ua)), Math.hypot(...unit(va)))
-  const at = (v: Vec3) => img[v[0] + nx * (v[1] + ny * v[2])]
+  })
+  // Slab thickness: the voxel step most aligned with the view's normal.
+  const dz = Math.max(...cols.map((c) => Math.abs(c[depth] ?? 0)))
+  const bin = Math.min(...cols.map((c) => Math.hypot(...c)))
+  const normal: Vec3 = [0, 0, 0]
+  normal[depth] = 1
+  const at = (x: number, y: number, z: number) =>
+    x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz
+      ? undefined
+      : img[x + nx * (y + ny * z)]
+  const slabs = new Map<number, Vec3[]>()
+  for (let z = 0; z < nz; z++)
+    for (let y = 0; y < ny; y++)
+      for (let x = 0; x < nx; x++) {
+        if (at(x, y, z) !== value) continue
+        const surface =
+          at(x - 1, y, z) !== value ||
+          at(x + 1, y, z) !== value ||
+          at(x, y - 1, z) !== value ||
+          at(x, y + 1, z) !== value ||
+          at(x, y, z - 1) !== value ||
+          at(x, y, z + 1) !== value
+        if (!surface) continue
+        const p = vox2mm([x, y, z])
+        const k = Math.round(p[depth] / dz)
+        p[depth] = k * dz
+        const list = slabs.get(k)
+        if (list) list.push(p)
+        else slabs.set(k, [p])
+      }
   let best: [Vec3, Vec3, Vec3, Vec3] | undefined
   let bestLength = 0
-  for (let k = 0; k < (n[axis] as number); k++) {
-    const pts: Vec3[] = []
-    for (let j = 0; j < (n[va] as number); j++)
-      for (let i = 0; i < (n[ua] as number); i++) {
-        const v: Vec3 = [0, 0, 0]
-        v[axis] = k
-        v[ua] = i
-        v[va] = j
-        if (at(v) !== value) continue
-        const edge = [
-          [ua, -1],
-          [ua, 1],
-          [va, -1],
-          [va, 1],
-        ].some(([a, d]) => {
-          const w: Vec3 = [...v]
-          const c = (w[a as number] as number) + (d as number)
-          w[a as number] = c
-          return c < 0 || c >= (n[a as number] as number) || at(w) !== value
-        })
-        if (edge) pts.push(vox2mm(v))
-      }
+  for (const pts of slabs.values()) {
     let major: [Vec3, Vec3] | undefined
     let length = bestLength
     for (let p = 0; p < pts.length; p++)
@@ -109,17 +114,9 @@ export function largestBidirectional(
   return best
 }
 
-// RAS voxel axis normal to each 2D view (axial z, coronal y, sagittal x),
-// and the world (RAS mm) axis normal to it.
-const NORMAL_AXIS = [2, 1, 0]
-const WORLD_DEPTH = [2, 1, 0]
+// World (RAS mm) axis normal to each 2D view (axial z, coronal y, sagittal x).
+const WORLD_DEPTH = [2, 1, 0] as const
 
-/**
- * OHIF's runSegmentBidirectional on a NiiVue pane: the active segment's
- * largest bidirectional on the acquisition plane, added as a Bidirectional
- * measurement and shown. False when the segment has no voxels.
- * ponytail: the panel's segment statistics do not list it (cornerstone's do).
- */
 export function addSegmentBidirectional(nv: NiiVue): boolean {
   const img = nv.drawingVolume?.img
   const d = nv.volumes[0]?.dimsRAS
@@ -130,26 +127,16 @@ export function addSegmentBidirectional(nv: NiiVue): boolean {
     [d[1], d[2], d[3]] as Vec3,
     (v) => nv.vox2mm(v) ?? [0, 0, 0],
     activeSegmentValue(nv),
-    NORMAL_AXIS[sliceType] ?? 2,
+    WORLD_DEPTH[sliceType] ?? 2,
   )
-  const row = (points: Vec3[]) =>
+  const annotation =
+    ends &&
     annotationFromRow(nv, {
       uid: crypto.randomUUID(),
       toolName: 'Bidirectional',
-      points: points.map((p) => rasToLps(p)),
+      points: ends.map((p) => rasToLps(p)),
       metadata: { sliceType },
     })
-  // A tilted grid's voxel slice is not a world plane, which NiiVue's
-  // annotations live on: project the ends onto the nearest one (their mean
-  // depth). ponytail: the tilted axis then reads up to 1 - cos(tilt) short.
-  const depth = (WORLD_DEPTH[sliceType] ?? 2) as 0 | 1 | 2
-  const mean = ends ? ends.reduce((a, p) => a + p[depth], 0) / ends.length : 0
-  const flat = (p: Vec3): Vec3 => {
-    const q: Vec3 = [p[0], p[1], p[2]]
-    q[depth] = mean
-    return q
-  }
-  const annotation = ends && (row(ends) ?? row(ends.map(flat)))
   if (!ends || !annotation) return false
   nv.addAnnotation(annotation)
   nv.setCrosshairPos(ends[0])

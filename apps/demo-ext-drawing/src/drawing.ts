@@ -57,7 +57,13 @@ threshSlider.oninput = () => {
 }
 
 // --- Initialize NiiVue + extension context ---
-const nv = new NiiVue()
+// ?backend=webgpu|webgl2 as the other demos; else NiiVue's default.
+const backendParam = new URLSearchParams(location.search).get('backend')
+const nv = new NiiVue(
+  backendParam === 'webgpu' || backendParam === 'webgl2'
+    ? { backend: backendParam }
+    : {},
+)
 const ctx = nv.createExtensionContext()
 
 ctx.on('locationChange', (e) => {

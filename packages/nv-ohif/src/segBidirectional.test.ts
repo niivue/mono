@@ -144,3 +144,15 @@ it('largest bidirectional samples whole cells on an oblique grid', () => {
   const [a, b] = largestBidirectional(img, [n, n, 30], vox2mm, 1, 2) ?? []
   expect(a && b && Math.hypot(a[0] - b[0], a[1] - b[1])).toBeCloseTo(5.44, 2)
 })
+
+// Review of #863: a sheared affine projected the in-plane columns parallel
+// onto the sagittal plane, so a filled block gave no measurement.
+it('largest bidirectional measures on a sheared grid', () => {
+  const img = new Uint8Array(27).fill(1)
+  const vox2mm = ([x, y, z]: [number, number, number]): [
+    number,
+    number,
+    number,
+  ] => [2 * x + y + z, y + 2 * z, x]
+  expect(largestBidirectional(img, [3, 3, 3], vox2mm, 1, 0)).toBeDefined()
+})

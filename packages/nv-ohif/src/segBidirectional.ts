@@ -55,15 +55,28 @@ export function largestBidirectional(
   // The grid steps along the in-plane voxel columns projected onto the plane:
   // on a grid rotated in-plane (or anisotropic) the samples are voxel centres.
   const through = steps.indexOf(dz)
-  const [u, v] = cols
-    .filter((_, a) => a !== through)
-    .map((c) => {
-      const q: Vec3 = [c[0], c[1], c[2]]
-      q[depth] = 0
-      return q
-    }) as [Vec3, Vec3]
-  const bin = Math.min(Math.hypot(...u), Math.hypot(...v))
   const [ia, ib] = AXES.filter((a) => a !== depth) as [Axis, Axis]
+  const pairs = AXES.map(
+    (t) =>
+      cols
+        .filter((_, a) => a !== t)
+        .map((c) => {
+          const q: Vec3 = [c[0], c[1], c[2]]
+          q[depth] = 0
+          return q
+        }) as [Vec3, Vec3],
+  )
+  const sine = ([p, q]: [Vec3, Vec3]) =>
+    Math.abs(p[ia] * q[ib] - p[ib] * q[ia]) /
+    (Math.hypot(...p) * Math.hypot(...q) || 1)
+  // A sheared affine can project the in-plane columns near parallel: then the
+  // least skewed pair.
+  const pair = pairs[through] as [Vec3, Vec3]
+  const [u, v] =
+    sine(pair) > 0.1
+      ? pair
+      : pairs.reduce((a, b) => (sine(b) > sine(a) ? b : a))
+  const bin = Math.min(Math.hypot(...u), Math.hypot(...v))
   const normal: Vec3 = [0, 0, 0]
   normal[depth] = 1
   // mm -> voxel: the inverse of [cols] (vox2mm is affine).

@@ -306,8 +306,9 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   spacing, orthogonal localizers), or a single slice, opens in its acquired
   plane rather than multiplanar.
 - **Overlay planes (60xx).** While `ImageOverlayViewer` is Enabled and no SEG
-  holds the drawing, the first overlay plane shows as the pane's drawing,
-  display only (the pen stays off). First plane and first frame only.
+  or PT label holds the drawing, the first overlay plane shows as the pane's drawing,
+  display only (the pen stays off). First plane only; a 4D plane follows the
+  pane's frame (none past its last).
 - **Fetching.** Each instance is retrieved whole (WADO-RS RetrieveInstance) when
   the server allows it; otherwise it is rebuilt from `/metadata` plus frames
   1..NumberOfFrames, so enhanced/multi-frame instances convert as one file.

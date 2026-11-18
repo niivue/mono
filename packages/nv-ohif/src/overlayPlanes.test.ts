@@ -137,6 +137,22 @@ test('a hold cancels a pending plane, its release shows it', async () => {
   expect(core.nv.drawingVolume).not.toBeNull()
 })
 
+// Review of #866: releasing one of two owners left the other's drawing open
+// to planes.
+test('planes stay off until every hold is released', async () => {
+  const core = fakeCore({ autoFinish: true })
+  const files = plane()
+  const seg = holdOverlayPlanes(core.as)
+  const label = holdOverlayPlanes(core.as)
+  label()
+  label() // a repeated release counts once
+  await setOverlayPlanes(core.as, files, em, 'g')
+  expect(core.nv.drawingVolume).toBeNull()
+  seg()
+  await Bun.sleep(0)
+  expect(core.nv.drawingVolume).not.toBeNull()
+})
+
 function labels(): ArrayBuffer {
   const view = new DataView(new ArrayBuffer(352 + 8))
   view.setInt32(0, 348, true)
@@ -209,7 +225,7 @@ function plane4D(frames: number): File {
 // Review of #863: a 4D plane showed its first frame whatever the pane showed.
 test('planeFrame cuts volume t of a 4D plane as a 3D plane', async () => {
   const cut = new DataView(
-    await (await planeFrame(plane4D(3), 2)).arrayBuffer(),
+    await ((await planeFrame(plane4D(3), 2)) as File).arrayBuffer(),
   )
   expect(cut.getInt16(40, true)).toBe(3)
   expect(cut.getInt16(48, true)).toBe(1)
@@ -217,6 +233,8 @@ test('planeFrame cuts volume t of a 4D plane as a 3D plane', async () => {
   expect(cut.byteLength).toBe(354)
   const flat = plane4D(1)
   expect(await planeFrame(flat, 1)).toBe(flat)
+  // Review of #866: past the last volume there is no plane, not frame 0's.
+  expect(await planeFrame(plane4D(2), 2)).toBeUndefined()
 })
 
 test('a 4D plane reloads for the frame the pane steps to', async () => {
@@ -235,5 +253,18 @@ test('a 4D plane reloads for the frame the pane steps to', async () => {
   await Bun.sleep(0)
   expect(loads.length).toBe(2)
   expect(new Uint8Array(await (loads[1] as File).arrayBuffer())[352]).toBe(2)
+  expect(core.nv.drawingVolume).not.toBeNull()
+})
+
+test('a 4D plane shows none past its frames and returns on a step back', async () => {
+  const core = fakeCore({ autoFinish: true })
+  await setOverlayPlanes(core.as, [plane4D(2)], em, 'g')
+  core.stepFrame(2)
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(core.nv.drawingVolume).toBeNull()
+  core.stepFrame(1)
+  await Bun.sleep(0)
+  await Bun.sleep(0)
   expect(core.nv.drawingVolume).not.toBeNull()
 })

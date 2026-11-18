@@ -297,15 +297,9 @@ it('TMTV SEG and RTSS reference the PT series and keep segment voxel counts', as
 // Holistic review (nv-ohif): a label shown in a pane with a 60xx plane wrote
 // TMTV into the plane's drawing. The label takes the drawing; mode exit gives
 // it back.
-it('a label replaces a shown overlay plane until mode exit', async () => {
-  const nv = new NiiVue({ backend: 'webgl2' })
-  nv.drawScene = () => {}
-  await nv.loadVolumes([{ url: nifti() }])
-  registerNiivue('plane', nv)
-  updateNiivueViewport('plane', {
-    displaySets: [{ displaySetInstanceUID: 'pt', Modality: 'PT' } as never],
-  })
-  const em = {
+// A tool group with ImageOverlayViewer Enabled.
+const planesOn = () => {
+  return {
     getModuleEntry: () => ({
       exports: {
         getCornerstoneLibraries: () => ({
@@ -320,6 +314,17 @@ it('a label replaces a shown overlay plane until mode exit', async () => {
       },
     }),
   } as never
+}
+
+it('a label replaces a shown overlay plane until mode exit', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti() }])
+  registerNiivue('plane', nv)
+  updateNiivueViewport('plane', {
+    displaySets: [{ displaySetInstanceUID: 'pt', Modality: 'PT' } as never],
+  })
+  const em = planesOn()
   await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], em, 'g')
   expect(nv.drawingVolume?.img?.[0]).toBe(9)
   const services = {
@@ -332,4 +337,28 @@ it('a label replaces a shown overlay plane until mode exit', async () => {
   await Bun.sleep(0)
   expect(nv.drawingVolume?.img?.[0]).toBe(9)
   unregisterNiivue('plane')
+})
+
+// Review of #866: the label's hold outlived the PT, so the next series' plane
+// never showed.
+it('a pane leaving its PT series gives its overlay planes back', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti() }])
+  registerNiivue('swap', nv)
+  updateNiivueViewport('swap', {
+    displaySets: [{ displaySetInstanceUID: 'pt2', Modality: 'PT' } as never],
+  })
+  const services = {
+    services: { viewportGridService: { getActiveViewportId: () => 'swap' } },
+  } as never
+  expect(armBrush('swap', 'CircularBrush', services, () => 5)).toBe(true)
+  updateNiivueViewport('swap', {
+    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' } as never],
+  })
+  showPaneLabel(getNiivueEntry('swap') as never, services)
+  await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], planesOn(), 'g')
+  expect(nv.drawingVolume?.img?.[0]).toBe(9)
+  resetQuant()
+  unregisterNiivue('swap')
 })

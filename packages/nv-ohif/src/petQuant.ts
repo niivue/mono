@@ -113,12 +113,7 @@ export function resetQuant(): void {
   // Panes still mounted drop the label and get their planes back; the rest
   // are destroyed.
   const live = new Set(niivueEntries().map((e) => e.nv))
-  for (const [nv, release] of planeHolds) {
-    if (!live.has(nv)) continue
-    if (nv.drawingVolume && shownIn.get(nv)?.[2] === nv.drawingVolume)
-      nv.closeDrawing()
-    release()
-  }
+  for (const nv of planeHolds.keys()) if (live.has(nv)) dropLabel(nv)
   planeHolds.clear()
   masks.clear()
   thresholdRange = [2.5, 50]
@@ -256,13 +251,25 @@ function showMask(
   }
 }
 
-/** Show the label of a pane's PT series once it holds one (a late or re-hung pane). */
+/** A pane's label drawing goes and its overlay planes come back. */
+function dropLabel(nv: NiiVue): void {
+  if (nv.drawingVolume && shownIn.get(nv)?.[2] === nv.drawingVolume)
+    nv.closeDrawing()
+  planeHolds.get(nv)?.()
+  planeHolds.delete(nv)
+}
+
+/**
+ * Show the label of a pane's PT series once it holds one (a late or re-hung
+ * pane); a pane now on another series gives its planes back.
+ */
 export function showPaneLabel(
   entry: NiivueViewportEntry,
   services: Services,
 ): void {
   const pet = paneTarget(entry, services)
-  if (pet) showMask(pet.uid, services, undefined, true)
+  if (pet && masks.has(pet.uid)) showMask(pet.uid, services, undefined, true)
+  else if (planeHolds.has(entry.nv)) dropLabel(entry.nv)
 }
 
 /** Read a pane's brushed drawing back into its series' label. */

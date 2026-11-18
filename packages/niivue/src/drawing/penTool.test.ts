@@ -150,6 +150,19 @@ describe('3D ball pen and shape fills', () => {
     expect(count(rect)).toBe(12)
     expect(rect[idx(7, 5, 2)]).toBe(2)
   })
+
+  test('a multiplanar or render sliceType fills an axial circle', () => {
+    for (const sliceType of [3, 4]) {
+      const bmp = new Uint8Array(1331)
+      drawShapeFill({
+        ...{ shape: PEN_SHAPE.CIRCLE, a: [5, 5, 5], b: [7, 5, 5], sliceType },
+        ...{ penValue: 1, drawBitmap: bmp, dims, pixDims: [3, 1, 1, 1] },
+        penOverwrites: true,
+      })
+      expect(bmp[idx(5, 5, 5)]).toBe(1)
+      expect(bmp[idx(5, 5, 6)]).toBe(0) // one plane, not a sphere
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -7797,8 +7797,8 @@ export default class NiiVue extends EventTarget {
    * `PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the
    * edge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`
    * takes opposite corners. A circle or rectangle lies in the `sliceType` plane
-   * through `startMm`. Emits `drawingChanged` (`update`); false without a
-   * drawing.
+   * through `startMm` (axial for a multiplanar or render `sliceType`). Emits
+   * `drawingChanged` (`update`); false without a drawing.
    * @example nv1.drawShapeFill(PEN_SHAPE.SPHERE, [0, 0, 0], [0, 0, 20])
    */
   drawShapeFill(

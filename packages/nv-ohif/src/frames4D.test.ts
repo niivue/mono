@@ -361,8 +361,11 @@ it('a reconverted series rejoins its frame group while shown', async () => {
     (await split('ds1')).frames.group === first.frames.group,
     (await split('ds2')).frames.group === first.frames.group,
   ]
+  await nv.removeVolume(0)
+  const afterRemove = (await split('ds1')).frames.group
   leave()
   const reopened = (await split('ds1')).frames.group
+  expect(afterRemove).not.toBe(first.frames.group)
   expect([...shown, reopened === first.frames.group]).toEqual([
     true,
     false,

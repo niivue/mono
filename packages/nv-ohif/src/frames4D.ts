@@ -74,6 +74,11 @@ const isShown = (group: object): boolean =>
   [...panes.values()].some((nv) =>
     nv.volumes.some((v) => v.frameSource?.group === group),
   )
+// Frees a closed series' buffers (held by its computed result).
+const pruneGroups = () => {
+  for (const [series, group] of groups)
+    if (!isShown(group)) groups.delete(series)
+}
 
 /** The frame-source volume (base or overlay) a pane shows, if any. */
 const sourceVolume = (nv: NiiVue): NVImage | undefined =>
@@ -359,15 +364,17 @@ export function joinFrames(
   nv.addEventListener('frameChange', onFrameChange)
   nv.addEventListener('volumeLoaded', onVolumeLoaded)
   // Removing the last 4D volume must hide the panel's frame controls.
-  nv.addEventListener('volumeRemoved', onFrameChange)
+  const onVolumeRemoved = () => {
+    pruneGroups()
+    onFrameChange()
+  }
+  nv.addEventListener('volumeRemoved', onVolumeRemoved)
   return () => {
     nv.removeEventListener('frameChange', onFrameChange)
     nv.removeEventListener('volumeLoaded', onVolumeLoaded)
-    nv.removeEventListener('volumeRemoved', onFrameChange)
+    nv.removeEventListener('volumeRemoved', onVolumeRemoved)
     if (panes.get(viewportId) === nv) panes.delete(viewportId)
-    // Frees a closed series' buffers (held by its computed result).
-    for (const [series, group] of groups)
-      if (!isShown(group)) groups.delete(series)
+    pruneGroups()
     if (element) {
       delete element.dataset.frame
       delete element.dataset.frames

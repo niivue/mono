@@ -109,3 +109,16 @@ export interface ViewState {
   flipVertical?: boolean
   colorbar: boolean
 }
+
+/** The slide annotation tools, as NiiVue's `SlideAnnotationTool`. */
+export const SLIDE_ANNOTATION_TOOLS = [
+  'point',
+  'line',
+  'rectangle',
+  'ellipse',
+  'circle',
+  'polygon',
+  'freehand',
+  'freehandLine',
+] as const
+export type SlideAnnotationTool = (typeof SLIDE_ANNOTATION_TOOLS)[number]

@@ -198,7 +198,7 @@ export function snapshotMeasurements(
 }
 
 /** Distance from a point to a line segment, all in canvas pixels. */
-function pointToSegmentDistance(
+export function pointToSegmentDistance(
   px: number,
   py: number,
   sx: number,

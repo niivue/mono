@@ -1,9 +1,15 @@
 import { crosshairPanThresholdCssPx } from '@/control/dragModes'
+import { pointToSegmentDistance } from '@/control/measurements'
 import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideScreen, NVSlideWindow } from './NVSlide'
 import {
+  dragSlideAnnotationHandle,
+  isClosedSlideTool,
   NVSlideAnnotations,
+  type SlideAnnotation,
   type SlideAnnotationTool,
+  slideAnnotationHandles,
+  slideAnnotationOutline,
 } from './slideAnnotations'
 import { isRgbSlide } from './slideChannels'
 
@@ -92,14 +98,21 @@ const CONTRAST_GRID = 32
 const isBoxMode = (mode: DRAG_MODE): boolean =>
   mode === DRAG_MODE.contrast || mode === DRAG_MODE.roiSelection
 
-// A polygon closes on a press this near its first vertex.
-const CLOSE_POLYGON_CSS_PX = 8
+// A press this near a polygon's first vertex closes it, near a handle or an
+// outline picks it.
+const PICK_CSS_PX = 8
 // Freehand samples no closer than this: denser only adds overlay lines.
 const FREEHAND_STEP_CSS_PX = 3
 
 /** An annotation being drawn; a polygon's last point follows the pointer. */
 export interface NVSlideAnnotationDraft {
   tool: SlideAnnotationTool
+  points: NVSlidePoint[]
+}
+
+/** A selected annotation's handle being dragged: `points` until released. */
+export interface NVSlideAnnotationEdit {
+  id: string
   points: NVSlidePoint[]
 }
 
@@ -134,6 +147,8 @@ export class NVSlideController {
   readonly annotations: NVSlideAnnotations
   /** The annotation being drawn, or null. */
   draft: NVSlideAnnotationDraft | null = null
+  /** The selected annotation's edit under way, or null. */
+  edit: NVSlideAnnotationEdit | null = null
   /** The channel the default windowing and contrast handlers set. */
   windowChannel = 0
   /** Double-click zooms in 2x about the pointer (shift: out) while the primary mode is `pan`. */
@@ -153,6 +168,12 @@ export class NVSlideController {
 
   private readonly _canvas: HTMLCanvasElement
   private _annotationTool: SlideAnnotationTool | null = null
+  private _selected: string | null = null
+  // The press selected an annotation: it draws nothing.
+  private _picked = false
+  // The edited annotation as pressed, and the handle dragged.
+  private _editFrom: { annotation: SlideAnnotation; handle: number } | null =
+    null
   private readonly _options: NVSlideControllerOptions
   private _gesture: Gesture | null = null
   // Touch points down on the canvas, for pinch.
@@ -177,6 +198,10 @@ export class NVSlideController {
     )
     for (const type of ['added', 'changed', 'removed'])
       this.annotations.addEventListener(type, () => options.onChange?.())
+    this.annotations.addEventListener('removed', (e) => {
+      if ((e as CustomEvent<SlideAnnotation>).detail.id === this._selected)
+        this.selectAnnotation(null)
+    })
     canvas.addEventListener('pointerdown', this._onDown)
     canvas.addEventListener('pointermove', this._onMove)
     canvas.addEventListener('pointerup', this._onEnd)
@@ -188,6 +213,7 @@ export class NVSlideController {
     canvas.addEventListener('contextmenu', this._onContextMenu)
     canvas.addEventListener('mousedown', this._onMouseDown)
     canvas.addEventListener('dblclick', this._onDoubleClick)
+    canvas.ownerDocument?.addEventListener('keydown', this._onKeyDown)
   }
 
   /**
@@ -200,14 +226,36 @@ export class NVSlideController {
     this._dropDraft()
   }
 
+  // Escape drops a shape being drawn and reverts a handle drag, as NiiVue's.
+  private _onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && (this._gesture?.isAnnotation || this.draft))
+      this.cancelGesture()
+  }
+
+  /** The annotation whose handles show, or null. */
+  get selectedAnnotation(): string | null {
+    return this._selected
+  }
+
+  /** Show `id`'s edit handles (null: none). */
+  selectAnnotation(id: string | null): void {
+    if (id === this._selected) return
+    this._selected = id
+    this._options.onChange?.()
+  }
+
   /**
    * The left button's annotation tool, over `primaryDragMode`; null: none.
    * Point: click. Line, rectangle, ellipse (corner to corner), circle (centre
    * out): drag. Polygon: click vertices, close near the first or double-click.
-   * Freehand (closed), freehandLine (open): drag. Changing it drops a draft;
-   * setting the current tool again keeps it.
-   * ponytail: no selection or edit handles, and no click-move-click for
-   * two-point tools; add when a host needs them.
+   * Freehand (closed), freehandLine (open): drag. With a shape tool (point,
+   * line, rectangle, ellipse, circle), a press near an annotation's outline
+   * selects it instead (the point tool selects points only), and dragging a
+   * selected one's handle reshapes it, one undoable step on release; Escape or
+   * {@link cancelGesture} reverts the drag. Changing it drops a draft and the
+   * selection; setting the current tool again keeps them.
+   * ponytail: no whole-shape move (NiiVue's volume annotations have none) and
+   * no click-move-click for two-point tools; add when a host needs them.
    */
   get annotationTool(): SlideAnnotationTool | null {
     return this._annotationTool
@@ -218,6 +266,7 @@ export class NVSlideController {
     if (tool === this._annotationTool) return
     if (this._gesture?.isAnnotation) this._end(this._gesture, false, true)
     this._dropDraft()
+    this.selectAnnotation(null)
     this._annotationTool = tool
   }
 
@@ -270,6 +319,7 @@ export class NVSlideController {
     c.removeEventListener('contextmenu', this._onContextMenu)
     c.removeEventListener('mousedown', this._onMouseDown)
     c.removeEventListener('dblclick', this._onDoubleClick)
+    c.ownerDocument?.removeEventListener('keydown', this._onKeyDown)
   }
 
   private _modeFor(button: number): DRAG_MODE {
@@ -536,9 +586,42 @@ export class NVSlideController {
   }
 
   private _dropDraft(): void {
-    if (!this.draft) return
+    if (!this.draft && !this.edit) return
     this.draft = null
+    this.edit = null
+    this._editFrom = null
     this._options.onChange?.()
+  }
+
+  /** Index of the selected annotation's handle at `p`, or -1. */
+  private _handleAt(p: NVSlidePoint): number {
+    const a = this._selected ? this.annotations.get(this._selected) : undefined
+    if (!a) return -1
+    return slideAnnotationHandles(a.tool, a.points).findIndex(
+      (h) => this._cssDistance(p, h) <= PICK_CSS_PX,
+    )
+  }
+
+  /** The topmost annotation whose outline passes near `p`. */
+  private _annotationAt(p: NVSlidePoint, tool: SlideAnnotationTool) {
+    const scale = this._options.slide()?.viewport.scale ?? 1
+    return this.annotations
+      .list()
+      .reverse()
+      .find((a) => {
+        // A point tool picks points only, as NiiVue's probe.
+        if (tool === 'point' && a.tool !== 'point') return false
+        const ring = slideAnnotationOutline(a.tool, a.points)
+        const closed = isClosedSlideTool(a.tool)
+        return ring.some((q, i) => {
+          const r = ring[i - 1] ?? (closed ? ring.at(-1) : q)
+          const { x, y } = r as NVSlidePoint
+          return (
+            pointToSegmentDistance(p.x, p.y, x, y, q.x, q.y) * scale <=
+            PICK_CSS_PX
+          )
+        })
+      })
   }
 
   // Distance in CSS px between slide points: tolerances are on screen.
@@ -556,13 +639,27 @@ export class NVSlideController {
   private _annotateDown(p: NVSlidePoint): void {
     const tool = this._annotationTool as SlideAnnotationTool
     const draft = this.draft
+    // Shape tools pick and edit, as NiiVue's: polygon and freehand only draw.
+    if (!draft && tool !== 'polygon' && !tool.startsWith('freehand')) {
+      const handle = this._handleAt(p)
+      const annotation =
+        handle >= 0 && this._selected
+          ? this.annotations.get(this._selected)
+          : undefined
+      if (annotation) {
+        this._editFrom = { annotation, handle }
+        this.edit = { id: annotation.id, points: annotation.points }
+        return
+      }
+      const hit = this._annotationAt(p, tool)
+      this.selectAnnotation(hit?.id ?? null)
+      this._picked = !!hit
+      if (hit) return
+    }
     if (tool === 'polygon' && draft) {
       const placed = draft.points.slice(0, -1)
       const first = placed[0] as NVSlidePoint
-      if (
-        placed.length >= 3 &&
-        this._cssDistance(p, first) <= CLOSE_POLYGON_CSS_PX
-      )
+      if (placed.length >= 3 && this._cssDistance(p, first) <= PICK_CSS_PX)
         this._commitDraft(placed)
       else if (
         this._cssDistance(p, placed.at(-1) as NVSlidePoint) >
@@ -581,6 +678,13 @@ export class NVSlideController {
   private _annotateMove(x: number, y: number): void {
     const draft = this.draft
     const p = this._slidePoint(x, y)
+    const from = this._editFrom
+    if (from && this.edit && p) {
+      const { tool, points } = from.annotation
+      this.edit.points = dragSlideAnnotationHandle(tool, points, from.handle, p)
+      this._options.onChange?.()
+      return
+    }
     if (!draft || !p) return
     const pts = draft.points
     if (!draft.tool.startsWith('freehand')) pts[pts.length - 1] = p
@@ -598,6 +702,19 @@ export class NVSlideController {
     cancelled: boolean,
   ): void {
     const tool = this._annotationTool
+    const edit = this.edit
+    if (this._picked) {
+      this._picked = false
+      return
+    }
+    if (edit) {
+      this.edit = null
+      this._editFrom = null
+      if (committed && g.isDrag)
+        this.annotations.setPoints(edit.id, edit.points)
+      this._options.onChange?.()
+      return
+    }
     // A polygon outlives its clicks: only a cancel drops it.
     if (tool === 'polygon' && !cancelled) return
     if (!committed || cancelled || !tool) {

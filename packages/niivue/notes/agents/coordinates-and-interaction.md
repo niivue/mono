@@ -42,7 +42,7 @@ directions. Pinned by `bothEndsOfTheRangeAreReachable` in `NVTransforms.test.ts`
 
 Configurable drag interactions on 2D slices. `interaction.primaryDragMode` (default: `crosshair`) for left-button, `interaction.secondaryDragMode` (default: `contrast`) for right-button. 3D tile: left=rotate, right=clip plane. Module: `control/dragModes.ts`.
 
-`DRAG_MODE` enum: `none`(0), `contrast`(1), `measurement`(2), `pan`(3), `slicer3D`(4), `callbackOnly`(5), `roiSelection`(6), `angle`(7), `crosshair`(8), `windowing`(9), `crosshairPan`(10).
+`DRAG_MODE` enum: `none`(0), `contrast`(1), `measurement`(2), `pan`(3), `slicer3D`(4), `callbackOnly`(5), `roiSelection`(6), `angle`(7), `crosshair`(8), `windowing`(9), `crosshairPan`(10), `slice`(11) (vertical drag steps slices through `dragModes.stepSlice`, the wheel's path; one step per `sliceDragCssPx`, the drag start advancing by what was consumed so slow drags add up).
 
 `crosshairPan` is a single-button touch/trackpad mode: press and release without moving more than `crosshairPanThresholdCssPx` (4 CSS px, scaled to canvas pixels) places the crosshair at the release point like `crosshair`; moving further pans like `pan`, and the gesture then stays a pan. A `pointercancel` never places the crosshair.
 

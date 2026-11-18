@@ -363,12 +363,13 @@
         "kind": "Enum",
         "values": [
           0,
-          1
+          1,
+          2
         ]
       },
       "hasGetter": true,
       "hasSetter": true,
-      "doc": "Footprint of the pen when `drawPenSize` is greater than one: a square\n(`PEN_SHAPE.RECTANGLE`, the default) or a round brush (`PEN_SHAPE.CIRCLE`)."
+      "doc": "Footprint of the pen when `drawPenSize` is greater than one: a square\n(`PEN_SHAPE.RECTANGLE`, the default), a round brush (`PEN_SHAPE.CIRCLE`) or\na 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm)."
     },
     {
       "jsName": "drawPenSize",
@@ -395,6 +396,17 @@
     {
       "jsName": "drawRimOpacity",
       "pyName": "draw_rim_opacity",
+      "tsType": "number",
+      "pyTraitlet": {
+        "kind": "Float"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "drawRimWidth",
+      "pyName": "draw_rim_width",
       "tsType": "number",
       "pyTraitlet": {
         "kind": "Float"
@@ -846,6 +858,17 @@
       "hasGetter": true,
       "hasSetter": true,
       "doc": null
+    },
+    {
+      "jsName": "isWindowingUpperBoundOnly",
+      "pyName": "is_windowing_upper_bound_only",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link InteractionConfig.isWindowingUpperBoundOnly}."
     },
     {
       "jsName": "isYoked3DTo2DZoom",
@@ -2485,6 +2508,41 @@
       ],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "drawShapeFill",
+      "pyName": "draw_shape_fill",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "shape",
+          "tsType": "PEN_SHAPE",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "startMm",
+          "tsType": "ArrayLike<number>",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "endMm",
+          "tsType": "ArrayLike<number>",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "sliceType",
+          "tsType": "number",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "boolean",
+      "doc": "Fill a shape in the drawing with `drawPenValue` as one undo step, honouring\n`drawIsFillOverwriting`. World-mm geometry, as from a drag:\n`PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the\nedge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`\ntakes opposite corners. A circle or rectangle lies in the `sliceType` plane\nthrough `startMm`. Emits `drawingChanged` (`update`); false without a\ndrawing.",
       "returnsDoc": null
     },
     {

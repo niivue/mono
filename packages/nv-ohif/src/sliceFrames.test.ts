@@ -36,7 +36,12 @@ interface Geometry {
 // The sform dcm2niix writes for a DICOM stack: rows flipped (NIfTI j = rows-1-j),
 // LPS -> RAS. `reverse` stores the slices last-first (dcm2niix flipping to a
 // positive-determinant sform), so slice k holds acquired slice n-1-k.
-function niftiHeader(g: Geometry, reverse = false): ArrayBuffer {
+// `slicesFirst` stores the slices along i, as dcm2niix does for a 3D sagittal.
+function niftiHeader(
+  g: Geometry,
+  reverse = false,
+  slicesFirst = false,
+): ArrayBuffer {
   const normal = cross(g.row, g.col)
   let origin = add(g.ipp, g.col, (g.rows - 1) * g.spacing)
   let ck = normal.map((v) => v * g.sliceStep) as Vec3
@@ -50,9 +55,14 @@ function niftiHeader(g: Geometry, reverse = false): ArrayBuffer {
     ck,
     origin,
   ]
+  const dims = [g.columns, g.rows, g.slices]
+  if (slicesFirst) {
+    cols.unshift(...cols.splice(2, 1))
+    dims.unshift(...dims.splice(2, 1))
+  }
   const view = new DataView(new ArrayBuffer(352))
   view.setInt32(0, 348, true)
-  ;[3, g.columns, g.rows, g.slices].forEach((d, i) => {
+  ;[3, ...dims].forEach((d, i) => {
     view.setInt16(40 + 2 * i, d, true)
   })
   view.setInt16(254, 1, true) // sform_code
@@ -125,6 +135,31 @@ describe('buildSliceFrames', () => {
       localizer,
     ])
     expect(sops(sf)).toEqual(['sag0:1', 'sag1:1', 'sag2:1', 'sag3:1'])
+    // The same series with its slices stored along i (D1's MPRAGE).
+    const first = buildSliceFrames(niftiHeader(sag, false, true), [
+      localizer,
+      ...classic(sag, 'sag'),
+    ])
+    expect(sops(first)).toEqual(['sag0:1', 'sag1:1', 'sag2:1', 'sag3:1'])
+  })
+
+  it('keeps k for a single-slice output among orthogonal localizers', () => {
+    // D3's scout: one axial, one sagittal and one coronal frame, one per axis.
+    const one: Geometry = { ...axial, slices: 1 }
+    const sf = buildSliceFrames(niftiHeader(one), [
+      {
+        SOPInstanceUID: 'sag',
+        ImagePositionPatient: [-99, -120, 30],
+        ImageOrientationPatient: [0, 1, 0, 0, 0, -1],
+      },
+      {
+        SOPInstanceUID: 'cor',
+        ImagePositionPatient: [-100.5, -119, 30],
+        ImageOrientationPatient: [1, 0, 0, 0, 0, -1],
+      },
+      ...classic(one, 'ax'),
+    ])
+    expect(sops(sf)).toEqual(['ax0:1'])
   })
 
   it('maps enhanced per-frame positions with a shared orientation', () => {

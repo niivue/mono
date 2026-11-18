@@ -1,7 +1,10 @@
+import type NiiVue from '@niivue/niivue'
 import {
   type AnnotationTool,
+  computeAnnotationStats,
   DRAG_MODE,
   type SlideAnnotationTool,
+  type VectorAnnotation,
 } from '@niivue/niivue'
 
 // OHIF value types (literals, so we do not depend on measurementService.VALUE_TYPES
@@ -100,7 +103,7 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
     labelPrefix: 'Bidirectional',
     readout: 'bidirectional',
   },
-  // freehand has no measure variant; any stats NiiVue attaches still show.
+  // freehand has no measure variant: measureFreehand gives it ROI stats.
   freehand: {
     toolName: 'PlanarFreehandROI',
     valueType: POLYLINE_VALUE_TYPE,
@@ -148,7 +151,7 @@ export const ANNOTATION_TO_OHIF: Record<string, AnnotationToolDescriptor> = {
   },
 }
 
-/** OHIF brush tool -> pen mode. Sphere variants paint per slice (NiiVue's pen is 2D). */
+/** OHIF brush tool -> pen mode (Sphere variants: 3D ball pen). */
 export const OHIF_BRUSHES: Record<string, 'paint' | 'erase' | 'threshold'> = {
   CircularBrush: 'paint',
   SphereBrush: 'paint',
@@ -204,9 +207,31 @@ export function ohifToolToDragMode(tool: string | undefined): number {
       return DRAG_MODE.pan
     case 'Zoom':
       return DRAG_MODE.slicer3D
+    case 'StackScroll':
+      return DRAG_MODE.slice
+    // NiiVue's contrast box: window from the enclosed voxels' min/max (shown
+    // frame, scaled values), as OHIF's region W/L does.
+    case 'WindowLevelRegion':
+      return DRAG_MODE.contrast
     default:
       // NiiVue's render tile rotates on primary drag independently of the 2D
       // drag mode. Unknown OHIF tools retain safe crosshair navigation in 2D.
       return DRAG_MODE.crosshair
   }
+}
+
+/**
+ * OHIF's PlanarFreehandROI reports area and intensity stats; a NiiVue freehand
+ * annotation (no measure variant) has none: measure its polygons as an ROI.
+ */
+export function measureFreehand(nv: NiiVue, a: VectorAnnotation): void {
+  const vol = nv.volumes[0]
+  const p = a.polygons[0]?.outer[0]
+  if (a.shape || !vol || !p) return
+  a.stats =
+    computeAnnotationStats(
+      { ...a, shape: { type: 'freehand', start: p, end: p } },
+      vol,
+      nv.annotationAreaIsGeometric,
+    ) ?? undefined
 }

@@ -1,6 +1,12 @@
+import type { Series } from '@niivue/dcm2niix'
 import type NiiVue from '@niivue/niivue'
 import type { VolumeFrameSource } from '@niivue/niivue'
-import { isPart, outputEcho, rankOutputs } from './dcm2niixOutputs'
+import {
+  isOverlayPlane,
+  isPart,
+  outputEcho,
+  rankOutputs,
+} from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
 import { split4D } from './frames4D'
 import { updateNiivueViewport } from './niivueRegistry'
@@ -38,10 +44,18 @@ export interface DicomConvertOptions {
  */
 function instanceRefs(ds: OhifDisplaySet): InstanceRef[] {
   const refs = new Map<string, InstanceRef>()
+  // A just-saved SEG/RTSS keeps a local `dicomfile:` imageId (OHIF registers
+  // the written dataset): it is on the data source too, under its UIDs.
+  const root = (ds as { wadoRoot?: unknown }).wadoRoot
   for (const inst of ds.instances ?? []) {
     const id = inst.imageId
     const url =
-      typeof id === 'string' ? retrieveInstanceUrlFromImageId(id) : null
+      (typeof id === 'string' ? retrieveInstanceUrlFromImageId(id) : null) ??
+      (typeof root === 'string' && inst.SOPInstanceUID
+        ? retrieveInstanceUrlFromImageId(
+            `${root}/studies/${inst.StudyInstanceUID}/series/${inst.SeriesInstanceUID}/instances/${inst.SOPInstanceUID}`,
+          )
+        : null)
     if (url && !refs.has(url))
       refs.set(url, {
         url,
@@ -83,7 +97,13 @@ export interface DicomConversion {
    * The other single-slice outputs when `image` is one too (orthogonal
    * localizers in one series): a cornerstone stack scrolls through them all.
    */
-  alternates?: Array<{ image: File; sliceFrames?: SliceFrames }>
+  alternates?: Array<{
+    image: File
+    sliceFrames?: SliceFrames
+    overlayPlanes?: File[]
+  }>
+  /** `image`'s DICOM overlay planes (dcm2niix `<stem>_ROI<n>`), on its grid. */
+  overlayPlanes?: File[]
 }
 
 /**
@@ -175,6 +195,7 @@ async function convertUnshared(
             others.map(async (o) => ({
               image: o.image,
               sliceFrames: await frameMap(o),
+              ...overlayPlanesOf(series, o.stem),
             })),
           )
         ).filter((o) => o.sliceFrames?.frames.length === 1)
@@ -195,7 +216,15 @@ async function convertUnshared(
     note: notes.length > 0 ? notes.join(' ') : undefined,
     sliceFrames,
     ...(alternates.length > 0 ? { alternates } : {}),
+    ...overlayPlanesOf(series, shown.stem),
   }
+}
+
+function overlayPlanesOf(series: Series[], stem: string) {
+  const planes = series
+    .filter((s) => isOverlayPlane(s) && s.stem.startsWith(`${stem}_ROI`))
+    .map((s) => s.image)
+  return planes.length > 0 ? { overlayPlanes: planes } : {}
 }
 
 /**

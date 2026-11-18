@@ -66,9 +66,8 @@ describe('composeThumbnail', () => {
         this.data = new Uint8ClampedArray(width * height * 4)
       }
       getContext() {
-        const c = this
         return {
-          canvas: c,
+          canvas: this,
           drawImage: (
             src: Px,
             sx = 0,
@@ -91,18 +90,26 @@ describe('composeThumbnail', () => {
                       sum += src.data[
                         ((sy + v) * src.width + sx + u) * 4 + k
                       ] as number
-                  c.data[((dy + y) * c.width + dx + x) * 4 + k] =
+                  this.data[((dy + y) * this.width + dx + x) * 4 + k] =
                     sum / ((x1 - x0) * (y1 - y0))
                 }
               }
           },
           getImageData: (x: number, y: number, w: number, h: number) => {
             const out = new PixelCanvas(w, h)
-            out.getContext().drawImage(c, x, y, w, h)
+            out.getContext().drawImage(this, x, y, w, h)
             return out
           },
           putImageData: (img: Px, dx: number, dy: number) =>
-            c.getContext().drawImage(img, 0, 0, img.width, img.height, dx, dy),
+            this.getContext().drawImage(
+              img,
+              0,
+              0,
+              img.width,
+              img.height,
+              dx,
+              dy,
+            ),
         }
       }
       transferToImageBitmap() {

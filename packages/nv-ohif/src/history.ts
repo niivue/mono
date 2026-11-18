@@ -36,10 +36,20 @@ export function historyMemo(
   return libs?.cornerstone?.utilities?.HistoryMemo?.DefaultHistoryMemo
 }
 
+/** A recorder of annotation steps: a NiiVue, or a slide's NVSlideAnnotations. */
+type StepSource = Pick<
+  NiiVue,
+  | 'annotationUndoTop'
+  | 'annotationRedoTop'
+  | 'annotationUndo'
+  | 'annotationRedo'
+> &
+  Pick<EventTarget, 'addEventListener' | 'removeEventListener'>
+
 // Set while "delete all" removes its NiiVue rows: their step joins OHIF's group.
 let joinGroupAt: number | undefined
 
-function record(memo: HistoryMemo, nv: NiiVue, seq: number): void {
+function record(memo: HistoryMemo, nv: StepSource, seq: number): void {
   // Replays only its own step: one cleared (series swap) or evicted (core keeps
   // fewer steps than OHIF) is never on top again, so it is inert rather than
   // undoing or redoing another step.
@@ -60,19 +70,28 @@ function record(memo: HistoryMemo, nv: NiiVue, seq: number): void {
   else memo.push(step)
 }
 
-/** Mirror `nv`'s recorded annotation steps in OHIF's undo history. */
+/** Mirror `nv`'s recorded annotation steps in OHIF's undo history; returns the unbinder. */
+export function mirrorAnnotationHistory(
+  nv: StepSource,
+  extensionManager: OhifExtensionManager | undefined,
+): () => void {
+  const memo = historyMemo(extensionManager)
+  if (!memo) return () => {}
+  const onPush = (e: Event) =>
+    record(memo, nv, (e as CustomEvent<{ seq: number }>).detail.seq)
+  nv.addEventListener('annotationHistoryPush', onPush)
+  return () => nv.removeEventListener('annotationHistoryPush', onPush)
+}
+
+/** {@link mirrorAnnotationHistory} for a viewport's NiiVue. */
 export function useAnnotationHistory(
   nv: NiiVue | null,
   extensionManager: OhifExtensionManager | undefined,
 ): void {
-  useEffect(() => {
-    const memo = historyMemo(extensionManager)
-    if (!nv || !memo) return
-    const onPush = (e: Event) =>
-      record(memo, nv, (e as CustomEvent<{ seq: number }>).detail.seq)
-    nv.addEventListener('annotationHistoryPush', onPush)
-    return () => nv.removeEventListener('annotationHistoryPush', onPush)
-  }, [nv, extensionManager])
+  useEffect(
+    () => (nv ? mirrorAnnotationHistory(nv, extensionManager) : undefined),
+    [nv, extensionManager],
+  )
 }
 
 type Row = { uid: string; source?: { name?: string } }

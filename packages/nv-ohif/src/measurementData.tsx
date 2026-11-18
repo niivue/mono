@@ -59,7 +59,7 @@ const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
 const slideSnapshot = (slide: NVSlideAnnotations): Row[] =>
   slide.list().map((a) => ({
     id: a.id,
-    toolName: slideRowTool(a),
+    toolName: slideRowTool(slide, a),
     label: a.label,
     values: slideRowValues(a).data,
   }))

@@ -222,6 +222,8 @@ async function installComputed(
     done.catch(() => {}),
   )
   await done
+  // The crosshair readout follows locationChange: re-sample it (setFrame4D does).
+  nv.createOnLocationChange()
 }
 
 /** Back from a computed volume to the series' shown frame. */
@@ -245,6 +247,7 @@ export async function showFrames(group: object): Promise<void> {
     // A compute shown during the load owns the volumes now.
     if (computedShown.has(group)) return
     await nv.updateVolumeData(i, data)
+    nv.createOnLocationChange()
   }
 }
 

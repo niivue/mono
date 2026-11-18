@@ -32,21 +32,26 @@ describe('segPanel', () => {
     expect(drawOpacities({ fillAlpha: 0.3, outlineOpacity: 0.8 })).toEqual({
       fill: 0.3,
       rim: 0.8,
+      width: 1,
     })
     expect(drawOpacities({ renderOutline: false, fillAlpha: 0.3 })).toEqual({
       fill: 0.3,
       rim: -1,
+      width: 1,
     })
     // Outline only: a nonzero fill keeps the shader drawing the rim.
     expect(drawOpacities({ renderFill: false })).toEqual({
       fill: 1 / 255,
       rim: 1,
+      width: 1,
     })
     expect(drawOpacities({ renderFill: false, renderOutline: false })).toEqual({
       fill: 0,
       rim: -1,
+      width: 1,
     })
     expect(drawOpacities({ renderFill: false, outlineOpacity: 0 }).fill).toBe(0)
+    expect(drawOpacities({ outlineWidth: 3 }).width).toBe(3)
   })
 
   test('panelColormap_hiddenSegmentIsTransparent', () => {
@@ -130,7 +135,9 @@ function host(style: object = {}, color = [255, 0, 0, 255]) {
         id: string,
       ) => reps.set(vp + id, {}),
     },
-    segmentationStyle: { setRenderInactiveSegmentations: () => {} },
+    segmentationStyle: {
+      setRenderInactiveSegmentations: () => {},
+    },
     triggerSegmentationEvents: {
       triggerSegmentationModified: (segmentationId: string) => {
         for (const cb of listeners) cb({ segmentationId })

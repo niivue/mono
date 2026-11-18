@@ -139,6 +139,26 @@ describe('convertDisplaySetToNifti', () => {
     expect(urls).toContain(frames)
   })
 
+  it('fetches a just-saved instance (dicomfile: imageId) from its data source', async () => {
+    const urls: string[] = []
+    const stub = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      urls.push(url)
+      return stub(url, init)
+    }) as unknown as typeof fetch
+    result = Promise.resolve({ series: [output('saved', 3)] })
+    const uids = {
+      StudyInstanceUID: '1',
+      SeriesInstanceUID: '2',
+      SOPInstanceUID: '3',
+    }
+    await convertDisplaySetToNifti({
+      wadoRoot: 'https://h/dicomweb',
+      instances: [{ imageId: 'dicomfile:0', ...uids }],
+    } as OhifDisplaySet)
+    expect(urls).toContain(frames)
+  })
+
   it('fetches frames 1..NumberOfFrames of a multi-frame instance into one file', async () => {
     const urls: string[] = []
     const stub = globalThis.fetch

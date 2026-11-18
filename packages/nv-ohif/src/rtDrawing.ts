@@ -28,6 +28,7 @@ export function styleDrawing(
     | 'drawColormap'
     | 'drawOpacity'
     | 'drawRimOpacity'
+    | 'drawRimWidth'
     | 'addEventListener'
     | 'removeEventListener'
   >,
@@ -38,6 +39,7 @@ export function styleDrawing(
     drawColormap: nv.drawColormap,
     drawOpacity: nv.drawOpacity,
     drawRimOpacity: nv.drawRimOpacity,
+    drawRimWidth: nv.drawRimWidth,
   })
   const prior = snap()
   apply()
@@ -53,6 +55,8 @@ export function styleDrawing(
       applied.drawOpacity = after.drawOpacity
     if (after.drawRimOpacity !== before.drawRimOpacity)
       applied.drawRimOpacity = after.drawRimOpacity
+    if (after.drawRimWidth !== before.drawRimWidth)
+      applied.drawRimWidth = after.drawRimWidth
   }
   let done = false
   const onDrawingChanged = () => {
@@ -68,6 +72,8 @@ export function styleDrawing(
       nv.drawOpacity = prior.drawOpacity
     if (nv.drawRimOpacity === applied.drawRimOpacity)
       nv.drawRimOpacity = prior.drawRimOpacity
+    if (nv.drawRimWidth === applied.drawRimWidth)
+      nv.drawRimWidth = prior.drawRimWidth
   }
   nv.addEventListener('drawingChanged', onDrawingChanged)
   return { restore, restyle }
@@ -652,6 +658,7 @@ export function startRtDrawing(
     | 'drawColormap'
     | 'drawOpacity'
     | 'drawRimOpacity'
+    | 'drawRimWidth'
     | 'addEventListener'
     | 'removeEventListener'
   >,

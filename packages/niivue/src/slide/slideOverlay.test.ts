@@ -71,6 +71,17 @@ test('annotations draw as culled device-pixel segments with a label', () => {
     20, 20, 40, 20, 40, 20, 40, 60, 40, 60, 20, 60, 20, 60, 20, 20,
   ])
   expect(c.labels).toEqual([{ x: 48, y: 20, text: 'tumour 200 um2' }])
+  // A handle drag shows its shape, stats and handles before it is stored.
+  const id = annotations.list()[0]?.id ?? ''
+  const edited = slideOverlayContent(slide([0.001, 0.001]), screen, {
+    ...source,
+    annotations,
+    selectedAnnotation: id,
+    edit: { id, points: [p, { x: 20, y: 30 }] },
+  })
+  expect(edited.labels[0]?.text).toBe('tumour 375 um2')
+  expect(edited.handles).toHaveLength(8 * 3)
+  expect(edited.handles.slice(0, 3)).toEqual([10, 10, 8])
 })
 
 test('off-screen line annotations are culled', () => {

@@ -3,12 +3,27 @@
 // through them in instance order and a jump to an image in another one
 // switches to it.
 import type { NiiVue } from '@niivue/niivue'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { centerCrosshair } from './commands'
 import type { DicomConversion } from './dicomToNiivue'
 import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { acquisitionSliceType } from './standardCommands'
+
+/**
+ * Cornerstone draws an image as stored. NiiVue's radiological view (patient
+ * right on screen left: NIfTI +x is right, DICOM +x left) mirrors one without
+ * orientation (a secondary capture lacking ImageOrientationPatient: dcm2niix
+ * writes qform/sform code 0 with voxel i along +x), so such an image is shown
+ * unflipped, without orientation labels.
+ */
+export function matchStoredOrientation(nv: NiiVue): void {
+  const h = nv.volumes[0]?.hdr
+  const isOriented = !(h && !h.qform_code && !h.sform_code)
+  nv.isRadiological = isOriented
+  // No patient directions to label, as cornerstone shows none.
+  nv.isOrientationTextVisible = isOriented
+}
 
 export function useOutputStack(
   nv: NiiVue | null,
@@ -16,7 +31,12 @@ export function useOutputStack(
   ds: OhifDisplaySet | undefined,
   conversion: DicomConversion | null,
   note: (message: string) => void,
+  /** After an output swaps in (its overlay planes follow it). */
+  onOutput?: (o: Pick<DicomConversion, 'overlayPlanes'>) => void,
 ): void {
+  // Latest callback, read at swap time: a new closure must not re-run the effect.
+  const onOutputRef = useRef(onOutput)
+  onOutputRef.current = onOutput
   useEffect(() => {
     const canvas = nv?.canvas
     if (!nv || !canvas || !conversion?.alternates?.length) return
@@ -51,11 +71,13 @@ export function useOutputStack(
       if (cancelled) return
       await nv.loadVolumes([v])
       if (cancelled) return
+      matchStoredOrientation(nv)
       at = i
       updateNiivueViewport(viewportId, { sliceFrames: o.sliceFrames })
       const plane = acquisitionSliceType(nv)
       if (plane !== undefined) nv.sliceType = plane
       centerCrosshair(nv)
+      onOutputRef.current?.(o)
     }
     // Resolves true once output i is shown, if no later request came meanwhile.
     const show = (i: number): Promise<boolean> | undefined => {

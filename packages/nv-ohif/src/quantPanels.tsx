@@ -174,14 +174,30 @@ export function TmtvPanel(params: OhifExtensionParams) {
         <span>
           <b>TMTV:</b> {stats?.tmtv ? `${stats.tmtv.toFixed(3)} mL` : ''}
         </span>
-        <button
-          type="button"
-          style={button}
-          data-cy="exportTmtvCsvReport"
-          onClick={() => run(params, 'niivueExportTMTVCSV')}
-        >
-          CSV
-        </button>
+        <div style={row}>
+          <button
+            type="button"
+            style={button}
+            data-cy="exportTmtvCsvReport"
+            onClick={() => run(params, 'niivueExportTMTVCSV')}
+          >
+            CSV
+          </button>
+          {/* cornerstone's TMTV panel Save menu: DICOM SEG / DICOM RTSS. */}
+          {(['SEG', 'RTSTRUCT'] as const).map((modality) => (
+            <button
+              key={modality}
+              type="button"
+              style={button}
+              data-cy={`niivue-tmtv-save-${modality}`}
+              onClick={() =>
+                run(params, 'niivueStoreTMTVSegmentation', { modality })
+              }
+            >
+              {modality === 'SEG' ? 'DICOM SEG' : 'DICOM RTSS'}
+            </button>
+          ))}
+        </div>
       </div>
       <SegmentTable segments={stats?.segments ?? []} />
     </div>

@@ -96,7 +96,14 @@ it('shows a computed volume until the next frame step', async () => {
   const leave = joinFrames('computed', nv, { services: { cineService } }, null)
   await nv.loadVolumes([{ url: split.image, frameSource: split.frames }])
   const v = nv.volumes[0] as NonNullable<(typeof nv.volumes)[0]>
+  // The crosshair readout re-samples on the switch, not on the next move.
+  let readout: number | undefined
+  nv.addEventListener('locationChange', (e) => {
+    readout = (e as CustomEvent).detail.values?.[0]?.value
+  })
+  nv.setCrosshairPos(nv.vox2mm([0, 0, 0]) ?? [0, 0, 0])
   await showComputed(split.frames.group, Float32Array.from([10.5, -3]))
+  expect(readout).toBeCloseTo(10.5, 3)
   expect(paused).toEqual([{ id: 'computed', isPlaying: false }])
   tick?.(performance.now() + 1000)
   await new Promise((r) => setTimeout(r, 10))

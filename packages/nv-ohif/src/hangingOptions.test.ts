@@ -13,6 +13,7 @@ mock.module('react', () => ({
 const { applyViewportStyle, isMip, useHungOverlays } = await import(
   './hangingOptions'
 )
+const { rampColormap } = await import('./commands')
 const { getNiivueEntry, registerNiivue, unregisterNiivue } = await import(
   './niivueRegistry'
 )
@@ -23,6 +24,24 @@ test('isMip needs a full-volume slab', () => {
   expect(
     isMip([{ options: { blendMode: 'MIP', slabThickness: 'fullVolume' } }]),
   ).toBe(true)
+})
+
+// TMTV fusion's PET ramp: alpha 0 at the window floor, 0.8 at 10%, 0.9 at the top.
+test('rampColormap puts the opacity ramp in the colormap alpha', () => {
+  let def = { A: [] as number[], I: [] as number[] }
+  const nv = {
+    addColormap: (_: string, d: typeof def) => {
+      def = d
+      return 'x'
+    },
+  }
+  rampColormap(nv as never, 'hot', [
+    { value: 0, opacity: 0 },
+    { value: 0.1, opacity: 0.8 },
+    { value: 1, opacity: 0.9 },
+  ])
+  const alphaAt = (i: number) => def.A[def.I.indexOf(i)]
+  expect([alphaAt(0), alphaAt(26), alphaAt(255)]).toEqual([0, 204, 230])
 })
 
 test('a superseded overlay run adds no more overlays', async () => {
@@ -190,7 +209,10 @@ test('restyling to a plain colormap resets the colormap type', async () => {
   )
   effects.pop()?.()
   await new Promise((r) => setTimeout(r, 0))
-  expect(updates[0]?.colormapType).toBe(0)
+  expect(updates[0]).toMatchObject({
+    colormapType: 0,
+    isColormapAlphaKept: false,
+  })
   unregisterNiivue('vp-type')
 })
 

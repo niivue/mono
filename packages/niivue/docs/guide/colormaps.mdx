@@ -41,6 +41,8 @@ the demo uses to size its sliders. To go back to the automatic window, call
 
 By default, values below `calMin` are transparent on an overlay. Set
 `isTransparentBelowCalMin: false` to clamp them to the first color instead.
+An overlay draws every in-window voxel opaque; `isColormapAlphaKept: true`
+keeps the colormap's own alpha, so an `A` ramp fades it in (PET over CT).
 For the background volume, `nv.volumeIsAlphaClipDark = true` makes voxels
 below `calMin` transparent, so dark air no longer hides what is behind it.
 

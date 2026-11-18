@@ -40,6 +40,7 @@ type Style = {
   renderOutline?: boolean
   fillAlpha?: number
   outlineOpacity?: number
+  outlineWidth?: number
 }
 type Specifier = { segmentationId: string; type: string }
 interface CstSegmentation {
@@ -150,13 +151,24 @@ export function labelStats(bitmap: Uint8Array, dims: ArrayLike<number>) {
 }
 
 /**
- * NiiVue drawing opacities for a cornerstone labelmap style. The shader draws a
- * rim only where the fill alpha is nonzero, so outline-only keeps a 1/255 fill.
+ * NiiVue drawing opacities and rim width for a cornerstone labelmap style. The
+ * shader draws a rim only where the fill alpha is nonzero, so outline-only
+ * keeps a 1/255 fill. ponytail: active style only; the pane's segmentation is
+ * its only one (a new one replaces it), so cornerstone's *Inactive half never
+ * applies.
  */
-export function drawOpacities(style: Style): { fill: number; rim: number } {
+export function drawOpacities(style: Style): {
+  fill: number
+  rim: number
+  width: number
+} {
   const fill = style.renderFill === false ? 0 : (style.fillAlpha ?? 0.5)
   const rim = style.renderOutline === false ? -1 : (style.outlineOpacity ?? 1)
-  return { fill: rim > 0 && fill === 0 ? 1 / 255 : fill, rim }
+  return {
+    fill: rim > 0 && fill === 0 ? 1 / 255 : fill,
+    rim,
+    width: style.outlineWidth ?? 1,
+  }
 }
 
 /** Label colormap of the panel's segments; a hidden one gets alpha 0. */
@@ -408,7 +420,7 @@ export function startSegPanel(
       // Until the panel activates one, the pen paints the first listed segment.
       const active = rows.find((r) => r.active) ?? rows[0]
       if (active && !rt) setActiveSegmentValue(nv, active.value)
-      const { fill, rim } = drawOpacities(
+      const { fill, rim, width } = drawOpacities(
         cst.config.style.getStyle({ viewportId, ...specifier }),
       )
       // Outline only: the rim ignores colour alpha, but a faint colour would
@@ -421,7 +433,7 @@ export function startSegPanel(
         color: outlineOnly ? ([...color.slice(0, 3), 255] as Color) : color,
         visible,
       }))
-      const key = JSON.stringify([visibleRows, fill, rim])
+      const key = JSON.stringify([visibleRows, fill, rim, width])
       if (key === applied) return
       applied = key
       const visible = rows.filter((r) => r.visible).map((r) => r.value)
@@ -432,6 +444,7 @@ export function startSegPanel(
       nv.drawColormap = nv.addColormap(colormapName, panelColormap(visibleRows))
       nv.drawOpacity = fill
       nv.drawRimOpacity = rim
+      nv.drawRimWidth = width
     })
   }
   panels.set(viewportId, {

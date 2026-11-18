@@ -427,6 +427,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       ...(volume.isColorbarVisible ? { colorbar: true } : {}),
       ...(volume.isLegendVisible === false ? { legend: false } : {}),
       ...(volume.isNearestInterpolation ? { nearest: true } : {}),
+      ...(volume.isColormapAlphaKept ? { colormapAlpha: true } : {}),
       ...(volume.atlasOutline ? { atlasOutline: volume.atlasOutline } : {}),
       ...(volume.hiddenLabels?.length
         ? { hiddenLabels: [...volume.hiddenLabels] }
@@ -1146,6 +1147,7 @@ export function coreHandlers(host: NiiVueHost): Handlers {
       put(update, 'isColorbarVisible', flag(params, 'colorbar'))
       put(update, 'isLegendVisible', flag(params, 'legend'))
       put(update, 'isNearestInterpolation', flag(params, 'nearest'))
+      put(update, 'isColormapAlphaKept', flag(params, 'colormap_alpha'))
       const outline = number(params, 'atlas_outline')
       if (outline !== undefined) update.atlasOutline = clamp(outline, 0, 1)
       const hiddenLabels = numbers(params, 'hidden_labels')

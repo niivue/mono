@@ -3025,6 +3025,16 @@ describe('setViewportColormap', () => {
     expect(volume('a').colormap).toBeUndefined()
   })
 
+  it('keeps a ramped overlay ramp on a new colormap', () => {
+    const { nv, setColormap, volume } = withOverlays(['a'])
+    volume('a').colormap = 'Hot_ramp_0_0_0.1_0.8_1_0.9'
+    Object.assign(nv, { addColormap: (name: string) => name })
+    setColormap({ displaySetInstanceUID: 'ds-a', colormap: 'viridis' })
+    expect(nv.volumeUpdates[0]?.opts.colormap).toBe(
+      'Viridis_ramp_0_0_0.1_0.8_1_0.9',
+    )
+  })
+
   it('ignores updates while a new base is loading', () => {
     const { nv, entry, setColormap } = withOverlays(['a'])
     entry.baseLoading = true

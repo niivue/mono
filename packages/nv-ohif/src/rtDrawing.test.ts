@@ -408,6 +408,7 @@ describe('startRtDrawing', () => {
       drawIsEnabled: false,
       drawOpacity: 0,
       drawRimOpacity: 0,
+      drawRimWidth: 1,
       addEventListener() {},
       removeEventListener() {},
     }
@@ -487,6 +488,7 @@ describe('startRtDrawing', () => {
       drawIsEnabled: false,
       drawOpacity: 0.8,
       drawRimOpacity: -1,
+      drawRimWidth: 1,
       drawingGeneration: 0,
       addEventListener: (_: string, f: () => void) => {
         onChanged = f
@@ -667,6 +669,7 @@ describe('startRtDrawing', () => {
       drawIsEnabled: false,
       drawOpacity: 0,
       drawRimOpacity: 0,
+      drawRimWidth: 1,
       addEventListener() {},
       removeEventListener() {},
     }

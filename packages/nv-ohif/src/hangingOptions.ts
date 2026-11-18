@@ -7,6 +7,7 @@ import {
   niivueColormapName,
   OVERLAY_COLORMAP,
   OVERLAY_OPACITY,
+  rampColormap,
   voiRange,
 } from './commands'
 import { getNiivueEntry } from './niivueRegistry'
@@ -71,16 +72,16 @@ export const isMipInverted = (dso: DisplaySetOptions): boolean =>
   isMip(dso) && optionsAt(dso, 0).voiInverted === true
 
 type Point = { value: number; opacity: number }
-type OverlayStyle = { colormap?: string; opacity?: number; knee?: number }
+type OverlayStyle = {
+  colormap?: string
+  opacity?: number
+  isColormapAlphaKept?: boolean
+}
 
 /**
  * The NiiVue colormap for an OHIF `colormap` option: a name, or `{ name,
- * opacity }` where opacity is a scalar or a ramp of `{ value, opacity }`
- * (value 0..1 across the window).
- * ponytail: core binarises overlay alpha on 2D slices, so a ramp becomes a
- * knee: alpha rises as f² from 0 to the ramp's second point, then holds its top
- * opacity (COLORMAP_TYPE 2, lookup from 0, as cornerstone's). Exact ramps need
- * core to keep an overlay's LUT alpha.
+ * opacity }` where opacity is a scalar or a ramp of `{ value, opacity }`. A
+ * ramp becomes the colormap's alpha, which the overlay keeps.
  */
 export function niivueColormap(nv: NiiVue, colormap: unknown): OverlayStyle {
   const name = niivueColormapName(nv.colormaps, colormap)
@@ -90,28 +91,14 @@ export function niivueColormap(nv: NiiVue, colormap: unknown): OverlayStyle {
   if (!Array.isArray(opacity) || opacity.length < 2) return { colormap: name }
   const ramp = [...(opacity as Point[])].sort((a, b) => a.value - b.value)
   return {
-    colormap: name,
-    opacity: Math.max(...ramp.map((p) => p.opacity)),
-    knee: ramp[1]?.value,
+    colormap: rampColormap(nv, name, ramp),
+    opacity: 1,
+    isColormapAlphaKept: true,
   }
 }
 
-// Overlay hdr -> knee, so a synced window keeps the ramp's transparent foot.
-const knees = new WeakMap<object, number>()
 // Overlays the hanging protocol added, per viewer: only these leave with it.
 const hungBy = new WeakMap<NiiVue, Set<string>>()
-
-/** The NiiVue window for OHIF window [lo, hi] on a volume (knee-aware). */
-export function windowFor(
-  hdr: object | undefined,
-  calMin: number,
-  calMax: number,
-): { calMin: number; calMax: number } {
-  const knee = hdr ? knees.get(hdr) : undefined
-  return knee === undefined
-    ? { calMin, calMax }
-    : { calMin: calMin + knee * (calMax - calMin), calMax }
-}
 
 /** Base-volume load options from `displaySetOptions[0]` (colormap, inversion). */
 export function baseStyle(
@@ -119,7 +106,8 @@ export function baseStyle(
   dso: DisplaySetOptions,
 ): { colormap?: string; isColormapInverted?: boolean } {
   const options = optionsAt(dso, 0)
-  const { colormap } = niivueColormap(nv, options.colormap)
+  // The plain colormap: a ramp is an overlay's (a base 2D slice ignores LUT alpha).
+  const colormap = niivueColormapName(nv.colormaps, options.colormap)
   return {
     ...(colormap ? { colormap } : {}),
     // NiiVue's MIP takes the brightest colour, so an inverted MIP inverts the canvas instead.
@@ -205,25 +193,14 @@ export function useHungOverlays(
         if (stale) return
         const i = displaySets.indexOf(ds)
         const uid = String(ds.displaySetInstanceUID)
-        const { knee, ...style } = niivueColormap(
-          nv,
-          optionsAt(dso, i).colormap,
-        )
+        const style = niivueColormap(nv, optionsAt(dso, i).colormap)
         const voi = voiRange(dso, i)
         const display = {
           ...style,
-          // A restyle off a ramp must reset the type, not keep the ramp's.
-          ...(knee === undefined
-            ? { colormapType: COLORMAP_TYPE.MIN_TO_MAX, ...voi }
-            : {
-                colormapType: COLORMAP_TYPE.ZERO_TO_MAX_TRANSLUCENT_BELOW_MIN,
-              }),
-          ...(knee !== undefined && voi
-            ? {
-                calMin: voi.calMin + knee * (voi.calMax - voi.calMin),
-                calMax: voi.calMax,
-              }
-            : {}),
+          // A restyle off a ramp must drop the kept alpha.
+          isColormapAlphaKept: style.isColormapAlphaKept ?? false,
+          colormapType: COLORMAP_TYPE.MIN_TO_MAX,
+          ...voi,
         }
         const entry = getNiivueEntry(viewportId)
         const loaded = entry?.overlays.get(uid)
@@ -242,8 +219,6 @@ export function useHungOverlays(
               : {}),
             ...display,
           })
-          if (knee === undefined) knees.delete(loaded)
-          else knees.set(loaded, knee)
           continue
         }
         const before = entry?.overlayAbort
@@ -259,7 +234,6 @@ export function useHungOverlays(
         pending = undefined
         const hdr = getNiivueEntry(viewportId)?.overlays.get(uid)
         if (hdr) hung.add(uid)
-        if (hdr && knee !== undefined) knees.set(hdr, knee)
       }
     })()
     return () => {

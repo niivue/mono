@@ -995,7 +995,7 @@ export interface SlideAnnotation {
 }
 
 /** NiiVue's `NVSlideAnnotations`, as the tools use it. */
-export interface SlideAnnotations {
+interface SlideAnnotations {
   list(): SlideAnnotation[]
   add(
     tool: SlideAnnotationTool,

@@ -80,7 +80,7 @@ const HOST_AGNOSTIC_COMMANDS = [
   'runSegmentBidirectional',
 ]
 
-export const NIIVUE_SEGMENTATION_EVALUATOR = 'evaluate.niivue.segmentation'
+const NIIVUE_SEGMENTATION_EVALUATOR = 'evaluate.niivue.segmentation'
 
 type SegmentationServiceLike = {
   getSegmentationRepresentations?: (viewportId: string) => unknown[]

@@ -154,10 +154,7 @@ function paneTarget(
 }
 
 /** The PT series to quantify: the active pane's, else the first shown. */
-export function findPet(
-  services: Services,
-  viewportId?: string,
-): Pet | undefined {
+function findPet(services: Services, viewportId?: string): Pet | undefined {
   const active = getActiveNiivueEntry(services, viewportId)
   for (const e of [...(active ? [active] : []), ...niivueEntries()]) {
     const pet = paneTarget(e, services)

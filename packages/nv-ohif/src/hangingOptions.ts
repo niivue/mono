@@ -83,7 +83,7 @@ type OverlayStyle = {
  * opacity }` where opacity is a scalar or a ramp of `{ value, opacity }`. A
  * ramp becomes the colormap's alpha, which the overlay keeps.
  */
-export function niivueColormap(nv: NiiVue, colormap: unknown): OverlayStyle {
+function niivueColormap(nv: NiiVue, colormap: unknown): OverlayStyle {
   const name = niivueColormapName(nv.colormaps, colormap)
   const opacity = (colormap as { opacity?: unknown } | null)?.opacity
   if (!name) return {}

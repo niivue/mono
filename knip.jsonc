@@ -37,6 +37,12 @@
     // Bare `bun test` in project.json, which Knip doesn't read. Not a packages/* glob:
     // overriding `entry` drops Knip's src/index.ts default, nv-ohif's only public entry.
     "packages/dev-images": { "entry": ["src/**/*.test.ts"] },
+    // Published mode entries (package.json exports map them to lib/); bench run by hand.
+    // @ohif/* resolves from the OHIF host at runtime (build:modes --external).
+    "packages/nv-ohif": {
+      "entry": ["src/index.ts!", "src/modes/*.js!", "src/**/*.test.{ts,tsx,js}", "bench/*.bench.ts"],
+      "ignoreDependencies": ["@ohif/.*"]
+    },
     "packages/nv-ext-drawing": { "entry": ["src/**/*.test.ts"] },
     "packages/nv-ext-image-processing": { "entry": ["src/**/*.test.ts"] },
     "packages/nv-ext-save-html": { "entry": ["src/**/*.test.ts"] },
@@ -70,7 +76,8 @@
         "scripts/fetch-openslide-dicom.ts",
         "bench/build-report.ts",
         "bench/compare-bench.ts",
-        "benchmarks/diff-runs.mjs"
+        "benchmarks/diff-runs.mjs",
+        "benchmarks/pen-bench.ts"
       ],
       // The trailing ! marks production patterns; test exclusions apply only there.
       "project": [

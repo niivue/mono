@@ -65,7 +65,10 @@ export const MARK_SCHEMAS = {
       .min(1)
       .optional()
       .describe('For load: where the drawing is.'),
-    slice: SLICE_ARG,
+    slice: SLICE_ARG.describe(
+      'The slice orientation: for svg, the one shown otherwise; for fill, the plane of a ' +
+        'rectangle or circle, axial otherwise.',
+    ),
     slice_index: z
       .number()
       .int()

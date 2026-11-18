@@ -55,7 +55,9 @@ export async function split4D(
       count: frames,
       frame: 0,
       // A refreshed display set may have another shape: its own group.
-      group: seriesGroup(series && `${series}:${voxels}x${frames}`),
+      group: seriesGroup(
+        series && `${series}:${dim(1)}x${dim(2)}x${dim(3)}x${frames}`,
+      ),
       load: async (f) => new View(buf, offset + f * frameBytes, voxels),
     },
   }

@@ -299,8 +299,13 @@ describe('createSlideView', () => {
       removed.push((e as CustomEvent<{ label: string }>).detail.label),
     )
     store?.add('point', [{ x: 1, y: 1 }], 'slide A')
+    view.controller?.measurements.push({
+      start: { x: 0, y: 0 },
+      end: { x: 5, y: 0 },
+    } as never)
     view.setSlide(fakeSlide())
     expect(store?.list()).toEqual([])
+    expect(view.controller?.measurements).toEqual([]) // H7: rulers too
     expect(removed).toEqual(['slide A'])
     view.destroy()
   })

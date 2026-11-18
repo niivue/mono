@@ -78,7 +78,7 @@ export interface SlideView {
   overlayStyle: Partial<SlideOverlayStyle>
   /**
    * Show `slide` (null: none), releasing the previous one and clearing the
-   * controller's annotations; fits it unless `fit` is false.
+   * controller's annotations and rulers; fits it unless `fit` is false.
    */
   setSlide(slide: NVSlide | null, opts?: { fit?: boolean }): void
   /** Fit the slide on the next sized frame, and again on resizes until the view moves. */
@@ -307,9 +307,10 @@ export async function createSlideViewWith(
         return
       }
       if (next === slide) return
-      // Annotations are in the old slide's base pixels: they go with it.
+      // Annotations and rulers are in the old slide's base pixels: they go with it.
       controller?.cancelGesture()
       controller?.annotations.clear()
+      controller?.clearMeasurements()
       slide?.removeEventListener('change', requestRender)
       slide?.dispose()
       renderer.clearTextures()

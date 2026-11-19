@@ -16,14 +16,6 @@
       "types": "./lib/types/src/modes/viewer.d.ts",
       "import": "./lib/modes/viewer.js"
     },
-    "./modes/segmentation": {
-      "types": "./lib/types/src/modes/segmentation.d.ts",
-      "import": "./lib/modes/segmentation.js"
-    },
-    "./modes/microscopy": {
-      "types": "./lib/types/src/modes/microscopy.d.ts",
-      "import": "./lib/modes/microscopy.js"
-    },
     "./modes/tmtv": {
       "types": "./lib/types/src/modes/tmtv.d.ts",
       "import": "./lib/modes/tmtv.js"
@@ -42,7 +34,7 @@
   "scripts": {
     "dev": "vite",
     "build:lib": "bun build ./src/index.ts --production --outdir=lib --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external @niivue/nv-ext-tile --external dcmjs",
-    "build:modes": "bun build ./src/modes/viewer.js ./src/modes/segmentation.js ./src/modes/microscopy.js ./src/modes/tmtv.js ./src/modes/dynamic.js --production --splitting --outdir=lib/modes --target=browser --format=esm --external '@ohif/*'",
+    "build:modes": "bun build ./src/modes/viewer.js ./src/modes/tmtv.js ./src/modes/dynamic.js --production --splitting --outdir=lib/modes --target=browser --format=esm --external '@ohif/*'",
     "build:types": "tsc -p tsconfig.build.json",
     "build:package": "bun run build:lib && bun run build:modes && bun run build:types",
     "test": "bun test"

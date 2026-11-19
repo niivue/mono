@@ -67,13 +67,22 @@ function rasVoxelAt(
 ): [number, number, number] | undefined {
   const xy = nv.clientToCanvas(clientX, clientY)
   const mm = xy && nv.canvasToMM(xy[0], xy[1])
-  const m = mm && rasToVoxel(nv)
-  if (!mm || !m) return undefined
+  return mm ? rasVoxelOfMM(nv, mm) : undefined
+}
+
+/** The RAS voxel of the pane's base at RAS point `mm`. */
+function rasVoxelOfMM(
+  nv: NiiVue,
+  mm: ArrayLike<number>,
+): [number, number, number] | undefined {
+  const m = rasToVoxel(nv)
+  if (!m) return undefined
+  const [x = 0, y = 0, z = 0] = Array.from(mm)
   return [0, 1, 2].map((r) =>
     Math.round(
-      (m[r * 4] as number) * mm[0] +
-        (m[r * 4 + 1] as number) * mm[1] +
-        (m[r * 4 + 2] as number) * mm[2] +
+      (m[r * 4] as number) * x +
+        (m[r * 4 + 1] as number) * y +
+        (m[r * 4 + 2] as number) * z +
         (m[r * 4 + 3] as number),
     ),
   ) as [number, number, number]
@@ -85,10 +94,21 @@ export function drawingValueAt(
   clientX: number,
   clientY: number,
 ): number {
+  return drawingValueOfVoxel(nv, rasVoxelAt(nv, clientX, clientY))
+}
+
+/** The drawing's value at RAS point `mm` (0 off the drawing). */
+export function drawingValueAtMM(nv: NiiVue, mm: ArrayLike<number>): number {
+  return drawingValueOfVoxel(nv, rasVoxelOfMM(nv, mm))
+}
+
+function drawingValueOfVoxel(
+  nv: NiiVue,
+  v: [number, number, number] | undefined,
+): number {
   const img = nv.drawingVolume?.img
   const dims = nv.volumes[0]?.dimsRAS
-  const v = img && dims && rasVoxelAt(nv, clientX, clientY)
-  if (!v || !dims) return 0
+  if (!img || !v || !dims) return 0
   const [, nx = 0, ny = 0, nz = 0] = dims
   const [x, y, z] = v
   if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return 0

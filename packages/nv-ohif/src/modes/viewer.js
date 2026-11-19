@@ -279,4 +279,29 @@ export function niivueMode({ id, routeName, layout = {}, ...overrides }) {
   }
 }
 
-export default mode
+// The NiiVue Viewer carries segmentation editing, as OHIF's segmentationEditing
+// customization adds it to the viewer mode, and opens SM slides (NVSlide), so
+// no separate segmentation or microscopy mode is needed. The other modes build
+// on the plain modeInstance.
+export default niivueMode({
+  id,
+  routeName: modeInstance.routeName,
+  layout: {
+    // ponytail: no contour panel; NiiVue has no contour segmentation tools.
+    rightPanels: [cornerstone.labelMapSegmentationPanel, tracked.measurements],
+  },
+  modeCustomizations: { 'panelSegmentation.disableEditing': false },
+  toolbarButtons: [
+    ...modeInstance.toolbarButtons,
+    { $reference: 'cornerstone.segmentationToolbarButtons' },
+  ],
+  toolbarSections: [
+    { $reference: 'cornerstone.segmentationToolbarSections' },
+    ...modeInstance.toolbarSections,
+  ],
+  toolGroupAdditions: {
+    ...modeInstance.toolGroupAdditions,
+    default: [{ $reference: 'cornerstone.segmentationTools' }],
+    mpr: [{ $reference: 'cornerstone.segmentationTools' }],
+  },
+})

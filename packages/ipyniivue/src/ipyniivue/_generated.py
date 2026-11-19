@@ -121,6 +121,8 @@ the pointer and vector annotation editing is inert (the first such
 interaction warns). Turn one off before turning the other on. Does not
 affect whether annotations *render* — they always do."""
     annotation_is_erasing = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    annotation_is_handle_grab = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    """See {@link AnnotationConfig.isHandleGrab}."""
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint", "measureAngle", "measureCobbAngle"], None, allow_none=True).tag(sync=True)

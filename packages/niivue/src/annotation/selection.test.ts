@@ -94,6 +94,12 @@ describe('getControlPoints', () => {
     // Width handle: midpoint + perpendicular offset
     expect(pts[2].x).toBeCloseTo(5, 5)
     expect(pts[2].y).toBeCloseTo(2, 5) // perpendicular to horizontal line
+    // A measure line has no thickness to set: ends only.
+    const ends = { start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, width: 4 }
+    expect(getControlPoints({ type: 'measureLine', ...ends })).toEqual([
+      ends.start,
+      ends.end,
+    ])
   })
 
   test('freehand_returnsEmpty', () => {
@@ -204,6 +210,72 @@ describe('updateShapeBounds', () => {
     const result = updateShapeBounds('line', original, 0, { x: -5, y: 3 })
     expect(result.start).toEqual({ x: -5, y: 3 })
     expect(result.end).toEqual({ x: 10, y: 0 })
+  })
+
+  // Long axis 0..10 on x, short axis crossing at x = 4, 3 up and 2 down.
+  const bidi = {
+    start: { x: 0, y: 0 },
+    end: { x: 10, y: 0 },
+    start2: { x: 4, y: 3 },
+    end2: { x: 4, y: -2 },
+  }
+  const near = (
+    p: { x: number; y: number } | undefined,
+    x: number,
+    y: number,
+  ) => {
+    expect(p?.x).toBeCloseTo(x, 9)
+    expect(p?.y).toBeCloseTo(y, 9)
+  }
+
+  test('bidirectional long handle turns the axis and carries the short one', () => {
+    // End swung from (10, 0) to (0, 20): the long axis turns 90 degrees about
+    // the start and doubles; the short axis keeps 40% along and 3/2 across.
+    const r = updateShapeBounds('measureBidirectional', bidi, 1, {
+      x: 0,
+      y: 20,
+    })
+    near(r.start, 0, 0)
+    near(r.end, 0, 20)
+    near(r.start2, -3, 8)
+    near(r.end2, 2, 8)
+  })
+
+  test('bidirectional short handle slides its axis and sets its own reach', () => {
+    const r = updateShapeBounds('measureBidirectional', bidi, 2, { x: 7, y: 5 })
+    near(r.start, 0, 0)
+    near(r.end, 10, 0)
+    near(r.start2, 7, 5)
+    near(r.end2, 7, -2)
+  })
+
+  test('a skewed short axis keeps its skew when the long axis moves', () => {
+    const skewed = { ...bidi, start2: { x: 4, y: -3 }, end2: { x: 6, y: 3 } }
+    const r = updateShapeBounds('measureBidirectional', skewed, 0, {
+      x: 0.01,
+      y: 0,
+    })
+    near(r.end2, 6.004, 3)
+  })
+
+  test('angle vertex handle moves both arms', () => {
+    const angle = {
+      start: { x: 0, y: 10 },
+      end: { x: 0, y: 0 },
+      start2: { x: 0, y: 0 },
+      end2: { x: 10, y: 0 },
+    }
+    expect(getControlPoints({ type: 'measureAngle', ...angle })).toEqual([
+      angle.start,
+      angle.end,
+      angle.end2,
+    ])
+    const r = updateShapeBounds('measureAngle', angle, 1, { x: 1, y: 1 })
+    expect([r.end, r.start2]).toEqual([
+      { x: 1, y: 1 },
+      { x: 1, y: 1 },
+    ])
+    expect([r.start, r.end2]).toEqual([angle.start, angle.end2])
   })
 })
 

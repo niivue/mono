@@ -329,8 +329,23 @@ export function startSegPanel(
   const voxel = grid ? voxelMM3(grid) : px * py * pz
   const cached = (value: number) => {
     const count = stats.get(value)?.count ?? 0
+    const volume = count * voxel
     // No `center`: OHIF's own jump would then look for a cornerstone viewport.
-    return { count, volume: count * voxel }
+    // The panel's statistics card lists namedStats (labels as OHIF's readableText).
+    return {
+      count,
+      volume,
+      namedStats: {
+        count: { name: 'count', label: 'Voxel Count', value: count, order: 0 },
+        volume: {
+          name: 'volume',
+          label: 'Volume',
+          value: volume,
+          unit: 'mm³',
+          order: 1,
+        },
+      },
+    }
   }
   // A second pane on the same SEG shares the segmentation, with its own
   // colours; segments added later take palette colours.

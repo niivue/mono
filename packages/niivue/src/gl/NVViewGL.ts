@@ -1602,6 +1602,7 @@ export default class NVGlview {
         screenSlices,
         buildLine,
         this.fontRenderer.buildText.bind(this.fontRenderer),
+        this._dpr,
       )
       if (annotationResult) {
         this.polygonRenderer.draw(gl, annotationResult)

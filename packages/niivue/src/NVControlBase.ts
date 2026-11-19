@@ -773,6 +773,10 @@ export default class NiiVue extends EventTarget {
     isErased: boolean
     // A Probe drag moves its 3D point too.
     anchorMM?: [number, number, number]
+    // A bidirectional or angle drag moves its second line and its stats.
+    start2?: AnnotationPoint
+    end2?: AnnotationPoint
+    stats?: VectorAnnotation['stats']
   } | null = null
   _resizingAnnotation: VectorAnnotation | null = null
   /** The annotations before a resize, pushed to undo when it is released. */
@@ -2816,6 +2820,23 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * False for a shape a press must not grab, resize or select (e.g. one an
+   * overlay hides). A function, so not a saved setting.
+   */
+  annotationIsGrabbable: ((annotation: VectorAnnotation) => boolean) | null =
+    null
+
+  get annotationIsHandleGrab(): boolean {
+    return this.model.annotation.isHandleGrab
+  }
+
+  /** See {@link AnnotationConfig.isHandleGrab}. */
+  set annotationIsHandleGrab(v: boolean) {
+    this.model.annotation.isHandleGrab = v
+    this.emit('change', { property: 'annotationIsHandleGrab', value: v })
+  }
+
   get annotationAreaIsGeometric(): boolean {
     return this.model.annotation.isAreaGeometric
   }
@@ -2944,6 +2965,9 @@ export default class NiiVue extends EventTarget {
     shape.start = original.start
     shape.end = original.end
     shape.width = original.width
+    if (original.start2) shape.start2 = original.start2
+    if (original.end2) shape.end2 = original.end2
+    if (original.stats) this._resizingAnnotation.stats = original.stats
     this._resizingAnnotation.polygons = original.polygons
     if (original.anchorMM) this._resizingAnnotation.anchorMM = original.anchorMM
     const sel = this.model._annotationSelection

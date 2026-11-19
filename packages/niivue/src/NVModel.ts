@@ -538,6 +538,9 @@ export default class NVModel {
       ...(options.annotationIsDrawnFromCenter !== undefined && {
         isDrawnFromCenter: options.annotationIsDrawnFromCenter,
       }),
+      ...(options.annotationIsHandleGrab !== undefined && {
+        isHandleGrab: options.annotationIsHandleGrab,
+      }),
       ...(options.annotationAreaIsGeometric !== undefined && {
         isAreaGeometric: options.annotationAreaIsGeometric,
       }),

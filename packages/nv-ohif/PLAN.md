@@ -120,14 +120,16 @@ react-dom requirement is documented in `README.md`, not enforced via peers.
 
 ### Modes (2026-11-17)
 
-- `src/modes/*.js` are five OHIF modes (viewer, segmentation, microscopy,
-  tmtv, dynamic), formerly the ohif-niivue rig's `modes/`. Exports:
+- `src/modes/*.js` are three OHIF modes (viewer, tmtv, dynamic), formerly the
+  ohif-niivue rig's `modes/`. Since 2026-11-19 the viewer carries segmentation
+  editing and SM slides; the segmentation and microscopy modes are gone. Exports:
   `@niivue/nv-ohif/modes/<name>`. pluginConfig: README "Enable the NiiVue modes".
 - They are plain JS: OHIF's mode objects are untyped, and `@ohif/*` is external
   (`build:modes`, resolved from the host). This adds no peers (see above).
 - They reuse OHIF's hanging protocols and tool groups, so nv-ohif ships no HP
   module. A copy would drift from OHIF's.
-- `niivueMode()` (viewer.js) is the factory the other four use.
+- `niivueMode()` (viewer.js) is the factory the viewer and the other two use;
+  the other two build on the plain `modeInstance` (no segmentation editing).
 - `@ohif/mode-preclinical-4d` exports neither `initToolGroups` nor
   `toolbarButtons`, so dynamic.js deep-imports its `src/`. Fragile across
   OHIF releases; ask OHIF to export them.

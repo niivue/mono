@@ -254,10 +254,17 @@ test('a cancelled resize records no undo step', () => {
     expect(nv.cancelAnnotationInProgress()).toBe(true)
     at('pointerup')
     expect(nv.annotationUndoTop).toBeUndefined()
-    // A released resize still records one.
+    // A click on a handle changes nothing and records nothing.
     select()
     at('pointerdown')
     at('pointerup')
+    expect(nv.annotationUndoTop).toBeUndefined()
+    // A released resize records one.
+    select()
+    at('pointerdown')
+    point = [4, 4, 0]
+    at('pointermove', 55)
+    at('pointerup', 55)
     const top = nv.annotationUndoTop
     expect(top).toBeDefined()
     // pointercancel (touch interrupted) reverts a moved handle, as a cancel.
@@ -522,4 +529,135 @@ test('live wire without a slice closes near its first click', () =>
     } finally {
       slice.mockRestore()
     }
+  }))
+
+// One axial tile, mm (x, y) at canvas (100 + x, 100 - y); `tilt` is the
+// 60-degree slice of controller(tool, true).
+function tile(nv: NiiVue, tilt = false) {
+  ;(nv.view as { screenSlices: unknown }).screenSlices = [
+    {
+      axCorSag: 0,
+      mvpMatrix: mat4.fromScaling(mat4.create(), [0.01, 0.01, 0.01]),
+      planeNormal: tilt ? [0, -Math.sqrt(3) / 2, 0.5] : [0, 0, 1],
+      planePoint: [0, 0, 0],
+      leftTopWidthHeight: [0, 0, 200, 200],
+    },
+  ]
+}
+// Press at world `a`, drag to `b`, release (screen from the x, y mm).
+function drag(nv: NiiVue, a: number[], b: number[]) {
+  const at = (p: number[]) =>
+    ({
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      pointerId: 1,
+      detail: 1,
+      clientX: 100 + (p[0] as number),
+      clientY: 100 - (p[1] as number),
+      shiftKey: false,
+      preventDefault() {},
+    }) as never
+  point = a
+  nv._eventListeners.pointerdown?.(at(a))
+  point = b
+  nv._eventListeners.pointermove?.(at(b))
+  nv._eventListeners.pointerup?.(at(b))
+}
+function grabMode(nv: NiiVue) {
+  nv.model._annotationSelection = null
+  nv.model.annotation.isEnabled = false
+  nv.model.annotation.isHandleGrab = true
+}
+
+// annotation.isHandleGrab: a press on a shown shape's handle drags it with
+// annotation mode off (another tool active) and no selecting click first.
+test('isHandleGrab drags a Length end with annotation mode off', () =>
+  withStubs(() => {
+    const nv = controller('measureLine')
+    press(nv, [10, 10, 0])
+    press(nv, [30, 10, 0])
+    grabMode(nv)
+    tile(nv)
+    drag(nv, [30, 10, 0], [30, 40, 0])
+    expect(nv.annotations).toHaveLength(1)
+    expect(nv.annotations[0]?.shape?.end).toEqual({ x: 30, y: 40 })
+    expect(nv.annotations[0]?.stats?.length).toBeCloseTo(Math.hypot(20, 30), 6)
+  }))
+
+// External audit: on a tilted slice a bidirectional's handle drag kept slice-2D
+// right angles and lengths, which are not physical there.
+test('a bidirectional resized on an oblique slice stays perpendicular in mm', () =>
+  withStubs(() => {
+    const nv = controller('measureBidirectional', true)
+    press(nv, [0, 0, 0])
+    press(nv, [20, 0, 0])
+    grabMode(nv)
+    tile(nv, true)
+    drag(nv, [20, 0, 0], [20, 10, Math.sqrt(300)])
+    const ann = nv.annotations[0]
+    const s = ann?.shape
+    if (!s?.start2 || !s.end2) throw new Error('no short axis')
+    // World vector of a slice-2D step on this plane: z = sqrt(3) y.
+    const world = (
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+    ) => [b.x - a.x, b.y - a.y, Math.sqrt(3) * (b.y - a.y)]
+    const u = world(s.start, s.end)
+    const v = world(s.start2, s.end2)
+    expect(ann?.stats?.length).toBeCloseTo(
+      Math.hypot(20, 10, Math.sqrt(300)),
+      5,
+    )
+    const cos =
+      (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) /
+      Math.hypot(...u) /
+      Math.hypot(...v)
+    expect(cos).toBeCloseTo(0, 6)
+    // Re-audit: crossing arms share a centre; each polygon moves with one arm.
+    expect(ann?.polygons).toHaveLength(2)
+    const xs = (ann?.polygons[0]?.outer ?? []).map((p) => p.x)
+    expect(Math.min(...xs)).toBeLessThan(0.5)
+    expect(Math.max(...xs)).toBeGreaterThan(19.5)
+  }))
+
+// External audit: editing one arm of an erased angle rebuilt the other whole.
+test('resizing one arm of an angle keeps the erased gap in the other', () =>
+  withStubs(() => {
+    const nv = controller('measureAngle')
+    press(nv, [0, 20, 0])
+    press(nv, [0, 0, 0])
+    press(nv, [20, 0, 0])
+    tile(nv)
+    nv.model.annotation.tool = 'freehand'
+    nv.model.annotation.isErasing = true
+    nv.model.annotation.brushRadius = 2
+    drag(nv, [-3, 10, 0], [3, 10, 0])
+    const gap = { x: 0, y: 10 }
+    expect(
+      Annotation.hitTestAnnotationPolygon(gap, nv.annotations[0] as never),
+    ).toBe(-1)
+    nv.model.annotation.isErasing = false
+    grabMode(nv)
+    drag(nv, [20, 0, 0], [30, 0, 0])
+    expect(nv.annotations[0]?.shape?.end2).toEqual({ x: 30, y: 0 })
+    expect(
+      Annotation.hitTestAnnotationPolygon(gap, nv.annotations[0] as never),
+    ).toBe(-1)
+  }))
+
+// Re-audit: with annotation mode on, a shape the host hides must not be
+// resized through the selected-handle path the grab falls back to.
+test('a hidden shape stays put when its selected handle is dragged', () =>
+  withStubs(() => {
+    const nv = controller('measureLine')
+    press(nv, [0, 0, 0])
+    press(nv, [20, 0, 0])
+    tile(nv)
+    nv.model.annotation.isHandleGrab = true
+    drag(nv, [20, 0, 0], [30, 0, 0])
+    expect(nv.selectedAnnotation).toBe(nv.annotations[0]?.id ?? '')
+    nv.annotationIsGrabbable = () => false
+    drag(nv, [30, 0, 0], [40, 0, 0])
+    expect(nv.annotations[0]?.shape?.end).toEqual({ x: 30, y: 0 })
   }))

@@ -33,6 +33,7 @@ import {
   dicomWindow,
   initialRenderView,
   initialSliceType,
+  isAnnotationShown,
   NIIVUE_SLICE_TYPES,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
@@ -86,9 +87,9 @@ import { setOverlayPlanes } from './overlayPlanes'
 import { armBrush, showPaneLabel } from './petQuant'
 import { ReferenceLines } from './referenceLines'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
-import { applySegTool, ohifPenSize } from './segEdit'
+import { applySegTool, drawingValueAtMM, ohifPenSize } from './segEdit'
 import { PaneCorner, useHydratePrompt } from './segHydration'
-import { SegmentLabel } from './segmentLabel'
+import { SegmentLabel, segmentLabel } from './segmentLabel'
 import { SliceCine } from './sliceCine'
 import type { SliceFrames } from './sliceFrames'
 import { bindSlideMeasurements } from './slideMeasurements'
@@ -116,7 +117,11 @@ import { joinSyncGroups } from './viewportSync'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { displayPresetColormap } from './vrPresets'
 import { wsiFetch, wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
-import { mountWsiSlideView, type WsiSlideView } from './wsiSlideView'
+import {
+  mountWsiSlideView,
+  RULER_COLOR,
+  type WsiSlideView,
+} from './wsiSlideView'
 
 const viewName = (sliceType: number | undefined) =>
   Object.keys(NIIVUE_SLICE_TYPES).find(
@@ -146,6 +151,15 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationIsDrawnFromCenter: true,
   // ROI area as cornerstone reports it: the outline's, not a voxel count.
   annotationAreaIsGeometric: true,
+  // Cornerstone's handles: a press on any measurement's handle drags it,
+  // whatever the tool, with no selecting click first.
+  annotationIsHandleGrab: true,
+  // Yellow outlines without fill, as slide measurements and cornerstone's.
+  annotationStyle: {
+    fillColor: [0, 0, 0, 0],
+    strokeColor: RULER_COLOR,
+    strokeWidth: 2,
+  },
 }
 
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -422,6 +436,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [stack, setStack] = useState<StackPosition | null>(null)
   // Base intensity at the crosshair (cornerstone has no such readout; Probe pins one).
   const [crosshairValue, setCrosshairValue] = useState<string | null>(null)
+  // Name of the segment at the crosshair, shown above the value.
+  const [crosshairSegment, setCrosshairSegment] = useState<string>()
   // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
   const [sliceType, setSliceType] = useState<number>()
   const isRender = sliceType === SLICE_TYPE.RENDER
@@ -555,6 +571,8 @@ export function NiivueViewport(props: OhifViewportProps) {
             ),
           )
           unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
+          // A measurement hidden in the panel cannot be grabbed either.
+          nv.annotationIsGrabbable = (a) => isAnnotationShown(viewportId, a.id)
           nv.isAnnotationDrawn = false
           // A lens already up must stay above the annotations it magnifies.
           magnifyRef.current?.raise()
@@ -611,11 +629,17 @@ export function NiivueViewport(props: OhifViewportProps) {
     // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
     // sliceTypeChange carries no position: reuse the last crosshair.
     let vox: number[] | undefined
+    // A label overlay's name there (a SEG shown before it loads as the drawing).
+    let overlayLabel: string | undefined
     const showStack = (e: Event) => {
       const values = (e as CustomEvent<Partial<NiiVueLocation>>).detail?.values
       if (values) {
         const v = values[0]
         vox = v?.vox
+        overlayLabel = values
+          .slice(1)
+          .map((o) => o.label)
+          .find(Boolean)
         setCrosshairValue(
           v && Number.isFinite(v.value)
             ? `${v.approximate ? '~' : ''}${roundNumber(v.value)}`
@@ -626,6 +650,10 @@ export function NiivueViewport(props: OhifViewportProps) {
       const moved = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
       if (entry && moved) entry.crosshairMM = moved
       const mm = moved ?? entry?.crosshairMM
+      const seg = mm ? drawingValueAtMM(nv, mm) : 0
+      setCrosshairSegment(
+        (seg ? segmentLabel(nv.drawColormap, seg) : undefined) ?? overlayLabel,
+      )
       const pos =
         mm && nv.sliceType === acquisitionSliceType(nv)
           ? stackPosition(
@@ -1298,6 +1326,7 @@ export function NiivueViewport(props: OhifViewportProps) {
               value={crosshairValue}
               unit={unit}
               aboveStack={!!stack}
+              segment={crosshairSegment}
             />
           ) : null}
         </>

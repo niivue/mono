@@ -1,3 +1,18 @@
+## 1.0.0-rc.227 (2026-11-19)
+
+### Features
+
+- **niivue:** drag any shown shape's handle; editable bidirectional and angles ([954ecf1a](https://github.com/niivue/mono/commit/954ecf1a))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.230
+- Updated uikit to 1.0.0-rc.229
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.226 (2026-11-19)
 
 ### Fixes

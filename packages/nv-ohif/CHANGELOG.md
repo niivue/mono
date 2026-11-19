@@ -1,3 +1,29 @@
+## 1.0.0-rc.266 (2026-11-19)
+
+### Features
+
+- **nv-ohif:** segment statistics card shows voxel count and volume ([7ea12378](https://github.com/niivue/mono/commit/7ea12378))
+- ⚠️  **nv-ohif:** one NiiVue viewer with segmentation editing and slides; editable measurements ([b05979da](https://github.com/niivue/mono/commit/b05979da))
+- **nv-ohif:** name the segment at the crosshair above its value ([c130b2a1](https://github.com/niivue/mono/commit/c130b2a1))
+
+### Breaking Changes
+
+- **nv-ohif:** one NiiVue viewer with segmentation editing and slides; editable measurements  ([b05979da](https://github.com/niivue/mono/commit/b05979da))
+  the @niivue/nv-ohif/modes/segmentation and
+  @niivue/nv-ohif/modes/microscopy exports and the /niivue-segmentation and
+  /niivue-microscopy routes are removed; use /niivue-viewer.
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.230
+- Updated nv-ext-drawing to 1.0.0-rc.232
+- Updated nv-ext-tile to 1.0.0-rc.139
+- Updated uikit to 1.0.0-rc.229
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.265 (2026-11-19)
 
 ### Fixes

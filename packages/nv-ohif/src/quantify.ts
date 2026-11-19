@@ -106,12 +106,6 @@ const apply = (m: number[], p: ArrayLike<number>, r: number) =>
   (m[r * 4 + 2] as number) * (p[2] as number) +
   (m[r * 4 + 3] as number)
 
-export const vox2mm = (g: RasGrid, v: ArrayLike<number>): number[] => [
-  apply(g.affine, v, 0),
-  apply(g.affine, v, 1),
-  apply(g.affine, v, 2),
-]
-
 /** Inverse of a row-major 3x4 affine. */
 export function invertAffine(m: number[]): number[] {
   const [a = 0, b = 0, c = 0, tx = 0, d = 0, e = 0, f = 0, ty = 0] = m

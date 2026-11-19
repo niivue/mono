@@ -2,7 +2,7 @@
 // the .nii and .nii.gz forms.
 
 import fs from 'node:fs/promises'
-import nifti from 'nifti-reader-js'
+import * as nifti from 'nifti-reader-js'
 import type {
   Affine4x4,
   Dtype,

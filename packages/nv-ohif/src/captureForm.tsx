@@ -12,7 +12,7 @@ const field: CSSProperties = {
   margin: '6px 0',
 }
 
-export function NiivueCaptureForm({
+function NiivueCaptureForm({
   entry,
   hide,
 }: {

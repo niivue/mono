@@ -395,7 +395,7 @@ export function buildSegDataset(
  * top-left). Holes are loops of their own: filling every loop even-odd with
  * pixel centres inside gives back the mask exactly.
  */
-export function traceLoops(
+function traceLoops(
   mask: ArrayLike<number>,
   rows: number,
   cols: number,

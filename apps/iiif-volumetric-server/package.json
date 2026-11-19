@@ -16,7 +16,7 @@
     "express": "^4.19.2",
     "jpeg-js": "^0.4.4",
     "morgan": "^1.10.0",
-    "nifti-reader-js": "^0.6.8",
+    "nifti-reader-js": "^0.8.1",
     "nrrd-js": "^0.2.1",
     "pngjs": "^7.0.0"
   },

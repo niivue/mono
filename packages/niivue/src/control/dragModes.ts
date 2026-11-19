@@ -59,7 +59,7 @@ function cssToCanvasPx(ctrl: NiiVue, cssPx: number): number {
 }
 
 /** Vertical drag (CSS pixels) per slice step of `DRAG_MODE.slice`. */
-export const sliceDragCssPx = 4
+const sliceDragCssPx = 4
 
 /**
  * Step the crosshair `delta` slices through a 2D tile of `sliceType`, as one

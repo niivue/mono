@@ -165,6 +165,16 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
 /**
+ * What a reload must match to keep the crosshair: the series, else (a NIfTI
+ * display set may have no series UID) the display set itself.
+ */
+export function shownSeriesKey(ds: OhifDisplaySet): string | undefined {
+  return (
+    (ds.SeriesInstanceUID as string | undefined) || ds.displaySetInstanceUID
+  )
+}
+
+/**
  * A series opens in its acquired plane, as a cornerstone stack does, unless the
  * hanging protocol names a view ('acquisition' names that plane). OHIF marks
  * unequal slice spacing (or orthogonal localizers) not reconstructable: only
@@ -373,6 +383,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   // The series whose volume is shown: imports must not target an outgoing one.
   const [loadedSeries, setLoadedSeries] = useState<string>()
+  // The series the pane last showed: a reload of it (petSUV Reload Data) keeps the crosshair.
+  const shownSeriesRef = useRef<string | undefined>(undefined)
   // The base display set shown: a NIfTI set may carry no series UID.
   const [loadedBase, setLoadedBase] = useState<string>()
   // The shown conversion, for stepping through a series' other outputs.
@@ -828,12 +840,16 @@ export function NiivueViewport(props: OhifViewportProps) {
       if (nv.volumes.length > 0) void nv.removeAllVolumes().catch(() => {})
     }
 
+    // If OHIF hung nothing, stay idle.
+    const ds: OhifDisplaySet | undefined = displaySets[0]
+    const keptCrosshair =
+      nv.volumes[0] && ds && shownSeriesRef.current === shownSeriesKey(ds)
+        ? nv.getCrosshairPos()
+        : undefined
     setIsLoaded(false)
     setLoadedSeries(undefined)
     setLoadedBase(undefined)
     setConversion(null)
-    // If OHIF hung nothing, stay idle.
-    const ds: OhifDisplaySet | undefined = displaySets[0]
     if (!ds) {
       dropStaleVolumes()
       setStatus({ kind: 'idle' })
@@ -869,7 +885,19 @@ export function NiivueViewport(props: OhifViewportProps) {
       baseInstalled(true)
       setLoadedSeries(ds.SeriesInstanceUID as string | undefined)
       setLoadedBase(ds.displaySetInstanceUID)
-      centerCrosshair(nv)
+      shownSeriesRef.current = shownSeriesKey(ds)
+      // OHIF's data overlay menu offers a foreground only over a background
+      // with imageIds, which cornerstone's viewport fills on load. Only when
+      // one per instance: nv-ohif reads them aligned with `instances`.
+      if (!ds.imageIds) {
+        const ids = props.extensionManager
+          ?.getActiveDataSource?.()[0]
+          ?.getImageIdsForDisplaySet?.(ds)
+        if (ids?.length && ids.length === ds.instances?.length)
+          ds.imageIds = ids
+      }
+      if (keptCrosshair) nv.setCrosshairPos(keptCrosshair)
+      else centerCrosshair(nv)
       const vol = nv.volumes[0]
       const suv = unitForDisplaySet(ds) === 'SUV'
       const step =

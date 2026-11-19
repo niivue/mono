@@ -166,9 +166,9 @@ export function CrosshairValueReadout({
   aboveStack: boolean
   segment?: string
 }) {
+  // The value keeps its own element: readers parse its text as "Value: ...".
   return (
     <div
-      data-cy="niivue-crosshair-value"
       style={{
         ...corner({ right: 12, bottom: aboveStack ? 28 : 8 }),
         textAlign: 'right',
@@ -179,7 +179,7 @@ export function CrosshairValueReadout({
           {segment}
         </div>
       ) : null}
-      {`Value: ${value}${unit ? ` ${unit}` : ''}`}
+      <div data-cy="niivue-crosshair-value">{`Value: ${value}${unit ? ` ${unit}` : ''}`}</div>
     </div>
   )
 }

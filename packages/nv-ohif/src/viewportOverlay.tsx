@@ -150,21 +150,35 @@ export function StackPositionReadout({
   )
 }
 
-/** Base intensity at the crosshair, lower right (above I: when that shows). */
+/**
+ * Base intensity at the crosshair, lower right (above I: when that shows),
+ * under the name of the segment there, if any (cornerstone names a segment
+ * only on hover, with SegmentLabelTool active).
+ */
 export function CrosshairValueReadout({
   value,
   unit,
   aboveStack,
+  segment,
 }: {
   value: string
   unit: string
   aboveStack: boolean
+  segment?: string
 }) {
   return (
     <div
       data-cy="niivue-crosshair-value"
-      style={corner({ right: 12, bottom: aboveStack ? 28 : 8 })}
+      style={{
+        ...corner({ right: 12, bottom: aboveStack ? 28 : 8 }),
+        textAlign: 'right',
+      }}
     >
+      {segment ? (
+        <div data-cy="niivue-crosshair-segment" title="Segment">
+          {segment}
+        </div>
+      ) : null}
       {`Value: ${value}${unit ? ` ${unit}` : ''}`}
     </div>
   )

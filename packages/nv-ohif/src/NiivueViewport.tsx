@@ -86,9 +86,9 @@ import { setOverlayPlanes } from './overlayPlanes'
 import { armBrush, showPaneLabel } from './petQuant'
 import { ReferenceLines } from './referenceLines'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
-import { applySegTool, ohifPenSize } from './segEdit'
+import { applySegTool, drawingValueAtMM, ohifPenSize } from './segEdit'
 import { PaneCorner, useHydratePrompt } from './segHydration'
-import { SegmentLabel } from './segmentLabel'
+import { SegmentLabel, segmentLabel } from './segmentLabel'
 import { SliceCine } from './sliceCine'
 import type { SliceFrames } from './sliceFrames'
 import { bindSlideMeasurements } from './slideMeasurements'
@@ -422,6 +422,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   const [stack, setStack] = useState<StackPosition | null>(null)
   // Base intensity at the crosshair (cornerstone has no such readout; Probe pins one).
   const [crosshairValue, setCrosshairValue] = useState<string | null>(null)
+  // Name of the segment at the crosshair, shown above the value.
+  const [crosshairSegment, setCrosshairSegment] = useState<string>()
   // A 3D render has no slice to label: hide the corner text, as the HP's 3D pane does.
   const [sliceType, setSliceType] = useState<number>()
   const isRender = sliceType === SLICE_TYPE.RENDER
@@ -611,11 +613,17 @@ export function NiivueViewport(props: OhifViewportProps) {
     // OHIF shows I: only for a stack: a single 2D view in the acquisition plane.
     // sliceTypeChange carries no position: reuse the last crosshair.
     let vox: number[] | undefined
+    // A label overlay's name there (a SEG shown before it loads as the drawing).
+    let overlayLabel: string | undefined
     const showStack = (e: Event) => {
       const values = (e as CustomEvent<Partial<NiiVueLocation>>).detail?.values
       if (values) {
         const v = values[0]
         vox = v?.vox
+        overlayLabel = values
+          .slice(1)
+          .map((o) => o.label)
+          .find(Boolean)
         setCrosshairValue(
           v && Number.isFinite(v.value)
             ? `${v.approximate ? '~' : ''}${roundNumber(v.value)}`
@@ -626,6 +634,10 @@ export function NiivueViewport(props: OhifViewportProps) {
       const moved = (e as CustomEvent<{ mm?: number[] }>).detail?.mm
       if (entry && moved) entry.crosshairMM = moved
       const mm = moved ?? entry?.crosshairMM
+      const seg = mm ? drawingValueAtMM(nv, mm) : 0
+      setCrosshairSegment(
+        (seg ? segmentLabel(nv.drawColormap, seg) : undefined) ?? overlayLabel,
+      )
       const pos =
         mm && nv.sliceType === acquisitionSliceType(nv)
           ? stackPosition(
@@ -1298,6 +1310,7 @@ export function NiivueViewport(props: OhifViewportProps) {
               value={crosshairValue}
               unit={unit}
               aboveStack={!!stack}
+              segment={crosshairSegment}
             />
           ) : null}
         </>

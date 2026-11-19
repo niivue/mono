@@ -394,6 +394,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether a two-point shape grows from its first point as the centre.',
   ),
   bool(
+    'annotationIsHandleGrab',
+    'Whether a press on any shape handle drags it, whatever the tool.',
+  ),
+  bool(
     'annotationIsVisibleIn3D',
     'Whether annotations are drawn in the render.',
   ),

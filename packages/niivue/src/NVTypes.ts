@@ -1553,6 +1553,8 @@ export type NiiVueOptions = {
   annotationIsClickToPlace?: boolean
   /** See AnnotationConfig.isDrawnFromCenter. Default false. */
   annotationIsDrawnFromCenter?: boolean
+  /** See AnnotationConfig.isHandleGrab. Default false. */
+  annotationIsHandleGrab?: boolean
   /** See AnnotationConfig.isAreaGeometric. Default false. */
   annotationAreaIsGeometric?: boolean
   annotationIsErasing?: boolean
@@ -2238,6 +2240,13 @@ export type AnnotationConfig = {
    * its rim. Default false: both points are opposite box corners.
    */
   isDrawnFromCenter: boolean
+  /**
+   * A left press on a control point of any shown shape on a 2D slice drags it,
+   * whatever the tool and even with annotation mode off, as cornerstone's
+   * handles: no selecting click first. Default false: a shape is selected
+   * first, and only in annotation mode.
+   */
+  isHandleGrab: boolean
   /**
    * Measured ROI `area` is the outline's own area (exact for rectangles,
    * ellipses and circles), as cornerstone reports it. Default false: the count

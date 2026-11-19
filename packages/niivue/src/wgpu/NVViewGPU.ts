@@ -1951,6 +1951,7 @@ export default class NVView {
         screenSlices,
         buildLine,
         this.fontRenderer.buildText.bind(this.fontRenderer),
+        this._dpr,
       )
       if (annotationResult) {
         this.polygonRenderer.draw(device, pass, annotationResult)

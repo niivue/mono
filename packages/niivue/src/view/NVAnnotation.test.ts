@@ -150,7 +150,7 @@ describe('annotation label anchors', () => {
       return { count: 1 } as GlyphBatch
     }
     const buildLine = () => ({}) as LineData
-    buildAnnotationRenderData(model, [tile], buildLine, buildText)
+    buildAnnotationRenderData(model, [tile], buildLine, buildText, 1)
     model.ui.isAnnotationDrawn = false
     projectAnnotationScreenShapes(model, [tile])
     model.ui.isAnnotationDrawn = true

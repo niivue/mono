@@ -30,6 +30,7 @@ const PROPS_RW = [
   ["annotationIsDrawnFromCenter", "annotation_is_drawn_from_center"],
   ["annotationIsEnabled", "annotation_is_enabled"],
   ["annotationIsErasing", "annotation_is_erasing"],
+  ["annotationIsHandleGrab", "annotation_is_handle_grab"],
   ["annotationIsVisibleIn3D", "annotation_is_visible_in_3d"],
   ["annotationMergesOverlaps", "annotation_merges_overlaps"],
   ["annotationTool", "annotation_tool"],

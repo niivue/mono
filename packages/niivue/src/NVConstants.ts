@@ -639,6 +639,7 @@ export const ANNOTATION_DEFAULTS: AnnotationConfig = {
   mergesOverlaps: true,
   isClickToPlace: false,
   isDrawnFromCenter: false,
+  isHandleGrab: false,
   isAreaGeometric: false,
   isErasing: false,
   isVisibleIn3D: false,

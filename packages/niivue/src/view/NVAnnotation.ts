@@ -121,12 +121,13 @@ function buildSelectionHandles(
   strokeLines: LineData[],
   startOffset: number,
   tolerance: number,
+  dpr: number,
 ): number {
   const sel = model._annotationSelection
   if (!sel) return startOffset
   const ann = model.annotations.find((a) => a.id === sel.annotationId)
   if (!ann?.shape) return startOffset
-  const handleSize = 4 // pixels
+  const handleSize = 4 * dpr // canvas pixels
   let offset = startOffset
   const anchor = getAnchorMM(ann)
   if (!anchor) return startOffset
@@ -312,7 +313,8 @@ export function buildAnnotationRenderData(
   model: NVModel,
   screenSlices: SliceTile[],
   buildLine: BuildLineFn,
-  buildText?: BuildTextFn,
+  buildText: BuildTextFn | undefined,
+  dpr: number,
 ): AnnotationRenderData | null {
   const tolerance = computeTolerance(model)
   const allFillVerts: number[] = []
@@ -380,6 +382,7 @@ export function buildAnnotationRenderData(
     strokeLines,
     vertexOffset,
     tolerance,
+    dpr,
   )
 
   if (

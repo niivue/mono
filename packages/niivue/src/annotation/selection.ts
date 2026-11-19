@@ -14,6 +14,9 @@ export type ShapeBoundsUpdate = {
   start: AnnotationPoint
   end: AnnotationPoint
   width?: number
+  /** Second line of a two-line shape (bidirectional, angle). */
+  start2?: AnnotationPoint
+  end2?: AnnotationPoint
 }
 
 export function getAnnotationSelection(
@@ -31,13 +34,29 @@ export function getAnnotationSelection(
  * Rectangle (8): 4 corners + 4 edge midpoints
  * Ellipse (4): cardinal points on the ellipse curve
  * Line/Arrow (3): start, end, + side handle for thickness
+ * Measure line (2): start, end (its thickness is not drawn or measured)
+ * Bidirectional, Cobb angle (4): start, end, start2, end2
+ * Angle (3): start, vertex, end2
  */
 export function getControlPoints(shape: {
   type: AnnotationTool
   start: AnnotationPoint
   end: AnnotationPoint
   width?: number
+  start2?: AnnotationPoint
+  end2?: AnnotationPoint
 }): AnnotationPoint[] {
+  // A two-line shape still being drawn has no second line and no handles.
+  if (isTwoLineShape(shape.type)) {
+    const { start, end, start2, end2 } = shape
+    if (!start2 || !end2) return []
+    // An angle's vertex is both `end` and `start2`: one handle.
+    const points =
+      shape.type === 'measureAngle'
+        ? [start, end, end2]
+        : [start, end, start2, end2]
+    return points.map((p) => ({ ...p }))
+  }
   switch (shape.type) {
     case 'rectangle':
     case 'measureRect': {
@@ -82,11 +101,12 @@ export function getControlPoints(shape: {
       // Perpendicular offset for the width handle
       const px = len > 1e-9 ? (-dy / len) * hw : hw
       const py = len > 1e-9 ? (dx / len) * hw : 0
-      return [
+      const ends = [
         { x: shape.start.x, y: shape.start.y }, // 0: start/tail
         { x: shape.end.x, y: shape.end.y }, // 1: end/tip
-        { x: midX + px, y: midY + py }, // 2: width handle
       ]
+      if (shape.type === 'measureLine') return ends
+      return [...ends, { x: midX + px, y: midY + py }] // 2: width handle
     }
     case 'measurePoint':
       return [{ x: shape.end.x, y: shape.end.y }]
@@ -120,11 +140,24 @@ export function hitTestControlPoint(
  */
 export function updateShapeBounds(
   shapeType: AnnotationTool,
-  original: { start: AnnotationPoint; end: AnnotationPoint; width?: number },
+  original: ShapeBoundsUpdate,
   controlPointIndex: number,
   newPosition: AnnotationPoint,
 ): ShapeBoundsUpdate {
   switch (shapeType) {
+    case 'bidirectional':
+    case 'measureBidirectional':
+      return _updateBidirectional(original, controlPointIndex, newPosition)
+    case 'measureAngle':
+    case 'measureCobbAngle': {
+      const p = getControlPoints({ type: shapeType, ...original })
+      p[controlPointIndex] = newPosition
+      const [start, end, a, b] = p as AnnotationPoint[]
+      // An angle's vertex (end) starts its second arm.
+      return shapeType === 'measureAngle'
+        ? { start, end, width: original.width, start2: end, end2: a }
+        : { start, end, width: original.width, start2: a, end2: b }
+    }
     case 'rectangle':
     case 'measureRect':
       return _updateRectangle(original, controlPointIndex, newPosition)
@@ -147,6 +180,68 @@ export function updateShapeBounds(
     default:
       return { start: { ...original.start }, end: { ...original.end } }
   }
+}
+
+export function isTwoLineShape(type: AnnotationTool): boolean {
+  return (
+    type === 'bidirectional' ||
+    type === 'measureBidirectional' ||
+    type === 'measureAngle' ||
+    type === 'measureCobbAngle'
+  )
+}
+
+/**
+ * Cornerstone's bidirectional handles. A long-axis end (0, 1) turns the long
+ * axis about the other end and carries the short axis with it: same fraction
+ * along the long axis, same distances off it. A short-axis end (2, 3) slides
+ * the short axis along the long axis to the pointer and sets its own distance
+ * off it; the short axis stays perpendicular.
+ */
+function _updateBidirectional(
+  original: ShapeBoundsUpdate,
+  idx: number,
+  pos: AnnotationPoint,
+): ShapeBoundsUpdate {
+  const { start, end, width, start2 = start, end2 = end } = original
+  // Long-axis frame: origin start, unit u along it, n across it.
+  const frame = (a: AnnotationPoint, b: AnnotationPoint) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y)
+    const u =
+      len > 1e-9
+        ? { x: (b.x - a.x) / len, y: (b.y - a.y) / len }
+        : { x: 1, y: 0 }
+    return { a, len, u, n: { x: -u.y, y: u.x } }
+  }
+  const f = frame(start, end)
+  const along = (p: AnnotationPoint) =>
+    (p.x - start.x) * f.u.x + (p.y - start.y) * f.u.y
+  const across = (p: AnnotationPoint) =>
+    (p.x - start.x) * f.n.x + (p.y - start.y) * f.n.y
+  // Each short end: its fraction along the long axis and distance off it
+  // (equal fractions for a perpendicular short axis; an imported or dragged
+  // one may be skewed, and keeps its skew).
+  const frac = (p: AnnotationPoint) => (f.len > 1e-9 ? along(p) / f.len : 0.5)
+  let [t1, d1] = [frac(start2), across(start2)]
+  let [t2, d2] = [frac(end2), across(end2)]
+  let s = start
+  let e = end
+  if (idx === 0) s = pos
+  else if (idx === 1) e = pos
+  else {
+    // The dragged end goes to the pointer; the other slides along with it.
+    const dt = frac(pos) - (idx === 2 ? t1 : t2)
+    t1 += dt
+    t2 += dt
+    if (idx === 2) d1 = across(pos)
+    else d2 = across(pos)
+  }
+  const g = frame(s, e)
+  const at = (t: number, d: number) => ({
+    x: s.x + (e.x - s.x) * t + g.n.x * d,
+    y: s.y + (e.y - s.y) * t + g.n.y * d,
+  })
+  return { start: s, end: e, width, start2: at(t1, d1), end2: at(t2, d2) }
 }
 
 function _bounds(original: { start: AnnotationPoint; end: AnnotationPoint }) {

@@ -13,6 +13,7 @@ import {
 } from '@/control/cameraEvents'
 import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
+import { pointToSegmentDistance } from '@/control/measurements'
 import {
   clampScale3D,
   type Pinch,
@@ -150,6 +151,106 @@ function startAnnotationDrag(ctrl: NiiVue, evt: PointerEvent): void {
   ctrl.canvas?.setPointerCapture(evt.pointerId)
 }
 
+// Drag control point `cpIdx` of `ann` (selected) until pointer-up.
+function startResize(
+  ctrl: NiiVue,
+  evt: PointerEvent,
+  ann: VectorAnnotation,
+  cpIdx: number,
+): void {
+  const shape = ann.shape as NonNullable<VectorAnnotation['shape']>
+  // Recorded on release, so a cancelled resize leaves no step.
+  ctrl._resizeUndoSnapshot = structuredClone(ctrl.model.annotations)
+  ctrl._resizingControlPoint = cpIdx
+  ctrl._resizeOriginalShape = {
+    start: { ...shape.start },
+    end: { ...shape.end },
+    width: shape.width,
+    polygons: ann.polygons,
+    anchorMM: ann.anchorMM,
+    isErased: Annotation.isAnnotationErased(
+      ann,
+      ctrl.model.annotation.style.strokeWidth,
+    ),
+    start2: shape.start2 && { ...shape.start2 },
+    end2: shape.end2 && { ...shape.end2 },
+    stats: ann.stats,
+  }
+  ctrl._resizingAnnotation = ann
+  startAnnotationDrag(ctrl, evt)
+}
+
+// Is `ann` on the slice `tile` shows: its anchor on the tile's plane, else its
+// stored depth near `depth` (the pressed slice's position).
+function isOnTile(
+  ann: VectorAnnotation,
+  tile: NVSliceLayout.SliceTile | undefined,
+  depth: number,
+  tolerance: number,
+): boolean {
+  const anchor = ann.anchorMM
+  return anchor && tile?.planeNormal && tile.planePoint
+    ? Annotation.isOnSlice(anchor, tile.planeNormal, tile.planePoint, tolerance)
+    : Math.abs(ann.slicePosition - depth) <= tolerance
+}
+
+// annotationIsGrabbable: a shape the host hides takes no press (grab, handle
+// or select).
+function isGrabbable(ctrl: NiiVue, ann: VectorAnnotation): boolean {
+  return ctrl.annotationIsGrabbable?.(ann) ?? true
+}
+
+// Handles within this many CSS px of a press grab (annotation.isHandleGrab).
+const GRAB_PX = 6
+
+/**
+ * isHandleGrab: the shown shape and control point under a press on 2D tile
+ * `tileIndex`, the selected shape first; null when none is near.
+ */
+function handleUnderPointer(
+  ctrl: NiiVue,
+  evt: PointerEvent,
+  tileIndex: number,
+): { ann: VectorAnnotation; cpIdx: number } | null {
+  const tile = ctrl.view?.screenSlices[tileIndex]
+  const { mvpMatrix, planeNormal, planePoint, leftTopWidthHeight } = tile ?? {}
+  const at = clientToBoundsPixel(ctrl, evt.clientX, evt.clientY)
+  if (
+    !tile ||
+    !mvpMatrix ||
+    !planeNormal ||
+    !planePoint ||
+    !leftTopWidthHeight ||
+    !at
+  )
+    return null
+  const tolerance = computeTolerance(ctrl.model)
+  const radius = GRAB_PX * ctrl.effectiveDevicePixelRatio
+  const depth = planePoint[sliceTypeDim(tile.axCorSag)] as number
+  // The selected shape first: its handles win where shapes overlap.
+  const selectedId = ctrl.model._annotationSelection?.annotationId
+  const selected = ctrl.model.annotations.find((a) => a.id === selectedId)
+  for (const ann of selected
+    ? [selected, ...ctrl.model.annotations]
+    : ctrl.model.annotations) {
+    if (!ann.shape || ann.sliceType !== tile.axCorSag) continue
+    if (!isGrabbable(ctrl, ann)) continue
+    if (!isOnTile(ann, tile, depth, tolerance)) continue
+    const cps = Annotation.getControlPoints(ann.shape)
+    for (let i = 0; i < cps.length; i++) {
+      const mm = Annotation.slice2DToMMOnPlane(
+        cps[i] as AnnotationPoint,
+        ann.sliceType,
+        planeNormal,
+        planePoint,
+      )
+      const [cx, cy] = projectMMToCanvas(mm, mvpMatrix, leftTopWidthHeight)
+      if (Math.hypot(at[0] - cx, at[1] - cy) <= radius) return { ann, cpIdx: i }
+    }
+  }
+  return null
+}
+
 // --- Legend label visibility ---------------------------------------------------
 
 /**
@@ -235,7 +336,6 @@ function isMultiClickTool(tool: AnnotationTool): boolean {
 // An angle tool's annotation from its clicks so far: two thin-line arms with
 // the clicked points in shape (measureAngle: start, end = start2 = vertex,
 // end2; measureCobbAngle: two lines), and the angle once both arms exist.
-// ponytail: no control points (as bidirectional); add start2/end2 handles if editing is needed.
 function angleAnnotation(
   ctrl: NiiVue,
   pts: readonly AnnotationPoint[],
@@ -282,9 +382,14 @@ function angleAnnotation(
 
 // Slice-2D -> world mm on the plane the renderer draws the angle on (through
 // its anchor; oblique on a tilted volume), else at its constant depth.
+type Placement = Pick<
+  VectorAnnotation,
+  'sliceType' | 'slicePosition' | 'anchorMM'
+>
+
 function angleToMM(
   ctrl: NiiVue,
-  ann: VectorAnnotation,
+  ann: Placement,
 ): (p: AnnotationPoint) => ArrayLike<number> {
   const { mm2tex, tex2mm } = ctrl.model
   const anchor = ann.anchorMM
@@ -309,6 +414,61 @@ function angleToMM(
           plane.point,
         )
     : (p) => Annotation.slice2DToMM(p, ann.slicePosition, ann.sliceType)
+}
+
+/**
+ * Slice-2D <-> an orthonormal 2D frame (mm) of the plane a shape is drawn on.
+ * Slice-2D drops the depth, so on an oblique slice its lengths and right
+ * angles are not physical; this frame's are.
+ */
+function planeFrame(ctrl: NiiVue, at: Placement) {
+  const toMM = angleToMM(ctrl, at)
+  const o = Array.from(toMM({ x: 0, y: 0 }))
+  const a = Array.from(toMM({ x: 1, y: 0 }))
+  const b = Array.from(toMM({ x: 0, y: 1 }))
+  const sub = (p: number[], q: number[]) =>
+    p.map((v, i) => v - (q[i] as number))
+  const dot = (p: number[], q: number[]) =>
+    p.reduce((sum, v, i) => sum + v * (q[i] as number), 0)
+  const e1 = sub(a, o)
+  const n1 = Math.hypot(...e1)
+  for (let i = 0; i < 3; i++) e1[i] = (e1[i] as number) / n1
+  const d = sub(b, o)
+  const k = dot(d, e1)
+  const e2 = d.map((v, i) => v - k * (e1[i] as number))
+  const n2 = Math.hypot(...e2)
+  for (let i = 0; i < 3; i++) e2[i] = (e2[i] as number) / n2
+  return {
+    to(p: AnnotationPoint): AnnotationPoint {
+      const w = sub(Array.from(toMM(p)), o)
+      return { x: dot(w, e1), y: dot(w, e2) }
+    },
+    from(q: AnnotationPoint): AnnotationPoint {
+      const w = o.map(
+        (v, i) => v + q.x * (e1[i] as number) + q.y * (e2[i] as number),
+      )
+      return Annotation.mmToSlice2D(w as [number, number, number], at.sliceType)
+    },
+  }
+}
+
+// Cornerstone's automatic short axis, perpendicular on the drawing plane.
+function autoShortAxis(
+  ctrl: NiiVue,
+  long: Axis,
+  at: Placement = currentPlacement(ctrl),
+): Axis {
+  const f = planeFrame(ctrl, at)
+  const ax = Annotation.bidirectionalShortAxis(f.to(long.start), f.to(long.end))
+  return { start: f.from(ax.start), end: f.from(ax.end) }
+}
+
+function currentPlacement(ctrl: NiiVue): Placement {
+  return {
+    sliceType: ctrl._annotationSliceType,
+    slicePosition: ctrl._annotationSlicePosition,
+    anchorMM: ctrl._annotationAnchorMM,
+  }
 }
 
 // Live-wire snapped path (slice-2D points) from the current seed's field to a
@@ -507,8 +667,20 @@ function isBidirectionalTool(tool: AnnotationTool): boolean {
   return tool === 'bidirectional' || tool === 'measureBidirectional'
 }
 
-const axisLen = (a: Axis): number =>
-  Math.hypot(a.end.x - a.start.x, a.end.y - a.start.y)
+// The axes' lengths in mm on the drawing plane.
+function bidirectionalLengths(
+  ctrl: NiiVue,
+  at: Placement,
+  long: Axis,
+  short: Axis | null,
+): { length: number; shortLength?: number } {
+  const f = planeFrame(ctrl, at)
+  const len = (a: Axis) => {
+    const [p, q] = [f.to(a.start), f.to(a.end)]
+    return Math.hypot(q.x - p.x, q.y - p.y)
+  }
+  return { length: len(long), ...(short ? { shortLength: len(short) } : {}) }
+}
 
 // Build the annotation for a bidirectional measurement from its two axes: two
 // thin-line polygons (so the built-in draw renders both), plus long/short
@@ -517,15 +689,7 @@ function bidirectionalAnnotation(
   ctrl: NiiVue,
   long: Axis,
   short: Axis | null,
-  at: {
-    sliceType: number
-    slicePosition: number
-    anchorMM: [number, number, number]
-  } = {
-    sliceType: ctrl._annotationSliceType,
-    slicePosition: ctrl._annotationSlicePosition,
-    anchorMM: ctrl._annotationAnchorMM,
-  },
+  at: Placement = currentPlacement(ctrl),
 ): VectorAnnotation | null {
   const cfg = ctrl.model.annotation
   const w = cfg.style.strokeWidth
@@ -558,8 +722,7 @@ function bidirectionalAnnotation(
     mean: 0,
     max: 0,
     stdDev: 0,
-    length: axisLen(long),
-    ...(short ? { shortLength: axisLen(short) } : {}),
+    ...bidirectionalLengths(ctrl, at, long, short),
   }
   return ann
 }
@@ -580,7 +743,7 @@ function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
       : null
     short =
       long && ctrl.model.annotation.isClickToPlace
-        ? Annotation.bidirectionalShortAxis(long.start, long.end)
+        ? autoShortAxis(ctrl, long)
         : null
   }
   ctrl.model._annotationPreview = long
@@ -1429,6 +1592,103 @@ function resizedPolygons(
   )
 }
 
+// A bidirectional or angle with handle `cpIdx` dragged to `pt`: a
+// bidirectional's axes are recomputed on its drawing plane (perpendicular in
+// mm on an oblique slice); each arm carries its own polygons, so an erased
+// gap stays erased; lengths or angle are measured again.
+function resizeTwoLineShape(
+  ctrl: NiiVue,
+  ann: VectorAnnotation,
+  original: NonNullable<NiiVue['_resizeOriginalShape']>,
+  cpIdx: number,
+  pt: AnnotationPoint,
+): void {
+  const shape = ann.shape as NonNullable<VectorAnnotation['shape']>
+  let box: ShapeBoundsUpdate
+  if (isBidirectionalTool(shape.type)) {
+    const f = planeFrame(ctrl, ann)
+    const onPlane = (p: AnnotationPoint | undefined) => p && f.to(p)
+    const b = Annotation.updateShapeBounds(
+      shape.type,
+      {
+        start: f.to(original.start),
+        end: f.to(original.end),
+        start2: onPlane(original.start2),
+        end2: onPlane(original.end2),
+      },
+      cpIdx,
+      f.to(pt),
+    )
+    box = {
+      start: f.from(b.start),
+      end: f.from(b.end),
+      start2: b.start2 && f.from(b.start2),
+      end2: b.end2 && f.from(b.end2),
+    }
+  } else box = Annotation.updateShapeBounds(shape.type, original, cpIdx, pt)
+  const { start2, end2 } = box
+  if (!start2 || !end2 || !original.start2 || !original.end2) return
+  const w = shape.width ?? ctrl.model.annotation.style.strokeWidth
+  const arms: [ShapeBoundsUpdate, ShapeBoundsUpdate][] = [
+    [
+      { start: original.start, end: original.end, width: w },
+      { start: box.start, end: box.end, width: w },
+    ],
+    [
+      { start: original.start2, end: original.end2, width: w },
+      { start: start2, end: end2, width: w },
+    ],
+  ]
+  // Each polygon goes with exactly one arm: the one its outline runs along
+  // (summed vertex distance; arms crossing at their centres share a centre).
+  const spread = (poly: PolygonWithHoles, arm: ShapeBoundsUpdate) =>
+    poly.outer.reduce(
+      (sum, p) =>
+        sum +
+        pointToSegmentDistance(
+          p.x,
+          p.y,
+          arm.start.x,
+          arm.start.y,
+          arm.end.x,
+          arm.end.y,
+        ),
+      0,
+    )
+  const longPolys: PolygonWithHoles[] = []
+  const shortPolys: PolygonWithHoles[] = []
+  for (const poly of original.polygons)
+    (spread(poly, arms[0][0]) <= spread(poly, arms[1][0])
+      ? longPolys
+      : shortPolys
+    ).push(poly)
+  const polygons: PolygonWithHoles[] = []
+  for (const [i, [from, to]] of arms.entries()) {
+    const own = i === 0 ? longPolys : shortPolys
+    const moved = Annotation.resizePolygons('measureLine', from, to, own)
+    // A degenerate arm keeps the last valid shape.
+    if (!moved) return
+    polygons.push(...moved)
+  }
+  Object.assign(shape, { start: box.start, end: box.end, start2, end2 })
+  ann.polygons = polygons
+  const stats = { area: 0, min: 0, mean: 0, max: 0, stdDev: 0 }
+  ann.stats = isBidirectionalTool(shape.type)
+    ? {
+        ...stats,
+        ...bidirectionalLengths(
+          ctrl,
+          ann,
+          { start: box.start, end: box.end },
+          { start: start2, end: end2 },
+        ),
+      }
+    : { ...stats, angle: Annotation.shapeAngle(shape, angleToMM(ctrl, ann)) }
+  if (ctrl.model._annotationSelection)
+    ctrl.model._annotationSelection.controlPoints =
+      Annotation.getControlPoints(shape)
+}
+
 export function resetDragState(ctrl: NiiVue): void {
   // A resize that pointerup did not finish (pointercancel, pinch, annotation
   // mode off) is reverted, as a cancel: pointerup alone records its undo step.
@@ -1781,6 +2041,31 @@ export function initInteraction(ctrl: NiiVue): void {
       ctrl.canvas?.setPointerCapture(evt.pointerId)
       return
     }
+    // isHandleGrab: a press on any shown shape's handle drags it, whatever the
+    // tool, unless a raster pen or a multi-click shape is in progress.
+    if (
+      ctrl.model.annotation.isHandleGrab &&
+      ctrl.activeTileHit &&
+      !ctrl.activeTileHit.isRender &&
+      evt.button === 0 &&
+      !(ctrl.model.annotation.isEnabled && ctrl.model.annotation.isErasing) &&
+      ctrl._angleState === 'none' &&
+      !ctrl._annotationPolyPoints &&
+      !ctrl._bidirectionalLong &&
+      !ctrl._annotationClickStart
+    ) {
+      const grab = handleUnderPointer(ctrl, evt, ctrl.activeTileHit.tileIndex)
+      if (grab?.ann.shape) {
+        ctrl._annotationSliceType = grab.ann.sliceType
+        ctrl.model._annotationSelection = {
+          annotationId: grab.ann.id,
+          controlPoints: Annotation.getControlPoints(grab.ann.shape),
+        }
+        startResize(ctrl, evt, grab.ann, grab.cpIdx)
+        ctrl.drawScene()
+        return
+      }
+    }
     // Annotation intercept: if annotation mode enabled and click is on a 2D slice
     if (
       ctrl.model.annotation.isEnabled &&
@@ -1960,26 +2245,10 @@ export function initInteraction(ctrl: NiiVue): void {
               // A probe lands on a region's handle, as anywhere inside it.
               if (
                 ann?.shape &&
+                isGrabbable(ctrl, ann) &&
                 (tool !== 'measurePoint' || ann.shape.type === 'measurePoint')
               ) {
-                // Recorded on release, so a cancelled resize leaves no step.
-                ctrl._resizeUndoSnapshot = structuredClone(
-                  ctrl.model.annotations,
-                )
-                ctrl._resizingControlPoint = cpIdx
-                ctrl._resizeOriginalShape = {
-                  start: { ...ann.shape.start },
-                  end: { ...ann.shape.end },
-                  width: ann.shape.width,
-                  polygons: ann.polygons,
-                  anchorMM: ann.anchorMM,
-                  isErased: Annotation.isAnnotationErased(
-                    ann,
-                    ctrl.model.annotation.style.strokeWidth,
-                  ),
-                }
-                ctrl._resizingAnnotation = ann
-                startAnnotationDrag(ctrl, evt)
+                startResize(ctrl, evt, ann, cpIdx)
                 return
               }
             }
@@ -1995,17 +2264,8 @@ export function initInteraction(ctrl: NiiVue): void {
             // A probe lands inside a region; only another probe's dot selects.
             if (tool === 'measurePoint' && ann.shape.type !== 'measurePoint')
               continue
-            const anchor = ann.anchorMM
-            const onSlice =
-              anchor && selTile?.planeNormal && selTile?.planePoint
-                ? Annotation.isOnSlice(
-                    anchor,
-                    selTile.planeNormal,
-                    selTile.planePoint,
-                    selTolerance,
-                  )
-                : Math.abs(ann.slicePosition - slicePosition) <= selTolerance
-            if (!onSlice) continue
+            if (!isGrabbable(ctrl, ann)) continue
+            if (!isOnTile(ann, selTile, slicePosition, selTolerance)) continue
             if (Annotation.hitTestAnnotationPolygon(pt2d, ann) !== -1) {
               ctrl.model._annotationSelection = {
                 annotationId: ann.id,
@@ -2137,13 +2397,19 @@ export function initInteraction(ctrl: NiiVue): void {
         ctrl.emit('drawingChanged', { action: 'stroke' })
       }
       // Finalize resize on mouse-up
-      if (ctrl.model.annotation.isEnabled && ctrl._resizingControlPoint >= 0) {
+      if (ctrl._resizingControlPoint >= 0) {
         const sel = ctrl.model._annotationSelection
-        if (sel) {
-          const ann = ctrl._resizingAnnotation
+        const ann = ctrl._resizingAnnotation
+        // A move replaces the polygons: a click on a handle changed nothing
+        // and records no step.
+        if (sel && ann?.polygons !== ctrl._resizeOriginalShape?.polygons) {
           if (ann?.shape) {
-            // The last move already set the polygons and control points.
-            if (Annotation.isMeasureTool(ann.shape.type)) {
+            // The last move already set the polygons and control points (and
+            // a two-line shape's stats, which need its drawing plane).
+            if (
+              Annotation.isMeasureTool(ann.shape.type) &&
+              !Annotation.isTwoLineShape(ann.shape.type)
+            ) {
               const vol = ctrl.model.getVolumes()[0]
               if (vol)
                 ann.stats =
@@ -2163,6 +2429,10 @@ export function initInteraction(ctrl: NiiVue): void {
             })
           }
         }
+        // A grab outside annotation mode leaves nothing selected (no handles
+        // to linger, nothing for Delete to remove).
+        if (!ctrl.model.annotation.isEnabled)
+          ctrl.model._annotationSelection = null
         ctrl._resizingControlPoint = -1
         ctrl._resizeOriginalShape = null
         ctrl._resizeUndoSnapshot = null
@@ -2222,11 +2492,7 @@ export function initInteraction(ctrl: NiiVue): void {
                 commitBidirectional(ctrl, ctrl._bidirectionalLong, drag)
                 ctrl._bidirectionalLong = null
               } else if (cfg.isClickToPlace) {
-                commitBidirectional(
-                  ctrl,
-                  drag,
-                  Annotation.bidirectionalShortAxis(start, pt2d),
-                )
+                commitBidirectional(ctrl, drag, autoShortAxis(ctrl, drag))
               } else {
                 ctrl._bidirectionalLong = drag
               }
@@ -2483,9 +2749,7 @@ export function initInteraction(ctrl: NiiVue): void {
                 ctrl.model._annotationPreview = bidirectionalAnnotation(
                   ctrl,
                   long ?? axis,
-                  long
-                    ? axis
-                    : Annotation.bidirectionalShortAxis(parked.start, end),
+                  long ? axis : autoShortAxis(ctrl, axis, parked),
                   parked,
                 )
               } else
@@ -2640,9 +2904,8 @@ export function initInteraction(ctrl: NiiVue): void {
       }
       return
     }
-    // Annotation resize drag
+    // Annotation resize drag (also isHandleGrab with annotation mode off)
     if (
-      ctrl.model.annotation.isEnabled &&
       ctrl._resizingControlPoint >= 0 &&
       ctrl.activeTileHit &&
       !ctrl.activeTileHit.isRender
@@ -2663,6 +2926,17 @@ export function initInteraction(ctrl: NiiVue): void {
         )
         const ann = ctrl._resizingAnnotation
         if (ann?.shape) {
+          if (Annotation.isTwoLineShape(ann.shape.type)) {
+            resizeTwoLineShape(
+              ctrl,
+              ann,
+              ctrl._resizeOriginalShape,
+              ctrl._resizingControlPoint,
+              pt2d,
+            )
+            ctrl.drawScene()
+            return
+          }
           const newBox = Annotation.updateShapeBounds(
             ann.shape.type,
             ctrl._resizeOriginalShape,
@@ -2788,19 +3062,17 @@ export function initInteraction(ctrl: NiiVue): void {
                   )
                 }
                 for (const ann of ctrl.model.annotations) {
-                  const anchor = ann.anchorMM
-                  const onSlice =
-                    anchor && eraseTile?.planeNormal && eraseTile?.planePoint
-                      ? Annotation.isOnSlice(
-                          anchor,
-                          eraseTile.planeNormal,
-                          eraseTile.planePoint,
-                          eraseTolerance,
-                        )
-                      : Math.abs(
-                          ann.slicePosition - ctrl._annotationSlicePosition,
-                        ) <= eraseTolerance
-                  if (ann.sliceType !== ctrl._annotationSliceType || !onSlice) {
+                  // A shape the host hides is not erased either.
+                  if (
+                    ann.sliceType !== ctrl._annotationSliceType ||
+                    !isOnTile(
+                      ann,
+                      eraseTile,
+                      ctrl._annotationSlicePosition,
+                      eraseTolerance,
+                    ) ||
+                    !isGrabbable(ctrl, ann)
+                  ) {
                     erasePreview.push(ann)
                     continue
                   }

@@ -91,6 +91,17 @@
       "doc": null
     },
     {
+      "jsName": "annotationIsHandleGrab",
+      "pyName": "annotation_is_handle_grab",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isHandleGrab}."
+    },
+    {
       "jsName": "annotationIsVisibleIn3D",
       "pyName": "annotation_is_visible_in_3d",
       "tsType": "boolean",

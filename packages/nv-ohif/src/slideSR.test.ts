@@ -81,6 +81,56 @@ test('slide line and polygon rows write SCOORD3D that loadSR reads back', async 
   ).toEqual(['cut', 'gland'])
 })
 
+// External audit: OHIF's microscopy loadSR pairs the adapter's Nth polyline
+// with the Nth POLYLINE measurement group, so a bidirectional writes one group
+// per axis (codes it reads: G-A185 long, G-A186 short).
+test('a slide bidirectional row writes one measurement group per axis', () => {
+  const ds = buildSlideSR(
+    [
+      {
+        uid: 'niivue-slide-1-3',
+        label: 'node',
+        points: [
+          [0.5, 0.5, 0],
+          [40.5, 0.5, 0],
+          [20.5, -9.5, 0],
+          [20.5, 10.5, 0],
+        ],
+        data: { length: 20, width: 5, unit: 'µm' },
+        metadata: { slideTool: 'bidirectional' },
+      },
+    ],
+    () => sm,
+    {},
+  )
+  const { DicomMessage, DicomMetaDictionary } = dcmjs.data
+  const back = DicomMetaDictionary.naturalizeDataset(
+    DicomMessage.readFile(dcmjs.data.datasetToDict(ds).write()).dict,
+  )
+  const state =
+    dcmjs.adapters.DICOMMicroscopyViewer.MeasurementReport.generateToolState(
+      back,
+    )
+  type Item = {
+    ConceptNameCodeSequence: { CodeValue: string }
+    ContentSequence: Item[]
+    GraphicType?: string
+  }
+  const groups = (back.ContentSequence as Item[]).find(
+    (c) => c.ConceptNameCodeSequence.CodeValue === '126010',
+  )?.ContentSequence as Item[]
+  const codes = (g: Item) =>
+    g.ContentSequence.map((c) => c.ConceptNameCodeSequence.CodeValue)
+  expect(state.Polyline).toHaveLength(2)
+  expect(
+    groups.map((g) => codes(g).filter((c) => c === '111030').length),
+  ).toEqual([1, 1])
+  expect(groups.map((g) => codes(g).find((c) => c.startsWith('G-A')))).toEqual([
+    'G-A185',
+    'G-A186',
+  ])
+})
+
 // Review of #857: a row without slide geometry fails the save, not vanishes.
 test('a slide row without geometry fails the SR build', () => {
   const row = (uid: string) => ({

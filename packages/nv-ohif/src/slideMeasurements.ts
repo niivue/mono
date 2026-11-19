@@ -36,7 +36,9 @@ function slideRowPoints({
 }: Pick<SlideAnnotation, 'tool' | 'points'>): [number, number, number][] {
   const [a, b] = points as [NVSlidePoint, NVSlidePoint]
   let out = points
-  if (tool === 'rectangle' || tool === 'ellipse') {
+  // ArrowAnnotate rows lead with the tip, as cornerstone's (and volume rows).
+  if (tool === 'arrow') out = [b, a]
+  else if (tool === 'rectangle' || tool === 'ellipse') {
     const [x0, x1] = [Math.min(a.x, b.x), Math.max(a.x, b.x)]
     const [y0, y1] = [Math.min(a.y, b.y), Math.max(a.y, b.y)]
     const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2]
@@ -67,6 +69,17 @@ export function slideRowValues({ stats }: Pick<SlideAnnotation, 'stats'>): {
   data: Record<string, number | string>
 } {
   const [unit, k] = stats.unit === 'mm' ? ['µm', 1000] : ['px', 1]
+  if (stats.length !== undefined && stats.shortLength !== undefined) {
+    // As a volume Bidirectional row: length and width.
+    const [length, width] = [stats.length * k, stats.shortLength * k]
+    return {
+      primary: [
+        `L: ${roundNumber(length)} ${unit}`,
+        `W: ${roundNumber(width)} ${unit}`,
+      ],
+      data: { length, width, unit },
+    }
+  }
   if (stats.length !== undefined) {
     const length = stats.length * k
     return {
@@ -188,8 +201,22 @@ export function bindSlideMeasurements(
     // A no-op when the panel removed the row first.
     ms.remove(prefix + a.id)
   }
+  // A drawn arrow asks for its text through OHIF's dialog, as cornerstone's;
+  // an empty save removes it (a dismissed dialog keeps it unlabelled).
+  const askArrowText = ({ detail: a }: CustomEvent<SlideAnnotation>): void => {
+    if (a.tool !== 'arrow' || a.label) return
+    commandsManager?.runCommand?.('arrowTextCallback', {
+      callback: (text: unknown) => {
+        if (typeof text !== 'string') return
+        if (text) annotations.setLabel(a.id, text)
+        else annotations.remove(a.id)
+      },
+      data: { data: { label: '' } },
+    })
+  }
   const listeners = [
     ['added', upsert],
+    ['added', askArrowText],
     ['changed', upsert],
     ['removed', onRemoved],
   ] as const

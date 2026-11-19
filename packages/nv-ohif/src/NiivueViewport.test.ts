@@ -16,6 +16,7 @@ import {
   openingSliceType,
   type Status,
   settleBase,
+  shownSeriesKey,
 } from './NiivueViewport'
 import {
   getNiivueEntry,
@@ -419,4 +420,15 @@ test('a brief note clears after 6 s, unless a newer status replaced it', () => {
   } finally {
     jest.useRealTimers()
   }
+})
+
+// External audit: two NIfTI display sets without series UIDs are different
+// series (a switch re-centres the crosshair); a reload of one is the same.
+test('a reload keeps the crosshair only for the same series or display set', () => {
+  const a = { displaySetInstanceUID: 'a' }
+  const b = { displaySetInstanceUID: 'b' }
+  expect(shownSeriesKey(a)).not.toBe(shownSeriesKey(b))
+  expect(
+    shownSeriesKey({ displaySetInstanceUID: 'c', SeriesInstanceUID: 's' }),
+  ).toBe(shownSeriesKey({ displaySetInstanceUID: 'd', SeriesInstanceUID: 's' }))
 })

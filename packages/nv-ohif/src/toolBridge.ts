@@ -167,6 +167,8 @@ export const SLIDE_UID_PREFIX = 'niivue-slide-'
 /** OHIF measurement tool -> the slide annotation tool it draws with. */
 export const OHIF_TO_SLIDE_TOOL: Record<string, SlideAnnotationTool> = {
   Length: 'line',
+  Bidirectional: 'bidirectional',
+  ArrowAnnotate: 'arrow',
   Probe: 'point',
   RectangleROI: 'rectangle',
   EllipticalROI: 'ellipse',

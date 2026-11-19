@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  dragSlideAnnotationHandle,
   NVSlideAnnotations,
   slideAnnotationOutline,
   slideAnnotationStats,
@@ -186,4 +187,56 @@ describe('NVSlideAnnotations.setPoints', () => {
     a.annotationRedo()
     expect(a.get(id)?.points).toHaveLength(4)
   })
+})
+
+// Slide Bidirectional and ArrowAnnotate (cornerstone parity).
+test('a bidirectional drawn as its long axis gets a short axis and both lengths', () => {
+  const store = new NVSlideAnnotations(() => [0.5, 0.5])
+  const a = store.add('bidirectional', [
+    { x: 0, y: 0 },
+    { x: 30, y: 0 },
+  ])
+  expect(a?.points).toEqual([
+    { x: 0, y: 0 },
+    { x: 30, y: 0 },
+    { x: 15, y: -10 },
+    { x: 15, y: 10 },
+  ])
+  expect(a?.stats).toEqual({ unit: 'mm', length: 15, shortLength: 10 })
+  // A long end swings the axis and carries the short one (as a volume's).
+  const moved = dragSlideAnnotationHandle('bidirectional', a?.points ?? [], 1, {
+    x: 0,
+    y: 30,
+  })
+  expect(moved[2]?.x).toBeCloseTo(10, 9)
+  expect(moved[2]?.y).toBeCloseTo(15, 9)
+  expect(slideAnnotationStats('arrow', moved.slice(0, 2), [1, 1])).toEqual({
+    unit: 'mm',
+  })
+})
+
+// External audit: on non-square pixels the axes are perpendicular in mm, as
+// drawn and after a long-end drag.
+test('a slide bidirectional is perpendicular in mm on unequal spacing', () => {
+  const spacing = [0.002, 0.001] as const
+  const cosMM = (p: { x: number; y: number }[]) => {
+    const [a, b, c, d] = p.map((q) => [q.x * spacing[0], q.y * spacing[1]])
+    const u = [b[0] - a[0], b[1] - a[1]]
+    const v = [d[0] - c[0], d[1] - c[1]]
+    return (u[0] * v[0] + u[1] * v[1]) / Math.hypot(...u) / Math.hypot(...v)
+  }
+  const store = new NVSlideAnnotations(() => spacing)
+  const a = store.add('bidirectional', [
+    { x: 0, y: 0 },
+    { x: 100, y: 100 },
+  ])
+  expect(cosMM(a?.points ?? [])).toBeCloseTo(0, 12)
+  const moved = dragSlideAnnotationHandle(
+    'bidirectional',
+    a?.points ?? [],
+    1,
+    { x: 150, y: 100 },
+    spacing,
+  )
+  expect(cosMM(moved)).toBeCloseTo(0, 12)
 })

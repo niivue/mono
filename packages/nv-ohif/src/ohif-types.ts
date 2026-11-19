@@ -40,6 +40,9 @@ export interface OhifServicesManager {
 }
 export interface OhifExtensionManager {
   getModuleEntry: (id: string) => unknown
+  getActiveDataSource?: () => ReadonlyArray<{
+    getImageIdsForDisplaySet?: (ds: OhifDisplaySet) => string[]
+  }>
 }
 export interface OhifCommandsManager {
   runCommand: (

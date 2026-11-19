@@ -4,12 +4,11 @@ import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideScreen, NVSlideWindow } from './NVSlide'
 import {
   dragSlideAnnotationHandle,
-  isClosedSlideTool,
   NVSlideAnnotations,
   type SlideAnnotation,
   type SlideAnnotationTool,
   slideAnnotationHandles,
-  slideAnnotationOutline,
+  slideAnnotationSegments,
 } from './slideAnnotations'
 import { isRgbSlide } from './slideChannels'
 
@@ -617,16 +616,18 @@ export class NVSlideController {
       .find((a) => {
         // A point tool picks points only, as NiiVue's probe.
         if (tool === 'point' && a.tool !== 'point') return false
-        const ring = slideAnnotationOutline(a.tool, a.points)
-        const closed = isClosedSlideTool(a.tool)
-        return ring.some((q, i) => {
-          const r = ring[i - 1] ?? (closed ? ring.at(-1) : q)
-          const { x, y } = r as NVSlidePoint
-          return (
-            pointToSegmentDistance(p.x, p.y, x, y, q.x, q.y) * scale <=
-            PICK_CSS_PX
-          )
-        })
+        const segments = slideAnnotationSegments(a.tool, a.points)
+        // A point is its own segment.
+        if (!segments.length)
+          segments.push([a.points[0], a.points[0]] as [
+            NVSlidePoint,
+            NVSlidePoint,
+          ])
+        return segments.some(
+          ([r, q]) =>
+            pointToSegmentDistance(p.x, p.y, r.x, r.y, q.x, q.y) * scale <=
+            PICK_CSS_PX,
+        )
       })
   }
 
@@ -697,7 +698,13 @@ export class NVSlideController {
     const from = this._editFrom
     if (from && this.edit && p) {
       const { tool, points } = from.annotation
-      this.edit.points = dragSlideAnnotationHandle(tool, points, from.handle, p)
+      this.edit.points = dragSlideAnnotationHandle(
+        tool,
+        points,
+        from.handle,
+        p,
+        this._options.slide()?.manifest.pixelSpacingMM,
+      )
       this._options.onChange?.()
       return
     }

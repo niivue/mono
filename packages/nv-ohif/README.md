@@ -187,7 +187,11 @@ rotate/flip) are disabled.
 
 ### Overlays
 
-A viewport holds one base series and any number of overlays drawn over it:
+A viewport holds one base series and any number of overlays drawn over it.
+OHIF's data overlay menu works on a NiiVue pane: **+ Foreground** layers a
+co-registered image series with the modality's overlay colormap (hsv by
+default) at 90% opacity, as cornerstone's; **+ Segmentation** hangs a SEG or
+RTSTRUCT.
 
 | Command | Options | Effect |
 |---|---|---|
@@ -382,10 +386,13 @@ Support boundary:
   - A slide with no tiled (VOLUME) pyramid levels.
 
 The slide viewport is core's `createSlideView` (WebGL2): pan, the Zoom tool's
-drag, the wheel, and OHIF's Length, Probe, RectangleROI, EllipticalROI,
-CircleROI, PlanarFreehandROI, SplineROI and LivewireContour tools (core's slide
-overlay; a sub-millimetre length reads with one decimal, "180.0 um"),
-reflected into the Measurements panel.
+drag, the wheel, and OHIF's Length, Bidirectional, ArrowAnnotate, Probe,
+RectangleROI, EllipticalROI, CircleROI, PlanarFreehandROI, SplineROI and
+LivewireContour tools (core's slide overlay; a sub-millimetre length reads with
+one decimal, "180.0 um"), reflected into the Measurements panel. A
+Bidirectional is drawn as its long axis and gets a perpendicular short axis
+(2/3 as long); its row shows length and width. An arrow asks for its text in
+OHIF's dialog. The SR export writes a Bidirectional's two axes.
 `mountWsiSlideView(canvas, slide, options)` returns a Promise of the view handle
 (`setTool`, `resetView`, `zoom`, `fit`, `setWindow`, `saveBitmap`, `dispose`,
 `canvas`).

@@ -14,7 +14,7 @@ export interface SlideRow {
   label?: string
   /** Slide base-level px (x column, y row, 0 at the first pixel's corner), z 0. */
   points: number[][]
-  data?: { length?: number; area?: number; unit?: string }
+  data?: { length?: number; width?: number; area?: number; unit?: string }
   metadata?: { slideTool?: string }
   displaySetInstanceUID?: string
 }
@@ -56,8 +56,11 @@ function graphic(row: SlideRow): { type: string; points: number[][] } {
   const p = row.points
   const tool = row.metadata?.slideTool
   if (tool === 'point') return { type: 'POINT', points: p.slice(0, 1) }
-  if (tool === 'line' || tool === 'freehandLine')
+  if (tool === 'line' || tool === 'freehandLine' || tool === 'arrow')
     return { type: 'POLYLINE', points: p }
+  // The long axis; the short axis follows as a second region (buildSlideSR).
+  if (tool === 'bidirectional')
+    return { type: 'POLYLINE', points: p.slice(0, 2) }
   if (tool === 'circle') {
     const [[cx = 0, cy = 0] = [], [rx = 0] = []] = p
     const r = rx - cx
@@ -124,80 +127,105 @@ export function buildSlideSR(
   const sm0 = placed[0]?.sm
   if (!sm0) return undefined
   const specimen = first(sm0.SpecimenDescriptionSequence)
-  const groups = placed.map(({ row, sm, toFrame }, i) => {
-    const g = graphic(row)
-    const { length, area, unit } = row.data ?? {}
-    const num = (name: Name, value: number, u: Ds) =>
-      item('CONTAINS', 'NUM', name, {
-        MeasuredValueSequence: [{ ...u, NumericValue: value }],
-      })
-    return item(
-      'CONTAINS',
-      'CONTAINER',
-      ['125007', 'DCM', 'Measurement Group'],
+  const um = ucum('um', 'micrometer')
+  // One image region per measurement group, as loadSR pairs them: a
+  // bidirectional is two groups, its long then short axis (codes it reads).
+  const parts = placed.flatMap(({ row, sm, toFrame }) => {
+    const { length, width, area, unit } = row.data ?? {}
+    const isUm = unit === 'µm'
+    if (row.metadata?.slideTool === 'bidirectional')
+      return [
+        [row.points.slice(0, 2), ['G-A185', 'SRT', 'Long Axis'], length],
+        [row.points.slice(2, 4), ['G-A186', 'SRT', 'Short Axis'], width],
+      ].map(([points, name, value]) => ({
+        row,
+        sm,
+        toFrame,
+        region: { type: 'POLYLINE', points: points as number[][] },
+        values:
+          isUm && typeof value === 'number'
+            ? [{ name: name as Name, value, units: um }]
+            : [],
+      }))
+    return [
       {
-        ContinuityOfContent: 'SEPARATE',
-        ContentTemplateSequence: [
-          { MappingResource: 'DCMR', TemplateIdentifier: '1410' },
-        ],
-        ContentSequence: [
-          item(
-            'HAS OBS CONTEXT',
-            'TEXT',
-            ['112039', 'DCM', 'Tracking Identifier'],
-            {
-              TextValue: `ROI #${i + 1}`,
-            },
-          ),
-          item(
-            'HAS OBS CONTEXT',
-            'UIDREF',
-            ['112040', 'DCM', 'Tracking Unique Identifier'],
-            {
-              UID: newUid(),
-            },
-          ),
-          // loadSR reads a row's label back from the finding's code value.
-          ...(row.label
+        row,
+        sm,
+        toFrame,
+        region: graphic(row),
+        values: [
+          ...(isUm && length !== undefined
             ? [
-                item('CONTAINS', 'CODE', ['121071', 'DCM', 'Finding'], {
-                  ConceptCodeSequence: [
-                    code(
-                      row.label,
-                      '@ohif/extension-dicom-microscopy',
-                      'FREETEXT',
-                    ),
-                  ],
-                }),
+                {
+                  name: ['410668003', 'SCT', 'Length'] as Name,
+                  value: length,
+                  units: um,
+                },
               ]
             : []),
-          item('CONTAINS', 'SCOORD3D', ['111030', 'DCM', 'Image Region'], {
-            GraphicType: g.type,
-            GraphicData: g.points.flatMap(toFrame),
-            ReferencedFrameOfReferenceUID: sm.FrameOfReferenceUID,
-          }),
-          ...(unit === 'µm' && length !== undefined
+          ...(isUm && area !== undefined
             ? [
-                num(
-                  ['410668003', 'SCT', 'Length'],
-                  length,
-                  ucum('um', 'micrometer'),
-                ),
-              ]
-            : []),
-          ...(unit === 'µm' && area !== undefined
-            ? [
-                num(
-                  ['42798000', 'SCT', 'Area'],
-                  area,
-                  ucum('um2', 'square micrometer'),
-                ),
+                {
+                  name: ['42798000', 'SCT', 'Area'] as Name,
+                  value: area,
+                  units: ucum('um2', 'square micrometer'),
+                },
               ]
             : []),
         ],
       },
-    )
+    ]
   })
+  const groups = parts.map(({ row, sm, toFrame, region, values }, i) =>
+    item('CONTAINS', 'CONTAINER', ['125007', 'DCM', 'Measurement Group'], {
+      ContinuityOfContent: 'SEPARATE',
+      ContentTemplateSequence: [
+        { MappingResource: 'DCMR', TemplateIdentifier: '1410' },
+      ],
+      ContentSequence: [
+        item(
+          'HAS OBS CONTEXT',
+          'TEXT',
+          ['112039', 'DCM', 'Tracking Identifier'],
+          {
+            TextValue: `ROI #${i + 1}`,
+          },
+        ),
+        item(
+          'HAS OBS CONTEXT',
+          'UIDREF',
+          ['112040', 'DCM', 'Tracking Unique Identifier'],
+          {
+            UID: newUid(),
+          },
+        ),
+        // loadSR reads a row's label back from the finding's code value.
+        ...(row.label
+          ? [
+              item('CONTAINS', 'CODE', ['121071', 'DCM', 'Finding'], {
+                ConceptCodeSequence: [
+                  code(
+                    row.label,
+                    '@ohif/extension-dicom-microscopy',
+                    'FREETEXT',
+                  ),
+                ],
+              }),
+            ]
+          : []),
+        item('CONTAINS', 'SCOORD3D', ['111030', 'DCM', 'Image Region'], {
+          GraphicType: region.type,
+          GraphicData: region.points.flatMap(toFrame),
+          ReferencedFrameOfReferenceUID: sm.FrameOfReferenceUID,
+        }),
+        ...values.map(({ name, value, units }) =>
+          item('CONTAINS', 'NUM', name, {
+            MeasuredValueSequence: [{ ...units, NumericValue: value }],
+          }),
+        ),
+      ],
+    }),
+  )
   const evidence = [...new Set(placed.map((p) => p.sm))]
   const series = [...new Set(evidence.map((e) => e.SeriesInstanceUID))]
   return {

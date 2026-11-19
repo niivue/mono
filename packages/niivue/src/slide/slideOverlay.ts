@@ -15,6 +15,7 @@ import {
   type SlideAnnotationTool,
   slideAnnotationHandles,
   slideAnnotationOutline,
+  slideAnnotationSegments,
   slideAnnotationStats,
 } from './slideAnnotations'
 import type { NVSlideController, NVSlidePoint } from './slideController'
@@ -113,9 +114,11 @@ export function slideAnnotationText(
   const size =
     stats.area !== undefined
       ? formatArea(stats.area, stats.unit)
-      : stats.length !== undefined
-        ? formatLength(stats.length, stats.unit)
-        : ''
+      : stats.shortLength !== undefined && stats.length !== undefined
+        ? `L: ${formatLength(stats.length, stats.unit)} W: ${formatLength(stats.shortLength, stats.unit)}`
+        : stats.length !== undefined
+          ? formatLength(stats.length, stats.unit)
+          : ''
   return [label, size].filter(Boolean).join(' ')
 }
 
@@ -198,6 +201,41 @@ export function slideOverlayContent(
       if (!onScreen(r.sx, r.sy, r.ex, r.ey)) return
       rulers.push(r)
       if (label) labels.push({ x: r.ex + 4 * dpr, y: r.ey, text: label })
+      return
+    }
+    if (tool === 'arrow' || tool === 'bidirectional') {
+      const drawn = segments.length
+      let right = -Infinity
+      let top = Infinity
+      for (const [a, b] of slideAnnotationSegments(tool, points, spacing)) {
+        const [x0, y0] = toDevice(a)
+        const [x1, y1] = toDevice(b)
+        segment(x0, y0, x1, y1)
+        right = Math.max(right, x0, x1)
+        top = Math.min(top, y0, y1)
+        if (tool !== 'arrow') continue
+        // Head at the tip, 10 px barbs at 25 degrees off the shaft.
+        const len = Math.hypot(x1 - x0, y1 - y0)
+        if (len === 0) continue
+        const [ux, uy] = [(x0 - x1) / len, (y0 - y1) / len]
+        const r = 10 * dpr
+        for (const t of [0.436, -0.436]) {
+          const [c, s] = [Math.cos(t), Math.sin(t)]
+          segment(
+            x1,
+            y1,
+            x1 + r * (ux * c - uy * s),
+            y1 + r * (ux * s + uy * c),
+          )
+        }
+      }
+      const text = stats ? slideAnnotationText(label, stats) : label
+      if (text && segments.length > drawn)
+        labels.push({
+          x: Math.min(right, W) + 4 * dpr,
+          y: Math.max(top, 0),
+          text,
+        })
       return
     }
     const outline = slideAnnotationOutline(tool, points).map(toDevice)

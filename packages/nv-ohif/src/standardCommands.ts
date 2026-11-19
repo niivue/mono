@@ -78,6 +78,33 @@ const ZOOM_OUT = 1 / 1.1
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v))
 
+/**
+ * A layer's display options as OHIF's addDisplaySetAsLayer sets them: the
+ * modality's overlay colormap (customizable, default hsv) at 90% opacity; a
+ * SEG none.
+ */
+function layerOptions(
+  servicesManager: OhifExtensionParams['servicesManager'],
+  uid: string,
+): Record<string, unknown> {
+  const services = ohifServices(servicesManager)
+  const ds = (
+    services?.displaySetService as
+      | { getDisplaySetByUID?(uid: string): { Modality?: string } | undefined }
+      | undefined
+  )?.getDisplaySetByUID?.(uid)
+  if (!ds || ds.Modality === 'SEG') return {}
+  const maps = (
+    services?.customizationService as
+      | { getCustomization?(name: string): unknown }
+      | undefined
+  )?.getCustomization?.('cornerstone.modalityOverlayDefaultColorMaps') as
+    | { defaultSettings?: Record<string, { colormap?: string }> }
+    | undefined
+  const name = maps?.defaultSettings?.[ds.Modality ?? '']?.colormap ?? 'hsv'
+  return { colormap: { name, opacity: 0.9 } }
+}
+
 function scale(entry: NiivueViewportEntry, direction: unknown): void {
   const factor =
     direction === 0 ? 0 : Number(direction) > 0 ? ZOOM_IN : ZOOM_OUT
@@ -429,6 +456,12 @@ export function getStandardCommandDefinitions({
           | {
               getActiveViewportId(): string
               getDisplaySetsUIDsForViewport(id: string): string[]
+              getState?(): {
+                viewports?: Map<
+                  string,
+                  { displaySetOptions?: Record<string, unknown>[] }
+                >
+              }
             }
           | undefined
         const viewportId = opts.viewportId ?? grid?.getActiveViewportId()
@@ -442,9 +475,21 @@ export function getStandardCommandDefinitions({
           return commands?.runCommand?.('addDisplaySetAsLayer', opts, 'DEFAULT')
         const uids = grid.getDisplaySetsUIDsForViewport(viewportId) ?? []
         if (typeof uid !== 'string' || uids.includes(uid)) return
+        // Without the grid's state, leave the layers' options to OHIF.
+        const state = grid.getState?.()
+        const kept = state?.viewports?.get(viewportId)?.displaySetOptions ?? []
         commands?.runCommand?.('setDisplaySetsForViewports', {
           viewportsToUpdate: [
-            { viewportId, displaySetInstanceUIDs: [...uids, uid] },
+            {
+              viewportId,
+              displaySetInstanceUIDs: [...uids, uid],
+              ...(state && {
+                displaySetOptions: [
+                  ...uids.map((_, i) => kept[i] ?? {}),
+                  layerOptions(servicesManager, uid),
+                ],
+              }),
+            },
           ],
         })
       },

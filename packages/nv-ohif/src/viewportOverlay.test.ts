@@ -84,3 +84,22 @@ test('a split multi-frame instance counts only its shown frames', () => {
   expect(stackPosition(ds, sf, [0, 0, 0])).toEqual({ index: 1, total: 2 })
   expect(stackPosition(ds, sf, [0, 0, 1])).toEqual({ index: 2, total: 2 })
 })
+
+// Regression (rig petsuv/quant): the segment name above the value must not
+// enter the value element, whose text readers parse as "Value: ...".
+test('the crosshair value element holds only the value', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { createElement } = await import('react')
+  const { CrosshairValueReadout } = await import('./viewportOverlay')
+  const html = renderToStaticMarkup(
+    createElement(CrosshairValueReadout, {
+      value: '1.69',
+      unit: 'SUV',
+      aboveStack: false,
+      segment: 'Lesion',
+    }),
+  )
+  expect(html).toContain(
+    'data-cy="niivue-crosshair-value">Value: 1.69 SUV</div>',
+  )
+})

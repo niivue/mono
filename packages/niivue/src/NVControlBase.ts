@@ -7964,7 +7964,7 @@ export default class NiiVue extends EventTarget {
    * Open a uint8 label image as the drawing over the background (volume 0).
    * A label image on another grid (dims, axis order, flips or origin) loads
    * when every voxel centre lands on a background voxel centre, within
-   * 1e-3 voxel at every voxel; background voxels outside it are 0.
+   * 0.05 voxel at every voxel; background voxels outside it are 0.
    * Rotated, rescaled or sub-voxel-shifted grids are refused (no resampling).
    * A drawing whose header has no spatial transform (qform and sform codes 0)
    * is placed by index, so it must match the background's dims.

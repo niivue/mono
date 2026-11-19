@@ -93,10 +93,12 @@
       let seq = 0
       // What Save downloads: the latest box, whatever the pane shows.
       let saved = null
+      // Assigned once the font loads; a corner picked before then has no Save to grey.
+      let buttons
       // A new or reset box replaces the saved one.
       const dropSaved = () => {
         saved = null
-        buttons.updateButton('save', { enabled: false })
+        buttons?.updateButton('save', { enabled: false })
       }
       // Copy-pane loads run in pick order, so a slow earlier load cannot replace a later box.
       let loading = Promise.resolve()
@@ -170,7 +172,7 @@
       })
 
       // A Clear button on the copy: forget the box and empty the pane.
-      const buttons = new UIKitButtonOverlay(font, { cssUnits: true })
+      buttons = new UIKitButtonOverlay(font, { cssUnits: true })
       copy.registerOverlayRenderer(buttons)
       buttons.attach(copy)
       buttons.addButton({

@@ -495,6 +495,20 @@ describe('startSegDrawing', () => {
     expect(notes).toEqual([['dcm2niix exit 1: incomplete SEG', true]])
   })
 
+  test('noSidecarSegments_rawFrameStack_notedNotDrawn', async () => {
+    const { nv, calls, release } = pane(true)
+    const notes: string[] = []
+    startSegDrawing(nv, segDs, {
+      setNote: (m) => notes.push(m),
+      convert: async () => ({ image: converted.image, json: {} }),
+      whenBase,
+    })
+    release()
+    await settle()
+    expect(calls).toEqual([])
+    expect(notes[0]).toContain('no Segments')
+  })
+
   test('refusedLoad_notes_andCleanupLeavesOtherDrawingsAlone', async () => {
     const { nv, calls, release } = pane(false)
     const notes: string[] = []

@@ -202,15 +202,16 @@ function transferSyntaxOf(
 /**
  * An uncompressed instance's whole pixel data in one request, from its
  * absolute BulkDataURI (IDC's proxy serves a 2674-frame SEG's 88 MB in ~5 s,
- * where per-frame requests take minutes); null when not applicable or not
- * exactly the expected size, so the caller fetches frames instead.
+ * where per-frame requests take minutes). Undefined when not applicable; null
+ * when refused or not the expected size (the server will not serve bulk). The
+ * caller fetches frames instead.
  */
 async function fetchBulkPixels(
   metadata: JsonDataset,
   instanceUrl: string,
   headers: Record<string, string>,
   signal: AbortSignal | undefined,
-): Promise<Uint8Array | null> {
+): Promise<Uint8Array | null | undefined> {
   const uri = (metadata['7FE00010'] as { BulkDataURI?: unknown } | undefined)
     ?.BulkDataURI
   const syntax = firstValue<string>(metadata['00020010'])
@@ -220,7 +221,7 @@ async function fetchBulkPixels(
     !syntax ||
     !UNCOMPRESSED_SYNTAXES.has(syntax)
   )
-    return null
+    return undefined
   const n = (tag: string) => Number(firstValue(metadata[tag])) || 1
   const expected = Math.ceil(
     (n('00280010') *
@@ -249,7 +250,11 @@ async function fetchBulkPixels(
     const buffer = await resp.arrayBuffer()
     const parts = parseMultipartRelated(buffer, contentType)
     const bytes = parts.length === 0 ? new Uint8Array(buffer) : concat(parts)
-    return bytes.length === expected ? bytes : null
+    // An odd-length value is padded to even length (PS3.5 7.1.1).
+    return bytes.length === expected + (expected % 2) ||
+      bytes.length === expected
+      ? bytes
+      : null
   } catch {
     signal?.throwIfAborted()
     return null
@@ -439,8 +444,8 @@ export async function reconstructInstanceFiles(
     const bulk =
       canBulk &&
       (await limit(() => fetchBulkPixels(metadata, inst.url, headers, signal)))
-    if (!bulk) canBulk = false
-    else {
+    if (bulk === null) canBulk = false
+    if (bulk) {
       progress(count)
       // DICOMweb serves uncompressed bulk data little endian (PS3.18 8.7.3.3),
       // whatever the stored syntax.

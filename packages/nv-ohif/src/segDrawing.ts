@@ -195,6 +195,14 @@ export function startSegDrawing(
     ])
     if (!converted || !hasBase || cancelled || nv.drawingGeneration !== atStart)
       return
+    // A dcm2niix without SEG support writes the raw frame stack, no Segments:
+    // as a drawing that is one label smeared over the first slices.
+    if (!Array.isArray(converted.json?.Segments)) {
+      options.setNote(
+        'This dcm2niix could not decode the segmentation (no Segments).',
+      )
+      return
+    }
     const load = nv.loadDrawing(converted.image)
     pending = nv.drawingGeneration
     const isShown = await load

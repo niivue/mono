@@ -84,6 +84,7 @@ export async function idcS3Files(
   } = {},
 ): Promise<File[] | null> {
   const { signal, concurrency = 8, onProgress } = options
+  signal?.throwIfAborted()
   // Its own abort, linked to the caller's: on the first failed GET the finally
   // cancels its siblings before the caller falls back, without aborting that
   // fallback.

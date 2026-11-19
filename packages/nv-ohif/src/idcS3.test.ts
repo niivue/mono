@@ -73,3 +73,11 @@ test('a failed S3 object stops further S3 downloads', async () => {
     urls.filter((u) => u.endsWith('.dcm')).map((u) => u.slice(-5)),
   ).toEqual(['a.dcm', 'b.dcm'])
 })
+
+test('an already aborted signal sends no request', async () => {
+  const urls = serve(2)
+  const ac = new AbortController()
+  ac.abort()
+  await expect(idcS3Files('1.2.3', 2, { signal: ac.signal })).rejects.toThrow()
+  expect(urls).toEqual([])
+})

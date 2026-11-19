@@ -260,6 +260,17 @@ describe('updateShapeBounds', () => {
     near(r.end2, 10, -2)
   })
 
+  test('a skewed short axis stops where it crosses the long axis end', () => {
+    // Crossing at x = 4.8; dragging start2 to (12, 3) would move it to 11.2.
+    const skewed = { ...bidi, start2: { x: 4, y: 3 }, end2: { x: 6, y: -2 } }
+    const r = updateShapeBounds('measureBidirectional', skewed, 2, {
+      x: 12,
+      y: 3,
+    })
+    near(r.start2, 8.8, 3)
+    near(r.end2, 10.8, -2)
+  })
+
   test('a skewed short axis keeps its skew when the long axis moves', () => {
     const skewed = { ...bidi, start2: { x: 4, y: -3 }, end2: { x: 6, y: 3 } }
     const r = updateShapeBounds('measureBidirectional', skewed, 0, {

@@ -230,15 +230,20 @@ function _updateBidirectional(
   else if (idx === 1) e = pos
   else {
     // The dragged end follows the pointer and the other slides along with it,
-    // clamped so the axes still cross: not past a long-axis end, and the
-    // dragged end not across the long axis to the other end's side.
-    const dt = Math.min(1, Math.max(0, frac(pos))) - (idx === 2 ? t1 : t2)
+    // clamped so the axes still cross: the dragged end not across the long
+    // axis to the other end's side, and the crossing (not the dragged end,
+    // which a skewed short axis offsets) not past a long-axis end.
+    const dt = frac(pos) - (idx === 2 ? t1 : t2)
     t1 += dt
     t2 += dt
     const keepSide = (d: number, was: number) =>
       was < 0 ? Math.min(0, d) : Math.max(0, d)
     if (idx === 2) d1 = keepSide(across(pos), d1)
     else d2 = keepSide(across(pos), d2)
+    const cross = d1 === d2 ? t1 : t1 + ((t2 - t1) * d1) / (d1 - d2)
+    const shift = Math.min(1, Math.max(0, cross)) - cross
+    t1 += shift
+    t2 += shift
   }
   const g = frame(s, e)
   const at = (t: number, d: number) => ({

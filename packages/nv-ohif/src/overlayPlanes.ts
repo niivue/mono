@@ -24,6 +24,11 @@ const pending = new WeakMap<NiiVue, number>()
 // until the last releases.
 const holds = new WeakMap<NiiVue, number>()
 const held = (nv: NiiVue) => (holds.get(nv) ?? 0) > 0
+// The SEG/RTSTRUCT holds among them: those own the drawing, even while loading.
+const ownerHolds = new WeakMap<NiiVue, number>()
+
+/** Whether a SEG or RTSTRUCT shows, or is loading, `nv`'s drawing. */
+export const drawingOwned = (nv: NiiVue) => (ownerHolds.get(nv) ?? 0) > 0
 // The frame each pane's plane drawing was loaded for.
 const shownFrame = new WeakMap<NiiVue, number>()
 const listening = new WeakSet<NiiVue>()
@@ -78,16 +83,19 @@ function closeOwn(nv: NiiVue): void {
 
 /**
  * Give `nv`'s drawing to a SEG/RT: drops the plane synchronously, before the
- * SEG reads drawingGeneration. The release shows the planes again.
+ * SEG reads drawingGeneration. The release shows the planes again. A PT label
+ * passes `owner` false: it gives way to a SEG/RT (drawingOwned).
  */
-export function holdOverlayPlanes(nv: NiiVue): () => void {
+export function holdOverlayPlanes(nv: NiiVue, owner = true): () => void {
   holds.set(nv, (holds.get(nv) ?? 0) + 1)
+  if (owner) ownerHolds.set(nv, (ownerHolds.get(nv) ?? 0) + 1)
   closeOwn(nv)
   let released = false
   return () => {
     if (released) return
     released = true
     holds.set(nv, (holds.get(nv) ?? 1) - 1)
+    if (owner) ownerHolds.set(nv, (ownerHolds.get(nv) ?? 1) - 1)
     if (held(nv)) return
     const p = planes.get(nv)
     if (p) void refreshOverlayPlanes(nv, p.em, p.toolGroupId)

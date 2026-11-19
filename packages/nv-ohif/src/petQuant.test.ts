@@ -7,7 +7,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { setOverlayPlanes } from './overlayPlanes'
+import { holdOverlayPlanes, setOverlayPlanes } from './overlayPlanes'
 import {
   armBrush,
   getQuantCommandDefinitions,
@@ -427,4 +427,55 @@ it('a PT label leaves a SEG drawing alone', async () => {
   expect(seg.img[0]).toBe(7)
   resetQuant()
   unregisterNiivue('segpt')
+})
+
+// Review of #866: an unlabelled PT base hid the label of a PT overlay.
+it('a labelled PT overlay keeps its label under an unlabelled PT base', async () => {
+  const one = new NiiVue({ backend: 'webgl2' })
+  const mix = new NiiVue({ backend: 'webgl2' })
+  one.drawScene = mix.drawScene = () => {}
+  await one.loadVolumes([{ url: nifti() }])
+  await mix.loadVolumes([{ url: nifti(3, 'b.nii') }, { url: nifti() }])
+  registerNiivue('one', one)
+  registerNiivue('mix', mix)
+  const pt = (uid: string) => ({ displaySetInstanceUID: uid, Modality: 'PT' })
+  updateNiivueViewport('one', { displaySets: [pt('a')] as never })
+  updateNiivueViewport('mix', {
+    displaySets: [pt('b')] as never,
+    overlays: new Map([['a', mix.volumes[1]?.hdr]]) as never,
+  })
+  const services = {
+    services: {
+      displaySetService: { getDisplaySetByUID: pt },
+      viewportGridService: { getActiveViewportId: () => 'one' },
+    },
+  } as never
+  expect(armBrush('one', 'CircularBrush', services, () => 5)).toBe(true)
+  showPaneLabel(getNiivueEntry('mix') as never, services)
+  expect(mix.drawingVolume).toBeTruthy()
+  resetQuant()
+  unregisterNiivue('one')
+  unregisterNiivue('mix')
+})
+
+// Codex 866-r5: a label drawing made while a SEG converted cancelled its load.
+it('a PT label waits out a SEG still loading', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti() }])
+  registerNiivue('segload', nv)
+  updateNiivueViewport('segload', {
+    displaySets: [{ displaySetInstanceUID: 'pt', Modality: 'PT' } as never],
+  })
+  const services = {
+    services: { viewportGridService: { getActiveViewportId: () => 'segload' } },
+  } as never
+  const release = holdOverlayPlanes(nv) // useSegDrawing's hold, conversion pending
+  const generation = nv.drawingGeneration
+  expect(armBrush('segload', 'CircularBrush', services, () => 5)).toBe(false)
+  expect(nv.drawingGeneration).toBe(generation)
+  expect(nv.drawingVolume).toBeFalsy()
+  release()
+  resetQuant()
+  unregisterNiivue('segload')
 })

@@ -120,6 +120,19 @@ describe('NVSlideAnnotations.setPoints', () => {
     expect(a.annotationUndoTop).toBeUndefined()
     expect(a.get(r?.id ?? '')?.points).toHaveLength(2)
   })
+  // Holistic review H6: a line with 3 points measured one length, drew another.
+  test('fixed-count tools take exactly their points', () => {
+    const a = new NVSlideAnnotations(spacing)
+    const three = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ]
+    expect(a.add('line', three)).toBeNull()
+    const id = a.add('line', three.slice(0, 2))?.id ?? ''
+    expect(a.setPoints(id, three)).toBe(false)
+    expect(a.add('freehandLine', three)).not.toBeNull()
+  })
   test('a history listener that removes it gets no change', () => {
     const a = new NVSlideAnnotations(spacing)
     const id =
@@ -157,5 +170,20 @@ describe('NVSlideAnnotations.setPoints', () => {
     a.addEventListener('annotationHistoryPush', () => a.remove(gone))
     expect(a.setPoints(gone, box)).toBe(false)
     expect(a.annotationRedoTop).toBe(redo)
+  })
+
+  test('undo reverts an edit that only appends a vertex', () => {
+    const a = new NVSlideAnnotations(spacing)
+    const tri = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 4 },
+    ]
+    const id = a.add('polygon', tri)?.id ?? ''
+    a.setPoints(id, [...tri, { x: 4, y: 4 }])
+    a.annotationUndo()
+    expect(a.get(id)?.points).toEqual(tri)
+    a.annotationRedo()
+    expect(a.get(id)?.points).toHaveLength(4)
   })
 })

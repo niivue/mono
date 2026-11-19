@@ -1014,7 +1014,7 @@ export default class NVGlview {
               : md.getSliceTexFrac(sliceDim)
           const sliceMd = {
             overlayAlphaShader: md.volume.alphaShader,
-            overlayOutlineWidth: md.volume.outlineWidth,
+            overlayOutlineWidth: md.overlayOutlineWidth(),
             isAlphaClipDark: md.volume.isAlphaClipDark,
             isColormapAlphaOn2D: md.volume.isColormapAlphaOn2D,
             drawRimOpacity: md.draw.rimOpacity,

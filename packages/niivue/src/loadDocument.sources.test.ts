@@ -299,6 +299,7 @@ test('restore keeps every saved display field of a streamed volume', async () =>
   })
   await nv.setVolume(0, {
     isColormapInverted: true,
+    isColormapAlphaKept: true,
     colormapType: 1,
     isLegendVisible: false,
     visible: false,
@@ -311,10 +312,11 @@ test('restore keeps every saved display field of a streamed volume', async () =>
   const v = back.volumes[0]
   expect([
     v.isColormapInverted,
+    v.isColormapAlphaKept,
     v.colormapType,
     v.isLegendVisible,
     v.visible,
-  ]).toEqual([true, 1, false, false])
+  ]).toEqual([true, true, 1, false, false])
 })
 
 test('loadVolumes supersedes a document still restoring', async () => {

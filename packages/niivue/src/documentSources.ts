@@ -217,6 +217,7 @@ const DISPLAY_FIELDS = [
   'isColormapInverted',
   'isNearestInterpolation',
   'atlasOutline',
+  'isColormapAlphaKept',
   'hiddenLabels',
   'selectedLabels',
   'visible',

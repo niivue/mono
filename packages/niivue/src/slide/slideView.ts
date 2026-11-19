@@ -55,8 +55,10 @@ export interface SlideViewOptions extends SlideRendererOptions {
   slide?: NVSlide | null
   /** Gestures (`NVSlideController`); false attaches none. */
   controller?: Omit<NVSlideControllerOptions, 'slide' | 'screen'> | false
-  /** Draw the controller's rulers and boxes (core's overlay). Default true;
-   * false for a host drawing its own (UIKit ruler) from the controller state. */
+  /** Draw the controller's rulers, boxes and annotations (core's overlay).
+   * Default true; false for a host drawing its own (UIKit ruler) from the
+   * controller state. A scale bar (`overlayStyle.isRulerVisible`) is drawn
+   * either way. */
   controllerOverlay?: boolean
   /** Ruler, scale bar and selection-box style for the controller's overlay. */
   overlayStyle?: Partial<SlideOverlayStyle>
@@ -78,7 +80,7 @@ export interface SlideView {
   overlayStyle: Partial<SlideOverlayStyle>
   /**
    * Show `slide` (null: none), releasing the previous one and clearing the
-   * controller's annotations; fits it unless `fit` is false.
+   * controller's annotations and rulers; fits it unless `fit` is false.
    */
   setSlide(slide: NVSlide | null, opts?: { fit?: boolean }): void
   /** Fit the slide on the next sized frame, and again on resizes until the view moves. */
@@ -307,9 +309,10 @@ export async function createSlideViewWith(
         return
       }
       if (next === slide) return
-      // Annotations are in the old slide's base pixels: they go with it.
+      // Annotations and rulers are in the old slide's base pixels: they go with it.
       controller?.cancelGesture()
       controller?.annotations.clear()
+      controller?.clearMeasurements()
       slide?.removeEventListener('change', requestRender)
       slide?.dispose()
       renderer.clearTextures()

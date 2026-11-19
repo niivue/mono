@@ -19,10 +19,12 @@ import {
   DziSource,
   drawingBitmapToRGBA,
   formatSlideSample,
+  isClosedSlideTool,
   lookupColorMap,
   NVSlide,
   SlideDrawing,
   SlideVectorLayer,
+  slideAnnotationOutline,
   slideStatsSummary,
 } from '../src/index.ts'
 import { backendFromUrl, isAntiAlias } from './displayControls.js'
@@ -271,8 +273,34 @@ function afterRender(screen) {
 // pen drawing is not exportable as SVG). Disable the button otherwise so clicking
 // it isn't a silent no-op that looks broken mid-demo. Cheap to re-evaluate per
 // frame; the state tracks add/undo/clear/source-switch without extra wiring.
+// The vector shapes plus the measure annotations' outlines.
+function exportShapes() {
+  const measured = (view?.controller.annotations.list() ?? []).map((a) => {
+    const points = slideAnnotationOutline(a.tool, a.points).map((q) => [
+      q.x,
+      q.y,
+    ])
+    // A one-point polyline draws nothing: a point exports as a small square.
+    const [x, y] = points[0] ?? [0, 0]
+    const marker = [
+      [x - 4, y - 4],
+      [x + 4, y - 4],
+      [x + 4, y + 4],
+      [x - 4, y + 4],
+    ]
+    const point = points.length === 1
+    return {
+      kind: point || isClosedSlideTool(a.tool) ? 'polygon' : 'polyline',
+      points: point ? marker : points,
+      color: '#ffd400',
+      strokeWidth: 2,
+    }
+  })
+  return [...(vector?.shapes ?? []), ...measured]
+}
+
 function updateExportEnabled() {
-  els.exportSvg.disabled = !slide || !vector || vector.shapes.length === 0
+  els.exportSvg.disabled = !slide || exportShapes().length === 0
 }
 
 // Build (or rebuild) the slide-space drawing raster for the active slide.
@@ -721,7 +749,14 @@ els.penValue.addEventListener('change', () => {
   penValue = Number(els.penValue.value) || 1
 })
 els.drawUndo.addEventListener('click', () => {
-  // Vector tool undoes the last polygon; other tools undo the raster.
+  // A measure tool removes the last measurement, the vector tool the last
+  // polygon; other tools undo the raster.
+  const annotations = view?.controller.annotations
+  if (view?.controller.annotationTool && annotations) {
+    const last = annotations.list().at(-1)
+    if (last && annotations.remove(last.id)) requestRender()
+    return
+  }
   if (drawTool === 'vector') {
     if (vector?.removeLast()) requestRender()
     return
@@ -734,12 +769,16 @@ els.drawUndo.addEventListener('click', () => {
 els.drawClear.addEventListener('click', () => {
   drawing?.clear()
   vector?.clear()
+  view?.controller.annotations.clear()
   overlayDirty = true
   requestRender()
 })
 els.exportSvg.addEventListener('click', () => {
-  if (!slide || !vector || vector.shapes.length === 0) return
-  const svg = vector.toSVG(slide.manifest.width, slide.manifest.height)
+  const shapes = exportShapes()
+  if (!slide || shapes.length === 0) return
+  const layer = new SlideVectorLayer()
+  for (const s of shapes) layer.add(s)
+  const svg = layer.toSVG(slide.manifest.width, slide.manifest.height)
   const blob = new Blob([svg], { type: 'image/svg+xml' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

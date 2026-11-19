@@ -2542,7 +2542,7 @@
         }
       ],
       "returns": "boolean",
-      "doc": "Fill a shape in the drawing with `drawPenValue` as one undo step, honouring\n`drawIsFillOverwriting`. World-mm geometry, as from a drag:\n`PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the\nedge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`\ntakes opposite corners. A circle or rectangle lies in the `sliceType` plane\nthrough `startMm`. Emits `drawingChanged` (`update`); false without a\ndrawing.",
+      "doc": "Fill a shape in the drawing with `drawPenValue` as one undo step, honouring\n`drawIsFillOverwriting`. World-mm geometry, as from a drag:\n`PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the\nedge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`\ntakes opposite corners. A circle or rectangle lies in the `sliceType` plane\nthrough `startMm` (axial for a multiplanar or render `sliceType`). Emits\n`drawingChanged` (`update`); false without a drawing.",
       "returnsDoc": null
     },
     {

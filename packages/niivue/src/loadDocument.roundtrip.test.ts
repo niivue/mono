@@ -672,6 +672,23 @@ test('volumeCinematic merges and survives a document round trip', async () => {
   })
 })
 
+test('isColormapAlphaKept survives embedded and linked document round-trips', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadVolumes([{ url: SPHERE }])
+  await nv.setVolume(0, { isColormapAlphaKept: true })
+  const nvA = new NiiVue({ backend: 'webgl2' })
+  await nvA.loadDocument(documentFile(nv.serializeDocument(), 'kept.nvd'))
+  const nvB = new NiiVue({ backend: 'webgl2' })
+  await nvB.loadDocument(
+    documentFile(
+      nv.serializeDocument({ format: 'json', linkData: true }),
+      'kept.json',
+    ),
+  )
+  expect(nvA.volumes[0]?.isColormapAlphaKept).toBe(true)
+  expect(nvB.volumes[0]?.isColormapAlphaKept).toBe(true)
+})
+
 test('2D rotate and flip survive a document round-trip', async () => {
   const nv = new NiiVue({ rotation2D: 270, isFlipped2DVertical: true })
   const nv2 = new NiiVue({ isFlipped2DHorizontal: true })

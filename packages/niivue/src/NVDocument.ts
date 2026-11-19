@@ -122,6 +122,7 @@ export type NVDocumentVolume = {
   isColormapInverted?: boolean
   isNearestInterpolation?: boolean
   atlasOutline?: number
+  isColormapAlphaKept?: boolean
   /** Hidden label values; written only when non-empty. Additive, no version
    * bump: an older reader just shows every label. */
   hiddenLabels?: number[]
@@ -448,6 +449,7 @@ export function serialize(
         isColormapInverted: v.isColormapInverted,
         isNearestInterpolation: v.isNearestInterpolation,
         atlasOutline: v.atlasOutline,
+        isColormapAlphaKept: v.isColormapAlphaKept,
         opacity: v.opacity,
         calMin: v.calMin,
         calMax: v.calMax,
@@ -1037,6 +1039,8 @@ export async function reconstructVolume(
       if (v.isNearestInterpolation !== undefined)
         base.isNearestInterpolation = v.isNearestInterpolation
       if (v.atlasOutline !== undefined) base.atlasOutline = v.atlasOutline
+      if (v.isColormapAlphaKept !== undefined)
+        base.isColormapAlphaKept = v.isColormapAlphaKept
       if (v.hiddenLabels !== undefined) base.hiddenLabels = v.hiddenLabels
       if (v.selectedLabels !== undefined) base.selectedLabels = v.selectedLabels
       if (v.opacity !== undefined) base.opacity = v.opacity

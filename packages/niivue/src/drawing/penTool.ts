@@ -146,7 +146,7 @@ export interface DrawShapeFillParams {
   // edge. Rectangle: opposite corners, in the plane through a.
   a: ArrayLike<number>
   b: ArrayLike<number>
-  // Plane of a circle or rectangle (PEN_SLICE_TYPE); ignored by a sphere.
+  // Plane of a circle or rectangle (PEN_SLICE_TYPE, else axial); ignored by a sphere.
   sliceType: number
   penValue: number
   drawBitmap: Uint8Array
@@ -162,7 +162,8 @@ export interface DrawShapeFillParams {
  */
 export function drawShapeFill(p: DrawShapeFillParams): number {
   const a = [Math.round(p.a[0]), Math.round(p.a[1]), Math.round(p.a[2])]
-  const normal = 2 - p.sliceType // axial -> z, coronal -> y, sagittal -> x
+  // axial -> z, coronal -> y, sagittal -> x; multiplanar or render -> axial
+  const normal = p.sliceType >= 0 && p.sliceType <= 2 ? 2 - p.sliceType : 2
   if (p.shape === PEN_SHAPE.RECTANGLE) {
     const lo = [0, 0, 0]
     const hi = [0, 0, 0]

@@ -995,7 +995,8 @@ export default class NiiVue extends EventTarget {
   /**
    * Transient world-space box outlined as 12 edges on the 3D render view (e.g. a
    * focused subvolume). `min`/`max` are in the scene's world-mm space. Set null
-   * to clear. Not serialized.
+   * to clear. Not serialized. One box, last writer wins: UIKit's subvolume
+   * selector and nv-mcp `set_boxes` both set it.
    */
   get focusBox(): FocusBox | null {
     return this.model._focusBox
@@ -2228,6 +2229,8 @@ export default class NiiVue extends EventTarget {
     return this.view?.cinematicRenderer.frameMs ?? null
   }
 
+  /** Black outline around 2D overlay voxels above threshold (0 = off). Not
+   * drawn while an overlay has `isColormapAlphaKept`. */
   get volumeOutlineWidth(): number {
     return this.model.volume.outlineWidth
   }
@@ -7797,8 +7800,8 @@ export default class NiiVue extends EventTarget {
    * `PEN_SHAPE.CIRCLE` and `PEN_SHAPE.SPHERE` take the centre and a point on the
    * edge (radius in mm, round on anisotropic voxels); `PEN_SHAPE.RECTANGLE`
    * takes opposite corners. A circle or rectangle lies in the `sliceType` plane
-   * through `startMm`. Emits `drawingChanged` (`update`); false without a
-   * drawing.
+   * through `startMm` (axial for a multiplanar or render `sliceType`). Emits
+   * `drawingChanged` (`update`); false without a drawing.
    * @example nv1.drawShapeFill(PEN_SHAPE.SPHERE, [0, 0, 0], [0, 0, 20])
    */
   drawShapeFill(

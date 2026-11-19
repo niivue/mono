@@ -6,6 +6,7 @@
  */
 
 import { MAX_BOXES, MAX_PLANE_OUTLINES } from '../limits'
+import { PEN_SHAPES } from '../settings'
 import { nameFor, SLICE_TYPES, SLIDE_ANNOTATION_TOOLS } from '../views'
 import {
   choice,
@@ -39,8 +40,6 @@ const DRAWING_ACTIONS = [
   'svg',
   'fill',
 ] as const
-// NiiVue's PEN_SHAPE values.
-const FILL_SHAPES = { rectangle: 0, circle: 1, sphere: 2 } as const
 const ANNOTATION_ACTIONS = [
   'add',
   'remove',
@@ -242,10 +241,10 @@ export function markHandlers(host: NiiVueHost): Handlers {
           break
         case 'fill': {
           if (!view.drawShapeFill) throw missing()
-          const shape = choice(params, 'shape', Object.keys(FILL_SHAPES))
+          const shape = choice(params, 'shape', Object.keys(PEN_SHAPES))
           if (!shape)
             throw new Error(
-              `Filling needs a shape: one of ${Object.keys(FILL_SHAPES).join(', ')}.`,
+              `Filling needs a shape: one of ${Object.keys(PEN_SHAPES).join(', ')}.`,
             )
           const plane = sliceType(params, 'slice') ?? SLICE_TYPES.axial
           if (plane > SLICE_TYPES.sagittal)
@@ -253,7 +252,7 @@ export function markHandlers(host: NiiVueHost): Handlers {
               'A fill lies in an axial, coronal or sagittal slice.',
             )
           const filled = view.drawShapeFill(
-            FILL_SHAPES[shape as keyof typeof FILL_SHAPES],
+            PEN_SHAPES[shape as keyof typeof PEN_SHAPES],
             point(params, 'start_mm'),
             point(params, 'end_mm'),
             plane,
@@ -521,7 +520,7 @@ export function markHandlers(host: NiiVueHost): Handlers {
               `Adding needs tool: one of ${SLIDE_ANNOTATION_TOOLS.join(', ')}.`,
             )
           const made = store.add(tool, slidePoints(params), label)
-          if (!made) throw new Error(`Too few points for a ${tool}.`)
+          if (!made) throw new Error(`Wrong number of points for a ${tool}.`)
           out.annotation = describeSlideAnnotation(made, false)
           break
         }

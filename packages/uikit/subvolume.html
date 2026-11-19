@@ -93,7 +93,7 @@
       let seq = 0
       // What Save downloads: the latest box, whatever the pane shows.
       let saved = null
-      // Assigned once the font loads; a corner picked before then has no Save to grey.
+      // Assigned once the font loads; a brick-grid change before then has no Save to grey.
       let buttons
       // A new or reset box replaces the saved one.
       const dropSaved = () => {
@@ -136,7 +136,6 @@
           setStatus(`${x}x${y}x${z} voxels from [${sel.voxelOrigin.join(', ')}]${z === 1 || y === 1 || x === 1 ? ': right-click another slice view to set the depth' : ''}`, 'ok')
         },
       })
-      selector.attach(nv)
 
       const font = await loadDefaultFont()
       // How-to text on the copy pane while it is empty, laid out per frame size.
@@ -191,6 +190,8 @@
         id: 'save', label: 'Save', x: 12 + buttons.getLayout('clear').width + 8, y: 12, enabled: false,
         onClick: () => download(new Blob([saved.nifti]), saved.name),
       })
+      // Picks start once the buttons exist: onSelect enables Clear and Save.
+      selector.attach(nv)
       nv.registerOverlayRenderer(selector)
     </script>
   </body>

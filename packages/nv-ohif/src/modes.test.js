@@ -32,9 +32,6 @@ mock.module('@ohif/mode-basic', () => ({
     toolbarService.register(toolbarButtons),
   sopClassHandlers: [],
 }))
-mock.module('@ohif/mode-segmentation', () => ({
-  modeInstance: { toolbarButtons: [], toolbarSections: [] },
-}))
 mock.module('@ohif/mode-tmtv', () => ({ initToolGroups: () => {} }))
 mock.module('@ohif/mode-preclinical-4d/src/initToolGroups', () => ({
   default: () => {},
@@ -43,14 +40,14 @@ mock.module('@ohif/mode-preclinical-4d/src/toolbarButtons', () => ({
   default: [],
 }))
 const { default: dynamic } = await import('./modes/dynamic.js')
-const { default: segmentation } = await import('./modes/segmentation.js')
+const { default: viewer } = await import('./modes/viewer.js')
 const { default: tmtv } = await import('./modes/tmtv.js')
 
-test('segmentation mode does not inherit the basic read-only panel', () => {
-  const { modeCustomizations } = segmentation.modeInstance
+test('the viewer mode does not inherit the basic read-only panel', () => {
+  const { modeCustomizations } = viewer.modeInstance
   const block =
     typeof modeCustomizations === 'string'
-      ? segmentation.customizations[modeCustomizations]
+      ? viewer.customizations[modeCustomizations]
       : modeCustomizations
   expect(block['panelSegmentation.disableEditing']).toBe(false)
 })

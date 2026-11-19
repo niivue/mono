@@ -1327,7 +1327,11 @@ export function jumpToNiivueMeasurement(
   }
   if (!target) target = annotation.anchorMM
   if (target) entry.nv.setCrosshairPos(target)
-  entry.nv.selectAnnotation(annotation.id)
+  // A row hidden in the panel jumps but leaves nothing selected (no floating
+  // handles, no Delete target).
+  entry.nv.selectAnnotation(
+    isAnnotationShown(ref.viewportId, annotation.id) ? annotation.id : null,
+  )
 }
 
 /**
@@ -1377,6 +1381,11 @@ function clearHiddenAnnotation(viewportId: string, annotationId: string): void {
   if (set.size === 0) hiddenAnnotations.delete(viewportId)
 }
 
+/** False for an annotation hidden by its measurement's panel eye toggle. */
+export function isAnnotationShown(viewportId: string, annotationId: string) {
+  return !hiddenAnnotations.get(viewportId)?.has(annotationId)
+}
+
 /**
  * The overlay shape provider: `nv.annotationScreenShapes` minus any annotation
  * hidden via its OHIF measurement's visibility toggle. Core still projects every
@@ -1416,7 +1425,11 @@ export function applyOhifVisibilityToAnnotation(
     target.add(ref.annotationId)
     hiddenAnnotations.set(ref.viewportId, target)
   }
-  getNiivueEntry(ref.viewportId)?.nv.drawScene()
+  const nv = getNiivueEntry(ref.viewportId)?.nv
+  // A hidden shape keeps no handles (nor a Delete target).
+  if (!isVisible && nv?.selectedAnnotation === ref.annotationId)
+    nv.selectAnnotation(null)
+  nv?.drawScene()
 }
 
 /**

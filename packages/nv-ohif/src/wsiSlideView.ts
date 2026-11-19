@@ -30,8 +30,8 @@ export interface WsiSlideView {
   dispose(): void
 }
 
-// Annotations in the old UIKit ruler's yellow.
-const RULER_COLOR: [number, number, number, number] = [1, 0.85, 0, 1]
+// Annotations in the old UIKit ruler's yellow, on slides and volumes alike.
+export const RULER_COLOR: [number, number, number, number] = [1, 0.85, 0, 1]
 
 // Zoom and WindowLevel run on every button but right; any other tool pans
 // (an annotation tool takes the left button over this).

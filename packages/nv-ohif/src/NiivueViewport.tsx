@@ -33,6 +33,7 @@ import {
   dicomWindow,
   initialRenderView,
   initialSliceType,
+  isAnnotationShown,
   NIIVUE_SLICE_TYPES,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
@@ -116,7 +117,11 @@ import { joinSyncGroups } from './viewportSync'
 import { VolumeAnnotationOverlay } from './volumeAnnotationOverlay'
 import { displayPresetColormap } from './vrPresets'
 import { wsiFetch, wsiRetrieveBulkData, wsiSeriesSlide } from './wsiSeries'
-import { mountWsiSlideView, type WsiSlideView } from './wsiSlideView'
+import {
+  mountWsiSlideView,
+  RULER_COLOR,
+  type WsiSlideView,
+} from './wsiSlideView'
 
 const viewName = (sliceType: number | undefined) =>
   Object.keys(NIIVUE_SLICE_TYPES).find(
@@ -146,6 +151,15 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationIsDrawnFromCenter: true,
   // ROI area as cornerstone reports it: the outline's, not a voxel count.
   annotationAreaIsGeometric: true,
+  // Cornerstone's handles: a press on any measurement's handle drags it,
+  // whatever the tool, with no selecting click first.
+  annotationIsHandleGrab: true,
+  // Yellow outlines without fill, as slide measurements and cornerstone's.
+  annotationStyle: {
+    fillColor: [0, 0, 0, 0],
+    strokeColor: RULER_COLOR,
+    strokeWidth: 2,
+  },
 }
 
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
@@ -557,6 +571,8 @@ export function NiivueViewport(props: OhifViewportProps) {
             ),
           )
           unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
+          // A measurement hidden in the panel cannot be grabbed either.
+          nv.annotationIsGrabbable = (a) => isAnnotationShown(viewportId, a.id)
           nv.isAnnotationDrawn = false
           // A lens already up must stay above the annotations it magnifies.
           magnifyRef.current?.raise()

@@ -51,7 +51,7 @@ viewport from a mode. The extension id is `@niivue/nv-ohif`; the viewport name i
 
 ## Enable the NiiVue modes
 
-nv-ohif ships five OHIF modes, one subpath export each. In an OHIF app, add
+nv-ohif ships three OHIF modes, one subpath export each. In an OHIF app, add
 `@niivue/nv-ohif` and `@niivue/niivue` to the root `package.json`
 dependencies. Then merge the following into `platform/app/pluginConfig.json`,
 with the extension placed after `@ohif/extension-cornerstone`:
@@ -61,8 +61,6 @@ with the extension placed after `@ohif/extension-cornerstone`:
   "extensions": [{ "packageName": "@niivue/nv-ohif", "default": false }],
   "modes": [
     { "packageName": "@niivue/nv-ohif/modes/viewer" },
-    { "packageName": "@niivue/nv-ohif/modes/segmentation" },
-    { "packageName": "@niivue/nv-ohif/modes/microscopy" },
     { "packageName": "@niivue/nv-ohif/modes/tmtv" },
     { "packageName": "@niivue/nv-ohif/modes/dynamic" }
   ]
@@ -71,13 +69,11 @@ with the extension placed after `@ohif/extension-cornerstone`:
 
 | Route | Mirrors | Hanging protocol (OHIF's own) |
 |---|---|---|
-| `/niivue-viewer` | longitudinal (tracked series, measurements) | `default` |
-| `/niivue-segmentation` | segmentation (labelmap toolbox and panel) | `@ohif/mnGrid` |
-| `/niivue-microscopy` | microscopy (SM via NVSlide) | `default` |
+| `/niivue-viewer` | longitudinal (tracked series, measurements), with segmentation editing (labelmap panel and toolbox) and SM slides; right panel starts closed | `default` |
 | `/niivue-tmtv` | TMTV (petSUV, TMTV panel, ROI tools) | `@ohif/extension-tmtv.hangingProtocolModule.ptCT` |
 | `/niivue-dynamic` | preclinical-4d (4 workflow steps, cine) | `default4D` |
 
-- The modes import `@ohif/mode-basic`, `-segmentation`, `-tmtv`,
+- The modes import `@ohif/mode-basic`, `-tmtv`,
   `-preclinical-4d` (deep `src/` imports) and `@ohif/core` from the host, so
   those packages must be installed. OHIF's own pluginConfig already lists them.
 - nv-ohif ships no hanging protocols. The modes use OHIF's protocols unchanged.
@@ -88,6 +84,8 @@ with the extension placed after `@ohif/extension-cornerstone`:
   `@niivue/nv-ohif/modes/viewer`) builds a custom NiiVue mode. `layout`
   overrides the route's layout props.
 - Each mode needs its own route: OHIF registers one route per mode.
+- **Migration (rc).** `@niivue/nv-ohif/modes/segmentation` and
+  `/modes/microscopy` are gone; `/niivue-viewer` covers both.
 
 ## What it does today
 
@@ -248,6 +246,13 @@ same slice: the long axis first, then the perpendicular short axis. A second dra
 on a different slice starts the measurement over. Loading a document drops any
 half-drawn contour or bidirectional axis.
 
+**Editing.** nv-ohif turns on core's `annotationIsHandleGrab`: a press on any
+shown measurement's control point drags it, whatever the active tool, with no
+selecting click. Bidirectional follows cornerstone: a long-axis end turns the
+long axis about the other end and carries the short axis; a short-axis end
+slides the short axis along the long one. Angle and Cobb angle handles move
+their points. Handles scale with device pixel ratio.
+
 **Intensity stats** are sampled from the base volume in the series' modality unit
 (HU for CT, SUV for PT, unitless otherwise); area is in mm2 and voxel-spacing
 aware. Length and the bidirectional diameters are in-plane mm.
@@ -255,7 +260,8 @@ aware. Length and the bidirectional diameters are in-plane mm.
 **Rendering.** Shapes and their labels are drawn by the `@niivue/uikit` overlay,
 not OHIF's cornerstone canvas.
 A measured line renders as a graduated ruler (end caps, mm ticks, numbered majors,
-rotated length label) in the annotation's stroke color.
+rotated length label) in the annotation's stroke color. Volume-pane
+measurements draw yellow without fill, as slide annotations.
 
 **Free-text labels.** Edit a measurement row's label in OHIF's panel and the text
 is pushed onto the shape on the viewport; the label and the annotation stay in
@@ -392,7 +398,7 @@ reflected into the Measurements panel.
 ## Workflows
 
 Each follows the OHIF mode's own tools and panels (`modes/`: viewer, dynamic,
-tmtv, segmentation, microscopy).
+tmtv).
 
 - **4D (dynamic PET).** A dynamic series converts to one 4D NIfTI; every pane
   shows the current frame from one shared buffer. OHIF's 4D panel (play,
@@ -410,7 +416,9 @@ tmtv, segmentation, microscopy).
 - **MIP pane.** `VolumeRotateMouseWheel` and `MIPJumpToClickTool` (crosshair to
   the brightest voxel along the clicked ray).
 - **Segmentation.** A SEG or RTSTRUCT drawing is entered in OHIF's
-  segmentation panel and panel edits mirror back. OHIF's labelmap tools drive
+  segmentation panel and panel edits mirror back. `/niivue-viewer` carries
+  OHIF's segmentation editing (labelmap panel and toolbox, segmentation tools
+  in the default and mpr tool groups; no contour panel). OHIF's labelmap tools drive
   NiiVue's pen (threshold range and segment locks enforced); each edit is one
   OHIF undo step. Export writes DICOM SEG or RTSTRUCT on the source series'
   own frames.

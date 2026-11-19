@@ -94,7 +94,7 @@ const fromMM = (p: NVSlidePoint, [sx, sy]: readonly [number, number]) => ({
  * A bidirectional's four points from its long axis alone (its short axis
  * perpendicular in mm), or as given.
  */
-export function bidirectionalPoints(
+function bidirectionalPoints(
   points: readonly NVSlidePoint[],
   spacingMM: Spacing = undefined,
 ): NVSlidePoint[] {

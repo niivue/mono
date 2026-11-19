@@ -1,21 +1,24 @@
 import { expect, it } from 'bun:test'
 import NiiVue from '@niivue/niivue'
+import { getNiivueCommandsModule } from './commands'
 import {
   getNiivueEntry,
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
+import { holdOverlayPlanes, setOverlayPlanes } from './overlayPlanes'
 import {
   armBrush,
   getQuantCommandDefinitions,
+  resetQuant,
   showPaneLabel,
   tmtvCsv,
 } from './petQuant'
 import { tmtvDataset } from './segCommands'
 
-// 2x2x2 uint8 NIfTI-1, 1 mm voxels.
-function nifti(): File {
+// 2x2x2 uint8 NIfTI-1, 1 mm voxels, every voxel `fill`.
+function nifti(fill = 5, name = 'pet.nii'): File {
   const hdr = new DataView(new ArrayBuffer(352))
   hdr.setInt32(0, 348, true)
   for (const [i, d] of [3, 2, 2, 2].entries()) hdr.setInt16(40 + 2 * i, d, true)
@@ -24,7 +27,7 @@ function nifti(): File {
   hdr.setFloat32(108, 352, true)
   for (const i of [1, 2, 3]) hdr.setFloat32(76 + 4 * i, 1, true)
   hdr.setUint32(344, 0x00312b6e, true) // magic 'n+1'
-  return new File([hdr.buffer, new Uint8Array(8).fill(5)], 'pet.nii')
+  return new File([hdr.buffer, new Uint8Array(8).fill(fill)], name)
 }
 
 // Audit 22.3: Add Segment / segment selection must retarget an armed brush;
@@ -49,6 +52,14 @@ it('segment change retargets an armed brush pen, not an eraser', async () => {
   armBrush('pet', 'CircularEraser', services, () => 5)
   cmd.niivueSetActiveSegment?.commandFn({ segmentIndex: 1 })
   expect(nv.drawPenValue).toBe(0)
+  // Holistic review H16: a mode exit drops the masks and the segment list.
+  armBrush('pet', 'CircularBrush', services, () => 5)
+  cmd.niivueAddSegment?.commandFn({})
+  expect(nv.drawPenValue).toBe(3)
+  resetQuant()
+  expect(nv.drawPenValue).toBe(1)
+  cmd.niivueAddSegment?.commandFn({})
+  expect(nv.drawPenValue).toBe(2)
   unregisterNiivue('pet')
 })
 
@@ -282,4 +293,162 @@ it('TMTV SEG and RTSS reference the PT series and keep segment voxel counts', as
   } finally {
     f.done()
   }
+})
+
+// Holistic review (nv-ohif): a label shown in a pane with a 60xx plane wrote
+// TMTV into the plane's drawing. The label takes the drawing; mode exit gives
+// it back.
+// A tool group with ImageOverlayViewer Enabled.
+const planesOn = () => {
+  return {
+    getModuleEntry: () => ({
+      exports: {
+        getCornerstoneLibraries: () => ({
+          cornerstoneTools: {
+            ToolGroupManager: {
+              getToolGroup: () => ({
+                getToolInstance: () => ({ mode: 'Enabled' }),
+              }),
+            },
+          },
+        }),
+      },
+    }),
+  } as never
+}
+
+it('a label replaces a shown overlay plane until mode exit', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti() }])
+  registerNiivue('plane', nv)
+  updateNiivueViewport('plane', {
+    displaySets: [{ displaySetInstanceUID: 'pt', Modality: 'PT' } as never],
+  })
+  const em = planesOn()
+  await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], em, 'g')
+  expect(nv.drawingVolume?.img?.[0]).toBe(9)
+  const services = {
+    services: { viewportGridService: { getActiveViewportId: () => 'plane' } },
+  } as never
+  expect(armBrush('plane', 'CircularBrush', services, () => 5)).toBe(true)
+  expect([...(nv.drawingVolume?.img ?? [])].every((v) => v === 0)).toBe(true)
+  resetQuant()
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(nv.drawingVolume?.img?.[0]).toBe(9)
+  unregisterNiivue('plane')
+})
+
+// Review of #866 r2: removing the PT overlay kept its label and plane hold.
+it("removing a PT overlay gives the pane's planes back", async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
+  registerNiivue('rm', nv)
+  const petDs = { displaySetInstanceUID: 'pet', Modality: 'PT' }
+  updateNiivueViewport('rm', {
+    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
+    overlays: new Map([['pet', nv.volumes[1]?.hdr]]) as never,
+  })
+  const services = {
+    services: {
+      displaySetService: { getDisplaySetByUID: () => petDs },
+      viewportGridService: { getActiveViewportId: () => 'rm' },
+    },
+  } as never
+  expect(armBrush('rm', 'CircularBrush', services, () => 5)).toBe(true)
+  const { actions } = getNiivueCommandsModule({ servicesManager: services })
+  await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
+  await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], planesOn(), 'g')
+  expect(nv.drawingVolume?.img?.[0]).toBe(9)
+  resetQuant()
+  unregisterNiivue('rm')
+})
+
+// Review of #866: a PT label neither overwrites nor closes a SEG drawing.
+it('a PT label leaves a SEG drawing alone', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
+  nv.createEmptyDrawing() // stands in for a hung SEG
+  const seg = nv.drawingVolume
+  if (!seg?.img) throw new Error('no drawing')
+  seg.img[0] = 7
+  registerNiivue('segpt', nv)
+  updateNiivueViewport('segpt', {
+    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
+    overlays: new Map([['pet', nv.volumes[1]?.hdr]]) as never,
+  })
+  const services = {
+    services: {
+      displaySetService: {
+        getDisplaySetByUID: () => ({
+          displaySetInstanceUID: 'pet',
+          Modality: 'PT',
+        }),
+      },
+      viewportGridService: { getActiveViewportId: () => 'segpt' },
+    },
+  } as never
+  // The pen stays the SEG's; the label does not take its drawing.
+  expect(armBrush('segpt', 'CircularBrush', services, () => 5)).toBe(false)
+  expect(seg.img[0]).toBe(7)
+  const { actions } = getNiivueCommandsModule({ servicesManager: services })
+  await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
+  expect(nv.drawingVolume).toBe(seg)
+  expect(seg.img[0]).toBe(7)
+  resetQuant()
+  unregisterNiivue('segpt')
+})
+
+// Review of #866: an unlabelled PT base hid the label of a PT overlay.
+it('a labelled PT overlay keeps its label under an unlabelled PT base', async () => {
+  const one = new NiiVue({ backend: 'webgl2' })
+  const mix = new NiiVue({ backend: 'webgl2' })
+  one.drawScene = mix.drawScene = () => {}
+  await one.loadVolumes([{ url: nifti() }])
+  await mix.loadVolumes([{ url: nifti(3, 'b.nii') }, { url: nifti() }])
+  registerNiivue('one', one)
+  registerNiivue('mix', mix)
+  const pt = (uid: string) => ({ displaySetInstanceUID: uid, Modality: 'PT' })
+  updateNiivueViewport('one', { displaySets: [pt('a')] as never })
+  updateNiivueViewport('mix', {
+    displaySets: [pt('b')] as never,
+    overlays: new Map([['a', mix.volumes[1]?.hdr]]) as never,
+  })
+  const services = {
+    services: {
+      displaySetService: { getDisplaySetByUID: pt },
+      viewportGridService: { getActiveViewportId: () => 'one' },
+    },
+  } as never
+  expect(armBrush('one', 'CircularBrush', services, () => 5)).toBe(true)
+  showPaneLabel(getNiivueEntry('mix') as never, services)
+  expect(mix.drawingVolume).toBeTruthy()
+  resetQuant()
+  unregisterNiivue('one')
+  unregisterNiivue('mix')
+})
+
+// Codex 866-r5: a label drawing made while a SEG converted cancelled its load.
+it('a PT label waits out a SEG still loading', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti() }])
+  registerNiivue('segload', nv)
+  updateNiivueViewport('segload', {
+    displaySets: [{ displaySetInstanceUID: 'pt', Modality: 'PT' } as never],
+  })
+  const services = {
+    services: { viewportGridService: { getActiveViewportId: () => 'segload' } },
+  } as never
+  const release = holdOverlayPlanes(nv) // useSegDrawing's hold, conversion pending
+  const generation = nv.drawingGeneration
+  expect(armBrush('segload', 'CircularBrush', services, () => 5)).toBe(false)
+  expect(nv.drawingGeneration).toBe(generation)
+  expect(nv.drawingVolume).toBeFalsy()
+  release()
+  resetQuant()
+  unregisterNiivue('segload')
 })

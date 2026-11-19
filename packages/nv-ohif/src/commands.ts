@@ -1919,6 +1919,7 @@ export function getNiivueCommandsModule({
         nv.model.removeVolume(nv.volumes.length - 1)
       }
       entry.overlays.clear()
+      showPaneLabel(entry, servicesManager)
       await nv.updateGLVolume()
       refreshToolbar(servicesManager, viewportId)
     },
@@ -2188,6 +2189,7 @@ export function getNiivueCommandsModule({
       const index = overlayVolumeIndex(entry, displaySetInstanceUID)
       if (index === 0) return
       entry.overlays.delete(displaySetInstanceUID as string)
+      showPaneLabel(entry, servicesManager)
       const removed = entry.nv
         .removeVolume(index)
         .catch((err: unknown) =>

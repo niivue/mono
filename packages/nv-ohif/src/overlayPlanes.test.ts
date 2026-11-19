@@ -1,92 +1,212 @@
 import { expect, test } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import type { OhifExtensionManager } from './ohif-types'
-import { setOverlayPlanes } from './overlayPlanes'
+import {
+  holdOverlayPlanes,
+  planeFrame,
+  refreshOverlayPlanes,
+  setOverlayPlanes,
+} from './overlayPlanes'
 
-// A tool group with ImageOverlayViewer Enabled.
-const em = {
-  getModuleEntry: () => ({
-    exports: {
-      getCornerstoneLibraries: () => ({
-        cornerstoneTools: {
-          ToolGroupManager: {
-            getToolGroup: () => ({
-              getToolInstance: () => ({ mode: 'Enabled' }),
-            }),
+// A tool group with ImageOverlayViewer in `mode.value`.
+function toolGroup(mode = { value: 'Enabled' }) {
+  return {
+    getModuleEntry: () => ({
+      exports: {
+        getCornerstoneLibraries: () => ({
+          cornerstoneTools: {
+            ToolGroupManager: {
+              getToolGroup: () => ({
+                getToolInstance: () => ({ mode: mode.value }),
+              }),
+            },
           },
-        },
-      }),
-    },
-  }),
-} as unknown as OhifExtensionManager
+        }),
+      },
+    }),
+  } as unknown as OhifExtensionManager
+}
+const em = toolGroup()
 
-// Review of #857: an image switch while a plane loads must not leave it shown.
-test('a plane still loading when the image changes is dropped', async () => {
-  let finish: (ok: boolean) => void = () => {}
+// Core's drawing calls as overlayPlanes sees them: every load, install, cancel
+// or close bumps drawingGeneration, and a load installs only if none came
+// after it. `finish` settles the latest load.
+function fakeCore(options: { autoFinish?: boolean } = {}) {
+  let finish: () => void = () => {}
+  let onFrame: () => void = () => {}
   const nv = {
     drawingVolume: null as unknown,
-    loadDrawing: () =>
-      new Promise<boolean>((resolve) => {
-        finish = (ok) => {
-          nv.drawingVolume = {}
+    drawingGeneration: 0,
+    volumes: [] as { frame4D?: number }[],
+    addEventListener: (_type: string, fn: () => void) => {
+      onFrame = fn
+    },
+    drawIsEnabled: false,
+    loadDrawing: () => {
+      const generation = ++nv.drawingGeneration
+      nv.drawIsEnabled = true
+      const done = new Promise<boolean>((resolve) => {
+        finish = () => {
+          const ok = nv.drawingGeneration === generation
+          if (ok) nv.drawingVolume = {}
           resolve(ok)
         }
-      }),
+      })
+      if (options.autoFinish) finish()
+      return done
+    },
+    cancelDrawingLoad: () => {
+      nv.drawingGeneration++
+    },
     closeDrawing: () => {
+      nv.drawingGeneration++
       nv.drawingVolume = null
     },
   }
-  const old = new File([], 'old_ROI1.nii')
-  const loading = setOverlayPlanes(nv as unknown as NiiVue, [old], em, 'g')
-  await setOverlayPlanes(nv as unknown as NiiVue, undefined, em, 'g')
-  finish(true)
+  return {
+    nv,
+    as: nv as unknown as NiiVue,
+    finish: () => finish(),
+    stepFrame: (frame: number) => {
+      nv.volumes = [{ frame4D: frame }]
+      onFrame()
+    },
+  }
+}
+const plane = () => [new File([], 'x_ROI1.nii')]
+
+// Review of #857: an image switch while a plane loads must not leave it shown.
+test('a plane still loading when the image changes is dropped', async () => {
+  const core = fakeCore()
+  const loading = setOverlayPlanes(core.as, plane(), em, 'g')
+  await setOverlayPlanes(core.as, undefined, em, 'g')
+  core.finish()
   await loading
-  expect(nv.drawingVolume).toBeNull()
+  expect(core.nv.drawingVolume).toBeNull()
 })
 
 // User report: series 401 painted into its overlay plane on a plain drag.
 test('a shown overlay plane leaves the pen off', async () => {
-  const nv = {
-    drawingVolume: null as unknown,
-    drawIsEnabled: false,
-    loadDrawing: async () => {
-      nv.drawingVolume = {}
-      nv.drawIsEnabled = true
-      return true
-    },
-    closeDrawing: () => {},
-  }
-  await setOverlayPlanes(
-    nv as unknown as NiiVue,
-    [new File([], 'x_ROI1.nii')],
-    em,
-    'g',
-  )
-  expect(nv.drawingVolume).not.toBeNull()
-  expect(nv.drawIsEnabled).toBe(false)
+  const core = fakeCore({ autoFinish: true })
+  await setOverlayPlanes(core.as, plane(), em, 'g')
+  expect(core.nv.drawingVolume).not.toBeNull()
+  expect(core.nv.drawIsEnabled).toBe(false)
 })
 
 // Review of #863: a segmentation made during the plane's load keeps its pen.
 test('a superseded plane load leaves the pen armed', async () => {
-  let finish = () => {}
-  const nv = {
-    drawingVolume: null as unknown,
-    drawIsEnabled: false,
-    loadDrawing: () =>
-      new Promise<boolean>((resolve) => {
-        finish = () => resolve(false)
-      }),
-    closeDrawing: () => {},
-  }
-  const pending = setOverlayPlanes(
-    nv as unknown as NiiVue,
-    [new File([], 'x_ROI1.nii')],
-    em,
-    'g',
-  )
-  nv.drawingVolume = {}
-  nv.drawIsEnabled = true
-  finish()
+  const core = fakeCore()
+  const pending = setOverlayPlanes(core.as, plane(), em, 'g')
+  core.nv.closeDrawing() // the segmentation's install
+  core.nv.drawingVolume = {}
+  core.nv.drawIsEnabled = true
+  core.finish()
   await pending
-  expect(nv.drawIsEnabled).toBe(true)
+  expect(core.nv.drawIsEnabled).toBe(true)
+})
+
+// Holistic review H3: turning the planes off leaves a drawing that replaced them.
+test('turning planes off closes only the plane drawing', async () => {
+  const mode = { value: 'Enabled' }
+  const group = toolGroup(mode)
+  const core = fakeCore({ autoFinish: true })
+  await setOverlayPlanes(core.as, plane(), group, 'g')
+  const seg = {}
+  core.nv.drawingVolume = seg // a segmentation replaced the plane
+  mode.value = 'Disabled'
+  await refreshOverlayPlanes(core.as, group, 'g')
+  expect(core.nv.drawingVolume).toBe(seg)
+})
+
+// H3: a hold drops a plane still loading; the release shows the planes again.
+test('a hold cancels a pending plane, its release shows it', async () => {
+  const core = fakeCore()
+  const files = plane()
+  const loading = setOverlayPlanes(core.as, files, em, 'g')
+  const release = holdOverlayPlanes(core.as)
+  core.finish()
+  await loading
+  expect(core.nv.drawingVolume).toBeNull()
+  await setOverlayPlanes(core.as, files, em, 'g') // held: no load
+  expect(core.nv.drawingVolume).toBeNull()
+  release()
+  await Promise.resolve() // the release refreshes a microtask on
+  core.finish()
+  await Promise.resolve()
+  expect(core.nv.drawingVolume).not.toBeNull()
+})
+
+// Review of #866: releasing one of two owners left the other's drawing open
+// to planes.
+test('planes stay off until every hold is released', async () => {
+  const core = fakeCore({ autoFinish: true })
+  const files = plane()
+  const seg = holdOverlayPlanes(core.as)
+  const label = holdOverlayPlanes(core.as)
+  label()
+  label() // a repeated release counts once
+  await setOverlayPlanes(core.as, files, em, 'g')
+  expect(core.nv.drawingVolume).toBeNull()
+  seg()
+  await Bun.sleep(0)
+  expect(core.nv.drawingVolume).not.toBeNull()
+})
+
+// A uint8 NIfTI-1 plane of `frames` 2x1x1 volumes; volume t holds t + 1.
+function plane4D(frames: number): File {
+  const hdr = new DataView(new ArrayBuffer(352))
+  hdr.setInt32(0, 348, true)
+  for (const [i, v] of [4, 2, 1, 1, frames].entries())
+    hdr.setInt16(40 + 2 * i, v, true)
+  hdr.setInt16(70, 2, true)
+  hdr.setFloat32(108, 352, true)
+  const data = Uint8Array.from({ length: 2 * frames }, (_, i) => (i >> 1) + 1)
+  return new File([hdr.buffer, data], 'x_ROI1.nii')
+}
+
+// Review of #863: a 4D plane showed its first frame whatever the pane showed.
+test('planeFrame cuts volume t of a 4D plane as a 3D plane', async () => {
+  const cut = new DataView(
+    await ((await planeFrame(plane4D(3), 2)) as File).arrayBuffer(),
+  )
+  expect(cut.getInt16(40, true)).toBe(3)
+  expect(cut.getInt16(48, true)).toBe(1)
+  expect([cut.getUint8(352), cut.getUint8(353)]).toEqual([3, 3])
+  expect(cut.byteLength).toBe(354)
+  const flat = plane4D(1)
+  expect(await planeFrame(flat, 1)).toBe(flat)
+  // Review of #866: past the last volume there is no plane, not frame 0's.
+  expect(await planeFrame(plane4D(2), 2)).toBeUndefined()
+})
+
+test('a 4D plane reloads for the frame the pane steps to', async () => {
+  const core = fakeCore({ autoFinish: true })
+  const loads: File[] = []
+  const load = core.nv.loadDrawing
+  core.nv.loadDrawing = ((f: File) => {
+    loads.push(f)
+    return load()
+  }) as typeof core.nv.loadDrawing
+  const file = plane4D(2)
+  await setOverlayPlanes(core.as, [file], em, 'g')
+  expect(loads).toEqual([file])
+  core.stepFrame(1)
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(loads.length).toBe(2)
+  expect(new Uint8Array(await (loads[1] as File).arrayBuffer())[352]).toBe(2)
+  expect(core.nv.drawingVolume).not.toBeNull()
+})
+
+test('a 4D plane shows none past its frames and returns on a step back', async () => {
+  const core = fakeCore({ autoFinish: true })
+  await setOverlayPlanes(core.as, [plane4D(2)], em, 'g')
+  core.stepFrame(2)
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(core.nv.drawingVolume).toBeNull()
+  core.stepFrame(1)
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(core.nv.drawingVolume).not.toBeNull()
 })

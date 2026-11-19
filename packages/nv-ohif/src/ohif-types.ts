@@ -182,4 +182,5 @@ export interface OhifExtension {
   getCustomizationModule?: (
     context: OhifExtensionParams,
   ) => OhifCustomizationModuleEntry[]
+  onModeExit?: () => void
 }

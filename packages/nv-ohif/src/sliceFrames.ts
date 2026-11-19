@@ -4,6 +4,7 @@
 // sform makes this immune to dcm2niix's row flip, slice reordering and echo split.
 
 import { isPartType } from './dcm2niixOutputs'
+import { framePlanes } from './segExport'
 
 type Vec3 = [number, number, number]
 
@@ -40,10 +41,6 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
   a[2] * b[0] - a[0] * b[2],
   a[0] * b[1] - a[1] * b[0],
 ]
-// dcmjs collapses a one-item sequence to the item itself.
-const one = (v: unknown): Record<string, unknown> | undefined =>
-  (Array.isArray(v) ? v[0] : v) as Record<string, unknown> | undefined
-
 function vec3(v: unknown, offset = 0): Vec3 | undefined {
   if (!Array.isArray(v)) return undefined
   const out: Vec3 = [
@@ -97,7 +94,6 @@ function instanceFrames(
   for (const inst of instances) {
     const sop = inst.SOPInstanceUID
     if (typeof sop !== 'string') continue
-    const perFrame = inst.PerFrameFunctionalGroupsSequence
     const add = (frameNumber: number, ipp: unknown, iop: unknown) => {
       const position = vec3(ipp)
       const row = vec3(iop)
@@ -114,20 +110,8 @@ function instanceFrames(
         normal: cross(row, col),
       })
     }
-    if (perFrame) {
-      const shared = one(inst.SharedFunctionalGroupsSequence)
-      const sharedIop = one(
-        shared?.PlaneOrientationSequence,
-      )?.ImageOrientationPatient
-      const groups = Array.isArray(perFrame) ? perFrame : [perFrame]
-      groups.forEach((group: Record<string, unknown>, i) => {
-        add(
-          i + 1,
-          one(group?.PlanePositionSequence)?.ImagePositionPatient,
-          one(group?.PlaneOrientationSequence)?.ImageOrientationPatient ??
-            sharedIop,
-        )
-      })
+    if (inst.PerFrameFunctionalGroupsSequence) {
+      for (const p of framePlanes(inst)) add(p.frame ?? 1, p.ipp, p.iop)
     } else if ((Number(inst.NumberOfFrames) || 1) === 1) {
       const e = inst.EchoNumbers
       const instEcho = Number(Array.isArray(e) ? e[0] : e)

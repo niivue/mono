@@ -28,6 +28,7 @@ import type {
   OhifViewportModuleEntry,
   OhifViewportProps,
 } from './ohif-types'
+import { resetQuant } from './petQuant'
 import {
   getNiivueSopClassHandlerModule,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
@@ -51,7 +52,6 @@ import {
   NIIVUE_WL_SECTION,
   niivueToolbarCustomization,
 } from './toolbar'
-
 export const NIIVUE_OHIF_EXTENSION_ID = '@niivue/nv-ohif'
 
 // The OHIF extension object. OHIF apps register this (via pluginConfig / addExtension)
@@ -65,6 +65,7 @@ const niivueOhifExtension: OhifExtension = {
   getCommandsModule: (params) => getNiivueCommandsModule(params),
   getToolbarModule: (params) => getNiivueToolbarModule(params),
   getPanelModule: (params) => getNiivuePanelModule(params),
+  onModeExit: () => resetQuant(),
   // Auto-registered at default scope; modes pull the packs in by reference
   // ('niivue.toolbarButtons' / 'niivue.toolbarSections').
   getCustomizationModule: () => [

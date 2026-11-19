@@ -105,14 +105,18 @@ first, so a large one takes a moment; the viewport says what it is doing.
   [Toolbar and controls](/packages/nv-ohif/toolbar/).
 - **Measure:** OHIF's measurement tools draw on NiiVue and fill the
   Measurements panel. See [Measuring](/packages/nv-ohif/measurements/).
+- **Segment and quantify:** SEG and RT structure sets show and edit as
+  drawings and export back to DICOM; the 4D (dynamic PET) and TMTV modes run
+  their panels on NiiVue panes; edits join OHIF's undo. The package README's
+  Workflows section lists each.
 
 ## When something does not work
 
 - **The viewport stays black.** OHIF only hands a series to a viewport
   that lists its display-set handler in `displaySetsToDisplay`. Check that
   the series' handler is listed on the NiiVue viewport.
-- **"This series isn't something NiiVue can load yet."** Segmentations,
-  RT structures, reports and other non-image series are not converted.
+- **"This series isn't something NiiVue can load yet."** RT plans,
+  presentation states and other non-image series are not converted.
   Show them in OHIF's own viewports.
 - **Only one series shows.** A NiiVue viewport shows the first series it is
   given and names the rest in a note. To stack one series on another, add

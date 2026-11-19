@@ -2,6 +2,7 @@ import type NiiVue from '@niivue/niivue'
 import { SLICE_TYPE } from '@niivue/niivue'
 import { useEffect } from 'react'
 import type { OhifServicesManager } from './ohif-types'
+import { invertAffine } from './quantify'
 
 // TMTV's MIP pane tools, as its tool group binds them (cornerstone tool
 // names): VolumeRotateMouseWheel turns the camera, MIPJumpToClickTool
@@ -53,8 +54,8 @@ export function brightestAlongRay(
   if (!img || !A || !nx || !ny || !nz) return undefined
   const m = A.map((r) => r.slice(0, 3)) as number[][]
   const t = A.map((r) => r[3] ?? 0)
-  const inv = invert3(m)
-  if (!inv) return undefined
+  const inv = invertAffine(A.slice(0, 3).flatMap((r) => r.slice(0, 4)))
+  if (!inv.every(Number.isFinite)) return undefined
   // Half-voxel steps over the volume's diagonal on both sides of `mm`.
   const [, sx = 1, sy = 1, sz = 1] = hdr?.pixDims ?? []
   const step = Math.min(sx, sy, sz) / 2
@@ -64,14 +65,15 @@ export function brightestAlongRay(
   let best = -Infinity
   let bestVox: number[] | undefined
   for (let s = -reach; s <= reach; s += step) {
-    const d = [0, 1, 2].map(
-      (k) => (mm[k] ?? 0) + s * (axis[k] ?? 0) - (t[k] ?? 0),
-    )
+    const [px, py, pz] = [0, 1, 2].map(
+      (k) => (mm[k] ?? 0) + s * (axis[k] ?? 0),
+    ) as [number, number, number]
     const [i, j, k] = [0, 1, 2].map((r) =>
       Math.round(
-        (inv[r]?.[0] ?? 0) * (d[0] ?? 0) +
-          (inv[r]?.[1] ?? 0) * (d[1] ?? 0) +
-          (inv[r]?.[2] ?? 0) * (d[2] ?? 0),
+        (inv[r * 4] as number) * px +
+          (inv[r * 4 + 1] as number) * py +
+          (inv[r * 4 + 2] as number) * pz +
+          (inv[r * 4 + 3] as number),
       ),
     ) as [number, number, number]
     if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) continue
@@ -87,19 +89,6 @@ export function brightestAlongRay(
       t[r] ?? 0,
     ),
   )
-}
-
-function invert3(m: number[][]): number[][] | undefined {
-  const [a = 0, b = 0, c = 0] = m[0] ?? []
-  const [d = 0, e = 0, f = 0] = m[1] ?? []
-  const [g = 0, h = 0, i = 0] = m[2] ?? []
-  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
-  if (!det) return undefined
-  return [
-    [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
-    [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
-    [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det],
-  ]
 }
 
 /**

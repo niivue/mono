@@ -23,6 +23,7 @@ import type {
   OhifExtensionParams,
   OhifServicesManager,
 } from './ohif-types'
+import { drawingOwned, holdOverlayPlanes } from './overlayPlanes'
 import {
   boxAround,
   boxMax,
@@ -90,6 +91,11 @@ const setActiveSegment = (value: number) => {
 const roiSlices: { start?: number[]; end?: number[] } = {}
 // Panes whose armed brush is OHIF's threshold brush.
 const thresholdPens = new WeakSet<NiiVue>()
+// Panes whose drawing a label holds, with the overlay planes' release. Weak:
+// an unmounted pane goes with its viewer.
+const planeHolds = new WeakMap<NiiVue, () => void>()
+// Drawings a label created; one it wrote into (a SEG's) is not its to close.
+const ownDrawings = new WeakSet<NVImage>()
 let thresholdRange: [number, number] = [2.5, 50]
 // Armed panes' pen size (OHIF's brush size), re-read by refreshBrushSizes.
 const penSizes = new WeakMap<NiiVue, () => number>()
@@ -102,6 +108,19 @@ export const onQuantChange = (fn: () => void): (() => void) => {
 }
 const notify = () => {
   for (const fn of listeners) fn()
+}
+
+/** Drop every PT label and the tool state: a mode exit leaves no study's
+ * masks (a full label grid per brushed PT series) behind. */
+export function resetQuant(): void {
+  // Panes still mounted drop the label and get their planes back; the rest
+  // are destroyed.
+  for (const { nv } of niivueEntries()) if (planeHolds.has(nv)) dropLabel(nv)
+  masks.clear()
+  thresholdRange = [2.5, 50]
+  roiSlices.start = roiSlices.end = undefined
+  lastConfig = DEFAULT_THRESHOLD
+  setActiveSegment(1) // notifies
 }
 
 const displaySet = (services: Services, uid: string) =>
@@ -133,21 +152,22 @@ function panesOf(uid: string): Pane[] {
 export const holdsPet = (entry: NiivueViewportEntry, services: Services) =>
   !!paneTarget(entry, services)
 
-/** The PT series a pane holds (base first), if any. */
+/** The PT series a pane holds (base first), if any; `want` filters them. */
 function paneTarget(
   entry: NiivueViewportEntry,
   services: Services,
+  want: (uid: string) => boolean = () => true,
 ): Pet | undefined {
   const base = entry.displaySets[0]
   const uid = base?.displaySetInstanceUID
   const vol = entry.nv.volumes[0]
-  if (base?.Modality === 'PT' && uid && loaded(vol))
+  if (base?.Modality === 'PT' && uid && loaded(vol) && want(uid))
     return { uid, ds: base, vol, pane: { entry, index: 0 } }
   for (const [uid, hdr] of entry.overlays) {
     const ds = displaySet(services, uid)
     const index = entry.nv.volumes.findIndex((v) => v.hdr === hdr)
     const v = entry.nv.volumes[index]
-    if (ds?.Modality === 'PT' && index > 0 && loaded(v))
+    if (ds?.Modality === 'PT' && index > 0 && loaded(v) && want(uid))
       return { uid, ds, vol: v, pane: { entry, index } }
   }
   return undefined
@@ -205,11 +225,25 @@ function showMask(
       shown[2] === nv.drawingVolume
     )
       continue
+    // A SEG or RT loading here wins: a drawing made now would cancel its load.
+    if (drawingOwned(nv)) continue
+    // A shown 60xx plane is display only: the label replaces it.
+    if (!planeHolds.has(nv))
+      planeHolds.set(
+        nv,
+        holdOverlayPlanes(nv, () => dropLabel(nv)),
+      )
+    // A SEG or RT drawing is not the label's to overwrite: that pane goes without.
+    if (nv.drawingVolume && !ownDrawings.has(nv.drawingVolume)) {
+      dropLabel(nv)
+      continue
+    }
     if (!nv.drawingVolume) {
       // createEmptyDrawing arms the pen; the pane's tool decides.
       const armed = nv.drawIsEnabled
       nv.createEmptyDrawing()
       nv.drawIsEnabled = armed
+      if (nv.drawingVolume) ownDrawings.add(nv.drawingVolume)
     }
     const img = nv.drawingVolume?.img
     if (!(img instanceof Uint8Array)) continue
@@ -228,20 +262,42 @@ function showMask(
   }
 }
 
-/** Show the label of a pane's PT series once it holds one (a late or re-hung pane). */
+/** The pane shows the label's drawing and no SEG/RT is loading over it. */
+const labelOwns = (nv: NiiVue) =>
+  !!nv.drawingVolume && ownDrawings.has(nv.drawingVolume) && !drawingOwned(nv)
+
+/** A pane's label drawing goes and its overlay planes come back. */
+function dropLabel(nv: NiiVue): void {
+  const draw = nv.drawingVolume
+  if (draw && ownDrawings.has(draw)) {
+    // A loading SEG/RT replaces the label; closing it would cancel that load.
+    // Keep the hold: its yield drops the label if the SEG is cancelled.
+    if (drawingOwned(nv)) return
+    nv.closeDrawing()
+  }
+  planeHolds.get(nv)?.()
+  planeHolds.delete(nv)
+}
+
+/**
+ * Show the label of a pane's PT series once it holds one (a late or re-hung
+ * pane); a pane now on another series gives its planes back.
+ */
 export function showPaneLabel(
   entry: NiivueViewportEntry,
   services: Services,
 ): void {
-  const pet = paneTarget(entry, services)
+  // A labelled PT overlay keeps its label under an unlabelled PT base.
+  const pet = paneTarget(entry, services, (uid) => masks.has(uid))
   if (pet) showMask(pet.uid, services, undefined, true)
+  else if (planeHolds.has(entry.nv)) dropLabel(entry.nv)
 }
 
 /** Read a pane's brushed drawing back into its series' label. */
 function pull(entry: NiivueViewportEntry, services: Services): void {
   const pet = paneTarget(entry, services)
   const m = pet && masks.get(pet.uid)
-  const img = entry.nv.drawingVolume?.img
+  const img = labelOwns(entry.nv) ? entry.nv.drawingVolume?.img : undefined
   const base = entry.nv.volumes[0] && rasGrid(entry.nv.volumes[0])
   if (!pet || !m || !base || !(img instanceof Uint8Array)) return
   // A pane covering only part of the PT grid leaves the rest of the label.
@@ -296,6 +352,7 @@ export function armBrush(
   if (!entry || !pet || !maskFor(pet)) return false
   showMask(pet.uid, services, undefined, true)
   const { nv } = entry
+  if (!labelOwns(nv)) return false
   nv.drawPenValue = mode === 'erase' ? 0 : activeSegment
   if (mode !== 'erase') armedPens.add(nv)
   nv.drawPenShape = tool?.includes('Sphere')

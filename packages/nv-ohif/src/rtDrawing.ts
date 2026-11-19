@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet } from './ohif-types'
+import { invertAffine } from './quantify'
 import {
   type PanelSegment,
   panelColormap,
@@ -103,36 +104,20 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
   const cy = vox2mm([0, 1, 0])
   const cz = vox2mm([0, 0, 1])
   if (!o || !cx || !cy || !cz) return null
-  // Columns of the voxel->RAS linear part, with the RAS->LPS flip of x and y.
-  const [a = 0, d = 0, g = 0] = cx.map(
-    (v, i) => (v - (o[i] ?? 0)) * (i < 2 ? -1 : 1),
+  // Voxel->LPS: NiiVue's voxel->RAS with x and y flipped.
+  const flip = (v: number, i: number) => (i < 2 ? -v : v)
+  const [x, y, z] = [cx, cy, cz].map((p) =>
+    p.map((v, i) => flip(v - (o[i] ?? 0), i)),
   )
-  const [b = 0, e = 0, h = 0] = cy.map(
-    (v, i) => (v - (o[i] ?? 0)) * (i < 2 ? -1 : 1),
+  const m = invertAffine(
+    [0, 1, 2].flatMap((r) => [
+      x?.[r] ?? 0,
+      y?.[r] ?? 0,
+      z?.[r] ?? 0,
+      flip(o[r] ?? 0, r),
+    ]),
   )
-  const [c = 0, f = 0, k = 0] = cz.map(
-    (v, i) => (v - (o[i] ?? 0)) * (i < 2 ? -1 : 1),
-  )
-  const det = a * (e * k - f * h) - b * (d * k - f * g) + c * (d * h - e * g)
-  if (!det) return null
-  const inv = [
-    (e * k - f * h) / det,
-    (c * h - b * k) / det,
-    (b * f - c * e) / det,
-    (f * g - d * k) / det,
-    (a * k - c * g) / det,
-    (c * d - a * f) / det,
-    (d * h - e * g) / det,
-    (b * g - a * h) / det,
-    (a * e - b * d) / det,
-  ] as const
-  const [ox = 0, oy = 0, oz = 0] = [-(o[0] ?? 0), -(o[1] ?? 0), o[2] ?? 0]
-  const m: number[] = []
-  for (let r = 0; r < 3; r++) {
-    const [p = 0, q = 0, s = 0] = inv.slice(r * 3, r * 3 + 3)
-    m.push(p, q, s, -(p * ox + q * oy + s * oz))
-  }
-  return m
+  return m.every(Number.isFinite) ? m : null
 }
 
 /**
@@ -673,6 +658,8 @@ export function startRtDrawing(
       labels: RtLabels,
       restyle: Restyle,
     ) => () => void
+    /** Called when the load settles without a drawing (not on stop). */
+    onFailed?: () => void
   },
 ): () => void {
   let cancelled = false
@@ -747,13 +734,17 @@ export function startRtDrawing(
       style.restyle,
     )
   }
-  show().catch((err) => {
-    if (cancelled) return
-    console.error('[nv-ohif] RTSTRUCT load failed', err)
-    options.setNote(
-      `Structure set failed: ${err instanceof Error ? err.message : String(err)}`,
-    )
-  })
+  show()
+    .catch((err) => {
+      if (cancelled) return
+      console.error('[nv-ohif] RTSTRUCT load failed', err)
+      options.setNote(
+        `Structure set failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
+    .finally(() => {
+      if (!cancelled && !owned) options.onFailed?.()
+    })
   return () => {
     cancelled = true
     stopShown?.()

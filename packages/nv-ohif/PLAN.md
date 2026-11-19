@@ -2,7 +2,9 @@
 
 Design + delivery plan. Branch: `ohif-viewer-integration`.
 
-**Status: Phase 1 PROVEN — in a real OHIF app.** The extension + React-18 viewport +
+**Status (2026-11): shipped.** NIfTI, DICOM (via dcm2niix, not Phase 2's cornerstone volume reuse), whole-slide, SEG/RTSTRUCT/SR, 4D and TMTV run in OHIF; README.md lists what works. The history below is kept as written.
+
+**Phase 1 PROVEN — in a real OHIF app.** The extension + React-18 viewport +
 NIfTI data bridge render a volume end-to-end. Independent proofs:
 1. A proof harness (`demo/`, `bun run dev`) drives the real extension the way OHIF
    would — `getViewportModule()` -> `NiivueViewport` fed a mock OHIF `displaySets`
@@ -91,18 +93,18 @@ OHIF viewers are **extensions + a mode**, not standalone apps.
 ```
 packages/nv-ohif/
   src/
-    index.ts                # the OHIF extension object (id, version, getViewportModule, lifecycle)
-    getNiivueViewportModule.tsx
-    NiivueViewport.tsx       # React 18 component: owns a <canvas> + a Niivue instance
-    sopClassHandler.ts       # SOPClassHandlerModule — which displaySets we claim
+    index.ts                 # the OHIF extension object (modules, lifecycle, onModeExit)
+    NiivueViewport.tsx       # React component: owns a <canvas> + a NiiVue instance
+    sopClassHandler.ts, classifyDisplaySet.ts   # which display sets we claim, and how
+    displaySetToNiivue.ts, dicomToNiivue.ts, dicomWadoRs.ts, reconstructP10.ts  # data bridge (dcm2niix)
+    commands.ts, toolbar.ts  # OHIF commands and buttons
+    seg*.ts, rtDrawing.ts, overlayPlanes.ts      # SEG / RTSTRUCT / 60xx drawings, editing, export
+    sr*.ts, slideSR.ts, slideMeasurements.ts     # measurements and SR
+    frames4D.ts, kinetics.ts, petQuant.ts, suv.ts, quantPanels.tsx, dynamicPanel.tsx  # 4D + TMTV
+    history.ts, viewportSync.ts, referenceLines.tsx, hangingOptions.ts, magnify.ts, mipTools.ts
     modes/                   # OHIF modes, one subpath export each (built apart: no NiiVue import)
-    data/
-      displaySetToNiivue.ts  # displaySet -> NiiVue load (the data bridge; phased)
-      cornerstoneVolumeToNVImage.ts  # (phase 2) in-memory cornerstone volume -> NVImage
-    commands.ts              # OHIF commands (reset view, set slice type, toggle 3D render, ...)
-    toolbar.ts               # toolbar buttons wired to commands
   PLAN.md                    # this file
-  README.md                  # consumer docs (add to pluginConfig, mode config)
+  README.md                  # consumer docs (add to pluginConfig, mode config, features)
   package.json / project.json / tsconfig.json
 ```
 
@@ -159,7 +161,7 @@ hand-copied `.niivue-pkgs`). Findings:
    niivue symbols — `NiiVueGPU` (default), `DRAG_MODE`, `SLICE_TYPE` — and published
    rc.10's `index.d.ts` exports all three (`export { DRAG_MODE, …, SLICE_TYPE }`,
    `export { default, default as NiiVueGPU }`). No monorepo-newer-API gap.
-5. **DICOM confirmed broken for consumers** (as documented above): the resolved
+5. **DICOM confirmed broken for consumers at the time** (as documented above): the resolved
    `@niivue/dcm2niix@1.2.0` worker still has the bare `const exitCode = mod.callMain(args)`
    (no exit fix), so browser conversion aborts. NIfTI is the consumer-supported path
    until the dcm2niix pin bump. (Resolved since: see DICOM shippability.)
@@ -190,6 +192,8 @@ custom display set pointing at a `.nii.gz` URL). `NiivueViewport` calls
 plumbing and NiiVue's rendering inside OHIF end-to-end, with the least data work.
 
 ### Phase 2 — DICOM via cornerstone volume reuse (best UX)
+Superseded: DICOM shipped through dcm2niix (see DICOM shippability).
+
 OHIF/cornerstone3D already streams a DICOM series into an **in-memory volume**
 (typed-array scalar data + image metadata: spacing, orientation, origin,
 rescale). Build an `NVImage` from that already-loaded volume — **no re-fetch** —

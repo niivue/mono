@@ -758,8 +758,11 @@ els.drawUndo.addEventListener('click', () => {
   if (view?.controller.annotationTool && annotations) {
     while (measureSteps.length) {
       const step = measureSteps.pop()
-      if (step === 'edit') annotations.annotationUndo()
-      else if (!annotations.remove(step)) continue
+      if (step === 'edit') {
+        // The undo stack keeps 32 edits: an older one is gone.
+        if (annotations.annotationUndoTop === undefined) continue
+        annotations.annotationUndo()
+      } else if (!annotations.remove(step)) continue
       requestRender()
       return
     }

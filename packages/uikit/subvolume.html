@@ -83,6 +83,8 @@
         vol.chunkExplode = n && explode.checked ? { enabled: true, scale: [1.4, 1.4, 1.4] } : { enabled: false }
         // The old box no longer matches what is drawn.
         selector.reset()
+        seq++
+        dropSaved()
         await nv.updateGLVolume()
       }
       grid.addEventListener('change', applyBricks)
@@ -91,19 +93,24 @@
       let seq = 0
       // What Save downloads: the latest box, whatever the pane shows.
       let saved = null
+      // A new or reset box replaces the saved one.
+      const dropSaved = () => {
+        saved = null
+        buttons.updateButton('save', { enabled: false })
+      }
       // Copy-pane loads run in pick order, so a slow earlier load cannot replace a later box.
       let loading = Promise.resolve()
       const download = createBrowserDownload()
       const selector = new UIKitSubvolumeSelector({
         onCorner: (mm) => {
           seq++
+          dropSaved()
           setStatus(`First corner at (${mm.map((v) => v.toFixed(1)).join(', ')}) mm: right-click the second`, 'wait')
         },
         onSelect: async (sel) => {
           const at = ++seq
           const [x, y, z] = sel.voxelDims
-          saved = null
-          buttons.updateButton('save', { enabled: false })
+          dropSaved()
           if (!sel.subVolume) {
             setStatus(`${x}x${y}x${z} voxels, but this volume has no CPU copy to extract`, 'error')
             return
@@ -172,8 +179,7 @@
           seq++ // drop a copy still loading
           selector.reset()
           buttons.updateButton('clear', { enabled: false })
-          buttons.updateButton('save', { enabled: false })
-          saved = null
+          dropSaved()
           await copy.removeAllVolumes()
           setStatus('Right-click the first corner', 'wait')
         },

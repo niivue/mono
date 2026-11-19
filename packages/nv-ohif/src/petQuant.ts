@@ -231,7 +231,11 @@ function showMask(
     // A SEG or RT loading here wins: a drawing made now would cancel its load.
     if (drawingOwned(nv)) continue
     // A shown 60xx plane is display only: the label replaces it.
-    if (!planeHolds.has(nv)) planeHolds.set(nv, holdOverlayPlanes(nv, false))
+    if (!planeHolds.has(nv))
+      planeHolds.set(
+        nv,
+        holdOverlayPlanes(nv, () => dropLabel(nv)),
+      )
     // A SEG or RT drawing is not the label's to overwrite: that pane goes without.
     if (nv.drawingVolume && !ownDrawings.has(nv.drawingVolume)) {
       dropLabel(nv)
@@ -261,9 +265,19 @@ function showMask(
   }
 }
 
+/** The pane shows the label's drawing and no SEG/RT is loading over it. */
+const labelOwns = (nv: NiiVue) =>
+  !!nv.drawingVolume && ownDrawings.has(nv.drawingVolume) && !drawingOwned(nv)
+
 /** A pane's label drawing goes and its overlay planes come back. */
 function dropLabel(nv: NiiVue): void {
-  if (nv.drawingVolume && ownDrawings.has(nv.drawingVolume)) nv.closeDrawing()
+  const draw = nv.drawingVolume
+  if (draw && ownDrawings.has(draw)) {
+    // A loading SEG/RT replaces the label; closing it would cancel that load.
+    // Keep the hold: its yield drops the label if the SEG is cancelled.
+    if (drawingOwned(nv)) return
+    nv.closeDrawing()
+  }
   planeHolds.get(nv)?.()
   planeHolds.delete(nv)
 }
@@ -286,11 +300,7 @@ export function showPaneLabel(
 function pull(entry: NiivueViewportEntry, services: Services): void {
   const pet = paneTarget(entry, services)
   const m = pet && masks.get(pet.uid)
-  const draw = entry.nv.drawingVolume
-  const img =
-    draw && ownDrawings.has(draw) && !drawingOwned(entry.nv)
-      ? draw.img
-      : undefined
+  const img = labelOwns(entry.nv) ? entry.nv.drawingVolume?.img : undefined
   const base = entry.nv.volumes[0] && rasGrid(entry.nv.volumes[0])
   if (!pet || !m || !base || !(img instanceof Uint8Array)) return
   // A pane covering only part of the PT grid leaves the rest of the label.
@@ -345,12 +355,7 @@ export function armBrush(
   if (!entry || !pet || !maskFor(pet)) return false
   showMask(pet.uid, services, undefined, true)
   const { nv } = entry
-  if (
-    drawingOwned(nv) ||
-    !nv.drawingVolume ||
-    !ownDrawings.has(nv.drawingVolume)
-  )
-    return false
+  if (!labelOwns(nv)) return false
   nv.drawPenValue = mode === 'erase' ? 0 : activeSegment
   if (mode !== 'erase') armedPens.add(nv)
   nv.drawPenShape = tool?.includes('Sphere')

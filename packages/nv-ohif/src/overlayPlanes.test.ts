@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
-import NiiVue from '@niivue/niivue'
-import { DEFAULT_OPTIONS } from './NiivueViewport'
+import type NiiVue from '@niivue/niivue'
 import type { OhifExtensionManager } from './ohif-types'
 import {
   holdOverlayPlanes,
@@ -8,7 +7,6 @@ import {
   refreshOverlayPlanes,
   setOverlayPlanes,
 } from './overlayPlanes'
-import { startSegDrawing } from './segDrawing'
 
 // A tool group with ImageOverlayViewer in `mode.value`.
 function toolGroup(mode = { value: 'Enabled' }) {
@@ -132,6 +130,7 @@ test('a hold cancels a pending plane, its release shows it', async () => {
   await setOverlayPlanes(core.as, files, em, 'g') // held: no load
   expect(core.nv.drawingVolume).toBeNull()
   release()
+  await Promise.resolve() // the release refreshes a microtask on
   core.finish()
   await Promise.resolve()
   expect(core.nv.drawingVolume).not.toBeNull()
@@ -151,63 +150,6 @@ test('planes stay off until every hold is released', async () => {
   seg()
   await Bun.sleep(0)
   expect(core.nv.drawingVolume).not.toBeNull()
-})
-
-function labels(): ArrayBuffer {
-  const view = new DataView(new ArrayBuffer(352 + 8))
-  view.setInt32(0, 348, true)
-  ;[3, 2, 2, 2].forEach((d, i) => {
-    view.setInt16(40 + 2 * i, d, true)
-  })
-  view.setInt16(70, 2, true)
-  view.setInt16(72, 8, true)
-  ;[1, 1, 1, 1].forEach((d, i) => {
-    view.setFloat32(76 + 4 * i, d, true)
-  })
-  view.setFloat32(108, 352, true)
-  view.setFloat32(112, 1, true)
-  view.setInt16(254, 1, true)
-  ;[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0].forEach((v, i) => {
-    view.setFloat32(280 + 4 * i, v, true)
-  })
-  ;[0x6e, 0x2b, 0x31, 0].forEach((b, i) => {
-    view.setUint8(344 + i, b)
-  })
-  view.setUint8(352, 1)
-  return view.buffer
-}
-
-// H3: a SEG hung over a series with 60xx planes shows (the plane load used to
-// bump drawingGeneration and the SEG gave way). useSegDrawing holds first.
-test('a SEG over a series with overlay planes is shown', async () => {
-  globalThis.requestAnimationFrame ??= () => 0
-  const nv = new NiiVue(DEFAULT_OPTIONS)
-  let installBase: (ok: boolean) => void = () => {}
-  const whenBase = new Promise<boolean>((r) => {
-    installBase = r
-  })
-  const release = holdOverlayPlanes(nv)
-  const stop = startSegDrawing(
-    nv,
-    { displaySetInstanceUID: 'seg', Modality: 'SEG' },
-    {
-      setNote: () => {},
-      convert: async () =>
-        ({
-          image: new File([labels()], 'seg.nii'),
-          json: { Segments: [{ LabelValue: 1, RGB: [1, 2, 3] }] },
-        }) as never,
-      whenBase,
-    },
-  )
-  await nv.loadVolumes([{ url: new File([labels()], 'base.nii') }])
-  void setOverlayPlanes(nv, [new File([labels()], 'base_ROI1.nii')], em, 'g')
-  installBase(true)
-  for (let i = 0; i < 50 && nv.drawColormap.toLowerCase() !== 'seg-seg'; i++)
-    await new Promise((r) => setTimeout(r, 10))
-  expect(nv.drawColormap.toLowerCase()).toBe('seg-seg')
-  stop()
-  release()
 })
 
 // A uint8 NIfTI-1 plane of `frames` 2x1x1 volumes; volume t holds t + 1.

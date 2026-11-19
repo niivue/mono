@@ -658,6 +658,8 @@ export function startRtDrawing(
       labels: RtLabels,
       restyle: Restyle,
     ) => () => void
+    /** Called when the load settles without a drawing (not on stop). */
+    onFailed?: () => void
   },
 ): () => void {
   let cancelled = false
@@ -732,13 +734,17 @@ export function startRtDrawing(
       style.restyle,
     )
   }
-  show().catch((err) => {
-    if (cancelled) return
-    console.error('[nv-ohif] RTSTRUCT load failed', err)
-    options.setNote(
-      `Structure set failed: ${err instanceof Error ? err.message : String(err)}`,
-    )
-  })
+  show()
+    .catch((err) => {
+      if (cancelled) return
+      console.error('[nv-ohif] RTSTRUCT load failed', err)
+      options.setNote(
+        `Structure set failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
+    .finally(() => {
+      if (!cancelled && !owned) options.onFailed?.()
+    })
   return () => {
     cancelled = true
     stopShown?.()

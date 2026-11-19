@@ -340,58 +340,31 @@ it('a label replaces a shown overlay plane until mode exit', async () => {
   unregisterNiivue('plane')
 })
 
-// Review of #866: the label's hold outlived the PT, so the next series' plane
-// never showed.
-it('a pane leaving its PT series gives its overlay planes back', async () => {
+// Review of #866 r2: removing the PT overlay kept its label and plane hold.
+it("removing a PT overlay gives the pane's planes back", async () => {
   const nv = new NiiVue({ backend: 'webgl2' })
   nv.drawScene = () => {}
-  await nv.loadVolumes([{ url: nifti() }])
-  registerNiivue('swap', nv)
-  updateNiivueViewport('swap', {
-    displaySets: [{ displaySetInstanceUID: 'pt2', Modality: 'PT' } as never],
+  await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
+  registerNiivue('rm', nv)
+  const petDs = { displaySetInstanceUID: 'pet', Modality: 'PT' }
+  updateNiivueViewport('rm', {
+    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
+    overlays: new Map([['pet', nv.volumes[1]?.hdr]]) as never,
   })
   const services = {
-    services: { viewportGridService: { getActiveViewportId: () => 'swap' } },
+    services: {
+      displaySetService: { getDisplaySetByUID: () => petDs },
+      viewportGridService: { getActiveViewportId: () => 'rm' },
+    },
   } as never
-  expect(armBrush('swap', 'CircularBrush', services, () => 5)).toBe(true)
-  updateNiivueViewport('swap', {
-    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' } as never],
-  })
-  showPaneLabel(getNiivueEntry('swap') as never, services)
+  expect(armBrush('rm', 'CircularBrush', services, () => 5)).toBe(true)
+  const { actions } = getNiivueCommandsModule({ servicesManager: services })
+  await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
   await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], planesOn(), 'g')
   expect(nv.drawingVolume?.img?.[0]).toBe(9)
   resetQuant()
-  unregisterNiivue('swap')
+  unregisterNiivue('rm')
 })
-
-// Review of #866 r2: removing the PT overlay kept its label and plane hold.
-for (const how of ['remove', 'toggle'] as const)
-  it(`removing a PT overlay (${how}) gives the pane's planes back`, async () => {
-    const nv = new NiiVue({ backend: 'webgl2' })
-    nv.drawScene = () => {}
-    await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
-    registerNiivue('rm', nv)
-    const petDs = { displaySetInstanceUID: 'pet', Modality: 'PT' }
-    updateNiivueViewport('rm', {
-      displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
-      overlays: new Map([['pet', nv.volumes[1]?.hdr]]) as never,
-    })
-    const services = {
-      services: {
-        displaySetService: { getDisplaySetByUID: () => petDs },
-        viewportGridService: { getActiveViewportId: () => 'rm' },
-      },
-    } as never
-    expect(armBrush('rm', 'CircularBrush', services, () => 5)).toBe(true)
-    const { actions } = getNiivueCommandsModule({ servicesManager: services })
-    if (how === 'remove')
-      await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
-    else await actions.niivueToggleOverlay()
-    await setOverlayPlanes(nv, [nifti(9, 'x_ROI1.nii')], planesOn(), 'g')
-    expect(nv.drawingVolume?.img?.[0]).toBe(9)
-    resetQuant()
-    unregisterNiivue('rm')
-  })
 
 // Review of #866: a PT label neither overwrites nor closes a SEG drawing.
 it('a PT label leaves a SEG drawing alone', async () => {

@@ -171,6 +171,8 @@ export function startSegDrawing(
     convert?: typeof convertDisplaySetToNifti
     /** Called once shown, with the segments; returns its cleanup. */
     onShown?: (segments: PanelSegment[], restyle: Restyle) => () => void
+    /** Called when the load settles without a drawing (not on stop). */
+    onFailed?: () => void
   },
 ): () => void {
   let cancelled = false
@@ -236,13 +238,17 @@ export function startSegDrawing(
         style.restyle,
       )
   }
-  show().catch((err) => {
-    if (cancelled) return
-    console.error('[nv-ohif] SEG load failed', err)
-    options.setNote(
-      `Segmentation failed: ${err instanceof Error ? err.message : String(err)}`,
-    )
-  })
+  show()
+    .catch((err) => {
+      if (cancelled) return
+      console.error('[nv-ohif] SEG load failed', err)
+      options.setNote(
+        `Segmentation failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
+    .finally(() => {
+      if (!cancelled && !installed) options.onFailed?.()
+    })
   return () => {
     cancelled = true
     abort.abort()
@@ -291,12 +297,14 @@ export function useSegDrawing(
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !seg) return
+    const release = holdOverlayPlanes(nv)
+    // A SEG/RT that fails gives the pane back to the label and planes.
     const options = {
       headers: authHeaders(managers.servicesManager),
       setNote,
       whenBase: baseInstalledRef.current,
+      onFailed: release,
     }
-    const release = holdOverlayPlanes(nv)
     const stop =
       seg.Modality === 'RTSTRUCT'
         ? startRtDrawing(nv, seg, { ...options, onShown })

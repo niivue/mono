@@ -305,10 +305,10 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
 - **Acquired plane.** A series OHIF marks not reconstructable (unequal slice
   spacing, orthogonal localizers), or a single slice, opens in its acquired
   plane rather than multiplanar.
-- **Overlay planes (60xx).** While `ImageOverlayViewer` is Enabled and no SEG
-  or PT label holds the drawing, the first overlay plane shows as the pane's drawing,
-  display only (the pen stays off). First plane only; a 4D plane follows the
-  pane's frame (none past its last).
+- **Overlay planes (60xx).** While `ImageOverlayViewer` is Enabled and no SEG,
+  RTSTRUCT or PT label holds the drawing, the first overlay plane shows as the
+  pane's drawing, display only (the pen stays off). First plane only; a 4D
+  plane follows the pane's frame (none past its last).
 - **Fetching.** Each instance is retrieved whole (WADO-RS RetrieveInstance) when
   the server allows it; otherwise it is rebuilt from `/metadata` plus frames
   1..NumberOfFrames, so enhanced/multi-frame instances convert as one file.
@@ -402,9 +402,11 @@ tmtv, segmentation, microscopy).
 - **PET quantification (TMTV).** Body-weight SUV from the instance tags (no
   vendor quirks). One label per PT series on the PT grid, shown on every pane
   holding it (resampled on fusion panes); brush, threshold brush and ROI
-  threshold tools; TMTV / TLG and per-segment stats, CSV export. A pane whose
-  drawing is a SEG or RTSTRUCT keeps it (no label, no brush). A mode exit
-  drops the labels.
+  threshold tools; TMTV / TLG and per-segment stats, CSV export. The label
+  replaces shown 60xx planes. A pane whose drawing is a SEG or RTSTRUCT, shown
+  or still loading, keeps it (no label, no brush); once the last goes (closed,
+  failed or cancelled mid-load), the label is dropped, the planes return and
+  re-arming the brush brings the label back. A mode exit drops the labels.
 - **MIP pane.** `VolumeRotateMouseWheel` and `MIPJumpToClickTool` (crosshair to
   the brightest voxel along the clicked ray).
 - **Segmentation.** A SEG or RTSTRUCT drawing is entered in OHIF's

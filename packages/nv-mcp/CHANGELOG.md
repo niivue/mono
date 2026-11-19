@@ -1,3 +1,19 @@
+## 1.0.0-rc.226 (2026-11-19)
+
+### Fixes
+
+- **niivue:** slide annotation tools with a fixed point count take exactly it ([3cb3829d](https://github.com/niivue/mono/commit/3cb3829d))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.229
+- Updated uikit to 1.0.0-rc.228
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.225 (2026-11-18)
 
 ### Updated Dependencies

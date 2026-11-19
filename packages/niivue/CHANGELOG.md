@@ -1,3 +1,22 @@
+## 1.0.0-rc.229 (2026-11-19)
+
+### Fixes
+
+- **niivue:** hidden overlays keep the outline on; slide demo exports point annotations ([aec59bcd](https://github.com/niivue/mono/commit/aec59bcd))
+- **niivue:** export the slide annotation helpers from the backend entries ([21d0ba43](https://github.com/niivue/mono/commit/21d0ba43))
+- **niivue:** slides demo Undo, Clear and SVG export cover measure annotations ([6f078fb4](https://github.com/niivue/mono/commit/6f078fb4))
+- **niivue:** no 2D overlay outline while an overlay keeps its colormap alpha ([af1b509a](https://github.com/niivue/mono/commit/af1b509a))
+- **niivue:** setSlide drops the old slide's rulers with its annotations ([c90d8032](https://github.com/niivue/mono/commit/c90d8032))
+- **niivue:** slide annotation tools with a fixed point count take exactly it ([3cb3829d](https://github.com/niivue/mono/commit/3cb3829d))
+- **niivue:** drawShapeFill on a multiplanar or render view fills an axial shape ([31c2afb6](https://github.com/niivue/mono/commit/31c2afb6))
+- **niivue:** persist isColormapAlphaKept in documents ([2fbb3524](https://github.com/niivue/mono/commit/2fbb3524))
+- **niivue:** slide undo restores an edit that appended a vertex ([59cc0d68](https://github.com/niivue/mono/commit/59cc0d68))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.228 (2026-11-18)
 
 ### Fixes

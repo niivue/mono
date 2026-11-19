@@ -374,6 +374,8 @@ export class CinematicRenderer extends NVRenderer {
     textures.forEach(([name, target, tex], unit) => {
       gl.activeTexture(gl.TEXTURE0 + unit)
       gl.bindTexture(target, tex)
+      // A sampler object left on this unit by another pass overrides the texture's filtering.
+      gl.bindSampler(unit, null)
       gl.uniform1i(shader.uniforms[name] ?? null, unit)
     })
   }

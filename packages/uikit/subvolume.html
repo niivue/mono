@@ -49,7 +49,7 @@
 
     <script type="module">
       import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '@niivue/niivue'
-      import { loadDefaultFont, UIKitButtonOverlay, UIKitSubvolumeSelector, UIKitTextOverlay } from './src/index.ts'
+      import { createBrowserDownload, loadDefaultFont, UIKitButtonOverlay, UIKitSubvolumeSelector, UIKitTextOverlay } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -89,7 +89,11 @@
       explode.addEventListener('change', applyBricks)
 
       let seq = 0
-      let saveName = ''
+      // What Save downloads: the latest box, whatever the pane shows.
+      let saved = null
+      // Copy-pane loads run in pick order, so a slow earlier load cannot replace a later box.
+      let loading = Promise.resolve()
+      const download = createBrowserDownload()
       const selector = new UIKitSubvolumeSelector({
         onCorner: (mm) => {
           seq++
@@ -98,15 +102,26 @@
         onSelect: async (sel) => {
           const at = ++seq
           const [x, y, z] = sel.voxelDims
+          saved = null
+          buttons.updateButton('save', { enabled: false })
           if (!sel.subVolume) {
             setStatus(`${x}x${y}x${z} voxels, but this volume has no CPU copy to extract`, 'error')
             return
           }
           // A fresh File each pick: the copy is ephemeral, rebuilt on the next box.
           const { nifti, calMin, calMax } = sel.subVolume
-          await copy.loadVolumes([{ url: new File([nifti], 'subvolume.nii'), colormap: 'gray', calMin, calMax }])
+          const loaded = loading.then(() =>
+            at === seq && copy.loadVolumes([{ url: new File([nifti], 'subvolume.nii'), colormap: 'gray', calMin, calMax }]),
+          )
+          loading = loaded.catch(() => {})
+          try {
+            await loaded
+          } catch (err) {
+            if (at === seq) setStatus(`Copy failed: ${err.message}`, 'error')
+            return
+          }
           if (at !== seq) return
-          saveName = `subvolume_${sel.voxelOrigin.join('-')}_${x}x${y}x${z}.nii`
+          saved = { nifti, name: `subvolume_${sel.voxelOrigin.join('-')}_${x}x${y}x${z}.nii` }
           buttons.updateButton('clear', { enabled: true })
           buttons.updateButton('save', { enabled: true })
           setStatus(`${x}x${y}x${z} voxels from [${sel.voxelOrigin.join(', ')}]${z === 1 || y === 1 || x === 1 ? ': right-click another slice view to set the depth' : ''}`, 'ok')
@@ -158,14 +173,15 @@
           selector.reset()
           buttons.updateButton('clear', { enabled: false })
           buttons.updateButton('save', { enabled: false })
+          saved = null
           await copy.removeAllVolumes()
           setStatus('Right-click the first corner', 'wait')
         },
       })
-      // Save downloads the copy as NIfTI, its header placing it where the box was.
+      // Save downloads the box as NIfTI, its header placing it where the box was.
       buttons.addButton({
-        id: 'save', label: 'Save', x: 96, y: 12, enabled: false,
-        onClick: () => copy.saveVolume({ filename: saveName }),
+        id: 'save', label: 'Save', x: 12 + buttons.getLayout('clear').width + 8, y: 12, enabled: false,
+        onClick: () => download(new Blob([saved.nifti]), saved.name),
       })
       nv.registerOverlayRenderer(selector)
     </script>

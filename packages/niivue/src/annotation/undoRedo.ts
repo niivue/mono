@@ -9,6 +9,8 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
   // What the last push cleared and evicted, restored if that push is discarded.
   private _clearedRedo: Entry<T>[] = []
   private _evicted: Entry<T> | undefined
+  // The push discard may still revert; any later undo or redo ends that window.
+  private _lastPush: number | undefined
   private _maxSnapshots: number
   private _seq = 0
   /**
@@ -32,6 +34,7 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
         : undefined
     this._clearedRedo = this._redoStack
     this._redoStack = []
+    this._lastPush = seq
     this.onPush?.(seq)
     return seq
   }
@@ -39,6 +42,7 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
   undo(current: T): T | null {
     const top = this._undoStack.pop()
     if (!top) return null
+    this._endDiscardWindow()
     // The step keeps its number on the redo side.
     this._redoStack.push({ seq: top.seq, snapshot: structuredClone(current) })
     return top.snapshot
@@ -47,21 +51,28 @@ export class AnnotationUndoStack<T = VectorAnnotation[]> {
   redo(current: T): T | null {
     const top = this._redoStack.pop()
     if (!top) return null
+    this._endDiscardWindow()
     this._undoStack.push({ seq: top.seq, snapshot: structuredClone(current) })
     return top.snapshot
   }
 
   /** Undo push `seq`, called right after it (an edit abandoned after its push). */
   discard(seq: number): void {
-    if (this.undoTop !== seq) return
+    if (this._lastPush !== seq) return
     this._undoStack.pop()
     if (this._evicted) this._undoStack.unshift(this._evicted)
     this._redoStack = this._clearedRedo
+    this._endDiscardWindow()
   }
 
   clear(): void {
     this._undoStack.length = 0
     this._redoStack.length = 0
+    this._endDiscardWindow()
+  }
+
+  private _endDiscardWindow(): void {
+    this._lastPush = undefined
     this._clearedRedo = []
     this._evicted = undefined
   }

@@ -161,6 +161,9 @@ urlParamSelect(els.aaSelect, 'aa', isAntiAlias ? 'on' : 'off')
 
 // The slide view (renderer, frame loop, gestures), made in main().
 let view = null
+// Measure-tool steps, newest last: an annotation's id when it was added, or
+// 'edit' for a handle drag (an annotationUndo step).
+const measureSteps = []
 let slide = null
 // The slide pixel under the pointer, for the HUD's value readout.
 let hoverCss = null // the pointer in canvas CSS px: a pan moves the slide under it
@@ -749,12 +752,17 @@ els.penValue.addEventListener('change', () => {
   penValue = Number(els.penValue.value) || 1
 })
 els.drawUndo.addEventListener('click', () => {
-  // A measure tool removes the last measurement, the vector tool the last
-  // polygon; other tools undo the raster.
+  // A measure tool undoes the last add or handle edit, the vector tool removes
+  // the last polygon; other tools undo the raster.
   const annotations = view?.controller.annotations
   if (view?.controller.annotationTool && annotations) {
-    const last = annotations.list().at(-1)
-    if (last && annotations.remove(last.id)) requestRender()
+    while (measureSteps.length) {
+      const step = measureSteps.pop()
+      if (step === 'edit') annotations.annotationUndo()
+      else if (!annotations.remove(step)) continue
+      requestRender()
+      return
+    }
     return
   }
   if (drawTool === 'vector') {
@@ -770,6 +778,7 @@ els.drawClear.addEventListener('click', () => {
   drawing?.clear()
   vector?.clear()
   view?.controller.annotations.clear()
+  measureSteps.length = 0
   overlayDirty = true
   requestRender()
 })
@@ -866,6 +875,7 @@ async function loadSlide() {
   // (its cache and in-flight fetches) and frees the renderer's tile textures.
   slide = null
   view.setSlide(null)
+  measureSteps.length = 0
   try {
     const opts = {
       maxCacheBytes: MAX_CACHE_BYTES,
@@ -932,6 +942,12 @@ async function main() {
     view.controller.annotations.addEventListener(type, (e) =>
       console.log(`annotation ${type}`, e.detail),
     )
+  view.controller.annotations.addEventListener('added', (e) =>
+    measureSteps.push(e.detail.id),
+  )
+  view.controller.annotations.addEventListener('annotationHistoryPush', () =>
+    measureSteps.push('edit'),
+  )
   const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'
     requestRender()

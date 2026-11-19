@@ -138,17 +138,32 @@ describe('AnnotationUndoStack', () => {
     expect(stack.redo([])).toBeNull()
   })
 
-  test('discard_restoresEvictedStepAndRedo', () => {
+  // A full undo stack means an empty redo stack, so eviction and a cleared
+  // redo are tested apart.
+  test('discard_restoresEvictedStep', () => {
     const stack = new AnnotationUndoStack<string>(2)
     stack.push('first')
     stack.push('second')
-    stack.undo('now')
-    stack.push('second')
-    const redo = stack.redoTop
     stack.discard(stack.push('third'))
-    expect(stack.redoTop).toBe(redo)
     expect(stack.undo('now')).toBe('second')
     expect(stack.undo('now')).toBe('first')
+  })
+
+  test('discard_restoresClearedRedo', () => {
+    const stack = new AnnotationUndoStack<string>(3)
+    stack.push('first')
+    stack.undo('later')
+    stack.discard(stack.push('abandoned'))
+    expect(stack.redo('now')).toBe('later')
+  })
+
+  test('discard_afterUndoRedo_isNoop', () => {
+    const stack = new AnnotationUndoStack<string>(3)
+    stack.push('first')
+    const seq = stack.push('second')
+    stack.redo(stack.undo('now') ?? '')
+    stack.discard(seq)
+    expect(stack.undo('now')).toBe('second')
   })
 
   test('discard_withoutEviction_keepsStack', () => {

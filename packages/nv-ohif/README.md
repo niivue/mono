@@ -420,8 +420,9 @@ tmtv).
   OHIF's segmentation editing (labelmap panel and toolbox, segmentation tools
   in the default and mpr tool groups; no contour panel). OHIF's labelmap tools drive
   NiiVue's pen (threshold range and segment locks enforced); each edit is one
-  OHIF undo step. Export writes DICOM SEG or RTSTRUCT on the source series'
-  own frames.
+  OHIF undo step. A segment row's statistics card shows its voxel count and
+  volume, refreshed after each edit. Export writes DICOM SEG or RTSTRUCT on the
+  source series' own frames.
 - **SR.** NiiVue measurement rows are mirrored as cornerstone annotations, so
   OHIF's SR export includes them; a hydrated SR's rows show as NiiVue
   annotations (axis-aligned only). Slide rows save and load as OHIF's

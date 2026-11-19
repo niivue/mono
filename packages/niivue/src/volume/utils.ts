@@ -990,8 +990,15 @@ function copyRuns(
   }
 }
 
-/** Voxel misalignment `remapDrawingToRAS` accepts (float32 affines round-trip far inside it). */
-export const DRAWING_GRID_TOLERANCE = 1e-3
+/**
+ * Voxel misalignment `remapDrawingToRAS` accepts. DICOM slice positions are
+ * float32 and a converter's spacing estimate drifts from them: a TMTV PT
+ * converts 0.013 voxel off its own slices at the far end, so a SEG on its
+ * frames lands that far from the PT volume's centres. Placement stays
+ * unambiguous to 0.5 voxel; any rotation, rescale or half-voxel offset is
+ * still refused.
+ */
+export const DRAWING_GRID_TOLERANCE = 0.05
 
 /**
  * Copy a label bitmap on another grid (native order, `srcDims`, voxel->mm

@@ -186,7 +186,8 @@ export const MARK_SCHEMAS = {
       .enum(SLIDE_ANNOTATION_TOOLS)
       .optional()
       .describe(
-        'For add: the shape. point takes 1 point; line [start, end]; rectangle and ellipse ' +
+        'For add: the shape. point takes 1 point; line [start, end]; arrow [tail, tip]; ' +
+          'bidirectional [long start, long end] (short axis added) or all 4 points; rectangle and ellipse ' +
           'two opposite corners; circle [centre, rim]; polygon and freehand (closed, 3 or more) ' +
           'and freehandLine (open, 2 or more) their vertices.',
       ),
@@ -195,7 +196,7 @@ export const MARK_SCHEMAS = {
       .min(1)
       .optional()
       .describe(
-        'For add: [x, y] points in slide base (level 0) pixels. point takes 1; line, rectangle, ellipse and circle exactly 2; polygon and freehand 3 or more; freehandLine 2 or more.',
+        'For add: [x, y] points in slide base (level 0) pixels. point takes 1; line, arrow, rectangle, ellipse and circle exactly 2; bidirectional 2 or 4; polygon and freehand 3 or more; freehandLine 2 or more.',
       ),
     id: z
       .string()

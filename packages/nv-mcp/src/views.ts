@@ -114,6 +114,8 @@ export interface ViewState {
 export const SLIDE_ANNOTATION_TOOLS = [
   'point',
   'line',
+  'arrow',
+  'bidirectional',
   'rectangle',
   'ellipse',
   'circle',

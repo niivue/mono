@@ -8,6 +8,7 @@ import {
   calMinMax,
   createNiftiArray,
   createNiftiHeader,
+  DRAWING_GRID_TOLERANCE,
   ensureValidNonZero,
   extractVoxelFid,
   framesInImage,
@@ -548,16 +549,20 @@ describe('remapDrawingToRAS', () => {
 
   test('halfVoxelShift_refused', () => {
     expect(remap(2, [11, -3, 5], [3, 6, 3]).ras).toBe('non-integer shift')
+    // D6-12: float32 slice positions leave a SEG ~0.013 voxel off its PT.
+    expect(remap(2, [10.026, -3, 5], [3, 6, 3]).ras).toEqual(
+      remap(2, [10, -3, 5], [3, 6, 3]).ras,
+    )
   })
 
   test('driftThatCancelsAcrossTheGrid_judgedAtItsWorstVoxel', () => {
-    // Along y the source spacing is 3.2e-4 short and its origin compensates:
-    // -8e-4 voxel at one end, +8e-4 at the other, though the summed parts
-    // (1.6e-3 + 8e-4) exceed the tolerance. 1.5x the drift is refused.
+    // Along y the source spacing is 0.32 tolerance short and its origin
+    // compensates: -0.8 tolerance at one end, +0.8 at the other, though the
+    // summed parts (1.6 + 0.8) exceed it. 1.5x the drift is refused.
     const back = makeOrientedVolume([6, 5, 4], SAGITTAL_AFFINE)
     const src = distinctBytes(3 * 6 * 3)
     const at = (k: number) => {
-      const e = 3.2e-4 * k
+      const e = 0.32 * DRAWING_GRID_TOLERANCE * k
       return [
         [-2, 0, 0, 10],
         [0, 2 / (1 + e), 0, -5 + (2.5 * e * 2) / (1 + e)],

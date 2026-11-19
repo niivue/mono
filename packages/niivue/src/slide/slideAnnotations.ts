@@ -1,5 +1,5 @@
 import { getControlPoints, updateShapeBounds } from '@/annotation/selection'
-import { ellipseRing } from '@/annotation/shapes'
+import { bidirectionalShortAxis, ellipseRing } from '@/annotation/shapes'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import type { PolygonWithHoles } from '@/NVTypes'
 import type { NVSlidePoint } from './slideController'
@@ -8,11 +8,15 @@ import type { NVSlidePoint } from './slideController'
  * Slide annotation tools and the points each stores (slide base pixels):
  * point [p]; line [start, end]; rectangle and ellipse [corner, opposite
  * corner], axis aligned; circle [centre, rim point]; polygon, freehand
- * (closed) and freehandLine (open) their vertices.
+ * (closed) and freehandLine (open) their vertices; arrow [tail, tip];
+ * bidirectional [long start, long end, short start, short end] (drawn as its
+ * long axis; the short axis is added perpendicular, 2/3 as long).
  */
 export type SlideAnnotationTool =
   | 'point'
   | 'line'
+  | 'arrow'
+  | 'bidirectional'
   | 'rectangle'
   | 'ellipse'
   | 'circle'
@@ -29,6 +33,8 @@ export type SlideAnnotationTool =
 export interface SlideAnnotationStats {
   unit: 'mm' | 'px'
   length?: number
+  /** A bidirectional's short axis (`length` is its long axis). */
+  shortLength?: number
   area?: number
   perimeter?: number
 }
@@ -47,6 +53,8 @@ type Spacing = readonly [number, number] | undefined
 const SLIDE_ANNOTATION_MIN_POINTS: Record<SlideAnnotationTool, number> = {
   point: 1,
   line: 2,
+  arrow: 2,
+  bidirectional: 4,
   rectangle: 2,
   ellipse: 2,
   circle: 2,
@@ -61,8 +69,67 @@ const hasPointCount = (tool: SlideAnnotationTool, n: number): boolean =>
     ? n >= SLIDE_ANNOTATION_MIN_POINTS[tool]
     : n === SLIDE_ANNOTATION_MIN_POINTS[tool]
 
+const CLOSED_SLIDE_TOOLS = new Set<SlideAnnotationTool>([
+  'rectangle',
+  'ellipse',
+  'circle',
+  'polygon',
+  'freehand',
+])
 export const isClosedSlideTool = (tool: SlideAnnotationTool): boolean =>
-  tool !== 'point' && tool !== 'line' && tool !== 'freehandLine'
+  CLOSED_SLIDE_TOOLS.has(tool)
+
+// Slide pixels <-> mm on each axis, so right angles are physical on
+// non-square pixels.
+const toMM = (p: NVSlidePoint, [sx, sy]: readonly [number, number]) => ({
+  x: p.x * sx,
+  y: p.y * sy,
+})
+const fromMM = (p: NVSlidePoint, [sx, sy]: readonly [number, number]) => ({
+  x: p.x / sx,
+  y: p.y / sy,
+})
+
+/**
+ * A bidirectional's four points from its long axis alone (its short axis
+ * perpendicular in mm), or as given.
+ */
+export function bidirectionalPoints(
+  points: readonly NVSlidePoint[],
+  spacingMM: Spacing = undefined,
+): NVSlidePoint[] {
+  if (points.length !== 2) return points.map(({ x, y }) => ({ x, y }))
+  const sp = spacingMM ?? [1, 1]
+  const [a, b] = points.map((p) => toMM(p, sp)) as [NVSlidePoint, NVSlidePoint]
+  const short = bidirectionalShortAxis(a, b)
+  return [a, b, short.start, short.end].map((p) => fromMM(p, sp))
+}
+
+/**
+ * The line segments an annotation is drawn and picked by, in slide pixels: a
+ * bidirectional's two axes (its long axis while being drawn), an arrow's
+ * shaft, otherwise its outline's edges.
+ */
+export function slideAnnotationSegments(
+  tool: SlideAnnotationTool,
+  points: readonly NVSlidePoint[],
+  spacingMM: Spacing = undefined,
+): [NVSlidePoint, NVSlidePoint][] {
+  if (tool === 'bidirectional') {
+    const [a, b, c, d] = bidirectionalPoints(points, spacingMM)
+    return [
+      [a, b],
+      [c, d],
+    ] as [NVSlidePoint, NVSlidePoint][]
+  }
+  const ring = slideAnnotationOutline(tool, points)
+  const segments: [NVSlidePoint, NVSlidePoint][] = []
+  for (let i = 1; i < ring.length; i++)
+    segments.push([ring[i - 1], ring[i]] as [NVSlidePoint, NVSlidePoint])
+  if (isClosedSlideTool(tool) && ring.length > 2)
+    segments.push([ring.at(-1), ring[0]] as [NVSlidePoint, NVSlidePoint])
+  return segments
+}
 
 /**
  * The outline drawn for an annotation, in slide pixels: an ellipse or circle
@@ -113,8 +180,8 @@ function boxOf(type: BoxTool, points: readonly NVSlidePoint[]) {
 
 /**
  * Edit handles in slide pixels: a rectangle's corners and sides, an ellipse's
- * or circle's cardinal points (as volume annotations), a point's, line's or
- * polygon's own points; none for freehand.
+ * or circle's cardinal points (as volume annotations), a point's, line's,
+ * arrow's, bidirectional's or polygon's own points; none for freehand.
  */
 export function slideAnnotationHandles(
   tool: SlideAnnotationTool,
@@ -130,7 +197,27 @@ export function dragSlideAnnotationHandle(
   points: readonly NVSlidePoint[],
   index: number,
   to: NVSlidePoint,
+  spacingMM: Spacing = undefined,
 ): NVSlidePoint[] {
+  if (tool === 'bidirectional') {
+    // As a volume bidirectional (cornerstone's rules), in mm.
+    const sp = spacingMM ?? [1, 1]
+    const [start, end, start2, end2] = points.map((p) => toMM(p, sp)) as [
+      NVSlidePoint,
+      NVSlidePoint,
+      NVSlidePoint,
+      NVSlidePoint,
+    ]
+    const r = updateShapeBounds(
+      'measureBidirectional',
+      { start, end, start2, end2 },
+      index,
+      toMM(to, sp),
+    )
+    return [r.start, r.end, r.start2 ?? start2, r.end2 ?? end2].map((p) =>
+      fromMM(p, sp),
+    )
+  }
   if (!isBoxTool(tool))
     return points.map((p, i) => (i === index ? { ...to } : { ...p }))
   const { start, end } = updateShapeBounds(tool, boxOf(tool, points), index, to)
@@ -163,7 +250,16 @@ export function slideAnnotationStats(
 ): SlideAnnotationStats {
   const [sx, sy] = spacingMM ?? [1, 1]
   const unit = spacingMM ? 'mm' : 'px'
-  if (tool === 'point') return { unit }
+  // An arrow points at something; it measures nothing (cornerstone's).
+  if (tool === 'point' || tool === 'arrow') return { unit }
+  if (tool === 'bidirectional') {
+    const [a, b, c, d] = bidirectionalPoints(points, spacingMM)
+    return {
+      unit,
+      length: pathLength([a, b] as NVSlidePoint[], false, sx, sy),
+      shortLength: pathLength([c, d] as NVSlidePoint[], false, sx, sy),
+    }
+  }
   if (!isClosedSlideTool(tool))
     return { unit, length: pathLength(points, false, sx, sy) }
   if (tool === 'ellipse' || tool === 'circle') {
@@ -251,8 +347,12 @@ export class NVSlideAnnotations extends EventTarget {
     points: readonly NVSlidePoint[],
     label = '',
   ): SlideAnnotation | null {
-    if (!hasPointCount(tool, points.length)) return null
-    const copy = points.map(({ x, y }) => ({ x, y }))
+    // A bidirectional given its long axis gets its automatic short axis.
+    const copy =
+      tool === 'bidirectional'
+        ? bidirectionalPoints(points, this._spacing())
+        : points.map(({ x, y }) => ({ x, y }))
+    if (!hasPointCount(tool, copy.length)) return null
     const annotation: SlideAnnotation = {
       id: `slide-annotation-${this._next++}`,
       tool,

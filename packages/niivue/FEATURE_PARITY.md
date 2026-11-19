@@ -574,5 +574,5 @@ No old-package equivalent. Formats via `@niivue/nv-ext-tile` (`/tiff`, `/dicom`,
 | Saved slide reopens its own source and focal/time plane | Present | TIFF/Zarr/DICOM sources and focal/time planes restored (#755) |
 | MCP: OME-Zarr label colours | ✅ | #757 |
 | One core `ByteLru` for byte, decoded-chunk and tile caches | Present | Public `ByteLru` export |
-| Slide annotations (point, line, rectangle, ellipse, circle, polygon, freehand; stats, labels, edit handles, point-edit undo) | ✅ | #836 (`NVSlideAnnotations`, `NVSlideController.annotationTool`). Adds and removes are not undo steps |
+| Slide annotations (point, line, arrow, bidirectional, rectangle, ellipse, circle, polygon, freehand; stats, labels, edit handles, point-edit undo) | ✅ | #836 (`NVSlideAnnotations`, `NVSlideController.annotationTool`). Adds and removes are not undo steps |
 | MCP: slide annotation tools (`list_slide_annotations`, `edit_slide_annotations`) | Present | #859. No page wires `slideAnnotations` yet; no point-edit, undo or select actions |

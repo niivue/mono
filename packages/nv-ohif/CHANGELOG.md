@@ -1,3 +1,20 @@
+## 1.0.0-rc.267 (2026-11-19)
+
+### Fixes
+
+- **nv-ohif:** TMTV SEG reload, slide Bidirectional/Arrow, data overlay Foreground, readout and PT reload regressions ([be806a00](https://github.com/niivue/mono/commit/be806a00))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.231
+- Updated nv-ext-drawing to 1.0.0-rc.233
+- Updated nv-ext-tile to 1.0.0-rc.140
+- Updated uikit to 1.0.0-rc.230
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.266 (2026-11-19)
 
 ### Features

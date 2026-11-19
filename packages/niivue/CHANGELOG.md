@@ -1,3 +1,13 @@
+## 1.0.0-rc.231 (2026-11-19)
+
+### Features
+
+- **niivue:** slide Bidirectional and Arrow tools; drawings load within 0.05 voxel ([b5b3f0c6](https://github.com/niivue/mono/commit/b5b3f0c6))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.230 (2026-11-19)
 
 ### Features

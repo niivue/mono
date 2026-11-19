@@ -298,7 +298,8 @@ export function registerMarkTools(
     title: 'List the slide annotations',
     description:
       "Lists the annotations on the page's whole-slide viewer, each with its id, tool, label and " +
-      'stats (length, area and perimeter in mm, or base pixels without a pixel spacing); with ' +
+      "stats (length, a bidirectional's shortLength, area and perimeter in mm, or base pixels " +
+      'without a pixel spacing); with ' +
       'their points when asked. These are not the slice annotations of list_annotations.',
     inputSchema: MARK_SCHEMAS.list_slide_annotations,
     readOnly: true,
@@ -307,8 +308,9 @@ export function registerMarkTools(
   registerSimple(server, context, 'edit_slide_annotations', {
     title: 'Edit the slide annotations',
     description:
-      "Adds an annotation to the page's whole-slide viewer (a point, line, rectangle, ellipse, " +
-      'circle, polygon, freehand shape or freehand line, in slide base pixels), removes one or ' +
+      "Adds an annotation to the page's whole-slide viewer (a point, line, arrow, bidirectional, " +
+      'rectangle, ellipse, circle, polygon, freehand shape or freehand line, in slide base ' +
+      'pixels), removes one or ' +
       'sets its label by id, or clears them. Reports how many there are afterwards.',
     inputSchema: MARK_SCHEMAS.edit_slide_annotations,
   })

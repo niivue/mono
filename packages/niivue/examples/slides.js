@@ -275,7 +275,16 @@ function afterRender(screen) {
 // frame; the state tracks add/undo/clear/source-switch without extra wiring.
 // The vector shapes plus the measure annotations' outlines.
 function exportShapes() {
-  const measured = (view?.controller.annotations.list() ?? []).map((a) => {
+  const line = (points) => ({
+    kind: 'polyline',
+    points: points.map((q) => [q.x, q.y]),
+    color: '#ffd400',
+    strokeWidth: 2,
+  })
+  const measured = (view?.controller.annotations.list() ?? []).flatMap((a) => {
+    // A bidirectional is two crossing lines, not one 4-point path.
+    if (a.tool === 'bidirectional')
+      return [line(a.points.slice(0, 2)), line(a.points.slice(2, 4))]
     const points = slideAnnotationOutline(a.tool, a.points).map((q) => [
       q.x,
       q.y,

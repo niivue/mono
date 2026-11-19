@@ -249,6 +249,17 @@ describe('updateShapeBounds', () => {
     near(r.end2, 7, -2)
   })
 
+  test('bidirectional short handle stops at the long axis and its ends', () => {
+    // Dragged across the long axis and past its end: the short end stops on
+    // the axis at the end, so the axes still cross.
+    const r = updateShapeBounds('measureBidirectional', bidi, 2, {
+      x: 14,
+      y: -8,
+    })
+    near(r.start2, 10, 0)
+    near(r.end2, 10, -2)
+  })
+
   test('a skewed short axis keeps its skew when the long axis moves', () => {
     const skewed = { ...bidi, start2: { x: 4, y: -3 }, end2: { x: 6, y: 3 } }
     const r = updateShapeBounds('measureBidirectional', skewed, 0, {

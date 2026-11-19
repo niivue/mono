@@ -196,7 +196,7 @@ export function isTwoLineShape(type: AnnotationTool): boolean {
  * axis about the other end and carries the short axis with it: same fraction
  * along the long axis, same distances off it. A short-axis end (2, 3) slides
  * the short axis along the long axis to the pointer and sets its own distance
- * off it; the short axis stays perpendicular.
+ * off it; the short axis keeps its angle and keeps crossing the long axis.
  */
 function _updateBidirectional(
   original: ShapeBoundsUpdate,
@@ -229,12 +229,16 @@ function _updateBidirectional(
   if (idx === 0) s = pos
   else if (idx === 1) e = pos
   else {
-    // The dragged end goes to the pointer; the other slides along with it.
-    const dt = frac(pos) - (idx === 2 ? t1 : t2)
+    // The dragged end follows the pointer and the other slides along with it,
+    // clamped so the axes still cross: not past a long-axis end, and the
+    // dragged end not across the long axis to the other end's side.
+    const dt = Math.min(1, Math.max(0, frac(pos))) - (idx === 2 ? t1 : t2)
     t1 += dt
     t2 += dt
-    if (idx === 2) d1 = across(pos)
-    else d2 = across(pos)
+    const keepSide = (d: number, was: number) =>
+      was < 0 ? Math.min(0, d) : Math.max(0, d)
+    if (idx === 2) d1 = keepSide(across(pos), d1)
+    else d2 = keepSide(across(pos), d2)
   }
   const g = frame(s, e)
   const at = (t: number, d: number) => ({

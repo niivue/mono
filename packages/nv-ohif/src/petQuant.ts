@@ -93,6 +93,8 @@ const roiSlices: { start?: number[]; end?: number[] } = {}
 const thresholdPens = new WeakSet<NiiVue>()
 // Panes whose drawing a label holds, with the overlay planes' release.
 const planeHolds = new Map<NiiVue, () => void>()
+// Drawings a label created; one it wrote into (a SEG's) is not its to close.
+const ownDrawings = new WeakSet<NVImage>()
 let thresholdRange: [number, number] = [2.5, 50]
 // Armed panes' pen size (OHIF's brush size), re-read by refreshBrushSizes.
 const penSizes = new WeakMap<NiiVue, () => number>()
@@ -233,6 +235,7 @@ function showMask(
       const armed = nv.drawIsEnabled
       nv.createEmptyDrawing()
       nv.drawIsEnabled = armed
+      if (nv.drawingVolume) ownDrawings.add(nv.drawingVolume)
     }
     const img = nv.drawingVolume?.img
     if (!(img instanceof Uint8Array)) continue
@@ -253,8 +256,7 @@ function showMask(
 
 /** A pane's label drawing goes and its overlay planes come back. */
 function dropLabel(nv: NiiVue): void {
-  if (nv.drawingVolume && shownIn.get(nv)?.[2] === nv.drawingVolume)
-    nv.closeDrawing()
+  if (nv.drawingVolume && ownDrawings.has(nv.drawingVolume)) nv.closeDrawing()
   planeHolds.get(nv)?.()
   planeHolds.delete(nv)
 }

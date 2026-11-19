@@ -392,3 +392,35 @@ for (const how of ['remove', 'toggle'] as const)
     resetQuant()
     unregisterNiivue('rm')
   })
+
+// Independent review of #866: dropping a label must not close a SEG drawing
+// it was written into.
+it('removing a PT overlay keeps a SEG drawing the label borrowed', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
+  nv.createEmptyDrawing() // stands in for a hung SEG
+  const seg = nv.drawingVolume
+  registerNiivue('segpt', nv)
+  updateNiivueViewport('segpt', {
+    displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
+    overlays: new Map([['pet', nv.volumes[1]?.hdr]]) as never,
+  })
+  const services = {
+    services: {
+      displaySetService: {
+        getDisplaySetByUID: () => ({
+          displaySetInstanceUID: 'pet',
+          Modality: 'PT',
+        }),
+      },
+      viewportGridService: { getActiveViewportId: () => 'segpt' },
+    },
+  } as never
+  expect(armBrush('segpt', 'CircularBrush', services, () => 5)).toBe(true)
+  const { actions } = getNiivueCommandsModule({ servicesManager: services })
+  await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
+  expect(nv.drawingVolume).toBe(seg)
+  resetQuant()
+  unregisterNiivue('segpt')
+})

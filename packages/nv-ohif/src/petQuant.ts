@@ -230,6 +230,11 @@ function showMask(
       continue
     // A shown 60xx plane is display only: the label replaces it.
     if (!planeHolds.has(nv)) planeHolds.set(nv, holdOverlayPlanes(nv))
+    // A SEG or RT drawing is not the label's to overwrite: that pane goes without.
+    if (nv.drawingVolume && !ownDrawings.has(nv.drawingVolume)) {
+      dropLabel(nv)
+      continue
+    }
     if (!nv.drawingVolume) {
       // createEmptyDrawing arms the pen; the pane's tool decides.
       const armed = nv.drawIsEnabled
@@ -278,7 +283,8 @@ export function showPaneLabel(
 function pull(entry: NiivueViewportEntry, services: Services): void {
   const pet = paneTarget(entry, services)
   const m = pet && masks.get(pet.uid)
-  const img = entry.nv.drawingVolume?.img
+  const draw = entry.nv.drawingVolume
+  const img = draw && ownDrawings.has(draw) ? draw.img : undefined
   const base = entry.nv.volumes[0] && rasGrid(entry.nv.volumes[0])
   if (!pet || !m || !base || !(img instanceof Uint8Array)) return
   // A pane covering only part of the PT grid leaves the rest of the label.
@@ -333,6 +339,7 @@ export function armBrush(
   if (!entry || !pet || !maskFor(pet)) return false
   showMask(pet.uid, services, undefined, true)
   const { nv } = entry
+  if (!nv.drawingVolume || !ownDrawings.has(nv.drawingVolume)) return false
   nv.drawPenValue = mode === 'erase' ? 0 : activeSegment
   if (mode !== 'erase') armedPens.add(nv)
   nv.drawPenShape = tool?.includes('Sphere')

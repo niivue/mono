@@ -402,7 +402,8 @@ tmtv, segmentation, microscopy).
 - **PET quantification (TMTV).** Body-weight SUV from the instance tags (no
   vendor quirks). One label per PT series on the PT grid, shown on every pane
   holding it (resampled on fusion panes); brush, threshold brush and ROI
-  threshold tools; TMTV / TLG and per-segment stats, CSV export. A mode exit
+  threshold tools; TMTV / TLG and per-segment stats, CSV export. A pane whose
+  drawing is a SEG or RTSTRUCT keeps it (no label, no brush). A mode exit
   drops the labels.
 - **MIP pane.** `VolumeRotateMouseWheel` and `MIPJumpToClickTool` (crosshair to
   the brightest voxel along the clicked ray).

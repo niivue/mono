@@ -393,14 +393,15 @@ for (const how of ['remove', 'toggle'] as const)
     unregisterNiivue('rm')
   })
 
-// Independent review of #866: dropping a label must not close a SEG drawing
-// it was written into.
-it('removing a PT overlay keeps a SEG drawing the label borrowed', async () => {
+// Review of #866: a PT label neither overwrites nor closes a SEG drawing.
+it('a PT label leaves a SEG drawing alone', async () => {
   const nv = new NiiVue({ backend: 'webgl2' })
   nv.drawScene = () => {}
   await nv.loadVolumes([{ url: nifti(2, 'ct.nii') }, { url: nifti() }])
   nv.createEmptyDrawing() // stands in for a hung SEG
   const seg = nv.drawingVolume
+  if (!seg?.img) throw new Error('no drawing')
+  seg.img[0] = 7
   registerNiivue('segpt', nv)
   updateNiivueViewport('segpt', {
     displaySets: [{ displaySetInstanceUID: 'ct', Modality: 'CT' }] as never,
@@ -417,10 +418,13 @@ it('removing a PT overlay keeps a SEG drawing the label borrowed', async () => {
       viewportGridService: { getActiveViewportId: () => 'segpt' },
     },
   } as never
-  expect(armBrush('segpt', 'CircularBrush', services, () => 5)).toBe(true)
+  // The pen stays the SEG's; the label does not take its drawing.
+  expect(armBrush('segpt', 'CircularBrush', services, () => 5)).toBe(false)
+  expect(seg.img[0]).toBe(7)
   const { actions } = getNiivueCommandsModule({ servicesManager: services })
   await actions.niivueRemoveOverlay({ displaySetInstanceUID: 'pet' })
   expect(nv.drawingVolume).toBe(seg)
+  expect(seg.img[0]).toBe(7)
   resetQuant()
   unregisterNiivue('segpt')
 })

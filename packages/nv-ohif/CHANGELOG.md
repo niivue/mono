@@ -1,3 +1,24 @@
+## 1.0.0-rc.265 (2026-11-19)
+
+### Fixes
+
+- **nv-ohif:** PT label waits out a cancelled or failed SEG; hold races ([a175d9b0](https://github.com/niivue/mono/commit/a175d9b0))
+- **nv-ohif:** PT label yields to a loading SEG; label lifetime P3s ([11f52458](https://github.com/niivue/mono/commit/11f52458))
+- **nv-ohif:** a PT label leaves a SEG or RTSTRUCT drawing alone ([1e8ec44c](https://github.com/niivue/mono/commit/1e8ec44c))
+- **nv-ohif:** a dropped PT label closes only a drawing it created ([#866](https://github.com/niivue/mono/issues/866))
+- **nv-ohif:** removing a PT overlay releases its label and plane hold ([44e8d3a6](https://github.com/niivue/mono/commit/44e8d3a6))
+- **nv-ohif:** count plane holds, release a PT label's on a series switch, no plane past a 4D plane's frames ([67459100](https://github.com/niivue/mono/commit/67459100))
+- **nv-ohif:** a TMTV label takes a pane's drawing from a 60xx plane ([dfb56120](https://github.com/niivue/mono/commit/dfb56120))
+- **nv-ohif:** a 4D overlay plane follows the pane's frame ([a96a1578](https://github.com/niivue/mono/commit/a96a1578))
+- **nv-ohif:** a mode exit drops petQuant masks and tool state ([9c442a98](https://github.com/niivue/mono/commit/9c442a98))
+- **nv-ohif:** overlay planes give the drawing to a hung SEG or RTSTRUCT ([f956d4e3](https://github.com/niivue/mono/commit/f956d4e3))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.264 (2026-11-19)
 
 ### Updated Dependencies

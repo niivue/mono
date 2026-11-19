@@ -199,6 +199,63 @@ function transferSyntaxOf(
   return /transfer-syntax=([0-9.]+)/i.exec(head)?.[1] ?? null
 }
 
+/**
+ * An uncompressed instance's whole pixel data in one request, from its
+ * absolute BulkDataURI (IDC's proxy serves a 2674-frame SEG's 88 MB in ~5 s,
+ * where per-frame requests take minutes); null when not applicable or not
+ * exactly the expected size, so the caller fetches frames instead.
+ */
+async function fetchBulkPixels(
+  metadata: JsonDataset,
+  instanceUrl: string,
+  headers: Record<string, string>,
+  signal: AbortSignal | undefined,
+): Promise<Uint8Array | null> {
+  const uri = (metadata['7FE00010'] as { BulkDataURI?: unknown } | undefined)
+    ?.BulkDataURI
+  const syntax = firstValue<string>(metadata['00020010'])
+  if (
+    typeof uri !== 'string' ||
+    !/^https?:/.test(uri) ||
+    !syntax ||
+    !UNCOMPRESSED_SYNTAXES.has(syntax)
+  )
+    return null
+  const n = (tag: string) => Number(firstValue(metadata[tag])) || 1
+  const expected = Math.ceil(
+    (n('00280010') *
+      n('00280011') *
+      n('00280008') *
+      n('00280002') *
+      n('00280100')) /
+      8,
+  )
+  try {
+    // The server's credentials go only to its own origin (as the WSI bulk
+    // policy): a bulk object elsewhere is fetched without them.
+    const sameOrigin = new URL(uri).origin === new URL(instanceUrl).origin
+    const resp = await fetch(uri, {
+      headers: {
+        Accept: 'application/octet-stream',
+        ...(sameOrigin ? headers : {}),
+      },
+      signal,
+    })
+    if (!resp.ok) {
+      await resp.body?.cancel()
+      return null
+    }
+    const contentType = resp.headers.get('content-type') ?? ''
+    const buffer = await resp.arrayBuffer()
+    const parts = parseMultipartRelated(buffer, contentType)
+    const bytes = parts.length === 0 ? new Uint8Array(buffer) : concat(parts)
+    return bytes.length === expected ? bytes : null
+  } catch {
+    signal?.throwIfAborted()
+    return null
+  }
+}
+
 async function fetchFrame(
   url: string,
   headers: Record<string, string>,
@@ -356,6 +413,8 @@ export async function reconstructInstanceFiles(
   // One bound for every request, so frames nested in instances stay within it.
   const limit = limiter(concurrency)
   let canRetrieve = true
+  // A server that refuses one bulk request is not asked again (as RetrieveInstance).
+  let canBulk = true
   const instanceFile = async (inst: InstanceRef): Promise<File | null> => {
     const sop = sopFromInstanceUrl(inst.url)
     const name = `${sop}.dcm`
@@ -377,6 +436,29 @@ export async function reconstructInstanceFiles(
     // OHIF may lack NumberOfFrames (static servers); the metadata has it.
     const count = Number(firstValue(metadata['00280008'])) || inst.frames
     total += count - inst.frames
+    const bulk =
+      canBulk &&
+      (await limit(() => fetchBulkPixels(metadata, inst.url, headers, signal)))
+    if (!bulk) canBulk = false
+    else {
+      progress(count)
+      // DICOMweb serves uncompressed bulk data little endian (PS3.18 8.7.3.3),
+      // whatever the stored syntax.
+      return new File(
+        [
+          assemblePart10(
+            DicomDict,
+            metadata,
+            [bulk],
+            EXPLICIT_VR_LITTLE_ENDIAN,
+          ),
+        ],
+        name,
+        {
+          type: 'application/dicom',
+        },
+      )
+    }
     const frameNumbers = Array.from({ length: count }, (_, i) => i + 1)
     const frames = await mapPool(frameNumbers, concurrency, async (n) => {
       const frame = await limit(() =>

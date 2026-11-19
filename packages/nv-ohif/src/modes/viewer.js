@@ -291,6 +291,13 @@ export default niivueMode({
     rightPanels: [cornerstone.labelMapSegmentationPanel, tracked.measurements],
   },
   modeCustomizations: { 'panelSegmentation.disableEditing': false },
+  // A server that reports no modalities (IDC's proxy) leaves basic's check
+  // with '' and hides the mode; the viewer opens any study then.
+  isValidMode(args) {
+    return args.modalities
+      ? modeInstance.isValidMode.call(this, args)
+      : { valid: true, description: 'Modalities unknown' }
+  },
   toolbarButtons: [
     ...modeInstance.toolbarButtons,
     { $reference: 'cornerstone.segmentationToolbarButtons' },

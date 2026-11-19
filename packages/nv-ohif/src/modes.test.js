@@ -154,3 +154,11 @@ test('a missing study sets no 4D workflow step', () => {
   })
   expect(steps).toEqual([])
 })
+
+// IDC's proxy returns no ModalitiesInStudy: the viewer must still be offered.
+test('the viewer mode is valid for a study with unknown modalities', () => {
+  const { isValidMode } = viewer.modeInstance
+  expect(
+    isValidMode.call(viewer.modeInstance, { modalities: '', study: {} }).valid,
+  ).toBe(true)
+})

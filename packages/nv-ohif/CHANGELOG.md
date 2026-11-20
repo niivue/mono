@@ -1,3 +1,27 @@
+## 1.0.0-rc.268 (2026-11-20)
+
+### Features
+
+- **nv-ohif:** Imaging Data Commons volumes and SEGs from S3; bulk pixel fetch ([acb213be](https://github.com/niivue/mono/commit/acb213be))
+
+### Fixes
+
+- **nv-ohif:** require @niivue/dcm2niix 1.4.20261122-rc.1 (DICOM SEG labels) ([40b1b0ac](https://github.com/niivue/mono/commit/40b1b0ac))
+- **nv-ohif:** review fixes for IDC S3 and bulk pixels ([659e46f8](https://github.com/niivue/mono/commit/659e46f8))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.232
+- Updated nv-ext-drawing to 1.0.0-rc.234
+- Updated nv-ext-tile to 1.0.0-rc.141
+- Updated uikit to 1.0.0-rc.231
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.267 (2026-11-19)
 
 ### Fixes

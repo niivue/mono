@@ -1652,6 +1652,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * With isAnnotationDrawn false, still draw the shapes' fills, under an
+   * external overlay that draws only strokes and labels.
+   */
+  get isAnnotationFillDrawn(): boolean {
+    return this.model.ui.isAnnotationFillDrawn
+  }
+  set isAnnotationFillDrawn(v: boolean) {
+    this.model.ui.isAnnotationFillDrawn = v
+    this.emit('change', { property: 'isAnnotationFillDrawn', value: v })
+    this.drawScene()
+  }
+
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }
@@ -2821,11 +2834,22 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * False for a shape a press must not grab, resize or select (e.g. one an
-   * overlay hides). A function, so not a saved setting.
+   * False for a shape a press must not grab, resize or select, and that no
+   * merge, cut or erase may change (one an overlay hides, a locked segment).
+   * A function, so not a saved setting.
    */
   annotationIsGrabbable: ((annotation: VectorAnnotation) => boolean) | null =
     null
+
+  get annotationMergedGroups(): string[] | null {
+    return this.model.annotation.mergedGroups
+  }
+
+  /** See {@link AnnotationConfig.mergedGroups}. */
+  set annotationMergedGroups(v: string[] | null) {
+    this.model.annotation.mergedGroups = v
+    this.emit('change', { property: 'annotationMergedGroups', value: v })
+  }
 
   get annotationIsHandleGrab(): boolean {
     return this.model.annotation.isHandleGrab
@@ -3067,6 +3091,37 @@ export default class NiiVue extends EventTarget {
     this.emit('annotationChanged', {
       action: 'delete',
       added: [],
+      updated: [],
+      removed,
+    })
+    this.drawScene()
+  }
+
+  /**
+   * Replace annotations `ids` with `added` as one change (one annotationUndo
+   * step when `isUndoable`), as a host's edit of several shapes at once (a
+   * segment operation); emits annotationChanged with action 'draw'.
+   */
+  replaceAnnotations(
+    ids: readonly string[],
+    added: readonly VectorAnnotation[],
+    isUndoable = false,
+  ): void {
+    const drop = new Set(ids)
+    const removed = this.model.annotations
+      .filter((a) => drop.has(a.id))
+      .map((a) => a.id)
+    if (removed.length === 0 && added.length === 0) return
+    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
+    this.model.annotations = [
+      ...this.model.annotations.filter((a) => !drop.has(a.id)),
+      ...added,
+    ]
+    if (drop.has(this.selectedAnnotation ?? ''))
+      this.model._annotationSelection = null
+    this.emit('annotationChanged', {
+      action: 'draw',
+      added: added.map((a) => a.id),
       updated: [],
       removed,
     })

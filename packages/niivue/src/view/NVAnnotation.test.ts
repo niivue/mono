@@ -170,6 +170,34 @@ describe('annotation label anchors', () => {
       labels.map((l) => [l?.x, l?.y, l?.align === 'left' ? 0 : 0.5]),
     )
   })
+
+  // nv-ohif contour segments: core fills under an overlay that only strokes.
+  test('isAnnotationFillDrawn keeps fills alone under an external overlay', () => {
+    const buildText = () => ({ count: 1 }) as GlyphBatch
+    const buildLine = () => ({}) as LineData
+    const drawn = buildAnnotationRenderData(
+      model,
+      [tile],
+      buildLine,
+      buildText,
+      1,
+    )
+    model.ui.isAnnotationDrawn = false
+    const ui = model.ui as { isAnnotationFillDrawn?: boolean }
+    ui.isAnnotationFillDrawn = true
+    const fillOnly = buildAnnotationRenderData(
+      model,
+      [tile],
+      buildLine,
+      buildText,
+      1,
+    )
+    model.ui.isAnnotationDrawn = true
+    ui.isAnnotationFillDrawn = false
+    expect(fillOnly?.fillIndices).toEqual(drawn?.fillIndices)
+    expect(fillOnly?.strokeLines).toHaveLength(0)
+    expect(fillOnly?.labels).toHaveLength(0)
+  })
 })
 
 describe('annotation stats labels', () => {

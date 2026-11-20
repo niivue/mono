@@ -324,11 +324,13 @@ export function buildAnnotationRenderData(
   let vertexOffset = 0
 
   // When isAnnotationDrawn is false, an external overlay renders the shapes from
-  // annotationScreenShapes; skip the built-in fill/stroke/labels but still draw
-  // the brush cursor + selection handles below.
-  const shapes = model.ui.isAnnotationDrawn
-    ? projectAnnotations(model, screenSlices, annotationLabelLines)
-    : []
+  // annotationScreenShapes; skip the built-in stroke/labels (and fill, unless
+  // isAnnotationFillDrawn) but still draw the brush cursor + selection handles below.
+  const { isAnnotationDrawn: isDrawn, isAnnotationFillDrawn } = model.ui
+  const shapes =
+    isDrawn || isAnnotationFillDrawn
+      ? projectAnnotations(model, screenSlices, annotationLabelLines)
+      : []
   for (const { polygons, style, label } of shapes) {
     const [fr, fg, fb, fa] = style.fillColor
     for (const { outer, holes } of polygons) {
@@ -341,6 +343,7 @@ export function buildAnnotationRenderData(
         allFillIndices.push(indices[i] + vertexOffset)
       }
       vertexOffset += nVerts
+      if (!isDrawn) continue
       for (const ring of [outer, ...holes]) {
         for (let i = 0; i < ring.length; i++) {
           const p = ring[i] as AnnotationPoint
@@ -351,7 +354,7 @@ export function buildAnnotationRenderData(
         }
       }
     }
-    if (buildText && label) {
+    if (isDrawn && buildText && label) {
       const [sr, sg, sb] = style.strokeColor
       const left = label.align === 'left'
       labels.push(

@@ -287,8 +287,11 @@ export default niivueMode({
   id,
   routeName: modeInstance.routeName,
   layout: {
-    // ponytail: no contour panel; NiiVue has no contour segmentation tools.
-    rightPanels: [cornerstone.labelMapSegmentationPanel, tracked.measurements],
+    rightPanels: [
+      cornerstone.labelMapSegmentationPanel,
+      cornerstone.contourSegmentationPanel,
+      tracked.measurements,
+    ],
   },
   modeCustomizations: { 'panelSegmentation.disableEditing': false },
   // A server that reports no modalities (IDC's proxy) leaves basic's check

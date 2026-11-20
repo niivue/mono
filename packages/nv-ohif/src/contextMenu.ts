@@ -6,6 +6,7 @@ import type { NiiVue } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { annotationAt } from './annotationHit'
 import { reflectedRowUid } from './commands'
+import { isContourAnnotation } from './contourSeg'
 import type { OhifCommandsManager } from './ohif-types'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
@@ -39,7 +40,8 @@ export function useAnnotationContextMenu(
         })
         return
       }
-      const a = annotationAt(nv, viewportId, e)
+      // Measurements only: a contour segment under the pointer is not a row.
+      const a = annotationAt(nv, viewportId, e, (x) => !isContourAnnotation(x))
       const uid = a && reflectedRowUid(a.id)
       if (!a || !uid) return
       e.preventDefault()

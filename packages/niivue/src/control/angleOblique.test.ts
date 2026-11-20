@@ -708,3 +708,17 @@ test('a hidden shape stays put when its selected handle is dragged', () =>
     drag(nv, [30, 0, 0], [40, 0, 0])
     expect(nv.annotations[0]?.shape?.end).toEqual({ x: 30, y: 0 })
   }))
+
+// Contour segmentation (nv-ohif): on a tilted slice the mm depth of a press
+// varies across the slice, so two overlapping strokes on it still merge.
+test('overlapping shapes on one oblique slice merge', () =>
+  withStubs(() => {
+    const nv = controller('rectangle', true)
+    nv.model.annotation.mergesOverlaps = true
+    const onSlice = (x: number, y: number) => [x, y, Math.sqrt(3) * y]
+    press(nv, onSlice(0, 0))
+    press(nv, onSlice(10, 10))
+    press(nv, onSlice(5, 5))
+    press(nv, onSlice(15, 15))
+    expect(nv.annotations).toHaveLength(1)
+  }))

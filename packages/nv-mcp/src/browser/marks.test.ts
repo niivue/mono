@@ -357,6 +357,27 @@ describe('edit_annotations', () => {
     expect(view.removeAnnotations).toHaveBeenLastCalledWith(['a1', 'a2'], true)
   })
 
+  // A host's multi-shape edit (nv-ohif's contour operations) as one step.
+  it('replaces several with new annotations as one undoable step', () => {
+    const replaceAnnotations = mock(() => {})
+    const view = markView({ replaceAnnotations })
+    const { edit_annotations } = markHandlers(hostOf(view))
+    expect(() =>
+      edit_annotations({ action: 'replace', ids: ['zz'], annotations: [] }),
+    ).toThrow('There is no annotation with the id "zz".')
+    edit_annotations({
+      action: 'replace',
+      ids: ['a1', 'a2'],
+      annotations: [note('b1')],
+      is_undoable: true,
+    })
+    expect(replaceAnnotations).toHaveBeenLastCalledWith(
+      ['a1', 'a2'],
+      [expect.objectContaining({ id: 'b1', group: 'lesions' })],
+      true,
+    )
+  })
+
   it('adds, selects, retitles, removes, clears, undoes, redoes and loads', () => {
     const view = markView()
     const { edit_annotations } = markHandlers(hostOf(view))
@@ -501,7 +522,7 @@ describe('edit_annotations', () => {
   it('refuses a missing or unknown id, a bad annotation, and missing text or json', () => {
     const { edit_annotations } = markHandlers(hostOf(markView()))
     expect(() => edit_annotations({})).toThrow(
-      'edit_annotations needs an action: one of add, remove, clear, select, set_text, undo, redo, load, set_style.',
+      'edit_annotations needs an action: one of add, remove, clear, select, set_text, undo, redo, load, set_style, replace.',
     )
     expect(() => edit_annotations({ action: 'remove' })).toThrow(
       "Action remove needs the annotation's id.",

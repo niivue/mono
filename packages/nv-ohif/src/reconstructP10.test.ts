@@ -217,6 +217,111 @@ describe('assemblePart10', () => {
       expect(progress.at(-1)).toEqual([3, 3])
     })
 
+    // IDC's proxy: an uncompressed SEG's pixels in one bulk request, not
+    // thousands of frame requests.
+    it('takes uncompressed pixels from an absolute BulkDataURI in one request', async () => {
+      const bulky = {
+        ...enhanced,
+        '00020010': { vr: 'UI', Value: ['1.2.840.10008.1.2.1'] },
+        '00280010': { vr: 'US', Value: [2] },
+        '00280011': { vr: 'US', Value: [2] },
+        '00280002': { vr: 'US', Value: [1] },
+        '00280100': { vr: 'US', Value: [8] },
+        '7FE00010': { vr: 'OB', BulkDataURI: 'https://host/bulk/pixels' },
+      }
+      const pixels = Uint8Array.from({ length: 12 }, (_, i) => i)
+      const urls: string[] = []
+      globalThis.fetch = (async (url: string) => {
+        urls.push(url)
+        if (url.endsWith('/metadata')) return Response.json([bulky])
+        if (url === 'https://host/bulk/pixels')
+          return new Response(pixels, {
+            headers: { 'content-type': 'application/octet-stream' },
+          })
+        return refused()
+      }) as unknown as typeof fetch
+      const [file] = await reconstructInstanceFiles([
+        { url: instanceUrl, frames: 3 },
+      ])
+      if (!file) throw new Error('no file')
+      expect(urls.some((u) => u.includes('/frames/'))).toBe(false)
+      const pd = DicomMessage.readFile(await file.arrayBuffer()).dict[
+        '7FE00010'
+      ] as {
+        Value: ArrayBuffer[]
+      }
+      expect([...new Uint8Array(pd.Value[0] as ArrayBuffer)]).toEqual([
+        ...pixels,
+      ])
+    })
+
+    // An odd-length PixelData arrives padded to even length (PS3.5 7.1.1).
+    it('accepts bulk pixels padded to even length', async () => {
+      const odd = {
+        ...enhanced,
+        '00020010': { vr: 'UI', Value: ['1.2.840.10008.1.2.1'] },
+        '00280008': { vr: 'IS', Value: ['1'] },
+        '00280010': { vr: 'US', Value: [1] },
+        '00280011': { vr: 'US', Value: [3] },
+        '00280002': { vr: 'US', Value: [1] },
+        '00280100': { vr: 'US', Value: [8] },
+        '7FE00010': { vr: 'OB', BulkDataURI: 'https://host/bulk/odd' },
+      }
+      const urls: string[] = []
+      globalThis.fetch = (async (url: string) => {
+        urls.push(url)
+        if (url.endsWith('/metadata')) return Response.json([odd])
+        if (url === 'https://host/bulk/odd')
+          return new Response(new Uint8Array([1, 2, 3, 0]))
+        return refused()
+      }) as unknown as typeof fetch
+      const [file] = await reconstructInstanceFiles([
+        { url: instanceUrl, frames: 1 },
+      ])
+      expect(file).toBeTruthy()
+      expect(urls.some((u) => u.includes('/frames/'))).toBe(false)
+    })
+
+    // External audit: a bulk object on another origin gets no credentials,
+    // and big-endian instances are written little endian, as DICOMweb sends
+    // uncompressed bulk data.
+    it('fetches cross-origin bulk without credentials, little endian', async () => {
+      const bigEndian = {
+        ...enhanced,
+        '00020010': { vr: 'UI', Value: ['1.2.840.10008.1.2.2'] },
+        '00280008': { vr: 'IS', Value: ['1'] },
+        '00280010': { vr: 'US', Value: [1] },
+        '00280011': { vr: 'US', Value: [2] },
+        '00280002': { vr: 'US', Value: [1] },
+        '00280100': { vr: 'US', Value: [16] },
+        '7FE00010': { vr: 'OW', BulkDataURI: 'https://objects.example/px' },
+      }
+      let bulkAuth: string | null = 'unset'
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/metadata')) return Response.json([bigEndian])
+        if (url === 'https://objects.example/px') {
+          bulkAuth = new Headers(init?.headers).get('Authorization')
+          return new Response(new Uint8Array([1, 0, 2, 0]))
+        }
+        return refused()
+      }) as unknown as typeof fetch
+      const [file] = await reconstructInstanceFiles(
+        [{ url: instanceUrl, frames: 1 }],
+        { headers: { Authorization: 'Bearer secret' } },
+      )
+      if (!file) throw new Error('no file')
+      expect(bulkAuth).toBeNull()
+      const back = DicomMessage.readFile(await file.arrayBuffer())
+      // Written little endian: the bytes mean 1 and 2, not 256 and 512.
+      expect(
+        DicomMetaDictionary.naturalizeDataset(back.meta).TransferSyntaxUID,
+      ).toBe('1.2.840.10008.1.2.1')
+      const ds = DicomMetaDictionary.naturalizeDataset(back.dict)
+      expect([
+        ...new Uint16Array((ds.PixelData as ArrayBuffer[])[0] as ArrayBuffer),
+      ]).toEqual([1, 2])
+    })
+
     it('probes RetrieveInstance once, then reconstructs the series', async () => {
       let cancelled = false
       const urls = serve(

@@ -345,6 +345,18 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
 - A second Overlay press (or another `niivueAddOverlay`) while an overlay converts
   cancels it, as do a base swap and unmount.
 
+### Imaging Data Commons
+
+Point an OHIF DICOMweb data source at IDC's proxy (as IDC's own viewer,
+`viewer.imaging.datacommons.cancer.gov/v3/app-config.js`) and open
+`/niivue-viewer/<sourceName>?StudyInstanceUIDs=<uid>`. Slides tile over the
+proxy. A volume or SEG series served by the proxy is fetched whole from IDC's
+public S3 objects instead (located by IDC's v3 SQL index): the proxy refuses
+whole-instance downloads and its metadata omits a large SEG's per-frame
+positions. A display set that is only part of a series, or any S3 failure,
+falls back to the proxy. The proxy reports no study modalities, so the
+viewer mode accepts a study whose modalities are unknown.
+
 ## Whole-slide imaging
 
 A whole-slide (SM) series renders with **NVSlide** (tiled deep-zoom) on its own

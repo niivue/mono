@@ -9,6 +9,7 @@ import {
 } from './dcm2niixOutputs'
 import { retrieveInstanceUrlFromImageId } from './dicomWadoRs'
 import { split4D } from './frames4D'
+import { idcS3Files, isIdcProxyUrl } from './idcS3'
 import { updateNiivueViewport } from './niivueRegistry'
 import type { OhifDisplaySet } from './ohif-types'
 import { type InstanceRef, reconstructInstanceFiles } from './reconstructP10'
@@ -74,11 +75,24 @@ async function fetchDicomInstanceFiles(
   options: DicomConvertOptions = {},
 ): Promise<File[]> {
   const { headers, onProgress, signal, concurrency } = options
-  return reconstructInstanceFiles(instanceRefs(ds), {
+  const refs = instanceRefs(ds)
+  // An IDC series comes whole from its public S3 objects (idcS3.ts).
+  const series = ds.SeriesInstanceUID as string | undefined
+  const fetching = (loaded: number, total: number) =>
+    onProgress?.('fetching', loaded, total)
+  if (series && refs[0] && isIdcProxyUrl(refs[0].url)) {
+    const files = await idcS3Files(series, refs.length, {
+      signal,
+      concurrency,
+      onProgress: fetching,
+    })
+    if (files) return files
+  }
+  return reconstructInstanceFiles(refs, {
     headers,
     signal,
     concurrency,
-    onProgress: (loaded, total) => onProgress?.('fetching', loaded, total),
+    onProgress: fetching,
   })
 }
 

@@ -1,3 +1,16 @@
+## 1.0.0-rc.234 (2026-11-20)
+
+### Fixes
+
+- **niivue:** only a grab deselects when annotation mode is off ([603d468c](https://github.com/niivue/mono/commit/603d468c))
+- **niivue:** clamp a bidirectional's crossing, not its dragged end ([e9bb636b](https://github.com/niivue/mono/commit/e9bb636b))
+- #868/#869 review follow-ups ([#868](https://github.com/niivue/mono/issues/868), [#869](https://github.com/niivue/mono/issues/869))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.233 (2026-11-20)
 
 ### Fixes

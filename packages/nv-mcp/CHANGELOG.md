@@ -1,3 +1,19 @@
+## 1.0.0-rc.231 (2026-11-20)
+
+### Fixes
+
+- #868/#869 review follow-ups ([#868](https://github.com/niivue/mono/issues/868), [#869](https://github.com/niivue/mono/issues/869))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.234
+- Updated uikit to 1.0.0-rc.233
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.230 (2026-11-20)
 
 ### Updated Dependencies

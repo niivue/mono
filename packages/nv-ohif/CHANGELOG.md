@@ -1,3 +1,21 @@
+## 1.0.0-rc.270 (2026-11-20)
+
+### Fixes
+
+- #868/#869 review follow-ups ([#868](https://github.com/niivue/mono/issues/868), [#869](https://github.com/niivue/mono/issues/869))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.234
+- Updated nv-ext-drawing to 1.0.0-rc.236
+- Updated nv-ext-tile to 1.0.0-rc.143
+- Updated uikit to 1.0.0-rc.233
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.269 (2026-11-20)
 
 ### Updated Dependencies

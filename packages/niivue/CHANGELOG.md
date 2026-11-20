@@ -1,3 +1,15 @@
+## 1.0.0-rc.233 (2026-11-20)
+
+### Fixes
+
+- Codex 870-r1, stale Save and evicted slide undo steps ([ae4a6855](https://github.com/niivue/mono/commit/ae4a6855))
+- review follow-ups 1118 (undo discard window, cinematic samplers, demos) ([#861](https://github.com/niivue/mono/issues/861), [#853](https://github.com/niivue/mono/issues/853), [#865](https://github.com/niivue/mono/issues/865), [#862](https://github.com/niivue/mono/issues/862))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.232 (2026-11-20)
 
 This was a version bump only for niivue to align it with other projects, there were no code changes.

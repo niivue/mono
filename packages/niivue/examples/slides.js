@@ -162,7 +162,7 @@ urlParamSelect(els.aaSelect, 'aa', isAntiAlias ? 'on' : 'off')
 // The slide view (renderer, frame loop, gestures), made in main().
 let view = null
 // Measure-tool steps, newest last: an annotation's id when it was added, or
-// 'edit' for a handle drag (an annotationUndo step).
+// the history seq of a handle drag (an annotationUndo step).
 const measureSteps = []
 let slide = null
 // The slide pixel under the pointer, for the HUD's value readout.
@@ -767,9 +767,9 @@ els.drawUndo.addEventListener('click', () => {
   if (view?.controller.annotationTool && annotations) {
     while (measureSteps.length) {
       const step = measureSteps.pop()
-      if (step === 'edit') {
-        // The undo stack keeps 32 edits: an older one is gone.
-        if (annotations.annotationUndoTop === undefined) continue
+      if (typeof step === 'number') {
+        // Not on top: discarded by setPoints, or evicted (the stack keeps 32).
+        if (annotations.annotationUndoTop !== step) continue
         annotations.annotationUndo()
       } else if (!annotations.remove(step)) continue
       requestRender()
@@ -957,8 +957,8 @@ async function main() {
   view.controller.annotations.addEventListener('added', (e) =>
     measureSteps.push(e.detail.id),
   )
-  view.controller.annotations.addEventListener('annotationHistoryPush', () =>
-    measureSteps.push('edit'),
+  view.controller.annotations.addEventListener('annotationHistoryPush', (e) =>
+    measureSteps.push(e.detail.seq),
   )
   const applySlideFilter = () => {
     view.renderer.isNearestInterpolation = els.slideFilter.value === 'nearest'

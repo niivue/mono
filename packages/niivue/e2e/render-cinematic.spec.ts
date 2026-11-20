@@ -446,6 +446,34 @@ const SCENES: Scene[] = [
     ],
   },
   {
+    // Labels in CINEMATIC from the first frame (cinematic-labels switches late).
+    name: 'cinematic-labels-start',
+    options: {
+      sliceType: RENDER,
+      volumeRenderMode: CINEMATIC,
+      volumeCinematic: { maxFrames: 2 },
+    },
+    setup: async ({ nv, view, p, check, settle }) => {
+      nv.addColormap('e2eOctants', {
+        R: [0, 230, 0, 0, 230, 230, 0, 255, 128],
+        G: [0, 25, 200, 0, 230, 0, 230, 128, 128],
+        B: [0, 75, 0, 230, 0, 230, 230, 0, 255],
+        A: [0, 255, 255, 255, 255, 255, 255, 255, 255],
+        I: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        labels: ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+      })
+      await nv.loadVolumes([
+        { url: p.anatomy() },
+        { url: p.labels(), colormap: 'e2eOctants' },
+      ])
+      await settle()
+      const frames = [...view().cinematicRenderer.tiles.values()].map(
+        (t) => t.frame,
+      )
+      check(frames.length === 1 && frames[0] === 2, `frames ${frames}`)
+    },
+  },
+  {
     // A negative clip alpha tints the cinematic cut face (here green); 0
     // leaves it untinted.
     name: 'cinematic-clip',

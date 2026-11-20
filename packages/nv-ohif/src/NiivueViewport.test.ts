@@ -12,11 +12,12 @@ import {
   baseKey,
   briefNote,
   DEFAULT_OPTIONS,
+  fillImageIds,
   hangingKeys,
+  keptCrosshair,
   openingSliceType,
   type Status,
   settleBase,
-  shownSeriesKey,
 } from './NiivueViewport'
 import {
   getNiivueEntry,
@@ -24,6 +25,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
+import type { OhifDisplaySet } from './ohif-types'
 import { buildSliceFrames, frameAt } from './sliceFrames'
 import { acquisitionSliceType } from './standardCommands'
 import { joinSyncGroups } from './viewportSync'
@@ -422,13 +424,35 @@ test('a brief note clears after 6 s, unless a newer status replaced it', () => {
   }
 })
 
-// External audit: two NIfTI display sets without series UIDs are different
-// series (a switch re-centres the crosshair); a reload of one is the same.
-test('a reload keeps the crosshair only for the same series or display set', () => {
-  const a = { displaySetInstanceUID: 'a' }
-  const b = { displaySetInstanceUID: 'b' }
-  expect(shownSeriesKey(a)).not.toBe(shownSeriesKey(b))
-  expect(
-    shownSeriesKey({ displaySetInstanceUID: 'c', SeriesInstanceUID: 's' }),
-  ).toBe(shownSeriesKey({ displaySetInstanceUID: 'd', SeriesInstanceUID: 's' }))
+// Review of #869: a reload of the shown display set keeps the crosshair; a
+// switch re-centres it, even to another display set of the same series.
+test('a reload keeps the crosshair only for the display set shown', () => {
+  const pos: [number, number, number] = [1, 2, 3]
+  const nv = { volumes: [{}], getCrosshairPos: () => pos }
+  const a = { displaySetInstanceUID: 'a', SeriesInstanceUID: 's' }
+  const b = { displaySetInstanceUID: 'b', SeriesInstanceUID: 's' }
+  expect(keptCrosshair(nv, a, 'a')).toEqual(pos)
+  expect(keptCrosshair(nv, b, 'a')).toBeUndefined()
+  expect(keptCrosshair(nv, a, undefined)).toBeUndefined()
+  expect(keptCrosshair({ ...nv, volumes: [] }, a, 'a')).toBeUndefined()
+})
+
+test('fillImageIds fills one id per instance, else leaves them', () => {
+  const em = (ids: string[]) =>
+    ({
+      getActiveDataSource: () => [{ getImageIdsForDisplaySet: () => ids }],
+    }) as never
+  const ds = (): OhifDisplaySet => ({
+    displaySetInstanceUID: 'a',
+    instances: [{}, {}],
+  })
+  const filled = ds()
+  fillImageIds(filled, em(['x', 'y']))
+  expect(filled.imageIds).toEqual(['x', 'y'])
+  const short = ds()
+  fillImageIds(short, em(['x']))
+  expect(short.imageIds).toBeUndefined()
+  const kept = { ...ds(), imageIds: ['k'] }
+  fillImageIds(kept, em(['x', 'y']))
+  expect(kept.imageIds).toEqual(['k'])
 })

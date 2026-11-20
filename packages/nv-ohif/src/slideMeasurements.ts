@@ -202,9 +202,11 @@ export function bindSlideMeasurements(
     ms.remove(prefix + a.id)
   }
   // A drawn arrow asks for its text through OHIF's dialog, as cornerstone's;
-  // an empty save removes it (a dismissed dialog keeps it unlabelled).
+  // an empty save removes it (a dismissed dialog keeps it unlabelled). One
+  // added by API (MCP, a restore) asks only while the Arrow tool is active.
   const askArrowText = ({ detail: a }: CustomEvent<SlideAnnotation>): void => {
     if (a.tool !== 'arrow' || a.label) return
+    if (OHIF_TO_SLIDE_TOOL[view.tool ?? ''] !== 'arrow') return
     commandsManager?.runCommand?.('arrowTextCallback', {
       callback: (text: unknown) => {
         if (typeof text !== 'string') return

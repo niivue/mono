@@ -995,8 +995,8 @@ function copyRuns(
  * float32 and a converter's spacing estimate drifts from them: a TMTV PT
  * converts 0.013 voxel off its own slices at the far end, so a SEG on its
  * frames lands that far from the PT volume's centres. Placement stays
- * unambiguous to 0.5 voxel; any rotation, rescale or half-voxel offset is
- * still refused.
+ * unambiguous to 0.5 voxel. A rotation, rescale or offset moving no voxel
+ * centre more than this is accepted as exact; any larger one is refused.
  */
 export const DRAWING_GRID_TOLERANCE = 0.05
 

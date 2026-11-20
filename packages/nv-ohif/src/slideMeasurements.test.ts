@@ -93,3 +93,24 @@ test('slide annotations mirror as µm rows; panel edits flow back', () => {
   expect(ms.rows.size).toBe(0)
   expect(annotations.list()).toEqual([])
 })
+
+// Review of #869: only an arrow drawn with the Arrow tool asks for its text.
+test('an arrow added under another tool opens no text dialog', () => {
+  const ms = fakeMeasurementService()
+  const annotations = new NVSlideAnnotations(() => [0.0005, 0.0005])
+  const view = { annotations, focusAnnotation() {}, tool: 'Length' }
+  const asked: unknown[] = []
+  bindSlideMeasurements(
+    view,
+    { services: { measurementService: ms } } as never,
+    { SeriesInstanceUID: 's', StudyInstanceUID: 't' },
+    { runCommand: (_n: string, o: unknown) => asked.push(o) } as never,
+  )
+  const tail = { x: 0, y: 0 }
+  const tip = { x: 9, y: 0 }
+  expect(annotations.add('arrow', [tail, tip])).not.toBeNull()
+  expect(asked).toHaveLength(0)
+  view.tool = 'ArrowAnnotate'
+  annotations.add('arrow', [tail, tip])
+  expect(asked).toHaveLength(1)
+})

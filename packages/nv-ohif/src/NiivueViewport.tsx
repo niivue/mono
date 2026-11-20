@@ -80,7 +80,11 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import type { OhifDisplaySet, OhifViewportProps } from './ohif-types'
+import type {
+  OhifDisplaySet,
+  OhifExtensionManager,
+  OhifViewportProps,
+} from './ohif-types'
 import { OrientationMenu } from './orientationMenu'
 import { matchStoredOrientation, useOutputStack } from './outputStack'
 import { setOverlayPlanes } from './overlayPlanes'
@@ -165,13 +169,37 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
 export type Status = { kind: 'idle' } | { kind: StatusKind; message: string }
 
 /**
- * What a reload must match to keep the crosshair: the series, else (a NIfTI
- * display set may have no series UID) the display set itself.
+ * The crosshair a load keeps: only on a reload of the display set shown (OHIF
+ * keeps its UID on a metadata reload, as petSUV's), not on a switch to another,
+ * even one split from the same series.
  */
-export function shownSeriesKey(ds: OhifDisplaySet): string | undefined {
-  return (
-    (ds.SeriesInstanceUID as string | undefined) || ds.displaySetInstanceUID
-  )
+export function keptCrosshair(
+  nv: {
+    volumes: readonly unknown[]
+    getCrosshairPos(): [number, number, number]
+  },
+  ds: OhifDisplaySet | undefined,
+  shownUid: string | undefined,
+): [number, number, number] | undefined {
+  return nv.volumes[0] && shownUid && ds?.displaySetInstanceUID === shownUid
+    ? nv.getCrosshairPos()
+    : undefined
+}
+
+/**
+ * OHIF's data overlay menu offers a foreground only over a background with
+ * imageIds, which cornerstone's viewport fills on load. Fill them only when one
+ * per instance: nv-ohif reads them aligned with `instances`.
+ */
+export function fillImageIds(
+  ds: OhifDisplaySet,
+  extensionManager: OhifExtensionManager | undefined,
+): void {
+  if (ds.imageIds) return
+  const ids = extensionManager
+    ?.getActiveDataSource?.()[0]
+    ?.getImageIdsForDisplaySet?.(ds)
+  if (ids?.length && ids.length === ds.instances?.length) ds.imageIds = ids
 }
 
 /**
@@ -384,7 +412,7 @@ export function NiivueViewport(props: OhifViewportProps) {
   // The series whose volume is shown: imports must not target an outgoing one.
   const [loadedSeries, setLoadedSeries] = useState<string>()
   // The series the pane last showed: a reload of it (petSUV Reload Data) keeps the crosshair.
-  const shownSeriesRef = useRef<string | undefined>(undefined)
+  const shownDisplaySetRef = useRef<string | undefined>(undefined)
   // The base display set shown: a NIfTI set may carry no series UID.
   const [loadedBase, setLoadedBase] = useState<string>()
   // The shown conversion, for stepping through a series' other outputs.
@@ -842,10 +870,7 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     // If OHIF hung nothing, stay idle.
     const ds: OhifDisplaySet | undefined = displaySets[0]
-    const keptCrosshair =
-      nv.volumes[0] && ds && shownSeriesRef.current === shownSeriesKey(ds)
-        ? nv.getCrosshairPos()
-        : undefined
+    const kept = keptCrosshair(nv, ds, shownDisplaySetRef.current)
     setIsLoaded(false)
     setLoadedSeries(undefined)
     setLoadedBase(undefined)
@@ -885,18 +910,9 @@ export function NiivueViewport(props: OhifViewportProps) {
       baseInstalled(true)
       setLoadedSeries(ds.SeriesInstanceUID as string | undefined)
       setLoadedBase(ds.displaySetInstanceUID)
-      shownSeriesRef.current = shownSeriesKey(ds)
-      // OHIF's data overlay menu offers a foreground only over a background
-      // with imageIds, which cornerstone's viewport fills on load. Only when
-      // one per instance: nv-ohif reads them aligned with `instances`.
-      if (!ds.imageIds) {
-        const ids = props.extensionManager
-          ?.getActiveDataSource?.()[0]
-          ?.getImageIdsForDisplaySet?.(ds)
-        if (ids?.length && ids.length === ds.instances?.length)
-          ds.imageIds = ids
-      }
-      if (keptCrosshair) nv.setCrosshairPos(keptCrosshair)
+      shownDisplaySetRef.current = ds.displaySetInstanceUID
+      fillImageIds(ds, props.extensionManager)
+      if (kept) nv.setCrosshairPos(kept)
       else centerCrosshair(nv)
       const vol = nv.volumes[0]
       const suv = unitForDisplaySet(ds) === 'SUV'

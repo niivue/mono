@@ -1240,6 +1240,52 @@ function draw3DOnExplodedBlock(
   return voxel
 }
 
+// Take a fill's undo snapshot; the returned function discards it again
+// (drawAddUndoBitmap returns fresh arrays, so restoring the prior pointers drops it).
+function beginFillUndo(ctrl: NiiVue): () => void {
+  const prevUndoBitmaps = ctrl.drawUndoBitmaps
+  const prevUndoIndex = ctrl.currentDrawUndoBitmap
+  ctrl.drawAddUndoBitmap()
+  return () => {
+    ctrl.drawUndoBitmaps = prevUndoBitmaps
+    ctrl.currentDrawUndoBitmap = prevUndoIndex
+  }
+}
+
+// Close a region fill: drop the undo snapshot of a no-op fill, else flush the
+// fill's AABB. Returns whether anything was filled.
+function finishFill(
+  ctrl: NiiVue,
+  result: { filled: number; min: number[]; max: number[] },
+  dropUndo: () => void,
+): boolean {
+  if (result.filled === 0) {
+    dropUndo()
+    return false
+  }
+  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
+  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
+  ctrl.refreshDrawing()
+  ctrl.emit('drawingChanged', { action: 'stroke' })
+  return true
+}
+
+// Draw a pen segment from the last pen location to ptB with the current pen.
+function penLineTo(ctrl: NiiVue, vol: NVImage, ptB: number[]): void {
+  drawLine({
+    ptA: ctrl._drawPenLocation,
+    ptB,
+    penValue: ctrl.model.draw.penValue,
+    penShape: ctrl.model.draw.penShape,
+    drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
+    dims: vol.dimsRAS as number[],
+    penSize: ctrl.model.draw.penSize,
+    penAxCorSag: ctrl._drawPenAxCorSag,
+    penOverwrites: ctrl.model.draw.isFillOverwriting,
+    pixDims: vol.pixDimsRAS as number[],
+  })
+}
+
 // 3D flood fill on an exploded block (fill mode): a right-click seeds a 3D
 // region-grow at the picked voxel, filling the connected visible-tissue blob
 // (6-connected, bounded by the same threshold the pick uses) with the pen value.
@@ -1249,9 +1295,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   if (!pick) return false
   const { voxel, drawingVol, keep } = pick
   if (!drawingVol) return false
-  const prevUndoBitmaps = ctrl.drawUndoBitmaps
-  const prevUndoIndex = ctrl.currentDrawUndoBitmap
-  ctrl.drawAddUndoBitmap()
+  const dropUndo = beginFillUndo(ctrl)
   const dims = vol.dimsRAS as number[]
   // Cap the fill so a click on a huge connected structure can't run unbounded.
   // The cap applies to erase (penValue 0) too; on a volume with more than 4M
@@ -1270,18 +1314,7 @@ function floodFill3DOnExplodedBlock(ctrl: NiiVue, vol: NVImage): boolean {
   if (result.hitCap) {
     log.warn(`3D flood fill stopped at the ${maxVoxels}-voxel cap`)
   }
-  if (result.filled === 0) {
-    // Nothing changed — drop the no-op undo snapshot (addUndoBitmap returns fresh
-    // arrays, so restoring the prior pointers discards it).
-    ctrl.drawUndoBitmaps = prevUndoBitmaps
-    ctrl.currentDrawUndoBitmap = prevUndoIndex
-    return true
-  }
-  // Mark the fill's AABB corners so the incremental flush covers the region.
-  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
-  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
-  ctrl.refreshDrawing()
-  ctrl.emit('drawingChanged', { action: 'stroke' })
+  finishFill(ctrl, result, dropUndo)
   return true
 }
 
@@ -1316,9 +1349,7 @@ function magicWandFill(
   const winHi = (vol.calMax - sclInter) / sclSlope
   const tolerance =
     ctrl.model.draw.clickToSegmentTolerance * Math.abs(winHi - winLo)
-  const prevUndoBitmaps = ctrl.drawUndoBitmaps
-  const prevUndoIndex = ctrl.currentDrawUndoBitmap
-  ctrl.drawAddUndoBitmap()
+  const dropUndo = beginFillUndo(ctrl)
   const maxVoxels = Math.min(dims[1] * dims[2] * dims[3], 4_000_000)
   const result = magicWand3D({
     seed,
@@ -1337,16 +1368,7 @@ function magicWandFill(
   if (result.hitCap) {
     log.warn(`Magic wand stopped at the ${maxVoxels}-voxel cap`)
   }
-  if (result.filled === 0) {
-    // Nothing changed — drop the no-op undo snapshot.
-    ctrl.drawUndoBitmaps = prevUndoBitmaps
-    ctrl.currentDrawUndoBitmap = prevUndoIndex
-    return true
-  }
-  ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
-  ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
-  ctrl.refreshDrawing()
-  ctrl.emit('drawingChanged', { action: 'stroke' })
+  if (!finishFill(ctrl, result, dropUndo)) return true
   // Report the segmented region so a host can show its size without walking
   // the bitmap itself. Voxel volume comes from the segmented volume's own RAS
   // grid (the drawing shares that grid).
@@ -2356,18 +2378,7 @@ export function initInteraction(ctrl: NiiVue): void {
         const vol = ctrl.model.getVolumes()[0]
         if (vol?.dimsRAS) {
           if (ctrl.drawPenAutoClose && ctrl._drawPenFillPts.length > 2) {
-            drawLine({
-              ptA: ctrl._drawPenLocation,
-              ptB: ctrl._drawPenFillPts[0],
-              penValue: ctrl.model.draw.penValue,
-              penShape: ctrl.model.draw.penShape,
-              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
-              dims: vol.dimsRAS,
-              penSize: ctrl.model.draw.penSize,
-              penAxCorSag: ctrl._drawPenAxCorSag,
-              penOverwrites: ctrl.model.draw.isFillOverwriting,
-              pixDims: vol.pixDimsRAS,
-            })
+            penLineTo(ctrl, vol, ctrl._drawPenFillPts[0])
           }
           if (ctrl.drawPenFilled && ctrl._drawPenFillPts.length > 2) {
             const currentUndo =
@@ -2875,18 +2886,7 @@ export function initInteraction(ctrl: NiiVue): void {
             Math.round(vox[2]),
           ]
           if (!isSamePoint(ctrl._drawPenLocation, newPt)) {
-            drawLine({
-              ptA: ctrl._drawPenLocation,
-              ptB: newPt,
-              penValue: ctrl.model.draw.penValue,
-              penShape: ctrl.model.draw.penShape,
-              drawBitmap: getDrawingBitmap(ctrl.model.drawingVolume as NVImage),
-              dims: vol.dimsRAS,
-              penSize: ctrl.model.draw.penSize,
-              penAxCorSag: ctrl._drawPenAxCorSag,
-              penOverwrites: ctrl.model.draw.isFillOverwriting,
-              pixDims: vol.pixDimsRAS,
-            })
+            penLineTo(ctrl, vol, newPt)
             const penSize = ctrl.model.draw.penSize
             ctrl.markDrawDirty(
               ctrl._drawPenLocation[0],

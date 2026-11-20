@@ -1702,7 +1702,8 @@ export function resetDragState(ctrl: NiiVue): void {
   ctrl._frozenLoopPoints = null
   ctrl._annotationShapeStart = null
   // As at pointerup: a grab outside annotation mode leaves nothing selected.
-  if (!ctrl.model.annotation.isEnabled) ctrl.model._annotationSelection = null
+  if (ctrl._resizingControlPoint >= 0 && !ctrl.model.annotation.isEnabled)
+    ctrl.model._annotationSelection = null
   ctrl._resizingControlPoint = -1
   ctrl._resizingAnnotation = null
   ctrl._resizeOriginalShape = null

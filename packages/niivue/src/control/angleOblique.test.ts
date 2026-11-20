@@ -615,6 +615,23 @@ test('isHandleGrab cancelled by pointercancel reverts and deselects', () =>
     expect(nv.model._annotationSelection).toBeNull()
   }))
 
+// Review of #871: only a grab deselects; a plain click away from the shape keeps
+// a selection made through the API (an OHIF panel row, nv-mcp select).
+test('a click outside annotation mode keeps an API selection', () =>
+  withStubs(() => {
+    const nv = controller('measureLine')
+    press(nv, [10, 10, 0])
+    press(nv, [30, 10, 0])
+    grabMode(nv)
+    tile(nv)
+    nv.setCrosshairPos = () => {}
+    ;(nv.model.volumes[0] as { matRAS?: mat4 }).matRAS = mat4.create()
+    const id = nv.annotations[0]?.id ?? ''
+    nv.selectAnnotation(id)
+    drag(nv, [60, 60, 0], [60, 60, 0])
+    expect(nv.selectedAnnotation).toBe(id)
+  }))
+
 // External audit: on a tilted slice a bidirectional's handle drag kept slice-2D
 // right angles and lengths, which are not physical there.
 test('a bidirectional resized on an oblique slice stays perpendicular in mm', () =>

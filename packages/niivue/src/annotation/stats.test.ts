@@ -4,7 +4,11 @@ import { SLICE_TYPE } from '@/NVConstants'
 import type { AnnotationPoint, NVImage, VectorAnnotation } from '@/NVTypes'
 import { pointInRing } from './pointInRing'
 import { generatePolygonFromPoints, generateShape } from './shapes'
-import { computeAnnotationStats, shapeAngle } from './stats'
+import {
+  computeAnnotationStats,
+  forEachAnnotationVoxel,
+  shapeAngle,
+} from './stats'
 
 // 20x20x1 axial grid, 1 mm voxels, voxel value = its x index.
 const N = 20
@@ -104,6 +108,18 @@ describe('computeAnnotationStats', () => {
     expect(stats?.area).toBe(12 + 9)
     expect(stats?.min).toBe(0)
     expect(stats?.max).toBe(12)
+  })
+
+  // forEachAnnotationVoxel repeats the stats scanline (sharing it slowed
+  // stats): the two must keep selecting the same voxels.
+  test('forEachAnnotationVoxel visits the voxels stats count', () => {
+    const a = annotation([
+      { outer: square(0, 0, 4), holes: [square(1, 1, 2)] },
+      { outer: square(10, 10, 3), holes: [] },
+    ])
+    let n = 0
+    expect(forEachAnnotationVoxel(a, volume, () => n++)).toBe(true)
+    expect(computeAnnotationStats(a, volume)?.area).toBe(n)
   })
 })
 

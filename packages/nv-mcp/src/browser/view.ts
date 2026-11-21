@@ -806,6 +806,11 @@ export interface View {
   addAnnotation?(annotation: Annotation): unknown
   removeAnnotation?(id: string, isUndoable?: boolean): unknown
   removeAnnotations?(ids: readonly string[], isUndoable?: boolean): unknown
+  replaceAnnotations?(
+    ids: readonly string[],
+    added: readonly Annotation[],
+    isUndoable?: boolean,
+  ): unknown
   clearAnnotations?(): unknown
   selectAnnotation?(id: string | null): unknown
   setAnnotationText?(id: string, text: string): unknown

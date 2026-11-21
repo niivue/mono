@@ -124,6 +124,8 @@ affect whether annotations *render* — they always do."""
     annotation_is_handle_grab = traitlets.Bool(None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.isHandleGrab}."""
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    annotation_merged_groups = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
+    """See {@link AnnotationConfig.mergedGroups}."""
     annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint", "measureAngle", "measureCobbAngle"], None, allow_none=True).tag(sync=True)
     azimuth = traitlets.Float(None, allow_none=True).tag(sync=True)
@@ -176,6 +178,7 @@ a 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm)."""
     hero_slice_type = traitlets.Float(None, allow_none=True).tag(sync=True)
     is_3d_crosshair_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_annotation_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
+    is_annotation_fill_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_clip_plane_cutaway = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_colorbar_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_cross_lines_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -1607,6 +1610,17 @@ and its volumes alive."""
             Index of the volume to remove
         """
         self.send({"cmd": "removeVolume", "args": _make_args(volume_index)})
+
+    def replace_annotations(self, ids: Any, added: Any, is_undoable: Any = _UNSET) -> None:
+        """Replace annotations `ids` with `added` as one change (one annotationUndo step when `isUndoable`), as a host's edit of several shapes at once (a segment operation); emits annotationChanged with action 'draw'.
+
+        Parameters
+        ----------
+        ids : readonly string[]
+        added : readonly VectorAnnotation[]
+        is_undoable : boolean
+        """
+        self.send({"cmd": "replaceAnnotations", "args": _make_args(ids, added, is_undoable)})
 
     def reset_chunk_timing(self) -> None:
         """Clear {@link chunkTimingStats} to start a fresh measurement window.

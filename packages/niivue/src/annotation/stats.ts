@@ -166,6 +166,200 @@ function intactEllipse(
   }
 }
 
+/** The voxel plane an annotation lies on, and its slice-2D -> voxel map. */
+function annotationPlane(annotation: VectorAnnotation, volume: NVImage) {
+  const firstPt = annotation.polygons[0]?.outer[0]
+  const dims = volume.dimsRAS
+  const pixDims = volume.pixDimsRAS
+  if (!firstPt || !dims || !pixDims) return null
+
+  const sliceType = annotation.sliceType
+  const depthDim = sliceTypeDim(sliceType)
+  const [ax0, ax1] = IN_PLANE_AXES[sliceType] as [number, number]
+  const pixDim0 = pixDims[ax0 + 1]
+  const pixDim1 = pixDims[ax1 + 1]
+
+  if (!volume.matRAS) return null
+
+  // The slice's voxel plane: the one holding the anchor the renderer places
+  // the ROI by (a tilted plane's depth varies across the outline).
+  const vox2mm = mat4.transpose(mat4.create(), volume.matRAS)
+  const mm2vox = mat4.invert(mat4.create(), vox2mm)
+  if (!mm2vox) return null
+  const tmpVec = vec4.create()
+  const mm0 =
+    annotation.anchorMM ??
+    slice2DToMM(firstPt, annotation.slicePosition, sliceType)
+  vec4.transformMat4(
+    tmpVec,
+    vec4.set(tmpVec, mm0[0], mm0[1], mm0[2], 1),
+    mm2vox,
+  )
+  const depthVox = Math.round(tmpVec[depthDim] as number)
+  if (depthVox < 0 || depthVox >= dims[depthDim + 1]) return null
+
+  // Voxel (i0, i1) on that plane -> slice-2D mm is affine (projecting along the
+  // mm depth axis, as slice2DToMMOnPlane places annotations). The rings, their
+  // bounds and the ellipse rows all use it, so tilted volumes agree.
+  const toSlice2D = (i0: number, i1: number): AnnotationPoint => {
+    const v = [0, 0, 0]
+    v[ax0] = i0
+    v[ax1] = i1
+    v[depthDim] = depthVox
+    vec4.transformMat4(tmpVec, vec4.set(tmpVec, v[0], v[1], v[2], 1), vox2mm)
+    return mmToSlice2D([tmpVec[0], tmpVec[1], tmpVec[2]], sliceType)
+  }
+  const o = toSlice2D(0, 0)
+  const p0 = toSlice2D(1, 0)
+  const p1 = toSlice2D(0, 1)
+  const e0 = { x: p0.x - o.x, y: p0.y - o.y } // one voxel along i0
+  const e1 = { x: p1.x - o.x, y: p1.y - o.y } // one voxel along i1
+  const det = e0.x * e1.y - e1.x * e0.y
+  // Continuous voxel coordinates: centres are tested against the exact
+  // outline (as cornerstone does), not one rounded to whole voxels.
+  const toVox = (pt: AnnotationPoint): AnnotationPoint => {
+    const dx = pt.x - o.x
+    const dy = pt.y - o.y
+    return {
+      x: (dx * e1.y - e1.x * dy) / det,
+      y: (e0.x * dy - dx * e0.y) / det,
+    }
+  }
+  return {
+    depthDim,
+    dims,
+    ax0,
+    ax1,
+    pixDim0: pixDim0 as number,
+    pixDim1: pixDim1 as number,
+    matRAS: volume.matRAS,
+    depthVox,
+    o,
+    e0,
+    e1,
+    det,
+    toVox,
+  }
+}
+
+/**
+ * Visit the RAS voxel indices (reused array) whose centres lie inside an area
+ * annotation, on its voxel plane, as computeAnnotationStats measures them
+ * (holes excluded, an intact ellipse by its true curve, oblique planes by the
+ * anchor's voxel depth). False when the outline covers no part of the image.
+ * The scanline repeats computeAnnotationStats': sharing it slowed stats ~20%.
+ */
+export function forEachAnnotationVoxel(
+  annotation: VectorAnnotation,
+  volume: NVImage,
+  visit: (ras: readonly [number, number, number]) => void,
+): boolean {
+  const plane = annotationPlane(annotation, volume)
+  if (!plane) return false
+  const { dims, ax0, ax1, depthDim, depthVox, toVox, o, e0, e1, det } = plane
+  // Every piece of an eraser-split ROI counts (#115); a voxel inside any of a
+  // piece's holes does not.
+  const polygonsVox = annotation.polygons
+    .filter((poly) => poly.outer.length >= 3)
+    .map((poly) => [poly.outer, ...poly.holes].map((ring) => ring.map(toVox)))
+  if (polygonsVox.length === 0) return false
+  let minV0 = Infinity,
+    minV1 = Infinity,
+    maxV0 = -Infinity,
+    maxV1 = -Infinity
+  const ell = intactEllipse(annotation)
+  if (ell) {
+    // Bound the true curve, not its 64-gon: the gon falls short by
+    // r(1 - cos(pi/64)), several voxels on a large shape. toVox is linear, so
+    // the curve's voxel half-extents are the norms of its axes' rows.
+    const c = toVox({ x: ell.cx, y: ell.cy })
+    const h0 = Math.hypot(ell.a * e1.y, ell.b * e1.x) / Math.abs(det)
+    const h1 = Math.hypot(ell.a * e0.y, ell.b * e0.x) / Math.abs(det)
+    minV0 = c.x - h0
+    maxV0 = c.x + h0
+    minV1 = c.y - h1
+    maxV1 = c.y + h1
+  } else
+    for (const [outer] of polygonsVox) {
+      for (const pt of outer as AnnotationPoint[]) {
+        if (pt.x < minV0) minV0 = pt.x
+        if (pt.y < minV1) minV1 = pt.y
+        if (pt.x > maxV0) maxV0 = pt.x
+        if (pt.y > maxV1) maxV1 = pt.y
+      }
+    }
+  const r0min = Math.max(0, Math.floor(minV0))
+  const r0max = Math.min(dims[ax0 + 1] - 1, Math.ceil(maxV0))
+  const r1min = Math.max(0, Math.floor(minV1))
+  const r1max = Math.min(dims[ax1 + 1] - 1, Math.ceil(maxV1))
+  // Off the image (e.g. drawn in a zoomed-out canvas margin): nothing to measure.
+  if (r0max < r0min || r1max < r1min) return false
+
+  // Scanline fill: per voxel row, where the outline crosses it, then the spans
+  // between crossings; rows cost O(edges), not O(voxels x edges).
+  const inRow = new Uint8Array(r0max - r0min + 1)
+  const pieceRow = new Uint8Array(inRow.length)
+  const xs: number[] = []
+  const ras: [number, number, number] = [0, 0, 0]
+  ras[depthDim] = depthVox
+  for (let i1 = r1min; i1 <= r1max; i1++) {
+    inRow.fill(0)
+    if (ell) {
+      // Along a row the slice point is o + i1*e1 + i0*e0: the row meets the
+      // curve where a quadratic in i0 is zero. A closed curve, as cornerstone's
+      // createEllipseShape: centres on it (and tangent rows) count.
+      const u = (o.x + i1 * e1.x - ell.cx) / ell.a
+      const w = (o.y + i1 * e1.y - ell.cy) / ell.b
+      const du = e0.x / ell.a
+      const dw = e0.y / ell.b
+      const A = du * du + dw * dw
+      const B = 2 * (u * du + w * dw)
+      const disc = B * B - 4 * A * (u * u + w * w - 1 - ELLIPSE_TOL)
+      if (disc >= 0) {
+        const sq = Math.sqrt(disc)
+        const lo = Math.max(r0min, Math.ceil((-B - sq) / (2 * A)))
+        const hi = Math.min(r0max, Math.floor((-B + sq) / (2 * A)))
+        for (let i0 = lo; i0 <= hi; i0++) inRow[i0 - r0min] = 1
+      }
+    } else
+      for (const [outer, ...holes] of polygonsVox) {
+        if (holes.length === 0) {
+          fillRingRow(
+            outer as AnnotationPoint[],
+            i1,
+            inRow,
+            r0min,
+            r0max,
+            1,
+            xs,
+          )
+          continue
+        }
+        pieceRow.fill(0)
+        fillRingRow(
+          outer as AnnotationPoint[],
+          i1,
+          pieceRow,
+          r0min,
+          r0max,
+          1,
+          xs,
+        )
+        for (const hole of holes)
+          fillRingRow(hole, i1, pieceRow, r0min, r0max, 0, xs)
+        for (let k = 0; k < pieceRow.length; k++)
+          inRow[k] |= pieceRow[k] as number
+      }
+    ras[ax1] = i1
+    for (let k = 0; k < inRow.length; k++) {
+      if (!inRow[k]) continue
+      ras[ax0] = r0min + k
+      visit(ras)
+    }
+  }
+  return true
+}
+
 /**
  * Stats over the voxels whose centres lie inside the outline (an intact
  * ellipse or circle: the true curve, not its drawn 64-gon, as cornerstone). `area` is their

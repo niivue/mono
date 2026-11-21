@@ -436,12 +436,30 @@ tmtv).
   the brightest voxel along the clicked ray).
 - **Segmentation.** A SEG or RTSTRUCT drawing is entered in OHIF's
   segmentation panel and panel edits mirror back. `/niivue-viewer` carries
-  OHIF's segmentation editing (labelmap panel and toolbox, segmentation tools
-  in the default and mpr tool groups; no contour panel). OHIF's labelmap tools drive
+  OHIF's segmentation editing (labelmap and contour panels and toolboxes,
+  segmentation tools in the default and mpr tool groups). OHIF's labelmap tools drive
   NiiVue's pen (threshold range and segment locks enforced); each edit is one
   OHIF undo step. A segment row's statistics card shows its voxel count and
   volume, refreshed after each edit. Export writes DICOM SEG or RTSTRUCT on the
   source series' own frames.
+- **Contour segmentation** (`contourSeg.ts`, `contourOps.ts`,
+  `contourSculpt.ts`). The contour panel's segmentation is NiiVue vector
+  annotations, one group per segmentation (`seg:<id>`), labelled by segment.
+  Freehand, spline (Catmull-Rom; linear and B-spline draw as it) and live wire
+  draw the active segment in its colour; a stroke merges with its segment and
+  cuts the segmentation's other segments, never measurements. Shift+freehand
+  cuts a hole. Locked or hidden segments are not cut, grabbed or erased.
+  Combine (merge, subtract, intersect), Duplicate, Smooth, Remove extra
+  points, Fill holes, Remove small contours, Holes to segment and Sculptor
+  (cursor sized as cornerstone's, Dynamic Cursor Size included) edit the
+  shapes, each one undo step; locked segments are left as they are. The statistics
+  card counts the voxels whose centres the shapes cover; Export writes a SEG
+  of those voxels or an RTSTRUCT of the drawn rings (LPS, on each shape's
+  voxel plane, so oblique slices round-trip). A contour segmentation shows on one pane at a time; after a layout
+  change the new pane showing its series takes it. A finished spline
+  is an outline (Simplified Spline on, OHIF's default). Not done: contour
+  interpolation and Simplified Spline off (their switches are no-ops), and an
+  RTSTRUCT loads as a labelmap, not as editable contours.
 - **SR.** NiiVue measurement rows are mirrored as cornerstone annotations, so
   OHIF's SR export includes them; a hydrated SR's rows show as NiiVue
   annotations (axis-aligned only). Slide rows save and load as OHIF's

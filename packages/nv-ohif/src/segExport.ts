@@ -226,7 +226,7 @@ export const code = (
   CodingSchemeDesignator,
   CodeMeaning,
 })
-const ref = (inst: Ds, frame?: number) => ({
+export const ref = (inst: Ds, frame?: number) => ({
   ReferencedSOPClassUID: inst.SOPClassUID,
   ReferencedSOPInstanceUID: inst.SOPInstanceUID,
   ...(frame ? { ReferencedFrameNumber: frame } : {}),
@@ -488,15 +488,55 @@ export function buildRtssDataset(
     return { s, contours }
   })
   const first = frames[0]
-  if (!first || !rois.some((r) => r.contours.length)) return undefined
-  const forUid = first.inst.FrameOfReferenceUID
+  return first
+    ? rtssDataset(
+        rois,
+        first.inst,
+        frames.map((f) => ref(f.inst, f.frame)),
+        h,
+      )
+    : undefined
+}
+
+export interface RtRoi {
+  s: ExportSegment
+  contours: Ds[]
+}
+
+/** One CLOSED_PLANAR contour from LPS points (x, y, z, ...). */
+export const closedPlanar = (data: number[]): Ds => ({
+  ContourGeometricType: 'CLOSED_PLANAR',
+  NumberOfContourPoints: data.length / 3,
+  ContourData: data.map((v) => +v.toFixed(4)),
+})
+
+/**
+ * An RTSTRUCT of `rois` on `inst`'s series and frame of reference, its
+ * referenced series listing `contourImages`; undefined when nothing is drawn.
+ */
+export function rtssDataset(
+  rois: ReadonlyArray<RtRoi>,
+  inst: Ds,
+  contourImages: Ds[],
+  h: SeriesHeader,
+): Ds | undefined {
+  if (!rois.some((r) => r.contours.length)) return undefined
+  const forUid = inst.FrameOfReferenceUID
   const { date, time } = dicomNow()
   return {
-    ...header(first.inst, '1.2.840.10008.5.1.4.1.1.481.3', 'RTSTRUCT', h),
+    ...header(inst, '1.2.840.10008.5.1.4.1.1.481.3', 'RTSTRUCT', h),
     StructureSetLabel: h.SeriesDescription.slice(0, 16),
     StructureSetName: h.SeriesDescription,
     StructureSetDate: date,
     StructureSetTime: time,
+    // Common Instance Reference: OHIF's RT handler takes the referenced series
+    // from here before the frame-of-reference tree (which it reads as one item).
+    ReferencedSeriesSequence: [
+      {
+        SeriesInstanceUID: inst.SeriesInstanceUID,
+        ReferencedInstanceSequence: contourImages,
+      },
+    ],
     // Arrays: OHIF reads the stored dataset itself (its RT handler forEach-es these).
     ReferencedFrameOfReferenceSequence: [
       {
@@ -504,11 +544,11 @@ export function buildRtssDataset(
         RTReferencedStudySequence: [
           {
             ReferencedSOPClassUID: '1.2.840.10008.3.1.2.3.1',
-            ReferencedSOPInstanceUID: first.inst.StudyInstanceUID,
+            ReferencedSOPInstanceUID: inst.StudyInstanceUID,
             RTReferencedSeriesSequence: [
               {
-                SeriesInstanceUID: first.inst.SeriesInstanceUID,
-                ContourImageSequence: frames.map((f) => ref(f.inst, f.frame)),
+                SeriesInstanceUID: inst.SeriesInstanceUID,
+                ContourImageSequence: contourImages,
               },
             ],
           },

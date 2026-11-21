@@ -1,3 +1,4 @@
+import { CONTOUR_TOOL_NAMES } from './contourSeg'
 import { getNiivueEntry, ohifServices } from './niivueRegistry'
 import type {
   OhifExtensionParams,
@@ -32,6 +33,7 @@ export const NIIVUE_SUPPORTED_TOOLS: readonly string[] = [
   'Magnify',
   'AdvancedMagnify',
   ...Object.keys(SEG_TOOLS),
+  ...CONTOUR_TOOL_NAMES,
 ]
 // TMTV / 4D ROI tools: only on a pane holding a PT (petQuant.ts).
 const PET_TOOLS: readonly string[] = [
@@ -74,6 +76,8 @@ const HOST_AGNOSTIC_COMMANDS = [
   // the pane reads it (sliceCine.tsx, segmentLabel.tsx).
   'toggleCine',
   'toggleSegmentLabel',
+  // UI state: which contour utility's options are open (contourOps.ts runs them).
+  'toggleActiveSegmentationUtility',
   // Shadowed in the NIIVUE context (standardCommands.ts, segCommands.ts).
   'toggleEnabledDisabledToolbar',
   'toggleSynchronizer',

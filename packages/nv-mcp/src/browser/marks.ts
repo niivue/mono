@@ -50,6 +50,7 @@ const ANNOTATION_ACTIONS = [
   'redo',
   'load',
   'set_style',
+  'replace',
 ] as const
 const SLIDE_ANNOTATION_ACTIONS = [
   'add',
@@ -338,28 +339,27 @@ export function markHandlers(host: NiiVueHost): Handlers {
             throw new Error(
               'Adding needs annotation: a NiiVue VectorAnnotation as JSON.',
             )
-          const made = given as Record<string, unknown>
-          const { id: madeId, sliceType, slicePosition, polygons } = made
-          if (
-            typeof madeId !== 'string' ||
-            !Array.isArray(polygons) ||
-            polygons.length === 0 ||
-            typeof sliceType !== 'number' ||
-            typeof slicePosition !== 'number'
-          )
+          view.addAnnotation(annotationFrom(given))
+          break
+        }
+        case 'replace': {
+          if (!view.replaceAnnotations) throw missing()
+          const ids = strings(params, 'ids') ?? []
+          const given = params?.annotations
+          if (!Array.isArray(given))
             throw new Error(
-              'annotation needs at least id, sliceType, slicePosition and polygons.',
+              'Replacing needs annotations: a list of NiiVue VectorAnnotations as JSON (may be empty).',
             )
-          view.addAnnotation({
-            ...made,
-            id: madeId,
-            sliceType,
-            slicePosition,
-            label: typeof made.label === 'number' ? made.label : 1,
-            group: typeof made.group === 'string' ? made.group : 'default',
-            style: styleFrom(made.style),
-            polygons: polygons.map(polygonFrom),
-          })
+          const unknown = ids.find(
+            (i) => !annotations().some((a) => a.id === i),
+          )
+          if (unknown !== undefined)
+            throw new Error(`There is no annotation with the id "${unknown}".`)
+          view.replaceAnnotations(
+            ids,
+            given.map((g) => annotationFrom(g as Record<string, unknown>)),
+            flag(params, 'is_undoable') ?? false,
+          )
           break
         }
         case 'remove': {
@@ -643,6 +643,31 @@ function pointFrom(given: unknown): { x: number; y: number } {
 }
 
 const RED: [number, number, number, number] = [1, 0, 0, 1]
+
+/** A VectorAnnotation from an agent's JSON, or an error naming what is missing. */
+function annotationFrom(made: Record<string, unknown>): Annotation {
+  const { id, sliceType, slicePosition, polygons } = made
+  if (
+    typeof id !== 'string' ||
+    !Array.isArray(polygons) ||
+    polygons.length === 0 ||
+    typeof sliceType !== 'number' ||
+    typeof slicePosition !== 'number'
+  )
+    throw new Error(
+      'annotation needs at least id, sliceType, slicePosition and polygons.',
+    )
+  return {
+    ...made,
+    id,
+    sliceType,
+    slicePosition,
+    label: typeof made.label === 'number' ? made.label : 1,
+    group: typeof made.group === 'string' ? made.group : 'default',
+    style: styleFrom(made.style),
+    polygons: polygons.map(polygonFrom),
+  } as Annotation
+}
 
 /**
  * An annotation's style as NiiVue needs it, every field present. NiiVue 1.0

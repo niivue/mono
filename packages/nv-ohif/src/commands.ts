@@ -14,6 +14,7 @@ import {
 } from '@niivue/niivue'
 import { showCaptureForm } from './captureForm'
 import { classifyDisplaySet } from './classifyDisplaySet'
+import { isContourAnnotation, jumpToContourSegment } from './contourSeg'
 import { rowReport } from './csvReport'
 import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -1650,7 +1651,12 @@ export function applyNiivueAnnotationDelta(
   delta: Pick<AnnotationChangedDetail, 'added' | 'updated' | 'removed'>,
 ): void {
   guarded(viewportId, (entry) => {
-    const live = new Map(entry.nv.annotations.map((a) => [a.id, a]))
+    // Contour segments are segmentation, not measurements (contourSeg.ts).
+    const live = new Map(
+      entry.nv.annotations
+        .filter((a) => !isContourAnnotation(a))
+        .map((a) => [a.id, a]),
+    )
     const failed = [...(mappingFailures.get(viewportId)?.keys() ?? [])]
     for (const id of new Set([...delta.removed, ...failed]))
       if (!live.has(id)) removeNiivueAnnotation(viewportId, servicesManager, id)
@@ -2338,12 +2344,20 @@ export function getNiivueCommandsModule({
       const grid = ohifServices(servicesManager)?.viewportGridService as
         | { getActiveViewportId?: () => string }
         | undefined
+      const viewportId = grid?.getActiveViewportId?.()
+      const { segmentationId, segmentIndex } = options
       if (
         jumpToNiivueSegment(
           servicesManager,
-          grid?.getActiveViewportId?.(),
-          options.segmentationId,
-          options.segmentIndex,
+          viewportId,
+          segmentationId,
+          segmentIndex,
+        ) ||
+        jumpToContourSegment(
+          servicesManager,
+          viewportId,
+          segmentationId,
+          segmentIndex,
         )
       )
         return

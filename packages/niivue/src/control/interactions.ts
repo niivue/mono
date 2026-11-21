@@ -762,6 +762,16 @@ function commitAnnotation(
     before,
     ann,
     mergesOverlaps,
+    {
+      mergedGroups: ctrl.model.annotation.mergedGroups,
+      isEditable: (a) => isGrabbable(ctrl, a),
+      // On an oblique volume a slice's mm depth varies with the press point.
+      isSameSlice: (a, b) =>
+        a.sliceType === b.sliceType &&
+        (a.anchorMM && b.anchorMM
+          ? isOnSliceOf(ctrl, a.anchorMM, b.anchorMM, sliceTypeDim(a.sliceType))
+          : Math.abs(a.slicePosition - b.slicePosition) <= 0.01),
+    },
   )
   // Measure after the store: a merge or a cut changes a measurement's polygons.
   const vol = ctrl.model.getVolumes()[0]

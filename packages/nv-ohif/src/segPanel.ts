@@ -43,7 +43,7 @@ type Style = {
   outlineWidth?: number
 }
 type Specifier = { segmentationId: string; type: string }
-interface CstSegmentation {
+export interface CstSegmentation {
   addSegmentations(input: unknown[]): void
   removeSegmentationRepresentations(viewportId: string, s: object): void
   state: {
@@ -94,7 +94,7 @@ interface CstSegmentation {
     ): void
   }
 }
-interface SegmentationServiceLike {
+export interface SegmentationServiceLike {
   EVENTS: Record<string, string>
   subscribe(
     event: string,
@@ -195,7 +195,28 @@ export function panelColormap(
   return cmap
 }
 
-function cornerstoneSegmentation(
+/** A segment's panel statistics (cornerstone's cachedStats) from its voxel count. */
+export function segmentStats(count: number, voxelMM3: number) {
+  const volume = count * voxelMM3
+  // No `center`: OHIF's own jump would then look for a cornerstone viewport.
+  // The panel's statistics card lists namedStats (labels as OHIF's readableText).
+  return {
+    count,
+    volume,
+    namedStats: {
+      count: { name: 'count', label: 'Voxel Count', value: count, order: 0 },
+      volume: {
+        name: 'volume',
+        label: 'Volume',
+        value: volume,
+        unit: 'mm³',
+        order: 1,
+      },
+    },
+  }
+}
+
+export function cornerstoneSegmentation(
   extensionManager: OhifExtensionManager | undefined,
 ): CstSegmentation | undefined {
   const entry = extensionManager?.getModuleEntry(CORNERSTONE_COMMON) as
@@ -327,26 +348,8 @@ export function startSegPanel(
   // |det| of the affine: pixDims overstate a sheared grid's voxel.
   const [, px = 1, py = 1, pz = 1] = back.hdr?.pixDims ?? []
   const voxel = grid ? voxelMM3(grid) : px * py * pz
-  const cached = (value: number) => {
-    const count = stats.get(value)?.count ?? 0
-    const volume = count * voxel
-    // No `center`: OHIF's own jump would then look for a cornerstone viewport.
-    // The panel's statistics card lists namedStats (labels as OHIF's readableText).
-    return {
-      count,
-      volume,
-      namedStats: {
-        count: { name: 'count', label: 'Voxel Count', value: count, order: 0 },
-        volume: {
-          name: 'volume',
-          label: 'Volume',
-          value: volume,
-          unit: 'mm³',
-          order: 1,
-        },
-      },
-    }
-  }
+  const cached = (value: number) =>
+    segmentStats(stats.get(value)?.count ?? 0, voxel)
   // A second pane on the same SEG shares the segmentation, with its own
   // colours; segments added later take palette colours.
   const lut: Color[] = [[0, 0, 0, 0]]
@@ -568,11 +571,12 @@ export function startSegPanel(
   }
 }
 
-function addRepresentation(
+export function addRepresentation(
   cst: CstSegmentation,
   viewportId: string,
   segmentationId: string,
   colorLUTIndex: number,
+  type = LABELMAP,
 ): void {
   const manager = cst.defaultSegmentationStateManager
   manager.updateState((state) => {
@@ -581,7 +585,7 @@ function addRepresentation(
       state,
       viewportId,
       segmentationId,
-      LABELMAP,
+      type,
       {
         colorLUTIndex,
       },
@@ -592,6 +596,6 @@ function addRepresentation(
   cst.triggerSegmentationEvents.triggerSegmentationRepresentationModified(
     viewportId,
     segmentationId,
-    LABELMAP,
+    type,
   )
 }

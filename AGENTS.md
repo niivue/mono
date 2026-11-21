@@ -52,7 +52,7 @@ bunx nx affected -t lint             # Only affected
 bunx nx typecheck <project>          # Single project (tsc --noEmit)
 bunx nx affected -t typecheck        # Only affected
 
-bunx nx format <project>             # Auto-fix formatting (Biome)
+bunx nx run <project>:format         # Auto-fix formatting (Biome; `nx format` is Nx's Prettier, repo-wide)
 
 bunx nx dev <project>                # Start dev server
 

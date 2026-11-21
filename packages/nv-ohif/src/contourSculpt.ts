@@ -171,14 +171,43 @@ export function startSculpt(
       pixelMM: maxR / (cssPx || 1),
     }
   }
-  const shapes = () =>
+  const segmentShapes = (t: { group: string; label: number }, slice: string) =>
     nv.annotations.filter(
       (a) =>
-        drag &&
-        a.group === drag.group &&
-        a.label === drag.label &&
-        sliceOf(nv, a) === drag.slice,
+        a.group === t.group && a.label === t.label && sliceOf(nv, a) === slice,
     )
+  const shapes = () => (drag ? segmentShapes(drag, drag.slice) : [])
+  // The cursor circle (cornerstone's CircleSculptCursor), at the radius a
+  // press there would sculpt with.
+  const ring = document.createElement('div')
+  ring.style.cssText =
+    'position:absolute;pointer-events:none;border:1px solid #ffff00;border-radius:50%;display:none'
+  canvas.parentElement?.appendChild(ring)
+  const hideRing = () => {
+    ring.style.display = 'none'
+  }
+  const showRing = (e: PointerEvent, rMM?: number) => {
+    const where = at(e)
+    const t = target()
+    const r =
+      where &&
+      (rMM ??
+        (t &&
+          sculptRadius(
+            where.maxR,
+            segmentShapes(t, where.slice).flatMap((a) => a.polygons),
+            where.p,
+            dynamicCursor,
+          )))
+    if (!where || !r) return hideRing()
+    const px = r / where.pixelMM
+    const box = canvas.getBoundingClientRect()
+    const parent = canvas.parentElement?.getBoundingClientRect() ?? box
+    ring.style.display = 'block'
+    ring.style.width = ring.style.height = `${2 * px}px`
+    ring.style.left = `${e.clientX - parent.left - px}px`
+    ring.style.top = `${e.clientY - parent.top - px}px`
+  }
   const sculpt = (p: AnnotationPoint) => {
     if (!drag) return
     const before = shapes()
@@ -223,6 +252,7 @@ export function startSculpt(
     sculpt(where.p)
   }
   const move = (e: PointerEvent) => {
+    showRing(e, drag?.r)
     if (!drag) return
     e.stopImmediatePropagation()
     const where = at(e)
@@ -247,10 +277,13 @@ export function startSculpt(
   canvas.addEventListener('pointermove', move, { capture: true })
   canvas.addEventListener('pointerup', up)
   canvas.addEventListener('pointercancel', up)
+  canvas.addEventListener('pointerleave', hideRing)
   return () => {
     canvas.removeEventListener('pointerdown', down, { capture: true })
     canvas.removeEventListener('pointermove', move, { capture: true })
     canvas.removeEventListener('pointerup', up)
     canvas.removeEventListener('pointercancel', up)
+    canvas.removeEventListener('pointerleave', hideRing)
+    ring.remove()
   }
 }

@@ -310,7 +310,8 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
 - **Output stack.** Every other mapped output of the shown echo and part,
   multi-frame ones included, joins a cornerstone-style stack: on the
   acquisition plane the wheel steps through every image in instance order,
-  switching outputs at an output's end, and `jumpToImage` switches to the
+  switching outputs at an output's end (as does a StackScroll drag over
+  single-slice outputs, one image per 4 px), and `jumpToImage` switches to the
   output holding the image.
 - **Acquired plane.** A series OHIF marks not reconstructable (unequal slice
   spacing, orthogonal localizers), or a single slice, opens in its acquired
@@ -451,15 +452,23 @@ tmtv).
   cuts a hole. Locked or hidden segments are not cut, grabbed or erased.
   Combine (merge, subtract, intersect), Duplicate, Smooth, Remove extra
   points, Fill holes, Remove small contours, Holes to segment and Sculptor
-  (cursor sized as cornerstone's, Dynamic Cursor Size included) edit the
+  (cursor drawn and sized as cornerstone's, Dynamic Cursor Size included) edit the
   shapes, each one undo step; locked segments are left as they are. The statistics
   card counts the voxels whose centres the shapes cover; Export writes a SEG
   of those voxels or an RTSTRUCT of the drawn rings (LPS, on each shape's
-  voxel plane, so oblique slices round-trip). A contour segmentation shows on one pane at a time; after a layout
-  change the new pane showing its series takes it. A finished spline
-  is an outline (Simplified Spline on, OHIF's default). Not done: contour
-  interpolation and Simplified Spline off (their switches are no-ops), and an
-  RTSTRUCT loads as a labelmap, not as editable contours.
+  voxel plane, so oblique slices round-trip). Every NiiVue pane showing the
+  series holds the segmentation (one pane's copy is counted and exported; the
+  others mirror its edits), so in MPR any pane draws into it; a layout change
+  or series swap keeps it. Interpolate Contours (per tool, off by default)
+  fills the slices between two drawn contours of a segment (outer rings only),
+  as cornerstone's: in-betweens draw fainter and regenerate when a drawn one
+  changes; editing one makes it drawn (undo restores it). Another
+  segmentation active on the pane draws this one in its inactive style. Live
+  wire uses cornerstone's LivewireScissors cost (core
+  `annotationIsLivewireScissors`). A
+  finished spline is an outline (Simplified Spline on, OHIF's default). Not
+  done: Simplified Spline off, and an RTSTRUCT loads as a labelmap, not as
+  editable contours.
 - **SR.** NiiVue measurement rows are mirrored as cornerstone annotations, so
   OHIF's SR export includes them; a hydrated SR's rows show as NiiVue
   annotations (axis-aligned only). Slide rows save and load as OHIF's

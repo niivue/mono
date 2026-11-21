@@ -56,6 +56,19 @@ describe('segPanel', () => {
     })
     expect(drawOpacities({ renderFill: false, outlineOpacity: 0 }).fill).toBe(0)
     expect(drawOpacities({ outlineWidth: 3 }).width).toBe(3)
+    // Another segmentation active on the pane: the *Inactive half.
+    expect(
+      drawOpacities(
+        {
+          fillAlpha: 0.5,
+          fillAlphaInactive: 0.2,
+          outlineWidth: 3,
+          outlineWidthInactive: 1,
+          renderOutlineInactive: false,
+        },
+        false,
+      ),
+    ).toEqual({ fill: 0.2, rim: -1, width: 1, outlineOnly: false })
     // Review of #855: a 1/255 fill the style asks for is not outline only.
     expect(drawOpacities({ fillAlpha: 1 / 255 }).outlineOnly).toBe(false)
   })

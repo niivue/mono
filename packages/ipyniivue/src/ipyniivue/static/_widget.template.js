@@ -31,6 +31,7 @@ const PROPS_RW = [
   ["annotationIsEnabled", "annotation_is_enabled"],
   ["annotationIsErasing", "annotation_is_erasing"],
   ["annotationIsHandleGrab", "annotation_is_handle_grab"],
+  ["annotationIsLivewireScissors", "annotation_is_livewire_scissors"],
   ["annotationIsVisibleIn3D", "annotation_is_visible_in_3d"],
   ["annotationMergedGroups", "annotation_merged_groups"],
   ["annotationMergesOverlaps", "annotation_merges_overlaps"],

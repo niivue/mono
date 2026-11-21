@@ -408,6 +408,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether ROI area is the outline area rather than its voxel count.',
   ),
   bool(
+    'annotationIsLivewireScissors',
+    "Whether the live wire uses cornerstone's LivewireScissors edge cost.",
+  ),
+  bool(
     'annotationMergesOverlaps',
     'Whether a new annotation is merged with one it overlaps.',
   ),

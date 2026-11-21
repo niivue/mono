@@ -18,7 +18,7 @@ const {
   reflectNiivueAnnotation,
   reflectedRowUid,
 } = await import('./commands')
-const { generateShape } = await import('@niivue/niivue')
+const { DRAG_MODE, generateShape } = await import('@niivue/niivue')
 const {
   registerNiivue,
   getNiivueEntry,
@@ -382,6 +382,26 @@ for (const isVolumeViewport of [false, true])
     expect([nv.volumes[0]?.name, z]).toEqual(['B', 10])
     await wheel()
     expect(z).toBe(11)
+    // Review of the R28 draft: from A, one 12 px StackScroll move (three
+    // steps) must reach B3, the steps after the switch waiting for its load.
+    const back = (deltaY: number) =>
+      nv.canvas.dispatchEvent(
+        Object.assign(new Event('wheel', { cancelable: true }), { deltaY }),
+      )
+    back(-1)
+    back(-1)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(nv.volumes[0]?.name).toBe('A')
+    Object.assign(nv, { primaryDragMode: DRAG_MODE.slice })
+    for (const [type, clientY] of [
+      ['pointerdown', 0],
+      ['pointermove', 12],
+    ] as const)
+      nv.canvas.dispatchEvent(
+        Object.assign(new Event(type), { button: 0, buttons: 1, clientY }),
+      )
+    await new Promise((r) => setTimeout(r, 0))
+    expect([nv.volumes[0]?.name, z]).toEqual(['B', 12])
     cleanup?.()
     unregisterNiivue('vw')
   })
@@ -588,4 +608,75 @@ test('the wheel moves through unmapped slices without switching', async () => {
   expect([nv.volumes[0]?.name, nv.crosshairPos[2]]).toEqual(['B', 2])
   cleanup?.()
   unregisterNiivue('vu')
+})
+
+// Review of the R28 draft: a StackScroll drag over single-slice outputs moved
+// one image per pointer event, however many 4 px steps it crossed, and steps
+// taken while a switch loads must carry on from it.
+test('a StackScroll drag steps by distance, not by event count', async () => {
+  const end = async (moves: number[]) => {
+    const sf = (sop: string) => ({
+      origin: [0, 0, 0] as [number, number, number],
+      normal: [0, 0, 1] as [number, number, number],
+      frames: [{ SOPInstanceUID: sop, frameNumber: 1 }],
+    })
+    const vs = ['A', 'B', 'C', 'D'].map((name) => ({
+      name,
+      dims: [3, 2, 2, 1],
+      dimsRAS: [3, 2, 2, 1],
+      permRAS: [1, 2, 3],
+    }))
+    const nv = {
+      canvas: new EventTarget(),
+      volumes: [vs[0]],
+      sliceType: 0,
+      primaryDragMode: DRAG_MODE.slice,
+      prepareVolume: async (o: { name: string }) =>
+        vs.find((v) => v.name === o.name),
+      loadVolumes: async (v: typeof vs) => {
+        nv.volumes = v
+      },
+      vox2frac: (v: number[]) => v,
+      crosshairPos: [0, 0, 0],
+      setCrosshairPos: () => {},
+      moveCrosshairInVox: () => {},
+    }
+    const ds = {
+      instances: vs.map((v) => ({ SOPInstanceUID: v.name })),
+    } as unknown as OhifDisplaySet
+    registerNiivue('drag', nv as unknown as NiiVue)
+    updateNiivueViewport('drag', {
+      displaySets: [ds],
+      sliceFrames: sf('A'),
+      isVolumeViewport: true,
+    })
+    useOutputStack(
+      nv as unknown as NiiVue,
+      'drag',
+      ds,
+      {
+        image: { name: 'A' },
+        sliceFrames: sf('A'),
+        alternates: vs
+          .slice(1)
+          .map((v) => ({ image: { name: v.name }, sliceFrames: sf(v.name) })),
+      } as unknown as DicomConversion,
+      () => {},
+    )
+    const cleanup = effects.pop()?.()
+    const pointer = (type: string, clientY: number) =>
+      nv.canvas.dispatchEvent(
+        Object.assign(new Event(type), { button: 0, buttons: 1, clientY }),
+      )
+    pointer('pointerdown', 0)
+    for (const y of moves) pointer('pointermove', y)
+    await new Promise((r) => setTimeout(r, 0))
+    cleanup?.()
+    unregisterNiivue('drag')
+    return nv.volumes[0]?.name
+  }
+  // Past D and back one image: C, however the steps meet the loads.
+  expect([await end([12]), await end([4, 8, 12]), await end([20, 16])]).toEqual(
+    ['D', 'D', 'C'],
+  )
 })

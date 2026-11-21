@@ -1564,6 +1564,8 @@ export type NiiVueOptions = {
   annotationMergedGroups?: string[] | null
   /** See AnnotationConfig.isAreaGeometric. Default false. */
   annotationAreaIsGeometric?: boolean
+  /** See AnnotationConfig.isLivewireScissors. Default false. */
+  annotationIsLivewireScissors?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -2267,6 +2269,12 @@ export type AnnotationConfig = {
    * whole voxels. Mean/min/max/SD always use those voxels.
    */
   isAreaGeometric: boolean
+  /**
+   * The live wire uses cornerstone's LivewireScissors cost (edge strength,
+   * Laplacian zero crossings and gradient direction, on the slice through the
+   * display window). Default false: the Sobel gradient magnitude alone.
+   */
+  isLivewireScissors: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

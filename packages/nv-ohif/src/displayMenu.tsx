@@ -1,4 +1,5 @@
 import type NiiVue from '@niivue/niivue'
+import { SLICE_TYPE } from '@niivue/niivue'
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import {
   applyWindowLevelPreset,
@@ -115,100 +116,107 @@ export function DisplayMenu({
             borderRadius: 6,
           }}
         >
-          {presets.length ? (
-            <div style={heading}>Modality Window Presets</div>
-          ) : null}
-          {presets.map((p, i) => (
-            <button
-              key={p.id ?? i}
-              type="button"
-              style={item}
-              onClick={() => {
-                applyWindowLevelPreset(entry, servicesManager, p.id, i)
-                setOpen(false)
-              }}
-            >
-              {p.description ?? p.id} ({p.window} / {p.level})
-            </button>
-          ))}
-          <div style={heading}>Window / Level</div>
-          <label style={row}>
-            W
-            <input
-              aria-label="Window width"
-              type="number"
-              defaultValue={Math.round(width)}
-              onChange={(e) => setVoi(Number(e.target.value), level)}
-              style={{ width: 70 }}
-            />
-            L
-            <input
-              aria-label="Window level"
-              type="number"
-              defaultValue={Math.round(level)}
-              onChange={(e) => setVoi(width, Number(e.target.value))}
-              style={{ width: 70 }}
-            />
-          </label>
-          <label style={row}>
-            <input
-              type="checkbox"
-              checked={nv.isColorbarVisible}
-              onChange={(e) => {
-                nv.isColorbarVisible = e.target.checked
-                redraw((n) => n + 1)
-              }}
-            />
-            Colorbar
-          </label>
-          {ov ? (
+          {nv.sliceType === SLICE_TYPE.RENDER ? (
+            // A 3D pane: cornerstone's Volume Rendering Options only.
+            <RenderingOptions nv={nv} redraw={() => redraw((n) => n + 1)} />
+          ) : (
             <>
+              {presets.length ? (
+                <div style={heading}>Modality Window Presets</div>
+              ) : null}
+              {presets.map((p, i) => (
+                <button
+                  key={p.id ?? i}
+                  type="button"
+                  style={item}
+                  onClick={() => {
+                    applyWindowLevelPreset(entry, servicesManager, p.id, i)
+                    setOpen(false)
+                  }}
+                >
+                  {p.description ?? p.id} ({p.window} / {p.level})
+                </button>
+              ))}
+              <div style={heading}>Window / Level</div>
               <label style={row}>
-                Opacity
+                W
                 <input
-                  aria-label="Overlay opacity"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  defaultValue={ov.opacity}
-                  onChange={(e) =>
-                    void nv.setVolume(overlay, {
-                      opacity: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label style={row}>
-                Threshold
-                <input
-                  aria-label="Overlay threshold"
+                  aria-label="Window width"
                   type="number"
-                  defaultValue={ov.calMin}
-                  onChange={(e) =>
-                    void nv.setVolume(overlay, {
-                      calMin: Number(e.target.value),
-                    })
-                  }
-                  style={{ width: 80 }}
+                  defaultValue={Math.round(width)}
+                  onChange={(e) => setVoi(Number(e.target.value), level)}
+                  style={{ width: 70 }}
+                />
+                L
+                <input
+                  aria-label="Window level"
+                  type="number"
+                  defaultValue={Math.round(level)}
+                  onChange={(e) => setVoi(width, Number(e.target.value))}
+                  style={{ width: 70 }}
                 />
               </label>
+              <label style={row}>
+                <input
+                  type="checkbox"
+                  checked={nv.isColorbarVisible}
+                  onChange={(e) => {
+                    nv.isColorbarVisible = e.target.checked
+                    redraw((n) => n + 1)
+                  }}
+                />
+                Colorbar
+              </label>
+              {ov ? (
+                <>
+                  <label style={row}>
+                    Opacity
+                    <input
+                      aria-label="Overlay opacity"
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      defaultValue={ov.opacity}
+                      onChange={(e) =>
+                        void nv.setVolume(overlay, {
+                          opacity: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <label style={row}>
+                    Threshold
+                    <input
+                      aria-label="Overlay threshold"
+                      type="number"
+                      defaultValue={ov.calMin}
+                      onChange={(e) =>
+                        void nv.setVolume(overlay, {
+                          calMin: Number(e.target.value),
+                        })
+                      }
+                      style={{ width: 80 }}
+                    />
+                  </label>
+                </>
+              ) : null}
+              {colormaps.length ? <div style={heading}>Color LUT</div> : null}
+              {colormaps.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  style={item}
+                  onClick={() => {
+                    setViewportColormap(entry, { colormap: name })
+                    setOpen(false)
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
             </>
-          ) : null}
-          {colormaps.length ? <div style={heading}>Color LUT</div> : null}
-          {colormaps.map((name) => (
-            <button
-              key={name}
-              type="button"
-              style={item}
-              onClick={() => {
-                setViewportColormap(entry, { colormap: name })
-                setOpen(false)
-              }}
-            >
-              {name}
-            </button>
-          ))}
+          )}
         </div>
       ) : null}
       {hover || open ? (
@@ -230,5 +238,66 @@ export function DisplayMenu({
         </button>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * cornerstone's Volume Rendering Options (quality, shift, shade) on a NiiVue
+ * 3D pane, through the same commands as OHIF's menu would run.
+ */
+function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
+  const vol = nv.volumes[0]
+  const width = vol ? Math.max(1, vol.calMax - vol.calMin) : 1
+  const [shift, setShift] = useState(0)
+  return (
+    <>
+      <div style={heading}>Rendering</div>
+      <label style={row}>
+        Quality
+        <input
+          aria-label="Volume rendering quality"
+          type="range"
+          min={1}
+          max={4}
+          step={1}
+          defaultValue={nv.volumeSampleRate}
+          onChange={(e) => {
+            nv.volumeSampleRate = Number(e.target.value)
+            redraw()
+          }}
+        />
+      </label>
+      <label style={row}>
+        Shift
+        <input
+          aria-label="Volume opacity shift"
+          type="range"
+          min={-width}
+          max={width}
+          step={width / 100}
+          value={shift}
+          onChange={(e) => {
+            const next = Number(e.target.value)
+            if (vol)
+              void nv.setVolume(0, {
+                calMin: vol.calMin + next - shift,
+                calMax: vol.calMax + next - shift,
+              })
+            setShift(next)
+          }}
+        />
+      </label>
+      <label style={row}>
+        <input
+          type="checkbox"
+          checked={nv.volumeIllumination > 0}
+          onChange={(e) => {
+            nv.volumeIllumination = e.target.checked ? 0.6 : 0
+            redraw()
+          }}
+        />
+        Shade
+      </label>
+    </>
   )
 }

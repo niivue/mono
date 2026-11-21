@@ -495,18 +495,21 @@ function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
       vol,
       ctrl._annotationPolySliceType,
       ctrl._annotationPolySlicePosition,
+      ctrl.model.annotation.isLivewireScissors,
     )
   }
   const slice = ctrl._livewireSlice
   if (!slice) return false
   const g = Annotation.slice2DToGrid(slice, pt)
-  ctrl._livewireField = Annotation.livewireField(
-    slice.cost,
-    slice.width,
-    slice.height,
-    g.x,
-    g.y,
-  )
+  ctrl._livewireField = slice.scissors
+    ? Annotation.livewireFieldScissors(
+        slice.scissors,
+        slice.width,
+        slice.height,
+        g.x,
+        g.y,
+      )
+    : Annotation.livewireField(slice.cost, slice.width, slice.height, g.x, g.y)
   ctrl._livewireSeed = g
   return true
 }
@@ -643,7 +646,6 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   const cfg = ctrl.model.annotation
   const polygons = contourPolygons(ctrl, pts)
   if (polygons.length === 0) return false
-  ctrl._annotationUndoStack.push(ctrl.model.annotations)
   const newAnn = Annotation.createAnnotation(
     cfg.activeLabel,
     cfg.activeGroup,
@@ -758,21 +760,22 @@ function commitAnnotation(
   mergesOverlaps: boolean,
 ): void {
   const before = ctrl.model.annotations
-  ctrl.model.annotations = Annotation.storeAnnotation(
-    before,
-    ann,
-    mergesOverlaps,
-    {
-      mergedGroups: ctrl.model.annotation.mergedGroups,
-      isEditable: (a) => isGrabbable(ctrl, a),
-      // On an oblique volume a slice's mm depth varies with the press point.
-      isSameSlice: (a, b) =>
-        a.sliceType === b.sliceType &&
-        (a.anchorMM && b.anchorMM
-          ? isOnSliceOf(ctrl, a.anchorMM, b.anchorMM, sliceTypeDim(a.sliceType))
-          : Math.abs(a.slicePosition - b.slicePosition) <= 0.01),
-    },
-  )
+  const after = Annotation.storeAnnotation(before, ann, mergesOverlaps, {
+    mergedGroups: ctrl.model.annotation.mergedGroups,
+    isEditable: (a) => isGrabbable(ctrl, a),
+    // On an oblique volume a slice's mm depth varies with the press point.
+    isSameSlice: (a, b) =>
+      a.sliceType === b.sliceType &&
+      (a.anchorMM && b.anchorMM
+        ? isOnSliceOf(ctrl, a.anchorMM, b.anchorMM, sliceTypeDim(a.sliceType))
+        : Math.abs(a.slicePosition - b.slicePosition) <= 0.01),
+  })
+  // A stroke wholly inside a shape it may not cut stores nothing: no step.
+  // The store may reorder (measurements last), so compare membership.
+  const kept = new Set(before)
+  if (after.length === before.length && after.every((a) => kept.has(a))) return
+  ctrl._annotationUndoStack.push(before)
+  ctrl.model.annotations = after
   // Measure after the store: a merge or a cut changes a measurement's polygons.
   const vol = ctrl.model.getVolumes()[0]
   if (vol) {
@@ -800,7 +803,6 @@ function commitAnnotation(
 function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
   const ann = bidirectionalAnnotation(ctrl, long, short)
   if (!ann) return
-  ctrl._annotationUndoStack.push(ctrl.model.annotations)
   commitAnnotation(ctrl, ann, ctrl.model.annotation.mergesOverlaps)
 }
 
@@ -1819,7 +1821,6 @@ function finish3DAnnotationStroke(ctrl: NiiVue): void {
   ]
   anchorMM[depthAxis] = slicePosition
   const cfg = ctrl.model.annotation
-  ctrl._annotationUndoStack.push(ctrl.model.annotations)
   const newAnn = Annotation.createAnnotation(
     cfg.activeLabel,
     cfg.activeGroup,
@@ -2236,10 +2237,7 @@ export function initInteraction(ctrl: NiiVue): void {
           }
           if (poly.length === ANGLE_CLICKS[tool]) {
             const ann = angleAnnotation(ctrl, poly)
-            if (ann) {
-              ctrl._annotationUndoStack.push(ctrl.model.annotations)
-              commitAnnotation(ctrl, ann, cfg.mergesOverlaps)
-            }
+            if (ann) commitAnnotation(ctrl, ann, cfg.mergesOverlaps)
             ctrl._abandonAnnotationInProgress()
             ctrl.drawScene()
             return
@@ -2528,7 +2526,6 @@ export function initInteraction(ctrl: NiiVue): void {
                 cfg.style.strokeWidth,
               )
               if (polygons.length > 0) {
-                ctrl._annotationUndoStack.push(ctrl.model.annotations)
                 const newAnn = Annotation.createAnnotation(
                   cfg.activeLabel,
                   cfg.activeGroup,
@@ -2573,10 +2570,9 @@ export function initInteraction(ctrl: NiiVue): void {
         ctrl._annotationBrushPath.length > 0
       ) {
         if (ctrl._annotationBrushPath.length > 1) {
-          // Save undo snapshot before modifying annotations
-          ctrl._annotationUndoStack.push(ctrl.model.annotations)
           const cfg = ctrl.model.annotation
           if (cfg.isErasing) {
+            ctrl._annotationUndoStack.push(ctrl.model.annotations)
             // Commit the erase preview (already computed during pointermove)
             const preview = ctrl.model._annotationErasePreview
             const beforeErase = ctrl.model.annotations

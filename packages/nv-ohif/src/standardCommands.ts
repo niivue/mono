@@ -63,6 +63,9 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'nextImage',
   'previousImage',
   'showDownloadViewportModal',
+  'setVolumeRenderingQulaity',
+  'shiftVolumeOpacityPoints',
+  'setVolumeLighting',
   ...NIIVUE_ROTATE_FLIP_COMMANDS,
 ] as const
 
@@ -514,6 +517,36 @@ export function getStandardCommandDefinitions({
       ),
     },
     invertViewport: { commandFn: route('invertViewport', invertBase) },
+    // cornerstone's volume rendering options (D5-06) on a NiiVue 3D pane.
+    // Quality: samples per voxel along the ray (NiiVue's 1-4).
+    setVolumeRenderingQulaity: {
+      commandFn: route('setVolumeRenderingQulaity', ({ nv }, opts) => {
+        nv.volumeSampleRate = Math.min(
+          4,
+          Math.max(1, Number(opts.volumeQuality) || 1),
+        )
+      }),
+    },
+    // Shift: the opacity ramp moves along intensity with the window.
+    shiftVolumeOpacityPoints: {
+      commandFn: route('shiftVolumeOpacityPoints', ({ nv }, opts) => {
+        const vol = nv.volumes[0]
+        const shift = Number(opts.shift) || 0
+        if (vol && shift)
+          void nv.setVolume(0, {
+            calMin: vol.calMin + shift,
+            calMax: vol.calMax + shift,
+          })
+      }),
+    },
+    // Shade: NiiVue's illumination. ponytail: ambient, diffuse and specular
+    // have no NiiVue equivalent (one illumination strength).
+    setVolumeLighting: {
+      commandFn: route('setVolumeLighting', ({ nv }, opts) => {
+        const shade = (opts.options as { shade?: boolean } | undefined)?.shade
+        if (shade !== undefined) nv.volumeIllumination = shade ? 0.6 : 0
+      }),
+    },
     // Delete on a NiiVue pane removes its selected annotation (undoably; undo
     // and redo are OHIF's, through its history: history.ts).
     deleteActiveAnnotation: {

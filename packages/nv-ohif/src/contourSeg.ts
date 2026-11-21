@@ -11,10 +11,11 @@ import {
   type NiiVue,
   type VectorAnnotation,
 } from '@niivue/niivue'
+import { interpolateGroup, isInterpolated } from './contourInterp'
 import { startSculpt } from './contourSculpt'
 import { historyMemo } from './history'
 import type { NiivueViewportEntry } from './niivueRegistry'
-import { niivueEntries, ohifServices } from './niivueRegistry'
+import { getNiivueEntry, niivueEntries, ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
 import { invertAffine, rasGrid, voxelMM3 } from './quantify'
 import { closedPlanar, type RtRoi } from './segExport'
@@ -24,6 +25,7 @@ import {
   cornerstoneSegmentation,
   paletteColor,
   type SegmentationServiceLike,
+  segmentationRole,
   segmentStats,
 } from './segPanel'
 
@@ -68,9 +70,19 @@ type Service = SegmentationServiceLike & {
 interface ContourSegmentation {
   viewportId: string
   nv: NiiVue
+  /** The base display set the shapes belong to, and the panel's colour LUT. */
+  source: string
+  lutIndex: number
   rows: Map<number, Row>
   fillAlpha: number
   outlineWidth: number
+  outlineOpacity: number
+  /** Interpolated contours' fill and outline width. */
+  auto: { fillAlpha: number; outlineWidth: number }
+  /** Regenerate interpolated contours (when the switch is on). */
+  interpolate(): void
+  /** Mirror this segmentation on another pane showing its series. */
+  mirrorTo(entry: NiivueViewportEntry): void
   /** The panel's Delete Segment: one undo step, shapes included. */
   deleteSegment(index: number): void
   /** `park`: the pane goes but the segmentation stays (see adoptContours). */
@@ -88,6 +100,142 @@ const parked = new Map<
   { source: string; shapes: VectorAnnotation[]; lutIndex: number }
 >()
 
+/**
+ * The other NiiVue panes showing a segmentation's series (MPR, a 2-up): each
+ * holds a copy of its shapes, so any of them draws into it and shows it on a
+ * matching plane, as cornerstone's. The owner pane's copy is the one counted
+ * and exported. segmentationId -> viewportId -> mirror.
+ */
+const mirrors = new Map<string, Map<string, { nv: NiiVue; stop(): void }>>()
+// Set while one view's shapes are copied to the others: not edits.
+let replicating = false
+
+const groupShapes = (nv: NiiVue, group: string) =>
+  nv.annotations.filter((a) => a.group === group)
+
+/** Which shapes an edit event touched: ids written and ids removed. */
+type Delta = { written: string[]; removed: string[] }
+const deltaOf = (e: Event): Delta | undefined => {
+  const d = (e as CustomEvent).detail as {
+    annotation?: { id: string }
+    id?: string
+    added?: string[]
+    updated?: string[]
+    removed?: string[]
+  }
+  if (e.type === 'annotationAdded' && d?.annotation)
+    return { written: [d.annotation.id], removed: [] }
+  if (e.type === 'annotationRemoved' && d?.id)
+    return { written: [], removed: [d.id] }
+  if (e.type === 'annotationChanged')
+    return {
+      written: [...(d?.added ?? []), ...(d?.updated ?? [])],
+      removed: d?.removed ?? [],
+    }
+  return undefined
+}
+
+/**
+ * Copy an edit on `from` to a segmentation's other views (no undo step): only
+ * the shapes it touched, so a view that missed a step never wipes the others.
+ * Without `delta`, `from`'s whole set (a new mirror).
+ */
+function replicate(segmentationId: string, from: NiiVue, delta?: Delta): void {
+  const c = contours.get(segmentationId)
+  if (replicating || !c) return
+  const group = contourGroup(segmentationId)
+  const source = groupShapes(from, group)
+  const written = delta
+    ? source.filter((a) => delta.written.includes(a.id))
+    : source
+  const gone = new Set(delta ? delta.removed : [])
+  if (delta && written.length === 0 && gone.size === 0) return
+  const views = [...(mirrors.get(segmentationId)?.values() ?? [])]
+  replicating = true
+  try {
+    for (const nv of [c.nv, ...views.map((m) => m.nv)]) {
+      if (nv === from) continue
+      const replace = new Set(written.map((a) => a.id))
+      const drop = groupShapes(nv, group)
+        .filter((a) => !delta || gone.has(a.id) || replace.has(a.id))
+        .map((a) => a.id)
+      nv.replaceAnnotations(
+        drop,
+        written.map((a) => structuredClone(a)),
+        false,
+      )
+    }
+  } finally {
+    replicating = false
+  }
+}
+
+/** `entry` shows the segmentation's series too: mirror it there. */
+function addMirror(
+  entry: NiivueViewportEntry,
+  segmentationId: string,
+  cst: CstSegmentation,
+  service: Service,
+): void {
+  const c = contours.get(segmentationId)
+  const views = mirrors.get(segmentationId) ?? new Map()
+  if (!c || c.viewportId === entry.viewportId || views.has(entry.viewportId))
+    return
+  const { nv, viewportId } = entry
+  const group = contourGroup(segmentationId)
+  nv.annotationMergedGroups = [...(nv.annotationMergedGroups ?? []), group]
+  addRepresentation(cst, viewportId, segmentationId, c.lutIndex, CONTOUR)
+  if (!service.getActiveSegmentation?.(viewportId))
+    service.setActiveSegmentation(viewportId, segmentationId)
+  const base = nv.volumes[0]
+  const onEdit = (e: Event) => {
+    replicate(segmentationId, nv, deltaOf(e))
+  }
+  const onRemoved = (e: Event) => {
+    if ((e as CustomEvent<{ volume: unknown }>).detail?.volume !== base) return
+    stop()
+    nv.removeAnnotations(groupShapes(nv, group).map((a) => a.id))
+  }
+  const onDestroyed = () => {
+    if (nv.isDestroyed) stop()
+  }
+  const edits = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
+  const stop = () => {
+    if (!views.has(viewportId)) return
+    views.delete(viewportId)
+    for (const e of edits) nv.removeEventListener(e, onEdit)
+    nv.removeEventListener('volumeRemoved', onRemoved)
+    nv.removeEventListener('viewDestroyed', onDestroyed)
+    nv.annotationMergedGroups = (nv.annotationMergedGroups ?? []).filter(
+      (g) => g !== group,
+    )
+    cst.removeSegmentationRepresentations(viewportId, { segmentationId })
+  }
+  views.set(viewportId, { nv, stop })
+  mirrors.set(segmentationId, views)
+  replicate(segmentationId, c.nv)
+  for (const e of edits) nv.addEventListener(e, onEdit)
+  nv.addEventListener('volumeRemoved', onRemoved)
+  nv.addEventListener('viewDestroyed', onDestroyed)
+}
+
+/** Mirror a live segmentation in every other pane already showing its series. */
+function mirrorEverywhere(
+  segmentationId: string,
+  cst: CstSegmentation,
+  service: Service,
+): void {
+  const c = contours.get(segmentationId)
+  if (!c) return
+  for (const e of niivueEntries())
+    if (
+      e.viewportId !== c.viewportId &&
+      !e.baseLoading &&
+      e.displaySets[0]?.displaySetInstanceUID === c.source
+    )
+      addMirror(e, segmentationId, cst, service)
+}
+
 const ofAnnotation = (a: Pick<VectorAnnotation, 'group'>) =>
   isContourAnnotation(a)
     ? contours.get(a.group.slice(GROUP_PREFIX.length))
@@ -100,6 +248,7 @@ const HOLE = -1
 /** False for a hidden or locked segment's shape: no grab, select, erase or cut. */
 export function isContourEditable(
   a: Pick<VectorAnnotation, 'group' | 'label'>,
+  viewportId?: string,
 ): boolean {
   if (cutting) return a.group === cutting.group && a.label === cutting.label
   const c = ofAnnotation(a)
@@ -107,7 +256,16 @@ export function isContourEditable(
   if (!c) return !isContourAnnotation(a)
   // Only a contour tool edits contours: a Length press inside a segment does not grab it.
   const row = c.rows.get(a.label)
-  return armed.has(c.viewportId) && !!row && row.visible && !row.locked
+  // Not drawn at all (inactive with renderInactiveSegmentations off): not
+  // grabbed either.
+  const drawn = c.fillAlpha > 0 || c.outlineWidth > 0
+  return (
+    armed.has(viewportId ?? c.viewportId) &&
+    drawn &&
+    !!row &&
+    row.visible &&
+    !row.locked
+  )
 }
 
 /** False for a hidden segment's shape (the overlay does not draw it). */
@@ -121,16 +279,47 @@ export function isContourShown(
 
 const toStyle = (
   row: Row,
-  c: Pick<ContourSegmentation, 'fillAlpha' | 'outlineWidth'>,
+  c: Pick<
+    ContourSegmentation,
+    'fillAlpha' | 'outlineWidth' | 'outlineOpacity' | 'auto'
+  >,
+  a?: Pick<VectorAnnotation, 'id' | 'polygons'>,
 ): AnnotationStyle => {
   const [r = 0, g = 0, b = 0] = row.color.map((v) => v / 255)
+  // An interpolated contour: cornerstone's *AutoGenerated style.
+  const auto = a && isInterpolated(a)
+  const fill = auto ? c.auto.fillAlpha : c.fillAlpha
   return {
-    strokeColor: [r, g, b, 1],
+    strokeColor: [r, g, b, c.outlineOpacity],
     // Core fills under the overlay, which hides a hidden segment's stroke only.
-    fillColor: [r, g, b, row.visible ? c.fillAlpha : 0],
-    strokeWidth: c.outlineWidth,
+    fillColor: [r, g, b, row.visible ? fill : 0],
+    strokeWidth: auto ? c.auto.outlineWidth : c.outlineWidth,
   }
 }
+
+// The contour tools whose Interpolate Contours switch is on (per tool, as
+// cornerstone's tool configuration; off by default, as OHIF's).
+const interpolatingTools = new Set<string>()
+// Set while a pane regenerates interpolated shapes (its own edits).
+let regenerating = false
+
+/**
+ * The switch: on regenerates every segmentation; off stops regenerating and
+ * keeps what was made (OHIF replays each contour tool's own switch on arming).
+ */
+export function setContourInterpolation(
+  on: boolean,
+  toolNames: readonly string[],
+): void {
+  for (const t of toolNames)
+    if (on) interpolatingTools.add(t)
+    else interpolatingTools.delete(t)
+  if (on) for (const c of contours.values()) c.interpolate()
+}
+
+/** A pane holding the segmentation has a contour tool armed whose switch is on. */
+const interpolatesOn = (viewportIds: readonly string[]) =>
+  viewportIds.some((v) => interpolatingTools.has(armed.get(v)?.tool ?? ''))
 
 /**
  * OHIF's createContourForViewport on a NiiVue pane: a new contour
@@ -188,6 +377,7 @@ export function createContourSegmentation(
   attach(entry, segmentationId, cst, service, lutIndex, extensionManager)
   service.setActiveSegmentation(viewportId, segmentationId)
   service.setActiveSegment(segmentationId, 1)
+  mirrorEverywhere(segmentationId, cst, service)
   return segmentationId
 }
 
@@ -229,7 +419,7 @@ export function adoptContours(
   }: Pick<OhifExtensionParams, 'servicesManager' | 'extensionManager'>,
 ): void {
   const source = entry.displaySets[0]?.displaySetInstanceUID
-  if (!source || parked.size === 0) return
+  if (!source) return
   const cst = cornerstoneSegmentation(extensionManager)
   const service = ohifServices(servicesManager)?.segmentationService as
     | Service
@@ -256,7 +446,11 @@ export function adoptContours(
     entry.nv.replaceAnnotations([], p.shapes, false)
     addRepresentation(cst, entry.viewportId, id, p.lutIndex, CONTOUR)
     attach(entry, id, cst, service, p.lutIndex, extensionManager)
+    mirrorEverywhere(id, cst, service)
   }
+  // A live segmentation of this series held by another pane: mirror it here.
+  for (const [id, c] of contours)
+    if (c.source === source) addMirror(entry, id, cst, service)
 }
 
 /**
@@ -265,6 +459,7 @@ export function adoptContours(
  * back when that series is shown again.
  */
 export function parkContours(viewportId: string): void {
+  for (const views of mirrors.values()) views.get(viewportId)?.stop()
   for (const c of [...contours.values()])
     if (c.viewportId === viewportId) c.stop(true)
 }
@@ -292,9 +487,15 @@ function startContourSync(
   const c: ContourSegmentation = {
     viewportId,
     nv,
+    source,
+    lutIndex,
     rows: new Map(),
     fillAlpha: 0.5,
     outlineWidth: 2,
+    outlineOpacity: 1,
+    auto: { fillAlpha: 0.3, outlineWidth: 3 },
+    interpolate: () => {},
+    mirrorTo: (entry) => addMirror(entry, segmentationId, cst, service),
     stop: () => {},
     // Not cornerstone's removeSegment: it needs the contour data this entry
     // omits so OHIF offers Save.
@@ -325,6 +526,21 @@ function startContourSync(
         restoreMemo: apply,
       })
     },
+  }
+  // The owner pane and every mirror.
+  const panes = () => [
+    { viewportId, nv },
+    ...[...(mirrors.get(segmentationId) ?? [])].map(([v, m]) => ({
+      viewportId: v,
+      nv: m.nv,
+    })),
+  ]
+  const restyle = () => {
+    for (const p of panes())
+      for (const a of groupShapes(p.nv, group)) {
+        const row = c.rows.get(a.label)
+        if (row) a.style = toStyle(row, c, a)
+      }
   }
   const sync = () => {
     const segmentation = cst.state.getSegmentation(segmentationId)
@@ -358,20 +574,47 @@ function startContourSync(
         label: s.label ?? key,
       })
     }
+    // cornerstone's getSVGStyleForSegment: the *Inactive half while another
+    // segmentation is active on the pane.
     const style = cst.config.style.getStyle({ viewportId, ...specifier })
-    c.fillAlpha = style.renderFill === false ? 0 : (style.fillAlpha ?? 0.5)
+    const role = segmentationRole(service, cst, viewportId, segmentationId)
+    const on = role === 'active'
+    const renderFill = on
+      ? style.renderFill
+      : (style.renderFillInactive ?? style.renderFill)
+    const renderOutline = on
+      ? style.renderOutline
+      : (style.renderOutlineInactive ?? style.renderOutline)
+    c.fillAlpha =
+      role === 'hidden' || renderFill === false
+        ? 0
+        : ((on ? style.fillAlpha : style.fillAlphaInactive) ?? 0.5)
     c.outlineWidth =
-      style.renderOutline === false ? 0 : (style.outlineWidth ?? 2)
+      role === 'hidden' || renderOutline === false
+        ? 0
+        : ((on ? style.outlineWidth : style.outlineWidthInactive) ?? 2)
+    c.outlineOpacity =
+      (on ? style.outlineOpacity : style.outlineOpacityInactive) ?? 1
+    c.auto = {
+      fillAlpha:
+        role === 'hidden' || style.renderFill === false
+          ? 0
+          : (style.fillAlphaAutoGenerated ?? 0.3),
+      outlineWidth:
+        role === 'hidden' || style.renderOutline === false
+          ? 0
+          : (style.outlineWidthAutoGenerated ?? 3),
+    }
     // A deleted segment's (or segmentation's) shapes go, as cornerstone's.
     for (const a of [...nv.annotations])
       if (a.group === group && before.has(a.label) && !c.rows.has(a.label))
         nv.removeAnnotation(a.id)
-    for (const a of nv.annotations) {
-      const row = a.group === group && c.rows.get(a.label)
-      if (row) a.style = toStyle(row, c)
+    restyle()
+    // Every pane holding it: a mirror's armed tool follows the segment too.
+    for (const p of panes()) {
+      rearm(p.viewportId)
+      p.nv.drawScene()
     }
-    rearm(viewportId)
-    nv.drawScene()
   }
   const { EVENTS } = service
   const subscriptions = [
@@ -384,7 +627,13 @@ function startContourSync(
     .filter((event): event is string => !!event)
     .map((event) =>
       service.subscribe(event, (e) => {
-        if (!e?.segmentationId || e.segmentationId === segmentationId) sync()
+        // Activating another segmentation on the pane restyles this one.
+        if (
+          !e?.segmentationId ||
+          e.segmentationId === segmentationId ||
+          event === EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED
+        )
+          sync()
       }),
     )
   // The shapes belong to the base volume's grid: when the pane drops it (or
@@ -404,7 +653,26 @@ function startContourSync(
   const grid = base && rasGrid(base)
   const voxel = grid ? voxelMM3(grid) : 1
   let counted = ''
-  const onEdit = () => {
+  c.interpolate = () => {
+    if (regenerating || !interpolatesOn(panes().map((p) => p.viewportId)))
+      return
+    regenerating = true
+    let changed: boolean
+    try {
+      changed = interpolateGroup(nv, group)
+    } finally {
+      regenerating = false
+    }
+    // An edit (or its undo) moves a shape between key and auto-generated.
+    restyle()
+    // An edit replayed from a mirror is inside replicate, which drops the
+    // regeneration's own copy: copy back after it.
+    if (changed && replicating)
+      queueMicrotask(() => replicate(segmentationId, nv))
+  }
+  const onEdit = (e: Event) => {
+    c.interpolate()
+    replicate(segmentationId, nv, deltaOf(e))
     const segmentation = cst.state.getSegmentation(segmentationId)
     if (!segmentation) return
     const counts = segmentVoxels(nv, group)
@@ -424,7 +692,19 @@ function startContourSync(
   nv.addEventListener('viewDestroyed', onDestroyed)
   c.stop = (park = false) => {
     if (!contours.has(segmentationId)) return
-    if (park && source && cst.state.getSegmentation(segmentationId))
+    const views = mirrors.get(segmentationId)
+    // The pane goes but another shows the series: that one takes over.
+    const heir = park
+      ? [...(views ?? [])].find(([, m]) => !m.nv.isDestroyed)
+      : undefined
+    if (!park) {
+      for (const m of [...(views?.values() ?? [])]) {
+        m.stop()
+        m.nv.removeAnnotations(groupShapes(m.nv, group).map((a) => a.id))
+      }
+      mirrors.delete(segmentationId)
+    }
+    if (park && !heir && source && cst.state.getSegmentation(segmentationId))
       parked.set(segmentationId, {
         source,
         shapes: nv.annotations.filter((a) => a.group === group),
@@ -439,7 +719,18 @@ function startContourSync(
       (g) => g !== group,
     )
     cst.removeSegmentationRepresentations(viewportId, { segmentationId })
-    if (!parked.has(segmentationId)) cst.state.removeColorLUT(lutIndex)
+    const entry = heir && getNiivueEntry(heir[0])
+    if (heir && entry) {
+      heir[1].stop()
+      addRepresentation(
+        cst,
+        entry.viewportId,
+        segmentationId,
+        lutIndex,
+        CONTOUR,
+      )
+      attach(entry, segmentationId, cst, service, lutIndex, extensionManager)
+    } else if (!parked.has(segmentationId)) cst.state.removeColorLUT(lutIndex)
   }
   sync()
   return c
@@ -456,17 +747,22 @@ export function jumpToContourSegment(
   segmentIndex: number,
 ): boolean {
   const c = contours.get(segmentationId)
-  if (!c || c.viewportId !== viewportId) return false
+  if (!c || !viewportId) return false
+  const nv =
+    c.viewportId === viewportId
+      ? c.nv
+      : mirrors.get(segmentationId)?.get(viewportId)?.nv
+  if (!nv) return false
   const service = ohifServices(servicesManager)?.segmentationService as
     | Service
     | undefined
   service?.setActiveSegmentation(viewportId, segmentationId)
   service?.setActiveSegment(segmentationId, segmentIndex)
   const group = contourGroup(segmentationId)
-  const at = c.nv.annotations.find(
+  const at = nv.annotations.find(
     (a) => a.group === group && a.label === segmentIndex,
   )?.anchorMM
-  if (at) c.nv.setCrosshairPos(at)
+  if (at) nv.setCrosshairPos(at)
   return true
 }
 
@@ -503,6 +799,19 @@ export function applyContourTool(
   const services = ohifServices(servicesManager)?.segmentationService as
     | Service
     | undefined
+  // A pane showing the series that does not yet hold the active segmentation
+  // (it loaded while that one was moving between panes) takes it now.
+  const activeId = services?.getActiveSegmentation?.(viewportId)?.segmentationId
+  const owner = activeId ? contours.get(activeId) : undefined
+  const entry = getNiivueEntry(viewportId)
+  if (
+    tool &&
+    owner &&
+    entry &&
+    owner.viewportId !== viewportId &&
+    entry.displaySets[0]?.displaySetInstanceUID === owner.source
+  )
+    owner.mirrorTo(entry)
   if (tool === SCULPTOR) {
     armed.set(viewportId, { tool, services: services as Service })
     nv.annotationIsEnabled = false
@@ -569,11 +878,11 @@ function drawableSegment(viewportId: string, services: Service | undefined) {
 // The active segment or its colour changed: an armed tool follows it.
 function rearm(viewportId: string): void {
   const a = armed.get(viewportId)
-  const c = [...contours.values()].find((x) => x.viewportId === viewportId)
-  if (!a || !c) return
+  const nv = getNiivueEntry(viewportId)?.nv
+  if (!a || !nv) return
   const { tool } = a
   armed.delete(viewportId)
-  applyContourTool(c.nv, viewportId, tool, {
+  applyContourTool(nv, viewportId, tool, {
     services: { segmentationService: a.services },
   } as never)
 }

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { buildLivewireCost, livewireBacktrack, livewireField } from './livewire'
+import {
+  buildLivewireCost,
+  buildScissorsCost,
+  livewireBacktrack,
+  livewireField,
+  livewireFieldScissors,
+} from './livewire'
 
 // A W x H image with a bright vertical stripe at column `stripeX`.
 function stripeImage(w: number, h: number, stripeX: number): Float32Array {
@@ -47,5 +53,25 @@ describe('livewire', () => {
     for (const p of path) {
       expect(Math.abs(p.x - 10)).toBeLessThanOrEqual(1)
     }
+  })
+
+  // cornerstone's cost (a step-dependent direction term, its own loop): from
+  // seeds 3 columns off a step edge, the path still runs along the edge.
+  test('scissors cost: the path runs along a step edge', () => {
+    const w = 24
+    const h = 24
+    const img = new Float32Array(w * h)
+    for (let y = 0; y < h; y++)
+      for (let x = 12; x < w; x++) img[y * w + x] = 100
+    const sc = buildScissorsCost(img, w, h, 0, 100)
+    const path = livewireBacktrack(
+      livewireFieldScissors(sc, w, h, 9, 2),
+      w,
+      9,
+      21,
+    )
+    const mid = path.filter((p) => p.y >= 6 && p.y <= 17)
+    expect(mid.length).toBeGreaterThan(0)
+    for (const p of mid) expect(Math.abs(p.x - 11.5)).toBeLessThanOrEqual(1.5)
   })
 })

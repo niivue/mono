@@ -722,3 +722,28 @@ test('overlapping shapes on one oblique slice merge', () =>
     press(nv, onSlice(15, 15))
     expect(nv.annotations).toHaveLength(1)
   }))
+
+// A shape drawn wholly inside one the host locks (a locked contour segment of
+// another label) stores nothing, so it records no undo step either.
+test('a stroke swallowed by a locked shape records no undo step', () =>
+  withStubs(() => {
+    const nv = controller('rectangle')
+    nv.model.annotation.mergesOverlaps = true
+    press(nv, [0, 0, 0])
+    press(nv, [20, 20, 0])
+    nv.model.annotation.tool = 'measureLine'
+    press(nv, [40, 40, 0])
+    press(nv, [60, 40, 0])
+    nv.model.annotation.tool = 'rectangle'
+    // A host's replace appends the shape after the measurement; the store
+    // puts measurements last, a reorder that is no edit.
+    const rect = nv.annotations.find((a) => a.shape?.type === 'rectangle')
+    if (rect) nv.replaceAnnotations([rect.id], [rect])
+    const steps = nv.annotationUndoTop
+    nv.annotationIsGrabbable = () => false
+    nv.model.annotation.activeLabel = 2
+    press(nv, [5, 5, 0])
+    press(nv, [10, 10, 0])
+    expect(nv.annotations).toHaveLength(2)
+    expect(nv.annotationUndoTop).toBe(steps)
+  }))

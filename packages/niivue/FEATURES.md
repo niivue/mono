@@ -234,6 +234,7 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `annotationActiveLabel`, `annotationActiveGroup` | Prop | No | |
 | `annotationBrushRadius` | Prop | No | |
 | `annotationIsErasing` | Prop | No | |
+| `annotationIsLivewireScissors` | Prop | No | Live wire uses cornerstone's LivewireScissors cost |
 | `annotationIsVisibleIn3D` | Prop | No | |
 | `annotationStyle` | Prop | No | `AnnotationStyle` |
 | `annotationTool` | Prop | No | `AnnotationTool` union |

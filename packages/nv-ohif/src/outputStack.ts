@@ -2,7 +2,7 @@
 // multi-frame surview) shows one at a time; as a cornerstone stack, the wheel
 // steps through every image in instance order, switching outputs at an
 // output's end, and a jump to an image in another one switches to it.
-import type { NiiVue } from '@niivue/niivue'
+import { DRAG_MODE, type NiiVue } from '@niivue/niivue'
 import { useEffect, useRef } from 'react'
 import { centerCrosshair } from './commands'
 import type { DicomConversion } from './dicomToNiivue'
@@ -58,6 +58,10 @@ export function useOutputStack(
       (a, b) => order(a) - order(b),
     )
     let at = outputs.indexOf(conversion)
+    // Steps taken while a switch loads, made in order once it has (and has
+    // landed on its near end): a fast drag or wheel loses none, and an
+    // overshoot past the end then a reversal clamps as it would unhurried.
+    let owed: number[] = []
     // Requests queue behind the load in flight; only the latest one loads.
     let latest = 0
     let queue: Promise<void> | undefined
@@ -94,7 +98,14 @@ export function useOutputStack(
       const tail: Promise<void> = done
         .catch(() => {})
         .then(() => {
-          if (queue === tail) queue = undefined
+          if (queue !== tail) return
+          queue = undefined
+          queueMicrotask(() => {
+            if (cancelled) return
+            const steps = owed
+            owed = []
+            for (const step of steps) stepImage(step)
+          })
         })
       queue = tail
       // Callers void this promise: a failed load becomes a note, not a rejection.
@@ -110,17 +121,17 @@ export function useOutputStack(
         },
       )
     }
-    const onWheel = (e: WheelEvent) => {
-      if (!e.deltaY) return
-      const isSingle = nv.volumes[0]?.dims?.[3] === 1
+    const isSingle = () => nv.volumes[0]?.dims?.[3] === 1
+    // One image along the stack, as a wheel tick: within the output, then on
+    // to the next one at its end.
+    const stepImage = (step: number) => {
+      if (queue) {
+        owed.push(step)
+        return
+      }
       const offPlane = nv.sliceType !== acquisitionSliceType(nv)
-      // Off the acquisition plane NiiVue scrolls its own slices.
-      if (!isSingle && offPlane) return
-      e.preventDefault()
-      e.stopImmediatePropagation()
       // A single slice viewed across: no frame to step, so step outputs.
       const entry = offPlane ? undefined : getNiivueEntry(viewportId)
-      const step = Math.sign(e.deltaY)
       if (entry) {
         const before = String(nv.crosshairPos)
         // By frame: entering a multi-slice output lands on its adjacent image.
@@ -139,7 +150,35 @@ export function useOutputStack(
           jumpToImage(entry, step > 0 ? 0 : -1)
       })
     }
+    const onWheel = (e: WheelEvent) => {
+      if (!e.deltaY) return
+      // Off the acquisition plane NiiVue scrolls its own slices.
+      if (!isSingle() && nv.sliceType !== acquisitionSliceType(nv)) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      stepImage(Math.sign(e.deltaY))
+    }
+    // StackScroll drag on a single-slice output, which core's slice drag
+    // cannot step: an image per 4 CSS px of vertical drag (core's
+    // sliceDragCssPx), as the wheel steps.
+    let dragY: number | undefined
+    const onDown = (e: PointerEvent) => {
+      dragY =
+        e.button === 0 && nv.primaryDragMode === DRAG_MODE.slice && isSingle()
+          ? e.clientY
+          : undefined
+    }
+    const onMove = (e: PointerEvent) => {
+      // On a multi-slice output core's own slice drag steps: not twice.
+      if (dragY === undefined || !(e.buttons & 1) || !isSingle()) return
+      const steps = Math.trunc((e.clientY - dragY) / 4)
+      if (!steps) return
+      dragY += steps * 4
+      for (let k = 0; k < Math.abs(steps); k++) stepImage(Math.sign(steps))
+    }
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
+    canvas.addEventListener('pointerdown', onDown, { capture: true })
+    canvas.addEventListener('pointermove', onMove, { capture: true })
     updateNiivueViewport(viewportId, {
       outputFrames: outputs.flatMap((o) =>
         o.sliceFrames ? [o.sliceFrames] : [],
@@ -158,6 +197,8 @@ export function useOutputStack(
     return () => {
       cancelled = true
       canvas.removeEventListener('wheel', onWheel, { capture: true })
+      canvas.removeEventListener('pointerdown', onDown, { capture: true })
+      canvas.removeEventListener('pointermove', onMove, { capture: true })
       updateNiivueViewport(viewportId, {
         switchToInstance: undefined,
         outputFrames: undefined,

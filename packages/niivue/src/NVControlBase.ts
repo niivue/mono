@@ -2871,6 +2871,16 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'annotationAreaIsGeometric', value: v })
   }
 
+  get annotationIsLivewireScissors(): boolean {
+    return this.model.annotation.isLivewireScissors
+  }
+
+  /** See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire. */
+  set annotationIsLivewireScissors(v: boolean) {
+    this.model.annotation.isLivewireScissors = v
+    this.emit('change', { property: 'annotationIsLivewireScissors', value: v })
+  }
+
   get annotationMergesOverlaps(): boolean {
     return this.model.annotation.mergesOverlaps
   }

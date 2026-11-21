@@ -5,6 +5,7 @@ import {
   type ContourPane,
   contourPane,
   createContourSegmentation,
+  setContourInterpolation,
 } from './contourSeg'
 import {
   getActiveNiivueEntry,
@@ -321,23 +322,33 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
           ? setDynamicCursor(opts.value !== false)
           : back('setDynamicCursorSizeForSculptorTool', opts),
     },
-    // Contour tool options that configure a cornerstone tool instance.
-    // ponytail: no contour interpolation on NiiVue panes. A finished spline is
-    // always an outline, which is Simplified Spline on (OHIF's default).
-    ...Object.fromEntries(
-      [
-        'setInterpolationToolConfiguration',
-        'setSimplifiedSplineForSplineContourSegmentationTool',
-      ].map((name) => [
-        name,
-        {
-          commandFn: (opts: Options = {}) =>
-            getActiveNiivueEntry(servicesManager, opts.viewportId)
-              ? undefined
-              : back(name, opts),
-        },
-      ]),
-    ),
+    // Per tool, as cornerstone's: the pane's active tool and any listed.
+    setInterpolationToolConfiguration: {
+      commandFn: (opts: Options = {}) => {
+        const entry = getActiveNiivueEntry(servicesManager, opts.viewportId)
+        if (!entry) return back('setInterpolationToolConfiguration', opts)
+        const tools = ohifServices(servicesManager)?.toolGroupService as
+          | {
+              getActivePrimaryMouseButtonTool?(id?: string): string | undefined
+            }
+          | undefined
+        const active = tools?.getActivePrimaryMouseButtonTool?.(
+          entry.toolGroupId,
+        )
+        setContourInterpolation(opts.value === true, [
+          ...(active ? [active] : []),
+          ...((opts.toolNames as string[] | undefined) ?? []),
+        ])
+      },
+    },
+    // A finished spline is always an outline: Simplified Spline on (OHIF's
+    // default); the switch configures a cornerstone tool instance.
+    setSimplifiedSplineForSplineContourSegmentationTool: {
+      commandFn: (opts: Options = {}) =>
+        getActiveNiivueEntry(servicesManager, opts.viewportId)
+          ? undefined
+          : back('setSimplifiedSplineForSplineContourSegmentationTool', opts),
+    },
     ...Object.fromEntries(
       ['setBrushSize', 'increaseBrushSize', 'decreaseBrushSize'].map((name) => [
         name,

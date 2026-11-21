@@ -15,24 +15,34 @@ import { invertAffine, rasGrid } from './quantify'
 
 const DEPTH_AXIS = [2, 1, 0] // axial, coronal, sagittal
 
+/** A shape's voxel depth along its slice axis, unrounded; undefined without a grid. */
+export function voxelDepth(
+  nv: NiiVue,
+  a: Pick<VectorAnnotation, 'sliceType' | 'anchorMM'>,
+): number | undefined {
+  const base = nv.volumes[0]
+  const grid = base && rasGrid(base)
+  const at = a.anchorMM
+  if (!grid || !at) return undefined
+  const m = invertAffine(grid.affine)
+  const d = (DEPTH_AXIS[a.sliceType] as number) * 4
+  return (
+    (m[d] as number) * at[0] +
+    (m[d + 1] as number) * at[1] +
+    (m[d + 2] as number) * at[2] +
+    (m[d + 3] as number)
+  )
+}
+
 /** A shape's slice: its plane and voxel depth (an oblique slice's mm depth varies). */
 export function sliceOf(
   nv: NiiVue,
   a: Pick<VectorAnnotation, 'sliceType' | 'anchorMM' | 'slicePosition'>,
 ): string {
-  const base = nv.volumes[0]
-  const grid = base && rasGrid(base)
-  const at = a.anchorMM
-  if (!grid || !at) return `${a.sliceType}:${a.slicePosition.toFixed(3)}`
-  const m = invertAffine(grid.affine)
-  const d = (DEPTH_AXIS[a.sliceType] as number) * 4
-  const depth = Math.round(
-    (m[d] as number) * at[0] +
-      (m[d + 1] as number) * at[1] +
-      (m[d + 2] as number) * at[2] +
-      (m[d + 3] as number),
-  )
-  return `${a.sliceType}:${depth}`
+  const depth = voxelDepth(nv, a)
+  return depth === undefined
+    ? `${a.sliceType}:${a.slicePosition.toFixed(3)}`
+    : `${a.sliceType}:${Math.round(depth)}`
 }
 
 type Slices = Map<string, { a: VectorAnnotation[]; b: VectorAnnotation[] }>

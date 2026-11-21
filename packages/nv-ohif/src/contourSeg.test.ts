@@ -1,6 +1,17 @@
 import { expect, test } from 'bun:test'
 import type { NiiVue, VectorAnnotation } from '@niivue/niivue'
-import { contourGroup, contourRois } from './contourSeg'
+import {
+  applyContourTool,
+  contourGroup,
+  contourRois,
+  createContourSegmentation,
+} from './contourSeg'
+import {
+  getNiivueEntry,
+  registerNiivue,
+  unregisterNiivue,
+  updateNiivueViewport,
+} from './niivueRegistry'
 
 // A grid tilted 30 degrees about x: one axial voxel plane's mm depth varies
 // with y, so a contour's z must be solved per point, not taken from its anchor.
@@ -49,4 +60,125 @@ test('RTSTRUCT contour points lie on the shape voxel plane, in LPS', () => {
     // Voxel depth (row 2 of the inverse rotation) is the anchor's, 3.
     expect(-s * y + c * z).toBeCloseTo(3, 3)
   }
+})
+
+// Review of the R28 draft: locking or changing the active segment re-armed
+// only the owner pane, so a mirror kept drawing into the old segment.
+test('a mirror pane follows the active segment and its lock', () => {
+  type Seg = { segments: Record<number, { locked?: boolean; label?: string }> }
+  const segs = new Map<string, Seg>()
+  const reps = new Map<string, { visible: boolean }>()
+  const bus = new EventTarget()
+  const active = new Map<string, string>()
+  let activeLabel = 1
+  const modified = (segmentationId: string) =>
+    bus.dispatchEvent(
+      new CustomEvent('modified', { detail: { segmentationId } }),
+    )
+  const cst = {
+    addSegmentations: (input: { segmentationId: string; config: Seg }[]) => {
+      for (const x of input) segs.set(x.segmentationId, x.config)
+    },
+    state: {
+      getSegmentation: (id: string) => segs.get(id),
+      getColorLUT: () => undefined,
+      getSegmentationRepresentation: (
+        v: string,
+        s: { segmentationId: string },
+      ) => reps.get(`${v}:${s.segmentationId}`),
+    },
+    config: {
+      color: {
+        addColorLUT: (_: unknown, i: number) => i,
+        getSegmentIndexColor: () => [255, 0, 0, 255],
+      },
+      style: { getStyle: () => ({}) },
+    },
+    defaultSegmentationStateManager: {
+      updateState: (f: (s: object) => void) =>
+        f({ viewportSegRepresentations: {} }),
+      addDefaultSegmentationRepresentation: (
+        _: unknown,
+        v: string,
+        id: string,
+      ) => reps.set(`${v}:${id}`, { visible: true }),
+    },
+    segmentationStyle: { setRenderInactiveSegmentations() {} },
+    triggerSegmentationEvents: {
+      triggerSegmentationModified: modified,
+      triggerSegmentationRepresentationModified() {},
+    },
+  }
+  const service = {
+    EVENTS: { SEGMENTATION_MODIFIED: 'modified' },
+    subscribe: (event: string, fn: (d: unknown) => void) => {
+      const l = (e: Event) => fn((e as CustomEvent).detail)
+      bus.addEventListener(event, l)
+      return { unsubscribe: () => bus.removeEventListener(event, l) }
+    },
+    setActiveSegmentation: (v: string, id: string) => active.set(v, id),
+    getActiveSegmentation: (v: string) =>
+      active.has(v) ? { segmentationId: active.get(v) } : undefined,
+    getActiveSegment: () => ({ segmentIndex: activeLabel }),
+    setActiveSegment: () => {},
+  }
+  const servicesManager = { services: { segmentationService: service } }
+  const extensionManager = {
+    getModuleEntry: () => ({
+      exports: {
+        getCornerstoneLibraries: () => ({
+          cornerstoneTools: { segmentation: cst },
+        }),
+      },
+    }),
+  }
+  const pane = () =>
+    Object.assign(new EventTarget(), {
+      canvas: new EventTarget(),
+      annotations: [],
+      volumes: [],
+      drawScene() {},
+      replaceAnnotations() {},
+    }) as unknown as NiiVue
+  const owner = pane()
+  const mirror = pane()
+  for (const [v, nv] of [
+    ['owner', owner],
+    ['mirror', mirror],
+  ] as const) {
+    registerNiivue(v, nv)
+    updateNiivueViewport(v, {
+      displaySets: [{ displaySetInstanceUID: 's' }] as never,
+    })
+  }
+  const id = createContourSegmentation(
+    getNiivueEntry('owner') as never,
+    {
+      servicesManager,
+      extensionManager,
+    } as never,
+  ) as string
+  for (const [v, nv] of [
+    ['owner', owner],
+    ['mirror', mirror],
+  ] as const)
+    applyContourTool(
+      nv,
+      v,
+      'PlanarFreehandContourSegmentationTool',
+      servicesManager as never,
+    )
+  expect(mirror.annotationIsEnabled).toBe(true)
+  const seg = segs.get(id) as Seg
+  ;(seg.segments[1] as { locked?: boolean }).locked = true
+  modified(id)
+  expect(mirror.annotationIsEnabled).toBe(false)
+  seg.segments[2] = { label: 'Segment 2' }
+  activeLabel = 2
+  modified(id)
+  expect([mirror.annotationIsEnabled, mirror.annotationActiveLabel]).toEqual([
+    true,
+    2,
+  ])
+  for (const v of ['owner', 'mirror']) unregisterNiivue(v)
 })

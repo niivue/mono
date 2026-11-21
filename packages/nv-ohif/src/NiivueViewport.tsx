@@ -166,6 +166,8 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationIsDrawnFromCenter: true,
   // ROI area as cornerstone reports it: the outline's, not a voxel count.
   annotationAreaIsGeometric: true,
+  // Live wire with cornerstone's LivewireScissors edge cost.
+  annotationIsLivewireScissors: true,
   // Cornerstone's handles: a press on any measurement's handle drags it,
   // whatever the tool, with no selecting click first.
   annotationIsHandleGrab: true,
@@ -628,7 +630,8 @@ export function NiivueViewport(props: OhifViewportProps) {
           // A measurement hidden in the panel cannot be grabbed either.
           // So can a hidden or locked contour segment's shape.
           nv.annotationIsGrabbable = (a) =>
-            isAnnotationShown(viewportId, a.id) && isContourEditable(a)
+            isAnnotationShown(viewportId, a.id) &&
+            isContourEditable(a, viewportId)
           nv.isAnnotationDrawn = false
           // The overlay strokes; core fills (contour segments' fill colour).
           nv.isAnnotationFillDrawn = true
@@ -1430,7 +1433,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       />
       <DisplayMenu
         viewportId={viewportId}
-        isLoaded={isLoaded && !slideViewRef.current && !isRender}
+        isLoaded={isLoaded && !slideViewRef.current}
         servicesManager={servicesManager}
       />
       <SliceCine

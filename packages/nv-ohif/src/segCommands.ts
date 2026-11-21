@@ -446,11 +446,17 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     /** A pane's drawing (RAS order) with its RAS voxel -> mm affine, as niivueGetLabelmap. */
     niivueGetDrawing: {
       commandFn: (opts: Options = {}) => {
-        const nv = getActiveNiivueEntry(servicesManager, opts.viewportId)?.nv
-        const img = nv?.drawingVolume?.img
+        // A contour segmentation's voxels (one segment: they may overlap).
+        const contour = contourPane(opts.segmentationId)
+        const nv =
+          contour?.nv ??
+          getActiveNiivueEntry(servicesManager, opts.viewportId)?.nv
+        const img = contour
+          ? contour.bitmap(opts.segmentIndex as number | undefined)
+          : nv?.drawingVolume?.img?.slice()
         const grid = nv?.volumes[0] && rasGrid(nv.volumes[0])
         return img instanceof Uint8Array && grid
-          ? { label: img.slice(), dims: grid.dims, affine: grid.affine }
+          ? { label: img, dims: grid.dims, affine: grid.affine }
           : undefined
       },
     },

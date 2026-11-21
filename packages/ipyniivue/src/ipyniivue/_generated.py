@@ -677,6 +677,11 @@ and its volumes alive."""
         """
         self.send({"cmd": "clearAngles", "args": []})
 
+    def clear_annotation_history(self) -> None:
+        """Forget the annotation undo/redo steps: after a load whose shapes earlier steps lack (undoing one would drop them), as loadAnnotationsJSON does.
+        """
+        self.send({"cmd": "clearAnnotationHistory", "args": []})
+
     def clear_annotations(self) -> None:
         self.send({"cmd": "clearAnnotations", "args": []})
 

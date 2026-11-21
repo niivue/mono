@@ -116,6 +116,8 @@ tool or turning annotations off drops a
 half-drawn shape; setting `annotationTool` to the tool already selected keeps
 it. `loadDocument` drops a half-drawn shape and also clears the annotation
 selection and the `annotationUndo()` history, which belong to the old scene.
+`clearAnnotationHistory()` clears that history alone, e.g. after adding loaded
+shapes that earlier undo steps lack.
 
 ## Beyond the core
 

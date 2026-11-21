@@ -2318,6 +2318,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "clearAnnotationHistory",
+      "pyName": "clear_annotation_history",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Forget the annotation undo/redo steps: after a load whose shapes earlier\nsteps lack (undoing one would drop them), as loadAnnotationsJSON does.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearAnnotations",
       "pyName": "clear_annotations",
       "isAsync": false,

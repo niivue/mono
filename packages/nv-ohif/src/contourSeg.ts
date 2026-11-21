@@ -2,8 +2,9 @@
 // cornerstone segmentation with a Contour representation (for OHIF's contour
 // panel and its buttons); its geometry is NiiVue vector annotations, one group
 // per segmentation (`seg:<id>`), labelled by segment index. Same-segment
-// shapes merge and other segments' are cut, within the group only
-// (annotationMergedGroups); measurements stay in the default group.
+// shapes merge within the group (annotationMergedGroups); other segments
+// overlap, as cornerstone's (only a hole stroke cuts its target);
+// measurements stay in the default group.
 import {
   type AnnotationStyle,
   type AnnotationTool,
@@ -17,7 +18,7 @@ import { historyMemo } from './history'
 import type { NiivueViewportEntry } from './niivueRegistry'
 import { getNiivueEntry, niivueEntries, ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
-import { invertAffine, rasGrid, voxelMM3 } from './quantify'
+import { apply, invertAffine, rasGrid, voxelMM3 } from './quantify'
 import { closedPlanar, type RtRoi } from './segExport'
 import {
   addRepresentation,
@@ -214,6 +215,9 @@ function addMirror(
   views.set(viewportId, { nv, stop })
   mirrors.set(segmentationId, views)
   replicate(segmentationId, c.nv)
+  // Copied shapes are a load here: an older undo step would drop them and
+  // replicate that removal to every pane.
+  if (groupShapes(nv, group).length) nv.clearAnnotationHistory()
   for (const e of edits) nv.addEventListener(e, onEdit)
   nv.addEventListener('volumeRemoved', onRemoved)
   nv.addEventListener('viewDestroyed', onDestroyed)
@@ -244,6 +248,13 @@ const ofAnnotation = (a: Pick<VectorAnnotation, 'group'>) =>
 // A Shift stroke cuts a hole in this segment only (see holeStroke).
 let cutting: { group: string; label: number } | undefined
 const HOLE = -1
+
+/**
+ * Segments overlap as cornerstone's do: a stroke merges with its own segment
+ * and cuts no other, except a hole stroke its target.
+ */
+export const isContourCut = (a: Pick<VectorAnnotation, 'group' | 'label'>) =>
+  a.group === cutting?.group && a.label === cutting.label
 
 /** False for a hidden or locked segment's shape: no grab, select, erase or cut. */
 export function isContourEditable(
@@ -328,7 +339,39 @@ const interpolatesOn = (viewportIds: readonly string[]) =>
  */
 export function createContourSegmentation(
   entry: NiivueViewportEntry,
-  { servicesManager, extensionManager }: OhifExtensionParams,
+  managers: OhifExtensionParams,
+): string | undefined {
+  const service = ohifServices(managers.servicesManager)?.segmentationService as
+    | { getSegmentations?(): unknown[] }
+    | undefined
+  const count = service?.getSegmentations?.().length ?? 0
+  return addContourSegmentation(entry, managers, {
+    segmentationId: crypto.randomUUID(),
+    label: `Segmentation ${count + 1}`,
+    segments: [{ value: 1, label: 'Segment 1' }],
+  })
+}
+
+/**
+ * A contour segmentation on `entry`'s pane holding `shapes` (group
+ * contourGroup(segmentationId), label = segment value), active there.
+ */
+export function addContourSegmentation(
+  entry: NiivueViewportEntry,
+  {
+    servicesManager,
+    extensionManager,
+  }: Pick<OhifExtensionParams, 'servicesManager' | 'extensionManager'>,
+  init: {
+    segmentationId: string
+    label: string
+    segments: ReadonlyArray<{
+      value: number
+      label: string
+      rgb?: readonly [number, number, number]
+    }>
+    shapes?: VectorAnnotation[]
+  },
 ): string | undefined {
   const cst = cornerstoneSegmentation(extensionManager)
   const service = ohifServices(servicesManager)?.segmentationService as
@@ -336,10 +379,7 @@ export function createContourSegmentation(
     | undefined
   if (!cst || !service) return undefined
   const { viewportId } = entry
-  const segmentationId = crypto.randomUUID()
-  const count =
-    (service as { getSegmentations?(): unknown[] }).getSegmentations?.()
-      .length ?? 0
+  const { segmentationId } = init
   cst.addSegmentations([
     {
       segmentationId,
@@ -348,15 +388,18 @@ export function createContourSegmentation(
         data: { geometryIds: [], imageIds: [] },
       },
       config: {
-        label: `Segmentation ${count + 1}`,
-        segments: {
-          1: {
-            segmentIndex: 1,
-            label: 'Segment 1',
-            locked: false,
-            active: true,
-          },
-        },
+        label: init.label,
+        segments: Object.fromEntries(
+          init.segments.map((s, i) => [
+            s.value,
+            {
+              segmentIndex: s.value,
+              label: s.label,
+              locked: false,
+              active: i === 0,
+            },
+          ]),
+        ),
       },
     },
   ])
@@ -370,13 +413,21 @@ export function createContourSegmentation(
     [0, 0, 0, 0],
     ...Array.from({ length: 255 }, (_, i) => paletteColor(i + 1)),
   ]
+  for (const s of init.segments) if (s.rgb) lut[s.value] = [...s.rgb, 255]
   let freeIndex = 0
   while (cst.state.getColorLUT(freeIndex)) freeIndex++
   const lutIndex = cst.config.color.addColorLUT(lut, freeIndex)
+  // Before attach: loaded shapes are no edit (no interpolation), and a load:
+  // earlier undo steps lack them, so they go.
+  if (init.shapes?.length) {
+    entry.nv.replaceAnnotations([], init.shapes, false)
+    entry.nv.clearAnnotationHistory()
+  }
   addRepresentation(cst, viewportId, segmentationId, lutIndex, CONTOUR)
   attach(entry, segmentationId, cst, service, lutIndex, extensionManager)
   service.setActiveSegmentation(viewportId, segmentationId)
-  service.setActiveSegment(segmentationId, 1)
+  const first = init.segments[0]
+  if (first) service.setActiveSegment(segmentationId, first.value)
   mirrorEverywhere(segmentationId, cst, service)
   return segmentationId
 }
@@ -444,6 +495,7 @@ export function adoptContours(
     if (entry.nv.sliceType !== want && better) continue
     parked.delete(id)
     entry.nv.replaceAnnotations([], p.shapes, false)
+    entry.nv.clearAnnotationHistory()
     addRepresentation(cst, entry.viewportId, id, p.lutIndex, CONTOUR)
     attach(entry, id, cst, service, p.lutIndex, extensionManager)
     mirrorEverywhere(id, cst, service)
@@ -451,6 +503,27 @@ export function adoptContours(
   // A live segmentation of this series held by another pane: mirror it here.
   for (const [id, c] of contours)
     if (c.source === source) addMirror(entry, id, cst, service)
+}
+
+/**
+ * Whether `segmentationId` is a contour segmentation, live or parked. A live
+ * one removed from `viewportId` (the panel's Remove from Viewport) is shown
+ * there again.
+ */
+export function reshowContourSegmentation(
+  segmentationId: string,
+  viewportId: string,
+  extensionManager: OhifExtensionParams['extensionManager'],
+): boolean {
+  const c = contours.get(segmentationId)
+  if (!c) return parked.has(segmentationId)
+  const cst = cornerstoneSegmentation(extensionManager)
+  const specifier = { segmentationId, type: CONTOUR }
+  if (cst && !cst.state.getSegmentationRepresentation(viewportId, specifier)) {
+    addRepresentation(cst, viewportId, segmentationId, c.lutIndex, CONTOUR)
+    cst.triggerSegmentationEvents.triggerSegmentationModified(segmentationId)
+  }
+  return true
 }
 
 /**
@@ -507,13 +580,15 @@ function startContourSync(
       )
       const apply = (undo = false) => {
         const segments = cst.state.getSegmentation(segmentationId)?.segments
-        if (!segments || !contours.has(segmentationId)) return
+        // The owner now: a handoff or adoption may have moved the shapes.
+        const owner = contours.get(segmentationId)?.nv
+        if (!segments || !owner) return
         if (undo) {
           // Not active: the panel may have activated another meanwhile.
           segments[index] = { ...segment, active: false }
-          for (const a of shapes) nv.addAnnotation(a)
+          for (const a of shapes) owner.addAnnotation(a)
         } else {
-          for (const a of shapes) nv.removeAnnotation(a.id)
+          for (const a of shapes) owner.removeAnnotation(a.id)
           delete segments[index]
         }
         cst.triggerSegmentationEvents.triggerSegmentationModified(
@@ -673,6 +748,10 @@ function startContourSync(
   const onEdit = (e: Event) => {
     c.interpolate()
     replicate(segmentationId, nv, deltaOf(e))
+    count()
+  }
+  // Panel stats; at start too, for shapes loaded before (an RTSTRUCT).
+  const count = () => {
     const segmentation = cst.state.getSegmentation(segmentationId)
     if (!segmentation) return
     const counts = segmentVoxels(nv, group)
@@ -688,6 +767,7 @@ function startContourSync(
   }
   const edits = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
   for (const e of edits) nv.addEventListener(e, onEdit)
+  if (groupShapes(nv, group).length) count()
   nv.addEventListener('volumeRemoved', onRemoved)
   nv.addEventListener('viewDestroyed', onDestroyed)
   c.stop = (park = false) => {
@@ -960,8 +1040,8 @@ const pointerInit = (e: PointerEvent): PointerEventInit => ({
   detail: e.detail,
 })
 
-const SLICE_DEPTH = [2, 1, 0] // axial, coronal, sagittal: the RAS axis across
-const IN_PLANE = [
+export const SLICE_DEPTH = [2, 1, 0] // axial, coronal, sagittal: the RAS axis across
+export const IN_PLANE = [
   [0, 1],
   [0, 2],
   [1, 2],
@@ -997,14 +1077,11 @@ function segmentVoxels(nv: NiiVue, group: string): Map<number, number> {
   const bySegment = new Map<number, VectorAnnotation[]>()
   for (const a of nv.annotations)
     if (a.group === group)
-      bySegment.set(a.label, [...(bySegment.get(a.label) ?? []), a])
+      bySegment.get(a.label)?.push(a) ?? bySegment.set(a.label, [a])
   const [nx, ny] = grid.dims
+  const mm2vox = invertAffine(grid.affine)
   for (const [label, shapes] of bySegment) {
     const [first] = shapes
-    if (shapes.length === 1 && first) {
-      counts.set(label, shapeVoxels(first, base))
-      continue
-    }
     const polygons = shapes.map((a) => a.polygons)
     const cached = first && unionCounts.get(first.polygons)
     if (
@@ -1015,13 +1092,52 @@ function segmentVoxels(nv: NiiVue, group: string): Map<number, number> {
       counts.set(label, cached.n)
       continue
     }
-    const seen = new Set<number>()
-    for (const a of shapes)
-      forEachAnnotationVoxel(a, base, ([x, y, z]) =>
-        seen.add(x + nx * (y + ny * z)),
-      )
-    if (first) unionCounts.set(first.polygons, { polygons, n: seen.size })
-    counts.set(label, seen.size)
+    // Shapes on different planes of one orientation share no voxel: count per
+    // plane, so no Set outgrows V8's 2^24 cap (a whole-body BODY ROI).
+    // Crossing orientations (drawn by hand) need one Set.
+    const crossing = shapes.some((b) => b.sliceType !== first?.sliceType)
+    let n = 0
+    if (crossing) {
+      // Crossing orientations share voxels: dedupe in one Set per slice of
+      // the first shape's orientation, each under V8's 2^24 cap.
+      const d = SLICE_DEPTH[first?.sliceType ?? 0] as number
+      const slices = new Map<number, Set<number>>()
+      for (const a of shapes)
+        forEachAnnotationVoxel(a, base, (v) => {
+          const k = v[d] as number
+          const seen = slices.get(k) ?? new Set<number>()
+          slices.set(k, seen)
+          seen.add(v[0] + nx * (v[1] + ny * v[2]))
+        })
+      for (const seen of slices.values()) n += seen.size
+    } else {
+      // Shapes on different planes share no voxel: count per plane, so no
+      // Set outgrows V8's 2^24 cap (a whole-body BODY ROI).
+      const planes = new Map<number, VectorAnnotation[]>()
+      for (const a of shapes) {
+        const key = a.anchorMM
+          ? Math.round(
+              apply(mm2vox, a.anchorMM, SLICE_DEPTH[a.sliceType] as number),
+            )
+          : a.slicePosition
+        planes.get(key)?.push(a) ?? planes.set(key, [a])
+      }
+      for (const onPlane of planes.values()) {
+        const [only] = onPlane
+        if (onPlane.length === 1 && only) {
+          n += shapeVoxels(only, base)
+          continue
+        }
+        const seen = new Set<number>()
+        for (const a of onPlane)
+          forEachAnnotationVoxel(a, base, ([x, y, z]) =>
+            seen.add(x + nx * (y + ny * z)),
+          )
+        n += seen.size
+      }
+    }
+    if (first) unionCounts.set(first.polygons, { polygons, n })
+    counts.set(label, n)
   }
   return counts
 }

@@ -293,7 +293,11 @@ export default niivueMode({
       tracked.measurements,
     ],
   },
-  modeCustomizations: { 'panelSegmentation.disableEditing': false },
+  // A hydrated RTSTRUCT loads as editable contours, as OHIF's segmentation mode.
+  modeCustomizations: {
+    'panelSegmentation.disableEditing': false,
+    'niivue.rtstructAsContours': true,
+  },
   // A server that reports no modalities (IDC's proxy) leaves basic's check
   // with '' and hides the mode; the viewer opens any study then.
   isValidMode(args) {

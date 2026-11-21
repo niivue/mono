@@ -349,7 +349,7 @@ export function rasterizeContours(
  * component is the largest.
  */
 /** A ring's Newell normal (area-weighted; zero for a degenerate ring). */
-function newellNormal(p: Float64Array): number[] {
+export function newellNormal(p: Float64Array): number[] {
   const nrm = [0, 0, 0]
   for (let i = 0, j = p.length - 3; i < p.length; j = i, i += 3)
     for (let a = 0; a < 3; a++) {
@@ -420,7 +420,7 @@ function pointInRing(
  * Whether ring `p` lies inside ring `q`: each edge of p, split where it meets
  * q, has every piece inside q or along its boundary (and at least one inside).
  */
-function ringInside(
+export function ringInside(
   p: Float64Array,
   q: Float64Array,
   u: number,
@@ -533,7 +533,7 @@ function unionSpans(xs: number[], ks: number[], signs: number[]): number[] {
  * An ROI's closed planar contours as flat LPS triplets, and whether any is
  * CLOSEDPLANAR_XOR (filled even-odd, see rasterizeContours).
  */
-function roiContours(roi: RtRoi): {
+export function roiContours(roi: RtRoi): {
   contours: Float64Array[]
   xor: boolean
 } {
@@ -604,18 +604,21 @@ export function rasterizeStructureSet(
     showOnly()
     return showOnly
   }
-  const segments = drawn.map(({ roi, value }) => {
-    const [red = 255, green = 255, blue = 255] = roi.colorArray ?? []
-    return {
-      value,
-      label: roi.ROIName ?? String(roi.ROINumber ?? value),
-      rgb: [red, green, blue] as [number, number, number],
-    }
-  })
+  const segments = drawn.map(({ roi, value }) => roiSegment(roi, value))
   return { segments, stats, draw, truncated }
 }
 
-type RtDisplaySet = OhifDisplaySet & {
+/** An ROI as panel segment `value`: its name (else number) and colour. */
+export function roiSegment(roi: RtRoi, value: number): PanelSegment {
+  const [red = 255, green = 255, blue = 255] = roi.colorArray ?? []
+  return {
+    value,
+    label: roi.ROIName ?? String(roi.ROINumber ?? value),
+    rgb: [red, green, blue],
+  }
+}
+
+export type RtDisplaySet = OhifDisplaySet & {
   load?: (o: {
     headers?: Record<string, string>
     createSegmentation?: boolean

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
-import type { NiiVue, VectorAnnotation } from '@niivue/niivue'
+import NiiVue, { type VectorAnnotation } from '@niivue/niivue'
 import {
+  addContourSegmentation,
   applyContourTool,
   contourGroup,
   contourRois,
@@ -64,8 +65,10 @@ test('RTSTRUCT contour points lie on the shape voxel plane, in LPS', () => {
 
 // Review of the R28 draft: locking or changing the active segment re-armed
 // only the owner pane, so a mirror kept drawing into the old segment.
-test('a mirror pane follows the active segment and its lock', () => {
-  type Seg = { segments: Record<number, { locked?: boolean; label?: string }> }
+type Seg = { segments: Record<number, { locked?: boolean; label?: string }> }
+// OHIF's segmentation service and cornerstone's segmentation state, as far as
+// contourSeg uses them.
+function ohifHarness() {
   const segs = new Map<string, Seg>()
   const reps = new Map<string, { visible: boolean }>()
   const bus = new EventTarget()
@@ -132,6 +135,20 @@ test('a mirror pane follows the active segment and its lock', () => {
       },
     }),
   }
+  return {
+    segs,
+    modified,
+    servicesManager,
+    extensionManager,
+    setActiveLabel: (l: number) => {
+      activeLabel = l
+    },
+  }
+}
+
+test('a mirror pane follows the active segment and its lock', () => {
+  const { segs, modified, servicesManager, extensionManager, setActiveLabel } =
+    ohifHarness()
   const pane = () =>
     Object.assign(new EventTarget(), {
       canvas: new EventTarget(),
@@ -174,11 +191,66 @@ test('a mirror pane follows the active segment and its lock', () => {
   modified(id)
   expect(mirror.annotationIsEnabled).toBe(false)
   seg.segments[2] = { label: 'Segment 2' }
-  activeLabel = 2
+  setActiveLabel(2)
   modified(id)
   expect([mirror.annotationIsEnabled, mirror.annotationActiveLabel]).toEqual([
     true,
     2,
   ])
+  for (const v of ['owner', 'mirror']) unregisterNiivue(v)
+})
+
+test('undo in a mirror cannot drop contours loaded before it', () => {
+  const { servicesManager, extensionManager } = ohifHarness()
+  const panes = ['owner', 'mirror'].map((v) => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.drawScene = () => {}
+    registerNiivue(v, nv)
+    updateNiivueViewport(v, {
+      displaySets: [{ displaySetInstanceUID: 's' }] as never,
+    })
+    return nv
+  })
+  const mirror = panes[1] as NiiVue
+  const shape = (id: string, group: string): VectorAnnotation => ({
+    id,
+    group,
+    label: 1,
+    sliceType: 0,
+    slicePosition: 0,
+    polygons: [
+      {
+        outer: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 0, y: 1 },
+        ],
+        holes: [],
+      },
+    ],
+    style: {
+      fillColor: [0, 0, 0, 0],
+      strokeColor: [1, 1, 1, 1],
+      strokeWidth: 1,
+    },
+  })
+  // An undo step in the mirror from before the load.
+  mirror.replaceAnnotations([], [shape('length', 'default')], true)
+  addContourSegmentation(
+    getNiivueEntry('owner') as never,
+    { servicesManager, extensionManager } as never,
+    {
+      segmentationId: 'rt',
+      label: 'RT',
+      segments: [{ value: 1, label: 'ROI' }],
+      shapes: [shape('roi', contourGroup('rt'))],
+    },
+  )
+  mirror.annotationUndo()
+  expect(
+    panes.map(
+      (nv) => nv.annotations.filter((a) => a.group === 'seg:rt').length,
+    ),
+  ).toEqual([1, 1])
   for (const v of ['owner', 'mirror']) unregisterNiivue(v)
 })

@@ -150,4 +150,18 @@ describe('storeAnnotation group policy', () => {
     expect(stored[0]).toBe(locked)
     expect(area(stored[1])).toBeCloseTo(75, 6)
   })
+
+  test('a shape isCut refuses overlaps the new one, locked or not', () => {
+    const other = inGroup(square('other', 0, 10), 'seg', 2)
+    for (const isEditable of [() => true, () => false]) {
+      const stored = storeAnnotation(
+        [other],
+        inGroup(square('new', 5, 15), 'seg', 1),
+        true,
+        { isEditable, isCut: () => false },
+      )
+      expect(stored[0]).toBe(other)
+      expect(area(stored[1])).toBeCloseTo(100, 6)
+    }
+  })
 })

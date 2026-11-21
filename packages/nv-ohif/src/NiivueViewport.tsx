@@ -51,6 +51,7 @@ import {
   adoptContours,
   applyContourTool,
   isContourAnnotation,
+  isContourCut,
   isContourEditable,
   parkContours,
   releaseContourTools,
@@ -632,6 +633,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           nv.annotationIsGrabbable = (a) =>
             isAnnotationShown(viewportId, a.id) &&
             isContourEditable(a, viewportId)
+          nv.annotationIsCut = isContourCut
           nv.isAnnotationDrawn = false
           // The overlay strokes; core fills (contour segments' fill colour).
           nv.isAnnotationFillDrawn = true

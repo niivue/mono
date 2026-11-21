@@ -334,9 +334,13 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   Segment Bidirectional samples the active segment on world planes of the
   shown view (oblique grids included); `SegmentLabelTool` names the segment
   under the pointer.
-- **RTSTRUCT.** Hung in a pane, it shows as a drawing over the CT it
+- **RTSTRUCT.** Hung in a pane, it previews as a drawing over the CT it
   references: each ROI's closed planar contours filled onto the base grid, one
-  label per ROI.
+  label per ROI. Hydrated in the NiiVue Viewer it is an editable contour
+  segmentation, one segment per ROI (`rtContours.ts`, as OHIF's segmentation
+  mode); loading clears the pane's (and mirror panes') undo history, so undo
+  cannot remove the loaded shapes. Other modes (TMTV), and a structure set with
+  any contour more than 0.25 voxel off the base's slice planes, keep the drawing.
 - **SR.** Not converted: a hydrated SR's measurement rows become NiiVue
   annotations (see [Workflows](#workflows)).
 - **Not converted:** RTPLAN, RTRECORD, PLAN, PR, KO, REG, DOC, FID, ECG, HD
@@ -448,8 +452,9 @@ tmtv).
   annotations, one group per segmentation (`seg:<id>`), labelled by segment.
   Freehand, spline (Catmull-Rom; linear and B-spline draw as it) and live wire
   draw the active segment in its colour; a stroke merges with its segment and
-  cuts the segmentation's other segments, never measurements. Shift+freehand
-  cuts a hole. Locked or hidden segments are not cut, grabbed or erased.
+  overlaps the others, as cornerstone's (core `annotationIsCut`).
+  Shift+freehand cuts a hole in its segment. Locked or hidden segments are not
+  cut, grabbed or erased.
   Combine (merge, subtract, intersect), Duplicate, Smooth, Remove extra
   points, Fill holes, Remove small contours, Holes to segment and Sculptor
   (cursor drawn and sized as cornerstone's, Dynamic Cursor Size included) edit the
@@ -467,8 +472,7 @@ tmtv).
   wire uses cornerstone's LivewireScissors cost (core
   `annotationIsLivewireScissors`). A
   finished spline is an outline (Simplified Spline on, OHIF's default). Not
-  done: Simplified Spline off, and an RTSTRUCT loads as a labelmap, not as
-  editable contours.
+  done: Simplified Spline off.
 - **SR.** NiiVue measurement rows are mirrored as cornerstone annotations, so
   OHIF's SR export includes them; a hydrated SR's rows show as NiiVue
   annotations (axis-aligned only). Slide rows save and load as OHIF's

@@ -196,20 +196,26 @@ export function hitTestAnnotationPolygon(
  * same-label annotations remain as separate instances. Only annotations of
  * the new one's group take part. One `isEditable` refuses is neither merged
  * nor cut: a new shape of another label is clipped around it instead (a
- * locked segment).
+ * locked segment). A shape of another label `isCut` refuses overlaps the new
+ * one untouched, in either direction.
  */
 function mergeAnnotations(
   existing: VectorAnnotation[],
   newAnnotation: VectorAnnotation,
   isEditable: (a: VectorAnnotation) => boolean,
   isSameSlice: (a: VectorAnnotation, b: VectorAnnotation) => boolean,
+  isCut: (a: VectorAnnotation) => boolean,
 ): VectorAnnotation[] {
   const result: VectorAnnotation[] = []
   let mergedPolygons: PolygonWithHoles[] = [...newAnnotation.polygons]
 
   for (const ann of existing) {
     // Another slice or group: pass through
-    if (ann.group !== newAnnotation.group || !isSameSlice(ann, newAnnotation)) {
+    if (
+      ann.group !== newAnnotation.group ||
+      !isSameSlice(ann, newAnnotation) ||
+      (ann.label !== newAnnotation.label && !isCut(ann))
+    ) {
       result.push(ann)
       continue
     }
@@ -288,6 +294,8 @@ export function storeAnnotation(
     isEditable?: (a: VectorAnnotation) => boolean
     /** Whether two shapes lie on one slice (default: equal slicePosition). */
     isSameSlice?: (a: VectorAnnotation, b: VectorAnnotation) => boolean
+    /** False for a shape of another label the new one overlaps uncut. */
+    isCut?: (a: VectorAnnotation) => boolean
   } = {},
 ): VectorAnnotation[] {
   const {
@@ -296,6 +304,7 @@ export function storeAnnotation(
     isSameSlice = (a, b) =>
       a.sliceType === b.sliceType &&
       Math.abs(a.slicePosition - b.slicePosition) <= 0.01,
+    isCut = () => true,
   } = policy
   const isMark = (a: VectorAnnotation) =>
     UNMERGED_SHAPES.has(a.shape?.type ?? '')
@@ -307,13 +316,14 @@ export function storeAnnotation(
     return [...existing, newAnnotation]
   const marks = existing.filter(isMark)
   return marks.length === 0
-    ? mergeAnnotations(existing, newAnnotation, isEditable, isSameSlice)
+    ? mergeAnnotations(existing, newAnnotation, isEditable, isSameSlice, isCut)
     : [
         ...mergeAnnotations(
           existing.filter((a) => !isMark(a)),
           newAnnotation,
           isEditable,
           isSameSlice,
+          isCut,
         ),
         ...marks,
       ]

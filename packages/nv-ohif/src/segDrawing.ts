@@ -8,6 +8,7 @@ import type {
   OhifServicesManager,
 } from './ohif-types'
 import { holdOverlayPlanes } from './overlayPlanes'
+import { startRtContours } from './rtContours'
 import {
   type Restyle,
   type RtLabels,
@@ -268,6 +269,14 @@ export function startSegDrawing(
   }
 }
 
+/** The mode loads a hydrated RTSTRUCT as editable contours (viewer mode). */
+const rtAsContours = (servicesManager: OhifServicesManager | undefined) =>
+  (
+    ohifServices(servicesManager)?.customizationService as
+      | { getCustomization?: (id: string) => unknown }
+      | undefined
+  )?.getCustomization?.('niivue.rtstructAsContours') === true
+
 /**
  * Show `seg` (SEG or RTSTRUCT) as the drawing once the pane's base is
  * installed, listed in OHIF's segmentation panel unless it is a preview
@@ -301,31 +310,44 @@ export function useSegDrawing(
     setShown({ segments, labels, restyle })
     return () => setShown(undefined)
   }
+  // A hydrated RT in a contour mode is a contour segmentation, not a drawing.
+  const asContours =
+    seg?.Modality === 'RTSTRUCT' &&
+    !isPreview &&
+    rtAsContours(managers.servicesManager)
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the SEG's UID and the base, as the load effect keys on displaySetsKey
   useEffect(() => {
     const nv = nvRef.current
     if (!nv || !seg) return
-    const release = holdOverlayPlanes(nv)
-    // A SEG/RT that fails gives the pane back to the label and planes.
-    const options = {
+    const base = {
       headers: authHeaders(managers.servicesManager),
       setNote,
       whenBase: baseInstalledRef.current,
-      onFailed: release,
     }
-    const stop =
-      seg.Modality === 'RTSTRUCT'
-        ? startRtDrawing(nv, seg, { ...options, onShown })
-        : startSegDrawing(nv, seg, {
-            ...options,
-            onShown: (segments, restyle) =>
-              onShown(segments, undefined, restyle),
-          })
-    return () => {
-      stop()
-      release()
+    const show = () => {
+      const release = holdOverlayPlanes(nv)
+      // A SEG/RT that fails gives the pane back to the label and planes.
+      const options = { ...base, onFailed: release }
+      const stop =
+        seg.Modality === 'RTSTRUCT'
+          ? startRtDrawing(nv, seg, { ...options, onShown })
+          : startSegDrawing(nv, seg, {
+              ...options,
+              onShown: (segments, restyle) =>
+                onShown(segments, undefined, restyle),
+            })
+      return () => {
+        stop()
+        release()
+      }
     }
-  }, [segKey, baseKey])
+    return asContours
+      ? startRtContours(managers.viewportId, seg, managers, {
+          ...base,
+          fallback: show,
+        })
+      : show()
+  }, [segKey, baseKey, asContours])
   // Hydrating keeps the drawing: only the panel entry starts.
   // biome-ignore lint/correctness/useExhaustiveDependencies: shown changes with the SEG
   useEffect(() => {

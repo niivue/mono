@@ -2841,6 +2841,13 @@ export default class NiiVue extends EventTarget {
   annotationIsGrabbable: ((annotation: VectorAnnotation) => boolean) | null =
     null
 
+  /**
+   * False for a shape of another label that a new shape in its group overlaps
+   * without cutting (segments that may overlap). A function, so not a saved
+   * setting.
+   */
+  annotationIsCut: ((annotation: VectorAnnotation) => boolean) | null = null
+
   get annotationMergedGroups(): string[] | null {
     return this.model.annotation.mergedGroups
   }
@@ -3198,6 +3205,16 @@ export default class NiiVue extends EventTarget {
   private _reselectAfterRestore(restored: VectorAnnotation[]): void {
     const kept = restored.find((a) => a.id === this.selectedAnnotation)
     this.model._annotationSelection = kept ? getAnnotationSelection(kept) : null
+  }
+
+  /**
+   * Forget the annotation undo/redo steps: after a load whose shapes earlier
+   * steps lack (undoing one would drop them), as loadAnnotationsJSON does.
+   */
+  clearAnnotationHistory(): void {
+    this._annotationUndoStack.clear()
+    // A drag under way would push its pre-load snapshot when it ends.
+    this._resizeUndoSnapshot = null
   }
 
   annotationUndo(): void {

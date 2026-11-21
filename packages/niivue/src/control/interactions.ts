@@ -763,6 +763,7 @@ function commitAnnotation(
   const after = Annotation.storeAnnotation(before, ann, mergesOverlaps, {
     mergedGroups: ctrl.model.annotation.mergedGroups,
     isEditable: (a) => isGrabbable(ctrl, a),
+    isCut: ctrl.annotationIsCut ?? undefined,
     // On an oblique volume a slice's mm depth varies with the press point.
     isSameSlice: (a, b) =>
       a.sliceType === b.sliceType &&

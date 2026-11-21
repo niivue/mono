@@ -181,7 +181,9 @@
           selector.reset()
           buttons.updateButton('clear', { enabled: false })
           dropSaved()
-          await copy.removeAllVolumes()
+          // After any load already running, so its box cannot reappear.
+          loading = loading.then(() => copy.removeAllVolumes()).catch(() => {})
+          await loading
           setStatus('Right-click the first corner', 'wait')
         },
       })

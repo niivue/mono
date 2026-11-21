@@ -1,3 +1,14 @@
+## 1.0.0-rc.235 (2026-11-21)
+
+### Fixes
+
+- **demos:** ordered subvolume Clear; slides undo matches edits by seq ([90b6e476](https://github.com/niivue/mono/commit/90b6e476))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.234 (2026-11-20)
 
 ### Fixes

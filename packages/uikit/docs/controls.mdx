@@ -140,6 +140,35 @@ move the highlight, Enter chooses, and Escape or a click elsewhere closes
 it. `menus.setItemChecked('view', 'colorbar', true)` changes a check mark
 quietly; `menus.open('view')` and `menus.close()` work from code.
 
+## Radial menus
+
+A radial menu opens around a point from code, as a pencil's squeeze opens a
+tool palette at its tip. Items sit on rings, the first ring innermost; an
+item with a `color` is a swatch, any other a labelled pill:
+
+```js
+const radial = new UIKitRadialMenuOverlay(font, units)
+controls.add(radial)
+
+radial.open({
+  x: tipX,
+  y: tipY,
+  items: [
+    { id: 'pen', label: 'Pen', selected: true },
+    { id: 'eraser', label: 'Eraser' },
+    { id: 'red', label: 'Red', color: [1, 0, 0, 1], ring: 1 },
+    { id: 'green', label: 'Green', color: [0, 1, 0, 1], ring: 1 },
+  ],
+  onSelect: (id) => choose(id),
+})
+```
+
+Each ring spreads its items evenly from 12 o'clock and grows to fit them;
+the whole menu is pulled inside the canvas near an edge. The item under the
+pointer or a hovering pencil enlarges, and lifting on the item that was
+pressed chooses it. A press anywhere else, or Escape, closes the menu
+without choosing, and that press never reaches the image.
+
 ## Drop-down lists
 
 A select shows the chosen option on a button and lists every option when

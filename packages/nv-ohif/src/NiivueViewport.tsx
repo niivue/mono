@@ -609,6 +609,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       addCornerstoneColormaps(nv)
+      // Overlap policy, not drawing: it must hold even if the font never loads.
+      nv.annotationIsCut = isContourCut
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
       // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
@@ -633,7 +635,6 @@ export function NiivueViewport(props: OhifViewportProps) {
           nv.annotationIsGrabbable = (a) =>
             isAnnotationShown(viewportId, a.id) &&
             isContourEditable(a, viewportId)
-          nv.annotationIsCut = isContourCut
           nv.isAnnotationDrawn = false
           // The overlay strokes; core fills (contour segments' fill colour).
           nv.isAnnotationFillDrawn = true

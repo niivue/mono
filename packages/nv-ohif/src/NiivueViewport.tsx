@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createAdvancedMagnifyBinding } from './advancedMagnify'
 import { useArrowText } from './arrowText'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
@@ -101,7 +102,12 @@ import { setOverlayPlanes } from './overlayPlanes'
 import { armBrush, showPaneLabel } from './petQuant'
 import { ReferenceLines } from './referenceLines'
 import { resolveSegDisplaySetsFor, useSegDrawing } from './segDrawing'
-import { applySegTool, drawingValueAtMM, ohifPenSize } from './segEdit'
+import {
+  applySegTool,
+  drawingValueAtMM,
+  ohifPenSize,
+  toolMode,
+} from './segEdit'
 import { PaneCorner, useHydratePrompt } from './segHydration'
 import { SegmentLabel, segmentLabel } from './segmentLabel'
 import { SliceCine } from './sliceCine'
@@ -420,6 +426,9 @@ export function NiivueViewport(props: OhifViewportProps) {
   const magnifyRef = useRef<ReturnType<typeof createMagnifyBinding> | null>(
     null,
   )
+  const glassesRef = useRef<ReturnType<
+    typeof createAdvancedMagnifyBinding
+  > | null>(null)
   const activeOhifToolRef = useRef<string | undefined>(undefined)
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -639,6 +648,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           nv.isAnnotationFillDrawn = true
           // A lens already up must stay above the annotations it magnifies.
           magnifyRef.current?.raise()
+          glassesRef.current?.raise()
         })
         .catch((err) =>
           console.error('[nv-ohif] annotation font failed to load', err),
@@ -830,6 +840,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       // go first, or its dispose draws a destroyed viewer.
       magnifyRef.current?.dispose()
       magnifyRef.current = null
+      glassesRef.current?.dispose()
+      glassesRef.current = null
       ro.disconnect()
       nv.destroy()
       // Free the WebGL context now, not at GC: layout churn would otherwise
@@ -1292,10 +1304,20 @@ export function NiivueViewport(props: OhifViewportProps) {
 
     const magnify = createMagnifyBinding(nv)
     magnifyRef.current = magnify
+    const glasses = createAdvancedMagnifyBinding(nv)
+    glassesRef.current = glasses
     const apply = () => {
       const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
       magnify.setTool(tool)
+      // Passive (another tool primary) keeps the glasses; Disabled removes them.
+      glasses.setMode(
+        toolMode(
+          props.extensionManager,
+          toolGroupId ?? 'default',
+          'AdvancedMagnify',
+        ),
+      )
       // Labelmap tools paint the pane's drawing (segEdit.ts); contour tools
       // draw the active contour segment (contourSeg.ts). Each disarms when
       // the other's tool comes, so both run.
@@ -1332,6 +1354,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       sub?.unsubscribe?.()
       magnify.dispose()
       magnifyRef.current = null
+      glasses.dispose()
+      glassesRef.current = null
     }
   }, [ready, servicesManager, toolGroupId, viewportId, props.extensionManager])
 

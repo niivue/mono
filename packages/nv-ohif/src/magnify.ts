@@ -2,23 +2,16 @@ import type { UIKitOverlayRenderer } from '@niivue/niivue'
 import type { UIKitHost } from '@niivue/uikit'
 import { UIKitMagnifierOverlay } from '@niivue/uikit'
 
-// Cornerstone defaults: Magnify 250 px box at magnifySize 10, shown only while
-// the primary button is held; AdvancedMagnify radius 125 at zoomFactor 3
-// (a placed glass there; here it follows the pointer).
-const PINCH_WAIT_MS = 150
-
-const LENS: Record<string, { radiusCss: number; zoom: number; held: boolean }> =
-  {
-    Magnify: { radiusCss: 125, zoom: 10, held: true },
-    AdvancedMagnify: { radiusCss: 125, zoom: 3, held: false },
-  }
+// Cornerstone's Magnify: a 250 px box at magnifySize 10, shown only while the
+// primary button is held. AdvancedMagnify's placed glasses: advancedMagnify.ts.
+const LENS = { radiusCss: 125, zoom: 10 }
 
 type Host = UIKitHost & {
   canvas: HTMLCanvasElement | null
   registerOverlayRenderer(r: UIKitOverlayRenderer): () => void
 }
 
-/** Shows a lens on the pane while OHIF's active tool is a magnifier. */
+/** Shows a lens on the pane while OHIF's Magnify tool is held. */
 export function createMagnifyBinding(nv: Host) {
   let detach: (() => void) | null = null
   let reregister: (() => void) | null = null
@@ -37,11 +30,10 @@ export function createMagnifyBinding(nv: Host) {
       if (detach && tool === active) return
       off()
       active = tool
-      const opts = tool ? LENS[tool] : undefined
       const canvas = nv.canvas
-      if (!opts || !canvas) return
+      if (tool !== 'Magnify' || !canvas) return
       // Registered last, so it magnifies the annotation overlay too.
-      const lens = new UIKitMagnifierOverlay(opts)
+      const lens = new UIKitMagnifierOverlay(LENS)
       let unregister = nv.registerOverlayRenderer(lens)
       // Moves only the overlay, so a press in progress keeps its state.
       reregister = () => {
@@ -59,13 +51,6 @@ export function createMagnifyBinding(nv: Host) {
       let pinch: { span: number; zoom: number } | null = null
       // After a pinch the lens stays put until every finger is up.
       let pinned = false
-      // AdvancedMagnify's glass stays put while a pinch may still start: a
-      // single touch waits this long for a second finger before moving it.
-      let wait: ReturnType<typeof setTimeout> | undefined
-      const settle = () => {
-        clearTimeout(wait)
-        wait = undefined
-      }
       const span = () => {
         const [a, b] = [...touches.values()] as [
           [number, number],
@@ -86,7 +71,6 @@ export function createMagnifyBinding(nv: Host) {
         if (touches.size && e.pointerType === 'touch') {
           e.stopImmediatePropagation()
           touches.set(e.pointerId, [e.clientX, e.clientY])
-          settle()
           pinned = true
           pinch = touches.size === 2 ? { span: span(), zoom: lens.zoom } : null
           return
@@ -94,25 +78,15 @@ export function createMagnifyBinding(nv: Host) {
         if (e.button !== 0) return
         e.stopImmediatePropagation()
         held = true
-        if (e.pointerType !== 'touch' || opts.held) {
-          at(e)
-          if (e.pointerType === 'touch')
-            touches.set(e.pointerId, [e.clientX, e.clientY])
-          return
-        }
-        const id = e.pointerId
-        touches.set(id, [e.clientX, e.clientY])
-        wait = setTimeout(() => {
-          wait = undefined
-          const p = touches.get(id)
-          if (p && !pinned) at({ clientX: p[0], clientY: p[1] })
-        }, PINCH_WAIT_MS)
+        at(e)
+        if (e.pointerType === 'touch')
+          touches.set(e.pointerId, [e.clientX, e.clientY])
       }
       const move = (e: PointerEvent) => {
         if (touches.has(e.pointerId)) {
           e.stopImmediatePropagation()
           touches.set(e.pointerId, [e.clientX, e.clientY])
-          if (touches.size === 1 && !pinned && !wait) at(e)
+          if (touches.size === 1 && !pinned) at(e)
           else if (pinch && pinch.span > 0) {
             // UIKit's own lens pinch range.
             lens.zoom = Math.min(
@@ -123,16 +97,13 @@ export function createMagnifyBinding(nv: Host) {
           }
           return
         }
-        if (held) e.stopImmediatePropagation()
-        // Touch has no hover: an unheld touch move is not the lens's.
-        if (held || (!opts.held && e.pointerType !== 'touch')) at(e)
+        if (!held) return
+        e.stopImmediatePropagation()
+        at(e)
       }
       const up = (e: PointerEvent) => {
         if (touches.delete(e.pointerId)) {
           e.stopImmediatePropagation()
-          settle()
-          // The glass goes where a lone touch lifts; a pinch leaves it put.
-          if (!pinned && !opts.held && e.type !== 'pointercancel') at(e)
           pinch = touches.size === 2 ? { span: span(), zoom: lens.zoom } : null
           if (touches.size) return
           pinned = false
@@ -140,17 +111,8 @@ export function createMagnifyBinding(nv: Host) {
         if (held) {
           e.stopImmediatePropagation()
           held = false
-          if (opts.held) hide()
-          else if (e.pointerType !== 'touch' && e.type !== 'pointercancel')
-            at(e)
-        }
-        // Touch fires pointerleave on every lift: the glass stays where it was put.
-        if (
-          e.type === 'pointerleave' &&
-          !opts.held &&
-          e.pointerType !== 'touch'
-        )
           hide()
+        }
       }
       // A double-click on the lens must not depth-pick and move the crosshair.
       const swallow = (e: Event) => e.stopImmediatePropagation()
@@ -168,7 +130,6 @@ export function createMagnifyBinding(nv: Host) {
       }
       detach = () => {
         reregister = null
-        settle()
         unwire()
         unregister()
         lens.destroy()

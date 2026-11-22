@@ -65,3 +65,39 @@ test('combineSegments with one segment as both operands', () => {
   expect(run('intersection')).toBeCloseTo(1600, 6)
   expect(run('difference')).toBe(0)
 })
+
+// Review of #875: combining into segment B kept B's old shapes beside the result.
+test('combineSegments into segment b replaces b', () => {
+  const group = contourGroup('s')
+  const square = (id: string, label: number, dx: number) =>
+    ({
+      id,
+      group,
+      label,
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [
+        {
+          outer: squareRing(1).map((p) => ({ x: p.x + dx, y: p.y })),
+          holes: [],
+        },
+      ],
+    }) as unknown as VectorAnnotation
+  let shapes = [square('a', 1, 0), square('b', 2, 20)]
+  const nv = {
+    volumes: [],
+    get annotations() {
+      return shapes
+    },
+    replaceAnnotations(ids: string[], added: VectorAnnotation[]) {
+      shapes = [...shapes.filter((a) => !ids.includes(a.id)), ...added]
+    },
+  } as unknown as NiiVue
+  combineSegments(nv, 's', 1, 2, 2, 'difference')
+  const b = shapes.filter((a) => a.label === 2)
+  expect(b).toHaveLength(1)
+  expect(b[0]?.polygons.reduce((n, p) => n + ringArea(p.outer), 0)).toBeCloseTo(
+    800,
+    6,
+  )
+})

@@ -8,13 +8,19 @@ import { mat4, vec4 } from 'gl-matrix'
 import { sliceTypeDim } from '@/NVConstants'
 import type { AnnotationPoint, NVImage } from '@/NVTypes'
 import { getVoxelValue } from '@/volume/utils'
-import { buildLivewireCost } from './livewire'
+import {
+  buildLivewireCost,
+  buildScissorsCost,
+  type ScissorsCost,
+} from './livewire'
 import { IN_PLANE_AXES, mmToSlice2D, slice2DToMM } from './sliceProjection'
 
 export type LivewireSlice = {
   image: Float32Array
   /** Per-pixel traversal cost (low on edges), for the Dijkstra field. */
   cost: Float32Array
+  /** cornerstone's scissors terms, with annotationIsLivewireScissors. */
+  scissors?: ScissorsCost
   width: number
   height: number
   ax0: number
@@ -37,6 +43,7 @@ export function extractLivewireSlice(
   volume: NVImage,
   sliceType: number,
   slicePosition: number,
+  isScissors = false,
 ): LivewireSlice | null {
   if (!volume.dimsRAS || !volume.matRAS) return null
   const dims = volume.dimsRAS
@@ -73,6 +80,10 @@ export function extractLivewireSlice(
   return {
     image,
     cost: buildLivewireCost(image, width, height),
+    // Through the display window, as cornerstone uses the viewport's VOI.
+    scissors: isScissors
+      ? buildScissorsCost(image, width, height, volume.calMin, volume.calMax)
+      : undefined,
     width,
     height,
     ax0,

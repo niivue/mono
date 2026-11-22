@@ -12,7 +12,11 @@ import {
   clipperInflatePath,
   clipperSubtractBrush,
 } from './clipper'
-import { livewireBacktrack, livewireField } from './livewire'
+import {
+  livewireBacktrack,
+  livewireField,
+  livewireFieldScissors,
+} from './livewire'
 import {
   extractLivewireSlice,
   gridToSlice2D,
@@ -61,6 +65,7 @@ export {
   isTwoLineShape,
   livewireBacktrack,
   livewireField,
+  livewireFieldScissors,
   mmToSlice2D,
   resizePolygons,
   shapeAngle,
@@ -188,22 +193,39 @@ export function hitTestAnnotationPolygon(
  * Add new annotation, cutting it from any overlapping annotations with
  * a different label (so labels don't overlap). Same-label annotations
  * that geometrically overlap are merged via boolean union; non-overlapping
- * same-label annotations remain as separate instances.
+ * same-label annotations remain as separate instances. Only annotations of
+ * the new one's group take part. One `isEditable` refuses is neither merged
+ * nor cut: a new shape of another label is clipped around it instead (a
+ * locked segment). A shape of another label `isCut` refuses overlaps the new
+ * one untouched, in either direction.
  */
 function mergeAnnotations(
   existing: VectorAnnotation[],
   newAnnotation: VectorAnnotation,
+  isEditable: (a: VectorAnnotation) => boolean,
+  isSameSlice: (a: VectorAnnotation, b: VectorAnnotation) => boolean,
+  isCut: (a: VectorAnnotation) => boolean,
 ): VectorAnnotation[] {
   const result: VectorAnnotation[] = []
   let mergedPolygons: PolygonWithHoles[] = [...newAnnotation.polygons]
 
   for (const ann of existing) {
-    // Non-overlapping slice: pass through
+    // Another slice or group: pass through
     if (
-      ann.sliceType !== newAnnotation.sliceType ||
-      Math.abs(ann.slicePosition - newAnnotation.slicePosition) > 0.01
+      ann.group !== newAnnotation.group ||
+      !isSameSlice(ann, newAnnotation) ||
+      (ann.label !== newAnnotation.label && !isCut(ann))
     ) {
       result.push(ann)
+      continue
+    }
+    if (!isEditable(ann)) {
+      result.push(ann)
+      if (ann.label !== newAnnotation.label)
+        for (const locked of ann.polygons)
+          mergedPolygons = mergedPolygons.flatMap((p) =>
+            _clipperDifference(p, locked),
+          )
       continue
     }
 
@@ -265,18 +287,43 @@ export function storeAnnotation(
   existing: VectorAnnotation[],
   newAnnotation: VectorAnnotation,
   mergesOverlaps: boolean,
+  policy: {
+    /** Groups whose shapes merge (null: every group). */
+    mergedGroups?: readonly string[] | null
+    /** False for a shape no merge or cut may change (a locked segment). */
+    isEditable?: (a: VectorAnnotation) => boolean
+    /** Whether two shapes lie on one slice (default: equal slicePosition). */
+    isSameSlice?: (a: VectorAnnotation, b: VectorAnnotation) => boolean
+    /** False for a shape of another label the new one overlaps uncut. */
+    isCut?: (a: VectorAnnotation) => boolean
+  } = {},
 ): VectorAnnotation[] {
+  const {
+    mergedGroups = null,
+    isEditable = () => true,
+    isSameSlice = (a, b) =>
+      a.sliceType === b.sliceType &&
+      Math.abs(a.slicePosition - b.slicePosition) <= 0.01,
+    isCut = () => true,
+  } = policy
   const isMark = (a: VectorAnnotation) =>
     UNMERGED_SHAPES.has(a.shape?.type ?? '')
-  if (!mergesOverlaps || isMark(newAnnotation))
+  if (
+    !mergesOverlaps ||
+    isMark(newAnnotation) ||
+    (mergedGroups && !mergedGroups.includes(newAnnotation.group))
+  )
     return [...existing, newAnnotation]
   const marks = existing.filter(isMark)
   return marks.length === 0
-    ? mergeAnnotations(existing, newAnnotation)
+    ? mergeAnnotations(existing, newAnnotation, isEditable, isSameSlice, isCut)
     : [
         ...mergeAnnotations(
           existing.filter((a) => !isMark(a)),
           newAnnotation,
+          isEditable,
+          isSameSlice,
+          isCut,
         ),
         ...marks,
       ]

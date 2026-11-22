@@ -12,16 +12,23 @@ import {
   type Paths64,
   type PolyPath64,
   PolyTree64,
+  trimCollinear,
 } from 'clipper2-ts'
 import type { AnnotationPoint, PolygonWithHoles } from '@/NVTypes'
 
 const SCALE = 100
 
-function toPath64(points: AnnotationPoint[]): Path64 {
+function scaled(points: AnnotationPoint[]): Path64 {
   return points.map((p) => ({
     x: Math.round(p.x * SCALE),
     y: Math.round(p.y * SCALE),
   }))
+}
+
+// A ring doubling back on itself (a live-wire trace retracing its pixels)
+// leaves collinear spikes on which clipper2-ts's sweep never ends.
+function toPath64(points: AnnotationPoint[]): Path64 {
+  return trimCollinear(scaled(points))
 }
 
 function fromPath64(path: Path64): AnnotationPoint[] {
@@ -39,10 +46,12 @@ function toSubjectPaths(
   const paths: Paths64 = []
   for (const poly of polygons) {
     const outerPath = toPath64(poly.outer)
+    if (outerPath.length < 3) continue
     paths.push(isPositive(outerPath) ? outerPath : reversePath(outerPath))
     if (poly.holes) {
       for (const hole of poly.holes) {
         const holePath = toPath64(hole)
+        if (holePath.length < 3) continue
         if (reverseHoles) {
           paths.push(isPositive(holePath) ? reversePath(holePath) : holePath)
         } else {
@@ -130,7 +139,7 @@ export function clipperInflatePath(
 ): PolygonWithHoles[] {
   if (brushPath.length === 0 || radius <= 0) return []
   const scaledRadius = Math.round(radius * SCALE)
-  const scaledBrush = toPath64(brushPath)
+  const scaledBrush = scaled(brushPath)
   const inflated = inflatePaths(
     [scaledBrush],
     scaledRadius,
@@ -152,7 +161,7 @@ export function clipperSubtractBrush(
     return [{ outer: [...subject.outer], holes: [...(subject.holes ?? [])] }]
   }
   const scaledRadius = Math.round(radius * SCALE)
-  const scaledBrush = toPath64(brushPath)
+  const scaledBrush = scaled(brushPath)
   const inflated = inflatePaths(
     [scaledBrush],
     scaledRadius,
@@ -212,4 +221,31 @@ export function clipperRegionArea(polygons: PolygonWithHoles[]): number {
   return Math.abs(
     areaPathsD(booleanOpD(ClipType.Union, pieces, null, FillRule.NonZero, 4)),
   )
+}
+
+/**
+ * A polygon set operation on two sets of polygons with holes (slice-2D mm):
+ * union, difference (a minus b), intersection or xor. Overlaps within a set
+ * union first (non-zero), so each set is a region.
+ */
+export function polygonBoolean(
+  op: 'union' | 'difference' | 'intersection' | 'xor',
+  a: readonly PolygonWithHoles[],
+  b: readonly PolygonWithHoles[],
+): PolygonWithHoles[] {
+  const type = {
+    union: ClipType.Union,
+    difference: ClipType.Difference,
+    intersection: ClipType.Intersection,
+    xor: ClipType.Xor,
+  }[op]
+  const tree = new PolyTree64()
+  booleanOpWithPolyTree(
+    type,
+    toSubjectPaths([...a], true),
+    toSubjectPaths([...b], true),
+    tree,
+    FillRule.NonZero,
+  )
+  return extractPolyTree(tree)
 }

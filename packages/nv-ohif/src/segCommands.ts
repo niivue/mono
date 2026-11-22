@@ -1,4 +1,12 @@
 import type NiiVue from '@niivue/niivue'
+import { contourOpCommands } from './contourOps'
+import { setDynamicCursor } from './contourSculpt'
+import {
+  type ContourPane,
+  contourPane,
+  createContourSegmentation,
+  setContourInterpolation,
+} from './contourSeg'
 import {
   getActiveNiivueEntry,
   getNiivueEntry,
@@ -17,6 +25,8 @@ import {
   buildSegDataset,
   type ExportSegment,
   frameLabels,
+  ref,
+  rtssDataset,
   segmentationCsv,
 } from './segExport'
 import {
@@ -128,13 +138,15 @@ export async function tmtvDataset(
 
 /** The SEG or RTSTRUCT dataset of a pane's segmentation; undefined if empty. */
 export async function niivueSegmentationDataset(
-  pane: NiivueSegmentationPane,
+  pane: NiivueSegmentationPane | ContourPane,
   modality: string,
   label: string,
 ): Promise<Ds | undefined> {
   const entry = getNiivueEntry(pane.viewportId)
   const nv = entry?.nv
-  const bitmap = nv?.drawingVolume?.img
+  const contour = 'bitmap' in pane ? pane : undefined
+  // A contour segmentation is rasterized per segment (its segments can overlap).
+  const bitmap = contour ? new Uint8Array(0) : nv?.drawingVolume?.img
   const dims = nv?.volumes[0]?.dimsRAS
   const lps2vox = nv && lpsToVoxel((v) => nv.vox2mm(v))
   // Only the shown output's instances: a series can hold others (orthogonal
@@ -158,19 +170,31 @@ export async function niivueSegmentationDataset(
     label,
     rgb,
   }))
-  const read = () =>
+  const read = (labels = bitmap) =>
     frameLabels({
-      bitmap,
+      bitmap: labels,
       dims: [dims[1] as number, dims[2] as number, dims[3] as number],
       lps2vox,
       instances,
     })
   const h = { SeriesDescription: label, SeriesNumber: 3000 }
-  const { rt } = pane
-  const flat = rt ? undefined : read()
+  const rt = 'rt' in pane ? pane.rt : undefined
+  if (contour && modality === 'RTSTRUCT') {
+    const first = instances[0]
+    return first
+      ? rtssDataset(
+          contour.rois(segments),
+          first,
+          instances.map((i) => ref(i)),
+          h,
+        )
+      : undefined
+  }
+  const flat = rt || contour ? undefined : read()
   // Overlapping (or hidden) ROIs: fill each alone, then restore what the panel shows.
   const framesFor = (s: ExportSegment) => {
     if (flat) return flat
+    if (contour) return read(contour.bitmap(s.value) ?? bitmap)
     rt?.showOnly(new Set([s.value]))
     return read()
   }
@@ -223,6 +247,9 @@ function download(text: string, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+const isNiivueSegmentation = (id: unknown) =>
+  !!niivueSegmentationPane(id as string) || !!contourPane(id as string)
+
 /** Command definitions for the NIIVUE context (see the file comment). */
 export function getSegCommandDefinitions(params: OhifExtensionParams) {
   const { servicesManager, extensionManager, commandsManager } = params
@@ -232,7 +259,9 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
   // Writes the dataset: to the active data source when it stores DICOM, else a download.
   // No pane: the TMTV PT label, named as cornerstone's save dialog defaults.
   const save = async (opts: Options, onlyDownload: boolean, tmtv = false) => {
-    const pane = niivueSegmentationPane(opts.segmentationId)
+    const pane =
+      niivueSegmentationPane(opts.segmentationId) ??
+      contourPane(opts.segmentationId)
     if (!pane && !tmtv) return undefined
     const modality = opts.modality === 'RTSTRUCT' ? 'RTSTRUCT' : 'SEG'
     const label = pane
@@ -278,6 +307,48 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
           : back('createLabelmapForViewport', opts)
       },
     },
+    ...contourOpCommands(servicesManager, (name, opts) => back(name, opts)),
+    createContourForViewport: {
+      commandFn: (opts: Options = {}) => {
+        const entry = getActiveNiivueEntry(servicesManager, opts.viewportId)
+        return entry
+          ? createContourSegmentation(entry, params)
+          : back('createContourForViewport', opts)
+      },
+    },
+    setDynamicCursorSizeForSculptorTool: {
+      commandFn: (opts: Options = {}) =>
+        getActiveNiivueEntry(servicesManager, opts.viewportId)
+          ? setDynamicCursor(opts.value !== false)
+          : back('setDynamicCursorSizeForSculptorTool', opts),
+    },
+    // Per tool, as cornerstone's: the pane's active tool and any listed.
+    setInterpolationToolConfiguration: {
+      commandFn: (opts: Options = {}) => {
+        const entry = getActiveNiivueEntry(servicesManager, opts.viewportId)
+        if (!entry) return back('setInterpolationToolConfiguration', opts)
+        const tools = ohifServices(servicesManager)?.toolGroupService as
+          | {
+              getActivePrimaryMouseButtonTool?(id?: string): string | undefined
+            }
+          | undefined
+        const active = tools?.getActivePrimaryMouseButtonTool?.(
+          entry.toolGroupId,
+        )
+        setContourInterpolation(opts.value === true, [
+          ...(active ? [active] : []),
+          ...((opts.toolNames as string[] | undefined) ?? []),
+        ])
+      },
+    },
+    // A finished spline is always an outline: Simplified Spline on (OHIF's
+    // default); the switch configures a cornerstone tool instance.
+    setSimplifiedSplineForSplineContourSegmentationTool: {
+      commandFn: (opts: Options = {}) =>
+        getActiveNiivueEntry(servicesManager, opts.viewportId)
+          ? undefined
+          : back('setSimplifiedSplineForSplineContourSegmentationTool', opts),
+    },
     ...Object.fromEntries(
       ['setBrushSize', 'increaseBrushSize', 'decreaseBrushSize'].map((name) => [
         name,
@@ -293,7 +364,9 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     ),
     deleteSegment: {
       commandFn: (opts: Options = {}) => {
-        const pane = niivueSegmentationPane(opts.segmentationId)
+        const pane =
+          niivueSegmentationPane(opts.segmentationId) ??
+          contourPane(opts.segmentationId)
         return pane
           ? pane.deleteSegment(Number(opts.segmentIndex))
           : back('deleteSegment', opts)
@@ -330,19 +403,19 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     // runs this name without a context, then shows the stored series.
     storeSegmentation: {
       commandFn: (opts: Options = {}) =>
-        niivueSegmentationPane(opts.segmentationId)
+        isNiivueSegmentation(opts.segmentationId)
           ? save(opts, false)
           : back('storeSegmentation', opts, 'SEGMENTATION'),
     },
     downloadSegmentation: {
       commandFn: (opts: Options = {}) =>
-        niivueSegmentationPane(opts.segmentationId)
+        isNiivueSegmentation(opts.segmentationId)
           ? save(opts, true)
           : back('downloadSegmentation', opts),
     },
     downloadRTSS: {
       commandFn: (opts: Options = {}) =>
-        niivueSegmentationPane(opts.segmentationId)
+        isNiivueSegmentation(opts.segmentationId)
           ? save({ ...opts, modality: 'RTSTRUCT' }, true)
           : back('downloadRTSS', opts),
     },
@@ -370,20 +443,31 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
         }
       },
     },
-    /** A pane's drawing (RAS order) with its RAS voxel -> mm affine, as niivueGetLabelmap. */
+    /**
+     * A pane's drawing (RAS order) with its RAS voxel -> mm affine, as
+     * niivueGetLabelmap. For a contour segmentation pass segmentIndex:
+     * segments overlap, so without it a shared voxel holds the last one drawn.
+     */
     niivueGetDrawing: {
       commandFn: (opts: Options = {}) => {
-        const nv = getActiveNiivueEntry(servicesManager, opts.viewportId)?.nv
-        const img = nv?.drawingVolume?.img
+        const contour = contourPane(opts.segmentationId)
+        const nv =
+          contour?.nv ??
+          getActiveNiivueEntry(servicesManager, opts.viewportId)?.nv
+        const img = contour
+          ? contour.bitmap(opts.segmentIndex as number | undefined)
+          : nv?.drawingVolume?.img?.slice()
         const grid = nv?.volumes[0] && rasGrid(nv.volumes[0])
         return img instanceof Uint8Array && grid
-          ? { label: img.slice(), dims: grid.dims, affine: grid.affine }
+          ? { label: img, dims: grid.dims, affine: grid.affine }
           : undefined
       },
     },
     downloadCSVSegmentationReport: {
       commandFn: (opts: Options = {}) => {
-        const pane = niivueSegmentationPane(opts.segmentationId)
+        const pane =
+          niivueSegmentationPane(opts.segmentationId) ??
+          contourPane(opts.segmentationId)
         if (!pane) return back('downloadCSVSegmentationReport', opts)
         const label = segmentationLabel(servicesManager, pane)
         const base = getNiivueEntry(pane.viewportId)?.displaySets[0] ?? {}

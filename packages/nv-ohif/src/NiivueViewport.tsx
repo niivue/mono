@@ -48,6 +48,16 @@ import {
 } from './commands'
 import { useAnnotationContextMenu } from './contextMenu'
 import {
+  adoptContours,
+  applyContourTool,
+  isContourAnnotation,
+  isContourCut,
+  isContourEditable,
+  parkContours,
+  releaseContourTools,
+  visibleContourShapes,
+} from './contourSeg'
+import {
   convertDisplaySetToNifti,
   type DicomConversion,
   loadConversion,
@@ -143,7 +153,9 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   backend: 'webgl2',
   // OHIF panel measurements are independent records. Never union/cut them when
   // their contours overlap, because that destroys measurement identity/stats.
-  annotationMergesOverlaps: false,
+  // Contour segments do merge: each contour segmentation adds its group.
+  annotationMergesOverlaps: true,
+  annotationMergedGroups: [],
   // A click lands the crosshair on a slice centre, so a measurement drawn there
   // lies on its DICOM frame (sliceFrames.frameAt).
   isSnapToVoxelCenters: true,
@@ -155,6 +167,8 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationIsDrawnFromCenter: true,
   // ROI area as cornerstone reports it: the outline's, not a voxel count.
   annotationAreaIsGeometric: true,
+  // Live wire with cornerstone's LivewireScissors edge cost.
+  annotationIsLivewireScissors: true,
   // Cornerstone's handles: a press on any measurement's handle drags it,
   // whatever the tool, with no selecting click first.
   annotationIsHandleGrab: true,
@@ -595,6 +609,12 @@ export function NiivueViewport(props: OhifViewportProps) {
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       addCornerstoneColormaps(nv)
+      // Edit policy, not drawing: it must hold even if the font never loads.
+      // A measurement hidden in the panel cannot be grabbed, nor a hidden or
+      // locked contour segment's shape.
+      nv.annotationIsGrabbable = (a) =>
+        isAnnotationShown(viewportId, a.id) && isContourEditable(a, viewportId)
+      nv.annotationIsCut = isContourCut
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
       // as @niivue/uikit shapes: once the bundled UIKit font resolves we register
@@ -605,15 +625,18 @@ export function NiivueViewport(props: OhifViewportProps) {
         .then((font) => {
           if (disposed) return
           annotationOverlay = new VolumeAnnotationOverlay(font, () =>
-            visibleAnnotationScreenShapes(
-              viewportId,
-              nv.annotationScreenShapes,
+            visibleContourShapes(
+              nv,
+              visibleAnnotationScreenShapes(
+                viewportId,
+                nv.annotationScreenShapes,
+              ),
             ),
           )
           unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
-          // A measurement hidden in the panel cannot be grabbed either.
-          nv.annotationIsGrabbable = (a) => isAnnotationShown(viewportId, a.id)
           nv.isAnnotationDrawn = false
+          // The overlay strokes; core fills (contour segments' fill colour).
+          nv.isAnnotationFillDrawn = true
           // A lens already up must stay above the annotations it magnifies.
           magnifyRef.current?.raise()
         })
@@ -724,7 +747,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     const onAnnotationAdded = (e: Event) => {
       const annotation = (e as CustomEvent<{ annotation: VectorAnnotation }>)
         .detail?.annotation
-      if (!annotation) return
+      // Contour segments are segmentation, not measurements (contourSeg.ts).
+      if (!annotation || isContourAnnotation(annotation)) return
       if (applyDefaultAnnotationText(annotation, nv.annotations)) nv.drawScene()
       // annotationAdded carries the PRE-merge object; nv.annotations holds the
       // post-merge clone (clipper may have changed its polygons). Reflect the
@@ -758,7 +782,8 @@ export function NiivueViewport(props: OhifViewportProps) {
     const onAnnotationChanged = (e: Event) => {
       const detail = (e as CustomEvent<AnnotationChangedDetail>).detail
       // An edit (erase, merge, undo) changes a freehand ROI's stats too.
-      for (const a of nv.annotations) measureFreehand(nv, a)
+      for (const a of nv.annotations)
+        if (!isContourAnnotation(a)) measureFreehand(nv, a)
       if (detail)
         applyNiivueAnnotationDelta(
           viewportId,
@@ -788,6 +813,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       leaveFrames?.()
       unfloorSuv?.()
       unregisterNiivue(viewportId)
+      releaseContourTools(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)
       nv.removeEventListener('locationChange', showWindowLevel)
@@ -836,6 +862,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     // active with nothing overlaid. (No-op on the first load — nothing to clear
     // yet.)
     releaseImportedRows(viewportId)
+    parkContours(viewportId)
     nv.clearAnnotations()
     let baseInstalled = (_: boolean) => {}
     baseInstalledRef.current = new Promise((resolve) => {
@@ -939,7 +966,14 @@ export function NiivueViewport(props: OhifViewportProps) {
       // annotation geometry itself has not changed.
       reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
       const entry = getNiivueEntry(viewportId)
-      if (entry) showPaneLabel(entry, servicesManagerRef.current)
+      if (entry) {
+        showPaneLabel(entry, servicesManagerRef.current)
+        // Contours whose pane went (a layout change) come back on this one.
+        adoptContours(entry, {
+          servicesManager: servicesManagerRef.current,
+          extensionManager: props.extensionManager,
+        })
+      }
       // The volume-gated toolbar buttons (Views, Clip, W/L, ...) were evaluated
       // at attach time when no volume was loaded yet, so they came up disabled.
       // Now that the volume is in (esp. after the async dcm2niix conversion),
@@ -1262,8 +1296,14 @@ export function NiivueViewport(props: OhifViewportProps) {
       const tool = svc.getActivePrimaryMouseButtonTool?.(toolGroupId)
       activeOhifToolRef.current = tool
       magnify.setTool(tool)
-      // Labelmap tools paint the pane's drawing (segEdit.ts).
-      if (applySegTool(nv, tool, toolGroupId, props.extensionManager)) return
+      // Labelmap tools paint the pane's drawing (segEdit.ts); contour tools
+      // draw the active contour segment (contourSeg.ts). Each disarms when
+      // the other's tool comes, so both run.
+      if (applySegTool(nv, tool, toolGroupId, props.extensionManager)) {
+        applyContourTool(nv, viewportId, undefined, servicesManager)
+        return
+      }
+      if (applyContourTool(nv, viewportId, tool, servicesManager)) return
       // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
       // etc.); the master gate must be on for a left-drag to draw. Every other
       // tool turns the gate off and maps to a left-drag mode instead.
@@ -1395,7 +1435,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       />
       <DisplayMenu
         viewportId={viewportId}
-        isLoaded={isLoaded && !slideViewRef.current && !isRender}
+        isLoaded={isLoaded && !slideViewRef.current}
         servicesManager={servicesManager}
       />
       <SliceCine

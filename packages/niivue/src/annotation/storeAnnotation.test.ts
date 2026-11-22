@@ -82,3 +82,86 @@ describe('storeAnnotation', () => {
     expect(storeAnnotation([mark], roi, true)).toEqual([roi, mark])
   })
 })
+
+// Contour segmentation: segments are groups; measurements must stay whole.
+describe('storeAnnotation group policy', () => {
+  const inGroup = (a: VectorAnnotation, group: string, label = 1) => ({
+    ...a,
+    group,
+    label,
+  })
+  const area = (a: VectorAnnotation | undefined) =>
+    (a?.polygons ?? []).reduce((sum, p) => {
+      let twice = 0
+      for (let i = 0, j = p.outer.length - 1; i < p.outer.length; j = i++) {
+        const [u, v] = [p.outer[j], p.outer[i]] as [
+          { x: number; y: number },
+          { x: number; y: number },
+        ]
+        twice += u.x * v.y - v.x * u.y
+      }
+      return sum + Math.abs(twice) / 2
+    }, 0)
+
+  test('a shape never cuts or merges another group', () => {
+    const measurement = inGroup(square('m', 0, 10), 'measurements', 2)
+    const stored = storeAnnotation(
+      [measurement],
+      inGroup(square('s', 5, 15), 'seg'),
+      true,
+    )
+    expect(stored[0]).toBe(measurement)
+    expect(stored).toHaveLength(2)
+  })
+
+  test('mergedGroups limits merging to its groups', () => {
+    const a = inGroup(square('a', 0, 10), 'measurements')
+    const stored = storeAnnotation(
+      [a],
+      inGroup(square('b', 5, 15), 'measurements'),
+      true,
+      {
+        mergedGroups: ['seg'],
+      },
+    )
+    expect(stored).toHaveLength(2)
+    const seg = storeAnnotation(
+      [inGroup(a, 'seg')],
+      inGroup(square('b', 5, 15), 'seg'),
+      true,
+      {
+        mergedGroups: ['seg'],
+      },
+    )
+    expect(seg).toHaveLength(1)
+    expect(area(seg[0])).toBeCloseTo(175, 6)
+  })
+
+  test('a locked shape is not cut; the new one is clipped around it', () => {
+    const locked = inGroup(square('locked', 0, 10), 'seg', 2)
+    const stored = storeAnnotation(
+      [locked],
+      inGroup(square('new', 5, 15), 'seg', 1),
+      true,
+      {
+        isEditable: (a) => a.id !== 'locked',
+      },
+    )
+    expect(stored[0]).toBe(locked)
+    expect(area(stored[1])).toBeCloseTo(75, 6)
+  })
+
+  test('a shape isCut refuses overlaps the new one, locked or not', () => {
+    const other = inGroup(square('other', 0, 10), 'seg', 2)
+    for (const isEditable of [() => true, () => false]) {
+      const stored = storeAnnotation(
+        [other],
+        inGroup(square('new', 5, 15), 'seg', 1),
+        true,
+        { isEditable, isCut: () => false },
+      )
+      expect(stored[0]).toBe(other)
+      expect(area(stored[1])).toBeCloseTo(100, 6)
+    }
+  })
+})

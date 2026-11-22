@@ -28,6 +28,8 @@ export type SettingKind =
   | 'vec4'
   /** Three numbers in millimetres, or null. */
   | 'mm-or-null'
+  /** A list of strings, or null. */
+  | 'strings-or-null'
   /** One of NiiVue's numbers, named. */
   | 'enum'
   /** One of a few strings NiiVue takes as they are. */
@@ -406,6 +408,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether ROI area is the outline area rather than its voxel count.',
   ),
   bool(
+    'annotationIsLivewireScissors',
+    "Whether the live wire uses cornerstone's LivewireScissors edge cost.",
+  ),
+  bool(
     'annotationMergesOverlaps',
     'Whether a new annotation is merged with one it overlaps.',
   ),
@@ -413,7 +419,16 @@ export const SETTINGS: readonly Setting[] = [
     'annotationIsClickToPlace',
     'Whether a click, a move and a second click place a two-point shape.',
   ),
+  setting(
+    'annotationMergedGroups',
+    'strings-or-null',
+    'With merging on, the groups whose annotations merge and cut (null: every group).',
+  ),
   bool('isAnnotationDrawn', 'Whether annotations are drawn at all.'),
+  bool(
+    'isAnnotationFillDrawn',
+    'With annotations not drawn, whether their fills still are (under a host overlay).',
+  ),
 
   // Slide (whole-slide) tools
   setting('slideTool', 'choice', 'The slide drawing tool in hand.', {
@@ -671,6 +686,11 @@ export function coerceSetting(setting: Setting, value: unknown): unknown {
       if (!numbers(value) || value.length !== 3)
         throw fail(setting, 'three numbers in millimetres, or null')
       return value.map(Number)
+    case 'strings-or-null':
+      if (value === null) return null
+      if (!Array.isArray(value) || value.some((v) => typeof v !== 'string'))
+        throw fail(setting, 'a list of text, or null')
+      return [...value]
     case 'enum': {
       const table = setting.values as Readonly<Record<string, number>>
       const name = String(value)

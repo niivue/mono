@@ -100,7 +100,8 @@ export function sampled(
   }
 }
 
-const apply = (m: number[], p: ArrayLike<number>, r: number) =>
+/** Row `r` of a 3x4 row-major affine applied to `p`. */
+export const apply = (m: number[], p: ArrayLike<number>, r: number) =>
   (m[r * 4] as number) * (p[0] as number) +
   (m[r * 4 + 1] as number) * (p[1] as number) +
   (m[r * 4 + 2] as number) * (p[2] as number) +

@@ -102,6 +102,17 @@
       "doc": "See {@link AnnotationConfig.isHandleGrab}."
     },
     {
+      "jsName": "annotationIsLivewireScissors",
+      "pyName": "annotation_is_livewire_scissors",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire."
+    },
+    {
       "jsName": "annotationIsVisibleIn3D",
       "pyName": "annotation_is_visible_in_3d",
       "tsType": "boolean",
@@ -111,6 +122,21 @@
       "hasGetter": true,
       "hasSetter": true,
       "doc": null
+    },
+    {
+      "jsName": "annotationMergedGroups",
+      "pyName": "annotation_merged_groups",
+      "tsType": "string[]",
+      "pyTraitlet": {
+        "kind": "List",
+        "elem": {
+          "kind": "Unicode"
+        },
+        "length": null
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": "See {@link AnnotationConfig.mergedGroups}."
     },
     {
       "jsName": "annotationMergesOverlaps",
@@ -598,6 +624,17 @@
     {
       "jsName": "isAnnotationDrawn",
       "pyName": "is_annotation_drawn",
+      "tsType": "boolean",
+      "pyTraitlet": {
+        "kind": "Bool"
+      },
+      "hasGetter": true,
+      "hasSetter": true,
+      "doc": null
+    },
+    {
+      "jsName": "isAnnotationFillDrawn",
+      "pyName": "is_annotation_fill_drawn",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -2281,6 +2318,16 @@
       "returnsDoc": null
     },
     {
+      "jsName": "clearAnnotationHistory",
+      "pyName": "clear_annotation_history",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [],
+      "returns": "void",
+      "doc": "Forget the annotation undo/redo steps: after a load whose shapes earlier\nsteps lack (undoing one would drop them), as loadAnnotationsJSON does.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "clearAnnotations",
       "pyName": "clear_annotations",
       "isAsync": false,
@@ -3667,6 +3714,35 @@
       ],
       "returns": "Promise<void>",
       "doc": "Remove a single volume by index, emitting `volumeRemoved`.",
+      "returnsDoc": null
+    },
+    {
+      "jsName": "replaceAnnotations",
+      "pyName": "replace_annotations",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "ids",
+          "tsType": "readonly string[]",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "added",
+          "tsType": "readonly VectorAnnotation[]",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "isUndoable",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Replace annotations `ids` with `added` as one change (one annotationUndo\nstep when `isUndoable`), as a host's edit of several shapes at once (a\nsegment operation); emits annotationChanged with action 'draw'.",
       "returnsDoc": null
     },
     {

@@ -840,6 +840,11 @@ export type UIConfig = {
    * cursor and selection handles are unaffected. Default true.
    */
   isAnnotationDrawn: boolean
+  /**
+   * With isAnnotationDrawn false, still draw the shapes' fills, under the
+   * external overlay (for one that draws only strokes and labels). Default false.
+   */
+  isAnnotationFillDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
@@ -1555,8 +1560,12 @@ export type NiiVueOptions = {
   annotationIsDrawnFromCenter?: boolean
   /** See AnnotationConfig.isHandleGrab. Default false. */
   annotationIsHandleGrab?: boolean
+  /** See AnnotationConfig.mergedGroups. Default null (every group). */
+  annotationMergedGroups?: string[] | null
   /** See AnnotationConfig.isAreaGeometric. Default false. */
   annotationAreaIsGeometric?: boolean
+  /** See AnnotationConfig.isLivewireScissors. Default false. */
+  annotationIsLivewireScissors?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -2248,12 +2257,24 @@ export type AnnotationConfig = {
    */
   isHandleGrab: boolean
   /**
+   * With mergesOverlaps, the groups whose shapes merge and cut (null: every
+   * group). Merging and cutting stay within the new shape's group either way,
+   * so a host can merge its segment groups and leave its measurements alone.
+   */
+  mergedGroups: string[] | null
+  /**
    * Measured ROI `area` is the outline's own area (exact for rectangles,
    * ellipses and circles), as cornerstone reports it. Default false: the count
    * of voxels whose centres are inside times the voxel area, which steps in
    * whole voxels. Mean/min/max/SD always use those voxels.
    */
   isAreaGeometric: boolean
+  /**
+   * The live wire uses cornerstone's LivewireScissors cost (edge strength,
+   * Laplacian zero crossings and gradient direction, on the slice through the
+   * display window). Default false: the Sobel gradient magnitude alone.
+   */
+  isLivewireScissors: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

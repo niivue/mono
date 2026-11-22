@@ -6,6 +6,7 @@ import type {
 import { useEffect, useState } from 'react'
 import { toCanvas } from './annotationHit'
 import { probeIndex } from './commands'
+import { isContourAnnotation } from './contourSeg'
 import { slideRowTool, slideRowValues } from './slideMeasurements'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
@@ -32,28 +33,30 @@ function anchorOf(nv: NiiVue, a: VectorAnnotation) {
 }
 
 const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
-  nv.annotations.map((a) => {
-    const type = a.shape?.type ?? 'freehand'
-    const values: Row['values'] = { ...a.stats }
-    if (a.stats && !a.stats.length) values.modalityUnit = unit
-    // Cornerstone names a bidirectional's short axis its width.
-    if (a.stats?.shortLength !== undefined) values.width = a.stats.shortLength
-    // Cornerstone's Probe reports the voxel's image index too ("i,j,k").
-    const index = probeIndex(viewportId, a)
-    if (index) values.index = index.join(',')
-    // Cornerstone's CircleROI reports its radius too.
-    if (a.shape && (type === 'circle' || type === 'measureCircle')) {
-      values.radius = Math.abs(a.shape.end.x - a.shape.start.x) / 2
-      values.radiusUnit = 'mm'
-    }
-    return {
-      id: a.id,
-      toolName: ANNOTATION_TO_OHIF[type]?.toolName,
-      label: a.text,
-      anchor: anchorOf(nv, a),
-      values,
-    }
-  })
+  nv.annotations
+    .filter((a) => !isContourAnnotation(a))
+    .map((a) => {
+      const type = a.shape?.type ?? 'freehand'
+      const values: Row['values'] = { ...a.stats }
+      if (a.stats && !a.stats.length) values.modalityUnit = unit
+      // Cornerstone names a bidirectional's short axis its width.
+      if (a.stats?.shortLength !== undefined) values.width = a.stats.shortLength
+      // Cornerstone's Probe reports the voxel's image index too ("i,j,k").
+      const index = probeIndex(viewportId, a)
+      if (index) values.index = index.join(',')
+      // Cornerstone's CircleROI reports its radius too.
+      if (a.shape && (type === 'circle' || type === 'measureCircle')) {
+        values.radius = Math.abs(a.shape.end.x - a.shape.start.x) / 2
+        values.radiusUnit = 'mm'
+      }
+      return {
+        id: a.id,
+        toolName: ANNOTATION_TO_OHIF[type]?.toolName,
+        label: a.text,
+        anchor: anchorOf(nv, a),
+        values,
+      }
+    })
 
 // Slide annotations: values in µm (px without pixel spacing), no anchor.
 const slideSnapshot = (slide: NVSlideAnnotations): Row[] =>

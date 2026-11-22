@@ -234,13 +234,15 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `annotationActiveLabel`, `annotationActiveGroup` | Prop | No | |
 | `annotationBrushRadius` | Prop | No | |
 | `annotationIsErasing` | Prop | No | |
+| `annotationIsLivewireScissors` | Prop | No | Live wire uses cornerstone's LivewireScissors cost |
 | `annotationIsVisibleIn3D` | Prop | No | |
+| `annotationIsGrabbable`, `annotationIsCut` | Prop | No | Host predicates (functions, default `null`): which shapes can be grabbed, erased, merged or cut; which shapes of another label a new shape cuts (false: they overlap). Not saved or serialized |
 | `annotationStyle` | Prop | No | `AnnotationStyle` |
 | `annotationTool` | Prop | No | `AnnotationTool` union |
 | `annotations` | Prop (get) | No | `readonly VectorAnnotation[]` |
 | `selectedAnnotation`, `selectAnnotation(id)` | Prop / Method | No | |
 | `addAnnotation(a)`, `removeAnnotation(id)`, `clearAnnotations()` | Method | No | |
-| `annotationUndo()`, `annotationRedo()` | Method | No | |
+| `annotationUndo()`, `annotationRedo()`, `clearAnnotationHistory()` | Method | No | `clearAnnotationHistory` forgets the steps (after adding loaded shapes earlier steps lack) |
 | `getAnnotationsJSON()` / `loadAnnotationsJSON(json)` | Method | No | Round-trip through Swift |
 
 ## 11. Measurements
@@ -296,7 +298,7 @@ All flat keys; mirrors the prop list above. Grouping (from source):
 - **Mesh**: all §8 props.
 - **Draw**: all §9 props (except methods).
 - **Interaction**: all §12 props (except methods).
-- **Annotation**: all §10 props (except methods).
+- **Annotation**: all §10 props (except methods and the predicates).
 
 ## 14. Fonts, Colormaps, Matcaps
 

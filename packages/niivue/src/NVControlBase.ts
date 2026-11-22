@@ -1652,6 +1652,19 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * With isAnnotationDrawn false, still draw the shapes' fills, under an
+   * external overlay that draws only strokes and labels.
+   */
+  get isAnnotationFillDrawn(): boolean {
+    return this.model.ui.isAnnotationFillDrawn
+  }
+  set isAnnotationFillDrawn(v: boolean) {
+    this.model.ui.isAnnotationFillDrawn = v
+    this.emit('change', { property: 'isAnnotationFillDrawn', value: v })
+    this.drawScene()
+  }
+
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }
@@ -2821,11 +2834,29 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * False for a shape a press must not grab, resize or select (e.g. one an
-   * overlay hides). A function, so not a saved setting.
+   * False for a shape a press must not grab, resize or select, and that no
+   * merge, cut or erase may change (one an overlay hides, a locked segment).
+   * A function, so not a saved setting.
    */
   annotationIsGrabbable: ((annotation: VectorAnnotation) => boolean) | null =
     null
+
+  /**
+   * False for a shape of another label that a new shape in its group overlaps
+   * without cutting (segments that may overlap). A function, so not a saved
+   * setting.
+   */
+  annotationIsCut: ((annotation: VectorAnnotation) => boolean) | null = null
+
+  get annotationMergedGroups(): string[] | null {
+    return this.model.annotation.mergedGroups
+  }
+
+  /** See {@link AnnotationConfig.mergedGroups}. */
+  set annotationMergedGroups(v: string[] | null) {
+    this.model.annotation.mergedGroups = v
+    this.emit('change', { property: 'annotationMergedGroups', value: v })
+  }
 
   get annotationIsHandleGrab(): boolean {
     return this.model.annotation.isHandleGrab
@@ -2845,6 +2876,16 @@ export default class NiiVue extends EventTarget {
   set annotationAreaIsGeometric(v: boolean) {
     this.model.annotation.isAreaGeometric = v
     this.emit('change', { property: 'annotationAreaIsGeometric', value: v })
+  }
+
+  get annotationIsLivewireScissors(): boolean {
+    return this.model.annotation.isLivewireScissors
+  }
+
+  /** See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire. */
+  set annotationIsLivewireScissors(v: boolean) {
+    this.model.annotation.isLivewireScissors = v
+    this.emit('change', { property: 'annotationIsLivewireScissors', value: v })
   }
 
   get annotationMergesOverlaps(): boolean {
@@ -3073,6 +3114,37 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
+  /**
+   * Replace annotations `ids` with `added` as one change (one annotationUndo
+   * step when `isUndoable`), as a host's edit of several shapes at once (a
+   * segment operation); emits annotationChanged with action 'draw'.
+   */
+  replaceAnnotations(
+    ids: readonly string[],
+    added: readonly VectorAnnotation[],
+    isUndoable = false,
+  ): void {
+    const drop = new Set(ids)
+    const removed = this.model.annotations
+      .filter((a) => drop.has(a.id))
+      .map((a) => a.id)
+    if (removed.length === 0 && added.length === 0) return
+    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
+    this.model.annotations = [
+      ...this.model.annotations.filter((a) => !drop.has(a.id)),
+      ...added,
+    ]
+    if (drop.has(this.selectedAnnotation ?? ''))
+      this.model._annotationSelection = null
+    this.emit('annotationChanged', {
+      action: 'draw',
+      added: added.map((a) => a.id),
+      updated: [],
+      removed,
+    })
+    this.drawScene()
+  }
+
   clearAnnotations(): void {
     const removed = this.model.annotations.map((a) => a.id)
     this.model.annotations.length = 0
@@ -3133,6 +3205,16 @@ export default class NiiVue extends EventTarget {
   private _reselectAfterRestore(restored: VectorAnnotation[]): void {
     const kept = restored.find((a) => a.id === this.selectedAnnotation)
     this.model._annotationSelection = kept ? getAnnotationSelection(kept) : null
+  }
+
+  /**
+   * Forget the annotation undo/redo steps: after a load whose shapes earlier
+   * steps lack (undoing one would drop them), as loadAnnotationsJSON does.
+   */
+  clearAnnotationHistory(): void {
+    this._annotationUndoStack.clear()
+    // A drag under way would push its pre-load snapshot when it ends.
+    this._resizeUndoSnapshot = null
   }
 
   annotationUndo(): void {

@@ -287,10 +287,17 @@ export default niivueMode({
   id,
   routeName: modeInstance.routeName,
   layout: {
-    // ponytail: no contour panel; NiiVue has no contour segmentation tools.
-    rightPanels: [cornerstone.labelMapSegmentationPanel, tracked.measurements],
+    rightPanels: [
+      cornerstone.labelMapSegmentationPanel,
+      cornerstone.contourSegmentationPanel,
+      tracked.measurements,
+    ],
   },
-  modeCustomizations: { 'panelSegmentation.disableEditing': false },
+  // A hydrated RTSTRUCT loads as editable contours, as OHIF's segmentation mode.
+  modeCustomizations: {
+    'panelSegmentation.disableEditing': false,
+    'niivue.rtstructAsContours': true,
+  },
   // A server that reports no modalities (IDC's proxy) leaves basic's check
   // with '' and hides the mode; the viewer opens any study then.
   isValidMode(args) {

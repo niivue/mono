@@ -168,6 +168,9 @@ export function useOutputStack(
           ? e.clientY
           : undefined
     }
+    const onUp = () => {
+      dragY = undefined
+    }
     const onMove = (e: PointerEvent) => {
       // On a multi-slice output core's own slice drag steps: not twice.
       if (dragY === undefined || !(e.buttons & 1) || !isSingle()) return
@@ -179,6 +182,7 @@ export function useOutputStack(
     canvas.addEventListener('wheel', onWheel, { capture: true, passive: false })
     canvas.addEventListener('pointerdown', onDown, { capture: true })
     canvas.addEventListener('pointermove', onMove, { capture: true })
+    canvas.addEventListener('pointerup', onUp, { capture: true })
     updateNiivueViewport(viewportId, {
       outputFrames: outputs.flatMap((o) =>
         o.sliceFrames ? [o.sliceFrames] : [],
@@ -198,6 +202,7 @@ export function useOutputStack(
       cancelled = true
       canvas.removeEventListener('wheel', onWheel, { capture: true })
       canvas.removeEventListener('pointerdown', onDown, { capture: true })
+      canvas.removeEventListener('pointerup', onUp, { capture: true })
       canvas.removeEventListener('pointermove', onMove, { capture: true })
       updateNiivueViewport(viewportId, {
         switchToInstance: undefined,

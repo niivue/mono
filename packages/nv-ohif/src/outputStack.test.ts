@@ -614,7 +614,7 @@ test('the wheel moves through unmapped slices without switching', async () => {
 // one image per pointer event, however many 4 px steps it crossed, and steps
 // taken while a switch loads must carry on from it.
 test('a StackScroll drag steps by distance, not by event count', async () => {
-  const end = async (moves: number[]) => {
+  const end = async (moves: number[], released = false) => {
     const sf = (sop: string) => ({
       origin: [0, 0, 0] as [number, number, number],
       normal: [0, 0, 1] as [number, number, number],
@@ -669,6 +669,7 @@ test('a StackScroll drag steps by distance, not by event count', async () => {
         Object.assign(new Event(type), { button: 0, buttons: 1, clientY }),
       )
     pointer('pointerdown', 0)
+    if (released) pointer('pointerup', 0)
     for (const y of moves) pointer('pointermove', y)
     await new Promise((r) => setTimeout(r, 0))
     cleanup?.()
@@ -679,4 +680,6 @@ test('a StackScroll drag steps by distance, not by event count', async () => {
   expect([await end([12]), await end([4, 8, 12]), await end([20, 16])]).toEqual(
     ['D', 'D', 'C'],
   )
+  // Review of #876: a press entering after a release does not scroll.
+  expect(await end([8], true)).toBe('A')
 })

@@ -65,3 +65,16 @@ test('drawShapeFill: drawingChanged reports a box holding every painted voxel', 
   nv.drawUndo()
   expect(details[1]).toEqual({ action: 'undo' })
 })
+
+test('markDrawDirty: an off-volume point grows the box from its clamped voxel', async () => {
+  const nv = new NiiVue({ backend: 'webgl2' })
+  await nv.loadVolumes([{ url: devImageUrl('volumes/hippo.nii.gz') }])
+  nv.createEmptyDrawing()
+  const details: DrawingChangedDetail[] = []
+  nv.addEventListener('drawingChanged', (e) => details.push(e.detail))
+  // The pen clamps x=-2 to 0 and a radius-1 pen there paints x 0..1.
+  nv.markDrawDirty(-2, 3, 3, 1)
+  nv._emitDrawingChanged('update', true)
+  expect(details[0].box?.min[0]).toBe(0)
+  expect(details[0].box?.max[0]).toBe(1)
+})

@@ -66,7 +66,7 @@ import {
   validateDrawingDimensions,
 } from '@/drawing/drawingManager'
 import { drawingSliceToSVG } from '@/drawing/drawingSvg'
-import { drawShapeFill } from '@/drawing/penTool'
+import { clampToDimension, drawShapeFill } from '@/drawing/penTool'
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import { drawUndo, setDrawingBitmap } from '@/drawing/undo'
 import { clampVoxelBox, growVoxelBox, type VoxelBox } from '@/drawing/voxelBox'
@@ -7899,6 +7899,13 @@ export default class NiiVue extends EventTarget {
    */
   markDrawDirty(x: number, y: number, z: number, radius = 0): void {
     const r = Math.max(0, Math.ceil(radius))
+    // The pen clamps an off-volume point to the edge, so grow the box from there.
+    const dims = this.model.drawingVolume?.dimsRAS
+    if (dims) {
+      x = clampToDimension(x, dims[1])
+      y = clampToDimension(y, dims[2])
+      z = clampToDimension(z, dims[3])
+    }
     this._drawDirtyBox = growVoxelBox(this._drawDirtyBox, x, y, z, r)
     this._drawChangeBox = growVoxelBox(this._drawChangeBox, x, y, z, r)
   }

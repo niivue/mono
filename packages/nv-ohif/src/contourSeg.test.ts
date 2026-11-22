@@ -444,6 +444,52 @@ test('each pane styles a segmentation by its own active segmentation', () => {
   for (const v of shapes.keys()) unregisterNiivue(v)
 })
 
+// Review of #878: a mirror added later kept the owner pane's style.
+test('a mirror added later takes its own pane style', () => {
+  const { style, active, modified, servicesManager, extensionManager } =
+    ohifHarness()
+  style.fillAlphaInactive = 0.1
+  const owner: VectorAnnotation[] = []
+  registerNiivue('lateOwner', Object.assign(fakePane(), { annotations: owner }))
+  updateNiivueViewport('lateOwner', {
+    displaySets: [{ displaySetInstanceUID: 'late' }] as never,
+  })
+  const params = { servicesManager, extensionManager } as never
+  const id = createContourSegmentation(
+    getNiivueEntry('lateOwner') as never,
+    params,
+  ) as string
+  owner.push({
+    id: 'late1',
+    group: contourGroup(id),
+    label: 1,
+    sliceType: 0,
+    slicePosition: 0,
+    polygons: [],
+  } as unknown as VectorAnnotation)
+  modified(id)
+  const mirror: VectorAnnotation[] = []
+  registerNiivue(
+    'lateMirror',
+    Object.assign(fakePane(), {
+      annotations: mirror,
+      replaceAnnotations: (_: string[], add: VectorAnnotation[]) =>
+        mirror.push(...add),
+      clearAnnotationHistory() {},
+    }),
+  )
+  updateNiivueViewport('lateMirror', {
+    displaySets: [{ displaySetInstanceUID: 'late' }] as never,
+  })
+  active.set('lateMirror', 'other')
+  adoptContours(getNiivueEntry('lateMirror') as never, params)
+  expect([
+    owner[0]?.style?.fillColor[3],
+    mirror[0]?.style?.fillColor[3],
+  ]).toEqual([0.5, 0.1])
+  for (const v of ['lateOwner', 'lateMirror']) unregisterNiivue(v)
+})
+
 // Review of #875: a segment deleted while its contours were parked came back
 // on adoption, since no sync was running to drop its shapes.
 test('a segment deleted while parked stays deleted on adoption', () => {

@@ -189,4 +189,11 @@ test('an undrawable ROI past the 255 cap is not a truncation', () => {
     255,
     255,
   ])
+  // One the contours cannot hold past the cap is dropped, not a fallback.
+  const tilted = {
+    ROIName: 'Tilted',
+    contourPoints: [onPlane(4, square(0, 20), 1)],
+  }
+  const t = rtContourShapes(grid, [...rois, tilted], 'rt')
+  expect([t?.truncated, t?.segments.length]).toEqual([true, 255])
 })

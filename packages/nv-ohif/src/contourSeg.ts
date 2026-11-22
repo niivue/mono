@@ -80,6 +80,7 @@ interface ContourSegmentation {
   styles: Map<string, PaneStyle>
   /** Regenerate interpolated contours (when the switch is on). */
   interpolate(): void
+  restyle(): void
   /** Re-read the panel's state into every pane. */
   sync(): void
   /** Mirror this segmentation on another pane showing its series. */
@@ -185,6 +186,8 @@ function replicate(segmentationId: string, from: NiiVue, delta?: Delta): void {
   } finally {
     replicating = false
   }
+  // Copies (and a Combine's result) carry their source shape's style.
+  c.restyle()
 }
 
 /** `entry` shows the segmentation's series too: mirror it there. */
@@ -539,6 +542,11 @@ export function reshowContourSegmentation(
   if (!c) return parked.has(segmentationId)
   const cst = cornerstoneSegmentation(extensionManager)
   const specifier = { segmentationId, type: CONTOUR }
+  const held =
+    viewportId === c.viewportId ||
+    !!mirrors.get(segmentationId)?.has(viewportId)
+  // Another series' pane: the shapes sit on c.source's grid, nothing shows here.
+  if (!held) return true
   if (cst && !cst.state.getSegmentationRepresentation(viewportId, specifier)) {
     addRepresentation(cst, viewportId, segmentationId, c.lutIndex, CONTOUR)
     cst.triggerSegmentationEvents.triggerSegmentationModified(segmentationId)
@@ -585,6 +593,7 @@ function startContourSync(
     rows: new Map(),
     styles: new Map(),
     interpolate: () => {},
+    restyle: () => {},
     sync: () => {},
     mirrorTo: (entry) => addMirror(entry, segmentationId, cst, service),
     stop: () => {},
@@ -719,6 +728,7 @@ function startContourSync(
     }
   }
   c.sync = sync
+  c.restyle = restyle
   const { EVENTS } = service
   const subscriptions = [
     EVENTS.SEGMENTATION_MODIFIED,

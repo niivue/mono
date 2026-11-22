@@ -13,6 +13,7 @@ import {
   createContourSegmentation,
   parkContours,
   releaseContourTools,
+  reshowContourSegmentation,
 } from './contourSeg'
 import {
   getNiivueEntry,
@@ -149,6 +150,7 @@ function ohifHarness() {
   }
   return {
     segs,
+    reps,
     removedLuts,
     style,
     active,
@@ -541,4 +543,59 @@ test('a segment deleted while parked stays deleted on adoption', () => {
     nv.annotations.filter((a) => a.group === group).map((a) => a.label),
   ).toEqual([1])
   unregisterNiivue('park')
+})
+
+// Review of #875: a Combine result copies its first operand's style, so a
+// hidden segment's alpha 0 landed on a visible one when voxel counts held.
+test("an edit restyles shapes carrying another segment's style", () => {
+  const { modified, servicesManager, extensionManager } = ohifHarness()
+  const owner: VectorAnnotation[] = []
+  const nv = Object.assign(fakePane(), { annotations: owner })
+  registerNiivue('restyle', nv)
+  updateNiivueViewport('restyle', {
+    displaySets: [{ displaySetInstanceUID: 'restyle' }] as never,
+  })
+  const id = createContourSegmentation(
+    getNiivueEntry('restyle') as never,
+    { servicesManager, extensionManager } as never,
+  ) as string
+  modified(id)
+  // Counted once, so the edit below leaves the voxel counts as they were.
+  nv.dispatchEvent(new CustomEvent('annotationAdded'))
+  owner.push({
+    id: 'copied',
+    group: contourGroup(id),
+    label: 1,
+    sliceType: 0,
+    slicePosition: 0,
+    polygons: [],
+    style: { fillColor: [1, 0, 0, 0] },
+  } as unknown as VectorAnnotation)
+  nv.dispatchEvent(new CustomEvent('annotationAdded'))
+  expect(owner[0]?.style?.fillColor[3]).toBe(0.5)
+  unregisterNiivue('restyle')
+})
+
+// Review of #877: re-showing a live RTSTRUCT in a pane of another series added
+// a contour representation with no shapes behind it.
+test('re-showing a contour segmentation on another series adds nothing', () => {
+  const { reps, servicesManager, extensionManager } = ohifHarness()
+  for (const [v, series] of [
+    ['reOwner', 'reA'],
+    ['reOther', 'reB'],
+  ]) {
+    registerNiivue(v as string, fakePane())
+    updateNiivueViewport(v as string, {
+      displaySets: [{ displaySetInstanceUID: series }] as never,
+    })
+  }
+  const id = createContourSegmentation(
+    getNiivueEntry('reOwner') as never,
+    { servicesManager, extensionManager } as never,
+  ) as string
+  expect(
+    reshowContourSegmentation(id, 'reOther', extensionManager as never),
+  ).toBe(true)
+  expect(reps.has(`reOther:${id}`)).toBe(false)
+  for (const v of ['reOwner', 'reOther']) unregisterNiivue(v)
 })

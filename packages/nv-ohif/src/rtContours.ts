@@ -95,7 +95,7 @@ export function rtContourShapes(
   const segments: PanelSegment[] = []
   const shapes: VectorAnnotation[] = []
   let truncated = false
-  for (const roi of rois) {
+  nextRoi: for (const roi of rois) {
     const { contours, xor } = roiContours(roi)
     if (!contours.length) continue
     const value = segments.length + 1
@@ -149,6 +149,11 @@ export function rtContourShapes(
         // A ring the drawing shows nothing for (a line, or one with
         // decimal-string noise and no reliable plane) does not reject the set.
         if (!rasterizeContours(grid.dims, lps2vox, [lps], xor).count) continue
+        // Past the last slot it is a dropped ROI, not a reason to reject the set.
+        if (segments.length === 255) {
+          truncated = true
+          break nextRoi
+        }
         return null
       }
       const sliceType = SLICE_DEPTH.indexOf(d)

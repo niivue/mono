@@ -490,7 +490,8 @@ export function adoptContours(
   if (!cst || !service) return
   for (const [id, p] of [...parked]) {
     if (p.source !== source) continue
-    if (!cst.state.getSegmentation(id)) {
+    const segmentation = cst.state.getSegmentation(id)
+    if (!segmentation) {
       parked.delete(id)
       cst.state.removeColorLUT(p.lutIndex)
       continue
@@ -507,7 +508,9 @@ export function adoptContours(
     )
     if (entry.nv.sliceType !== want && better) continue
     parked.delete(id)
-    entry.nv.replaceAnnotations([], p.shapes, false)
+    // A segment deleted while parked had no sync to drop its shapes.
+    const shapes = p.shapes.filter((a) => `${a.label}` in segmentation.segments)
+    entry.nv.replaceAnnotations([], shapes, false)
     entry.nv.clearAnnotationHistory()
     addRepresentation(cst, entry.viewportId, id, p.lutIndex, CONTOUR)
     attach(entry, id, cst, service, p.lutIndex, extensionManager)

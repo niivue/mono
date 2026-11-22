@@ -111,7 +111,7 @@ export type LogicalOperation = 'union' | 'difference' | 'intersection'
 
 /**
  * OHIF's Combine Contours: segment `a` op segment `b` into segment `result`
- * (a or b, replaced, or a new segment), slice by slice.
+ * (replaced, whichever it is), slice by slice.
  */
 export function combineSegments(
   nv: NiiVue,
@@ -121,19 +121,15 @@ export function combineSegments(
   result: number,
   op: LogicalOperation,
 ): void {
-  const removed: VectorAnnotation[] = []
+  const group = contourGroup(segmentationId)
+  const removed = nv.annotations.filter(
+    (s) => s.group === group && s.label === result,
+  )
   const added: VectorAnnotation[] = []
-  for (const slice of slicesOf(
-    nv,
-    contourGroup(segmentationId),
-    a,
-    b,
-  ).values()) {
+  for (const slice of slicesOf(nv, group, a, b).values()) {
     const template = slice.a[0] ?? slice.b[0]
     if (!template) continue
     const out = polygonBoolean(op, polygons(slice.a), polygons(slice.b))
-    if (result === a) removed.push(...slice.a)
-    else if (result === b) removed.push(...slice.b)
     added.push(...shape(template, result, out))
   }
   nv.replaceAnnotations(

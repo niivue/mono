@@ -633,5 +633,9 @@ test('a segment hidden only in a mirror is hidden there only', () => {
   expect(
     [...shapes.values()].map((list) => list[0]?.style?.fillColor[3]),
   ).toEqual([0.5, 0])
+  // Core strokes too when the overlay's font never loads.
+  expect(
+    [...shapes.values()].map((list) => list[0]?.style?.strokeColor[3]),
+  ).toEqual([1, 0])
   for (const v of shapes.keys()) unregisterNiivue(v)
 })

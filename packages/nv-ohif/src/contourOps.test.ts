@@ -101,3 +101,29 @@ test('combineSegments into segment b replaces b', () => {
     6,
   )
 })
+
+// Review of #875: combining into a third segment kept its old shapes.
+test('combineSegments into a third segment replaces it', () => {
+  const group = contourGroup('s')
+  const square = (id: string, label: number) =>
+    ({
+      id,
+      group,
+      label,
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [{ outer: squareRing(1), holes: [] }],
+    }) as unknown as VectorAnnotation
+  let shapes = [square('a', 1), square('b', 2), square('c', 3)]
+  const nv = {
+    volumes: [],
+    get annotations() {
+      return shapes
+    },
+    replaceAnnotations(ids: string[], added: VectorAnnotation[]) {
+      shapes = [...shapes.filter((a) => !ids.includes(a.id)), ...added]
+    },
+  } as unknown as NiiVue
+  combineSegments(nv, 's', 1, 2, 3, 'union')
+  expect(shapes.filter((a) => a.label === 3)).toHaveLength(1)
+})

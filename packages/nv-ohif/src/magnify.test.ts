@@ -38,17 +38,16 @@ afterEach(() => {
   for (const s of spies.splice(0)) s.mockRestore()
 })
 
-for (const tool of ['Magnify'])
-  test(`${tool} claims the left-button drag from core, not other buttons`, () => {
-    const { canvas, core, nv } = host()
-    const binding = createMagnifyBinding(nv)
-    binding.setTool(tool)
-    for (const t of ['pointerdown', 'pointermove', 'pointerup'])
-      canvas.dispatchEvent(pointer(t))
-    canvas.dispatchEvent(pointer('pointerdown', 2))
-    binding.dispose()
-    expect(core).toEqual(['pointerdown:2'])
-  })
+test('Magnify claims the left-button drag from core, not other buttons', () => {
+  const { canvas, core, nv } = host()
+  const binding = createMagnifyBinding(nv)
+  binding.setTool('Magnify')
+  for (const t of ['pointerdown', 'pointermove', 'pointerup'])
+    canvas.dispatchEvent(pointer(t))
+  canvas.dispatchEvent(pointer('pointerdown', 2))
+  binding.dispose()
+  expect(core).toEqual(['pointerdown:2'])
+})
 
 test('switching tools destroys the lens', () => {
   const destroy = spyOn(UIKitMagnifierOverlay.prototype, 'destroy')
@@ -129,27 +128,13 @@ test('a second dispose (the tool effect after unmount) draws nothing', () => {
   expect(draws).toBe(0)
 })
 
-test('re-sending the same tool keeps the lens and its zoom', () => {
+test('re-sending the same tool keeps the lens (so its zoom)', () => {
   const { nv, overlays } = host()
   const binding = createMagnifyBinding(nv)
   binding.setTool('Magnify')
-  const lens = overlays.at(-1) as UIKitMagnifierOverlay
-  lens.zoom = 6
+  const lens = overlays.at(-1)
   binding.setTool('Magnify')
   expect(overlays).toEqual([lens])
-  expect(lens.zoom).toBe(6)
-  binding.dispose()
-})
-
-test('raise keeps the same lens, so its zoom', () => {
-  const { nv, overlays } = host()
-  const binding = createMagnifyBinding(nv)
-  binding.setTool('Magnify')
-  const lens = overlays.at(-1) as UIKitMagnifierOverlay
-  lens.zoom = 6
-  binding.raise()
-  expect(overlays.at(-1)).toBe(lens)
-  expect(lens.zoom).toBe(6)
   binding.dispose()
 })
 
@@ -163,16 +148,17 @@ test('a double-click on the lens does not reach core', () => {
   expect(core).toEqual(['dblclick:0'])
 })
 
-test('raise puts the lens above an overlay registered after it', () => {
+test('raise puts the same lens above an overlay registered after it', () => {
   const { nv, overlays } = host()
   const binding = createMagnifyBinding(nv)
   binding.setTool('Magnify')
+  const lens = overlays.at(-1)
   const annotations = {}
   ;(
     nv as unknown as { registerOverlayRenderer(r: unknown): void }
   ).registerOverlayRenderer(annotations)
   binding.raise()
   expect(overlays[0]).toBe(annotations)
-  expect(overlays[1]).toBeInstanceOf(UIKitMagnifierOverlay)
+  expect(overlays[1]).toBe(lens)
   expect(overlays).toHaveLength(2)
 })

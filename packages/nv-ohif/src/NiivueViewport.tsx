@@ -106,6 +106,7 @@ import {
   applySegTool,
   drawingValueAtMM,
   ohifPenSize,
+  onToolModeChanged,
   toolMode,
 } from './segEdit'
 import { PaneCorner, useHydratePrompt } from './segHydration'
@@ -1350,8 +1351,16 @@ export function NiivueViewport(props: OhifViewportProps) {
     apply()
     const event = svc.EVENTS?.PRIMARY_TOOL_ACTIVATED
     const sub = event ? svc.subscribe?.(event, apply) : undefined
+    // Toggling AdvancedMagnify off while Passive activates no tool.
+    const offMode = onToolModeChanged(
+      props.extensionManager,
+      toolGroupId ?? 'default',
+      'AdvancedMagnify',
+      (m: string | undefined) => glasses.setMode(m),
+    )
     return () => {
       sub?.unsubscribe?.()
+      offMode()
       magnify.dispose()
       magnifyRef.current = null
       glasses.dispose()

@@ -1,3 +1,25 @@
+## 1.0.0-rc.233 (2026-11-22)
+
+### Features
+
+- **nv-ohif:** contour interpolation, mirror panes, StackScroll over outputs, livewire scissors ([be361b4c](https://github.com/niivue/mono/commit/be361b4c))
+- **nv-ohif:** contour segmentation on NiiVue panes (OHIF contour panel, tools, ops, Sculptor) ([4c20570c](https://github.com/niivue/mono/commit/4c20570c))
+
+### Fixes
+
+- **nv-ohif): each pane hides contour segments by its own representation; docs(nv-mcp:** edit_annotations replace ([bb513cd1](https://github.com/niivue/mono/commit/bb513cd1))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.236
+- Updated uikit to 1.0.0-rc.235
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.232 (2026-11-21)
 
 ### Updated Dependencies

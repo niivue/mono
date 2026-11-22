@@ -1,3 +1,39 @@
+## 1.0.0-rc.272 (2026-11-22)
+
+### Features
+
+- **nv-ohif:** hydrated RTSTRUCT as editable contours; contour segments overlap ([39aed1e3](https://github.com/niivue/mono/commit/39aed1e3))
+- **nv-ohif:** contour interpolation, mirror panes, StackScroll over outputs, livewire scissors ([be361b4c](https://github.com/niivue/mono/commit/be361b4c))
+- **nv-ohif:** contour segmentation on NiiVue panes (OHIF contour panel, tools, ops, Sculptor) ([4c20570c](https://github.com/niivue/mono/commit/4c20570c))
+
+### Fixes
+
+- **nv-ohif:** Combine replaces any result segment; a hidden contour has no core stroke ([24575010](https://github.com/niivue/mono/commit/24575010))
+- **nv-ohif): each pane hides contour segments by its own representation; docs(nv-mcp:** edit_annotations replace ([bb513cd1](https://github.com/niivue/mono/commit/bb513cd1))
+- **nv-ohif:** restyle after every contour edit; re-show only on held panes; cap before RTSTRUCT fallback ([#875](https://github.com/niivue/mono/issues/875), [#877](https://github.com/niivue/mono/issues/877), [#878](https://github.com/niivue/mono/issues/878))
+- **nv-ohif:** flag RTSTRUCT truncation only for a drawable ROI past the cap ([f8fc05be](https://github.com/niivue/mono/commit/f8fc05be))
+- **nv-ohif:** a StackScroll drag ends on pointer release ([efe0e0aa](https://github.com/niivue/mono/commit/efe0e0aa))
+- **nv-ohif:** an RTSTRUCT ROI wholly off the image is not a contour segment ([59105aa4](https://github.com/niivue/mono/commit/59105aa4))
+- **nv-ohif:** combining contours into segment B replaces B's shapes ([5b481327](https://github.com/niivue/mono/commit/5b481327))
+- **nv-ohif:** style a new mirror by its own pane, and honour inactive render flags on generated contours ([7b6ba1fb](https://github.com/niivue/mono/commit/7b6ba1fb))
+- **nv-ohif:** install the annotation grab policy before the font loads ([c784574c](https://github.com/niivue/mono/commit/c784574c))
+- **nv-ohif:** install the contour cut policy before the annotation font loads ([c9bed2e9](https://github.com/niivue/mono/commit/c9bed2e9))
+- **nv-ohif:** drop a segment deleted while its contours were parked ([68a209e4](https://github.com/niivue/mono/commit/68a209e4))
+- review follow-ups for #875-#877 ([#875](https://github.com/niivue/mono/issues/875), [#877](https://github.com/niivue/mono/issues/877))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.236
+- Updated nv-ext-drawing to 1.0.0-rc.238
+- Updated nv-ext-tile to 1.0.0-rc.145
+- Updated uikit to 1.0.0-rc.235
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.271 (2026-11-21)
 
 ### Updated Dependencies

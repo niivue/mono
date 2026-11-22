@@ -1,3 +1,21 @@
+## 1.0.0-rc.236 (2026-11-22)
+
+### Features
+
+- **nv-ohif:** hydrated RTSTRUCT as editable contours; contour segments overlap ([39aed1e3](https://github.com/niivue/mono/commit/39aed1e3))
+- **nv-ohif:** contour interpolation, mirror panes, StackScroll over outputs, livewire scissors ([be361b4c](https://github.com/niivue/mono/commit/be361b4c))
+- **nv-ohif:** contour segmentation on NiiVue panes (OHIF contour panel, tools, ops, Sculptor) ([4c20570c](https://github.com/niivue/mono/commit/4c20570c))
+
+### Fixes
+
+- review follow-ups for #875-#877 ([#875](https://github.com/niivue/mono/issues/875), [#877](https://github.com/niivue/mono/issues/877))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.235 (2026-11-21)
 
 ### Fixes

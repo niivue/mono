@@ -2,10 +2,12 @@ import { expect, test } from 'bun:test'
 import NiiVue, { type VectorAnnotation } from '@niivue/niivue'
 import {
   addContourSegmentation,
+  adoptContours,
   applyContourTool,
   contourGroup,
   contourRois,
   createContourSegmentation,
+  parkContours,
 } from './contourSeg'
 import {
   getNiivueEntry,
@@ -79,12 +81,14 @@ function ohifHarness() {
       new CustomEvent('modified', { detail: { segmentationId } }),
     )
   const cst = {
+    removeSegmentationRepresentations() {},
     addSegmentations: (input: { segmentationId: string; config: Seg }[]) => {
       for (const x of input) segs.set(x.segmentationId, x.config)
     },
     state: {
       getSegmentation: (id: string) => segs.get(id),
       getColorLUT: () => undefined,
+      removeColorLUT() {},
       getSegmentationRepresentation: (
         v: string,
         s: { segmentationId: string },
@@ -253,4 +257,57 @@ test('undo in a mirror cannot drop contours loaded before it', () => {
     ),
   ).toEqual([1, 1])
   for (const v of ['owner', 'mirror']) unregisterNiivue(v)
+})
+
+// Review of #875: a segment deleted while its contours were parked came back
+// on adoption, since no sync was running to drop its shapes.
+test('a segment deleted while parked stays deleted on adoption', () => {
+  const { segs, servicesManager, extensionManager } = ohifHarness()
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  registerNiivue('park', nv)
+  updateNiivueViewport('park', {
+    displaySets: [{ displaySetInstanceUID: 'parked' }] as never,
+  })
+  const params = { servicesManager, extensionManager } as never
+  const group = contourGroup('pk')
+  const shape = (label: number): VectorAnnotation => ({
+    id: `s${label}`,
+    group,
+    label,
+    sliceType: 0,
+    slicePosition: 0,
+    polygons: [
+      {
+        outer: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 0, y: 1 },
+        ],
+        holes: [],
+      },
+    ],
+    style: {
+      fillColor: [0, 0, 0, 0],
+      strokeColor: [1, 1, 1, 1],
+      strokeWidth: 1,
+    },
+  })
+  addContourSegmentation(getNiivueEntry('park') as never, params, {
+    segmentationId: 'pk',
+    label: 'PK',
+    segments: [
+      { value: 1, label: 'A' },
+      { value: 2, label: 'B' },
+    ],
+    shapes: [shape(1), shape(2)],
+  })
+  parkContours('park')
+  nv.removeAnnotations(nv.annotations.map((a) => a.id))
+  delete segs.get('pk')?.segments[2]
+  adoptContours(getNiivueEntry('park') as never, params)
+  expect(
+    nv.annotations.filter((a) => a.group === group).map((a) => a.label),
+  ).toEqual([1])
+  unregisterNiivue('park')
 })

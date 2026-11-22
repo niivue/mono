@@ -128,6 +128,15 @@ export function rtContourShapes(
           hi[k] = Math.max(hi[k] as number, v)
         }
       }
+      // Wholly off the grid: no voxels, as the drawing (and no segment slot).
+      if (
+        [0, 1, 2].some(
+          (k) =>
+            (hi[k] as number) < -0.5 ||
+            (lo[k] as number) > (grid.dims[k] as number) - 0.5,
+        )
+      )
+        continue
       // The rasterizer's plane: the axis the ring faces most (its vector
       // area, so a ring narrower than a voxel keeps its plane), else the one
       // it varies least along.

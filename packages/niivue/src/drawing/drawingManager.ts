@@ -71,11 +71,11 @@ export function addUndoBitmap(
     const bmp = decodeRLE(newDrawUndoBitmaps[currentIndex], len)
     newDrawBitmap = new Uint8Array(drawBitmap)
     for (let i = 0; i < len; i++) {
-      if (bmp[i] > 0) {
+      if (bmp[i] > 0 && newDrawBitmap[i] !== bmp[i]) {
         newDrawBitmap[i] = bmp[i]
+        needsRefresh = true
       }
     }
-    needsRefresh = true
   }
 
   let newCurrentIndex = currentIndex + 1

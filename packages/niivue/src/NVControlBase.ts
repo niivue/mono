@@ -7817,6 +7817,17 @@ export default class NiiVue extends EventTarget {
     this.currentDrawUndoBitmap = undoResult.currentDrawUndoBitmap
     if (undoResult.drawBitmap)
       setDrawingBitmap(drawingVol, undoResult.drawBitmap)
+    // Non-overwriting mode restores the prior snapshot's voxels anywhere, so
+    // the next upload and drawingChanged must cover the whole drawing.
+    if (undoResult.needsRefresh) {
+      const d = drawingVol.dimsRAS as number[]
+      const all = (): VoxelBox => ({
+        min: [0, 0, 0],
+        max: [d[1] - 1, d[2] - 1, d[3] - 1],
+      })
+      this._drawDirtyBox = all()
+      this._drawChangeBox = all()
+    }
   }
 
   /**

@@ -279,6 +279,18 @@ The label and value sit on the scene, so they draw with a halo outline:
 null, which picks black or white for contrast with `textColor`) in
 `SliderStyle`.
 
+`marks` takes inclusive `[first, last]` value ranges and draws them as bars
+under the track (`markColor`, `markHeight` in `SliderStyle`). To flag the
+slices that hold drawing, `UIKitDrawingSlices` keeps per-slice painted counts
+from NiiVue's `drawingChanged`, rescanning only the event's `box` when it has
+one:
+
+```ts
+const slices = new UIKitDrawingSlices(nv, () =>
+  sliders.updateSlider('axial', { marks: slices.runs(2) }),
+)
+```
+
 ## Menus
 
 `UIKitMenuOverlay` draws menu buttons (a label with a chevron) and, when one is

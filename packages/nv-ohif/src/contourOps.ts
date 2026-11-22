@@ -111,7 +111,7 @@ export type LogicalOperation = 'union' | 'difference' | 'intersection'
 
 /**
  * OHIF's Combine Contours: segment `a` op segment `b` into segment `result`
- * (a itself, or a new segment), slice by slice.
+ * (a or b, replaced, or a new segment), slice by slice.
  */
 export function combineSegments(
   nv: NiiVue,
@@ -133,6 +133,7 @@ export function combineSegments(
     if (!template) continue
     const out = polygonBoolean(op, polygons(slice.a), polygons(slice.b))
     if (result === a) removed.push(...slice.a)
+    else if (result === b) removed.push(...slice.b)
     added.push(...shape(template, result, out))
   }
   nv.replaceAnnotations(

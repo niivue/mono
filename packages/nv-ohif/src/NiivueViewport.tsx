@@ -609,7 +609,11 @@ export function NiivueViewport(props: OhifViewportProps) {
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       addCornerstoneColormaps(nv)
-      // Overlap policy, not drawing: it must hold even if the font never loads.
+      // Edit policy, not drawing: it must hold even if the font never loads.
+      // A measurement hidden in the panel cannot be grabbed, nor a hidden or
+      // locked contour segment's shape.
+      nv.annotationIsGrabbable = (a) =>
+        isAnnotationShown(viewportId, a.id) && isContourEditable(a, viewportId)
       nv.annotationIsCut = isContourCut
       // Measurements + ROIs are vector annotations (Length is the measureLine
       // tool, unified with the ellipse/rect/circle/arrow/spline tools). Draw them
@@ -630,11 +634,6 @@ export function NiivueViewport(props: OhifViewportProps) {
             ),
           )
           unregisterAnnotation = nv.registerOverlayRenderer(annotationOverlay)
-          // A measurement hidden in the panel cannot be grabbed either.
-          // So can a hidden or locked contour segment's shape.
-          nv.annotationIsGrabbable = (a) =>
-            isAnnotationShown(viewportId, a.id) &&
-            isContourEditable(a, viewportId)
           nv.isAnnotationDrawn = false
           // The overlay strokes; core fills (contour segments' fill colour).
           nv.isAnnotationFillDrawn = true

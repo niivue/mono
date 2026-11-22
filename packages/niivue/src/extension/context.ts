@@ -152,7 +152,7 @@ export class NVExtensionContext {
       update(bitmap: Uint8Array): void {
         ;(drawVol.img as Uint8Array).set(bitmap)
         nv.refreshDrawing()
-        nv.emit('drawingChanged', { action: 'update' })
+        nv._emitDrawingChanged('update')
       },
 
       pushUndo(): void {

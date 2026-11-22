@@ -224,6 +224,24 @@ describe('buildSlider', () => {
     expect(geo.lines[2].data[0]).toBe(291)
   })
 
+  it('draws marks under the track, beneath the thumb', () => {
+    const spec = {
+      ...SPEC,
+      marks: [
+        [0, 0],
+        [5, 10],
+      ] as const,
+    }
+    const l = layoutSlider(spec, STYLE, METRICS)
+    const geo = buildSlider(spec, STYLE, l, IDLE)
+    const [single, run] = geo.rects.slice(2, 4).map((r) => r.data)
+    expect([single[0], single[2]]).toEqual([108, 2]) // a lone value is 2 px wide
+    expect([run[0], run[2]]).toEqual([200, 91])
+    expect(single[1]).toBeCloseTo(l.rail.cy + STYLE.trackHeight / 2 + 1, 4)
+    expectColor(single.slice(8, 12), STYLE.markColor)
+    expectColor(geo.rects[4].data.slice(8, 12), STYLE.thumbFill)
+  })
+
   it('tints the thumb for hover and drag, and rings it when focused', () => {
     const hover = buildSlider(SPEC, STYLE, layout, {
       ...IDLE,

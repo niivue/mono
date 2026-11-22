@@ -61,6 +61,8 @@ export type {
 export { DEFAULT_DIALOG_STYLE } from './dialog'
 export type { UIKitDialogOverlayOptions } from './dialogOverlay'
 export { UIKitDialogOverlay } from './dialogOverlay'
+export type { UIKitDrawingSource } from './drawingSlices'
+export { UIKitDrawingSlices } from './drawingSlices'
 export type {
   FilePickerLayout,
   FilePickerSpec,

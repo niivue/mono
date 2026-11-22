@@ -69,6 +69,7 @@ import { drawingSliceToSVG } from '@/drawing/drawingSvg'
 import { drawShapeFill } from '@/drawing/penTool'
 import { decodeRLE, encodeRLE } from '@/drawing/rle'
 import { drawUndo, setDrawingBitmap } from '@/drawing/undo'
+import { clampVoxelBox, growVoxelBox, type VoxelBox } from '@/drawing/voxelBox'
 import { NVExtensionContext } from '@/extension/context'
 import { type LogLevel, log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
@@ -106,6 +107,7 @@ import * as NVDocument from '@/NVDocument'
 import type {
   ChunkStreamCounts,
   ChunkStreamDetail,
+  DrawingChangedDetail,
   GraphRangeChangeDetail,
   NVEventListener,
   NVEventMap,
@@ -684,10 +686,9 @@ export default class NiiVue extends EventTarget {
   // Inclusive voxel AABB of pen strokes since the last drawing flush. When set
   // on a chunked background, only the chunks overlapping it are re-uploaded;
   // null means a full upload (first build, undo, clear, colormap change, …).
-  _drawDirtyBox: {
-    min: [number, number, number]
-    max: [number, number, number]
-  } | null = null
+  _drawDirtyBox: VoxelBox | null = null
+  // The same box since the last `drawingChanged`, reported with it.
+  _drawChangeBox: VoxelBox | null = null
   // Bumped by every drawing install or close, so a loadDrawing still reading
   // its file when another drawing call lands gives way to it.
   _drawingGeneration = 0
@@ -6823,7 +6824,7 @@ export default class NiiVue extends EventTarget {
       this._slideLastRasterPt = [rx, ry]
     }
     this._refreshSlideAnnotation()
-    this.emit('drawingChanged', { action: 'stroke' })
+    this._emitDrawingChanged('stroke')
     return true
   }
 
@@ -6837,7 +6838,7 @@ export default class NiiVue extends EventTarget {
         this.model.draw.isFillOverwriting,
       )
       this._refreshSlideAnnotation()
-      this.emit('drawingChanged', { action: 'stroke' })
+      this._emitDrawingChanged('stroke')
     }
     if (
       this._slideTool === 'vector' &&
@@ -7760,7 +7761,7 @@ export default class NiiVue extends EventTarget {
     this.currentDrawUndoBitmap = cleared.currentDrawUndoBitmap
     this.model.draw.isEnabled = true
     this._drawLut = null
-    this.emit('drawingChanged', { action: 'create' })
+    this._emitDrawingChanged('create')
     this.refreshDrawing()
   }
 
@@ -7789,7 +7790,7 @@ export default class NiiVue extends EventTarget {
     this._drawPenFillPts = []
     this._drawLut = null
     this.view?.clearDrawing()
-    this.emit('drawingChanged', { action: 'close' })
+    this._emitDrawingChanged('close')
     this.drawScene()
   }
 
@@ -7859,7 +7860,7 @@ export default class NiiVue extends EventTarget {
     )
     this.markDrawDirty(Math.round(b[0]), Math.round(b[1]), Math.round(b[2]))
     this.refreshDrawing()
-    this.emit('drawingChanged', { action: 'update' })
+    this._emitDrawingChanged('update', true)
     return true
   }
 
@@ -7873,7 +7874,7 @@ export default class NiiVue extends EventTarget {
     if (result) {
       setDrawingBitmap(this.model.drawingVolume, result.drawBitmap)
       this.currentDrawUndoBitmap = result.currentDrawUndoBitmap
-      this.emit('drawingChanged', { action: 'undo' })
+      this._emitDrawingChanged('undo')
       this.refreshDrawing()
     }
   }
@@ -7898,17 +7899,27 @@ export default class NiiVue extends EventTarget {
    */
   markDrawDirty(x: number, y: number, z: number, radius = 0): void {
     const r = Math.max(0, Math.ceil(radius))
-    const lo: [number, number, number] = [x - r, y - r, z - r]
-    const hi: [number, number, number] = [x + r, y + r, z + r]
-    if (!this._drawDirtyBox) {
-      this._drawDirtyBox = { min: lo, max: hi }
-      return
-    }
-    const b = this._drawDirtyBox
-    for (let i = 0; i < 3; i++) {
-      b.min[i] = Math.min(b.min[i], lo[i])
-      b.max[i] = Math.max(b.max[i], hi[i])
-    }
+    this._drawDirtyBox = growVoxelBox(this._drawDirtyBox, x, y, z, r)
+    this._drawChangeBox = growVoxelBox(this._drawChangeBox, x, y, z, r)
+  }
+
+  /**
+   * Emit `drawingChanged`. With `bounded`, the edit's voxels all went through
+   * `markDrawDirty`, so it carries the box grown since the last emit, clamped
+   * to the drawing; without, any voxel may have changed and it carries none.
+   */
+  _emitDrawingChanged(
+    action: DrawingChangedDetail['action'],
+    bounded = false,
+  ): void {
+    const box = this._drawChangeBox
+    this._drawChangeBox = null
+    const dims = this.model.drawingVolume?.dimsRAS
+    const clamped =
+      bounded && box && dims
+        ? clampVoxelBox(box, [dims[1], dims[2], dims[3]])
+        : null
+    this.emit('drawingChanged', clamped ? { action, box: clamped } : { action })
   }
 
   /** Perform the actual bitmap→RGBA conversion and GPU texture upload. Called from drawScene RAF. */
@@ -8060,7 +8071,7 @@ export default class NiiVue extends EventTarget {
       this.model.draw.isEnabled = true
       this._drawLut = null
       this.refreshDrawing()
-      this.emit('drawingChanged', { action: 'load' })
+      this._emitDrawingChanged('load')
       return true
     } catch (err) {
       log.warn('loadDrawing failed:', err)
@@ -8822,7 +8833,7 @@ export default class NiiVue extends EventTarget {
         this.model.draw.isEnabled = true
         this._drawLut = null
         this.refreshDrawing()
-        this.emit('drawingChanged', { action: 'load' })
+        this._emitDrawingChanged('load')
       }
     }
 

@@ -31,6 +31,9 @@ export interface SliderStyle {
   tickColor: RGBA
   tickLength: number
   tickWidth: number
+  /** Bars under the track (drawn for the spec's `marks`). */
+  markColor: RGBA
+  markHeight: number
   textColor: RGBA
   disabledTextColor: RGBA
   /** Label and value em size. */
@@ -63,6 +66,8 @@ export const DEFAULT_SLIDER_STYLE: SliderStyle = {
   tickColor: [0.6, 0.66, 0.78, 0.8],
   tickLength: 4,
   tickWidth: 1,
+  markColor: [1, 0.25, 0.25, 1],
+  markHeight: 4,
   textColor: [1, 1, 1, 1],
   disabledTextColor: [1, 1, 1, 0.45],
   textSizePx: 14,
@@ -98,6 +103,11 @@ export interface SliderSpec {
   format?: (value: number) => string
   /** Spacing of tick marks under the track, in value units. Omit for none. */
   tickStep?: number
+  /**
+   * Inclusive value ranges to flag under the track, such as the slices that
+   * hold a drawing (see `UIKitDrawingSlices`). The thumb draws over them.
+   */
+  marks?: readonly (readonly [number, number])[]
   /** A disabled slider draws dimmed and ignores input. Default true. */
   enabled?: boolean
   /** Per-slider overrides of the overlay's default style. */
@@ -288,6 +298,7 @@ export function scaleSlider(
       thumbBorderWidth: style.thumbBorderWidth * k,
       tickLength: style.tickLength * k,
       tickWidth: style.tickWidth * k,
+      markHeight: style.markHeight * k,
       textSizePx: style.textSizePx * k,
       textOutlineWidth: style.textOutlineWidth * k,
       labelGap: style.labelGap * k,
@@ -330,7 +341,7 @@ export function sliderContains(
 
 /**
  * The draw data for one slider in one visual state: the track with its active
- * part filled to the thumb, tick marks, the thumb (with a focus ring when
+ * part filled to the thumb, tick marks, value marks, the thumb (with a focus ring when
  * focused), and the label row.
  */
 export function buildSlider(
@@ -393,6 +404,25 @@ export function buildSlider(
           style.tickWidth,
           dim(style.tickColor),
         ),
+      )
+    }
+  }
+
+  if (spec.marks?.length) {
+    // Each mark is at least 2 px wide, so a single value still shows.
+    const top = layout.rail.cy + style.trackHeight / 2 + 1
+    for (const [a, b] of spec.marks) {
+      const xa = sliderThumbX(layout, spec, a)
+      const xb = sliderThumbX(layout, spec, b)
+      const width = Math.max(2, Math.abs(xb - xa))
+      rects.push(
+        buildRect({
+          x: (xa + xb) / 2 - width / 2,
+          y: top,
+          width,
+          height: style.markHeight,
+          fill: dim(style.markColor),
+        }),
       )
     }
   }

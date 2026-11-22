@@ -1,3 +1,20 @@
+## 1.0.0-rc.237 (2026-11-22)
+
+### Features
+
+- **niivue,uikit:** report the changed voxel box on drawingChanged ([17cc184e](https://github.com/niivue/mono/commit/17cc184e))
+
+### Fixes
+
+- **niivue:** widen the change box when non-overwrite undo prep restores voxels ([1d4dbf31](https://github.com/niivue/mono/commit/1d4dbf31))
+- **niivue:** grow the drawing change box from the clamped pen point ([ed1205c3](https://github.com/niivue/mono/commit/ed1205c3))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.236 (2026-11-22)
 
 ### Features

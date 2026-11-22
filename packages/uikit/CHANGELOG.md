@@ -1,3 +1,25 @@
+## 1.0.0-rc.236 (2026-11-22)
+
+### Features
+
+- **niivue,uikit:** report the changed voxel box on drawingChanged ([17cc184e](https://github.com/niivue/mono/commit/17cc184e))
+
+### Fixes
+
+- **niivue:** widen the change box when non-overwrite undo prep restores voxels ([1d4dbf31](https://github.com/niivue/mono/commit/1d4dbf31))
+- **uikit:** reserve slider height for value marks ([a3426065](https://github.com/niivue/mono/commit/a3426065))
+- **uikit:** recount drawing slices on any dims change; one bit per voxel ([#879](https://github.com/niivue/mono/issues/879))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.237
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.235 (2026-11-22)
 
 ### Updated Dependencies

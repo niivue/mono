@@ -165,3 +165,28 @@ test('an ROI wholly outside the grid is not a segment', () => {
   expect(r?.segments.map((s) => [s.label, s.value])).toEqual([['Inside', 1]])
   expect(r?.shapes).toHaveLength(1)
 })
+
+// Review of #877: the 255 cap flagged truncation before knowing whether the
+// next ROI draws anything.
+test('an undrawable ROI past the 255 cap is not a truncation', () => {
+  const inside = { contourPoints: [onPlane(4, square(0, 20))] }
+  const rois = Array.from({ length: 255 }, (_, i) => ({
+    ROIName: `R${i}`,
+    ...inside,
+  }))
+  const beyond = {
+    ROIName: 'Beyond',
+    contourPoints: [onPlane(20, square(0, 20))],
+  }
+  expect(rtContourShapes(grid, [...rois, beyond], 'rt')?.truncated).toBe(false)
+  const r = rtContourShapes(
+    grid,
+    [...rois, { ROIName: 'More', ...inside }],
+    'rt',
+  )
+  expect([r?.truncated, r?.segments.length, r?.shapes.length]).toEqual([
+    true,
+    255,
+    255,
+  ])
+})

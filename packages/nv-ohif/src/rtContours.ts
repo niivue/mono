@@ -98,10 +98,6 @@ export function rtContourShapes(
   for (const roi of rois) {
     const { contours, xor } = roiContours(roi)
     if (!contours.length) continue
-    if (segments.length === 255) {
-      truncated = true
-      break
-    }
     const value = segments.length + 1
     // Rings by plane: slice type and voxel depth.
     const planes = new Map<
@@ -189,7 +185,14 @@ export function rtContourShapes(
       })
     }
     // As the drawing: an ROI with nothing to show is not a segment.
-    if (shapes.length > first) segments.push(roiSegment(roi, value))
+    if (shapes.length === first) continue
+    // Only a drawable ROI past the last slot is a dropped one.
+    if (segments.length === 255) {
+      shapes.length = first
+      truncated = true
+      break
+    }
+    segments.push(roiSegment(roi, value))
   }
   return { segments, shapes, truncated }
 }

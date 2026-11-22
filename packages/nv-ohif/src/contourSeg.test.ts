@@ -599,3 +599,39 @@ test('re-showing a contour segmentation on another series adds nothing', () => {
   expect(reps.has(`reOther:${id}`)).toBe(false)
   for (const v of ['reOwner', 'reOther']) unregisterNiivue(v)
 })
+
+// Review of #878: a mirror took segment visibility from the owner's representation.
+test('a segment hidden only in a mirror is hidden there only', () => {
+  const { reps, modified, servicesManager, extensionManager } = ohifHarness()
+  const shapes = new Map<string, VectorAnnotation[]>()
+  for (const v of ['visOwner', 'visMirror']) {
+    const annotations: VectorAnnotation[] = []
+    shapes.set(v, annotations)
+    registerNiivue(v, Object.assign(fakePane(), { annotations }))
+    updateNiivueViewport(v, {
+      displaySets: [{ displaySetInstanceUID: 'vis' }] as never,
+    })
+  }
+  const id = createContourSegmentation(
+    getNiivueEntry('visOwner') as never,
+    { servicesManager, extensionManager } as never,
+  ) as string
+  for (const list of shapes.values())
+    list.push({
+      id: crypto.randomUUID(),
+      group: contourGroup(id),
+      label: 1,
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [],
+    } as unknown as VectorAnnotation)
+  reps.set(`visMirror:${id}`, {
+    visible: true,
+    segments: { 1: { visible: false } },
+  } as never)
+  modified(id)
+  expect(
+    [...shapes.values()].map((list) => list[0]?.style?.fillColor[3]),
+  ).toEqual([0.5, 0])
+  for (const v of shapes.keys()) unregisterNiivue(v)
+})

@@ -242,6 +242,17 @@ describe('buildSlider', () => {
     expectColor(geo.rects[4].data.slice(8, 12), STYLE.thumbFill)
   })
 
+  it('reserves height for tall marks, even with none yet', () => {
+    const style = { ...STYLE, markHeight: 30 }
+    const spec = { ...SPEC, marks: [[2, 3]] as const }
+    const l = layoutSlider(spec, style, METRICS)
+    const mark = buildSlider(spec, style, l, IDLE).rects[2].data
+    expect(mark[1] + mark[3]).toBeLessThanOrEqual(l.y + l.height)
+    expect(layoutSlider({ ...SPEC, marks: [] }, style, METRICS).height).toBe(
+      l.height,
+    )
+  })
+
   it('tints the thumb for hover and drag, and rings it when focused', () => {
     const hover = buildSlider(SPEC, STYLE, layout, {
       ...IDLE,

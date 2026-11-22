@@ -261,6 +261,10 @@ export function layoutSlider(
   const rowH = Math.max(style.thumbSize, style.trackHeight)
   const ticksH =
     spec.tickStep !== undefined && spec.tickStep > 0 ? style.tickLength + 2 : 0
+  // Reserve marks even when empty, so the slider keeps its height as they come and go.
+  const marksH = spec.marks
+    ? Math.max(0, style.trackHeight / 2 + 1 + style.markHeight - rowH / 2)
+    : 0
   const cy = rowTop + rowH / 2
   const inset = style.thumbSize / 2
   const x0 = spec.x + inset
@@ -269,7 +273,7 @@ export function layoutSlider(
     x: spec.x,
     y: spec.y,
     width: spec.width,
-    height: Math.ceil(rowTop - spec.y + rowH + ticksH),
+    height: Math.ceil(rowTop - spec.y + rowH + Math.max(ticksH, marksH)),
     track: {
       x: spec.x,
       y: cy - style.trackHeight / 2,

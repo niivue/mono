@@ -133,6 +133,7 @@ export function combineSegments(
     if (!template) continue
     const out = polygonBoolean(op, polygons(slice.a), polygons(slice.b))
     if (result === a) removed.push(...slice.a)
+    else if (result === b) removed.push(...slice.b)
     added.push(...shape(template, result, out))
   }
   nv.replaceAnnotations(

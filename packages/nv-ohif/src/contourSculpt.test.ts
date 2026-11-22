@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
+import type { VectorAnnotation } from '@niivue/niivue'
 import { ringArea } from './contourOps'
-import { sculptRadius, sculptRing } from './contourSculpt'
+import { resolveSculpted, sculptRadius, sculptRing } from './contourSculpt'
 
 // A circle 2 mm outside a square's edge pushes in the circular segment it
 // overlaps; the pushed arc is filled in, not a chord between moved points.
@@ -47,4 +48,30 @@ test('sculptRing spacing floor bounds a tiny circle', () => {
   expect(sculptRing(ring, { x: 99.995, y: 50 }, 0.01, 1).length).toBeLessThan(
     500,
   )
+})
+
+// Review of #875: a shape the brush swallows collapses onto the circle; it
+// was kept with no polygons.
+test('a shape the brush swallows goes, the rest stay', () => {
+  const shape = (id: string, x: number) =>
+    ({
+      id,
+      polygons: [
+        {
+          outer: sculptRing(
+            [
+              { x, y: 0 },
+              { x: x + 0.5, y: 0 },
+              { x, y: 0.5 },
+            ],
+            { x: 0, y: 0 },
+            10,
+          ),
+          holes: [],
+        },
+      ],
+    }) as unknown as VectorAnnotation
+  expect(
+    resolveSculpted([shape('in', 5), shape('out', 20)]).map((a) => a.id),
+  ).toEqual(['out'])
 })

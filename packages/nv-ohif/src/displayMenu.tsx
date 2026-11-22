@@ -234,7 +234,7 @@ export function DisplayMenu({
             font: 'inherit',
           }}
         >
-          W/L
+          {nv.sliceType === SLICE_TYPE.RENDER ? '3D' : 'W/L'}
         </button>
       ) : null}
     </div>

@@ -339,7 +339,9 @@ Emscripten `exit()` throw inside the Web Worker) and are excluded.
   label per ROI. Hydrated in the NiiVue Viewer it is an editable contour
   segmentation, one segment per ROI (`rtContours.ts`, as OHIF's segmentation
   mode); loading clears the pane's (and mirror panes') undo history, so undo
-  cannot remove the loaded shapes. Other modes (TMTV), and a structure set with
+  cannot remove the loaded shapes. A pane that a non-empty contour
+  segmentation mirrors into (hand-drawn ones too) loses its earlier annotation
+  undo steps the same way. Other modes (TMTV), and a structure set with
   any contour more than 0.25 voxel off the base's slice planes, keep the drawing.
 - **SR.** Not converted: a hydrated SR's measurement rows become NiiVue
   annotations (see [Workflows](#workflows)).

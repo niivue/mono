@@ -443,10 +443,13 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
         }
       },
     },
-    /** A pane's drawing (RAS order) with its RAS voxel -> mm affine, as niivueGetLabelmap. */
+    /**
+     * A pane's drawing (RAS order) with its RAS voxel -> mm affine, as
+     * niivueGetLabelmap. For a contour segmentation pass segmentIndex:
+     * segments overlap, so without it a shared voxel holds the last one drawn.
+     */
     niivueGetDrawing: {
       commandFn: (opts: Options = {}) => {
-        // A contour segmentation's voxels (one segment: they may overlap).
         const contour = contourPane(opts.segmentationId)
         const nv =
           contour?.nv ??

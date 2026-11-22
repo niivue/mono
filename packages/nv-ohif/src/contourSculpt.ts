@@ -125,6 +125,17 @@ export function sculptRadius(
 }
 
 /**
+ * A pushed outline can cross itself: each shape resolved to a region once. One
+ * the brush swallowed collapses onto its circle (no area) and goes.
+ */
+export const resolveSculpted = (
+  shapes: readonly VectorAnnotation[],
+): VectorAnnotation[] =>
+  shapes
+    .map((a) => ({ ...a, polygons: polygonBoolean('union', a.polygons, []) }))
+    .filter((a) => a.polygons.length > 0)
+
+/**
  * Sculpt with `nv`'s pointer while `target()` names a segment (its group and
  * label). Returns the cleanup.
  */
@@ -260,15 +271,11 @@ export function startSculpt(
   }
   const up = () => {
     if (!drag) return
-    // A pushed outline can cross itself: resolve it to a region once.
     const pushed = shapes()
     if (!drag.first)
       nv.replaceAnnotations(
         pushed.map((a) => a.id),
-        pushed.map((a) => ({
-          ...a,
-          polygons: polygonBoolean('union', a.polygons, []),
-        })),
+        resolveSculpted(pushed),
         false,
       )
     drag = undefined

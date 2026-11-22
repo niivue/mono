@@ -133,8 +133,12 @@ export const isInterpolated = (
  */
 export function interpolateGroup(nv: NiiVue, group: string): boolean {
   const mine = nv.annotations.filter((a) => a.group === group)
-  const old = mine.filter(isInterpolated)
   const keys = mine.filter((a) => !isInterpolated(a))
+  const slice = (a: VectorAnnotation) =>
+    `${a.label}:${a.sliceType}:${Math.round(voxelDepth(nv, a) ?? Number.NaN)}`
+  const keySlices = new Set(keys.map(slice))
+  // As cornerstone: a generated contour stays once its slice gains a key.
+  const old = mine.filter((a) => isInterpolated(a) && !keySlices.has(slice(a)))
   // Key contours per (label, orientation), by voxel depth.
   const series = new Map<string, Map<number, VectorAnnotation[]>>()
   for (const a of keys) {

@@ -96,3 +96,48 @@ test('an edited in-between is a key until undone', () => {
   run()
   expect([area(), isInterpolated(mid())]).toEqual([1225, true])
 })
+
+// Review of #876: a manual contour drawn on a slice that already held a
+// generated one deleted the generated one; cornerstone keeps both (a slice
+// with two contours is not interpolated).
+test('a generated contour stays beside a manual one on its slice', () => {
+  const ring = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ]
+  const shape = (id: string, z: number) =>
+    ({
+      id,
+      group: 'seg:m',
+      label: 1,
+      sliceType: 0,
+      slicePosition: z,
+      anchorMM: [0, 0, z],
+      polygons: [{ outer: ring, holes: [] }],
+    }) as unknown as VectorAnnotation
+  const nv = {
+    annotations: [shape('k0', 0), shape('k2', 2)],
+    volumes: [
+      {
+        dimsRAS: [3, 64, 64, 3],
+        img2RASstep: [1, 64, 4096],
+        img2RASstart: [0, 0, 0],
+        matRAS: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+      },
+    ],
+    replaceAnnotations(ids: string[], added: VectorAnnotation[]) {
+      nv.annotations = [
+        ...nv.annotations.filter((a) => !ids.includes(a.id)),
+        ...added,
+      ]
+    },
+  }
+  interpolateGroup(nv as unknown as NiiVue, 'seg:m')
+  const generated = nv.annotations.find((a) => a.anchorMM?.[2] === 1)?.id
+  expect(generated).toBeString()
+  nv.annotations.push(shape('manual', 1))
+  interpolateGroup(nv as unknown as NiiVue, 'seg:m')
+  expect(nv.annotations.map((a) => a.id)).toContain(generated as string)
+})

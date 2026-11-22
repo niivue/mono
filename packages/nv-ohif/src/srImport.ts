@@ -25,6 +25,7 @@ import {
   rasToLps,
   reflectedRowUid,
 } from './commands'
+import { measurementStyleOf } from './contourSeg'
 import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
 import { acquisitionSliceType } from './standardCommands'
@@ -100,7 +101,7 @@ function twoLineFromRow(
         angle:
           (Math.atan2(cross, isAngle ? dot : Math.abs(dot)) * 180) / Math.PI,
       }
-  const width = nv.annotationStyle.strokeWidth
+  const width = measurementStyleOf(nv).strokeWidth
   return {
     id: crypto.randomUUID(),
     label: 1,
@@ -112,7 +113,7 @@ function twoLineFromRow(
       ...generateShape('measureLine', a, b, width),
       ...generateShape('measureLine', arm2[0], arm2[1], width),
     ],
-    style: structuredClone(nv.annotationStyle),
+    style: structuredClone(measurementStyleOf(nv)),
     shape: {
       type: isBidirectional
         ? 'measureBidirectional'
@@ -230,7 +231,7 @@ export function annotationFromRow(
     default:
       return undefined
   }
-  const width = nv.annotationStyle.strokeWidth
+  const width = measurementStyleOf(nv).strokeWidth
   const polygons =
     row.toolName && row.toolName in CONTOUR_TOOLS
       ? [{ outer: pts, holes: [] }]
@@ -245,7 +246,7 @@ export function annotationFromRow(
     slicePosition: depth,
     anchorMM: tool === 'measurePoint' ? anchorMM : undefined,
     polygons,
-    style: structuredClone(nv.annotationStyle),
+    style: structuredClone(measurementStyleOf(nv)),
     shape: {
       type: tool,
       start,

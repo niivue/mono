@@ -166,8 +166,9 @@ export function livewireBacktrack(
 export type ScissorsCost = {
   grad: Float32Array
   laplace: Uint8Array
-  gx: Float32Array
-  gy: Float32Array
+  /** Unit gradient per pixel (0 where flat), for the direction term. */
+  ux: Float64Array
+  uy: Float64Array
 }
 
 export function buildScissorsCost(
@@ -194,11 +195,17 @@ export function buildScissorsCost(
       gy[i] = (g[iy] as number) - (g[iy + width] as number)
     }
   const grad = new Float32Array(n)
+  // Float64: the field loop's per-step division, once per pixel instead.
+  const ux = new Float64Array(n)
+  const uy = new Float64Array(n)
   let max = 0
   for (let i = 0; i < n; i++) {
     const m = Math.hypot(gx[i] as number, gy[i] as number)
     grad[i] = m
     if (m > max) max = m
+    const l = m || 1e-100
+    ux[i] = (gx[i] as number) / l
+    uy[i] = (gy[i] as number) / l
   }
   for (let i = 0; i < n; i++) grad[i] = 1 - (grad[i] as number) / (max || 1)
   const laplace = new Uint8Array(n).fill(1)
@@ -222,7 +229,7 @@ export function buildScissorsCost(
         (g[i + 2 * w] as number)
       laplace[i] = lap > 0.33 ? 0 : 1
     }
-  return { grad, laplace, gx, gy }
+  return { grad, laplace, ux, uy }
 }
 
 const TWO_THIRD_PI = 2 / (3 * Math.PI)
@@ -239,7 +246,7 @@ export function livewireFieldScissors(
   seedX: number,
   seedY: number,
 ): Int32Array {
-  const { grad, laplace, gx, gy } = sc
+  const { grad, laplace, ux: unitX, uy: unitY } = sc
   const n = width * height
   const dist = new Float32Array(n).fill(Number.POSITIVE_INFINITY)
   const prev = new Int32Array(n).fill(-1)
@@ -254,9 +261,8 @@ export function livewireFieldScissors(
     done[u] = 1
     const ux = u % width
     const uy = (u - ux) / width
-    const ul = Math.hypot(gx[u] as number, gy[u] as number) || 1e-100
-    const upx = (gx[u] as number) / ul
-    const upy = (gy[u] as number) / ul
+    const upx = unitX[u] as number
+    const upy = unitY[u] as number
     for (let dy = -1; dy <= 1; dy++) {
       const vy = uy + dy
       if (vy < 0 || vy >= height) continue
@@ -267,9 +273,8 @@ export function livewireFieldScissors(
         const v = vy * width + vx
         if (done[v]) continue
         const isAxial = dx === 0 || dy === 0
-        const vl = Math.hypot(gx[v] as number, gy[v] as number) || 1e-100
         let dp = upy * dx - upx * dy
-        let dq = ((gy[v] as number) / vl) * dx - ((gx[v] as number) / vl) * dy
+        let dq = (unitY[v] as number) * dx - (unitX[v] as number) * dy
         if (dp < 0) {
           dp = -dp
           dq = -dq

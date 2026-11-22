@@ -1,11 +1,18 @@
 import { expect, test } from 'bun:test'
-import NiiVue, { type VectorAnnotation } from '@niivue/niivue'
+import NiiVue, {
+  type AnnotationStyle,
+  type VectorAnnotation,
+} from '@niivue/niivue'
 import {
   addContourSegmentation,
+  adoptContours,
   applyContourTool,
   contourGroup,
+  contourPane,
   contourRois,
   createContourSegmentation,
+  parkContours,
+  releaseContourTools,
 } from './contourSeg'
 import {
   getNiivueEntry,
@@ -13,6 +20,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
+import { annotationFromRow } from './srImport'
 
 // A grid tilted 30 degrees about x: one axial voxel plane's mm depth varies
 // with y, so a contour's z must be solved per point, not taken from its anchor.
@@ -73,18 +81,22 @@ function ohifHarness() {
   const reps = new Map<string, { visible: boolean }>()
   const bus = new EventTarget()
   const active = new Map<string, string>()
+  const removedLuts: number[] = []
+  const style: Record<string, number> = {}
   let activeLabel = 1
   const modified = (segmentationId: string) =>
     bus.dispatchEvent(
       new CustomEvent('modified', { detail: { segmentationId } }),
     )
   const cst = {
+    removeSegmentationRepresentations() {},
     addSegmentations: (input: { segmentationId: string; config: Seg }[]) => {
       for (const x of input) segs.set(x.segmentationId, x.config)
     },
     state: {
       getSegmentation: (id: string) => segs.get(id),
       getColorLUT: () => undefined,
+      removeColorLUT: (i: number) => removedLuts.push(i),
       getSegmentationRepresentation: (
         v: string,
         s: { segmentationId: string },
@@ -95,7 +107,7 @@ function ohifHarness() {
         addColorLUT: (_: unknown, i: number) => i,
         getSegmentIndexColor: () => [255, 0, 0, 255],
       },
-      style: { getStyle: () => ({}) },
+      style: { getStyle: () => style },
     },
     defaultSegmentationStateManager: {
       updateState: (f: (s: object) => void) =>
@@ -137,6 +149,9 @@ function ohifHarness() {
   }
   return {
     segs,
+    removedLuts,
+    style,
+    active,
     modified,
     servicesManager,
     extensionManager,
@@ -146,17 +161,19 @@ function ohifHarness() {
   }
 }
 
+const fakePane = () =>
+  Object.assign(new EventTarget(), {
+    canvas: new EventTarget(),
+    annotations: [],
+    volumes: [],
+    drawScene() {},
+    replaceAnnotations() {},
+  }) as unknown as NiiVue
+
 test('a mirror pane follows the active segment and its lock', () => {
   const { segs, modified, servicesManager, extensionManager, setActiveLabel } =
     ohifHarness()
-  const pane = () =>
-    Object.assign(new EventTarget(), {
-      canvas: new EventTarget(),
-      annotations: [],
-      volumes: [],
-      drawScene() {},
-      replaceAnnotations() {},
-    }) as unknown as NiiVue
+  const pane = fakePane
   const owner = pane()
   const mirror = pane()
   for (const [v, nv] of [
@@ -253,4 +270,176 @@ test('undo in a mirror cannot drop contours loaded before it', () => {
     ),
   ).toEqual([1, 1])
   for (const v of ['owner', 'mirror']) unregisterNiivue(v)
+})
+
+// Review of #875: a row adopted while a contour tool was armed took the
+// segment's colour and fill.
+test('a row adopted while a contour tool is armed keeps the measurement style', () => {
+  const { servicesManager, extensionManager } = ohifHarness()
+  const measure: AnnotationStyle = {
+    fillColor: [1, 0, 0, 0],
+    strokeColor: [1, 1, 0, 1],
+    strokeWidth: 1,
+  }
+  const nv = Object.assign(new EventTarget(), {
+    canvas: new EventTarget(),
+    annotations: [],
+    volumes: [{ permRAS: [1, 2, 3] }],
+    annotationStyle: measure,
+    annotationAreaIsGeometric: true,
+    drawScene() {},
+    replaceAnnotations() {},
+  }) as unknown as NiiVue
+  registerNiivue('p', nv)
+  updateNiivueViewport('p', {
+    displaySets: [{ displaySetInstanceUID: 's' }] as never,
+  })
+  createContourSegmentation(
+    getNiivueEntry('p') as never,
+    { servicesManager, extensionManager } as never,
+  )
+  applyContourTool(
+    nv,
+    'p',
+    'PlanarFreehandContourSegmentationTool',
+    servicesManager as never,
+  )
+  expect(nv.annotationStyle).not.toEqual(measure)
+  const row = annotationFromRow(nv, {
+    uid: 'l',
+    toolName: 'Length',
+    points: [
+      [0, 0, 5],
+      [10, 0, 5],
+    ],
+  })
+  expect(row?.style).toEqual(measure)
+  releaseContourTools('p')
+  unregisterNiivue('p')
+})
+
+// Review of #875: deleting a parked segmentation leaked its colour LUT.
+test('a parked segmentation deleted before adoption frees its colour LUT', () => {
+  const { segs, removedLuts, servicesManager, extensionManager } = ohifHarness()
+  registerNiivue('p', fakePane())
+  updateNiivueViewport('p', {
+    displaySets: [{ displaySetInstanceUID: 'lut' }] as never,
+  })
+  const params = { servicesManager, extensionManager } as never
+  const id = createContourSegmentation(
+    getNiivueEntry('p') as never,
+    params,
+  ) as string
+  parkContours('p')
+  expect(removedLuts).toEqual([])
+  segs.delete(id)
+  adoptContours(getNiivueEntry('p') as never, params)
+  expect(removedLuts.length).toBe(1)
+  unregisterNiivue('p')
+})
+
+// Review of #876: a mirror already gone from the registry was picked as heir,
+// so the owner neither handed over nor parked, and the contours were lost.
+test('an owner parks when its only live mirror is unregistered', () => {
+  const { removedLuts, servicesManager, extensionManager } = ohifHarness()
+  for (const v of ['heirOwner', 'heirMirror']) {
+    registerNiivue(v, fakePane())
+    updateNiivueViewport(v, {
+      displaySets: [{ displaySetInstanceUID: 'heir' }] as never,
+    })
+  }
+  const params = { servicesManager, extensionManager } as never
+  createContourSegmentation(getNiivueEntry('heirOwner') as never, params)
+  unregisterNiivue('heirMirror')
+  parkContours('heirOwner')
+  expect(removedLuts).toEqual([])
+  unregisterNiivue('heirOwner')
+})
+
+// Review of #877: an anchored and an unanchored shape on one voxel plane were
+// keyed by voxel index and by mm, so their overlap counted twice.
+test('anchored and unanchored shapes on one plane count shared voxels once', () => {
+  const { servicesManager, extensionManager } = ohifHarness()
+  const ring = [
+    { x: 0, y: 0 },
+    { x: 4, y: 0 },
+    { x: 4, y: 4 },
+    { x: 0, y: 4 },
+  ]
+  // Voxel z 3 is mm z -7: an mm depth is not a voxel index.
+  const matRAS = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -10, 0, 0, 0, 1]
+  const annotations: VectorAnnotation[] = []
+  const nv = Object.assign(fakePane(), {
+    annotations,
+    volumes: [
+      {
+        dimsRAS: [3, 10, 10, 10],
+        pixDimsRAS: [1, 1, 1, 1],
+        img2RASstep: [1, 10, 100],
+        img2RASstart: [0, 0, 0],
+        matRAS,
+      },
+    ],
+  }) as unknown as NiiVue
+  registerNiivue('count', nv)
+  updateNiivueViewport('count', {
+    displaySets: [{ displaySetInstanceUID: 'count' }] as never,
+  })
+  const id = createContourSegmentation(
+    getNiivueEntry('count') as never,
+    { servicesManager, extensionManager } as never,
+  ) as string
+  const shape = (sid: string, anchorMM?: number[]) =>
+    ({
+      id: sid,
+      group: contourGroup(id),
+      label: 1,
+      sliceType: 0,
+      slicePosition: -7,
+      anchorMM,
+      polygons: [{ outer: ring, holes: [] }],
+    }) as unknown as VectorAnnotation
+  const one = shape('one', [0, 0, -7])
+  annotations.push(one)
+  const single = contourPane(id)?.rows()[0]?.count ?? 0
+  expect(single).toBeGreaterThan(0)
+  annotations.push(shape('two'))
+  expect(contourPane(id)?.rows()[0]?.count).toBe(single)
+  unregisterNiivue('count')
+})
+
+// Review of #876: a mirror took the owner's active or inactive style although
+// another segmentation is active on it.
+test('each pane styles a segmentation by its own active segmentation', () => {
+  const { style, active, modified, servicesManager, extensionManager } =
+    ohifHarness()
+  style.fillAlphaInactive = 0.1
+  const shapes = new Map<string, VectorAnnotation[]>()
+  for (const v of ['styleOwner', 'styleMirror']) {
+    const annotations: VectorAnnotation[] = []
+    shapes.set(v, annotations)
+    registerNiivue(v, Object.assign(fakePane(), { annotations }))
+    updateNiivueViewport(v, {
+      displaySets: [{ displaySetInstanceUID: 'style' }] as never,
+    })
+  }
+  const id = createContourSegmentation(
+    getNiivueEntry('styleOwner') as never,
+    { servicesManager, extensionManager } as never,
+  ) as string
+  for (const list of shapes.values())
+    list.push({
+      id: crypto.randomUUID(),
+      group: contourGroup(id),
+      label: 1,
+      sliceType: 0,
+      slicePosition: 0,
+      polygons: [],
+    } as unknown as VectorAnnotation)
+  active.set('styleMirror', 'other')
+  modified(id)
+  expect(
+    [...shapes.values()].map((list) => list[0]?.style?.fillColor[3]),
+  ).toEqual([0.5, 0.1])
+  for (const v of shapes.keys()) unregisterNiivue(v)
 })

@@ -63,6 +63,11 @@ export type SliceTypeChangeDetail = { sliceType: number }
 export type PenValueChangedDetail = { penValue: number }
 export type DrawingChangedDetail = {
   action: 'stroke' | 'create' | 'close' | 'undo' | 'load' | 'update'
+  /**
+   * The inclusive RAS voxel box every voxel this change touched lies in, when
+   * it is known (pen, fill and shape edits). Absent: any voxel may have changed.
+   */
+  box?: { min: [number, number, number]; max: [number, number, number] }
 }
 export type DrawingEnabledDetail = { isEnabled: boolean }
 /** A click-to-segment ("magic wand") fill finished. */

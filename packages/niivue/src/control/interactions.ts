@@ -1248,7 +1248,7 @@ function draw3DOnExplodedBlock(
   ctrl.markDrawDirty(from[0], from[1], from[2], ctrl.model.draw.penSize)
   ctrl.markDrawDirty(voxel[0], voxel[1], voxel[2], ctrl.model.draw.penSize)
   ctrl.refreshDrawing()
-  ctrl.emit('drawingChanged', { action: 'stroke' })
+  ctrl._emitDrawingChanged('stroke', true)
   ctrl._draw3DLastChunk = chunkIndex
   return voxel
 }
@@ -1279,7 +1279,7 @@ function finishFill(
   ctrl.markDrawDirty(result.min[0], result.min[1], result.min[2], 1)
   ctrl.markDrawDirty(result.max[0], result.max[1], result.max[2], 1)
   ctrl.refreshDrawing()
-  ctrl.emit('drawingChanged', { action: 'stroke' })
+  ctrl._emitDrawingChanged('stroke', true)
   return true
 }
 
@@ -2417,7 +2417,7 @@ export function initInteraction(ctrl: NiiVue): void {
         ctrl._drawPenLocation = [NaN, NaN, NaN]
         ctrl._drawPenAxCorSag = -1
         ctrl._drawPenFillPts = []
-        ctrl.emit('drawingChanged', { action: 'stroke' })
+        ctrl._emitDrawingChanged('stroke', true)
       }
       // Finalize resize on mouse-up
       if (ctrl._resizingControlPoint >= 0) {

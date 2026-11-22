@@ -149,3 +149,19 @@ test('RT contours become shapes on the voxel planes, holes and keyholes cut', ()
   )
   expect(between).toBeNull()
 })
+
+// Review of #877: an ROI wholly off the image became a segment (and took one
+// of the 255 slots).
+test('an ROI wholly outside the grid is not a segment', () => {
+  const r = rtContourShapes(
+    grid,
+    [
+      { ROIName: 'Beside', contourPoints: [onPlane(4, square(40, 50))] },
+      { ROIName: 'Beyond', contourPoints: [onPlane(20, square(0, 20))] },
+      { ROIName: 'Inside', contourPoints: [onPlane(4, square(0, 20))] },
+    ],
+    'rt',
+  )
+  expect(r?.segments.map((s) => [s.label, s.value])).toEqual([['Inside', 1]])
+  expect(r?.shapes).toHaveLength(1)
+})

@@ -66,19 +66,24 @@ test('combineSegments with one segment as both operands', () => {
   expect(run('difference')).toBe(0)
 })
 
-// Review of #875: a result into B kept B's old shapes beside the new ones.
-test('combineSegments into segment B replaces its shapes', () => {
+// Review of #875: combining into segment B kept B's old shapes beside the result.
+test('combineSegments into segment b replaces b', () => {
   const group = contourGroup('s')
-  const square = (id: string, label: number) =>
+  const square = (id: string, label: number, dx: number) =>
     ({
       id,
       group,
       label,
       sliceType: 0,
       slicePosition: 0,
-      polygons: [{ outer: squareRing(1), holes: [] }],
+      polygons: [
+        {
+          outer: squareRing(1).map((p) => ({ x: p.x + dx, y: p.y })),
+          holes: [],
+        },
+      ],
     }) as unknown as VectorAnnotation
-  let shapes = [square('a', 1), square('b', 2)]
+  let shapes = [square('a', 1, 0), square('b', 2, 20)]
   const nv = {
     volumes: [],
     get annotations() {
@@ -88,9 +93,11 @@ test('combineSegments into segment B replaces its shapes', () => {
       shapes = [...shapes.filter((a) => !ids.includes(a.id)), ...added]
     },
   } as unknown as NiiVue
-  combineSegments(nv, 's', 1, 2, 2, 'union')
-  expect(shapes.filter((a) => a.label === 2).map((a) => a.id)).not.toContain(
-    'b',
+  combineSegments(nv, 's', 1, 2, 2, 'difference')
+  const b = shapes.filter((a) => a.label === 2)
+  expect(b).toHaveLength(1)
+  expect(b[0]?.polygons.reduce((n, p) => n + ringArea(p.outer), 0)).toBeCloseTo(
+    800,
+    6,
   )
-  expect(shapes.filter((a) => a.label === 2)).toHaveLength(1)
 })

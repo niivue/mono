@@ -111,7 +111,7 @@ export type LogicalOperation = 'union' | 'difference' | 'intersection'
 
 /**
  * OHIF's Combine Contours: segment `a` op segment `b` into segment `result`
- * (a itself, or a new segment), slice by slice.
+ * (a or b, replaced, or a new segment), slice by slice.
  */
 export function combineSegments(
   nv: NiiVue,

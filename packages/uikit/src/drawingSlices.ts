@@ -27,7 +27,7 @@ export class UIKitDrawingSlices {
     new Uint32Array(0),
     new Uint32Array(0),
   ]
-  /** Whether each voxel was painted at the last update, to diff a box against. */
+  /** One bit per voxel: painted at the last update, to diff a box against. */
   private painted = new Uint8Array(0)
   private readonly listener = (evt: CustomEvent<DrawingChangedDetail>) => {
     this.update(evt.detail.box)
@@ -57,27 +57,26 @@ export class UIKitDrawingSlices {
       return
     }
     const [nx, ny, nz] = [d[1], d[2], d[3]]
-    if (
-      !box ||
-      this.painted.length !== img.length ||
-      this.counts[0].length !== nx
-    ) {
-      this.reset(nx, ny, nz)
-      box = { min: [0, 0, 0], max: [nx - 1, ny - 1, nz - 1] }
+    const [cx, cy, cz] = this.counts
+    if (!box || cx.length !== nx || cy.length !== ny || cz.length !== nz) {
+      this.recount(img, nx, ny, nz)
+      return
     }
     const painted = this.painted
-    const [cx, cy, cz] = this.counts
+    const [ax, ay, az] = this.counts
     for (let z = box.min[2]; z <= box.max[2]; z++) {
       for (let y = box.min[1]; y <= box.max[1]; y++) {
         const row = nx * (y + ny * z)
         for (let x = box.min[0]; x <= box.max[0]; x++) {
-          const now = img[row + x] !== 0 ? 1 : 0
-          const delta = now - painted[row + x]
-          if (delta === 0) continue
-          painted[row + x] = now
-          cx[x] += delta
-          cy[y] += delta
-          cz[z] += delta
+          const i = row + x
+          const bit = 1 << (i & 7)
+          const was = painted[i >> 3] & bit
+          if ((img[i] !== 0) === (was !== 0)) continue
+          painted[i >> 3] ^= bit
+          const delta = was ? -1 : 1
+          ax[x] += delta
+          ay[y] += delta
+          az[z] += delta
         }
       }
     }
@@ -99,12 +98,31 @@ export class UIKitDrawingSlices {
     this.nv.removeEventListener('drawingChanged', this.listener)
   }
 
+  /** From scratch: nothing to diff against, so count and set bits only. */
+  private recount(img: ArrayLike<number>, nx: number, ny: number, nz: number) {
+    this.reset(nx, ny, nz)
+    const painted = this.painted
+    const [ax, ay, az] = this.counts
+    let i = 0
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++, i++) {
+          if (img[i] === 0) continue
+          painted[i >> 3] |= 1 << (i & 7)
+          ax[x]++
+          ay[y]++
+          az[z]++
+        }
+      }
+    }
+  }
+
   private reset(nx: number, ny: number, nz: number): void {
     this.counts = [
       new Uint32Array(nx),
       new Uint32Array(ny),
       new Uint32Array(nz),
     ]
-    this.painted = new Uint8Array(nx * ny * nz)
+    this.painted = new Uint8Array(Math.ceil((nx * ny * nz) / 8))
   }
 }

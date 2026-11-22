@@ -46,4 +46,15 @@ describe('UIKitDrawingSlices', () => {
     emit({ action: 'undo' })
     expect(slices.runs(2)).toEqual([[4, 4]])
   })
+  // Review of #879: a new drawing with the same x size and voxel count kept
+  // the old per-slice arrays.
+  test('a drawing of other dims recounts even with a box', () => {
+    const { nv, emit } = source()
+    const slices = new UIKitDrawingSlices(nv)
+    const img = new Uint8Array(60)
+    img[0 + 3 * 4 + 15 * 3] = 1 // (0, 4, 3) on a 3x5x4 grid
+    nv.drawingVolume = { img, dimsRAS: [3, 3, 5, 4] }
+    emit({ action: 'stroke', box: { min: [0, 0, 0], max: [2, 4, 3] } })
+    expect([slices.runs(1), slices.runs(2)]).toEqual([[[4, 4]], [[3, 3]]])
+  })
 })

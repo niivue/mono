@@ -1,5 +1,6 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import NiiVue from '@/index'
+import * as NVMesh from '@/mesh/NVMesh'
 import { devImageUrl, documentFile } from '@/testing/headless'
 
 // Linked documents through serializeDocument({ linkData, linkUrl }) and
@@ -173,4 +174,29 @@ test('linkUrl returning null embeds that volume and mesh', async () => {
   expect(doc.meshes[0].data).toBeDefined()
   expect(nv2.volumes[0]?.img?.length).toBe(nv.volumes[0].img?.length)
   expect(nv2.meshes[0]?.positions).toEqual(nv.meshes[0].positions)
+})
+
+test('linked meshes reload in document order', async () => {
+  const make = (url: string) =>
+    NVMesh.createMesh(
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      new Uint32Array([0, 1, 2]),
+      new Uint32Array(3),
+      { url, name: url },
+    )
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.meshes.push(make('slow.mz3'), make('fast.mz3'))
+  const doc = nv.serializeDocument({ linkData: true })
+  const spy = spyOn(NVMesh, 'loadMesh').mockImplementation(async (opts) => {
+    const url = String(opts.url)
+    if (url === 'slow.mz3') await Bun.sleep(20)
+    return make(url)
+  })
+  try {
+    const nv2 = new NiiVue({ backend: 'webgl2' })
+    await nv2.loadDocument(documentFile(doc))
+    expect(nv2.meshes.map((m) => m.name)).toEqual(['slow.mz3', 'fast.mz3'])
+  } finally {
+    spy.mockRestore()
+  }
 })

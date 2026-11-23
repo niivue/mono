@@ -8901,6 +8901,15 @@ export default class NiiVue extends EventTarget {
       this.model.meshes = this.model.meshes.filter((m) => !added.includes(m))
       return
     }
+    // Parallel loads append as they finish; restore the document's order.
+    const loaded = this.model.meshes.slice(meshesBefore)
+    this.model.meshes = [
+      ...this.model.meshes.slice(0, meshesBefore),
+      ...loaded
+        .filter((m) => added.includes(m))
+        .sort((a, b) => added.indexOf(a) - added.indexOf(b)),
+      ...loaded.filter((m) => !added.includes(m)),
+    ]
     for (const mesh of this.model.meshes.slice(meshesBefore)) {
       this.emit('meshLoaded', { mesh })
     }

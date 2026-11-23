@@ -515,6 +515,48 @@ describe('reflectNiivueAnnotation', () => {
     expect(last().data).toEqual({ length: 42.5, unit: 'mm' })
   })
 
+  it("scales a calibrated CircleROI row's radius (its SR perimeter)", () => {
+    const nv = stubNiivue()
+    register('vp-circ', nv)
+    updateNiivueViewport('vp-circ', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-circ', backing)
+    const a = {
+      ...ellipse('circ'),
+      polygons: generateShape(
+        'measureCircle',
+        { x: 0, y: 0 },
+        { x: 3, y: 4 },
+        1,
+      ),
+      shape: {
+        type: 'measureCircle',
+        start: { x: 0, y: 0 },
+        end: { x: 3, y: 4 },
+      },
+    } as unknown as VectorAnnotation
+    nv.annotations = [a]
+    expect(reflectNiivueAnnotation('vp-circ', svc.servicesManager, a)).toBe(
+      true,
+    )
+    type Row = { data: { radius: number; radiusUnit: string; area: number } }
+    const last = () => (svc.added.at(-1)?.data.schema as Row).data
+    const native = last()
+    expect(native.radiusUnit).toBe('mm')
+    setCalibrationScale('ds-1', 2)
+    try {
+      reconcileNiivueAnnotations('vp-circ', svc.servicesManager)
+      expect(last().radius).toBeCloseTo(native.radius * 2)
+      expect(last().radiusUnit).toBe('mm User')
+      expect(last().area).toBeCloseTo(native.area * 4)
+    } finally {
+      setCalibrationScale('ds-1', 1)
+    }
+  })
+
   it('adds an OHIF CobbAngle: degrees row, its four points in click order', () => {
     const [p0, p1, p2, p3] = [
       { x: 0, y: 0 },

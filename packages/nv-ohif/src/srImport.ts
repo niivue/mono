@@ -57,11 +57,16 @@ export function reportScale(
   const v = (flat ? d : Object.values(d)[0]) as
     | { length?: unknown; area?: unknown }
     | undefined
-  if (typeof v?.length === 'number' && stats?.length)
-    return v.length / stats.length
-  if (typeof v?.area === 'number' && v.area > 0 && stats?.area)
-    return Math.sqrt(v.area / stats.area)
-  return undefined
+  const ratio =
+    typeof v?.length === 'number' && stats?.length
+      ? v.length / stats.length
+      : typeof v?.area === 'number' && v.area > 0 && stats?.area
+        ? Math.sqrt(v.area / stats.area)
+        : undefined
+  // An overflowed NUM (1e400) or a negative length is no calibration.
+  return ratio !== undefined && Number.isFinite(ratio) && ratio > 0
+    ? ratio
+    : undefined
 }
 
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.

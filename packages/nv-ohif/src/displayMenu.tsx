@@ -1,4 +1,5 @@
 import type NiiVue from '@niivue/niivue'
+import type { PropertyChangeDetail } from '@niivue/niivue'
 import { SLICE_TYPE, VOLUME_RENDER_MODE } from '@niivue/niivue'
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import {
@@ -246,14 +247,29 @@ export function DisplayMenu({
  * cornerstone's Volume Rendering Options (quality, shift, shade, lighting) on a NiiVue
  * 3D pane, through the same commands as OHIF's menu would run.
  */
-function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
+const MENU_PROPERTIES = new Set([
+  'volumeRenderMode',
+  'volumeCinematic',
+  'volumeIllumination',
+])
+
+export function RenderingOptions({
+  nv,
+  redraw,
+}: {
+  nv: NiiVue
+  redraw: () => void
+}) {
   const vol = nv.volumes[0]
   const width = vol ? Math.max(1, vol.calMax - vol.calMin) : 1
   const [shift, setShift] = useState(0)
   // Follow changes made elsewhere (commands, the orientation menu's 3D Cinematic).
   const [, refresh] = useState(0)
   useEffect(() => {
-    const update = () => refresh((n) => n + 1)
+    // Only what the menu shows; crosshair and azimuth changes fire per frame.
+    const update = (e: CustomEvent<PropertyChangeDetail>) => {
+      if (MENU_PROPERTIES.has(e.detail.property)) refresh((n) => n + 1)
+    }
     nv.addEventListener('change', update)
     return () => nv.removeEventListener('change', update)
   }, [nv])
@@ -320,7 +336,8 @@ function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
             aria-label={`Volume lighting ${name}`}
             type="range"
             min={0}
-            max={1}
+            // Core allows above 1; the slider must still show such a value.
+            max={Math.max(1, nv.volumeCinematic[key])}
             step={0.1}
             disabled={!cinematic}
             value={nv.volumeCinematic[key]}

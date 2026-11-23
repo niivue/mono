@@ -250,6 +250,13 @@ function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
   const vol = nv.volumes[0]
   const width = vol ? Math.max(1, vol.calMax - vol.calMin) : 1
   const [shift, setShift] = useState(0)
+  // Follow changes made elsewhere (commands, the orientation menu's 3D Cinematic).
+  const [, refresh] = useState(0)
+  useEffect(() => {
+    const update = () => refresh((n) => n + 1)
+    nv.addEventListener('change', update)
+    return () => nv.removeEventListener('change', update)
+  }, [nv])
   // cornerstone disables its lighting sliders without shade; these need the
   // path tracer, the only NiiVue renderer with separate lighting terms.
   const cinematic = nv.volumeRenderMode === VOLUME_RENDER_MODE.CINEMATIC

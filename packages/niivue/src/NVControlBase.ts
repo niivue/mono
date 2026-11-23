@@ -295,6 +295,15 @@ const MESH_DRAW_TIME_OPTIONS = new Set([
   'isLegendVisible',
 ])
 
+/** The scene values broadcastTo syncs, as comparable strings. */
+function syncedState(scene: NiiVue['model']['scene']): Record<string, string> {
+  return {
+    view3d: `${scene.azimuth},${scene.elevation},${scene.scaleMultiplier}`,
+    crosshair: String(Array.from(scene.crosshairPos)),
+    pan: String(Array.from(scene.pan2Dxyzmm)),
+  }
+}
+
 /** Mark a mesh's vertex data as edited in place so the GPU re-uploads it. */
 function markMeshDataChanged(m: NVMeshType): void {
   m._dataVersion = (m._dataVersion ?? 0) + 1
@@ -7691,6 +7700,8 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.
+   * A value is sent when it changes in this instance, not on every redraw, and a
+   * value received from a peer is not sent back.
    * @param targets - the other NiiVue instance(s) to broadcast to, or omit to clear sync
    * @param opts - which properties to sync (default: { '2d': true, '3d': true })
    * @example
@@ -7719,11 +7730,7 @@ export default class NiiVue extends EventTarget {
     this._syncDirty = false
     const opts = this._syncOpts
     const src = this.model.scene
-    const now: Record<string, string> = {
-      view3d: `${src.azimuth},${src.elevation},${src.scaleMultiplier}`,
-      crosshair: String(Array.from(src.crosshairPos)),
-      pan: String(Array.from(src.pan2Dxyzmm)),
-    }
+    const now = syncedState(src)
     const sent = this._syncSent
     const moved = (k: string) => now[k] !== sent[k]
     this._syncSent = now
@@ -7824,6 +7831,11 @@ export default class NiiVue extends EventTarget {
         }
       }
       if (changed) {
+        // What the target received is not its own move: it must not echo it
+        // back, converted through its own grid, over the move it came from.
+        const got = syncedState(dst)
+        for (const k of Object.keys(got))
+          if (moved(k)) target._syncSent[k] = got[k] as string
         target.drawScene(false)
         target.createOnLocationChange()
       }

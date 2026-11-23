@@ -111,4 +111,29 @@ describe('broadcastTo', () => {
     sync(a)
     expect(b.model.scene.crosshairPos[2]).toBeCloseTo(0.6, 6)
   })
+
+  // A peer that received a move must not echo it back: converted through its
+  // own grid, the echo lands a little off (here float32 rounding; across CT and
+  // PT grids, slices away) and overwrites the move it came from.
+  test('a received move is not broadcast back', () => {
+    const a = new NiiVue()
+    const b = new NiiVue()
+    for (const nv of [a, b]) {
+      nv.model.extentsMin = [0, 0, 0]
+      nv.model.extentsMax = [100, 100, 100]
+    }
+    a.broadcastTo(b, { crosshair: true })
+    b.broadcastTo(a, { crosshair: true })
+    const sync = (nv: NiiVue) => {
+      nv['_syncDirty'] = true
+      nv['_sync']()
+    }
+    sync(a)
+    sync(b)
+    const moved = [0.5, 0.5, 0.6]
+    a.model.scene.crosshairPos = moved
+    sync(a)
+    sync(b)
+    expect(a.model.scene.crosshairPos).toBe(moved)
+  })
 })

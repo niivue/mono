@@ -83,8 +83,17 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   /** Patch the shown palette, keeping hover and a press under way. */
   update(patch: Partial<ToolPaletteOverlaySpec>): void {
     if (!this.spec) return
+    // Hover is an index into the layout: follow its item by key, or drop it.
+    const hovered = this.getLayout()?.items[this.hover]
+    const key = hovered ? itemKey(this.spec, hovered) : null
     this.spec = { ...this.spec, ...patch }
     this.layout = null
+    const spec = this.spec
+    this.hover = key
+      ? (this.getLayout()?.items.findIndex(
+          (item) => itemKey(spec, item) === key,
+        ) ?? -1)
+      : -1
     this.bundle.invalidate()
   }
 

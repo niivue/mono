@@ -150,4 +150,32 @@ describe('UIKitToolPaletteOverlay', () => {
     })
     expect(chosen).toEqual(['undo'])
   })
+
+  it('keeps the highlight on its item when an update moves it', () => {
+    const chosen: string[] = []
+    const palette = new UIKitToolPaletteOverlay(FONT)
+    palette.show({
+      x: 20,
+      y: 300,
+      tools: [{ id: 'pen', label: 'Pen', look: 'pen' }],
+      tool: 'pen',
+      onTool: (id) => chosen.push(`tool ${id}`),
+      onAction: (id) => chosen.push(`action ${id}`),
+    })
+    const pen = palette.getLayout()?.items[0]
+    if (!pen) throw new Error('no pen')
+    const [x, y] = [pen.x + pen.width / 2, pen.y + pen.height / 2]
+    palette.pointerMove(x, y)
+    palette.pointerDown(x, y)
+    palette.pointerUp(x, y)
+    palette.update({ actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }] })
+    palette.keyDown({
+      key: 'Enter',
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+    })
+    expect(chosen).toEqual(['tool pen', 'tool pen'])
+  })
 })

@@ -262,6 +262,18 @@ describe('standard commands', () => {
     expect(nv.volumeIllumination).toBe(0)
     expect(cinematic).toHaveLength(2)
   })
+
+  it('Escape (cancelActiveOperation) drops a half-drawn shape on a NiiVue pane', () => {
+    let cancels = 0
+    const nv = Object.assign(stubNiivue(), {
+      cancelAnnotationInProgress: () => ++cancels > 0,
+    })
+    register('nv-1', nv)
+    const { run } = fakeHost('nv-1')
+    run('cancelActiveOperation')
+    run('cancelMeasurement')
+    expect(cancels).toBe(2)
+  })
 })
 
 describe('rotate and flip commands', () => {

@@ -1,3 +1,19 @@
+## 1.0.0-rc.239 (2026-11-23)
+
+### Features
+
+- **uikit:** shape keys and a redo icon for the tool palette ([b7962a3d](https://github.com/niivue/mono/commit/b7962a3d))
+
+### Fixes
+
+- **uikit:** draw the ellipse key as an ellipse, not a capsule ([dd13f75f](https://github.com/niivue/mono/commit/dd13f75f))
+- **uikit:** keys keep their hit box in the tray; contrast on translucent ink ([ba2587af](https://github.com/niivue/mono/commit/ba2587af))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.238 (2026-11-23)
 
 ### Fixes

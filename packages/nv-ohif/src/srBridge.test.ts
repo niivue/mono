@@ -5,7 +5,7 @@ import { mirrorNiivueMeasurements, toCornerstoneAnnotation } from './srBridge'
 // R13 audit: SR adapters read RectangleROI handles as TL, TR, BL, BR (the row
 // runs around the outline), a circle's radius and an ROI's modalityUnit from
 // cachedStats (the row says unit: 30 HU was exported as 30 px).
-test('rectangle handles reorder and a circle carries its radius', () => {
+test('rectangle handles reorder and a circle carries its perimeter', () => {
   const base = {
     uid: 'u',
     referencedImageId: 'img',
@@ -30,13 +30,11 @@ test('rectangle handles reorder and a circle carries its radius', () => {
   const circle = toCornerstoneAnnotation({
     ...base,
     toolName: 'CircleROI',
-    points: [
-      [1, 1, 0],
-      [4, 5, 0],
-    ],
+    points: [],
+    data: { ...base.data, radius: 5 },
   })
   expect(circle?.data.cachedStats['imageId:img']).toMatchObject({
-    radius: 5,
+    perimeter: 10 * Math.PI,
     area: 1,
     modalityUnit: 'HU',
   })

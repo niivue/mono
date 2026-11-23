@@ -32,7 +32,6 @@ import {
   lengthUnit,
   paneDisplaySet,
   paneScale,
-  scaleFromLine,
   setCalibrationScale,
 } from './calibration'
 import { askCalibrationDistance, CalibratedMarker } from './calibrationForm'
@@ -839,8 +838,8 @@ export function NiivueViewport(props: OhifViewportProps) {
         shown,
       )
       if (text === null || text.trim() === shown) return
-      const scale = scaleFromLine(nativeMM, Number(text))
-      if (scale) setCalibrationScale(ds, scale)
+      const mm = Number(text)
+      if (Number.isFinite(mm) && mm > 0) setCalibrationScale(ds, mm / nativeMM)
       else flashNote('Calibration needs a distance above 0 mm')
     }
     // Rows, labels and rulers of this pane's display set follow a calibration.

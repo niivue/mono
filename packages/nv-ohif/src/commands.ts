@@ -1158,7 +1158,8 @@ function reflectNiivueAnnotationResult(
     unit,
     scale,
   )
-  if (mapping.toolName === 'CircleROI' && scale !== 1) {
+  // Cornerstone's circle radius, and so its SR perimeter (srBridge.ts).
+  if (mapping.toolName === 'CircleROI') {
     const [c = [], e = []] = points
     data.radius =
       Math.hypot(...[0, 1, 2].map((i) => (e[i] ?? 0) - (c[i] ?? 0))) * scale

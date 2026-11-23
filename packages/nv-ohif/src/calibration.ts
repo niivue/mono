@@ -33,13 +33,6 @@ export function setCalibrationScale(displaySetUID: string, scale: number) {
   )
 }
 
-/** The scale making a line of native length `nativeMM` read `enteredMM`. */
-export function scaleFromLine(nativeMM: number, enteredMM: number) {
-  return nativeMM > 0 && Number.isFinite(enteredMM) && enteredMM > 0
-    ? enteredMM / nativeMM
-    : undefined
-}
-
 // Cornerstone's calibrated units (getCalibratedLengthUnitsAndScale, type User).
 export const lengthUnit = (scale: number) => (scale === 1 ? 'mm' : 'mm User')
 export const areaUnit = (scale: number) => (scale === 1 ? 'mm²' : 'mm² User')

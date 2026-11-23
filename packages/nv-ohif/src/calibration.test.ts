@@ -4,7 +4,6 @@ import {
   calibrateShapes,
   calibrateStats,
   calibrationScale,
-  scaleFromLine,
   setCalibrationScale,
 } from './calibration'
 import { contourGroup } from './contourSeg'
@@ -19,14 +18,11 @@ test('a calibration doubles lengths, quadruples area, keeps the rest', () => {
   })
   // Recalibrating replaces the scale; another display set stays native.
   setCalibrationScale('a', 2)
-  setCalibrationScale('a', scaleFromLine(10, 30) ?? 0)
+  setCalibrationScale('a', 3)
   expect(calibrationScale('a')).toBe(3)
   expect(calibrationScale('b')).toBe(1)
   setCalibrationScale('a', 1)
   expect(calibrationScale('a')).toBe(1)
-  expect(scaleFromLine(10, 0)).toBeUndefined()
-  expect(scaleFromLine(0, 5)).toBeUndefined()
-  expect(scaleFromLine(10, Number('x'))).toBeUndefined()
 })
 
 test('overlay labels and rulers take the scale; free text and contours do not', () => {

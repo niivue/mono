@@ -27,6 +27,8 @@ type Host = Pick<
   | 'registerOverlayRenderer'
   | 'drawScene'
   | 'effectiveDevicePixelRatio'
+  | 'addEventListener'
+  | 'removeEventListener'
 >
 
 /** A placed glass: centre in world mm and the rim as a world offset, so it pans, zooms and slices with the image. */
@@ -61,7 +63,8 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     if (s) s.onblur = null
     s?.remove()
   }
-  const canvas = nv.canvas
+  // Core swaps in a new canvas on a backend change and says so in viewAttached.
+  let canvas: HTMLCanvasElement | null = null
 
   const renderer = {
     drawOverlay(frame: UIKitOverlayFrame) {
@@ -110,7 +113,9 @@ export function createAdvancedMagnifyBinding(nv: Host) {
       drag = null
       touches.clear()
     }
-    if (!glasses.length) register()
+    // Called from the renderer: unregistering now would splice core's
+    // renderer list mid-dispatch and skip the next renderer this frame.
+    if (!glasses.length) queueMicrotask(register)
   }
   const clear = () => {
     drag = null
@@ -220,6 +225,8 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     const touch = e.pointerType === 'touch'
     const second = touch && fingers.size > 0
     if (touch) fingers.add(e.pointerId)
+    // A mouse drag still live at a new press was released off the canvas.
+    else if (drag?.id === e.pointerId) drag = null
     if (!mode) return
     const p = nv.clientToCanvas(e.clientX, e.clientY)
     if (!p) return
@@ -345,8 +352,25 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     ['dblclick', dblclick],
   ] as const
   const o = { capture: true }
-  for (const [type, fn] of listeners)
-    canvas?.addEventListener(type, fn as EventListener, o)
+  const listen = (on: boolean) => {
+    for (const [type, fn] of listeners)
+      if (on) canvas?.addEventListener(type, fn as EventListener, o)
+      else canvas?.removeEventListener(type, fn as EventListener, o)
+  }
+  const attach = () => {
+    listen(false)
+    // The old canvas will not deliver the releases of gestures still down on it.
+    drag = null
+    touches.clear()
+    owned.clear()
+    fingers.clear()
+    pinched = false
+    closeList()
+    canvas = nv.canvas
+    listen(true)
+  }
+  attach()
+  nv.addEventListener('viewAttached', attach)
 
   return {
     /** OHIF's AdvancedMagnify mode in the pane's tool group. */
@@ -357,8 +381,8 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     /** Re-register last, above overlays registered since (the lens magnifies them). */
     raise: register,
     dispose(): void {
-      for (const [type, fn] of listeners)
-        canvas?.removeEventListener(type, fn as EventListener, o)
+      nv.removeEventListener('viewAttached', attach)
+      listen(false)
       clear()
     },
   }

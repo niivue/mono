@@ -16,6 +16,7 @@ import {
 } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { programmaticAnnotations } from './arrowText'
+import { adoptReportScale } from './calibration'
 import {
   adoptedRowUids,
   claimPendingJump,
@@ -38,6 +39,17 @@ export interface OhifRow {
   referenceSeriesUID?: string
   source?: { name?: string }
   metadata?: { sliceType?: number }
+  /** Stats as stored: per image for cornerstone rows (an SR's NUM values). */
+  data?: Record<string, unknown>
+}
+
+// A row's stored length (a hydrated SR's NUM), flat or per image.
+function storedLength(row: OhifRow): number | undefined {
+  const d = row.data ?? {}
+  const v = (typeof d.length === 'number' ? d : Object.values(d)[0]) as
+    | { length?: unknown }
+    | undefined
+  return typeof v?.length === 'number' ? v.length : undefined
 }
 
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
@@ -321,6 +333,12 @@ export function useOhifRowImport(
       // reflection keeps the original measurement. A released row is
       // reflected under its own uid, so jumps and tracking keep pointing at it.
       // Marked only for the synchronous add, so no id outlives it.
+      // A NiiVue row's scale is already its display set's.
+      const stored =
+        row.source?.name === 'NiiVue' ? undefined : storedLength(row)
+      const native = annotation.stats?.length
+      const ds = own.displaySets[0]?.displaySetInstanceUID
+      if (stored && native && ds) adoptReportScale(ds, stored / native)
       programmaticAnnotations.add(annotation.id)
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)

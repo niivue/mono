@@ -33,6 +33,32 @@ export function setCalibrationScale(displaySetUID: string, scale: number) {
   )
 }
 
+const near = (a: number, b: number) => Math.abs(a / b - 1) <= 1e-3
+// Display set -> the scale its report rows gave in the current task: one SR
+// hydrates its rows in a burst, which must agree.
+const reportScales = new Map<string, number>()
+
+/**
+ * A report row's stored length over the length of its geometry (srImport.ts):
+ * a calibrated report restores its scale. Rows that disagree within one burst
+ * leave native mm rather than contradictory values.
+ */
+export function adoptReportScale(displaySetUID: string, ratio: number) {
+  const prior = reportScales.get(displaySetUID)
+  if (prior === undefined) {
+    if (!reportScales.size) setTimeout(() => reportScales.clear())
+    reportScales.set(displaySetUID, ratio)
+    if (!near(ratio, calibrationScale(displaySetUID)))
+      setCalibrationScale(displaySetUID, near(ratio, 1) ? 1 : ratio)
+  } else if (!near(ratio, prior)) {
+    reportScales.set(displaySetUID, Number.NaN)
+    if (calibrationScale(displaySetUID) !== 1) {
+      console.warn('[nv-ohif] report rows disagree on calibration: native mm')
+      setCalibrationScale(displaySetUID, 1)
+    }
+  }
+}
+
 // Cornerstone's calibrated units (getCalibratedLengthUnitsAndScale, type User).
 export const lengthUnit = (scale: number) => (scale === 1 ? 'mm' : 'mm User')
 export const areaUnit = (scale: number) => (scale === 1 ? 'mm²' : 'mm² User')

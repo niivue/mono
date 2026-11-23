@@ -498,9 +498,11 @@ tmtv).
   (cornerstone calibrates one image) and to its rows, SR export, canvas labels
   and rulers, in `mm User` / `mm² User`; core keeps native mm. Contour
   segmentations stay native. A **Calibrated** marker's Reset returns to native
-  mm. Unlike cornerstone, the line reads mm (calibrated, if set), not px, while drawn; the scale
-  stays with the display set when a pane swaps away and back. Not done: SR
-  re-import restoring the scale.
+  mm. Unlike cornerstone, the line reads mm (calibrated, if set), not px,
+  while drawn; the scale stays with the display set when a pane swaps away and
+  back. Re-importing an
+  SR restores the scale from its stored lengths (rows that disagree leave
+  native mm).
 
 ## Compatibility
 

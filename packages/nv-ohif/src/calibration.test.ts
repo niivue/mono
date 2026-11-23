@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { AnnotationScreenShape, NiiVue } from '@niivue/niivue'
 import {
+  adoptReportScale,
   calibrateShapes,
   calibrateStats,
   calibrationScale,
@@ -74,4 +75,12 @@ test('overlay labels and rulers take the scale; free text and contours do not', 
   expect(seg?.label?.lines).toEqual(['Area: 3.0 mm²'])
   expect(drawing?.length).toBe(10)
   expect(drag?.label?.lines).toEqual(['L: 6.0 mm User', 'W: 2.0 mm User'])
+})
+
+test('report rows restore their scale; disagreeing rows leave native mm', () => {
+  adoptReportScale('sr', 2)
+  adoptReportScale('sr', 2.0005)
+  expect(calibrationScale('sr')).toBe(2)
+  adoptReportScale('sr', 1)
+  expect(calibrationScale('sr')).toBe(1)
 })

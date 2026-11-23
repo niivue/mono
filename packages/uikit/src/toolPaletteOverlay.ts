@@ -2,10 +2,16 @@
 // tools standing in a tray. Pressing a tool, swatch, width or action and
 // lifting on it chooses it; the item under the pointer (or a hovering pencil)
 // lifts or grows. Presses anywhere on it never reach the scene. One palette
-// per overlay, shown with `show` and patched with `update`.
+// per overlay, shown with `show` and patched with `update`. A press gives it
+// keyboard focus: arrows then move the highlight over enabled items and Enter
+// or Space chooses.
 
 import type { UIKitOverlayFrame } from '@niivue/niivue'
-import type { UIKitInteractive, UIKitRedrawSource } from './controls'
+import type {
+  UIKitInteractive,
+  UIKitKeyEvent,
+  UIKitRedrawSource,
+} from './controls'
 import { UIKitDrawBundle } from './overlayParts'
 import type { UIKitFont } from './text/font'
 import {
@@ -50,6 +56,8 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   private layout: ToolPaletteLayout | null = null
   private scale = 1
   private hover = -1
+  private focused = false
+  private layer: UIKitRedrawSource | null = null
   /** `kind:id` of the pressed item, so an update that moves items cannot retarget it. */
   private pressed: string | null = null
 
@@ -83,6 +91,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   hide(): void {
     if (!this.spec) return
     this.spec = null
+    this.focused = false
     this.layout = null
     this.bundle.invalidate()
   }
@@ -133,6 +142,8 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     }
     const item = layout.items[toolPaletteItemAt(this.spec, layout, x, y)]
     this.pressed = item ? itemKey(this.spec, item) : null
+    this.focused = true
+    this.layer?.focus?.(this)
     return true
   }
 
@@ -140,10 +151,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     const layout = this.getLayout()
     if (!this.spec || !layout) return false
     const at = toolPaletteItemAt(this.spec, layout, x, y)
-    if (at !== this.hover) {
-      this.hover = at
-      this.bundle.invalidate()
-    }
+    this.setHover(at)
     return at >= 0
   }
 
@@ -164,8 +172,39 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     this.pressed = null
   }
 
+  /** With focus, arrows move the highlight over enabled items (wrapping); Enter or Space chooses. */
+  keyDown(e: UIKitKeyEvent): boolean {
+    const spec = this.spec
+    const layout = this.getLayout()
+    if (!this.focused || !spec || !layout) return false
+    const items = layout.items
+    if (e.key === 'Enter' || e.key === ' ') {
+      const item = items[this.hover]
+      if (!item) return false
+      this.choose(spec, item.kind, item.index)
+      return true
+    }
+    if (!e.key.startsWith('Arrow') || !items.length) return false
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1
+    let next = this.hover < 0 && step < 0 ? 0 : this.hover
+    for (let tries = 0; tries < items.length; tries++) {
+      next = (next + step + items.length) % items.length
+      if (isEnabled(spec, items[next])) {
+        this.setHover(next)
+        break
+      }
+    }
+    return true
+  }
+
+  blur(): void {
+    this.focused = false
+    this.setHover(-1)
+  }
+
   bindLayer(layer: UIKitRedrawSource): void {
     this.bundle.bind(layer)
+    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -201,6 +240,12 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     return scaleToolPaletteStyle(this.baseStyle, this.scale)
   }
 
+  private setHover(index: number): void {
+    if (index === this.hover) return
+    this.hover = index
+    this.bundle.invalidate()
+  }
+
   private choose(
     spec: ToolPaletteOverlaySpec,
     kind: ToolPaletteItemKind,
@@ -223,6 +268,15 @@ function itemId(
   if (kind === 'color') return spec.colors?.[index]?.id ?? ''
   if (kind === 'width') return spec.widths?.[index]?.id ?? ''
   return spec.actions?.[index]?.id ?? ''
+}
+
+function isEnabled(
+  spec: ToolPaletteOverlaySpec,
+  item: { kind: ToolPaletteItemKind; index: number },
+): boolean {
+  return !(
+    item.kind === 'action' && spec.actions?.[item.index]?.enabled === false
+  )
 }
 
 function itemKey(

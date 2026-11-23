@@ -137,19 +137,6 @@ export type {
   PointLabelPlacement,
 } from './pointLabelOverlay'
 export { UIKitPointLabelOverlay } from './pointLabelOverlay'
-export type {
-  RadialItemLayout,
-  RadialMenuBounds,
-  RadialMenuItem,
-  RadialMenuLayout,
-  RadialMenuStyle,
-} from './radialMenu'
-export { DEFAULT_RADIAL_MENU_STYLE } from './radialMenu'
-export type {
-  RadialMenuSpec,
-  UIKitRadialMenuOverlayOptions,
-} from './radialMenuOverlay'
-export { UIKitRadialMenuOverlay } from './radialMenuOverlay'
 export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'

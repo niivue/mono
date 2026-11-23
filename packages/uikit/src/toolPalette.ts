@@ -221,12 +221,12 @@ export function layoutToolPalette(
     (spec.colors ?? []).map((_, index) => ({
       kind: 'color',
       index,
-      width: style.swatchSize + 4,
+      width: style.swatchSize * (32 / 28),
     })),
     (spec.widths ?? []).map((_, index) => ({
       kind: 'width',
       index,
-      width: style.maxDot + 12,
+      width: style.maxDot * (30 / 18),
     })),
   ]
   const rowWidth = (row: Part[][]): number => {
@@ -383,14 +383,19 @@ export function buildToolPalette(
       tool.look,
       cx,
       top,
-      rowY + style.rowHeight - lip - 2,
+      rowY + style.rowHeight - lip - style.rowHeight / 28,
       style,
       ink,
     )
     text.push({
       str: tool.label,
       x: item.x + item.width / 2,
-      y: rowY + style.rowHeight - lip / 2 - 2 + capOf(style.captionSizePx),
+      y:
+        rowY +
+        style.rowHeight -
+        lip / 2 -
+        style.rowHeight / 28 +
+        capOf(style.captionSizePx),
       sizePx: style.captionSizePx,
       align: 0.5,
       color: tool.id === spec.tool ? style.textColor : style.disabledTextColor,
@@ -407,7 +412,7 @@ export function buildToolPalette(
       const selected = color.id === spec.color
       const size = style.swatchSize * (i === hover ? 1.08 : 1)
       if (selected) {
-        const ring = size + 8
+        const ring = size * (36 / 28)
         rects.push(
           buildRect({
             x: cx - ring / 2,
@@ -438,7 +443,7 @@ export function buildToolPalette(
       if (!width) return
       const selected = width.id === spec.width
       if (selected || i === hover) {
-        const back = style.maxDot + 10
+        const back = style.maxDot * (28 / 18)
         rects.push(
           buildRect({
             x: cx - back / 2,

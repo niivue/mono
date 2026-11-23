@@ -50,7 +50,6 @@ package-private (see "Conventions for contributors").
 | `buildFilePicker` | `UIKitFilePickerOverlay` | File pickers: a Choose button and a readout; the host chooser and downloads go through bridges |
 | `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
-| `buildRadialMenu` | `UIKitRadialMenuOverlay` | Rings of pills and swatches around a point, opened from code (a pencil squeeze); modal until a choice, Escape or a press outside |
 | `buildToolPalette` | `UIKitToolPaletteOverlay` | A floating drawing toolbar after the iPad's: upright tools in a tray (the selected one raised), swatches, brush widths and actions such as Undo |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
@@ -766,7 +765,7 @@ and `urlParamSelect.js` are shared by the pages.
 
 | Page | Shows |
 | --- | --- |
-| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
+| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker, a tool palette and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
 | `calipers.html` | Calipers (the ruler overlay) on an axial CT slice, in the volume's units, beside NiiVue's static scale ruler. Endpoints are world points: they follow pan and the zoom slider, belong to their slice (hidden on others), and a drag never places one |
 | `volume.html` | Volume ruler with a view selector and magnifier toggle |
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile. By design it measures canvas pixels, not the scene: the zoom slider scales the scene under fixed calipers, and Retina switches device and CSS pixels; a magnifier toggle |

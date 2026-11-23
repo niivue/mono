@@ -4,6 +4,7 @@ import {
   buildToolPalette,
   layoutToolPalette,
   DEFAULT_TOOL_PALETTE_STYLE as STYLE,
+  scaleToolPaletteStyle,
   type ToolPaletteSpec,
   toolPaletteContains,
   toolPaletteItemAt,
@@ -114,5 +115,25 @@ describe('tool palette', () => {
       'Wand',
       'Erase',
     ])
+  })
+
+  it('scales swatch, width and ring sizes with the style', () => {
+    const sizes = (k: number) => {
+      const style = scaleToolPaletteStyle(STYLE, k)
+      const layout = layoutToolPalette(SPEC, 0, 100, 1e9, style, METRICS)
+      const slot = (kind: string) =>
+        layout.items.find((i) => i.kind === kind)?.width ?? 0
+      // The selected swatch's ring is the widest round rect drawn for colors.
+      const rects = buildToolPalette(SPEC, style, METRICS, layout, -1).rects
+      const ring = Math.max(
+        ...rects
+          .map((r) => r.data)
+          .filter((d) => d[2] === d[3] && d[2] < style.rowHeight)
+          .map((d) => d[2]),
+      )
+      return [slot('color'), slot('width'), ring]
+    }
+    const [one, two] = [sizes(1), sizes(2)]
+    for (const [i, v] of two.entries()) expect(v).toBeCloseTo(2 * one[i], 4)
   })
 })

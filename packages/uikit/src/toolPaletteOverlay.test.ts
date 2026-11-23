@@ -80,4 +80,44 @@ describe('UIKitToolPaletteOverlay', () => {
     palette.show({ x: 0, y: 0, tools: [], tool: '' })
     expect(palette.measure()?.reach).toBe(0)
   })
+
+  it('takes focus on a press, then steps over disabled items and chooses with Enter', () => {
+    const chosen: string[] = []
+    const palette = new UIKitToolPaletteOverlay(FONT)
+    palette.show({
+      x: 20,
+      y: 300,
+      actions: [
+        { id: 'undo', label: 'Undo', icon: 'undo', enabled: false },
+        { id: 'redo', label: 'Redo', icon: 'undo' },
+      ],
+      tools: [{ id: 'pen', label: 'Pen', look: 'pen' }],
+      tool: 'pen',
+      onTool: (id) => chosen.push(`tool ${id}`),
+      onAction: (id) => chosen.push(`action ${id}`),
+    })
+    const key = (k: string) => ({
+      key: k,
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+    })
+    expect(palette.keyDown(key('ArrowRight'))).toBe(false)
+    // Press the pen and lift off it: focus without a choice.
+    const pen = palette.getLayout()?.items[2]
+    if (!pen) throw new Error('no pen')
+    palette.pointerDown(pen.x + pen.width / 2, pen.y + pen.height / 2)
+    palette.pointerUp(0, 0)
+    palette.keyDown(key('ArrowRight'))
+    palette.keyDown(key('Enter'))
+    palette.keyDown(key('ArrowDown'))
+    palette.keyDown(key(' '))
+    palette.keyDown(key('ArrowLeft'))
+    palette.keyDown(key('ArrowLeft'))
+    palette.keyDown(key('Enter'))
+    expect(chosen).toEqual(['action redo', 'tool pen', 'tool pen'])
+    palette.blur()
+    expect(palette.keyDown(key('Enter'))).toBe(false)
+  })
 })

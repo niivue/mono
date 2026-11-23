@@ -43,13 +43,28 @@ export interface OhifRow {
   data?: Record<string, unknown>
 }
 
-// A row's stored length (a hydrated SR's NUM), flat or per image.
-function storedLength(row: OhifRow): number | undefined {
+/**
+ * A report row's calibration (C35): its stored length (a hydrated SR's NUM,
+ * flat or per image) over the length of its geometry, else the root of stored
+ * over native area. Viewers' area methods differ by up to ~1%, so an area
+ * ratio that close to 1 counts as native.
+ */
+export function reportScale(
+  row: OhifRow,
+  stats: { length?: number; area: number } | undefined,
+): number | undefined {
   const d = row.data ?? {}
-  const v = (typeof d.length === 'number' ? d : Object.values(d)[0]) as
-    | { length?: unknown }
+  const flat = typeof d.length === 'number' || typeof d.area === 'number'
+  const v = (flat ? d : Object.values(d)[0]) as
+    | { length?: unknown; area?: unknown }
     | undefined
-  return typeof v?.length === 'number' ? v.length : undefined
+  if (typeof v?.length === 'number' && stats?.length)
+    return v.length / stats.length
+  if (typeof v?.area === 'number' && v.area > 0 && stats?.area) {
+    const k = Math.sqrt(v.area / stats.area)
+    return Math.abs(k - 1) < 0.01 ? 1 : k
+  }
+  return undefined
 }
 
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
@@ -334,11 +349,12 @@ export function useOhifRowImport(
       // reflected under its own uid, so jumps and tracking keep pointing at it.
       // Marked only for the synchronous add, so no id outlives it.
       // A NiiVue row's scale is already its display set's.
-      const stored =
-        row.source?.name === 'NiiVue' ? undefined : storedLength(row)
-      const native = annotation.stats?.length
+      const scale =
+        row.source?.name === 'NiiVue'
+          ? undefined
+          : reportScale(row, annotation.stats)
       const ds = own.displaySets[0]?.displaySetInstanceUID
-      if (stored && native && ds) adoptReportScale(ds, stored / native)
+      if (scale && ds) adoptReportScale(ds, scale)
       programmaticAnnotations.add(annotation.id)
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)

@@ -6,7 +6,7 @@ import {
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
-import { annotationFromRow } from './srImport'
+import { annotationFromRow, reportScale } from './srImport'
 
 // An axial volume (voxel dim 3 along RAS z): acquisition plane axial.
 const nv = {
@@ -120,4 +120,17 @@ test('a released native row is restored on the plane it was drawn on', () => {
   } finally {
     unregisterNiivue('native-plane')
   }
+})
+
+test('a report row gives its calibration from length, else from area', () => {
+  const perImage = (stats: object) => ({
+    uid: 'u',
+    data: { 'imageId:a': stats },
+  })
+  expect(reportScale(perImage({ length: 20 }), { length: 10, area: 0 })).toBe(2)
+  // An ROI-only report: 16 mm2 stored over 4 mm2 of geometry.
+  expect(reportScale(perImage({ area: 16 }), { area: 4 })).toBe(2)
+  // Another viewer's area method, 0.8% off, is native.
+  expect(reportScale(perImage({ area: 100.8 }), { area: 100 })).toBe(1)
+  expect(reportScale(perImage({ value: 3 }), { area: 0 })).toBeUndefined()
 })

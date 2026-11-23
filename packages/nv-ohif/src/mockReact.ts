@@ -17,7 +17,7 @@ export function mockReactHooks(hooks: Record<string, Hook>): void {
   const handOff = Object.fromEntries(
     Object.entries(hooks).map(([name, hook]) => [
       name,
-      (...args: never[]) => (active ? hook : prior[name])(...args),
+      (...args: never[]) => (active ? hook : (prior[name] as Hook))(...args),
     ]),
   )
   mock.module('react', () => ({ ...prior, ...handOff }))

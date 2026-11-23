@@ -243,16 +243,16 @@ export function DisplayMenu({
   )
 }
 
-/**
- * cornerstone's Volume Rendering Options (quality, shift, shade, lighting) on a NiiVue
- * 3D pane, through the same commands as OHIF's menu would run.
- */
 const MENU_PROPERTIES = new Set([
   'volumeRenderMode',
   'volumeCinematic',
   'volumeIllumination',
 ])
 
+/**
+ * cornerstone's Volume Rendering Options (quality, shift, shade, lighting) on a NiiVue
+ * 3D pane, through the same commands as OHIF's menu would run.
+ */
 export function RenderingOptions({
   nv,
   redraw,

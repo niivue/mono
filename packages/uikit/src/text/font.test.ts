@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import ubuntu from '../fonts/ubuntu.json'
 import { dataUrlBytes, parseFont, screenPxRange } from './font'
 
 const RAW = {
@@ -62,5 +63,16 @@ describe('dataUrlBytes', () => {
   it('decodes a base64 data: URL', () => {
     const bytes = dataUrlBytes('data:image/png;base64,iVBORw0KGgo=')
     expect([...bytes]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  })
+})
+
+describe('superscript fallback', () => {
+  it('draws ² from an ASCII-only atlas as a small raised 2', () => {
+    const m = parseFont(ubuntu as unknown as Parameters<typeof parseFont>[0])
+    const two = m.glyphs.get('2')
+    const sup = m.glyphs.get('²')
+    expect(sup?.uv).toEqual(two?.uv)
+    expect(sup?.xadv).toBeCloseTo((two?.xadv ?? 0) * 0.6)
+    expect(sup?.plane[1]).toBeGreaterThan(two?.plane[1] ?? 0)
   })
 })

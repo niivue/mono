@@ -81,6 +81,20 @@ export function parseFont(raw: RawFontFile): UIKitFontMetrics {
       xadv: glyph.advance,
     })
   }
+  // ASCII-only atlases lack the superscripts unit labels use (mm², mm³): draw
+  // a smaller, raised digit from the atlas instead of dropping the character.
+  const SUPER_SCALE = 0.6
+  const SUPER_RAISE = 0.3 // em; puts the small digit's top near cap height
+  for (const [sup, digit] of ['¹1', '²2', '³3']) {
+    const d = glyphs.get(digit)
+    if (glyphs.has(sup) || !d) continue
+    const [l, b, w, h] = d.plane.map((v) => v * SUPER_SCALE)
+    glyphs.set(sup, {
+      uv: d.uv,
+      plane: [l, b + SUPER_RAISE, w, h],
+      xadv: d.xadv * SUPER_SCALE,
+    })
+  }
   return {
     distanceRange: atlas.distanceRange,
     size: atlas.size,

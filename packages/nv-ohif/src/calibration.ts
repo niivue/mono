@@ -45,16 +45,48 @@ const near = (a: number, b: number) => Math.abs(a / b - 1) <= 1e-3
 // Display set -> its report rows (annotation id -> the scale each gave) and the
 // scale before the first of them. Rows of every report on a set must agree,
 // whenever they hydrate: a later report at another scale would silently
-// rescale the rows already shown. The scale follows the rows a pane holds, so
-// removing rows (or a failed reflection) re-derives it. Rows are kept after
-// removal so an undo that brings one back brings its scale back.
+// rescale the rows already shown. The scale follows the rows panes hold (or
+// OHIF holds after a release), so removing rows (or a failed reflection)
+// re-derives it. Rows are kept after removal so an undo that brings one back
+// brings its scale back.
 const reportRows = new Map<
   string,
   { base: number; rows: Map<string, number> }
 >()
 
+// Report rows a pane released to OHIF (unmount, series swap): the OHIF row
+// keeps its calibrated values until a pane takes it back or it is removed.
+const parkedRows = new Set<string>()
+
 const liveAnnotationIds = () =>
-  new Set(niivueEntries().flatMap((e) => e.nv.annotations.map((a) => a.id)))
+  new Set([
+    ...parkedRows,
+    ...niivueEntries().flatMap((e) => e.nv.annotations.map((a) => a.id)),
+  ])
+
+const isReportRow = (id: string) =>
+  [...reportRows.values()].some((e) => e.rows.has(id))
+
+/** Keep released rows' scale while their OHIF rows wait for a pane. */
+export function parkReportRows(annotationIds: Iterable<string>) {
+  for (const id of annotationIds) if (isReportRow(id)) parkedRows.add(id)
+}
+
+/** A released row's OHIF row is gone: its scale no longer counts. */
+export function unparkReportRow(annotationId: string) {
+  if (parkedRows.delete(annotationId)) syncReportRows()
+}
+
+/** A pane took a released row back under a new annotation id. */
+export function moveReportRow(from: string, to: string) {
+  parkedRows.delete(from)
+  for (const { rows } of reportRows.values()) {
+    const ratio = rows.get(from)
+    if (ratio === undefined) continue
+    rows.delete(from)
+    rows.set(to, ratio)
+  }
+}
 
 function applyReportRows(displaySetUID: string, live: Set<string>) {
   const entry = reportRows.get(displaySetUID)

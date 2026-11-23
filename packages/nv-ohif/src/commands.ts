@@ -17,6 +17,8 @@ import {
   calibrateStats,
   calibrationScale,
   lengthUnit,
+  parkReportRows,
+  unparkReportRow,
 } from './calibration'
 import { showCaptureForm } from './captureForm'
 import { classifyDisplaySet } from './classifyDisplaySet'
@@ -860,11 +862,15 @@ const measurementToAnnotation = new Map<
 // removing them, as cornerstone keeps measurements across layout changes: the
 // measurement survives (srBridge keeps it in cornerstone for SR export) and a
 // later NiiVue pane on the series takes it back under the same uid (srImport.ts).
-const releasedRows = new Set<string>()
+// Released row uid -> the annotation id it reflected.
+const releasedRows = new Map<string, string>()
 const releaseListeners = new Set<(from: NiivueViewportEntry['nv']) => void>()
 
 /** A NiiVue row left in OHIF by releaseImportedRows. */
 export const isReleasedRow = (uid: string): boolean => releasedRows.has(uid)
+
+/** The annotation id a released row reflected before its pane let it go. */
+export const releasedAnnotationId = (uid: string) => releasedRows.get(uid)
 
 /** Call `listener` with the releasing pane's NiiVue after it releases rows. */
 export function onRowsReleased(
@@ -891,11 +897,12 @@ export function releaseImportedRows(viewportId: string): void {
   const byView = reflectedAnnotations.get(viewportId)
   if (!byView) return
   reflectedAnnotations.delete(viewportId)
-  for (const { uid } of byView.values()) {
+  for (const [annotationId, { uid }] of byView) {
     if (!uid) continue
     measurementToAnnotation.delete(uid)
-    releasedRows.add(uid)
+    releasedRows.set(uid, annotationId)
   }
+  parkReportRows(byView.keys())
   const from = getNiivueEntry(viewportId)?.nv
   if (from) for (const listener of releaseListeners) listener(from)
 }
@@ -1397,6 +1404,11 @@ export function removeAnnotationsForRows(
 ): void {
   const byViewport = new Map<string, string[]>()
   for (const uid of measurementUids) {
+    const released = releasedRows.get(uid)
+    if (released !== undefined) {
+      releasedRows.delete(uid)
+      unparkReportRow(released)
+    }
     const ref = measurementToAnnotation.get(uid)
     if (!ref) continue
     const byView = reflectedAnnotations.get(ref.viewportId)

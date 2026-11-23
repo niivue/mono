@@ -246,3 +246,46 @@ test('glasses: a mouse drag released off the canvas ends at the next press', () 
   expect(lenses[0]?.radiusCss).toBeCloseTo(125, 4)
   glasses.dispose()
 })
+
+test('glasses: a zoom list open on a swapped-out canvas closes (viewAttached)', () => {
+  const { at, glasses, nv, events } = setup()
+  const lists: Array<{ removed: boolean }> = []
+  const parent = {
+    getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    appendChild: (s: { removed: boolean }) => lists.push(s),
+  }
+  Object.assign(nv.canvas as object, { parentElement: parent })
+  const { document: priorDocument, Option: priorOption } = globalThis
+  globalThis.document = {
+    createElement: () => ({
+      style: {},
+      add() {},
+      addEventListener() {},
+      focus() {},
+      remove() {
+        this.removed = true
+      },
+      removed: false,
+      onblur: null,
+    }),
+  } as unknown as Document
+  globalThis.Option = class {
+    title = ''
+  } as unknown as typeof Option
+  try {
+    glasses.setMode('Active')
+    at('pointerdown', 100, 100)
+    at('pointerup', 100, 100)
+    at('pointerdown', 225, 100, { button: 2, shiftKey: true })
+    expect(lists).toHaveLength(1)
+    ;(nv as { canvas: unknown }).canvas = Object.assign(new EventTarget(), {
+      parentElement: parent,
+    })
+    events.dispatchEvent(new Event('viewAttached'))
+    expect(lists[0]?.removed).toBe(true)
+  } finally {
+    glasses.dispose()
+    globalThis.document = priorDocument
+    globalThis.Option = priorOption
+  }
+})

@@ -365,6 +365,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     owned.clear()
     fingers.clear()
     pinched = false
+    closeList()
     canvas = nv.canvas
     listen(true)
   }

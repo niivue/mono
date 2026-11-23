@@ -53,11 +53,7 @@ const isPreset = (name) => name in PRESETS || name in VOLUME_PRESETS
 const params = new URLSearchParams(location.search)
 // Calibrated (int16 Hounsfield) CT samples, each with a suggested preset.
 // CT_AVM and CT_pitch in the same repository are uint8, so HU presets do not apply.
-const DEMO_BASE =
-  'https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/'
-// Larger scans are Git LFS objects: raw URLs return pointers, so use the media endpoint.
-const LFS_BASE =
-  'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/'
+const DEMO_BASE = 'https://data.niivue.com/'
 // labels: a label image on the same grid, with a material table (label
 // colormap plus per-label S, lo/hi intensity ramp, surface, normalize).
 const SAMPLES = [
@@ -82,18 +78,18 @@ const SAMPLES = [
   {
     id: 'ct-wholebody',
     name: 'CT_WholeBody (1.5 mm, 59 MB)',
-    url: `${LFS_BASE}CT_WholeBody.nii.gz`,
+    url: `${DEMO_BASE}CT_WholeBody.nii.gz`,
     tf: 'cr_skin_bone',
   },
   {
     id: 'ct-wholebody-labels',
     name: 'CT_WholeBody + TotalSegmentator labels',
-    url: `${LFS_BASE}CT_WholeBody.nii.gz`,
+    url: `${DEMO_BASE}CT_WholeBody.nii.gz`,
     tf: 'cr_ct_mod',
     labels: {
-      // ?v= versions the URL: bump it when the file changes (GitHub's CDN
-      // caches a 404 from before a file existed).
-      url: `${LFS_BASE}CT_WholeBody_labels.nii.gz?v=1`,
+      // ?v= versions the URL: bump it when the file changes (the query is
+      // part of Cloudflare's cache key, so it skips the 1-day edge cache).
+      url: `${DEMO_BASE}CT_WholeBody_labels.nii.gz?v=1`,
       colormap: 'ts_wholebody',
       table: tsWholeBody,
     },
@@ -101,10 +97,10 @@ const SAMPLES = [
   {
     id: 'ct-abdopelvis-labels',
     name: 'CT_AbdoPelvis + labels (smaller, 20 MB)',
-    url: `${LFS_BASE}CT_AbdoPelvis.nii.gz?v=2`,
+    url: `${DEMO_BASE}CT_AbdoPelvis.nii.gz?v=2`,
     tf: 'cr_ct_mod',
     labels: {
-      url: `${LFS_BASE}CT_AbdoPelvis_labels.nii.gz?v=2`,
+      url: `${DEMO_BASE}CT_AbdoPelvis_labels.nii.gz?v=2`,
       colormap: 'ts_abdopelvis',
       table: tsAbdoPelvis,
     },
@@ -153,10 +149,10 @@ const SAMPLES = [
   {
     id: 'mr-siam',
     name: 'MR T1 brain + SIAM labels',
-    url: `${LFS_BASE}MR_T1_brain.nii.gz?v=1`,
+    url: `${DEMO_BASE}MR_T1_brain.nii.gz?v=1`,
     tf: 'cr_t1_mod',
     labels: {
-      url: `${LFS_BASE}MR_T1_brain_siam.nii.gz?v=1`,
+      url: `${DEMO_BASE}MR_T1_brain_siam.nii.gz?v=1`,
       colormap: 'siam_t1',
       table: siamT1,
     },

@@ -605,15 +605,14 @@ const credited = (option: HTMLOptionElement, a: NVSlideAttribution) => {
 }
 const tiffOption = (path: string, note: string) => {
   const name = path.split('/').pop()
-  const remote = path.startsWith('https:') // the LFS copy of an Aperio slide
+  const remote = path.startsWith('https:') // the data.niivue.com copy of an Aperio slide
   return credited(
     new Option(`${name} (${note})`, remote ? path : HF + path),
     openslideCredit(remote ? `Aperio/${name}` : path),
   )
 }
 // Hosted DICOM-WSI manifests (dicom-wsi-range-v1), each naming its .dcm files.
-const DICOM =
-  'https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/streaming/dicom-wsi/'
+const DICOM = 'https://data.niivue.com/streaming/dicom-wsi/'
 // Each hosted slide's source: an OpenSlide DICOM archive, or its own credit.
 const LUMINANCE = openslideCredit(
   'DICOM/3DHISTECH-1.zip',
@@ -659,7 +658,7 @@ const customUrlOption = new Option('Custom URL...', 'custom-url')
 sourceSelect.replaceChildren(
   group('TIFF / SVS', [
     tiffOption(
-      'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/svs/CMU-1-Small-Region.svs',
+      'https://data.niivue.com/streaming/svs/CMU-1-Small-Region.svs',
       '2 MB',
     ),
     tiffOption('Aperio/CMU-1.svs', '178 MB, ICC'),
@@ -776,20 +775,7 @@ const openUrl = (url: string) => {
   showCurrent(url, url.replace(/\/+$/, '').split('/').pop() || url)
   // Inside the loader, so a malformed URL is reported in the status line.
   return open(async (signal) => {
-    const [candidate] = (
-      await openSlide(url, {
-        pool,
-        signal,
-        // GitHub raw serves LFS pointers, so the listed manifests' relative .dcm
-        // paths resolve against its media endpoint, which serves the LFS files.
-        baseUrl: url.startsWith(DICOM)
-          ? url.replace(
-              'https://raw.githubusercontent.com/',
-              'https://media.githubusercontent.com/media/',
-            )
-          : undefined,
-      })
-    ).candidates
+    const [candidate] = (await openSlide(url, { pool, signal })).candidates
     // A URL is one slide.
     return (candidate as SlideCandidate).open(signal)
   })

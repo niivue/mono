@@ -1,6 +1,6 @@
 {
   "source": "Allen Institute for Cell Science, Integrated Mitotic Stem Cell (imsc.allencell.org) and Cell Feature Explorer per-cell atlases (cfe.allencell.org). Allen Institute terms of use: noncommercial, with citation.",
-  "stageAtlasBase": "https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/Allen/IMSC/",
+  "stageAtlasBase": "https://data.niivue.com/Allen/IMSC/",
   "cellAtlasBase": "https://s3.us-west-2.amazonaws.com/bisque.allencell.org/v1.4.0/Cell-Viewer_Thumbnails/",
   "dnaColor": "#aeaeae",
   "cellChannels": [

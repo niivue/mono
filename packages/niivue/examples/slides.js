@@ -196,29 +196,17 @@ function resolveDemoUrl(path) {
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
 
-// Streaming slides (DICOM-WSI, OpenSlide DICOM) come from the Git LFS
-// repository the Pages build uses, so `bun run dev` loads them with no fetch
-// step: manifests from raw, binaries from the LFS media endpoint (raw returns
-// LFS pointers). VITE_STREAMING_ASSET_BASE=/ serves local copies instead
+// Streaming slides (DICOM-WSI, OpenSlide DICOM) come from data.niivue.com (the
+// niivue-demo-images-lfs files on Cloudflare R2), so `bun run dev` loads them
+// with no fetch step. VITE_STREAMING_ASSET_BASE=/ serves local copies instead
 // (scripts/fetch-dicom-wsi.ts, scripts/fetch-openslide-dicom.ts).
-const STREAMING_REPO = 'niivue/niivue-demo-images-lfs/main/streaming/'
 const STREAMING_ASSET_BASE =
   import.meta.env.VITE_STREAMING_ASSET_BASE ||
-  `https://raw.githubusercontent.com/${STREAMING_REPO}`
-const STREAMING_MEDIA_BASE =
-  import.meta.env.VITE_STREAMING_MEDIA_BASE ||
-  import.meta.env.VITE_STREAMING_ASSET_BASE ||
-  `https://media.githubusercontent.com/media/${STREAMING_REPO}`
+  'https://data.niivue.com/streaming/'
 const isLocalStreaming = !/^https?:/.test(STREAMING_ASSET_BASE)
 
 function resolveStreamingUrl(path) {
   const base = STREAMING_ASSET_BASE
-  const normalized = base.endsWith('/') ? base : `${base}/`
-  return new URL(`${normalized}${path}`, window.location.href).toString()
-}
-
-function resolveStreamingMediaUrl(path) {
-  const base = STREAMING_MEDIA_BASE
   const normalized = base.endsWith('/') ? base : `${base}/`
   return new URL(`${normalized}${path}`, window.location.href).toString()
 }
@@ -230,24 +218,8 @@ function manifestUrl() {
     : resolveStreamingUrl(path)
 }
 
-function manifestBinaryBaseUrl() {
-  const path = MANIFEST_PATHS[els.source.value] ?? SYNTHETIC_MANIFEST_PATH
-  return els.source.value === 'synthetic'
-    ? resolveDemoUrl(path)
-    : resolveStreamingMediaUrl(path)
-}
-
-async function slideFromManifest(opts) {
-  const url = manifestUrl()
-  const binaryBaseUrl = manifestBinaryBaseUrl()
-  if (binaryBaseUrl === url) return NVSlide.fromManifestUrl(url, opts)
-
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Slide manifest HTTP ${response.status}`)
-  return new NVSlide(await response.json(), {
-    ...opts,
-    manifestUrl: binaryBaseUrl,
-  })
+function slideFromManifest(opts) {
+  return NVSlide.fromManifestUrl(manifestUrl(), opts)
 }
 
 function html(value) {

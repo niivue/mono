@@ -67,7 +67,7 @@ import { createSlideView, NVSlide } from '@niivue/niivue'
 import { openSlide } from '@niivue/nv-ext-tile/open'
 
 const url =
-  'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/svs/CMU-1-Small-Region.svs'
+  'https://data.niivue.com/streaming/svs/CMU-1-Small-Region.svs'
 const { candidates } = await openSlide(url)
 const slide = NVSlide.fromSource(await candidates[0].open())
 

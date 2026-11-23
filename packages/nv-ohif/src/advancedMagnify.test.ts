@@ -217,6 +217,19 @@ test('glasses: input follows a canvas core swaps in (viewAttached)', () => {
   glasses.dispose()
 })
 
+test('glasses: a touch down on a swapped-out canvas does not block a tap on the new one', () => {
+  const { at, lenses, glasses, nv, events } = setup()
+  glasses.setMode('Active')
+  const touch = { pointerType: 'touch' }
+  at('pointerdown', 50, 50, { ...touch, pointerId: 7 })
+  ;(nv as { canvas: unknown }).canvas = new EventTarget()
+  events.dispatchEvent(new Event('viewAttached'))
+  at('pointerdown', 100, 100, { ...touch, pointerId: 8 })
+  at('pointerup', 100, 100, { ...touch, pointerId: 8 })
+  expect(lenses).toHaveLength(1)
+  glasses.dispose()
+})
+
 test('glasses: a mouse drag released off the canvas ends at the next press', () => {
   const { at, centre, lenses, glasses } = setup()
   glasses.setMode('Active')

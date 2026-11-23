@@ -359,6 +359,12 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   }
   const attach = () => {
     listen(false)
+    // The old canvas will not deliver the releases of gestures still down on it.
+    drag = null
+    touches.clear()
+    owned.clear()
+    fingers.clear()
+    pinched = false
     canvas = nv.canvas
     listen(true)
   }

@@ -264,6 +264,9 @@ export function RenderingOptions({
   const vol = nv.volumes[0]
   const width = vol ? Math.max(1, vol.calMax - vol.calMin) : 1
   const [shift, setShift] = useState(0)
+  // Each lighting slider's max: 2, or the highest value it has shown, so a
+  // lowered value can return.
+  const lightingMax = useRef<Record<string, number>>({})
   // Follow changes made elsewhere (commands, the orientation menu's 3D Cinematic).
   const [, refresh] = useState(0)
   useEffect(() => {
@@ -337,9 +340,12 @@ export function RenderingOptions({
             aria-label={`Volume lighting ${name}`}
             type="range"
             min={0}
-            // Core allows above 1; a fixed 0..2 range lets the slider return to
-            // such a value after lowering it.
-            max={Math.max(2, nv.volumeCinematic[key])}
+            max={
+              (lightingMax.current[key] = Math.max(
+                lightingMax.current[key] ?? 2,
+                nv.volumeCinematic[key],
+              ))
+            }
             step={0.1}
             disabled={!cinematic}
             value={nv.volumeCinematic[key]}

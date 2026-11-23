@@ -177,6 +177,8 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   let pinched = false
   // Fingers added to a glass drag: the gesture is the glass's, so core sees none of it.
   const owned = new Set<number>()
+  // Fingers down on this canvas (each OHIF pane has its own; isPrimary is page-wide).
+  const fingers = new Set<number>()
   const mmOnTile = (e: PointerEvent, tile: number) => {
     const p = nv.clientToCanvas(e.clientX, e.clientY)
     if (!p || nv.hitTest(p[0], p[1])?.tileIndex !== tile) return null
@@ -208,10 +210,12 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   }
 
   const down = (e: PointerEvent) => {
+    const touch = e.pointerType === 'touch'
+    const second = touch && fingers.size > 0
+    if (touch) fingers.add(e.pointerId)
     if (!mode) return
     const p = nv.clientToCanvas(e.clientX, e.clientY)
     if (!p) return
-    const touch = e.pointerType === 'touch'
     if (touch && drag) {
       owned.add(e.pointerId)
       // No longer a still press: lifting the drag finger must not open the zoom list.
@@ -219,7 +223,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
       e.stopImmediatePropagation()
       return
     }
-    if (touch && !e.isPrimary) {
+    if (second) {
       // A finger added while another is down (moved or not): core's pinch;
       // no finger of it places.
       touches.clear()
@@ -283,6 +287,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   }
 
   const up = (e: PointerEvent) => {
+    fingers.delete(e.pointerId)
     if (owned.delete(e.pointerId)) {
       e.stopImmediatePropagation()
       return

@@ -62,7 +62,6 @@ function setup() {
         buttons: 1,
         pointerId: 1,
         pointerType: 'mouse',
-        isPrimary: true,
         clientX: x,
         clientY: y,
         ...more,
@@ -122,7 +121,7 @@ test('glasses: core gets whole touch gestures: taps and pinches off a glass, non
   // came down and the second lifts still.
   at('pointerdown', 50, 50, { ...touch, pointerId: 1 })
   at('pointermove', 70, 50, { ...touch, pointerId: 1 })
-  at('pointerdown', 90, 90, { ...touch, pointerId: 2, isPrimary: false })
+  at('pointerdown', 90, 90, { ...touch, pointerId: 2 })
   at('pointerup', 90, 90, { ...touch, pointerId: 2 })
   at('pointerup', 70, 50, { ...touch, pointerId: 1 })
   expect(overlays).toHaveLength(0)
@@ -142,7 +141,7 @@ test('glasses: core gets whole touch gestures: taps and pinches off a glass, non
   core.length = 0
   // A pinch starting inside the glass is the glass's: core sees none of it.
   at('pointerdown', 60, 60, { ...touch, pointerId: 6 })
-  at('pointerdown', 150, 150, { ...touch, pointerId: 7, isPrimary: false })
+  at('pointerdown', 150, 150, { ...touch, pointerId: 7 })
   at('pointermove', 70, 60, { ...touch, pointerId: 6 })
   at('pointermove', 160, 150, { ...touch, pointerId: 7 })
   at('pointerup', 160, 150, { ...touch, pointerId: 7 })

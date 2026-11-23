@@ -99,9 +99,10 @@ export class GlLensRenderer {
     const x1 = Math.min(gl.drawingBufferWidth, b.x + width)
     const y1 = Math.min(gl.drawingBufferHeight, y0 + height)
     const yLow = Math.max(0, y0)
-    // Grow only: views sharing a canvas (and so this copy) differ in extent.
-    const texWidth = Math.max(1, x1, copy.width)
-    const texHeight = Math.max(1, y1, copy.height)
+    // The whole canvas: views sharing it (and so this copy) differ in extent,
+    // and a texture kept from a larger canvas would sample stale texels.
+    const texWidth = Math.max(1, gl.drawingBufferWidth)
+    const texHeight = Math.max(1, gl.drawingBufferHeight)
     copy.y0 = y0
     if (!copy.texture || copy.width !== texWidth || copy.height !== texHeight) {
       // A multisample resolve needs the canvas's own format: RGB8 without alpha.

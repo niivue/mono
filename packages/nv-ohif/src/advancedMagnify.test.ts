@@ -33,8 +33,11 @@ function setup() {
       core.push(`${type.slice(7)}${(e as PointerEvent).pointerId}`),
     )
   const overlays: Array<{ drawOverlay(f: UIKitOverlayFrame): void }> = []
+  const events = new EventTarget()
   const nv = {
     canvas,
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
     // 1 mm voxels, RAS = voxel index.
     volumes: [
       {
@@ -53,10 +56,13 @@ function setup() {
       overlays.push(r)
       return () => overlays.splice(overlays.indexOf(r), 1)
     },
-    drawScene: () => overlays[0]?.drawOverlay({ dpr: 1 } as UIKitOverlayFrame),
+    // Core's dispatch: one pass over the live renderer list.
+    drawScene: () => {
+      for (const r of overlays) r.drawOverlay({ dpr: 1 } as UIKitOverlayFrame)
+    },
   } as unknown as Parameters<typeof createAdvancedMagnifyBinding>[0]
   const at = (type: string, x: number, y: number, more = {}) =>
-    canvas.dispatchEvent(
+    (nv.canvas as unknown as EventTarget).dispatchEvent(
       Object.assign(new Event(type), {
         button: 0,
         buttons: 1,
@@ -76,7 +82,18 @@ function setup() {
   const glasses = createAdvancedMagnifyBinding(nv)
   const centre = () => pointerMove.mock.calls.at(-1)?.map(Math.round)
 
-  return { at, core, overlays, lenses, centre, glasses, plane, pointerMove }
+  return {
+    at,
+    core,
+    overlays,
+    lenses,
+    centre,
+    glasses,
+    plane,
+    pointerMove,
+    nv,
+    events,
+  }
 }
 
 test('glasses: Active places, rim drags resize and move, Passive keeps, Disabled removes', () => {
@@ -159,5 +176,60 @@ test('glasses: core gets whole touch gestures: taps and pinches off a glass, non
   glasses.setMode('Passive')
   at('pointerdown', 60, 175, { pointerId: 5 })
   expect(core).toEqual(['down5'])
+  glasses.dispose()
+})
+
+test('glasses: a series swap drops them without skipping the next renderer that frame', async () => {
+  const { at, overlays, glasses, nv } = setup()
+  glasses.setMode('Active')
+  at('pointerdown', 100, 100)
+  at('pointerup', 100, 100)
+  let drawn = 0
+  overlays.push({ drawOverlay: () => drawn++ })
+  ;(nv.volumes as unknown[])[0] = { ...nv.volumes[0] }
+  nv.drawScene()
+  expect(drawn).toBe(1)
+  await Promise.resolve()
+  expect(overlays).toHaveLength(1)
+  glasses.dispose()
+})
+
+test('glasses: input follows a canvas core swaps in (viewAttached)', () => {
+  const { at, lenses, glasses, nv, events } = setup()
+  glasses.setMode('Active')
+  const old = nv.canvas as unknown as EventTarget
+  ;(nv as { canvas: unknown }).canvas = new EventTarget()
+  events.dispatchEvent(new Event('viewAttached'))
+  at('pointerdown', 100, 100)
+  at('pointerup', 100, 100)
+  expect(lenses).toHaveLength(1)
+  // The old canvas no longer places.
+  old.dispatchEvent(
+    Object.assign(new Event('pointerdown'), {
+      button: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientX: 20,
+      clientY: 20,
+    }),
+  )
+  expect(lenses).toHaveLength(1)
+  glasses.dispose()
+})
+
+test('glasses: a mouse drag released off the canvas ends at the next press', () => {
+  const { at, centre, lenses, glasses } = setup()
+  glasses.setMode('Active')
+  at('pointerdown', 100, 100)
+  at('pointerup', 100, 100)
+  // Grab the rim; the release lands off the canvas.
+  at('pointerdown', 188, 188)
+  // Passive, so the next press places nothing; it and a move must not move the glass.
+  glasses.setMode('Passive')
+  // Inside the glass, so not a grab (a mouse grabs the rim only).
+  at('pointerdown', 100, 100)
+  at('pointermove', 190, 188)
+  expect(centre()).toEqual([100, 100])
+  expect(lenses[0]?.radiusCss).toBeCloseTo(125, 4)
   glasses.dispose()
 })

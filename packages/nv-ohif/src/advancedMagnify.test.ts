@@ -62,6 +62,7 @@ function setup() {
         buttons: 1,
         pointerId: 1,
         pointerType: 'mouse',
+        isPrimary: true,
         clientX: x,
         clientY: y,
         ...more,
@@ -117,20 +118,31 @@ test('glasses: core gets whole touch gestures: taps and pinches off a glass, non
   const { at, core, overlays, centre, glasses, plane } = setup()
   glasses.setMode('Active')
   const touch = { pointerType: 'touch' }
+  // A pinch places nothing, even when the first finger moved before the second
+  // came down and the second lifts still.
   at('pointerdown', 50, 50, { ...touch, pointerId: 1 })
-  at('pointerdown', 90, 90, { ...touch, pointerId: 2 })
+  at('pointermove', 70, 50, { ...touch, pointerId: 1 })
+  at('pointerdown', 90, 90, { ...touch, pointerId: 2, isPrimary: false })
   at('pointerup', 90, 90, { ...touch, pointerId: 2 })
-  at('pointerup', 50, 50, { ...touch, pointerId: 1 })
+  at('pointerup', 70, 50, { ...touch, pointerId: 1 })
   expect(overlays).toHaveLength(0)
   // A still tap places, and core sees its press and release.
   at('pointerdown', 50, 50, { ...touch, pointerId: 3 })
   at('pointerup', 50, 50, { ...touch, pointerId: 3 })
   expect(overlays).toHaveLength(1)
-  expect(core).toEqual(['down1', 'down2', 'up2', 'up1', 'down3', 'up3'])
+  expect(core).toEqual([
+    'down1',
+    'move1',
+    'down2',
+    'up2',
+    'up1',
+    'down3',
+    'up3',
+  ])
   core.length = 0
   // A pinch starting inside the glass is the glass's: core sees none of it.
   at('pointerdown', 60, 60, { ...touch, pointerId: 6 })
-  at('pointerdown', 150, 150, { ...touch, pointerId: 7 })
+  at('pointerdown', 150, 150, { ...touch, pointerId: 7, isPrimary: false })
   at('pointermove', 70, 60, { ...touch, pointerId: 6 })
   at('pointermove', 160, 150, { ...touch, pointerId: 7 })
   at('pointerup', 160, 150, { ...touch, pointerId: 7 })

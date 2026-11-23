@@ -219,8 +219,9 @@ export function createAdvancedMagnifyBinding(nv: Host) {
       e.stopImmediatePropagation()
       return
     }
-    if (touch && touches.size) {
-      // A second finger: core's pinch (core saw the first); the first places nothing.
+    if (touch && !e.isPrimary) {
+      // A finger added while another is down (moved or not): core's pinch;
+      // no finger of it places.
       touches.clear()
       pinched = true
       return

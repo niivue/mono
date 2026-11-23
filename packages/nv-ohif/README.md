@@ -502,7 +502,11 @@ tmtv).
   while drawn; the scale stays with the display set when a pane swaps away and
   back. Re-importing an
   SR restores the scale from its stored lengths, or areas in an ROI-only
-  report (rows that disagree leave native mm).
+  report (rows that disagree leave native mm). Importing an uncalibrated SR
+  resets the scale to native. Cornerstone's own CalibrationLine stores lengths
+  that need not match its geometry by the entered factor (x2 on a CT scout
+  moved a Length 277.97 to 280.26 mm), so its SR marks a NiiVue pane
+  Calibrated at the stored/geometry ratio (about 1.008 there).
 
 ## Compatibility
 

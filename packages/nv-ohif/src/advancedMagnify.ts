@@ -171,6 +171,8 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   // a second finger makes the gesture core's pinch.
   const touches = new Map<number, { x: number; y: number; t: number }>()
   let pinched = false
+  // Fingers added to a glass drag: the gesture is the glass's, so core sees none of it.
+  const owned = new Set<number>()
   const mmOnTile = (e: PointerEvent, tile: number) => {
     const p = nv.clientToCanvas(e.clientX, e.clientY)
     if (!p || nv.hitTest(p[0], p[1])?.tileIndex !== tile) return null
@@ -206,8 +208,13 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     const p = nv.clientToCanvas(e.clientX, e.clientY)
     if (!p) return
     const touch = e.pointerType === 'touch'
-    if (touch && (touches.size || drag)) {
-      // A second finger: core's pinch; the first places nothing.
+    if (touch && drag) {
+      owned.add(e.pointerId)
+      e.stopImmediatePropagation()
+      return
+    }
+    if (touch && touches.size) {
+      // A second finger: core's pinch (core saw the first); the first places nothing.
       touches.clear()
       pinched = true
       return
@@ -239,6 +246,10 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   }
 
   const move = (e: PointerEvent) => {
+    if (owned.has(e.pointerId)) {
+      e.stopImmediatePropagation()
+      return
+    }
     const t = touches.get(e.pointerId)
     const p = t && nv.clientToCanvas(e.clientX, e.clientY)
     if (
@@ -265,6 +276,10 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   }
 
   const up = (e: PointerEvent) => {
+    if (owned.delete(e.pointerId)) {
+      e.stopImmediatePropagation()
+      return
+    }
     const t = touches.get(e.pointerId)
     touches.delete(e.pointerId)
     const still = t && e.type === 'pointerup' ? t : undefined
@@ -277,8 +292,9 @@ export function createAdvancedMagnifyBinding(nv: Host) {
       drag = null
       return
     }
-    if (still && !pinched && mode === 'Active' && placeAt(still.x, still.y))
-      e.stopImmediatePropagation()
+    // Core saw this tap's press, so it also gets the release (else its drag and
+    // pinch trackers keep a lifted finger).
+    if (still && !pinched && mode === 'Active') placeAt(still.x, still.y)
   }
 
   const onGlass = (e: MouseEvent) => {

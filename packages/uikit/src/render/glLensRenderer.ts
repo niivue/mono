@@ -4,24 +4,34 @@
 // texture read could not. A multisampled blit must keep its rectangle (WebGL2
 // rejects any offset or scale with INVALID_OPERATION), so the texture covers
 // the canvas from its origin to the bounds rect, the rect lands at its own
-// coordinates, and the shader samples it there.
+// coordinates, and the shader samples it there. Lenses on one context share
+// one copy per frame, as WebGPU's captureScene does: a lens drawn after another
+// shows the scene, not the earlier lens enlarged again.
 
 import type { UIKitOverlayBounds } from '@niivue/niivue'
 import type { MagnifierLayout } from '../magnifier'
 import { compile } from './glImageRenderer'
 import { GL_IMAGE_VERT, GL_LENS_FRAG } from './shaders'
 
+interface SceneCopy {
+  texture: WebGLTexture | null
+  fbo: WebGLFramebuffer | null
+  width: number
+  height: number
+  // Bottom-up canvas y of the bounds rect's lower edge, where it sits in the texture.
+  y0: number
+  // The overlay frame last copied (a host builds a new frame object per draw).
+  frame: object | null
+  users: number
+}
+const copies = new WeakMap<WebGL2RenderingContext, SceneCopy>()
+
 export class GlLensRenderer {
   private gl: WebGL2RenderingContext | null = null
   private program: WebGLProgram | null = null
   // Empty VAO: the quad comes from gl_VertexID, and the host's bound VAO must not leak in.
   private vao: WebGLVertexArrayObject | null = null
-  private texture: WebGLTexture | null = null
-  private fbo: WebGLFramebuffer | null = null
-  private texWidth = 0
-  private texHeight = 0
-  // Bottom-up canvas y of the bounds rect's lower edge, where it sits in the texture.
-  private y0 = 0
+  private copy: SceneCopy | null = null
   private u: Record<string, WebGLUniformLocation | null> = {}
 
   private ensure(gl: WebGL2RenderingContext): void {
@@ -44,7 +54,21 @@ export class GlLensRenderer {
     this.gl = gl
     this.program = program
     this.vao = gl.createVertexArray()
-    this.fbo = gl.createFramebuffer()
+    let copy = copies.get(gl)
+    if (!copy) {
+      copy = {
+        texture: null,
+        fbo: gl.createFramebuffer(),
+        width: 0,
+        height: 0,
+        y0: 0,
+        frame: null,
+        users: 0,
+      }
+      copies.set(gl, copy)
+    }
+    copy.users++
+    this.copy = copy
     for (const name of [
       'canvasSize',
       'box',
@@ -57,7 +81,14 @@ export class GlLensRenderer {
       this.u[name] = gl.getUniformLocation(program, name)
   }
 
-  private capture(gl: WebGL2RenderingContext, b: UIKitOverlayBounds): void {
+  private capture(
+    gl: WebGL2RenderingContext,
+    b: UIKitOverlayBounds,
+    copy: SceneCopy,
+    frame: object,
+  ): void {
+    if (copy.frame === frame) return
+    copy.frame = frame
     const { width, height } = b
     // shortcut: assumes the hook draws to the canvas (true of every core view);
     // an offscreen target would need its own height here.
@@ -70,16 +101,12 @@ export class GlLensRenderer {
     const yLow = Math.max(0, y0)
     const texWidth = Math.max(1, x1)
     const texHeight = Math.max(1, y1)
-    this.y0 = y0
-    if (
-      !this.texture ||
-      this.texWidth !== texWidth ||
-      this.texHeight !== texHeight
-    ) {
+    copy.y0 = y0
+    if (!copy.texture || copy.width !== texWidth || copy.height !== texHeight) {
       // A multisample resolve needs the canvas's own format: RGB8 without alpha.
       const rgb = gl.getContextAttributes()?.alpha === false
-      this.texture ??= gl.createTexture()
-      gl.bindTexture(gl.TEXTURE_2D, this.texture)
+      copy.texture ??= gl.createTexture()
+      gl.bindTexture(gl.TEXTURE_2D, copy.texture)
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
@@ -96,20 +123,20 @@ export class GlLensRenderer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
       gl.bindTexture(gl.TEXTURE_2D, null)
-      this.texWidth = texWidth
-      this.texHeight = texHeight
+      copy.width = texWidth
+      copy.height = texHeight
     }
     const read = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING)
     const draw = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING)
     const scissor = gl.isEnabled(gl.SCISSOR_TEST)
     gl.disable(gl.SCISSOR_TEST)
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, draw)
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.fbo)
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, copy.fbo)
     gl.framebufferTexture2D(
       gl.DRAW_FRAMEBUFFER,
       gl.COLOR_ATTACHMENT0,
       gl.TEXTURE_2D,
-      this.texture,
+      copy.texture,
       0,
     )
     if (x1 > x0 && y1 > yLow)
@@ -135,10 +162,13 @@ export class GlLensRenderer {
     bounds: UIKitOverlayBounds,
     layout: MagnifierLayout,
     fill: readonly number[],
+    frame: object,
   ): void {
     this.ensure(gl)
-    this.capture(gl, bounds)
-    if (!this.program || !this.texture) return
+    const { copy } = this
+    if (!copy) return
+    this.capture(gl, bounds, copy, frame)
+    if (!this.program || !copy.texture) return
     const { u } = this
     const { lens } = layout
     gl.useProgram(this.program)
@@ -153,9 +183,9 @@ export class GlLensRenderer {
     )
     gl.uniform4f(u.fill, fill[0], fill[1], fill[2], fill[3])
     gl.uniform2f(u.imageSize, bounds.width, bounds.height)
-    gl.uniform4f(u.imageRect, bounds.x, this.y0, this.texWidth, this.texHeight)
+    gl.uniform4f(u.imageRect, bounds.x, copy.y0, copy.width, copy.height)
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    gl.bindTexture(gl.TEXTURE_2D, copy.texture)
     gl.uniform1i(u.image, 0)
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
@@ -173,17 +203,17 @@ export class GlLensRenderer {
     const gl = this.gl
     if (gl) {
       if (this.vao) gl.deleteVertexArray(this.vao)
-      if (this.texture) gl.deleteTexture(this.texture)
-      if (this.fbo) gl.deleteFramebuffer(this.fbo)
       if (this.program) gl.deleteProgram(this.program)
+      const copy = this.copy
+      if (copy && --copy.users === 0) {
+        if (copy.texture) gl.deleteTexture(copy.texture)
+        if (copy.fbo) gl.deleteFramebuffer(copy.fbo)
+        copies.delete(gl)
+      }
     }
     this.gl = null
     this.program = null
     this.vao = null
-    this.texture = null
-    this.fbo = null
-    this.texWidth = 0
-    this.texHeight = 0
-    this.y0 = 0
+    this.copy = null
   }
 }

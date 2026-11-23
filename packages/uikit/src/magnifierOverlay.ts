@@ -152,7 +152,7 @@ export class UIKitMagnifierOverlay {
     })
     if (!layout) return
     if (handle.backend === 'webgl2') {
-      this.gl.draw(handle.gl, bounds, layout, this.fillColor)
+      this.gl.draw(handle.gl, bounds, layout, this.fillColor, frame)
     } else {
       this.wgpu.draw(
         handle,

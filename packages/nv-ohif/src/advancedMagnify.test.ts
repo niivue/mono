@@ -28,7 +28,10 @@ function setup() {
   )
   const canvas = new EventTarget()
   const core: string[] = []
-  canvas.addEventListener('pointerdown', () => core.push('down'))
+  for (const type of ['pointerdown', 'pointermove', 'pointerup'])
+    canvas.addEventListener(type, (e) =>
+      core.push(`${type.slice(7)}${(e as PointerEvent).pointerId}`),
+    )
   const overlays: Array<{ drawOverlay(f: UIKitOverlayFrame): void }> = []
   const nv = {
     canvas,
@@ -81,7 +84,7 @@ test('glasses: Active places, rim drags resize and move, Passive keeps, Disabled
   glasses.setMode('Active')
   at('pointerdown', 100, 100)
   at('pointerup', 100, 100)
-  expect(core).toEqual([])
+  expect(core).toEqual(['up1'])
   expect(lenses[0]?.radiusCss).toBeCloseTo(125, 4)
   expect(centre()).toEqual([100, 100])
 
@@ -99,7 +102,7 @@ test('glasses: Active places, rim drags resize and move, Passive keeps, Disabled
   // Passive: glasses stay, a click elsewhere is core's.
   glasses.setMode('Passive')
   at('pointerdown', 20, 20)
-  expect(core).toEqual(['down'])
+  expect(core.at(-1)).toEqual('down1')
   expect(overlays).toHaveLength(1)
 
   const destroy = spyOn(UIKitMagnifierOverlay.prototype, 'destroy')
@@ -110,8 +113,8 @@ test('glasses: Active places, rim drags resize and move, Passive keeps, Disabled
   glasses.dispose()
 })
 
-test('glasses: a touch places on a still lift; two fingers are core pinch; own slice only', () => {
-  const { at, core, overlays, glasses, plane } = setup()
+test('glasses: core gets whole touch gestures: taps and pinches off a glass, none of one on it; own slice only', () => {
+  const { at, core, overlays, centre, glasses, plane } = setup()
   glasses.setMode('Active')
   const touch = { pointerType: 'touch' }
   at('pointerdown', 50, 50, { ...touch, pointerId: 1 })
@@ -119,22 +122,31 @@ test('glasses: a touch places on a still lift; two fingers are core pinch; own s
   at('pointerup', 90, 90, { ...touch, pointerId: 2 })
   at('pointerup', 50, 50, { ...touch, pointerId: 1 })
   expect(overlays).toHaveLength(0)
-  expect(core).toEqual(['down', 'down'])
+  // A still tap places, and core sees its press and release.
   at('pointerdown', 50, 50, { ...touch, pointerId: 3 })
   at('pointerup', 50, 50, { ...touch, pointerId: 3 })
   expect(overlays).toHaveLength(1)
-  // The tap's press reached core (it may still become a pinch).
-  expect(core).toEqual(['down', 'down', 'down'])
+  expect(core).toEqual(['down1', 'down2', 'up2', 'up1', 'down3', 'up3'])
+  core.length = 0
+  // A pinch starting inside the glass is the glass's: core sees none of it.
+  at('pointerdown', 60, 60, { ...touch, pointerId: 6 })
+  at('pointerdown', 150, 150, { ...touch, pointerId: 7 })
+  at('pointermove', 70, 60, { ...touch, pointerId: 6 })
+  at('pointermove', 160, 150, { ...touch, pointerId: 7 })
+  at('pointerup', 160, 150, { ...touch, pointerId: 7 })
+  at('pointerup', 70, 60, { ...touch, pointerId: 6 })
+  expect(core).toEqual([])
+  expect(centre()).toEqual([60, 50])
   // The crosshair moving within slice 0 keeps the glass grabbable; slice 1 hides it.
   plane.planePoint = [0, 0, 0.4]
   overlays[0]?.drawOverlay({ dpr: 1 } as UIKitOverlayFrame)
-  at('pointerdown', 50, 175, { pointerId: 4 })
-  at('pointerup', 50, 175, { pointerId: 4 })
-  expect(core).toHaveLength(3)
+  at('pointerdown', 60, 175, { pointerId: 4 })
+  at('pointerup', 60, 175, { pointerId: 4 })
+  expect(core).toEqual([])
   plane.planePoint = [0, 0, 1]
   overlays[0]?.drawOverlay({ dpr: 1 } as UIKitOverlayFrame)
   glasses.setMode('Passive')
-  at('pointerdown', 50, 175, { pointerId: 5 })
-  expect(core).toHaveLength(4)
+  at('pointerdown', 60, 175, { pointerId: 5 })
+  expect(core).toEqual(['down5'])
   glasses.dispose()
 })

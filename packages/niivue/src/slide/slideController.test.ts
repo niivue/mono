@@ -3,6 +3,9 @@ import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideViewport } from './NVSlide'
 import { NVSlideController, windowDragStep } from './slideController'
 
+// Not 0: Bun before 1.4 reads setSystemTime(new Date(0)) as a reset to real time.
+const T0 = 1_000_000
+
 // No DOM in bun tests: an EventTarget canvas and a slide whose screen and
 // slide coordinates coincide.
 let captures = 0
@@ -392,7 +395,7 @@ describe('NVSlideController', () => {
   test('a slow press at a closed polygon starts a new one', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     r.ctl.annotationTool = 'polygon'
-    setSystemTime(new Date(0))
+    setSystemTime(new Date(T0))
     for (const [x, y] of [
       [0, 0],
       [50, 0],
@@ -402,7 +405,7 @@ describe('NVSlideController', () => {
       r.fire('pointerdown', x, y)
       r.fire('pointerup', x, y)
     }
-    setSystemTime(new Date(600))
+    setSystemTime(new Date(T0 + 600))
     r.fire('pointerdown', 1, 1)
     setSystemTime()
     expect(r.ctl.draft?.points[0]).toEqual({ x: 1, y: 1 })
@@ -412,7 +415,7 @@ describe('NVSlideController', () => {
   test('a polygon press after a shape-tool pick starts a new polygon', () => {
     const r = rig({ scale: 1, primary: DRAG_MODE.pan })
     r.ctl.annotationTool = 'polygon'
-    setSystemTime(new Date(0))
+    setSystemTime(new Date(T0))
     for (const [x, y] of [
       [0, 0],
       [50, 0],

@@ -1,3 +1,14 @@
+## 1.0.0-rc.238 (2026-11-23)
+
+### Fixes
+
+- **nv-ohif,uikit:** magnifier audit P3s ([b0cbdafe](https://github.com/niivue/mono/commit/b0cbdafe))
+- **nv-ohif,uikit:** WebGL lenses share one frame copy; touch gestures stay whole for core ([784d77b9](https://github.com/niivue/mono/commit/784d77b9))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.237 (2026-11-23)
 
 ### Features

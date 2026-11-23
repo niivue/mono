@@ -1,3 +1,25 @@
+## 1.0.0-rc.275 (2026-11-23)
+
+### Features
+
+- **nv-ohif:** AdvancedMagnify places glasses on NiiVue panes, as cornerstone ([b3bd3989](https://github.com/niivue/mono/commit/b3bd3989))
+
+### Fixes
+
+- **nv-ohif:** count pinch fingers per canvas, not by isPrimary ([1e93f648](https://github.com/niivue/mono/commit/1e93f648))
+- **nv-ohif:** a pinch whose first finger moved places no glass ([8e3189e4](https://github.com/niivue/mono/commit/8e3189e4))
+- **nv-ohif,uikit:** magnifier audit P3s ([b0cbdafe](https://github.com/niivue/mono/commit/b0cbdafe))
+- **nv-ohif,uikit:** WebGL lenses share one frame copy; touch gestures stay whole for core ([784d77b9](https://github.com/niivue/mono/commit/784d77b9))
+- **nv-ohif:** AdvancedMagnify audit fixes ([65a9444a](https://github.com/niivue/mono/commit/65a9444a))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.238
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.274 (2026-11-23)
 
 ### Updated Dependencies

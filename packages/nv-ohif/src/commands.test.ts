@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
+import { setCalibrationScale } from './calibration'
 import {
   adoptedRowUids,
   applyDefaultAnnotationText,
@@ -478,6 +479,16 @@ describe('reflectNiivueAnnotation', () => {
       [0, 0, 0],
       [-3, -4, 0],
     ])
+    // A calibrated display set's row (and so its SR NUM) carries the scaled length.
+    setCalibrationScale('ds-1', 2)
+    try {
+      reflectNiivueAnnotation('vp-len', svc.servicesManager, line('L2'))
+      const c = svc.added[1]?.data.schema as typeof m
+      expect(c.displayText.primary).toEqual(['85.0 mm User'])
+      expect(c.data).toEqual({ length: 85, unit: 'mm User' })
+    } finally {
+      setCalibrationScale('ds-1', 1)
+    }
   })
 
   it('adds an OHIF CobbAngle: degrees row, its four points in click order', () => {

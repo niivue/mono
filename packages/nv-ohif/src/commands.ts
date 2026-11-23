@@ -12,6 +12,12 @@ import {
   slice2DToMM,
   type VectorAnnotation,
 } from '@niivue/niivue'
+import {
+  areaUnit,
+  calibrateStats,
+  calibrationScale,
+  lengthUnit,
+} from './calibration'
 import { showCaptureForm } from './captureForm'
 import { classifyDisplaySet } from './classifyDisplaySet'
 import { isContourAnnotation, jumpToContourSegment } from './contourSeg'
@@ -832,11 +838,16 @@ function annotationContentHash(a: VectorAnnotation): string {
 
 // The row's hash: its content plus the frame it lies on, which appears only once
 // the converted volume's slice map is published, so that re-reflects the row.
-function rowHash(a: VectorAnnotation, sf: SliceFrames | undefined): string {
+// A calibration change re-reflects the row too.
+function rowHash(a: VectorAnnotation, entry: NiivueViewportEntry): string {
+  const sf = entry.sliceFrames
   const frame = sf && frameAt(sf, annotationPointsLps(a))
   const at = frame ? `${frame.SOPInstanceUID}:${frame.frameNumber}` : ''
-  return `${annotationContentHash(a)}|${at}`
+  return `${annotationContentHash(a)}|${at}|${entryScale(entry)}`
 }
+
+const entryScale = (entry: NiivueViewportEntry) =>
+  calibrationScale(entry.displaySets[0]?.displaySetInstanceUID)
 
 // OHIF measurement uid -> the NiiVue annotation it reflects, so an edit of the
 // measurement's label in OHIF's panel can be pushed back as the annotation text.
@@ -955,18 +966,22 @@ export function roundNumber(value: number, precision = 2): string {
 // (ellipse/rect/circle) carry area (mm^2) + intensity stats; arrows carry none.
 function buildAnnotationDisplay(
   { toolName, readout }: AnnotationToolDescriptor,
-  stats: AnnotationStats | undefined,
+  nativeStats: AnnotationStats | undefined,
   unit: string,
+  scale = 1,
 ): { primary: string[]; data: Record<string, unknown>; label: string } {
   const label = `NiiVue ${toolName}`
+  const stats = calibrateStats(nativeStats, scale)
+  const mm = lengthUnit(scale)
+  const mm2 = areaUnit(scale)
   if (readout === 'none' || !stats) {
     return { primary: [label], data: {}, label }
   }
   // Length is a single measured line: in-plane distance in mm, no area/intensity.
   if (readout === 'length' && stats.length !== undefined) {
     return {
-      primary: [`${roundNumber(stats.length)} mm`],
-      data: { length: stats.length, unit: 'mm' },
+      primary: [`${roundNumber(stats.length)} ${mm}`],
+      data: { length: stats.length, unit: mm },
       label,
     }
   }
@@ -991,24 +1006,24 @@ function buildAnnotationDisplay(
     const short = stats.shortLength ?? 0
     return {
       primary: [
-        `L: ${roundNumber(stats.length)} mm`,
-        `W: ${roundNumber(short)} mm`,
+        `L: ${roundNumber(stats.length)} ${mm}`,
+        `W: ${roundNumber(short)} ${mm}`,
       ],
-      data: { length: stats.length, width: short, unit: 'mm' },
+      data: { length: stats.length, width: short, unit: mm },
       label,
     }
   }
   // Spline and live-wire contours list their area only, as cornerstone's rows.
   if (readout === 'areaOnly')
     return {
-      primary: [`${roundNumber(stats.area)} mm²`],
-      data: { area: stats.area, areaUnit: 'mm²' },
+      primary: [`${roundNumber(stats.area)} ${mm2}`],
+      data: { area: stats.area, areaUnit: mm2 },
       label,
     }
   // Area then max, as cornerstone's ROI rows (getStatisticDisplayString).
   return {
     primary: [
-      `${roundNumber(stats.area)} mm²`,
+      `${roundNumber(stats.area)} ${mm2}`,
       unit
         ? `Max: ${roundNumber(stats.max)} ${unit}`
         : `Max: ${roundNumber(stats.max)}`,
@@ -1020,7 +1035,7 @@ function buildAnnotationDisplay(
       max: stats.max,
       min: stats.min,
       unit,
-      areaUnit: 'mm²',
+      areaUnit: mm2,
     },
     label,
   }
@@ -1136,11 +1151,19 @@ function reflectNiivueAnnotationResult(
         }
       : undefined)
   const unit = modalityUnit(entry)
+  const scale = entryScale(entry)
   const { primary, data } = buildAnnotationDisplay(
     mapping,
     annotation.stats,
     unit,
+    scale,
   )
+  if (mapping.toolName === 'CircleROI' && scale !== 1) {
+    const [c = [], e = []] = points
+    data.radius =
+      Math.hypot(...[0, 1, 2].map((i) => (e[i] ?? 0) - (c[i] ?? 0))) * scale
+    data.radiusUnit = lengthUnit(scale)
+  }
   const index = probeIndex(viewportId, annotation, frame?.SOPInstanceUID)
   if (index) data.index = index
   // The row label is the annotation's own text (applyDefaultAnnotationText seeds a
@@ -1148,7 +1171,7 @@ function reflectNiivueAnnotationResult(
   // fallback for empty text: reflecting that fallback would echo it back through
   // the label sync onto the canvas, making a user-cleared label impossible.
   const rowLabel = annotation.text ?? ''
-  const hash = rowHash(annotation, entry.sliceFrames)
+  const hash = rowHash(annotation, entry)
   if (mappingExhausted(viewportId, annotation.id, hash))
     return { status: 'retryableFailure' }
 
@@ -1582,7 +1605,7 @@ function syncNiivueAnnotation(
   annotation: VectorAnnotation,
 ): void {
   const existing = reflectedAnnotations.get(viewportId)?.get(annotation.id)
-  const hash = rowHash(annotation, entry.sliceFrames)
+  const hash = rowHash(annotation, entry)
   if (existing && existing.hash === hash) return
   const result = reflectNiivueAnnotationResult(
     viewportId,

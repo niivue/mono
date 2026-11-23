@@ -37,8 +37,17 @@ function statsFor(m: MirroredMeasurement): Record<string, unknown> {
   const stats = data.areaUnit ? { ...data, modalityUnit: data.unit } : data
   if (m.toolName !== 'CircleROI') return stats
   const [c = [], e = []] = m.points
-  const radius = Math.hypot(...[0, 1, 2].map((i) => (e[i] ?? 0) - (c[i] ?? 0)))
-  return { ...stats, radius, radiusUnit: 'mm', perimeter: 2 * Math.PI * radius }
+  // A calibrated row carries its scaled radius (commands.ts).
+  const radius =
+    typeof data.radius === 'number'
+      ? data.radius
+      : Math.hypot(...[0, 1, 2].map((i) => (e[i] ?? 0) - (c[i] ?? 0)))
+  return {
+    radiusUnit: 'mm',
+    ...stats,
+    radius,
+    perimeter: 2 * Math.PI * radius,
+  }
 }
 
 export interface MirroredMeasurement {

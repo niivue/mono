@@ -32,6 +32,7 @@ export const NIIVUE_SUPPORTED_TOOLS: readonly string[] = [
   'Zoom',
   'Magnify',
   'AdvancedMagnify',
+  'CalibrationLine',
   ...Object.keys(SEG_TOOLS),
   ...CONTOUR_TOOL_NAMES,
 ]

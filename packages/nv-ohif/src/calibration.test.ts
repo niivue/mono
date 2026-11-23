@@ -5,8 +5,8 @@ import {
   calibrateShapes,
   calibrateStats,
   calibrationScale,
-  pruneReportRows,
   setCalibrationScale,
+  syncReportRows,
 } from './calibration'
 import { measurementNote } from './commands'
 import { contourGroup } from './contourSeg'
@@ -114,11 +114,11 @@ test('a later report at another scale leaves native mm, even tasks later', async
   expect(calibrationScale('two-reports')).toBe(1)
   // Removing the disagreeing row restores the surviving rows' scale.
   annotations.splice(1)
-  pruneReportRows()
+  syncReportRows()
   expect(calibrationScale('two-reports')).toBe(2)
   // Once every report row is gone, the scale from before the report returns.
   annotations.length = 0
-  pruneReportRows()
+  syncReportRows()
   expect(calibrationScale('two-reports')).toBe(1)
   adopt('two-reports', 'c', 2)
   expect(calibrationScale('two-reports')).toBe(2)
@@ -135,11 +135,24 @@ test('a report row whose reflection failed gives back the prior scale', () => {
   setCalibrationScale('failed', 4)
   adoptReportScale('failed', 'gone', 2)
   expect(calibrationScale('failed')).toBe(2)
-  // srImport removes the annotation; the pane's annotationRemoved prunes.
-  pruneReportRows()
+  // srImport removes the annotation; the pane's annotationRemoved re-syncs.
+  syncReportRows()
   expect(calibrationScale('failed')).toBe(4)
   setCalibrationScale('failed', 1)
   unregisterNiivue('vp-fail')
+})
+
+test('undoing a report row deletion brings its scale back', () => {
+  const { annotations, adopt } = reportPane('vp-undo')
+  adopt('undo', 'a', 2)
+  const [row] = annotations.splice(0)
+  syncReportRows()
+  expect(calibrationScale('undo')).toBe(1)
+  annotations.push(row as { id: string })
+  syncReportRows()
+  expect(calibrationScale('undo')).toBe(2)
+  setCalibrationScale('undo', 1)
+  unregisterNiivue('vp-undo')
 })
 
 test('calibrated rows and the flash note carry scaled values and User units', () => {

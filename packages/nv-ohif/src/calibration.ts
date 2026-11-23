@@ -45,43 +45,39 @@ const near = (a: number, b: number) => Math.abs(a / b - 1) <= 1e-3
 // Display set -> its report rows (annotation id -> the scale each gave) and the
 // scale before the first of them. Rows of every report on a set must agree,
 // whenever they hydrate: a later report at another scale would silently
-// rescale the rows already shown. The scale follows the rows a pane still
-// holds, so removing rows (or a failed reflection) re-derives it.
+// rescale the rows already shown. The scale follows the rows a pane holds, so
+// removing rows (or a failed reflection) re-derives it. Rows are kept after
+// removal so an undo that brings one back brings its scale back.
 const reportRows = new Map<
   string,
   { base: number; rows: Map<string, number> }
 >()
 
-function applyReportRows(displaySetUID: string) {
+const liveAnnotationIds = () =>
+  new Set(niivueEntries().flatMap((e) => e.nv.annotations.map((a) => a.id)))
+
+function applyReportRows(displaySetUID: string, live: Set<string>) {
   const entry = reportRows.get(displaySetUID)
   if (!entry) return
-  const ratios = [...entry.rows.values()]
+  const ratios = [...entry.rows]
+    .filter(([id]) => live.has(id))
+    .map(([, r]) => r)
   const first = ratios[0]
-  if (first === undefined) {
-    reportRows.delete(displaySetUID)
-    if (!near(entry.base, calibrationScale(displaySetUID)))
-      applyScale(displaySetUID, entry.base)
-    return
-  }
-  const agree = ratios.every((r) => near(r, first))
-  if (!agree && calibrationScale(displaySetUID) !== 1)
+  const agree = ratios.every((r) => near(r, first ?? r))
+  const scale =
+    first === undefined ? entry.base : agree && !near(first, 1) ? first : 1
+  if (near(scale, calibrationScale(displaySetUID))) return
+  if (!agree)
     console.warn('[nv-ohif] report rows disagree on calibration: native mm')
-  const scale = agree && !near(first, 1) ? first : 1
-  if (!near(scale, calibrationScale(displaySetUID)))
-    applyScale(displaySetUID, scale)
+  applyScale(displaySetUID, scale)
 }
 
-/** Drops report rows no pane holds any more and re-derives their scale. */
-export function pruneReportRows() {
+/** Re-derives each report scale from the report rows panes hold now. */
+export function syncReportRows() {
   if (!reportRows.size) return
-  const live = new Set(
-    niivueEntries().flatMap((e) => e.nv.annotations.map((a) => a.id)),
-  )
-  for (const [displaySetUID, { rows }] of reportRows) {
-    const before = rows.size
-    for (const id of rows.keys()) if (!live.has(id)) rows.delete(id)
-    if (rows.size !== before) applyReportRows(displaySetUID)
-  }
+  const live = liveAnnotationIds()
+  for (const displaySetUID of reportRows.keys())
+    applyReportRows(displaySetUID, live)
 }
 
 /**
@@ -95,14 +91,14 @@ export function adoptReportScale(
   annotationId: string,
   ratio: number,
 ) {
-  pruneReportRows()
   const entry = reportRows.get(displaySetUID) ?? {
     base: calibrationScale(displaySetUID),
     rows: new Map<string, number>(),
   }
   reportRows.set(displaySetUID, entry)
   entry.rows.set(annotationId, ratio)
-  applyReportRows(displaySetUID)
+  // The row's annotation is added after this, so count it as held already.
+  applyReportRows(displaySetUID, liveAnnotationIds().add(annotationId))
 }
 
 // Cornerstone's calibrated units (getCalibratedLengthUnitsAndScale, type User).

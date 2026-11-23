@@ -551,6 +551,7 @@ export function serialize(
       m.kind === 'tract'
         ? null
         : linkedUrl(m.url, 'mesh', linkData, options?.linkUrl)
+    const isLinked = url !== null
     if (url !== null) {
       // linked: geometry omitted, loader fetches from url; layer values stay
       // embedded, and an empty list tells the loader to drop file scalars.
@@ -619,7 +620,9 @@ export function serialize(
     if (m.layers && m.layers.length > 0) {
       mesh.layers = m.layers.map((layer) => {
         const docLayer: NVDocumentMeshLayer = {
-          url: layer.url,
+          // A linked mesh's layers omit url: older readers refetch every layer
+          // url on the URL path, and an unreachable one would fail the mesh.
+          url: isLinked ? undefined : layer.url,
           name: layer.name,
           colormap: layer.colormap,
           colormapNegative: layer.colormapNegative,

@@ -48,9 +48,10 @@ test('linkUrl writes bundle ids that resolveUrl maps back: volume and mesh with 
   const doc = toJson(
     nv.serializeDocument({ linkData: true, linkUrl, format: 'json' }),
   )
-  // The layer's values are embedded, so its source file need not be reachable.
-  const layer = doc.meshes[0].layers?.[0]
-  if (layer) layer.url = 'gone.curv'
+  // Layer values are embedded and the url is omitted, so an older reader
+  // (which refetches layer urls on the URL path) skips the layer, not the mesh.
+  expect(doc.meshes[0].layers?.length).toBe(1)
+  expect(doc.meshes[0].layers?.[0]?.url).toBeUndefined()
 
   const nv2 = new NiiVue({ backend: 'webgl2' })
   await nv2.loadDocument(documentFile(JSON.stringify(doc), 'doc.json'), {

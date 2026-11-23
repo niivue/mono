@@ -1,5 +1,5 @@
 import type NiiVue from '@niivue/niivue'
-import { SLICE_TYPE } from '@niivue/niivue'
+import { SLICE_TYPE, VOLUME_RENDER_MODE } from '@niivue/niivue'
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import {
   applyWindowLevelPreset,
@@ -10,6 +10,7 @@ import {
 } from './commands'
 import { getNiivueEntry, ohifServices } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
+import { CINEMATIC_LIGHTING } from './vrPresets'
 
 // cornerstone's viewport action corners (bottom-left windowLevelMenu,
 // bottom-middle AdvancedRenderingControls: W/L presets and manual VOI, Color
@@ -242,13 +243,23 @@ export function DisplayMenu({
 }
 
 /**
- * cornerstone's Volume Rendering Options (quality, shift, shade) on a NiiVue
+ * cornerstone's Volume Rendering Options (quality, shift, shade, lighting) on a NiiVue
  * 3D pane, through the same commands as OHIF's menu would run.
  */
 function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
   const vol = nv.volumes[0]
   const width = vol ? Math.max(1, vol.calMax - vol.calMin) : 1
   const [shift, setShift] = useState(0)
+  // Follow changes made elsewhere (commands, the orientation menu's 3D Cinematic).
+  const [, refresh] = useState(0)
+  useEffect(() => {
+    const update = () => refresh((n) => n + 1)
+    nv.addEventListener('change', update)
+    return () => nv.removeEventListener('change', update)
+  }, [nv])
+  // cornerstone disables its lighting sliders without shade; these need the
+  // path tracer, the only NiiVue renderer with separate lighting terms.
+  const cinematic = nv.volumeRenderMode === VOLUME_RENDER_MODE.CINEMATIC
   return (
     <>
       <div style={heading}>Rendering</div>
@@ -298,6 +309,28 @@ function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
         />
         Shade
       </label>
+      {Object.entries(CINEMATIC_LIGHTING).map(([name, key]) => (
+        <label
+          key={name}
+          style={row}
+          title={cinematic ? undefined : 'Lighting applies in 3D Cinematic'}
+        >
+          {name.charAt(0).toUpperCase() + name.slice(1)}
+          <input
+            aria-label={`Volume lighting ${name}`}
+            type="range"
+            min={0}
+            max={1}
+            step={0.1}
+            disabled={!cinematic}
+            value={nv.volumeCinematic[key]}
+            onChange={(e) => {
+              nv.volumeCinematic = { [key]: Number(e.target.value) }
+              redraw()
+            }}
+          />
+        </label>
+      ))}
     </>
   )
 }

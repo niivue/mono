@@ -38,3 +38,11 @@ export function displayPresetColormap(
       : (byModality?.[String(modality)] ?? byModality?.default)
   return typeof name === 'string' ? NIIVUE_VR_PRESETS[name] : undefined
 }
+
+// OHIF's VTK lighting sliders (0-1) on the 3D Cinematic renderer's terms.
+// volumetricDiffuse shades only normal-free samples; surfaces keep full N.L.
+export const CINEMATIC_LIGHTING = {
+  ambient: 'ambient',
+  diffuse: 'volumetricDiffuse',
+  specular: 'specular',
+} as const

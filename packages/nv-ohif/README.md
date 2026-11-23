@@ -127,6 +127,14 @@ with the extension placed after `@ohif/extension-cornerstone`:
   OHIF's viewport prompts (`uiViewportDialogService`) are drawn on the pane.
 - Feeds new measurements to OHIF's **measurement tracking** (longitudinal mode)
   as TrackedCornerstoneViewport does; inert without the tracking context.
+- A 3D pane's display menu offers cornerstone's **Volume Rendering Options**
+  (`setVolumeRenderingQulaity`, `shiftVolumeOpacityPoints`,
+  `setVolumeLighting`): Quality is the sample rate, Shift moves the window and
+  Shade toggles illumination. Ambient, Diffuse and Specular apply in 3D
+  Cinematic only (`volumeCinematic` ambient / volumetricDiffuse / specular,
+  kept per pane). Diffuse shades normal-free samples only, and Specular shows
+  only where the colormap has a specular channel (`S`), which NiiVue's CT
+  colormaps lack.
 - A whole-slide pane shows a **minimap** with the visible region boxed.
 - The pane root carries `data-viewportid` (as cornerstone) and `data-loaded`
   (set once the base volume or slide is shown, absent while loading or after a

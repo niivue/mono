@@ -501,8 +501,8 @@ tmtv).
   mm. Unlike cornerstone, the line reads mm (calibrated, if set), not px,
   while drawn; the scale stays with the display set when a pane swaps away and
   back. Re-importing an
-  SR restores the scale from its stored lengths (rows that disagree leave
-  native mm).
+  SR restores the scale from its stored lengths, or areas in an ROI-only
+  report (rows that disagree leave native mm).
 
 ## Compatibility
 

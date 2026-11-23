@@ -1,3 +1,28 @@
+## 1.0.0-rc.276 (2026-11-23)
+
+### Features
+
+- **nv-ohif:** an imported SR restores its calibration from stored lengths ([de642056](https://github.com/niivue/mono/commit/de642056))
+- **nv-ohif:** CalibrationLine scales a display set's measurements (C35) ([b03b916f](https://github.com/niivue/mono/commit/b03b916f))
+
+### Fixes
+
+- **nv-ohif:** a withdrawn CalibrationLine keeps the Redo it cleared ([cad86f59](https://github.com/niivue/mono/commit/cad86f59))
+- **nv-ohif:** a CalibrationLine spends no undo step ([d34a5184](https://github.com/niivue/mono/commit/d34a5184))
+- **nv-ohif:** no snap on area-derived report scales (contradicted a small length scale) ([a432024b](https://github.com/niivue/mono/commit/a432024b))
+- **nv-ohif:** an ROI-only SR restores its calibration from stored area ([4c2929d0](https://github.com/niivue/mono/commit/4c2929d0))
+- **nv-ohif:** slide circle rows keep their SR radius from points ([a8e1bcbf](https://github.com/niivue/mono/commit/a8e1bcbf))
+- **nv-ohif:** calibrate the dragged bidirectional's labels ([c163ec9d](https://github.com/niivue/mono/commit/c163ec9d))
+- **nv-ohif:** calibration scales the drawn ruler; row test covers re-reflection ([68fdb50a](https://github.com/niivue/mono/commit/68fdb50a))
+- **nv-ohif:** every glass zoom-list removal unhooks its blur first ([f6147498](https://github.com/niivue/mono/commit/f6147498))
+- **nv-ohif:** the glass zoom list closes once on a pick ([ff5d5876](https://github.com/niivue/mono/commit/ff5d5876))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.275 (2026-11-23)
 
 ### Features

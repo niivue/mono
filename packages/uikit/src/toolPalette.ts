@@ -94,6 +94,8 @@ export interface ToolPaletteStyle {
   border: RGBA
   borderWidth: number
   hoverFill: RGBA
+  /** An unpicked shape key. */
+  keyFill: RGBA
   barrel: RGBA
   barrelEdge: RGBA
   eraser: RGBA
@@ -124,6 +126,7 @@ export const DEFAULT_TOOL_PALETTE_STYLE: ToolPaletteStyle = {
   border: [0.6, 0.66, 0.78, 0.35],
   borderWidth: 1,
   hoverFill: [1, 1, 1, 0.12],
+  keyFill: [1, 1, 1, 0.06],
   barrel: [0.94, 0.94, 0.96, 1],
   barrelEdge: [0.55, 0.57, 0.62, 1],
   eraser: [0.97, 0.87, 0.86, 1],
@@ -307,8 +310,11 @@ export function layoutToolPalette(
       }
       section.forEach((part, i) => {
         if (i > 0) cursor += style.gap
-        // A tool's hit box runs from its raised tip down through the tray.
-        const top = part.kind === 'tool' ? rowY - reach : rowY
+        // An upright tool's hit box runs from its raised tip down through the
+        // tray; a flat key's stays in the tray.
+        const upright =
+          part.kind === 'tool' && !KEY_LOOKS.has(spec.tools[part.index].look)
+        const top = upright ? rowY - reach : rowY
         items.push({
           kind: part.kind,
           index: part.index,
@@ -409,9 +415,10 @@ export function buildToolPalette(
   layout.items.forEach((item, i) => {
     if (item.kind !== 'tool') return
     const tool = spec.tools[item.index]
-    const rowY = item.y + reach
+    const key = KEY_LOOKS.has(tool.look)
+    const rowY = key ? item.y : item.y + reach
     const cx = item.x + item.width / 2
-    if (KEY_LOOKS.has(tool.look)) {
+    if (key) {
       // The picked key fills with the ink; its shape turns dark on it.
       const picked = tool.id === spec.tool
       const keyTop = rowY + style.padding * 0.4
@@ -423,7 +430,7 @@ export function buildToolPalette(
           width: item.width - 2,
           height: keyHeight,
           radius: style.rowHeight * 0.14,
-          fill: picked ? ink : i === hover ? style.hoverFill : [1, 1, 1, 0.06],
+          fill: picked ? ink : i === hover ? style.hoverFill : style.keyFill,
         }),
       )
       shapeGlyph(
@@ -550,7 +557,7 @@ export function buildToolPalette(
         )
       }
       if (action.icon) {
-        undoIcon(lines, cx, cy, style.rowHeight * 0.16, color, action.icon)
+        historyIcon(lines, cx, cy, style.rowHeight * 0.16, color, action.icon)
       } else {
         text.push({
           str: action.label,
@@ -670,8 +677,12 @@ function luminance([r, g, b]: RGBA): number {
 
 /** The tray fill or the text color, whichever stands out more on `ink`, opaque. */
 export function glyphOn(ink: RGBA, style: ToolPaletteStyle): RGBA {
+  // A translucent ink shows the tray through it.
+  const over = (k: number): number =>
+    ink[k] * ink[3] + style.fill[k] * (1 - ink[3])
+  const seen: RGBA = [over(0), over(1), over(2), 1]
   const contrast = (c: RGBA): number => {
-    const [a, b] = [luminance(ink), luminance(c)]
+    const [a, b] = [luminance(seen), luminance(c)]
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
   }
   const [r, g, b] =
@@ -771,9 +782,9 @@ function shapeGlyph(
   }
 }
 
-// A counter-clockwise hook ending in an arrowhead, about `r` across; redo
-// mirrors it.
-function undoIcon(
+// Undo: a counter-clockwise hook ending in an arrowhead, about `r` across;
+// redo mirrors it.
+function historyIcon(
   lines: LineData[],
   cx: number,
   cy: number,

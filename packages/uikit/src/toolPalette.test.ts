@@ -125,6 +125,28 @@ describe('tool palette', () => {
     expect(glyphOn([1, 0.23, 0.19, 1], STYLE).slice(0, 3)).toEqual(dark)
     expect(glyphOn([0, 0, 0, 1], STYLE).slice(0, 3)).toEqual(light)
     expect(glyphOn([0.1, 0.1, 0.5, 1], STYLE).slice(0, 3)).toEqual(light)
+    // Faint yellow mostly shows the dark tray: a light glyph.
+    expect(glyphOn([1, 0.9, 0.2, 0.1], STYLE).slice(0, 3)).toEqual(light)
+  })
+
+  it('keeps a key in the tray beside upright tools', () => {
+    const spec: ToolPaletteSpec = {
+      x: 0,
+      y: 100,
+      actions: [],
+      tools: [
+        { id: 'pen', label: 'Pen', look: 'pen' },
+        { id: 'rectangle', label: 'Rect', look: 'rectangle' },
+      ],
+      tool: 'pen',
+      colors: [],
+    }
+    const layout = layoutToolPalette(spec, 0, 100, 1e9, STYLE, METRICS)
+    const [pen, key] = layout.items
+    expect(pen.y).toBe(100 - toolPaletteReach(STYLE, spec.tools))
+    expect(key.y).toBe(100)
+    expect(key.height).toBe(STYLE.rowHeight)
+    expect(toolPaletteContains(layout, key.x + 1, 99)).toBe(false)
   })
 
   it('draws shapes as flat keys, the picked one filled with the ink, and mirrors undo for redo', () => {

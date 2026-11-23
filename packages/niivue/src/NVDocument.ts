@@ -17,7 +17,11 @@ import {
   looksLikeJSON,
 } from '@/documentJson'
 import { upgradeLegendFlags } from '@/documentLegend'
-import { isTransientStreamedVolume, shouldLinkVolume } from '@/documentLinkData'
+import {
+  isLinkableUrl,
+  isTransientStreamedVolume,
+  linkedUrl,
+} from '@/documentLinkData'
 import { matcapToName } from '@/documentMatcap'
 import { selectUrlMeshLayers } from '@/documentMeshLayers'
 import {
@@ -376,11 +380,12 @@ export interface SerializeOptions {
    */
   settings?: SettingsSavePolicy
   /**
-   * Link (rather than embed) volume data. When true, a volume that has a
-   * fetchable URL is serialized WITHOUT its bytes and the loader refetches from
-   * the URL — a small, "linked" document. Volumes with no linkable URL
-   * (drag-dropped files, `blob:`/`data:` URLs) still embed their data so the
-   * document always round-trips. Default false (self-contained).
+   * Link (rather than embed) volume and mesh data. When true, a volume or mesh
+   * that has a fetchable URL is serialized WITHOUT its bytes and the loader
+   * refetches from the URL — a small, "linked" document. Entries with no
+   * linkable URL (drag-dropped files, `blob:`/`data:` URLs) still embed their
+   * data so the document always round-trips. Default false (self-contained).
+   * A linked mesh keeps its layers' values embedded; tracts always embed.
    *
    * INVARIANT — a linked volume assumes the URL's content is immutable and still
    * matches the in-memory voxels. Linking keys off "has a fetchable URL," NOT off
@@ -390,12 +395,17 @@ export interface SerializeOptions {
    * fetches whatever the URL now serves. Do not link a volume you have edited in
    * place — embed it (the default) instead. (Display state and the drawing bitmap
    * are serialized separately and survive; only the raw voxels can diverge.)
-   *
-   * NOTE: meshes are always embedded (their URL-restore path reapplies only
-   * URL-referenced overlay layers, not embedded layer data or tract/connectome
-   * options).
+   * The same holds for a mesh whose geometry was edited in place
+   * (`updateMeshPositions`).
    */
   linkData?: boolean
+  /**
+   * Under `linkData`, decides how each linked volume or mesh URL is written
+   * (the save-side mirror of `loadDocument`'s `resolveUrl`): return the string
+   * to write instead (e.g. a bundle id that `resolveUrl` maps back), or `null`
+   * to embed that item's data. Called only for URLs that would be linked.
+   */
+  linkUrl?: (url: string, kind: 'volume' | 'mesh') => string | null
   /**
    * Encoding of the returned bytes: `'cbor'` (default) is the compact binary
    * `.nvd`; `'json'` is a human-readable/portable JSON document (typed arrays
@@ -473,10 +483,12 @@ export function serialize(
       // and this volume has a fetchable URL (then the loader refetches it). A
       // linked volume with no usable URL still embeds so the document round-trips.
       if (v.hdr && v.img) {
-        if (shouldLinkVolume(v.url, linkData)) {
-          // linked: bytes omitted, loader fetches from v.url
+        const url = linkedUrl(v.url, 'volume', linkData, options?.linkUrl)
+        if (url !== null) {
+          // linked: bytes omitted, loader fetches from url
+          vol.url = url
         } else {
-          if (linkData) {
+          if (linkData && !isLinkableUrl(v.url)) {
             log.warn(
               `serialize: volume "${v.name ?? v.url ?? '(unnamed)'}" has no linkable URL; embedding its data`,
             )
@@ -533,13 +545,19 @@ export function serialize(
     }
     if (m.visible === false) mesh.visible = false
 
-    // Meshes are always embedded, even under linkData: the mesh URL-restore path
-    // reapplies only URL-referenced scalar-overlay layers (not embedded layer
-    // data or tract/connectome options), so linking a mesh could silently drop
-    // that state. linkData covers volumes (whose URL-restore is complete); mesh
-    // linking is a tracked follow-up.
-    // Always embed mesh data for self-contained documents
-    if (m.positions && m.indices && m.colors) {
+    // Tracts always embed: scalars merged into `trx` at load from separate
+    // TSF/TXT layer files are not recorded, so a URL reload would drop them.
+    const url =
+      m.kind === 'tract'
+        ? null
+        : linkedUrl(m.url, 'mesh', linkData, options?.linkUrl)
+    const isLinked = url !== null
+    if (url !== null) {
+      // linked: geometry omitted, loader fetches from url; layer values stay
+      // embedded, and an empty list tells the loader to drop file scalars.
+      mesh.url = url
+      mesh.layers = []
+    } else if (m.positions && m.indices && m.colors) {
       mesh.data = {
         positions: typedArrayToBytes(m.positions),
         indices: typedArrayToBytes(m.indices),
@@ -589,10 +607,11 @@ export function serialize(
 
     // Serialize connectome source data and options
     if (m.kind === 'connectome' && m.jcon) {
-      mesh.connectomeData = {
-        nodes: m.jcon.nodes.map((n) => ({ ...n })),
-        edges: m.jcon.edges.map((e) => ({ ...e })),
-      }
+      if (url === null)
+        mesh.connectomeData = {
+          nodes: m.jcon.nodes.map((n) => ({ ...n })),
+          edges: m.jcon.edges.map((e) => ({ ...e })),
+        }
       if (m.connectomeOptions)
         mesh.connectomeOptions = { ...m.connectomeOptions }
     }
@@ -601,7 +620,9 @@ export function serialize(
     if (m.layers && m.layers.length > 0) {
       mesh.layers = m.layers.map((layer) => {
         const docLayer: NVDocumentMeshLayer = {
-          url: layer.url,
+          // A linked mesh's layers omit url: older readers refetch every layer
+          // url on the URL path, and an unreachable one would fail the mesh.
+          url: isLinked ? undefined : layer.url,
           name: layer.name,
           colormap: layer.colormap,
           colormapNegative: layer.colormapNegative,
@@ -1093,6 +1114,53 @@ export async function reconstructVolume(
   return vol
 }
 
+/** A document mesh's layers that carry embedded values, rebuilt in order. */
+function embeddedMeshLayers(
+  docLayers: NVDocumentMeshLayer[] | undefined,
+  nVert: number,
+): NVMeshLayer[] {
+  const layers: NVMeshLayer[] = []
+  for (const docLayer of docLayers ?? []) {
+    if (!docLayer.data) continue
+    const values = new Float32Array(copyDocumentBytes(docLayer.data))
+    const layer = NVMeshLayers.createLayer(values, nVert, {
+      url: docLayer.url,
+      name: docLayer.name,
+      colormap: docLayer.colormap,
+      colormapNegative: docLayer.colormapNegative,
+      calMin: docLayer.calMin,
+      calMax: docLayer.calMax,
+      calMinNeg: docLayer.calMinNeg,
+      calMaxNeg: docLayer.calMaxNeg,
+      opacity: docLayer.opacity,
+      isColorbarVisible: docLayer.isColorbarVisible,
+      isColormapInverted: docLayer.isColormapInverted,
+      colormapType: docLayer.colormapType,
+      isTransparentBelowCalMin: docLayer.isTransparentBelowCalMin,
+      isAdditiveBlend: docLayer.isAdditiveBlend,
+      nFrame4D: docLayer.nFrame4D,
+      frame4D: docLayer.frame4D,
+      outlineWidth: docLayer.outlineWidth,
+    })
+    if (docLayer.colormapLabel) {
+      layer.colormapLabel = {
+        lut: new Uint8ClampedArray(
+          copyDocumentBytes(docLayer.colormapLabel.lut),
+        ),
+        min: docLayer.colormapLabel.min,
+        max: docLayer.colormapLabel.max,
+        labels: docLayer.colormapLabel.labels,
+      }
+    }
+    if (docLayer.hiddenLabels?.length)
+      layer.hiddenLabels = [...docLayer.hiddenLabels]
+    if (docLayer.isHiddenLabelCulled === false)
+      layer.isHiddenLabelCulled = false
+    layers.push(layer)
+  }
+  return layers
+}
+
 /**
  * Reconstruct a mesh from a document entry and add it to the model.
  */
@@ -1116,51 +1184,7 @@ export async function reconstructMesh(
         const pvcBuffer = copyDocumentBytes(m.data.perVertexColors)
         perVertexColors = new Uint32Array(pvcBuffer)
       }
-      // Restore layers from embedded data
-      const layers: NVMeshLayer[] = []
-      if (m.layers) {
-        const nVert = positions.length / 3
-        for (const docLayer of m.layers) {
-          if (docLayer.data) {
-            const valBuffer = copyDocumentBytes(docLayer.data)
-            const values = new Float32Array(valBuffer)
-            const layer = NVMeshLayers.createLayer(values, nVert, {
-              url: docLayer.url,
-              name: docLayer.name,
-              colormap: docLayer.colormap,
-              colormapNegative: docLayer.colormapNegative,
-              calMin: docLayer.calMin,
-              calMax: docLayer.calMax,
-              calMinNeg: docLayer.calMinNeg,
-              calMaxNeg: docLayer.calMaxNeg,
-              opacity: docLayer.opacity,
-              isColorbarVisible: docLayer.isColorbarVisible,
-              isColormapInverted: docLayer.isColormapInverted,
-              colormapType: docLayer.colormapType,
-              isTransparentBelowCalMin: docLayer.isTransparentBelowCalMin,
-              isAdditiveBlend: docLayer.isAdditiveBlend,
-              nFrame4D: docLayer.nFrame4D,
-              frame4D: docLayer.frame4D,
-              outlineWidth: docLayer.outlineWidth,
-            })
-            // Restore layer label colormap if present
-            if (docLayer.colormapLabel) {
-              const lutData = docLayer.colormapLabel.lut
-              layer.colormapLabel = {
-                lut: new Uint8ClampedArray(copyDocumentBytes(lutData)),
-                min: docLayer.colormapLabel.min,
-                max: docLayer.colormapLabel.max,
-                labels: docLayer.colormapLabel.labels,
-              }
-            }
-            if (docLayer.hiddenLabels?.length)
-              layer.hiddenLabels = [...docLayer.hiddenLabels]
-            if (docLayer.isHiddenLabelCulled === false)
-              layer.isHiddenLabelCulled = false
-            layers.push(layer)
-          }
-        }
-      }
+      const layers = embeddedMeshLayers(m.layers, positions.length / 3)
 
       // Build species-specific source data
       const kind = m.kind ?? 'mesh'
@@ -1232,12 +1256,12 @@ export async function reconstructMesh(
       const mesh = NVMesh.createMesh(positions, indices, colors, meshOpts)
       return await model.addMesh(mesh)
     } else if (m.url) {
-      // Load from URL. Forward URL-referenced scalar overlay layers so they are
-      // fetched and applied — previously they were dropped, leaving surfaces
-      // without their overlays. See selectUrlMeshLayers for why URL-less layers
-      // are skipped on this path.
-      const layers = selectUrlMeshLayers(m.layers)
-      return await model.addMesh({
+      // Load from URL. A linked mesh (every layer carries its values, as
+      // serialize writes them) gets exactly its saved layers, replacing any
+      // scalars the file brings. Otherwise (a hand-written document) fetch the
+      // URL-referenced layers; see selectUrlMeshLayers.
+      const isSavedLayers = m.layers?.every((l) => l.data) ?? false
+      const mesh = await model.addMesh({
         url: m.url,
         name: m.name,
         opacity: m.opacity,
@@ -1247,8 +1271,24 @@ export async function reconstructMesh(
         color: m.color,
         isColorbarVisible: m.isColorbarVisible,
         isLegendVisible: m.isLegendVisible ?? true,
-        layers,
+        layers: isSavedLayers ? undefined : selectUrlMeshLayers(m.layers),
+        tractOptions: m.tractOptions,
+        connectomeOptions: m.connectomeOptions,
       })
+      if (!mesh) return null
+      // The tract and connectome loaders ignore these load options.
+      if (m.visible !== undefined) mesh.visible = m.visible
+      mesh.isLegendVisible = m.isLegendVisible ?? true
+      if (isSavedLayers && mesh.kind === 'mesh') {
+        mesh.layers = embeddedMeshLayers(m.layers, mesh.positions.length / 3)
+        NVMeshLayers.compositeLayers(
+          mesh.perVertexColors,
+          mesh.color,
+          mesh.layers,
+          mesh.colors,
+        )
+      }
+      return mesh
     }
   } catch (err) {
     log.warn(`Failed to load mesh ${m.name ?? m.url}:`, err)

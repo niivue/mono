@@ -201,6 +201,7 @@ test('a URL document keeps a layer label table read from its file', async () => 
   delete docMesh.data
   for (const k of Object.keys(docMesh.layers[0]))
     if (!['url', 'colormap', 'opacity'].includes(k)) delete docMesh.layers[0][k]
+  docMesh.layers[0].url = server.url('/fixture/table.label.gii')
 
   const nv2 = new NiiVue({ backend: 'webgl2' })
   await nv2.loadDocument(documentFile(JSON.stringify(doc), 'labels.json'))

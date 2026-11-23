@@ -8465,9 +8465,11 @@ export default class NiiVue extends EventTarget {
   /**
    * Return the current scene serialized as an NVD document (Uint8Array).
    * `options.settings` overrides the instance `settingsSavePolicy`;
-   * `options.linkData` saves a small "linked" document that references volumes by
-   * URL instead of embedding their bytes; `options.format` is `'cbor'` (default,
-   * binary) or `'json'` (portable text). `loadDocument` accepts either encoding.
+   * `options.linkData` saves a small "linked" document that references volumes
+   * and meshes by URL instead of embedding their bytes, and `options.linkUrl`
+   * chooses the URL written for each (or embeds it); `options.format` is
+   * `'cbor'` (default, binary) or `'json'` (portable text). `loadDocument`
+   * accepts either encoding.
    */
   serializeDocument(options?: NVDocument.SerializeOptions): Uint8Array {
     return NVDocument.serialize(
@@ -8476,6 +8478,7 @@ export default class NiiVue extends EventTarget {
       {
         settings: options?.settings ?? this._settingsSavePolicy,
         linkData: options?.linkData,
+        linkUrl: options?.linkUrl,
         format: options?.format,
       },
       this.opts.matcaps,
@@ -8898,6 +8901,15 @@ export default class NiiVue extends EventTarget {
       this.model.meshes = this.model.meshes.filter((m) => !added.includes(m))
       return
     }
+    // Parallel loads append as they finish; restore the document's order.
+    const loaded = this.model.meshes.slice(meshesBefore)
+    this.model.meshes = [
+      ...this.model.meshes.slice(0, meshesBefore),
+      ...loaded
+        .filter((m) => added.includes(m))
+        .sort((a, b) => added.indexOf(a) - added.indexOf(b)),
+      ...loaded.filter((m) => !added.includes(m)),
+    ]
     for (const mesh of this.model.meshes.slice(meshesBefore)) {
       this.emit('meshLoaded', { mesh })
     }

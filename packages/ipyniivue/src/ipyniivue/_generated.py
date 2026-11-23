@@ -1707,9 +1707,11 @@ and its volumes alive."""
         """Return the current scene serialized as an NVD document (Uint8Array).
 
         `options.settings` overrides the instance `settingsSavePolicy`;
-        `options.linkData` saves a small \"linked\" document that references volumes by
-        URL instead of embedding their bytes; `options.format` is `'cbor'` (default,
-        binary) or `'json'` (portable text). `loadDocument` accepts either encoding.
+        `options.linkData` saves a small \"linked\" document that references volumes
+        and meshes by URL instead of embedding their bytes, and `options.linkUrl`
+        chooses the URL written for each (or embeds it); `options.format` is
+        `'cbor'` (default, binary) or `'json'` (portable text). `loadDocument`
+        accepts either encoding.
 
         Parameters
         ----------

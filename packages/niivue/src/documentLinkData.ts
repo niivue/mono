@@ -22,15 +22,20 @@ export function isLinkableUrl(url: string | undefined): boolean {
 }
 
 /**
- * Whether a volume's bytes should be LINKED (omitted, refetched from `url`)
- * rather than embedded: only when `linkData` is requested AND the volume has a
- * linkable URL. Otherwise the volume embeds so the document always round-trips.
+ * The `url` a LINKED entry (volume or mesh; data omitted, refetched on load) is
+ * written with, or `null` to embed its data: links only when `linkData` is
+ * requested AND the entry has a linkable URL, then through `linkUrl` when given
+ * (it may rewrite the URL, or return `null` to embed). Otherwise the entry
+ * embeds so the document always round-trips.
  */
-export function shouldLinkVolume(
+export function linkedUrl(
   url: string | undefined,
+  kind: 'volume' | 'mesh',
   linkData: boolean,
-): boolean {
-  return linkData && isLinkableUrl(url)
+  linkUrl?: (url: string, kind: 'volume' | 'mesh') => string | null,
+): string | null {
+  if (!linkData || !url || !isLinkableUrl(url)) return null
+  return linkUrl ? linkUrl(url, kind) : url
 }
 
 /**

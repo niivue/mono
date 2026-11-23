@@ -3,7 +3,7 @@ import { decode, encode } from 'cbor-x'
 import {
   isLinkableUrl,
   isTransientStreamedVolume,
-  shouldLinkVolume,
+  linkedUrl,
 } from './documentLinkData'
 
 // A real niivue test-images URL (the "niivue test images repo") plus a served
@@ -28,15 +28,28 @@ describe('isLinkableUrl', () => {
   })
 })
 
-describe('shouldLinkVolume', () => {
+describe('linkedUrl', () => {
   test('links only when linkData is on AND the URL is linkable', () => {
-    expect(shouldLinkVolume(REMOTE_URL, true)).toBe(true)
-    expect(shouldLinkVolume(LOCAL_URL, true)).toBe(true)
+    expect(linkedUrl(REMOTE_URL, 'volume', true)).toBe(REMOTE_URL)
+    expect(linkedUrl(LOCAL_URL, 'mesh', true)).toBe(LOCAL_URL)
     // linkData off -> always embed
-    expect(shouldLinkVolume(REMOTE_URL, false)).toBe(false)
+    expect(linkedUrl(REMOTE_URL, 'volume', false)).toBeNull()
     // linkData on but no fetchable URL -> embed (fallback)
-    expect(shouldLinkVolume('blob:https://app/9f2c', true)).toBe(false)
-    expect(shouldLinkVolume(undefined, true)).toBe(false)
+    expect(linkedUrl('blob:https://app/9f2c', 'volume', true)).toBeNull()
+    expect(linkedUrl(undefined, 'volume', true)).toBeNull()
+  })
+
+  test('linkUrl rewrites or embeds, and sees only linkable URLs under linkData', () => {
+    const seen: string[] = []
+    const linkUrl = (url: string, kind: 'volume' | 'mesh') => {
+      seen.push(`${kind}:${url}`)
+      return kind === 'mesh' ? null : 't1'
+    }
+    expect(linkedUrl(REMOTE_URL, 'volume', true, linkUrl)).toBe('t1')
+    expect(linkedUrl(LOCAL_URL, 'mesh', true, linkUrl)).toBeNull()
+    expect(linkedUrl('blob:x', 'volume', true, linkUrl)).toBeNull()
+    expect(linkedUrl(REMOTE_URL, 'volume', false, linkUrl)).toBeNull()
+    expect(seen).toEqual([`volume:${REMOTE_URL}`, `mesh:${LOCAL_URL}`])
   })
 })
 
@@ -51,7 +64,7 @@ type DocVolume = { url?: string; name: string; data?: { img: Uint8Array } }
 
 function toDocVolume(v: SrcVolume, linkData: boolean): DocVolume {
   const doc: DocVolume = { url: v.url, name: v.name }
-  if (!shouldLinkVolume(v.url, linkData)) doc.data = { img: v.img }
+  if (linkedUrl(v.url, 'volume', linkData) === null) doc.data = { img: v.img }
   return doc
 }
 

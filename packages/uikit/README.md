@@ -360,6 +360,8 @@ palette.measure() // { width, height, reach } in spec units, or null while hidde
 
 `x`, `y` is the tray's top-left; tools reach above it by `measure().reach`.
 Past `maxWidth`, whole sections wrap to new rows; tools stay on the top row.
+Looks: `pen`, `marker`, `wand`, `eraser`, and the flat shape keys `freehand`,
+`rectangle`, `ellipse`, `arrow`, `spline`, `livewire`. Action icons: `undo`, `redo`.
 `update` keeps hover and a press under way. `ToolPaletteStyle` holds the row,
 tool, swatch and dot sizes, lifts, fills and text sizes.
 

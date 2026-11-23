@@ -1,5 +1,6 @@
 // Pure tool palette model for UIKit: a floating drawing toolbar after the
-// iPad's own, with upright tools rising from a tray (the selected one raised),
+// iPad's own, with upright tools rising from a tray (the selected one raised)
+// or flat shape keys (the selected one filled with the ink),
 // color swatches, brush widths and action buttons such as Undo. Layout,
 // hit-testing and draw geometry only; UIKitToolPaletteOverlay wires it up.
 
@@ -10,8 +11,21 @@ import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
 
-/** How a tool is drawn: a fine pen, a broad marker, a wand or an eraser. */
-export type ToolLook = 'pen' | 'marker' | 'wand' | 'eraser'
+/**
+ * How a tool is drawn: a fine pen, a broad marker, a wand or an eraser standing
+ * up from the tray, or a flat key showing a shape.
+ */
+export type ToolLook =
+  | 'pen'
+  | 'marker'
+  | 'wand'
+  | 'eraser'
+  | 'freehand'
+  | 'rectangle'
+  | 'ellipse'
+  | 'arrow'
+  | 'spline'
+  | 'livewire'
 
 export interface ToolPaletteTool {
   id: string
@@ -35,7 +49,7 @@ export interface ToolPaletteAction {
   id: string
   label: string
   /** Draw an icon in place of the label. */
-  icon?: 'undo'
+  icon?: 'undo' | 'redo'
   /** Default true. */
   enabled?: boolean
 }
@@ -80,6 +94,8 @@ export interface ToolPaletteStyle {
   border: RGBA
   borderWidth: number
   hoverFill: RGBA
+  /** An unpicked shape key. */
+  keyFill: RGBA
   barrel: RGBA
   barrelEdge: RGBA
   eraser: RGBA
@@ -110,6 +126,7 @@ export const DEFAULT_TOOL_PALETTE_STYLE: ToolPaletteStyle = {
   border: [0.6, 0.66, 0.78, 0.35],
   borderWidth: 1,
   hoverFill: [1, 1, 1, 0.12],
+  keyFill: [1, 1, 1, 0.06],
   barrel: [0.94, 0.94, 0.96, 1],
   barrelEdge: [0.55, 0.57, 0.62, 1],
   eraser: [0.97, 0.87, 0.86, 1],
@@ -182,9 +199,24 @@ export function scaleToolPaletteStyle(
   return scaled
 }
 
-/** The highest a tool reaches above the tray (selected and hovered). */
-export function toolPaletteReach(style: ToolPaletteStyle): number {
-  return style.toolRise + style.selectedLift + style.hoverLift
+// Shape tools are flat keys in the tray; the rest stand up out of it.
+const KEY_LOOKS: ReadonlySet<ToolLook> = new Set([
+  'freehand',
+  'rectangle',
+  'ellipse',
+  'arrow',
+  'spline',
+  'livewire',
+])
+
+/** The highest a tool reaches above the tray (selected and hovered); 0 for keys only. */
+export function toolPaletteReach(
+  style: ToolPaletteStyle,
+  tools: readonly ToolPaletteTool[],
+): number {
+  return tools.every(({ look }) => KEY_LOOKS.has(look))
+    ? 0
+    : style.toolRise + style.selectedLift + style.hoverLift
 }
 
 /**
@@ -200,6 +232,7 @@ export function layoutToolPalette(
   metrics: UIKitFontMetrics,
 ): ToolPaletteLayout {
   const square = style.rowHeight - 2 * style.padding
+  const reach = toolPaletteReach(style, spec.tools)
   const actionWidth = (action: ToolPaletteAction): number =>
     action.icon
       ? square
@@ -277,8 +310,11 @@ export function layoutToolPalette(
       }
       section.forEach((part, i) => {
         if (i > 0) cursor += style.gap
-        // A tool's hit box runs from its raised tip down through the tray.
-        const top = part.kind === 'tool' ? rowY - toolPaletteReach(style) : rowY
+        // An upright tool's hit box runs from its raised tip down through the
+        // tray; a flat key's stays in the tray.
+        const upright =
+          part.kind === 'tool' && !KEY_LOOKS.has(spec.tools[part.index].look)
+        const top = upright ? rowY - reach : rowY
         items.push({
           kind: part.kind,
           index: part.index,
@@ -375,25 +411,53 @@ export function buildToolPalette(
 
   // Tools stand just above their captions.
   const lip = style.rowHeight * 0.36
+  const reach = toolPaletteReach(style, spec.tools)
   layout.items.forEach((item, i) => {
     if (item.kind !== 'tool') return
     const tool = spec.tools[item.index]
-    const rowY = item.y + toolPaletteReach(style)
-    const lift =
-      (tool.id === spec.tool ? style.selectedLift : 0) +
-      (i === hover ? style.hoverLift : 0)
-    const top = rowY - style.toolRise - lift
+    const key = KEY_LOOKS.has(tool.look)
+    const rowY = key ? item.y : item.y + reach
     const cx = item.x + item.width / 2
-    buildTool(
-      rects,
-      lines,
-      tool.look,
-      cx,
-      top,
-      rowY + style.rowHeight - lip - style.rowHeight / 28,
-      style,
-      ink,
-    )
+    if (key) {
+      // The picked key fills with the ink; its shape turns dark on it.
+      const picked = tool.id === spec.tool
+      const keyTop = rowY + style.padding * 0.4
+      const keyHeight = style.rowHeight - lip - style.padding * 0.4
+      rects.push(
+        buildRect({
+          x: item.x + 1,
+          y: keyTop,
+          width: item.width - 2,
+          height: keyHeight,
+          radius: style.rowHeight * 0.14,
+          fill: picked ? ink : i === hover ? style.hoverFill : style.keyFill,
+        }),
+      )
+      shapeGlyph(
+        rects,
+        lines,
+        tool.look,
+        cx,
+        keyTop + keyHeight / 2,
+        Math.min(item.width, keyHeight) * 0.3,
+        Math.max(1.5, style.rowHeight / 28),
+        picked ? glyphOn(ink, style) : style.textColor,
+      )
+    } else {
+      const lift =
+        (tool.id === spec.tool ? style.selectedLift : 0) +
+        (i === hover ? style.hoverLift : 0)
+      buildTool(
+        rects,
+        lines,
+        tool.look,
+        cx,
+        rowY - style.toolRise - lift,
+        rowY + style.rowHeight - lip - style.rowHeight / 28,
+        style,
+        ink,
+      )
+    }
     text.push({
       str: tool.label,
       x: cx,
@@ -492,8 +556,8 @@ export function buildToolPalette(
           }),
         )
       }
-      if (action.icon === 'undo') {
-        undoIcon(lines, cx, cy, style.rowHeight * 0.16, color)
+      if (action.icon) {
+        historyIcon(lines, cx, cy, style.rowHeight * 0.16, color, action.icon)
       } else {
         text.push({
           str: action.label,
@@ -598,20 +662,149 @@ function buildTool(
       lines.push(buildLine(cx - dx, cy - dy, cx + dx, cy + dy, 2 * u, ink))
     }
   } else {
-    // A soft block, rounded at the end that erases.
+    // Eraser: a soft block, rounded at the end that erases.
     barrel(top, style.eraser, 8 * u)
     band(top + 16 * u, style.barrelEdge)
   }
 }
 
-// A counter-clockwise hook ending in an arrowhead, about `r` across.
-function undoIcon(
+// WCAG relative luminance of an sRGB color.
+function luminance([r, g, b]: RGBA): number {
+  const lin = (c: number): number =>
+    c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+/** The tray fill or the text color, whichever stands out more on `ink`, opaque. */
+export function glyphOn(ink: RGBA, style: ToolPaletteStyle): RGBA {
+  // A translucent ink shows the tray through it.
+  const over = (k: number): number =>
+    ink[k] * ink[3] + style.fill[k] * (1 - ink[3])
+  const seen: RGBA = [over(0), over(1), over(2), 1]
+  const contrast = (c: RGBA): number => {
+    const [a, b] = [luminance(seen), luminance(c)]
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  }
+  const [r, g, b] =
+    contrast(style.fill) >= contrast(style.textColor)
+      ? style.fill
+      : style.textColor
+  return [r, g, b, 1]
+}
+
+// A shape about 2r across centred on (cx, cy), stroked `t` thick.
+function shapeGlyph(
+  rects: RectData[],
+  lines: LineData[],
+  look: ToolLook,
+  cx: number,
+  cy: number,
+  r: number,
+  t: number,
+  ink: RGBA,
+): void {
+  const path = (points: [number, number][]): void => {
+    for (let k = 1; k < points.length; k++) {
+      const [a, b] = [points[k - 1], points[k]]
+      lines.push(buildLine(a[0], a[1], b[0], b[1], t, ink))
+    }
+  }
+  const dot = (x: number, y: number): void => {
+    rects.push(
+      buildRect({
+        x: x - t,
+        y: y - t,
+        width: 2 * t,
+        height: 2 * t,
+        radius: t,
+        fill: ink,
+      }),
+    )
+  }
+  const sample = (
+    f: (s: number) => [number, number],
+    steps = 12,
+  ): [number, number][] =>
+    Array.from({ length: steps + 1 }, (_, k) => f(k / steps))
+  const outline = (h: number, radius: number): void => {
+    rects.push(
+      buildRect({
+        x: cx - r,
+        y: cy - h,
+        width: 2 * r,
+        height: 2 * h,
+        radius,
+        fill: [0, 0, 0, 0],
+        border: ink,
+        borderWidth: t,
+      }),
+    )
+  }
+  if (look === 'rectangle') {
+    outline(r * 0.7, t / 2)
+  } else if (look === 'ellipse') {
+    // A rounded rect wider than tall would be a capsule: trace the curve.
+    path(
+      sample(
+        (s) => [
+          cx + r * Math.cos(2 * Math.PI * s),
+          cy + r * 0.7 * Math.sin(2 * Math.PI * s),
+        ],
+        24,
+      ),
+    )
+  } else if (look === 'arrow') {
+    const [tx, ty] = [cx + r, cy - r]
+    path([
+      [cx - r, cy + r],
+      [tx, ty],
+    ])
+    path([
+      [tx - r * 0.8, ty],
+      [tx, ty],
+      [tx, ty + r * 0.8],
+    ])
+  } else if (look === 'freehand') {
+    // A loose scribble.
+    path(
+      sample((s) => [
+        cx - r + 2 * r * s,
+        cy + r * 0.55 * Math.sin(s * 3.5 * Math.PI),
+      ]),
+    )
+  } else if (look === 'spline') {
+    // One smooth S through two control points.
+    path(
+      sample((s) => [cx - r + 2 * r * s, cy + r * 0.6 * Math.cos(s * Math.PI)]),
+    )
+    dot(cx - r, cy + r * 0.6)
+    dot(cx + r, cy - r * 0.6)
+  } else {
+    // Livewire: a jagged edge-hugging trace between seed points.
+    const points: [number, number][] = [
+      [cx - r, cy + r * 0.5],
+      [cx - r * 0.4, cy - r * 0.4],
+      [cx + r * 0.1, cy + r * 0.2],
+      [cx + r * 0.5, cy - r * 0.6],
+      [cx + r, cy - r * 0.1],
+    ]
+    path(points)
+    dot(...points[0])
+    dot(...points[4])
+  }
+}
+
+// Undo: a counter-clockwise hook ending in an arrowhead, about `r` across;
+// redo mirrors it.
+function historyIcon(
   lines: LineData[],
   cx: number,
   cy: number,
   r: number,
   color: RGBA,
+  icon: 'undo' | 'redo',
 ): void {
+  const from = lines.length
   const thickness = Math.max(1.5, r / 4.5)
   const steps = 8
   // From the right, round the top and down the left: a half turn.
@@ -630,4 +823,10 @@ function undoIcon(
     buildLine(px, py, px - head * 0.6, py - head * 0.8, thickness, color),
     buildLine(px, py, px + head * 0.8, py - head * 0.5, thickness, color),
   )
+  if (icon === 'redo') {
+    for (const { data } of lines.slice(from)) {
+      data[0] = 2 * cx - data[0]
+      data[2] = 2 * cx - data[2]
+    }
+  }
 }

@@ -786,6 +786,9 @@ export default class NiiVue extends EventTarget {
   private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
+  // What _sync last broadcast: a redraw for another reason (a cine frame, a
+  // load) must not push stale values over a peer's newer move.
+  private _syncSent: Record<string, string> = {}
   private _rafId: number | null = null
   // The transition animateTo is running, if any
   private _animation: Animation | null = null
@@ -7708,6 +7711,7 @@ export default class NiiVue extends EventTarget {
     this._syncTargets = Array.isArray(targets) ? targets : [targets]
     this._syncOpts = opts
     this._syncDirty = false
+    this._syncSent = {}
   }
 
   private _sync(): void {
@@ -7715,11 +7719,19 @@ export default class NiiVue extends EventTarget {
     this._syncDirty = false
     const opts = this._syncOpts
     const src = this.model.scene
+    const now: Record<string, string> = {
+      view3d: `${src.azimuth},${src.elevation},${src.scaleMultiplier}`,
+      crosshair: String(Array.from(src.crosshairPos)),
+      pan: String(Array.from(src.pan2Dxyzmm)),
+    }
+    const sent = this._syncSent
+    const moved = (k: string) => now[k] !== sent[k]
+    this._syncSent = now
     for (const target of this._syncTargets) {
       if (target === this) continue
       const dst = target.model.scene
       let changed = false
-      if (opts['3d']) {
+      if (opts['3d'] && moved('view3d')) {
         if (
           dst.azimuth !== src.azimuth ||
           dst.elevation !== src.elevation ||
@@ -7736,15 +7748,16 @@ export default class NiiVue extends EventTarget {
         const frac = target.model.mm2scene(mm)
         let crosshairMoved = false
         if (
-          dst.crosshairPos[0] !== frac[0] ||
-          dst.crosshairPos[1] !== frac[1] ||
-          dst.crosshairPos[2] !== frac[2]
+          moved('crosshair') &&
+          (dst.crosshairPos[0] !== frac[0] ||
+            dst.crosshairPos[1] !== frac[1] ||
+            dst.crosshairPos[2] !== frac[2])
         ) {
           dst.crosshairPos = frac
           crosshairMoved = true
           changed = true
         }
-        if (opts['2d']) {
+        if (opts['2d'] && moved('pan')) {
           const sp = src.pan2Dxyzmm
           const dp = dst.pan2Dxyzmm
           if (

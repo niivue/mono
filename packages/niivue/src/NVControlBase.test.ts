@@ -86,3 +86,29 @@ describe('2D rotate and flip state', () => {
     ])
   })
 })
+
+describe('broadcastTo', () => {
+  // A linked peer redrawing for another reason (a cine frame, a load) used to
+  // push its unchanged crosshair over a newer move made in the other pane.
+  test("a peer's redraw does not undo a newer crosshair move", () => {
+    const a = new NiiVue()
+    const b = new NiiVue()
+    for (const nv of [a, b]) {
+      nv.model.extentsMin = [0, 0, 0]
+      nv.model.extentsMax = [100, 100, 100]
+    }
+    a.broadcastTo(b, { crosshair: true })
+    b.broadcastTo(a, { crosshair: true })
+    const sync = (nv: NiiVue) => {
+      nv['_syncDirty'] = true
+      nv['_sync']()
+    }
+    sync(a)
+    sync(b)
+    a.model.scene.crosshairPos = [0.5, 0.5, 0.6]
+    sync(b)
+    expect(Array.from(a.model.scene.crosshairPos)).toEqual([0.5, 0.5, 0.6])
+    sync(a)
+    expect(b.model.scene.crosshairPos[2]).toBeCloseTo(0.6, 6)
+  })
+})

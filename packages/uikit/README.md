@@ -51,6 +51,7 @@ package-private (see "Conventions for contributors").
 | `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
 | `buildRadialMenu` | `UIKitRadialMenuOverlay` | Rings of pills and swatches around a point, opened from code (a pencil squeeze); modal until a choice, Escape or a press outside |
+| `buildToolPalette` | `UIKitToolPaletteOverlay` | A floating drawing toolbar after the iPad's: upright tools in a tray (the selected one raised), swatches, brush widths and actions such as Undo |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
 | (package-private) | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |

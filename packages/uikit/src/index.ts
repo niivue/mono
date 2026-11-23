@@ -251,3 +251,22 @@ export type {
 export { DEFAULT_TOGGLE_STYLE } from './toggle'
 export type { UIKitToggleOverlayOptions } from './toggleOverlay'
 export { UIKitToggleOverlay } from './toggleOverlay'
+export type {
+  ToolLook,
+  ToolPaletteAction,
+  ToolPaletteColor,
+  ToolPaletteItem,
+  ToolPaletteItemKind,
+  ToolPaletteLayout,
+  ToolPaletteSpec,
+  ToolPaletteStyle,
+  ToolPaletteTool,
+  ToolPaletteWidth,
+} from './toolPalette'
+export { DEFAULT_TOOL_PALETTE_STYLE } from './toolPalette'
+export type {
+  ToolPaletteHandlers,
+  ToolPaletteOverlaySpec,
+  UIKitToolPaletteOverlayOptions,
+} from './toolPaletteOverlay'
+export { UIKitToolPaletteOverlay } from './toolPaletteOverlay'

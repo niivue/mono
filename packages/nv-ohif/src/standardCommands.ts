@@ -26,6 +26,7 @@ import {
   shownImages,
 } from './sliceFrames'
 import { toggleSliceSync } from './viewportSync'
+import { CINEMATIC_LIGHTING } from './vrPresets'
 
 /**
  * OHIF's standard viewport commands, answered on a NiiVue viewport. The NIIVUE
@@ -539,12 +540,19 @@ export function getStandardCommandDefinitions({
           })
       }),
     },
-    // Shade: NiiVue's illumination. ponytail: ambient, diffuse and specular
-    // have no NiiVue equivalent (one illumination strength).
+    // Shade: standard 3D's illumination. Ambient, diffuse and specular set the
+    // pane's 3D Cinematic lighting (standard 3D has one illumination strength).
     setVolumeLighting: {
       commandFn: route('setVolumeLighting', ({ nv }, opts) => {
-        const shade = (opts.options as { shade?: boolean } | undefined)?.shade
-        if (shade !== undefined) nv.volumeIllumination = shade ? 0.6 : 0
+        const o = (opts.options ?? {}) as Record<string, unknown>
+        if (typeof o.shade === 'boolean')
+          nv.volumeIllumination = o.shade ? 0.6 : 0
+        const lighting = Object.fromEntries(
+          Object.entries(CINEMATIC_LIGHTING)
+            .filter(([k]) => typeof o[k] === 'number')
+            .map(([k, key]) => [key, o[k]]),
+        )
+        if (Object.keys(lighting).length) nv.volumeCinematic = lighting
       }),
     },
     // Delete on a NiiVue pane removes its selected annotation (undoably; undo

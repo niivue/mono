@@ -46,8 +46,7 @@ export interface OhifRow {
 /**
  * A report row's calibration (C35): its stored length (a hydrated SR's NUM,
  * flat or per image) over the length of its geometry, else the root of stored
- * over native area. Viewers' area methods differ by up to ~1%, so an area
- * ratio that close to 1 counts as native.
+ * over native area (cornerstone's and NiiVue's geometric areas agree exactly).
  */
 export function reportScale(
   row: OhifRow,
@@ -60,10 +59,8 @@ export function reportScale(
     | undefined
   if (typeof v?.length === 'number' && stats?.length)
     return v.length / stats.length
-  if (typeof v?.area === 'number' && v.area > 0 && stats?.area) {
-    const k = Math.sqrt(v.area / stats.area)
-    return Math.abs(k - 1) < 0.01 ? 1 : k
-  }
+  if (typeof v?.area === 'number' && v.area > 0 && stats?.area)
+    return Math.sqrt(v.area / stats.area)
   return undefined
 }
 

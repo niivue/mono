@@ -72,10 +72,12 @@ export function calibrateShapes(
   shapes: readonly AnnotationScreenShape[],
 ): readonly AnnotationScreenShape[] {
   if (scale === 1) return shapes
-  const byId = new Map(nv.annotations.map((a) => [a.id, a]))
+  const preview = nv.model._annotationPreview
+  const byId = new Map(
+    [...nv.annotations, ...(preview ? [preview] : [])].map((a) => [a.id, a]),
+  )
   const len = lengthUnit(scale)
   return shapes.map((shape) => {
-    // The shape being drawn has no annotation yet: only its ruler scales.
     const a = byId.get(shape.id)
     if (a && isContourAnnotation(a)) return shape
     const st = a?.stats && calibrateStats(a.stats, scale)

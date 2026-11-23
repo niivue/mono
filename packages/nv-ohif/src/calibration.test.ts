@@ -31,6 +31,14 @@ test('a calibration doubles lengths, quadruples area, keeps the rest', () => {
 
 test('overlay labels and rulers take the scale; free text and contours do not', () => {
   const nv = {
+    // The shape being dragged is core's preview, not yet an annotation.
+    model: {
+      _annotationPreview: {
+        id: 'drag',
+        group: '',
+        stats: { area: 0, length: 3, shortLength: 1 },
+      },
+    },
     annotations: [
       {
         id: 'bi',
@@ -49,12 +57,13 @@ test('overlay labels and rulers take the scale; free text and contours do not', 
       label: { lines, x: 0, y: 0, align: 'left' },
       length,
     }) as unknown as AnnotationScreenShape
-  const [bi, roi, ruler, seg, drawing] = calibrateShapes(nv, 2, [
+  const [bi, roi, ruler, seg, drawing, drag] = calibrateShapes(nv, 2, [
     shape('bi', ['L: lesion', 'L: 4.0 mm', 'W: 2.0 mm']),
     shape('roi', ['Area: 3.0 mm²', 'Mean: 7.0  SD: 0.0']),
     shape('ruler', [], 5),
     shape('seg', ['Area: 3.0 mm²']),
     shape('drawing', [], 5),
+    shape('drag', ['L: 3.0 mm', 'W: 1.0 mm']),
   ])
   expect(bi?.label?.lines).toEqual([
     'L: lesion',
@@ -68,4 +77,5 @@ test('overlay labels and rulers take the scale; free text and contours do not', 
   expect([ruler?.length, ruler?.unit]).toEqual([10, 'mm User'])
   expect(seg?.label?.lines).toEqual(['Area: 3.0 mm²'])
   expect(drawing?.length).toBe(10)
+  expect(drag?.label?.lines).toEqual(['L: 6.0 mm User', 'W: 2.0 mm User'])
 })

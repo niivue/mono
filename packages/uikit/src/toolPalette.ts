@@ -721,8 +721,11 @@ function shapeGlyph(
       }),
     )
   }
-  const sample = (f: (s: number) => [number, number]): [number, number][] =>
-    Array.from({ length: 13 }, (_, k) => f(k / 12))
+  const sample = (
+    f: (s: number) => [number, number],
+    steps = 12,
+  ): [number, number][] =>
+    Array.from({ length: steps + 1 }, (_, k) => f(k / steps))
   const outline = (h: number, radius: number): void => {
     rects.push(
       buildRect({
@@ -740,7 +743,16 @@ function shapeGlyph(
   if (look === 'rectangle') {
     outline(r * 0.7, t / 2)
   } else if (look === 'ellipse') {
-    outline(r * 0.7, r * 0.7)
+    // A rounded rect wider than tall would be a capsule: trace the curve.
+    path(
+      sample(
+        (s) => [
+          cx + r * Math.cos(2 * Math.PI * s),
+          cy + r * 0.7 * Math.sin(2 * Math.PI * s),
+        ],
+        24,
+      ),
+    )
   } else if (look === 'arrow') {
     const [tx, ty] = [cx + r, cy - r]
     path([

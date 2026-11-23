@@ -129,6 +129,33 @@ describe('tool palette', () => {
     expect(glyphOn([1, 0.9, 0.2, 0.1], STYLE).slice(0, 3)).toEqual(light)
   })
 
+  it('draws the ellipse key as an ellipse, not a capsule', () => {
+    const spec: ToolPaletteSpec = {
+      x: 0,
+      y: 100,
+      actions: [],
+      tools: [{ id: 'ellipse', label: 'Ellipse', look: 'ellipse' }],
+      tool: '',
+      colors: [],
+    }
+    const layout = layoutToolPalette(spec, 0, 100, 1e9, STYLE, METRICS)
+    const { lines } = buildToolPalette(spec, STYLE, METRICS, layout, -1)
+    const xs = lines.map((l) => l.data[0])
+    const ys = lines.map((l) => l.data[1])
+    const [cx, rx] = [
+      (Math.max(...xs) + Math.min(...xs)) / 2,
+      (Math.max(...xs) - Math.min(...xs)) / 2,
+    ]
+    const [cy, ry] = [
+      (Math.max(...ys) + Math.min(...ys)) / 2,
+      (Math.max(...ys) - Math.min(...ys)) / 2,
+    ]
+    expect(lines.length).toBeGreaterThan(12)
+    for (const [x, y] of xs.map((x, k) => [x, ys[k]])) {
+      expect(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2).toBeCloseTo(1, 1)
+    }
+  })
+
   it('keeps a key in the tray beside upright tools', () => {
     const spec: ToolPaletteSpec = {
       x: 0,

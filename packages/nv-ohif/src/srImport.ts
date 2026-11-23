@@ -16,7 +16,7 @@ import {
 } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { programmaticAnnotations } from './arrowText'
-import { adoptReportScale } from './calibration'
+import { adoptReportScale, moveReportRow } from './calibration'
 import {
   adoptedRowUids,
   claimPendingJump,
@@ -25,6 +25,7 @@ import {
   onRowsReleased,
   rasToLps,
   reflectedRowUid,
+  releasedAnnotationId,
 } from './commands'
 import { measurementStyleOf } from './contourSeg'
 import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
@@ -356,8 +357,9 @@ export function useOhifRowImport(
           ? undefined
           : reportScale(row, annotation.stats)
       const ds = own.displaySets[0]?.displaySetInstanceUID
-      if (scale && ds) adoptReportScale(ds, scale)
+      if (scale && ds) adoptReportScale(ds, annotation.id, scale)
       programmaticAnnotations.add(annotation.id)
+      const releasedFrom = released ? releasedAnnotationId(row.uid) : undefined
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)
         adopting.add(row.uid)
@@ -371,8 +373,11 @@ export function useOhifRowImport(
       }
       if (!reflectedRowUid(annotation.id)) nv.removeAnnotation(annotation.id)
       else if (!released) ms.remove?.(row.uid)
-      else if (claimPendingJump(row.uid))
-        jumpToNiivueMeasurement(row.uid, servicesManager)
+      else {
+        if (releasedFrom) moveReportRow(releasedFrom, annotation.id)
+        if (claimPendingJump(row.uid))
+          jumpToNiivueMeasurement(row.uid, servicesManager)
+      }
     }
     const scan = (releasing?: NiivueViewportEntry['nv']) => {
       for (const row of ms.getMeasurements?.() ?? []) take(row, releasing)

@@ -24,15 +24,13 @@ import {
 import { createAdvancedMagnifyBinding } from './advancedMagnify'
 import { programmaticAnnotations, useArrowText } from './arrowText'
 import {
-  areaUnit,
   calibrateShapes,
-  calibrateStats,
   calibrationEvents,
   calibrationScale,
-  lengthUnit,
   paneDisplaySet,
   paneScale,
   setCalibrationScale,
+  syncReportRows,
 } from './calibration'
 import { askCalibrationDistance, CalibratedMarker } from './calibrationForm'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
@@ -47,6 +45,7 @@ import {
   initialRenderView,
   initialSliceType,
   isAnnotationShown,
+  measurementNote,
   NIIVUE_SLICE_TYPES,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
@@ -806,21 +805,13 @@ export function NiivueViewport(props: OhifViewportProps) {
         servicesManagerRef.current,
         stored,
       )
-      const scale = paneScale(viewportId)
-      const stats = calibrateStats(stored.stats, scale)
-      if (!added || !stats) return
-      // A measured line reports its length, a probe its value, area tools area.
-      const message =
-        stats.length !== undefined
-          ? `Length: ${stats.length.toFixed(1)} ${lengthUnit(scale)}`
-          : stats.value !== undefined
-            ? `Value: ${roundNumber(stats.value)}`
-            : `Area: ${stats.area.toFixed(1)} ${areaUnit(scale)}`
-      flashNote(message)
+      const message = measurementNote(stored.stats, paneScale(viewportId))
+      if (added && message) flashNote(message)
     }
     const onAnnotationRemoved = (e: Event) => {
       const id = (e as CustomEvent<{ id: string }>).detail?.id
       if (id) removeNiivueAnnotation(viewportId, servicesManagerRef.current, id)
+      syncReportRows()
     }
     // A 'draw' can also MERGE (clipper union/cut) a reflected annotation out of
     // the set with no annotationRemoved event; its id arrives in `removed`.
@@ -835,6 +826,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           servicesManagerRef.current,
           detail,
         )
+      syncReportRows()
     }
     const calibrate = async (nativeMM: number | undefined) => {
       const ds = paneDisplaySet(viewportId)
@@ -879,6 +871,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       leaveFrames?.()
       unfloorSuv?.()
       unregisterNiivue(viewportId)
+      // Report rows this pane held no longer count toward their scale.
+      syncReportRows()
       releaseContourTools(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)

@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { emptyBatch, FLOATS_PER_PANEL, packPanels } from './NVFont'
+import ubuntu from '../assets/fonts/Ubuntu.json'
+import {
+  buildTextLayout,
+  emptyBatch,
+  FLOATS_PER_PANEL,
+  packPanels,
+  parseFontMetrics,
+} from './NVFont'
 
 describe('packPanels', () => {
   test('packs only batches with a visible backing panel', () => {
@@ -21,4 +28,16 @@ describe('packPanels', () => {
   test('returns null when no batch has a panel', () => {
     expect(packPanels([emptyBatch()])).toBeNull()
   })
+})
+
+test('an ASCII-only font draws ² as a small raised 2, not nothing', () => {
+  const mets = parseFontMetrics(ubuntu)
+  const two = mets.mets[0x32]
+  const sup = mets.mets[0xb2]
+  expect(sup?.uv_lbwh).toEqual(two?.uv_lbwh)
+  expect(sup?.xadv).toBeCloseTo((two?.xadv ?? 0) * 0.6)
+  expect(sup?.lbwh[1]).toBeGreaterThan(two?.lbwh[1] ?? 0)
+  const layout = (s: string) =>
+    buildTextLayout(s, 0, 0, 10, 1, mets, [1, 1, 1, 1], 0, 0, [0, 0, 0, 0])
+  expect(layout('mm²').count).toBe(3)
 })

@@ -259,6 +259,24 @@ export function parseFontMetrics(jsonMetrics: FontJson): FontMetrics {
     }
     fontMets.mets[id] = m
   }
+  // ASCII-only atlases lack the superscripts unit labels use (mm², mm³): draw
+  // a smaller, raised digit from the atlas instead of dropping the character.
+  const SUPER_SCALE = 0.6
+  const SUPER_RAISE = 0.3 // em; puts the small digit's top near cap height
+  for (const [sup, digit] of [
+    [0xb9, 0x31],
+    [0xb2, 0x32],
+    [0xb3, 0x33],
+  ]) {
+    const d = fontMets.mets[digit]
+    if (fontMets.mets[sup] || !d) continue
+    const [l, b, w, h] = d.lbwh.map((v) => v * SUPER_SCALE)
+    fontMets.mets[sup] = {
+      xadv: d.xadv * SUPER_SCALE,
+      uv_lbwh: d.uv_lbwh,
+      lbwh: [l, b + SUPER_RAISE, w, h],
+    }
+  }
   return fontMets
 }
 

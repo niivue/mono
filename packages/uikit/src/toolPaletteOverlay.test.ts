@@ -120,4 +120,34 @@ describe('UIKitToolPaletteOverlay', () => {
     palette.blur()
     expect(palette.keyDown(key('Enter'))).toBe(false)
   })
+
+  it('never chooses an action that an update disabled', () => {
+    const chosen: string[] = []
+    const palette = new UIKitToolPaletteOverlay(FONT)
+    palette.show({
+      x: 20,
+      y: 300,
+      actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }],
+      tools: [],
+      tool: '',
+      onAction: (id) => chosen.push(id),
+    })
+    const undo = palette.getLayout()?.items[0]
+    if (!undo) throw new Error('no undo')
+    const [x, y] = [undo.x + undo.width / 2, undo.y + undo.height / 2]
+    palette.pointerMove(x, y)
+    palette.pointerDown(x, y)
+    palette.pointerUp(x, y)
+    palette.update({
+      actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: false }],
+    })
+    palette.keyDown({
+      key: 'Enter',
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+    })
+    expect(chosen).toEqual(['undo'])
+  })
 })

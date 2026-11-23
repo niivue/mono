@@ -251,6 +251,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     kind: ToolPaletteItemKind,
     index: number,
   ): void {
+    if (!isEnabled(spec, { kind, index })) return
     const id = itemId(spec, kind, index)
     if (kind === 'tool') spec.onTool?.(id)
     else if (kind === 'color') spec.onColor?.(id)

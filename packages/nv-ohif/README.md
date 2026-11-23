@@ -488,8 +488,9 @@ tmtv).
   blendMode (MIP), per viewport background.
 - **Magnify.** `Magnify` (while the button is held) and `AdvancedMagnify`
   (placed glasses, as cornerstone's: a click places one; drag its rim to move
-  it or a rim handle to resize it, or inside it on touch; Shift+right-click or
-  a long touch picks its zoom; glasses stay while another tool is active and go
+  it or a rim handle to resize it, or inside it on touch, where extra fingers
+  stay the glass's and start no pinch zoom; Shift+right-click or a long touch
+  picks its zoom; glasses stay while another tool is active and go
   when the button is toggled off). A glass shows on its own slice only.
 
 ## Compatibility

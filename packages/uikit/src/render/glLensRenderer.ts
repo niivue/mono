@@ -99,8 +99,9 @@ export class GlLensRenderer {
     const x1 = Math.min(gl.drawingBufferWidth, b.x + width)
     const y1 = Math.min(gl.drawingBufferHeight, y0 + height)
     const yLow = Math.max(0, y0)
-    const texWidth = Math.max(1, x1)
-    const texHeight = Math.max(1, y1)
+    // Grow only: views sharing a canvas (and so this copy) differ in extent.
+    const texWidth = Math.max(1, x1, copy.width)
+    const texHeight = Math.max(1, y1, copy.height)
     copy.y0 = y0
     if (!copy.texture || copy.width !== texWidth || copy.height !== texHeight) {
       // A multisample resolve needs the canvas's own format: RGB8 without alpha.
@@ -165,13 +166,13 @@ export class GlLensRenderer {
     frame: object,
   ): void {
     this.ensure(gl)
-    const { copy } = this
-    if (!copy) return
+    const { copy, program } = this
+    if (!copy || !program) return
     this.capture(gl, bounds, copy, frame)
-    if (!this.program || !copy.texture) return
+    if (!copy.texture) return
     const { u } = this
     const { lens } = layout
-    gl.useProgram(this.program)
+    gl.useProgram(program)
     gl.uniform2f(u.canvasSize, bounds.width, bounds.height)
     gl.uniform4f(u.box, lens.x, lens.y, lens.width, lens.height)
     gl.uniform4f(

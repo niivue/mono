@@ -99,11 +99,15 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   const drop = (g: Glass) => {
     glasses.splice(glasses.indexOf(g), 1)
     g.lens.destroy()
-    if (drag?.g === g) drag = null
+    if (drag?.g === g) {
+      drag = null
+      touches.clear()
+    }
     if (!glasses.length) register()
   }
   const clear = () => {
     drag = null
+    touches.clear()
     select?.remove()
     if (!glasses.length) return
     for (const g of glasses.splice(0)) g.lens.destroy()
@@ -210,6 +214,8 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     const touch = e.pointerType === 'touch'
     if (touch && drag) {
       owned.add(e.pointerId)
+      // No longer a still press: lifting the drag finger must not open the zoom list.
+      touches.delete(drag.id)
       e.stopImmediatePropagation()
       return
     }

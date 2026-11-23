@@ -29,6 +29,7 @@ import {
   calibrationScale,
   paneDisplaySet,
   paneScale,
+  pruneReportRows,
   setCalibrationScale,
 } from './calibration'
 import { askCalibrationDistance, CalibratedMarker } from './calibrationForm'
@@ -810,6 +811,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const onAnnotationRemoved = (e: Event) => {
       const id = (e as CustomEvent<{ id: string }>).detail?.id
       if (id) removeNiivueAnnotation(viewportId, servicesManagerRef.current, id)
+      pruneReportRows()
     }
     // A 'draw' can also MERGE (clipper union/cut) a reflected annotation out of
     // the set with no annotationRemoved event; its id arrives in `removed`.
@@ -824,6 +826,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           servicesManagerRef.current,
           detail,
         )
+      pruneReportRows()
     }
     const calibrate = async (nativeMM: number | undefined) => {
       const ds = paneDisplaySet(viewportId)

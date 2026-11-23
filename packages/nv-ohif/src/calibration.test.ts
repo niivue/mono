@@ -5,6 +5,7 @@ import {
   calibrateShapes,
   calibrateStats,
   calibrationScale,
+  pruneReportRows,
   setCalibrationScale,
 } from './calibration'
 import { measurementNote } from './commands'
@@ -111,8 +112,14 @@ test('a later report at another scale leaves native mm, even tasks later', async
   await new Promise((r) => setTimeout(r, 0))
   adopt('two-reports', 'b', 3)
   expect(calibrationScale('two-reports')).toBe(1)
-  // Once the disagreeing rows are gone, a report restores its scale again.
+  // Removing the disagreeing row restores the surviving rows' scale.
+  annotations.splice(1)
+  pruneReportRows()
+  expect(calibrationScale('two-reports')).toBe(2)
+  // Once every report row is gone, the scale from before the report returns.
   annotations.length = 0
+  pruneReportRows()
+  expect(calibrationScale('two-reports')).toBe(1)
   adopt('two-reports', 'c', 2)
   expect(calibrationScale('two-reports')).toBe(2)
   // A user calibration starts the agreement over.
@@ -121,6 +128,18 @@ test('a later report at another scale leaves native mm, even tasks later', async
   expect(calibrationScale('two-reports')).toBe(3)
   setCalibrationScale('two-reports', 1)
   unregisterNiivue('vp-two')
+})
+
+test('a report row whose reflection failed gives back the prior scale', () => {
+  registerNiivue('vp-fail', { annotations: [] } as unknown as NiiVue)
+  setCalibrationScale('failed', 4)
+  adoptReportScale('failed', 'gone', 2)
+  expect(calibrationScale('failed')).toBe(2)
+  // srImport removes the annotation; the pane's annotationRemoved prunes.
+  pruneReportRows()
+  expect(calibrationScale('failed')).toBe(4)
+  setCalibrationScale('failed', 1)
+  unregisterNiivue('vp-fail')
 })
 
 test('calibrated rows and the flash note carry scaled values and User units', () => {

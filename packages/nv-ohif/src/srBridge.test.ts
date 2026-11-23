@@ -30,10 +30,14 @@ test('rectangle handles reorder and a circle carries its perimeter', () => {
   const circle = toCornerstoneAnnotation({
     ...base,
     toolName: 'CircleROI',
-    points: [],
-    data: { ...base.data, radius: 5 },
+    points: [
+      [1, 1, 0],
+      [4, 5, 0],
+    ],
   })
+  // A slide row: the radius from its centre and rim points.
   expect(circle?.data.cachedStats['imageId:img']).toMatchObject({
+    radius: 5,
     perimeter: 10 * Math.PI,
     area: 1,
     modalityUnit: 'HU',

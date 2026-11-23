@@ -3949,7 +3949,7 @@
         }
       ],
       "returns": "Uint8Array",
-      "doc": "Return the current scene serialized as an NVD document (Uint8Array).\n`options.settings` overrides the instance `settingsSavePolicy`;\n`options.linkData` saves a small \"linked\" document that references volumes by\nURL instead of embedding their bytes; `options.format` is `'cbor'` (default,\nbinary) or `'json'` (portable text). `loadDocument` accepts either encoding.",
+      "doc": "Return the current scene serialized as an NVD document (Uint8Array).\n`options.settings` overrides the instance `settingsSavePolicy`;\n`options.linkData` saves a small \"linked\" document that references volumes\nand meshes by URL instead of embedding their bytes, and `options.linkUrl`\nchooses the URL written for each (or embeds it); `options.format` is\n`'cbor'` (default, binary) or `'json'` (portable text). `loadDocument`\naccepts either encoding.",
       "returnsDoc": null
     },
     {

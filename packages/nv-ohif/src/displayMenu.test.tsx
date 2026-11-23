@@ -24,11 +24,12 @@ function lighting(volumeRenderMode: number, ambient = 0.3) {
   )
 }
 
-test('lighting sliders: enabled only in 3D Cinematic, and show a value above 1', () => {
+test('lighting sliders: enabled only in 3D Cinematic, and keep a 0..2 range that shows any value', () => {
   expect(lighting(VOLUME_RENDER_MODE.COMPOSITE).every((s) => s.disabled)).toBe(
     true,
   )
   const cinematic = lighting(VOLUME_RENDER_MODE.CINEMATIC, 2)
   expect(cinematic.map((s) => s.disabled)).toEqual([false, false, false])
-  expect(cinematic.map((s) => s.max)).toEqual(['2', '1', '1'])
+  expect(cinematic.map((s) => s.max)).toEqual(['2', '2', '2'])
+  expect(lighting(VOLUME_RENDER_MODE.CINEMATIC, 3)[0]?.max).toBe('3')
 })

@@ -247,6 +247,7 @@ const MENU_PROPERTIES = new Set([
   'volumeRenderMode',
   'volumeCinematic',
   'volumeIllumination',
+  'volumeSampleRate',
 ])
 
 /**
@@ -287,7 +288,7 @@ export function RenderingOptions({
           min={1}
           max={4}
           step={1}
-          defaultValue={nv.volumeSampleRate}
+          value={nv.volumeSampleRate}
           onChange={(e) => {
             nv.volumeSampleRate = Number(e.target.value)
             redraw()
@@ -336,8 +337,9 @@ export function RenderingOptions({
             aria-label={`Volume lighting ${name}`}
             type="range"
             min={0}
-            // Core allows above 1; the slider must still show such a value.
-            max={Math.max(1, nv.volumeCinematic[key])}
+            // Core allows above 1; a fixed 0..2 range lets the slider return to
+            // such a value after lowering it.
+            max={Math.max(2, nv.volumeCinematic[key])}
             step={0.1}
             disabled={!cinematic}
             value={nv.volumeCinematic[key]}

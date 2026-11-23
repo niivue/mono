@@ -76,3 +76,50 @@ test('stale and evicted memos never replay another step', () => {
   evict.redo() // a0's deletion: inert, does not delete a1
   expect(ids(b)).toEqual(names.slice(1))
 })
+
+// Codex 885-r1 P2: a CalibrationLine is removed as it lands; its step must go
+// from both histories, or the next Undo does nothing.
+test('a withdrawn add spends no Undo in core or OHIF', async () => {
+  const { withdrawLastStep } = await import('./history')
+  // OHIF's DefaultHistoryMemo ring, as far as history.ts reads it.
+  const ring = {
+    ring: [] as unknown[],
+    position: -1,
+    size: 50,
+    undoAvailable: 0,
+    push(m: unknown) {
+      ring.position = (ring.position + 1) % ring.size
+      ring.ring[ring.position] = m
+      ring.undoAvailable++
+    },
+    undo() {
+      ;(
+        ring.ring[ring.position] as { restoreMemo: (u: boolean) => void }
+      ).restoreMemo(true)
+      ring.position--
+      ring.undoAvailable--
+    },
+  }
+  const libs = {
+    cornerstone: { utilities: { HistoryMemo: { DefaultHistoryMemo: ring } } },
+  }
+  const extensionManager = {
+    getModuleEntry: () => ({
+      exports: { getCornerstoneLibraries: () => libs },
+    }),
+  }
+  const nv = new NiiVue({ backend: 'webgl2' })
+  nv.drawScene = () => {}
+  nv.model.annotations = [{ id: 'length' }] as never
+  useAnnotationHistory(nv, extensionManager)
+  effects.pop()?.()
+  nv.removeAnnotation('length', true) // a real step
+  // The calibration line lands as a step, and its handler removes it.
+  nv.replaceAnnotations([], [{ id: 'line' }] as never, true)
+  nv.removeAnnotation('line')
+  withdrawLastStep(nv, extensionManager)
+  expect(ids(nv)).toEqual([])
+  expect(ring.undoAvailable).toBe(1)
+  ring.undo()
+  expect(ids(nv)).toEqual(['length'])
+})

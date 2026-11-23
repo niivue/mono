@@ -9,13 +9,20 @@ import { useEffect } from 'react'
 import { removeAnnotationsForRows } from './commands'
 import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 
-type Memo = { id: string; restoreMemo: (undo?: boolean) => void }
+type Memo = {
+  id: string
+  restoreMemo: (undo?: boolean) => void
+  source?: StepSource
+  seq?: number
+}
 type HistoryMemo = {
   push: (memo: Memo) => void
   // Internal ring; read only to join a group OHIF has just recorded (groups
   // do not nest, so it cannot be wrapped from outside).
   ring?: unknown[]
   position?: number
+  size?: number
+  undoAvailable?: number
 }
 
 const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
@@ -56,6 +63,8 @@ function record(memo: HistoryMemo, nv: StepSource, seq: number): void {
   // undoing or redoing another step.
   const step: Memo = {
     id: crypto.randomUUID(),
+    source: nv,
+    seq,
     restoreMemo: (undo) => {
       if (undo && nv.annotationUndoTop === seq) nv.annotationUndo()
       else if (!undo && nv.annotationRedoTop === seq) nv.annotationRedo()
@@ -82,6 +91,30 @@ export function mirrorAnnotationHistory(
     record(memo, nv, (e as CustomEvent<{ seq: number }>).detail.seq)
   nv.addEventListener('annotationHistoryPush', onPush)
   return () => nv.removeEventListener('annotationHistoryPush', onPush)
+}
+
+/**
+ * Take back the step `nv` recorded for an add a handler withdraws as it lands
+ * (a CalibrationLine), and its OHIF memo, so no Undo is spent on it. Core keeps
+ * it as a redo no memo replays; the next step clears it.
+ */
+export function withdrawLastStep(
+  nv: StepSource,
+  extensionManager: OhifExtensionManager | undefined,
+): void {
+  const seq = nv.annotationUndoTop
+  if (seq === undefined) return
+  nv.annotationUndo()
+  const memo = historyMemo(extensionManager)
+  const { ring, position, size, undoAvailable } = memo ?? {}
+  if (!memo || !ring || position === undefined || !size || !undoAvailable)
+    return
+  const top = ring[position] as Memo | undefined
+  if (top?.source !== nv || top.seq !== seq) return
+  // As cornerstone's own rollbackUnusedGroupItem.
+  ring[position] = undefined
+  memo.position = (position - 1 + size) % size
+  memo.undoAvailable = undoAvailable - 1
 }
 
 /** {@link mirrorAnnotationHistory} for a viewport's NiiVue. */

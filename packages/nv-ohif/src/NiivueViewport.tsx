@@ -87,7 +87,11 @@ import {
   overlayDisplaySets,
   useHungOverlays,
 } from './hangingOptions'
-import { mirrorAnnotationHistory, useAnnotationHistory } from './history'
+import {
+  mirrorAnnotationHistory,
+  useAnnotationHistory,
+  withdrawLastStep,
+} from './history'
 import { createMagnifyBinding } from './magnify'
 import { MeasurementData } from './measurementData'
 import { useMetadataRevision } from './metadataReload'
@@ -534,6 +538,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   displaySetsRef.current = displaySets
   const servicesManagerRef = useRef(servicesManager)
   servicesManagerRef.current = servicesManager
+  const extensionManagerRef = useRef(props.extensionManager)
+  extensionManagerRef.current = props.extensionManager
   const dataSourceRef = useRef(props.dataSource)
   dataSourceRef.current = props.dataSource
   const displaySetOptionsRef = useRef(props.displaySetOptions)
@@ -783,6 +789,7 @@ export function NiivueViewport(props: OhifViewportProps) {
         !programmaticAnnotations.has(annotation.id)
       ) {
         nv.removeAnnotation(annotation.id)
+        withdrawLastStep(nv, extensionManagerRef.current)
         void calibrate(annotation.stats?.length)
         return
       }

@@ -24,8 +24,16 @@ export const paneDisplaySet = (viewportId: string) =>
 export const paneScale = (viewportId: string) =>
   calibrationScale(paneDisplaySet(viewportId))
 
-/** Replaces any earlier scale (never compounds); 1 resets to native mm. */
+/**
+ * A user calibration: replaces any earlier scale (never compounds); 1 resets
+ * to native mm. Later report rows are checked against this one afresh.
+ */
 export function setCalibrationScale(displaySetUID: string, scale: number) {
+  reportScales.delete(displaySetUID)
+  applyScale(displaySetUID, scale)
+}
+
+function applyScale(displaySetUID: string, scale: number) {
   if (scale === 1) scales.delete(displaySetUID)
   else scales.set(displaySetUID, scale)
   calibrationEvents.dispatchEvent(
@@ -34,27 +42,29 @@ export function setCalibrationScale(displaySetUID: string, scale: number) {
 }
 
 const near = (a: number, b: number) => Math.abs(a / b - 1) <= 1e-3
-// Display set -> the scale its report rows gave in the current task: one SR
-// hydrates its rows in a burst, which must agree.
+// Display set -> the scale its report rows gave (NaN once they disagreed).
+// Rows of every report on a set must agree, whenever they hydrate: a later
+// report at another scale would silently rescale the rows already shown.
+// shortcut: never pruned (one number per calibrated display set), prune on
+// display set removal if that ever matters.
 const reportScales = new Map<string, number>()
 
 /**
  * A report row's stored length over the length of its geometry (srImport.ts):
- * a calibrated report restores its scale. Rows that disagree within one burst
- * leave native mm rather than contradictory values.
+ * a calibrated report restores its scale. Rows that disagree, in one report or
+ * across reports, leave native mm rather than contradictory values.
  */
 export function adoptReportScale(displaySetUID: string, ratio: number) {
   const prior = reportScales.get(displaySetUID)
   if (prior === undefined) {
-    if (!reportScales.size) setTimeout(() => reportScales.clear())
     reportScales.set(displaySetUID, ratio)
     if (!near(ratio, calibrationScale(displaySetUID)))
-      setCalibrationScale(displaySetUID, near(ratio, 1) ? 1 : ratio)
+      applyScale(displaySetUID, near(ratio, 1) ? 1 : ratio)
   } else if (!near(ratio, prior)) {
     reportScales.set(displaySetUID, Number.NaN)
     if (calibrationScale(displaySetUID) !== 1) {
       console.warn('[nv-ohif] report rows disagree on calibration: native mm')
-      setCalibrationScale(displaySetUID, 1)
+      applyScale(displaySetUID, 1)
     }
   }
 }

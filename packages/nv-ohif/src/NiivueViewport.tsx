@@ -24,12 +24,9 @@ import {
 import { createAdvancedMagnifyBinding } from './advancedMagnify'
 import { programmaticAnnotations, useArrowText } from './arrowText'
 import {
-  areaUnit,
   calibrateShapes,
-  calibrateStats,
   calibrationEvents,
   calibrationScale,
-  lengthUnit,
   paneDisplaySet,
   paneScale,
   setCalibrationScale,
@@ -47,6 +44,7 @@ import {
   initialRenderView,
   initialSliceType,
   isAnnotationShown,
+  measurementNote,
   NIIVUE_SLICE_TYPES,
   readBaseWindowLevel,
   reconcileNiivueAnnotations,
@@ -806,17 +804,8 @@ export function NiivueViewport(props: OhifViewportProps) {
         servicesManagerRef.current,
         stored,
       )
-      const scale = paneScale(viewportId)
-      const stats = calibrateStats(stored.stats, scale)
-      if (!added || !stats) return
-      // A measured line reports its length, a probe its value, area tools area.
-      const message =
-        stats.length !== undefined
-          ? `Length: ${stats.length.toFixed(1)} ${lengthUnit(scale)}`
-          : stats.value !== undefined
-            ? `Value: ${roundNumber(stats.value)}`
-            : `Area: ${stats.area.toFixed(1)} ${areaUnit(scale)}`
-      flashNote(message)
+      const message = measurementNote(stored.stats, paneScale(viewportId))
+      if (added && message) flashNote(message)
     }
     const onAnnotationRemoved = (e: Event) => {
       const id = (e as CustomEvent<{ id: string }>).detail?.id

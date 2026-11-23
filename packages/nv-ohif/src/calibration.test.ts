@@ -7,7 +7,14 @@ import {
   calibrationScale,
   setCalibrationScale,
 } from './calibration'
+import { measurementNote } from './commands'
 import { contourGroup } from './contourSeg'
+import { snapshot } from './measurementData'
+import {
+  registerNiivue,
+  unregisterNiivue,
+  updateNiivueViewport,
+} from './niivueRegistry'
 
 test('a calibration doubles lengths, quadruples area, keeps the rest', () => {
   const stats = { area: 10, min: 1, mean: 2, max: 3, stdDev: 4, length: 5 }
@@ -83,4 +90,66 @@ test('report rows restore their scale; disagreeing rows leave native mm', () => 
   expect(calibrationScale('sr')).toBe(2)
   adoptReportScale('sr', 1)
   expect(calibrationScale('sr')).toBe(1)
+})
+
+test('a later report at another scale leaves native mm, even tasks later', async () => {
+  adoptReportScale('two-reports', 2)
+  await new Promise((r) => setTimeout(r, 0))
+  adoptReportScale('two-reports', 3)
+  expect(calibrationScale('two-reports')).toBe(1)
+  // A user calibration starts the agreement over.
+  setCalibrationScale('two-reports', 4)
+  adoptReportScale('two-reports', 3)
+  expect(calibrationScale('two-reports')).toBe(3)
+  setCalibrationScale('two-reports', 1)
+})
+
+test('calibrated rows and the flash note carry scaled values and User units', () => {
+  const stats = { area: 6, min: 0, mean: 0, max: 0, stdDev: 0 }
+  const line = {
+    id: 'line',
+    group: 'measurements',
+    sliceType: 0,
+    slicePosition: 0,
+    shape: { type: 'measureLine', start: { x: 0, y: 0 }, end: { x: 3, y: 4 } },
+    polygons: [],
+    stats: { ...stats, area: 0, length: 5 },
+  }
+  const circle = {
+    ...line,
+    id: 'circle',
+    shape: {
+      type: 'measureCircle',
+      start: { x: 0, y: 0 },
+      end: { x: 4, y: 4 },
+    },
+    stats,
+  }
+  const nv = {
+    annotations: [line, circle],
+    effectiveDevicePixelRatio: 1,
+    mmToCanvas: () => ({ x: 0, y: 0 }),
+  } as unknown as NiiVue
+  registerNiivue('vp-rows', nv)
+  updateNiivueViewport('vp-rows', {
+    displaySets: [{ displaySetInstanceUID: 'ds-rows' }] as never,
+  })
+  setCalibrationScale('ds-rows', 2)
+  try {
+    const [l, c] = snapshot(nv, 'HU', 'vp-rows').map((r) => r.values)
+    expect([l?.length, l?.lengthUnit, l?.areaUnit]).toEqual([
+      10,
+      'mm User',
+      'mm² User',
+    ])
+    expect([c?.area, c?.radius, c?.radiusUnit]).toEqual([24, 4, 'mm User'])
+    expect(measurementNote(line.stats, 2)).toBe('Length: 10.0 mm User')
+    expect(measurementNote(stats, 2)).toBe('Area: 24.0 mm² User')
+    expect(measurementNote(line.stats, 1)).toBe('Length: 5.0 mm')
+  } finally {
+    setCalibrationScale('ds-rows', 1)
+    unregisterNiivue('vp-rows')
+  }
+  const [native] = snapshot(nv, 'HU', 'vp-rows').map((r) => r.values)
+  expect([native?.length, native?.lengthUnit]).toEqual([5, undefined])
 })

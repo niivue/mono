@@ -39,7 +39,12 @@ function anchorOf(nv: NiiVue, a: VectorAnnotation) {
   return c ? { x: c.x / dpr, y: c.y / dpr } : undefined
 }
 
-const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] => {
+/** A volume pane's rows, as MeasurementData lists them (exported for tests). */
+export const snapshot = (
+  nv: NiiVue,
+  unit: string,
+  viewportId: string,
+): Row[] => {
   const scale = paneScale(viewportId)
   return nv.annotations
     .filter((a) => !isContourAnnotation(a))

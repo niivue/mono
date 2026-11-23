@@ -962,6 +962,21 @@ export function roundNumber(value: number, precision = 2): string {
   return value.toFixed(precision + extra)
 }
 
+/** The note a pane flashes for a new measurement, in its display set's scale. */
+export function measurementNote(
+  nativeStats: AnnotationStats | undefined,
+  scale: number,
+): string | undefined {
+  const stats = calibrateStats(nativeStats, scale)
+  if (!stats) return undefined
+  // A measured line reports its length, a probe its value, area tools area.
+  return stats.length !== undefined
+    ? `Length: ${stats.length.toFixed(1)} ${lengthUnit(scale)}`
+    : stats.value !== undefined
+      ? `Value: ${roundNumber(stats.value)}`
+      : `Area: ${stats.area.toFixed(1)} ${areaUnit(scale)}`
+}
+
 // The panel row content + cachedStats for a reflected annotation. Measure tools
 // (ellipse/rect/circle) carry area (mm^2) + intensity stats; arrows carry none.
 function buildAnnotationDisplay(

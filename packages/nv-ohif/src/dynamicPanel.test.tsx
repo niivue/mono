@@ -1,17 +1,16 @@
-import { expect, mock, test } from 'bun:test'
-import * as React from 'react'
+import { expect, test } from 'bun:test'
+import { mockReactHooks } from './mockReact'
 
 const effects: Array<() => undefined | (() => void)> = []
 let renders = 0
-mock.module('react', () => ({
-  ...React,
+mockReactHooks({
   useEffect: (fn: () => undefined | (() => void)) => {
     effects.push(fn)
   },
   useReducer: () => [0, () => renders++],
   // A range left over from a longer series.
   useState: () => [[2, 5], () => {}],
-}))
+})
 const { DynamicVolumePanel } = await import('./dynamicPanel')
 const { joinFrames } = await import('./frames4D')
 

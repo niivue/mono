@@ -1,15 +1,14 @@
-import { expect, mock, test } from 'bun:test'
-import * as React from 'react'
+import { expect, test } from 'bun:test'
+import { mockReactHooks } from './mockReact'
 
 const effects: Array<() => undefined | (() => void)> = []
 const effectDeps: unknown[][] = []
-mock.module('react', () => ({
-  ...React,
+mockReactHooks({
   useEffect: (fn: () => undefined | (() => void), deps: unknown[]) => {
     effects.push(fn)
     effectDeps.push(deps)
   },
-}))
+})
 const { applyViewportStyle, isMip, useHungOverlays } = await import(
   './hangingOptions'
 )

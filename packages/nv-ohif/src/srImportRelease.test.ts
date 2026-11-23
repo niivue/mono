@@ -1,7 +1,8 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test } from 'bun:test'
+import { mockReactHooks } from './mockReact'
 
 // useOhifRowImport runs its effect at once.
-mock.module('react', () => ({ useEffect: (f: () => unknown) => void f() }))
+mockReactHooks({ useEffect: (f: () => unknown) => void f() })
 const { generateShape } = await import('@niivue/niivue')
 const { reflectNiivueAnnotation, clearNiivueAnnotations, isReleasedRow } =
   await import('./commands')

@@ -1,17 +1,16 @@
-import { expect, mock, test } from 'bun:test'
-import * as React from 'react'
+import { expect, test } from 'bun:test'
+import { mockReactHooks } from './mockReact'
 
 // One component's state across renders, as React keeps it.
 const slots: unknown[] = []
 let at = 0
-mock.module('react', () => ({
-  ...React,
+mockReactHooks({
   useState: <T>(init?: T) => {
     const i = at++
     if (!(i in slots)) slots[i] = init
     return [slots[i], (v: T) => (slots[i] = v)]
   },
-}))
+})
 const { useLoadedFor } = await import('./NiivueViewport')
 const render = (key: string) => {
   at = 0

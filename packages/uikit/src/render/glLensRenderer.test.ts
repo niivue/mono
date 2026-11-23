@@ -73,3 +73,28 @@ test('the scene copy follows the canvas when it shrinks, so off-canvas parts fil
   expect(uniforms.at(-1)?.slice(2)).toEqual([100, 100])
   lens.destroy()
 })
+
+test('a small view low on a big canvas copies only its own extent', () => {
+  const { gl, uniforms, size } = fakeGl()
+  size.drawingBufferWidth = size.drawingBufferHeight = 4096
+  const layout = layoutMagnifier({
+    x: 64,
+    y: 64,
+    width: 128,
+    height: 128,
+    dpr: 1,
+    radiusCss: 20,
+    zoom: 3,
+  })
+  if (!layout) throw new Error('no layout')
+  const lens = new GlLensRenderer()
+  lens.draw(
+    gl,
+    { x: 0, y: 4096 - 128, width: 128, height: 128 },
+    layout,
+    [0, 0, 0, 1],
+    {},
+  )
+  expect(uniforms.at(-1)?.slice(2)).toEqual([128, 128])
+  lens.destroy()
+})

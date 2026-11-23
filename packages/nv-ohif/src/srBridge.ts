@@ -30,15 +30,18 @@ const toHandles = (m: MirroredMeasurement) =>
     : m.points
 
 // The stats each adapter reads: an ROI's intensity unit as modalityUnit (its
-// row carries it as unit), and a circle's radius (so its SR perimeter) from
-// its centre and rim points.
+// row carries it as unit), and a circle's radius and perimeter.
 function statsFor(m: MirroredMeasurement): Record<string, unknown> {
   const data = m.data ?? {}
   const stats = data.areaUnit ? { ...data, modalityUnit: data.unit } : data
   if (m.toolName !== 'CircleROI') return stats
+  // Slide rows carry no radius: from their centre and rim points.
   const [c = [], e = []] = m.points
-  const radius = Math.hypot(...[0, 1, 2].map((i) => (e[i] ?? 0) - (c[i] ?? 0)))
-  return { ...stats, radius, radiusUnit: 'mm', perimeter: 2 * Math.PI * radius }
+  const radius =
+    typeof data.radius === 'number'
+      ? data.radius
+      : Math.hypot(...[0, 1, 2].map((i) => (e[i] ?? 0) - (c[i] ?? 0)))
+  return { radiusUnit: 'mm', ...stats, radius, perimeter: 2 * Math.PI * radius }
 }
 
 export interface MirroredMeasurement {

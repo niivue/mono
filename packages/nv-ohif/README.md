@@ -259,7 +259,8 @@ their points. Handles scale with device pixel ratio.
 
 **Intensity stats** are sampled from the base volume in the series' modality unit
 (HU for CT, SUV for PT, unitless otherwise); area is in mm2 and voxel-spacing
-aware. Length and the bidirectional diameters are in-plane mm.
+aware. Length and the bidirectional diameters are in-plane mm. A
+`CalibrationLine` scales lengths and areas (see [Workflows](#workflows)).
 
 **Rendering.** Shapes and their labels are drawn by the `@niivue/uikit` overlay,
 not OHIF's cornerstone canvas.
@@ -492,6 +493,20 @@ tmtv).
   stay the glass's and start no pinch zoom; Shift+right-click or a long touch
   picks its zoom; glasses stay while another tool is active and go
   when the button is toggled off). A glass shows on its own slice only.
+- **Calibration.** `CalibrationLine` draws a line, asks its actual length in
+  OHIF's dialog, then removes it. The scale applies to the whole display set
+  (cornerstone calibrates one image) and to its rows, SR export, canvas labels
+  and rulers, in `mm User` / `mm² User`; core keeps native mm. Contour
+  segmentations stay native. A **Calibrated** marker's Reset returns to native
+  mm. Unlike cornerstone, the line reads mm (calibrated, if set), not px,
+  while drawn; the scale stays with the display set when a pane swaps away and
+  back. Re-importing an
+  SR restores the scale from its stored lengths, or areas in an ROI-only
+  report (rows that disagree leave native mm). Importing an uncalibrated SR
+  resets the scale to native. Cornerstone's own CalibrationLine stores lengths
+  that need not match its geometry by the entered factor (x2 on a CT scout
+  moved a Length 277.97 to 280.26 mm), so its SR marks a NiiVue pane
+  Calibrated at the stored/geometry ratio (about 1.008 there).
 
 ## Compatibility
 

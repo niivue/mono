@@ -16,6 +16,7 @@ import {
 } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { programmaticAnnotations } from './arrowText'
+import { adoptReportScale } from './calibration'
 import {
   adoptedRowUids,
   claimPendingJump,
@@ -38,6 +39,29 @@ export interface OhifRow {
   referenceSeriesUID?: string
   source?: { name?: string }
   metadata?: { sliceType?: number }
+  /** Stats as stored: per image for cornerstone rows (an SR's NUM values). */
+  data?: Record<string, unknown>
+}
+
+/**
+ * A report row's calibration (C35): its stored length (a hydrated SR's NUM,
+ * flat or per image) over the length of its geometry, else the root of stored
+ * over native area (cornerstone's and NiiVue's geometric areas agree exactly).
+ */
+export function reportScale(
+  row: OhifRow,
+  stats: { length?: number; area: number } | undefined,
+): number | undefined {
+  const d = row.data ?? {}
+  const flat = typeof d.length === 'number' || typeof d.area === 'number'
+  const v = (flat ? d : Object.values(d)[0]) as
+    | { length?: unknown; area?: unknown }
+    | undefined
+  if (typeof v?.length === 'number' && stats?.length)
+    return v.length / stats.length
+  if (typeof v?.area === 'number' && v.area > 0 && stats?.area)
+    return Math.sqrt(v.area / stats.area)
+  return undefined
 }
 
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
@@ -321,6 +345,13 @@ export function useOhifRowImport(
       // reflection keeps the original measurement. A released row is
       // reflected under its own uid, so jumps and tracking keep pointing at it.
       // Marked only for the synchronous add, so no id outlives it.
+      // A NiiVue row's scale is already its display set's.
+      const scale =
+        row.source?.name === 'NiiVue'
+          ? undefined
+          : reportScale(row, annotation.stats)
+      const ds = own.displaySets[0]?.displaySetInstanceUID
+      if (scale && ds) adoptReportScale(ds, scale)
       programmaticAnnotations.add(annotation.id)
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)

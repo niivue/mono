@@ -5,6 +5,13 @@ import type {
 } from '@niivue/niivue'
 import { useEffect, useState } from 'react'
 import { toCanvas } from './annotationHit'
+import {
+  areaUnit,
+  calibrateStats,
+  calibrationEvents,
+  lengthUnit,
+  paneScale,
+} from './calibration'
 import { probeIndex } from './commands'
 import { isContourAnnotation } from './contourSeg'
 import { slideRowTool, slideRowValues } from './slideMeasurements'
@@ -32,22 +39,28 @@ function anchorOf(nv: NiiVue, a: VectorAnnotation) {
   return c ? { x: c.x / dpr, y: c.y / dpr } : undefined
 }
 
-const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
-  nv.annotations
+const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] => {
+  const scale = paneScale(viewportId)
+  return nv.annotations
     .filter((a) => !isContourAnnotation(a))
     .map((a) => {
       const type = a.shape?.type ?? 'freehand'
-      const values: Row['values'] = { ...a.stats }
-      if (a.stats && !a.stats.length) values.modalityUnit = unit
+      const stats = calibrateStats(a.stats, scale)
+      const values: Row['values'] = { ...stats }
+      if (stats && !stats.length) values.modalityUnit = unit
+      if (scale !== 1) {
+        values.lengthUnit = lengthUnit(scale)
+        values.areaUnit = areaUnit(scale)
+      }
       // Cornerstone names a bidirectional's short axis its width.
-      if (a.stats?.shortLength !== undefined) values.width = a.stats.shortLength
+      if (stats?.shortLength !== undefined) values.width = stats.shortLength
       // Cornerstone's Probe reports the voxel's image index too ("i,j,k").
       const index = probeIndex(viewportId, a)
       if (index) values.index = index.join(',')
       // Cornerstone's CircleROI reports its radius too.
       if (a.shape && (type === 'circle' || type === 'measureCircle')) {
-        values.radius = Math.abs(a.shape.end.x - a.shape.start.x) / 2
-        values.radiusUnit = 'mm'
+        values.radius = (Math.abs(a.shape.end.x - a.shape.start.x) / 2) * scale
+        values.radiusUnit = lengthUnit(scale)
       }
       return {
         id: a.id,
@@ -57,6 +70,7 @@ const snapshot = (nv: NiiVue, unit: string, viewportId: string): Row[] =>
         values,
       }
     })
+}
 
 // Slide annotations: values in µm (px without pixel spacing), no anchor.
 const slideSnapshot = (slide: NVSlideAnnotations): Row[] =>
@@ -102,6 +116,7 @@ export function MeasurementData({
     update()
     const events = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
     for (const e of events) nv.addEventListener(e, update)
+    calibrationEvents.addEventListener('change', update)
     // Anchors are canvas px: a resized pane (a panel opening) moves them.
     // NiiVue relays out on its next render, so read them two frames later.
     const ro = nv.canvas
@@ -112,6 +127,7 @@ export function MeasurementData({
     if (nv.canvas) ro?.observe(nv.canvas)
     return () => {
       for (const e of events) nv.removeEventListener(e, update)
+      calibrationEvents.removeEventListener('change', update)
       ro?.disconnect()
     }
   }, [nv, unit, viewportId])

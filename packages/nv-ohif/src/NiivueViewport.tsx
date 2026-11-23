@@ -22,7 +22,19 @@ import {
   useState,
 } from 'react'
 import { createAdvancedMagnifyBinding } from './advancedMagnify'
-import { useArrowText } from './arrowText'
+import { programmaticAnnotations, useArrowText } from './arrowText'
+import {
+  areaUnit,
+  calibrateShapes,
+  calibrateStats,
+  calibrationEvents,
+  calibrationScale,
+  lengthUnit,
+  paneDisplaySet,
+  paneScale,
+  setCalibrationScale,
+} from './calibration'
+import { askCalibrationDistance, CalibratedMarker } from './calibrationForm'
 import { classifyDisplaySet, extraDisplaySetsNote } from './classifyDisplaySet'
 import {
   applyDefaultAnnotationText,
@@ -75,7 +87,11 @@ import {
   overlayDisplaySets,
   useHungOverlays,
 } from './hangingOptions'
-import { mirrorAnnotationHistory, useAnnotationHistory } from './history'
+import {
+  mirrorAnnotationHistory,
+  useAnnotationHistory,
+  withdrawLastStep,
+} from './history'
 import { createMagnifyBinding } from './magnify'
 import { MeasurementData } from './measurementData'
 import { useMetadataRevision } from './metadataReload'
@@ -522,6 +538,8 @@ export function NiivueViewport(props: OhifViewportProps) {
   displaySetsRef.current = displaySets
   const servicesManagerRef = useRef(servicesManager)
   servicesManagerRef.current = servicesManager
+  const extensionManagerRef = useRef(props.extensionManager)
+  extensionManagerRef.current = props.extensionManager
   const dataSourceRef = useRef(props.dataSource)
   dataSourceRef.current = props.dataSource
   const displaySetOptionsRef = useRef(props.displaySetOptions)
@@ -635,11 +653,15 @@ export function NiivueViewport(props: OhifViewportProps) {
         .then((font) => {
           if (disposed) return
           annotationOverlay = new VolumeAnnotationOverlay(font, () =>
-            visibleContourShapes(
+            calibrateShapes(
               nv,
-              visibleAnnotationScreenShapes(
-                viewportId,
-                nv.annotationScreenShapes,
+              paneScale(viewportId),
+              visibleContourShapes(
+                nv,
+                visibleAnnotationScreenShapes(
+                  viewportId,
+                  nv.annotationScreenShapes,
+                ),
               ),
             ),
           )
@@ -760,6 +782,17 @@ export function NiivueViewport(props: OhifViewportProps) {
         .detail?.annotation
       // Contour segments are segmentation, not measurements (contourSeg.ts).
       if (!annotation || isContourAnnotation(annotation)) return
+      // A CalibrationLine asks for the actual distance, then goes, as OHIF's.
+      if (
+        activeOhifToolRef.current === 'CalibrationLine' &&
+        annotation.shape?.type === 'measureLine' &&
+        !programmaticAnnotations.has(annotation.id)
+      ) {
+        nv.removeAnnotation(annotation.id)
+        withdrawLastStep(nv, extensionManagerRef.current)
+        void calibrate(annotation.stats?.length)
+        return
+      }
       if (applyDefaultAnnotationText(annotation, nv.annotations)) nv.drawScene()
       // annotationAdded carries the PRE-merge object; nv.annotations holds the
       // post-merge clone (clipper may have changed its polygons). Reflect the
@@ -773,15 +806,16 @@ export function NiivueViewport(props: OhifViewportProps) {
         servicesManagerRef.current,
         stored,
       )
-      const stats = stored.stats
+      const scale = paneScale(viewportId)
+      const stats = calibrateStats(stored.stats, scale)
       if (!added || !stats) return
       // A measured line reports its length, a probe its value, area tools area.
       const message =
         stats.length !== undefined
-          ? `Length: ${stats.length.toFixed(1)} mm`
+          ? `Length: ${stats.length.toFixed(1)} ${lengthUnit(scale)}`
           : stats.value !== undefined
             ? `Value: ${roundNumber(stats.value)}`
-            : `Area: ${stats.area.toFixed(1)} mm²`
+            : `Area: ${stats.area.toFixed(1)} ${areaUnit(scale)}`
       flashNote(message)
     }
     const onAnnotationRemoved = (e: Event) => {
@@ -802,6 +836,27 @@ export function NiivueViewport(props: OhifViewportProps) {
           detail,
         )
     }
+    const calibrate = async (nativeMM: number | undefined) => {
+      const ds = paneDisplaySet(viewportId)
+      if (!ds || !nativeMM) return
+      const shown = `${Math.round(nativeMM * calibrationScale(ds) * 100) / 100}`
+      const text = await askCalibrationDistance(
+        servicesManagerRef.current?.services,
+        shown,
+      )
+      if (text === null || text.trim() === shown) return
+      const mm = Number(text)
+      if (Number.isFinite(mm) && mm > 0) setCalibrationScale(ds, mm / nativeMM)
+      else flashNote('Calibration needs a distance above 0 mm')
+    }
+    // Rows, labels and rulers of this pane's display set follow a calibration.
+    const onCalibration = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== paneDisplaySet(viewportId))
+        return
+      nv.drawScene()
+      reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
+    }
+    calibrationEvents.addEventListener('change', onCalibration)
     nv.addEventListener('annotationAdded', onAnnotationAdded)
     nv.addEventListener('annotationRemoved', onAnnotationRemoved)
     nv.addEventListener('annotationChanged', onAnnotationChanged)
@@ -831,6 +886,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('locationChange', showStack)
       nv.removeEventListener('sliceTypeChange', showStack)
       nv.removeEventListener('sliceTypeChange', showRender)
+      calibrationEvents.removeEventListener('change', onCalibration)
       nv.removeEventListener('annotationAdded', onAnnotationAdded)
       nv.removeEventListener('annotationRemoved', onAnnotationRemoved)
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
@@ -1330,7 +1386,11 @@ export function NiivueViewport(props: OhifViewportProps) {
       // ROI / arrow tools drive NiiVue's vector-annotation system (measureEllipse
       // etc.); the master gate must be on for a left-drag to draw. Every other
       // tool turns the gate off and maps to a left-drag mode instead.
-      const annoTool = ohifToolToAnnotationTool(tool)
+      // CalibrationLine draws a measured line (onAnnotationAdded calibrates).
+      const annoTool =
+        tool === 'CalibrationLine'
+          ? 'measureLine'
+          : ohifToolToAnnotationTool(tool)
       // Brush/Eraser/Threshold paint the PT label (petQuant.ts).
       nv.drawIsEnabled = armBrush(viewportId, tool, servicesManager, () =>
         ohifPenSize(nv, toolGroupId, props.extensionManager),
@@ -1414,6 +1474,7 @@ export function NiivueViewport(props: OhifViewportProps) {
           {overlay}
         </div>
       ) : null}
+      <CalibratedMarker displaySetUID={displaySets[0]?.displaySetInstanceUID} />
       <MeasurementData
         nv={ready ? nvRef.current : null}
         slide={isLoaded ? slideViewRef.current?.annotations : undefined}

@@ -54,6 +54,13 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   let mode: 'Active' | 'Passive' | undefined
   let unregister: (() => void) | null = null
   let select: HTMLSelectElement | null = null
+  // Removing a focused select fires its blur: unhook first, or blur removes it twice.
+  const closeList = () => {
+    const s = select
+    select = null
+    if (s) s.onblur = null
+    s?.remove()
+  }
   const canvas = nv.canvas
 
   const renderer = {
@@ -108,7 +115,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   const clear = () => {
     drag = null
     touches.clear()
-    select?.remove()
+    closeList()
     if (!glasses.length) return
     for (const g of glasses.splice(0)) g.lens.destroy()
     register()
@@ -142,7 +149,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   const showZoomList = (g: Glass, clientX: number, clientY: number) => {
     const parent = canvas?.parentElement
     if (!parent) return
-    select?.remove()
+    closeList()
     const s = document.createElement('select')
     select = s
     const box = parent.getBoundingClientRect()
@@ -154,10 +161,10 @@ export function createAdvancedMagnifyBinding(nv: Host) {
     }
     s.addEventListener('change', () => {
       g.lens.zoom = Number.parseFloat(s.value)
-      s.remove()
+      closeList()
       nv.drawScene()
     })
-    s.addEventListener('blur', () => s.remove())
+    s.onblur = closeList
     parent.appendChild(s)
     s.focus()
   }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
+import { setCalibrationScale } from './calibration'
 import {
   adoptedRowUids,
   applyDefaultAnnotationText,
@@ -478,6 +479,40 @@ describe('reflectNiivueAnnotation', () => {
       [0, 0, 0],
       [-3, -4, 0],
     ])
+  })
+
+  it('re-reflects an existing Length row when its display set is calibrated or reset', () => {
+    const nv = stubNiivue()
+    register('vp-cal', nv)
+    updateNiivueViewport('vp-cal', {
+      displaySets: backing as unknown as Parameters<
+        typeof updateNiivueViewport
+      >[1]['displaySets'],
+    })
+    const svc = measurementServices('vp-cal', backing)
+    const a = {
+      ...ellipse('c'),
+      polygons: generateShape('measureLine', { x: 0, y: 0 }, { x: 3, y: 4 }, 1),
+      stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, length: 42.5 },
+      shape: {
+        type: 'measureLine',
+        start: { x: 0, y: 0 },
+        end: { x: 3, y: 4 },
+      },
+    } as unknown as VectorAnnotation
+    nv.annotations = [a]
+    expect(reflectNiivueAnnotation('vp-cal', svc.servicesManager, a)).toBe(true)
+    const last = () => svc.added.at(-1)?.data.schema as { data: unknown }
+    setCalibrationScale('ds-1', 2)
+    try {
+      reconcileNiivueAnnotations('vp-cal', svc.servicesManager)
+      // The row (and so its SR NUM) carries the scaled length.
+      expect(last().data).toEqual({ length: 85, unit: 'mm User' })
+    } finally {
+      setCalibrationScale('ds-1', 1)
+    }
+    reconcileNiivueAnnotations('vp-cal', svc.servicesManager)
+    expect(last().data).toEqual({ length: 42.5, unit: 'mm' })
   })
 
   it('adds an OHIF CobbAngle: degrees row, its four points in click order', () => {

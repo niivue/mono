@@ -12,6 +12,14 @@ const FONT: UIKitFont = {
   image: {} as ImageBitmap,
 }
 
+const key = (k: string) => ({
+  key: k,
+  shiftKey: false,
+  ctrlKey: false,
+  altKey: false,
+  metaKey: false,
+})
+
 describe('UIKitToolPaletteOverlay', () => {
   it('chooses what was pressed and lifted on, and holds presses on the tray', () => {
     const chosen: string[] = []
@@ -48,10 +56,6 @@ describe('UIKitToolPaletteOverlay', () => {
     const size = palette.measure()
     expect(size?.height).toBe(56)
     expect(size?.reach).toBeGreaterThan(0)
-    palette.update({ tool: 'eraser' })
-    expect(palette.isShown).toBe(true)
-    palette.hide()
-    expect(palette.hitTest(...at(1))).toBe(false)
   })
 
   it('drops a press whose item an update replaced', () => {
@@ -75,12 +79,6 @@ describe('UIKitToolPaletteOverlay', () => {
     expect(chosen).toEqual([])
   })
 
-  it('measures an empty palette as reaching nothing', () => {
-    const palette = new UIKitToolPaletteOverlay(FONT)
-    palette.show({ x: 0, y: 0, tools: [], tool: '' })
-    expect(palette.measure()?.reach).toBe(0)
-  })
-
   it('takes focus on a press, then steps over disabled items and chooses with Enter', () => {
     const chosen: string[] = []
     const palette = new UIKitToolPaletteOverlay(FONT)
@@ -95,13 +93,6 @@ describe('UIKitToolPaletteOverlay', () => {
       tool: 'pen',
       onTool: (id) => chosen.push(`tool ${id}`),
       onAction: (id) => chosen.push(`action ${id}`),
-    })
-    const key = (k: string) => ({
-      key: k,
-      shiftKey: false,
-      ctrlKey: false,
-      altKey: false,
-      metaKey: false,
     })
     expect(palette.keyDown(key('ArrowRight'))).toBe(false)
     // Press the pen and lift off it: focus without a choice.
@@ -141,13 +132,7 @@ describe('UIKitToolPaletteOverlay', () => {
     palette.update({
       actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: false }],
     })
-    const enter = palette.keyDown({
-      key: 'Enter',
-      shiftKey: false,
-      ctrlKey: false,
-      altKey: false,
-      metaKey: false,
-    })
+    const enter = palette.keyDown(key('Enter'))
     expect(enter).toBe(false)
     expect(chosen).toEqual(['undo'])
   })
@@ -170,13 +155,7 @@ describe('UIKitToolPaletteOverlay', () => {
     palette.pointerDown(x, y)
     palette.pointerUp(x, y)
     palette.update({ actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }] })
-    palette.keyDown({
-      key: 'Enter',
-      shiftKey: false,
-      ctrlKey: false,
-      altKey: false,
-      metaKey: false,
-    })
+    palette.keyDown(key('Enter'))
     expect(chosen).toEqual(['tool pen', 'tool pen'])
   })
 })

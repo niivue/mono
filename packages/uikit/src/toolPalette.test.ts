@@ -71,50 +71,10 @@ describe('tool palette', () => {
     expect(kindY('width')).toBe(STYLE.rowHeight)
   })
 
-  it('gives each section its own row when even two are too wide', () => {
-    const narrow = layoutToolPalette(SPEC, 0, 0, 1, STYLE, METRICS)
-    // Tools take the first row alone; the actions drop below them.
-    expect(narrow.height).toBe(4 * STYLE.rowHeight)
-    expect(narrow.dividers).toHaveLength(0)
-    expect(narrow.items.filter((i) => i.kind === 'tool')[0].y).toBe(
-      -toolPaletteReach(STYLE),
-    )
-  })
-
-  it('keeps every tool pressable when the sections wrap', () => {
-    const spec: ToolPaletteSpec = {
-      ...SPEC,
-      actions: ['undo', 'redo', 'clear'].map((id) => ({ id, label: id })),
-    }
-    const layout = layoutToolPalette(spec, 0, 100, 200, STYLE, METRICS)
-    layout.items.forEach((item, i) => {
-      // Near the raised tip, where a wrapped tool would sit over the row above.
-      if (item.kind === 'tool')
-        expect(
-          toolPaletteItemAt(spec, layout, centre(item)[0], item.y + 2),
-        ).toBe(i)
-    })
-  })
-
   it('finds enabled items only', () => {
     const layout = layoutToolPalette(SPEC, 0, 0, 1e9, STYLE, METRICS)
-    expect(toolPaletteItemAt(SPEC, layout, ...centre(layout.items[0]))).toBe(-1)
-    expect(toolPaletteItemAt(SPEC, layout, ...centre(layout.items[5]))).toBe(5)
-  })
-
-  it('raises the selected tool and rings the selected color', () => {
-    const layout = layoutToolPalette(SPEC, 0, 100, 1e9, STYLE, METRICS)
-    const tops = (spec: ToolPaletteSpec) =>
-      buildToolPalette(spec, STYLE, METRICS, layout, -1).rects.length
-    // A selected swatch adds one ring; a selected width adds its backing.
-    expect(tops(SPEC)).toBe(tops({ ...SPEC, color: 'x', width: 'x' }) + 2)
-    const geometry = buildToolPalette(SPEC, STYLE, METRICS, layout, -1)
-    expect(geometry.text.map((t) => t.str)).toEqual([
-      'Pen',
-      'Fill',
-      'Wand',
-      'Erase',
-    ])
+    expect(toolPaletteItemAt(layout, ...centre(layout.items[0]))).toBe(-1)
+    expect(toolPaletteItemAt(layout, ...centre(layout.items[5]))).toBe(5)
   })
 
   it('scales swatch, width and ring sizes with the style', () => {

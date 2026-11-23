@@ -336,6 +336,33 @@ fire. `MenuStyle` holds the popup fill, border, radius and padding, row height,
 highlight fill, text, mark and shortcut colors, separator and chevron sizes, and
 `buttonStyle` is a `ButtonStyle` for the trigger.
 
+## Tool palettes
+
+`UIKitToolPaletteOverlay` draws one floating drawing toolbar after the iPad's:
+actions, upright tools in a tray (the selected one raised and inked in the
+chosen color), color swatches and brush widths, in that order. Lifting on the
+pressed item fires `onAction`, `onTool`, `onColor` or `onWidth` with its id;
+presses on the palette never reach the scene. A press gives it keyboard focus:
+arrows move the highlight over enabled items, wrapping, and Enter or Space
+chooses.
+
+```ts
+const palette = new UIKitToolPaletteOverlay(font, units)
+palette.show({
+  x: 40, y: 600, maxWidth: 480,
+  actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: canUndo }],
+  tools: [{ id: 'pen', label: 'Pen', look: 'pen' }], tool: 'pen',
+  onTool: (id) => palette.update({ tool: id }),
+})
+palette.update({ actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: false }] })
+palette.measure() // { width, height, reach } in spec units, or null while hidden
+```
+
+`x`, `y` is the tray's top-left; tools reach above it by `measure().reach`.
+Past `maxWidth`, whole sections wrap to new rows; tools stay on the top row.
+`update` keeps hover and a press under way. `ToolPaletteStyle` holds the row,
+tool, swatch and dot sizes, lifts, fills and text sizes.
+
 ## Selects
 
 `UIKitSelectOverlay` draws drop-down lists: a menu button whose label is the

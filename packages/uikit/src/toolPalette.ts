@@ -44,7 +44,7 @@ export interface ToolPaletteSpec {
   /** The tray's top-left; tools rise above it. */
   x: number
   y: number
-  /** Wider than this, the colors and widths wrap to a second row. */
+  /** Wider than this, whole sections wrap to new rows; tools stay on top. */
   maxWidth?: number
   actions?: readonly ToolPaletteAction[]
   tools: readonly ToolPaletteTool[]
@@ -123,10 +123,12 @@ export const DEFAULT_TOOL_PALETTE_STYLE: ToolPaletteStyle = {
 
 export type ToolPaletteItemKind = 'action' | 'tool' | 'color' | 'width'
 
-/** A pressable part: its kind, its index in that list, and its hit box. */
+/** A pressable part: its kind, its index and id in that list, and its hit box. */
 export interface ToolPaletteItem {
   kind: ToolPaletteItemKind
   index: number
+  id: string
+  enabled: boolean
   x: number
   y: number
   width: number
@@ -206,37 +208,46 @@ export function layoutToolPalette(
           measureWidth(metrics, action.label, style.textSizePx) +
             2 * style.padding,
         )
-  type Part = { kind: ToolPaletteItemKind; index: number; width: number }
+  type Part = Pick<ToolPaletteItem, 'kind' | 'index' | 'id' | 'enabled'> & {
+    width: number
+  }
   const sections: Part[][] = [
     (spec.actions ?? []).map((action, index) => ({
       kind: 'action',
       index,
+      id: action.id,
+      enabled: action.enabled !== false,
       width: actionWidth(action),
     })),
-    spec.tools.map((_, index) => ({
+    spec.tools.map(({ id }, index) => ({
       kind: 'tool',
       index,
+      id,
+      enabled: true,
       width: style.toolSlot,
     })),
-    (spec.colors ?? []).map((_, index) => ({
+    (spec.colors ?? []).map(({ id }, index) => ({
       kind: 'color',
       index,
+      id,
+      enabled: true,
       width: style.swatchSize * (32 / 28),
     })),
-    (spec.widths ?? []).map((_, index) => ({
+    (spec.widths ?? []).map(({ id }, index) => ({
       kind: 'width',
       index,
+      id,
+      enabled: true,
       width: style.maxDot * (30 / 18),
     })),
   ]
   const rowWidth = (row: Part[][]): number => {
-    const present = row.filter((section) => section.length > 0)
-    const items = present.flat()
+    const items = row.flat()
     return (
       2 * style.padding +
       items.reduce((sum, part) => sum + part.width, 0) +
-      Math.max(0, items.length - present.length) * style.gap +
-      Math.max(0, present.length - 1) * (2 * style.sectionGap + 1)
+      (items.length - row.length) * style.gap +
+      Math.max(0, row.length - 1) * (2 * style.sectionGap + style.borderWidth)
     )
   }
   // Whole sections wrap: one that doesn't fit starts the next row. Tools stay
@@ -258,12 +269,11 @@ export function layoutToolPalette(
   rows.forEach((row, r) => {
     const rowY = y + r * style.rowHeight
     let cursor = x + style.padding
-    const present = row.filter((section) => section.length > 0)
-    present.forEach((section, s) => {
+    row.forEach((section, s) => {
       if (s > 0) {
         cursor += style.sectionGap
         dividers.push({ x: cursor, y: rowY })
-        cursor += 1 + style.sectionGap
+        cursor += style.borderWidth + style.sectionGap
       }
       section.forEach((part, i) => {
         if (i > 0) cursor += style.gap
@@ -272,6 +282,8 @@ export function layoutToolPalette(
         items.push({
           kind: part.kind,
           index: part.index,
+          id: part.id,
+          enabled: part.enabled,
           x: cursor,
           y: top,
           width: part.width,
@@ -293,15 +305,12 @@ export function layoutToolPalette(
 
 /** The enabled item under (x, y), or -1. */
 export function toolPaletteItemAt(
-  spec: ToolPaletteSpec,
   layout: ToolPaletteLayout,
   x: number,
   y: number,
 ): number {
   return layout.items.findIndex(
-    (item) =>
-      rectContains(item, x, y) &&
-      !(item.kind === 'action' && spec.actions?.[item.index].enabled === false),
+    (item) => item.enabled && rectContains(item, x, y),
   )
 }
 
@@ -387,7 +396,7 @@ export function buildToolPalette(
     )
     text.push({
       str: tool.label,
-      x: item.x + item.width / 2,
+      x: cx,
       y:
         rowY +
         style.rowHeight -

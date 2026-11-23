@@ -20,7 +20,7 @@ import {
   layoutToolPalette,
   resolveToolPaletteStyle,
   scaleToolPaletteStyle,
-  type ToolPaletteItemKind,
+  type ToolPaletteItem,
   type ToolPaletteLayout,
   type ToolPaletteSpec,
   type ToolPaletteStyle,
@@ -57,7 +57,6 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   private scale = 1
   private hover = -1
   private focused = false
-  private layer: UIKitRedrawSource | null = null
   /** `kind:id` of the pressed item, so an update that moves items cannot retarget it. */
   private pressed: string | null = null
 
@@ -86,13 +85,12 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     // Hover is an index into the layout: follow its item by key, or drop it
     // (also when the update disabled it).
     const hovered = this.getLayout()?.items[this.hover]
-    const key = hovered ? itemKey(this.spec, hovered) : null
+    const key = hovered ? itemKey(hovered) : null
     this.spec = { ...this.spec, ...patch }
     this.layout = null
-    const spec = this.spec
     this.hover = key
       ? (this.getLayout()?.items.findIndex(
-          (item) => itemKey(spec, item) === key && isEnabled(spec, item),
+          (item) => itemKey(item) === key && item.enabled,
         ) ?? -1)
       : -1
     this.bundle.invalidate()
@@ -150,17 +148,18 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     if (!this.spec || !layout || !toolPaletteContains(layout, x, y)) {
       return false
     }
-    const item = layout.items[toolPaletteItemAt(this.spec, layout, x, y)]
-    this.pressed = item ? itemKey(this.spec, item) : null
+    const item = layout.items[toolPaletteItemAt(layout, x, y)]
+    this.pressed = item ? itemKey(item) : null
     this.focused = true
-    this.layer?.focus?.(this)
     return true
   }
 
   pointerMove(x: number, y: number): boolean {
     const layout = this.getLayout()
-    if (!this.spec || !layout) return false
-    const at = toolPaletteItemAt(this.spec, layout, x, y)
+    if (!layout) return false
+    const at = toolPaletteItemAt(layout, x, y)
+    // With focus, leaving the items keeps the keyboard highlight, like a menu.
+    if (at < 0 && this.focused) return false
     this.setHover(at)
     return at >= 0
   }
@@ -169,12 +168,10 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     const layout = this.getLayout()
     const spec = this.spec
     if (!spec || !layout) return false
-    const at = toolPaletteItemAt(spec, layout, x, y)
-    const item = layout.items[at]
-    const chosen =
-      item && itemKey(spec, item) === this.pressed ? layout.items[at] : null
+    const item = layout.items[toolPaletteItemAt(layout, x, y)]
+    const chosen = item && itemKey(item) === this.pressed ? item : null
     this.pressed = null
-    if (chosen) this.choose(spec, chosen.kind, chosen.index)
+    if (chosen) choose(spec, chosen)
     return true
   }
 
@@ -189,9 +186,10 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     if (!this.focused || !spec || !layout) return false
     const items = layout.items
     if (e.key === 'Enter' || e.key === ' ') {
+      // Hover only ever holds an enabled item (update drops a disabled one).
       const item = items[this.hover]
-      if (!item || !isEnabled(spec, item)) return false
-      this.choose(spec, item.kind, item.index)
+      if (!item) return false
+      choose(spec, item)
       return true
     }
     if (!e.key.startsWith('Arrow') || !items.length) return false
@@ -199,7 +197,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     let next = this.hover < 0 && step < 0 ? 0 : this.hover
     for (let tries = 0; tries < items.length; tries++) {
       next = (next + step + items.length) % items.length
-      if (isEnabled(spec, items[next])) {
+      if (items[next].enabled) {
         this.setHover(next)
         break
       }
@@ -214,7 +212,6 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
 
   bindLayer(layer: UIKitRedrawSource): void {
     this.bundle.bind(layer)
-    this.layer = layer
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
@@ -255,44 +252,19 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     this.hover = index
     this.bundle.invalidate()
   }
-
-  private choose(
-    spec: ToolPaletteOverlaySpec,
-    kind: ToolPaletteItemKind,
-    index: number,
-  ): void {
-    if (!isEnabled(spec, { kind, index })) return
-    const id = itemId(spec, kind, index)
-    if (kind === 'tool') spec.onTool?.(id)
-    else if (kind === 'color') spec.onColor?.(id)
-    else if (kind === 'width') spec.onWidth?.(id)
-    else spec.onAction?.(id)
-  }
 }
 
-function itemId(
-  spec: ToolPaletteOverlaySpec,
-  kind: ToolPaletteItemKind,
-  index: number,
-): string {
-  if (kind === 'tool') return spec.tools[index]?.id ?? ''
-  if (kind === 'color') return spec.colors?.[index]?.id ?? ''
-  if (kind === 'width') return spec.widths?.[index]?.id ?? ''
-  return spec.actions?.[index]?.id ?? ''
+const HANDLER = {
+  tool: 'onTool',
+  color: 'onColor',
+  width: 'onWidth',
+  action: 'onAction',
+} as const
+
+function choose(spec: ToolPaletteOverlaySpec, item: ToolPaletteItem): void {
+  spec[HANDLER[item.kind]]?.(item.id)
 }
 
-function isEnabled(
-  spec: ToolPaletteOverlaySpec,
-  item: { kind: ToolPaletteItemKind; index: number },
-): boolean {
-  return !(
-    item.kind === 'action' && spec.actions?.[item.index]?.enabled === false
-  )
-}
-
-function itemKey(
-  spec: ToolPaletteOverlaySpec,
-  item: { kind: ToolPaletteItemKind; index: number },
-): string {
-  return `${item.kind}:${itemId(spec, item.kind, item.index)}`
+function itemKey(item: ToolPaletteItem): string {
+  return `${item.kind}:${item.id}`
 }

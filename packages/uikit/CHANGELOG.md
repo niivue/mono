@@ -1,3 +1,26 @@
+## 1.0.0-rc.237 (2026-11-23)
+
+### Features
+
+- **uikit:** drop the radial menu; palette keyboard, scaled offsets, demo ([df7ccdb6](https://github.com/niivue/mono/commit/df7ccdb6))
+- **uikit:** tool palette overlay ([3b52c8dd](https://github.com/niivue/mono/commit/3b52c8dd))
+- **uikit:** radial menu overlay ([d9e65c57](https://github.com/niivue/mono/commit/d9e65c57))
+
+### Fixes
+
+- **uikit:** tool palette audit fixes ([655396a3](https://github.com/niivue/mono/commit/655396a3))
+- **uikit:** keep the tool palette within maxWidth when tools must wrap ([c3c77353](https://github.com/niivue/mono/commit/c3c77353))
+- **uikit:** drop the palette highlight from an action an update disabled ([8adfa495](https://github.com/niivue/mono/commit/8adfa495))
+- **uikit:** keep the palette highlight on its item across update() ([e16e7ce9](https://github.com/niivue/mono/commit/e16e7ce9))
+- **uikit:** never choose a palette action an update disabled ([8d180e3b](https://github.com/niivue/mono/commit/8d180e3b))
+- **uikit:** radial menu and tool palette review fixes ([7a4eb8cf](https://github.com/niivue/mono/commit/7a4eb8cf))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+- neurolabusc
+
 ## 1.0.0-rc.236 (2026-11-22)
 
 ### Features

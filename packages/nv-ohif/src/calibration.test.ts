@@ -155,6 +155,16 @@ test('undoing a report row deletion brings its scale back', () => {
   unregisterNiivue('vp-undo')
 })
 
+test('unmounting the pane holding a report row gives back the prior scale', () => {
+  const { adopt } = reportPane('vp-unmount')
+  adopt('unmount', 'a', 2)
+  expect(calibrationScale('unmount')).toBe(2)
+  // NiivueViewport's cleanup order: unregister, then re-sync report rows.
+  unregisterNiivue('vp-unmount')
+  syncReportRows()
+  expect(calibrationScale('unmount')).toBe(1)
+})
+
 test('calibrated rows and the flash note carry scaled values and User units', () => {
   const stats = { area: 6, min: 0, mean: 0, max: 0, stdDev: 0 }
   const line = {

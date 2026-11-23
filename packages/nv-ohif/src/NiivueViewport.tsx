@@ -871,6 +871,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       leaveFrames?.()
       unfloorSuv?.()
       unregisterNiivue(viewportId)
+      // Report rows this pane held no longer count toward their scale.
+      syncReportRows()
       releaseContourTools(viewportId)
       refreshToolbar(servicesManagerRef.current, viewportId)
       nv.removeEventListener('volumeUpdated', onVolumeUpdated)

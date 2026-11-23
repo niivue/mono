@@ -1,3 +1,20 @@
+## 1.0.0-rc.238 (2026-11-23)
+
+### Features
+
+- **niivue:** linkUrl hook and linked meshes in documents ([59f2a240](https://github.com/niivue/mono/commit/59f2a240))
+
+### Fixes
+
+- **niivue:** keep document mesh order when linked meshes load in parallel ([75ce10e0](https://github.com/niivue/mono/commit/75ce10e0))
+- **niivue:** omit layer urls on linked document meshes ([852a56d5](https://github.com/niivue/mono/commit/852a56d5))
+- **niivue,uikit:** draw superscript digits missing from the font atlas ([e453e99a](https://github.com/niivue/mono/commit/e453e99a))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.237 (2026-11-22)
 
 ### Features

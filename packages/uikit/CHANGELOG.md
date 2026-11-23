@@ -1,3 +1,18 @@
+## 1.0.0-rc.241 (2026-11-23)
+
+### Fixes
+
+- **niivue,uikit:** draw superscript digits missing from the font atlas ([e453e99a](https://github.com/niivue/mono/commit/e453e99a))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.238
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.240 (2026-11-23)
 
 ### Fixes

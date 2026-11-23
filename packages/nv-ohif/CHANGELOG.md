@@ -1,3 +1,29 @@
+## 1.0.0-rc.280 (2026-11-23)
+
+### Fixes
+
+- **nv-ohif:** keep a released report row's scale until a pane takes it back or OHIF removes it ([1c1ed3e3](https://github.com/niivue/mono/commit/1c1ed3e3))
+- **nv-ohif:** re-sync report scale when a pane unmounts ([d207eb87](https://github.com/niivue/mono/commit/d207eb87))
+- **nv-ohif:** keep removed report rows so undo restores their scale ([1a2fd8a3](https://github.com/niivue/mono/commit/1a2fd8a3))
+- **nv-ohif:** restore a report scale when its rows are removed ([7fc54f55](https://github.com/niivue/mono/commit/7fc54f55))
+- **nv-ohif:** report-scale agreement counts only rows a pane still holds ([dbc25462](https://github.com/niivue/mono/commit/dbc25462))
+- **nv-ohif:** report rows on a display set agree across reports and tasks ([#885](https://github.com/niivue/mono/issues/885))
+- **nv-ohif:** a lowered lighting value above 2 can return; DOM test for the menu refresh ([dc4ce3a0](https://github.com/niivue/mono/commit/dc4ce3a0))
+- **nv-ohif:** keep the lighting sliders' 0..2 range and follow quality changes made elsewhere ([b46cd72b](https://github.com/niivue/mono/commit/b46cd72b))
+- **nv-ohif:** #885 and #886 review follow-ups ([#885](https://github.com/niivue/mono/issues/885), [#886](https://github.com/niivue/mono/issues/886))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.238
+- Updated nv-ext-drawing to 1.0.0-rc.240
+- Updated nv-ext-tile to 1.0.0-rc.147
+- Updated uikit to 1.0.0-rc.241
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.279 (2026-11-23)
 
 ### Features

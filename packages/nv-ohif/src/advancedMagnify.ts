@@ -152,12 +152,17 @@ export function createAdvancedMagnifyBinding(nv: Host) {
       o.title = `Zoom factor ${z.toFixed(1)}`
       s.add(o)
     }
+    // Removing a focused select fires its blur: unhook first, or blur removes it twice.
+    const close = () => {
+      s.removeEventListener('blur', close)
+      s.remove()
+    }
     s.addEventListener('change', () => {
       g.lens.zoom = Number.parseFloat(s.value)
-      s.remove()
+      close()
       nv.drawScene()
     })
-    s.addEventListener('blur', () => s.remove())
+    s.addEventListener('blur', close)
     parent.appendChild(s)
     s.focus()
   }

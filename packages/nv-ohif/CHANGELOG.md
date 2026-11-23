@@ -1,3 +1,17 @@
+## 1.0.0-rc.279 (2026-11-23)
+
+### Features
+
+- **nv-ohif:** OHIF volume lighting sliders drive 3D Cinematic lighting (D5-06) ([b6e8f3ab](https://github.com/niivue/mono/commit/b6e8f3ab))
+
+### Fixes
+
+- **nv-ohif:** the 3D display menu follows render-mode and lighting changes ([1ead89a6](https://github.com/niivue/mono/commit/1ead89a6))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.278 (2026-11-23)
 
 ### Fixes

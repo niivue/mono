@@ -12,8 +12,10 @@ import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 type Memo = {
   id: string
   restoreMemo: (undo?: boolean) => void
-  source?: StepSource
+  source?: object
   seq?: number
+  // The ring as the push found it: a withdrawn step puts it back (redo too).
+  before?: { slot: unknown; undoAvailable: number; redoAvailable: number }
 }
 type HistoryMemo = {
   push: (memo: Memo) => void
@@ -23,6 +25,7 @@ type HistoryMemo = {
   position?: number
   size?: number
   undoAvailable?: number
+  redoAvailable?: number
 }
 
 const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
@@ -77,7 +80,16 @@ function record(memo: HistoryMemo, nv: StepSource, seq: number): void {
   // First in the group: undo restores a group last-first, so the rows return
   // after OHIF has restored the tracking state they belong to.
   if (Array.isArray(group)) group.unshift(step)
-  else memo.push(step)
+  else {
+    const { ring, position, size, undoAvailable, redoAvailable } = memo
+    if (ring && position !== undefined && size)
+      step.before = {
+        slot: ring[(position + 1) % size],
+        undoAvailable: undoAvailable ?? 0,
+        redoAvailable: redoAvailable ?? 0,
+      }
+    memo.push(step)
+  }
 }
 
 /** Mirror `nv`'s recorded annotation steps in OHIF's undo history; returns the unbinder. */
@@ -95,26 +107,25 @@ export function mirrorAnnotationHistory(
 
 /**
  * Take back the step `nv` recorded for an add a handler withdraws as it lands
- * (a CalibrationLine), and its OHIF memo, so no Undo is spent on it. Core keeps
- * it as a redo no memo replays; the next step clears it.
+ * (a CalibrationLine), and its OHIF memo, so no Undo is spent on it and the
+ * Redo the step cleared comes back. The handler has already removed the add.
  */
 export function withdrawLastStep(
-  nv: StepSource,
+  nv: Pick<NiiVue, 'annotationUndoTop' | '_annotationUndoStack'>,
   extensionManager: OhifExtensionManager | undefined,
 ): void {
   const seq = nv.annotationUndoTop
   if (seq === undefined) return
-  nv.annotationUndo()
+  nv._annotationUndoStack.discard(seq)
   const memo = historyMemo(extensionManager)
-  const { ring, position, size, undoAvailable } = memo ?? {}
-  if (!memo || !ring || position === undefined || !size || !undoAvailable)
-    return
+  const { ring, position, size } = memo ?? {}
+  if (!memo || !ring || position === undefined || !size) return
   const top = ring[position] as Memo | undefined
-  if (top?.source !== nv || top.seq !== seq) return
-  // As cornerstone's own rollbackUnusedGroupItem.
-  ring[position] = undefined
+  if (top?.source !== nv || top.seq !== seq || !top.before) return
+  ring[position] = top.before.slot
   memo.position = (position - 1 + size) % size
-  memo.undoAvailable = undoAvailable - 1
+  memo.undoAvailable = top.before.undoAvailable
+  memo.redoAvailable = top.before.redoAvailable
 }
 
 /** {@link mirrorAnnotationHistory} for a viewport's NiiVue. */

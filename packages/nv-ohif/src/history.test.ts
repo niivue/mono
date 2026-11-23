@@ -78,26 +78,35 @@ test('stale and evicted memos never replay another step', () => {
 })
 
 // Codex 885-r1 P2: a CalibrationLine is removed as it lands; its step must go
-// from both histories, or the next Undo does nothing.
-test('a withdrawn add spends no Undo in core or OHIF', async () => {
+// from both histories, or the next Undo does nothing. 885-r2: and the Redo
+// it cleared must come back.
+test('a withdrawn add spends no Undo and keeps the Redo, in core and OHIF', async () => {
   const { withdrawLastStep } = await import('./history')
-  // OHIF's DefaultHistoryMemo ring, as far as history.ts reads it.
+  type Step = { restoreMemo: (u: boolean) => void }
+  // OHIF's DefaultHistoryMemo ring, as cornerstone's HistoryMemo moves it.
   const ring = {
     ring: [] as unknown[],
     position: -1,
     size: 50,
     undoAvailable: 0,
+    redoAvailable: 0,
     push(m: unknown) {
+      ring.redoAvailable = 0
+      ring.undoAvailable++
       ring.position = (ring.position + 1) % ring.size
       ring.ring[ring.position] = m
-      ring.undoAvailable++
     },
     undo() {
-      ;(
-        ring.ring[ring.position] as { restoreMemo: (u: boolean) => void }
-      ).restoreMemo(true)
-      ring.position--
+      ;(ring.ring[ring.position] as Step).restoreMemo(true)
+      ring.position = (ring.position - 1 + ring.size) % ring.size
       ring.undoAvailable--
+      ring.redoAvailable++
+    },
+    redo() {
+      ring.position = (ring.position + 1) % ring.size
+      ;(ring.ring[ring.position] as Step).restoreMemo(false)
+      ring.undoAvailable++
+      ring.redoAvailable--
     },
   }
   const libs = {
@@ -113,13 +122,20 @@ test('a withdrawn add spends no Undo in core or OHIF', async () => {
   nv.model.annotations = [{ id: 'length' }] as never
   useAnnotationHistory(nv, extensionManager)
   effects.pop()?.()
-  nv.removeAnnotation('length', true) // a real step
   // The calibration line lands as a step, and its handler removes it.
-  nv.replaceAnnotations([], [{ id: 'line' }] as never, true)
-  nv.removeAnnotation('line')
-  withdrawLastStep(nv, extensionManager)
-  expect(ids(nv)).toEqual([])
+  const calibrate = () => {
+    nv.replaceAnnotations([], [{ id: 'line' }] as never, true)
+    nv.removeAnnotation('line')
+    withdrawLastStep(nv, extensionManager)
+    expect(ids(nv)).not.toContain('line')
+  }
+  nv.removeAnnotation('length', true) // a real step
+  calibrate()
   expect(ring.undoAvailable).toBe(1)
   ring.undo()
   expect(ids(nv)).toEqual(['length'])
+  calibrate()
+  expect(ring.redoAvailable).toBe(1)
+  ring.redo()
+  expect(ids(nv)).toEqual([])
 })

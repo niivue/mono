@@ -1,15 +1,14 @@
-import { expect, mock, test } from 'bun:test'
-import * as React from 'react'
+import { expect, test } from 'bun:test'
+import { mockReactHooks } from './mockReact'
 
 const effects: Array<() => undefined | (() => void)> = []
-mock.module('react', () => ({
-  ...React,
+mockReactHooks({
   useState: <T>(init: T | (() => T)) => [
     typeof init === 'function' ? (init as () => T)() : init,
     () => {},
   ],
   useEffect: (fn: () => undefined | (() => void)) => effects.push(fn),
-}))
+})
 const { useHydratePrompt } = await import('./segHydration')
 
 test('switching SEG or reloading retires the open hydrate prompt', () => {

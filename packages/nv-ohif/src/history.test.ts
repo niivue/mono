@@ -1,12 +1,11 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import NiiVue from '@niivue/niivue'
-import * as React from 'react'
+import { mockReactHooks } from './mockReact'
 
 const effects: Array<() => void> = []
-mock.module('react', () => ({
-  ...React,
+mockReactHooks({
   useEffect: (fn: () => void) => effects.push(fn),
-}))
+})
 const { useAnnotationHistory } = await import('./history')
 
 // OHIF's history: a stack of memos replayed undo-first / redo-first.

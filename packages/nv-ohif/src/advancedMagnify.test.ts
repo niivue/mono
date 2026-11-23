@@ -289,3 +289,47 @@ test('glasses: a zoom list open on a swapped-out canvas closes (viewAttached)', 
     globalThis.Option = priorOption
   }
 })
+
+test('glasses: closing a focused zoom list removes it once (its blur re-enters)', () => {
+  const { at, glasses, nv } = setup()
+  const lists: Array<{ removes: number }> = []
+  Object.assign(nv.canvas as object, {
+    parentElement: {
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+      appendChild: (s: { removes: number }) => lists.push(s),
+    },
+  })
+  const { document: priorDocument, Option: priorOption } = globalThis
+  globalThis.document = {
+    createElement: () => ({
+      style: {},
+      add() {},
+      addEventListener() {},
+      focus() {},
+      removes: 0,
+      onblur: null as (() => void) | null,
+      // A focused select fires blur from inside remove().
+      remove() {
+        this.removes++
+        this.onblur?.()
+      },
+    }),
+  } as unknown as Document
+  globalThis.Option = class {
+    title = ''
+  } as unknown as typeof Option
+  try {
+    glasses.setMode('Active')
+    at('pointerdown', 100, 100)
+    at('pointerup', 100, 100)
+    at('pointerdown', 225, 100, { button: 2, shiftKey: true })
+    at('pointerup', 225, 100, { button: 2 })
+    // A second list closes the first.
+    at('pointerdown', 225, 100, { button: 2, shiftKey: true })
+    expect(lists.map((s) => s.removes)).toEqual([1, 0])
+  } finally {
+    glasses.dispose()
+    globalThis.document = priorDocument
+    globalThis.Option = priorOption
+  }
+})

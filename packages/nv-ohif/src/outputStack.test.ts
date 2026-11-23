@@ -1,15 +1,14 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import type { NiiVue } from '@niivue/niivue'
-import * as React from 'react'
 import type { DicomConversion } from './dicomToNiivue'
+import { mockReactHooks } from './mockReact'
 import type { OhifDisplaySet } from './ohif-types'
 
 const effects: Array<() => () => void> = []
-mock.module('react', () => ({
-  ...React,
+mockReactHooks({
   useEffect: (fn: () => () => void) => effects.push(fn),
   useRef: <T>(current: T) => ({ current }),
-}))
+})
 const { useOutputStack } = await import('./outputStack')
 const { cineStep } = await import('./sliceCine')
 const {

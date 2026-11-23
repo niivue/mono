@@ -1,4 +1,5 @@
 import type NiiVue from '@niivue/niivue'
+import type { PropertyChangeDetail } from '@niivue/niivue'
 import { SLICE_TYPE, VOLUME_RENDER_MODE } from '@niivue/niivue'
 import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import {
@@ -242,24 +243,48 @@ export function DisplayMenu({
   )
 }
 
+const MENU_PROPERTIES = new Set([
+  'volumeRenderMode',
+  'volumeCinematic',
+  'volumeIllumination',
+  'volumeSampleRate',
+])
+
 /**
  * cornerstone's Volume Rendering Options (quality, shift, shade, lighting) on a NiiVue
  * 3D pane, through the same commands as OHIF's menu would run.
  */
-function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
+export function RenderingOptions({
+  nv,
+  redraw,
+}: {
+  nv: NiiVue
+  redraw: () => void
+}) {
   const vol = nv.volumes[0]
   const width = vol ? Math.max(1, vol.calMax - vol.calMin) : 1
   const [shift, setShift] = useState(0)
+  // Each lighting slider's max: 2, or the highest value it has shown, so a
+  // lowered value can return.
+  const lightingMax = useRef<Record<string, number>>({})
   // Follow changes made elsewhere (commands, the orientation menu's 3D Cinematic).
   const [, refresh] = useState(0)
   useEffect(() => {
-    const update = () => refresh((n) => n + 1)
+    // Only what the menu shows; crosshair and azimuth changes fire per frame.
+    const update = (e: CustomEvent<PropertyChangeDetail>) => {
+      if (MENU_PROPERTIES.has(e.detail.property)) refresh((n) => n + 1)
+    }
     nv.addEventListener('change', update)
     return () => nv.removeEventListener('change', update)
   }, [nv])
   // cornerstone disables its lighting sliders without shade; these need the
   // path tracer, the only NiiVue renderer with separate lighting terms.
   const cinematic = nv.volumeRenderMode === VOLUME_RENDER_MODE.CINEMATIC
+  for (const key of Object.values(CINEMATIC_LIGHTING))
+    lightingMax.current[key] = Math.max(
+      lightingMax.current[key] ?? 2,
+      nv.volumeCinematic[key],
+    )
   return (
     <>
       <div style={heading}>Rendering</div>
@@ -271,7 +296,7 @@ function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
           min={1}
           max={4}
           step={1}
-          defaultValue={nv.volumeSampleRate}
+          value={nv.volumeSampleRate}
           onChange={(e) => {
             nv.volumeSampleRate = Number(e.target.value)
             redraw()
@@ -320,7 +345,7 @@ function RenderingOptions({ nv, redraw }: { nv: NiiVue; redraw: () => void }) {
             aria-label={`Volume lighting ${name}`}
             type="range"
             min={0}
-            max={1}
+            max={lightingMax.current[key]}
             step={0.1}
             disabled={!cinematic}
             value={nv.volumeCinematic[key]}

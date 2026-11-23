@@ -544,7 +544,8 @@ export function getStandardCommandDefinitions({
     // pane's 3D Cinematic lighting (standard 3D has one illumination strength).
     setVolumeLighting: {
       commandFn: route('setVolumeLighting', ({ nv }, opts) => {
-        const o = (opts.options ?? {}) as Record<string, unknown>
+        // OHIF's menu nests the values; useViewportRendering passes them flat.
+        const o = (opts.options ?? opts) as Record<string, unknown>
         if (typeof o.shade === 'boolean')
           nv.volumeIllumination = o.shade ? 0.6 : 0
         const lighting = Object.fromEntries(

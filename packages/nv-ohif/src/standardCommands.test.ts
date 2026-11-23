@@ -239,6 +239,29 @@ describe('standard commands', () => {
     run('setWindowLevelPreset', { presetIndex: 1 }) // CT lung: W1500 L-600
     expect(nv.volumeUpdates).toEqual([{ calMin: -1350, calMax: 150 }])
   })
+
+  it("set shade and 3D Cinematic lighting from OHIF's nested or flat options", () => {
+    const cinematic: Array<Record<string, unknown>> = []
+    const nv = Object.defineProperty(
+      Object.assign(stubNiivue(), { volumeIllumination: 0 }),
+      'volumeCinematic',
+      { set: (v: Record<string, unknown>) => cinematic.push(v) },
+    )
+    register('nv-1', nv)
+    const { run } = fakeHost('nv-1')
+    // OHIF's lighting menu nests them; non-numbers are skipped.
+    run('setVolumeLighting', {
+      options: { shade: true, ambient: 0.9, diffuse: 0.1, specular: 'x' },
+    })
+    expect(nv.volumeIllumination).toBe(0.6)
+    expect(cinematic).toEqual([{ ambient: 0.9, volumetricDiffuse: 0.1 }])
+    // useViewportRendering passes them flat.
+    run('setVolumeLighting', { specular: 0.7 })
+    expect(cinematic[1]).toEqual({ specular: 0.7 })
+    run('setVolumeLighting', { options: { shade: false } })
+    expect(nv.volumeIllumination).toBe(0)
+    expect(cinematic).toHaveLength(2)
+  })
 })
 
 describe('rotate and flip commands', () => {

@@ -131,4 +131,11 @@ test('a report row gives its calibration from length, else from area', () => {
   // An ROI-only report: 16 mm2 stored over 4 mm2 of geometry.
   expect(reportScale(perImage({ area: 16 }), { area: 4 })).toBe(2)
   expect(reportScale(perImage({ value: 3 }), { area: 0 })).toBeUndefined()
+  // An overflowed NUM (1e400 parses to Infinity) or a negative one: no scale.
+  expect(
+    reportScale(perImage({ length: Infinity }), { length: 10, area: 0 }),
+  ).toBeUndefined()
+  expect(
+    reportScale(perImage({ length: -20 }), { length: 10, area: 0 }),
+  ).toBeUndefined()
 })

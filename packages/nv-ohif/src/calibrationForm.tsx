@@ -28,6 +28,8 @@ function CalibrationForm({
         data-cy="calibration-distance"
         // biome-ignore lint/a11y/noAutofocus: the dialog's only field
         autoFocus
+        // Typing replaces the prefilled distance rather than appending to it.
+        onFocus={(e) => e.currentTarget.select()}
         placeholder="Actual Physical distance (mm)"
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -84,7 +86,8 @@ export function CalibratedMarker({
       data-calibration-scale={scale}
       style={{
         position: 'absolute',
-        bottom: 4,
+        // Above the display menu's W/L button, which shares the bottom centre.
+        bottom: 28,
         left: '50%',
         transform: 'translateX(-50%)',
         color: '#fbbf24',

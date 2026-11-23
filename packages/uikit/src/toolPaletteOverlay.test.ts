@@ -141,13 +141,14 @@ describe('UIKitToolPaletteOverlay', () => {
     palette.update({
       actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: false }],
     })
-    palette.keyDown({
+    const enter = palette.keyDown({
       key: 'Enter',
       shiftKey: false,
       ctrlKey: false,
       altKey: false,
       metaKey: false,
     })
+    expect(enter).toBe(false)
     expect(chosen).toEqual(['undo'])
   })
 

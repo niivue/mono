@@ -83,7 +83,8 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   /** Patch the shown palette, keeping hover and a press under way. */
   update(patch: Partial<ToolPaletteOverlaySpec>): void {
     if (!this.spec) return
-    // Hover is an index into the layout: follow its item by key, or drop it.
+    // Hover is an index into the layout: follow its item by key, or drop it
+    // (also when the update disabled it).
     const hovered = this.getLayout()?.items[this.hover]
     const key = hovered ? itemKey(this.spec, hovered) : null
     this.spec = { ...this.spec, ...patch }
@@ -91,7 +92,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     const spec = this.spec
     this.hover = key
       ? (this.getLayout()?.items.findIndex(
-          (item) => itemKey(spec, item) === key,
+          (item) => itemKey(spec, item) === key && isEnabled(spec, item),
         ) ?? -1)
       : -1
     this.bundle.invalidate()
@@ -189,7 +190,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     const items = layout.items
     if (e.key === 'Enter' || e.key === ' ') {
       const item = items[this.hover]
-      if (!item) return false
+      if (!item || !isEnabled(spec, item)) return false
       this.choose(spec, item.kind, item.index)
       return true
     }

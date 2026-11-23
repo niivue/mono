@@ -53,4 +53,31 @@ describe('UIKitToolPaletteOverlay', () => {
     palette.hide()
     expect(palette.hitTest(...at(1))).toBe(false)
   })
+
+  it('drops a press whose item an update replaced', () => {
+    const chosen: string[] = []
+    const palette = new UIKitToolPaletteOverlay(FONT)
+    palette.show({
+      x: 20,
+      y: 300,
+      tools: [{ id: 'pen', label: 'Pen', look: 'pen' }],
+      tool: 'pen',
+      onTool: (id) => chosen.push(id),
+    })
+    const pen = palette.getLayout()?.items[0]
+    if (!pen) throw new Error('hidden')
+    const at: [number, number] = [pen.x + pen.width / 2, pen.y + pen.height / 2]
+    palette.pointerDown(...at)
+    palette.update({
+      tools: [{ id: 'eraser', label: 'Erase', look: 'eraser' }],
+    })
+    palette.pointerUp(...at)
+    expect(chosen).toEqual([])
+  })
+
+  it('measures an empty palette as reaching nothing', () => {
+    const palette = new UIKitToolPaletteOverlay(FONT)
+    palette.show({ x: 0, y: 0, tools: [], tool: '' })
+    expect(palette.measure()?.reach).toBe(0)
+  })
 })

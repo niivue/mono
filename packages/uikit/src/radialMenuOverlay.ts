@@ -87,6 +87,7 @@ export class UIKitRadialMenuOverlay implements UIKitInteractive {
     if (!this.spec) return
     this.spec = null
     this.layout = null
+    this.hover = -1
     this.pressed = -1
     this.bundle.invalidate()
   }
@@ -169,9 +170,11 @@ export class UIKitRadialMenuOverlay implements UIKitInteractive {
       let next = this.hover
       for (let tries = 0; tries < items.length; tries++) {
         next = (next + step + items.length) % items.length
-        if (items[next].enabled !== false) break
+        if (items[next].enabled !== false) {
+          this.setHover(next)
+          break
+        }
       }
-      this.setHover(next)
     }
     // Every key is the open menu's.
     return true
@@ -241,7 +244,7 @@ export class UIKitRadialMenuOverlay implements UIKitInteractive {
 
   private choose(index: number): void {
     const spec = this.spec
-    if (!spec) return
+    if (!spec || spec.items[index].enabled === false) return
     this.close()
     spec.onSelect(spec.items[index].id)
   }

@@ -239,12 +239,17 @@ export function layoutToolPalette(
       Math.max(0, present.length - 1) * (2 * style.sectionGap + 1)
     )
   }
-  // Whole sections wrap: one that doesn't fit starts the next row.
+  // Whole sections wrap: one that doesn't fit starts the next row. Tools stay
+  // on the first row, since they stand up over the row above.
   const rows: Part[][][] = [[]]
   for (const section of sections) {
     if (!section.length) continue
     const row = rows[rows.length - 1]
-    if (row.length && rowWidth([...row, section]) > maxWidth)
+    if (
+      row.length &&
+      section[0].kind !== 'tool' &&
+      rowWidth([...row, section]) > maxWidth
+    )
       rows.push([section])
     else row.push(section)
   }

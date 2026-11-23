@@ -50,7 +50,8 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   private layout: ToolPaletteLayout | null = null
   private scale = 1
   private hover = -1
-  private pressed = -1
+  /** `kind:id` of the pressed item, so an update that moves items cannot retarget it. */
+  private pressed: string | null = null
 
   constructor(font: UIKitFont, options: UIKitToolPaletteOverlayOptions = {}) {
     this.font = font
@@ -67,7 +68,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     this.spec = spec
     this.layout = null
     this.hover = -1
-    this.pressed = -1
+    this.pressed = null
     this.bundle.invalidate()
   }
 
@@ -111,7 +112,8 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
   measure(): { width: number; height: number; reach: number } | null {
     const layout = this.getLayout()
     if (!layout) return null
-    const reach = layout.y - Math.min(...layout.items.map((item) => item.y))
+    const top = layout.items.reduce((m, item) => Math.min(m, item.y), layout.y)
+    const reach = layout.y - top
     return {
       width: layout.width / this.scale,
       height: layout.height / this.scale,
@@ -129,7 +131,8 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     if (!this.spec || !layout || !toolPaletteContains(layout, x, y)) {
       return false
     }
-    this.pressed = toolPaletteItemAt(this.spec, layout, x, y)
+    const item = layout.items[toolPaletteItemAt(this.spec, layout, x, y)]
+    this.pressed = item ? itemKey(this.spec, item) : null
     return true
   }
 
@@ -149,14 +152,16 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     const spec = this.spec
     if (!spec || !layout) return false
     const at = toolPaletteItemAt(spec, layout, x, y)
-    const chosen = at >= 0 && at === this.pressed ? layout.items[at] : null
-    this.pressed = -1
+    const item = layout.items[at]
+    const chosen =
+      item && itemKey(spec, item) === this.pressed ? layout.items[at] : null
+    this.pressed = null
     if (chosen) this.choose(spec, chosen.kind, chosen.index)
     return true
   }
 
   pointerCancel(): void {
-    this.pressed = -1
+    this.pressed = null
   }
 
   bindLayer(layer: UIKitRedrawSource): void {
@@ -201,9 +206,28 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     kind: ToolPaletteItemKind,
     index: number,
   ): void {
-    if (kind === 'tool') spec.onTool?.(spec.tools[index].id)
-    else if (kind === 'color') spec.onColor?.(spec.colors?.[index]?.id ?? '')
-    else if (kind === 'width') spec.onWidth?.(spec.widths?.[index]?.id ?? '')
-    else spec.onAction?.(spec.actions?.[index]?.id ?? '')
+    const id = itemId(spec, kind, index)
+    if (kind === 'tool') spec.onTool?.(id)
+    else if (kind === 'color') spec.onColor?.(id)
+    else if (kind === 'width') spec.onWidth?.(id)
+    else spec.onAction?.(id)
   }
+}
+
+function itemId(
+  spec: ToolPaletteOverlaySpec,
+  kind: ToolPaletteItemKind,
+  index: number,
+): string {
+  if (kind === 'tool') return spec.tools[index]?.id ?? ''
+  if (kind === 'color') return spec.colors?.[index]?.id ?? ''
+  if (kind === 'width') return spec.widths?.[index]?.id ?? ''
+  return spec.actions?.[index]?.id ?? ''
+}
+
+function itemKey(
+  spec: ToolPaletteOverlaySpec,
+  item: { kind: ToolPaletteItemKind; index: number },
+): string {
+  return `${item.kind}:${itemId(spec, item.kind, item.index)}`
 }

@@ -86,4 +86,30 @@ describe('UIKitRadialMenuOverlay', () => {
     expect(menu.isOpen).toBe(false)
     expect(chosen).toEqual([])
   })
+
+  it('never highlights or chooses a disabled item from the keyboard', () => {
+    const chosen: string[] = []
+    const menu = new UIKitRadialMenuOverlay(FONT)
+    menu.open({
+      x: 300,
+      y: 300,
+      items: [
+        { id: 'a', label: 'A', enabled: false },
+        { id: 'b', label: 'B', enabled: false },
+      ],
+      onSelect: (id) => chosen.push(id),
+    })
+    menu.keyDown(key('ArrowRight'))
+    menu.keyDown(key('Enter'))
+    expect(menu.highlightedIndex).toBe(-1)
+    expect(chosen).toEqual([])
+  })
+
+  it('clears the highlight on close', () => {
+    const { menu } = make()
+    menu.keyDown(key('ArrowRight'))
+    menu.keyDown(key('Escape'))
+    expect(menu.isOpen).toBe(false)
+    expect(menu.highlightedIndex).toBe(-1)
+  })
 })

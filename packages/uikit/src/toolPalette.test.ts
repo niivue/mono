@@ -72,8 +72,27 @@ describe('tool palette', () => {
 
   it('gives each section its own row when even two are too wide', () => {
     const narrow = layoutToolPalette(SPEC, 0, 0, 1, STYLE, METRICS)
-    expect(narrow.height).toBe(4 * STYLE.rowHeight)
-    expect(narrow.dividers).toHaveLength(0)
+    // Tools never leave the first row, so actions keep them company.
+    expect(narrow.height).toBe(3 * STYLE.rowHeight)
+    expect(narrow.dividers).toHaveLength(1)
+    expect(narrow.items.filter((i) => i.kind === 'tool')[0].y).toBe(
+      -toolPaletteReach(STYLE),
+    )
+  })
+
+  it('keeps every tool pressable when the sections wrap', () => {
+    const spec: ToolPaletteSpec = {
+      ...SPEC,
+      actions: ['undo', 'redo', 'clear'].map((id) => ({ id, label: id })),
+    }
+    const layout = layoutToolPalette(spec, 0, 100, 200, STYLE, METRICS)
+    layout.items.forEach((item, i) => {
+      // Near the raised tip, where a wrapped tool would sit over the row above.
+      if (item.kind === 'tool')
+        expect(
+          toolPaletteItemAt(spec, layout, centre(item)[0], item.y + 2),
+        ).toBe(i)
+    })
   })
 
   it('finds enabled items only', () => {

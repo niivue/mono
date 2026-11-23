@@ -27,7 +27,7 @@ APPS=(
   dandi-demo
 )
 
-STREAMING_ASSET_BASE="https://raw.githubusercontent.com/niivue/niivue-demo-images-lfs/main/streaming/"
+STREAMING_ASSET_BASE="https://data.niivue.com/streaming/"
 
 # 1. Build the niivue library (required by all apps)
 echo "==> Building niivue library"
@@ -63,7 +63,6 @@ rm -rf packages/niivue/dist-examples
   && bun run gen-fixtures \
   && VITE_BASE="$BASE_PATH" \
     VITE_STREAMING_ASSET_BASE="$STREAMING_ASSET_BASE" \
-    VITE_STREAMING_MEDIA_BASE="https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/" \
     bunx --bun vite build --config vite.config.examples.ts --mode production)
 
 # 5. Assemble site

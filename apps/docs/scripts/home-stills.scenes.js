@@ -6,8 +6,7 @@ import { openSlide } from '../../../packages/nv-ext-tile/src/open.ts'
 const DEMO_IMAGES =
   'https://raw.githubusercontent.com/niivue/niivue-demo-images/main/'
 // An H&E-stained skin sample (Carnegie Mellon, via OpenSlide's test data).
-const HE_SLIDE =
-  'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/streaming/svs/CMU-1-Small-Region.svs'
+const HE_SLIDE = 'https://data.niivue.com/streaming/svs/CMU-1-Small-Region.svs'
 
 async function viewer(canvas, options) {
   const nv = new NiiVue({

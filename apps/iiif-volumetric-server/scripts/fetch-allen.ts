@@ -14,7 +14,7 @@
 // Fixtures are NOT committed (see .gitignore): the Allen data is under the
 // Allen Institute's noncommercial terms, not this repo's BSD licence. The
 // default copy lives in niivue/niivue-demo-images-lfs (Allen/IMSC, with its
-// own LICENSE), which also serves it with CORS; Allen's own host,
+// own LICENSE), served with CORS from data.niivue.com; Allen's own host,
 // imsc.allencell.org, has the same files.
 
 import fs from 'node:fs/promises'
@@ -25,7 +25,7 @@ const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
 
 // An interphase cell from the IMSC 3D viewer: 32 channels, 256x256x58, 11 atlases.
 const DEFAULT_URL =
-  'https://media.githubusercontent.com/media/niivue/niivue-demo-images-lfs/main/Allen/IMSC/COMP_crop_Interphase_atlas.json'
+  'https://data.niivue.com/Allen/IMSC/COMP_crop_Interphase_atlas.json'
 
 interface Options {
   sidecarUrl: string

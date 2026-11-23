@@ -17,8 +17,8 @@ const webgpuCheck = document.getElementById('webgpuCheck')
 //
 // 3D cell viewer: per mitotic stage, one atlas holding DNA plus 15 tagged
 // structures, each from a different cell, aligned into one 256x256x58 volume.
-// These are the copies in niivue/niivue-demo-images-lfs (Allen/IMSC), because
-// imsc.allencell.org sends no CORS header.
+// These are the copies in niivue/niivue-demo-images-lfs (Allen/IMSC), served
+// from data.niivue.com, because imsc.allencell.org sends no CORS header.
 //
 // Cell gallery: the essay's z-stack viewer shows the same 75 cells (15 genes
 // by 5 stages) as pre-rendered RGB slices. Here each cell loads its Cell

@@ -192,13 +192,10 @@ ramp 30-70; structures without reliable T1 contrast use an always-on ramp, `lo`
 label-calibrated MR the classic view keeps the grey window. Samples by id
 (`?sample=`: `ct-abdo`, `ct-philips`, `ct-electrodes`, `ct-wholebody`,
 `ct-wholebody-labels`, `ct-abdopelvis-labels`, `mr-mni152`, `mr-mni152-tract`, `mr-t1-scalp` (`chris_t1.nii.gz`, not brain extracted, on `cr_default`), `mr-siam`); `index.html` links
-"Cinematic CT" and "Cinematic Labeled MR", and under Tract Scenes "Cinematic streamlines" (`mr-mni152-tract`). Data: niivue-demo-images-lfs; LFS
-objects load via `media.githubusercontent.com` with `?v=` (raw returns
-pointers). Add a sample only after its LFS PR merges: requesting a media URL
-before the file exists makes GitHub's CDN cache the 404 for that exact URL
-(query included), and only a new `?v=` escapes it. LFS PR #7 (cleaned MR
-segmentation) is pending: after it merges, move the MR URLs to `?v=2`, never
-before. CT_AVM and CT_pitch are uint8, not HU: excluded. `window.nv1` is exposed
+"Cinematic CT" and "Cinematic Labeled MR", and under Tract Scenes "Cinematic streamlines" (`mr-mni152-tract`). Data: niivue-demo-images-lfs, served
+from `data.niivue.com` (Cloudflare R2, 1-day edge cache). After re-uploading a
+file, purge its URL in Cloudflare or bump its `?v=` (the query is part of the
+cache key). CT_AVM and CT_pitch are uint8, not HU: excluded. `window.nv1` is exposed
 for scripted checks.
 
 **Performance** (measured on the removed example prototype, march GPU time per frame, ~1400x605, M4 Pro,

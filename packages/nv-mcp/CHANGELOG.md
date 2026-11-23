@@ -1,3 +1,9 @@
+## 1.0.0-rc.238 (2026-11-23)
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.240
+
 ## 1.0.0-rc.237 (2026-11-23)
 
 ### Updated Dependencies

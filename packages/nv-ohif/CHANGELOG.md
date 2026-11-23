@@ -1,3 +1,20 @@
+## 1.0.0-rc.278 (2026-11-23)
+
+### Fixes
+
+- **nv-ohif:** a canvas swap closes an open glass zoom list ([e58d72bb](https://github.com/niivue/mono/commit/e58d72bb))
+- **nv-ohif:** reset glass gesture state when core swaps the canvas ([6b224c81](https://github.com/niivue/mono/commit/6b224c81))
+- **nv-ohif:** #881 review follow-ups for AdvancedMagnify glasses ([#881](https://github.com/niivue/mono/issues/881))
+
+### Updated Dependencies
+
+- Updated uikit to 1.0.0-rc.240
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.277 (2026-11-23)
 
 ### Updated Dependencies

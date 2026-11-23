@@ -1,3 +1,15 @@
+## 1.0.0-rc.240 (2026-11-23)
+
+### Fixes
+
+- **uikit:** cap the lens scene copy at the canvas, still grow-only ([cc00989e](https://github.com/niivue/mono/commit/cc00989e))
+- **nv-ohif:** #881 review follow-ups for AdvancedMagnify glasses ([#881](https://github.com/niivue/mono/issues/881))
+
+### Thank You
+
+- Chris Drake
+- Claude Opus 5.5
+
 ## 1.0.0-rc.239 (2026-11-23)
 
 ### Features

@@ -333,15 +333,27 @@
         onChange: (text) => say(`notes: ${text.split('\n').length} line(s), ${text.length} chars`),
       })
       // A tool palette: upright tools in a tray (they stand above y), then
-      // swatches, brush widths and an action. Each choice just updates it.
+      // swatches, brush widths and actions. Each choice just updates it;
+      // Shapes swaps the pens for shape keys (which take no width).
+      const pens = [
+        { id: 'pen', label: 'Pen', look: 'pen' },
+        { id: 'marker', label: 'Marker', look: 'marker' },
+        { id: 'eraser', label: 'Erase', look: 'eraser' },
+      ]
+      const shapes = [
+        ['freehand', 'Free'], ['rectangle', 'Rect'], ['ellipse', 'Ellipse'],
+        ['arrow', 'Arrow'], ['spline', 'Spline'], ['livewire', 'Wire'],
+      ].map(([look, label]) => ({ id: look, label, look }))
+      const widths = [{ id: 'fine', label: 'Fine' }, { id: 'broad', label: 'Broad' }]
+      const paletteActions = (shaping) => [
+        { id: 'undo', label: 'Undo', icon: 'undo' },
+        { id: 'redo', label: 'Redo', icon: 'redo' },
+        { id: 'mode', label: shaping ? 'Pens' : 'Shapes' },
+      ]
       palette.show({
         x: 12, y: 660, maxWidth: PANEL_WIDTH - 24,
-        actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }],
-        tools: [
-          { id: 'pen', label: 'Pen', look: 'pen' },
-          { id: 'marker', label: 'Marker', look: 'marker' },
-          { id: 'eraser', label: 'Erase', look: 'eraser' },
-        ],
+        actions: paletteActions(false),
+        tools: pens,
         tool: 'pen',
         colors: [
           { id: 'red', label: 'Red', color: [1, 0.23, 0.19, 1] },
@@ -349,12 +361,21 @@
           { id: 'blue', label: 'Blue', color: [0, 0.48, 1, 1] },
         ],
         color: 'red',
-        widths: [{ id: 'fine', label: 'Fine' }, { id: 'broad', label: 'Broad' }],
+        widths,
         width: 'fine',
         onTool: (id) => { palette.update({ tool: id }); say(`tool: ${id}`) },
         onColor: (id) => { palette.update({ color: id }); say(`color: ${id}`) },
         onWidth: (id) => { palette.update({ width: id }); say(`width: ${id}`) },
-        onAction: (id) => say(`action: ${id}`),
+        onAction: (id) => {
+          if (id === 'mode') {
+            const shaping = palette.getLayout()?.items.some((i) => i.id === 'pen')
+            const tools = shaping ? shapes : pens
+            palette.update({
+              actions: paletteActions(shaping), tools, tool: tools[0].id, widths: shaping ? [] : widths,
+            })
+          }
+          say(`action: ${id}`)
+        },
       })
       const download = createBrowserDownload()
       function exportSettings() {

@@ -75,23 +75,25 @@ export function calibrateShapes(
   const byId = new Map(nv.annotations.map((a) => [a.id, a]))
   const len = lengthUnit(scale)
   return shapes.map((shape) => {
+    // The shape being drawn has no annotation yet: only its ruler scales.
     const a = byId.get(shape.id)
-    if (!a?.stats || isContourAnnotation(a)) return shape
-    const st = calibrateStats(a.stats, scale)
-    const label = shape.label && {
-      ...shape.label,
-      lines: shape.label.lines.map((line, i) =>
-        i < (a.text ? 1 : 0)
-          ? line
-          : line.startsWith('L: ') && st.length !== undefined
-            ? `L: ${st.length.toFixed(1)} ${len}`
-            : line.startsWith('W: ') && st.shortLength !== undefined
-              ? `W: ${st.shortLength.toFixed(1)} ${len}`
-              : line.startsWith('Area: ')
-                ? `Area: ${st.area.toFixed(1)} ${areaUnit(scale)}`
-                : line,
-      ),
-    }
+    if (a && isContourAnnotation(a)) return shape
+    const st = a?.stats && calibrateStats(a.stats, scale)
+    const label = st &&
+      shape.label && {
+        ...shape.label,
+        lines: shape.label.lines.map((line, i) =>
+          i < (a.text ? 1 : 0)
+            ? line
+            : line.startsWith('L: ') && st.length !== undefined
+              ? `L: ${st.length.toFixed(1)} ${len}`
+              : line.startsWith('W: ') && st.shortLength !== undefined
+                ? `W: ${st.shortLength.toFixed(1)} ${len}`
+                : line.startsWith('Area: ')
+                  ? `Area: ${st.area.toFixed(1)} ${areaUnit(scale)}`
+                  : line,
+        ),
+      }
     return {
       ...shape,
       ...(label ? { label } : {}),

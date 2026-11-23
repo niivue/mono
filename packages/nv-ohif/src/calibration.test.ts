@@ -84,24 +84,43 @@ test('overlay labels and rulers take the scale; free text and contours do not', 
   expect(drag?.label?.lines).toEqual(['L: 6.0 mm User', 'W: 2.0 mm User'])
 })
 
+// A pane holding report rows: adoptReportScale checks only rows a pane holds.
+const reportPane = (viewportId: string) => {
+  const annotations: { id: string }[] = []
+  registerNiivue(viewportId, { annotations } as unknown as NiiVue)
+  const adopt = (ds: string, id: string, ratio: number) => {
+    adoptReportScale(ds, id, ratio)
+    annotations.push({ id })
+  }
+  return { annotations, adopt }
+}
+
 test('report rows restore their scale; disagreeing rows leave native mm', () => {
-  adoptReportScale('sr', 2)
-  adoptReportScale('sr', 2.0005)
+  const { adopt } = reportPane('vp-sr')
+  adopt('sr', 'a', 2)
+  adopt('sr', 'b', 2.0005)
   expect(calibrationScale('sr')).toBe(2)
-  adoptReportScale('sr', 1)
+  adopt('sr', 'c', 1)
   expect(calibrationScale('sr')).toBe(1)
+  unregisterNiivue('vp-sr')
 })
 
 test('a later report at another scale leaves native mm, even tasks later', async () => {
-  adoptReportScale('two-reports', 2)
+  const { annotations, adopt } = reportPane('vp-two')
+  adopt('two-reports', 'a', 2)
   await new Promise((r) => setTimeout(r, 0))
-  adoptReportScale('two-reports', 3)
+  adopt('two-reports', 'b', 3)
   expect(calibrationScale('two-reports')).toBe(1)
+  // Once the disagreeing rows are gone, a report restores its scale again.
+  annotations.length = 0
+  adopt('two-reports', 'c', 2)
+  expect(calibrationScale('two-reports')).toBe(2)
   // A user calibration starts the agreement over.
   setCalibrationScale('two-reports', 4)
-  adoptReportScale('two-reports', 3)
+  adopt('two-reports', 'd', 3)
   expect(calibrationScale('two-reports')).toBe(3)
   setCalibrationScale('two-reports', 1)
+  unregisterNiivue('vp-two')
 })
 
 test('calibrated rows and the flash note carry scaled values and User units', () => {

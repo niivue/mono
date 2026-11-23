@@ -351,7 +351,7 @@ export function useOhifRowImport(
           ? undefined
           : reportScale(row, annotation.stats)
       const ds = own.displaySets[0]?.displaySetInstanceUID
-      if (scale && ds) adoptReportScale(ds, scale)
+      if (scale && ds) adoptReportScale(ds, annotation.id, scale)
       programmaticAnnotations.add(annotation.id)
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)

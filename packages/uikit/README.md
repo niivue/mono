@@ -50,6 +50,7 @@ package-private (see "Conventions for contributors").
 | `buildFilePicker` | `UIKitFilePickerOverlay` | File pickers: a Choose button and a readout; the host chooser and downloads go through bridges |
 | `buildDialog` | `UIKitDialogOverlay` | Modal dialogs: a scrim, a panel with a title, wrapped message, hosted widgets and action buttons |
 | `buildMenuButton`, `buildMenuPopup` | `UIKitMenuOverlay` | Menu buttons with popups of actions, check items and radio groups |
+| `buildToolPalette` | `UIKitToolPaletteOverlay` | A floating drawing toolbar after the iPad's: upright tools in a tray (the selected one raised), swatches, brush widths and actions such as Undo |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
 | (package-private) | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |
@@ -334,6 +335,33 @@ activated one first), then the item's `onSelect` and the menu's `onSelect`
 fire. `MenuStyle` holds the popup fill, border, radius and padding, row height,
 highlight fill, text, mark and shortcut colors, separator and chevron sizes, and
 `buttonStyle` is a `ButtonStyle` for the trigger.
+
+## Tool palettes
+
+`UIKitToolPaletteOverlay` draws one floating drawing toolbar after the iPad's:
+actions, upright tools in a tray (the selected one raised and inked in the
+chosen color), color swatches and brush widths, in that order. Lifting on the
+pressed item fires `onAction`, `onTool`, `onColor` or `onWidth` with its id;
+presses on the palette never reach the scene. A press gives it keyboard focus:
+arrows move the highlight over enabled items, wrapping, and Enter or Space
+chooses.
+
+```ts
+const palette = new UIKitToolPaletteOverlay(font, units)
+palette.show({
+  x: 40, y: 600, maxWidth: 480,
+  actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: canUndo }],
+  tools: [{ id: 'pen', label: 'Pen', look: 'pen' }], tool: 'pen',
+  onTool: (id) => palette.update({ tool: id }),
+})
+palette.update({ actions: [{ id: 'undo', label: 'Undo', icon: 'undo', enabled: false }] })
+palette.measure() // { width, height, reach } in spec units, or null while hidden
+```
+
+`x`, `y` is the tray's top-left; tools reach above it by `measure().reach`.
+Past `maxWidth`, whole sections wrap to new rows; tools stay on the top row.
+`update` keeps hover and a press under way. `ToolPaletteStyle` holds the row,
+tool, swatch and dot sizes, lifts, fills and text sizes.
 
 ## Selects
 
@@ -764,7 +792,7 @@ and `urlParamSelect.js` are shared by the pages.
 
 | Page | Shows |
 | --- | --- |
-| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
+| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker, a tool palette and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
 | `calipers.html` | Calipers (the ruler overlay) on an axial CT slice, in the volume's units, beside NiiVue's static scale ruler. Endpoints are world points: they follow pan and the zoom slider, belong to their slice (hidden on others), and a drag never places one |
 | `volume.html` | Volume ruler with a view selector and magnifier toggle |
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile. By design it measures canvas pixels, not the scene: the zoom slider scales the scene under fixed calipers, and Retina switches device and CSS pixels; a magnifier toggle |

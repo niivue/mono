@@ -51,6 +51,7 @@
         UIKitTextAreaOverlay,
         UIKitTextInputOverlay,
         UIKitToggleOverlay,
+        UIKitToolPaletteOverlay,
       } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
@@ -97,6 +98,7 @@
       const colors = new UIKitColorControlOverlay(font, units)
       const pickers = new UIKitFilePickerOverlay(font, units)
       const dialogs = new UIKitDialogOverlay(font, units)
+      const palette = new UIKitToolPaletteOverlay(font, units)
       const controls = new UIKitControls()
         .add(buttons)
         .add(sliders)
@@ -105,6 +107,7 @@
         .add(colors)
         .add(pickers)
         .add(areas)
+        .add(palette)
         .add(toggles)
         .add(segmented)
         .add(menus)
@@ -328,6 +331,30 @@
         placeholder: 'Findings, one per line. Cmd/Ctrl+Enter commits.',
         maxLength: 2000,
         onChange: (text) => say(`notes: ${text.split('\n').length} line(s), ${text.length} chars`),
+      })
+      // A tool palette: upright tools in a tray (they stand above y), then
+      // swatches, brush widths and an action. Each choice just updates it.
+      palette.show({
+        x: 12, y: 660, maxWidth: PANEL_WIDTH - 24,
+        actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }],
+        tools: [
+          { id: 'pen', label: 'Pen', look: 'pen' },
+          { id: 'marker', label: 'Marker', look: 'marker' },
+          { id: 'eraser', label: 'Erase', look: 'eraser' },
+        ],
+        tool: 'pen',
+        colors: [
+          { id: 'red', label: 'Red', color: [1, 0.23, 0.19, 1] },
+          { id: 'green', label: 'Green', color: [0.2, 0.78, 0.35, 1] },
+          { id: 'blue', label: 'Blue', color: [0, 0.48, 1, 1] },
+        ],
+        color: 'red',
+        widths: [{ id: 'fine', label: 'Fine' }, { id: 'broad', label: 'Broad' }],
+        width: 'fine',
+        onTool: (id) => { palette.update({ tool: id }); say(`tool: ${id}`) },
+        onColor: (id) => { palette.update({ color: id }); say(`color: ${id}`) },
+        onWidth: (id) => { palette.update({ width: id }); say(`width: ${id}`) },
+        onAction: (id) => say(`action: ${id}`),
       })
       const download = createBrowserDownload()
       function exportSettings() {

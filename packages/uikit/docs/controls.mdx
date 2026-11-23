@@ -140,6 +140,45 @@ move the highlight, Enter chooses, and Escape or a click elsewhere closes
 it. `menus.setItemChecked('view', 'colorbar', true)` changes a check mark
 quietly; `menus.open('view')` and `menus.close()` work from code.
 
+## Tool palettes
+
+A tool palette is a floating drawing toolbar after the iPad's own: tools
+stand upright in a tray, the selected one raised and inked in the chosen
+color, beside swatches, brush widths and actions such as Undo:
+
+```js
+const palette = new UIKitToolPaletteOverlay(font, units)
+controls.add(palette)
+
+palette.show({
+  x: 40,
+  y: 600,
+  maxWidth: canvasWidth - 32,
+  actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }],
+  tools: [
+    { id: 'pen', label: 'Pen', look: 'pen' },
+    { id: 'eraser', label: 'Erase', look: 'eraser' },
+  ],
+  tool: 'pen',
+  colors: [{ id: 'red', label: 'Red', color: [1, 0, 0, 1] }],
+  color: 'red',
+  widths: [{ id: 'fine', label: 'Fine' }, { id: 'broad', label: 'Broad' }],
+  width: 'fine',
+  onTool: (id) => palette.update({ tool: id }),
+  onColor: (id) => palette.update({ color: id }),
+  onWidth: (id) => palette.update({ width: id }),
+  onAction: (id) => undo(),
+})
+```
+
+`x` and `y` place the tray; tools reach above it, and `measure()` gives
+the tray's size and that reach for placing it. A palette wider than
+`maxWidth` wraps whole sections onto more rows, tools always on top.
+The item under the pointer or a hovering pencil lifts or grows, lifting
+on the pressed item chooses it, and presses on the palette never reach
+the image. A press gives it keyboard focus: arrows move the highlight
+over enabled items, wrapping, and Enter or Space chooses.
+
 ## Drop-down lists
 
 A select shows the chosen option on a button and lists every option when

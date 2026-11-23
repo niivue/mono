@@ -280,6 +280,11 @@ export function RenderingOptions({
   // cornerstone disables its lighting sliders without shade; these need the
   // path tracer, the only NiiVue renderer with separate lighting terms.
   const cinematic = nv.volumeRenderMode === VOLUME_RENDER_MODE.CINEMATIC
+  for (const key of Object.values(CINEMATIC_LIGHTING))
+    lightingMax.current[key] = Math.max(
+      lightingMax.current[key] ?? 2,
+      nv.volumeCinematic[key],
+    )
   return (
     <>
       <div style={heading}>Rendering</div>
@@ -340,12 +345,7 @@ export function RenderingOptions({
             aria-label={`Volume lighting ${name}`}
             type="range"
             min={0}
-            max={
-              (lightingMax.current[key] = Math.max(
-                lightingMax.current[key] ?? 2,
-                nv.volumeCinematic[key],
-              ))
-            }
+            max={lightingMax.current[key]}
             step={0.1}
             disabled={!cinematic}
             value={nv.volumeCinematic[key]}

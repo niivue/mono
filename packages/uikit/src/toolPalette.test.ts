@@ -73,9 +73,9 @@ describe('tool palette', () => {
 
   it('gives each section its own row when even two are too wide', () => {
     const narrow = layoutToolPalette(SPEC, 0, 0, 1, STYLE, METRICS)
-    // Tools never leave the first row, so actions keep them company.
-    expect(narrow.height).toBe(3 * STYLE.rowHeight)
-    expect(narrow.dividers).toHaveLength(1)
+    // Tools take the first row alone; the actions drop below them.
+    expect(narrow.height).toBe(4 * STYLE.rowHeight)
+    expect(narrow.dividers).toHaveLength(0)
     expect(narrow.items.filter((i) => i.kind === 'tool')[0].y).toBe(
       -toolPaletteReach(STYLE),
     )
@@ -135,5 +135,25 @@ describe('tool palette', () => {
     }
     const [one, two] = [sizes(1), sizes(2)]
     for (const [i, v] of two.entries()) expect(v).toBeCloseTo(2 * one[i], 4)
+  })
+
+  it('puts tools that do not fit beside the actions on a row of their own above them', () => {
+    const spec: ToolPaletteSpec = {
+      x: 0,
+      y: 0,
+      actions: [{ id: 'undo', label: 'Undo', icon: 'undo' }],
+      tools: [
+        { id: 'pen', label: 'Pen', look: 'pen' },
+        { id: 'eraser', label: 'Erase', look: 'eraser' },
+      ],
+      tool: 'pen',
+    }
+    const layout = layoutToolPalette(spec, 0, 100, 120, STYLE, METRICS)
+    expect(layout.width).toBeLessThanOrEqual(120)
+    expect(layout.height).toBe(2 * STYLE.rowHeight)
+    const tool = layout.items.find((i) => i.kind === 'tool')
+    const action = layout.items.find((i) => i.kind === 'action')
+    expect(tool?.y).toBe(100 - toolPaletteReach(STYLE))
+    expect(action?.y).toBe(100 + STYLE.rowHeight)
   })
 })

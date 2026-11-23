@@ -240,18 +240,16 @@ export function layoutToolPalette(
     )
   }
   // Whole sections wrap: one that doesn't fit starts the next row. Tools stay
-  // on the first row, since they stand up over the row above.
+  // on the first row, since they stand up over the row above: tools that don't
+  // fit beside the actions take the first row alone, the actions below them.
   const rows: Part[][][] = [[]]
   for (const section of sections) {
     if (!section.length) continue
     const row = rows[rows.length - 1]
-    if (
-      row.length &&
-      section[0].kind !== 'tool' &&
-      rowWidth([...row, section]) > maxWidth
-    )
-      rows.push([section])
-    else row.push(section)
+    if (!row.length || rowWidth([...row, section]) <= maxWidth)
+      row.push(section)
+    else if (section[0].kind === 'tool') rows.unshift([section])
+    else rows.push([section])
   }
   const width = Math.max(...rows.map(rowWidth))
 

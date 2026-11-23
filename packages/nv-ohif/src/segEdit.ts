@@ -157,6 +157,7 @@ type ToolGroup = {
   getToolInstance?: (tool: string) => { mode?: string } | undefined
 }
 type CstLibs = {
+  cornerstone?: { eventTarget?: EventTarget }
   cornerstoneTools?: {
     utilities?: {
       segmentation?: {
@@ -176,6 +177,28 @@ export function toolMode(
   const group =
     cstLibs(em)?.cornerstoneTools?.ToolGroupManager?.getToolGroup?.(toolGroupId)
   return group?.getToolInstance?.(tool)?.mode
+}
+
+/**
+ * Calls `cb(mode)` when cornerstone changes `tool`'s mode in `toolGroupId`
+ * (e.g. its toolbar toggle disables it without activating another tool);
+ * returns the unsubscribe.
+ */
+export function onToolModeChanged(
+  em: OhifExtensionManager | undefined,
+  toolGroupId: string,
+  tool: string,
+  cb: (mode: string | undefined) => void,
+): () => void {
+  const target = cstLibs(em)?.cornerstone?.eventTarget
+  const fn = (e: Event) => {
+    const d = (e as CustomEvent).detail
+    if (d?.toolGroupId === toolGroupId && d.toolName === tool) cb(d.mode)
+  }
+  // cornerstoneTools Enums.Events.TOOL_MODE_CHANGED
+  target?.addEventListener('CORNERSTONE_TOOLS_TOOL_MODE_CHANGED', fn)
+  return () =>
+    target?.removeEventListener('CORNERSTONE_TOOLS_TOOL_MODE_CHANGED', fn)
 }
 
 function cstLibs(em: OhifExtensionManager | undefined): CstLibs | undefined {

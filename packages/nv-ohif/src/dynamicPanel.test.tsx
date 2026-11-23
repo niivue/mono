@@ -15,6 +15,8 @@ const { DynamicVolumePanel } = await import('./dynamicPanel')
 const { joinFrames } = await import('./frames4D')
 
 test('a new active pane rereads the series it controls', async () => {
+  // The clamp test's clicks rerender too, and may run first.
+  renders = 0
   let changed = () => {}
   const viewportGridService = {
     getActiveViewportId: () => undefined,

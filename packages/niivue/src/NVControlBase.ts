@@ -295,11 +295,13 @@ const MESH_DRAW_TIME_OPTIONS = new Set([
   'isLegendVisible',
 ])
 
-/** The scene values broadcastTo syncs, as comparable strings. */
-function syncedState(scene: NiiVue['model']['scene']): Record<string, string> {
+/** The scene values broadcastTo syncs, as comparable strings. The crosshair
+ * is compared in world mm, the unit sent: an affine change moves it there. */
+function syncedState(nv: NiiVue): Record<string, string> {
+  const scene = nv.model.scene
   return {
     view3d: `${scene.azimuth},${scene.elevation},${scene.scaleMultiplier}`,
-    crosshair: String(Array.from(scene.crosshairPos)),
+    crosshair: String(Array.from(nv.model.scene2mm(scene.crosshairPos))),
     pan: String(Array.from(scene.pan2Dxyzmm)),
   }
 }
@@ -7730,7 +7732,7 @@ export default class NiiVue extends EventTarget {
     this._syncDirty = false
     const opts = this._syncOpts
     const src = this.model.scene
-    const now = syncedState(src)
+    const now = syncedState(this)
     const sent = this._syncSent
     const moved = (k: string) => now[k] !== sent[k]
     this._syncSent = now
@@ -7833,9 +7835,16 @@ export default class NiiVue extends EventTarget {
       if (changed) {
         // What the target received is not its own move: it must not echo it
         // back, converted through its own grid, over the move it came from.
-        const got = syncedState(dst)
-        for (const k of Object.keys(got))
-          if (moved(k)) target._syncSent[k] = got[k] as string
+        // Only the fields these options send: another pending change of the
+        // target's own (a pan, with crosshair-only sync) still goes out.
+        const got = syncedState(target)
+        const keys = [
+          opts['3d'] && 'view3d',
+          (opts['2d'] || opts.crosshair) && 'crosshair',
+          opts['2d'] && 'pan',
+        ]
+        for (const k of keys)
+          if (k && moved(k)) target._syncSent[k] = got[k] as string
         target.drawScene(false)
         target.createOnLocationChange()
       }

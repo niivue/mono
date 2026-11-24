@@ -516,6 +516,9 @@ and its volumes alive."""
     def broadcast_to(self, targets: Any = _UNSET, opts: Any = _UNSET) -> None:
         """Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.
 
+        A value is sent when it changes in this instance, not on every redraw, and a
+        value received from a peer is not sent back.
+
         Parameters
         ----------
         targets : default | default[] | undefined

@@ -3,6 +3,7 @@ import NiiVue from './index'
 import * as NVMesh from './mesh/NVMesh'
 import NVControlBase from './NVControlBase'
 import type { NVMesh as NVMeshType } from './NVTypes'
+import { createNiftiArray } from './volume/utils'
 import { NVWorker } from './workers/NVWorker'
 
 describe('NVControlBase under bun test', () => {
@@ -88,23 +89,29 @@ describe('2D rotate and flip state', () => {
 })
 
 describe('broadcastTo', () => {
+  const peer = () => {
+    const nv = new NiiVue()
+    nv.model.extentsMin = [0, 0, 0]
+    nv.model.extentsMax = [100, 100, 100]
+    return nv
+  }
+  const sync = (nv: NiiVue) => {
+    nv['_syncDirty'] = true
+    nv['_sync']()
+  }
+  const link = (a: NiiVue, b: NiiVue) => {
+    a.broadcastTo(b, { crosshair: true })
+    b.broadcastTo(a, { crosshair: true })
+    sync(a)
+    sync(b)
+  }
+
   // A linked peer redrawing for another reason (a cine frame, a load) used to
   // push its unchanged crosshair over a newer move made in the other pane.
   test("a peer's redraw does not undo a newer crosshair move", () => {
-    const a = new NiiVue()
-    const b = new NiiVue()
-    for (const nv of [a, b]) {
-      nv.model.extentsMin = [0, 0, 0]
-      nv.model.extentsMax = [100, 100, 100]
-    }
-    a.broadcastTo(b, { crosshair: true })
-    b.broadcastTo(a, { crosshair: true })
-    const sync = (nv: NiiVue) => {
-      nv['_syncDirty'] = true
-      nv['_sync']()
-    }
-    sync(a)
-    sync(b)
+    const a = peer()
+    const b = peer()
+    link(a, b)
     a.model.scene.crosshairPos = [0.5, 0.5, 0.6]
     sync(b)
     expect(Array.from(a.model.scene.crosshairPos)).toEqual([0.5, 0.5, 0.6])
@@ -116,24 +123,64 @@ describe('broadcastTo', () => {
   // own grid, the echo lands a little off (here float32 rounding; across CT and
   // PT grids, slices away) and overwrites the move it came from.
   test('a received move is not broadcast back', () => {
-    const a = new NiiVue()
-    const b = new NiiVue()
-    for (const nv of [a, b]) {
-      nv.model.extentsMin = [0, 0, 0]
-      nv.model.extentsMax = [100, 100, 100]
-    }
-    a.broadcastTo(b, { crosshair: true })
-    b.broadcastTo(a, { crosshair: true })
-    const sync = (nv: NiiVue) => {
-      nv['_syncDirty'] = true
-      nv['_sync']()
-    }
-    sync(a)
-    sync(b)
+    const a = peer()
+    const b = peer()
+    link(a, b)
     const moved = [0.5, 0.5, 0.6]
     a.model.scene.crosshairPos = moved
     sync(a)
     sync(b)
     expect(a.model.scene.crosshairPos).toBe(moved)
+  })
+
+  test('a crosshair-only receipt keeps a pending pan for the next peer', () => {
+    const a = peer()
+    const b = peer()
+    const c = peer()
+    a.broadcastTo(b, { crosshair: true })
+    b.broadcastTo(c, { '2d': true })
+    sync(a)
+    sync(b)
+    b.model.scene.pan2Dxyzmm = new Float32Array([0, 10, 0, 1])
+    // A's own pan changes too, but crosshair-only sync does not send it.
+    a.model.scene.pan2Dxyzmm = new Float32Array([0, 20, 0, 1])
+    a.model.scene.crosshairPos = [0.5, 0.5, 0.6]
+    sync(a)
+    sync(b)
+    expect(c.model.scene.pan2Dxyzmm[1]).toBe(10)
+  })
+
+  // An affine change moves the crosshair in mm without changing its fraction.
+  test('an affine change moves the linked crosshair to the same world point', async () => {
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const vol = () =>
+      new File(
+        [
+          createNiftiArray(
+            [2, 2, 2],
+            [1, 1, 1],
+            identity,
+            2,
+            new Uint8Array(8),
+          ),
+        ],
+        'small.nii',
+      )
+    const a = new NiiVue()
+    const b = new NiiVue()
+    await a.loadVolumes([{ url: vol() }])
+    await b.loadVolumes([{ url: vol() }])
+    a.broadcastTo(b, { crosshair: true })
+    sync(a)
+    await a.setVolumeAffine(0, [
+      [1, 0, 0, 10],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
+    ])
+    sync(a)
+    expect(Array.from(b.getCrosshairPos())).toEqual(
+      Array.from(a.getCrosshairPos()),
+    )
   })
 })

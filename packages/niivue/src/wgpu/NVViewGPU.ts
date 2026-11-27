@@ -50,6 +50,7 @@ import type * as NVGraph from '@/view/NVGraph'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
+import { pickChunkedVolumeMM, tilePickMatrices } from '@/view/NVPickVolume'
 import {
   buildPlaneOutline3DRenderData,
   mergeRenderData,
@@ -61,15 +62,13 @@ import {
   drawnOpacity,
   isChannelStackActive,
   isVolumeDrawn,
-  stackPickSampler,
 } from '@/view/NVVolumeVisibility'
 import { orientationTextPlacements } from '@/view/orientationLabels'
-import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import type { RgbaGrid } from '@/view/planeVisibility'
 import {
   type UpdateBindGroupsOptions,
   volumeUpdateScope,
 } from '@/view/volumeUpdateScope'
-import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
   chunkSampleTransform,
@@ -78,7 +77,6 @@ import {
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
-import { residentPickSampler } from '@/volume/utils'
 import { WGPUBench } from './bench'
 import { maxBlendSliceDim } from './blendOverlays'
 import { BoxLineRenderer } from './boxLine'
@@ -2651,206 +2649,25 @@ export default class NVView {
     const md = this.model
     const device = this.device
     if (!device) return null
-    // Calculate MVP for this tile (same logic as render loop)
-    let mvpMatrix: mat4 | Float32Array
-    let normalMatrix: mat4 | Float32Array
-    let rayDir: Float32Array | number[]
-    if (hit.isRender && tile.renderOrientation !== undefined && tile.screen) {
-      // Mosaic render tile: use same MVP as render loop (origin-centered, tile angles)
-      const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-      const result = NVTransforms.calculateMvpMatrix2D(
-        ltwh,
-        screen.mnMM,
-        screen.mxMM,
-        tile.azimuth as number,
-        tile.elevation as number,
-        NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
-        md.volumes[0]?.obliqueRAS,
-        md.pivot3D,
-      )
-      mvpMatrix = result[0] as mat4
-      normalMatrix = result[2] as mat4
-      rayDir = result[3] as Float32Array
-    } else if (hit.isRender) {
-      const result = NVTransforms.calculateMvpMatrix(
-        ltwh,
-        md.scene.azimuth,
-        md.scene.elevation,
-        md._renderPivotMM ?? md.pivot3D,
-        md.furthestFromPivot,
-        md.scene.scaleMultiplier,
-        md.volumes[0]?.obliqueRAS,
-        md.scene.renderPan,
-      )
-      mvpMatrix = result[0] as mat4
-      normalMatrix = result[2] as mat4
-      rayDir = result[3] as Float32Array
-    } else {
-      const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-      if (!screen) return null
-      const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
-      const result = NVTransforms.calculateMvpMatrix2D(
-        ltwh,
-        screen.mnMM,
-        screen.mxMM,
-        tile.azimuth as number,
-        tile.elevation as number,
-        NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
-        md.volumes[0]?.obliqueRAS,
-        undefined,
-        pan,
-        true,
-        tile.clipRot,
-      )
-      mvpMatrix = result[0] as mat4
-      normalMatrix = result[2] as mat4
-      rayDir = result[3] as Float32Array
-    }
-    // Chunked / multi-LOD volumes have no single whole-volume texture, so the
-    // GPU depth-pass cannot sample them. Fall back to a CPU ray/AABB pick against
-    // the volume's mm bounding box and return the near-surface entry under the
-    // cursor — enough to move the crosshair (and thus the multi-LOD focus) in a
-    // 3D render. Meshes, if any, still take the GPU path below for 2D tiles.
+    if (!hit.isRender && !tile.screen) return null
+    // Same MVP as the render loop
+    const [mvpMatrix, , normalMatrix, rayDir] = tilePickMatrices(
+      tile,
+      hit.isRender,
+      md,
+      true,
+    )
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
-      const vol = md.volumes[0]
-      // A hidden background is not drawn, so it must not answer a pick; a
-      // channel stack answers from any drawn channel (#370).
-      const stack = this._isChannelStack(md.volumes)
-      const pickSampler = stack
-        ? stackPickSampler(md.volumes)
-        : // A resident chunked volume has no streamed sampler, but its
-          // voxels are on the CPU: without one the pick stops at its box.
-          (vol?.pickSampler ?? (vol && residentPickSampler(vol)) ?? undefined)
-      if (
-        vol?.extentsMin &&
-        vol?.extentsMax &&
-        (stack ? md.volumes.some(isVolumeDrawn) : isVolumeDrawn(vol))
-      ) {
-        const near = NVTransforms.unprojectScreen(
-          hit.normalizedX,
-          hit.normalizedY,
-          0,
-          mvpMatrix as mat4,
-        )
-        const far = NVTransforms.unprojectScreen(
-          hit.normalizedX,
-          hit.normalizedY,
-          1,
-          mvpMatrix as mat4,
-        )
-        // SLICES draws three crosshair planes, so the pick lands on the nearest
-        // VISIBLE plane crossing rather than on the near surface — the same rule
-        // the GPU shaders use for a non-chunked volume.
-        //
-        // A miss must NOT fall through to the surface fallbacks below: in this
-        // mode the volume's near surface is not on screen, so landing the
-        // crosshair there would teleport all three planes to a voxel the user
-        // never clicked. It drops to the GPU pass instead, which is the only
-        // one that picks MESHES.
-        //
-        // ponytail: un-exploded only, and the planes are the mm-axis ones, as
-        // the bounding box around them already is -- an oblique volume's true
-        // planes are tilted. Exploded blocks displace the planes with them, so
-        // they keep the block pick below. Give either its own plane maths if
-        // someone picks in one of those views.
-        if (
-          md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.SLICES &&
-          !chunkExplodeEnabled(vol.chunkExplode)
-        ) {
-          const planeMM = NVTransforms.rayPlaneFirstVisibleMM(
-            near,
-            far,
-            vol.extentsMin,
-            vol.extentsMax,
-            md.scene2mm(md.scene.crosshairPos),
-            // Without alpha clipping the plane is a solid slab, so every
-            // in-box crossing is visible and there is nothing to reject. With
-            // it, the base volume's own sampler is widened by the PAQD and
-            // drawing layers the render paints over transparent base.
-            md.volume.isAlphaClipDark
-              ? composePlaneVisibility({
-                  lo: vol.extentsMin,
-                  hi: vol.extentsMax,
-                  base: pickSampler,
-                  drawing: this._drawingPickGrid,
-                  paqd: this.volumeRenderer.paqdPickGrid
-                    ? {
-                        grid: this.volumeRenderer.paqdPickGrid,
-                        uniforms: md.volume.paqdUniforms,
-                      }
-                    : null,
-                })
-              : undefined,
-          )
-          if (planeMM) return planeMM
-        } else if (
-          // Exploded view: blocks are displaced, so the un-exploded bounding box
-          // no longer matches what's on screen. Pick against each block's
-          // exploded AABB (first window-visible voxel in the hit block) and map
-          // the recovered un-exploded voxel back to mm for the crosshair.
-          vol.chunkPlan &&
-          vol.matRAS &&
-          chunkExplodeEnabled(vol.chunkExplode)
-        ) {
-          const matRAS = vol.matRAS
-          const base = pickSampler
-          const sample = base
-            ? (vx: number, vy: number, vz: number): number => {
-                const mm = NVTransforms.vox2mm(
-                  null,
-                  [vx, vy, vz],
-                  matRAS as mat4,
-                )
-                return base(mm[0], mm[1], mm[2])
-              }
-            : undefined
-          const picked = pickExplodedVoxel(
-            vol.chunkPlan,
-            matRAS,
-            vol.chunkExplode,
-            [near[0], near[1], near[2]],
-            [far[0] - near[0], far[1] - near[1], far[2] - near[2]],
-            {
-              sample,
-              threshold: 0,
-              clipPlanes: md.clipPlanes,
-              isCutaway: md.scene.isClipPlaneCutaway,
-            },
-          )
-          if (picked) {
-            const mm = NVTransforms.vox2mm(null, picked.voxel, matRAS as mat4)
-            return [mm[0], mm[1], mm[2]]
-          }
-          return null
-        } else {
-          // With a CPU sampler (the streamed volume's coarse floor, or
-          // app-supplied data), march to the first window-visible voxel.
-          // Without one — or when the ray crosses nothing visible — land on the
-          // bounding-box / clip surface, which is what the GPU shader does with
-          // its own miss.
-          const hitMM =
-            (pickSampler
-              ? NVTransforms.rayMarchFirstVisibleMM(
-                  near,
-                  far,
-                  vol.extentsMin,
-                  vol.extentsMax,
-                  pickSampler,
-                  md.clipPlanes,
-                  md.scene.isClipPlaneCutaway,
-                )
-              : null) ??
-            NVTransforms.rayBoxEntryMM(
-              near,
-              far,
-              vol.extentsMin,
-              vol.extentsMax,
-              md.clipPlanes,
-              md.scene.isClipPlaneCutaway,
-            )
-          if (hitMM) return hitMM
-        }
-      }
+      const mm = pickChunkedVolumeMM(
+        md,
+        hit.normalizedX,
+        hit.normalizedY,
+        mvpMatrix,
+        this._isChannelStack(md.volumes),
+        this._drawingPickGrid,
+        this.volumeRenderer.paqdPickGrid,
+      )
+      if (mm !== undefined) return mm
     }
     // Build pick-matrix-modified MVP that zooms to 1 pixel
     const tileW = ltwh[2]

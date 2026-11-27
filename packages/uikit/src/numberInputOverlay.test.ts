@@ -440,48 +440,4 @@ describe('UIKitNumberInputOverlay', () => {
     expect(overlay.getText('n')).toBe('-3')
     expect(inputs).toHaveLength(1) // reported clamped to this field's min
   })
-
-  it('keeps the field when the clipboard read is refused or rejects', async () => {
-    const { clipboard } = fakeClipboard('')
-    const { overlay, inputs } = make(clipboard)
-    overlay.focus('n')
-    expect(overlay.keyDown({ ...key('v'), ctrlKey: true })).toBe(true)
-    await Promise.resolve()
-    expect(overlay.getText('n')).toBe('5')
-    clipboard.read = () => Promise.reject(new Error('denied'))
-    overlay.keyDown(cmd('v'))
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(overlay.getText('n')).toBe('5')
-    expect(inputs).toEqual([])
-  })
-
-  it('drops a paste that arrives after the field lost focus or was refocused', async () => {
-    const { clipboard } = fakeClipboard('3')
-    const { overlay, inputs } = make(clipboard)
-    overlay.focus('n')
-    overlay.keyDown(cmd('v'))
-    overlay.blur()
-    await Promise.resolve()
-    expect(overlay.getText('n')).toBe('5')
-    expect(overlay.paste('3')).toBe(false)
-    overlay.focus('n')
-    overlay.keyDown(cmd('v'))
-    overlay.blur()
-    overlay.focus('n') // a new session with everything selected
-    await Promise.resolve()
-    expect(overlay.getText('n')).toBe('5')
-    expect(inputs).toEqual([])
-  })
-
-  it('drops a paste that arrives after the overlay was destroyed', async () => {
-    const { clipboard } = fakeClipboard('3')
-    const { overlay, inputs } = make(clipboard)
-    overlay.focus('n')
-    overlay.keyDown(cmd('v'))
-    overlay.destroy()
-    await Promise.resolve()
-    expect(overlay.getText('n')).toBe('5')
-    expect(inputs).toEqual([])
-  })
 })

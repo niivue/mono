@@ -17,7 +17,6 @@ import {
   colorsEqual,
   DEFAULT_COLOR_CONTROL_STYLE,
   layoutColorControl,
-  resolveColorControlStyle,
   scaleColorControl,
   withChannel,
 } from './colorControl'
@@ -27,24 +26,16 @@ import type {
   UIKitRedrawSource,
 } from './controls'
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
-import { UIKitEntryMap } from './overlayParts'
+import { UIKitEntryMap, type UIKitEntryOverlayOptions } from './overlayParts'
 import { UIKitRectOverlay } from './rectOverlay'
 import { UIKitSliderOverlay } from './sliderOverlay'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import type { RGBA } from './text/layout'
 import { UIKitTextOverlay } from './textOverlay'
 
-export interface UIKitColorControlOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every control; a spec's `style` overrides per key. */
-  style?: Partial<ColorControlStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
-}
+export interface UIKitColorControlOverlayOptions
+  extends UIKitEntryOverlayOptions<ColorControlStyle> {}
 
 interface ColorEntry {
   spec: ColorControlSpec
@@ -80,10 +71,7 @@ export class UIKitColorControlOverlay
   constructor(font: UIKitFont, options: UIKitColorControlOverlayOptions = {}) {
     this.font = font
     this.labels = new UIKitTextOverlay(font)
-    this.baseStyle = resolveColorControlStyle(
-      DEFAULT_COLOR_CONTROL_STYLE,
-      options.style,
-    )
+    this.baseStyle = resolveStyle(DEFAULT_COLOR_CONTROL_STYLE, options.style)
     const cssUnits = options.cssUnits ?? false
     this.entries = new UIKitEntryMap((entry, scale) => {
       const { spec, style } = scaleColorControl(entry.spec, entry.style, scale)
@@ -98,12 +86,9 @@ export class UIKitColorControlOverlay
 
   /** Replace the default style for every control (per-spec overrides still win). */
   setDefaultStyle(style: Partial<ColorControlStyle>): void {
-    this.baseStyle = resolveColorControlStyle(
-      DEFAULT_COLOR_CONTROL_STYLE,
-      style,
-    )
+    this.baseStyle = resolveStyle(DEFAULT_COLOR_CONTROL_STYLE, style)
     for (const entry of this.entries.values()) {
-      entry.style = resolveColorControlStyle(this.baseStyle, entry.spec.style)
+      entry.style = resolveStyle(this.baseStyle, entry.spec.style)
       entry.layout = null
       this.placeSliders(entry)
     }
@@ -113,7 +98,7 @@ export class UIKitColorControlOverlay
   /** Add a control, or replace the one with the same id (keeping its color). */
   addColorControl(spec: ColorControlSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveColorControlStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     let entry: ColorEntry
     if (existing) {
       existing.spec = spec

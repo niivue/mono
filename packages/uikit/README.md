@@ -803,8 +803,8 @@ overrides of the button style.
 
 - **A widget is a model file plus an overlay file.** `foo.ts` holds the pure
   model: the `FooSpec` and `FooStyle` interfaces, `DEFAULT_FOO_STYLE`,
-  `resolveFooStyle`, `layoutFoo` (spec to boxes), `scaleFoo` (spec and style
-  into device pixels for `cssUnits`), `fooContains` (hit test) and `buildFoo`
+  `layoutFoo` (spec to boxes), `scaleFoo` (spec and style into device pixels
+  for `cssUnits`; styles merge through `resolveStyle` in `style.ts`), `fooContains` (hit test) and `buildFoo`
   (layout and state to line, text and rect draw data). It imports no GPU code
   and is tested in `foo.test.ts` without one. `fooOverlay.ts` holds
   `UIKitFooOverlay`: it keeps the specs and interaction state, implements
@@ -816,16 +816,17 @@ overrides of the button style.
 - **Overlays share the primitives.** Draw through `UIKitRectOverlay`,
   `UIKitLineOverlay` and `UIKitTextOverlay` (and the `render/` renderers under
   them); widget overlays draw them through `UIKitDrawBundle` and keep specs in
-  `UIKitEntryMap` (`overlayParts.ts`); a composite widget composes another
+  `UIKitEntryMap` (`overlayParts.ts`), wired to the widget model by
+  `UIKitEntryOverlay` there; a composite widget composes another
   overlay (the file picker holds a button overlay, the color control a slider
   overlay, the select a menu overlay) rather than redrawing it.
 - **Edit widgets share one edit core.** The number input, text input and
-  text area copy, cut and paste through `clipboardEdit`, which uses an
-  `EditSession` to drop a paste that resolves after the edit ended; the text
-  widgets compare respec values with `sameValue` (both in `textEdit.ts`, the
-  number input compares snapped numbers). Each has a private `respec` that
-  takes a new spec while keeping a live edit, session and scroll. Parsing,
-  paste filtering and other widget rules stay in the widget.
+  text area extend `UIKitFieldOverlay` (`fieldOverlay.ts`; the single-line
+  two through `UIKitLineFieldOverlay`): add, replace and patch while keeping
+  a live edit, session and scroll, focus and commit, and the clipboard keys
+  through `clipboardEdit` (`textEdit.ts`), whose `EditSession` drops a paste
+  that resolves after the edit ended. Parsing, paste filtering, pointer
+  handling and drawing stay in the widget.
 - **Shared behaviour lives in shared models.** Row scrolling is `scroll.ts`,
   single-line editing `textEdit.ts` and `textField.ts`, multi-line editing
   `textArea.ts`, text wrapping `wrapText` in `dialog.ts`. Extend those before

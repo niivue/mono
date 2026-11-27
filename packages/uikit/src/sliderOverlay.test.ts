@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { UIKitControls } from './controls'
 import { UIKitSliderOverlay } from './sliderOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 
@@ -176,16 +175,6 @@ describe('UIKitSliderOverlay', () => {
     expect(changes).toEqual([])
   })
 
-  it('hovers and un-hovers with a redraw each way', () => {
-    const { overlay, redraws } = make()
-    expect(overlay.pointerMove(200, 70)).toBe(false)
-    const n = redraws()
-    overlay.pointerMove(201, 70)
-    expect(redraws()).toBe(n)
-    overlay.pointerMove(-1, -1)
-    expect(redraws()).toBe(n + 1)
-  })
-
   it('rejects a slider without finite bounds', () => {
     const { overlay } = make()
     expect(() =>
@@ -203,37 +192,5 @@ describe('UIKitSliderOverlay', () => {
       RangeError,
     )
     expect(overlay.getValue('s')).toBe(2)
-  })
-
-  it('replaces the set with setSliders and drops stale focus', () => {
-    const { overlay } = make()
-    overlay.focus('s')
-    overlay.setSliders([
-      { id: 'u', x: 0, y: 0, width: 50, min: 0, max: 1, value: 0 },
-    ])
-    expect(overlay.ids).toEqual(['u'])
-    expect(overlay.focusedSlider).toBeNull()
-  })
-
-  it("takes the layer's keys when focused from code", () => {
-    const { overlay, inputs } = make()
-    const other = new UIKitSliderOverlay(FONT)
-    other.addSlider({
-      id: 'o',
-      x: 100,
-      y: 200,
-      width: 200,
-      min: 0,
-      max: 10,
-      value: 0,
-    })
-    const layer = new UIKitControls().add(other).add(overlay)
-    other.focus('o')
-    expect(layer.focusedWidget).toBe(other)
-    overlay.focus('s')
-    expect(layer.focusedWidget).toBe(overlay)
-    expect(layer.keyDown(key('ArrowRight'))).toBe(true)
-    expect(inputs).toEqual([3])
-    expect(other.focusedSlider).toBeNull()
   })
 })

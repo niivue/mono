@@ -5,7 +5,6 @@ import {
   effectiveStep,
   formatSliderValue,
   layoutSlider,
-  resolveSliderStyle,
   type SliderSpec,
   type SliderVisual,
   scaleSlider,
@@ -16,6 +15,7 @@ import {
   stepValue,
   valueToFraction,
 } from './slider'
+import { resolveStyle } from './style'
 import type { UIKitFontMetrics } from './text/font'
 
 // Stub font: 'H' and 'i' advance half an em; cap height is 0.7 em.
@@ -289,7 +289,7 @@ describe('buildSlider', () => {
 
   it('draws no active fill when the thumb sits at the track start', () => {
     const spec = { ...SPEC, style: undefined }
-    const style = resolveSliderStyle(STYLE, { thumbSize: 0 })
+    const style = resolveStyle(STYLE, { thumbSize: 0 })
     const l = layoutSlider(spec, style, METRICS)
     const geo = buildSlider(spec, style, l, { ...IDLE, value: 0 })
     expect(geo.rects.length).toBe(2)
@@ -317,7 +317,7 @@ describe('label outline', () => {
       expect(t.outlineWidthPx).toBe(1)
       expect(t.outlineColor).toBeUndefined()
     }
-    const style = resolveSliderStyle(STYLE, {
+    const style = resolveStyle(STYLE, {
       textOutlineWidth: 2,
       textOutlineColor: [0, 0, 0, 1],
     })

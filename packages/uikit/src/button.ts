@@ -5,6 +5,7 @@
 // it to pointer events and the overlay draw hook.
 
 import { buildRect, type RectData, rectContains } from './rect'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -93,13 +94,6 @@ export interface ButtonVisual {
   enabled: boolean
 }
 
-export function resolveButtonStyle(
-  base: ButtonStyle,
-  override?: Partial<ButtonStyle>,
-): ButtonStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** Linear blend of two colors, t in [0, 1]. */
 export function mixColor(a: RGBA, b: RGBA, t: number): RGBA {
   const k = Math.min(1, Math.max(0, t))
@@ -132,6 +126,15 @@ export function layoutButton(
  * Scale every length in a spec and style by `k` (used to lay out CSS-pixel
  * specs on a high-DPR canvas). Returns new objects; the inputs are untouched.
  */
+export const BUTTON_SPEC_LENGTHS = ['x', 'y', 'width', 'height'] as const
+export const BUTTON_STYLE_LENGTHS = [
+  'borderWidth',
+  'radius',
+  'textSizePx',
+  'paddingX',
+  'paddingY',
+] as const
+
 export function scaleButton(
   spec: ButtonSpec,
   style: ButtonStyle,
@@ -139,21 +142,8 @@ export function scaleButton(
 ): { spec: ButtonSpec; style: ButtonStyle } {
   if (k === 1) return { spec, style }
   return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-      height: spec.height === undefined ? undefined : spec.height * k,
-    },
-    style: {
-      ...style,
-      borderWidth: style.borderWidth * k,
-      radius: style.radius * k,
-      textSizePx: style.textSizePx * k,
-      paddingX: style.paddingX * k,
-      paddingY: style.paddingY * k,
-    },
+    spec: scaleKeys(spec, BUTTON_SPEC_LENGTHS, k),
+    style: scaleKeys(style, BUTTON_STYLE_LENGTHS, k),
   }
 }
 

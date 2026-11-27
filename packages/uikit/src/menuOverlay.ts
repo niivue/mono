@@ -14,12 +14,7 @@
 // The popup is drawn after every other widget through `drawPopup` when the
 // overlay sits in a control layer, so it never ends up under a later widget.
 
-import {
-  type ButtonLayout,
-  type ButtonStyle,
-  buttonContains,
-  resolveButtonStyle,
-} from './button'
+import { type ButtonLayout, type ButtonStyle, buttonContains } from './button'
 import type {
   UIKitInteractive,
   UIKitKeyEvent,
@@ -45,30 +40,26 @@ import {
   menuScrollStripAt,
   nextSelectableIndex,
   popupContains,
-  resolveMenuStyle,
   scaleMenu,
 } from './menu'
 import {
   UIKitDrawBundle,
   UIKitEntryMap,
+  type UIKitEntryOverlayOptions,
   type UIKitGeometry,
 } from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
 import { WheelAccumulator } from './scroll'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitMenuOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default button style for every menu; a spec's `buttonStyle` overrides per key. */
-  buttonStyle?: Partial<ButtonStyle>
-  /** Default popup style for every menu; a spec's `style` overrides per key. */
-  style?: Partial<MenuStyle>
+export interface UIKitMenuOverlayOptions
+  extends UIKitEntryOverlayOptions<MenuStyle> {
   /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
+   * Default button style for every menu (`style` is the popup's); a spec's
+   * `buttonStyle` overrides per key.
    */
-  cssUnits?: boolean
+  buttonStyle?: Partial<ButtonStyle>
 }
 
 interface MenuEntry {
@@ -122,11 +113,11 @@ export class UIKitMenuOverlay
       )
       return layoutMenuButton(spec, buttonStyle, style, font.metrics)
     }, options.cssUnits ?? false)
-    this.baseButtonStyle = resolveButtonStyle(
+    this.baseButtonStyle = resolveStyle(
       DEFAULT_MENU_BUTTON_STYLE,
       options.buttonStyle,
     )
-    this.baseStyle = resolveMenuStyle(DEFAULT_MENU_STYLE, options.style)
+    this.baseStyle = resolveStyle(DEFAULT_MENU_STYLE, options.style)
     this.requestRedraw = options.requestRedraw ?? null
   }
 
@@ -138,11 +129,8 @@ export class UIKitMenuOverlay
    */
   addMenu(spec: MenuButtonSpec): void {
     const existing = this.entries.get(spec.id)
-    const buttonStyle = resolveButtonStyle(
-      this.baseButtonStyle,
-      spec.buttonStyle,
-    )
-    const style = resolveMenuStyle(this.baseStyle, spec.style)
+    const buttonStyle = resolveStyle(this.baseButtonStyle, spec.buttonStyle)
+    const style = resolveStyle(this.baseStyle, spec.style)
     const items = spec.items.map((item) => ({ ...item }))
     if (existing) {
       existing.spec = spec

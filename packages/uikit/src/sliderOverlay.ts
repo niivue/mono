@@ -7,15 +7,10 @@
 // `UIKitControls` layer with the other widgets, or feed `pointerDown/Move/Up`
 // and `keyDown` yourself from any host.
 
-import type {
-  UIKitInteractive,
-  UIKitKeyEvent,
-  UIKitRedrawSource,
-} from './controls'
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
+import type { UIKitKeyEvent } from './controls'
 import {
-  UIKitDrawBundle,
-  UIKitEntryMap,
+  UIKitEntryOverlay,
+  type UIKitEntryOverlayOptions,
   type UIKitGeometry,
 } from './overlayParts'
 import { unscaleBox } from './rect'
@@ -23,7 +18,6 @@ import {
   buildSlider,
   DEFAULT_SLIDER_STYLE,
   layoutSlider,
-  resolveSliderStyle,
   type SliderLayout,
   type SliderSpec,
   type SliderStyle,
@@ -35,57 +29,41 @@ import {
 } from './slider'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitSliderOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every slider; a spec's `style` overrides per key. */
-  style?: Partial<SliderStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
-}
+export interface UIKitSliderOverlayOptions
+  extends UIKitEntryOverlayOptions<SliderStyle> {}
 
 interface SliderEntry {
   spec: SliderSpec
   style: SliderStyle
   layout: SliderLayout | null
   value: number
-  hover: boolean
 }
 
-export class UIKitSliderOverlay
-  implements UIKitOverlayRenderer, UIKitInteractive
-{
+const MODEL = {
+  defaultStyle: DEFAULT_SLIDER_STYLE,
+  scale: scaleSlider,
+  layout: layoutSlider,
+  contains: sliderContains,
+  unscale: (l: SliderLayout, k: number): SliderLayout => ({
+    ...unscaleBox(l, k),
+    track: unscaleBox(l.track, k),
+    rail: { x0: l.rail.x0 / k, x1: l.rail.x1 / k, cy: l.rail.cy / k },
+    labelBaseline: l.labelBaseline === null ? null : l.labelBaseline / k,
+  }),
+}
+
+export class UIKitSliderOverlay extends UIKitEntryOverlay<
+  SliderSpec,
+  SliderStyle,
+  SliderLayout,
+  SliderEntry
+> {
   readonly hoverCursor = 'pointer'
-  private readonly bundle: UIKitDrawBundle
-  private readonly entries: UIKitEntryMap<SliderLayout, SliderEntry>
-  private baseStyle: SliderStyle
-  private dragId: string | null = null
   /** The value when the drag started, to decide whether release fires onChange. */
   private dragStartValue = 0
-  private hoverId: string | null = null
-  private focusedId: string | null = null
-  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitSliderOverlayOptions = {}) {
-    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
-    this.entries = new UIKitEntryMap((entry, scale) => {
-      const { spec, style } = scaleSlider(entry.spec, entry.style, scale)
-      return layoutSlider(spec, style, font.metrics)
-    }, options.cssUnits ?? false)
-    this.baseStyle = resolveSliderStyle(DEFAULT_SLIDER_STYLE, options.style)
-  }
-
-  /** Replace the default style for every slider (per-spec overrides still win). */
-  setDefaultStyle(style: Partial<SliderStyle>): void {
-    this.baseStyle = resolveSliderStyle(DEFAULT_SLIDER_STYLE, style)
-    for (const entry of this.entries.values()) {
-      entry.style = resolveSliderStyle(this.baseStyle, entry.spec.style)
-      entry.layout = null
-    }
-    this.bundle.invalidate()
+    super(font, MODEL, options)
   }
 
   /**
@@ -98,47 +76,32 @@ export class UIKitSliderOverlay
         `UIKit: slider "${spec.id}" needs finite min and max`,
       )
     }
-    const existing = this.entries.get(spec.id)
-    const style = resolveSliderStyle(this.baseStyle, spec.style)
     const value = snapValue(spec.value, spec.min, spec.max, spec.step)
+    const existing = this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      value,
+    }))
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
       existing.value = value
       // Disabling ends a drag as a cancel does, with its onChange, and
       // drops focus.
       if (spec.enabled === false) {
-        if (this.dragId === spec.id) this.endDrag()
+        if (this.pressedId === spec.id) this.endDrag()
         if (this.focusedId === spec.id) this.focusedId = null
       }
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        value,
-        hover: false,
-      })
     }
-    this.bundle.invalidate()
+    this.invalidate()
   }
 
   /** Replace the whole slider set. */
   setSliders(specs: readonly SliderSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addSlider(spec),
-      (id) => this.removeSlider(id),
-    )
+    this.replaceAll(specs, (spec) => this.addSlider(spec))
   }
 
   removeSlider(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.dragId === id) this.dragId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.bundle.invalidate()
+    this.remove(id)
   }
 
   /**
@@ -171,54 +134,21 @@ export class UIKitSliderOverlay
     return this.entries.get(id)?.value
   }
 
-  /** The ids of all sliders, in draw order. */
-  get ids(): string[] {
-    return this.entries.ids
-  }
-
-  /** A slider's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): SliderLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    return {
-      ...unscaleBox(l, k),
-      track: unscaleBox(l.track, k),
-      rail: { x0: l.rail.x0 / k, x1: l.rail.x1 / k, cy: l.rail.cy / k },
-      labelBaseline: l.labelBaseline === null ? null : l.labelBaseline / k,
-    }
-  }
-
   /** The slider with keyboard focus, if any. */
   get focusedSlider(): string | null {
     return this.focusedId
   }
 
-  /** Give a slider keyboard focus, or null to clear. Disabled sliders refuse. */
-  focus(id: string | null): void {
-    const next = this.entries.enabled(id) ? id : null
-    if (next === this.focusedId) return
-    this.focusedId = next
-    if (next !== null) this.layer?.focus?.(this)
-    this.bundle.invalidate()
-  }
-
   /** True while a thumb is being dragged. */
   get isDragging(): boolean {
-    return this.dragId !== null
-  }
-
-  hitTest(x: number, y: number): boolean {
-    return this.hitEntry(x, y) !== null
+    return this.pressedId !== null
   }
 
   /** Jumps the thumb to the pointer and starts a drag. */
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
-    this.dragId = entry.spec.id
+    this.pressedId = entry.spec.id
     this.dragStartValue = entry.value
     this.focus(entry.spec.id)
     this.setFromPointer(entry, x)
@@ -227,27 +157,19 @@ export class UIKitSliderOverlay
   }
 
   pointerMove(x: number, y: number): boolean {
-    if (this.dragId !== null) {
-      const entry = this.entries.get(this.dragId)
+    if (this.pressedId !== null) {
+      const entry = this.entries.get(this.pressedId)
       if (entry) this.setFromPointer(entry, x)
       return true
     }
-    const hit = this.hitEntry(x, y)
-    const id = hit ? hit.spec.id : null
-    if (id !== this.hoverId) {
-      const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) prev.hover = false
-      if (hit) hit.hover = true
-      this.hoverId = id
-      this.bundle.invalidate()
-    }
+    this.setHover(this.hitEntry(x, y))
     return false
   }
 
   /** Ends the drag; fires `onChange` if the value moved since the press. */
   pointerUp(x: number, y: number): boolean {
-    if (this.dragId === null) return false
-    const entry = this.entries.get(this.dragId)
+    if (this.pressedId === null) return false
+    const entry = this.entries.get(this.pressedId)
     if (entry) this.setFromPointer(entry, x)
     this.endDrag()
     this.pointerMove(x, y)
@@ -256,7 +178,7 @@ export class UIKitSliderOverlay
 
   /** Ends the drag where it is; fires `onChange` if the value moved. */
   pointerCancel(): void {
-    if (this.dragId === null) return
+    if (this.pressedId === null) return
     this.endDrag()
   }
 
@@ -303,29 +225,9 @@ export class UIKitSliderOverlay
     return true
   }
 
-  blur(): void {
-    this.focus(null)
-  }
-
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.bundle.bind(layer)
-    this.layer = layer
-  }
-
-  drawOverlay(frame: UIKitOverlayFrame): void {
-    if (this.entries.size === 0) return
-    const rescaled = this.entries.rescale(frame.dpr)
-    this.bundle.draw(frame, () => this.geometry(), rescaled)
-  }
-
-  /** Release GPU resources on both backends. */
-  destroy(): void {
-    this.bundle.destroy()
-  }
-
   private endDrag(): void {
-    const id = this.dragId
-    this.dragId = null
+    const id = this.pressedId
+    this.pressedId = null
     this.bundle.invalidate()
     const entry = id !== null ? this.entries.get(id) : undefined
     if (entry && entry.value !== this.dragStartValue) {
@@ -342,23 +244,14 @@ export class UIKitSliderOverlay
     entry.spec.onInput?.(v, entry.spec.id)
   }
 
-  /** The topmost (last added) enabled slider under a canvas point. */
-  private hitEntry(x: number, y: number): SliderEntry | null {
-    return this.entries.topmost(sliderContains, x, y)
-  }
-
-  private *geometry(): Generator<UIKitGeometry> {
+  protected *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = scaleSlider(
-        entry.spec,
-        entry.style,
-        this.entries.scale,
-      )
+      const { spec, style } = this.scaled(entry)
       const id = entry.spec.id
       yield buildSlider(spec, style, this.entries.layoutOf(entry), {
         value: entry.value,
-        hover: entry.hover,
-        active: this.dragId === id,
+        hover: this.hoverId === id,
+        active: this.pressedId === id,
         focused: this.focusedId === id,
         enabled: entry.spec.enabled !== false,
       })

@@ -9,7 +9,6 @@
 // list on the current option.
 
 import type { ButtonLayout, ButtonStyle } from './button'
-import { resolveButtonStyle } from './button'
 import type {
   UIKitInteractive,
   UIKitKeyEvent,
@@ -22,9 +21,9 @@ import {
   type MenuBounds,
   type MenuPopupLayout,
   type MenuStyle,
-  resolveMenuStyle,
 } from './menu'
 import { UIKitMenuOverlay } from './menuOverlay'
+import type { UIKitEntryOverlayOptions } from './overlayParts'
 import {
   endSelectValue,
   type SelectOption,
@@ -34,20 +33,16 @@ import {
   selectOption,
   stepSelectValue,
 } from './select'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitSelectOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default button style for every select; a spec's `buttonStyle` overrides per key. */
-  buttonStyle?: Partial<ButtonStyle>
-  /** Default popup style for every select; a spec's `style` overrides per key. */
-  style?: Partial<MenuStyle>
+export interface UIKitSelectOverlayOptions
+  extends UIKitEntryOverlayOptions<MenuStyle> {
   /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
+   * Default button style for every select (`style` is the popup's); a spec's
+   * `buttonStyle` overrides per key.
    */
-  cssUnits?: boolean
+  buttonStyle?: Partial<ButtonStyle>
 }
 
 interface SelectEntry {
@@ -67,11 +62,11 @@ export class UIKitSelectOverlay
 
   constructor(font: UIKitFont, options: UIKitSelectOverlayOptions = {}) {
     this.font = font
-    this.baseButtonStyle = resolveButtonStyle(
+    this.baseButtonStyle = resolveStyle(
       DEFAULT_MENU_BUTTON_STYLE,
       options.buttonStyle,
     )
-    this.baseStyle = resolveMenuStyle(DEFAULT_MENU_STYLE, options.style)
+    this.baseStyle = resolveStyle(DEFAULT_MENU_STYLE, options.style)
     this.menu = new UIKitMenuOverlay(font, options)
   }
 
@@ -332,11 +327,11 @@ export class UIKitSelectOverlay
   private sync(id: string): void {
     const entry = this.entries.get(id)
     if (!entry) return
-    const buttonStyle = resolveButtonStyle(
+    const buttonStyle = resolveStyle(
       this.baseButtonStyle,
       entry.spec.buttonStyle,
     )
-    const style = resolveMenuStyle(this.baseStyle, entry.spec.style)
+    const style = resolveStyle(this.baseStyle, entry.spec.style)
     const menuSpec = selectMenuSpec(
       { ...entry.spec, value: entry.value },
       buttonStyle,

@@ -6,6 +6,7 @@
 import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData, rectContains } from './rect'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -110,13 +111,6 @@ export interface ToggleVisual {
   enabled: boolean
 }
 
-export function resolveToggleStyle(
-  base: ToggleStyle,
-  override?: Partial<ToggleStyle>,
-): ToggleStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The control box for a spec: the check box plus the label beside it. */
 export function layoutToggle(
   spec: ToggleSpec,
@@ -142,6 +136,18 @@ export function layoutToggle(
 }
 
 /** Scale every length in a spec and style by `k` (CSS pixels to canvas pixels). */
+const TOGGLE_SPEC_LENGTHS = ['x', 'y'] as const
+const TOGGLE_STYLE_LENGTHS = [
+  'boxSize',
+  'radius',
+  'gap',
+  'borderWidth',
+  'checkWidth',
+  'textSizePx',
+  'textOutlineWidth',
+  'focusRingWidth',
+] as const
+
 export function scaleToggle(
   spec: ToggleSpec,
   style: ToggleStyle,
@@ -149,18 +155,8 @@ export function scaleToggle(
 ): { spec: ToggleSpec; style: ToggleStyle } {
   if (k === 1) return { spec, style }
   return {
-    spec: { ...spec, x: spec.x * k, y: spec.y * k },
-    style: {
-      ...style,
-      boxSize: style.boxSize * k,
-      radius: style.radius * k,
-      gap: style.gap * k,
-      borderWidth: style.borderWidth * k,
-      checkWidth: style.checkWidth * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      focusRingWidth: style.focusRingWidth * k,
-    },
+    spec: scaleKeys(spec, TOGGLE_SPEC_LENGTHS, k),
+    style: scaleKeys(style, TOGGLE_STYLE_LENGTHS, k),
   }
 }
 

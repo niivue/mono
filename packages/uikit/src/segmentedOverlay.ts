@@ -7,24 +7,18 @@
 // `UIKitControls` layer with the other widgets, or feed the pointer and key
 // entry points yourself from any host.
 
-import type {
-  UIKitInteractive,
-  UIKitKeyEvent,
-  UIKitRedrawSource,
-} from './controls'
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
+import type { UIKitKeyEvent } from './controls'
 import {
-  UIKitDrawBundle,
-  UIKitEntryMap,
+  UIKitEntryOverlay,
+  type UIKitEntryOverlayOptions,
   type UIKitGeometry,
 } from './overlayParts'
-import { type UIKitBox, unscaleBox } from './rect'
+import { unscaleBox } from './rect'
 import {
   buildSegmented,
   DEFAULT_SEGMENTED_STYLE,
   endSegmentValue,
   layoutSegmented,
-  resolveSegmentedStyle,
   type SegmentedLayout,
   type SegmentedSpec,
   type SegmentedStyle,
@@ -36,17 +30,8 @@ import {
 } from './segmented'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitSegmentedOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every control; a spec's `style` overrides per key. */
-  style?: Partial<SegmentedStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
-}
+export interface UIKitSegmentedOverlayOptions
+  extends UIKitEntryOverlayOptions<SegmentedStyle> {}
 
 interface SegmentedEntry {
   spec: SegmentedSpec
@@ -57,44 +42,32 @@ interface SegmentedEntry {
   hover: number
 }
 
-export class UIKitSegmentedOverlay
-  implements UIKitOverlayRenderer, UIKitInteractive
-{
+const MODEL = {
+  defaultStyle: DEFAULT_SEGMENTED_STYLE,
+  scale: scaleSegmented,
+  layout: layoutSegmented,
+  contains: (l: SegmentedLayout, x: number, y: number) =>
+    segmentAt(l, x, y) >= 0,
+  unscale: (l: SegmentedLayout, k: number): SegmentedLayout => ({
+    ...unscaleBox(l, k),
+    segments: l.segments.map((s) => ({ index: s.index, ...unscaleBox(s, k) })),
+  }),
+}
+
+export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
+  SegmentedSpec,
+  SegmentedStyle,
+  SegmentedLayout,
+  SegmentedEntry
+> {
   readonly hoverCursor = 'pointer'
-  private readonly font: UIKitFont
-  private readonly bundle: UIKitDrawBundle
-  private readonly entries: UIKitEntryMap<SegmentedLayout, SegmentedEntry>
-  private baseStyle: SegmentedStyle
-  private pressedId: string | null = null
   /** Index of the segment the press started on. */
   private pressedIndex = -1
   /** While pressed: whether the pointer is over the pressed segment. */
   private pressInside = false
-  private hoverId: string | null = null
-  private focusedId: string | null = null
-  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitSegmentedOverlayOptions = {}) {
-    this.font = font
-    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
-    this.entries = new UIKitEntryMap((entry, scale) => {
-      const { spec, style } = scaleSegmented(entry.spec, entry.style, scale)
-      return layoutSegmented(spec, style, font.metrics)
-    }, options.cssUnits ?? false)
-    this.baseStyle = resolveSegmentedStyle(
-      DEFAULT_SEGMENTED_STYLE,
-      options.style,
-    )
-  }
-
-  /** Replace the default style for every control (per-spec overrides still win). */
-  setDefaultStyle(style: Partial<SegmentedStyle>): void {
-    this.baseStyle = resolveSegmentedStyle(DEFAULT_SEGMENTED_STYLE, style)
-    for (const entry of this.entries.values()) {
-      entry.style = resolveSegmentedStyle(this.baseStyle, entry.spec.style)
-      entry.layout = null
-    }
-    this.bundle.invalidate()
+    super(font, MODEL, options)
   }
 
   /**
@@ -102,37 +75,29 @@ export class UIKitSegmentedOverlay
    * the new spec's value; a value no segment holds clears the selection.
    */
   addSegmented(spec: SegmentedSpec): void {
-    const style = resolveSegmentedStyle(this.baseStyle, spec.style)
     const value =
       segmentIndex(spec.segments, spec.value) >= 0 ? spec.value : null
-    const existing = this.entries.get(spec.id)
+    const existing = this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      value,
+      hover: -1,
+    }))
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
       existing.value = value
       existing.hover = -1
-    } else {
-      this.entries.set(spec.id, { spec, style, layout: null, value, hover: -1 })
     }
-    this.bundle.invalidate()
+    this.invalidate()
   }
 
   /** Replace the whole control set. */
   setSegmenteds(specs: readonly SegmentedSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addSegmented(spec),
-      (id) => this.removeSegmented(id),
-    )
+    this.replaceAll(specs, (spec) => this.addSegmented(spec))
   }
 
   removeSegmented(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.pressedId === id) this.pressedId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.bundle.invalidate()
+    this.remove(id)
   }
 
   /** Patch one control's spec. The value is kept unless the patch sets `value`. */
@@ -185,41 +150,9 @@ export class UIKitSegmentedOverlay
     entry.spec.onChange?.(value, id)
   }
 
-  /** The ids of all controls, in draw order. */
-  get ids(): string[] {
-    return this.entries.ids
-  }
-
-  /** A control's track and segments in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): SegmentedLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    const s = (r: UIKitBox) => unscaleBox(r, k)
-    return {
-      ...s(l),
-      segments: l.segments.map((seg) => ({ index: seg.index, ...s(seg) })),
-    }
-  }
-
   /** The control with keyboard focus, if any. */
   get focusedSegmented(): string | null {
     return this.focusedId
-  }
-
-  /** Give a control keyboard focus (arrows move the selection), or null to clear. */
-  focus(id: string | null): void {
-    const next = this.entries.enabled(id) ? id : null
-    if (next === this.focusedId) return
-    this.focusedId = next
-    if (next !== null) this.layer?.focus?.(this)
-    this.bundle.invalidate()
-  }
-
-  hitTest(x: number, y: number): boolean {
-    return this.hitEntry(x, y) !== null
   }
 
   /** Presses the segment under the pointer (disabled segments still take focus). */
@@ -322,43 +255,14 @@ export class UIKitSegmentedOverlay
     return true
   }
 
-  blur(): void {
-    this.focus(null)
-  }
-
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.bundle.bind(layer)
-    this.layer = layer
-  }
-
-  drawOverlay(frame: UIKitOverlayFrame): void {
-    if (this.entries.size === 0) return
-    const rescaled = this.entries.rescale(frame.dpr)
-    this.bundle.draw(frame, () => this.geometry(), rescaled)
-  }
-
-  /** Release GPU resources on both backends. */
-  destroy(): void {
-    this.bundle.destroy()
-  }
-
   private segmentEnabled(entry: SegmentedEntry, index: number): boolean {
     const seg = entry.spec.segments[index]
     return seg !== undefined && seg.enabled !== false
   }
 
-  /** The topmost (last added) enabled control under a canvas point. */
-  private hitEntry(x: number, y: number): SegmentedEntry | null {
-    return this.entries.topmost((l, px, py) => segmentAt(l, px, py) >= 0, x, y)
-  }
-
-  private *geometry(): Generator<UIKitGeometry> {
+  protected *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = scaleSegmented(
-        entry.spec,
-        entry.style,
-        this.entries.scale,
-      )
+      const { spec, style } = this.scaled(entry)
       const id = entry.spec.id
       const pressed =
         this.pressedId === id && this.pressInside ? this.pressedIndex : -1

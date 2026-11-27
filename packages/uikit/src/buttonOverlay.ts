@@ -21,20 +21,13 @@ import {
   buttonContains,
   DEFAULT_BUTTON_STYLE,
   layoutButton,
-  resolveButtonStyle,
   scaleButton,
 } from './button'
+import { UIKitControls, type UIKitHost, type UIKitKeyEvent } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import {
-  UIKitControls,
-  type UIKitHost,
-  type UIKitInteractive,
-  type UIKitKeyEvent,
-  type UIKitRedrawSource,
-} from './controls'
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
-import {
-  UIKitDrawBundle,
-  UIKitEntryMap,
+  UIKitEntryOverlay,
+  type UIKitEntryOverlayOptions,
   type UIKitGeometry,
 } from './overlayParts'
 import { unscaleBox } from './rect'
@@ -43,21 +36,8 @@ import type { UIKitFont } from './text/font'
 /** What `attach` needs from a host: NiiVue satisfies it as-is. */
 export type UIKitButtonHost = UIKitHost
 
-export interface UIKitButtonOverlayOptions {
-  /**
-   * Called whenever the overlay needs another frame (a hover/press change, or
-   * each step of a running press animation). `attach` fills this in with the
-   * host's `drawScene` when it is not set.
-   */
-  requestRedraw?: () => void
-  /** Default style for every button; a spec's `style` overrides per key. */
-  style?: Partial<ButtonStyle>
-  /**
-   * Interpret spec positions, sizes and style lengths as CSS pixels and scale
-   * them by the frame's device pixel ratio, instead of canvas pixels. Pointer
-   * coordinates always arrive in canvas pixels (the hook's convention).
-   */
-  cssUnits?: boolean
+export interface UIKitButtonOverlayOptions
+  extends UIKitEntryOverlayOptions<ButtonStyle> {
   /** Clock for the press animation (ms). Default `performance.now`. */
   now?: () => number
 }
@@ -67,86 +47,55 @@ interface ButtonEntry {
   style: ButtonStyle
   /** Resting box in canvas pixels, for the scale it was laid out at. */
   layout: ButtonLayout | null
-  hover: boolean
   press: number
   pressTarget: number
   /** A programmatic click: run the press to 1, then release. */
   pulse: boolean
 }
 
-export class UIKitButtonOverlay
-  implements UIKitOverlayRenderer, UIKitInteractive
-{
+const MODEL = {
+  defaultStyle: DEFAULT_BUTTON_STYLE,
+  scale: scaleButton,
+  layout: layoutButton,
+  contains: buttonContains,
+  unscale: unscaleBox,
+}
+
+export class UIKitButtonOverlay extends UIKitEntryOverlay<
+  ButtonSpec,
+  ButtonStyle,
+  ButtonLayout,
+  ButtonEntry
+> {
   readonly hoverCursor = 'pointer'
-  private readonly font: UIKitFont
-  private readonly bundle: UIKitDrawBundle
-  private readonly entries: UIKitEntryMap<ButtonLayout, ButtonEntry>
-  private baseStyle: ButtonStyle
   private readonly now: () => number
   private lastTick = 0
-  private pressedId: string | null = null
-  private hoverId: string | null = null
-  /** The button that takes Enter/Space, set by the last press on it. */
-  private focusedId: string | null = null
 
   constructor(font: UIKitFont, options: UIKitButtonOverlayOptions = {}) {
-    this.font = font
-    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
-    this.entries = new UIKitEntryMap((entry, scale) => {
-      const { spec, style } = scaleButton(entry.spec, entry.style, scale)
-      return layoutButton(spec, style, font.metrics)
-    }, options.cssUnits ?? false)
-    this.baseStyle = resolveButtonStyle(DEFAULT_BUTTON_STYLE, options.style)
+    super(font, MODEL, options)
     this.now = options.now ?? (() => performance.now())
-  }
-
-  /** Replace the default style for every button (per-spec overrides still win). */
-  setDefaultStyle(style: Partial<ButtonStyle>): void {
-    this.baseStyle = resolveButtonStyle(DEFAULT_BUTTON_STYLE, style)
-    for (const entry of this.entries.values()) {
-      entry.style = resolveButtonStyle(this.baseStyle, entry.spec.style)
-      entry.layout = null
-    }
-    this.invalidate()
   }
 
   /** Add a button, or replace the one with the same id (keeping its press state). */
   addButton(spec: ButtonSpec): void {
-    const existing = this.entries.get(spec.id)
-    const style = resolveButtonStyle(this.baseStyle, spec.style)
-    if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        hover: false,
-        press: 0,
-        pressTarget: 0,
-        pulse: false,
-      })
-    }
+    this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      press: 0,
+      pressTarget: 0,
+      pulse: false,
+    }))
     this.invalidate()
   }
 
   /** Replace the whole button set. */
   setButtons(specs: readonly ButtonSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addButton(spec),
-      (id) => this.removeButton(id),
-    )
+    this.replaceAll(specs, (spec) => this.addButton(spec))
   }
 
   removeButton(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.pressedId === id) this.pressedId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.invalidate()
+    this.remove(id)
   }
 
   /** Patch one button's spec (label, position, style, enabled, callback). */
@@ -162,25 +111,6 @@ export class UIKitButtonOverlay
 
   setEnabled(id: string, enabled: boolean): void {
     this.updateButton(id, { enabled })
-  }
-
-  /** The ids of all buttons, in draw order. */
-  get ids(): string[] {
-    return this.entries.ids
-  }
-
-  /**
-   * The resting box of a button in spec units (canvas pixels, or CSS pixels
-   * with `cssUnits`), or null for an unknown id. Handy for placing the next
-   * button after an auto-sized one.
-   */
-  getLayout(id: string): ButtonLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    return unscaleBox(l, k)
   }
 
   /** True while the pointer is over an enabled button. */
@@ -199,11 +129,6 @@ export class UIKitButtonOverlay
     entry.pressTarget = 1
     this.startAnimation()
     entry.spec.onClick?.(id)
-  }
-
-  /** True when canvas point (x, y) is over an enabled button. */
-  hitTest(x: number, y: number): boolean {
-    return this.hitEntry(x, y) !== null
   }
 
   /**
@@ -240,15 +165,7 @@ export class UIKitButtonOverlay
       }
       return true
     }
-    const hit = this.hitEntry(x, y)
-    const id = hit ? hit.spec.id : null
-    if (id !== this.hoverId) {
-      const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) prev.hover = false
-      if (hit) hit.hover = true
-      this.hoverId = id
-      this.invalidate()
-    }
+    this.setHover(this.hitEntry(x, y))
     return false
   }
 
@@ -294,12 +211,8 @@ export class UIKitButtonOverlay
     return true
   }
 
-  blur(): void {
+  override blur(): void {
     this.focusedId = null
-  }
-
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.bundle.bind(layer)
   }
 
   /**
@@ -351,7 +264,7 @@ export class UIKitButtonOverlay
     return { animating, stepped }
   }
 
-  drawOverlay(frame: UIKitOverlayFrame): void {
+  override drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
     const rescaled = this.entries.rescale(frame.dpr)
     const { animating, stepped } = this.tick()
@@ -360,39 +273,21 @@ export class UIKitButtonOverlay
     if (animating) this.bundle.invalidate()
   }
 
-  /** Release GPU resources on both backends. */
-  destroy(): void {
-    this.bundle.destroy()
-  }
-
-  private invalidate(): void {
-    this.bundle.invalidate()
-  }
-
   private startAnimation(): void {
     this.lastTick = this.now()
     this.invalidate()
   }
 
-  /** The topmost (last added) enabled button under a canvas point. */
-  private hitEntry(x: number, y: number): ButtonEntry | null {
-    return this.entries.topmost(buttonContains, x, y)
-  }
-
-  private *geometry(): Generator<UIKitGeometry> {
+  protected *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = scaleButton(
-        entry.spec,
-        entry.style,
-        this.entries.scale,
-      )
+      const { spec, style } = this.scaled(entry)
       const geo = buildButton(
         spec,
         style,
         this.font.metrics,
         this.entries.layoutOf(entry),
         {
-          hover: entry.hover,
+          hover: this.hoverId === entry.spec.id,
           press: entry.press,
           enabled: entry.spec.enabled !== false,
         },

@@ -7,9 +7,9 @@ import {
   DEFAULT_BUTTON_STYLE,
   layoutButton,
   mixColor,
-  resolveButtonStyle,
   scaleButton,
 } from './button'
+import { resolveStyle } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight } from './text/layout'
 
@@ -25,7 +25,7 @@ const FONT: UIKitFontMetrics = {
   ]),
 }
 
-const STYLE = resolveButtonStyle(DEFAULT_BUTTON_STYLE, {
+const STYLE = resolveStyle(DEFAULT_BUTTON_STYLE, {
   textSizePx: 20,
   paddingX: 10,
   paddingY: 5,

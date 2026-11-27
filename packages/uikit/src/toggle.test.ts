@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { resolveStyle } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import {
   buildCheckMark,
@@ -6,7 +7,6 @@ import {
   buildToggle,
   DEFAULT_TOGGLE_STYLE,
   layoutToggle,
-  resolveToggleStyle,
   scaleToggle,
   type ToggleSpec,
   type ToggleVisual,
@@ -51,7 +51,7 @@ describe('layoutToggle', () => {
   })
 
   it('centres a small box on a taller label', () => {
-    const style = resolveToggleStyle(STYLE, { boxSize: 10, textSizePx: 20 })
+    const style = resolveStyle(STYLE, { boxSize: 10, textSizePx: 20 })
     const l = layoutToggle(SPEC, style, METRICS)
     expect(l.height).toBe(14)
     expect(l.box).toEqual({ x: 100, y: 52, size: 10 })

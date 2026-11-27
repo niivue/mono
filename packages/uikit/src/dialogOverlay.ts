@@ -24,11 +24,7 @@
 // control layer's `destroy` tears a form down in one call. `removeChild`
 // first to keep a child alive.
 
-import {
-  DEFAULT_BUTTON_STYLE,
-  layoutButton,
-  resolveButtonStyle,
-} from './button'
+import { DEFAULT_BUTTON_STYLE, layoutButton } from './button'
 import { UIKitButtonOverlay } from './buttonOverlay'
 import type {
   UIKitInteractive,
@@ -45,25 +41,18 @@ import {
   type DialogStyle,
   dialogContains,
   layoutDialog,
-  resolveDialogStyle,
   scaleDialog,
 } from './dialog'
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
+import type { UIKitEntryOverlayOptions } from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import { UIKitTextOverlay } from './textOverlay'
 
-export interface UIKitDialogOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every dialog; a spec's `style` overrides per key. */
-  style?: Partial<DialogStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
+export interface UIKitDialogOverlayOptions
+  extends UIKitEntryOverlayOptions<DialogStyle> {
   /** Clock for the button press animation. Default `performance.now`. */
   now?: () => number
 }
@@ -106,7 +95,7 @@ export class UIKitDialogOverlay
   constructor(font: UIKitFont, options: UIKitDialogOverlayOptions = {}) {
     this.font = font
     this.labels = new UIKitTextOverlay(font)
-    this.baseStyle = resolveDialogStyle(DEFAULT_DIALOG_STYLE, options.style)
+    this.baseStyle = resolveStyle(DEFAULT_DIALOG_STYLE, options.style)
     this.cssUnits = options.cssUnits ?? false
     this.now = options.now
     this.requestRedraw = options.requestRedraw ?? null
@@ -120,9 +109,9 @@ export class UIKitDialogOverlay
 
   /** Replace the default style for every dialog (per-spec overrides still win). */
   setDefaultStyle(style: Partial<DialogStyle>): void {
-    this.baseStyle = resolveDialogStyle(DEFAULT_DIALOG_STYLE, style)
+    this.baseStyle = resolveStyle(DEFAULT_DIALOG_STYLE, style)
     for (const entry of this.entries.values()) {
-      entry.style = resolveDialogStyle(this.baseStyle, entry.spec.style)
+      entry.style = resolveStyle(this.baseStyle, entry.spec.style)
       entry.layout = null
     }
     this.invalidate()
@@ -131,7 +120,7 @@ export class UIKitDialogOverlay
   /** Add a dialog, or replace the one with the same id (keeping its children). */
   addDialog(spec: DialogSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveDialogStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     if (existing) {
       existing.spec = spec
       existing.style = style
@@ -517,14 +506,8 @@ export class UIKitDialogOverlay
     if (entry.layout) return entry.layout
     const k = this.scale
     const { spec, style } = this.scaled(entry)
-    const buttonStyle = resolveButtonStyle(
-      DEFAULT_BUTTON_STYLE,
-      entry.style.button,
-    )
-    const defaultStyle = resolveButtonStyle(
-      buttonStyle,
-      entry.style.defaultButton,
-    )
+    const buttonStyle = resolveStyle(DEFAULT_BUTTON_STYLE, entry.style.button)
+    const defaultStyle = resolveStyle(buttonStyle, entry.style.defaultButton)
     const sizes: DialogButtonSize[] = (spec.buttons ?? []).map((b) => {
       const l = layoutButton(
         { id: b.id, label: b.label, x: 0, y: 0 },

@@ -9,7 +9,6 @@
 // no DOM here; UIKitTextAreaOverlay wires it to the pointer, the keyboard, the
 // wheel and the draw hook.
 
-import { mixColor } from './button'
 import type { UIKitKeyEvent } from './controls'
 import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
 import { revealRow, type ScrollWindow, scrollWindow } from './scroll'
@@ -27,7 +26,12 @@ import {
   snapToBoundary,
   type TextEditState,
 } from './textEdit'
-import type { FieldStyle } from './textField'
+import {
+  buildFieldBox,
+  dimField,
+  type FieldStyle,
+  scaleField,
+} from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
 /** Every visual knob on a text area. All lengths are in canvas pixels. */
@@ -154,13 +158,6 @@ export interface TextRow {
   hard: boolean
 }
 
-export function resolveTextAreaStyle(
-  base: TextAreaStyle,
-  override?: Partial<TextAreaStyle>,
-): TextAreaStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The control's boxes for a spec. */
 export function layoutTextArea(
   spec: TextAreaSpec,
@@ -199,25 +196,12 @@ export function scaleTextArea(
   style: TextAreaStyle,
   k: number,
 ): { spec: TextAreaSpec; style: TextAreaStyle } {
-  if (k === 1) return { spec, style }
+  const scaled = scaleField(spec, style, k)
+  if (k === 1) return scaled
   return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-    },
+    spec: scaled.spec,
     style: {
-      ...style,
-      borderWidth: style.borderWidth * k,
-      radius: style.radius * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      paddingX: style.paddingX * k,
-      paddingY: style.paddingY * k,
-      labelGap: style.labelGap * k,
-      fieldWidth: style.fieldWidth * k,
-      caretWidth: style.caretWidth * k,
+      ...scaled.style,
       scrollbarWidth: style.scrollbarWidth * k,
       scrollbarGap: style.scrollbarGap * k,
     },
@@ -582,24 +566,14 @@ export function buildTextArea(
   metrics: UIKitFontMetrics,
   visual: TextAreaVisual,
 ): { rects: RectData[]; text: UIKitTextItem[]; shown: ScrollWindow } {
-  const dim = (c: RGBA): RGBA =>
-    visual.enabled ? c : mixColor(c, [c[0], c[1], c[2], 0], 0.5)
+  const dim = (c: RGBA): RGBA => dimField(c, visual.enabled)
   const focused = visual.edit !== null
   const rects: RectData[] = []
   const text: UIKitTextItem[] = []
 
-  let fill = style.fill
-  if (!visual.enabled) fill = style.disabledFill
-  else if (visual.hover) fill = style.hoverFill
   const border = visual.enabled && focused ? style.focusBorder : style.border
   rects.push(
-    buildRect({
-      ...layout.field,
-      radius: style.radius,
-      borderWidth: style.borderWidth,
-      fill,
-      border: dim(border),
-    }),
+    buildFieldBox(layout.field, style, border, visual.hover, visual.enabled),
   )
 
   const area = layout.textArea

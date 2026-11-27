@@ -6,6 +6,7 @@
 import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData, rectContains } from './rect'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -145,13 +146,6 @@ export interface SliderVisual {
   enabled: boolean
 }
 
-export function resolveSliderStyle(
-  base: SliderStyle,
-  override?: Partial<SliderStyle>,
-): SliderStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The number of decimal places needed to print multiples of `step` exactly (0 for no step). */
 export function stepDecimals(step: number): number {
   if (!Number.isFinite(step) || step <= 0) return 0
@@ -286,6 +280,21 @@ export function layoutSlider(
 }
 
 /** Scale every length in a spec and style by `k` (CSS pixels to canvas pixels). */
+const SLIDER_SPEC_LENGTHS = ['x', 'y', 'width'] as const
+const SLIDER_STYLE_LENGTHS = [
+  'trackHeight',
+  'trackRadius',
+  'thumbSize',
+  'thumbBorderWidth',
+  'tickLength',
+  'tickWidth',
+  'markHeight',
+  'textSizePx',
+  'textOutlineWidth',
+  'labelGap',
+  'focusRingWidth',
+] as const
+
 export function scaleSlider(
   spec: SliderSpec,
   style: SliderStyle,
@@ -293,21 +302,8 @@ export function scaleSlider(
 ): { spec: SliderSpec; style: SliderStyle } {
   if (k === 1) return { spec, style }
   return {
-    spec: { ...spec, x: spec.x * k, y: spec.y * k, width: spec.width * k },
-    style: {
-      ...style,
-      trackHeight: style.trackHeight * k,
-      trackRadius: style.trackRadius * k,
-      thumbSize: style.thumbSize * k,
-      thumbBorderWidth: style.thumbBorderWidth * k,
-      tickLength: style.tickLength * k,
-      tickWidth: style.tickWidth * k,
-      markHeight: style.markHeight * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      labelGap: style.labelGap * k,
-      focusRingWidth: style.focusRingWidth * k,
-    },
+    spec: scaleKeys(spec, SLIDER_SPEC_LENGTHS, k),
+    style: scaleKeys(style, SLIDER_STYLE_LENGTHS, k),
   }
 }
 

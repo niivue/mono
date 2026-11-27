@@ -4,7 +4,6 @@ import {
   DEFAULT_SEGMENTED_STYLE,
   endSegmentValue,
   layoutSegmented,
-  resolveSegmentedStyle,
   type SegmentedSpec,
   type SegmentedVisual,
   scaleSegmented,
@@ -13,6 +12,7 @@ import {
   segmentIndex,
   stepSegmentValue,
 } from './segmented'
+import { resolveStyle } from './style'
 import type { UIKitFontMetrics } from './text/font'
 
 // Stub font: 'H' and 'i' advance half an em; cap height is 0.7 em.
@@ -78,8 +78,8 @@ describe('segmented model', () => {
       width: 40,
       height: 16,
     })
-    expect(resolveSegmentedStyle(STYLE, { inset: 0 }).inset).toBe(0)
-    expect(resolveSegmentedStyle(STYLE)).toBe(STYLE)
+    expect(resolveStyle(STYLE, { inset: 0 }).inset).toBe(0)
+    expect(resolveStyle(STYLE)).toBe(STYLE)
   })
 
   it('hit-tests the track and maps points to segments, inset included', () => {

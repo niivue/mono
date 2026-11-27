@@ -352,21 +352,6 @@ export function textWindow(
   return w
 }
 
-/**
- * Whether a replacement spec leaves a field's committed text alone: it sets
- * no `value`, or the same one once both are trimmed to its maxLength.
- */
-export function sameValue(
-  value: string,
-  spec: { value?: string; maxLength?: number },
-): boolean {
-  return (
-    spec.value === undefined ||
-    truncateText(spec.value, spec.maxLength) ===
-      truncateText(value, spec.maxLength)
-  )
-}
-
 /** A field's edit in progress and its session, bumped whenever an edit starts. */
 export interface EditSession {
   edit: TextEditState | null

@@ -12,6 +12,7 @@ import {
   clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
+  isAnnotationShown,
   isReleasedRow,
   jumpToNiivueMeasurement,
   NIIVUE_CLIP_PLANES,
@@ -28,7 +29,6 @@ import {
   resolveWindowLevel,
   roundNumber,
   subscribeOhifLabelSync,
-  visibleAnnotationScreenShapes,
 } from './commands'
 import * as dicomToNiivue from './dicomToNiivue'
 import {
@@ -39,6 +39,12 @@ import {
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
+
+// The shapes a pane still draws: those not hidden by their panel row.
+const visibleAnnotationScreenShapes = (
+  viewportId: string,
+  shapes: readonly { id: string }[],
+) => shapes.filter((s) => isAnnotationShown(viewportId, s.id))
 
 // A stub with the scene properties and volume APIs the commands touch.
 function stubNiivue() {

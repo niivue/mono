@@ -49,7 +49,7 @@ test('reports added, changed and removed ids; unchanged clones are not updates',
 
 test('a draw that merges reports the absorbed annotation as removed', () => {
   const before = [square('old', 0, 10), square('far', 50, 60)]
-  const after = storeAnnotation(before, square('new', 5, 15), true)
+  const after = storeAnnotation(before, square('new', 5, 15))
   expect(annotationDelta(before, after)).toEqual({
     added: ['new'],
     updated: [],
@@ -59,7 +59,7 @@ test('a draw that merges reports the absorbed annotation as removed', () => {
 
 test('a draw cuts only the other-label annotations it overlaps', () => {
   const before = [square('hit', 0, 10, 2), square('miss', 50, 60, 2)]
-  const after = storeAnnotation(before, square('new', 5, 15), true)
+  const after = storeAnnotation(before, square('new', 5, 15))
   expect(annotationDelta(before, after)).toEqual({
     added: ['new'],
     updated: ['hit'],
@@ -75,21 +75,25 @@ function listen(nv: NiiVue): AnnotationChangedDetail[] {
 
 test('controller edits emit their ids', () => {
   const nv = new NiiVue({ backend: 'webgl2' })
+  const seen = listen(nv)
   nv.addAnnotation(square('a'))
   nv.addAnnotation(square('b'))
-  const seen = listen(nv)
 
   nv._annotationUndoStack.push(nv.model.annotations)
   nv.setAnnotationText('a', 'note')
   nv.annotationUndo()
   nv.annotationRedo()
+  nv.removeAnnotation('b')
   nv.clearAnnotations()
 
   expect(seen).toEqual([
-    { action: 'move', added: [], updated: ['a'], removed: [] },
+    { action: 'add', added: ['a'], updated: [], removed: [] },
+    { action: 'add', added: ['b'], updated: [], removed: [] },
+    { action: 'text', added: [], updated: ['a'], removed: [] },
     { action: 'undo', added: [], updated: ['a'], removed: [] },
     { action: 'redo', added: [], updated: ['a'], removed: [] },
-    { action: 'clear', added: [], updated: [], removed: ['a', 'b'] },
+    { action: 'delete', added: [], updated: [], removed: ['b'] },
+    { action: 'clear', added: [], updated: [], removed: ['a'] },
   ])
 })
 

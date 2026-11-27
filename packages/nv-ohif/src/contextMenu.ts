@@ -12,7 +12,6 @@ import { ANNOTATION_TO_OHIF } from './toolBridge'
 
 export function useAnnotationContextMenu(
   nv: NiiVue | null,
-  viewportId: string,
   commandsManager: OhifCommandsManager | undefined,
 ): void {
   useEffect(() => {
@@ -41,7 +40,7 @@ export function useAnnotationContextMenu(
         return
       }
       // Measurements only: a contour segment under the pointer is not a row.
-      const a = annotationAt(nv, viewportId, e, (x) => !isContourAnnotation(x))
+      const a = annotationAt(nv, e, (x) => !isContourAnnotation(x))
       const uid = a && reflectedRowUid(a.id)
       if (!a || !uid) return
       e.preventDefault()
@@ -56,5 +55,5 @@ export function useAnnotationContextMenu(
     }
     canvas.addEventListener('contextmenu', onContextMenu)
     return () => canvas.removeEventListener('contextmenu', onContextMenu)
-  }, [nv, viewportId, commandsManager])
+  }, [nv, commandsManager])
 }

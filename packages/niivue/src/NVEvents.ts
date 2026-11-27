@@ -10,7 +10,6 @@ import type {
   NVImage,
   NVMesh,
   NVSignal,
-  VectorAnnotation,
   VolumeUpdate,
 } from '@/NVTypes'
 import type { FrameReport } from '@/view/NVPerfMarks'
@@ -107,18 +106,25 @@ export type ViewAttachedDetail = {
   backend: BackendType
 }
 export type CanvasResizeDetail = { width: number; height: number }
-export type AnnotationAddedDetail = { annotation: VectorAnnotation }
-export type AnnotationRemovedDetail = { id: string }
 export type AnnotationChangedDetail = {
+  /**
+   * What changed the annotations: `draw` a shape the user just finished, `add`
+   * addAnnotation, `replace` replaceAnnotations, `resize` a handle drag, `erase`
+   * an eraser stroke, `text` setAnnotationText, `delete` removeAnnotation(s),
+   * `clear`, `undo`, `redo`, `load` loadAnnotationsJSON or a document.
+   */
   action:
     | 'draw'
-    | 'erase'
-    | 'move'
+    | 'add'
+    | 'replace'
     | 'resize'
+    | 'erase'
+    | 'text'
+    | 'delete'
+    | 'clear'
     | 'undo'
     | 'redo'
-    | 'clear'
-    | 'delete'
+    | 'load'
   /** Ids of annotations this change added, so a listener need not diff. */
   added: string[]
   /** Ids of annotations whose geometry, stats or text changed. */
@@ -232,8 +238,6 @@ export interface NVEventMap {
   clickToSegment: ClickToSegmentDetail
 
   // Annotations
-  annotationAdded: AnnotationAddedDetail
-  annotationRemoved: AnnotationRemovedDetail
   annotationChanged: AnnotationChangedDetail
   /** An annotation undo step was recorded; `seq` names it (annotationUndoTop). */
   annotationHistoryPush: { seq: number }

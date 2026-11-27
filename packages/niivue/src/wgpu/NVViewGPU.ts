@@ -1952,6 +1952,7 @@ export default class NVView {
         buildLine,
         this.fontRenderer.buildText.bind(this.fontRenderer),
         this._dpr,
+        this.fontRenderer.fontPx * 0.5,
       )
       if (annotationResult) {
         this.polygonRenderer.draw(device, pass, annotationResult)

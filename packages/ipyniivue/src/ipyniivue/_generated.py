@@ -32,10 +32,8 @@ def _make_args(*values: Any) -> list[Any]:
 # them raises instead of silently never firing.
 NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "angleCompleted",
-    "annotationAdded",
     "annotationChanged",
     "annotationHistoryPush",
-    "annotationRemoved",
     "azimuthElevationChange",
     "change",
     "chunkStreamIdle",
@@ -128,7 +126,6 @@ affect whether annotations *render* — they always do."""
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_merged_groups = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.mergedGroups}."""
-    annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint", "measureAngle", "measureCobbAngle"], None, allow_none=True).tag(sync=True)
     azimuth = traitlets.Float(None, allow_none=True).tag(sync=True)
     background_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
@@ -180,7 +177,6 @@ a 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm)."""
     hero_slice_type = traitlets.Float(None, allow_none=True).tag(sync=True)
     is_3d_crosshair_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_annotation_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    is_annotation_fill_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_clip_plane_cutaway = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_colorbar_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_cross_lines_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -317,8 +313,15 @@ and its volumes alive."""
     volume_write_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
 
     # Command methods
-    def add_annotation(self, annotation: Any) -> None:
-        self.send({"cmd": "addAnnotation", "args": _make_args(annotation)})
+    def add_annotation(self, annotation: Any, is_undoable: Any = _UNSET) -> None:
+        """Add an annotation; `isUndoable` records an annotationUndo step first.
+
+        Parameters
+        ----------
+        annotation : VectorAnnotation
+        is_undoable : boolean
+        """
+        self.send({"cmd": "addAnnotation", "args": _make_args(annotation, is_undoable)})
 
     async def add_colormap(self, name: Any, cmap: Any) -> Any:
         """Register a colormap by name so it becomes available to `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh layers, and so on.
@@ -801,6 +804,15 @@ and its volumes alive."""
 
     def destroy(self) -> None:
         self.send({"cmd": "destroy", "args": []})
+
+    def discard_annotation_step(self, seq: Any) -> None:
+        """Withdraw undo step `seq` while it is still the top one (a host dropping a step it just caused), restoring the redo steps that push cleared.
+
+        Parameters
+        ----------
+        seq : number
+        """
+        self.send({"cmd": "discardAnnotationStep", "args": _make_args(seq)})
 
     def draw_add_undo_bitmap(self) -> None:
         """Push the current drawing bitmap onto the undo stack, so the next `drawUndo()` restores it.
@@ -1415,6 +1427,24 @@ and its volumes alive."""
         """
         self.send({"cmd": "moveVolumeUp", "args": _make_args(volume_index)})
 
+    async def pick_annotation(self, x: Any, y: Any, opts: Any = _UNSET) -> Any:
+        """The annotation drawn under canvas point `x, y` (device px, as clientToCanvas returns): inside its outline, or within `tolerancePx` CSS px of an edge.
+
+        The nearest wins; ties go to the earlier annotation. Shapes the
+        host hides and a shape being drawn are never picked.
+
+        Parameters
+        ----------
+        x : number
+        y : number
+        opts : { tolerancePx?: number | undefined; accept?: ((annotation: VectorAnnotation) => boolean) | undefined; }
+
+        Returns
+        -------
+        { annotation: VectorAnnotation; distance: number; } | null
+        """
+        return await self._request("pickAnnotation", _make_args(x, y, opts))
+
     async def pick_at(self, x: Any, y: Any, options: Any = _UNSET) -> Any:
         """Depth-pick the canvas pixel `[x, y]` (device pixels, as a double-click does): the world point of the first drawn volume voxel or mesh under it.
 
@@ -1622,7 +1652,7 @@ and its volumes alive."""
         self.send({"cmd": "removeVolume", "args": _make_args(volume_index)})
 
     def replace_annotations(self, ids: Any, added: Any, is_undoable: Any = _UNSET) -> None:
-        """Replace annotations `ids` with `added` as one change (one annotationUndo step when `isUndoable`), as a host's edit of several shapes at once (a segment operation); emits annotationChanged with action 'draw'.
+        """Replace annotations `ids` with `added` as one change (one annotationUndo step when `isUndoable`), as a host's edit of several shapes at once (a segment operation); emits annotationChanged with action 'replace'.
 
         Parameters
         ----------

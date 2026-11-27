@@ -3,6 +3,7 @@ import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import { annotationDelta } from '@/annotation/delta'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
+import { polygonDistance } from '@/annotation/pointInRing'
 import { getAnnotationSelection } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -120,6 +121,7 @@ import type {
   AnimationOptions,
   AnimationResult,
   AnimationTarget,
+  AnnotationCalibration,
   AnnotationPoint,
   AnnotationScreenShape,
   AnnotationStyle,
@@ -1669,19 +1671,6 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  /**
-   * With isAnnotationDrawn false, still draw the shapes' fills, under an
-   * external overlay that draws only strokes and labels.
-   */
-  get isAnnotationFillDrawn(): boolean {
-    return this.model.ui.isAnnotationFillDrawn
-  }
-  set isAnnotationFillDrawn(v: boolean) {
-    this.model.ui.isAnnotationFillDrawn = v
-    this.emit('change', { property: 'isAnnotationFillDrawn', value: v })
-    this.drawScene()
-  }
-
   get isThumbnailVisible(): boolean {
     return this.model.ui.isThumbnailVisible
   }
@@ -1851,13 +1840,70 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Vector annotations projected to the current frame's canvas pixels, so an
-   * external overlay (a @niivue/uikit shape renderer through the overlay hook)
-   * can draw the shapes + stats labels itself. Recomputed every frame. Pair with
-   * `isAnnotationDrawn = false` to replace the built-in annotation rendering.
+   * Vector annotations projected to the last frame's canvas pixels (one per tile
+   * showing each), as NiiVue draws them. An overlay can draw them itself with
+   * `isAnnotationDrawn = false`.
    */
   get annotationScreenShapes(): readonly AnnotationScreenShape[] {
     return this.model._persistedAnnotationScreenShapes
+  }
+
+  /**
+   * The annotation drawn under canvas point `x, y` (device px, as
+   * clientToCanvas returns): inside its outline, or within `tolerancePx` CSS px
+   * of an edge. The nearest wins; ties go to the earlier annotation. Shapes the
+   * host hides and a shape being drawn are never picked.
+   */
+  pickAnnotation(
+    x: number,
+    y: number,
+    opts: {
+      tolerancePx?: number
+      accept?: (annotation: VectorAnnotation) => boolean
+    } = {},
+  ): { annotation: VectorAnnotation; distance: number } | null {
+    const limit = (opts.tolerancePx ?? 8) * this.effectiveDevicePixelRatio
+    const byId = new Map(this.model.annotations.map((a) => [a.id, a]))
+    let best: { annotation: VectorAnnotation; distance: number } | null = null
+    for (const shape of this.model._persistedAnnotationScreenShapes) {
+      const annotation = byId.get(shape.id)
+      if (!annotation || (opts.accept && !opts.accept(annotation))) continue
+      const distance = Math.min(
+        ...shape.polygons.map((p) => polygonDistance(x, y, p)),
+      )
+      if (distance <= limit && (!best || distance < best.distance))
+        best = { annotation, distance }
+    }
+    return best
+  }
+
+  /**
+   * True for an annotation the host hides: not drawn (2D or 3D), picked or
+   * grabbed, but still stored, exported and saved. A function, so not a saved
+   * setting.
+   */
+  get annotationIsHidden(): ((annotation: VectorAnnotation) => boolean) | null {
+    return this.model.annotationIsHidden
+  }
+  set annotationIsHidden(v:
+    | ((annotation: VectorAnnotation) => boolean)
+    | null) {
+    this.model.annotationIsHidden = v
+    this.drawScene()
+  }
+
+  /**
+   * Calibrate annotation labels (a host's user calibration): lengths times
+   * `scale` in `lengthUnit`, areas times scale² in `areaUnit`. Presentation
+   * only: annotation geometry and stats stay native. null: native units.
+   */
+  get annotationCalibration(): AnnotationCalibration | null {
+    return this.model.annotationCalibration
+  }
+  set annotationCalibration(v: AnnotationCalibration | null) {
+    this.model.annotationCalibration = v
+    this.emit('change', { property: 'annotationCalibration', value: v })
+    this.drawScene()
   }
 
   get rulerWidth(): number {
@@ -2905,15 +2951,6 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'annotationIsLivewireScissors', value: v })
   }
 
-  get annotationMergesOverlaps(): boolean {
-    return this.model.annotation.mergesOverlaps
-  }
-
-  set annotationMergesOverlaps(v: boolean) {
-    this.model.annotation.mergesOverlaps = v
-    this.emit('change', { property: 'annotationMergesOverlaps', value: v })
-  }
-
   get annotationIsErasing(): boolean {
     return this.model.annotation.isErasing
   }
@@ -3071,9 +3108,16 @@ export default class NiiVue extends EventTarget {
     return this.model.annotations
   }
 
-  addAnnotation(annotation: VectorAnnotation): void {
+  /** Add an annotation; `isUndoable` records an annotationUndo step first. */
+  addAnnotation(annotation: VectorAnnotation, isUndoable = false): void {
+    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
     this.model.annotations.push(annotation)
-    this.emit('annotationAdded', { annotation })
+    this.emit('annotationChanged', {
+      action: 'add',
+      added: [annotation.id],
+      updated: [],
+      removed: [],
+    })
     this.drawScene()
   }
 
@@ -3086,7 +3130,7 @@ export default class NiiVue extends EventTarget {
     if (!ann) return
     ann.text = text.length > 0 ? text : undefined
     this.emit('annotationChanged', {
-      action: 'move',
+      action: 'text',
       added: [],
       updated: [id],
       removed: [],
@@ -3101,7 +3145,12 @@ export default class NiiVue extends EventTarget {
       if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
       this.model.annotations.splice(idx, 1)
       if (this.selectedAnnotation === id) this.model._annotationSelection = null
-      this.emit('annotationRemoved', { id })
+      this.emit('annotationChanged', {
+        action: 'delete',
+        added: [],
+        updated: [],
+        removed: [id],
+      })
       this.drawScene()
     }
   }
@@ -3134,7 +3183,7 @@ export default class NiiVue extends EventTarget {
   /**
    * Replace annotations `ids` with `added` as one change (one annotationUndo
    * step when `isUndoable`), as a host's edit of several shapes at once (a
-   * segment operation); emits annotationChanged with action 'draw'.
+   * segment operation); emits annotationChanged with action 'replace'.
    */
   replaceAnnotations(
     ids: readonly string[],
@@ -3154,7 +3203,7 @@ export default class NiiVue extends EventTarget {
     if (drop.has(this.selectedAnnotation ?? ''))
       this.model._annotationSelection = null
     this.emit('annotationChanged', {
-      action: 'draw',
+      action: 'replace',
       added: added.map((a) => a.id),
       updated: [],
       removed,
@@ -3269,11 +3318,18 @@ export default class NiiVue extends EventTarget {
   }
 
   loadAnnotationsJSON(json: string): void {
+    const removed = this.model.annotations.map((a) => a.id)
     this.model.annotations = JSON.parse(json) as VectorAnnotation[]
     // A half-drawn shape and the selection belong to the replaced set (#470).
     this._abandonForNewScene()
     this.model._annotationSelection = null
     this._annotationUndoStack.clear()
+    this.emit('annotationChanged', {
+      action: 'load',
+      added: this.model.annotations.map((a) => a.id),
+      updated: [],
+      removed,
+    })
     this.drawScene()
   }
 
@@ -8854,6 +8910,7 @@ export default class NiiVue extends EventTarget {
     // applyDocumentToModel also replaces the signal list on the model; announce
     // the removals it implies the way removeAllSignals would.
     const signalsBefore = [...this.model.signals]
+    const annotationsBefore = this.model.annotations.map((a) => a.id)
     NVDocument.applyDocumentToModel(
       this.model,
       doc,
@@ -8862,6 +8919,12 @@ export default class NiiVue extends EventTarget {
     for (let i = 0; i < signalsBefore.length; i++) {
       this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
     }
+    this.emit('annotationChanged', {
+      action: 'load',
+      added: this.model.annotations.map((a) => a.id),
+      updated: [],
+      removed: annotationsBefore,
+    })
     // A document saves a known matcap by name; apply its URL.
     if (doc.volume?.matcap !== undefined) {
       this.model.volume.matcap = matcapFromName(

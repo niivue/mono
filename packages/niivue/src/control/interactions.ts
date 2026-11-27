@@ -197,6 +197,7 @@ function isOnTile(
 // annotationIsGrabbable: a shape the host hides takes no press (grab, handle
 // or select).
 function isGrabbable(ctrl: NiiVue, ann: VectorAnnotation): boolean {
+  if (ctrl.annotationIsHidden?.(ann)) return false
   return ctrl.annotationIsGrabbable?.(ann) ?? true
 }
 
@@ -657,7 +658,7 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   )
   const bounds = pointsBounds(pts)
   newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
-  commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+  commitAnnotation(ctrl, newAnn)
   return true
 }
 
@@ -754,13 +755,9 @@ function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
 }
 
 // Store a finished annotation and announce it.
-function commitAnnotation(
-  ctrl: NiiVue,
-  ann: VectorAnnotation,
-  mergesOverlaps: boolean,
-): void {
+function commitAnnotation(ctrl: NiiVue, ann: VectorAnnotation): void {
   const before = ctrl.model.annotations
-  const after = Annotation.storeAnnotation(before, ann, mergesOverlaps, {
+  const after = Annotation.storeAnnotation(before, ann, {
     mergedGroups: ctrl.model.annotation.mergedGroups,
     isEditable: (a) => isGrabbable(ctrl, a),
     isCut: ctrl.annotationIsCut ?? undefined,
@@ -793,7 +790,6 @@ function commitAnnotation(
       if (stored.id === ann.id) ann.stats = stored.stats
     }
   }
-  ctrl.emit('annotationAdded', { annotation: ann })
   ctrl.emit('annotationChanged', {
     action: 'draw',
     ...annotationDelta(before, ctrl.model.annotations),
@@ -804,7 +800,7 @@ function commitAnnotation(
 function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
   const ann = bidirectionalAnnotation(ctrl, long, short)
   if (!ann) return
-  commitAnnotation(ctrl, ann, ctrl.model.annotation.mergesOverlaps)
+  commitAnnotation(ctrl, ann)
 }
 
 function clientToCanvasPixel(
@@ -1831,7 +1827,7 @@ function finish3DAnnotationStroke(ctrl: NiiVue): void {
     cfg.style,
     anchorMM,
   )
-  commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+  commitAnnotation(ctrl, newAnn)
   ctrl.drawScene()
 }
 
@@ -2238,7 +2234,7 @@ export function initInteraction(ctrl: NiiVue): void {
           }
           if (poly.length === ANGLE_CLICKS[tool]) {
             const ann = angleAnnotation(ctrl, poly)
-            if (ann) commitAnnotation(ctrl, ann, cfg.mergesOverlaps)
+            if (ann) commitAnnotation(ctrl, ann)
             ctrl._abandonAnnotationInProgress()
             ctrl.drawScene()
             return
@@ -2553,7 +2549,7 @@ export function initInteraction(ctrl: NiiVue): void {
                   shapeData.width = cfg.style.strokeWidth
                 }
                 newAnn.shape = shapeData
-                commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+                commitAnnotation(ctrl, newAnn)
               }
             }
           }
@@ -2629,7 +2625,7 @@ export function initInteraction(ctrl: NiiVue): void {
                 cfg.style,
                 ctrl._annotationAnchorMM,
               )
-              commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+              commitAnnotation(ctrl, newAnn)
             }
           }
           ctrl.drawScene()

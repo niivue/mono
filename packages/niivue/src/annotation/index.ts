@@ -280,15 +280,14 @@ function mergeAnnotations(
 
 /**
  * Store a completed vector annotation using the configured overlap policy.
- * Measurement hosts disable merging so every measurement retains its own id,
- * geometry, and statistics even when contours overlap.
+ * Measurement hosts list only their segment groups in `mergedGroups` (or none)
+ * so every measurement keeps its own id, geometry and statistics.
  */
 export function storeAnnotation(
   existing: VectorAnnotation[],
   newAnnotation: VectorAnnotation,
-  mergesOverlaps: boolean,
   policy: {
-    /** Groups whose shapes merge (null: every group). */
+    /** Groups whose shapes merge (null: every group; []: none). */
     mergedGroups?: readonly string[] | null
     /** False for a shape no merge or cut may change (a locked segment). */
     isEditable?: (a: VectorAnnotation) => boolean
@@ -309,7 +308,6 @@ export function storeAnnotation(
   const isMark = (a: VectorAnnotation) =>
     UNMERGED_SHAPES.has(a.shape?.type ?? '')
   if (
-    !mergesOverlaps ||
     isMark(newAnnotation) ||
     (mergedGroups && !mergedGroups.includes(newAnnotation.group))
   )

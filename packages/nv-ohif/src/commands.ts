@@ -2,7 +2,6 @@ import type NiiVue from '@niivue/niivue'
 import {
   type AnnotationChangedDetail,
   type AnnotationPoint,
-  type AnnotationScreenShape,
   type AnnotationStats,
   generateShape,
   isAnnotationErased,
@@ -1372,20 +1371,6 @@ function clearHiddenAnnotation(viewportId: string, annotationId: string): void {
 /** False for an annotation hidden by its measurement's panel eye toggle. */
 export function isAnnotationShown(viewportId: string, annotationId: string) {
   return !hiddenAnnotations.get(viewportId)?.has(annotationId)
-}
-
-/**
- * The overlay shape provider: `nv.annotationScreenShapes` minus any annotation
- * hidden via its OHIF measurement's visibility toggle. Core still projects every
- * annotation each frame; we drop the hidden ones just before the overlay draws.
- */
-export function visibleAnnotationScreenShapes(
-  viewportId: string,
-  shapes: readonly AnnotationScreenShape[],
-): readonly AnnotationScreenShape[] {
-  const hidden = hiddenAnnotations.get(viewportId)
-  if (!hidden || hidden.size === 0) return shapes
-  return shapes.filter((shape) => !hidden.has(shape.id))
 }
 
 /**

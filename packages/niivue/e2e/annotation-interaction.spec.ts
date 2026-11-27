@@ -393,7 +393,7 @@ test('annotationIsClickToPlace: a parked start beats a selected control point', 
   const r = await page.evaluate(`(async () => {
     ${setup}
     nv.annotationIsClickToPlace = true
-    nv.annotationMergesOverlaps = false
+    nv.annotationMergedGroups = []
     drag([[120, 120]])
     drag([[200, 200]])
     const id = nv.annotations[0].id
@@ -416,7 +416,7 @@ test('annotationIsClickToPlace: Escape drops a parked start; a parked start beat
   const r = await page.evaluate(`(async () => {
     ${setup}
     nv.annotationIsClickToPlace = true
-    nv.annotationMergesOverlaps = false
+    nv.annotationMergedGroups = []
     // 2 px of press/release jitter still parks (screen-space click).
     drag([[120, 120], [122, 121]])
     const jitterParked = !!nv._annotationClickStart
@@ -450,7 +450,7 @@ test('annotationIsDrawnFromCenter: ellipse and circle grow from the press point'
 
   const r = await page.evaluate(`(async () => {
     ${setup}
-    nv.annotationMergesOverlaps = false
+    nv.annotationMergedGroups = []
     nv.annotationTool = 'ellipse'
     drag([[200, 200], [230, 220], [240, 220]])
     const corner = nv.annotations[0].shape

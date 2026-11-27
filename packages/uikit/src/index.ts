@@ -12,8 +12,6 @@
 // exercised by their own tests, not an API.
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
-export type { AnnotationGeometryOptions } from './annotationOverlay'
-export { buildAnnotationGeometry } from './annotationOverlay'
 export type {
   ButtonLayout,
   ButtonSpec,

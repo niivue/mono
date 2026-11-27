@@ -412,23 +412,15 @@ export const SETTINGS: readonly Setting[] = [
     "Whether the live wire uses cornerstone's LivewireScissors edge cost.",
   ),
   bool(
-    'annotationMergesOverlaps',
-    'Whether a new annotation is merged with one it overlaps.',
-  ),
-  bool(
     'annotationIsClickToPlace',
     'Whether a click, a move and a second click place a two-point shape.',
   ),
   setting(
     'annotationMergedGroups',
     'strings-or-null',
-    'With merging on, the groups whose annotations merge and cut (null: every group).',
+    'The groups whose overlapping annotations merge and cut (null: every group; empty: none).',
   ),
   bool('isAnnotationDrawn', 'Whether annotations are drawn at all.'),
-  bool(
-    'isAnnotationFillDrawn',
-    'With annotations not drawn, whether their fills still are (under a host overlay).',
-  ),
 
   // Slide (whole-slide) tools
   setting('slideTool', 'choice', 'The slide drawing tool in hand.', {

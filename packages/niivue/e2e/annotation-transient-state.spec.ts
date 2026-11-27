@@ -292,8 +292,11 @@ for (const [volume, oblique] of [
       await drawn()
       // Overlapping shapes merge, so count additions rather than annotations.
       const added = []
-      nv.addEventListener('annotationAdded', (e) =>
-        added.push(e.detail.annotation.shape?.type ?? 'freehand'))
+      nv.addEventListener('annotationChanged', (e) => {
+        if (e.detail.action !== 'draw') return
+        for (const id of e.detail.added)
+          added.push(nv.annotations.find((a) => a.id === id)?.shape?.type ?? 'freehand')
+      })
       const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
       drag([ax - 20, ay], [ax + 20, ay])
       drag([ax, ay - 10], [ax, ay + 10])

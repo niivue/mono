@@ -119,8 +119,7 @@ export function MeasurementData({
     if (!nv) return
     const update = () => setRows(snapshot(nv, unit, viewportId))
     update()
-    const events = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
-    for (const e of events) nv.addEventListener(e, update)
+    nv.addEventListener('annotationChanged', update)
     calibrationEvents.addEventListener('change', update)
     // Anchors are canvas px: a resized pane (a panel opening) moves them.
     // NiiVue relays out on its next render, so read them two frames later.
@@ -131,7 +130,7 @@ export function MeasurementData({
       : undefined
     if (nv.canvas) ro?.observe(nv.canvas)
     return () => {
-      for (const e of events) nv.removeEventListener(e, update)
+      nv.removeEventListener('annotationChanged', update)
       calibrationEvents.removeEventListener('change', update)
       ro?.disconnect()
     }

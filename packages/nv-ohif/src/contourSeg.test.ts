@@ -561,7 +561,11 @@ test("an edit restyles shapes carrying another segment's style", () => {
   ) as string
   modified(id)
   // Counted once, so the edit below leaves the voxel counts as they were.
-  nv.dispatchEvent(new CustomEvent('annotationAdded'))
+  nv.dispatchEvent(
+    new CustomEvent('annotationChanged', {
+      detail: { action: 'draw', added: [], updated: [], removed: [] },
+    }),
+  )
   owner.push({
     id: 'copied',
     group: contourGroup(id),
@@ -571,7 +575,11 @@ test("an edit restyles shapes carrying another segment's style", () => {
     polygons: [],
     style: { fillColor: [1, 0, 0, 0] },
   } as unknown as VectorAnnotation)
-  nv.dispatchEvent(new CustomEvent('annotationAdded'))
+  nv.dispatchEvent(
+    new CustomEvent('annotationChanged', {
+      detail: { action: 'draw', added: ['copied'], updated: [], removed: [] },
+    }),
+  )
   expect(owner[0]?.style?.fillColor[3]).toBe(0.5)
   unregisterNiivue('restyle')
 })

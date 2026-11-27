@@ -2,12 +2,7 @@
 // Core keeps native mm stats (undo, mirrors and re-import stay consistent);
 // the scale applies only where nv-ohif shows or exports a measurement.
 // Cornerstone calibrates one image's spacing; this calibrates the whole volume.
-import type {
-  AnnotationScreenShape,
-  AnnotationStats,
-  NiiVue,
-} from '@niivue/niivue'
-import { isContourAnnotation } from './contourSeg'
+import type { AnnotationStats } from '@niivue/niivue'
 import { getNiivueEntry, niivueEntries } from './niivueRegistry'
 
 const scales = new Map<string, number>()
@@ -154,47 +149,8 @@ export function calibrateStats<T extends AnnotationStats | undefined>(
   } as T
 }
 
-/**
- * The overlay's shapes with calibrated ruler lengths and stats labels. Label
- * lines follow core's format (NVAnnotation formatAnnotationStats): free text
- * first, then L:/W: or Area: lines carrying lengths.
- */
-export function calibrateShapes(
-  nv: NiiVue,
-  scale: number,
-  shapes: readonly AnnotationScreenShape[],
-): readonly AnnotationScreenShape[] {
-  if (scale === 1) return shapes
-  const preview = nv.model._annotationPreview
-  const byId = new Map(
-    [...nv.annotations, ...(preview ? [preview] : [])].map((a) => [a.id, a]),
-  )
-  const len = lengthUnit(scale)
-  return shapes.map((shape) => {
-    const a = byId.get(shape.id)
-    if (a && isContourAnnotation(a)) return shape
-    const st = a?.stats && calibrateStats(a.stats, scale)
-    const label = st &&
-      shape.label && {
-        ...shape.label,
-        lines: shape.label.lines.map((line, i) =>
-          i < (a.text ? 1 : 0)
-            ? line
-            : line.startsWith('L: ') && st.length !== undefined
-              ? `L: ${st.length.toFixed(1)} ${len}`
-              : line.startsWith('W: ') && st.shortLength !== undefined
-                ? `W: ${st.shortLength.toFixed(1)} ${len}`
-                : line.startsWith('Area: ')
-                  ? `Area: ${st.area.toFixed(1)} ${areaUnit(scale)}`
-                  : line,
-        ),
-      }
-    return {
-      ...shape,
-      ...(label ? { label } : {}),
-      ...(shape.length !== undefined
-        ? { length: shape.length * scale, unit: len }
-        : {}),
-    }
-  })
-}
+/** Core's label calibration for a pane scale (null: native mm). */
+export const labelCalibration = (scale: number) =>
+  scale === 1
+    ? null
+    : { scale, lengthUnit: lengthUnit(scale), areaUnit: areaUnit(scale) }

@@ -33,7 +33,7 @@ describe('storeAnnotation', () => {
     const first = square('first', 0, 10)
     const second = square('second', 5, 15)
 
-    const stored = storeAnnotation([first], second, false)
+    const stored = storeAnnotation([first], second, { mergedGroups: [] })
 
     expect(stored).toHaveLength(2)
     expect(stored[0]).toBe(first)
@@ -44,7 +44,6 @@ describe('storeAnnotation', () => {
     const stored = storeAnnotation(
       [square('first', 0, 10)],
       square('second', 5, 15),
-      true,
     )
 
     expect(stored).toHaveLength(1)
@@ -61,8 +60,8 @@ describe('storeAnnotation', () => {
       },
     } as VectorAnnotation
     const roi = square('roi', 0, 10)
-    expect(storeAnnotation([roi], probe, true)).toEqual([roi, probe])
-    const stored = storeAnnotation([probe], square('roi2', 0, 10), true)
+    expect(storeAnnotation([roi], probe)).toEqual([roi, probe])
+    const stored = storeAnnotation([probe], square('roi2', 0, 10))
     expect(stored.map((a) => a.id)).toEqual(['roi2', 'probe'])
     expect(stored[1]).toBe(probe)
   })
@@ -78,8 +77,8 @@ describe('storeAnnotation', () => {
       shape: { type, start: { x: 5, y: 5 }, end: { x: 20, y: 20 } },
     } as VectorAnnotation
     const roi = square('roi', 0, 10)
-    expect(storeAnnotation([roi], mark, true)).toEqual([roi, mark])
-    expect(storeAnnotation([mark], roi, true)).toEqual([roi, mark])
+    expect(storeAnnotation([roi], mark)).toEqual([roi, mark])
+    expect(storeAnnotation([mark], roi)).toEqual([roi, mark])
   })
 })
 
@@ -108,7 +107,6 @@ describe('storeAnnotation group policy', () => {
     const stored = storeAnnotation(
       [measurement],
       inGroup(square('s', 5, 15), 'seg'),
-      true,
     )
     expect(stored[0]).toBe(measurement)
     expect(stored).toHaveLength(2)
@@ -119,7 +117,6 @@ describe('storeAnnotation group policy', () => {
     const stored = storeAnnotation(
       [a],
       inGroup(square('b', 5, 15), 'measurements'),
-      true,
       {
         mergedGroups: ['seg'],
       },
@@ -128,7 +125,6 @@ describe('storeAnnotation group policy', () => {
     const seg = storeAnnotation(
       [inGroup(a, 'seg')],
       inGroup(square('b', 5, 15), 'seg'),
-      true,
       {
         mergedGroups: ['seg'],
       },
@@ -142,7 +138,6 @@ describe('storeAnnotation group policy', () => {
     const stored = storeAnnotation(
       [locked],
       inGroup(square('new', 5, 15), 'seg', 1),
-      true,
       {
         isEditable: (a) => a.id !== 'locked',
       },
@@ -157,7 +152,6 @@ describe('storeAnnotation group policy', () => {
       const stored = storeAnnotation(
         [other],
         inGroup(square('new', 5, 15), 'seg', 1),
-        true,
         { isEditable, isCut: () => false },
       )
       expect(stored[0]).toBe(other)

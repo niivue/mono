@@ -840,11 +840,6 @@ export type UIConfig = {
    * cursor and selection handles are unaffected. Default true.
    */
   isAnnotationDrawn: boolean
-  /**
-   * With isAnnotationDrawn false, still draw the shapes' fills, under the
-   * external overlay (for one that draws only strokes and labels). Default false.
-   */
-  isAnnotationFillDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
@@ -1548,12 +1543,6 @@ export type NiiVueOptions = {
   annotationActiveLabel?: number
   annotationActiveGroup?: string
   annotationBrushRadius?: number
-  /**
-   * Union same-label vector annotations and cut different-label annotations when
-   * they overlap. Disable for measurement integrations where every annotation
-   * must retain an independent identity.
-   */
-  annotationMergesOverlaps?: boolean
   /** See AnnotationConfig.isClickToPlace. Default false. */
   annotationIsClickToPlace?: boolean
   /** See AnnotationConfig.isDrawnFromCenter. Default false. */
@@ -2177,6 +2166,16 @@ export type VectorAnnotation = {
 }
 
 /**
+ * A host's calibration of annotation labels (NVControlBase.annotationCalibration):
+ * label lengths times `scale` in `lengthUnit`, areas times scale² in `areaUnit`.
+ */
+export type AnnotationCalibration = {
+  scale: number
+  lengthUnit: string
+  areaUnit: string
+}
+
+/**
  * A vector annotation projected to the current frame's canvas pixels, exposed so
  * an external overlay (a @niivue/uikit shape renderer drawn through the overlay
  * hook) can draw the shape + its stats label in screen space with its own
@@ -2231,7 +2230,6 @@ export type AnnotationConfig = {
   activeLabel: number
   activeGroup: string
   brushRadius: number
-  mergesOverlaps: boolean
   /**
    * Two-point shapes (line, measure, arrow, rect, ellipse, circle, bidirectional
    * axes) may also be placed click-move-click, as cornerstone's tools are: a
@@ -2257,9 +2255,11 @@ export type AnnotationConfig = {
    */
   isHandleGrab: boolean
   /**
-   * With mergesOverlaps, the groups whose shapes merge and cut (null: every
-   * group). Merging and cutting stay within the new shape's group either way,
-   * so a host can merge its segment groups and leave its measurements alone.
+   * The groups whose overlapping shapes merge (same label) and cut (other
+   * labels): null, every group; [], none, so every annotation keeps its own
+   * identity (a measurement host). Merging and cutting stay within the new
+   * shape's group either way, so a host can merge its segment groups and leave
+   * its measurements alone.
    */
   mergedGroups: string[] | null
   /**

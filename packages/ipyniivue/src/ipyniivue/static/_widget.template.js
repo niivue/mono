@@ -34,7 +34,6 @@ const PROPS_RW = [
   ["annotationIsLivewireScissors", "annotation_is_livewire_scissors"],
   ["annotationIsVisibleIn3D", "annotation_is_visible_in_3d"],
   ["annotationMergedGroups", "annotation_merged_groups"],
-  ["annotationMergesOverlaps", "annotation_merges_overlaps"],
   ["annotationTool", "annotation_tool"],
   ["azimuth", "azimuth"],
   ["backgroundColor", "background_color"],
@@ -74,7 +73,6 @@ const PROPS_RW = [
   ["heroSliceType", "hero_slice_type"],
   ["is3DCrosshairVisible", "is_3d_crosshair_visible"],
   ["isAnnotationDrawn", "is_annotation_drawn"],
-  ["isAnnotationFillDrawn", "is_annotation_fill_drawn"],
   ["isClipPlaneCutaway", "is_clip_plane_cutaway"],
   ["isColorbarVisible", "is_colorbar_visible"],
   ["isCrossLinesVisible", "is_cross_lines_visible"],
@@ -206,10 +204,8 @@ const SKIP_EVENT_FORWARDING = new Set([
 const RELEASE_QUEUE_EARLY = new Set(["animateTo"])
 const EVENTS = [
   "angleCompleted",
-  "annotationAdded",
   "annotationChanged",
   "annotationHistoryPush",
-  "annotationRemoved",
   "azimuthElevationChange",
   "canvasResize",
   "change",

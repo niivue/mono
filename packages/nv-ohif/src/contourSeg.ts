@@ -6,6 +6,7 @@
 // overlap, as cornerstone's (only a hole stroke cuts its target);
 // measurements stay in the default group.
 import {
+  type AnnotationChangedDetail,
   type AnnotationStyle,
   type AnnotationTool,
   forEachAnnotationVoxel,
@@ -33,6 +34,7 @@ import {
   segmentationRole,
   segmentStats,
 } from './segPanel'
+import { onAnnotationsAdded } from './toolBridge'
 
 const CONTOUR = 'Contour'
 const GROUP_PREFIX = 'seg:'
@@ -133,24 +135,9 @@ const groupShapes = (nv: NiiVue, group: string) =>
 
 /** Which shapes an edit event touched: ids written and ids removed. */
 type Delta = { written: string[]; removed: string[] }
-const deltaOf = (e: Event): Delta | undefined => {
-  const d = (e as CustomEvent).detail as {
-    annotation?: { id: string }
-    id?: string
-    added?: string[]
-    updated?: string[]
-    removed?: string[]
-  }
-  if (e.type === 'annotationAdded' && d?.annotation)
-    return { written: [d.annotation.id], removed: [] }
-  if (e.type === 'annotationRemoved' && d?.id)
-    return { written: [], removed: [d.id] }
-  if (e.type === 'annotationChanged')
-    return {
-      written: [...(d?.added ?? []), ...(d?.updated ?? [])],
-      removed: d?.removed ?? [],
-    }
-  return undefined
+const deltaOf = (e: Event): Delta => {
+  const d = (e as CustomEvent<AnnotationChangedDetail>).detail
+  return { written: [...d.added, ...d.updated], removed: d.removed }
 }
 
 /**
@@ -219,11 +206,10 @@ function addMirror(
   const onDestroyed = () => {
     if (nv.isDestroyed) stop()
   }
-  const edits = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
   const stop = () => {
     if (!views.has(viewportId)) return
     views.delete(viewportId)
-    for (const e of edits) nv.removeEventListener(e, onEdit)
+    nv.removeEventListener('annotationChanged', onEdit)
     nv.removeEventListener('volumeRemoved', onRemoved)
     nv.removeEventListener('viewDestroyed', onDestroyed)
     nv.annotationMergedGroups = (nv.annotationMergedGroups ?? []).filter(
@@ -239,7 +225,7 @@ function addMirror(
   if (groupShapes(nv, group).length) nv.clearAnnotationHistory()
   // The copies carry the owner pane's style; this pane's role may differ.
   c.sync()
-  for (const e of edits) nv.addEventListener(e, onEdit)
+  nv.addEventListener('annotationChanged', onEdit)
   nv.addEventListener('volumeRemoved', onRemoved)
   nv.addEventListener('viewDestroyed', onDestroyed)
 }
@@ -810,8 +796,7 @@ function startContourSync(
       }
     cst.triggerSegmentationEvents.triggerSegmentationModified(segmentationId)
   }
-  const edits = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
-  for (const e of edits) nv.addEventListener(e, onEdit)
+  nv.addEventListener('annotationChanged', onEdit)
   if (groupShapes(nv, group).length) count()
   nv.addEventListener('volumeRemoved', onRemoved)
   nv.addEventListener('viewDestroyed', onDestroyed)
@@ -838,7 +823,7 @@ function startContourSync(
         lutIndex,
       })
     for (const s of subscriptions) s.unsubscribe()
-    for (const e of edits) nv.removeEventListener(e, onEdit)
+    nv.removeEventListener('annotationChanged', onEdit)
     nv.removeEventListener('volumeRemoved', onRemoved)
     nv.removeEventListener('viewDestroyed', onDestroyed)
     contours.delete(segmentationId)
@@ -1025,18 +1010,6 @@ function rearm(viewportId: string): void {
   })
 }
 
-/** The overlay's shapes minus hidden contour segments'. */
-export function visibleContourShapes<T extends { id: string }>(
-  nv: NiiVue,
-  shapes: readonly T[],
-): readonly T[] {
-  if (contours.size === 0) return shapes
-  const hidden = new Set(
-    nv.annotations.filter((a) => !isContourShown(a, nv)).map((a) => a.id),
-  )
-  return hidden.size ? shapes.filter((s) => !hidden.has(s.id)) : shapes
-}
-
 const withHoles = new WeakSet<NiiVue>()
 
 /**
@@ -1071,10 +1044,8 @@ function holeStroke(nv: NiiVue, viewportId: string): void {
     },
     { capture: true },
   )
-  nv.addEventListener('annotationAdded', (e) => {
-    const added = (e as CustomEvent<{ annotation: VectorAnnotation }>).detail
-      ?.annotation
-    if (!cutting || added?.label !== HOLE) return
+  onAnnotationsAdded(nv, (added) => {
+    if (!cutting || added.label !== HOLE) return
     nv.removeAnnotation(added.id)
     end()
   })

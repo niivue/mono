@@ -127,6 +127,8 @@ describe('annotation label anchors', () => {
       ann('r', 'rectangle', { stats }),
     ],
     _persistedAnnotationScreenShapes: [],
+    annotationIsHidden: null,
+    annotationCalibration: null,
     getVolumes: () => [],
   } as unknown as NVModel
   const mvp = mat4.fromScaling(mat4.create(), [0.1, -0.05, 1])
@@ -138,65 +140,58 @@ describe('annotation label anchors', () => {
     leftTopWidthHeight: [10, 20, 200, 100],
   } as unknown as SliceTile
 
-  test('the built-in draw and annotationScreenShapes agree', () => {
-    const texts: { str: string; x: number; y: number; ax?: number }[] = []
-    const buildText = (
-      str: string,
-      x: number,
-      y: number,
-      ...rest: unknown[]
-    ) => {
-      texts.push({ str, x, y, ax: rest[2] as number })
+  const draw = () => {
+    const texts: { str: string; x: number; y: number }[] = []
+    const buildText = (str: string, x: number, y: number) => {
+      texts.push({ str, x, y })
       return { count: 1 } as GlyphBatch
     }
-    const buildLine = () => ({}) as LineData
-    buildAnnotationRenderData(model, [tile], buildLine, buildText, 1)
-    model.ui.isAnnotationDrawn = false
     projectAnnotationScreenShapes(model, [tile])
-    model.ui.isAnnotationDrawn = true
-    const labels = model._persistedAnnotationScreenShapes.map((s) => s.label)
-    // The overlay's measureLine label omits the length (its ruler draws it).
-    expect(labels.map((l) => l?.lines)).toEqual([
-      ['hi'],
-      ['tail'],
-      ['Area: 16.0 mm²', 'Min: 0.0  Max: 2.0', 'Mean: 1.0  SD: 0.5'],
-    ])
-    expect(texts.map((t) => t.str)).toEqual([
-      'hi\n5.0 mm',
-      'tail',
-      'Area: 16.0 mm²\nMin: 0.0  Max: 2.0\nMean: 1.0  SD: 0.5',
-    ])
-    expect(texts.map((t) => [t.x, t.y, t.ax])).toEqual(
-      labels.map((l) => [l?.x, l?.y, l?.align === 'left' ? 0 : 0.5]),
+    buildAnnotationRenderData(
+      model,
+      [tile],
+      () => ({}) as LineData,
+      buildText,
+      1,
     )
+    return texts
+  }
+
+  test('a measured line is a ruler; a closed shape labels below its box', () => {
+    const texts = draw().map((t) => t.str)
+    // The ruler prints the length; the shape's own label is its text alone.
+    expect(texts).toContain('5.00 mm')
+    expect(texts).toContain('hi')
+    expect(texts).not.toContain('hi\n5.0 mm')
+    const rect = model._persistedAnnotationScreenShapes.find(
+      (s) => s.id === 'r',
+    )
+    const bottom = Math.max(...(rect?.outer.map((p) => p.y) ?? []))
+    const label = draw().find((t) => t.str.startsWith('Area:'))
+    expect(label?.y).toBeGreaterThan(bottom)
   })
 
-  // nv-ohif contour segments: core fills under an overlay that only strokes.
-  test('isAnnotationFillDrawn keeps fills alone under an external overlay', () => {
-    const buildText = () => ({ count: 1 }) as GlyphBatch
-    const buildLine = () => ({}) as LineData
-    const drawn = buildAnnotationRenderData(
-      model,
-      [tile],
-      buildLine,
-      buildText,
-      1,
-    )
-    model.ui.isAnnotationDrawn = false
-    const ui = model.ui as { isAnnotationFillDrawn?: boolean }
-    ui.isAnnotationFillDrawn = true
-    const fillOnly = buildAnnotationRenderData(
-      model,
-      [tile],
-      buildLine,
-      buildText,
-      1,
-    )
-    model.ui.isAnnotationDrawn = true
-    ui.isAnnotationFillDrawn = false
-    expect(fillOnly?.fillIndices).toEqual(drawn?.fillIndices)
-    expect(fillOnly?.strokeLines).toHaveLength(0)
-    expect(fillOnly?.labels).toHaveLength(0)
+  test('calibration scales label lengths by s and areas by s²', () => {
+    model.annotationCalibration = {
+      scale: 2,
+      lengthUnit: 'mm User',
+      areaUnit: 'mm² User',
+    }
+    const texts = draw().map((t) => t.str)
+    model.annotationCalibration = null
+    expect(texts).toContain('10.0 mm User')
+    expect(texts.some((t) => t.startsWith('Area: 64.0 mm² User'))).toBe(true)
+  })
+
+  test('a hidden shape is neither drawn nor projected', () => {
+    model.annotationIsHidden = (a) => a.id === 'r'
+    const texts = draw().map((t) => t.str)
+    model.annotationIsHidden = null
+    expect(model._persistedAnnotationScreenShapes.map((s) => s.id)).toEqual([
+      'm',
+      'a',
+    ])
+    expect(texts.some((t) => t.startsWith('Area:'))).toBe(false)
   })
 })
 

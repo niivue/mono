@@ -139,17 +139,6 @@
       "doc": "See {@link AnnotationConfig.mergedGroups}."
     },
     {
-      "jsName": "annotationMergesOverlaps",
-      "pyName": "annotation_merges_overlaps",
-      "tsType": "boolean",
-      "pyTraitlet": {
-        "kind": "Bool"
-      },
-      "hasGetter": true,
-      "hasSetter": true,
-      "doc": null
-    },
-    {
       "jsName": "annotationTool",
       "pyName": "annotation_tool",
       "tsType": "AnnotationTool",
@@ -624,17 +613,6 @@
     {
       "jsName": "isAnnotationDrawn",
       "pyName": "is_annotation_drawn",
-      "tsType": "boolean",
-      "pyTraitlet": {
-        "kind": "Bool"
-      },
-      "hasGetter": true,
-      "hasSetter": true,
-      "doc": null
-    },
-    {
-      "jsName": "isAnnotationFillDrawn",
-      "pyName": "is_annotation_fill_drawn",
       "tsType": "boolean",
       "pyTraitlet": {
         "kind": "Bool"
@@ -1857,10 +1835,16 @@
           "tsType": "VectorAnnotation",
           "optional": false,
           "doc": null
+        },
+        {
+          "name": "isUndoable",
+          "tsType": "boolean",
+          "optional": true,
+          "doc": null
         }
       ],
       "returns": "void",
-      "doc": null,
+      "doc": "Add an annotation; `isUndoable` records an annotationUndo step first.",
       "returnsDoc": null
     },
     {
@@ -2516,6 +2500,23 @@
       "params": [],
       "returns": "void",
       "doc": null,
+      "returnsDoc": null
+    },
+    {
+      "jsName": "discardAnnotationStep",
+      "pyName": "discard_annotation_step",
+      "isAsync": false,
+      "returnsValue": false,
+      "params": [
+        {
+          "name": "seq",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        }
+      ],
+      "returns": "void",
+      "doc": "Withdraw undo step `seq` while it is still the top one (a host dropping a\nstep it just caused), restoring the redo steps that push cleared.",
       "returnsDoc": null
     },
     {
@@ -3360,6 +3361,35 @@
       "returnsDoc": null
     },
     {
+      "jsName": "pickAnnotation",
+      "pyName": "pick_annotation",
+      "isAsync": false,
+      "returnsValue": true,
+      "params": [
+        {
+          "name": "x",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "y",
+          "tsType": "number",
+          "optional": false,
+          "doc": null
+        },
+        {
+          "name": "opts",
+          "tsType": "{ tolerancePx?: number | undefined; accept?: ((annotation: VectorAnnotation) => boolean) | undefined; }",
+          "optional": true,
+          "doc": null
+        }
+      ],
+      "returns": "{ annotation: VectorAnnotation; distance: number; } | null",
+      "doc": "The annotation drawn under canvas point `x, y` (device px, as\nclientToCanvas returns): inside its outline, or within `tolerancePx` CSS px\nof an edge. The nearest wins; ties go to the earlier annotation. Shapes the\nhost hides and a shape being drawn are never picked.",
+      "returnsDoc": null
+    },
+    {
       "jsName": "pickAt",
       "pyName": "pick_at",
       "isAsync": true,
@@ -3742,7 +3772,7 @@
         }
       ],
       "returns": "void",
-      "doc": "Replace annotations `ids` with `added` as one change (one annotationUndo\nstep when `isUndoable`), as a host's edit of several shapes at once (a\nsegment operation); emits annotationChanged with action 'draw'.",
+      "doc": "Replace annotations `ids` with `added` as one change (one annotationUndo\nstep when `isUndoable`), as a host's edit of several shapes at once (a\nsegment operation); emits annotationChanged with action 'replace'.",
       "returnsDoc": null
     },
     {
@@ -5008,12 +5038,6 @@
       "doc": null
     },
     {
-      "jsName": "annotationAdded",
-      "pyName": "annotation_added",
-      "detailType": "AnnotationAddedDetail",
-      "doc": null
-    },
-    {
       "jsName": "annotationChanged",
       "pyName": "annotation_changed",
       "detailType": "AnnotationChangedDetail",
@@ -5024,12 +5048,6 @@
       "pyName": "annotation_history_push",
       "detailType": "{ seq: number; }",
       "doc": "An annotation undo step was recorded; `seq` names it (annotationUndoTop)."
-    },
-    {
-      "jsName": "annotationRemoved",
-      "pyName": "annotation_removed",
-      "detailType": "AnnotationRemovedDetail",
-      "doc": null
     },
     {
       "jsName": "azimuthElevationChange",
@@ -5232,6 +5250,16 @@
   ],
   "skipped": {
     "properties": [
+      {
+        "jsName": "annotationCalibration",
+        "tsType": "AnnotationCalibration",
+        "reason": "non-serializable nominal type: AnnotationCalibration"
+      },
+      {
+        "jsName": "annotationIsHidden",
+        "tsType": "(annotation: VectorAnnotation) => boolean",
+        "reason": "non-serializable nominal type: (annotation: VectorAnnotation) => boolean"
+      },
       {
         "jsName": "annotations",
         "tsType": "VectorAnnotation",

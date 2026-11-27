@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import {
+  type AnnotationChangedDetail,
   type AnnotationTool,
   computeAnnotationStats,
   DRAG_MODE,
@@ -236,4 +237,24 @@ export function measureFreehand(nv: NiiVue, a: VectorAnnotation): void {
       vol,
       nv.annotationAreaIsGeometric,
     ) ?? undefined
+}
+
+/**
+ * Call `fn` with each annotation a draw or addAnnotation just stored (the
+ * stored object: a merge may have changed its polygons). Returns the unsubscribe.
+ */
+export function onAnnotationsAdded(
+  nv: NiiVue,
+  fn: (annotation: VectorAnnotation) => void,
+): () => void {
+  const listener = (e: Event) => {
+    const { action, added } = (e as CustomEvent<AnnotationChangedDetail>).detail
+    if (action !== 'draw' && action !== 'add') return
+    for (const id of added) {
+      const a = nv.annotations.find((x) => x.id === id)
+      if (a) fn(a)
+    }
+  }
+  nv.addEventListener('annotationChanged', listener)
+  return () => nv.removeEventListener('annotationChanged', listener)
 }

@@ -95,9 +95,7 @@ export type { SlideDrawTool } from './NVControlBase'
 export type { SerializeOptions } from './NVDocument'
 // Event types
 export type {
-  AnnotationAddedDetail,
   AnnotationChangedDetail,
-  AnnotationRemovedDetail,
   AzimuthElevationChangeDetail,
   CanvasResizeDetail,
   ChunkStreamDetail,

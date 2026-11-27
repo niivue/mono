@@ -333,3 +333,16 @@ describe('ui.rulerUnits document round-trip', () => {
     ).toBe('um')
   })
 })
+
+// Documents saved before 1.0 kept annotations apart with mergesOverlaps: false.
+describe('legacy annotationConfig.mergesOverlaps', () => {
+  test('false still means no merging', async () => {
+    const { default: NiiVue } = await import('@/NVControl')
+    const { applyDocumentToModel } = await import('@/NVDocument')
+    const nv = new NiiVue({ backend: 'webgl2' })
+    applyDocumentToModel(nv.model, {
+      annotationConfig: { mergesOverlaps: false, mergedGroups: ['seg'] },
+    } as never)
+    expect(nv.model.annotation.mergedGroups).toEqual([])
+  })
+})

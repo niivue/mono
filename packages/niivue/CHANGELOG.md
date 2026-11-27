@@ -1,3 +1,17 @@
+## 1.0.0-rc.240 (2026-11-27)
+
+### Fixes
+
+- **niivue:** linked-view sync record does not retain unlinked viewers ([421b17bc](https://github.com/niivue/mono/commit/421b17bc))
+- **niivue:** linked-view sync tracks what it sent per target, so a receipt does not skip a new target's first sync ([97498ee1](https://github.com/niivue/mono/commit/97498ee1))
+- **niivue:** linked-view sync stamps only the fields it sends and compares the crosshair in mm ([b7f45b83](https://github.com/niivue/mono/commit/b7f45b83))
+- **niivue:** a linked peer does not echo a received move back ([c18a583a](https://github.com/niivue/mono/commit/c18a583a))
+- **niivue:** a linked peer's redraw no longer undoes a newer crosshair, pan or 3D move ([a72cf6ff](https://github.com/niivue/mono/commit/a72cf6ff))
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.239 (2026-11-27)
 
 ### Fixes

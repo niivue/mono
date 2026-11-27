@@ -1,3 +1,20 @@
+## 1.0.0-rc.282 (2026-11-27)
+
+### Fixes
+
+- **nv-ohif:** Escape cancels a half-drawn contour on a NiiVue pane ([766b2152](https://github.com/niivue/mono/commit/766b2152))
+
+### Updated Dependencies
+
+- Updated niivue to 1.0.0-rc.240
+- Updated nv-ext-drawing to 1.0.0-rc.242
+- Updated nv-ext-tile to 1.0.0-rc.149
+- Updated uikit to 1.0.0-rc.243
+
+### Thank You
+
+- neurolabusc
+
 ## 1.0.0-rc.281 (2026-11-27)
 
 ### Updated Dependencies

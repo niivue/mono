@@ -1,6 +1,5 @@
-import { buildLine, GlLineRenderer } from '@niivue/uikit'
+import { buildLine, GlLineRenderer, type LineData } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
-import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
@@ -39,37 +38,38 @@ import {
   findLabelVolume,
   hasScalarIntensity,
 } from '@/view/NVCinematic'
-import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
-import { HEADER_BACK_COLOR, resolveHeaderLabel } from '@/view/NVFont'
-import * as NVGraph from '@/view/NVGraph'
-import * as NVLegend from '@/view/NVLegend'
+import {
+  appendFrameLines,
+  buildOverlayText,
+  layoutFrame,
+} from '@/view/NVFrameOverlay'
+import type * as NVGraph from '@/view/NVGraph'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
+import { pickChunkedVolumeMM, tilePickMatrices } from '@/view/NVPickVolume'
 import {
   buildPlaneOutline3DRenderData,
-  buildPlaneOutlineLines,
   mergeRenderData,
 } from '@/view/NVPlaneOutline'
-import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { computeBoundsPixels, hitTestTiles } from '@/view/NVViewBounds'
 import {
   drawnOpacity,
   isChannelStackActive,
   isVolumeDrawn,
-  stackPickSampler,
 } from '@/view/NVVolumeVisibility'
 import { orientationTextPlacements } from '@/view/orientationLabels'
-import { composePlaneVisibility, type RgbaGrid } from '@/view/planeVisibility'
+import type { RgbaGrid } from '@/view/planeVisibility'
+import { syncVolumeFrameState } from '@/view/volumeFrameState'
 import {
   type UpdateBindGroupsOptions,
   volumeUpdateScope,
 } from '@/view/volumeUpdateScope'
-import { chunkExplodeEnabled, pickExplodedVoxel } from '@/volume/ChunkExplode'
 import {
   type ChunkPlan,
   chunkSampleTransform,
@@ -78,7 +78,6 @@ import {
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
-import { residentPickSampler, sceneUnit } from '@/volume/utils'
 import { GLBench } from './bench'
 import { BoxLineRenderer } from './boxLine'
 import { CinematicRenderer } from './cinematic'
@@ -623,59 +622,11 @@ export default class NVGlview {
       requestAnimationFrame(() => this.render())
       return false
     }
-    // Publish the current lighting to the volume renderer BEFORE any chunk work
-    // (entry creation, request, pump) so chunk uploaders can skip the gradient
-    // pass when unlit. Matches the gradientAmount passed to the volume draw.
-    this.volumeRenderer.gradientAmount = md.volume.illumination
-    // Composite (OVER) vs maximum-intensity projection vs orthogonal slices, for
-    // every volume pass this frame (base, overlay, PAQD, drawing, and the
-    // independent hi-res overlay cube). CINEMATIC tiles skip the classic
-    // march; where it falls back (chunked volume) it draws COMPOSITE.
-    const isCinematicMode =
-      md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.CINEMATIC
-    this.volumeRenderer.renderMode = isCinematicMode
-      ? NVConstants.VOLUME_RENDER_MODE.COMPOSITE
-      : md.volume.renderMode
-    // The crosshair planes SLICES draws, in the base volume's texture fraction —
-    // the same conversion the 2D tiles use, so sheared and oblique volumes line
-    // up with them.
-    this.volumeRenderer.sliceFrac = [0, 1, 2].map((d) => md.getSliceTexFrac(d))
-    // SLICES honours the same dark-voxel clip the 2D tiles do, so the two agree
-    // on what a plane shows.
-    this.volumeRenderer.isAlphaClipDark = md.volume.isAlphaClipDark
-    // Ray samples per voxel in the 3D fine march (anti-aliasing vs fragment cost).
-    this.volumeRenderer.sampleRate = md.volume.sampleRate
-    // Tricubic B-spline reconstruction in the fine march (8 fetches vs 1).
-    this.volumeRenderer.isCubicInterpolation = md.volume.isCubicInterpolation
-    // Stencil for the overlay/drawing passes' own gradient (the background's is
-    // precomputed into a texture and unaffected).
-    this.volumeRenderer.layerGradientMode = md.volume.layerGradientMode
-    this.volumeRenderer.isOverlayOpacityCorrected =
-      md.volume.isOverlayOpacityCorrected
-    // Background-only alpha modulation from that precomputed gradient: suppress
-    // homogeneous interior (gradientOpacity) and fade view-aligned material into
-    // a rim (silhouette). Set before chunk work, like gradientAmount, because a
-    // non-zero value means an unlit chunk still needs its gradient computed.
-    this.volumeRenderer.gradientOpacity = md.volume.gradientOpacity
-    this.volumeRenderer.silhouette = md.volume.silhouette
-    // Display gamma for the classified RGB of every volume sample (alpha, and
-    // therefore occlusion, is untouched).
-    this.volumeRenderer.gamma = md.scene.gamma
-    // Per-level brightness compensation for coarse multi-LOD bricks. Folds into
-    // the same shader exponent as `gamma`, but per chunk, so it is a no-op for
-    // single-level and non-chunked volumes whatever the coefficient.
-    this.volumeRenderer.lodBrightnessCompensation =
-      md.volume.lodBrightnessCompensation
-    // Per-level opacity compensation. Ray-march only: the slice renderer shows
-    // one sample per tile with no accumulation, so there is no aggregated alpha
-    // to correct there.
-    this.volumeRenderer.lodOpacityCompensation =
-      md.volume.lodOpacityCompensation
-    // 2D slice tiles read the same two exponents so a slice and the 3D render
-    // panel agree on brightness.
-    this.sliceRenderer.gamma = md.scene.gamma
-    this.sliceRenderer.lodBrightnessCompensation =
-      md.volume.lodBrightnessCompensation
+    const isCinematicMode = syncVolumeFrameState(
+      this.volumeRenderer,
+      this.sliceRenderer,
+      md,
+    )
     // Off-screen after viewport transform: skip the entire render pass — scissor would
     // clip everything and the work is wasted. preserveDrawingBuffer keeps prior pixels.
     if (this._isSubCanvasBounds && this._isBoundsOffscreen) return false
@@ -795,55 +746,18 @@ export default class NVGlview {
       volumes,
       md.volume.isNearestInterpolation,
     )
-    // Reserve vertical space for colorbars so tiles don't overlap them
-    const cbHeight = md.ui.isColorbarVisible
-      ? colorbarTotalHeight(
-          this.colorbarRenderer.getColorbarInfos(),
-          this.colorbarRenderer.getLayout(),
-        )
-      : 0
-    // Reserve horizontal space for legend and graph on the right side
-    const legendEntries = md.collectLegendEntries()
-    const legendLayout =
-      md.ui.isLegendVisible && legendEntries.length > 0
-        ? NVLegend.computeLegendLayout(
-            legendEntries,
-            iw,
-            ih,
-            cbHeight,
-            md.legendScrollRow(),
-            {
-              fontPx: this.fontRenderer.fontPx,
-              measure: (label, scale) =>
-                this.fontRenderer.measureText(label, scale),
-            },
-          )
-        : null
-    if (legendLayout) legendLayout.y += iy
-    const legendWidth = legendLayout?.width ?? 0
-    const graphData = md.collectGraphData()
-    const baseGraphWidth = graphData
-      ? NVGraph.graphTotalWidth(graphData, iw, ih)
-      : 0
-    let graphWidth: number
-    let screenSlices: NVSliceLayout.SliceTile[]
-    if (this.options.instances) {
-      // Multi-instance mode (global3d): the controller has already populated
-      // `this.screenSlices` via `updateTilesFromInstances` — skip the
-      // slice-layout pass. The signal graph is not used in instance scenes.
-      screenSlices = this.screenSlices
-      graphWidth = baseGraphWidth
-    } else {
-      const fit = NVSliceLayout.fitSlicesFromModel(
-        md,
-        [iw - legendWidth - baseGraphWidth, ih - cbHeight],
-        baseGraphWidth,
-        [ix, iy],
-      )
-      graphWidth = fit.graphWidth
-      screenSlices = fit.screenSlices
-      this.screenSlices = screenSlices
-    }
+    const frame = layoutFrame(
+      md,
+      this.fontRenderer,
+      this.colorbarRenderer,
+      ix,
+      iy,
+      iw,
+      ih,
+      this.options.instances ? this.screenSlices : null,
+    )
+    const screenSlices = frame.screenSlices
+    this.screenSlices = screenSlices
     // Crosshair geometry is rebuilt per tile rather than once per frame: its
     // radius is a screen weight, so it depends on the tile's mm-per-pixel.
     const ann3DData = mergeRenderData(
@@ -1467,162 +1381,39 @@ export default class NVGlview {
     if (this.model.ui.isColorbarVisible) {
       this.colorbarRenderer.draw(gl, null)
     }
-    // Layer 4: Lines — used by graph
-    let graphLines: ReturnType<typeof buildLine>[] = []
-    // Layer 5: Font/text
-    const hasContent =
-      this.model.getMeshes().length > 0 ||
-      volumes.length > 0 ||
-      this.model.signals.length > 0
-    const headerStr = resolveHeaderLabel(
-      this.model.ui.placeholderText,
-      hasContent,
-      'WebGL2',
-      log.level === 'debug',
-    )
+    // Layer 4: Lines — graph, ruler, annotation strokes, cross-lines, outlines
+    const lines: LineData[] = []
     // Project this frame's annotations: drawn below, hit-tested by pickAnnotation.
     NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
+    // Layer 5: Font/text
     if (this.fontRenderer.isReady) {
-      if (headerStr !== '') {
-        labels.push(
-          this.fontRenderer.buildText(
-            headerStr,
-            ix + iw * 0.5,
-            iy,
-            1.5,
-            [0, 0, 0, 1],
-            0.5,
-            -0.2,
-            HEADER_BACK_COLOR,
-          ),
-        )
-      }
-      // Colorbar labels and tick marks
-      if (this.model.ui.isColorbarVisible) {
-        const colorbarLabels = buildColorbarLabels(
-          this.colorbarRenderer.getColorbarInfos(),
-          (s, x, y, sc, c, ax, ay, bc) =>
-            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-          this.colorbarRenderer.getLayout(),
-        )
-        labels.push(...colorbarLabels)
-      }
-      // Legend labels for label colormaps
-      this.legendLayout = legendLayout
-      if (legendLayout) {
-        // Placed once the graph's width is known.
-        legendLayout.x = ix + iw - legendWidth - graphWidth
-        const legendLabels = NVLegend.buildLegendLabels(
-          legendLayout,
-          (s, x, y, sc, c, ax, ay, bc) =>
-            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-          md.scene.backgroundColor,
-        )
-        labels.push(...legendLabels)
-      }
-      // Graph labels and lines for 4D frame intensity
-      if (graphData && graphWidth > 0) {
-        const graphDpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
-        const graphLayout = NVGraph.computeGraphLayout(
-          graphData,
-          iw,
-          ih,
-          cbHeight,
-          graphDpr,
-          graphWidth,
-        )
-        this.graphLayout =
-          graphLayout && NVGraph.translateGraphLayout(graphLayout, ix, iy)
-        if (this.graphLayout) {
-          const graphElements = NVGraph.buildGraphElements(
-            graphData,
-            this.graphLayout,
-            (s, x, y, sc, c, ax, ay, bc) =>
-              this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-            buildLine,
-            md.scene.backgroundColor,
-          )
-          labels.push(...graphElements.labels)
-          graphLines = graphElements.lines
-        }
-      } else {
-        this.graphLayout = null
-      }
-      // Ruler
-      if (md.ui.isRulerVisible) {
-        const rulerResult = NVRuler.buildRuler(
-          screenSlices,
-          (s, x, y, sc, c, ax, ay, bc) =>
-            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-          buildLine,
-          md.ui.fontColor,
-          md.scene.pan2Dxyzmm,
-          sceneUnit(md).mm,
-          this.slidePlane
-            ? {
-                furthestFromPivot: md.furthestFromPivot,
-                scaleMultiplier: md.scene.scaleMultiplier,
-              }
-            : undefined,
-          md.ui.rulerUnits,
-        )
-        if (rulerResult) {
-          labels.push(...rulerResult.labels)
-          graphLines.push(...rulerResult.lines)
-        }
-      }
-      // Vector annotations
-      const annotationResult = NVAnnotation.buildAnnotationRenderData(
-        this.model,
-        screenSlices,
-        buildLine,
-        this.fontRenderer.buildText.bind(this.fontRenderer),
+      const annotation = buildOverlayText(
+        this,
+        md,
+        this.fontRenderer,
+        this.colorbarRenderer,
+        frame,
+        labels,
+        lines,
+        'WebGL2',
         this._dpr,
-        this.fontRenderer.fontPx * 0.5,
+        this.forceDevicePixelRatio,
+        !!this.slidePlane,
       )
-      if (annotationResult) {
-        this.polygonRenderer.draw(gl, annotationResult)
-        graphLines.push(...annotationResult.strokeLines)
-        labels.push(...annotationResult.labels)
-      }
-      // Drag overlay: the selection box as a panel rectangle
-      const overlay = this.model._dragOverlay
-      if (overlay?.rect) {
-        labels.push({
-          data: new Float32Array(0),
-          count: 0,
-          backColor: overlay.rect.color,
-          backRect: [...overlay.rect.ltwh],
-          backRadius: 0,
-        })
-      }
+      if (annotation) this.polygonRenderer.draw(gl, annotation)
       this.fontRenderer.draw(gl, labels)
     }
-    // Draw graph lines, cross-lines and the bounds border via the line renderer
-    const allLines = [...graphLines, ...crossLinesList]
-    allLines.push(
-      ...buildPlaneOutlineLines(
-        md.planeOutlines,
-        screenSlices,
-        buildLine,
-        md.ui.crosshairColor,
-        NVAnnotation.computeTolerance(md),
-      ),
+    appendFrameLines(
+      lines,
+      crossLinesList,
+      md,
+      screenSlices,
+      this.options,
+      this._isSubCanvasBounds,
+      canvasWidth,
+      canvasHeight,
     )
-    // Bounds border
-    if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
-      const bc = (this.options.boundsBorderColor as number[]) ?? [1, 1, 1, 1]
-      const bt = (this.options.boundsBorderThickness as number) ?? 2
-      allLines.push(buildLine(0, 0, canvasWidth, 0, bt, bc)) // top
-      allLines.push(
-        buildLine(0, canvasHeight, canvasWidth, canvasHeight, bt, bc),
-      ) // bottom
-      allLines.push(buildLine(0, 0, 0, canvasHeight, bt, bc)) // left
-      allLines.push(
-        buildLine(canvasWidth, 0, canvasWidth, canvasHeight, bt, bc),
-      ) // right
-    }
-    this.lineRenderer.draw(gl, allLines, bw, bh)
+    this.lineRenderer.draw(gl, lines, bw, bh)
     if (boxEdges) {
       this.boxLineRenderer.draw(gl, boxEdges, boxTiles, [bx, glBoundsY, bw, bh])
       gl.viewport(bx, glBoundsY, bw, bh)
@@ -1782,52 +1573,13 @@ export default class NVGlview {
   }
 
   private _computeBoundsPixels(): void {
-    const bounds = this.options.bounds
-    const cw = this.canvas.width
-    const ch = this.canvas.height
-    const vp = getCanvasViewport(this.canvas)
-    const isIdentity = vp.pan[0] === 0 && vp.pan[1] === 0 && vp.zoom === 1
-    if (
-      isIdentity &&
-      (!bounds ||
-        (bounds[0][0] === 0 &&
-          bounds[0][1] === 0 &&
-          bounds[1][0] === 1 &&
-          bounds[1][1] === 1))
-    ) {
-      this._boundsOffsetX = 0
-      this._boundsOffsetY = 0
-      this._boundsWidth = cw
-      this._boundsHeight = ch
-      this._isSubCanvasBounds = false
-      this._isBoundsOffscreen = false
-      return
-    }
-    const worldX1 = bounds ? bounds[0][0] : 0
-    const worldY1 = bounds ? bounds[0][1] : 0
-    const worldX2 = bounds ? bounds[1][0] : 1
-    const worldY2 = bounds ? bounds[1][1] : 1
-    // Apply viewport: world -> screen-normalized (zoom around centre, then translate by pan)
-    const z = vp.zoom
-    const px = vp.pan[0]
-    const py = vp.pan[1]
-    const sx1 = (worldX1 - 0.5) * z + 0.5 + px
-    const sx2 = (worldX2 - 0.5) * z + 0.5 + px
-    const sy1 = (worldY1 - 0.5) * z + 0.5 + py
-    const sy2 = (worldY2 - 0.5) * z + 0.5 + py
-    // Round pixel edges, then derive size by subtraction to prevent
-    // offset + size > canvas (which breaks copyTextureToTexture on odd dimensions)
-    const left = Math.round(sx1 * cw)
-    const right = Math.round(sx2 * cw)
-    const top = Math.round((1 - sy2) * ch)
-    const bottom = Math.round((1 - sy1) * ch)
-    this._boundsOffsetX = left
-    this._boundsOffsetY = top
-    this._boundsWidth = Math.max(1, right - left)
-    this._boundsHeight = Math.max(1, bottom - top)
-    this._isSubCanvasBounds = true
-    this._isBoundsOffscreen =
-      right <= 0 || left >= cw || bottom <= 0 || top >= ch
+    const b = computeBoundsPixels(this.canvas, this.options.bounds)
+    this._boundsOffsetX = b.x
+    this._boundsOffsetY = b.y
+    this._boundsWidth = b.width
+    this._boundsHeight = b.height
+    this._isSubCanvasBounds = b.isSub
+    this._isBoundsOffscreen = b.isOffscreen
   }
 
   getAvailableShaders(): string[] {
@@ -1927,24 +1679,7 @@ export default class NVGlview {
   }
 
   hitTest(x: number, y: number): ViewHitTest | null {
-    for (let idx = 0; idx < this.screenSlices.length; idx++) {
-      const tile = this.screenSlices[idx]
-      const ltwh = tile.leftTopWidthHeight as number[]
-      const left = ltwh[0]
-      const top = ltwh[1]
-      const width = ltwh[2]
-      const height = ltwh[3]
-      if (x >= left && x < left + width && y >= top && y < top + height) {
-        return {
-          tileIndex: idx,
-          sliceType: tile.axCorSag,
-          isRender: tile.axCorSag === NVConstants.SLICE_TYPE.RENDER,
-          normalizedX: (x - left) / width,
-          normalizedY: (y - top) / height,
-        }
-      }
-    }
-    return null
+    return hitTestTiles(this.screenSlices, x, y)
   }
 
   refreshDrawing(
@@ -2001,203 +1736,24 @@ export default class NVGlview {
     const ltwh = tile.leftTopWidthHeight as number[]
     const md = this.model
     const canvasHeight = this.canvas.height
-    // Calculate MVP for this tile (same logic as the render loop)
-    let mvpMatrix: mat4
-    let rayDir: Float32Array | number[]
-    if (hit.isRender && tile.renderOrientation !== undefined && tile.screen) {
-      // Mosaic render tile: use same MVP as render loop (origin-centered, tile angles)
-      const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-      const result = NVTransforms.calculateMvpMatrix2D(
-        ltwh,
-        screen.mnMM,
-        screen.mxMM,
-        tile.azimuth as number,
-        tile.elevation as number,
-        NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
-        md.volumes[0]?.obliqueRAS,
-        md.pivot3D,
-        undefined,
-        false,
-      )
-      mvpMatrix = result[0] as mat4
-      rayDir = result[3] as Float32Array
-    } else if (hit.isRender) {
-      const result = NVTransforms.calculateMvpMatrix(
-        ltwh,
-        md.scene.azimuth,
-        md.scene.elevation,
-        md._renderPivotMM ?? md.pivot3D,
-        md.furthestFromPivot,
-        md.scene.scaleMultiplier,
-        md.volumes[0]?.obliqueRAS,
-        md.scene.renderPan,
-      )
-      mvpMatrix = result[0] as mat4
-      rayDir = result[3] as Float32Array
-    } else {
-      const screen = tile.screen as { mnMM: number[]; mxMM: number[] }
-      const pan = NVSliceLayout.slicePanUV(md.scene.pan2Dxyzmm, tile.axCorSag)
-      const result = NVTransforms.calculateMvpMatrix2D(
-        ltwh,
-        screen.mnMM,
-        screen.mxMM,
-        tile.azimuth as number,
-        tile.elevation as number,
-        NVSliceLayout.isSliceMirrored(tile.axCorSag, md.layout),
-        md.volumes[0]?.obliqueRAS,
-        undefined,
-        pan,
-        false,
-        tile.clipRot,
-      )
-      mvpMatrix = result[0] as mat4
-      rayDir = result[3] as Float32Array
-    }
-    // Chunked / multi-LOD volumes have no single whole-volume texture, so the
-    // GPU depth-pass cannot sample them. Fall back to a CPU ray/AABB pick against
-    // the volume's mm bounding box and return the near-surface entry under the
-    // cursor — enough to move the crosshair (and thus the multi-LOD focus) in a
-    // 3D render. Mirrors the WebGPU backend.
+    // Same MVP as the render loop
+    const [mvpMatrix, , , rayDir] = tilePickMatrices(
+      tile,
+      hit.isRender,
+      md,
+      false,
+    )
     if (hit.isRender && this.volumeRenderer.hasChunkedVolume) {
-      const vol = md.volumes[0]
-      // A hidden background is not drawn, so it must not answer a pick; a
-      // channel stack answers from any drawn channel (#370).
-      const stack = this._isChannelStack(md.volumes)
-      const pickSampler = stack
-        ? stackPickSampler(md.volumes)
-        : // A resident chunked volume has no streamed sampler, but its
-          // voxels are on the CPU: without one the pick stops at its box.
-          (vol?.pickSampler ?? (vol && residentPickSampler(vol)) ?? undefined)
-      if (
-        vol?.extentsMin &&
-        vol?.extentsMax &&
-        (stack ? md.volumes.some(isVolumeDrawn) : isVolumeDrawn(vol))
-      ) {
-        const near = NVTransforms.unprojectScreen(
-          hit.normalizedX,
-          hit.normalizedY,
-          0,
-          mvpMatrix,
-        )
-        const far = NVTransforms.unprojectScreen(
-          hit.normalizedX,
-          hit.normalizedY,
-          1,
-          mvpMatrix,
-        )
-        // SLICES draws three crosshair planes, so the pick lands on the nearest
-        // VISIBLE plane crossing rather than on the near surface — the same rule
-        // the GPU shaders use for a non-chunked volume.
-        //
-        // A miss must NOT fall through to the surface fallbacks below: in this
-        // mode the volume's near surface is not on screen, so landing the
-        // crosshair there would teleport all three planes to a voxel the user
-        // never clicked. It drops to the GPU pass instead, which is the only
-        // one that picks MESHES.
-        //
-        // ponytail: un-exploded only, and the planes are the mm-axis ones, as
-        // the bounding box around them already is -- an oblique volume's true
-        // planes are tilted. Exploded blocks displace the planes with them, so
-        // they keep the block pick below. Give either its own plane maths if
-        // someone picks in one of those views.
-        if (
-          md.volume.renderMode === NVConstants.VOLUME_RENDER_MODE.SLICES &&
-          !chunkExplodeEnabled(vol.chunkExplode)
-        ) {
-          const planeMM = NVTransforms.rayPlaneFirstVisibleMM(
-            near,
-            far,
-            vol.extentsMin,
-            vol.extentsMax,
-            md.scene2mm(md.scene.crosshairPos),
-            // Without alpha clipping the plane is a solid slab, so every
-            // in-box crossing is visible and there is nothing to reject. With
-            // it, the base volume's own sampler is widened by the PAQD and
-            // drawing layers the render paints over transparent base.
-            md.volume.isAlphaClipDark
-              ? composePlaneVisibility({
-                  lo: vol.extentsMin,
-                  hi: vol.extentsMax,
-                  base: pickSampler,
-                  drawing: this._drawingPickGrid,
-                  paqd: this.volumeRenderer.paqdPickGrid
-                    ? {
-                        grid: this.volumeRenderer.paqdPickGrid,
-                        uniforms: md.volume.paqdUniforms,
-                      }
-                    : null,
-                })
-              : undefined,
-          )
-          if (planeMM) return planeMM
-        } else if (
-          // Exploded view: blocks are displaced, so the un-exploded bounding box
-          // no longer matches what's on screen. Pick against each block's
-          // exploded AABB (first window-visible voxel in the hit block) and map
-          // the recovered un-exploded voxel back to mm for the crosshair.
-          vol.chunkPlan &&
-          vol.matRAS &&
-          chunkExplodeEnabled(vol.chunkExplode)
-        ) {
-          const matRAS = vol.matRAS
-          const base = pickSampler
-          const sample = base
-            ? (vx: number, vy: number, vz: number): number => {
-                const mm = NVTransforms.vox2mm(
-                  null,
-                  [vx, vy, vz],
-                  matRAS as mat4,
-                )
-                return base(mm[0], mm[1], mm[2])
-              }
-            : undefined
-          const picked = pickExplodedVoxel(
-            vol.chunkPlan,
-            matRAS,
-            vol.chunkExplode,
-            [near[0], near[1], near[2]],
-            [far[0] - near[0], far[1] - near[1], far[2] - near[2]],
-            {
-              sample,
-              threshold: 0,
-              clipPlanes: md.clipPlanes,
-              isCutaway: md.scene.isClipPlaneCutaway,
-            },
-          )
-          if (picked) {
-            const mm = NVTransforms.vox2mm(null, picked.voxel, matRAS as mat4)
-            return [mm[0], mm[1], mm[2]]
-          }
-          return null
-        } else {
-          // With a CPU sampler (the streamed volume's coarse floor, or
-          // app-supplied data), march to the first window-visible voxel.
-          // Without one — or when the ray crosses nothing visible — land on the
-          // bounding-box / clip surface, which is what the GPU shader does with
-          // its own miss.
-          const hitMM =
-            (pickSampler
-              ? NVTransforms.rayMarchFirstVisibleMM(
-                  near,
-                  far,
-                  vol.extentsMin,
-                  vol.extentsMax,
-                  pickSampler,
-                  md.clipPlanes,
-                  md.scene.isClipPlaneCutaway,
-                )
-              : null) ??
-            NVTransforms.rayBoxEntryMM(
-              near,
-              far,
-              vol.extentsMin,
-              vol.extentsMax,
-              md.clipPlanes,
-              md.scene.isClipPlaneCutaway,
-            )
-          if (hitMM) return hitMM
-        }
-      }
+      const mm = pickChunkedVolumeMM(
+        md,
+        hit.normalizedX,
+        hit.normalizedY,
+        mvpMatrix,
+        this._isChannelStack(md.volumes),
+        this._drawingPickGrid,
+        this.volumeRenderer.paqdPickGrid,
+      )
+      if (mm !== undefined) return mm
     }
     // Depth-pick via scissor + readPixels (works for all tile types)
     // Offset by bounds origin for shared-canvas support

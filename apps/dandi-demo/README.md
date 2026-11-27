@@ -55,8 +55,9 @@ Options:
 - **Views.** The volumetric pane opens on the 3D render, which is where a
   streamed brick set is legible as a whole; the `View` dropdown switches it to
   multiplanar or to a single axial, coronal, or sagittal slice.
-- **Gestures per pane.** `Volume left/right drag` set NiiVue's primary and
-  secondary drag modes; `Slide left/right drag` set those of the deep-zoom pane
+- **Gestures per pane.** On the volume pane's slice views a left drag moves
+  the crosshair and a right drag pans (in the render a drag rotates);
+  `Slide left/right drag` set the deep-zoom pane's drag modes
   through core's `NVSlideController` (`crosshairPan`, `crosshair`, `pan`,
   `windowing`, `contrast`, `measurement`, zoom box (`roiSelection`), `none`;
   the middle button pans and the wheel zooms). Slide

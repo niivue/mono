@@ -25,6 +25,7 @@
 
 import NiiVue, {
   createSlideView,
+  DRAG_MODE,
   NVSlide,
   SLICE_TYPE,
   VolumeSliceSource,
@@ -221,8 +222,6 @@ const els = {
   zoom: el('zoom'),
   zoomVal: el('zoomVal'),
   fit: el('fit'),
-  volumePrimary: el('volumePrimary'),
-  volumeSecondary: el('volumeSecondary'),
   slidePrimary: el('slidePrimary'),
   slideSecondary: el('slideSecondary'),
   crosshair: el('crosshair'),
@@ -1096,12 +1095,6 @@ async function onSlideContrast(box) {
   applyWindow()
 }
 
-els.volumePrimary.addEventListener('change', () => {
-  if (nv) nv.primaryDragMode = Number(els.volumePrimary.value)
-})
-els.volumeSecondary.addEventListener('change', () => {
-  if (nv) nv.secondaryDragMode = Number(els.volumeSecondary.value)
-})
 els.slidePrimary.addEventListener('change', () => {
   if (slideView?.controller)
     slideView.controller.primaryDragMode = Number(els.slidePrimary.value)
@@ -1186,8 +1179,10 @@ async function main() {
     maxChunkResidencyBytes: DEFAULT_RESIDENCY_BYTES,
     // Faint crosshair arms through the volume, as mesh x-ray draws them.
     meshXRay: 0.25,
-    primaryDragMode: Number(els.volumePrimary.value),
-    secondaryDragMode: Number(els.volumeSecondary.value),
+    // Drag modes act on slice views only (a render drag rotates): a left drag
+    // moves the crosshair, a right drag pans.
+    primaryDragMode: DRAG_MODE.crosshair,
+    secondaryDragMode: DRAG_MODE.pan,
   })
   await nv.attachToCanvas(els.canvas)
   // A WebGPU adapter whose device request fails inside attach leaves WebGL2

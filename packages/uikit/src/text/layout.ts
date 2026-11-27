@@ -1,18 +1,14 @@
 // Pure text layout for UIKit. Rotation, advance, alignment and the perpendicular
-// lift are all computed on the CPU here, so the backend renderers stay trivial
-// textured-quad drawers and this math is unit-testable without a GPU. The
-// per-glyph transform mirrors the old niivue/niivue uikit `drawRotatedText`
-// (translate to the glyph pen, rotate about it, scale the em quad), but bakes the
-// four corners into screen-pixel triangle vertices instead of a per-glyph MVP.
+// lift are computed on the CPU here, so the math is unit-testable without a
+// GPU. Each glyph becomes one record for the instanced text renderers: its
+// quad's (rotated) top-left, size, atlas uv rect and colour, then the atlas
+// range and the rotation's sin and cos - 1 (the quad turns about its top-left).
 //
-// Screen space is y-down (matches the canvas / the line + font projection). A
-// glyph is emitted as two triangles (6 vertices), each vertex carrying
-// [posX, posY, u, v, r, g, b, a] = 8 floats.
-
+// Screen space is y-down (matches the canvas / the line + font projection).
 import type { UIKitFontMetrics, UIKitGlyph } from './font'
 
-export const FLOATS_PER_VERTEX = 8
-export const VERTICES_PER_GLYPH = 6
+/** Floats per glyph record: rect, uv rect, colour, atlas range, sin, cos - 1, pad. */
+export const FLOATS_PER_GLYPH = 16
 
 export type RGBA = readonly [number, number, number, number]
 
@@ -95,25 +91,15 @@ export function readableAngle(rotation: number): {
   return { angle: rotation, flipped: false }
 }
 
-// Quad corners as (px, py) in [0,1], y-down. Two triangles: TL,BL,TR / TR,BL,BR.
-const CORNERS: ReadonlyArray<readonly [number, number]> = [
-  [0, 0],
-  [0, 1],
-  [1, 0],
-  [1, 0],
-  [0, 1],
-  [1, 1],
-]
-
 /**
- * Lay out `str` into screen-pixel triangle vertices. Returns the packed vertex
- * buffer (8 floats/vertex) and the vertex count (6 per rendered glyph).
+ * Lay out `str` as glyph records (FLOATS_PER_GLYPH floats each, screen
+ * pixels) for the text renderers. Returns the packed records and their count.
  */
 export function layoutText(
   metrics: UIKitFontMetrics,
   str: string,
   opts: TextLayoutOptions,
-): { vertices: Float32Array; count: number } {
+): { glyphs: Float32Array; count: number } {
   const size = opts.sizePx
   const rot = opts.rotation ?? 0
   const color = opts.color ?? [1, 1, 1, 1]
@@ -128,43 +114,37 @@ export function layoutText(
   let penX = opts.x - cos * width * align + sin * lift
   let penY = opts.y - sin * width * align - cos * lift
 
-  const glyphs: { g: UIKitGlyph }[] = []
+  const found: UIKitGlyph[] = []
   for (const ch of str) {
     const g = metrics.glyphs.get(ch)
-    if (g) glyphs.push({ g })
+    if (g) found.push(g)
   }
-
-  const vertices = new Float32Array(
-    glyphs.length * VERTICES_PER_GLYPH * FLOATS_PER_VERTEX,
-  )
+  const glyphs = new Float32Array(found.length * FLOATS_PER_GLYPH)
   let o = 0
-  const [cr, cg, cb, ca] = color
-  for (const { g } of glyphs) {
+  for (const g of found) {
     // Plane bounds are em units relative to the pen on the baseline, y-up:
-    // [left bearing, bottom, width, height]. Map each unit-quad corner to a plane
-    // point, then to a pen-relative screen offset (y negated: plane-up = screen-up
-    // = -screen-y), rotate it, and translate by the pen. Corner (px,py) has py
-    // down, so py=0 is the glyph top and maps to the atlas top row (v = ub + uh).
+    // [left bearing, bottom, width, height]. The quad's top-left is at
+    // (left, -(bottom + height)) from the pen in y-down screen units, rotated.
     const [pl, pb, pw, ph] = g.plane
-    const [ul, ub, uw, uh] = g.uv
-    for (const [px, py] of CORNERS) {
-      const ox = (pl + pw * px) * size
-      const oy = -(pb + ph * (1 - py)) * size
-      vertices[o] = penX + cos * ox - sin * oy
-      vertices[o + 1] = penY + sin * ox + cos * oy
-      vertices[o + 2] = ul + px * uw
-      // py=0 is the top screen corner and maps to the glyph's top row in the
-      // atlas (uv v = ub), matching niivue core's font mapping. The atlas is
-      // top-origin in texture space, so top row = smaller v.
-      vertices[o + 3] = ub + py * uh
-      vertices[o + 4] = cr
-      vertices[o + 5] = cg
-      vertices[o + 6] = cb
-      vertices[o + 7] = ca
-      o += FLOATS_PER_VERTEX
-    }
+    const ox = pl * size
+    const oy = -(pb + ph) * size
+    glyphs.set(
+      [
+        penX + cos * ox - sin * oy,
+        penY + sin * ox + cos * oy,
+        pw * size,
+        ph * size,
+        ...g.uv,
+        ...color,
+        metrics.distanceRange,
+        sin,
+        cos - 1,
+      ],
+      o,
+    )
+    o += FLOATS_PER_GLYPH
     penX += cos * g.xadv * size
     penY += sin * g.xadv * size
   }
-  return { vertices, count: glyphs.length * VERTICES_PER_GLYPH }
+  return { glyphs, count: found.length }
 }

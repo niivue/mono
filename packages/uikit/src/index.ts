@@ -56,7 +56,10 @@ export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
 export { GlLineRenderer } from './render/glLineRenderer'
+export type { UIKitAtlasSource } from './render/glTextRenderer'
+export { GlTextRenderer } from './render/glTextRenderer'
 export { WgpuLineRenderer } from './render/wgpuLineRenderer'
+export { WgpuTextRenderer } from './render/wgpuTextRenderer'
 export type {
   RulerGeometry,
   RulerSegment,
@@ -72,10 +75,11 @@ export type {
   UIKitFontMetrics,
   UIKitGlyph,
 } from './text/font'
-export { parseFont, screenPxRange } from './text/font'
+export { parseFont } from './text/font'
 export type { RGBA, TextLayoutOptions } from './text/layout'
 export {
   autoOutlineColor,
+  FLOATS_PER_GLYPH,
   layoutText,
   measureWidth,
   readableAngle,

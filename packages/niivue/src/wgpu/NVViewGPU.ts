@@ -174,8 +174,6 @@ export default class NVView {
   private _destroyed = false
   context: GPUCanvasContext | null
   preferredCanvasFormat: GPUTextureFormat
-  sampler: GPUSampler | null
-  buffers: Record<string, GPUBuffer>
   msaaTexture: GPUTexture | null
   depthTexture: GPUTexture | null
   crosshairRenderer: CrosshairRenderer
@@ -197,8 +195,6 @@ export default class NVView {
   crosscut2BindGroupLayout: GPUBindGroupLayout | null = null
   meshPipelines: Record<string, GPURenderPipeline> | null
   meshXRayPipelines: Record<string, GPURenderPipeline> | null
-  fontBindGroup: GPUBindGroup | null
-  maxGlyphs: number
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGPUMeshGPU | null
   thumbnailRenderer: ThumbnailRenderer
@@ -317,8 +313,6 @@ export default class NVView {
     this.device = null
     this.context = null
     this.preferredCanvasFormat = 'bgra8unorm'
-    this.sampler = null
-    this.buffers = {}
     this.msaaTexture = null
     this.depthTexture = null
     this.crosshairRenderer = new CrosshairRenderer()
@@ -341,8 +335,6 @@ export default class NVView {
     this.meshBindGroupLayout = null
     this.meshPipelines = null
     this.meshXRayPipelines = null
-    this.fontBindGroup = null
-    this.maxGlyphs = 0
     this.meshResources = new Map()
     this.orientCubeGpu = null
     this.thumbnailRenderer = new ThumbnailRenderer()
@@ -740,7 +732,6 @@ export default class NVView {
     // reload or backend recreate).
     this.isBusy = true
     try {
-      const buffs = this.buffers
       const device = this.device
       if (!device) return
       if (opts.coarseFloor !== undefined)
@@ -814,13 +805,6 @@ export default class NVView {
           this.volumeRenderer.overlayTexture,
           this.volumeRenderer.paqdTexture,
           this.volumeRenderer.paqdLutTexture,
-        )
-      }
-      if (this.fontRenderer.isReady && this.sampler) {
-        this.fontBindGroup = this.fontRenderer.createBindGroup(
-          device,
-          buffs.glyphStorage,
-          this.sampler,
         )
       }
       this._rebuildMeshResources(device, opts.meshes ?? 'all')
@@ -1815,7 +1799,7 @@ export default class NVView {
     // Project this frame's annotations: drawn below, hit-tested by pickAnnotation.
     NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
-    if (this.fontRenderer.isReady && this.fontBindGroup) {
+    if (this.fontRenderer.isReady) {
       const hasContent =
         this.model.getMeshes().length > 0 ||
         volumes.length > 0 ||
@@ -1939,30 +1923,7 @@ export default class NVView {
           backRadius: 0,
         })
       }
-      // Grow glyph storage if needed
-      let neededGlyphs = 0
-      for (const item of labels) neededGlyphs += item.count
-      if (neededGlyphs > this.maxGlyphs) {
-        this.maxGlyphs = neededGlyphs
-        this.buffers.glyphStorage.destroy()
-        this.buffers.glyphStorage = device.createBuffer({
-          size: this.maxGlyphs * 64,
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        })
-        this.fontBindGroup = this.fontRenderer.createBindGroup(
-          device,
-          this.buffers.glyphStorage,
-          this.sampler as GPUSampler,
-        )
-      }
-      this.fontRenderer.draw(
-        device,
-        pass,
-        this.fontBindGroup,
-        this.buffers.glyphStorage,
-        labels,
-        this.maxGlyphs,
-      )
+      this.fontRenderer.draw(device, pass, labels)
     }
     // Draw graph lines, cross-lines and the bounds border via the line renderer
     const allLines = [...graphLines, ...crossLinesList]
@@ -2396,17 +2357,6 @@ export default class NVView {
     if (typeof fadeMs === 'number' && fadeMs >= 0) {
       this.volumeRenderer.chunkFadeMs = fadeMs
     }
-    // Storage Buffers
-    this.maxGlyphs = 2048 // Increased for legends with many entries
-    this.buffers.glyphStorage = this.device.createBuffer({
-      size: this.maxGlyphs * 64,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
-    // Sampler for font bind groups
-    this.sampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-    })
     // Crosshair renderer is initialized in _createPipelines after meshBindGroupLayout is created
   }
 
@@ -3286,12 +3236,6 @@ export default class NVView {
     }
     this._depthTextureView = null
 
-    // Destroy buffers
-    if (this.buffers.glyphStorage) {
-      this.buffers.glyphStorage.destroy()
-    }
-    this.buffers = {}
-
     // Destroy render layer modules
     this.lineRenderer.destroy()
     this.boxLineRenderer.destroy()
@@ -3322,10 +3266,8 @@ export default class NVView {
     // Clear references
     this.device = null
     this.context = null
-    this.sampler = null
     this.meshBindGroupLayout = null
     this.meshPipelines = null
     this.meshXRayPipelines = null
-    this.fontBindGroup = null
   }
 }

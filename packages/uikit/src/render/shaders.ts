@@ -103,46 +103,61 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `
 
-// MSDF text. Vertices are pre-transformed screen-pixel triangles (rotation baked
-// in by the CPU layout); the shader only maps pixels to NDC and samples the atlas.
-// screenPxRange is a uniform (precomputed from font size + distance range), so no
-// screen-space derivatives are needed. Duplicated in spirit from niivue core
-// (gl/fontShader.ts, wgpu/font.wgsl) but simplified for the baked-vertex model.
+// MSDF text, for uikit's overlays and NiiVue core's labels alike. One instanced
+// quad per glyph (FLOATS_PER_GLYPH floats: rect, uv rect, colour, then atlas
+// range, sin and cos - 1 of a rotation about the rect's top-left). All-zero
+// rotation floats are exactly unrotated. The anti-aliasing range comes from
+// screen-space derivatives, so glyphs stay sharp at any scale or angle.
 
 export const GL_TEXT_VERT = `#version 300 es
 precision highp float;
 uniform vec2 canvasSize;
-in vec2 pos;
-in vec2 uv;
-in vec4 color;
+in vec4 glyphRect;    // x, y, width, height (pixels)
+in vec4 glyphUvRect;  // u, v, width, height (0-1)
+in vec4 glyphColor;
+in vec4 glyphParams;  // atlas range, sin, cos - 1, unused
 out vec2 vUv;
 out vec4 vColor;
+out float vAtlasRange;
 
 void main() {
-  vec2 ndc = (pos / canvasSize) * 2.0 - 1.0;
+  int vIdx = gl_VertexID;
+  // Quad corners 0..3 -> (0,0), (1,0), (0,1), (1,1)
+  vec2 pos = vec2(0.0);
+  if (vIdx == 1) { pos.x = 1.0; }
+  else if (vIdx == 2) { pos.y = 1.0; }
+  else if (vIdx == 3) { pos = vec2(1.0); }
+  vec2 local = pos * glyphRect.zw;
+  float s = glyphParams.y;
+  float c1 = glyphParams.z;
+  vec2 pixelPos = glyphRect.xy + local + vec2(c1 * local.x - s * local.y, s * local.x + c1 * local.y);
+  vec2 ndc = (pixelPos / canvasSize) * 2.0 - 1.0;
   gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);
-  vUv = uv;
-  vColor = color;
+  vUv = glyphUvRect.xy + pos * glyphUvRect.zw;
+  vColor = glyphColor;
+  vAtlasRange = glyphParams.x;
 }
 `
 
 export const GL_TEXT_FRAG = `#version 300 es
 precision highp float;
-uniform highp sampler2D fontTexture;
-uniform float screenPxRange;
+uniform sampler2D fontTexture;
+uniform vec2 texSize;
 in vec2 vUv;
 in vec4 vColor;
+in float vAtlasRange;
 out vec4 fragColor;
-
-float median(float r, float g, float b) {
-  return max(min(r, g), min(max(r, g), b));
-}
 
 void main() {
   vec3 msd = texture(fontTexture, vUv).rgb;
-  float sd = median(msd.r, msd.g, msd.b);
+  float sd = max(min(msd.r, msd.g), min(max(msd.r, msd.g), msd.b));
+  vec2 uv_dx = dFdx(vUv);
+  vec2 uv_dy = dFdy(vUv);
+  vec2 unitRange = vec2(vAtlasRange) / texSize;
+  vec2 screenTexSize = inversesqrt(uv_dx * uv_dx + uv_dy * uv_dy);
+  float screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
   float opacity = clamp(screenPxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
-  if (opacity <= 0.0) discard;
+  if (opacity <= 0.0) { discard; }
   fragColor = vec4(vColor.rgb, vColor.a * opacity);
 }
 `
@@ -150,43 +165,65 @@ void main() {
 export const WGSL_TEXT = `
 struct TextUniforms {
     canvasSize: vec2f,
-    screenPxRange: f32,
+};
+
+struct Glyph {
+    rect: vec4f,
+    uvRect: vec4f,
+    color: vec4f,
+    distanceRange: f32,
+    rotSin: f32,
+    rotCosMinus1: f32,
     _pad: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: TextUniforms;
-@group(0) @binding(1) var fontTex: texture_2d<f32>;
-@group(0) @binding(2) var fontSampler: sampler;
+@group(0) @binding(1) var<storage, read> glyphs: array<Glyph>;
+@group(0) @binding(2) var fontTex: texture_2d<f32>;
+@group(0) @binding(3) var fontSampler: sampler;
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
+    @location(2) atlasRange: f32,
 };
 
 @vertex
 fn vertex_main(
-    @location(0) pos: vec2f,
-    @location(1) uv: vec2f,
-    @location(2) color: vec4f
+    @builtin(vertex_index) vIdx: u32,
+    @builtin(instance_index) iIdx: u32
 ) -> VertexOutput {
+    let glyph = glyphs[iIdx];
+    var pos = vec2f(0.0);
+    if (vIdx == 1u) { pos.x = 1.0; }
+    else if (vIdx == 2u) { pos.y = 1.0; }
+    else if (vIdx == 3u) { pos = vec2f(1.0); }
+    let local = pos * glyph.rect.zw;
+    let s = glyph.rotSin;
+    let c1 = glyph.rotCosMinus1;
+    let pixelPos = glyph.rect.xy + local + vec2f(c1 * local.x - s * local.y, s * local.x + c1 * local.y);
+    let ndc = (pixelPos / u.canvasSize) * 2.0 - 1.0;
     var out: VertexOutput;
-    let ndc = (pos / u.canvasSize) * 2.0 - 1.0;
     out.position = vec4f(ndc.x, -ndc.y, 0.0, 1.0);
-    out.uv = uv;
-    out.color = color;
+    out.uv = glyph.uvRect.xy + pos * glyph.uvRect.zw;
+    out.color = glyph.color;
+    out.atlasRange = glyph.distanceRange;
     return out;
-}
-
-fn median(r: f32, g: f32, b: f32) -> f32 {
-    return max(min(r, g), min(max(r, g), b));
 }
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4f {
     let msd = textureSample(fontTex, fontSampler, in.uv).rgb;
-    let sd = median(msd.r, msd.g, msd.b);
-    let opacity = clamp(u.screenPxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
+    let sd = max(min(msd.r, msd.g), min(max(msd.r, msd.g), msd.b));
+    let uv_dx = dpdx(in.uv);
+    let uv_dy = dpdy(in.uv);
+    let texSize = vec2f(textureDimensions(fontTex));
+    let unitRange = vec2f(in.atlasRange) / texSize;
+    let screenTexSize = inverseSqrt(uv_dx * uv_dx + uv_dy * uv_dy);
+    let screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
+    let opacity = clamp(screenPxRange * (sd - 0.5) + 0.5, 0.0, 1.0);
+    if (opacity <= 0.0) { discard; }
     return vec4f(in.color.rgb, in.color.a * opacity);
 }
 `

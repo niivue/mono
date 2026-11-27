@@ -1,19 +1,15 @@
 // A UIKit overlay that draws rotatable MSDF text through the niivue overlay hook,
-// on whichever backend is live. Each item is laid out on the CPU (rotation baked
-// in) and drawn as a textured triangle run. This is the transformed-text base the
-// ruler widget's label builds on.
+// on whichever backend is live. Items are laid out on the CPU as glyph records
+// and drawn as instanced quads, every item in one draw. This is the
+// transformed-text base the ruler widget's label builds on.
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { GlTextRenderer } from './render/glTextRenderer'
-import { type TextRun, WgpuTextRenderer } from './render/wgpuTextRenderer'
-import {
-  screenPxRange,
-  type UIKitFont,
-  type UIKitFontMetrics,
-} from './text/font'
+import { WgpuTextRenderer } from './render/wgpuTextRenderer'
+import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import {
   autoOutlineColor,
-  FLOATS_PER_VERTEX,
+  FLOATS_PER_GLYPH,
   layoutText,
   type TextLayoutOptions,
 } from './text/layout'
@@ -36,37 +32,38 @@ const OUTLINE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [-1, -1],
 ]
 
-/** Lay out one item's glyph run, baking an offset-halo outline in if requested. */
-function buildTextRun(
+/** Every item's glyph records, each item's offset-halo outline first. */
+function layoutItems(
   metrics: UIKitFontMetrics,
-  item: UIKitTextItem,
-): { vertices: Float32Array; count: number } {
-  const fill = layoutText(metrics, item.str, item)
-  const w = item.outlineWidthPx ?? 0
-  if (w <= 0) return fill
-  const outlineColor =
-    item.outlineColor ?? autoOutlineColor(item.color ?? [1, 1, 1, 1])
+  items: readonly UIKitTextItem[],
+): { glyphs: Float32Array; count: number } {
   const parts: Float32Array[] = []
-  for (const [ox, oy] of OUTLINE_OFFSETS) {
-    parts.push(
-      layoutText(metrics, item.str, {
-        ...item,
-        x: item.x + ox * w,
-        y: item.y + oy * w,
-        color: outlineColor,
-      }).vertices,
-    )
+  for (const item of items) {
+    const w = item.outlineWidthPx ?? 0
+    if (w > 0) {
+      const color =
+        item.outlineColor ?? autoOutlineColor(item.color ?? [1, 1, 1, 1])
+      for (const [ox, oy] of OUTLINE_OFFSETS)
+        parts.push(
+          layoutText(metrics, item.str, {
+            ...item,
+            x: item.x + ox * w,
+            y: item.y + oy * w,
+            color,
+          }).glyphs,
+        )
+    }
+    parts.push(layoutText(metrics, item.str, item).glyphs) // fill on top
   }
-  parts.push(fill.vertices) // fill drawn last, on top of the halo
   let total = 0
   for (const p of parts) total += p.length
-  const vertices = new Float32Array(total)
+  const glyphs = new Float32Array(total)
   let off = 0
   for (const p of parts) {
-    vertices.set(p, off)
+    glyphs.set(p, off)
     off += p.length
   }
-  return { vertices, count: total / FLOATS_PER_VERTEX }
+  return { glyphs, count: total / FLOATS_PER_GLYPH }
 }
 
 export class UIKitTextOverlay implements UIKitOverlayRenderer {
@@ -74,9 +71,10 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
   private items: UIKitTextItem[]
   private readonly gl = new GlTextRenderer()
   private readonly wgpu = new WgpuTextRenderer()
-  // Laid-out runs, cached so a static overlay doesn't re-run text layout (9x per
-  // item for the halo outline) every frame. Rebuilt when the items or font change.
-  private runs: TextRun[] | null = null
+  // Laid-out glyphs, cached so a static overlay doesn't re-run text layout (9x
+  // per item for the halo outline) every frame. Rebuilt when the items or font
+  // change.
+  private laidOut: { glyphs: Float32Array; count: number } | null = null
 
   constructor(font: UIKitFont, items: UIKitTextItem[] = []) {
     this.font = font
@@ -86,61 +84,43 @@ export class UIKitTextOverlay implements UIKitOverlayRenderer {
   /** Swap the font atlas (metrics + image). Trigger a redraw via the controller. */
   setFont(font: UIKitFont): void {
     this.font = font
-    this.runs = null
+    this.laidOut = null
   }
 
   /** Replace the text items drawn each frame. Trigger a redraw via the controller. */
   setItems(items: UIKitTextItem[]): void {
     this.items = items
-    this.runs = null
-  }
-
-  private layoutRuns(): TextRun[] {
-    const metrics = this.font.metrics
-    const runs: TextRun[] = []
-    for (const item of this.items) {
-      const { vertices, count } = buildTextRun(metrics, item)
-      if (count === 0) continue
-      runs.push({
-        vertices,
-        count,
-        screenPxRange: screenPxRange(metrics, item.sizePx),
-      })
-    }
-    return runs
+    this.laidOut = null
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.items.length === 0) return
     const { handle, bounds } = frame
     // Lay out on the first draw after a change; reuse the cache otherwise. The
-    // vertices are in absolute screen pixels (the canvas size is applied via the
-    // shader uniform), so they stay valid across pan/zoom of the same items.
-    this.runs ??= this.layoutRuns()
-    const runs = this.runs
-    if (runs.length === 0) return
-
+    // records are in absolute screen pixels (the canvas size is a shader
+    // uniform), so they stay valid across pan/zoom of the same items.
+    this.laidOut ??= layoutItems(this.font.metrics, this.items)
+    const { glyphs, count } = this.laidOut
+    if (count === 0) return
     if (handle.backend === 'webgl2') {
-      for (const r of runs) {
-        this.gl.draw(
-          handle.gl,
-          this.font.image,
-          r.vertices,
-          r.count,
-          r.screenPxRange,
-          bounds.width,
-          bounds.height,
-        )
-      }
+      this.gl.draw(
+        handle.gl,
+        this.font.image,
+        glyphs,
+        count,
+        bounds.width,
+        bounds.height,
+      )
     } else {
-      this.wgpu.drawAll(
+      this.wgpu.draw(
         handle.device,
         handle.pass,
         handle.colorFormat,
         handle.sampleCount,
         handle.depthFormat,
         this.font.image,
-        runs,
+        glyphs,
+        count,
         bounds.width,
         bounds.height,
       )

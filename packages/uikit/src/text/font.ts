@@ -103,17 +103,6 @@ export function parseFont(raw: RawFontFile): UIKitFontMetrics {
   }
 }
 
-/**
- * MSDF anti-aliasing range in screen pixels for a given text size, matching the
- * old uikit: `max((size / atlasSize) * distanceRange, 1)`. Passed to the shader.
- */
-export function screenPxRange(
-  metrics: UIKitFontMetrics,
-  sizePx: number,
-): number {
-  return Math.max((sizePx / metrics.size) * metrics.distanceRange, 1)
-}
-
 /** Bytes of a base64 data: URL, decoded without a (CSP-governed) fetch. */
 export function dataUrlBytes(url: string): Uint8Array<ArrayBuffer> {
   const binary = atob(url.slice(url.indexOf(',') + 1))

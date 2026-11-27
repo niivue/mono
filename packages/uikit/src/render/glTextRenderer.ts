@@ -1,10 +1,13 @@
-// UIKit's own WebGL2 MSDF text renderer. Draws pre-transformed screen-pixel
-// triangle vertices (rotation baked in by the CPU layout) with the atlas bound.
-// Self-contained; lazily initialized from the live context and atlas image, and
-// re-initialized if either identity changes.
+// The WebGL2 MSDF text renderer, for uikit's overlays and NiiVue core's labels
+// alike: one instanced quad per glyph record (text/layout.ts FLOATS_PER_GLYPH).
+// Self-contained; lazily initialized from the live context, and the atlas
+// texture re-uploaded when the atlas source changes.
 
-import { FLOATS_PER_VERTEX } from '../text/layout'
+import { FLOATS_PER_GLYPH } from '../text/layout'
 import { GL_TEXT_FRAG, GL_TEXT_VERT } from './shaders'
+
+/** An atlas image the text renderers upload: a decoded bitmap or a loaded `<img>`. */
+export type UIKitAtlasSource = ImageBitmap | HTMLImageElement
 
 function compile(
   gl: WebGL2RenderingContext,
@@ -29,9 +32,9 @@ export class GlTextRenderer {
   private vao: WebGLVertexArrayObject | null = null
   private buffer: WebGLBuffer | null = null
   private texture: WebGLTexture | null = null
-  private textureImage: ImageBitmap | null = null
+  private atlas: UIKitAtlasSource | null = null
   private uCanvasSize: WebGLUniformLocation | null = null
-  private uScreenPxRange: WebGLUniformLocation | null = null
+  private uTexSize: WebGLUniformLocation | null = null
   private uFontTexture: WebGLUniformLocation | null = null
 
   private ensureProgram(gl: WebGL2RenderingContext): void {
@@ -56,73 +59,95 @@ export class GlTextRenderer {
     if (!vao || !buffer) throw new Error('UIKit: failed to create text buffers')
     gl.bindVertexArray(vao)
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-    const stride = FLOATS_PER_VERTEX * 4
-    const aPos = gl.getAttribLocation(program, 'pos')
-    const aUv = gl.getAttribLocation(program, 'uv')
-    const aColor = gl.getAttribLocation(program, 'color')
-    gl.enableVertexAttribArray(aPos)
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, stride, 0)
-    gl.enableVertexAttribArray(aUv)
-    gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, stride, 8)
-    gl.enableVertexAttribArray(aColor)
-    gl.vertexAttribPointer(aColor, 4, gl.FLOAT, false, stride, 16)
+    const stride = FLOATS_PER_GLYPH * 4
+    const attrs: [string, number][] = [
+      ['glyphRect', 0],
+      ['glyphUvRect', 16],
+      ['glyphColor', 32],
+      ['glyphParams', 48],
+    ]
+    for (const [name, offset] of attrs) {
+      const loc = gl.getAttribLocation(program, name)
+      gl.enableVertexAttribArray(loc)
+      gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, stride, offset)
+      gl.vertexAttribDivisor(loc, 1)
+    }
     gl.bindVertexArray(null)
     this.gl = gl
     this.program = program
     this.vao = vao
     this.buffer = buffer
     this.uCanvasSize = gl.getUniformLocation(program, 'canvasSize')
-    this.uScreenPxRange = gl.getUniformLocation(program, 'screenPxRange')
+    this.uTexSize = gl.getUniformLocation(program, 'texSize')
     this.uFontTexture = gl.getUniformLocation(program, 'fontTexture')
   }
 
-  private ensureTexture(gl: WebGL2RenderingContext, image: ImageBitmap): void {
-    if (this.texture && this.textureImage === image) return
+  private ensureTexture(
+    gl: WebGL2RenderingContext,
+    atlas: UIKitAtlasSource,
+  ): void {
+    if (this.texture && this.atlas === atlas) return
     if (this.texture) gl.deleteTexture(this.texture)
     const texture = gl.createTexture()
     gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
-    gl.bindTexture(gl.TEXTURE_2D, null)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas)
     this.texture = texture
-    this.textureImage = image
+    this.atlas = atlas
   }
 
-  /** Draw one already-laid-out glyph run (screen-pixel vertices). */
+  /**
+   * Draw `count` glyph records from `glyphs` (screen pixels) over a `width` x
+   * `height` bounds rect, in one instanced draw.
+   */
   draw(
     gl: WebGL2RenderingContext,
-    image: ImageBitmap,
-    vertices: Float32Array,
+    atlas: UIKitAtlasSource,
+    glyphs: Float32Array,
     count: number,
-    screenPxRange: number,
     width: number,
     height: number,
   ): void {
     if (count === 0) return
     this.ensureProgram(gl)
-    this.ensureTexture(gl, image)
+    this.ensureTexture(gl, atlas)
     if (!this.program || !this.vao || !this.buffer || !this.texture) return
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer)
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      glyphs,
+      gl.DYNAMIC_DRAW,
+      0,
+      count * FLOATS_PER_GLYPH,
+    )
     gl.useProgram(this.program)
     if (this.uCanvasSize) gl.uniform2f(this.uCanvasSize, width, height)
-    if (this.uScreenPxRange) gl.uniform1f(this.uScreenPxRange, screenPxRange)
+    if (this.uTexSize) gl.uniform2f(this.uTexSize, atlas.width, atlas.height)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
     if (this.uFontTexture) gl.uniform1i(this.uFontTexture, 0)
+    // The quad winds clockwise on screen: draw with culling off, then put the
+    // host's state back.
+    const cull = gl.isEnabled(gl.CULL_FACE)
+    gl.disable(gl.CULL_FACE)
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+    )
     gl.bindVertexArray(this.vao)
-    gl.drawArrays(gl.TRIANGLES, 0, count)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count)
     gl.bindVertexArray(null)
-    gl.bindTexture(gl.TEXTURE_2D, null)
     gl.depthMask(true)
     gl.enable(gl.DEPTH_TEST)
+    if (cull) gl.enable(gl.CULL_FACE)
   }
 
   destroy(): void {
@@ -138,9 +163,9 @@ export class GlTextRenderer {
     this.vao = null
     this.buffer = null
     this.texture = null
-    this.textureImage = null
+    this.atlas = null
     this.uCanvasSize = null
-    this.uScreenPxRange = null
+    this.uTexSize = null
     this.uFontTexture = null
   }
 }

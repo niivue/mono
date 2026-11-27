@@ -7,9 +7,7 @@ import {
   layoutTextInput,
   scaleTextInput,
   type TextInputSpec,
-  textInputCaretAt,
   textInputContains,
-  textInputTextWindow,
 } from './textInput'
 
 // A stub font where every glyph is half an em wide and the cap height 0.7 em.
@@ -71,31 +69,13 @@ describe('layoutTextInput', () => {
   })
 })
 
-describe('textInputContains and caret mapping', () => {
+describe('textInputContains', () => {
   const layout = layoutTextInput(SPEC, STYLE, METRICS)
 
   it('hits the field but not the label', () => {
     expect(textInputContains(layout, 150, 60)).toBe(true)
     expect(textInputContains(layout, 105, 60)).toBe(false)
     expect(textInputContains(layout, 182, 60)).toBe(false)
-  })
-
-  it('maps a canvas x to the nearer caret index', () => {
-    // Glyphs are 7 px wide from x 128.
-    expect(textInputCaretAt(layout, STYLE, METRICS, 'abc', 0, 128)).toBe(0)
-    expect(textInputCaretAt(layout, STYLE, METRICS, 'abc', 0, 132)).toBe(1)
-    expect(textInputCaretAt(layout, STYLE, METRICS, 'abc', 0, 200)).toBe(3)
-  })
-
-  it('shows the glyphs that fit and scrolls to the caret', () => {
-    // 48 px viewport minus the 1 px caret: six 7 px glyphs.
-    const text = 'abcdefgh'
-    expect(
-      textInputTextWindow(layout, STYLE, METRICS, text, 0, 0),
-    ).toMatchObject({ first: 0, end: 6 })
-    expect(
-      textInputTextWindow(layout, STYLE, METRICS, text, 0, 8),
-    ).toMatchObject({ first: 2, end: 8 })
   })
 })
 

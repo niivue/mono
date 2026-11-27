@@ -6,19 +6,22 @@
 // UIKitNumberInputOverlay wires it to the pointer, the keyboard and the draw
 // hook.
 
-import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
-import { buildScrollArrow, type ScrollWindow } from './scroll'
+import { buildScrollArrow } from './scroll'
 import { snapToStep, stepDecimals, usableStep } from './slider'
 import type { UIKitFontMetrics } from './text/font'
-import { capHeight, measureWidth, type RGBA } from './text/layout'
+import type { RGBA } from './text/layout'
 import type { TextEditState } from './textEdit'
 import {
+  buildFieldBox,
+  buildLineFieldLabel,
   buildTextFieldContent,
+  dimField,
   type FieldStyle,
-  textFieldCaretAt,
-  textFieldWindow,
+  type LineFieldLayout,
+  layoutLineField,
+  scaleField,
 } from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
@@ -114,21 +117,10 @@ export interface NumberInputSpec {
   onChange?: (value: number, id: string) => void
 }
 
-/** The control's boxes in canvas pixels. */
-export interface NumberInputLayout {
-  /** The whole control: label and field. */
-  x: number
-  y: number
-  width: number
-  height: number
-  /** The bordered field. */
-  field: UIKitBox
-  /** Where the text, caret and selection draw: the field left of the spinner. */
-  textArea: UIKitBox
+/** The control's boxes in canvas pixels; the text area stops at the spinner. */
+export interface NumberInputLayout extends LineFieldLayout {
   spinUp: UIKitBox
   spinDown: UIKitBox
-  /** Baseline of the label and the field text. */
-  baseline: number
 }
 
 /** The transient state that changes how a number input looks. */
@@ -223,42 +215,25 @@ export function layoutNumberInput(
   style: NumberInputStyle,
   metrics: UIKitFontMetrics,
 ): NumberInputLayout {
-  const capH = capHeight(metrics) * style.textSizePx
-  const labelW = spec.label
-    ? measureWidth(metrics, spec.label, style.textSizePx) + style.labelGap
-    : 0
-  const fieldW = spec.width ?? style.fieldWidth
-  const fieldH = Math.ceil(capH + 2 * style.paddingY)
-  const b = style.borderWidth
-  const field = { x: spec.x + labelW, y: spec.y, width: fieldW, height: fieldH }
-  const spinX = field.x + fieldW - b - style.spinnerWidth
-  const halfH = (fieldH - 2 * b) / 2
-  const textX = field.x + style.paddingX
+  const l = layoutLineField(spec, style, metrics)
+  const { field, textArea } = l
+  const spinX = field.x + field.width - style.borderWidth - style.spinnerWidth
+  const halfH = textArea.height / 2
+  textArea.width = Math.max(0, spinX - style.paddingX - textArea.x)
   return {
-    x: spec.x,
-    y: spec.y,
-    width: labelW + fieldW,
-    height: fieldH,
-    field,
-    textArea: {
-      x: textX,
-      y: field.y + b,
-      width: Math.max(0, spinX - style.paddingX - textX),
-      height: fieldH - 2 * b,
-    },
+    ...l,
     spinUp: {
       x: spinX,
-      y: field.y + b,
+      y: textArea.y,
       width: style.spinnerWidth,
       height: halfH,
     },
     spinDown: {
       x: spinX,
-      y: field.y + b + halfH,
+      y: textArea.y + halfH,
       width: style.spinnerWidth,
       height: halfH,
     },
-    baseline: field.y + style.paddingY + capH,
   }
 }
 
@@ -268,28 +243,15 @@ export function scaleNumberInput(
   style: NumberInputStyle,
   k: number,
 ): { spec: NumberInputSpec; style: NumberInputStyle } {
-  if (k === 1) return { spec, style }
+  const scaled = scaleField(spec, style, k)
+  if (k === 1) return scaled
   return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-    },
+    spec: scaled.spec,
     style: {
-      ...style,
-      borderWidth: style.borderWidth * k,
-      radius: style.radius * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      paddingX: style.paddingX * k,
-      paddingY: style.paddingY * k,
-      labelGap: style.labelGap * k,
-      fieldWidth: style.fieldWidth * k,
+      ...scaled.style,
       spinnerWidth: style.spinnerWidth * k,
       arrowSize: style.arrowSize * k,
       arrowWidth: style.arrowWidth * k,
-      caretWidth: style.caretWidth * k,
     },
   }
 }
@@ -315,40 +277,6 @@ export function numberInputSpinAt(
 }
 
 /**
- * The run of glyphs the text area shows, starting at `firstGlyph` but
- * scrolled the least distance that keeps `caret` in view.
- */
-export function numberInputTextWindow(
-  layout: NumberInputLayout,
-  style: NumberInputStyle,
-  metrics: UIKitFontMetrics,
-  text: string,
-  firstGlyph: number,
-  caret: number,
-): ScrollWindow {
-  return textFieldWindow(
-    layout.textArea,
-    style,
-    metrics,
-    text,
-    firstGlyph,
-    caret,
-  )
-}
-
-/** The caret index for a canvas x over text shown from `firstGlyph`. */
-export function numberInputCaretAt(
-  layout: NumberInputLayout,
-  style: NumberInputStyle,
-  metrics: UIKitFontMetrics,
-  text: string,
-  firstGlyph: number,
-  px: number,
-): number {
-  return textFieldCaretAt(layout.textArea, style, metrics, text, firstGlyph, px)
-}
-
-/**
  * The draw data for one number input in one visual state: the field, the
  * spinner with its chevrons, the selection, the visible run of text, the
  * caret and the label.
@@ -360,27 +288,17 @@ export function buildNumberInput(
   metrics: UIKitFontMetrics,
   visual: NumberInputVisual,
 ): { rects: RectData[]; lines: LineData[]; text: UIKitTextItem[] } {
-  const dim = (c: RGBA): RGBA =>
-    visual.enabled ? c : mixColor(c, [c[0], c[1], c[2], 0], 0.5)
+  const dim = (c: RGBA): RGBA => dimField(c, visual.enabled)
   const focused = visual.edit !== null
   const rects: RectData[] = []
   const lines: LineData[] = []
   const text: UIKitTextItem[] = []
 
-  let fill = style.fill
-  if (!visual.enabled) fill = style.disabledFill
-  else if (visual.hover) fill = style.hoverFill
   let border = style.border
   if (visual.enabled && !visual.valid) border = style.invalidBorder
   else if (visual.enabled && focused) border = style.focusBorder
   rects.push(
-    buildRect({
-      ...layout.field,
-      radius: style.radius,
-      borderWidth: style.borderWidth,
-      fill,
-      border: dim(border),
-    }),
+    buildFieldBox(layout.field, style, border, visual.hover, visual.enabled),
   )
 
   // Spinner: two faces, a divider against the text and one between them.
@@ -441,17 +359,7 @@ export function buildNumberInput(
   rects.push(...content.rects)
   text.push(...content.text)
 
-  if (spec.label) {
-    text.push({
-      str: spec.label,
-      x: layout.x,
-      y: layout.baseline,
-      sizePx: style.textSizePx,
-      align: 0,
-      color,
-      outlineWidthPx: style.textOutlineWidth,
-      outlineColor: style.textOutlineColor ?? undefined,
-    })
-  }
+  if (spec.label)
+    text.push(buildLineFieldLabel(spec.label, layout, style, color))
   return { rects, lines, text }
 }

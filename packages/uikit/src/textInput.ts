@@ -4,17 +4,19 @@
 // and the run of glyphs that fits. No GPU and no DOM here; UIKitTextInputOverlay
 // wires it to the pointer, the keyboard and the draw hook.
 
-import { mixColor } from './button'
-import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
-import type { ScrollWindow } from './scroll'
+import { type RectData, rectContains } from './rect'
 import type { UIKitFontMetrics } from './text/font'
-import { capHeight, measureWidth, type RGBA } from './text/layout'
+import type { RGBA } from './text/layout'
 import type { TextEditState } from './textEdit'
 import {
+  buildFieldBox,
+  buildLineFieldLabel,
   buildTextFieldContent,
+  dimField,
   type FieldStyle,
-  textFieldCaretAt,
-  textFieldWindow,
+  type LineFieldLayout,
+  layoutLineField,
+  scaleField,
 } from './textField'
 import type { UIKitTextItem } from './textOverlay'
 
@@ -78,19 +80,7 @@ export interface TextInputSpec {
 }
 
 /** The control's boxes in canvas pixels. */
-export interface TextInputLayout {
-  /** The whole control: label and field. */
-  x: number
-  y: number
-  width: number
-  height: number
-  /** The bordered field. */
-  field: UIKitBox
-  /** Where the text, caret and selection draw. */
-  textArea: UIKitBox
-  /** Baseline of the label and the field text. */
-  baseline: number
-}
+export type TextInputLayout = LineFieldLayout
 
 /** The transient state that changes how a text input looks. */
 export interface TextInputVisual {
@@ -117,28 +107,7 @@ export function layoutTextInput(
   style: TextInputStyle,
   metrics: UIKitFontMetrics,
 ): TextInputLayout {
-  const capH = capHeight(metrics) * style.textSizePx
-  const labelW = spec.label
-    ? measureWidth(metrics, spec.label, style.textSizePx) + style.labelGap
-    : 0
-  const fieldW = spec.width ?? style.fieldWidth
-  const fieldH = Math.ceil(capH + 2 * style.paddingY)
-  const b = style.borderWidth
-  const field = { x: spec.x + labelW, y: spec.y, width: fieldW, height: fieldH }
-  return {
-    x: spec.x,
-    y: spec.y,
-    width: labelW + fieldW,
-    height: fieldH,
-    field,
-    textArea: {
-      x: field.x + style.paddingX,
-      y: field.y + b,
-      width: Math.max(0, fieldW - 2 * style.paddingX),
-      height: fieldH - 2 * b,
-    },
-    baseline: field.y + style.paddingY + capH,
-  }
+  return layoutLineField(spec, style, metrics)
 }
 
 /** Scale every length in a spec and style by `k` (CSS pixels to canvas pixels). */
@@ -147,27 +116,7 @@ export function scaleTextInput(
   style: TextInputStyle,
   k: number,
 ): { spec: TextInputSpec; style: TextInputStyle } {
-  if (k === 1) return { spec, style }
-  return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-    },
-    style: {
-      ...style,
-      borderWidth: style.borderWidth * k,
-      radius: style.radius * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      paddingX: style.paddingX * k,
-      paddingY: style.paddingY * k,
-      labelGap: style.labelGap * k,
-      fieldWidth: style.fieldWidth * k,
-      caretWidth: style.caretWidth * k,
-    },
-  }
+  return scaleField(spec, style, k)
 }
 
 /** True when canvas point (px, py) lies inside the field (the label is not interactive). */
@@ -177,40 +126,6 @@ export function textInputContains(
   py: number,
 ): boolean {
   return rectContains(layout.field, px, py)
-}
-
-/**
- * The run of glyphs the text area shows, starting at `firstGlyph` but
- * scrolled the least distance that keeps `caret` in view.
- */
-export function textInputTextWindow(
-  layout: TextInputLayout,
-  style: TextInputStyle,
-  metrics: UIKitFontMetrics,
-  text: string,
-  firstGlyph: number,
-  caret: number,
-): ScrollWindow {
-  return textFieldWindow(
-    layout.textArea,
-    style,
-    metrics,
-    text,
-    firstGlyph,
-    caret,
-  )
-}
-
-/** The caret index for a canvas x over text shown from `firstGlyph`. */
-export function textInputCaretAt(
-  layout: TextInputLayout,
-  style: TextInputStyle,
-  metrics: UIKitFontMetrics,
-  text: string,
-  firstGlyph: number,
-  px: number,
-): number {
-  return textFieldCaretAt(layout.textArea, style, metrics, text, firstGlyph, px)
 }
 
 /**
@@ -225,24 +140,13 @@ export function buildTextInput(
   metrics: UIKitFontMetrics,
   visual: TextInputVisual,
 ): { rects: RectData[]; text: UIKitTextItem[] } {
-  const dim = (c: RGBA): RGBA =>
-    visual.enabled ? c : mixColor(c, [c[0], c[1], c[2], 0], 0.5)
   const focused = visual.edit !== null
   const rects: RectData[] = []
   const text: UIKitTextItem[] = []
 
-  let fill = style.fill
-  if (!visual.enabled) fill = style.disabledFill
-  else if (visual.hover) fill = style.hoverFill
   const border = visual.enabled && focused ? style.focusBorder : style.border
   rects.push(
-    buildRect({
-      ...layout.field,
-      radius: style.radius,
-      borderWidth: style.borderWidth,
-      fill,
-      border: dim(border),
-    }),
+    buildFieldBox(layout.field, style, border, visual.hover, visual.enabled),
   )
 
   const color = visual.enabled ? style.textColor : style.disabledTextColor
@@ -256,7 +160,7 @@ export function buildTextInput(
       spec.placeholder,
       null,
       0,
-      dim(style.placeholderColor),
+      dimField(style.placeholderColor, visual.enabled),
       visual.enabled,
     )
     text.push(...hint.text)
@@ -275,17 +179,7 @@ export function buildTextInput(
   rects.push(...content.rects)
   text.push(...content.text)
 
-  if (spec.label) {
-    text.push({
-      str: spec.label,
-      x: layout.x,
-      y: layout.baseline,
-      sizePx: style.textSizePx,
-      align: 0,
-      color,
-      outlineWidthPx: style.textOutlineWidth,
-      outlineColor: style.textOutlineColor ?? undefined,
-    })
-  }
+  if (spec.label)
+    text.push(buildLineFieldLabel(spec.label, layout, style, color))
   return { rects, text }
 }

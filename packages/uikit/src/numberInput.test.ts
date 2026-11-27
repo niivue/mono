@@ -7,10 +7,8 @@ import {
   layoutNumberInput,
   type NumberInputSpec,
   type NumberInputVisual,
-  numberInputCaretAt,
   numberInputContains,
   numberInputSpinAt,
-  numberInputTextWindow,
   parseNumberInput,
   scaleNumberInput,
   snapNumberInput,
@@ -157,24 +155,6 @@ describe('layoutNumberInput', () => {
     expect(numberInputSpinAt(l, 190, 55)).toBe(1)
     expect(numberInputSpinAt(l, 190, 65)).toBe(-1)
     expect(numberInputSpinAt(l, 150, 60)).toBe(0)
-  })
-
-  it('maps a pointer x to the nearer caret and scrolls long text by whole glyphs', () => {
-    const l = layoutNumberInput(SPEC, STYLE, METRICS)
-    // Glyphs are 7 px wide from x 128.
-    expect(numberInputCaretAt(l, STYLE, METRICS, '123', 0, 130)).toBe(0)
-    expect(numberInputCaretAt(l, STYLE, METRICS, '123', 0, 132)).toBe(1)
-    expect(numberInputCaretAt(l, STYLE, METRICS, '123', 0, 999)).toBe(3)
-    // 51 px minus the caret leaves room for 7 glyphs of 7 px.
-    expect(
-      numberInputTextWindow(l, STYLE, METRICS, '123456789', 0, 0),
-    ).toMatchObject({ first: 0, end: 7 })
-    expect(
-      numberInputTextWindow(l, STYLE, METRICS, '123456789', 0, 9),
-    ).toMatchObject({ first: 2, end: 9 })
-    expect(
-      numberInputTextWindow(l, STYLE, METRICS, '123456789', 2, 1),
-    ).toMatchObject({ first: 1, end: 8 })
   })
 })
 

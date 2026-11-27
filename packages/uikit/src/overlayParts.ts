@@ -1,14 +1,15 @@
 // Mechanics shared by the widget overlays: the rect + line + label bundle they
-// draw through, and the entry map they keep specs in. Pointer state, focus and
-// callbacks stay in each widget.
+// draw through, the entry map they keep specs in, and the entry-overlay base
+// that wires the two to a widget model. Pointer state, focus and callbacks
+// stay in each widget.
 
 import type { UIKitRedrawSource } from './controls'
-import type { UIKitOverlayFrame } from './hook'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { LineData } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
 import type { RectData } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
-import type { UIKitFont } from './text/font'
+import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
 /** One widget's draw data. */
@@ -143,4 +144,107 @@ export class UIKitEntryMap<L, E extends UIKitEntry<L>> extends Map<string, E> {
     for (const id of this.ids) if (!keep.has(id)) remove(id)
     for (const spec of specs) add(spec)
   }
+}
+
+/** The model functions an entry overlay draws and hit-tests a widget with. */
+export interface UIKitEntryModel<S, St, L> {
+  defaultStyle: St
+  resolveStyle: (base: St, override?: Partial<St>) => St
+  scale: (spec: S, style: St, k: number) => { spec: S; style: St }
+  layout: (spec: S, style: St, metrics: UIKitFontMetrics) => L
+  contains: (layout: L, x: number, y: number) => boolean
+}
+
+export interface UIKitEntryOverlayOptions<St> {
+  requestRedraw?: () => void
+  style?: Partial<St>
+  cssUnits?: boolean
+}
+
+/**
+ * A widget overlay over one entry map: default style, scaling, hit testing,
+ * layer binding, drawing and teardown. The widget adds its entries, pointer
+ * and keyboard handling, and `geometry`.
+ */
+export abstract class UIKitEntryOverlay<
+  S extends { id: string; enabled?: boolean; style?: Partial<St> },
+  St,
+  L,
+  E extends { spec: S; style: St; layout: L | null },
+> implements UIKitOverlayRenderer
+{
+  protected readonly bundle: UIKitDrawBundle
+  protected readonly entries: UIKitEntryMap<L, E>
+  protected baseStyle: St
+  protected layer: UIKitRedrawSource | null = null
+
+  constructor(
+    protected readonly font: UIKitFont,
+    protected readonly model: UIKitEntryModel<S, St, L>,
+    options: UIKitEntryOverlayOptions<St>,
+  ) {
+    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
+    this.entries = new UIKitEntryMap((entry, scale) => {
+      const { spec, style } = model.scale(entry.spec, entry.style, scale)
+      return model.layout(spec, style, font.metrics)
+    }, options.cssUnits ?? false)
+    this.baseStyle = model.resolveStyle(model.defaultStyle, options.style)
+  }
+
+  /** Replace the default style for every entry (per-spec overrides still win). */
+  setDefaultStyle(style: Partial<St>): void {
+    this.baseStyle = this.model.resolveStyle(this.model.defaultStyle, style)
+    for (const entry of this.entries.values()) {
+      entry.style = this.model.resolveStyle(this.baseStyle, entry.spec.style)
+      this.relayout(entry)
+    }
+    this.invalidate()
+  }
+
+  /** The ids of all entries, in draw order. */
+  get ids(): string[] {
+    return this.entries.ids
+  }
+
+  hitTest(x: number, y: number): boolean {
+    return this.hitEntry(x, y) !== null
+  }
+
+  bindLayer(layer: UIKitRedrawSource): void {
+    this.bundle.bind(layer)
+    this.layer = layer
+  }
+
+  drawOverlay(frame: UIKitOverlayFrame): void {
+    if (this.entries.size === 0) return
+    const rescaled = this.entries.rescale(frame.dpr)
+    if (rescaled)
+      for (const entry of this.entries.values()) this.relayout(entry)
+    this.bundle.draw(frame, () => this.geometry(), rescaled)
+  }
+
+  /** Release GPU resources on both backends. */
+  destroy(): void {
+    this.bundle.destroy()
+  }
+
+  /** Drop an entry's cached layout (and anything measured from it). */
+  protected relayout(entry: E): void {
+    entry.layout = null
+  }
+
+  protected invalidate(): void {
+    this.bundle.invalidate()
+  }
+
+  protected scaled(entry: E): { spec: S; style: St } {
+    return this.model.scale(entry.spec, entry.style, this.entries.scale)
+  }
+
+  /** The topmost (last added) enabled entry under a canvas point. */
+  protected hitEntry(x: number, y: number): E | null {
+    return this.entries.topmost(this.model.contains, x, y)
+  }
+
+  protected abstract geometry(): Iterable<UIKitGeometry>
 }

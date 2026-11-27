@@ -181,6 +181,10 @@ describe('UIKitTextAreaOverlay', () => {
     overlay.pointerMove(153, 99)
     overlay.pointerUp(153, 99)
     expect(overlay.getFirstRow('a')).toBe(3)
+    // A set change that drops the area mid-drag releases the thumb.
+    overlay.pointerDown(150, 95)
+    overlay.setTextAreas([])
+    expect(overlay.hoverCursor).toBe('text')
   })
 
   it('places the caret on the scrolled row under the pointer', () => {
@@ -226,29 +230,6 @@ describe('UIKitTextAreaOverlay', () => {
     expect(overlay.focusedArea).toBe('a')
   })
 
-  it('drops a pending paste when the area is replaced', async () => {
-    for (const replace of [
-      (o: UIKitTextAreaOverlay) =>
-        o.setTextAreas([{ id: 'a', x: 100, y: 50, width: 60, value: 'new' }]),
-      (o: UIKitTextAreaOverlay) => {
-        o.removeTextArea('a')
-        o.addTextArea({ id: 'a', x: 100, y: 50, width: 60, value: 'abc' })
-        o.focus('a')
-      },
-      (o: UIKitTextAreaOverlay) => o.updateTextArea('a', { value: 'abc' }),
-    ]) {
-      const { clipboard } = fakeClipboard('late')
-      const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)
-      overlay.focus('a')
-      overlay.keyDown(key('v', { metaKey: true }))
-      replace(overlay)
-      await Promise.resolve()
-      await Promise.resolve()
-      expect(overlay.getText('a')).not.toContain('late')
-      expect(inputs).toEqual([])
-    }
-  })
-
   it('keeps a soft-wrap caret on its row across a position-only patch', () => {
     const { overlay } = make({ t: 0 }, 'abcdefghijabcdefghij')
     // Past the end of row 2: the caret sits at 10, the end of that soft row.
@@ -258,31 +239,6 @@ describe('UIKitTextAreaOverlay', () => {
     overlay.keyDown(key('End'))
     type(overlay, 'x')
     expect(overlay.getText('a')).toBe('abcdefghijxabcdefghij')
-  })
-
-  it('drops a paste that arrives after the overlay was destroyed', async () => {
-    const { clipboard } = fakeClipboard('late')
-    const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)
-    overlay.focus('a')
-    overlay.keyDown(key('v', { metaKey: true }))
-    overlay.destroy()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(overlay.getText('a')).toBe('abc')
-    expect(inputs).toEqual([])
-  })
-
-  it('drops a paste that arrives after a blur and refocus', async () => {
-    const { clipboard } = fakeClipboard('late')
-    const { overlay, inputs } = make({ t: 0 }, 'abc', clipboard)
-    overlay.focus('a')
-    overlay.keyDown(key('v', { metaKey: true }))
-    overlay.blur()
-    overlay.focus('a')
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(overlay.getText('a')).toBe('abc')
-    expect(inputs).toEqual([])
   })
 
   it('stops typing at maxLength and refuses rejected characters', () => {

@@ -1,12 +1,14 @@
-// The text-bearing part of a field shared by UIKit's single-line entry
-// widgets (number inputs, text inputs): which glyphs a text area shows, the
-// caret index for a pointer x, and the draw data for the selection, the
-// visible run of text and the caret. No GPU and no DOM here.
+// The parts of a field shared by UIKit's entry widgets (number inputs, text
+// inputs, text areas): the single-line layout and CSS scaling, the bordered
+// box and label, which glyphs a text area shows, the caret index for a
+// pointer x, and the draw data for the selection, the visible run of text and
+// the caret. No GPU and no DOM here.
 
+import { mixColor } from './button'
 import { buildRect, type RectData, type UIKitBox } from './rect'
 import type { ScrollWindow } from './scroll'
 import type { UIKitFontMetrics } from './text/font'
-import { capHeight, type RGBA } from './text/layout'
+import { capHeight, measureWidth, type RGBA } from './text/layout'
 import {
   advanceBetween,
   caretIndexAt,
@@ -59,6 +61,131 @@ export interface FieldStyle extends TextFieldStyle {
   labelGap: number
   /** Field width when the spec gives none. */
   fieldWidth: number
+}
+
+/** A single-line field's boxes in canvas pixels. */
+export interface LineFieldLayout {
+  /** The whole control: label and field. */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** The bordered field. */
+  field: UIKitBox
+  /** Where the text, caret and selection draw. */
+  textArea: UIKitBox
+  /** Baseline of the label and the field text. */
+  baseline: number
+}
+
+interface FieldPlacement {
+  label?: string
+  x: number
+  y: number
+  width?: number
+}
+
+/** An optional label, then a bordered field padded around one line of text. */
+export function layoutLineField(
+  spec: FieldPlacement,
+  style: FieldStyle,
+  metrics: UIKitFontMetrics,
+): LineFieldLayout {
+  const capH = capHeight(metrics) * style.textSizePx
+  const labelW = spec.label
+    ? measureWidth(metrics, spec.label, style.textSizePx) + style.labelGap
+    : 0
+  const fieldW = spec.width ?? style.fieldWidth
+  const fieldH = Math.ceil(capH + 2 * style.paddingY)
+  const b = style.borderWidth
+  const field = { x: spec.x + labelW, y: spec.y, width: fieldW, height: fieldH }
+  return {
+    x: spec.x,
+    y: spec.y,
+    width: labelW + fieldW,
+    height: fieldH,
+    field,
+    textArea: {
+      x: field.x + style.paddingX,
+      y: field.y + b,
+      width: Math.max(0, fieldW - 2 * style.paddingX),
+      height: fieldH - 2 * b,
+    },
+    baseline: field.y + style.paddingY + capH,
+  }
+}
+
+/** Scale a field's position and shared style lengths by `k` (CSS pixels to canvas pixels). */
+export function scaleField<S extends FieldPlacement, T extends FieldStyle>(
+  spec: S,
+  style: T,
+  k: number,
+): { spec: S; style: T } {
+  if (k === 1) return { spec, style }
+  return {
+    spec: {
+      ...spec,
+      x: spec.x * k,
+      y: spec.y * k,
+      width: spec.width === undefined ? undefined : spec.width * k,
+    },
+    style: {
+      ...style,
+      borderWidth: style.borderWidth * k,
+      radius: style.radius * k,
+      textSizePx: style.textSizePx * k,
+      textOutlineWidth: style.textOutlineWidth * k,
+      paddingX: style.paddingX * k,
+      paddingY: style.paddingY * k,
+      labelGap: style.labelGap * k,
+      fieldWidth: style.fieldWidth * k,
+      caretWidth: style.caretWidth * k,
+    },
+  }
+}
+
+/** A color as a disabled field draws it: half as opaque. */
+export function dimField(c: RGBA, enabled: boolean): RGBA {
+  return enabled ? c : mixColor(c, [c[0], c[1], c[2], 0], 0.5)
+}
+
+/** The bordered field box, its fill following hover and enabled. */
+export function buildFieldBox(
+  field: UIKitBox,
+  style: FieldStyle,
+  border: RGBA,
+  hover: boolean,
+  enabled: boolean,
+): RectData {
+  let fill = style.fill
+  if (!enabled) fill = style.disabledFill
+  else if (hover) fill = style.hoverFill
+  return buildRect({
+    ...field,
+    radius: style.radius,
+    borderWidth: style.borderWidth,
+    fill,
+    border: dimField(border, enabled),
+  })
+}
+
+/** A single-line field's label, left of the field on its baseline. */
+export function buildLineFieldLabel(
+  label: string,
+  layout: LineFieldLayout,
+  style: FieldStyle,
+  color: RGBA,
+): UIKitTextItem {
+  return {
+    str: label,
+    x: layout.x,
+    y: layout.baseline,
+    sizePx: style.textSizePx,
+    align: 0,
+    color,
+    outlineWidthPx: style.textOutlineWidth,
+    outlineColor: style.textOutlineColor ?? undefined,
+  }
 }
 
 /** The width a text area has for glyphs, keeping room for the caret. */

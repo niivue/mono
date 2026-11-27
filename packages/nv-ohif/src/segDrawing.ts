@@ -14,15 +14,9 @@ import {
   type Restyle,
   type RtLabels,
   startRtDrawing,
-  styleDrawing,
+  styleSegments,
 } from './rtDrawing'
-import {
-  type PanelSegment,
-  panelColormap,
-  SEG_FILL_OPACITY,
-  SEG_RIM_OPACITY,
-  startSegPanel,
-} from './segPanel'
+import { type PanelSegment, startSegPanel } from './segPanel'
 
 // A DICOM SEG hung in a NiiVue pane shows as a NiiVue drawing over the series
 // it references: the pane loads that series as its base, and dcm2niix turns the
@@ -213,17 +207,11 @@ export function startSegDrawing(
     const rows = sidecarSegments(Array.isArray(segments) ? segments : [])
     // loadDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
-    const style = styleDrawing(nv, () => {
-      if (rows.length)
-        nv.drawColormap = nv.addColormap(
-          `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
-          panelColormap(
-            rows.map((s) => ({ ...s, color: [...s.rgb, 255], visible: true })),
-          ),
-        )
-      nv.drawOpacity = SEG_FILL_OPACITY
-      nv.drawRimOpacity = SEG_RIM_OPACITY
-    })
+    const style = styleSegments(
+      nv,
+      `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
+      rows,
+    )
     restoreStyle = style.restore
     // Without the sidecar's segments the panel has nothing to list.
     if (rows.length) stopShown = options.onShown?.(rows, style.restyle)

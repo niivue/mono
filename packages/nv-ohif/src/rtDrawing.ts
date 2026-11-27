@@ -80,6 +80,32 @@ export function styleDrawing(
   return { restore, restyle }
 }
 
+/**
+ * styleDrawing as a segmentation shows: `segments` coloured as the panel
+ * lists them (when there are any), at the SEG fill and rim opacities.
+ */
+export function styleSegments(
+  nv: Parameters<typeof styleDrawing>[0] & Pick<NiiVue, 'addColormap'>,
+  colormapName: string,
+  segments: readonly PanelSegment[],
+): ReturnType<typeof styleDrawing> {
+  return styleDrawing(nv, () => {
+    if (segments.length)
+      nv.drawColormap = nv.addColormap(
+        colormapName,
+        panelColormap(
+          segments.map((s) => ({
+            ...s,
+            color: [...s.rgb, 255],
+            visible: true,
+          })),
+        ),
+      )
+    nv.drawOpacity = SEG_FILL_OPACITY
+    nv.drawRimOpacity = SEG_RIM_OPACITY
+  })
+}
+
 /** Write the drawing's style as its owner, so a later restore still undoes it. */
 export type Restyle = (write: () => void) => void
 
@@ -703,20 +729,11 @@ export function startRtDrawing(
     // createEmptyDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
     const showOnly = draw(bitmap)
-    const style = styleDrawing(nv, () => {
-      nv.drawColormap = nv.addColormap(
-        `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
-        panelColormap(
-          segments.map((s) => ({
-            ...s,
-            color: [...s.rgb, 255],
-            visible: true,
-          })),
-        ),
-      )
-      nv.drawOpacity = SEG_FILL_OPACITY
-      nv.drawRimOpacity = SEG_RIM_OPACITY
-    })
+    const style = styleSegments(
+      nv,
+      `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
+      segments,
+    )
     restoreStyle = style.restore
     nv.refreshDrawing()
     stopShown = options.onShown?.(

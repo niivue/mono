@@ -801,7 +801,7 @@ export default class NiiVue extends EventTarget {
   // frame, a load) must not push stale values over a peer's newer move. Per
   // target, so a receipt suppresses only the echo to its sender and a newly
   // linked target still gets a full first sync.
-  private _syncSent = new Map<NiiVue, Record<string, string>>()
+  private _syncSent = new WeakMap<NiiVue, Record<string, string>>()
   private _rafId: number | null = null
   // The transition animateTo is running, if any
   private _animation: Animation | null = null
@@ -7726,7 +7726,7 @@ export default class NiiVue extends EventTarget {
     this._syncTargets = Array.isArray(targets) ? targets : [targets]
     this._syncOpts = opts
     this._syncDirty = false
-    this._syncSent = new Map()
+    this._syncSent = new WeakMap()
   }
 
   private _sync(): void {

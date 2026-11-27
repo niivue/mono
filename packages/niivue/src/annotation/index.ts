@@ -29,6 +29,7 @@ import {
 import {
   bidirectionalShortAxis,
   dragCorners,
+  generateLine,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,
@@ -49,6 +50,7 @@ export {
   computeAnnotationStats,
   dragCorners,
   extractLivewireSlice,
+  generateLine,
   generatePolygonFromPoints,
   generateShape,
   generateSplineFromPoints,

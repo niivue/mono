@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import { DRAG_MODE } from '@/NVConstants'
+import NiiVue from '@/NVControl'
 import type NiiVueGPU from '@/NVControlBase'
 import type { VectorAnnotation } from '@/NVTypes'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
@@ -348,4 +349,52 @@ test('contrast box orders the window for a negative rescale slope', () => {
   pick.mockRestore()
   // raw 5..15 -> 90..70
   expect([vol.calMin, vol.calMax]).toEqual([70, 90])
+})
+
+// Audit of the drag-mode migration: through the real commit (not a mocked
+// _commitAnnotation), a drag keeps any nonzero length and measures it on the
+// slice's own plane, tilted or not.
+describe('a drag measurement through the real commit', () => {
+  const drag = (tilt: number, start: number[], end: number[]) => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    nv.drawScene = () => {}
+    const voxelToWorld = mat4.fromXRotation(mat4.create(), tilt)
+    nv.model.volumes = [
+      {
+        dimsRAS: [3, 20, 20, 20],
+        pixDimsRAS: [1, 1, 1, 1],
+        matRAS: mat4.transpose(mat4.create(), voxelToWorld),
+      },
+    ] as never
+    nv.model.tex2mm = voxelToWorld
+    nv.model.mm2tex = mat4.invert(mat4.create(), voxelToWorld)
+    nv.view = {
+      screenSlices: [
+        {
+          leftTopWidthHeight: [0, 0, 100, 100],
+          mvpMatrix: mat4.fromXRotation(mat4.create(), -tilt),
+          planeNormal: [0, -Math.sin(tilt), Math.cos(tilt)],
+          planePoint: [0, 0, 0],
+          axCorSag: 0,
+        },
+      ],
+    } as never
+    nv.activeTileHit = { tileIndex: 0, isRender: false, sliceType: 0 } as never
+    nv.isDragging = true
+    nv._activeDragMode = DRAG_MODE.measurement
+    nv.dragStartXY = start as never
+    nv.dragEndXY = end as never
+    handleDragRelease(nv)
+    return nv.annotations
+  }
+
+  test('a 0.2 mm drag is kept', () => {
+    const [ann] = drag(0, [10, 10], [20, 10])
+    expect(ann?.stats?.length).toBeCloseTo(0.2, 6)
+  })
+
+  test('a drag on a 60 degree tilted slice keeps its world length', () => {
+    const [ann] = drag(Math.PI / 3, [50, 50], [50, 0])
+    expect(ann?.stats?.length).toBeCloseTo(1, 6)
+  })
 })

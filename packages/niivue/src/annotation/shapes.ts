@@ -64,15 +64,21 @@ function perp(dx: number, dy: number, len: number): [number, number] {
   return [(-dy / d) * len, (dx / d) * len]
 }
 
-function generateLine(
+/**
+ * A line as a thin rectangle `width` wide. Shorter than `minLength` (a click
+ * with the line tool, by default) it is nothing; a measured line passes 0, as
+ * any nonzero distance it measures is kept.
+ */
+export function generateLine(
   start: AnnotationPoint,
   end: AnnotationPoint,
   width: number,
+  minLength = 0.25,
 ): PolygonWithHoles[] {
   const dx = end.x - start.x
   const dy = end.y - start.y
   const len = Math.sqrt(dx * dx + dy * dy)
-  if (len < 0.25) return []
+  if (len === 0 || len < minLength) return []
   const hw = width / 2
   const [px, py] = perp(dx, dy, hw)
   const outer: AnnotationPoint[] = [

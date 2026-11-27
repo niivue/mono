@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import type { UIKitOverlayRenderer } from '@niivue/niivue'
+import type { OverlayRenderer } from '@niivue/niivue'
 import type { UIKitFont } from '@niivue/uikit'
 import {
   UIKitButtonOverlay,
@@ -44,7 +44,7 @@ function fakeCanvas() {
 
 function setup() {
   const unregister = mock(() => {})
-  const renderers: UIKitOverlayRenderer[] = []
+  const renderers: OverlayRenderer[] = []
   let scenes = 0
   const host = {
     canvas: fakeCanvas() as unknown as HTMLCanvasElement,
@@ -52,7 +52,7 @@ function setup() {
     drawScene: () => {
       scenes++
     },
-    registerOverlayRenderer: (r: UIKitOverlayRenderer) => {
+    registerOverlayRenderer: (r: OverlayRenderer) => {
       renderers.push(r)
       return unregister
     },

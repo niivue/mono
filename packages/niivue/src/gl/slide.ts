@@ -28,7 +28,7 @@ import {
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
-import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
+import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { ColorLutTexturesGL } from './colorLut'
 import { FontRenderer } from './font'
 import { setTexParams } from './glUtil'
@@ -60,7 +60,7 @@ export class SlideRenderer {
    * before GL state is restored) so a widget can draw over the slide in screen
    * space. Mirrors the NiiVue view hook. See view/NVOverlayHook.ts.
    */
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  overlayDraw: ((frame: OverlayFrame) => void) | null = null
   /**
    * Rulers and selection drawn over the tiles with NiiVue's own line and font
    * renderers, before `overlayDraw` (see `slideOverlayContent`).

@@ -29,7 +29,7 @@ import {
   TileTextureCache,
 } from '@/slide/tileTextureCache'
 import { buildLine } from '@/view/NVLine'
-import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
+import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
 import { LineRenderer } from './line'
@@ -190,7 +190,7 @@ export class SlideRendererGPU {
    * has no depth attachment, so the frame's handle omits depthFormat; it reports
    * the pass's sampleCount (4 with `antialias`, else 1). See view/NVOverlayHook.ts.
    */
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  overlayDraw: ((frame: OverlayFrame) => void) | null = null
   /**
    * Rulers and selection drawn over the tiles with NiiVue's own line and font
    * renderers, before `overlayDraw` (see `slideOverlayContent`).

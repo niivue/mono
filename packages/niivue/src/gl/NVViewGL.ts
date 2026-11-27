@@ -46,7 +46,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
-import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
+import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import {
   buildPlaneOutline3DRenderData,
@@ -169,7 +169,7 @@ export default class NVGlview {
    * (after core's own line/text overlays, before present) so a privileged renderer
    * can draw into the same frame in screen space. See view/NVOverlayHook.ts.
    */
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  overlayDraw: ((frame: OverlayFrame) => void) | null = null
 
   /**
    * GPU-context-recovery hook, wired by the controller. Fires when this view has

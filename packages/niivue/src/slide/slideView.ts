@@ -1,8 +1,5 @@
 import { log } from '@/logger'
-import type {
-  UIKitOverlayFrame,
-  UIKitOverlayRenderer,
-} from '@/view/NVOverlayHook'
+import type { OverlayFrame, OverlayRenderer } from '@/view/NVOverlayHook'
 import type { NVSlide, NVSlideSample, NVSlideScreen } from './NVSlide'
 import {
   NVSlideController,
@@ -23,7 +20,7 @@ export interface SlideRenderBackend {
   destroy(): void
   isNearestInterpolation: boolean
   overlay: SlideOverlayContent | null
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
+  overlayDraw: ((frame: OverlayFrame) => void) | null
 }
 
 export type SlideBackendKind = 'webgpu' | 'webgl2'
@@ -91,7 +88,7 @@ export interface SlideView {
   /** Draw now (e.g. before `canvas.toBlob`, which reads the frame drawn in this task). */
   renderNow(): void
   /** Draw `overlay` at the end of every frame (UIKit widgets); returns its remover. */
-  addOverlay(overlay: UIKitOverlayRenderer): () => void
+  addOverlay(overlay: OverlayRenderer): () => void
   /** Call `fn` after every frame; returns its remover. */
   addRenderListener(fn: (screen: NVSlideScreen) => void): () => void
   /** Idempotent. Leaves the canvas in place. */
@@ -172,7 +169,7 @@ export async function createSlideViewWith(
   let pendingFit = false
   // The view a fit produced, kept until the user moves it: a resize refits.
   let fitted: { key: string; w: number; h: number } | null = null
-  const overlays = new Set<UIKitOverlayRenderer>()
+  const overlays = new Set<OverlayRenderer>()
   const listeners = new Set<(screen: NVSlideScreen) => void>()
   if (options.onRender) listeners.add(options.onRender)
 

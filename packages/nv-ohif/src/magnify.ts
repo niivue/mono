@@ -1,4 +1,4 @@
-import type { UIKitOverlayRenderer } from '@niivue/niivue'
+import type { OverlayRenderer } from '@niivue/niivue'
 import type { UIKitHost } from '@niivue/uikit'
 import { UIKitMagnifierOverlay } from '@niivue/uikit'
 
@@ -8,7 +8,7 @@ const LENS = { radiusCss: 125, zoom: 10 }
 
 type Host = UIKitHost & {
   canvas: HTMLCanvasElement | null
-  registerOverlayRenderer(r: UIKitOverlayRenderer): () => void
+  registerOverlayRenderer(r: OverlayRenderer): () => void
 }
 
 /** Shows a lens on the pane while OHIF's Magnify tool is held. */

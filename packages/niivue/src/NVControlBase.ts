@@ -205,10 +205,7 @@ import {
   signalXValueAtFrac,
 } from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
-import type {
-  UIKitOverlayFrame,
-  UIKitOverlayRenderer,
-} from '@/view/NVOverlayHook'
+import type { OverlayFrame, OverlayRenderer } from '@/view/NVOverlayHook'
 import {
   arePerfMarksEnabled,
   setNextActionTag,
@@ -356,7 +353,7 @@ type ViewBackend = {
    */
   coarseFloorDims: () => [number, number, number] | null
   cinematicRenderer: { frameMs: number | null }
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
+  overlayDraw: ((frame: OverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
     | ((
@@ -512,7 +509,7 @@ export default class NiiVue extends EventTarget {
   model: NVModel
   view: ViewBackend | null = null
   /** Privileged UIKit overlay renderers, drawn at the end of every frame. */
-  private _overlayRenderers: UIKitOverlayRenderer[] = []
+  private _overlayRenderers: OverlayRenderer[] = []
   /** Busy/idle transition tracking behind `chunkStreamProgress`/`chunkStreamIdle`. */
   private _chunkStreamEmitter = new ChunkStreamEmitter()
   /** The view instance `_onChunkStream` was last wired onto. When
@@ -7219,7 +7216,7 @@ export default class NiiVue extends EventTarget {
    * the same frame in screen space. Returns an unsubscribe function; you may also
    * call {@link unregisterOverlayRenderer}. See view/NVOverlayHook.ts.
    */
-  registerOverlayRenderer(renderer: UIKitOverlayRenderer): () => void {
+  registerOverlayRenderer(renderer: OverlayRenderer): () => void {
     if (!this._overlayRenderers.includes(renderer)) {
       this._overlayRenderers.push(renderer)
     }
@@ -7228,7 +7225,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /** Remove a previously registered overlay renderer. */
-  unregisterOverlayRenderer(renderer: UIKitOverlayRenderer): void {
+  unregisterOverlayRenderer(renderer: OverlayRenderer): void {
     const i = this._overlayRenderers.indexOf(renderer)
     if (i < 0) return
     this._overlayRenderers.splice(i, 1)
@@ -7278,7 +7275,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /** Stable dispatcher fanned out to every registered overlay renderer. */
-  private _dispatchOverlay = (frame: UIKitOverlayFrame): void => {
+  private _dispatchOverlay = (frame: OverlayFrame): void => {
     for (const renderer of this._overlayRenderers) {
       renderer.drawOverlay(frame)
     }

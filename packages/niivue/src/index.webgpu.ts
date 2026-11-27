@@ -338,12 +338,12 @@ export {
   fetchAllenAtlasInfo,
   loadAllenAtlasVolumes,
 } from './volume/allenAtlasLoader'
-// UIKit overlay lifecycle hook — the seam @niivue/uikit widgets draw into
+// Overlay lifecycle hook (registerOverlayRenderer), the seam @niivue/uikit draws into
 export type {
-  UIKitBackendHandle,
-  UIKitOverlayBounds,
-  UIKitOverlayFrame,
-  UIKitOverlayRenderer,
+  OverlayBackendHandle,
+  OverlayBounds,
+  OverlayFrame,
+  OverlayRenderer,
 } from './view/NVOverlayHook'
 // Font atlas metrics: the shape of NVFontData.metrics
 export type { FontMetrics } from './view/NVFont'

@@ -1,5 +1,5 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
-import type { UIKitOverlayFrame } from '@niivue/niivue'
+import type { OverlayFrame } from '@niivue/niivue'
 import { UIKitMagnifierOverlay } from '@niivue/uikit'
 import { createAdvancedMagnifyBinding } from './advancedMagnify'
 
@@ -32,7 +32,7 @@ function setup() {
     canvas.addEventListener(type, (e) =>
       core.push(`${type.slice(7)}${(e as PointerEvent).pointerId}`),
     )
-  const overlays: Array<{ drawOverlay(f: UIKitOverlayFrame): void }> = []
+  const overlays: Array<{ drawOverlay(f: OverlayFrame): void }> = []
   const events = new EventTarget()
   const nv = {
     canvas,
@@ -58,7 +58,7 @@ function setup() {
     },
     // Core's dispatch: one pass over the live renderer list.
     drawScene: () => {
-      for (const r of overlays) r.drawOverlay({ dpr: 1 } as UIKitOverlayFrame)
+      for (const r of overlays) r.drawOverlay({ dpr: 1 } as OverlayFrame)
     },
   } as unknown as Parameters<typeof createAdvancedMagnifyBinding>[0]
   const at = (type: string, x: number, y: number, more = {}) =>
@@ -167,12 +167,12 @@ test('glasses: core gets whole touch gestures: taps and pinches off a glass, non
   expect(centre()).toEqual([60, 50])
   // The crosshair moving within slice 0 keeps the glass grabbable; slice 1 hides it.
   plane.planePoint = [0, 0, 0.4]
-  overlays[0]?.drawOverlay({ dpr: 1 } as UIKitOverlayFrame)
+  overlays[0]?.drawOverlay({ dpr: 1 } as OverlayFrame)
   at('pointerdown', 60, 175, { pointerId: 4 })
   at('pointerup', 60, 175, { pointerId: 4 })
   expect(core).toEqual([])
   plane.planePoint = [0, 0, 1]
-  overlays[0]?.drawOverlay({ dpr: 1 } as UIKitOverlayFrame)
+  overlays[0]?.drawOverlay({ dpr: 1 } as OverlayFrame)
   glasses.setMode('Passive')
   at('pointerdown', 60, 175, { pointerId: 5 })
   expect(core).toEqual(['down5'])

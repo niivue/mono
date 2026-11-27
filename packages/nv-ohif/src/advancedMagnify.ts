@@ -1,4 +1,4 @@
-import type { NiiVue, NVImage, UIKitOverlayFrame } from '@niivue/niivue'
+import type { NiiVue, NVImage, OverlayFrame } from '@niivue/niivue'
 import { projectMMToCanvas } from '@niivue/niivue'
 import { UIKitMagnifierOverlay } from '@niivue/uikit'
 import { apply, invertAffine, rasGrid, SLICE_AXIS } from './quantify'
@@ -66,7 +66,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   let canvas: HTMLCanvasElement | null = null
 
   const renderer = {
-    drawOverlay(frame: UIKitOverlayFrame) {
+    drawOverlay(frame: OverlayFrame) {
       const vol = nv.volumes[0]
       // A series swap in this pane drops the old series' glasses.
       for (const g of glasses.filter((g) => g.volume !== vol)) drop(g)

@@ -7,6 +7,7 @@
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { removeAnnotationsForRows } from './commands'
+import { cornerstoneLibraries } from './niivueRegistry'
 import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 
 type Memo = {
@@ -28,21 +29,14 @@ type HistoryMemo = {
   redoAvailable?: number
 }
 
-const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
-
 export function historyMemo(
   extensionManager: OhifExtensionManager | undefined,
 ): HistoryMemo | undefined {
-  const entry = extensionManager?.getModuleEntry(CORNERSTONE_COMMON) as
-    | { exports?: { getCornerstoneLibraries?: () => unknown } }
-    | undefined
-  const libs = entry?.exports?.getCornerstoneLibraries?.() as
-    | {
-        cornerstone?: {
-          utilities?: { HistoryMemo?: { DefaultHistoryMemo?: HistoryMemo } }
-        }
-      }
-    | undefined
+  const libs = cornerstoneLibraries<{
+    cornerstone?: {
+      utilities?: { HistoryMemo?: { DefaultHistoryMemo?: HistoryMemo } }
+    }
+  }>(extensionManager)
   return libs?.cornerstone?.utilities?.HistoryMemo?.DefaultHistoryMemo
 }
 

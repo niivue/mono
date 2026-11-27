@@ -1,5 +1,9 @@
 import type { default as NiiVue, NVImage } from '@niivue/niivue'
-import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
+import type {
+  OhifDisplaySet,
+  OhifExtensionManager,
+  OhifServicesManager,
+} from './ohif-types'
 import type { SliceFrames } from './sliceFrames'
 import type { WsiSlideView } from './wsiSlideView'
 
@@ -214,4 +218,14 @@ export function authHeaders(
     | undefined
   const header = svc?.getAuthorizationHeader?.()
   return header?.Authorization ? { Authorization: header.Authorization } : {}
+}
+
+/** cornerstone's libraries, from OHIF's cornerstone extension (absent without it). */
+export function cornerstoneLibraries<T>(
+  extensionManager: OhifExtensionManager | undefined,
+): T | undefined {
+  const entry = extensionManager?.getModuleEntry(
+    '@ohif/extension-cornerstone.utilityModule.common',
+  ) as { exports?: { getCornerstoneLibraries?: () => unknown } } | undefined
+  return entry?.exports?.getCornerstoneLibraries?.() as T | undefined
 }

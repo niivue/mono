@@ -5,9 +5,9 @@
 // no duplicate row. Cornerstone panes on the same frame of reference draw them.
 // ponytail: editing a mirrored annotation in a cornerstone pane updates the row
 // through cornerstone's mapping, not back into NiiVue.
+import { cornerstoneLibraries } from './niivueRegistry'
 import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 
-const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
 // Tools the SR adapters encode (SplineROI and LivewireContour have none).
 const SR_TOOLS = new Set([
   'Length',
@@ -94,16 +94,11 @@ type AnnotationManager = {
 function annotationManager(
   extensionManager: OhifExtensionManager | undefined,
 ): AnnotationManager | undefined {
-  const entry = extensionManager?.getModuleEntry(CORNERSTONE_COMMON) as
-    | { exports?: { getCornerstoneLibraries?: () => unknown } }
-    | undefined
-  const libs = entry?.exports?.getCornerstoneLibraries?.() as
-    | {
-        cornerstoneTools?: {
-          annotation?: { state?: { getAnnotationManager?: () => unknown } }
-        }
-      }
-    | undefined
+  const libs = cornerstoneLibraries<{
+    cornerstoneTools?: {
+      annotation?: { state?: { getAnnotationManager?: () => unknown } }
+    }
+  }>(extensionManager)
   return libs?.cornerstoneTools?.annotation?.state?.getAnnotationManager?.() as
     | AnnotationManager
     | undefined

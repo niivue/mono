@@ -867,7 +867,7 @@ export function NiivueViewport(props: OhifViewportProps) {
       // nv.destroy() fires no 'clear' event, so without this the panel rows and
       // the module-level reflection maps would leak across every unmount
       // (StrictMode double-mount, route / layout churn).
-      clearNiivueAnnotations(viewportId, servicesManagerRef.current)
+      clearNiivueAnnotations(viewportId)
       leaveFrames?.()
       unfloorSuv?.()
       unregisterNiivue(viewportId)

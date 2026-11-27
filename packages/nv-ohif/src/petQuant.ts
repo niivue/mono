@@ -620,7 +620,8 @@ export function tmtvExport(services: Services) {
   return { frames, segments }
 }
 
-function download(text: string, filename: string): void {
+/** Save `text` as a CSV file. */
+export function download(text: string, filename: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }))
   const a = document.createElement('a')
   a.href = url

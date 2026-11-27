@@ -1122,7 +1122,7 @@ describe('reflectNiivueAnnotation', () => {
       const t = throwingAdd('vp-cap-clear')
       t.nv.annotations = [ellipse('cl')]
       for (let i = 0; i < 3; i++) t.reconcile()
-      clearNiivueAnnotations('vp-cap-clear', t.svc.servicesManager)
+      clearNiivueAnnotations('vp-cap-clear')
       t.reconcile()
       expect(t.state.attempts).toBe(4)
       t.warn.mockRestore()
@@ -1176,7 +1176,7 @@ describe('reflectNiivueAnnotation', () => {
     // Hidden in the panel before the release.
     rowOf(uid).isVisible = false
     applyOhifVisibilityToAnnotation(uid, false)
-    clearNiivueAnnotations('vp-a4', svc.servicesManager)
+    clearNiivueAnnotations('vp-a4')
     expect(svc.removed).toHaveLength(0)
     expect(isReleasedRow(uid)).toBe(true)
     expect(reflectedRowUid('own')).toBeUndefined()
@@ -1473,7 +1473,7 @@ describe('reflectNiivueAnnotation', () => {
       ellipse('r'),
     )
     const releasedUid = reflectedRowUid('r') as string
-    clearNiivueAnnotations('vp-guard-released', svc.servicesManager)
+    clearNiivueAnnotations('vp-guard-released')
     actions.jumpToMeasurementViewport({ measurement: { uid: releasedUid } })
     actions.jumpToMeasurementViewport({ measurement: { uid } })
     expect(claimPendingJump(releasedUid)).toBe(false)

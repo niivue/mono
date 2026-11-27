@@ -1,6 +1,10 @@
 import type NiiVue from '@niivue/niivue'
 import { historyMemo } from './history'
-import { getNiivueEntry, ohifServices } from './niivueRegistry'
+import {
+  cornerstoneLibraries,
+  getNiivueEntry,
+  ohifServices,
+} from './niivueRegistry'
 import type {
   OhifDisplaySet,
   OhifExtensionManager,
@@ -21,7 +25,6 @@ import {
 // representation on a viewport outside its rendering engine, so it is written
 // into the state directly; everything the panel then calls is keyed by id only.
 
-const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
 const LABELMAP = 'Labelmap'
 
 type Color = number[]
@@ -260,13 +263,9 @@ export function segmentStats(count: number, voxelMM3: number) {
 export function cornerstoneSegmentation(
   extensionManager: OhifExtensionManager | undefined,
 ): CstSegmentation | undefined {
-  const entry = extensionManager?.getModuleEntry(CORNERSTONE_COMMON) as
-    | { exports?: { getCornerstoneLibraries?: () => unknown } }
-    | undefined
-  const libs = entry?.exports?.getCornerstoneLibraries?.() as
-    | { cornerstoneTools?: { segmentation?: CstSegmentation } }
-    | undefined
-  return libs?.cornerstoneTools?.segmentation
+  return cornerstoneLibraries<{
+    cornerstoneTools?: { segmentation?: CstSegmentation }
+  }>(extensionManager)?.cornerstoneTools?.segmentation
 }
 
 /** A distinct colour for segment `i` (golden-angle hues), for segments the source did not colour. */

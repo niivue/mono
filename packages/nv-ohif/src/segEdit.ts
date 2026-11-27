@@ -2,6 +2,7 @@ import type NiiVue from '@niivue/niivue'
 import type { DragReleaseInfo } from '@niivue/niivue'
 import { DRAG_MODE, PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
 import { historyMemo } from './history'
+import { cornerstoneLibraries } from './niivueRegistry'
 import type { OhifExtensionManager } from './ohif-types'
 import { lpsToVoxel } from './rtDrawing'
 
@@ -112,7 +113,7 @@ function drawingValueOfVoxel(
   const [, nx = 0, ny = 0, nz = 0] = dims
   const [x, y, z] = v
   if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return 0
-  return Number(img?.[x + nx * (y + ny * z)] ?? 0)
+  return Number(img[x + nx * (y + ny * z)])
 }
 
 /**
@@ -201,12 +202,8 @@ export function onToolModeChanged(
     target?.removeEventListener('CORNERSTONE_TOOLS_TOOL_MODE_CHANGED', fn)
 }
 
-function cstLibs(em: OhifExtensionManager | undefined): CstLibs | undefined {
-  const entry = em?.getModuleEntry(
-    '@ohif/extension-cornerstone.utilityModule.common',
-  ) as { exports?: { getCornerstoneLibraries?: () => unknown } } | undefined
-  return entry?.exports?.getCornerstoneLibraries?.() as CstLibs | undefined
-}
+const cstLibs = (em: OhifExtensionManager | undefined) =>
+  cornerstoneLibraries<CstLibs>(em)
 
 interface Session {
   /** Its segmentation's id. */

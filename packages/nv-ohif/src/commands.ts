@@ -1612,11 +1612,7 @@ export function removeNiivueAnnotation(
 }
 
 /** Release a viewport's rows and drop its bookkeeping (unmount). */
-export function clearNiivueAnnotations(
-  viewportId: string,
-  // ponytail: unused, kept so NiivueViewport's call (shared with other topics) is unchanged.
-  _servicesManager?: unknown,
-): void {
+export function clearNiivueAnnotations(viewportId: string): void {
   releaseImportedRows(viewportId)
   // A viewport whose every add failed has no rows but may still hold failures.
   mappingFailures.delete(viewportId)

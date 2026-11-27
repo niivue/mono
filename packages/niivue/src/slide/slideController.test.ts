@@ -728,7 +728,7 @@ describe('default windowing and contrast', () => {
     const slide = {
       viewport: { centerX: 0, centerY: 0, scale: 1 },
       manifest: rgb
-        ? { channels: 'rgba', levels: [{ codec: 'raw-rgba', bitsStored: 8 }] }
+        ? { channels: 'rgba', levels: [{ codec: 'raw-rgba', bitsStored: 12 }] }
         : {
             channelInfo: [{ name: 'a' }, { name: 'b' }],
             levels: [{ codec: 'raw-gray', bitsStored: 8 }],
@@ -805,11 +805,14 @@ describe('default windowing and contrast', () => {
   // RGB slides window through NVSlide.rgbWindow: by default the drag and the
   // box set red, green and blue together, each from its own window or range.
   test('on an RGB slide they set red, green and blue together', () => {
-    const r = windowRig([0, 255], true)
+    // Red unset on a 12-bit source: RGB tiles decode to 8 bits, so 0..255.
+    const r = windowRig([Number.NaN, Number.NaN], true)
     r.fire('pointerdown', 0, 0)
     r.fire('pointermove', 10, 0)
     r.fire('pointerup', 10, 0)
     expect(r.sets.map(([c]) => c)).toEqual([0, 1, 2])
+    expect(r.sets[0]?.[1]).toBeCloseTo(-6.375)
+    expect(r.sets[0]?.[2]).toBeCloseTo(261.375)
     r.sets.length = 0
     r.fire('pointerdown', 0, 0, 2)
     r.fire('pointermove', 32, 32, 2)

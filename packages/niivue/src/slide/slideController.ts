@@ -70,6 +70,9 @@ function channelWindow(slide: NVSlide, c: number): [number, number] {
   const ch = slide.channels[c]
   if (ch && Number.isFinite(ch.calMin) && Number.isFinite(ch.calMax))
     return [ch.calMin, ch.calMax]
+  // RGB tiles are decoded to 8 bits whatever the source's BitsStored, and
+  // rgbWindow's unset window is 0..255.
+  if (isRgbSlide(slide.manifest)) return [0, 255]
   const level = slide.manifest.levels[0]
   if (level?.sampleType === 'i16') return [-32768, 32767]
   return [0, 2 ** (level?.bitsStored ?? 8) - 1]

@@ -122,7 +122,10 @@
       const toolSelect = document.getElementById('tool')
       toolSelect.addEventListener('change', () => {
         nv.drawIsEnabled = toolSelect.value === 'pen'
+        // A half-placed ruler is dropped: the next ruler click starts afresh.
+        anchor = null
         ruler.clear()
+        setStatus(toolSelect.value === 'pen' ? 'Drag to paint' : 'Waiting for first click', 'wait')
         nv.drawScene()
       })
 

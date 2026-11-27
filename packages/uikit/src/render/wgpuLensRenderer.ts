@@ -5,6 +5,7 @@
 import type { UIKitBackendHandle } from '../hook'
 import type { MagnifierLayout } from '../magnifier'
 import { WGSL_LENS } from './shaders'
+import { overlayPipeline } from './wgpuUtil'
 
 type WebGPUHandle = Extract<UIKitBackendHandle, { backend: 'webgpu' }>
 
@@ -42,32 +43,15 @@ export class WgpuLensRenderer {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     })
-    const module = device.createShaderModule({ code: WGSL_LENS })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
-      multisample: { count: sampleCount },
-      vertex: { module, entryPoint: 'vertex_main' },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          // No blend: the lens replaces the frame, alpha included.
-          { format: colorFormat },
-        ],
-      },
-      ...(depthFormat
-        ? {
-            depthStencil: {
-              depthWriteEnabled: false,
-              depthCompare: 'always' as const,
-              format: depthFormat,
-            },
-          }
-        : {}),
-      primitive: { topology: 'triangle-strip' },
-    })
+    this.pipeline = overlayPipeline(
+      device,
+      device.createShaderModule({ code: WGSL_LENS }),
+      this.bindLayout,
+      colorFormat,
+      sampleCount,
+      depthFormat,
+      false, // no blend: the lens replaces the frame, alpha included,
+    )
     this.bindGroup = null
   }
 

@@ -8,6 +8,7 @@
 import { FLOATS_PER_GLYPH } from '../text/layout'
 import type { UIKitAtlasSource } from './glTextRenderer'
 import { WGSL_TEXT } from './shaders'
+import { overlayPipeline } from './wgpuUtil'
 
 const BYTES_PER_GLYPH = FLOATS_PER_GLYPH * 4
 
@@ -57,42 +58,14 @@ export class WgpuTextRenderer {
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     })
-    const module = device.createShaderModule({ code: WGSL_TEXT })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
-      multisample: { count: sampleCount },
-      vertex: { module, entryPoint: 'vertex_main' },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: colorFormat,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      // Only declare depth-stencil when the target pass has a depth attachment
-      // (the main NiiVue view does; the slide viewer does not).
-      ...(depthFormat
-        ? {
-            depthStencil: {
-              depthWriteEnabled: false,
-              depthCompare: 'always' as const,
-              format: depthFormat,
-            },
-          }
-        : {}),
-      primitive: { topology: 'triangle-strip' },
-    })
+    this.pipeline = overlayPipeline(
+      device,
+      device.createShaderModule({ code: WGSL_TEXT }),
+      this.bindLayout,
+      colorFormat,
+      sampleCount,
+      depthFormat,
+    )
     this.bindGroup = null
   }
 

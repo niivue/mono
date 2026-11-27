@@ -1,13 +1,15 @@
-// UIKit's own WebGPU rounded-rect renderer: the line renderer's model (a storage
-// buffer of records, one instance each, drawn into the frame's open pass with a
-// pipeline matched to the pass's attachment formats) with the rect record layout.
+// The WebGPU line and rounded-rect renderers, for uikit's overlays and NiiVue
+// core's lines and label panels alike: a storage buffer of records (grown as
+// needed), one instanced 4-vertex strip each, appended to the open pass with a
+// pipeline matched to its attachment formats. One draw per renderer per pass:
+// a second would overwrite the first's records before the pass runs.
 
+import { FLOATS_PER_LINE, type LineData } from '../line'
 import { FLOATS_PER_RECT, type RectData } from '../rect'
-import { WGSL_RECT } from './shaders'
+import { WGSL_LINE, WGSL_RECT } from './shaders'
+import { overlayPipeline } from './wgpuUtil'
 
-const BYTES_PER_RECT = FLOATS_PER_RECT * 4
-
-export class WgpuRectRenderer {
+class WgpuInstancedRenderer<T extends { data: Float32Array }> {
   private device: GPUDevice | null = null
   private pipeline: GPURenderPipeline | null = null
   private bindLayout: GPUBindGroupLayout | null = null
@@ -16,10 +18,15 @@ export class WgpuRectRenderer {
   private bindGroup: GPUBindGroup | null = null
   private capacity = 0
   private key = ''
-  // CPU staging reused across frames (grown on demand) so an idle control
-  // layer drawing every frame does not allocate per overlay per frame.
+  // CPU staging reused across frames (grown on demand) so an idle overlay
+  // drawing every frame does not allocate per frame.
   private scratch = new Float32Array(0)
   private readonly params = new Float32Array(4)
+
+  constructor(
+    private readonly wgsl: string,
+    private readonly floats: number,
+  ) {}
 
   private ensurePipeline(
     device: GPUDevice,
@@ -50,42 +57,15 @@ export class WgpuRectRenderer {
         },
       ],
     })
-    const module = device.createShaderModule({ code: WGSL_RECT })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
-      multisample: { count: sampleCount },
-      vertex: { module, entryPoint: 'vertex_main' },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: colorFormat,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      // Only declare depth-stencil when the target pass actually has a depth
-      // attachment (the main NiiVue view does; the slide viewer does not).
-      ...(depthFormat
-        ? {
-            depthStencil: {
-              depthWriteEnabled: false,
-              depthCompare: 'always' as const,
-              format: depthFormat,
-            },
-          }
-        : {}),
-      primitive: { topology: 'triangle-strip' },
-    })
+    this.pipeline = overlayPipeline(
+      device,
+      device.createShaderModule({ code: this.wgsl }),
+      this.bindLayout,
+      colorFormat,
+      sampleCount,
+      depthFormat,
+    )
+    // The bind group depends on the layout; force a rebuild.
     this.bindGroup = null
   }
 
@@ -94,7 +74,7 @@ export class WgpuRectRenderer {
     this.capacity = Math.max(count, this.capacity, 64)
     this.storageBuffer?.destroy()
     this.storageBuffer = device.createBuffer({
-      size: this.capacity * BYTES_PER_RECT,
+      size: this.capacity * this.floats * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
     if (this.bindLayout && this.paramsBuffer) {
@@ -108,41 +88,40 @@ export class WgpuRectRenderer {
     }
   }
 
-  /** Append `rects` (screen-pixel space) to the open pass over a bounds rect. */
+  /** Append `records` (screen-pixel space) to the open pass over a bounds rect. */
   draw(
     device: GPUDevice,
     pass: GPURenderPassEncoder,
     colorFormat: GPUTextureFormat,
     sampleCount: number,
     depthFormat: GPUTextureFormat | undefined,
-    rects: RectData[],
+    records: readonly (T | undefined)[],
     width: number,
     height: number,
   ): void {
-    if (rects.length === 0) return
+    if (records.length === 0) return
     this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
-    this.ensureCapacity(device, rects.length)
+    this.ensureCapacity(device, records.length)
     if (!this.pipeline || !this.bindGroup || !this.storageBuffer) return
     this.params[0] = width
     this.params[1] = height
     device.queue.writeBuffer(this.paramsBuffer as GPUBuffer, 0, this.params)
-    const need = rects.length * FLOATS_PER_RECT
-    if (this.scratch.length < need) {
+    const f = this.floats
+    const need = records.length * f
+    if (this.scratch.length < need)
       this.scratch = new Float32Array(Math.max(need, this.scratch.length * 2))
-    }
     const data = this.scratch
-    for (let i = 0; i < rects.length; i++) {
-      const rect = rects[i]
-      const off = i * FLOATS_PER_RECT
-      // Zero the slot first: a hole or a short record must not keep a prior frame's
-      // rect from the reused scratch. A zeroed slot is a zero-size (invisible) rect.
-      data.fill(0, off, off + FLOATS_PER_RECT)
-      if (rect) data.set(rect.data, off)
+    for (let i = 0; i < records.length; i++) {
+      // Zero the slot first: a hole or a short record (a 3-value colour) must
+      // read as zeros, not a prior frame's record from the reused scratch.
+      data.fill(0, i * f, (i + 1) * f)
+      const r = records[i]
+      if (r) data.set(r.data, i * f)
     }
     device.queue.writeBuffer(this.storageBuffer, 0, data, 0, need)
     pass.setPipeline(this.pipeline)
     pass.setBindGroup(0, this.bindGroup)
-    pass.draw(4, rects.length)
+    pass.draw(4, records.length)
   }
 
   destroy(): void {
@@ -156,5 +135,17 @@ export class WgpuRectRenderer {
     this.bindGroup = null
     this.capacity = 0
     this.key = ''
+  }
+}
+
+export class WgpuLineRenderer extends WgpuInstancedRenderer<LineData> {
+  constructor() {
+    super(WGSL_LINE, FLOATS_PER_LINE)
+  }
+}
+
+export class WgpuRectRenderer extends WgpuInstancedRenderer<RectData> {
+  constructor() {
+    super(WGSL_RECT, FLOATS_PER_RECT)
   }
 }

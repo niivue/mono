@@ -4,27 +4,11 @@
 // texture re-uploaded when the atlas source changes.
 
 import { FLOATS_PER_GLYPH } from '../text/layout'
+import { blendOver, linkProgram } from './glUtil'
 import { GL_TEXT_FRAG, GL_TEXT_VERT } from './shaders'
 
 /** An atlas image the text renderers upload: a decoded bitmap or a loaded `<img>`. */
 export type UIKitAtlasSource = ImageBitmap | HTMLImageElement
-
-function compile(
-  gl: WebGL2RenderingContext,
-  type: number,
-  src: string,
-): WebGLShader {
-  const shader = gl.createShader(type)
-  if (!shader) throw new Error('UIKit: failed to create text shader')
-  gl.shaderSource(shader, src)
-  gl.compileShader(shader)
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const info = gl.getShaderInfoLog(shader)
-    gl.deleteShader(shader)
-    throw new Error(`UIKit: text shader compile failed: ${info}`)
-  }
-  return shader
-}
 
 export class GlTextRenderer {
   private gl: WebGL2RenderingContext | null = null
@@ -40,20 +24,7 @@ export class GlTextRenderer {
   private ensureProgram(gl: WebGL2RenderingContext): void {
     if (this.gl === gl && this.program) return
     if (this.gl && this.gl !== gl) this.destroy()
-    const vert = compile(gl, gl.VERTEX_SHADER, GL_TEXT_VERT)
-    const frag = compile(gl, gl.FRAGMENT_SHADER, GL_TEXT_FRAG)
-    const program = gl.createProgram()
-    if (!program) throw new Error('UIKit: failed to create text program')
-    gl.attachShader(program, vert)
-    gl.attachShader(program, frag)
-    gl.linkProgram(program)
-    gl.deleteShader(vert)
-    gl.deleteShader(frag)
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program)
-      gl.deleteProgram(program)
-      throw new Error(`UIKit: text program link failed: ${info}`)
-    }
+    const program = linkProgram(gl, GL_TEXT_VERT, GL_TEXT_FRAG, 'text')
     const vao = gl.createVertexArray()
     const buffer = gl.createBuffer()
     if (!vao || !buffer) throw new Error('UIKit: failed to create text buffers')
@@ -135,13 +106,7 @@ export class GlTextRenderer {
     gl.disable(gl.CULL_FACE)
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
-    gl.enable(gl.BLEND)
-    gl.blendFuncSeparate(
-      gl.SRC_ALPHA,
-      gl.ONE_MINUS_SRC_ALPHA,
-      gl.ONE,
-      gl.ONE_MINUS_SRC_ALPHA,
-    )
+    blendOver(gl)
     gl.bindVertexArray(this.vao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count)
     gl.bindVertexArray(null)

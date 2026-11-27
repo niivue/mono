@@ -3,9 +3,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import { FLOATS_PER_LINE } from '../line'
-import { FLOATS_PER_RECT } from '../rect'
-import { GlLineRenderer } from './glLineRenderer'
-import { GlRectRenderer } from './glRectRenderer'
+import { GlLineRenderer } from './glInstanced'
 
 /** A WebGL2 stand-in: every call succeeds; bufferData keeps a copy of the upload. */
 function fakeGl() {
@@ -33,7 +31,6 @@ function fakeGl() {
 describe('GL renderer instance packing', () => {
   for (const [name, Renderer, floats] of [
     ['GlLineRenderer', GlLineRenderer, FLOATS_PER_LINE],
-    ['GlRectRenderer', GlRectRenderer, FLOATS_PER_RECT],
   ] as const) {
     it(`${name} zeroes the tail of a short record instead of keeping the prior frame`, () => {
       const { gl, uploads } = fakeGl()

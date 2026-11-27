@@ -39,12 +39,14 @@ import {
   findLabelVolume,
   hasScalarIntensity,
 } from '@/view/NVCinematic'
-import { colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
-import { appendFrameLines, buildOverlayText } from '@/view/NVFrameOverlay'
-import * as NVGraph from '@/view/NVGraph'
-import * as NVLegend from '@/view/NVLegend'
+import {
+  appendFrameLines,
+  buildOverlayText,
+  layoutFrame,
+} from '@/view/NVFrameOverlay'
+import type * as NVGraph from '@/view/NVGraph'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
@@ -1046,55 +1048,18 @@ export default class NVView {
       volumes,
       md.volume.isNearestInterpolation,
     )
-    // Reserve vertical space for colorbars so tiles don't overlap them
-    const cbHeight = md.ui.isColorbarVisible
-      ? colorbarTotalHeight(
-          this.colorbarRenderer.getColorbarInfos(),
-          this.colorbarRenderer.getLayout(),
-        )
-      : 0
-    // Reserve horizontal space for legend and graph on the right side
-    const legendEntries = md.collectLegendEntries()
-    const legendLayout =
-      md.ui.isLegendVisible && legendEntries.length > 0
-        ? NVLegend.computeLegendLayout(
-            legendEntries,
-            iw,
-            ih,
-            cbHeight,
-            md.legendScrollRow(),
-            {
-              fontPx: this.fontRenderer.fontPx,
-              measure: (label, scale) =>
-                this.fontRenderer.measureText(label, scale),
-            },
-          )
-        : null
-    if (legendLayout) legendLayout.y += iy
-    const legendWidth = legendLayout?.width ?? 0
-    const graphData = md.collectGraphData()
-    const baseGraphWidth = graphData
-      ? NVGraph.graphTotalWidth(graphData, iw, ih)
-      : 0
-    let graphWidth: number
-    let screenSlices: NVSliceLayout.SliceTile[]
-    if (this.options.instances) {
-      // Multi-instance mode (global3d): the controller has already populated
-      // `this.screenSlices` via `updateTilesFromInstances` — skip the
-      // slice-layout pass. The signal graph is not used in instance scenes.
-      screenSlices = this.screenSlices
-      graphWidth = baseGraphWidth
-    } else {
-      const fit = NVSliceLayout.fitSlicesFromModel(
-        md,
-        [iw - legendWidth - baseGraphWidth, ih - cbHeight],
-        baseGraphWidth,
-        [ix, iy],
-      )
-      graphWidth = fit.graphWidth
-      screenSlices = fit.screenSlices
-      this.screenSlices = screenSlices
-    }
+    const frame = layoutFrame(
+      md,
+      this.fontRenderer,
+      this.colorbarRenderer,
+      ix,
+      iy,
+      iw,
+      ih,
+      this.options.instances ? this.screenSlices : null,
+    )
+    const screenSlices = frame.screenSlices
+    this.screenSlices = screenSlices
     // Crosshair geometry is written per tile rather than once per frame: its
     // radius is a screen weight, so it depends on the tile's mm-per-pixel. Each
     // tile that draws one claims the next vertex slot.
@@ -1803,18 +1768,7 @@ export default class NVView {
         md,
         this.fontRenderer,
         this.colorbarRenderer,
-        {
-          ix,
-          iy,
-          iw,
-          ih,
-          cbHeight,
-          legendLayout,
-          legendWidth,
-          graphData,
-          graphWidth,
-          screenSlices,
-        },
+        frame,
         labels,
         lines,
         'WebGPU',

@@ -4,7 +4,11 @@ import { log } from '@/logger'
 import type NVModel from '@/NVModel'
 import type { ColorbarInfo, NVViewOptions } from '@/NVTypes'
 import * as NVAnnotation from '@/view/NVAnnotation'
-import { buildColorbarLabels, type ColorbarLayout } from '@/view/NVColorbar'
+import {
+  buildColorbarLabels,
+  type ColorbarLayout,
+  colorbarTotalHeight,
+} from '@/view/NVColorbar'
 import {
   type GlyphBatch,
   HEADER_BACK_COLOR,
@@ -15,7 +19,7 @@ import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildPlaneOutlineLines } from '@/view/NVPlaneOutline'
 import * as NVRuler from '@/view/NVRuler'
-import type * as NVSliceLayout from '@/view/NVSliceLayout'
+import * as NVSliceLayout from '@/view/NVSliceLayout'
 import { sceneUnit } from '@/volume/utils'
 
 /** The colorbar renderer state both backends expose. */
@@ -42,6 +46,72 @@ export type FrameLayout = {
   graphData: NVGraph.GraphData | null
   graphWidth: number
   screenSlices: NVSliceLayout.SliceTile[]
+}
+
+/**
+ * Reserve vertical space for colorbars and horizontal space for the legend and
+ * graph inside the inset rect, then fit the tiles into what is left. In
+ * multi-instance mode (global3d) `instanceSlices` are the tiles the controller
+ * already placed via `updateTilesFromInstances`; the signal graph is unused there.
+ */
+export function layoutFrame(
+  md: NVModel,
+  font: NVFontRenderer,
+  colorbar: ColorbarSource,
+  ix: number,
+  iy: number,
+  iw: number,
+  ih: number,
+  instanceSlices: NVSliceLayout.SliceTile[] | null,
+): FrameLayout {
+  const cbHeight = md.ui.isColorbarVisible
+    ? colorbarTotalHeight(colorbar.getColorbarInfos(), colorbar.getLayout())
+    : 0
+  const legendEntries = md.collectLegendEntries()
+  const legendLayout =
+    md.ui.isLegendVisible && legendEntries.length > 0
+      ? NVLegend.computeLegendLayout(
+          legendEntries,
+          iw,
+          ih,
+          cbHeight,
+          md.legendScrollRow(),
+          {
+            fontPx: font.fontPx,
+            measure: (label, scale) => font.measureText(label, scale),
+          },
+        )
+      : null
+  if (legendLayout) legendLayout.y += iy
+  const legendWidth = legendLayout?.width ?? 0
+  const graphData = md.collectGraphData()
+  const baseGraphWidth = graphData
+    ? NVGraph.graphTotalWidth(graphData, iw, ih)
+    : 0
+  let graphWidth = baseGraphWidth
+  let screenSlices = instanceSlices
+  if (!screenSlices) {
+    const fit = NVSliceLayout.fitSlicesFromModel(
+      md,
+      [iw - legendWidth - baseGraphWidth, ih - cbHeight],
+      baseGraphWidth,
+      [ix, iy],
+    )
+    graphWidth = fit.graphWidth
+    screenSlices = fit.screenSlices
+  }
+  return {
+    ix,
+    iy,
+    iw,
+    ih,
+    cbHeight,
+    legendLayout,
+    legendWidth,
+    graphData,
+    graphWidth,
+    screenSlices,
+  }
 }
 
 /**

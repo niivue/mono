@@ -61,6 +61,7 @@ import { petSuvFactor } from './suv'
 import {
   ANNOTATION_TO_OHIF,
   type AnnotationToolDescriptor,
+  boxRowPoints,
   SLIDE_UID_PREFIX,
 } from './toolBridge'
 import { stackPosition } from './viewportOverlay'
@@ -615,40 +616,19 @@ function annotationPointsLps(
   }
 
   const { start, end } = shape
-  const cx = (start.x + end.x) / 2
-  const cy = (start.y + end.y) / 2
-  const minX = Math.min(start.x, end.x)
-  const maxX = Math.max(start.x, end.x)
-  const minY = Math.min(start.y, end.y)
-  const maxY = Math.max(start.y, end.y)
   let points: AnnotationPoint[]
 
   switch (shape.type) {
     case 'measureEllipse':
-      // cornerstone3D's EllipticalROI reads consecutive point PAIRS as its two
-      // axes (points[0..1] = one axis, points[2..3] = the other), so the vertical
-      // axis endpoints must be adjacent, then the horizontal ones. An interleaved
-      // top/right/bottom/left order makes the pairs the bounding-box diagonals,
-      // which reconstructs a rotated, mis-sized ellipse.
-      points = [
-        { x: cx, y: minY }, // top    \ vertical axis
-        { x: cx, y: maxY }, // bottom /
-        { x: minX, y: cy }, // left   \ horizontal axis
-        { x: maxX, y: cy }, // right  /
-      ]
+      points = boxRowPoints('ellipse', start, end)
       break
     case 'measureRect':
-      points = [
-        { x: minX, y: minY },
-        { x: maxX, y: minY },
-        { x: maxX, y: maxY },
-        { x: minX, y: maxY },
-      ]
+      points = boxRowPoints('rectangle', start, end)
       break
     case 'measureCircle':
       points = [
-        { x: cx, y: cy },
-        { x: maxX, y: cy },
+        { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+        { x: Math.max(start.x, end.x), y: (start.y + end.y) / 2 },
       ]
       break
     case 'measureBidirectional':

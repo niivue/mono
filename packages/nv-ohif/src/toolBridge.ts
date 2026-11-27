@@ -258,3 +258,32 @@ export function onAnnotationsAdded(
   nv.addEventListener('annotationChanged', listener)
   return () => nv.removeEventListener('annotationChanged', listener)
 }
+
+/**
+ * An OHIF row's points for a rectangle or ellipse spanning corners `a` and
+ * `b`: a rectangle's four corners; an ellipse's two axes as consecutive pairs,
+ * vertical then horizontal (cornerstone's EllipticalROI reads point pairs as
+ * axes, so interleaved points would make the box diagonals its axes).
+ */
+export function boxRowPoints(
+  kind: 'rectangle' | 'ellipse',
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number }[] {
+  const [x0, x1] = [Math.min(a.x, b.x), Math.max(a.x, b.x)]
+  const [y0, y1] = [Math.min(a.y, b.y), Math.max(a.y, b.y)]
+  const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2]
+  return kind === 'rectangle'
+    ? [
+        { x: x0, y: y0 },
+        { x: x1, y: y0 },
+        { x: x1, y: y1 },
+        { x: x0, y: y1 },
+      ]
+    : [
+        { x: cx, y: y0 },
+        { x: cx, y: y1 },
+        { x: x0, y: cy },
+        { x: x1, y: cy },
+      ]
+}

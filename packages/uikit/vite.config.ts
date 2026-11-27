@@ -69,6 +69,15 @@ export default defineConfig(({ command, mode }) => {
               entryRoot: 'src',
               exclude: ['src/**/*.test.ts'],
               tsconfigPath: './tsconfig.json',
+              // The plugin drops triple-slash directives; the hook types need
+              // the WebGPU globals (a peer) in a consumer's typecheck.
+              beforeWriteFile: (filePath, content) =>
+                filePath.endsWith('/hook.d.ts')
+                  ? {
+                      filePath,
+                      content: `/// <reference types="@webgpu/types" />\n${content}`,
+                    }
+                  : undefined,
             }),
           ]
         : [devImagesPlugin()],
@@ -76,12 +85,15 @@ export default defineConfig(({ command, mode }) => {
       outDir: 'dist',
       emptyOutDir: true,
       lib: {
-        entry: 'src/index.ts',
+        // The root and controls entries need no niivue; the niivue entry does
+        // (an optional peer).
+        entry: {
+          uikit: 'src/index.ts',
+          controls: 'src/controlsEntry.ts',
+          niivue: 'src/niivueEntry.ts',
+        },
         formats: ['es'],
-        fileName: 'uikit',
       },
-      // UIKit brings its own rendering; @niivue/niivue is only a peer for the
-      // lifecycle hook (added later), so keep it external when it is used.
       rolldownOptions: {
         external: ['@niivue/niivue'],
       },

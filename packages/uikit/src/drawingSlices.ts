@@ -3,6 +3,7 @@
 // costs only that box, anything else one pass over the bitmap.
 
 import type { DrawingChangedDetail } from '@niivue/niivue'
+import type {} from './hook'
 
 /** The slice of a NiiVue instance the tracker reads. */
 export interface UIKitDrawingSource {

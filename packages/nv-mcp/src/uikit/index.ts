@@ -20,18 +20,20 @@
 
 import type { UIKitOverlayRenderer } from '@niivue/niivue'
 import {
+  measureWidth,
+  type RGBA,
+  UIKitControls,
+  type UIKitFont,
+  type UIKitHost,
+} from '@niivue/uikit'
+import {
   type ColorSwatch,
   DEFAULT_SEGMENTED_STYLE,
   type FilePickerBridge,
-  measureWidth,
-  type RGBA,
   UIKitButtonOverlay,
   UIKitColorControlOverlay,
-  UIKitControls,
   UIKitDialogOverlay,
   UIKitFilePickerOverlay,
-  type UIKitFont,
-  type UIKitHost,
   UIKitMenuOverlay,
   UIKitNumberInputOverlay,
   UIKitSegmentedOverlay,
@@ -40,7 +42,7 @@ import {
   UIKitTextAreaOverlay,
   UIKitTextInputOverlay,
   UIKitToggleOverlay,
-} from '@niivue/uikit'
+} from '@niivue/uikit/controls'
 import {
   type ControlEvent,
   type ControlListener,

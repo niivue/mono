@@ -8,8 +8,8 @@
 // drag moves the lens, a pinch zooms it and a tap exits; the wheel zooms it
 // too. A UIKit layer attached before it still gets presses on its own widgets.
 
-import type { UIKitOverlayFrame } from '@niivue/niivue'
 import { type UIKitHost, wheelPxPerUnit } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import { layoutMagnifier } from './magnifier'
 import { buildRect } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'

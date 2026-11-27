@@ -8,7 +8,6 @@ import type {
   NVSlidePlaneIndex,
   NVSlideScreen,
   SlideView,
-  UIKitOverlayFrame,
 } from '@niivue/niivue'
 import {
   addChannelColormap,
@@ -19,6 +18,7 @@ import {
   toValue,
 } from '@niivue/niivue'
 import { UIKitControls, type UIKitHost } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import {
   UIKitMagnifierOverlay,
   type UIKitMagnifierOverlayOptions,

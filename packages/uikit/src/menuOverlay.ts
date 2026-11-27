@@ -14,7 +14,6 @@
 // The popup is drawn after every other widget through `drawPopup` when the
 // overlay sits in a control layer, so it never ends up under a later widget.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import {
   type ButtonLayout,
   type ButtonStyle,
@@ -26,6 +25,7 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import {
   activateMenuItem,
   buildMenuButton,

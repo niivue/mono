@@ -9,8 +9,9 @@
 // scales the tiles at 'high' smoothing quality) and nothing
 // leaks when NVSlide's cache evicts a tile.
 
-import type { NVSlide, UIKitOverlayFrame } from '@niivue/niivue'
+import type { NVSlide } from '@niivue/niivue'
 import type { UIKitInteractive, UIKitRedrawSource } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import { buildRect, rectContains } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 import { GlImageRenderer } from './render/glImageRenderer'

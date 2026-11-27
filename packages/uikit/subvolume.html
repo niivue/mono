@@ -49,7 +49,9 @@
 
     <script type="module">
       import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '@niivue/niivue'
-      import { createBrowserDownload, loadDefaultFont, UIKitButtonOverlay, UIKitSubvolumeSelector, UIKitTextOverlay } from './src/index.ts'
+      import { createBrowserDownload, UIKitButtonOverlay } from './src/controlsEntry.ts'
+      import { loadDefaultFont, UIKitTextOverlay } from './src/index.ts'
+      import { UIKitSubvolumeSelector } from './src/niivueEntry.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 

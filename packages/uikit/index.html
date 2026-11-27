@@ -34,25 +34,8 @@
 
     <script type="module">
       import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
-      import {
-        acceptExtensions,
-        createBrowserDownload,
-        loadDefaultFont,
-        UIKitButtonOverlay,
-        UIKitColorControlOverlay,
-        UIKitControls,
-        UIKitDialogOverlay,
-        UIKitFilePickerOverlay,
-        UIKitMenuOverlay,
-        UIKitNumberInputOverlay,
-        UIKitSegmentedOverlay,
-        UIKitSelectOverlay,
-        UIKitSliderOverlay,
-        UIKitTextAreaOverlay,
-        UIKitTextInputOverlay,
-        UIKitToggleOverlay,
-        UIKitToolPaletteOverlay,
-      } from './src/index.ts'
+      import { acceptExtensions, createBrowserDownload, UIKitButtonOverlay, UIKitColorControlOverlay, UIKitDialogOverlay, UIKitFilePickerOverlay, UIKitMenuOverlay, UIKitNumberInputOverlay, UIKitSegmentedOverlay, UIKitSelectOverlay, UIKitSliderOverlay, UIKitTextAreaOverlay, UIKitTextInputOverlay, UIKitToggleOverlay, UIKitToolPaletteOverlay } from './src/controlsEntry.ts'
+      import { loadDefaultFont, UIKitControls } from './src/index.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 

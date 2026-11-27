@@ -8,20 +8,31 @@ file pickers and dialogs) integrated into the
 
 Documentation: https://niivue.github.io/mono/docs/packages/uikit/
 
-> **Status: shipping widgets.** The rendering-lifecycle hook, UIKit's own
-> line/text/rect renderers (WebGL2 + WebGPU, with a text transform), the
-> measuring widgets (ruler, annotation, crosshair) and the control layer with
-> every widget in the table below are in. See `notes/ruler-port.md` in
-> `@niivue/niivue` for the design.
+## Entry points
+
+| Import | Holds | Needs `@niivue/niivue` |
+| --- | --- | --- |
+| `@niivue/uikit` | line, rect and text primitives and overlays, the measuring widgets (ruler, crosshair, point label, magnifier), `UIKitControls`, `loadDefaultFont`, the overlay hook types | no |
+| `@niivue/uikit/controls` | canvas form controls: buttons, toggles, sliders, menus, selects, segmented controls, number and text fields, colour controls, file pickers, dialogs, the tool palette | no |
+| `@niivue/uikit/niivue` | widgets that drive a NiiVue scene: the slide HUD, channel, plane, minimap and magnifier panels, drawing slices, the subvolume selector | yes (optional peer) |
+
+`bun run check:standalone` (after a build) packs the package, installs it
+without `@niivue/niivue` and typechecks and imports the first two entries.
+`@webgpu/types` is a peer, as for `@niivue/niivue`.
+
+Canvas form controls take focus only by pointer. Use them where the interface
+must live inside the canvas (XR, capture, a host with no DOM, as `nv-mcp`);
+ordinary app forms are better as DOM controls, as the slide panels are.
 
 ## Design in one paragraph
 
 UIKit is a **separate module with privileged access to NiiVue's rendering
 lifecycle**. NiiVue core exposes a small hook (an overlay draw phase + a backend
-handle + a settled signal); UIKit registers into it and draws with **its own**
-line/text renderers on both backends. UIKit carries a duplicated copy of the line
-and text drawing so core stays untouched during a bake-in phase; once UIKit is
-proven, core's overlays cut over onto it and the duplicate in core is removed.
+handle + a settled signal); UIKit registers into it, or draws on a bare canvas,
+with **its own** line/text renderers on both backends. Core draws its own
+annotations, measurements, scale bar and labels; UIKit is an opt-in toolkit
+for richer overlays and in-canvas controls, not core's renderer. The two share
+the overlay hook's shape and the bundled font atlas, not code.
 
 ## Widgets
 

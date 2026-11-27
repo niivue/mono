@@ -6,12 +6,12 @@
 // keyboard focus: arrows then move the highlight over enabled items and Enter
 // or Space chooses.
 
-import type { UIKitOverlayFrame } from '@niivue/niivue'
 import type {
   UIKitInteractive,
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import { UIKitDrawBundle } from './overlayParts'
 import type { UIKitFont } from './text/font'
 import {

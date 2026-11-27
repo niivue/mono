@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitFont } from '@niivue/uikit'
 import {
   UIKitButtonOverlay,
   UIKitDialogOverlay,
-  type UIKitFont,
   UIKitMenuOverlay,
   UIKitSegmentedOverlay,
   UIKitSliderOverlay,
   UIKitToggleOverlay,
-} from '@niivue/uikit'
+} from '@niivue/uikit/controls'
 import type { ControlEvent } from '../browser/controls'
 import { uikitControls } from './index'
 

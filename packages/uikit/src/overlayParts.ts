@@ -2,8 +2,8 @@
 // draw through, and the entry map they keep specs in. Pointer state, focus and
 // callbacks stay in each widget.
 
-import type { UIKitOverlayFrame } from '@niivue/niivue'
 import type { UIKitRedrawSource } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import type { LineData } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
 import type { RectData } from './rect'

@@ -30,8 +30,10 @@ carved out of core. Rationale:
   overlays onto UIKit and remove the duplicated line/text from core** - a deliberate,
   reversible cutover, not a big-bang refactor.
 
-End state: UIKit is niivue's overlay-rendering layer; core delegates to it. Interim:
-the two coexist. The duplication is the cost we pay for that safety and independence.
+End state (revised for 1.0): core draws its own annotations, measurements, scale
+bar and labels; UIKit is an opt-in toolkit (richer overlays, in-canvas controls)
+that needs no niivue. They share the overlay hook's shape and the font atlas, not
+renderer code; a shared base package waits until a widget actually moves.
 
 ## Two responsibilities, two homes
 

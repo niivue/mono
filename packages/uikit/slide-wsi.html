@@ -53,12 +53,8 @@
 
     <script type="module">
       import { createSlideView, DRAG_MODE, DziSource, NVSlide } from '@niivue/niivue'
-      import {
-        attachSlideMagnifier,
-        attachSlideMinimap,
-        loadDefaultFont,
-        UIKitRulerOverlay,
-      } from './src/index.ts'
+      import { loadDefaultFont, UIKitRulerOverlay } from './src/index.ts'
+      import { attachSlideMagnifier, attachSlideMinimap } from './src/niivueEntry.ts'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 

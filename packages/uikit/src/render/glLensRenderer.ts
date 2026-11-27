@@ -8,7 +8,7 @@
 // one copy per frame, as WebGPU's captureScene does: a lens drawn after another
 // shows the scene, not the earlier lens enlarged again.
 
-import type { UIKitOverlayBounds } from '@niivue/niivue'
+import type { UIKitOverlayBounds } from '../hook'
 import type { MagnifierLayout } from '../magnifier'
 import { compile } from './glImageRenderer'
 import { GL_IMAGE_VERT, GL_LENS_FRAG } from './shaders'

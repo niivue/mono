@@ -25,7 +25,7 @@ import {
   attachSlideHud,
   attachSlideMinimap,
   attachSlidePlaneControl,
-} from '@niivue/uikit'
+} from '@niivue/uikit/niivue'
 import { droppedFiles } from './drop'
 
 const filesInput = document.getElementById('files') as HTMLInputElement

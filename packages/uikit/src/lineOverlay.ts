@@ -3,7 +3,7 @@
 // niivue overlay lifecycle hook works end to end, and the drawing foundation the
 // ruler widget builds on. Register it with `nv.registerOverlayRenderer(overlay)`.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { LineData } from './line'
 import { GlLineRenderer } from './render/glLineRenderer'
 import { WgpuLineRenderer } from './render/wgpuLineRenderer'

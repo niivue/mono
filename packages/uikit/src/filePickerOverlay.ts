@@ -4,7 +4,6 @@
 // asks the host bridge to open its file chooser; the picker then shows what
 // was chosen and fires `onPick`, or `onCancel` when the chooser closed empty.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import { UIKitButtonOverlay } from './buttonOverlay'
 import type {
   UIKitInteractive,
@@ -22,6 +21,7 @@ import {
   resolveFilePickerStyle,
   scaleFilePicker,
 } from './filePicker'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { createBrowserFilePicker, type FilePickerBridge } from './host'
 import {
   UIKitDrawBundle,

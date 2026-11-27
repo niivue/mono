@@ -110,7 +110,7 @@ export function layoutText(
 
   // Alignment shifts the pen back along the text direction; lift shifts it along
   // the perpendicular (screen-up side of the direction at rot=0 is (0,-1)).
-  const width = measureWidth(metrics, str, size)
+  const width = align ? measureWidth(metrics, str, size) : 0
   let penX = opts.x - cos * width * align + sin * lift
   let penY = opts.y - sin * width * align - cos * lift
 
@@ -128,20 +128,15 @@ export function layoutText(
     const [pl, pb, pw, ph] = g.plane
     const ox = pl * size
     const oy = -(pb + ph) * size
-    glyphs.set(
-      [
-        penX + cos * ox - sin * oy,
-        penY + sin * ox + cos * oy,
-        pw * size,
-        ph * size,
-        ...g.uv,
-        ...color,
-        metrics.distanceRange,
-        sin,
-        cos - 1,
-      ],
-      o,
-    )
+    glyphs[o] = penX + cos * ox - sin * oy
+    glyphs[o + 1] = penY + sin * ox + cos * oy
+    glyphs[o + 2] = pw * size
+    glyphs[o + 3] = ph * size
+    glyphs.set(g.uv, o + 4)
+    glyphs.set(color, o + 8)
+    glyphs[o + 12] = metrics.distanceRange
+    glyphs[o + 13] = sin
+    glyphs[o + 14] = cos - 1
     o += FLOATS_PER_GLYPH
     penX += cos * g.xadv * size
     penY += sin * g.xadv * size

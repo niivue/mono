@@ -1,9 +1,8 @@
-// UIKit's own WebGPU line renderer. Self-contained (its own pipeline, bind group
-// layout, uniform + storage buffers) so UIKit draws without touching niivue core.
-// The pipeline is built to match the open render pass's attachment formats (color
-// format, MSAA sample count, depth format) carried on the overlay handle, then
-// appends its draw to that pass. Duplicated in spirit from niivue core wgpu/line.ts
-// during the bake-in phase.
+// The WebGPU line renderer, for uikit's overlays and NiiVue core's lines alike.
+// Self-contained (its own pipeline, bind group layout, uniform + storage
+// buffers, grown as needed). The pipeline matches the open render pass's
+// attachment formats (color format, MSAA sample count, depth format), then the
+// draw is appended to that pass.
 
 import { FLOATS_PER_LINE, type LineData } from '../line'
 import { WGSL_LINE } from './shaders'

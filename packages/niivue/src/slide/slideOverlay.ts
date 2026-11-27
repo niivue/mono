@@ -20,8 +20,7 @@ import {
 } from './slideAnnotations'
 import type { NVSlideController, NVSlidePoint } from './slideController'
 
-/** Overlay capacity: lines and glyphs a slide renderer draws per frame. */
-export const SLIDE_OVERLAY_MAX_LINES = 4096
+/** Overlay capacity: glyphs a slide renderer draws per frame. */
 export const SLIDE_OVERLAY_MAX_GLYPHS = 2048
 
 /** NiiVue's ruler, scale bar (`isRulerVisible`) and selection-box styling. */

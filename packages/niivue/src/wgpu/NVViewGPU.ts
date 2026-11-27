@@ -1,4 +1,4 @@
-import { buildLine } from '@niivue/uikit'
+import { buildLine, WgpuLineRenderer } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
@@ -87,7 +87,6 @@ import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import * as depthPick from './depthPick'
 import { FontRenderer } from './font'
-import { LineRenderer } from './line'
 import * as mesh from './mesh'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
@@ -186,7 +185,7 @@ export default class NVView {
   isBusy: boolean
   maxTextureDimension2D: number
   maxTextureDimension3D: number
-  lineRenderer: LineRenderer
+  lineRenderer: WgpuLineRenderer
   boxLineRenderer: BoxLineRenderer
   polygonRenderer: PolygonRenderer
   polygon3DRenderer: Polygon3DRenderer
@@ -198,10 +197,8 @@ export default class NVView {
   crosscut2BindGroupLayout: GPUBindGroupLayout | null = null
   meshPipelines: Record<string, GPURenderPipeline> | null
   meshXRayPipelines: Record<string, GPURenderPipeline> | null
-  lineBindGroup: GPUBindGroup | null
   fontBindGroup: GPUBindGroup | null
   maxGlyphs: number
-  maxLines: number
   meshResources: Map<NVMesh, MeshGpuWithShader>
   orientCubeGpu: WebGPUMeshGPU | null
   thumbnailRenderer: ThumbnailRenderer
@@ -333,7 +330,7 @@ export default class NVView {
     this.maxTextureDimension2D = 0
     this.maxTextureDimension3D = 0
     // Render layer instances
-    this.lineRenderer = new LineRenderer()
+    this.lineRenderer = new WgpuLineRenderer()
     this.boxLineRenderer = new BoxLineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()
@@ -344,10 +341,8 @@ export default class NVView {
     this.meshBindGroupLayout = null
     this.meshPipelines = null
     this.meshXRayPipelines = null
-    this.lineBindGroup = null
     this.fontBindGroup = null
     this.maxGlyphs = 0
-    this.maxLines = 0
     this.meshResources = new Map()
     this.orientCubeGpu = null
     this.thumbnailRenderer = new ThumbnailRenderer()
@@ -821,10 +816,6 @@ export default class NVView {
           this.volumeRenderer.paqdLutTexture,
         )
       }
-      this.lineBindGroup = this.lineRenderer.createBindGroup(
-        device,
-        this.buffers.lineStorage,
-      )
       if (this.fontRenderer.isReady && this.sampler) {
         this.fontBindGroup = this.fontRenderer.createBindGroup(
           device,
@@ -1997,28 +1988,16 @@ export default class NVView {
         buildLine(canvasWidth, 0, canvasWidth, canvasHeight, bt, bc),
       )
     }
-    if (allLines.length > 0 && this.lineBindGroup) {
-      if (allLines.length > this.maxLines) {
-        this.maxLines = allLines.length
-        this.buffers.lineStorage.destroy()
-        this.buffers.lineStorage = device.createBuffer({
-          size: this.maxLines * 48,
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        })
-        this.lineBindGroup = this.lineRenderer.createBindGroup(
-          device,
-          this.buffers.lineStorage,
-        )
-      }
-      this.lineRenderer.draw(
-        device,
-        pass,
-        this.lineBindGroup,
-        this.buffers.lineStorage,
-        allLines,
-        this.maxLines,
-      )
-    }
+    this.lineRenderer.draw(
+      device,
+      pass,
+      this.preferredCanvasFormat,
+      this.sampleCount,
+      DEPTH_FORMAT,
+      allLines,
+      bw,
+      bh,
+    )
     if (boxEdges) {
       // The scissor must stay inside the attachment.
       const tw = isSub ? bw : canvasTexture.width
@@ -2321,17 +2300,11 @@ export default class NVView {
     const msaaCount = this.sampleCount
     // Initialize render layer modules
     const dpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
-    await this.lineRenderer.init(
-      this.device,
-      this.preferredCanvasFormat,
-      msaaCount,
-    )
     await this.boxLineRenderer.init(
       this.device,
       this.preferredCanvasFormat,
       msaaCount,
     )
-    this.lineRenderer.resize(this.device, this.canvas.width, this.canvas.height)
     await this.polygonRenderer.init(
       this.device,
       this.preferredCanvasFormat,
@@ -2429,11 +2402,6 @@ export default class NVView {
       size: this.maxGlyphs * 64,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
-    this.maxLines = 1024
-    this.buffers.lineStorage = this.device.createBuffer({
-      size: this.maxLines * 48,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
     // Sampler for font bind groups
     this.sampler = this.device.createSampler({
       magFilter: 'linear',
@@ -2488,7 +2456,6 @@ export default class NVView {
     const bw = this._boundsWidth
     const bh = this._boundsHeight
     this._updateMultisampleTarget()
-    this.lineRenderer.resize(this.device as GPUDevice, bw, bh)
     this.polygonRenderer.resize(this.device as GPUDevice, bw, bh)
     this.fontRenderer.resize(
       this.device as GPUDevice,
@@ -3323,9 +3290,6 @@ export default class NVView {
     if (this.buffers.glyphStorage) {
       this.buffers.glyphStorage.destroy()
     }
-    if (this.buffers.lineStorage) {
-      this.buffers.lineStorage.destroy()
-    }
     this.buffers = {}
 
     // Destroy render layer modules
@@ -3362,7 +3326,6 @@ export default class NVView {
     this.meshBindGroupLayout = null
     this.meshPipelines = null
     this.meshXRayPipelines = null
-    this.lineBindGroup = null
     this.fontBindGroup = null
   }
 }

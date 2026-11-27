@@ -1,8 +1,7 @@
-// UIKit's own WebGL2 line renderer. Self-contained (its own program + VAO +
-// instance buffer) so UIKit draws without touching niivue core. Lazily initialized
-// from the live context handed in by the overlay hook, and re-initialized if the
-// context identity changes (backend switch / context loss). Duplicated in spirit
-// from niivue core gl/line.ts during the bake-in phase.
+// The WebGL2 line renderer, for uikit's overlays and NiiVue core's lines alike.
+// Self-contained (its own program + VAO + instance buffer); lazily initialized
+// from the live context and re-initialized if the context identity changes
+// (backend switch / context loss).
 
 import { FLOATS_PER_LINE, type LineData } from '../line'
 import { GL_LINE_FRAG, GL_LINE_VERT } from './shaders'
@@ -112,7 +111,13 @@ export class GlLineRenderer {
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    // Alpha "over" (alpha src ONE, as the WebGPU blend state).
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+    )
     gl.bindVertexArray(this.vao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, lines.length)
     gl.bindVertexArray(null)

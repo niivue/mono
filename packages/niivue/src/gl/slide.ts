@@ -1,4 +1,4 @@
-import { buildLine } from '@niivue/uikit'
+import { buildLine, GlLineRenderer } from '@niivue/uikit'
 import { ubuntu } from '@/assets/fonts'
 import type {
   NVSlide,
@@ -14,7 +14,6 @@ import {
 import {
   buildSlideOverlay,
   SLIDE_OVERLAY_MAX_GLYPHS,
-  SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import {
@@ -32,7 +31,6 @@ import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { ColorLutTexturesGL } from './colorLut'
 import { FontRenderer } from './font'
 import { setTexParams } from './glUtil'
-import { LineRenderer } from './line'
 import { Shader } from './shader'
 import { slideFragShader, slideVertShader } from './slideShader'
 import { TileFuserGL } from './tileFuse'
@@ -73,7 +71,7 @@ export class SlideRenderer {
   isNearestInterpolation = false
   // Overrides the tiles' linear filtering while isNearestInterpolation is on.
   private _nearestSampler: WebGLSampler | null = null
-  private readonly _lines = new LineRenderer()
+  private readonly _lines = new GlLineRenderer()
   private readonly _font = new FontRenderer()
 
   private readonly _maxPoolBytes: number
@@ -118,7 +116,6 @@ export class SlideRenderer {
       gl.samplerParameteri(this._nearestSampler, p, gl.NEAREST)
     for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T])
       gl.samplerParameteri(this._nearestSampler, p, gl.CLAMP_TO_EDGE)
-    this._lines.init(gl)
     // The atlas loads asynchronously; labels draw from the frame after.
     void this._font.init(gl, ubuntu)
     this._shader(gl, 0)
@@ -393,7 +390,6 @@ export class SlideRenderer {
     dpr: number,
   ): void {
     if (!this.overlay || !this._font.isReady) return
-    this._lines.resize(gl, width, height)
     this._font.resize(gl, width, height, dpr)
     const { lines, labels } = buildSlideOverlay(
       this.overlay,
@@ -401,7 +397,7 @@ export class SlideRenderer {
       buildLine,
       this._font.fontPx * 0.5,
     )
-    this._lines.draw(gl, null, null, null, lines, SLIDE_OVERLAY_MAX_LINES)
+    this._lines.draw(gl, lines, width, height)
     this._font.draw(gl, null, null, null, labels, SLIDE_OVERLAY_MAX_GLYPHS)
     // The line and font passes re-enable depth and culling; the overlay hook
     // expects both off.

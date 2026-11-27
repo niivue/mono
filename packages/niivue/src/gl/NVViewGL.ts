@@ -1,4 +1,4 @@
-import { buildLine } from '@niivue/uikit'
+import { buildLine, GlLineRenderer } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
@@ -86,7 +86,6 @@ import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
 import { blendOver } from './glUtil'
-import { LineRenderer } from './line'
 import * as mesh from './mesh'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
@@ -128,11 +127,10 @@ export default class NVGlview {
   legendLayout: import('@/view/NVLegend').LegendLayout | null
   graphLayout: NVGraph.GraphLayout | null
   isBusy: boolean
-  maxLines: number
   maxGlyphs: number
   meshPipelines: Record<string, boolean>
   volumeRenderer: VolumeRenderer
-  lineRenderer: LineRenderer
+  lineRenderer: GlLineRenderer
   boxLineRenderer: BoxLineRenderer
   polygonRenderer: PolygonRenderer
   polygon3DRenderer: Polygon3DRenderer
@@ -239,7 +237,6 @@ export default class NVGlview {
     this.graphLayout = null
     // State
     this.isBusy = false
-    this.maxLines = 1024
     this.maxGlyphs = 2048 // Increased for legends with many entries
     // Expose mesh shader types (matches WebGPU meshPipelines keys)
     this.meshPipelines = {
@@ -257,7 +254,7 @@ export default class NVGlview {
     }
     // Render layer instances
     this.volumeRenderer = new VolumeRenderer(defaultMatcap(options.matcaps))
-    this.lineRenderer = new LineRenderer()
+    this.lineRenderer = new GlLineRenderer()
     this.boxLineRenderer = new BoxLineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()
@@ -341,7 +338,6 @@ export default class NVGlview {
     log.info(
       `WebGL2 ${renderer} :: ${vendor} - maxTexture 2D:${this.max2D} 3D:${this.max3D} antiAlias:${this.isAntiAlias}`,
     )
-    this.lineRenderer.init(gl)
     this.boxLineRenderer.init(gl)
     this.polygonRenderer.init(gl)
     this.polygon3DRenderer.init(gl)
@@ -1632,10 +1628,7 @@ export default class NVGlview {
         buildLine(canvasWidth, 0, canvasWidth, canvasHeight, bt, bc),
       ) // right
     }
-    if (allLines.length > 0 && this.lineRenderer.isReady) {
-      if (allLines.length > this.maxLines) this.maxLines = allLines.length
-      this.lineRenderer.draw(gl, null, null, null, allLines, this.maxLines)
-    }
+    this.lineRenderer.draw(gl, allLines, bw, bh)
     if (boxEdges) {
       this.boxLineRenderer.draw(gl, boxEdges, boxTiles, [bx, glBoundsY, bw, bh])
       gl.viewport(bx, glBoundsY, bw, bh)
@@ -1780,7 +1773,6 @@ export default class NVGlview {
     this._computeBoundsPixels()
     const bw = this._boundsWidth
     const bh = this._boundsHeight
-    this.lineRenderer.resize(this.gl, bw, bh)
     this.polygonRenderer.resize(this.gl, bw, bh)
     this.fontRenderer.resize(
       this.gl,

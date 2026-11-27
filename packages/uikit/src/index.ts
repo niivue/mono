@@ -55,6 +55,8 @@ export { UIKitPointLabelOverlay } from './pointLabelOverlay'
 export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
+export { GlLineRenderer } from './render/glLineRenderer'
+export { WgpuLineRenderer } from './render/wgpuLineRenderer'
 export type {
   RulerGeometry,
   RulerSegment,

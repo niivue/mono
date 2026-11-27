@@ -29,7 +29,10 @@ if (!inPath || !outPath) {
 
 let legacy: LegacyDocument
 try {
-  legacy = JSON.parse(readFileSync(inPath, 'utf8')) as LegacyDocument
+  const raw = readFileSync(inPath)
+  // classic NiiVue gzipped its documents by default
+  const text = raw[0] === 0x1f && raw[1] === 0x8b ? Bun.gunzipSync(raw) : raw
+  legacy = JSON.parse(new TextDecoder().decode(text)) as LegacyDocument
 } catch (err) {
   console.error(`Failed to read/parse ${inPath} as JSON:`, err)
   process.exit(1)

@@ -65,7 +65,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | `loadDocument()` / `loadDocumentFromUrl()` | ✅ | `loadDocument(source)` |
-| `saveDocument()` | ✅ | |
+| `saveDocument()` | ✅ | Gzips the CBOR `.nvd` by default (`.json` stays plain text); `loadDocument` gunzips any gzipped document |
 | `saveScene()` | ✅ | 0.x saved a screenshot: `saveBitmap()`. Scene documents: `saveDocument()` (NVD) |
 | `saveHTML()` / `generateHTML()` | ✅ | `@niivue/nv-ext-save-html` extension package |
 | `json()` — serialize state | ✅ | `serializeDocument()` returns a `Uint8Array` (CBOR by default) |

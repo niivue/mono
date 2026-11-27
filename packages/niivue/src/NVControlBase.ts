@@ -8,6 +8,7 @@ import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
 import { cortex } from '@/assets/matcaps'
 import * as NVCmaps from '@/cmap/NVCmaps'
+import * as NVGz from '@/codecs/NVGz'
 import { Animation, planAnimation } from '@/control/animate'
 import { applyPanFollowsCrosshair } from '@/control/cameraEvents'
 import {
@@ -8732,17 +8733,19 @@ export default class NiiVue extends EventTarget {
     this.resize()
   }
 
-  saveDocument(
+  async saveDocument(
     filename = 'scene.nvd',
     options?: NVDocument.SerializeOptions,
-  ): void {
+  ): Promise<void> {
     // Default the encoding from the filename (`.json` -> JSON, else CBOR) unless
     // the caller specified `options.format`.
     const format =
       options?.format ??
       (filename.toLowerCase().endsWith('.json') ? 'json' : 'cbor')
     const data = this.serializeDocument({ ...options, format })
-    NVDocument.triggerDownload(data, filename)
+    // CBOR is gzipped (embedded voxels shrink ~10x); JSON stays readable text.
+    if (format === 'json') NVDocument.triggerDownload(data, filename, 'json')
+    else NVDocument.triggerDownload(await NVGz.compress(data), filename, 'gzip')
   }
 
   // Emit the `change` events (and the specialised events some setters pair
@@ -8808,7 +8811,12 @@ export default class NiiVue extends EventTarget {
     const buffer = await NVLoader.fetchFile(source)
     // Superseded by a newer loadDocument: leave the scene to it.
     if (load.signal.aborted) return
-    const data = new Uint8Array(buffer)
+    // Gzipped (the saveDocument default) or raw CBOR/JSON. The cap keeps a
+    // gzip bomb from inflating past what an honest document can decode into.
+    const data = new Uint8Array(
+      await NVGz.maybeDecompress(buffer, NVDocument.MAX_DOCUMENT_BYTES),
+    )
+    if (load.signal.aborted) return
 
     // Parse the document
     const doc = NVDocument.deserialize(data)

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { compress } from '@/codecs/NVGz'
 import NiiVue, { SLICE_TYPE, VOLUME_RENDER_MODE } from '@/index'
 import { defaultSignalDisplay } from '@/signal/processing'
 import { devImageUrl, documentFile } from '@/testing/headless'
@@ -38,6 +39,13 @@ test('linkData: a linked document omits volume bytes and refetches from the URL'
   expect(nv2.volumes[0]?.url).toBe(SPHERE)
   expect(voxels).toBeGreaterThan(0)
   expect(nv2.volumes[0]?.img?.length).toBe(voxels)
+})
+
+test('gzip: loadDocument reads a gzipped document (the saveDocument default)', async () => {
+  const gz = await compress(new NiiVue({ azimuth: 200 }).serializeDocument())
+  const nv = new NiiVue({ azimuth: 50 })
+  await nv.loadDocument(documentFile(gz, 'gz.nvd'))
+  expect(nv.azimuth).toBe(200)
 })
 
 test('sparse settings: fill policy - default resets omitted, current keeps, specified always wins', async () => {

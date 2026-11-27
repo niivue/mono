@@ -3835,7 +3835,7 @@
     {
       "jsName": "saveDocument",
       "pyName": "save_document",
-      "isAsync": false,
+      "isAsync": true,
       "returnsValue": false,
       "params": [
         {
@@ -3851,7 +3851,7 @@
           "doc": null
         }
       ],
-      "returns": "void",
+      "returns": "Promise<void>",
       "doc": null,
       "returnsDoc": null
     },

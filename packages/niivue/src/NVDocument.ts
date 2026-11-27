@@ -775,6 +775,9 @@ export function serialize(
   return encode(doc)
 }
 
+/** Inflated size cap for a gzipped document: the ~2 GiB ArrayBuffer limit. */
+export const MAX_DOCUMENT_BYTES = 2 ** 31
+
 export function deserialize(data: Uint8Array): NVDocumentData {
   // Accept either encoding: JSON (first non-whitespace byte `{`) or CBOR.
   const isJSON = looksLikeJSON(data)
@@ -1307,11 +1310,15 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-export function triggerDownload(data: Uint8Array, filename: string): void {
+export function triggerDownload(
+  data: Uint8Array,
+  filename: string,
+  type: 'gzip' | 'json',
+): void {
   const buffer = data.buffer.slice(
     data.byteOffset,
     data.byteOffset + data.byteLength,
   ) as ArrayBuffer
   const name = filename.endsWith('.nvd') ? filename : `${filename}.nvd`
-  downloadBlob(new Blob([buffer], { type: 'application/cbor' }), name)
+  downloadBlob(new Blob([buffer], { type: `application/${type}` }), name)
 }

@@ -420,7 +420,7 @@ export function viewportHandlers(host: NiiVueHost): Handlers {
           const format = choice(params, 'format', ['json', 'cbor'] as const)
           if (format) options.format = format
           const name = filename ?? 'scene.nvd'
-          view.saveDocument(name, options)
+          await view.saveDocument(name, options)
           return { saved: what, filename: name }
         }
         case 'volume': {

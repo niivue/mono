@@ -25,11 +25,18 @@ sliceType.onchange = () => {
   // Fill Canvas only governs a lone 2D slice (axial/coronal/sagittal).
   fillCheck.disabled = type > 2
 }
-// Rulers and angles clear independently, so erasing one kind leaves the
-// other on screen; clearMeasurements() still drops both at once.
-clearRulersBtn.onclick = () => nv1.clearDistanceMeasurements()
-clearAnglesBtn.onclick = () => nv1.clearAngles()
-clearAllBtn.onclick = () => nv1.clearMeasurements()
+// Drag-mode rulers and angles are measureLine / measureAngle annotations.
+const removeMeasures = (...types) => {
+  nv1.cancelAnnotationInProgress()
+  nv1.removeAnnotations(
+    nv1.annotations
+      .filter((a) => types.includes(a.shape?.type))
+      .map((a) => a.id),
+  )
+}
+clearRulersBtn.onclick = () => removeMeasures('measureLine')
+clearAnglesBtn.onclick = () => removeMeasures('measureAngle')
+clearAllBtn.onclick = () => removeMeasures('measureLine', 'measureAngle')
 function handleLocationChange(data) {
   document.getElementById('location').innerHTML = `&nbsp;&nbsp;${data.string}`
 }

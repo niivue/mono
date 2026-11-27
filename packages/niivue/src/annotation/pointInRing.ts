@@ -37,17 +37,27 @@ export function polygonDistance(
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
       const p = ring[j] as AnnotationPoint
       const q = ring[i] as AnnotationPoint
-      const dx = q.x - p.x
-      const dy = q.y - p.y
-      const t = Math.max(
-        0,
-        Math.min(
-          1,
-          ((x - p.x) * dx + (y - p.y) * dy) / (dx * dx + dy * dy || 1),
-        ),
-      )
-      d = Math.min(d, Math.hypot(x - p.x - t * dx, y - p.y - t * dy))
+      d = Math.min(d, pointToSegmentDistance(x, y, p.x, p.y, q.x, q.y))
     }
   }
   return inside ? 0 : d
+}
+
+/** Distance from a point to a line segment. */
+export function pointToSegmentDistance(
+  px: number,
+  py: number,
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+): number {
+  const dx = ex - sx
+  const dy = ey - sy
+  const lenSq = dx * dx + dy * dy
+  const t =
+    lenSq > 0
+      ? Math.max(0, Math.min(1, ((px - sx) * dx + (py - sy) * dy) / lenSq))
+      : 0
+  return Math.hypot(px - (sx + t * dx), py - (sy + t * dy))
 }

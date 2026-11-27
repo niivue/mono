@@ -231,8 +231,10 @@ export const SETTINGS: readonly Setting[] = [
     'Whether the orientation cube is drawn in the render.',
   ),
   bool('isRulerVisible', 'Whether a ruler is drawn.'),
-  bool('isMeasureUnitsVisible', 'Whether measurements show their units.'),
-  bool('isMeasurementDrawn', 'Whether measurements are drawn at all.'),
+  bool(
+    'isMeasureUnitsVisible',
+    'Whether the ruler of a measurement being dragged shows its unit.',
+  ),
   bool('isLegendVisible', 'Whether a legend of label names is drawn.'),
   bool('isGraphVisible', 'Whether the signal graph is drawn.'),
   bool(

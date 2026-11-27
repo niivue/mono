@@ -826,14 +826,6 @@ export type UIConfig = {
   isLegendVisible: boolean
   isMeasureUnitsVisible: boolean
   /**
-   * Draw the built-in measurement overlay (ruler line, ticks, distance label).
-   * Set false to let an external overlay renderer draw measurements instead (it
-   * still reads `measurementScreenLines`); the built-in geometry is computed but
-   * not drawn, so no line, label, or label background chip appears. Angles are
-   * unaffected. Default true.
-   */
-  isMeasurementDrawn: boolean
-  /**
    * When false, NiiVue's built-in 2D vector-annotation shapes (ellipse/rect/
    * circle/line/arrow fill + stroke + stats labels) are NOT drawn, so an external
    * overlay can render them from `annotationScreenShapes` instead. The brush
@@ -1612,39 +1604,6 @@ export type PlaneOutline = {
 }
 
 /**
- * A completed distance measurement. Endpoints and `distance` are scene units:
- * micrometers on a micrometer volume (`xyzt_units` MICRON), else mm.
- */
-export type CompletedMeasurement = {
-  startMM: [number, number, number]
-  endMM: [number, number, number]
-  distance: number
-  sliceIndex: number
-  sliceType: number
-  slicePosition: number
-}
-
-/**
- * A measurement projected to the current frame's canvas pixels, exposed so an
- * external overlay (e.g. a @niivue/uikit ruler drawn through the overlay hook)
- * can render the measurement in screen space with its own renderer. Recomputed
- * every frame; `distance` is in millimetres. See NVControlBase.measurementScreenLines.
- */
-export type MeasurementScreenLine = {
-  sx: number
-  sy: number
-  ex: number
-  ey: number
-  distance: number
-  /**
-   * Index of the source measurement in `completedMeasurements`, present for
-   * persisted lines. Absent on the transient active (in-progress drag) line,
-   * which has no persisted index yet.
-   */
-  index?: number
-}
-
-/**
  * Transient world-space axis-aligned bounding box drawn as 12 edges on the 3D
  * render tile(s) — e.g. to outline a focused subvolume. `min`/`max` are in the
  * same world-mm space as the scene extents, and both are corner positions the
@@ -1656,21 +1615,6 @@ export type FocusBox = {
   max: [number, number, number]
   color: number[]
   thickness: number
-}
-
-export type CompletedAngle = {
-  firstLine: {
-    startMM: [number, number, number]
-    endMM: [number, number, number]
-  }
-  secondLine: {
-    startMM: [number, number, number]
-    endMM: [number, number, number]
-  }
-  angle: number
-  sliceIndex: number
-  sliceType: number
-  slicePosition: number
 }
 
 // ============================================================

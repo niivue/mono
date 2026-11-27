@@ -743,17 +743,6 @@
       "doc": null
     },
     {
-      "jsName": "isMeasurementDrawn",
-      "pyName": "is_measurement_drawn",
-      "tsType": "boolean",
-      "pyTraitlet": {
-        "kind": "Bool"
-      },
-      "hasGetter": true,
-      "hasSetter": true,
-      "doc": null
-    },
-    {
       "jsName": "isMeasureUnitsVisible",
       "pyName": "is_measure_units_visible",
       "tsType": "boolean",
@@ -1660,7 +1649,7 @@
       },
       "hasGetter": true,
       "hasSetter": false,
-      "doc": "A multi-click contour, bidirectional or click-placed shape is half-drawn,\nor an annotation is being dragged."
+      "doc": "A multi-click contour, bidirectional, click-placed shape or drag-mode\nangle is half-drawn, or an annotation is being dragged."
     },
     {
       "jsName": "isAntiAlias",
@@ -1914,35 +1903,6 @@
       ],
       "returns": "Promise<void>",
       "doc": null,
-      "returnsDoc": null
-    },
-    {
-      "jsName": "addMeasurement",
-      "pyName": "add_measurement",
-      "isAsync": false,
-      "returnsValue": true,
-      "params": [
-        {
-          "name": "startMM",
-          "tsType": "[number, number, number]",
-          "optional": false,
-          "doc": null
-        },
-        {
-          "name": "endMM",
-          "tsType": "[number, number, number]",
-          "optional": false,
-          "doc": null
-        },
-        {
-          "name": "opts",
-          "tsType": "Partial<Pick<CompletedMeasurement, \"sliceIndex\" | \"sliceType\" | \"slicePosition\">>",
-          "optional": true,
-          "doc": null
-        }
-      ],
-      "returns": "number",
-      "doc": "Add a distance measurement between two mm-space points, exactly as if it\nhad been drawn interactively in `DRAG_MODE.measurement`: it renders on\nevery 2D slice tile whose slice plane contains both endpoints, emits\n`measurementCompleted` (after the mutation), and redraws. `opts` may pin\nthe slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted\nfields are derived from the segment geometry (see\ncontrol/measurements.buildMeasurement). An explicit `sliceType` must be a\n2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value\n(`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the\norientation from geometry. Returns the new measurement's index\n(valid for {@link removeMeasurement} until an earlier one is removed).",
       "returnsDoc": null
     },
     {
@@ -2292,16 +2252,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "clearAngles",
-      "pyName": "clear_angles",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [],
-      "returns": "void",
-      "doc": "Clear completed angles only, leaving distance measurements in place.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "clearAnnotationHistory",
       "pyName": "clear_annotation_history",
       "isAsync": false,
@@ -2339,26 +2289,6 @@
       "params": [],
       "returns": "void",
       "doc": "Clear any custom layout and revert to built-in layout modes.",
-      "returnsDoc": null
-    },
-    {
-      "jsName": "clearDistanceMeasurements",
-      "pyName": "clear_distance_measurements",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [],
-      "returns": "void",
-      "doc": "Clear completed distance measurements only, leaving angles in place.",
-      "returnsDoc": null
-    },
-    {
-      "jsName": "clearMeasurements",
-      "pyName": "clear_measurements",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [],
-      "returns": "void",
-      "doc": "Clear both completed distance measurements and completed angles.",
       "returnsDoc": null
     },
     {
@@ -2747,16 +2677,6 @@
       "params": [],
       "returns": "GraphRangeChangeDetail | null",
       "doc": "The signal graph's current visible x-range (the synchronous counterpart to\nthe `graphRangeChange` event): `{ min, max, full, axisLabel, isWindowed }`,\nor null when no signal graph is shown. Use `full` to drive a \"reset to full\nextent\" control (e.g. jump range sliders to the data limits).",
-      "returnsDoc": null
-    },
-    {
-      "jsName": "getMeasurements",
-      "pyName": "get_measurements",
-      "isAsync": false,
-      "returnsValue": true,
-      "params": [],
-      "returns": "readonly CompletedMeasurement[]",
-      "doc": "All completed distance measurements, in insertion order (an entry's\nposition is the index {@link addMeasurement} returned and\n{@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:\na fresh array of fresh entries, so editing it (an endpoint tuple included)\ncannot change what is rendered, and it does not update when measurements\nare later added, removed or cleared. Call it again for the current list,\nand use {@link addMeasurement}/{@link removeMeasurement}/\n{@link clearMeasurements} to change it so events fire and the scene\nredraws.",
       "returnsDoc": null
     },
     {
@@ -3442,35 +3362,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "pickMeasurement",
-      "pyName": "pick_measurement",
-      "isAsync": false,
-      "returnsValue": true,
-      "params": [
-        {
-          "name": "canvasX",
-          "tsType": "number",
-          "optional": false,
-          "doc": null
-        },
-        {
-          "name": "canvasY",
-          "tsType": "number",
-          "optional": false,
-          "doc": null
-        },
-        {
-          "name": "radiusPx",
-          "tsType": "number | undefined",
-          "optional": true,
-          "doc": null
-        }
-      ],
-      "returns": "number | null",
-      "doc": "Find the completed distance measurement under a canvas point, e.g. to\nimplement click-to-select or click-to-delete. Each measurement is projected\nwith the same per-tile filtering and matrices the renderer uses to draw it,\nso the hit-test agrees with what is on screen. Returns the index of the\nclosest measurement whose projected line is within `radiusPx` (default 8)\ncanvas pixels of the point, or null if none is. Requires a rendered frame\n(the projection uses matrices cached during render).\n\n`canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention\nas {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer\nevent's `offsetX`/`offsetY` are off by the device pixel ratio on any\ndisplay above 1x. Convert with {@link clientToCanvas} first.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "pickRay",
       "pyName": "pick_ray",
       "isAsync": false,
@@ -3653,23 +3544,6 @@
       ],
       "returns": "void",
       "doc": "Remove several annotations as one change (one annotationUndo step when\n`isUndoable`); emits annotationChanged with action 'delete'.",
-      "returnsDoc": null
-    },
-    {
-      "jsName": "removeMeasurement",
-      "pyName": "remove_measurement",
-      "isAsync": false,
-      "returnsValue": false,
-      "params": [
-        {
-          "name": "index",
-          "tsType": "number",
-          "optional": false,
-          "doc": null
-        }
-      ],
-      "returns": "void",
-      "doc": "Remove a single completed distance measurement by index, emitting\n`measurementRemoved` before the mutation (so the listener can still reach\nit) and redrawing. An index that is not an integer in bounds warns and\nno-ops, matching {@link removeVolume}.",
       "returnsDoc": null
     },
     {
@@ -5032,12 +4906,6 @@
   ],
   "events": [
     {
-      "jsName": "angleCompleted",
-      "pyName": "angle_completed",
-      "detailType": "CompletedAngle",
-      "doc": null
-    },
-    {
       "jsName": "annotationChanged",
       "pyName": "annotation_changed",
       "detailType": "AnnotationChangedDetail",
@@ -5137,18 +5005,6 @@
       "jsName": "locationChange",
       "pyName": "location_change",
       "detailType": "NiiVueLocation",
-      "doc": null
-    },
-    {
-      "jsName": "measurementCompleted",
-      "pyName": "measurement_completed",
-      "detailType": "CompletedMeasurement",
-      "doc": null
-    },
-    {
-      "jsName": "measurementRemoved",
-      "pyName": "measurement_removed",
-      "detailType": "MeasurementRemovedDetail",
       "doc": null
     },
     {
@@ -5294,11 +5150,6 @@
         "jsName": "lodBoxes",
         "tsType": "FocusBox",
         "reason": "non-serializable nominal type: FocusBox"
-      },
-      {
-        "jsName": "measurementScreenLines",
-        "tsType": "MeasurementScreenLine",
-        "reason": "non-serializable nominal type: MeasurementScreenLine"
       },
       {
         "jsName": "meshes",

@@ -27,6 +27,7 @@ import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import { applyInstances } from '@/control/instances'
 import {
   clientToBoundsPixel,
+  commitAnnotation,
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
@@ -34,8 +35,6 @@ import {
   resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
-import type { AddMeasurementOptions } from '@/control/measurements'
-import * as measurementApi from '@/control/measurements'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -130,14 +129,12 @@ import type {
   CanvasViewport,
   CinematicOptions,
   ColorMap,
-  CompletedMeasurement,
   CustomLayoutTile,
   FocusBox,
   ImageFromUrlOptions,
   LodCompensationLevel,
   LodCompensationReport,
   LUT,
-  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
@@ -1648,15 +1645,6 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  get isMeasurementDrawn(): boolean {
-    return this.model.ui.isMeasurementDrawn
-  }
-  set isMeasurementDrawn(v: boolean) {
-    this.model.ui.isMeasurementDrawn = v
-    this.emit('change', { property: 'isMeasurementDrawn', value: v })
-    this.drawScene()
-  }
-
   /**
    * When false, NiiVue's built-in 2D vector-annotation shapes are not drawn, so
    * an external overlay can render them from `annotationScreenShapes`. The brush
@@ -1820,23 +1808,6 @@ export default class NiiVue extends EventTarget {
     this.model.ui.measureTextColor = v
     this.emit('change', { property: 'measureTextColor', value: v })
     this.drawScene()
-  }
-
-  /**
-   * Every visible measurement projected to the current frame's canvas pixels
-   * (all persisted measurements plus an in-progress drag). Populated during
-   * render; read it from a registered overlay renderer (see
-   * {@link registerOverlayRenderer}) to draw measurements with an external
-   * renderer — e.g. a @niivue/uikit ruler with rotated tick numbers — instead of
-   * the built-in line. Hide the built-in draw by setting `measureLineColor` /
-   * `measureTextColor` alpha to 0. Each persisted entry carries an `index`
-   * into {@link getMeasurements}; the trailing in-progress line omits it.
-   */
-  get measurementScreenLines(): readonly MeasurementScreenLine[] {
-    const active = this.model._activeMeasurementScreenLine
-    return active
-      ? [...this.model._persistedMeasurementScreenLines, active]
-      : this.model._persistedMeasurementScreenLines
   }
 
   /**
@@ -3003,12 +2974,13 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * A multi-click contour, bidirectional or click-placed shape is half-drawn,
-   * or an annotation is being dragged.
+   * A multi-click contour, bidirectional, click-placed shape or drag-mode
+   * angle is half-drawn, or an annotation is being dragged.
    */
   get isAnnotationInProgress(): boolean {
     return Boolean(
-      this._annotationPolyPoints ||
+      this._angleState !== 'none' ||
+        this._annotationPolyPoints ||
         this._bidirectionalLong ||
         this._annotationClickStart ||
         this._isAnnotationDrag,
@@ -7656,80 +7628,11 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Add a distance measurement between two mm-space points, exactly as if it
-   * had been drawn interactively in `DRAG_MODE.measurement`: it renders on
-   * every 2D slice tile whose slice plane contains both endpoints, emits
-   * `measurementCompleted` (after the mutation), and redraws. `opts` may pin
-   * the slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted
-   * fields are derived from the segment geometry (see
-   * control/measurements.buildMeasurement). An explicit `sliceType` must be a
-   * 2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value
-   * (`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the
-   * orientation from geometry. Returns the new measurement's index
-   * (valid for {@link removeMeasurement} until an earlier one is removed).
-   * @example
-   * const idx = nv1.addMeasurement([-20, 10, 0], [25, 10, 0])
+   * Store a finished annotation as the annotation tools do (undo step,
+   * annotationChanged). For control/dragModes, which interactions imports.
    */
-  addMeasurement(
-    startMM: [number, number, number],
-    endMM: [number, number, number],
-    opts: AddMeasurementOptions = {},
-  ): number {
-    return measurementApi.addMeasurement(this, startMM, endMM, opts)
-  }
-
-  /**
-   * Remove a single completed distance measurement by index, emitting
-   * `measurementRemoved` before the mutation (so the listener can still reach
-   * it) and redrawing. An index that is not an integer in bounds warns and
-   * no-ops, matching {@link removeVolume}.
-   */
-  removeMeasurement(index: number): void {
-    measurementApi.removeMeasurement(this, index)
-  }
-
-  /**
-   * All completed distance measurements, in insertion order (an entry's
-   * position is the index {@link addMeasurement} returned and
-   * {@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:
-   * a fresh array of fresh entries, so editing it (an endpoint tuple included)
-   * cannot change what is rendered, and it does not update when measurements
-   * are later added, removed or cleared. Call it again for the current list,
-   * and use {@link addMeasurement}/{@link removeMeasurement}/
-   * {@link clearMeasurements} to change it so events fire and the scene
-   * redraws.
-   */
-  getMeasurements(): readonly CompletedMeasurement[] {
-    return measurementApi.snapshotMeasurements(this.model.completedMeasurements)
-  }
-
-  /**
-   * Find the completed distance measurement under a canvas point, e.g. to
-   * implement click-to-select or click-to-delete. Each measurement is projected
-   * with the same per-tile filtering and matrices the renderer uses to draw it,
-   * so the hit-test agrees with what is on screen. Returns the index of the
-   * closest measurement whose projected line is within `radiusPx` (default 8)
-   * canvas pixels of the point, or null if none is. Requires a rendered frame
-   * (the projection uses matrices cached during render).
-   *
-   * `canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention
-   * as {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer
-   * event's `offsetX`/`offsetY` are off by the device pixel ratio on any
-   * display above 1x. Convert with {@link clientToCanvas} first.
-   * @example
-   * canvas.addEventListener('pointerdown', (e) => {
-   *   const px = nv1.clientToCanvas(e.clientX, e.clientY)
-   *   if (!px) return
-   *   const idx = nv1.pickMeasurement(px[0], px[1])
-   *   if (idx !== null) nv1.removeMeasurement(idx)
-   * })
-   */
-  pickMeasurement(
-    canvasX: number,
-    canvasY: number,
-    radiusPx?: number,
-  ): number | null {
-    return measurementApi.pickMeasurement(this, canvasX, canvasY, radiusPx)
+  _commitAnnotation(ann: VectorAnnotation): void {
+    commitAnnotation(this, ann)
   }
 
   /** Drop a half-placed angle (its first arm and the following second arm). */
@@ -7740,27 +7643,6 @@ export default class NiiVue extends EventTarget {
     if (this._activeDragMode === DRAG_MODE.angle)
       this._activeDragMode = DRAG_MODE.none
     this.model._dragOverlay = null
-    this.drawScene()
-  }
-
-  /** Clear both completed distance measurements and completed angles. */
-  clearMeasurements(): void {
-    this._cancelAngle()
-    this.model.completedMeasurements = []
-    this.model.completedAngles = []
-    this.drawScene()
-  }
-
-  /** Clear completed angles only, leaving distance measurements in place. */
-  clearAngles(): void {
-    this._cancelAngle()
-    this.model.completedAngles = []
-    this.drawScene()
-  }
-
-  /** Clear completed distance measurements only, leaving angles in place. */
-  clearDistanceMeasurements(): void {
-    this.model.completedMeasurements = []
     this.drawScene()
   }
 

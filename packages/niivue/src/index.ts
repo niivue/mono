@@ -23,8 +23,6 @@ export {
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
-// Programmatic measurement API (NiiVue.addMeasurement options)
-export type { AddMeasurementOptions } from './control/measurements'
 // Options accepted by reinitializeView (backend switch, anti-alias, DPR)
 export type { ReinitializeOptions } from './control/viewLifecycle'
 // loadDocument's resolveUrl: what a document URL refers to, and the hook
@@ -106,7 +104,6 @@ export type {
   DrawingEnabledDetail,
   FrameChangeDetail,
   GraphRangeChangeDetail,
-  MeasurementRemovedDetail,
   MeshLoadedDetail,
   MeshRemovedDetail,
   MeshUpdatedDetail,
@@ -149,8 +146,6 @@ export type {
   CanvasViewport,
   CinematicOptions,
   ColorMap,
-  CompletedAngle,
-  CompletedMeasurement,
   CustomLayoutTile,
   DragReleaseInfo,
   FocusBox,
@@ -159,7 +154,6 @@ export type {
   LodCompensationLevel,
   LodCompensationReport,
   LUT,
-  MeasurementScreenLine,
   MeshAnimationTarget,
   MeshFromUrlOptions,
   MeshKind,

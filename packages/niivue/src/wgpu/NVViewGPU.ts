@@ -45,7 +45,6 @@ import { HEADER_BACK_COLOR, resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { buildLine } from '@/view/NVLine'
-import * as NVMeasurement from '@/view/NVMeasurement'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
 import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
@@ -1822,15 +1821,7 @@ export default class NVView {
     }
     // Layer 4: Lines (full-canvas) — used by graph
     let graphLines: ReturnType<typeof buildLine>[] = []
-    // Refresh the exposed measurement screen projection each rendered frame so an
-    // external overlay (UIKit ruler) keeps tracking pan/zoom/slice independently of
-    // whether the built-in measurement is drawn. NOTE: unlike the WebGL2 view,
-    // render() bails early on !fontRenderer.isReady (see the guard near the top), so
-    // on WebGPU this only runs once the font is ready. That is fine in practice:
-    // measurements are created by user interaction, which happens after the view is
-    // up and the (bundled) font has loaded.
-    NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
-    // Same for vector annotations (see annotationScreenShapes / isAnnotationDrawn).
+    // Project vector annotations for overlays (annotationScreenShapes / isAnnotationDrawn).
     NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
     if (this.fontRenderer.isReady && this.fontBindGroup) {
@@ -1931,19 +1922,6 @@ export default class NVView {
           labels.push(...rulerResult.labels)
           graphLines.push(...rulerResult.lines)
         }
-      }
-      // Persisted measurements and angles
-      const persistedResult = NVMeasurement.buildPersistedMeasurements(
-        this.model,
-        screenSlices,
-        (s, x, y, sc, c, ax, ay, bc) =>
-          this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-        buildLine,
-        this.fontRenderer.fontPx * 0.5,
-      )
-      if (persistedResult) {
-        labels.push(...persistedResult.labels)
-        graphLines.push(...persistedResult.lines)
       }
       // Vector annotations
       const annotationResult = NVAnnotation.buildAnnotationRenderData(

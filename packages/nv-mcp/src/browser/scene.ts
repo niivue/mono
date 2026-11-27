@@ -45,7 +45,7 @@ import {
   reportedCamera,
 } from './instances'
 import { checkFits, fetchValues, oneSource } from './liveData'
-import { markHandlers } from './marks'
+import { MEASURE_TYPES, markHandlers } from './marks'
 import { meshHandlers } from './meshes'
 import {
   clamp,
@@ -1937,7 +1937,10 @@ function counts(view: View): Record<string, number> {
   if (view.meshes) out.meshes = view.meshes.length
   if (view.signals) out.signals = view.signals.length
   if (view.annotations) out.annotations = view.annotations.length
-  if (view.getMeasurements) out.measurements = view.getMeasurements().length
+  const measures = view.annotations?.filter((a) =>
+    MEASURE_TYPES.includes(String(a.shape?.type)),
+  ).length
+  if (measures) out.measurements = measures
   return out
 }
 

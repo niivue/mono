@@ -100,8 +100,6 @@ export type {
   LabelTable,
   LayoutTile,
   LoadedVolume,
-  Measurement,
-  MeasurementOptions,
   MeshLayerToLoad,
   MeshLayerUpdate,
   MeshToLoad,

@@ -249,10 +249,8 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 
 | Feature | Kind | Notes |
 |---|---|---|
-| `clearMeasurements()` | Method | |
-| `measurementCompleted` / `angleCompleted` events | Event | See §15 |
-| `measureLineColor`, `measureTextColor`, `isMeasureUnitsVisible` | Prop | Styling |
-| Drag modes `measurement` (2) and `angle` (7) | Enum | Set via `primaryDragMode`/`secondaryDragMode` |
+| `measureLineColor`, `measureTextColor`, `isMeasureUnitsVisible` | Prop | Style the live drag preview; a finished measurement takes the annotation style |
+| Drag modes `measurement` (2) and `angle` (7) | Enum | Set via `primaryDragMode`/`secondaryDragMode`; a finished drag adds a `measureLine` / `measureAngle` annotation |
 
 ## 12. Interaction
 
@@ -327,8 +325,6 @@ are exported from the package.
 | `frameChange` | `{volume, frame}` | 4D frame changed |
 | `dragRelease` | `DragReleaseInfo` | End of measurement/pan drag |
 | `pointerUp` | `{x, y, button}` | |
-| `measurementCompleted` | `CompletedMeasurement` | |
-| `angleCompleted` | `CompletedAngle` | |
 | `volumeLoaded` / `meshLoaded` | `{volume}` / `{mesh}` | |
 | `volumeRemoved` / `meshRemoved` | `{volume, index}` / `{mesh, index}` | |
 | `volumeUpdated` / `meshUpdated` | `{index, …, changes}` | After `setVolume` / `setMesh` |

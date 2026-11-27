@@ -446,7 +446,6 @@ export const UI_DEFAULTS: UIConfig = {
   isCrossLinesVisible: false,
   isLegendVisible: true,
   isMeasureUnitsVisible: true,
-  isMeasurementDrawn: true,
   isAnnotationDrawn: true,
   isThumbnailVisible: false,
   thumbnailUrl: '',

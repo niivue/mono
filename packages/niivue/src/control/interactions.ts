@@ -5,6 +5,7 @@ import {
   shouldAppendMultiClickPoint,
   shouldStartFreshMultiClickContour,
 } from '@/annotation/multiClick'
+import { pointToSegmentDistance } from '@/annotation/pointInRing'
 import type { ShapeBoundsUpdate } from '@/annotation/selection'
 import {
   emitOrientationChange,
@@ -13,7 +14,6 @@ import {
 } from '@/control/cameraEvents'
 import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
-import { pointToSegmentDistance } from '@/control/measurements'
 import {
   clampScale3D,
   type Pinch,
@@ -755,7 +755,7 @@ function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
 }
 
 // Store a finished annotation and announce it.
-function commitAnnotation(ctrl: NiiVue, ann: VectorAnnotation): void {
+export function commitAnnotation(ctrl: NiiVue, ann: VectorAnnotation): void {
   const before = ctrl.model.annotations
   const after = Annotation.storeAnnotation(before, ann, {
     mergedGroups: ctrl.model.annotation.mergedGroups,

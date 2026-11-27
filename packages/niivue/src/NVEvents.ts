@@ -2,8 +2,6 @@ import type { ByteLruStats } from '@/byteLru'
 import type {
   AffineMatrix,
   BackendType,
-  CompletedAngle,
-  CompletedMeasurement,
   DragReleaseInfo,
   MeshUpdate,
   NiiVueLocation,
@@ -23,10 +21,6 @@ export type VolumeLoadedDetail = { volume: NVImage }
 export type MeshLoadedDetail = { mesh: NVMesh }
 export type VolumeRemovedDetail = { volume: NVImage; index: number }
 export type MeshRemovedDetail = { mesh: NVMesh; index: number }
-export type MeasurementRemovedDetail = {
-  measurement: CompletedMeasurement
-  index: number
-}
 export type SignalLoadedDetail = { signal: NVSignal }
 export type SignalRemovedDetail = { signal: NVSignal; index: number }
 export type SignalLocationDetail = {
@@ -202,9 +196,6 @@ export interface NVEventMap {
   frameChange: FrameChangeDetail
   dragRelease: DragReleaseInfo
   pointerUp: PointerUpDetail
-  measurementCompleted: CompletedMeasurement
-  measurementRemoved: MeasurementRemovedDetail
-  angleCompleted: CompletedAngle
 
   // Loading
   volumeLoaded: VolumeLoadedDetail

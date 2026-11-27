@@ -62,7 +62,7 @@ collection (`nv.volumes` / `nv.meshes`) at the moment the event fires**:
   `meshUpdated`, `volumeOrderChanged`).
 - **Removal** also fires *after* the model changes — the item is gone from the
   collection, and the event `detail` carries it together with its former index
-  (`volumeRemoved`, `meshRemoved`, `signalRemoved`, `measurementRemoved`, and the
+  (`volumeRemoved`, `meshRemoved`, `signalRemoved`, and the
   bulk forms, which emit once per item in reverse index order).
 
 **Consumer corollary:** a listener may re-read the collection synchronously
@@ -122,41 +122,6 @@ Fired when any drag interaction completes on a 2D slice.
 | `voxEnd` | `[number, number, number]` | End position (voxel, rounded) |
 | `mmStart` | `[number, number, number]` | Start position in mm |
 | `mmEnd` | `[number, number, number]` | End position in mm |
-
-#### `measurementCompleted`
-Fired when a distance measurement line is completed — by an interactive drag in
-`DRAG_MODE.measurement` or by a programmatic `addMeasurement` call. Fired after
-the measurement is appended, so it is already in `getMeasurements()`. A click (zero length) adds nothing.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `startMM` | `[number, number, number]` | Start point in mm |
-| `endMM` | `[number, number, number]` | End point in mm |
-| `distance` | `number` | Distance in mm |
-| `sliceIndex` | `number` | Slice tile index |
-| `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
-
-#### `measurementRemoved`
-Fired by `removeMeasurement` after the measurement is removed; `detail`
-carries the removed measurement and its former index.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `measurement` | `CompletedMeasurement` | The measurement being removed |
-| `index` | `number` | Its index in the measurement list |
-
-#### `angleCompleted`
-Fired when an angle measurement (two lines) is completed.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `firstLine` | `{ startMM, endMM }` | First line endpoints in mm |
-| `secondLine` | `{ startMM, endMM }` | Second line endpoints in mm |
-| `angle` | `number` | Angle in degrees |
-| `sliceIndex` | `number` | Slice tile index |
-| `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
 
 #### `pointerUp`
 Fired on every pointer release over the canvas.
@@ -429,6 +394,8 @@ Fired when a vector annotation is removed.
 
 #### `annotationChanged`
 Fired on annotation editing events (draw, erase, move, resize, undo, redo, clear).
+
+A finished `DRAG_MODE.measurement` or `DRAG_MODE.angle` drag is a draw of a `measureLine` or `measureAngle` annotation.
 
 A draw fires `annotationAdded` and then `annotationChanged` with the new id in `added`; annotations it merged or cut appear in `updated` or `removed`. `addAnnotation` and `removeAnnotation` fire only `annotationAdded` / `annotationRemoved`; `loadAnnotationsJSON` and `loadDocument` fire neither.
 

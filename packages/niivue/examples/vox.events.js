@@ -14,8 +14,7 @@ const CATEGORY = {
   frameChange: 'interaction',
   dragRelease: 'interaction',
   pointerUp: 'interaction',
-  measurementCompleted: 'interaction',
-  angleCompleted: 'interaction',
+  annotationChanged: 'interaction',
   volumeLoaded: 'loading',
   meshLoaded: 'loading',
   volumeRemoved: 'loading',
@@ -59,10 +58,8 @@ function formatDetail(name, detail) {
       return `(${detail.x}, ${detail.y}) btn=${detail.button}`
     case 'dragRelease':
       return `${detail.mmLength.toFixed(1)}mm`
-    case 'measurementCompleted':
-      return `${detail.distance.toFixed(1)}mm`
-    case 'angleCompleted':
-      return `${detail.angle.toFixed(1)}\u00B0`
+    case 'annotationChanged':
+      return `${detail.action} +${detail.added.length} -${detail.removed.length}`
     case 'volumeLoaded':
     case 'volumeRemoved':
       return detail.volume?.name || ''

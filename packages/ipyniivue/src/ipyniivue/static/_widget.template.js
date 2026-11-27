@@ -84,7 +84,6 @@ const PROPS_RW = [
   ["isGraphVisible", "is_graph_visible"],
   ["isLegendToggleEnabled", "is_legend_toggle_enabled"],
   ["isLegendVisible", "is_legend_visible"],
-  ["isMeasurementDrawn", "is_measurement_drawn"],
   ["isMeasureUnitsVisible", "is_measure_units_visible"],
   ["isMosaicCentered", "is_mosaic_centered"],
   ["isOrientationTextVisible", "is_orientation_text_visible"],
@@ -203,7 +202,6 @@ const SKIP_EVENT_FORWARDING = new Set([
 // They reply when they settle but do not hold the command queue.
 const RELEASE_QUEUE_EARLY = new Set(["animateTo"])
 const EVENTS = [
-  "angleCompleted",
   "annotationChanged",
   "annotationHistoryPush",
   "azimuthElevationChange",
@@ -221,8 +219,6 @@ const EVENTS = [
   "frameChange",
   "graphRangeChange",
   "locationChange",
-  "measurementCompleted",
-  "measurementRemoved",
   "meshLoaded",
   "meshRemoved",
   "meshUpdated",

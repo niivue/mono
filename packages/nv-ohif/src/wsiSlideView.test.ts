@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { windowSlideDrag } from './wsiSlideView'
 
 describe('windowSlideDrag', () => {
-  const slide = (channelInfo?: unknown) => {
+  const slide = (channelInfo?: unknown, bitsStored = 8) => {
     const sets: Array<[number, number, number]> = []
     const n = channelInfo ? 1 : 3
     return {
@@ -11,14 +11,15 @@ describe('windowSlideDrag', () => {
         calMin: Number.NaN,
         calMax: Number.NaN,
       })),
-      manifest: { channelInfo, levels: [{ codec: 'jpeg', bitsStored: 8 }] },
+      manifest: { channelInfo, levels: [{ codec: 'jpeg', bitsStored }] },
       setChannel(c: number, w: { calMin: number; calMax: number }) {
         sets.push([c, w.calMin, w.calMax])
       },
     }
   }
   it('windows all three channels of an RGB slide at cornerstone gain', () => {
-    const s = slide()
+    // 12-bit source: RGB still decodes to 8 bits, so the 8-bit range and gain.
+    const s = slide(undefined, 12)
     // 8-bit: 255/1024 per px. Right 40 px widens by ~10, down 40 raises centre ~10.
     windowSlideDrag(s as never, 0, 40, 40)
     const k = 255 / 1024
@@ -29,7 +30,8 @@ describe('windowSlideDrag', () => {
   })
   it('windows only the given channel of a channelInfo slide', () => {
     const s = slide([{ name: 'dapi' }])
-    windowSlideDrag(s as never, 0, 1, 0)
+    // -1 is the controller's default windowChannel: the first channel.
+    windowSlideDrag(s as never, -1, 1, 0)
     expect(s.sets.map(([c]) => c)).toEqual([0])
   })
 })

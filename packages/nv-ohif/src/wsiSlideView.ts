@@ -46,7 +46,8 @@ const dragModeFor = (tool: string | undefined): DRAG_MODE =>
  * Cornerstone's WindowLevel drag on a slide: round(range / 1024) stored units
  * per CSS px (unrounded below 1, so 8-bit RGB moves 0.25/px), right widens,
  * down raises the centre. An RGB slide windows its red, green and blue
- * channels together (brightness/contrast); others only `channel`.
+ * channels together (brightness/contrast); others only `channel` (-1: the
+ * first).
  */
 export function windowSlideDrag(
   slide: Pick<NVSlide, 'channels' | 'manifest' | 'setChannel'>,
@@ -54,12 +55,15 @@ export function windowSlideDrag(
   dx: number,
   dy: number,
 ): void {
-  const top = 2 ** (slide.manifest.levels[0]?.bitsStored ?? 8) - 1
+  const rgb = isRgbSlide(slide.manifest)
+  // RGB tiles decode to 8 bits whatever the source's BitsStored.
+  const top = rgb ? 255 : 2 ** (slide.manifest.levels[0]?.bitsStored ?? 8) - 1
   const ratio = top / 1024
   const perPixel = ratio > 1 ? Math.round(ratio) : ratio
-  const channels = isRgbSlide(slide.manifest)
+  // The controller's default windowChannel, -1, means the first channel here.
+  const channels = rgb
     ? slide.channels.map((_, c) => c)
-    : [channel]
+    : [Math.max(0, channel)]
   for (const c of channels) {
     const ch = slide.channels[c]
     const lo = Number.isFinite(ch?.calMin) ? (ch?.calMin as number) : 0

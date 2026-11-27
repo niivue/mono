@@ -797,9 +797,11 @@ export default class NiiVue extends EventTarget {
   private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
-  // What _sync last broadcast: a redraw for another reason (a cine frame, a
-  // load) must not push stale values over a peer's newer move.
-  private _syncSent: Record<string, string> = {}
+  // What _sync last sent each target: a redraw for another reason (a cine
+  // frame, a load) must not push stale values over a peer's newer move. Per
+  // target, so a receipt suppresses only the echo to its sender and a newly
+  // linked target still gets a full first sync.
+  private _syncSent = new Map<NiiVue, Record<string, string>>()
   private _rafId: number | null = null
   // The transition animateTo is running, if any
   private _animation: Animation | null = null
@@ -7724,7 +7726,7 @@ export default class NiiVue extends EventTarget {
     this._syncTargets = Array.isArray(targets) ? targets : [targets]
     this._syncOpts = opts
     this._syncDirty = false
-    this._syncSent = {}
+    this._syncSent = new Map()
   }
 
   private _sync(): void {
@@ -7733,11 +7735,11 @@ export default class NiiVue extends EventTarget {
     const opts = this._syncOpts
     const src = this.model.scene
     const now = syncedState(this)
-    const sent = this._syncSent
-    const moved = (k: string) => now[k] !== sent[k]
-    this._syncSent = now
     for (const target of this._syncTargets) {
       if (target === this) continue
+      const sent = this._syncSent.get(target) ?? {}
+      const moved = (k: string) => now[k] !== sent[k]
+      this._syncSent.set(target, now)
       const dst = target.model.scene
       let changed = false
       if (opts['3d'] && moved('view3d')) {
@@ -7838,13 +7840,14 @@ export default class NiiVue extends EventTarget {
         // Only the fields these options send: another pending change of the
         // target's own (a pan, with crosshair-only sync) still goes out.
         const got = syncedState(target)
+        const back = { ...target._syncSent.get(this) }
         const keys = [
           opts['3d'] && 'view3d',
           (opts['2d'] || opts.crosshair) && 'crosshair',
           opts['2d'] && 'pan',
         ]
-        for (const k of keys)
-          if (k && moved(k)) target._syncSent[k] = got[k] as string
+        for (const k of keys) if (k && moved(k)) back[k] = got[k] as string
+        target._syncSent.set(this, back)
         target.drawScene(false)
         target.createOnLocationChange()
       }

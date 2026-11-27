@@ -628,10 +628,9 @@ export function NiivueViewport(props: OhifViewportProps) {
         isAnnotationShown(viewportId, a.id) && isContourEditable(a, viewportId)
       nv.annotationIsCut = isContourCut
       // Panel-hidden measurements and hidden contour segments are not drawn
-      // or picked; labels follow the pane's calibration.
+      // or picked.
       nv.annotationIsHidden = (a) =>
         !isAnnotationShown(viewportId, a.id) || !isContourShown(a, nv)
-      nv.annotationCalibration = labelCalibration(paneScale(viewportId))
       // Expose the instance to OHIF commands / toolbar evaluators (commands.ts),
       // with a status sink so async commands (overlay load) surface progress.
       registerNiivue(viewportId, nv)
@@ -888,6 +887,8 @@ export function NiivueViewport(props: OhifViewportProps) {
       overlayLoading: false,
       sliceFrames: undefined,
     })
+    // Labels follow the calibration of the series the pane now shows.
+    nv.annotationCalibration = labelCalibration(paneScale(viewportId))
     refreshToolbar(servicesManager, viewportId)
 
     // Volume-loading routes call loadVolumes, which replaces nv.volumes to match

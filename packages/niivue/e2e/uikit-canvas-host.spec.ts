@@ -8,7 +8,9 @@ import { test } from './sharedPage'
 // bundle (run `nx build uikit` first) draws the standalone demo's triangle
 // (packages/uikit/triangle.js) and a UIKit toggle over it; a real click on
 // the toggle hides the triangle, a second shows it again (a state leak from
-// the overlays into the app's next frame would fail that).
+// the overlays into the app's next frame would fail that). The app's draw
+// leaves a right-half scissor: the toggle (left) and the next clear must not
+// be clipped by it.
 const uikit = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../uikit',
@@ -35,9 +37,20 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
       const host = await UIKitCanvasHost.create(c, {
         backend: '${backend}',
         clearColor: [0, 0, 0, 1],
-        draw: (f) => window.__visible && triangle.draw(f, {
-          cx: 200 * f.dpr, cy: 100 * f.dpr, radius: 60 * f.dpr, angle: 0, color: [1, 0, 0, 1],
-        }),
+        draw: (f) => {
+          if (window.__visible) triangle.draw(f, {
+            cx: 200 * f.dpr, cy: 100 * f.dpr, radius: 60 * f.dpr, angle: 0, color: [1, 0, 0, 1],
+          })
+          // An app may leave a scissor and viewport over part of the canvas:
+          // the host must give overlays and the next clear the whole canvas.
+          const w = c.width, h = c.height
+          if (f.handle.backend === 'webgl2') {
+            const gl = f.handle.gl
+            gl.enable(gl.SCISSOR_TEST)
+            gl.scissor(w / 2, 0, w / 2, h)
+            gl.viewport(w / 2, 0, w / 2, h)
+          } else f.handle.pass.setScissorRect(w / 2, 0, w / 2, h)
+        },
       })
       const toggles = new UIKitToggleOverlay(await loadDefaultFont(), { cssUnits: true })
       toggles.addToggle({ id: 'show', label: 'Show', x: 10, y: 10, checked: true,

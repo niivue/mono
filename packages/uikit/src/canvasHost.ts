@@ -143,7 +143,9 @@ export class UIKitCanvasHost implements UIKitHost {
     let handle: UIKitBackendHandle
     let finish: () => void
     if (gl) {
+      // The app's last draw may have left a smaller viewport or a scissor.
       gl.viewport(0, 0, width, height)
+      gl.disable(gl.SCISSOR_TEST)
       gl.clearColor(r, g, b, a)
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
       handle = { backend: 'webgl2', gl }
@@ -185,7 +187,15 @@ export class UIKitCanvasHost implements UIKitHost {
       settled: true,
     }
     this.options.draw?.(frame)
-    gl?.viewport(0, 0, width, height) // the hook promises the bounds viewport
+    // The hook promises overlays the bounds viewport and no scissor, whatever
+    // the app's draw set.
+    if (gl) {
+      gl.viewport(0, 0, width, height)
+      gl.disable(gl.SCISSOR_TEST)
+    } else if (handle.backend === 'webgpu') {
+      handle.pass.setViewport(0, 0, width, height, 0, 1)
+      handle.pass.setScissorRect(0, 0, width, height)
+    }
     for (const renderer of this.renderers) renderer.drawOverlay(frame)
     finish()
   }

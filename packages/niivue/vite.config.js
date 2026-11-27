@@ -21,6 +21,10 @@ const SITE_APPS = [
 // A site app that lives in packages/ (its demo pages), not apps/.
 const appDir = (name) =>
   resolve(repoRoot, name === 'uikit' ? 'packages' : 'apps', name)
+// Vite's /@fs URLs need forward slashes and a leading slash. On Windows
+// resolve() returns "H:\..." (backslashes, no leading slash), which 404s.
+const posixPath = (path) => path.replace(/\\/g, '/')
+const fsUrl = (path) => `/@fs/${posixPath(path).replace(/^\/+/, '')}`
 
 // Lay the dev server out like the GitHub Pages site, so the landing page and
 // the gallery's links to the demo apps work locally: `/` serves the landing
@@ -65,7 +69,7 @@ function pagesSiteDevPlugin() {
           for (const name of SITE_APPS) {
             const file = resolve(appDir(name), 'public', app)
             if (existsSync(file)) {
-              req.url = `/@fs${file}`
+              req.url = fsUrl(file)
               return next()
             }
           }
@@ -76,20 +80,23 @@ function pagesSiteDevPlugin() {
         if (file.endsWith('.html')) {
           const source = resolve(dir, file)
           // Stay inside the app's folder ("/<app>/../x.html").
-          if (!source.startsWith(`${dir}/`) || !existsSync(source))
+          if (
+            !posixPath(source).startsWith(`${posixPath(dir)}/`) ||
+            !existsSync(source)
+          )
             return next()
           // Module scripts, absolute ("/src/x") or relative ("src/x"), load
           // from the app's own folder.
           const html = readFileSync(source, 'utf8')
             .replace(
               /(<script[^>]*\ssrc=")\/?(?!\/|https?:)([^"]+)"/g,
-              `$1/@fs${dir}/$2"`,
+              `$1${fsUrl(dir)}/$2"`,
             )
             // Relative imports in inline module scripts (uikit's demo pages)
             // too: Vite would resolve them against this package.
             .replace(
               /(\bfrom\s+|\bimport\s*\(\s*)(['"])\.\//g,
-              `$1$2/@fs${dir}/`,
+              `$1$2${fsUrl(dir)}/`,
             )
           res.setHeader('Content-Type', 'text/html')
           res.end(await server.transformIndexHtml(path, html))
@@ -101,7 +108,7 @@ function pagesSiteDevPlugin() {
         // for metadata files a store may not have. So is a folder, or a path
         // that climbs out of the app ("/<app>/../x").
         const isFile = statSync(target, { throwIfNoEntry: false })?.isFile()
-        if (!isFile || !target.startsWith(`${dir}/`)) {
+        if (!isFile || !posixPath(target).startsWith(`${posixPath(dir)}/`)) {
           res.statusCode = 404
           res.end()
           return
@@ -113,7 +120,7 @@ function pagesSiteDevPlugin() {
           createReadStream(target).pipe(res)
           return
         }
-        req.url = `/@fs${target}${query ? `?${query}` : ''}`
+        req.url = `${fsUrl(target)}${query ? `?${query}` : ''}`
         next()
       })
     },

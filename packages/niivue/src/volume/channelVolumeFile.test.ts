@@ -84,7 +84,7 @@ describe('micrometer units', () => {
     )
     const units = new Uint8Array(await file.arrayBuffer())[123]
     expect(units).toBe(3 | 8)
-    expect(spatialUnit(units).label).toBe('um')
+    expect(spatialUnit(units).label).toBe('µm')
   })
 
   test('withSpatialUnits keeps the temporal bits', () => {
@@ -94,7 +94,7 @@ describe('micrometer units', () => {
 
   test('spatialUnit decodes the low three bits, default mm', () => {
     expect(spatialUnit(1 | 8)).toEqual({ label: 'm', mm: 1000 })
-    expect(spatialUnit(3 | 24)).toEqual({ label: 'um', mm: 1e-3 })
+    expect(spatialUnit(3 | 24)).toEqual({ label: 'µm', mm: 1e-3 })
     expect(spatialUnit(0)).toEqual({ label: 'mm', mm: 1 })
     expect(spatialUnit(10)).toEqual({ label: 'mm', mm: 1 })
   })

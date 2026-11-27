@@ -35,7 +35,7 @@ describe('slideOverlayContent', () => {
       screen,
       source,
     ).rulers
-    expect(r.label).toBe('180.0 um')
+    expect(r.label).toBe('180.0 µm')
   })
 
   test('without spacing a ruler reads in px and has no ticks', () => {
@@ -70,7 +70,7 @@ test('annotations draw as culled device-pixel segments with a label', () => {
   expect(c.segments).toEqual([
     20, 20, 40, 20, 40, 20, 40, 60, 40, 60, 20, 60, 20, 60, 20, 20,
   ])
-  expect(c.labels).toEqual([{ x: 48, y: 20, text: 'tumour 200 um2' }])
+  expect(c.labels).toEqual([{ x: 48, y: 20, text: 'tumour 200 µm²' }])
   // A handle drag shows its shape, stats and handles before it is stored.
   const id = annotations.list()[0]?.id ?? ''
   const edited = slideOverlayContent(slide([0.001, 0.001]), screen, {
@@ -79,7 +79,7 @@ test('annotations draw as culled device-pixel segments with a label', () => {
     selectedAnnotation: id,
     edit: { id, points: [p, { x: 20, y: 30 }] },
   })
-  expect(edited.labels[0]?.text).toBe('tumour 375 um2')
+  expect(edited.labels[0]?.text).toBe('tumour 375 µm²')
   expect(edited.handles).toHaveLength(8 * 3)
   expect(edited.handles.slice(0, 3)).toEqual([10, 10, 8])
 })
@@ -112,7 +112,7 @@ describe('slideScaleBar', () => {
     // 0.5 um/px at 1 device px per base pixel, 1000 px wide: 100 um = 200 px.
     expect(slideScaleBar(0.0005, 1, 1000)).toEqual({
       lengthPx: 200,
-      label: '100 um',
+      label: '100 µm',
     })
   })
 
@@ -122,7 +122,7 @@ describe('slideScaleBar', () => {
       label: '2 mm',
     })
     expect(slideScaleBar(0.0005, 0.1, 1000)?.label).toBe('1 mm')
-    expect(slideScaleBar(0.0005, 0.2, 1000)?.label).toBe('500 um')
+    expect(slideScaleBar(0.0005, 0.2, 1000)?.label).toBe('500 µm')
   })
 
   test('a fixed unit labels the bar in it', () => {
@@ -161,7 +161,7 @@ describe('slideOverlayContent scale bar', () => {
       y: 176,
       lengthPx: 40,
       thickness: 8,
-      label: '200 um',
+      label: '200 µm',
     })
   })
 
@@ -186,10 +186,10 @@ describe('slideOverlayContent scale bar', () => {
   })
 })
 
-// Review of #836: one 0.25 um pixel is 0.0625 um2, not 0.
-test('areas below 1 um2 keep two significant digits', () => {
+// Review of #836: one 0.25 um pixel is 0.0625 µm², not 0.
+test('areas below 1 µm² keep two significant digits', () => {
   expect(slideAnnotationText('a', { area: 6.25e-8, unit: 'mm' })).toBe(
-    'a 0.063 um2',
+    'a 0.063 µm²',
   )
-  expect(slideAnnotationText('a', { area: 2e-4, unit: 'mm' })).toBe('a 200 um2')
+  expect(slideAnnotationText('a', { area: 2e-4, unit: 'mm' })).toBe('a 200 µm²')
 })

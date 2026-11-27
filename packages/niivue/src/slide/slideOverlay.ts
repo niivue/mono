@@ -92,18 +92,17 @@ export function slideScaleBar(
 }
 
 // Sub-millimetre sizes read in micrometres, the scale most slides live at.
-// ASCII only: the font atlas has no micro or superscript glyphs.
 function formatLength(v: number, unit: 'mm' | 'px'): string {
   if (unit === 'px') return `${Math.round(v)} px`
-  return v < 1 ? `${(v * 1000).toFixed(1)} um` : `${v.toFixed(2)} mm`
+  return v < 1 ? `${(v * 1000).toFixed(1)} µm` : `${v.toFixed(2)} mm`
 }
 
 function formatArea(v: number, unit: 'mm' | 'px'): string {
-  if (unit === 'px') return `${Math.round(v)} px2`
-  if (v >= 1) return `${v.toFixed(3)} mm2`
+  if (unit === 'px') return `${Math.round(v)} px²`
+  if (v >= 1) return `${v.toFixed(3)} mm²`
   const um2 = v * 1e6
-  // Sub-micrometre pixels make areas below 1 um2; whole numbers would read 0.
-  return `${um2 >= 1 || um2 === 0 ? um2.toFixed(0) : um2.toPrecision(2)} um2`
+  // Sub-micrometre pixels make areas below 1 µm²; whole numbers would read 0.
+  return `${um2 >= 1 || um2 === 0 ? um2.toFixed(0) : um2.toPrecision(2)} µm²`
 }
 
 /** An annotation's overlay text: its label, then its area or length. */
@@ -158,7 +157,7 @@ export function slideOverlayContent(
     if (spacing) {
       const mm = Math.hypot(dx * spacing[0], dy * spacing[1])
       // Sub-millimetre spans read in micrometres, the scale most slides live at.
-      const label = mm < 1 ? `${(mm * 1000).toFixed(1)} um` : undefined
+      const label = mm < 1 ? `${(mm * 1000).toFixed(1)} µm` : undefined
       return { sx, sy, ex, ey, distance: mm, label }
     }
     const label = `${Math.round(Math.hypot(dx, dy))} px`

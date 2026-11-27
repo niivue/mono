@@ -271,10 +271,10 @@ describe('annotation stats labels', () => {
     // Probe: integers exact, fractions to 4 significant digits.
     expect(probeInt?.label?.lines).toEqual(['65535'])
     expect(probeFrac?.label?.lines).toEqual(['0.04322'])
-    expect(rect?.label?.lines[0]).toBe('Area: 16.0 um²')
-    expect(bidi?.label?.lines.slice(0, 2)).toEqual(['L: 5.0 um', 'W: 2.0 um'])
+    expect(rect?.label?.lines[0]).toBe('Area: 16.0 µm²')
+    expect(bidi?.label?.lines.slice(0, 2)).toEqual(['L: 5.0 µm', 'W: 2.0 µm'])
     // External overlays (uikit ruler) label the measured line from these.
     expect(line?.length).toBe(7)
-    expect(line?.unit).toBe('um')
+    expect(line?.unit).toBe('µm')
   })
 })

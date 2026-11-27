@@ -5,7 +5,7 @@ font is shipped as a `.json` metrics file + `.png` atlas pair under
 `src/assets/fonts/`, wrapped at build time by `scripts/generate-assets.js` into a
 TypeScript module that the library can import.
 
-Only `ubuntu` (ASCII) is bundled with the library; `src/assets/fonts/index.ts`
+Only `ubuntu` (ASCII plus µ ° ± ² ³) is bundled with the library; `src/assets/fonts/index.ts`
 is the barrel consumed by `NVControlBase` as the default font and published in
 the npm tarball. Community atlases — including CJK-capable fonts like Poem —
 live at [niivue/fonts](https://github.com/niivue/fonts) and are fetched on
@@ -47,3 +47,22 @@ update atlases without re-publishing.
 `src/assets/fonts/` and rerun `scripts/generate-assets.js`. Everything in
 that directory ships in the published npm package, so reserve this path
 for fonts you genuinely want bundled as defaults.
+
+## Extending the bundled atlas
+
+The five non-ASCII glyphs were added without touching the original 95: they
+were generated alone at the atlas's em size and stacked above it, so every
+existing glyph keeps its texels and metrics (no render reference moved).
+`yOrigin: bottom` bounds of the old glyphs stay valid; the new ones sit 256
+px higher. The same files are copied to `packages/uikit/src/fonts/`.
+
+```
+msdf-atlas-gen -font Ubuntu-Regular.ttf -charset extra.txt -type msdf -pxrange 2 \
+  -size 56.84375 -dimensions 512 64 -yorigin bottom -format png \
+  -json extra.json -imageout extra.png
+magick extra.png Ubuntu.png -append -strip PNG24:merged.png
+```
+
+then append `extra.json`'s glyphs with `atlasBounds.bottom/top` + 256 and set
+`atlas.height` to 320.
+

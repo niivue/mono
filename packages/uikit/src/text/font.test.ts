@@ -68,7 +68,10 @@ describe('dataUrlBytes', () => {
 
 describe('superscript fallback', () => {
   it('draws ² from an ASCII-only atlas as a small raised 2', () => {
-    const m = parseFont(ubuntu as unknown as Parameters<typeof parseFont>[0])
+    const ascii = ubuntu.glyphs.filter((g) => g.unicode < 127)
+    const m = parseFont({ ...ubuntu, glyphs: ascii } as unknown as Parameters<
+      typeof parseFont
+    >[0])
     const two = m.glyphs.get('2')
     const sup = m.glyphs.get('²')
     expect(sup?.uv).toEqual(two?.uv)

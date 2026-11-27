@@ -67,7 +67,7 @@ export interface CrosshairSpec {
   /** Number the major ticks. Default false. Needs a font on the overlay. */
   showTickNumbers?: boolean
   /**
-   * Unit suffix for the graduation numbers, e.g. 'um'. Omit for bare numbers.
+   * Unit suffix for the graduation numbers, e.g. 'µm'. Omit for bare numbers.
    * Worth setting on a pane whose scale changes with zoom, where a bare "10" is
    * ambiguous.
    */

@@ -880,7 +880,7 @@ describe('warnMixedUnits', () => {
     warnMixedUnits(mm, [mm, um])
     warnMixedUnits(undefined, [um])
     expect(warn).toHaveBeenCalledTimes(1)
-    expect(String(warn.mock.calls[0]?.[0])).toContain("'um' is in um")
+    expect(String(warn.mock.calls[0]?.[0])).toContain("'um' is in µm")
     warn.mockRestore()
   })
 })

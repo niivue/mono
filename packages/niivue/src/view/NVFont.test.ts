@@ -31,7 +31,8 @@ describe('packPanels', () => {
 })
 
 test('an ASCII-only font draws ² as a small raised 2, not nothing', () => {
-  const mets = parseFontMetrics(ubuntu)
+  const ascii = ubuntu.glyphs.filter((g) => g.unicode < 127)
+  const mets = parseFontMetrics({ ...ubuntu, glyphs: ascii })
   const two = mets.mets[0x32]
   const sup = mets.mets[0xb2]
   expect(sup?.uv_lbwh).toEqual(two?.uv_lbwh)

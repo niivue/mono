@@ -60,7 +60,7 @@ export function spatialUnit(xyztUnits: number): { label: string; mm: number } {
     case 1:
       return { label: 'm', mm: 1000 }
     case NIFTI_UNITS_MICRON:
-      return { label: 'um', mm: 1e-3 }
+      return { label: 'µm', mm: 1e-3 }
     default:
       return { label: 'mm', mm: 1 }
   }

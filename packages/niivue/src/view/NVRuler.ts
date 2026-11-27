@@ -72,7 +72,8 @@ export function chooseRulerSize(
   const perUnit = units === 'auto' ? undefined : UNIT_MM[units]
   if (perUnit) {
     const value = largestNice(maxMM / perUnit)
-    return { lengthMM: value * perUnit, label: `${value} ${units}` }
+    const label = units === 'um' ? 'µm' : units
+    return { lengthMM: value * perUnit, label: `${value} ${label}` }
   }
   // Metres and kilometres for geographic fields (Sentinel-2: 10 m/px).
   for (const [mmPer, unit] of [
@@ -109,7 +110,7 @@ export function chooseRulerSize(
       const um = v * scale
       const mm = um / 1000 // um -> mm
       if (mm <= maxMM) {
-        return { lengthMM: mm, label: `${um} um` }
+        return { lengthMM: mm, label: `${um} µm` }
       }
     }
   }

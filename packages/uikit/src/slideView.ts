@@ -362,7 +362,7 @@ export function attachSlidePlaneControl(
       const text = (): void => {
         const i = Number(input.value)
         const at = axis === 'z' ? axes.zPositionsUm?.[i] : axes.tSeconds?.[i]
-        const unit = axis === 'z' ? 'um' : 's'
+        const unit = axis === 'z' ? 'µm' : 's'
         out.value = `${i + 1}/${n}${at === undefined ? '' : ` (${at} ${unit})`}`
         input.setAttribute('aria-valuetext', out.value)
       }

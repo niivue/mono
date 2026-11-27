@@ -9,13 +9,18 @@
 // scales the tiles at 'high' smoothing quality) and nothing
 // leaks when NVSlide's cache evicts a tile.
 
-import type { NVSlide } from '@niivue/niivue'
-import type { UIKitInteractive, UIKitRedrawSource } from './controls'
-import type { UIKitOverlayFrame } from './hook'
-import { buildRect, rectContains } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
-import { GlImageRenderer } from './render/glImageRenderer'
-import { WgpuImageRenderer } from './render/wgpuImageRenderer'
+import type {
+  UIKitInteractive,
+  UIKitOverlayFrame,
+  UIKitRedrawSource,
+} from '@niivue/uikit'
+import {
+  buildRect,
+  rectContains,
+  UIKitImageOverlay,
+  UIKitRectOverlay,
+} from '@niivue/uikit'
+import type { NVSlide } from '@/index'
 import {
   layoutSlideMinimap,
   type MinimapCorner,
@@ -62,8 +67,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   private readonly options: Required<UIKitSlideMinimapOptions>
   private readonly panelRects = new UIKitRectOverlay()
   private readonly viewRects = new UIKitRectOverlay()
-  private readonly gl = new GlImageRenderer()
-  private readonly wgpu = new WgpuImageRenderer()
+  private readonly thumbImage = new UIKitImageOverlay()
   private thumbnail: OffscreenCanvas | null = null
   // Monotonic: the image renderers skip the upload while it is unchanged.
   private thumbnailVersion = 0
@@ -168,7 +172,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   }
 
   drawOverlay(frame: UIKitOverlayFrame): void {
-    const { handle, bounds, dpr } = frame
+    const { bounds, dpr } = frame
     const { panel, image, view } = this.layoutFor(
       bounds.width,
       bounds.height,
@@ -192,31 +196,12 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
     )
     this.panelRects.drawOverlay(frame)
     const thumb = this.thumbnail
-    if (thumb && this.thumbnailVersion > 0 && !this.stale) {
-      if (handle.backend === 'webgl2') {
-        this.gl.draw(
-          handle.gl,
-          thumb,
-          this.thumbnailVersion,
-          image,
-          bounds.width,
-          bounds.height,
-        )
-      } else {
-        this.wgpu.draw(
-          handle.device,
-          handle.pass,
-          handle.colorFormat,
-          handle.sampleCount,
-          handle.depthFormat,
-          thumb,
-          this.thumbnailVersion,
-          image,
-          bounds.width,
-          bounds.height,
-        )
-      }
-    }
+    this.thumbImage.setImage(
+      thumb && this.thumbnailVersion > 0 && !this.stale ? thumb : null,
+      this.thumbnailVersion,
+      image,
+    )
+    this.thumbImage.drawOverlay(frame)
     this.viewRects.drawOverlay(frame)
   }
 
@@ -270,8 +255,7 @@ export class UIKitSlideMinimapOverlay implements UIKitInteractive {
   destroy(): void {
     this.panelRects.destroy()
     this.viewRects.destroy()
-    this.gl.destroy()
-    this.wgpu.destroy()
+    this.thumbImage.destroy()
     clearTimeout(this.trailing)
     this.trailing = undefined
     this.thumbnail = null

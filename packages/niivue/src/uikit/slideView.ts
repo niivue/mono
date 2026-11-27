@@ -3,12 +3,19 @@
 // native form controls, so Tab reaches every one, focus shows, and screen
 // readers name them; canvas widgets take focus only by pointer.
 
+import type { UIKitOverlayFrame } from '@niivue/uikit'
+import {
+  UIKitControls,
+  type UIKitHost,
+  UIKitMagnifierOverlay,
+  type UIKitMagnifierOverlayOptions,
+} from '@niivue/uikit'
 import type {
   NVSlide,
   NVSlidePlaneIndex,
   NVSlideScreen,
   SlideView,
-} from '@niivue/niivue'
+} from '@/index'
 import {
   addChannelColormap,
   isRgbSlide,
@@ -16,13 +23,7 @@ import {
   slideStatsSummary,
   toStored,
   toValue,
-} from '@niivue/niivue'
-import { UIKitControls, type UIKitHost } from './controls'
-import type { UIKitOverlayFrame } from './hook'
-import {
-  UIKitMagnifierOverlay,
-  type UIKitMagnifierOverlayOptions,
-} from './magnifierOverlay'
+} from '@/index'
 import {
   type UIKitSlideMinimapOptions,
   UIKitSlideMinimapOverlay,

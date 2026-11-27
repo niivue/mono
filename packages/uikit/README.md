@@ -10,13 +10,17 @@ Documentation: https://niivue.github.io/mono/docs/packages/uikit/
 
 ## Entry points
 
-| Import | Holds | Needs `@niivue/niivue` |
-| --- | --- | --- |
-| `@niivue/uikit` | line, rect and text primitives and overlays, the measuring widgets (ruler, crosshair, point label, magnifier), `UIKitControls`, `UIKitCanvasHost`, `loadDefaultFont`, the overlay hook types | no |
-| `@niivue/uikit/controls` | canvas form controls: buttons, toggles, sliders, menus, selects, segmented controls, number and text fields, colour controls, file pickers, dialogs, the tool palette | no |
-| `@niivue/uikit/niivue` | widgets that drive a NiiVue scene: the slide HUD, channel, plane, minimap and magnifier panels, drawing slices, the subvolume selector | yes (optional peer) |
+| Import | Holds |
+| --- | --- |
+| `@niivue/uikit` | line, rect, image and text primitives and overlays, the measuring widgets (ruler, crosshair, point label, magnifier), `UIKitControls`, `UIKitCanvasHost`, `loadDefaultFont`, the overlay hook types |
+| `@niivue/uikit/controls` | canvas form controls: buttons, toggles, sliders, menus, selects, segmented controls, number and text fields, colour controls, file pickers, dialogs, the tool palette |
 
-Without NiiVue, `UIKitCanvasHost` drives a bare canvas (demo: `standalone.html`).
+uikit does not depend on `@niivue/niivue`. NiiVue's own widgets built on it
+(the slide HUD, channel, plane, minimap and magnifier panels, drawing slices,
+the subvolume selector) are in `@niivue/niivue/uikit`; see the NiiVue README.
+
+Without NiiVue, `UIKitCanvasHost` drives a bare canvas (demo:
+`apps/demo-uikit/standalone.html`).
 It owns the WebGL2 context or WebGPU device, redraws on `drawScene()`, and
 offers NiiVue's `registerOverlayRenderer` and `UIKitHost` shape, so overlays and
 `UIKitControls` attach unchanged. Each frame clears, calls `draw` (the app's own
@@ -37,7 +41,7 @@ sliders.addSlider({ id: 'k', x: 12, y: 12, width: 200, min: 0, max: 1, value: 0.
 ```
 
 `bun run check:standalone` (after a build) packs the package, installs it
-without `@niivue/niivue` and typechecks and imports the first two entries.
+without `@niivue/niivue` and typechecks and imports both entries.
 `@webgpu/types` is a peer, as for `@niivue/niivue`.
 
 Canvas form controls take focus only by pointer. Use them where the interface
@@ -69,6 +73,7 @@ package-private (see "Conventions for contributors").
 | `buildRuler` | `UIKitRulerOverlay` | A measuring ruler with graduated ticks and a distance label |
 | `buildCrosshair` | `UIKitCrosshairOverlay` | A screen-space cross marking a point, optionally graduated and numbered |
 | `buildRect` | `UIKitRectOverlay` | Filled rounded rectangles with an optional border ring (the first filled primitive) |
+| | `UIKitImageOverlay` | One bitmap or canvas stretched over a box; bump the version when its pixels change |
 | `buildButton` | `UIKitButtonOverlay` | Clickable, stylable push buttons with a text label and a press animation |
 | `buildToggle` | `UIKitToggleOverlay` | Check boxes with a label: pointer or Space/Enter flips them |
 | `buildSlider` | `UIKitSliderOverlay` | Horizontal sliders with min/max/step, ticks, a value readout, drag and arrow keys |
@@ -82,14 +87,11 @@ package-private (see "Conventions for contributors").
 | `buildToolPalette` | `UIKitToolPaletteOverlay` | A floating drawing toolbar after the iPad's: upright tools in a tray (the selected one raised), swatches, brush widths and actions such as Undo |
 | `selectMenuSpec` | `UIKitSelectOverlay` | Drop-down lists: a button showing the chosen option over a popup of options |
 | `buildSegmented` | `UIKitSegmentedOverlay` | Segmented controls: one row of segments with exactly one selected |
-| (package-private) | `UIKitSlideMinimapOverlay` | An NVSlide minimap: the coarsest level as a corner thumbnail with the viewport boxed; press or drag to recenter. Recomposed at most every 100 ms during window/level, at the drawn size. Follows `slide.displayGeneration`: breaking for a custom `UIKitMinimapSlide`, which must now provide it |
 | (package-private) | `UIKitMagnifierOverlay` | A magnifying glass: a round lens on the pointer showing the frame under it enlarged (`zoom`, default 3). `attach(host)` follows pointer moves; it is not a control-layer widget, so it never takes hover or the cursor. A press on the canvas exits it (the lens hides and stops following) and never reaches the scene; `onExit` lets the host untick its toggle. On touch, a one-finger drag moves the lens, a pinch zooms it (1.5 to 10) and a tap exits; the wheel zooms it too. A UIKit layer attached before it still gets presses on its widgets; on a bounded host (`clientToCanvas` null outside it) presses and wheel outside its bounds stay with the sibling viewer. Register it after the overlays it should magnify. Lenses on one canvas all magnify the same frame, so overlapping lenses do not compound. WebGPU needs the host's `captureScene` (core NiiVue and slide views provide it) |
 | `scrollWindow`, `revealRow`, `buildScrollArrow` | (used by the overlays above) | Row scrolling for any container whose list outgrows its viewport |
 | `editKey`, `textWindow`, `caretIndexAt` | (used by the overlays above) | Single-line text editing: caret, selection, key edits, whole-glyph scrolling |
 | `buildTextFieldContent` | (used by the overlays above) | The text, selection and caret of any field, clipped to the glyphs that fit |
 | | `UIKitControls` | The control layer: one owner of the pointer, wheel and keyboard for every widget above |
-
-**Migration (rc).** The slide minimap's model is package-private now: `layoutSlideMinimap`, `minimapToSlide`, `MinimapViewport` and `SlideMinimapSpec` are no longer exported (`UIKitSlideMinimapOverlay.layoutFor` still returns the layout). `UIKitSlideMinimapOptions` lost `panelColor`, `viewColor` and `viewLineCss`; the panel is translucent black and the viewport box amber, 1.5 CSS px.
 
 ```ts
 import { loadDefaultFont, UIKitCrosshairOverlay } from '@niivue/uikit'
@@ -109,17 +111,8 @@ crosshair.setCrosshair({
 })
 ```
 
-For a core `createSlideView` there are five attach helpers, each returning
-its detach function: `attachSlideMinimap(view, options)` (the minimap on its
-own control layer, following the view's slide), `attachSlideMagnifier(view,
-options)` (a lens over the drawn frame, not a finer level), `attachSlideHud(view, element,
-rows?)` (pre-formatted rows, default `slideStatsSummary`),
-`attachSlideChannelPanel(view, container)` (visibility, exact colour, window in
-data units, windowing target and blend per channel; no window for label
-channels) and `attachSlidePlaneControl(view, container)` (z/t sliders over the
-slide's `planes` and async `setPlaneIndex`, hidden for a fixed source). The
-panels are DOM form controls, not canvas widgets: canvas widgets take focus
-only by pointer, and these must work from the keyboard.
+The slide panels and minimap for a core `createSlideView` are NiiVue's
+(`@niivue/niivue/uikit`).
 
 The exported builders are usable on their own if you want the geometry but not
 UIKit's renderers:
@@ -311,15 +304,8 @@ null, which picks black or white for contrast with `textColor`) in
 
 `marks` takes inclusive `[first, last]` value ranges and draws them as bars
 under the track (`markColor`, `markHeight` in `SliderStyle`). To flag the
-slices that hold drawing, `UIKitDrawingSlices` keeps per-slice painted counts
-from NiiVue's `drawingChanged`, rescanning only the event's `box` when it has
-one:
-
-```ts
-const slices = new UIKitDrawingSlices(nv, () =>
-  sliders.updateSlider('axial', { marks: slices.runs(2) }),
-)
-```
+slices that hold drawing, NiiVue's `UIKitDrawingSlices`
+(`@niivue/niivue/uikit`) supplies the runs.
 
 ## Menus
 
@@ -812,24 +798,7 @@ overrides of the button style.
 
 ## Demo pages
 
-`bunx nx dev uikit` serves the package's own demo pages with Vite; the dev
-server also mounts `@niivue/dev-images`, so the pages can load real volumes
-from `/volumes/...`. Each page's nav links to the others and marks the current
-one; a backend menu reloads it on WebGL2 or WebGPU (`slide-wsi.html` defaults
-to WebGPU, the others to WebGL2), and a status bar at the
-bottom shows help on the left and the page's state on the right (yellow while
-it waits, green for a result, red for an error). `demo.css`, `statusBar.js`
-and `urlParamSelect.js` are shared by the pages.
-
-| Page | Shows |
-| --- | --- |
-| `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker, a tool palette and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
-| `calipers.html` | Calipers (the ruler overlay) on an axial CT slice, in the volume's units, beside NiiVue's static scale ruler. Endpoints are world points: they follow pan and the zoom slider, belong to their slice (hidden on others), and a drag never places one |
-| `volume.html` | Volume ruler with a view selector and magnifier toggle |
-| `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile. By design it measures canvas pixels, not the scene: the zoom slider scales the scene under fixed calipers, and Retina switches device and CSS pixels; a magnifier toggle |
-| `slide-wsi.html` | Tiles: the ruler, scale bar and slide minimap on the standalone tiled viewer (DICOM whole-slide image or Deep Zoom). Zoom slider and right-drag box zoom and a magnifier toggle; a slide without pixel spacing gets a page-drawn bar in slide pixels |
-| `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
-| `standalone.html` | No NiiVue: `UIKitCanvasHost` on a bare canvas; the app's own triangle shader with sliders, a colour control, a toggle, a button and a ruler over it |
+`apps/demo-uikit` (`bunx nx dev demo-uikit`).
 
 ## Conventions for contributors
 

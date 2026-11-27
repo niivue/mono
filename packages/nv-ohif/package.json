@@ -44,7 +44,7 @@
     "@niivue/niivue": "workspace:^",
     "react": "^18.3.1 || ^19"
   },
-  "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency: its magnifier overlays, and the slide minimap from '@niivue/uikit/niivue'. It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release. uikit's niivue peer is the same @niivue/niivue nv-ohif uses, so no niivue runtime is duplicated.",
+  "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency: its magnifier overlays (the slide minimap comes from '@niivue/niivue/uikit', built on it). It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release; @niivue/niivue depends on the same uikit, so one copy is installed.",
   "dependencies": {
     "@niivue/dcm2niix": "^1.4.20261122-rc.1",
     "@niivue/nv-ext-tile": "workspace:^",

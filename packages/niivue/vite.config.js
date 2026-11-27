@@ -16,11 +16,9 @@ const SITE_APPS = [
   'demo-ext-image-processing',
   'demo-ext-save-html',
   'demo-ext-tile',
-  'uikit',
+  'demo-uikit',
 ]
-// A site app that lives in packages/ (its demo pages), not apps/.
-const appDir = (name) =>
-  resolve(repoRoot, name === 'uikit' ? 'packages' : 'apps', name)
+const appDir = (name) => resolve(repoRoot, 'apps', name)
 // Vite's /@fs URLs need forward slashes and a leading slash. On Windows
 // resolve() returns "H:\..." (backslashes, no leading slash), which 404s.
 const posixPath = (path) => path.replace(/\\/g, '/')
@@ -92,7 +90,7 @@ function pagesSiteDevPlugin() {
               /(<script[^>]*\ssrc=")\/?(?!\/|https?:)([^"]+)"/g,
               `$1${fsUrl(dir)}/$2"`,
             )
-            // Relative imports in inline module scripts (uikit's demo pages)
+            // Relative imports in inline module scripts (demo-uikit's pages)
             // too: Vite would resolve them against this package.
             .replace(
               /(\bfrom\s+|\bimport\s*\(\s*)(['"])\.\//g,
@@ -155,6 +153,16 @@ export default defineConfig({
       {
         find: /^@niivue\/niivue\/assets\/(fonts|matcaps)$/,
         replacement: src('assets/$1/index.ts'),
+      },
+      { find: /^@niivue\/niivue\/uikit$/, replacement: src('uikit/entry.ts') },
+      // uikit too, so a uikit edit shows without a rebuild.
+      {
+        find: /^@niivue\/uikit$/,
+        replacement: resolve(repoRoot, 'packages/uikit/src/index.ts'),
+      },
+      {
+        find: /^@niivue\/uikit\/controls$/,
+        replacement: resolve(repoRoot, 'packages/uikit/src/controlsEntry.ts'),
       },
     ],
   },

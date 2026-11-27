@@ -6,15 +6,14 @@ import { test } from './sharedPage'
 
 // @niivue/uikit on a bare canvas, no NiiVue: UIKitCanvasHost from the built
 // bundle (run `nx build uikit` first) draws the standalone demo's triangle
-// (packages/uikit/triangle.js) and a UIKit toggle over it; a real click on
+// (apps/demo-uikit/triangle.js) and a UIKit toggle over it; a real click on
 // the toggle hides the triangle, a second shows it again (a state leak from
 // the overlays into the app's next frame would fail that). The app's draw
 // leaves a right-half scissor: the toggle (left) and the next clear must not
 // be clipped by it.
-const uikit = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../uikit',
-)
+const here = path.dirname(fileURLToPath(import.meta.url))
+const uikit = path.resolve(here, '../../uikit')
+const triangle = path.resolve(here, '../../../apps/demo-uikit/triangle.js')
 
 test.use(webgpuUse)
 
@@ -28,7 +27,7 @@ for (const backend of ['webgl2', 'webgpu'] as const) {
         return null
       const { UIKitCanvasHost, UIKitControls, loadDefaultFont } = await import('/@fs/${uikit}/dist/uikit.js')
       const { UIKitToggleOverlay } = await import('/@fs/${uikit}/dist/controls.js')
-      const { createTriangle } = await import('/@fs/${uikit}/triangle.js')
+      const { createTriangle } = await import('/@fs/${triangle}')
       const c = document.createElement('canvas')
       c.style.cssText = 'position:fixed;left:0;top:0;width:300px;height:200px'
       document.body.appendChild(c)

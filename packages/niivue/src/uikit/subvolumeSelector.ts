@@ -14,6 +14,8 @@
 // Turn draw and annotation modes off while it is attached: they claim the
 // right button on the render tile too.
 
+import type { UIKitHost, UIKitOverlayFrame } from '@niivue/uikit'
+import { buildRect, type UIKitBox, UIKitRectOverlay } from '@niivue/uikit'
 import {
   chunkExplodeEnabled,
   type ExplodedBlockPick,
@@ -26,11 +28,7 @@ import {
   type SliceTile,
   type SubVolumeBox,
   subVolumeBox,
-} from '@niivue/niivue'
-import type { UIKitHost } from './controls'
-import type { UIKitOverlayFrame } from './hook'
-import { buildRect, type UIKitBox } from './rect'
-import { UIKitRectOverlay } from './rectOverlay'
+} from '@/index'
 
 type Vec3 = [number, number, number]
 

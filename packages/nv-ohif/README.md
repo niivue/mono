@@ -270,10 +270,10 @@ their points. Handles scale with device pixel ratio.
 aware. Length and the bidirectional diameters are in-plane mm. A
 `CalibrationLine` scales lengths and areas (see [Workflows](#workflows)).
 
-**Rendering.** Shapes and their labels are drawn by the `@niivue/uikit` overlay,
-not OHIF's cornerstone canvas.
+**Rendering.** Shapes and their labels are drawn by NiiVue core, not OHIF's
+cornerstone canvas.
 A measured line renders as a graduated ruler (end caps, mm ticks, numbered majors,
-rotated length label) in the annotation's stroke color. Volume-pane
+length label) in the annotation's stroke color. Volume-pane
 measurements draw yellow without fill, as slide annotations.
 
 **Free-text labels.** Edit a measurement row's label in OHIF's panel and the text

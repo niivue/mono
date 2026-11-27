@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { NVSlideManifest, NVSlideViewport } from '@niivue/niivue'
+import type { NVSlideManifest, NVSlideViewport } from '@/index'
 import {
   type UIKitMinimapSlide,
   UIKitSlideMinimapOverlay,

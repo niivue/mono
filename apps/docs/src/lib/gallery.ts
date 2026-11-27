@@ -210,11 +210,8 @@ function collectApps(
     )) {
       const page = li[1]
       if (page.startsWith('examples/')) continue
-      // Demo apps live in apps/; a package's own demo pages (uikit/) in packages/.
-      const source = [`apps/${page}`, `packages/${page}`].find((p) =>
-        existsSync(path.join(repoRoot, p)),
-      )
-      if (!source)
+      const source = `apps/${page}`
+      if (!existsSync(path.join(repoRoot, source)))
         throw new Error(`${PAGES_INDEX} links a missing page: ${page}`)
       const pageHtml = readFileSync(path.join(repoRoot, source), 'utf8')
       const script = pageHtml.match(

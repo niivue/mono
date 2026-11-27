@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { DrawingChangedDetail } from '@niivue/niivue'
+import type { DrawingChangedDetail } from '@/index'
 import { UIKitDrawingSlices, type UIKitDrawingSource } from './drawingSlices'
 
 // A 3x4x5 drawing; voxel (x, y, z) at x + 3y + 12z.

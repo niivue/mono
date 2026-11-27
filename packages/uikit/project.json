@@ -3,10 +3,6 @@
   "projectType": "library",
   "tags": ["type:lib", "lang:typescript"],
   "targets": {
-    "dev": {
-      "command": "bunx --bun vite",
-      "options": { "cwd": "{projectRoot}" }
-    },
     "build": {
       "command": "bunx --bun vite build",
       "options": { "cwd": "{projectRoot}" },

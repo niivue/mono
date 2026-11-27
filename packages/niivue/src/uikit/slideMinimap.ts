@@ -2,7 +2,7 @@
 // corner, and the box on it marking the part of the slide the viewport shows.
 // Pure: the overlay (slideMinimapOverlay.ts) draws it and routes the pointer.
 
-import type { UIKitBox } from './rect'
+import type { UIKitBox } from '@niivue/uikit'
 
 export type MinimapCorner =
   | 'top-left'

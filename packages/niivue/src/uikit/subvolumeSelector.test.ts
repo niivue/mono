@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { FocusBox, NVImage, SliceTile } from '@niivue/niivue'
+import type { FocusBox, NVImage, SliceTile } from '@/index'
 import {
   nearestOnRay,
   type SubvolumeSelection,

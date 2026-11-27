@@ -27,6 +27,10 @@
       "types": "./dist/scene/NvSceneController.d.ts",
       "import": "./dist/scene.js"
     },
+    "./uikit": {
+      "types": "./dist/uikit/entry.d.ts",
+      "import": "./dist/uikit.js"
+    },
     "./assets/fonts": {
       "types": "./dist/assets/fonts/index.d.ts",
       "import": "./dist/assets/fonts/index.js"
@@ -99,6 +103,7 @@
   },
   "homepage": "https://github.com/niivue/niivue",
   "dependencies": {
+    "@niivue/uikit": "workspace:^",
     "cbor-x": "^1.6.0",
     "clipper2-ts": "^2.0.1-13",
     "earcut": "^3.0.2",

@@ -2,8 +2,8 @@
 // overlays), the measuring widgets (ruler, crosshair, point label, magnifier),
 // the input router (UIKitControls) and the overlay hook types. It needs no
 // @niivue/niivue: an overlay registers on a NiiVue controller or on a bare
-// canvas through UIKitCanvasHost. Canvas form controls are in '@niivue/uikit/controls',
-// widgets that drive a NiiVue scene in '@niivue/uikit/niivue'. Each widget is a
+// canvas through UIKitCanvasHost. Canvas form controls are in '@niivue/uikit/controls';
+// widgets that drive a NiiVue scene are NiiVue's ('@niivue/niivue/uikit'). Each widget is a
 // pure geometry builder plus an overlay that owns its GPU resources; the
 // builders' models stay package-private unless exported here.
 
@@ -28,6 +28,8 @@ export type {
   UIKitOverlayFrame,
   UIKitOverlayRenderer,
 } from './hook'
+export type { UIKitImageSource } from './imageOverlay'
+export { UIKitImageOverlay } from './imageOverlay'
 export type { LineData, LineTerminators } from './line'
 export { buildLine, buildTerminatedLine, LineTerminator } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
@@ -46,7 +48,7 @@ export type {
 } from './pointLabelOverlay'
 export { UIKitPointLabelOverlay } from './pointLabelOverlay'
 export type { RectData, RectSpec, UIKitBox } from './rect'
-export { buildRect } from './rect'
+export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
 export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
 export { buildRuler } from './ruler'

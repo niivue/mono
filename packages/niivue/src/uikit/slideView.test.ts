@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import type { SlideView } from '@niivue/niivue'
+import type { SlideView } from '@/index'
 import { attachSlideChannelPanel } from './slideView'
 
 // No DOM under bun: just enough element surface for the channel panel.

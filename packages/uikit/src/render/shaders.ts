@@ -1,8 +1,8 @@
-// UIKit's own line shaders, duplicated from niivue core (gl/lineShader.ts,
-// wgpu/line.wgsl) during the bake-in phase so UIKit renders without reaching into
-// core. Same wire format as `LineData`: instanced quads expanded in the vertex
-// stage from [start, end, thickness, color]. Pixel coordinates map to NDC with a
-// Y flip (screen y-down -> clip y-up). See notes/ruler-port.md in @niivue/niivue.
+// UIKit's own line shaders, mirroring niivue core's (gl/lineShader.ts,
+// wgpu/line.wgsl): each package keeps its own renderer. Same wire format as
+// `LineData`: instanced quads expanded in the vertex stage from [start, end,
+// thickness, color]. Pixel coordinates map to NDC with a Y flip (screen y-down
+// -> clip y-up).
 
 export const GL_LINE_VERT = `#version 300 es
 precision highp float;

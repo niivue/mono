@@ -96,20 +96,23 @@ describe('entry points', () => {
     expect(declared.filter((n) => !root.has(n))).toEqual([])
   })
 
-  test('only src/scene imports @/index, and nothing imports src/scene', async () => {
-    // vite.config.lib.ts externalizes '@/index' to ./niivue.js for the scene
-    // entry; anywhere else it would make an entry import itself. And the scene
-    // subpath must stay out of the root entries' graph.
+  test('only src/scene and src/uikit import @/index, and nothing imports them', async () => {
+    // vite.config.lib.ts externalizes '@/index' to ./niivue.js for these
+    // subpath entries; anywhere else it would make an entry import itself. And
+    // the subpaths must stay out of the root entries' graph.
     const offenders: string[] = []
     for await (const file of new Bun.Glob('**/*.ts').scan(import.meta.dir)) {
       if (file.endsWith('.test.ts')) continue
       const source = await read(file)
+      const subpath = /^(scene|uikit)\//.exec(file)?.[1]
       if (
-        (!file.startsWith('scene/') &&
+        (!subpath &&
           /(?:from\s*|import\s*\(\s*)['"]@\/index['"]/.test(source)) ||
-        /(?:from\s*|import\s*\(\s*)['"](?:@|\.\.?)\/(?:\.\.\/)*scene\//.test(
-          source,
-        )
+        [
+          ...source.matchAll(
+            /(?:from\s*|import\s*\(\s*)['"](?:@|\.\.?)\/(?:\.\.\/)*(scene|uikit)\//g,
+          ),
+        ].some((m) => m[1] !== subpath)
       )
         offenders.push(file)
     }

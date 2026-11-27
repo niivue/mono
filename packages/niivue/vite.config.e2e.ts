@@ -62,18 +62,8 @@ function e2ePreviewPlugin(): Plugin {
             ? resolve(path.slice(4))
             : ''
         if (!file.startsWith(`${repoRoot}/`) || !existsSync(file)) return next()
-        if (file.endsWith('.js')) {
-          // The uikit bundle keeps @niivue/niivue external; the dev server
-          // rewrites that bare import, preview serves files raw. Point it at
-          // the built src/index entry so it shares module state with the specs.
+        if (file.endsWith('.js'))
           res.setHeader('Content-Type', 'text/javascript')
-          return res.end(
-            readFileSync(file, 'utf8').replaceAll(
-              '"@niivue/niivue"',
-              '"/src/index.js"',
-            ),
-          )
-        }
         createReadStream(file).pipe(res)
       })
     },

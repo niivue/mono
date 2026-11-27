@@ -2,8 +2,7 @@
 // current from NiiVue's `drawingChanged`: an edit that reports its voxel box
 // costs only that box, anything else one pass over the bitmap.
 
-import type { DrawingChangedDetail } from '@niivue/niivue'
-import type {} from './hook'
+import type { DrawingChangedDetail } from '@/index'
 
 /** The slice of a NiiVue instance the tracker reads. */
 export interface UIKitDrawingSource {

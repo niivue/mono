@@ -145,13 +145,6 @@ export interface SliderVisual {
   enabled: boolean
 }
 
-export function resolveSliderStyle(
-  base: SliderStyle,
-  override?: Partial<SliderStyle>,
-): SliderStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The number of decimal places needed to print multiples of `step` exactly (0 for no step). */
 export function stepDecimals(step: number): number {
   if (!Number.isFinite(step) || step <= 0) return 0

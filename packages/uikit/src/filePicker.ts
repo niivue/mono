@@ -10,8 +10,8 @@ import {
   type ButtonStyle,
   DEFAULT_BUTTON_STYLE,
   layoutButton,
-  resolveButtonStyle,
 } from './button'
+import { resolveStyle } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import {
   autoOutlineColor,
@@ -118,7 +118,7 @@ export function resolveFilePickerStyle(
 
 /** The button style a picker's button is laid out and drawn with. */
 function filePickerButtonStyle(style: FilePickerStyle): ButtonStyle {
-  return resolveButtonStyle(DEFAULT_BUTTON_STYLE, style.button)
+  return resolveStyle(DEFAULT_BUTTON_STYLE, style.button)
 }
 
 /** What the readout says for a set of chosen names. */

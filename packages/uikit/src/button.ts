@@ -93,13 +93,6 @@ export interface ButtonVisual {
   enabled: boolean
 }
 
-export function resolveButtonStyle(
-  base: ButtonStyle,
-  override?: Partial<ButtonStyle>,
-): ButtonStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** Linear blend of two colors, t in [0, 1]. */
 export function mixColor(a: RGBA, b: RGBA, t: number): RGBA {
   const k = Math.min(1, Math.max(0, t))

@@ -21,13 +21,13 @@ import {
   buttonContains,
   DEFAULT_BUTTON_STYLE,
   layoutButton,
-  resolveButtonStyle,
   scaleButton,
 } from './button'
 import { UIKitControls, type UIKitHost, type UIKitKeyEvent } from './controls'
 import type { UIKitOverlayFrame } from './hook'
 import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 /** What `attach` needs from a host: NiiVue satisfies it as-is. */
@@ -66,7 +66,6 @@ interface ButtonEntry {
 
 const MODEL = {
   defaultStyle: DEFAULT_BUTTON_STYLE,
-  resolveStyle: resolveButtonStyle,
   scale: scaleButton,
   layout: layoutButton,
   contains: buttonContains,
@@ -91,7 +90,7 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
   /** Add a button, or replace the one with the same id (keeping its press state). */
   addButton(spec: ButtonSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveButtonStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     if (existing) {
       existing.spec = spec
       existing.style = style

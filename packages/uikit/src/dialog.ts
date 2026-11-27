@@ -130,13 +130,6 @@ export interface DialogButtonSize {
   height: number
 }
 
-export function resolveDialogStyle(
-  base: DialogStyle,
-  override?: Partial<DialogStyle>,
-): DialogStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /**
  * Break `text` into lines no wider than `maxWidth`: at '\n', else at the last
  * space that fits; a single word wider than the line stays whole.

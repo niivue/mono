@@ -9,6 +9,7 @@ import type { LineData } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
 import type { RectData } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
+import { resolveStyle } from './style'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import { type UIKitTextItem, UIKitTextOverlay } from './textOverlay'
 
@@ -149,7 +150,6 @@ export class UIKitEntryMap<L, E extends UIKitEntry<L>> extends Map<string, E> {
 /** The model functions an entry overlay draws and hit-tests a widget with. */
 export interface UIKitEntryModel<S, St, L> {
   defaultStyle: St
-  resolveStyle: (base: St, override?: Partial<St>) => St
   scale: (spec: S, style: St, k: number) => { spec: S; style: St }
   layout: (spec: S, style: St, metrics: UIKitFontMetrics) => L
   contains: (layout: L, x: number, y: number) => boolean
@@ -190,14 +190,14 @@ export abstract class UIKitEntryOverlay<
       const { spec, style } = model.scale(entry.spec, entry.style, scale)
       return model.layout(spec, style, font.metrics)
     }, options.cssUnits ?? false)
-    this.baseStyle = model.resolveStyle(model.defaultStyle, options.style)
+    this.baseStyle = resolveStyle(model.defaultStyle, options.style)
   }
 
   /** Replace the default style for every entry (per-spec overrides still win). */
   setDefaultStyle(style: Partial<St>): void {
-    this.baseStyle = this.model.resolveStyle(this.model.defaultStyle, style)
+    this.baseStyle = resolveStyle(this.model.defaultStyle, style)
     for (const entry of this.entries.values()) {
-      entry.style = this.model.resolveStyle(this.baseStyle, entry.spec.style)
+      entry.style = resolveStyle(this.baseStyle, entry.spec.style)
       this.relayout(entry)
     }
     this.invalidate()

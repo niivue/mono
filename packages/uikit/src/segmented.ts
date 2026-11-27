@@ -123,13 +123,6 @@ export interface SegmentedVisual {
   enabled: boolean
 }
 
-export function resolveSegmentedStyle(
-  base: SegmentedStyle,
-  override?: Partial<SegmentedStyle>,
-): SegmentedStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The track for a spec, with equal-width segment faces inside the inset. */
 export function layoutSegmented(
   spec: SegmentedSpec,

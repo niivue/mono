@@ -163,13 +163,6 @@ export interface ToolPaletteLayout {
   dividers: { x: number; y: number }[]
 }
 
-export function resolveToolPaletteStyle(
-  base: ToolPaletteStyle,
-  override?: Partial<ToolPaletteStyle>,
-): ToolPaletteStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** Scale every length in a style by `k` (CSS pixels to canvas pixels). */
 export function scaleToolPaletteStyle(
   style: ToolPaletteStyle,

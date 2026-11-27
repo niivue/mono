@@ -15,7 +15,6 @@ import {
   DEFAULT_SEGMENTED_STYLE,
   endSegmentValue,
   layoutSegmented,
-  resolveSegmentedStyle,
   type SegmentedLayout,
   type SegmentedSpec,
   type SegmentedStyle,
@@ -25,6 +24,7 @@ import {
   segmentIndex,
   stepSegmentValue,
 } from './segmented'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 export interface UIKitSegmentedOverlayOptions {
@@ -50,7 +50,6 @@ interface SegmentedEntry {
 
 const MODEL = {
   defaultStyle: DEFAULT_SEGMENTED_STYLE,
-  resolveStyle: resolveSegmentedStyle,
   scale: scaleSegmented,
   layout: layoutSegmented,
   contains: (l: SegmentedLayout, x: number, y: number) =>
@@ -79,7 +78,7 @@ export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
    * the new spec's value; a value no segment holds clears the selection.
    */
   addSegmented(spec: SegmentedSpec): void {
-    const style = resolveSegmentedStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     const value =
       segmentIndex(spec.segments, spec.value) >= 0 ? spec.value : null
     const existing = this.entries.get(spec.id)

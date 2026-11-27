@@ -141,13 +141,6 @@ export interface NumberInputVisual {
   enabled: boolean
 }
 
-export function resolveNumberInputStyle(
-  base: NumberInputStyle,
-  override?: Partial<NumberInputStyle>,
-): NumberInputStyle {
-  return override ? { ...base, ...override } : base
-}
-
 type Range = Pick<NumberInputSpec, 'min' | 'max' | 'step'>
 
 /** Clamp `value` into the spec's bounds and snap it to its step grid. NaN clamps to the low end, or 0. */

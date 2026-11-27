@@ -8,12 +8,12 @@
 import type { UIKitKeyEvent } from './controls'
 import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import {
   buildToggle,
   DEFAULT_TOGGLE_STYLE,
   layoutToggle,
-  resolveToggleStyle,
   scaleToggle,
   type ToggleLayout,
   type ToggleSpec,
@@ -43,7 +43,6 @@ interface ToggleEntry {
 
 const MODEL = {
   defaultStyle: DEFAULT_TOGGLE_STYLE,
-  resolveStyle: resolveToggleStyle,
   scale: scaleToggle,
   layout: layoutToggle,
   contains: toggleContains,
@@ -70,7 +69,7 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
    */
   addToggle(spec: ToggleSpec): void {
     const existing = this.entries.get(spec.id)
-    const style = resolveToggleStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     if (existing) {
       existing.spec = spec
       existing.style = style

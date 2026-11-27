@@ -12,6 +12,7 @@ import {
   type UIKitEntryOverlayOptions,
 } from './overlayParts'
 import type { UIKitBox } from './rect'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import {
   clipboardEdit,
@@ -214,7 +215,7 @@ export abstract class UIKitFieldOverlay<
       this.assign(existing, this.normalize(spec, spec.value))
       return
     }
-    const style = this.model.resolveStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     this.entries.set(
       spec.id,
       this.newEntry(spec, style, this.normalize(spec, spec.value)),
@@ -270,7 +271,7 @@ export abstract class UIKitFieldOverlay<
    */
   protected respec(entry: E, spec: S): void {
     entry.spec = spec
-    entry.style = this.model.resolveStyle(this.baseStyle, spec.style)
+    entry.style = resolveStyle(this.baseStyle, spec.style)
     entry.layout = null
     entry.value = this.normalize(spec, entry.value)
     if (spec.enabled === false) {

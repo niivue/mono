@@ -158,13 +158,6 @@ export interface TextRow {
   hard: boolean
 }
 
-export function resolveTextAreaStyle(
-  base: TextAreaStyle,
-  override?: Partial<TextAreaStyle>,
-): TextAreaStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The control's boxes for a spec. */
 export function layoutTextArea(
   spec: TextAreaSpec,

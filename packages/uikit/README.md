@@ -803,8 +803,8 @@ overrides of the button style.
 
 - **A widget is a model file plus an overlay file.** `foo.ts` holds the pure
   model: the `FooSpec` and `FooStyle` interfaces, `DEFAULT_FOO_STYLE`,
-  `resolveFooStyle`, `layoutFoo` (spec to boxes), `scaleFoo` (spec and style
-  into device pixels for `cssUnits`), `fooContains` (hit test) and `buildFoo`
+  `layoutFoo` (spec to boxes), `scaleFoo` (spec and style into device pixels
+  for `cssUnits`; styles merge through `resolveStyle` in `style.ts`), `fooContains` (hit test) and `buildFoo`
   (layout and state to line, text and rect draw data). It imports no GPU code
   and is tested in `foo.test.ts` without one. `fooOverlay.ts` holds
   `UIKitFooOverlay`: it keeps the specs and interaction state, implements

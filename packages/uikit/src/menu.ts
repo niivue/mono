@@ -210,13 +210,6 @@ export interface MenuBounds {
   height: number
 }
 
-export function resolveMenuStyle(
-  base: MenuStyle,
-  override?: Partial<MenuStyle>,
-): MenuStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** True for an item the user can highlight and activate. */
 export function isMenuItemSelectable(item: MenuItemSpec): boolean {
   return item.kind !== 'separator' && item.enabled !== false

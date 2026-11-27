@@ -110,13 +110,6 @@ export interface ToggleVisual {
   enabled: boolean
 }
 
-export function resolveToggleStyle(
-  base: ToggleStyle,
-  override?: Partial<ToggleStyle>,
-): ToggleStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The control box for a spec: the check box plus the label beside it. */
 export function layoutToggle(
   spec: ToggleSpec,

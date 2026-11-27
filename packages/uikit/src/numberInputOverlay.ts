@@ -28,7 +28,6 @@ import {
   numberInputContains,
   numberInputSpinAt,
   parseNumberInput,
-  resolveNumberInputStyle,
   scaleNumberInput,
   snapNumberInput,
   stepNumberInput,
@@ -74,7 +73,6 @@ interface NumberInputEntry {
 
 const MODEL = {
   defaultStyle: DEFAULT_NUMBER_INPUT_STYLE,
-  resolveStyle: resolveNumberInputStyle,
   scale: scaleNumberInput,
   layout: layoutNumberInput,
   contains: numberInputContains,

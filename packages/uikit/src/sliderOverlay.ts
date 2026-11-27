@@ -14,7 +14,6 @@ import {
   buildSlider,
   DEFAULT_SLIDER_STYLE,
   layoutSlider,
-  resolveSliderStyle,
   type SliderLayout,
   type SliderSpec,
   type SliderStyle,
@@ -24,6 +23,7 @@ import {
   snapValue,
   stepValue,
 } from './slider'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 export interface UIKitSliderOverlayOptions {
@@ -48,7 +48,6 @@ interface SliderEntry {
 
 const MODEL = {
   defaultStyle: DEFAULT_SLIDER_STYLE,
-  resolveStyle: resolveSliderStyle,
   scale: scaleSlider,
   layout: layoutSlider,
   contains: sliderContains,
@@ -80,7 +79,7 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
       )
     }
     const existing = this.entries.get(spec.id)
-    const style = resolveSliderStyle(this.baseStyle, spec.style)
+    const style = resolveStyle(this.baseStyle, spec.style)
     const value = snapValue(spec.value, spec.min, spec.max, spec.step)
     if (existing) {
       existing.spec = spec

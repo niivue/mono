@@ -14,12 +14,7 @@
 // The popup is drawn after every other widget through `drawPopup` when the
 // overlay sits in a control layer, so it never ends up under a later widget.
 
-import {
-  type ButtonLayout,
-  type ButtonStyle,
-  buttonContains,
-  resolveButtonStyle,
-} from './button'
+import { type ButtonLayout, type ButtonStyle, buttonContains } from './button'
 import type {
   UIKitInteractive,
   UIKitKeyEvent,
@@ -45,7 +40,6 @@ import {
   menuScrollStripAt,
   nextSelectableIndex,
   popupContains,
-  resolveMenuStyle,
   scaleMenu,
 } from './menu'
 import {
@@ -55,6 +49,7 @@ import {
 } from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
 import { WheelAccumulator } from './scroll'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 export interface UIKitMenuOverlayOptions {
@@ -122,11 +117,11 @@ export class UIKitMenuOverlay
       )
       return layoutMenuButton(spec, buttonStyle, style, font.metrics)
     }, options.cssUnits ?? false)
-    this.baseButtonStyle = resolveButtonStyle(
+    this.baseButtonStyle = resolveStyle(
       DEFAULT_MENU_BUTTON_STYLE,
       options.buttonStyle,
     )
-    this.baseStyle = resolveMenuStyle(DEFAULT_MENU_STYLE, options.style)
+    this.baseStyle = resolveStyle(DEFAULT_MENU_STYLE, options.style)
     this.requestRedraw = options.requestRedraw ?? null
   }
 
@@ -138,11 +133,8 @@ export class UIKitMenuOverlay
    */
   addMenu(spec: MenuButtonSpec): void {
     const existing = this.entries.get(spec.id)
-    const buttonStyle = resolveButtonStyle(
-      this.baseButtonStyle,
-      spec.buttonStyle,
-    )
-    const style = resolveMenuStyle(this.baseStyle, spec.style)
+    const buttonStyle = resolveStyle(this.baseButtonStyle, spec.buttonStyle)
+    const style = resolveStyle(this.baseStyle, spec.style)
     const items = spec.items.map((item) => ({ ...item }))
     if (existing) {
       existing.spec = spec

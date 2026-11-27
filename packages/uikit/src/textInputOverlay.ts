@@ -33,7 +33,6 @@ import {
   buildTextInput,
   DEFAULT_TEXT_INPUT_STYLE,
   layoutTextInput,
-  resolveTextInputStyle,
   scaleTextInput,
   type TextInputLayout,
   type TextInputSpec,
@@ -76,7 +75,6 @@ interface TextInputEntry {
 
 const MODEL = {
   defaultStyle: DEFAULT_TEXT_INPUT_STYLE,
-  resolveStyle: resolveTextInputStyle,
   scale: scaleTextInput,
   layout: layoutTextInput,
   contains: textInputContains,

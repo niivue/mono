@@ -143,13 +143,6 @@ export interface ColorControlVisual {
   enabled: boolean
 }
 
-export function resolveColorControlStyle(
-  base: ColorControlStyle,
-  override?: Partial<ColorControlStyle>,
-): ColorControlStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** True when two colors agree in every channel within a rounding tolerance. */
 export function colorsEqual(a: RGBA, b: RGBA, tolerance = 1e-6): boolean {
   return (

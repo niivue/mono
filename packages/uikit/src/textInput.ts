@@ -94,13 +94,6 @@ export interface TextInputVisual {
   enabled: boolean
 }
 
-export function resolveTextInputStyle(
-  base: TextInputStyle,
-  override?: Partial<TextInputStyle>,
-): TextInputStyle {
-  return override ? { ...base, ...override } : base
-}
-
 /** The control's boxes for a spec. */
 export function layoutTextInput(
   spec: TextInputSpec,

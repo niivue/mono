@@ -13,12 +13,12 @@ import type {
 } from './controls'
 import type { UIKitOverlayFrame } from './hook'
 import { UIKitDrawBundle } from './overlayParts'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import {
   buildToolPalette,
   DEFAULT_TOOL_PALETTE_STYLE,
   layoutToolPalette,
-  resolveToolPaletteStyle,
   scaleToolPaletteStyle,
   type ToolPaletteItem,
   type ToolPaletteLayout,
@@ -64,10 +64,7 @@ export class UIKitToolPaletteOverlay implements UIKitInteractive {
     this.font = font
     this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
     this.cssUnits = options.cssUnits ?? false
-    this.baseStyle = resolveToolPaletteStyle(
-      DEFAULT_TOOL_PALETTE_STYLE,
-      options.style,
-    )
+    this.baseStyle = resolveStyle(DEFAULT_TOOL_PALETTE_STYLE, options.style)
   }
 
   /** Show the palette, replacing any shown. */

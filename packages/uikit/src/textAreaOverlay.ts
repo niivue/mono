@@ -29,7 +29,6 @@ import {
   buildTextArea,
   DEFAULT_TEXT_AREA_STYLE,
   layoutTextArea,
-  resolveTextAreaStyle,
   scaleTextArea,
   type TextAreaLayout,
   type TextAreaSpec,
@@ -98,7 +97,6 @@ const SCROLLBAR_HIT_PADDING = 8
 
 const MODEL = {
   defaultStyle: DEFAULT_TEXT_AREA_STYLE,
-  resolveStyle: resolveTextAreaStyle,
   scale: scaleTextArea,
   layout: layoutTextArea,
   contains: textAreaContains,

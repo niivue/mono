@@ -9,7 +9,6 @@
 // list on the current option.
 
 import type { ButtonLayout, ButtonStyle } from './button'
-import { resolveButtonStyle } from './button'
 import type {
   UIKitInteractive,
   UIKitKeyEvent,
@@ -22,7 +21,6 @@ import {
   type MenuBounds,
   type MenuPopupLayout,
   type MenuStyle,
-  resolveMenuStyle,
 } from './menu'
 import { UIKitMenuOverlay } from './menuOverlay'
 import {
@@ -34,6 +32,7 @@ import {
   selectOption,
   stepSelectValue,
 } from './select'
+import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 export interface UIKitSelectOverlayOptions {
@@ -67,11 +66,11 @@ export class UIKitSelectOverlay
 
   constructor(font: UIKitFont, options: UIKitSelectOverlayOptions = {}) {
     this.font = font
-    this.baseButtonStyle = resolveButtonStyle(
+    this.baseButtonStyle = resolveStyle(
       DEFAULT_MENU_BUTTON_STYLE,
       options.buttonStyle,
     )
-    this.baseStyle = resolveMenuStyle(DEFAULT_MENU_STYLE, options.style)
+    this.baseStyle = resolveStyle(DEFAULT_MENU_STYLE, options.style)
     this.menu = new UIKitMenuOverlay(font, options)
   }
 
@@ -332,11 +331,11 @@ export class UIKitSelectOverlay
   private sync(id: string): void {
     const entry = this.entries.get(id)
     if (!entry) return
-    const buttonStyle = resolveButtonStyle(
+    const buttonStyle = resolveStyle(
       this.baseButtonStyle,
       entry.spec.buttonStyle,
     )
-    const style = resolveMenuStyle(this.baseStyle, entry.spec.style)
+    const style = resolveStyle(this.baseStyle, entry.spec.style)
     const menuSpec = selectMenuSpec(
       { ...entry.spec, value: entry.value },
       buttonStyle,

@@ -45,14 +45,15 @@ export interface NVSlideControllerOptions {
    * A windowing drag moved by (dx, dy) CSS pixels since the last call; `done`
    * on release (a click without a drag reports nothing). As NiiVue's windowing:
    * x widens the window, y lowers its centre. Default: `windowChannel`'s
-   * window follows the drag live ({@link windowDragStep}).
+   * window (an RGB slide's three, for -1) follows the drag live
+   * ({@link windowDragStep}).
    */
   onWindow?: (dx: number, dy: number, done: boolean) => void
   /**
    * A contrast drag released over this box (slide base pixels). As NiiVue's
    * contrast mode, the app sets the window to the intensity range inside it.
-   * Default: `windowChannel`'s window becomes the range of its resident
-   * samples in the box.
+   * Default: `windowChannel`'s window (each of an RGB slide's three, for -1)
+   * becomes the range of its resident samples in the box.
    */
   onContrast?: (box: NVSlideMeasurement) => void
   /**
@@ -150,8 +151,12 @@ export class NVSlideController {
   draft: NVSlideAnnotationDraft | null = null
   /** The selected annotation's edit under way, or null. */
   edit: NVSlideAnnotationEdit | null = null
-  /** The channel the default windowing and contrast handlers set. */
-  windowChannel = 0
+  /**
+   * The channel the default windowing and contrast handlers set; -1 sets an
+   * RGB slide's red, green and blue together (the default; on other slides it
+   * is the first channel).
+   */
+  windowChannel = -1
   /** Double-click zooms in 2x about the pointer (shift: out) while the primary mode is `pan`. */
   isDoubleClickZoom = true
   /** Middle button. Default `pan`, as in OHIF and most slide viewers. */
@@ -187,10 +192,11 @@ export class NVSlideController {
   private _polygonClosedAt: { p: NVSlidePoint; t: number } | null = null
   private _hoverFrame = 0
   private _hoverPoint: NVSlidePoint | null = null
-  private _windowDrag: {
-    start: [number, number]
-    now: [number, number]
-  } | null = null
+  // Per channel the drag moves: its window at the start and now.
+  private _windowDrag: Map<
+    number,
+    { start: [number, number]; now: [number, number] }
+  > | null = null
 
   constructor(canvas: HTMLCanvasElement, options: NVSlideControllerOptions) {
     this._canvas = canvas
@@ -806,41 +812,50 @@ export class NVSlideController {
         this._canvas.releasePointerCapture(id)
   }
 
-  // windowChannel outlives a slide swap: one past the new slide's channels is channel 0.
-  private _windowTarget(slide: NVSlide): number {
-    return this.windowChannel < slide.channels.length ? this.windowChannel : 0
+  // The channels windowing and contrast set: an RGB slide's three for -1,
+  // else one. windowChannel outlives a slide swap: one past the new slide's
+  // channels is channel 0.
+  private _windowTargets(slide: NVSlide): number[] {
+    const c = this.windowChannel
+    if (c < 0 && isRgbSlide(slide.manifest)) return [0, 1, 2]
+    return [c >= 0 && c < slide.channels.length ? c : 0]
   }
 
   private _defaultWindow(dx: number, dy: number): void {
     const slide = this._options.slide()
-    if (!slide || isRgbSlide(slide.manifest)) return
-    const c = this._windowTarget(slide)
-    if (!this._windowDrag) {
-      const start = channelWindow(slide, c)
-      this._windowDrag = { start, now: start }
+    if (!slide) return
+    this._windowDrag ??= new Map()
+    for (const c of this._windowTargets(slide)) {
+      let d = this._windowDrag.get(c)
+      if (!d) {
+        const start = channelWindow(slide, c)
+        d = { start, now: start }
+        this._windowDrag.set(c, d)
+      }
+      d.now = windowDragStep(d.start, d.now, dx, dy)
+      slide.setChannel(c, { calMin: d.now[0], calMax: d.now[1] })
     }
-    const d = this._windowDrag
-    d.now = windowDragStep(d.start, d.now, dx, dy)
-    slide.setChannel(c, { calMin: d.now[0], calMax: d.now[1] })
   }
 
+  // Each target channel's window becomes its own range inside the box.
   private _defaultContrast({ start, end }: NVSlideMeasurement): void {
     const slide = this._options.slide()
-    if (!slide || isRgbSlide(slide.manifest)) return
-    const c = this._windowTarget(slide)
-    let lo = Number.POSITIVE_INFINITY
-    let hi = Number.NEGATIVE_INFINITY
-    for (let j = 0; j < CONTRAST_GRID; j++)
-      for (let i = 0; i < CONTRAST_GRID; i++) {
-        const x = start.x + ((end.x - start.x) * (i + 0.5)) / CONTRAST_GRID
-        const y = start.y + ((end.y - start.y) * (j + 0.5)) / CONTRAST_GRID
-        const v = slide.sampleAt(x, y)[c]?.stored
-        if (v === null || v === undefined) continue
-        if (v < lo) lo = v
-        if (v > hi) hi = v
-      }
-    if (hi > lo)
-      slide.setChannel(c, { calMin: lo, calMax: hi } satisfies NVSlideWindow)
+    if (!slide) return
+    for (const c of this._windowTargets(slide)) {
+      let lo = Number.POSITIVE_INFINITY
+      let hi = Number.NEGATIVE_INFINITY
+      for (let j = 0; j < CONTRAST_GRID; j++)
+        for (let i = 0; i < CONTRAST_GRID; i++) {
+          const x = start.x + ((end.x - start.x) * (i + 0.5)) / CONTRAST_GRID
+          const y = start.y + ((end.y - start.y) * (j + 0.5)) / CONTRAST_GRID
+          const v = slide.sampleAt(x, y)[c]?.stored
+          if (v === null || v === undefined) continue
+          if (v < lo) lo = v
+          if (v > hi) hi = v
+        }
+      if (hi > lo)
+        slide.setChannel(c, { calMin: lo, calMax: hi } satisfies NVSlideWindow)
+    }
   }
 
   private _onDoubleClick = (event: MouseEvent): void => {

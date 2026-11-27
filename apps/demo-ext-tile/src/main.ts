@@ -59,10 +59,6 @@ const filterSelect = document.getElementById('filter') as HTMLSelectElement
 const credit = document.getElementById('credit') as HTMLDivElement
 const readout = document.getElementById('readout') as HTMLOutputElement
 const dragSelect = document.getElementById('drag') as HTMLSelectElement
-// Drag modes that set a channel window.
-const channelDragModes = ['windowLevel', 'contrastBox'].map(
-  (id) => document.getElementById(id) as HTMLOptionElement,
-)
 const channelsPanel = document.getElementById('channels') as HTMLElement
 const minimapToggle = document.getElementById('minimap') as HTMLInputElement
 const compareSelect = document.getElementById('compare') as HTMLSelectElement
@@ -178,22 +174,11 @@ function showReadout(): void {
   credit.hidden = !readout.hidden
 }
 
-// RGB slides have no channel window, so they get navigation instead.
-function syncDragModes(slide: NVSlide): void {
-  const rgb = isRgbSlide(slide.manifest)
-  for (const option of channelDragModes) option.disabled = rgb
-  if (!dragSelect.selectedOptions[0]?.disabled) return
-  dragSelect.value = String(DRAG_MODE.pan)
-  if (view.controller) {
-    view.controller.primaryDragMode = DRAG_MODE.pan
-    view.controller.selection = null
-  }
-  requestRender()
-}
-
-// A lens differs from the view beneath it only by its channel set.
+// A lens differs from the view beneath it only by its channel set, so an RGB
+// slide (one colour image) has nothing to show in one; the item says why.
 function syncCompareModes(slide: NVSlide): void {
   lensOption.disabled = isRgbSlide(slide.manifest) || slide.channels.length < 2
+  lensOption.text = lensOption.disabled ? 'lens (multichannel slides)' : 'lens'
   if (lensOption.selected && lensOption.disabled) compareSelect.value = 'single'
 }
 
@@ -397,7 +382,6 @@ async function open(load: Load): Promise<void> {
     // disposes) its source; the view owns the slide.
     const nextSlide = slideFor(next)
     view.setSlide(nextSlide)
-    syncDragModes(nextSlide)
     syncCompareModes(nextSlide)
     shownLoad = load
     // Always: it also supersedes a compare still opening for the last slide

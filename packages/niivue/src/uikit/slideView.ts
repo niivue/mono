@@ -152,8 +152,9 @@ const hexOf = (colormap: string): string => {
 /**
  * Per-channel controls in `container` for the view's slide: visibility,
  * exact colour, window (in data units, through `storedToValue`), which channel
- * a windowing drag sets, and the blend. Native controls: keyboard operable
- * with visible focus. The container is hidden for an RGB slide or none.
+ * a windowing drag sets, and the blend. An RGB slide shows its red, green and
+ * blue windows and the drag's target (all three, the default, or one). Native
+ * controls: keyboard operable with visible focus. Hidden with no slide.
  * Returns the detach function.
  */
 export function attachSlideChannelPanel(
@@ -172,8 +173,9 @@ export function attachSlideChannelPanel(
     built = slide
     fieldset.replaceChildren()
     sync = null
-    container.hidden = !slide || isRgbSlide(slide.manifest)
-    if (!slide || container.hidden) return
+    container.hidden = !slide
+    if (!slide) return
+    const rgb = isRgbSlide(slide.manifest)
     const legend = document.createElement('legend')
     legend.textContent = 'Channels'
     fieldset.append(legend)
@@ -183,9 +185,34 @@ export function attachSlideChannelPanel(
       view.controller &&
       view.controller.windowChannel >= slide.channels.length
     )
-      view.controller.windowChannel = 0
+      view.controller.windowChannel = rgb ? -1 : 0
+    // -1 is all of an RGB slide's channels, else the first one.
+    const targetOf = () => {
+      const c = view.controller?.windowChannel ?? 0
+      return c < 0 && !rgb ? 0 : c
+    }
+    const radio = (label: string, c: number): HTMLInputElement => {
+      const target = Object.assign(document.createElement('input'), {
+        type: 'radio',
+        name: group,
+        checked: targetOf() === c,
+      })
+      target.setAttribute('aria-label', `${label}: windowing drag sets`)
+      target.addEventListener('change', () => {
+        if (view.controller) view.controller.windowChannel = c
+      })
+      return target
+    }
+    if (rgb) {
+      const all = document.createElement('label')
+      all.className = 'row'
+      all.append(radio('red, green and blue', -1), ' all')
+      fieldset.append(all)
+    }
     const syncs: Array<() => void> = []
-    slide.channels.forEach((channel, c) => {
+    // An RGB slide windows its red, green and blue (no alpha, colour or hiding).
+    const channels = rgb ? slide.channels.slice(0, 3) : slide.channels
+    channels.forEach((channel, c) => {
       const info = slide.manifest.channelInfo?.[c]
       const map = info?.storedToValue
       const row = document.createElement('div')
@@ -232,18 +259,11 @@ export function attachSlideChannelPanel(
       }
       const min = bound('window minimum')
       const max = bound('window maximum')
-      const target = Object.assign(document.createElement('input'), {
-        type: 'radio',
-        name: group,
-        checked: view.controller?.windowChannel === c,
-      })
-      target.setAttribute('aria-label', `${channel.name}: windowing drag sets`)
-      target.addEventListener('change', () => {
-        if (view.controller) view.controller.windowChannel = c
-      })
+      const target = radio(channel.name, c)
       // Label IDs are never windowed.
       const isLabel = info?.kind === 'label'
       if (isLabel) row.append(name, colour)
+      else if (rgb) row.append(channel.name, min, max, target)
       else row.append(name, colour, min, max, target)
       fieldset.append(row)
       // Values follow the slide (a drag, a source window) unless being edited.
@@ -265,7 +285,7 @@ export function attachSlideChannelPanel(
         set(max, fmt(ch.calMax))
       })
     })
-    if (slide.channels.length > 1) {
+    if (!rgb && slide.channels.length > 1) {
       const blend = document.createElement('select')
       blend.setAttribute('aria-label', 'Channel blend')
       blend.append(new Option('max', 'max'), new Option('additive', 'additive'))

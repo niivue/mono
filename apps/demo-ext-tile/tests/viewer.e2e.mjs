@@ -2,8 +2,9 @@
  * Browser check of the viewer shell (createSlideView and its UIKit extras) on
  * a synthetic 2-channel 64 x 48 uint8 OME-Zarr store served from memory (no
  * network):
- * the status bar (credit, hover readout, fixed layout at any width), the
- * contrast box off for RGB (a 3-channel store), the channel panel reached by keyboard with visible focus, a
+ * the status bar (credit, hover readout, fixed layout at any width), RGB
+ * window/level and a lens item that says why it is off (a 3-channel store),
+ * the channel panel reached by keyboard with visible focus, a
  * window/level drag, double-click zoom, and the side-by-side and lens compare
  * views linked to the main one.
  *
@@ -388,7 +389,8 @@ async function check(backend) {
   if (!(await page.locator('#canvas2').isHidden()))
     fail('compare canvas still shown')
 
-  // Window/level and contrast box: off for RGB (which falls back to pan), back for scalar.
+  // RGB: window/level and the contrast box stay on and set red, green and blue
+  // together; the lens is off (one colour image) and says why.
   const openStore = async (name, rgb) => {
     await page.evaluate(
       (url) => nvBench.openUrl(url),
@@ -399,37 +401,29 @@ async function check(backend) {
       rgb,
     )
   }
-  const contrastOff = () =>
-    page.evaluate(
-      () =>
-        document.getElementById('contrastBox').disabled &&
-        document.getElementById('windowLevel').disabled,
-    )
   await page.selectOption('#drag', '9')
   await openStore('rgb.zarr', true)
-  if (!(await contrastOff()) || (await page.inputValue('#drag')) !== '3')
-    fail('RGB slide kept window/level')
-  await openStore('s.zarr', false)
-  await page.selectOption('#drag', '1')
-  await openStore('rgb.zarr', true)
-  if ((await page.inputValue('#drag')) !== '3')
-    fail('RGB slide kept the contrast box')
-  const centre = () => page.evaluate(() => nvBench.slide().viewport.centerX)
-  const c0 = await centre()
+  if ((await page.inputValue('#drag')) !== '9')
+    fail('RGB slide dropped window/level')
+  const lens = await page.evaluate(() => {
+    const o = document.getElementById('lensOption')
+    return { disabled: o.disabled, text: o.textContent }
+  })
+  if (!lens.disabled || !lens.text.includes('multichannel'))
+    fail(`RGB slide lens item ${JSON.stringify(lens)}`)
   await page.mouse.move(cx, cy)
   await page.mouse.down()
   await page.mouse.move(cx + 40, cy, { steps: 4 })
   await page.mouse.up()
-  if ((await centre()) === c0) fail('RGB slide: a left drag does not pan')
-  await openStore('s.zarr', false)
-  if (
-    await page.evaluate(
-      () =>
-        document.getElementById('contrastBox').disabled ||
-        document.getElementById('windowLevel').disabled,
-    )
+  const windowed = await page.evaluate(() =>
+    nvBench
+      .slide()
+      .channels.slice(0, 3)
+      .every((c) => Number.isFinite(c.calMin) && Number.isFinite(c.calMax)),
   )
-    fail('scalar slide: window/level or contrast box still disabled')
+  if (!windowed) fail('RGB window/level drag did not set red, green and blue')
+  await openStore('s.zarr', false)
+  await page.selectOption('#drag', '3')
 
   if (errors.length) fail(`page errors: ${errors.join('; ')}`)
   await page.close()

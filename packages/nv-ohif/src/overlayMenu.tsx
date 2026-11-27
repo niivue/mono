@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react'
 import {
-  type DisplaySetServiceLike,
   NIIVUE_COLORMAPS,
   overlayCandidates,
   overlayOrder,
@@ -148,9 +147,7 @@ export function overlayMenuComponent({
         options,
         'NIIVUE',
       )
-    const dsService = ohifServices(servicesManager)?.displaySetService as
-      | DisplaySetServiceLike
-      | undefined
+    const dsService = ohifServices(servicesManager)?.displaySetService
     const { overlays, candidates } = overlayMenuState(
       entry,
       dsService?.getActiveDisplaySets?.() ?? [],

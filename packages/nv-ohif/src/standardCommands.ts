@@ -95,19 +95,11 @@ function layerOptions(
   uid: string,
 ): Record<string, unknown> {
   const services = ohifServices(servicesManager)
-  const ds = (
-    services?.displaySetService as
-      | { getDisplaySetByUID?(uid: string): { Modality?: string } | undefined }
-      | undefined
-  )?.getDisplaySetByUID?.(uid)
+  const ds = services?.displaySetService?.getDisplaySetByUID?.(uid)
   if (!ds || ds.Modality === 'SEG') return {}
-  const maps = (
-    services?.customizationService as
-      | { getCustomization?(name: string): unknown }
-      | undefined
-  )?.getCustomization?.('cornerstone.modalityOverlayDefaultColorMaps') as
-    | { defaultSettings?: Record<string, { colormap?: string }> }
-    | undefined
+  const maps = services?.customizationService?.getCustomization?.(
+    'cornerstone.modalityOverlayDefaultColorMaps',
+  ) as { defaultSettings?: Record<string, { colormap?: string }> } | undefined
   const name = maps?.defaultSettings?.[ds.Modality ?? '']?.colormap ?? 'hsv'
   return { colormap: { name, opacity: 0.9 } }
 }
@@ -458,18 +450,7 @@ export function getStandardCommandDefinitions({
     // hung after its own (the data overlay menu's Add: a SEG or RTSTRUCT layer).
     addDisplaySetAsLayer: {
       commandFn: (opts: StandardOptions = {}) => {
-        const grid = ohifServices(servicesManager)?.viewportGridService as
-          | {
-              getActiveViewportId(): string
-              getDisplaySetsUIDsForViewport(id: string): string[]
-              getState?(): {
-                viewports?: Map<
-                  string,
-                  { displaySetOptions?: Record<string, unknown>[] }
-                >
-              }
-            }
-          | undefined
+        const grid = ohifServices(servicesManager)?.viewportGridService
         const viewportId = opts.viewportId ?? grid?.getActiveViewportId()
         const uid = opts.displaySetInstanceUID
         const commands = ohifCommandsManager(commandsManager)
@@ -479,7 +460,7 @@ export function getStandardCommandDefinitions({
           !getActiveNiivueEntry(servicesManager, viewportId)
         )
           return commands?.runCommand?.('addDisplaySetAsLayer', opts, 'DEFAULT')
-        const uids = grid.getDisplaySetsUIDsForViewport(viewportId) ?? []
+        const uids = grid.getDisplaySetsUIDsForViewport?.(viewportId) ?? []
         if (typeof uid !== 'string' || uids.includes(uid)) return
         // Without the grid's state, leave the layers' options to OHIF.
         const state = grid.getState?.()

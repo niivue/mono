@@ -133,22 +133,12 @@ export function useAnnotationHistory(
   )
 }
 
-type Row = { uid: string; source?: { name?: string } }
-type MeasurementService = {
-  getMeasurements: () => Row[]
-  getMeasurement: (uid: string) => Row | undefined
-  clearMeasurements: (...args: unknown[]) => unknown
-  __nvClear?: true
-}
-
 /** Make OHIF's clearMeasurements remove its NiiVue rows' annotations (once). */
 export function installClearHistory(
   servicesManager: OhifServicesManager | undefined,
   extensionManager: OhifExtensionManager | undefined,
 ): void {
-  const ms = servicesManager?.services?.measurementService as
-    | MeasurementService
-    | undefined
+  const ms = servicesManager?.services?.measurementService
   if (!ms?.clearMeasurements || ms.__nvClear) return
   ms.__nvClear = true
   const clear = ms.clearMeasurements.bind(ms)

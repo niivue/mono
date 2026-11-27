@@ -76,11 +76,11 @@ export function DisplayMenu({
   const ov = overlay ? nv.volumes[overlay] : undefined
   const presets =
     windowLevelPresets(servicesManager)[baseModality(entry) ?? ''] ?? []
-  const custom = (
-    ohifServices(servicesManager)?.customizationService as
-      | { getCustomization?: (id: string) => unknown }
-      | undefined
-  )?.getCustomization?.('cornerstone.colorbar') as Colormaps | undefined
+  const custom = ohifServices(
+    servicesManager,
+  )?.customizationService?.getCustomization?.('cornerstone.colorbar') as
+    | Colormaps
+    | undefined
   const colormaps = (custom?.colormaps ?? [])
     .map((c) => c.Name ?? c.name ?? '')
     .filter((n) => niivueColormapName(nv.colormaps, n))

@@ -33,10 +33,180 @@ export interface OhifDisplaySet {
   [key: string]: unknown
 }
 
-// The subset of OHIF managers a viewport receives. Typed as opaque for now; the
-// viewport uses them only to run commands / read services once those paths land.
+// OHIF's PubSubService surface. A payload's shape depends on the event, so
+// each subscriber names the one it handles.
+export interface OhifPubSub<Payload = unknown> {
+  EVENTS: Record<string, string>
+  subscribe<E = Payload>(
+    event: string,
+    cb: (e: E) => void,
+  ): { unsubscribe(): void }
+}
+
+// A MeasurementService row; only the fields we read are typed.
+export interface OhifMeasurement {
+  uid: string
+  toolName?: string
+  label?: string
+  isVisible?: boolean
+  points?: number[][]
+  referenceSeriesUID?: string
+  source?: { name?: string }
+  metadata?: { sliceType?: number }
+  /** Stats as stored: per image for cornerstone rows (an SR's NUM values). */
+  data?: Record<string, unknown>
+  SOPInstanceUID?: string
+  frameNumber?: number
+  referencedImageId?: string
+  [key: string]: unknown
+}
+export interface OhifMeasurementSource {
+  uid?: string
+}
+export interface OhifMeasurementEvent {
+  viewportId?: string
+  // MEASUREMENT_UPDATED/JUMP carry the full measurement object; the
+  // MEASUREMENT_REMOVED payload carries the uid as a bare string.
+  measurement?: string | OhifMeasurement
+}
+export interface OhifMeasurementService
+  extends OhifPubSub<OhifMeasurementEvent> {
+  createSource(name: string, version: string): OhifMeasurementSource
+  addMapping(
+    source: OhifMeasurementSource,
+    annotationType: string,
+    matchingCriteria: Array<{ valueType: string; points?: number }>,
+    toAnnotationSchema: (data: unknown) => unknown,
+    toMeasurementSchema: (data: { measurement: unknown }) => unknown,
+  ): void
+  addRawMeasurement(
+    source: OhifMeasurementSource,
+    annotationType: string,
+    data: unknown,
+    toMeasurementSchema: (data: { measurement: unknown }) => unknown,
+  ): string | undefined
+  getMeasurements(): OhifMeasurement[]
+  getMeasurement(uid: string): OhifMeasurement | undefined
+  remove(uid: string, source?: OhifMeasurementSource): void
+  clearMeasurements?: (...args: unknown[]) => unknown
+  /** Set once installClearHistory has wrapped clearMeasurements. */
+  __nvClear?: true
+}
+
+export interface OhifSegmentationService
+  extends OhifPubSub<{ segmentationId?: string } | undefined> {
+  setActiveSegmentation(viewportId: string, id: string): void
+  setActiveSegment(id: string, index: number): void
+  getActiveSegmentation(
+    viewportId: string,
+  ): { segmentationId: string; segments?: Record<string, unknown> } | undefined
+  getActiveSegment(viewportId: string): { segmentIndex: number } | undefined
+  getNextAvailableSegmentIndex(segmentationId: string): number
+  addSegment(segmentationId: string, config: { segmentIndex: number }): void
+  getSegmentations?(): unknown[]
+  getSegmentation?(id: string): { label?: string } | undefined
+  getSegmentationRepresentations?(viewportId: string): unknown[]
+}
+
+export interface OhifDisplaySetService extends Partial<OhifPubSub> {
+  getActiveDisplaySets?(): OhifDisplaySet[]
+  getDisplaySetsForSeries?(uid: string): ReadonlyArray<OhifDisplaySet>
+  getDisplaySetByUID?(uid: string): OhifDisplaySet | undefined
+}
+
+export interface OhifViewportGridService extends Partial<OhifPubSub> {
+  getActiveViewportId(): string | null | undefined
+  setActiveViewportId?(viewportId: string): void
+  getDisplaySetsUIDsForViewport?(viewportId: string): string[]
+  getState?(): {
+    activeViewportId?: string
+    viewports?: Map<
+      string,
+      {
+        displaySetInstanceUIDs?: string[]
+        displaySetOptions?: Record<string, unknown>[]
+      }
+    >
+  }
+}
+
+export interface OhifCustomizationService {
+  getCustomization?(id: string): unknown
+}
+
+export interface OhifToolbarService {
+  refreshToolbarState?(props: Record<string, unknown>): void
+  getButtonComponentForUIType?(uiType: string): unknown
+  _evaluateFunction?: Record<string, (args: Record<string, unknown>) => unknown>
+}
+
+export interface OhifToolGroup {
+  toolOptions?: Record<
+    string,
+    { mode?: string; bindings?: { mouseButton?: number }[] }
+  >
+  getToolConfiguration?: (tool: string, key?: string) => unknown
+}
+export interface OhifToolGroupService extends Partial<OhifPubSub> {
+  getActivePrimaryMouseButtonTool?(toolGroupId?: string): string | undefined
+  getToolGroup?(toolGroupId: string): OhifToolGroup | undefined
+}
+
+export interface OhifUiNotificationService {
+  show?(notification: Record<string, unknown>): void
+}
+export interface OhifUiModalService {
+  show?(modal: Record<string, unknown>): void
+  hide?(): void
+}
+export type OhifViewportDialog = { viewportId?: string } & Record<
+  string,
+  unknown
+>
+export interface OhifUiViewportDialogService {
+  show(dialog: OhifViewportDialog): void
+  hide(): void
+  /** Listeners viewportNotification mirrors show/hide to, once wrapped. */
+  __nvMirror?: Set<(dialog: OhifViewportDialog | null) => void>
+}
+// Some modals close through the provider itself, so only isEmpty is reliable.
+export interface OhifUiDialogService {
+  isEmpty?(): boolean
+}
+
+export type OhifCine = { isPlaying?: boolean; frameRate?: number }
+export interface OhifCineService extends Partial<OhifPubSub> {
+  getState?():
+    | { isCineEnabled?: boolean; cines?: Record<string, OhifCine> }
+    | undefined
+  setCine?(cine: { id: string } & OhifCine): void
+  setIsCineEnabled?(isCineEnabled: boolean): void
+}
+
+export interface OhifUserAuthenticationService {
+  getAuthorizationHeader?(): { Authorization?: string } | undefined
+}
+
+// The services this package reads. Any may be missing from a host.
+export interface OhifServices {
+  measurementService?: OhifMeasurementService
+  segmentationService?: OhifSegmentationService
+  displaySetService?: OhifDisplaySetService
+  viewportGridService?: OhifViewportGridService
+  customizationService?: OhifCustomizationService
+  toolbarService?: OhifToolbarService
+  toolGroupService?: OhifToolGroupService
+  uiNotificationService?: OhifUiNotificationService
+  uiModalService?: OhifUiModalService
+  uiViewportDialogService?: OhifUiViewportDialogService
+  uiDialogService?: OhifUiDialogService
+  cineService?: OhifCineService
+  userAuthenticationService?: OhifUserAuthenticationService
+}
+
+// The subset of OHIF managers a viewport receives.
 export interface OhifServicesManager {
-  services: Record<string, unknown>
+  services: OhifServices
 }
 export interface OhifExtensionManager {
   getModuleEntry: (id: string) => unknown

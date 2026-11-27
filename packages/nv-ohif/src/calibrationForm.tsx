@@ -4,6 +4,7 @@ import {
   calibrationScale,
   setCalibrationScale,
 } from './calibration'
+import type { OhifServices } from './ohif-types'
 
 // OHIF's CalibrationLine dialog (callInputDialog in CalibrationLineTool.ts),
 // which nv-ohif cannot import: the actual distance, defaulting to the measured.
@@ -44,12 +45,10 @@ function CalibrationForm({
 
 /** Resolves the entered text, or null when cancelled. */
 export function askCalibrationDistance(
-  services: Record<string, unknown> | undefined,
+  services: OhifServices | undefined,
   value: string,
 ): Promise<string | null> {
-  const modal = services?.uiModalService as
-    | { show?: (o: object) => void; hide?: () => void }
-    | undefined
+  const modal = services?.uiModalService
   if (!modal?.show) return Promise.resolve(window.prompt('Calibration', value))
   return new Promise((resolve) =>
     modal.show?.({

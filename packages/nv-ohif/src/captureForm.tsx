@@ -1,5 +1,6 @@
 import { type CSSProperties, useState } from 'react'
 import type { NiivueViewportEntry } from './niivueRegistry'
+import type { OhifServices } from './ohif-types'
 
 // OHIF's Capture opens cornerstone's download form (CornerstoneViewportDownloadForm),
 // which refuses a non-cornerstone pane: this is its NiiVue counterpart, saving
@@ -67,11 +68,9 @@ function NiivueCaptureForm({
 /** OHIF's download form for a NiiVue pane; a direct PNG without a modal service. */
 export function showCaptureForm(
   entry: NiivueViewportEntry,
-  services: Record<string, unknown> | undefined,
+  services: OhifServices | undefined,
 ): void {
-  const modal = services?.uiModalService as
-    | { show?: (o: object) => void; hide?: () => void }
-    | undefined
+  const modal = services?.uiModalService
   if (!modal?.show) {
     void (entry.slideView
       ? entry.slideView.saveBitmap()

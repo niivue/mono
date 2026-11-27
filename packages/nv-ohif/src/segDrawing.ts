@@ -4,6 +4,7 @@ import { convertDisplaySetToNifti } from './dicomToNiivue'
 import { authHeaders, ohifServices } from './niivueRegistry'
 import type {
   OhifDisplaySet,
+  OhifDisplaySetService,
   OhifExtensionManager,
   OhifServicesManager,
 } from './ohif-types'
@@ -26,12 +27,6 @@ import {
 // it references: the pane loads that series as its base, and dcm2niix turns the
 // SEG into a label volume (values = LabelValue) plus a sidecar naming each one.
 
-interface DisplaySetLookup {
-  getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined
-  getDisplaySetsForSeries?: (uid: string) => ReadonlyArray<OhifDisplaySet>
-  getActiveDisplaySets?: () => ReadonlyArray<OhifDisplaySet>
-}
-
 const isSegOrRt = (ds: OhifDisplaySet) =>
   ds.Modality === 'SEG' || ds.Modality === 'RTSTRUCT'
 
@@ -51,7 +46,7 @@ let hydrations = 0
  */
 export function resolveSegDisplaySets(
   hung: ReadonlyArray<OhifDisplaySet>,
-  lookup: DisplaySetLookup | undefined,
+  lookup: OhifDisplaySetService | undefined,
 ): { displaySets: ReadonlyArray<OhifDisplaySet>; seg?: OhifDisplaySet } {
   const index = hung.findIndex(isSegOrRt)
   const seg = hung[index]
@@ -271,11 +266,9 @@ export function startSegDrawing(
 
 /** The mode loads a hydrated RTSTRUCT as editable contours (viewer mode). */
 const rtAsContours = (servicesManager: OhifServicesManager | undefined) =>
-  (
-    ohifServices(servicesManager)?.customizationService as
-      | { getCustomization?: (id: string) => unknown }
-      | undefined
-  )?.getCustomization?.('niivue.rtstructAsContours') === true
+  ohifServices(servicesManager)?.customizationService?.getCustomization?.(
+    'niivue.rtstructAsContours',
+  ) === true
 
 /**
  * Show `seg` (SEG or RTSTRUCT) as the drawing once the pane's base is
@@ -372,8 +365,6 @@ export function resolveSegDisplaySetsFor(
 ) {
   return resolveSegDisplaySets(
     hung,
-    ohifServices(servicesManager)?.displaySetService as
-      | DisplaySetLookup
-      | undefined,
+    ohifServices(servicesManager)?.displaySetService,
   )
 }

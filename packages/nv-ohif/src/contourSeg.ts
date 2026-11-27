@@ -18,7 +18,11 @@ import { startSculpt } from './contourSculpt'
 import { historyMemo } from './history'
 import type { NiivueViewportEntry } from './niivueRegistry'
 import { getNiivueEntry, niivueEntries, ohifServices } from './niivueRegistry'
-import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
+import type {
+  OhifDisplaySet,
+  OhifExtensionParams,
+  OhifSegmentationService,
+} from './ohif-types'
 import { apply, invertAffine, rasGrid, SLICE_AXIS, voxelMM3 } from './quantify'
 import { closedPlanar, type RtRoi } from './segExport'
 import {
@@ -26,7 +30,6 @@ import {
   type CstSegmentation,
   cornerstoneSegmentation,
   paletteColor,
-  type SegmentationServiceLike,
   segmentationRole,
   segmentStats,
 } from './segPanel'
@@ -62,12 +65,6 @@ type Row = {
   visible: boolean
   locked: boolean
   label: string
-}
-type Service = SegmentationServiceLike & {
-  getActiveSegmentation?(
-    viewportId: string,
-  ): { segmentationId: string } | undefined
-  getActiveSegment?(viewportId: string): { segmentIndex: number } | undefined
 }
 interface ContourSegmentation {
   viewportId: string
@@ -198,7 +195,7 @@ function addMirror(
   entry: NiivueViewportEntry,
   segmentationId: string,
   cst: CstSegmentation,
-  service: Service,
+  service: OhifSegmentationService,
 ): void {
   const c = contours.get(segmentationId)
   const views = mirrors.get(segmentationId) ?? new Map()
@@ -251,7 +248,7 @@ function addMirror(
 function mirrorEverywhere(
   segmentationId: string,
   cst: CstSegmentation,
-  service: Service,
+  service: OhifSegmentationService,
 ): void {
   const c = contours.get(segmentationId)
   if (!c) return
@@ -368,9 +365,7 @@ export function createContourSegmentation(
   entry: NiivueViewportEntry,
   managers: OhifExtensionParams,
 ): string | undefined {
-  const service = ohifServices(managers.servicesManager)?.segmentationService as
-    | { getSegmentations?(): unknown[] }
-    | undefined
+  const service = ohifServices(managers.servicesManager)?.segmentationService
   const count = service?.getSegmentations?.().length ?? 0
   return addContourSegmentation(entry, managers, {
     segmentationId: crypto.randomUUID(),
@@ -401,9 +396,7 @@ export function addContourSegmentation(
   },
 ): string | undefined {
   const cst = cornerstoneSegmentation(extensionManager)
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | Service
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   if (!cst || !service) return undefined
   const { viewportId } = entry
   const { segmentationId } = init
@@ -464,7 +457,7 @@ function attach(
   { nv, viewportId, displaySets }: NiivueViewportEntry,
   segmentationId: string,
   cst: CstSegmentation,
-  service: Service,
+  service: OhifSegmentationService,
   lutIndex: number,
   extensionManager: OhifExtensionParams['extensionManager'],
 ): void {
@@ -499,9 +492,7 @@ export function adoptContours(
   const source = entry.displaySets[0]?.displaySetInstanceUID
   if (!source) return
   const cst = cornerstoneSegmentation(extensionManager)
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | Service
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   if (!cst || !service) return
   for (const [id, p] of [...parked]) {
     if (p.source !== source) continue
@@ -587,7 +578,7 @@ function startContourSync(
   source: string,
   segmentationId: string,
   cst: CstSegmentation,
-  service: Service,
+  service: OhifSegmentationService,
   lutIndex: number,
   extensionManager: OhifExtensionParams['extensionManager'],
 ): ContourSegmentation {
@@ -889,9 +880,7 @@ export function jumpToContourSegment(
       ? c.nv
       : mirrors.get(segmentationId)?.get(viewportId)?.nv
   if (!nv) return false
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | Service
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   service?.setActiveSegmentation(viewportId, segmentationId)
   service?.setActiveSegment(segmentationId, segmentIndex)
   const group = contourGroup(segmentationId)
@@ -904,7 +893,10 @@ export function jumpToContourSegment(
 
 // The measurement style a contour tool replaces while it is armed, per pane.
 const measurementStyle = new Map<string, AnnotationStyle>()
-const armed = new Map<string, { tool: string; services: Service }>()
+const armed = new Map<
+  string,
+  { tool: string; services: OhifSegmentationService | undefined }
+>()
 
 /** A pane's measurement style: the saved one while a contour tool replaces it. */
 export function measurementStyleOf(
@@ -941,9 +933,7 @@ export function applyContourTool(
     sculpting.get(viewportId)?.()
     sculpting.delete(viewportId)
   }
-  const services = ohifServices(servicesManager)?.segmentationService as
-    | Service
-    | undefined
+  const services = ohifServices(servicesManager)?.segmentationService
   // A pane showing the series that does not yet hold the active segmentation
   // (it loaded while that one was moving between panes) takes it now.
   const activeId = services?.getActiveSegmentation?.(viewportId)?.segmentationId
@@ -958,7 +948,7 @@ export function applyContourTool(
   )
     owner.mirrorTo(entry)
   if (tool === SCULPTOR) {
-    armed.set(viewportId, { tool, services: services as Service })
+    armed.set(viewportId, { tool, services })
     nv.annotationIsEnabled = false
     nv.drawIsEnabled = false
     if (!sculpting.has(viewportId))
@@ -979,7 +969,7 @@ export function applyContourTool(
     measurementStyle.set(viewportId, nv.annotationStyle)
   armed.set(viewportId, {
     tool: tool as string,
-    services: services as Service,
+    services,
   })
   nv.drawIsEnabled = false
   const target = drawableSegment(viewportId, services)
@@ -1004,7 +994,10 @@ export function applyContourTool(
 const sculpting = new Map<string, () => void>()
 
 /** The pane's active contour segment, if shown and unlocked. */
-function drawableSegment(viewportId: string, services: Service | undefined) {
+function drawableSegment(
+  viewportId: string,
+  services: OhifSegmentationService | undefined,
+) {
   const segmentationId =
     services?.getActiveSegmentation?.(viewportId)?.segmentationId
   const c = segmentationId ? contours.get(segmentationId) : undefined
@@ -1029,7 +1022,7 @@ function rearm(viewportId: string): void {
   armed.delete(viewportId)
   applyContourTool(nv, viewportId, tool, {
     services: { segmentationService: a.services },
-  } as never)
+  })
 }
 
 /** The overlay's shapes minus hidden contour segments'. */

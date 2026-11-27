@@ -8,6 +8,7 @@ import {
 import type {
   OhifDisplaySet,
   OhifExtensionManager,
+  OhifSegmentationService,
   OhifServicesManager,
 } from './ohif-types'
 import { rasGrid, voxelMM3 } from './quantify'
@@ -105,25 +106,13 @@ export interface CstSegmentation {
     ): void
   }
 }
-export interface SegmentationServiceLike {
-  EVENTS: Record<string, string>
-  subscribe(
-    event: string,
-    cb: (e?: { segmentationId?: string }) => void,
-  ): { unsubscribe(): void }
-  setActiveSegmentation(viewportId: string, id: string): void
-  setActiveSegment(id: string, index: number): void
-  getActiveSegmentation?(
-    viewportId: string,
-  ): { segmentationId: string } | undefined
-}
 
 /**
  * Whether a pane draws `segmentationId` with its active style, its inactive
  * one, or not at all (cornerstone's renderInactiveSegmentations off).
  */
 export function segmentationRole(
-  service: SegmentationServiceLike,
+  service: OhifSegmentationService,
   cst: Pick<CstSegmentation, 'segmentationStyle'>,
   viewportId: string,
   segmentationId: string,
@@ -330,9 +319,7 @@ export function jumpToNiivueSegment(
 ): boolean {
   const panel = viewportId ? panels.get(viewportId) : undefined
   if (!viewportId || panel?.segmentationId !== segmentationId) return false
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | SegmentationServiceLike
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   service?.setActiveSegmentation(viewportId, segmentationId)
   service?.setActiveSegment(segmentationId, segmentIndex)
   panel.jump(segmentIndex)
@@ -360,9 +347,7 @@ export function startSegPanel(
   restyle: Restyle = (write) => write(),
 ): () => void {
   const cst = cornerstoneSegmentation(managers.extensionManager)
-  const service = ohifServices(managers.servicesManager)?.segmentationService as
-    | SegmentationServiceLike
-    | undefined
+  const service = ohifServices(managers.servicesManager)?.segmentationService
   const bitmap = nv.drawingVolume?.img
   const back = nv.volumes[0]
   // The id is the SEG display set's, as OHIF's own: a segmentation added under

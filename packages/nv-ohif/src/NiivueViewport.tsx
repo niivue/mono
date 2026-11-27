@@ -279,11 +279,6 @@ export function briefNote(
 // a cornerstone tool group. Instead we mirror OHIF's active primary mouse tool onto
 // NiiVue's left-drag behaviour, so picking Window/Level, Pan, etc. in the toolbar
 // controls the NiiVue viewport too.
-interface ToolGroupServiceLike {
-  getActivePrimaryMouseButtonTool?: (toolGroupId: string) => string | undefined
-  subscribe?: (event: string, cb: () => void) => { unsubscribe?: () => void }
-  EVENTS?: Record<string, string>
-}
 
 /**
  * The NiiVue viewport React component OHIF hangs a display set in. It routes each
@@ -1348,9 +1343,7 @@ export function NiivueViewport(props: OhifViewportProps) {
     const nv = nvRef.current
     if (!nv || !ready) return
     updateNiivueViewport(viewportId, { toolGroupId })
-    const svc = ohifServices(servicesManager)?.toolGroupService as
-      | ToolGroupServiceLike
-      | undefined
+    const svc = ohifServices(servicesManager)?.toolGroupService
     if (!svc?.getActivePrimaryMouseButtonTool) return
 
     const magnify = createMagnifyBinding(nv)

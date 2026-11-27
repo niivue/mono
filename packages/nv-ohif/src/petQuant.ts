@@ -124,11 +124,7 @@ export function resetQuant(): void {
 }
 
 const displaySet = (services: Services, uid: string) =>
-  (
-    ohifServices(services)?.displaySetService as
-      | { getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined }
-      | undefined
-  )?.getDisplaySetByUID?.(uid)
+  ohifServices(services)?.displaySetService?.getDisplaySetByUID?.(uid)
 
 const loaded = (v: NVImage | undefined): v is NVImage => !!v?.img && !!v.dimsRAS
 

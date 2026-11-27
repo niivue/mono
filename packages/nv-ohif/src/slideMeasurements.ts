@@ -4,11 +4,7 @@ import type {
   SlideAnnotation,
   SlideAnnotationTool,
 } from '@niivue/niivue'
-import {
-  type MeasurementServiceLike,
-  niivueMeasurementSource,
-  roundNumber,
-} from './commands'
+import { niivueMeasurementSource, roundNumber } from './commands'
 import { rowReport } from './csvReport'
 import { ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
@@ -127,9 +123,7 @@ export function bindSlideMeasurements(
 ): () => void {
   const annotations = view.annotations
   const services = ohifServices(servicesManager)
-  const displaySets = services?.displaySetService as
-    | { getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined }
-    | undefined
+  const displaySets = services?.displaySetService
   // A row's base level: its series' largest total pixel matrix.
   const smOf = (row: SlideRow) =>
     displaySets
@@ -140,13 +134,7 @@ export function bindSlideMeasurements(
           : a,
       )
   routeSlideSR(commandsManager, smOf)
-  const ms = services?.measurementService as
-    | (MeasurementServiceLike & {
-        remove(uid: string): void
-        getMeasurement(uid: string): unknown
-        EVENTS?: { MEASUREMENTS_CLEARED?: string }
-      })
-    | undefined
+  const ms = services?.measurementService
   if (!annotations || !ms?.addRawMeasurement) return () => {}
   const source = niivueMeasurementSource(ms)
   const tools = new Map<string, string>()

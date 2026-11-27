@@ -41,7 +41,10 @@ import {
 import type {
   OhifCommandsModule,
   OhifDisplaySet,
+  OhifDisplaySetService,
   OhifExtensionParams,
+  OhifMeasurementService,
+  OhifMeasurementSource,
   OhifViewportProps,
 } from './ohif-types'
 import { getQuantCommandDefinitions, showPaneLabel } from './petQuant'
@@ -183,11 +186,6 @@ const VIEW_DEFAULTS = {
   pan2Dxyzmm: [0, 0, 0, 1] as [number, number, number, number],
   renderPan: [0, 0] as [number, number],
   crosshairPos: [0.5, 0.5, 0.5] as [number, number, number],
-}
-
-export interface DisplaySetServiceLike {
-  getActiveDisplaySets?: () => OhifDisplaySet[]
-  getDisplaySetsForSeries?: (uid: string) => ReadonlyArray<OhifDisplaySet>
 }
 
 // The study's display sets NiiVue could load as an overlay of this viewport:
@@ -377,17 +375,11 @@ export function baseModality(
   return typeof modality === 'string' ? modality : undefined
 }
 
-interface CustomizationServiceLike {
-  getCustomization?: (id: string) => unknown
-}
-
 /** OHIF's window/level presets (customization first, built-in fallback). */
 export function windowLevelPresets(
   servicesManager: OhifExtensionParams['servicesManager'],
 ): Record<string, WindowLevelPreset[]> {
-  const svc = ohifServices(servicesManager)?.customizationService as
-    | CustomizationServiceLike
-    | undefined
+  const svc = ohifServices(servicesManager)?.customizationService
   const custom = svc?.getCustomization?.('cornerstone.windowLevelPresets')
   if (custom && typeof custom === 'object') {
     return custom as Record<string, WindowLevelPreset[]>
@@ -492,50 +484,14 @@ export function applyDefaultAnnotationText(
   return true
 }
 
-interface MeasurementSourceLike {
-  uid?: string
-}
-export interface MeasurementServiceLike {
-  createSource: (name: string, version: string) => MeasurementSourceLike
-  addMapping: (
-    source: MeasurementSourceLike,
-    annotationType: string,
-    matchingCriteria: Array<{ valueType: string; points?: number }>,
-    toAnnotationSchema: (data: unknown) => unknown,
-    toMeasurementSchema: (data: { measurement: unknown }) => unknown,
-  ) => void
-  addRawMeasurement: (
-    source: MeasurementSourceLike,
-    annotationType: string,
-    data: unknown,
-    toMeasurementSchema: (data: { measurement: unknown }) => unknown,
-  ) => string | undefined
-  remove?: (uid: string, source?: MeasurementSourceLike) => void
-  EVENTS?: {
-    MEASUREMENT_UPDATED?: string
-    JUMP_TO_MEASUREMENT?: string
-    MEASUREMENT_REMOVED?: string
-  }
-  subscribe?: (
-    event: string,
-    cb: (payload: {
-      viewportId?: string
-      // MEASUREMENT_UPDATED/JUMP carry the full measurement object; the
-      // MEASUREMENT_REMOVED payload carries the uid as a bare string.
-      measurement?:
-        | string
-        | { uid?: string; label?: string; isVisible?: boolean }
-    }) => void,
-  ) => { unsubscribe?: () => void }
-}
 // One 'NiiVue' source per MeasurementService, with a mapping per tool. Every
 // tool (Length + the ROI/arrow shapes) is an annotation in ANNOTATION_TO_OHIF.
 // createSource is idempotent, but addMapping stacks, so register the set once.
-const measurementSources = new WeakMap<object, MeasurementSourceLike>()
+const measurementSources = new WeakMap<object, OhifMeasurementSource>()
 export function niivueMeasurementSource(
-  measurementService: MeasurementServiceLike,
-): MeasurementSourceLike {
-  const cached = measurementSources.get(measurementService as object)
+  measurementService: OhifMeasurementService,
+): OhifMeasurementSource {
+  const cached = measurementSources.get(measurementService)
   if (cached) return cached
   const source = measurementService.createSource('NiiVue', '1.0')
   for (const { toolName, valueType, points } of Object.values(
@@ -549,7 +505,7 @@ export function niivueMeasurementSource(
       (data) => data.measurement,
     )
   }
-  measurementSources.set(measurementService as object, source)
+  measurementSources.set(measurementService, source)
   return source
 }
 
@@ -563,7 +519,7 @@ let niivueMeasurementCounter = 0
  */
 function resolveBackingSeries(
   entry: NiivueViewportEntry,
-  displaySetService: DisplaySetServiceLike,
+  displaySetService: OhifDisplaySetService,
 ): OhifDisplaySet | undefined {
   for (const ds of entry.displaySets) {
     if (!ds.SeriesInstanceUID) continue
@@ -1105,12 +1061,8 @@ function reflectNiivueAnnotationResult(
   existingUid?: string,
 ): ReflectionResult {
   const services = ohifServices(servicesManager)
-  const measurementService = services?.measurementService as
-    | MeasurementServiceLike
-    | undefined
-  const displaySetService = services?.displaySetService as
-    | DisplaySetServiceLike
-    | undefined
+  const measurementService = services?.measurementService
+  const displaySetService = services?.displaySetService
   if (
     !measurementService?.addRawMeasurement ||
     !displaySetService?.getDisplaySetsForSeries
@@ -1153,13 +1105,7 @@ function reflectNiivueAnnotationResult(
   // An update keeps the row's image when no output map holds the shape any
   // more (it was drawn on an output not now shown): the row owns its frame.
   const existing = existingUid
-    ? (
-        measurementService as {
-          getMeasurement?: (
-            uid: string,
-          ) => (Partial<FrameRef> & { isVisible?: boolean }) | undefined
-        }
-      ).getMeasurement?.(existingUid)
+    ? measurementService.getMeasurement?.(existingUid)
     : undefined
   const frame =
     outputFrameAt(entry, points, existing?.SOPInstanceUID)?.frame ??
@@ -1314,23 +1260,13 @@ export function jumpToNiivueMeasurement(
   if (!entry || !annotation) return
 
   const services = ohifServices(servicesManager)
-  const viewportGridService = services?.viewportGridService as
-    | { setActiveViewportId?: (viewportId: string) => void }
-    | undefined
+  const viewportGridService = services?.viewportGridService
   viewportGridService?.setActiveViewportId?.(ref.viewportId)
 
   // On another output of the series (a localizer of another orientation):
   // show that output; its single slice holds the measurement.
   const { SOPInstanceUID: sop, frameNumber } =
-    (
-      services?.measurementService as
-        | {
-            getMeasurement?: (
-              uid: string,
-            ) => { SOPInstanceUID?: string; frameNumber?: number } | undefined
-          }
-        | undefined
-    )?.getMeasurement?.(measurementUid) ?? {}
+    services?.measurementService?.getMeasurement?.(measurementUid) ?? {}
   const switching = sop ? entry.switchToInstance?.(sop, frameNumber) : undefined
   if (switching) {
     // The new target is selected now: a Delete during the load must not hit
@@ -1492,18 +1428,16 @@ export function applyOhifVisibilityToAnnotation(
 export function subscribeOhifLabelSync(
   servicesManager: OhifExtensionParams['servicesManager'],
 ): (() => void) | undefined {
-  const svc = ohifServices(servicesManager)?.measurementService as
-    | MeasurementServiceLike
-    | undefined
+  const svc = ohifServices(servicesManager)?.measurementService
   const labelEvent = svc?.EVENTS?.MEASUREMENT_UPDATED
   const jumpEvent = svc?.EVENTS?.JUMP_TO_MEASUREMENT
   const removeEvent = svc?.EVENTS?.MEASUREMENT_REMOVED
   if (!svc?.subscribe || (!labelEvent && !jumpEvent && !removeEvent))
     return undefined
-  const existing = labelSyncSubscriptions.get(svc as object)
+  const existing = labelSyncSubscriptions.get(svc)
   if (existing) {
     existing.refCount += 1
-    return () => releaseLabelSync(svc as object)
+    return () => releaseLabelSync(svc)
   }
   const subscriptions: Array<{ unsubscribe?: () => void }> = []
   if (labelEvent) {
@@ -1541,13 +1475,13 @@ export function subscribeOhifLabelSync(
       }),
     )
   }
-  labelSyncSubscriptions.set(svc as object, {
+  labelSyncSubscriptions.set(svc, {
     refCount: 1,
     unsubscribe: () => {
       for (const subscription of subscriptions) subscription?.unsubscribe?.()
     },
   })
-  return () => releaseLabelSync(svc as object)
+  return () => releaseLabelSync(svc)
 }
 
 /** Remove one reflected annotation's OHIF panel row (annotationRemoved). */
@@ -1568,8 +1502,7 @@ export function removeNiivueAnnotation(
     clearMappingFailure(viewportId, annotationId)
     return true
   }
-  const measurementService = ohifServices(servicesManager)
-    ?.measurementService as MeasurementServiceLike | undefined
+  const measurementService = ohifServices(servicesManager)?.measurementService
   if (row.uid) {
     // After the retry cap, fall through and drop the bookkeeping: the OHIF row
     // is orphaned, but the maps stop growing and sync stops retrying.
@@ -2041,9 +1974,7 @@ export function getNiivueCommandsModule({
       // still holds the old one).
       if (entry.baseLoading || nv.volumes.length === 0) return
 
-      const dsService = ohifServices(servicesManager)?.displaySetService as
-        | DisplaySetServiceLike
-        | undefined
+      const dsService = ohifServices(servicesManager)?.displaySetService
       const candidates = overlayCandidates(
         entry,
         dsService?.getActiveDisplaySets?.() ?? [],
@@ -2385,10 +2316,10 @@ export function getNiivueCommandsModule({
       segmentationId: string
       segmentIndex: number
     }) => {
-      const grid = ohifServices(servicesManager)?.viewportGridService as
-        | { getActiveViewportId?: () => string }
-        | undefined
-      const viewportId = grid?.getActiveViewportId?.()
+      const viewportId =
+        ohifServices(
+          servicesManager,
+        )?.viewportGridService?.getActiveViewportId?.() ?? undefined
       const { segmentationId, segmentIndex } = options
       if (
         jumpToNiivueSegment(

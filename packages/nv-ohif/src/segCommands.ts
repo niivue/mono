@@ -60,13 +60,7 @@ function createSegmentation(
   const { nv, viewportId } = entry
   created.get(viewportId)?.()
   nv.createEmptyDrawing()
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | {
-        getSegmentations?: () => unknown[]
-        setActiveSegmentation(viewportId: string, id: string): void
-        setActiveSegment(id: string, index: number): void
-      }
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   const segmentationId = crypto.randomUUID()
   const seg: OhifDisplaySet = {
     displaySetInstanceUID: segmentationId,
@@ -228,9 +222,7 @@ function segmentationLabel(
   servicesManager: OhifExtensionParams['servicesManager'],
   pane: NiivueSegmentationPane,
 ): string {
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | { getSegmentation?: (id: string) => { label?: string } | undefined }
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   return (
     service?.getSegmentation?.(pane.segmentationId)?.label ??
     pane.seg.SeriesDescription ??
@@ -318,11 +310,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
       commandFn: (opts: Options = {}) => {
         const entry = getActiveNiivueEntry(servicesManager, opts.viewportId)
         if (!entry) return back('setInterpolationToolConfiguration', opts)
-        const tools = ohifServices(servicesManager)?.toolGroupService as
-          | {
-              getActivePrimaryMouseButtonTool?(id?: string): string | undefined
-            }
-          | undefined
+        const tools = ohifServices(servicesManager)?.toolGroupService
         const active = tools?.getActivePrimaryMouseButtonTool?.(
           entry.toolGroupId,
         )
@@ -368,9 +356,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
           opts.viewportId,
         )?.nv
         if (!nv) return back('runSegmentBidirectional', opts)
-        const notify = ohifServices(servicesManager)?.uiNotificationService as
-          | { show?: (n: object) => void }
-          | undefined
+        const notify = ohifServices(servicesManager)?.uiNotificationService
         if (!addSegmentBidirectional(nv))
           notify?.show?.({
             title: 'Segment Bidirectional',
@@ -412,9 +398,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     // panel's Save stores a segmentation, with createReportAsync's toast.
     niivueStoreTMTVSegmentation: {
       commandFn: async (opts: Options = {}) => {
-        const ui = ohifServices(servicesManager)?.uiNotificationService as
-          | { show?: (o: Record<string, string>) => void }
-          | undefined
+        const ui = ohifServices(servicesManager)?.uiNotificationService
         try {
           const dataset = await save(opts, false, true)
           ui?.show?.({

@@ -29,21 +29,9 @@ import {
 } from './commands'
 import { measurementStyleOf } from './contourSeg'
 import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
-import type { OhifServicesManager } from './ohif-types'
+import type { OhifMeasurement, OhifServicesManager } from './ohif-types'
 import { SLICE_AXIS } from './quantify'
 import { acquisitionSliceType } from './standardCommands'
-
-export interface OhifRow {
-  uid: string
-  toolName?: string
-  label?: string
-  points?: number[][]
-  referenceSeriesUID?: string
-  source?: { name?: string }
-  metadata?: { sliceType?: number }
-  /** Stats as stored: per image for cornerstone rows (an SR's NUM values). */
-  data?: Record<string, unknown>
-}
 
 /**
  * A report row's calibration (C35): its stored length (a hydrated SR's NUM,
@@ -51,7 +39,7 @@ export interface OhifRow {
  * over native area (cornerstone's and NiiVue's geometric areas agree exactly).
  */
 export function reportScale(
-  row: OhifRow,
+  row: OhifMeasurement,
   stats: { length?: number; area: number } | undefined,
 ): number | undefined {
   const d = row.data ?? {}
@@ -88,7 +76,7 @@ const near = (a: number | undefined, b: number | undefined) =>
 // lengths from the world points.
 function twoLineFromRow(
   nv: Pick<NiiVue, 'annotationStyle'>,
-  row: OhifRow,
+  row: OhifMeasurement,
   ras: [number, number, number][],
   pts: AnnotationPoint[],
   sliceType: number,
@@ -168,7 +156,7 @@ function twoLineFromRow(
  */
 export function annotationFromRow(
   nv: Pick<NiiVue, 'volumes' | 'annotationStyle' | 'annotationAreaIsGeometric'>,
-  row: OhifRow,
+  row: OhifMeasurement,
 ): VectorAnnotation | undefined {
   const vol = nv.volumes[0]
   if (!vol || !row.points?.length) return undefined
@@ -293,17 +281,6 @@ export function annotationFromRow(
   return annotation
 }
 
-type RowService = {
-  EVENTS?: Record<string, string>
-  getMeasurements?: () => OhifRow[]
-  getMeasurement?: (uid: string) => OhifRow | undefined
-  remove?: (uid: string) => void
-  subscribe?: (
-    event: string,
-    cb: (e: { measurement?: OhifRow }) => void,
-  ) => { unsubscribe: () => void }
-}
-
 // Released rows mid-adoption: adding one broadcasts it synchronously, and it
 // stays released until that add returns.
 const adopting = new Set<string>()
@@ -315,12 +292,10 @@ export function useOhifRowImport(
   servicesManager: OhifServicesManager | undefined,
 ): void {
   useEffect(() => {
-    const ms = servicesManager?.services?.measurementService as
-      | RowService
-      | undefined
+    const ms = servicesManager?.services?.measurementService
     if (!nv || !seriesUid || !ms?.remove) return
     const take = (
-      row: OhifRow | undefined,
+      row: OhifMeasurement | undefined,
       releasing?: NiivueViewportEntry['nv'],
     ) => {
       if (!row) return
@@ -391,7 +366,11 @@ export function useOhifRowImport(
       ms.EVENTS?.MEASUREMENT_ADDED,
       ms.EVENTS?.RAW_MEASUREMENT_ADDED,
     ].map((event) =>
-      event ? ms.subscribe?.(event, (e) => take(e.measurement)) : undefined,
+      event
+        ? ms.subscribe?.(event, (e: { measurement?: OhifMeasurement }) =>
+            take(e.measurement),
+          )
+        : undefined,
     )
     return () => {
       unsubscribeReleased()

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { type CineServiceLike, paneFrames } from './frames4D'
+import { paneFrames } from './frames4D'
 import { getNiivueEntry, type NiivueViewportEntry } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
 import { scrollImage } from './standardCommands'
@@ -7,18 +7,6 @@ import { scrollImage } from './standardCommands'
 // OHIF's Cine (toolbar, `c`) only flips cineService state: cornerstone's own
 // viewport draws the player and plays the clip. NiiVue panes not showing a 4D
 // series (those step frames, frames4D.ts) get the same player and a slice clip.
-
-type CineService = Omit<CineServiceLike, 'getState'> & {
-  getState?: () =>
-    | {
-        isCineEnabled?: boolean
-        cines?: Record<string, { isPlaying?: boolean; frameRate?: number }>
-      }
-    | undefined
-  setIsCineEnabled?: (isCineEnabled: boolean) => void
-  subscribe?: (event: string, cb: () => void) => { unsubscribe(): void }
-  EVENTS?: { CINE_STATE_CHANGED?: string }
-}
 
 /** One image forward; past the last, back to the first (cornerstone's loop). */
 export function cineStep(entry: NiivueViewportEntry): void {
@@ -40,7 +28,7 @@ export function SliceCine({
   isLoaded: boolean
   servicesManager: OhifServicesManager | undefined
 }) {
-  const cine = servicesManager?.services?.cineService as CineService | undefined
+  const cine = servicesManager?.services?.cineService
   const read = () => {
     const s = cine?.getState?.()
     return { enabled: !!s?.isCineEnabled, ...s?.cines?.[viewportId] }

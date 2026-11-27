@@ -16,19 +16,12 @@ import type {
 const CANCEL = 0
 const HYDRATE = 5
 
-type Subscribable = {
-  subscribe?: (event: string, cb: () => void) => { unsubscribe(): void }
-  EVENTS?: Record<string, string>
-}
-
 /** Whether `viewportId` is the grid's active pane, kept current. */
 function useIsActiveViewport(
   viewportId: string,
   servicesManager: OhifServicesManager | undefined,
 ): boolean {
-  const grid = ohifServices(servicesManager)?.viewportGridService as
-    | (Subscribable & { getActiveViewportId?: () => string | undefined })
-    | undefined
+  const grid = ohifServices(servicesManager)?.viewportGridService
   const read = () => grid?.getActiveViewportId?.() === viewportId
   const [isActive, setIsActive] = useState(read)
   // biome-ignore lint/correctness/useExhaustiveDependencies: read closes over grid and viewportId
@@ -73,9 +66,7 @@ export function useHydratePrompt(
   useEffect(() => {
     if (!seg || !isPreview || !isLoaded || !isActive) return
     const services = ohifServices(servicesManager)
-    const dialog = services?.uiViewportDialogService as
-      | { show(p: Record<string, unknown>): void; hide(): void }
-      | undefined
+    const dialog = services?.uiViewportDialogService
     const hydrate = () =>
       ohifCommandsManager(managers.commandsManager)?.runCommand?.(
         'hydrateSecondaryDisplaySet',
@@ -99,9 +90,7 @@ export function useHydratePrompt(
       dialog.hide()
       if (response === HYDRATE) hydrate()
     }
-    const customization = services?.customizationService as
-      | { getCustomization?: (id: string) => unknown }
-      | undefined
+    const customization = services?.customizationService
     dialog.show({
       id: isRt ? 'promptHydrateRT' : 'promptHydrateSEG',
       viewportId,
@@ -172,9 +161,7 @@ export function PaneCorner({
     document.addEventListener('mousemove', move)
     return () => document.removeEventListener('mousemove', move)
   }, [])
-  const toolbar = ohifServices(servicesManager)?.toolbarService as
-    | { getButtonComponentForUIType?: (t: string) => unknown }
-    | undefined
+  const toolbar = ohifServices(servicesManager)?.toolbarService
   type Component =
     | React.ComponentType<Record<string, unknown>>
     | null

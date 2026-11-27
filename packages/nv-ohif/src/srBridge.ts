@@ -6,7 +6,11 @@
 // ponytail: editing a mirrored annotation in a cornerstone pane updates the row
 // through cornerstone's mapping, not back into NiiVue.
 import { cornerstoneLibraries } from './niivueRegistry'
-import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
+import type {
+  OhifExtensionManager,
+  OhifMeasurement,
+  OhifServicesManager,
+} from './ohif-types'
 
 // Tools the SR adapters encode (SplineROI and LivewireContour have none).
 const SR_TOOLS = new Set([
@@ -106,15 +110,7 @@ function annotationManager(
 
 type MeasurementEvent = {
   source?: { name?: string }
-  measurement?: MirroredMeasurement | string
-}
-type Subscribable = {
-  EVENTS?: Record<string, string>
-  getMeasurements?: () => MirroredMeasurement[]
-  subscribe?: (
-    event: string,
-    cb: (e: MeasurementEvent) => void,
-  ) => { unsubscribe: () => void }
+  measurement?: OhifMeasurement | string
 }
 
 /** Mirror NiiVue-source rows into cornerstone's annotation state; returns the unsubscribe. */
@@ -122,9 +118,7 @@ export function mirrorNiivueMeasurements(
   servicesManager: OhifServicesManager | undefined,
   extensionManager: OhifExtensionManager | undefined,
 ): () => void {
-  const ms = servicesManager?.services?.measurementService as
-    | Subscribable
-    | undefined
+  const ms = servicesManager?.services?.measurementService
   if (!ms?.EVENTS || !ms.subscribe) return () => {}
   const mirrored = new Set<string>()
   // Looked up on use: the cornerstone extension may register after this one.
@@ -137,7 +131,8 @@ export function mirrorNiivueMeasurements(
     if (!m || typeof m === 'string') return
     if ((e.source ?? m.source)?.name !== 'NiiVue') return
     remove(m.uid)
-    const annotation = toCornerstoneAnnotation(m)
+    // NiiVue rows are reflected with toolName and points.
+    const annotation = toCornerstoneAnnotation(m as MirroredMeasurement)
     const manager = annotationManager(extensionManager)
     if (!annotation || !manager) return
     manager.addAnnotation(annotation)

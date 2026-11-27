@@ -1,4 +1,4 @@
-import { buildLine, WgpuLineRenderer } from '@niivue/uikit'
+import { buildLine, type LineData, WgpuLineRenderer } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
@@ -39,10 +39,10 @@ import {
   findLabelVolume,
   hasScalarIntensity,
 } from '@/view/NVCinematic'
-import { buildColorbarLabels, colorbarTotalHeight } from '@/view/NVColorbar'
+import { colorbarTotalHeight } from '@/view/NVColorbar'
 import { crosscutMM, crosscutPlanes } from '@/view/NVCrosscut'
 import { hiddenArmAlpha } from '@/view/NVCrosshair'
-import { HEADER_BACK_COLOR, resolveHeaderLabel } from '@/view/NVFont'
+import { appendFrameLines, buildOverlayText } from '@/view/NVFrameOverlay'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
@@ -50,10 +50,8 @@ import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import {
   buildPlaneOutline3DRenderData,
-  buildPlaneOutlineLines,
   mergeRenderData,
 } from '@/view/NVPlaneOutline'
-import * as NVRuler from '@/view/NVRuler'
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
@@ -78,7 +76,7 @@ import {
 } from '@/volume/chunking'
 import { sliceInterpolation } from '@/volume/interpolation'
 import { volumeCacheKey } from '@/volume/orientChunked'
-import { residentPickSampler, sceneUnit } from '@/volume/utils'
+import { residentPickSampler } from '@/volume/utils'
 import { WGPUBench } from './bench'
 import { maxBlendSliceDim } from './blendOverlays'
 import { BoxLineRenderer } from './boxLine'
@@ -1794,168 +1792,56 @@ export default class NVView {
     if (this.model.ui.isColorbarVisible) {
       this.colorbarRenderer.draw(device, pass)
     }
-    // Layer 4: Lines (full-canvas) — used by graph
-    let graphLines: ReturnType<typeof buildLine>[] = []
+    // Layer 4: Lines (full-canvas) — graph, ruler, annotation strokes, cross-lines, outlines
+    const lines: LineData[] = []
     // Project this frame's annotations: drawn below, hit-tested by pickAnnotation.
     NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
     if (this.fontRenderer.isReady) {
-      const hasContent =
-        this.model.getMeshes().length > 0 ||
-        volumes.length > 0 ||
-        this.model.signals.length > 0
-      const headerStr = resolveHeaderLabel(
-        this.model.ui.placeholderText,
-        hasContent,
-        'WebGPU',
-        log.level === 'debug',
-      )
-      if (headerStr !== '') {
-        labels.push(
-          this.fontRenderer.buildText(
-            headerStr,
-            ix + iw * 0.5,
-            iy,
-            1.5,
-            [0, 0, 0, 1],
-            0.5,
-            -0.2,
-            HEADER_BACK_COLOR,
-          ),
-        )
-      }
-      // Colorbar labels and tick marks
-      if (this.model.ui.isColorbarVisible) {
-        const colorbarLabels = buildColorbarLabels(
-          this.colorbarRenderer.getColorbarInfos(),
-          (s, x, y, sc, c, ax, ay, bc) =>
-            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-          this.colorbarRenderer.getLayout(),
-        )
-        labels.push(...colorbarLabels)
-      }
-      // Legend labels for label colormaps
-      this.legendLayout = legendLayout
-      if (legendLayout) {
-        // Placed once the graph's width is known.
-        legendLayout.x = ix + iw - legendWidth - graphWidth
-        const legendLabels = NVLegend.buildLegendLabels(
-          legendLayout,
-          (s, x, y, sc, c, ax, ay, bc) =>
-            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-          md.scene.backgroundColor,
-        )
-        labels.push(...legendLabels)
-      }
-      // Graph labels and lines for 4D frame intensity
-      if (graphData && graphWidth > 0) {
-        const graphDpr = effectiveDevicePixelRatio(this.forceDevicePixelRatio)
-        const graphLayout = NVGraph.computeGraphLayout(
-          graphData,
+      const annotation = buildOverlayText(
+        this,
+        md,
+        this.fontRenderer,
+        this.colorbarRenderer,
+        {
+          ix,
+          iy,
           iw,
           ih,
           cbHeight,
-          graphDpr,
+          legendLayout,
+          legendWidth,
+          graphData,
           graphWidth,
-        )
-        this.graphLayout =
-          graphLayout && NVGraph.translateGraphLayout(graphLayout, ix, iy)
-        if (this.graphLayout) {
-          const graphElements = NVGraph.buildGraphElements(
-            graphData,
-            this.graphLayout,
-            (s, x, y, sc, c, ax, ay, bc) =>
-              this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-            buildLine,
-            md.scene.backgroundColor,
-          )
-          labels.push(...graphElements.labels)
-          graphLines = graphElements.lines
-        }
-      } else {
-        this.graphLayout = null
-      }
-      // Ruler
-      if (md.ui.isRulerVisible) {
-        const rulerResult = NVRuler.buildRuler(
           screenSlices,
-          (s, x, y, sc, c, ax, ay, bc) =>
-            this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-          buildLine,
-          md.ui.fontColor,
-          md.scene.pan2Dxyzmm,
-          sceneUnit(md).mm,
-          this.slidePlane
-            ? {
-                furthestFromPivot: md.furthestFromPivot,
-                scaleMultiplier: md.scene.scaleMultiplier,
-              }
-            : undefined,
-          md.ui.rulerUnits,
-        )
-        if (rulerResult) {
-          labels.push(...rulerResult.labels)
-          graphLines.push(...rulerResult.lines)
-        }
-      }
-      // Vector annotations
-      const annotationResult = NVAnnotation.buildAnnotationRenderData(
-        this.model,
-        screenSlices,
-        buildLine,
-        this.fontRenderer.buildText.bind(this.fontRenderer),
+        },
+        labels,
+        lines,
+        'WebGPU',
         this._dpr,
-        this.fontRenderer.fontPx * 0.5,
+        this.forceDevicePixelRatio,
+        !!this.slidePlane,
       )
-      if (annotationResult) {
-        this.polygonRenderer.draw(device, pass, annotationResult)
-        graphLines.push(...annotationResult.strokeLines)
-        labels.push(...annotationResult.labels)
-      }
-      // Drag overlay: the selection box as a panel rectangle
-      const overlay = this.model._dragOverlay
-      if (overlay?.rect) {
-        labels.push({
-          data: new Float32Array(0),
-          count: 0,
-          backColor: overlay.rect.color,
-          backRect: [...overlay.rect.ltwh],
-          backRadius: 0,
-        })
-      }
+      if (annotation) this.polygonRenderer.draw(device, pass, annotation)
       this.fontRenderer.draw(device, pass, labels)
     }
-    // Draw graph lines, cross-lines and the bounds border via the line renderer
-    const allLines = [...graphLines, ...crossLinesList]
-    allLines.push(
-      ...buildPlaneOutlineLines(
-        md.planeOutlines,
-        screenSlices,
-        buildLine,
-        md.ui.crosshairColor,
-        NVAnnotation.computeTolerance(md),
-      ),
+    appendFrameLines(
+      lines,
+      crossLinesList,
+      md,
+      screenSlices,
+      this.options,
+      this._isSubCanvasBounds,
+      canvasWidth,
+      canvasHeight,
     )
-    // Bounds border
-    if (this._isSubCanvasBounds && this.options.showBoundsBorder) {
-      const bc = (this.options.boundsBorderColor as number[]) ?? [1, 1, 1, 1]
-      const bt = (this.options.boundsBorderThickness as number) ?? 2
-      allLines.push(buildLine(0, 0, canvasWidth, 0, bt, bc))
-      allLines.push(
-        buildLine(0, canvasHeight, canvasWidth, canvasHeight, bt, bc),
-      )
-      allLines.push(buildLine(0, 0, 0, canvasHeight, bt, bc))
-      allLines.push(
-        buildLine(canvasWidth, 0, canvasWidth, canvasHeight, bt, bc),
-      )
-    }
     this.lineRenderer.draw(
       device,
       pass,
       this.preferredCanvasFormat,
       this.sampleCount,
       DEPTH_FORMAT,
-      allLines,
+      lines,
       bw,
       bh,
     )

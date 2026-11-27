@@ -24,19 +24,9 @@ import {
   resolveButtonStyle,
   scaleButton,
 } from './button'
-import {
-  UIKitControls,
-  type UIKitHost,
-  type UIKitInteractive,
-  type UIKitKeyEvent,
-  type UIKitRedrawSource,
-} from './controls'
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
-import {
-  UIKitDrawBundle,
-  UIKitEntryMap,
-  type UIKitGeometry,
-} from './overlayParts'
+import { UIKitControls, type UIKitHost, type UIKitKeyEvent } from './controls'
+import type { UIKitOverlayFrame } from './hook'
+import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 
@@ -74,40 +64,28 @@ interface ButtonEntry {
   pulse: boolean
 }
 
-export class UIKitButtonOverlay
-  implements UIKitOverlayRenderer, UIKitInteractive
-{
+const MODEL = {
+  defaultStyle: DEFAULT_BUTTON_STYLE,
+  resolveStyle: resolveButtonStyle,
+  scale: scaleButton,
+  layout: layoutButton,
+  contains: buttonContains,
+}
+
+export class UIKitButtonOverlay extends UIKitEntryOverlay<
+  ButtonSpec,
+  ButtonStyle,
+  ButtonLayout,
+  ButtonEntry
+> {
   readonly hoverCursor = 'pointer'
-  private readonly font: UIKitFont
-  private readonly bundle: UIKitDrawBundle
-  private readonly entries: UIKitEntryMap<ButtonLayout, ButtonEntry>
-  private baseStyle: ButtonStyle
   private readonly now: () => number
   private lastTick = 0
   private pressedId: string | null = null
-  private hoverId: string | null = null
-  /** The button that takes Enter/Space, set by the last press on it. */
-  private focusedId: string | null = null
 
   constructor(font: UIKitFont, options: UIKitButtonOverlayOptions = {}) {
-    this.font = font
-    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
-    this.entries = new UIKitEntryMap((entry, scale) => {
-      const { spec, style } = scaleButton(entry.spec, entry.style, scale)
-      return layoutButton(spec, style, font.metrics)
-    }, options.cssUnits ?? false)
-    this.baseStyle = resolveButtonStyle(DEFAULT_BUTTON_STYLE, options.style)
+    super(font, MODEL, options)
     this.now = options.now ?? (() => performance.now())
-  }
-
-  /** Replace the default style for every button (per-spec overrides still win). */
-  setDefaultStyle(style: Partial<ButtonStyle>): void {
-    this.baseStyle = resolveButtonStyle(DEFAULT_BUTTON_STYLE, style)
-    for (const entry of this.entries.values()) {
-      entry.style = resolveButtonStyle(this.baseStyle, entry.spec.style)
-      entry.layout = null
-    }
-    this.invalidate()
   }
 
   /** Add a button, or replace the one with the same id (keeping its press state). */
@@ -164,11 +142,6 @@ export class UIKitButtonOverlay
     this.updateButton(id, { enabled })
   }
 
-  /** The ids of all buttons, in draw order. */
-  get ids(): string[] {
-    return this.entries.ids
-  }
-
   /**
    * The resting box of a button in spec units (canvas pixels, or CSS pixels
    * with `cssUnits`), or null for an unknown id. Handy for placing the next
@@ -199,11 +172,6 @@ export class UIKitButtonOverlay
     entry.pressTarget = 1
     this.startAnimation()
     entry.spec.onClick?.(id)
-  }
-
-  /** True when canvas point (x, y) is over an enabled button. */
-  hitTest(x: number, y: number): boolean {
-    return this.hitEntry(x, y) !== null
   }
 
   /**
@@ -298,10 +266,6 @@ export class UIKitButtonOverlay
     this.focusedId = null
   }
 
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.bundle.bind(layer)
-  }
-
   /**
    * Wire the host canvas's pointer events to this overlay alone and return a
    * function that unwires them: a one-widget `UIKitControls` layer. To combine
@@ -351,7 +315,7 @@ export class UIKitButtonOverlay
     return { animating, stepped }
   }
 
-  drawOverlay(frame: UIKitOverlayFrame): void {
+  override drawOverlay(frame: UIKitOverlayFrame): void {
     if (this.entries.size === 0) return
     const rescaled = this.entries.rescale(frame.dpr)
     const { animating, stepped } = this.tick()
@@ -360,32 +324,14 @@ export class UIKitButtonOverlay
     if (animating) this.bundle.invalidate()
   }
 
-  /** Release GPU resources on both backends. */
-  destroy(): void {
-    this.bundle.destroy()
-  }
-
-  private invalidate(): void {
-    this.bundle.invalidate()
-  }
-
   private startAnimation(): void {
     this.lastTick = this.now()
     this.invalidate()
   }
 
-  /** The topmost (last added) enabled button under a canvas point. */
-  private hitEntry(x: number, y: number): ButtonEntry | null {
-    return this.entries.topmost(buttonContains, x, y)
-  }
-
-  private *geometry(): Generator<UIKitGeometry> {
+  protected *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = scaleButton(
-        entry.spec,
-        entry.style,
-        this.entries.scale,
-      )
+      const { spec, style } = this.scaled(entry)
       const geo = buildButton(
         spec,
         style,

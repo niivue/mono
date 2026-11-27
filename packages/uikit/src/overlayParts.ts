@@ -1,9 +1,9 @@
 // Mechanics shared by the widget overlays: the rect + line + label bundle they
 // draw through, the entry map they keep specs in, and the entry-overlay base
-// that wires the two to a widget model. Pointer state, focus and callbacks
-// stay in each widget.
+// that wires the two to a widget model (with the hover and focus ids). Pointer
+// handling, keys and callbacks stay in each widget.
 
-import type { UIKitRedrawSource } from './controls'
+import type { UIKitInteractive, UIKitRedrawSource } from './controls'
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { LineData } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
@@ -171,12 +171,14 @@ export abstract class UIKitEntryOverlay<
   St,
   L,
   E extends { spec: S; style: St; layout: L | null },
-> implements UIKitOverlayRenderer
+> implements UIKitOverlayRenderer, UIKitInteractive
 {
   protected readonly bundle: UIKitDrawBundle
   protected readonly entries: UIKitEntryMap<L, E>
   protected baseStyle: St
   protected layer: UIKitRedrawSource | null = null
+  protected hoverId: string | null = null
+  protected focusedId: string | null = null
 
   constructor(
     protected readonly font: UIKitFont,
@@ -228,6 +230,15 @@ export abstract class UIKitEntryOverlay<
     this.bundle.destroy()
   }
 
+  /** Give an entry keyboard focus, or null to clear. Disabled entries refuse. */
+  protected moveFocus(id: string | null): void {
+    const next = this.entries.enabled(id) ? id : null
+    if (next === this.focusedId) return
+    this.focusedId = next
+    if (next !== null) this.layer?.focus?.(this)
+    this.invalidate()
+  }
+
   /** Drop an entry's cached layout (and anything measured from it). */
   protected relayout(entry: E): void {
     entry.layout = null
@@ -246,5 +257,9 @@ export abstract class UIKitEntryOverlay<
     return this.entries.topmost(this.model.contains, x, y)
   }
 
+  abstract pointerDown(x: number, y: number): boolean
+  abstract pointerMove(x: number, y: number): boolean
+  abstract pointerUp(x: number, y: number): boolean
+  abstract pointerCancel(): void
   protected abstract geometry(): Iterable<UIKitGeometry>
 }

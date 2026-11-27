@@ -7,17 +7,8 @@
 // `UIKitControls` layer with the other widgets, or feed `pointerDown/Move/Up`
 // and `keyDown` yourself from any host.
 
-import type {
-  UIKitInteractive,
-  UIKitKeyEvent,
-  UIKitRedrawSource,
-} from './controls'
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
-import {
-  UIKitDrawBundle,
-  UIKitEntryMap,
-  type UIKitGeometry,
-} from './overlayParts'
+import type { UIKitKeyEvent } from './controls'
+import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
 import {
   buildSlider,
@@ -55,37 +46,27 @@ interface SliderEntry {
   hover: boolean
 }
 
-export class UIKitSliderOverlay
-  implements UIKitOverlayRenderer, UIKitInteractive
-{
+const MODEL = {
+  defaultStyle: DEFAULT_SLIDER_STYLE,
+  resolveStyle: resolveSliderStyle,
+  scale: scaleSlider,
+  layout: layoutSlider,
+  contains: sliderContains,
+}
+
+export class UIKitSliderOverlay extends UIKitEntryOverlay<
+  SliderSpec,
+  SliderStyle,
+  SliderLayout,
+  SliderEntry
+> {
   readonly hoverCursor = 'pointer'
-  private readonly bundle: UIKitDrawBundle
-  private readonly entries: UIKitEntryMap<SliderLayout, SliderEntry>
-  private baseStyle: SliderStyle
   private dragId: string | null = null
   /** The value when the drag started, to decide whether release fires onChange. */
   private dragStartValue = 0
-  private hoverId: string | null = null
-  private focusedId: string | null = null
-  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitSliderOverlayOptions = {}) {
-    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
-    this.entries = new UIKitEntryMap((entry, scale) => {
-      const { spec, style } = scaleSlider(entry.spec, entry.style, scale)
-      return layoutSlider(spec, style, font.metrics)
-    }, options.cssUnits ?? false)
-    this.baseStyle = resolveSliderStyle(DEFAULT_SLIDER_STYLE, options.style)
-  }
-
-  /** Replace the default style for every slider (per-spec overrides still win). */
-  setDefaultStyle(style: Partial<SliderStyle>): void {
-    this.baseStyle = resolveSliderStyle(DEFAULT_SLIDER_STYLE, style)
-    for (const entry of this.entries.values()) {
-      entry.style = resolveSliderStyle(this.baseStyle, entry.spec.style)
-      entry.layout = null
-    }
-    this.bundle.invalidate()
+    super(font, MODEL, options)
   }
 
   /**
@@ -171,11 +152,6 @@ export class UIKitSliderOverlay
     return this.entries.get(id)?.value
   }
 
-  /** The ids of all sliders, in draw order. */
-  get ids(): string[] {
-    return this.entries.ids
-  }
-
   /** A slider's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): SliderLayout | null {
     const entry = this.entries.get(id)
@@ -198,20 +174,12 @@ export class UIKitSliderOverlay
 
   /** Give a slider keyboard focus, or null to clear. Disabled sliders refuse. */
   focus(id: string | null): void {
-    const next = this.entries.enabled(id) ? id : null
-    if (next === this.focusedId) return
-    this.focusedId = next
-    if (next !== null) this.layer?.focus?.(this)
-    this.bundle.invalidate()
+    this.moveFocus(id)
   }
 
   /** True while a thumb is being dragged. */
   get isDragging(): boolean {
     return this.dragId !== null
-  }
-
-  hitTest(x: number, y: number): boolean {
-    return this.hitEntry(x, y) !== null
   }
 
   /** Jumps the thumb to the pointer and starts a drag. */
@@ -307,22 +275,6 @@ export class UIKitSliderOverlay
     this.focus(null)
   }
 
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.bundle.bind(layer)
-    this.layer = layer
-  }
-
-  drawOverlay(frame: UIKitOverlayFrame): void {
-    if (this.entries.size === 0) return
-    const rescaled = this.entries.rescale(frame.dpr)
-    this.bundle.draw(frame, () => this.geometry(), rescaled)
-  }
-
-  /** Release GPU resources on both backends. */
-  destroy(): void {
-    this.bundle.destroy()
-  }
-
   private endDrag(): void {
     const id = this.dragId
     this.dragId = null
@@ -342,18 +294,9 @@ export class UIKitSliderOverlay
     entry.spec.onInput?.(v, entry.spec.id)
   }
 
-  /** The topmost (last added) enabled slider under a canvas point. */
-  private hitEntry(x: number, y: number): SliderEntry | null {
-    return this.entries.topmost(sliderContains, x, y)
-  }
-
-  private *geometry(): Generator<UIKitGeometry> {
+  protected *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = scaleSlider(
-        entry.spec,
-        entry.style,
-        this.entries.scale,
-      )
+      const { spec, style } = this.scaled(entry)
       const id = entry.spec.id
       yield buildSlider(spec, style, this.entries.layoutOf(entry), {
         value: entry.value,

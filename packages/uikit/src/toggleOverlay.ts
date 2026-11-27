@@ -5,17 +5,8 @@
 // Enter then flips it. Add it to a `UIKitControls` layer with the other widgets,
 // or feed `pointerDown/Move/Up` and `keyDown` yourself from any host.
 
-import type {
-  UIKitInteractive,
-  UIKitKeyEvent,
-  UIKitRedrawSource,
-} from './controls'
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
-import {
-  UIKitDrawBundle,
-  UIKitEntryMap,
-  type UIKitGeometry,
-} from './overlayParts'
+import type { UIKitKeyEvent } from './controls'
+import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 import {
@@ -50,39 +41,27 @@ interface ToggleEntry {
   hover: boolean
 }
 
-export class UIKitToggleOverlay
-  implements UIKitOverlayRenderer, UIKitInteractive
-{
+const MODEL = {
+  defaultStyle: DEFAULT_TOGGLE_STYLE,
+  resolveStyle: resolveToggleStyle,
+  scale: scaleToggle,
+  layout: layoutToggle,
+  contains: toggleContains,
+}
+
+export class UIKitToggleOverlay extends UIKitEntryOverlay<
+  ToggleSpec,
+  ToggleStyle,
+  ToggleLayout,
+  ToggleEntry
+> {
   readonly hoverCursor = 'pointer'
-  private readonly font: UIKitFont
-  private readonly bundle: UIKitDrawBundle
-  private readonly entries: UIKitEntryMap<ToggleLayout, ToggleEntry>
-  private baseStyle: ToggleStyle
   private pressedId: string | null = null
   /** While pressed: whether the pointer is currently over the pressed toggle. */
   private pressInside = false
-  private hoverId: string | null = null
-  private focusedId: string | null = null
-  private layer: UIKitRedrawSource | null = null
 
   constructor(font: UIKitFont, options: UIKitToggleOverlayOptions = {}) {
-    this.font = font
-    this.bundle = new UIKitDrawBundle(font, options.requestRedraw)
-    this.entries = new UIKitEntryMap((entry, scale) => {
-      const { spec, style } = scaleToggle(entry.spec, entry.style, scale)
-      return layoutToggle(spec, style, font.metrics)
-    }, options.cssUnits ?? false)
-    this.baseStyle = resolveToggleStyle(DEFAULT_TOGGLE_STYLE, options.style)
-  }
-
-  /** Replace the default style for every toggle (per-spec overrides still win). */
-  setDefaultStyle(style: Partial<ToggleStyle>): void {
-    this.baseStyle = resolveToggleStyle(DEFAULT_TOGGLE_STYLE, style)
-    for (const entry of this.entries.values()) {
-      entry.style = resolveToggleStyle(this.baseStyle, entry.spec.style)
-      entry.layout = null
-    }
-    this.bundle.invalidate()
+    super(font, MODEL, options)
   }
 
   /**
@@ -162,11 +141,6 @@ export class UIKitToggleOverlay
     entry.spec.onChange?.(entry.checked, id)
   }
 
-  /** The ids of all toggles, in draw order. */
-  get ids(): string[] {
-    return this.entries.ids
-  }
-
   /** A toggle's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
   getLayout(id: string): ToggleLayout | null {
     const entry = this.entries.get(id)
@@ -187,15 +161,7 @@ export class UIKitToggleOverlay
 
   /** Give a toggle keyboard focus (Space/Enter flips it), or null to clear. */
   focus(id: string | null): void {
-    const next = this.entries.enabled(id) ? id : null
-    if (next === this.focusedId) return
-    this.focusedId = next
-    if (next !== null) this.layer?.focus?.(this)
-    this.bundle.invalidate()
-  }
-
-  hitTest(x: number, y: number): boolean {
-    return this.hitEntry(x, y) !== null
+    this.moveFocus(id)
   }
 
   pointerDown(x: number, y: number): boolean {
@@ -266,34 +232,9 @@ export class UIKitToggleOverlay
     this.focus(null)
   }
 
-  bindLayer(layer: UIKitRedrawSource): void {
-    this.bundle.bind(layer)
-    this.layer = layer
-  }
-
-  drawOverlay(frame: UIKitOverlayFrame): void {
-    if (this.entries.size === 0) return
-    const rescaled = this.entries.rescale(frame.dpr)
-    this.bundle.draw(frame, () => this.geometry(), rescaled)
-  }
-
-  /** Release GPU resources on both backends. */
-  destroy(): void {
-    this.bundle.destroy()
-  }
-
-  /** The topmost (last added) enabled toggle under a canvas point. */
-  private hitEntry(x: number, y: number): ToggleEntry | null {
-    return this.entries.topmost(toggleContains, x, y)
-  }
-
-  private *geometry(): Generator<UIKitGeometry> {
+  protected *geometry(): Generator<UIKitGeometry> {
     for (const entry of this.entries.values()) {
-      const { spec, style } = scaleToggle(
-        entry.spec,
-        entry.style,
-        this.entries.scale,
-      )
+      const { spec, style } = this.scaled(entry)
       const id = entry.spec.id
       const geo = buildToggle(
         spec,

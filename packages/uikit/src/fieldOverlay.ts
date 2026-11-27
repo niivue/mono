@@ -4,7 +4,7 @@
 // for single-line fields the caret mapping and glyph scrolling. Parsing,
 // paste filtering, pointer handling and drawing stay in each widget.
 
-import type { UIKitInteractive, UIKitKeyEvent } from './controls'
+import type { UIKitKeyEvent } from './controls'
 import { type ClipboardBridge, createBrowserClipboard } from './host'
 import {
   type UIKitEntryModel,
@@ -52,18 +52,13 @@ export interface UIKitFieldOverlayOptions<St>
 }
 
 export abstract class UIKitFieldOverlay<
-    V,
-    S extends FieldSpec<St, V>,
-    St,
-    L,
-    E extends FieldEntry<S, St, L, V>,
-  >
-  extends UIKitEntryOverlay<S, St, L, E>
-  implements UIKitInteractive
-{
+  V,
+  S extends FieldSpec<St, V>,
+  St,
+  L,
+  E extends FieldEntry<S, St, L, V>,
+> extends UIKitEntryOverlay<S, St, L, E> {
   protected clipboard: ClipboardBridge | null
-  protected hoverId: string | null = null
-  protected focusedId: string | null = null
   /** The held press. */
   protected pressId: string | null = null
 
@@ -95,9 +90,6 @@ export abstract class UIKitFieldOverlay<
   ): boolean
   abstract paste(text: string): boolean
   abstract submitsForm(e: UIKitKeyEvent): boolean
-  abstract pointerDown(x: number, y: number): boolean
-  abstract pointerMove(x: number, y: number): boolean
-  abstract pointerUp(x: number, y: number): boolean
 
   /** Set a field's value from code. Fires no callback; a focused field shows it selected. */
   setValue(id: string, value: V): void {

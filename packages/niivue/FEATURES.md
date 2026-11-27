@@ -234,7 +234,6 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `annotationActiveLabel`, `annotationActiveGroup` | Prop | No | |
 | `annotationBrushRadius` | Prop | No | |
 | `annotationIsErasing` | Prop | No | |
-| `annotationIsLivewireScissors` | Prop | No | Live wire uses cornerstone's LivewireScissors cost |
 | `annotationIsVisibleIn3D` | Prop | No | |
 | `annotationIsGrabbable`, `annotationIsCut` | Prop | No | Host predicates (functions, default `null`): which shapes can be grabbed, erased, merged or cut; which shapes of another label a new shape cuts (false: they overlap). Not saved or serialized |
 | `annotationStyle` | Prop | No | `AnnotationStyle` |

@@ -102,17 +102,6 @@
       "doc": "See {@link AnnotationConfig.isHandleGrab}."
     },
     {
-      "jsName": "annotationIsLivewireScissors",
-      "pyName": "annotation_is_livewire_scissors",
-      "tsType": "boolean",
-      "pyTraitlet": {
-        "kind": "Bool"
-      },
-      "hasGetter": true,
-      "hasSetter": true,
-      "doc": "See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire."
-    },
-    {
       "jsName": "annotationIsVisibleIn3D",
       "pyName": "annotation_is_visible_in_3d",
       "tsType": "boolean",

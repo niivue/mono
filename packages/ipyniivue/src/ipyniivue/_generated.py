@@ -118,8 +118,6 @@ affect whether annotations *render* — they always do."""
     annotation_is_erasing = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_is_handle_grab = traitlets.Bool(None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.isHandleGrab}."""
-    annotation_is_livewire_scissors = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    """See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire."""
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_merged_groups = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.mergedGroups}."""

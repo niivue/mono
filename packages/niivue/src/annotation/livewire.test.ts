@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  buildLivewireCost,
   buildScissorsCost,
   livewireBacktrack,
-  livewireField,
   livewireFieldScissors,
 } from './livewire'
 
@@ -15,22 +13,11 @@ function stripeImage(w: number, h: number, stripeX: number): Float32Array {
 }
 
 describe('livewire', () => {
-  test('cost is lower on a strong edge than in a flat region', () => {
-    const w = 20
-    const h = 20
-    const cost = buildLivewireCost(stripeImage(w, h, 10), w, h)
-    // Beside the stripe (x=9/11) the gradient is strong -> low cost.
-    const edge = cost[10 * w + 9]
-    // A flat interior region far from the stripe -> high cost.
-    const flat = cost[10 * w + 3]
-    expect(edge).toBeLessThan(flat)
-  })
-
   test('backtracked path is seed-first, 8-connected, ends at the target', () => {
     const w = 20
     const h = 20
-    const cost = buildLivewireCost(stripeImage(w, h, 10), w, h)
-    const prev = livewireField(cost, w, h, 10, 2)
+    const sc = buildScissorsCost(stripeImage(w, h, 10), w, h, 0, 100)
+    const prev = livewireFieldScissors(sc, w, h, 10, 2)
     const path = livewireBacktrack(prev, w, 10, 17)
     expect(path[0]).toEqual({ x: 10, y: 2 })
     expect(path[path.length - 1]).toEqual({ x: 10, y: 17 })
@@ -43,21 +30,8 @@ describe('livewire', () => {
     }
   })
 
-  test('the path snaps to the edge column rather than wandering', () => {
-    const w = 20
-    const h = 20
-    const cost = buildLivewireCost(stripeImage(w, h, 10), w, h)
-    const prev = livewireField(cost, w, h, 10, 2)
-    const path = livewireBacktrack(prev, w, 10, 17)
-    // Every point hugs the vertical edge near column 10.
-    for (const p of path) {
-      expect(Math.abs(p.x - 10)).toBeLessThanOrEqual(1)
-    }
-  })
-
-  // cornerstone's cost (a step-dependent direction term, its own loop): from
-  // seeds 3 columns off a step edge, the path still runs along the edge.
-  test('scissors cost: the path runs along a step edge', () => {
+  // From seeds 3 columns off a step edge, the path still runs along the edge.
+  test('the path runs along a step edge', () => {
     const w = 24
     const h = 24
     const img = new Float32Array(w * h)

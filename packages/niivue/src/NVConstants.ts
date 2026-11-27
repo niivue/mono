@@ -640,7 +640,6 @@ export const ANNOTATION_DEFAULTS: AnnotationConfig = {
   isHandleGrab: false,
   mergedGroups: null,
   isAreaGeometric: false,
-  isLivewireScissors: false,
   isErasing: false,
   isVisibleIn3D: false,
   tool: 'freehand',

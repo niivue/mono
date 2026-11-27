@@ -538,9 +538,6 @@ export default class NVModel {
       ...(options.annotationAreaIsGeometric !== undefined && {
         isAreaGeometric: options.annotationAreaIsGeometric,
       }),
-      ...(options.annotationIsLivewireScissors !== undefined && {
-        isLivewireScissors: options.annotationIsLivewireScissors,
-      }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,
       }),

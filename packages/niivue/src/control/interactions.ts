@@ -496,21 +496,18 @@ function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
       vol,
       ctrl._annotationPolySliceType,
       ctrl._annotationPolySlicePosition,
-      ctrl.model.annotation.isLivewireScissors,
     )
   }
   const slice = ctrl._livewireSlice
   if (!slice) return false
   const g = Annotation.slice2DToGrid(slice, pt)
-  ctrl._livewireField = slice.scissors
-    ? Annotation.livewireFieldScissors(
-        slice.scissors,
-        slice.width,
-        slice.height,
-        g.x,
-        g.y,
-      )
-    : Annotation.livewireField(slice.cost, slice.width, slice.height, g.x, g.y)
+  ctrl._livewireField = Annotation.livewireFieldScissors(
+    slice.scissors,
+    slice.width,
+    slice.height,
+    g.x,
+    g.y,
+  )
   ctrl._livewireSeed = g
   return true
 }

@@ -187,8 +187,6 @@ export const DEFAULT_OPTIONS: Partial<NiiVueOptions> = {
   annotationIsDrawnFromCenter: true,
   // ROI area as cornerstone reports it: the outline's, not a voxel count.
   annotationAreaIsGeometric: true,
-  // Live wire with cornerstone's LivewireScissors edge cost.
-  annotationIsLivewireScissors: true,
   // Cornerstone's handles: a press on any measurement's handle drags it,
   // whatever the tool, with no selecting click first.
   annotationIsHandleGrab: true,

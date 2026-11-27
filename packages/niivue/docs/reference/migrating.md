@@ -190,7 +190,6 @@ Complete mapping from old property names/locations to new API.
 | (new) | `annotation.activeGroup` | `nv1.annotationActiveGroup` |
 | (new) | `annotation.brushRadius` | `nv1.annotationBrushRadius` |
 | (new) | `annotation.isErasing` | `nv1.annotationIsErasing` |
-| (new) | `annotation.isLivewireScissors` | `nv1.annotationIsLivewireScissors` |
 | (new) | `annotation.isVisibleIn3D` | `nv1.annotationIsVisibleIn3D` |
 | (new) | `annotation.style` | `nv1.annotationStyle` |
 | (new) | `annotation.tool` | `nv1.annotationTool` |

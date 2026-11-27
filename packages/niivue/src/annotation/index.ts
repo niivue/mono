@@ -12,11 +12,7 @@ import {
   clipperInflatePath,
   clipperSubtractBrush,
 } from './clipper'
-import {
-  livewireBacktrack,
-  livewireField,
-  livewireFieldScissors,
-} from './livewire'
+import { livewireBacktrack, livewireFieldScissors } from './livewire'
 import {
   extractLivewireSlice,
   gridToSlice2D,
@@ -64,7 +60,6 @@ export {
   isOnSlice,
   isTwoLineShape,
   livewireBacktrack,
-  livewireField,
   livewireFieldScissors,
   mmToSlice2D,
   resizePolygons,

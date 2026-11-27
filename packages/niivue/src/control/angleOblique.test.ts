@@ -2,7 +2,7 @@ import { expect, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import { generateShape } from '@/annotation/index'
-import { buildLivewireCost } from '@/annotation/livewire'
+import { buildScissorsCost } from '@/annotation/livewire'
 import NiiVue from '@/NVControl'
 import * as Layout from '@/view/NVSliceLayout'
 import { initInteraction } from './interactions'
@@ -463,7 +463,7 @@ test('live wire needs three clicks to close', () =>
     const id = mat4.create()
     const slice = spyOn(Annotation, 'extractLivewireSlice').mockReturnValue({
       image: new Float32Array(w * w),
-      cost: buildLivewireCost(new Float32Array(w * w), w, w),
+      scissors: buildScissorsCost(new Float32Array(w * w), w, w, 0, 1),
       width: w,
       height: w,
       ax0: 0,

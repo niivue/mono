@@ -257,6 +257,60 @@ export function cornerstoneSegmentation(
   }>(extensionManager)?.cornerstoneTools?.segmentation
 }
 
+/** Drop a segmentation's `type` data: NiiVue holds it, and OHIF offers Save
+ * only for data it can read itself or none. */
+export function dropRepresentationData(
+  cst: CstSegmentation,
+  segmentationId: string,
+  type: string,
+) {
+  const added = cst.state.getSegmentation(segmentationId) as
+    | { representationData?: Record<string, unknown> }
+    | undefined
+  if (added?.representationData) delete added.representationData[type]
+}
+
+/** Add a colour LUT in the first free slot (removeColorLUT leaves holes). */
+export function addColorLUT(cst: CstSegmentation, lut: number[][]): number {
+  let free = 0
+  while (cst.state.getColorLUT(free)) free++
+  return cst.config.color.addColorLUT(lut, free)
+}
+
+/**
+ * Run `sync` on every OHIF segmentation event that may concern
+ * `segmentationId`; activating another segmentation on the pane restyles
+ * this one too. Returns the unsubscribe.
+ */
+export function onSegmentationChange(
+  service: OhifSegmentationService,
+  segmentationId: string,
+  sync: () => void,
+): () => void {
+  const { EVENTS } = service
+  const subscriptions = [
+    EVENTS.SEGMENTATION_MODIFIED,
+    EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED,
+    EVENTS.SEGMENTATION_STYLE_MODIFIED,
+    EVENTS.SEGMENTATION_REMOVED,
+    EVENTS.SEGMENTATION_REPRESENTATION_REMOVED,
+  ]
+    .filter((event): event is string => !!event)
+    .map((event) =>
+      service.subscribe(event, (e) => {
+        if (
+          !e?.segmentationId ||
+          e.segmentationId === segmentationId ||
+          event === EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED
+        )
+          sync()
+      }),
+    )
+  return () => {
+    for (const s of subscriptions) s.unsubscribe()
+  }
+}
+
 /** A distinct colour for segment `i` (golden-angle hues), for segments the source did not colour. */
 export function paletteColor(i: number): Color {
   const h = ((i * 137.508) % 360) / 60
@@ -406,15 +460,9 @@ export function startSegPanel(
     // OHIF offers Save only for a labelmap it can scan in cornerstone's cache
     // (or a segmentation with no voxel representation); NiiVue keeps the
     // voxels, so the entry carries none and the save commands read the drawing.
-    const added = cst.state.getSegmentation(segmentationId) as
-      | { representationData?: Record<string, unknown> }
-      | undefined
-    if (added?.representationData) delete added.representationData[LABELMAP]
+    dropRepresentationData(cst, segmentationId, LABELMAP)
   }
-  // removeColorLUT leaves a hole and addColorLUT appends by default: fill the first hole.
-  let freeIndex = 0
-  while (cst.state.getColorLUT(freeIndex)) freeIndex++
-  const lutIndex = cst.config.color.addColorLUT(lut, freeIndex)
+  const lutIndex = addColorLUT(cst, lut)
   addRepresentation(cst, viewportId, segmentationId, lutIndex)
 
   const specifier = { segmentationId, type: LABELMAP }
@@ -573,28 +621,9 @@ export function startSegPanel(
         onEdit,
       })
 
-  const { EVENTS } = service
-  const subscriptions = [
-    EVENTS.SEGMENTATION_MODIFIED,
-    EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED,
-    EVENTS.SEGMENTATION_STYLE_MODIFIED,
-    EVENTS.SEGMENTATION_REMOVED,
-    EVENTS.SEGMENTATION_REPRESENTATION_REMOVED,
-  ]
-    .filter((event): event is string => !!event)
-    .map((event) =>
-      service.subscribe(event, (e) => {
-        // Activating another segmentation on the pane restyles this one.
-        if (
-          !e?.segmentationId ||
-          e.segmentationId === segmentationId ||
-          event === EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED
-        )
-          sync()
-      }),
-    )
+  const unsubscribe = onSegmentationChange(service, segmentationId, sync)
   return () => {
-    for (const s of subscriptions) s.unsubscribe()
+    unsubscribe()
     stopEditing()
     if (panels.get(viewportId)?.segmentationId === segmentationId)
       panels.delete(viewportId)

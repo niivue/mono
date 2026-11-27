@@ -4,29 +4,26 @@ import { DEFAULT_OPTIONS } from './NiivueViewport'
 import type { OhifDisplaySet } from './ohif-types'
 import {
   resolveSegDisplaySets,
-  segColormap,
+  sidecarSegments,
   startSegDrawing,
 } from './segDrawing'
 
-describe('segColormap', () => {
-  test('sidecarSegments_becomeLabelColormapWithTransparentZero', () => {
-    const cmap = segColormap([
-      { LabelValue: 1, SegmentLabel: 'Left-Thalamus', RGB: [0, 118, 14] },
-      { LabelValue: 43, SegmentLabel: 'Right-Putamen', RGB: [236, 13, 176] },
+describe('sidecarSegments', () => {
+  test('sidecarSegments_keepValueLabelAndColour', () => {
+    expect(
+      sidecarSegments([
+        { LabelValue: 1, SegmentLabel: 'Left-Thalamus', RGB: [0, 118, 14] },
+        { LabelValue: 43, SegmentLabel: 'Right-Putamen', RGB: [236, 13, 176] },
+      ]),
+    ).toEqual([
+      { value: 1, label: 'Left-Thalamus', rgb: [0, 118, 14] },
+      { value: 43, label: 'Right-Putamen', rgb: [236, 13, 176] },
     ])
-    expect(cmap).toEqual({
-      R: [0, 0, 236],
-      G: [0, 118, 13],
-      B: [0, 14, 176],
-      A: [0, 255, 255],
-      I: [0, 1, 43],
-      labels: ['', 'Left-Thalamus', 'Right-Putamen'],
-    })
   })
 
   test('lateralityModifier_prefixesSharedLabel', () => {
     const left = { CodeMeaning: 'Left' }
-    const cmap = segColormap([
+    const rows = sidecarSegments([
       {
         LabelValue: 1,
         SegmentLabel: 'Putamen',
@@ -38,7 +35,7 @@ describe('segColormap', () => {
         SegmentedPropertyTypeModifierCode: left,
       },
     ])
-    expect(cmap.labels).toEqual(['', 'Left Putamen', 'Left Putamen'])
+    expect(rows.map((r) => r.label)).toEqual(['Left Putamen', 'Left Putamen'])
   })
 })
 

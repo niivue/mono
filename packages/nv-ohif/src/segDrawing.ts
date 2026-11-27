@@ -18,6 +18,7 @@ import {
 } from './rtDrawing'
 import {
   type PanelSegment,
+  panelColormap,
   SEG_FILL_OPACITY,
   SEG_RIM_OPACITY,
   startSegPanel,
@@ -106,33 +107,24 @@ interface SidecarSegment {
   SegmentedPropertyTypeModifierCode?: { CodeMeaning?: string }
 }
 
-/**
- * NiiVue label colormap from dcm2niix's SEG sidecar `Segments`. Index 0 is the
- * transparent background, as in NiiVue's own drawing colormaps.
- */
-export function segColormap(segments: ReadonlyArray<SidecarSegment>) {
-  const cmap = {
-    R: [0],
-    G: [0],
-    B: [0],
-    A: [0],
-    I: [0],
-    labels: [''],
-  }
-  for (const s of segments) {
-    if (typeof s.LabelValue !== 'number') continue
+/** The sidecar's labelled segments, as the panel lists them. */
+export function sidecarSegments(
+  segments: ReadonlyArray<SidecarSegment>,
+): PanelSegment[] {
+  return segments.flatMap((s) => {
+    if (typeof s.LabelValue !== 'number') return []
     const [r = 255, g = 255, b = 255] = s.RGB ?? []
-    cmap.R.push(r)
-    cmap.G.push(g)
-    cmap.B.push(b)
-    cmap.A.push(255)
-    cmap.I.push(s.LabelValue)
     // Paired segments often share a label and differ only by laterality.
     const side = s.SegmentedPropertyTypeModifierCode?.CodeMeaning
     const label = s.SegmentLabel ?? String(s.LabelValue)
-    cmap.labels.push(side && !label.includes(side) ? `${side} ${label}` : label)
-  }
-  return cmap
+    return [
+      {
+        value: s.LabelValue,
+        label: side && !label.includes(side) ? `${side} ${label}` : label,
+        rgb: [r, g, b],
+      },
+    ]
+  })
 }
 
 /**
@@ -218,29 +210,23 @@ export function startSegDrawing(
     // dcm2niix warnings (e.g. an incomplete SEG) reach the pane as the base's do.
     if (converted.note) options.setNote(converted.note, true)
     const segments = converted.json?.Segments
-    const cmap = segColormap(Array.isArray(segments) ? segments : [])
+    const rows = sidecarSegments(Array.isArray(segments) ? segments : [])
     // loadDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
     const style = styleDrawing(nv, () => {
-      if (cmap.I.length > 1)
+      if (rows.length)
         nv.drawColormap = nv.addColormap(
           `seg-${seg.displaySetInstanceUID ?? seg.SeriesInstanceUID ?? ''}`,
-          cmap,
+          panelColormap(
+            rows.map((s) => ({ ...s, color: [...s.rgb, 255], visible: true })),
+          ),
         )
       nv.drawOpacity = SEG_FILL_OPACITY
       nv.drawRimOpacity = SEG_RIM_OPACITY
     })
     restoreStyle = style.restore
     // Without the sidecar's segments the panel has nothing to list.
-    if (cmap.I.length > 1)
-      stopShown = options.onShown?.(
-        cmap.I.slice(1).map((value, i) => ({
-          value,
-          label: cmap.labels[i + 1] ?? String(value),
-          rgb: [cmap.R[i + 1] ?? 0, cmap.G[i + 1] ?? 0, cmap.B[i + 1] ?? 0],
-        })),
-        style.restyle,
-      )
+    if (rows.length) stopShown = options.onShown?.(rows, style.restyle)
   }
   show()
     .catch((err) => {

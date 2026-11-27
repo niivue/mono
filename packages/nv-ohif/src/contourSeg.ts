@@ -27,9 +27,12 @@ import type {
 import { apply, invertAffine, rasGrid, SLICE_AXIS, voxelMM3 } from './quantify'
 import { closedPlanar, type RtRoi } from './segExport'
 import {
+  addColorLUT,
   addRepresentation,
   type CstSegmentation,
   cornerstoneSegmentation,
+  dropRepresentationData,
+  onSegmentationChange,
   paletteColor,
   segmentationRole,
   segmentStats,
@@ -409,20 +412,13 @@ export function addContourSegmentation(
       },
     },
   ])
-  // OHIF offers Save only for a segmentation with no contour data it can read
-  // (or with some): NiiVue keeps the shapes, so the save commands read them.
-  const added = cst.state.getSegmentation(segmentationId) as
-    | { representationData?: Record<string, unknown> }
-    | undefined
-  if (added?.representationData) delete added.representationData[CONTOUR]
+  dropRepresentationData(cst, segmentationId, CONTOUR)
   const lut = [
     [0, 0, 0, 0],
     ...Array.from({ length: 255 }, (_, i) => paletteColor(i + 1)),
   ]
   for (const s of init.segments) if (s.rgb) lut[s.value] = [...s.rgb, 255]
-  let freeIndex = 0
-  while (cst.state.getColorLUT(freeIndex)) freeIndex++
-  const lutIndex = cst.config.color.addColorLUT(lut, freeIndex)
+  const lutIndex = addColorLUT(cst, lut)
   // Before attach: loaded shapes are no edit (no interpolation), and a load:
   // earlier undo steps lack them, so they go.
   if (init.shapes?.length) {
@@ -722,26 +718,7 @@ function startContourSync(
   }
   c.sync = sync
   c.restyle = restyle
-  const { EVENTS } = service
-  const subscriptions = [
-    EVENTS.SEGMENTATION_MODIFIED,
-    EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED,
-    EVENTS.SEGMENTATION_STYLE_MODIFIED,
-    EVENTS.SEGMENTATION_REMOVED,
-    EVENTS.SEGMENTATION_REPRESENTATION_REMOVED,
-  ]
-    .filter((event): event is string => !!event)
-    .map((event) =>
-      service.subscribe(event, (e) => {
-        // Activating another segmentation on the pane restyles this one.
-        if (
-          !e?.segmentationId ||
-          e.segmentationId === segmentationId ||
-          event === EVENTS.SEGMENTATION_REPRESENTATION_MODIFIED
-        )
-          sync()
-      }),
-    )
+  const unsubscribe = onSegmentationChange(service, segmentationId, sync)
   // The shapes belong to the base volume's grid: when the pane drops it (or
   // goes) they park until a pane shows that series again.
   const base = nv.volumes[0]
@@ -822,7 +799,7 @@ function startContourSync(
         shapes: nv.annotations.filter((a) => a.group === group),
         lutIndex,
       })
-    for (const s of subscriptions) s.unsubscribe()
+    unsubscribe()
     nv.removeEventListener('annotationChanged', onEdit)
     nv.removeEventListener('volumeRemoved', onRemoved)
     nv.removeEventListener('viewDestroyed', onDestroyed)

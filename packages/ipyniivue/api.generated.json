@@ -4052,23 +4052,6 @@
       "returnsDoc": null
     },
     {
-      "jsName": "setFont",
-      "pyName": "set_font",
-      "isAsync": true,
-      "returnsValue": true,
-      "params": [
-        {
-          "name": "font",
-          "tsType": "NVFontData",
-          "optional": false,
-          "doc": null
-        }
-      ],
-      "returns": "Promise<boolean>",
-      "doc": "Swap the active font atlas. The font is infrastructure-level configuration\n(GPU-owned atlas texture + metrics map), so switching requires a full view\nrebuild — use this method instead of mutating `opts.font` directly.",
-      "returnsDoc": null
-    },
-    {
       "jsName": "setFontFromUrl",
       "pyName": "set_font_from_url",
       "isAsync": true,
@@ -5246,6 +5229,10 @@
       {
         "jsName": "restoreSlidePlaneView",
         "reason": "@internal"
+      },
+      {
+        "jsName": "setFont",
+        "reason": "argument is not JSON-serializable (NVFontData.metrics holds a Map of glyphs); use set_font_from_url"
       },
       {
         "jsName": "unregisterOverlayRenderer",

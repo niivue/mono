@@ -1,4 +1,9 @@
-import { parseFont, type RawFontFile } from '@niivue/uikit'
+import {
+  measureWidth,
+  parseFont,
+  type RawFontFile,
+  type UIKitFontMetrics,
+} from '@niivue/uikit'
 import * as NVLoader from '@/NVLoader'
 
 // --- Shared types and constants for both GL and GPU font renderers ---
@@ -110,14 +115,8 @@ export function measureTextWidth(
   fontMets: FontMetrics,
 ): number {
   let maxWidth = 0
-  for (const line of str.split('\n')) {
-    let w = 0
-    for (const ch of line) {
-      const m = fontMets.mets[ch.codePointAt(0) ?? 0]
-      if (m) w += fontPx * scale * m.xadv
-    }
-    if (w > maxWidth) maxWidth = w
-  }
+  for (const line of str.split('\n'))
+    maxWidth = Math.max(maxWidth, measureWidth(fontMets, line, fontPx * scale))
   return maxWidth
 }
 
@@ -137,21 +136,13 @@ export function buildTextLayout(
   const atlasRange = fontMets.distanceRange
   const lineHeight = fontSize * 1.2
   const lines = str.split('\n')
-  const lineCodes: number[][] = []
+  // By code point (handles surrogate pairs), as the font's glyphs are keyed.
+  const lineChars = lines.map((line) => [...line])
   let totalGlyphs = 0
   let maxWidth = 0
-  for (const line of lines) {
-    // Iterate by Unicode code points (handles surrogate pairs), not UTF-8 bytes.
-    const codes: number[] = []
-    for (const ch of line) codes.push(ch.codePointAt(0) ?? 0)
-    lineCodes.push(codes)
-    totalGlyphs += codes.length
-    let w = 0
-    for (let i = 0; i < codes.length; i++) {
-      const m = fontMets.mets[codes[i]]
-      if (m) w += fontSize * m.xadv
-    }
-    if (w > maxWidth) maxWidth = w
+  for (let li = 0; li < lines.length; li++) {
+    totalGlyphs += lineChars[li].length
+    maxWidth = Math.max(maxWidth, measureWidth(fontMets, lines[li], fontSize))
   }
   if (totalGlyphs === 0) return emptyBatch()
   const totalHeight = lines.length * lineHeight
@@ -164,19 +155,19 @@ export function buildTextLayout(
     maxX = -Infinity,
     maxY = -Infinity
   for (let li = 0; li < lines.length; li++) {
-    const codes = lineCodes[li]
     const baselineY = blockTopY + fontSize + li * lineHeight
     let currX = blockX
-    for (let i = 0; i < codes.length; i++) {
-      const m = fontMets.mets[codes[i]]
+    for (const ch of lineChars[li]) {
+      const m = fontMets.glyphs.get(ch)
       if (!m) continue
       const offset = glyphIdx * 16
-      const gx = currX + fontSize * m.lbwh[0]
-      const gy = baselineY - fontSize * (m.lbwh[1] + m.lbwh[3])
-      const gw = fontSize * m.lbwh[2]
-      const gh = fontSize * m.lbwh[3]
+      const [pl, pb, pw, ph] = m.plane
+      const gx = currX + fontSize * pl
+      const gy = baselineY - fontSize * (pb + ph)
+      const gw = fontSize * pw
+      const gh = fontSize * ph
       glyphs.set([gx, gy, gw, gh], offset)
-      glyphs.set(m.uv_lbwh, offset + 4)
+      glyphs.set(m.uv, offset + 4)
       glyphs.set(color, offset + 8)
       glyphs[offset + 12] = atlasRange
       if (gx < minX) minX = gx
@@ -211,36 +202,13 @@ export function buildTextLayout(
   }
 }
 
-// --- Font metrics parsing ---
+// --- Font metrics ---
 
-export type FontMetrics = {
-  distanceRange: number
-  size: number
-  mets: Record<number, { xadv: number; uv_lbwh: number[]; lbwh: number[] }>
-}
-
-type FontJson = RawFontFile
-
-/**
- * uikit's `parseFont` (the one msdf-atlas-gen parser, superscript fallback
- * included), keyed by code point for the layout code here.
- */
-export function parseFontMetrics(jsonMetrics: FontJson): FontMetrics {
-  const font = parseFont(jsonMetrics)
-  const mets: FontMetrics['mets'] = {}
-  for (const [char, g] of font.glyphs)
-    mets[char.codePointAt(0) ?? 0] = {
-      xadv: g.xadv,
-      uv_lbwh: [...g.uv],
-      lbwh: [...g.plane],
-    }
-  return { distanceRange: font.distanceRange, size: font.size, mets }
-}
+/** uikit's font model: the one msdf-atlas-gen parser (`parseFont`). */
+export type FontMetrics = UIKitFontMetrics
 
 export async function getFontMetrics(fnm: string): Promise<FontMetrics> {
   const fontBuffer = await NVLoader.fetchFile(fnm)
-  const decoder = new TextDecoder('utf-8')
-  const jsonString = decoder.decode(fontBuffer)
-  const jsonMetrics = JSON.parse(jsonString) as FontJson
-  return parseFontMetrics(jsonMetrics)
+  const json = JSON.parse(new TextDecoder('utf-8').decode(fontBuffer))
+  return parseFont(json as RawFontFile)
 }

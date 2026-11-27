@@ -1769,23 +1769,6 @@ and its volumes alive."""
     def set_drag_mode(self, mode: Any) -> None:
         self.send({"cmd": "setDragMode", "args": _make_args(mode)})
 
-    async def set_font(self, font: Any) -> Any:
-        """Swap the active font atlas.
-
-        The font is infrastructure-level configuration
-        (GPU-owned atlas texture + metrics map), so switching requires a full view
-        rebuild — use this method instead of mutating `opts.font` directly.
-
-        Parameters
-        ----------
-        font : NVFontData
-
-        Returns
-        -------
-        Promise<boolean>
-        """
-        return await self._request("setFont", _make_args(font))
-
     async def set_font_from_url(self, urls: Any) -> Any:
         """Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap it in as the active font.
 

@@ -66,6 +66,16 @@ import { ubuntu } from '@niivue/niivue/assets/fonts'
 await nv.setFont(ubuntu)
 ```
 
+A font of your own is its parsed metrics and the atlas URL; `parseFont`
+(from `@niivue/uikit`, which NiiVue's text uses too) reads msdf-atlas-gen
+JSON:
+
+```js
+import { parseFont } from '@niivue/uikit'
+
+await nv.setFont({ metrics: parseFont(json), atlasUrl: pngUrl })
+```
+
 ## Making a font
 
 Build a new atlas with

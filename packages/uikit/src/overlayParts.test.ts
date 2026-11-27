@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { UIKitOverlayFrame } from '@niivue/niivue'
+import type { UIKitOverlayFrame } from './hook'
 import { UIKitDrawBundle, UIKitEntryMap } from './overlayParts'
 import type { UIKitFont } from './text/font'
 

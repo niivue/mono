@@ -7,8 +7,8 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
-import type { UIKitOverlayFrame } from '@niivue/niivue'
 import { UIKitButtonOverlay } from './buttonOverlay'
+import type { UIKitOverlayFrame } from './hook'
 import { UIKitLineOverlay } from './lineOverlay'
 import { UIKitRectOverlay } from './rectOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'

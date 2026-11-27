@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import type { UIKitOverlayFrame } from '@niivue/niivue'
 import {
   UIKitControls,
   type UIKitInteractive,
   type UIKitKeyEvent,
   type UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 
 // A scripted widget: it claims the pointer inside its box, records every
 // call, and can be made modal. Enough to pin down the layer's routing rules

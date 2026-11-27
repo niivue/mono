@@ -26,9 +26,9 @@ import {
   type SliceTile,
   type SubVolumeBox,
   subVolumeBox,
-  type UIKitOverlayFrame,
 } from '@niivue/niivue'
 import type { UIKitHost } from './controls'
+import type { UIKitOverlayFrame } from './hook'
 import { buildRect, type UIKitBox } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 

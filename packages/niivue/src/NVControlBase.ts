@@ -3099,19 +3099,7 @@ export default class NiiVue extends EventTarget {
 
   /** Remove an annotation; `isUndoable` records an annotationUndo step first. */
   removeAnnotation(id: string, isUndoable = false): void {
-    const idx = this.model.annotations.findIndex((a) => a.id === id)
-    if (idx >= 0) {
-      if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
-      this.model.annotations.splice(idx, 1)
-      if (this.selectedAnnotation === id) this.model._annotationSelection = null
-      this.emit('annotationChanged', {
-        action: 'delete',
-        added: [],
-        updated: [],
-        removed: [id],
-      })
-      this.drawScene()
-    }
+    this._replaceAnnotations([id], [], isUndoable, 'delete')
   }
 
   /**
@@ -3119,24 +3107,7 @@ export default class NiiVue extends EventTarget {
    * `isUndoable`); emits annotationChanged with action 'delete'.
    */
   removeAnnotations(ids: readonly string[], isUndoable = false): void {
-    const drop = new Set(ids)
-    const removed = this.model.annotations
-      .filter((a) => drop.has(a.id))
-      .map((a) => a.id)
-    if (removed.length === 0) return
-    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
-    this.model.annotations = this.model.annotations.filter(
-      (a) => !drop.has(a.id),
-    )
-    if (drop.has(this.selectedAnnotation ?? ''))
-      this.model._annotationSelection = null
-    this.emit('annotationChanged', {
-      action: 'delete',
-      added: [],
-      updated: [],
-      removed,
-    })
-    this.drawScene()
+    this._replaceAnnotations(ids, [], isUndoable, 'delete')
   }
 
   /**
@@ -3148,6 +3119,18 @@ export default class NiiVue extends EventTarget {
     ids: readonly string[],
     added: readonly VectorAnnotation[],
     isUndoable = false,
+  ): void {
+    this._replaceAnnotations(ids, added, isUndoable, 'replace')
+  }
+
+  // The shared mutation: drop `ids` (survivors keep their order), append
+  // `added`, clear a dropped selection, emit once and redraw. A no-op emits
+  // nothing and records no undo step.
+  private _replaceAnnotations(
+    ids: readonly string[],
+    added: readonly VectorAnnotation[],
+    isUndoable: boolean,
+    action: 'delete' | 'replace',
   ): void {
     const drop = new Set(ids)
     const removed = this.model.annotations
@@ -3162,7 +3145,7 @@ export default class NiiVue extends EventTarget {
     if (drop.has(this.selectedAnnotation ?? ''))
       this.model._annotationSelection = null
     this.emit('annotationChanged', {
-      action: 'replace',
+      action,
       added: added.map((a) => a.id),
       updated: [],
       removed,

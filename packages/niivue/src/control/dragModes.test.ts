@@ -13,6 +13,7 @@ import {
   handleDragRelease,
   isCrosshairPanDrag,
 } from './dragModes'
+import { initInteraction } from './interactions'
 
 type FakeCanvas = {
   width: number
@@ -355,8 +356,14 @@ test('contrast box orders the window for a negative rescale slope', () => {
 // _commitAnnotation), a drag keeps any nonzero length and measures it on the
 // slice's own plane, tilted or not.
 describe('a drag measurement through the real commit', () => {
-  const drag = (tilt: number, start: number[], end: number[]) => {
+  const drag = (
+    tilt: number,
+    start: number[],
+    end: number[],
+    keep?: (nv: NiiVue) => void,
+  ) => {
     const nv = new NiiVue({ backend: 'webgl2' })
+    keep?.(nv)
     nv.drawScene = () => {}
     const voxelToWorld = mat4.fromXRotation(mat4.create(), tilt)
     nv.model.volumes = [
@@ -378,6 +385,8 @@ describe('a drag measurement through the real commit', () => {
           axCorSag: 0,
         },
       ],
+      legendLayout: null,
+      graphLayout: null,
     } as never
     nv.activeTileHit = { tileIndex: 0, isRender: false, sliceType: 0 } as never
     nv.isDragging = true
@@ -388,9 +397,60 @@ describe('a drag measurement through the real commit', () => {
     return nv.annotations
   }
 
-  test('a 0.2 mm drag is kept', () => {
-    const [ann] = drag(0, [10, 10], [20, 10])
+  test('a 0.2 mm drag is kept, and its end drags to 0.22 mm', () => {
+    let nv: NiiVue | undefined
+    const [ann] = drag(0, [10, 10], [20, 10], (made) => {
+      nv = made
+    })
     expect(ann?.stats?.length).toBeCloseTo(0.2, 6)
+    if (!nv) throw new Error('no controller')
+    // The end handle drags through the same shape rule as the drag.
+    nv.canvas = {
+      width: 100,
+      height: 100,
+      style: {},
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 100,
+      }),
+      addEventListener() {},
+      removeEventListener() {},
+      setPointerCapture() {},
+      releasePointerCapture() {},
+    } as never
+    ;(nv.view as unknown as { hitTest: () => unknown }).hitTest = () => ({
+      tileIndex: 0,
+      isRender: false,
+      sliceType: 0,
+    })
+    nv.model.annotation.isHandleGrab = true
+    const g = globalThis as { window?: unknown }
+    const prior = g.window
+    g.window = {
+      devicePixelRatio: 1,
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    initInteraction(nv)
+    const at = (x: number) =>
+      ({
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        pointerId: 1,
+        detail: 1,
+        clientX: x,
+        clientY: 10,
+        shiftKey: false,
+        preventDefault() {},
+      }) as never
+    nv._eventListeners.pointerdown?.(at(20))
+    nv._eventListeners.pointermove?.(at(21))
+    nv._eventListeners.pointerup?.(at(21))
+    g.window = prior
+    expect(nv.annotations[0]?.stats?.length).toBeCloseTo(0.22, 6)
   })
 
   test('a drag on a 60 degree tilted slice keeps its world length', () => {

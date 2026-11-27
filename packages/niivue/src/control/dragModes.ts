@@ -651,10 +651,9 @@ function commitMeasure(
   const [p0, p1, p2] = mm.map((p) => Annotation.mmToSlice2D(p, sliceType))
   const anchor = mm[0]
   if (!p0 || !p1 || !anchor) return
-  // Any nonzero drag is a measurement: no click-size minimum.
   const polygons = [
-    ...Annotation.generateLine(p0, p1, w, 0),
-    ...(p2 ? Annotation.generateLine(p1, p2, w, 0) : []),
+    ...Annotation.generateShape('measureLine', p0, p1, w),
+    ...(p2 ? Annotation.generateShape('measureLine', p1, p2, w) : []),
   ]
   if (polygons.length === 0) return
   const ann: VectorAnnotation = Annotation.createAnnotation(

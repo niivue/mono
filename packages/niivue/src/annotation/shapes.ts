@@ -69,7 +69,7 @@ function perp(dx: number, dy: number, len: number): [number, number] {
  * with the line tool, by default) it is nothing; a measured line passes 0, as
  * any nonzero distance it measures is kept.
  */
-export function generateLine(
+function generateLine(
   start: AnnotationPoint,
   end: AnnotationPoint,
   width: number,
@@ -251,8 +251,10 @@ export function generateShape(
     case 'measureRect':
       return generateRectangle(start, end)
     case 'line':
-    case 'measureLine':
       return generateLine(start, end, strokeWidth)
+    case 'measureLine':
+      // Any nonzero length a measurement measures is kept, drawn or edited.
+      return generateLine(start, end, strokeWidth, 0)
     case 'arrow':
       return generateArrow(start, end, strokeWidth)
     case 'circle':

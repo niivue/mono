@@ -105,12 +105,12 @@ export function mirrorAnnotationHistory(
  * Redo the step cleared comes back. The handler has already removed the add.
  */
 export function withdrawLastStep(
-  nv: Pick<NiiVue, 'annotationUndoTop' | '_annotationUndoStack'>,
+  nv: Pick<NiiVue, 'annotationUndoTop' | 'discardAnnotationStep'>,
   extensionManager: OhifExtensionManager | undefined,
 ): void {
   const seq = nv.annotationUndoTop
   if (seq === undefined) return
-  nv._annotationUndoStack.discard(seq)
+  nv.discardAnnotationStep(seq)
   const memo = historyMemo(extensionManager)
   const { ring, position, size } = memo ?? {}
   if (!memo || !ring || position === undefined || !size) return

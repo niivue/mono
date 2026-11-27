@@ -3218,6 +3218,14 @@ export default class NiiVue extends EventTarget {
     return this._annotationUndoStack.redoTop
   }
 
+  /**
+   * Withdraw undo step `seq` while it is still the top one (a host dropping a
+   * step it just caused), restoring the redo steps that push cleared.
+   */
+  discardAnnotationStep(seq: number): void {
+    this._annotationUndoStack.discard(seq)
+  }
+
   // The selected id may survive with a different shape: rebuild its handles.
   private _reselectAfterRestore(restored: VectorAnnotation[]): void {
     const kept = restored.find((a) => a.id === this.selectedAnnotation)

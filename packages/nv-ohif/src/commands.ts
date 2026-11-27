@@ -2104,10 +2104,7 @@ export function getNiivueCommandsModule({
           if (stillLive() && !abort.signal.aborted) return image.hdr
           // addVolume stores a copy of `image` that shares its hdr.
           const i = nv.volumes.findIndex((v) => v.hdr === image.hdr)
-          if (i >= 0) {
-            nv.model.removeVolume(i)
-            await nv.updateGLVolume()
-          }
+          if (i >= 0) await nv.removeVolume(i)
         }
         // Cancelled: the cancel press cleared the status.
         abort.signal.throwIfAborted()

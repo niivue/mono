@@ -388,24 +388,33 @@ export function buildAnnotationRenderData(
     const stroke = style.strokeColor
     const line = (p: AnnotationPoint, q: AnnotationPoint) =>
       strokeLines.push(buildLine(p.x, p.y, q.x, q.y, width, stroke))
-    for (const { outer, holes } of polygons) {
-      const { vertices, indices } = triangulatePolygon(outer, holes)
-      const nVerts = vertices.length / 2
-      for (let i = 0; i < nVerts; i++) {
-        allFillVerts.push(vertices[i * 2], vertices[i * 2 + 1], fr, fg, fb, fa)
-      }
-      for (let i = 0; i < indices.length; i++) {
-        allFillIndices.push(indices[i] + vertexOffset)
-      }
-      vertexOffset += nVerts
-      if (!shape.isClosed) continue
-      for (const ring of [outer, ...holes])
-        for (let i = 0; i < ring.length; i++)
-          line(
-            ring[i] as AnnotationPoint,
-            ring[(i + 1) % ring.length] as AnnotationPoint,
+    // An open shape's polygon is its thin hit-test rectangle: drawn as centre
+    // lines below, never filled (zoomed in, a fill shows as a wide band).
+    if (shape.isClosed)
+      for (const { outer, holes } of polygons) {
+        const { vertices, indices } = triangulatePolygon(outer, holes)
+        const nVerts = vertices.length / 2
+        for (let i = 0; i < nVerts; i++) {
+          allFillVerts.push(
+            vertices[i * 2],
+            vertices[i * 2 + 1],
+            fr,
+            fg,
+            fb,
+            fa,
           )
-    }
+        }
+        for (let i = 0; i < indices.length; i++) {
+          allFillIndices.push(indices[i] + vertexOffset)
+        }
+        vertexOffset += nVerts
+        for (const ring of [outer, ...holes])
+          for (let i = 0; i < ring.length; i++)
+            line(
+              ring[i] as AnnotationPoint,
+              ring[(i + 1) % ring.length] as AnnotationPoint,
+            )
+      }
     const { start, end } = shape
     if (!shape.isClosed && start && end) {
       if (

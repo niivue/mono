@@ -12,12 +12,18 @@ export type RulerSegment = readonly [number, number, number, number]
 const MAX_RULER_TICKS = 200
 
 /**
- * Thin the ticks to at most MAX_RULER_TICKS in 1/2/5 steps, as @niivue/uikit's
- * `decimation`: an arbitrary step (7, say) would number ticks 35, 70, ...
+ * Units per tick, in 1/2/5 steps (an arbitrary step, 7 say, would number ticks
+ * 35, 70, ...): at most MAX_RULER_TICKS ticks, as @niivue/uikit's `decimation`,
+ * and ticks at least two tick lengths apart on screen, so a short or zoomed-out
+ * ruler is not a solid comb.
  */
-function tickStep(marks: number): number {
-  if (marks <= MAX_RULER_TICKS) return 1
-  const raw = marks / MAX_RULER_TICKS
+function tickStep(
+  marks: number,
+  pxPerUnit: number,
+  tickLength: number,
+): number {
+  const raw = Math.max(marks / MAX_RULER_TICKS, (2 * tickLength) / pxPerUnit)
+  if (raw <= 1) return 1
   const decade = 10 ** Math.floor(Math.log10(raw))
   for (const m of [1, 2, 5]) {
     if (m * decade >= raw) return m * decade
@@ -75,7 +81,7 @@ export function rulerSegments(
   if (units <= 0) return segs
 
   const marks = Math.floor(units)
-  const step = tickStep(marks)
+  const step = tickStep(marks, len / units, tickLength)
   for (let i = step; i <= marks; i += step) {
     const t = i / units
     const cx = sx + t * dx
@@ -147,7 +153,7 @@ export function rulerTickLabels(
   const [px, py] = downPerp(dx, dy, len)
   const off = tickLength * 2 + tickLength
   const marks = Math.floor(units)
-  const step = tickStep(marks)
+  const step = tickStep(marks, len / units, tickLength)
   // Minimum along-ruler gap between numbers so they never collide (matches
   // @niivue/uikit's buildRuler); derived from the number size and digit count.
   const maxDigits = `${marks}`.length

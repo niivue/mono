@@ -25,16 +25,23 @@ describe('rulerSegments', () => {
   })
 
   it('makes every fifth tick a major (twice as long)', () => {
-    // Horizontal line 0..100 px, 10 units -> ticks every 10px. Tick i is a
+    // Horizontal line 0..200 px, 10 units -> ticks every 20px. Tick i is a
     // vertical segment straddling the baseline; its half-length is tickLength
     // (6) for minors and 2x for majors (i % 5 === 0).
-    const segs = rulerSegments(0, 0, 100, 0, 10)
+    const segs = rulerSegments(0, 0, 200, 0, 10)
     const ticks = segs.slice(BASELINE_SEGS)
     expect(ticks).toHaveLength(10)
     const halfHeight = (s: readonly number[]) => Math.abs(s[3] - s[1]) / 2
     // i = 5 is the 5th tick (index 4) -> major; i = 4 (index 3) -> minor.
     expect(halfHeight(ticks[4])).toBeCloseTo(12) // 6 * 2
     expect(halfHeight(ticks[3])).toBeCloseTo(6)
+  })
+
+  // A short or zoomed-out ruler was a solid comb: one tick per unit at 2.5 px.
+  it('keeps ticks at least two tick lengths apart on screen', () => {
+    const ticks = rulerSegments(0, 0, 100, 0, 40).slice(BASELINE_SEGS)
+    // 2.5 px per unit: every 5 units (12.5 px), not every unit.
+    expect(ticks).toHaveLength(8)
   })
 
   it('caps the tick count for an enormous measurement', () => {
@@ -47,7 +54,7 @@ describe('rulerSegments', () => {
 
 describe('rulerTickLabels', () => {
   it('numbers every major (fifth) unit', () => {
-    const labels = rulerTickLabels(0, 0, 100, 0, 12)
+    const labels = rulerTickLabels(0, 0, 240, 0, 12)
     // Majors at 5 and 10.
     expect(labels.map((l) => l.str)).toEqual(['5', '10'])
   })
@@ -121,8 +128,8 @@ describe('ruler tick thinning', () => {
 
 describe('ruler majors under decimation', () => {
   it('keeps majors every fifth drawn tick once the step reaches 5', () => {
-    // 1000 units: 200 ticks at step 5, so 40 majors (every 25 units).
-    const ticks = rulerSegments(0, 0, 1000, 0, 1000).slice(BASELINE_SEGS)
+    // 1000 units over 5000 px: 200 ticks at step 5, so 40 majors (every 25 units).
+    const ticks = rulerSegments(0, 0, 5000, 0, 1000).slice(BASELINE_SEGS)
     const lengths = ticks.map(([, y0, , y1]) => Math.abs(y1 - y0))
     expect(ticks).toHaveLength(200)
     expect(lengths.filter((l) => l === 24)).toHaveLength(40)

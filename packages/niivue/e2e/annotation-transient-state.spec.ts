@@ -513,11 +513,13 @@ test('zoom between the arms moves the first arm with the image', async ({
       c.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: r.left + 200, clientY: r.top + 200, bubbles: true, cancelable: true }))
     await drawn()
     ev('pointermove', 250, 120, -1, PointerEvent, 0)
-    const arm = nv.model._dragOverlay.lines[0]
+    await drawn()
+    // The open angle is the annotation preview, projected like any annotation.
+    const arm = nv.annotationScreenShapes.find((s) => s.tool === 'measureAngle')
     // Perpendicular to the drawn (moved) arm at its vertex.
-    const [vx, vy] = arm.endXY
+    const { x: vx, y: vy } = arm.end
     click([vx, vy - 80])
-    return { start: arm.startXY, angle: nv.annotations[0]?.stats?.angle }
+    return { start: [arm.start.x, arm.start.y], angle: nv.annotations[0]?.stats?.angle }
   })()`)
   expect(r.start[0]).not.toBeCloseTo(160, 0)
   expect(r.angle).toBeCloseTo(90, 0)

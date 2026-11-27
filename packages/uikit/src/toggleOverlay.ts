@@ -124,11 +124,6 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
     return this.focusedId
   }
 
-  /** Give a toggle keyboard focus (Space/Enter flips it), or null to clear. */
-  focus(id: string | null): void {
-    this.moveFocus(id)
-  }
-
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
@@ -183,10 +178,6 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
     if (!this.entries.enabled(this.focusedId)) return false
     this.toggle(this.focusedId)
     return true
-  }
-
-  blur(): void {
-    this.focus(null)
   }
 
   protected *geometry(): Generator<UIKitGeometry> {

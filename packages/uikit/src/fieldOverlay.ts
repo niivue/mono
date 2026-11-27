@@ -115,7 +115,7 @@ export abstract class UIKitFieldOverlay<
    * Give a field keyboard focus with its whole text selected, or null to
    * clear. Leaving a field commits its edit. Disabled fields refuse.
    */
-  focus(id: string | null): void {
+  override focus(id: string | null): void {
     const entry = id !== null ? this.entries.get(id) : undefined
     const next = entry && entry.spec.enabled !== false ? id : null
     if (next === this.focusedId) return
@@ -165,11 +165,6 @@ export abstract class UIKitFieldOverlay<
       (next) => this.cut(entry, next),
     )
     return true
-  }
-
-  /** Commits the edit in progress and drops focus. */
-  blur(): void {
-    this.focus(null)
   }
 
   /** Release GPU resources on both backends. */

@@ -211,7 +211,7 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
     return true
   }
 
-  blur(): void {
+  override blur(): void {
     this.focusedId = null
   }
 

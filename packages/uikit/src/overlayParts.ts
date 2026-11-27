@@ -245,6 +245,10 @@ export abstract class UIKitEntryOverlay<
     this.bundle.draw(frame, () => this.geometry(), rescaled)
   }
 
+  blur(): void {
+    this.focus(null)
+  }
+
   /** Release GPU resources on both backends. */
   destroy(): void {
     this.bundle.destroy()
@@ -290,7 +294,7 @@ export abstract class UIKitEntryOverlay<
   }
 
   /** Give an entry keyboard focus, or null to clear. Disabled entries refuse. */
-  protected moveFocus(id: string | null): void {
+  focus(id: string | null): void {
     const next = this.entries.enabled(id) ? id : null
     if (next === this.focusedId) return
     this.focusedId = next

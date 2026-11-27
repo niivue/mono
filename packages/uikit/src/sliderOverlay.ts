@@ -139,11 +139,6 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
     return this.focusedId
   }
 
-  /** Give a slider keyboard focus, or null to clear. Disabled sliders refuse. */
-  focus(id: string | null): void {
-    this.moveFocus(id)
-  }
-
   /** True while a thumb is being dragged. */
   get isDragging(): boolean {
     return this.pressedId !== null
@@ -228,10 +223,6 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
       spec.onChange?.(next, spec.id)
     }
     return true
-  }
-
-  blur(): void {
-    this.focus(null)
   }
 
   private endDrag(): void {

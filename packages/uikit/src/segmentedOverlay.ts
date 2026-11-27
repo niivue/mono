@@ -155,11 +155,6 @@ export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
     return this.focusedId
   }
 
-  /** Give a control keyboard focus (arrows move the selection), or null to clear. */
-  focus(id: string | null): void {
-    this.moveFocus(id)
-  }
-
   /** Presses the segment under the pointer (disabled segments still take focus). */
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
@@ -258,10 +253,6 @@ export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
     }
     if (next !== null && next !== entry.value) this.select(this.focusedId, next)
     return true
-  }
-
-  blur(): void {
-    this.focus(null)
   }
 
   private segmentEnabled(entry: SegmentedEntry, index: number): boolean {

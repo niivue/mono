@@ -579,7 +579,11 @@ const niivuePkg = await Bun.file(path.join(niivueRoot, 'package.json')).json()
 // No niivue version stamp: output depends only on the API, so the PR gate
 // can diff it against the committed files (#257).
 const descriptor: ApiDescriptor = {
-  source: path.relative(repoRoot, controlBase.getFilePath()),
+  // POSIX separators: path.relative() returns backslashes on Windows, which
+  // would dirty the committed generated files on every Windows codegen run.
+  source: path
+    .relative(repoRoot, controlBase.getFilePath())
+    .replace(/\\/g, '/'),
   className,
   properties: properties.sort((a, b) => a.jsName.localeCompare(b.jsName)),
   readonlyProperties: readonlyProperties.sort((a, b) =>

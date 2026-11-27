@@ -6,10 +6,7 @@ import type { NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { annotationAt } from './annotationHit'
 import type { OhifCommandsManager } from './ohif-types'
-import { onAnnotationsAdded } from './toolBridge'
-
-/** Ids being added by code right now (SR import): no prompt for those. */
-export const programmaticAnnotations = new Set<string>()
+import { onAnnotationsDrawn } from './toolBridge'
 
 export function useArrowText(
   nv: NiiVue | null,
@@ -28,19 +25,19 @@ export function useArrowText(
         },
         data: { data: { label } },
       })
-    const onAdded = (a: VectorAnnotation) => {
-      if (a.shape?.type !== 'arrow' || programmaticAnnotations.has(a.id)) return
-      ask(a.id, '', true)
+    // Only an arrow the user draws asks: one SR import adds does not.
+    const onDrawn = (a: VectorAnnotation) => {
+      if (a.shape?.type === 'arrow') ask(a.id, '', true)
     }
     const onDoubleClick = (e: MouseEvent) => {
       const a = annotationAt(nv, e, (x) => x.shape?.type === 'arrow')
       if (a) ask(a.id, a.text ?? '', false)
     }
     const canvas = nv.canvas
-    const offAdded = onAnnotationsAdded(nv, onAdded)
+    const offDrawn = onAnnotationsDrawn(nv, onDrawn)
     canvas?.addEventListener('dblclick', onDoubleClick)
     return () => {
-      offAdded()
+      offDrawn()
       canvas?.removeEventListener('dblclick', onDoubleClick)
     }
   }, [nv, commandsManager])

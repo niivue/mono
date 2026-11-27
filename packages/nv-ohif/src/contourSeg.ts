@@ -37,7 +37,7 @@ import {
   segmentationRole,
   segmentStats,
 } from './segPanel'
-import { onAnnotationsAdded } from './toolBridge'
+import { onAnnotationsDrawn } from './toolBridge'
 
 const CONTOUR = 'Contour'
 const GROUP_PREFIX = 'seg:'
@@ -1026,7 +1026,7 @@ function holeStroke(nv: NiiVue, viewportId: string): void {
     },
     { capture: true },
   )
-  onAnnotationsAdded(nv, (added) => {
+  onAnnotationsDrawn(nv, (added) => {
     if (!cutting || added.label !== HOLE) return
     nv.removeAnnotation(added.id)
     end()

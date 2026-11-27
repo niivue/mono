@@ -240,16 +240,17 @@ export function measureFreehand(nv: NiiVue, a: VectorAnnotation): void {
 }
 
 /**
- * Call `fn` with each annotation a draw or addAnnotation just stored (the
- * stored object: a merge may have changed its polygons). Returns the unsubscribe.
+ * Call `fn` with each annotation the user just drew (core's 'draw' action, not
+ * a host's addAnnotation), as stored: a merge may have changed its polygons.
+ * Returns the unsubscribe.
  */
-export function onAnnotationsAdded(
+export function onAnnotationsDrawn(
   nv: NiiVue,
   fn: (annotation: VectorAnnotation) => void,
 ): () => void {
   const listener = (e: Event) => {
     const { action, added } = (e as CustomEvent<AnnotationChangedDetail>).detail
-    if (action !== 'draw' && action !== 'add') return
+    if (action !== 'draw') return
     for (const id of added) {
       const a = nv.annotations.find((x) => x.id === id)
       if (a) fn(a)

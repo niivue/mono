@@ -21,7 +21,7 @@ import {
   useState,
 } from 'react'
 import { createAdvancedMagnifyBinding } from './advancedMagnify'
-import { programmaticAnnotations, useArrowText } from './arrowText'
+import { useArrowText } from './arrowText'
 import {
   calibrationEvents,
   calibrationScale,
@@ -135,7 +135,6 @@ import {
   measureFreehand,
   ohifToolToAnnotationTool,
   ohifToolToDragMode,
-  onAnnotationsAdded,
 } from './toolBridge'
 import { useMeasurementTracking } from './trackingBridge'
 import { ViewportNotification } from './viewportNotification'
@@ -732,14 +731,18 @@ export function NiivueViewport(props: OhifViewportProps) {
     // into OHIF's measurement panel, remove its row when the annotation is
     // removed, and drop every row when annotations are cleared (series swap /
     // clear-all).
-    const onAnnotationAdded = (annotation: VectorAnnotation) => {
+    const onAnnotationAdded = (
+      annotation: VectorAnnotation,
+      drawn: boolean,
+    ) => {
       // Contour segments are segmentation, not measurements (contourSeg.ts).
       if (isContourAnnotation(annotation)) return
-      // A CalibrationLine asks for the actual distance, then goes, as OHIF's.
+      // A CalibrationLine the user draws asks for the actual distance, then
+      // goes, as OHIF's.
       if (
+        drawn &&
         activeOhifToolRef.current === 'CalibrationLine' &&
-        annotation.shape?.type === 'measureLine' &&
-        !programmaticAnnotations.has(annotation.id)
+        annotation.shape?.type === 'measureLine'
       ) {
         nv.removeAnnotation(annotation.id)
         withdrawLastStep(nv, extensionManagerRef.current)
@@ -756,20 +759,23 @@ export function NiivueViewport(props: OhifViewportProps) {
       const message = measurementNote(annotation.stats, paneScale(viewportId))
       if (added && message) flashNote(message)
     }
-    // Every change, including a removal or a draw that merged (clipper union or
-    // cut) a reflected annotation out of the set: its id arrives in `removed`.
-    // Registered after onAnnotationsAdded, so a new shape is reflected first.
+    // One handler per change: a shape just drawn or added is reflected first,
+    // an edited one (erase, merge, undo) re-measured, then the panel follows
+    // the delta, including a removal or a draw that merged (clipper union or
+    // cut) a reflected annotation out of the set.
     const onAnnotationChanged = (e: Event) => {
       const detail = (e as CustomEvent<AnnotationChangedDetail>).detail
-      // An edit (erase, merge, undo) changes a freehand ROI's stats too.
-      for (const a of nv.annotations)
-        if (!isContourAnnotation(a)) measureFreehand(nv, a)
-      if (detail)
-        applyNiivueAnnotationDelta(
-          viewportId,
-          servicesManagerRef.current,
-          detail,
-        )
+      const byId = new Map(nv.annotations.map((a) => [a.id, a]))
+      if (detail.action === 'draw' || detail.action === 'add')
+        for (const id of detail.added) {
+          const a = byId.get(id)
+          if (a) onAnnotationAdded(a, detail.action === 'draw')
+        }
+      for (const id of detail.updated) {
+        const a = byId.get(id)
+        if (a && !isContourAnnotation(a)) measureFreehand(nv, a)
+      }
+      applyNiivueAnnotationDelta(viewportId, servicesManagerRef.current, detail)
       syncReportRows()
     }
     const calibrate = async (nativeMM: number | undefined) => {
@@ -793,7 +799,6 @@ export function NiivueViewport(props: OhifViewportProps) {
       reconcileNiivueAnnotations(viewportId, servicesManagerRef.current)
     }
     calibrationEvents.addEventListener('change', onCalibration)
-    const offAnnotationsAdded = onAnnotationsAdded(nv, onAnnotationAdded)
     nv.addEventListener('annotationChanged', onAnnotationChanged)
 
     // Push OHIF measurement-label edits onto the matching NiiVue annotation as
@@ -824,7 +829,6 @@ export function NiivueViewport(props: OhifViewportProps) {
       nv.removeEventListener('sliceTypeChange', showStack)
       nv.removeEventListener('sliceTypeChange', showRender)
       calibrationEvents.removeEventListener('change', onCalibration)
-      offAnnotationsAdded()
       nv.removeEventListener('annotationChanged', onAnnotationChanged)
       unsubscribeLabelSync?.()
       // React cleans this effect up before the tool effect's: the lens must

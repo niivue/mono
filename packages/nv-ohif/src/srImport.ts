@@ -15,7 +15,6 @@ import {
   type VectorAnnotation,
 } from '@niivue/niivue'
 import { useEffect } from 'react'
-import { programmaticAnnotations } from './arrowText'
 import { adoptReportScale, moveReportRow } from './calibration'
 import { measurementStyleOf } from './contourSeg'
 import {
@@ -325,7 +324,6 @@ export function useOhifRowImport(
       // Replace the source row only once the NiiVue one exists: a failed
       // reflection keeps the original measurement. A released row is
       // reflected under its own uid, so jumps and tracking keep pointing at it.
-      // Marked only for the synchronous add, so no id outlives it.
       // A NiiVue row's scale is already its display set's.
       const scale =
         row.source?.name === 'NiiVue'
@@ -333,7 +331,6 @@ export function useOhifRowImport(
           : reportScale(row, annotation.stats)
       const ds = own.displaySets[0]?.displaySetInstanceUID
       if (scale && ds) adoptReportScale(ds, annotation.id, scale)
-      programmaticAnnotations.add(annotation.id)
       const releasedFrom = released ? releasedAnnotationId(row.uid) : undefined
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)
@@ -342,7 +339,6 @@ export function useOhifRowImport(
       try {
         nv.addAnnotation(annotation)
       } finally {
-        programmaticAnnotations.delete(annotation.id)
         adoptedRowUids.delete(annotation.id)
         adopting.delete(row.uid)
       }

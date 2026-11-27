@@ -30,12 +30,10 @@ carved out of core. Rationale:
   overlays onto UIKit and remove the duplicated line/text from core** - a deliberate,
   reversible cutover, not a big-bang refactor.
 
-End state (1.0): core draws its own annotations, measurements, scale bar and
-labels with its own renderers. uikit is an opt-in toolkit (overlays, in-canvas
-controls) with no niivue dependency; core depends on uikit and takes its pure
-geometry and parsing from it (`rulerSegments`, `rulerTickNumbers`, `parseFont`),
-and NiiVue's uikit widgets live in core (`@niivue/niivue/uikit`). The line and
-text renderers stay separate (two designs). The rest of this note is the
+End state (1.0): core decides what to draw (annotations, measurements, scale
+bar, labels) and draws it with uikit: its line, rect and text renderers, font,
+ruler geometry and text layout. uikit has no niivue dependency; NiiVue's uikit
+widgets live in core (`@niivue/niivue/uikit`). The rest of this note is the
 original design, kept for history.
 
 ## Two responsibilities, two homes

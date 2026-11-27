@@ -53,10 +53,12 @@ ordinary app forms are better as DOM controls, as the slide panels are.
 UIKit is a **separate module with privileged access to NiiVue's rendering
 lifecycle**. NiiVue core exposes a small hook (an overlay draw phase + a backend
 handle + a settled signal); UIKit registers into it, or into the same hook on a
-bare canvas (`UIKitCanvasHost`), with **its own** line/text renderers on both backends. Core draws its own
-annotations, measurements, scale bar and labels; UIKit is an opt-in toolkit
-for richer overlays and in-canvas controls, not core's renderer. The two share
-the overlay hook's shape and the bundled font atlas, not code.
+bare canvas (`UIKitCanvasHost`). Its line, rect and text renderers (both
+backends) and its font, ruler geometry and text layout are also what NiiVue
+core draws with: core depends on uikit, uikit does not depend on core. Core
+decides what to draw (annotations, measurements, scale bar, labels); uikit is
+how it is drawn, and an opt-in toolkit for richer overlays and in-canvas
+controls.
 
 ## Widgets
 

@@ -10,7 +10,9 @@ export class FontRenderer extends NVFontRenderer {
   private readonly _panels = new WgpuRectRenderer()
   private readonly _glyphs = new WgpuTextRenderer()
   private _atlas: ImageBitmap | null = null
-  private _scratch = new Float32Array(0)
+  // Bumped by every init and destroy, so an atlas that loads after either is
+  // dropped instead of reviving a disposed renderer.
+  private _initToken = 0
   private _format: GPUTextureFormat = 'bgra8unorm'
   private _msaaCount = 1
   private _depthFormat: GPUTextureFormat | undefined
@@ -27,10 +29,16 @@ export class FontRenderer extends NVFontRenderer {
   ): Promise<void> {
     if (this.isReady) return
     if (!fontData) return
+    const token = ++this._initToken
     try {
-      this._atlas = await createImageBitmap(
+      const atlas = await createImageBitmap(
         await loadImageElement(fontData.atlasUrl),
       )
+      if (token !== this._initToken) {
+        atlas.close()
+        return
+      }
+      this._atlas = atlas
       this.fontMets = fontData.metrics
       this._format = format
       this._msaaCount = msaaCount
@@ -69,31 +77,12 @@ export class FontRenderer extends NVFontRenderer {
     const h = this._height
     // Backing panels first, then every label's glyphs in one instanced draw.
     this._panels.draw(device, pass, f, n, d, panelRects(textList), w, h)
-    let total = 0
-    for (const item of textList) total += item.count
-    if (total === 0) return
-    if (this._scratch.length < total * 16)
-      this._scratch = new Float32Array(total * 16)
-    let at = 0
-    for (const item of textList) {
-      this._scratch.set(item.data, at)
-      at += item.count * 16
-    }
-    this._glyphs.draw(
-      device,
-      pass,
-      f,
-      n,
-      d,
-      this._atlas,
-      this._scratch,
-      total,
-      w,
-      h,
-    )
+    const { glyphs, count } = this.packGlyphs(textList)
+    this._glyphs.draw(device, pass, f, n, d, this._atlas, glyphs, count, w, h)
   }
 
   destroy(): void {
+    this._initToken++
     this._panels.destroy()
     this._glyphs.destroy()
     this._atlas?.close()

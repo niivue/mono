@@ -1596,7 +1596,7 @@ export default class NVGlview {
           backRadius: 0,
         })
       }
-      this.fontRenderer.draw(gl, null, null, null, labels)
+      this.fontRenderer.draw(gl, labels)
     }
     // Draw graph lines, cross-lines and the bounds border via the line renderer
     const allLines = [...graphLines, ...crossLinesList]

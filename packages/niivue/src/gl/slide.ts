@@ -397,7 +397,7 @@ export class SlideRenderer {
       this._font.fontPx * 0.5,
     )
     this._lines.draw(gl, lines, width, height)
-    this._font.draw(gl, null, null, null, labels)
+    this._font.draw(gl, labels)
     // The line and font passes re-enable depth and culling; the overlay hook
     // expects both off.
     gl.disable(gl.DEPTH_TEST)

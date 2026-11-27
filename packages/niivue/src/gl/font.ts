@@ -20,7 +20,6 @@ export class FontRenderer extends NVFontRenderer {
   private readonly _panels = new GlRectRenderer()
   private readonly _glyphs = new GlTextRenderer()
   private _atlas: HTMLImageElement | null = null
-  private _scratch = new Float32Array(0)
   private _canvasWidth = 1
   private _canvasHeight = 1
   // Bumped by every init and destroy, so an atlas that loads after either is
@@ -59,33 +58,14 @@ export class FontRenderer extends NVFontRenderer {
     this.resizeFont(width, height, dpi, fontSizeScaling, fontMinPx)
   }
 
-  createBindGroup() {
-    return null
-  }
-
-  draw(
-    gl: WebGL2RenderingContext,
-    _pass: unknown,
-    _bindGroup: unknown,
-    _storageBuffer: unknown,
-    textList: GlyphBatch[],
-  ): void {
+  draw(gl: WebGL2RenderingContext, textList: GlyphBatch[]): void {
     if (!this.isReady || !this._atlas || textList.length === 0) return
     const w = this._canvasWidth
     const h = this._canvasHeight
     // Backing panels first, then every label's glyphs in one instanced draw.
     this._panels.draw(gl, panelRects(textList), w, h)
-    let total = 0
-    for (const item of textList) total += item.count
-    if (total === 0) return
-    if (this._scratch.length < total * 16)
-      this._scratch = new Float32Array(total * 16)
-    let at = 0
-    for (const item of textList) {
-      this._scratch.set(item.data, at)
-      at += item.count * 16
-    }
-    this._glyphs.draw(gl, this._atlas, this._scratch, total, w, h)
+    const { glyphs, count } = this.packGlyphs(textList)
+    this._glyphs.draw(gl, this._atlas, glyphs, count, w, h)
   }
 
   destroy(): void {

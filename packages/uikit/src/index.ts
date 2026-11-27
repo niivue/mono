@@ -1,13 +1,15 @@
 // @niivue/uikit root entry: the drawing primitives (line, rect, text and their
 // overlays), the measuring widgets (ruler, crosshair, point label, magnifier),
 // the input router (UIKitControls) and the overlay hook types. It needs no
-// @niivue/niivue: an overlay registers on a NiiVue controller or draws on a bare
-// canvas (attachToCanvas). Canvas form controls are in '@niivue/uikit/controls',
+// @niivue/niivue: an overlay registers on a NiiVue controller or on a bare
+// canvas through UIKitCanvasHost. Canvas form controls are in '@niivue/uikit/controls',
 // widgets that drive a NiiVue scene in '@niivue/uikit/niivue'. Each widget is a
 // pure geometry builder plus an overlay that owns its GPU resources; the
 // builders' models stay package-private unless exported here.
 
 // biome-ignore-all lint/performance/noBarrelFile: package entry point
+export type { UIKitCanvasHostOptions } from './canvasHost'
+export { UIKitCanvasHost } from './canvasHost'
 export type {
   UIKitControlsOptions,
   UIKitHost,

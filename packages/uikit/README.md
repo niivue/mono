@@ -12,9 +12,29 @@ Documentation: https://niivue.github.io/mono/docs/packages/uikit/
 
 | Import | Holds | Needs `@niivue/niivue` |
 | --- | --- | --- |
-| `@niivue/uikit` | line, rect and text primitives and overlays, the measuring widgets (ruler, crosshair, point label, magnifier), `UIKitControls`, `loadDefaultFont`, the overlay hook types | no |
+| `@niivue/uikit` | line, rect and text primitives and overlays, the measuring widgets (ruler, crosshair, point label, magnifier), `UIKitControls`, `UIKitCanvasHost`, `loadDefaultFont`, the overlay hook types | no |
 | `@niivue/uikit/controls` | canvas form controls: buttons, toggles, sliders, menus, selects, segmented controls, number and text fields, colour controls, file pickers, dialogs, the tool palette | no |
 | `@niivue/uikit/niivue` | widgets that drive a NiiVue scene: the slide HUD, channel, plane, minimap and magnifier panels, drawing slices, the subvolume selector | yes (optional peer) |
+
+Without NiiVue, `UIKitCanvasHost` drives a bare canvas (demo: `standalone.html`).
+It owns the WebGL2 context or WebGPU device, redraws on `drawScene()`, and
+offers NiiVue's `registerOverlayRenderer` and `UIKitHost` shape, so overlays and
+`UIKitControls` attach unchanged. Each frame clears, calls `draw` (the app's own
+content; WebGPU: into the open pass, which it must not end), then the overlays.
+It provides no `captureScene`, so a magnifier draws nothing there on WebGPU.
+
+```ts
+const host = await UIKitCanvasHost.create(canvas, {
+  backend: 'webgpu', // or 'webgl2'
+  draw: (frame) => myScene.draw(frame), // the same UIKitOverlayFrame overlays get
+})
+const sliders = new UIKitSliderOverlay(await loadDefaultFont(), { cssUnits: true })
+const controls = new UIKitControls().add(sliders)
+host.registerOverlayRenderer(controls)
+const detach = controls.attach(host)
+sliders.addSlider({ id: 'k', x: 12, y: 12, width: 200, min: 0, max: 1, value: 0.5,
+  onInput: (v) => { k = v; host.drawScene() } })
+```
 
 `bun run check:standalone` (after a build) packs the package, installs it
 without `@niivue/niivue` and typechecks and imports the first two entries.
@@ -28,8 +48,8 @@ ordinary app forms are better as DOM controls, as the slide panels are.
 
 UIKit is a **separate module with privileged access to NiiVue's rendering
 lifecycle**. NiiVue core exposes a small hook (an overlay draw phase + a backend
-handle + a settled signal); UIKit registers into it, or draws on a bare canvas,
-with **its own** line/text renderers on both backends. Core draws its own
+handle + a settled signal); UIKit registers into it, or into the same hook on a
+bare canvas (`UIKitCanvasHost`), with **its own** line/text renderers on both backends. Core draws its own
 annotations, measurements, scale bar and labels; UIKit is an opt-in toolkit
 for richer overlays and in-canvas controls, not core's renderer. The two share
 the overlay hook's shape and the bundled font atlas, not code.
@@ -809,6 +829,7 @@ and `urlParamSelect.js` are shared by the pages.
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile. By design it measures canvas pixels, not the scene: the zoom slider scales the scene under fixed calipers, and Retina switches device and CSS pixels; a magnifier toggle |
 | `slide-wsi.html` | Tiles: the ruler, scale bar and slide minimap on the standalone tiled viewer (DICOM whole-slide image or Deep Zoom). Zoom slider and right-drag box zoom and a magnifier toggle; a slide without pixel spacing gets a page-drawn bar in slide pixels |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |
+| `standalone.html` | No NiiVue: `UIKitCanvasHost` on a bare canvas; the app's own triangle shader with sliders, a colour control, a toggle, a button and a ruler over it |
 
 ## Conventions for contributors
 

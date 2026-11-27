@@ -21,6 +21,7 @@ const DEMO_PAGES = [
   'subvolume',
   'slide',
   'slide-wsi',
+  'standalone',
 ]
 
 function imagesBaseRewrite(imagesBase: string): Plugin {

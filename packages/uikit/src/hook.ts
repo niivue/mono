@@ -2,7 +2,7 @@
 // NiiVue's overlay lifecycle hook, as uikit draws into it. These are uikit's own
 // copies of the types (core names them OverlayFrame and so on): structural, so
 // a uikit overlay registers on NiiVue unchanged, and uikit needs no niivue
-// dependency to compile or to draw on a bare canvas (attachToCanvas).
+// dependency to compile or to draw on a bare canvas (UIKitCanvasHost).
 // GPUDevice and friends come from the ambient @webgpu/types.
 
 /**

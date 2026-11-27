@@ -12,7 +12,7 @@ import type {
   UIKitRedrawSource,
 } from './controls'
 import type { UIKitOverlayFrame } from './hook'
-import { UIKitDrawBundle } from './overlayParts'
+import { UIKitDrawBundle, type UIKitEntryOverlayOptions } from './overlayParts'
 import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import {
@@ -38,13 +38,8 @@ export interface ToolPaletteHandlers {
 
 export type ToolPaletteOverlaySpec = ToolPaletteSpec & ToolPaletteHandlers
 
-export interface UIKitToolPaletteOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  style?: Partial<ToolPaletteStyle>
-  /** Interpret positions and style lengths as CSS pixels, scaled by the frame's DPR. */
-  cssUnits?: boolean
-}
+export interface UIKitToolPaletteOverlayOptions
+  extends UIKitEntryOverlayOptions<ToolPaletteStyle> {}
 
 export class UIKitToolPaletteOverlay implements UIKitInteractive {
   readonly hoverCursor = 'pointer'

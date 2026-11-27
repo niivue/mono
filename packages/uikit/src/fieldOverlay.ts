@@ -48,6 +48,7 @@ interface FieldEntry<S, St, L, V> {
 
 export interface UIKitFieldOverlayOptions<St>
   extends UIKitEntryOverlayOptions<St> {
+  /** Where copy, cut and paste go. Default: the browser's async clipboard. */
   clipboard?: ClipboardBridge
 }
 

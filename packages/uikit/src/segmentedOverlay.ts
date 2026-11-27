@@ -8,7 +8,11 @@
 // entry points yourself from any host.
 
 import type { UIKitKeyEvent } from './controls'
-import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
+import {
+  UIKitEntryOverlay,
+  type UIKitEntryOverlayOptions,
+  type UIKitGeometry,
+} from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
 import {
   buildSegmented,
@@ -26,17 +30,8 @@ import {
 } from './segmented'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitSegmentedOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every control; a spec's `style` overrides per key. */
-  style?: Partial<SegmentedStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
-}
+export interface UIKitSegmentedOverlayOptions
+  extends UIKitEntryOverlayOptions<SegmentedStyle> {}
 
 interface SegmentedEntry {
   spec: SegmentedSpec

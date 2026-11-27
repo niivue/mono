@@ -14,8 +14,10 @@
 // widgets, or feed the pointer and keyboard entry points from any host.
 
 import type { UIKitKeyEvent } from './controls'
-import { UIKitLineFieldOverlay } from './fieldOverlay'
-import type { ClipboardBridge } from './host'
+import {
+  type UIKitFieldOverlayOptions,
+  UIKitLineFieldOverlay,
+} from './fieldOverlay'
 import type { UIKitGeometry } from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
@@ -41,22 +43,12 @@ import {
   textInputContains,
 } from './textInput'
 
-export interface UIKitTextInputOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every input; a spec's `style` overrides per key. */
-  style?: Partial<TextInputStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
+export interface UIKitTextInputOverlayOptions
+  extends UIKitFieldOverlayOptions<TextInputStyle> {
   /** Two presses on a focused field within this many ms select all. Default 400. */
   doubleClickMs?: number
   /** Clock for the double-click interval. Default `performance.now`. */
   now?: () => number
-  /** Where copy, cut and paste go. Default: the browser's async clipboard. */
-  clipboard?: ClipboardBridge
 }
 
 interface TextInputEntry {

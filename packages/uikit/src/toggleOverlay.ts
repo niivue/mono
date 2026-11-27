@@ -6,7 +6,11 @@
 // or feed `pointerDown/Move/Up` and `keyDown` yourself from any host.
 
 import type { UIKitKeyEvent } from './controls'
-import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
+import {
+  UIKitEntryOverlay,
+  type UIKitEntryOverlayOptions,
+  type UIKitGeometry,
+} from './overlayParts'
 import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 import {
@@ -20,17 +24,8 @@ import {
   toggleContains,
 } from './toggle'
 
-export interface UIKitToggleOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every toggle; a spec's `style` overrides per key. */
-  style?: Partial<ToggleStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
-}
+export interface UIKitToggleOverlayOptions
+  extends UIKitEntryOverlayOptions<ToggleStyle> {}
 
 interface ToggleEntry {
   spec: ToggleSpec

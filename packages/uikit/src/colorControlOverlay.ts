@@ -26,7 +26,7 @@ import type {
   UIKitRedrawSource,
 } from './controls'
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
-import { UIKitEntryMap } from './overlayParts'
+import { UIKitEntryMap, type UIKitEntryOverlayOptions } from './overlayParts'
 import { UIKitRectOverlay } from './rectOverlay'
 import { UIKitSliderOverlay } from './sliderOverlay'
 import { resolveStyle } from './style'
@@ -34,17 +34,8 @@ import type { UIKitFont } from './text/font'
 import type { RGBA } from './text/layout'
 import { UIKitTextOverlay } from './textOverlay'
 
-export interface UIKitColorControlOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every control; a spec's `style` overrides per key. */
-  style?: Partial<ColorControlStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
-}
+export interface UIKitColorControlOverlayOptions
+  extends UIKitEntryOverlayOptions<ColorControlStyle> {}
 
 interface ColorEntry {
   spec: ColorControlSpec

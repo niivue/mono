@@ -156,8 +156,15 @@ export interface UIKitEntryModel<S, St, L> {
 }
 
 export interface UIKitEntryOverlayOptions<St> {
+  /** Called whenever the overlay needs another frame. A control layer fills it in. */
   requestRedraw?: () => void
+  /** Default style for every widget; a spec's `style` overrides per key. */
   style?: Partial<St>
+  /**
+   * Interpret spec positions, sizes and style lengths as CSS pixels and scale
+   * them by the frame's device pixel ratio, instead of canvas pixels. Pointer
+   * coordinates always arrive in canvas pixels.
+   */
   cssUnits?: boolean
 }
 

@@ -45,6 +45,7 @@ import {
 import {
   UIKitDrawBundle,
   UIKitEntryMap,
+  type UIKitEntryOverlayOptions,
   type UIKitGeometry,
 } from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
@@ -52,18 +53,13 @@ import { WheelAccumulator } from './scroll'
 import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitMenuOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default button style for every menu; a spec's `buttonStyle` overrides per key. */
-  buttonStyle?: Partial<ButtonStyle>
-  /** Default popup style for every menu; a spec's `style` overrides per key. */
-  style?: Partial<MenuStyle>
+export interface UIKitMenuOverlayOptions
+  extends UIKitEntryOverlayOptions<MenuStyle> {
   /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
+   * Default button style for every menu (`style` is the popup's); a spec's
+   * `buttonStyle` overrides per key.
    */
-  cssUnits?: boolean
+  buttonStyle?: Partial<ButtonStyle>
 }
 
 interface MenuEntry {

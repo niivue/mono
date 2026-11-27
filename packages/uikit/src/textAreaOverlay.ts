@@ -19,8 +19,10 @@
 // keyboard and wheel entry points from any host.
 
 import type { UIKitKeyEvent } from './controls'
-import { UIKitFieldOverlay } from './fieldOverlay'
-import type { ClipboardBridge } from './host'
+import {
+  UIKitFieldOverlay,
+  type UIKitFieldOverlayOptions,
+} from './fieldOverlay'
 import type { UIKitGeometry } from './overlayParts'
 import { type UIKitBox, unscaleBox } from './rect'
 import { scrollWindow, WheelAccumulator } from './scroll'
@@ -52,22 +54,12 @@ import {
   truncateText,
 } from './textEdit'
 
-export interface UIKitTextAreaOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every area; a spec's `style` overrides per key. */
-  style?: Partial<TextAreaStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
+export interface UIKitTextAreaOverlayOptions
+  extends UIKitFieldOverlayOptions<TextAreaStyle> {
   /** Two presses on a focused field within this many ms select all. Default 400. */
   doubleClickMs?: number
   /** Clock for the double-click interval. Default `performance.now`. */
   now?: () => number
-  /** Where copy, cut and paste go. Default: the browser's async clipboard. */
-  clipboard?: ClipboardBridge
 }
 
 interface TextAreaEntry {

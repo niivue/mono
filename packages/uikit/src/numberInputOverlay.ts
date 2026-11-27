@@ -14,8 +14,10 @@
 // keyboard entry points from any host.
 
 import type { UIKitKeyEvent } from './controls'
-import { UIKitLineFieldOverlay } from './fieldOverlay'
-import type { ClipboardBridge } from './host'
+import {
+  type UIKitFieldOverlayOptions,
+  UIKitLineFieldOverlay,
+} from './fieldOverlay'
 import {
   acceptNumberChar,
   buildNumberInput,
@@ -38,20 +40,10 @@ import { WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import { editKey, pasteText, setCaret, type TextEditState } from './textEdit'
 
-export interface UIKitNumberInputOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default style for every input; a spec's `style` overrides per key. */
-  style?: Partial<NumberInputStyle>
-  /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
-   */
-  cssUnits?: boolean
+export interface UIKitNumberInputOverlayOptions
+  extends UIKitFieldOverlayOptions<NumberInputStyle> {
   /** Wheel pixels per step over a focused field. Default 40. */
   wheelStepPx?: number
-  /** Where copy, cut and paste go. Default: the browser's async clipboard. */
-  clipboard?: ClipboardBridge
 }
 
 interface NumberInputEntry {

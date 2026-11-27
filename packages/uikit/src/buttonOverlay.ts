@@ -25,28 +25,19 @@ import {
 } from './button'
 import { UIKitControls, type UIKitHost, type UIKitKeyEvent } from './controls'
 import type { UIKitOverlayFrame } from './hook'
-import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
+import {
+  UIKitEntryOverlay,
+  type UIKitEntryOverlayOptions,
+  type UIKitGeometry,
+} from './overlayParts'
 import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 
 /** What `attach` needs from a host: NiiVue satisfies it as-is. */
 export type UIKitButtonHost = UIKitHost
 
-export interface UIKitButtonOverlayOptions {
-  /**
-   * Called whenever the overlay needs another frame (a hover/press change, or
-   * each step of a running press animation). `attach` fills this in with the
-   * host's `drawScene` when it is not set.
-   */
-  requestRedraw?: () => void
-  /** Default style for every button; a spec's `style` overrides per key. */
-  style?: Partial<ButtonStyle>
-  /**
-   * Interpret spec positions, sizes and style lengths as CSS pixels and scale
-   * them by the frame's device pixel ratio, instead of canvas pixels. Pointer
-   * coordinates always arrive in canvas pixels (the hook's convention).
-   */
-  cssUnits?: boolean
+export interface UIKitButtonOverlayOptions
+  extends UIKitEntryOverlayOptions<ButtonStyle> {
   /** Clock for the press animation (ms). Default `performance.now`. */
   now?: () => number
 }

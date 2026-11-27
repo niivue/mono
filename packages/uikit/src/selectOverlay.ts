@@ -23,6 +23,7 @@ import {
   type MenuStyle,
 } from './menu'
 import { UIKitMenuOverlay } from './menuOverlay'
+import type { UIKitEntryOverlayOptions } from './overlayParts'
 import {
   endSelectValue,
   type SelectOption,
@@ -35,18 +36,13 @@ import {
 import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
-export interface UIKitSelectOverlayOptions {
-  /** Called whenever the overlay needs another frame. A control layer fills it in. */
-  requestRedraw?: () => void
-  /** Default button style for every select; a spec's `buttonStyle` overrides per key. */
-  buttonStyle?: Partial<ButtonStyle>
-  /** Default popup style for every select; a spec's `style` overrides per key. */
-  style?: Partial<MenuStyle>
+export interface UIKitSelectOverlayOptions
+  extends UIKitEntryOverlayOptions<MenuStyle> {
   /**
-   * Interpret spec positions and style lengths as CSS pixels and scale them by
-   * the frame's device pixel ratio, instead of canvas pixels.
+   * Default button style for every select (`style` is the popup's); a spec's
+   * `buttonStyle` overrides per key.
    */
-  cssUnits?: boolean
+  buttonStyle?: Partial<ButtonStyle>
 }
 
 interface SelectEntry {

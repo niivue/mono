@@ -146,11 +146,11 @@ with the extension placed after `@ohif/extension-cornerstone`:
 
 ## Toolbar buttons
 
-The extension registers the commands (`niivueSetSliceType`, `niivueResetView`,
-`niivueSetClipPlane`, `niivueToggleOverlay`, `niivueAddOverlay`, `niivueSetOverlayVisible`,
-`niivueMoveOverlay`, `niivueRemoveOverlay`, `niivueSetWindowLevel`,
-`niivueSetWindowLevelPreset`, `niivueAutoWindowLevel`, `niivueSetColormap`,
-`niivueToggleColorbar`, `niivueToggleInterpolation`, `niivueToggleCrosshair`), the toolbar evaluators, and a customization pack with the
+The extension registers the commands (`niivueSetSliceType`, `niivueSetClipPlane`,
+`niivueAddOverlay`, `niivueSetOverlayVisible`, `niivueMoveOverlay`,
+`niivueRemoveOverlay`, `niivueSetWindowLevel`, `niivueSetWindowLevelPreset`,
+`niivueAutoWindowLevel`, `niivueSetColormap`, `niivueToggleInterpolation`,
+`niivueToggleCrosshair`), the toolbar evaluators, and a customization pack with the
 button definitions. `niivue*` commands act only when the active viewport is NiiVue.
 
 A mode pulls them in by reference and places them in its primary bar:
@@ -169,12 +169,21 @@ toolbarSections: [
   // in place of cornerstone's 'Capture' / 'Crosshairs' on NiiVue viewports:
   // ToolbarService.register is first-registration-wins, so a same-id override
   // of a cornerstone button is silently dropped.
-  { primary: [/* ...your button ids, */ 'NiivueViews', 'NiivueClip',
-              'NiivueWindowLevel', 'NiivueColormap', 'NiivueColorbar', 'NiivueInterpolation',
-              'NiivueRuler', 'NiivueOverlay', 'NiivueOverlayMenu', 'NiivueReset', 'NiivueCapture',
-              'NiivueCrosshair'] },
+  { primary: [/* ...your button ids, */ 'NiivueClip', 'NiivueWindowLevel',
+              'NiivueColormap', 'NiivueInterpolation', 'NiivueOverlayMenu',
+              'NiivueCapture', 'NiivueCrosshair'] },
 ],
 ```
+
+Buttons removed in 1.0, for custom modes that listed them:
+
+| Removed | Use instead |
+| --- | --- |
+| `NiivueViews` (and `NiivueAxial`, `NiivueCoronal`, `NiivueSagittal`, `NiivueMultiplanar`, `NiivueRender`) | each pane's orientation menu; `niivueSetSliceType` stays |
+| `NiivueRuler` (`niivueSetMeasurementMode`) | OHIF's Length tool |
+| `NiivueOverlay` (`niivueToggleOverlay`) | `NiivueOverlayMenu`; `niivueAddOverlay` with no series adds the next one or cancels a load |
+| `NiivueReset` (`niivueResetView`) | OHIF's `resetViewport` |
+| `NiivueColorbar` (`niivueToggleColorbar`) | the pane's display menu (Colorbar) |
 
 It also answers OHIF's standard `resetViewport`, `setViewportOrientation`
 (axial / sagittal / coronal / acquisition), `scaleUpViewport`, `scaleDownViewport`,
@@ -216,9 +225,7 @@ layer first, with visibility, colormap (the colormap dropdown's names), opacity,
 up/down and remove. It is disabled off NiiVue, on a whole-slide viewport and
 until a base volume has loaded.
 
-`niivueToggleOverlay` (the Overlay button) cancels a load in flight, else adds the
-next series or removes every overlay. A base swap or unmount drops the overlays and
-cancels a load in flight.
+A base swap or unmount drops the overlays and cancels a load in flight.
 
 `withNiivueSupport(button)` adds the `evaluate.niivue.unsupported` evaluator to a
 button: on a NiiVue viewport it disables buttons whose commands or tools are not in

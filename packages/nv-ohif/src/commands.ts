@@ -1841,36 +1841,6 @@ export function getNiivueCommandsModule({
       nv.sliceType = mapped
     },
 
-    /**
-     * Activate the ruler (length) tool. Routes through OHIF's `setToolActiveToolbar`
-     * so OHIF's active-tool state and NiiVue agree: the tool bridge in
-     * NiivueViewport maps the active `Length` tool onto NiiVue's `measureLine`
-     * annotation (the same system as the ROI tools). Setting the annotation tool
-     * directly would be reset by that bridge the next time OHIF's active tool
-     * (e.g. WindowLevel) re-applies. On release the completed line annotation is
-     * reflected into OHIF's measurement panel (see the annotationAdded
-     * subscription in NiivueViewport). Falls back to enabling NiiVue's measureLine
-     * annotation directly when no commandsManager is available.
-     */
-    niivueSetMeasurementMode: () => {
-      const cmds = ohifCommandsManager(commandsManager)
-      if (cmds?.runCommand) {
-        cmds.runCommand('setToolActiveToolbar', { toolName: 'Length' })
-        return
-      }
-      const nv = getActiveNiivue(servicesManager)
-      if (nv) {
-        nv.annotationTool = 'measureLine'
-        nv.annotationIsEnabled = true
-      }
-    },
-
-    /** Reset camera, pan, zoom, crosshair, 2D rotation and flips to their defaults. */
-    niivueResetView: () => {
-      const entry = getActiveNiivueEntry(servicesManager)
-      if (entry) resetView(entry)
-    },
-
     /** Download the visible NiiVue volume or NVSlide canvas as a PNG. */
     // Capture: OHIF's download form (name, type), as cornerstone's.
     niivueSaveBitmap: () => {
@@ -1888,31 +1858,10 @@ export function getNiivueCommandsModule({
     },
 
     /**
-     * Toggle a colormapped overlay: cancel a load in flight; with overlays
-     * loaded, remove them; otherwise add the study's next loadable series.
-     */
-    niivueToggleOverlay: async () => {
-      const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry) return
-      const { nv, viewportId } = entry
-      if (entry.overlayLoading || entry.overlays.size === 0) {
-        await actions.niivueAddOverlay()
-        return
-      }
-      while (nv.volumes.length > 1) {
-        nv.model.removeVolume(nv.volumes.length - 1)
-      }
-      entry.overlays.clear()
-      showPaneLabel(entry, servicesManager)
-      await nv.updateGLVolume()
-      refreshToolbar(servicesManager, viewportId)
-    },
-
-    /**
      * Add a series of the study as an overlay on the base (fetch + dcm2niix
      * conversion for DICOM): `displaySetInstanceUID`, else the next loadable
      * one. A load in flight is cancelled first; without a chosen series that
-     * is all a call does (the Overlay toggle's second press). `viewportId`
+     * is all a call does (the Overlays menu's cancel). `viewportId`
      * (else the active one) and the style options serve hanging protocols.
      */
     niivueAddOverlay: async ({
@@ -2258,14 +2207,6 @@ export function getNiivueCommandsModule({
       nv.setVolume(0, { colormap }).catch((err: unknown) =>
         console.error('[nv-ohif] colormap update failed', err),
       )
-    },
-
-    /** Toggle the colormap legend (colorbar) on the viewport. */
-    niivueToggleColorbar: () => {
-      const entry = getActiveNiivueEntry(servicesManager)
-      if (!entry) return
-      entry.nv.isColorbarVisible = !entry.nv.isColorbarVisible
-      refreshToolbar(servicesManager, entry.viewportId)
     },
 
     /**

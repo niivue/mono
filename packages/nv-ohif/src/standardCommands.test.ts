@@ -323,20 +323,19 @@ describe('rotate and flip commands', () => {
     ])
   })
 
-  for (const reset of ['resetViewport', 'niivueResetView'])
-    it(`clear the turn and flips on ${reset} (OHIF's and NiiVue's reset)`, () => {
-      const nv = register('nv-1')
-      const { run } = fakeHost('nv-1')
-      run('rotateViewportCW')
-      run('flipViewportHorizontal')
-      run('setViewportVerticalFlip')
-      run(reset)
-      expect([
-        nv.rotation2D,
-        nv.isFlipped2DHorizontal,
-        nv.isFlipped2DVertical,
-      ]).toEqual([0, false, false])
-    })
+  it("clear the turn and flips on OHIF's resetViewport", () => {
+    const nv = register('nv-1')
+    const { run } = fakeHost('nv-1')
+    run('rotateViewportCW')
+    run('flipViewportHorizontal')
+    run('setViewportVerticalFlip')
+    run('resetViewport')
+    expect([
+      nv.rotation2D,
+      nv.isFlipped2DHorizontal,
+      nv.isFlipped2DVertical,
+    ]).toEqual([0, false, false])
+  })
 
   it('leave a render-only view alone (the turn applies to 2D tiles only)', () => {
     const nv = register('nv-1')

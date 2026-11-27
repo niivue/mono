@@ -1,5 +1,5 @@
 import type NiiVue from '@niivue/niivue'
-import { rasToLps } from './commands'
+import { rasToLps } from './measurementReflection'
 import { SLICE_AXIS } from './quantify'
 import { activeSegmentValue } from './segEdit'
 import { annotationFromRow } from './srImport'

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { dicomWindow, unitForDisplaySet } from './commands'
+import { dicomWindow } from './commands'
+import { unitForDisplaySet } from './measurementReflection'
 import { floorSuvWindow, scaleNifti, suvBwFactor } from './suv'
 
 // OHIF D6 (TMTV) PET AC: 91 kg, 588.8 MBq FDG at 07:21, series 09:59:47.

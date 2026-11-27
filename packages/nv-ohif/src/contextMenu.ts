@@ -5,8 +5,8 @@
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect } from 'react'
 import { annotationAt } from './annotationHit'
-import { reflectedRowUid } from './commands'
 import { isContourAnnotation } from './contourSeg'
+import { reflectedRowUid } from './measurementReflection'
 import type { OhifCommandsManager } from './ohif-types'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 

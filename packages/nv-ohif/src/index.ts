@@ -5,7 +5,6 @@ import {
   NIIVUE_CLIP_PLANES,
   NIIVUE_COLORMAPS,
   NIIVUE_SLICE_TYPES,
-  resetReleasedRows,
 } from './commands'
 import { resetParkedContours } from './contourSeg'
 import { displaySetToNiivue } from './displaySetToNiivue'
@@ -14,6 +13,7 @@ import {
   getNiivueViewportModule,
   NIIVUE_VIEWPORT_NAME,
 } from './getNiivueViewportModule'
+import { resetReleasedRows } from './measurementReflection'
 import { NiivueViewport } from './NiivueViewport'
 import {
   NIIVUE_SUPPORTED_TOOLS,

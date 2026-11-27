@@ -12,8 +12,8 @@ import {
   lengthUnit,
   paneScale,
 } from './calibration'
-import { probeIndex } from './commands'
 import { isContourAnnotation } from './contourSeg'
+import { probeIndex } from './measurementReflection'
 import { slideRowTool, slideRowValues } from './slideMeasurements'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 

@@ -7,8 +7,8 @@ import {
   setCalibrationScale,
   syncReportRows,
 } from './calibration'
-import { measurementNote } from './commands'
 import { snapshot } from './measurementData'
+import { measurementNote } from './measurementReflection'
 import {
   registerNiivue,
   unregisterNiivue,

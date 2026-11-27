@@ -9,7 +9,7 @@ const {
   clearNiivueAnnotations,
   isReleasedRow,
   removeAnnotationsForRows,
-} = await import('./commands')
+} = await import('./measurementReflection')
 const { adoptReportScale, calibrationScale, syncReportRows } = await import(
   './calibration'
 )

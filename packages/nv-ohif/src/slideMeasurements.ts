@@ -4,8 +4,8 @@ import type {
   SlideAnnotation,
   SlideAnnotationTool,
 } from '@niivue/niivue'
-import { niivueMeasurementSource, roundNumber } from './commands'
 import { rowReport } from './csvReport'
+import { niivueMeasurementSource, roundNumber } from './measurementReflection'
 import { ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
 import { type CommandsLike, routeSlideSR, type SlideRow } from './slideSR'

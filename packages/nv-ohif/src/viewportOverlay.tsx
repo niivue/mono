@@ -3,7 +3,7 @@
 // slice in the acquisition plane its instance number and stack position lower
 // right.
 import type { CSSProperties } from 'react'
-import { rasToLps } from './commands'
+import { rasToLps } from './measurementReflection'
 import type { OhifDisplaySet } from './ohif-types'
 import { frameAt, type SliceFrames, shownImages } from './sliceFrames'
 

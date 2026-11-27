@@ -6,7 +6,7 @@
 // as one step that joins that group, so a single undo restores them all.
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect } from 'react'
-import { removeAnnotationsForRows } from './commands'
+import { removeAnnotationsForRows } from './measurementReflection'
 import { cornerstoneLibraries } from './niivueRegistry'
 import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 

@@ -17,6 +17,7 @@ import {
 import { useEffect } from 'react'
 import { programmaticAnnotations } from './arrowText'
 import { adoptReportScale, moveReportRow } from './calibration'
+import { measurementStyleOf } from './contourSeg'
 import {
   adoptedRowUids,
   claimPendingJump,
@@ -26,8 +27,7 @@ import {
   rasToLps,
   reflectedRowUid,
   releasedAnnotationId,
-} from './commands'
-import { measurementStyleOf } from './contourSeg'
+} from './measurementReflection'
 import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
 import type { OhifMeasurement, OhifServicesManager } from './ohif-types'
 import { SLICE_AXIS } from './quantify'

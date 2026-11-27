@@ -3,18 +3,8 @@ import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
 import { setCalibrationScale } from './calibration'
 import {
-  adoptedRowUids,
-  applyDefaultAnnotationText,
-  applyNiivueAnnotationDelta,
-  applyOhifLabelToAnnotation,
-  applyOhifVisibilityToAnnotation,
-  claimPendingJump,
-  clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
-  isAnnotationShown,
-  isReleasedRow,
-  jumpToNiivueMeasurement,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -22,16 +12,28 @@ import {
   overlayCandidates,
   overlayOrder,
   readBaseWindowLevel,
+  resetView,
+  resolveWindowLevel,
+} from './commands'
+import * as dicomToNiivue from './dicomToNiivue'
+import {
+  adoptedRowUids,
+  applyDefaultAnnotationText,
+  applyNiivueAnnotationDelta,
+  applyOhifLabelToAnnotation,
+  applyOhifVisibilityToAnnotation,
+  claimPendingJump,
+  clearNiivueAnnotations,
+  isAnnotationShown,
+  isReleasedRow,
+  jumpToNiivueMeasurement,
   reconcileNiivueAnnotations,
   reflectedRowUid,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
-  resetView,
-  resolveWindowLevel,
   roundNumber,
   subscribeOhifLabelSync,
-} from './commands'
-import * as dicomToNiivue from './dicomToNiivue'
+} from './measurementReflection'
 import {
   getActiveNiivueEntry,
   getNiivueEntryForViewport,

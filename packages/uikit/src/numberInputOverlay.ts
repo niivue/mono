@@ -67,7 +67,6 @@ interface NumberInputEntry {
   /** The last value `onInput` reported (or the committed one). */
   lastInput: number
   firstGlyph: number
-  hover: boolean
   spinHover: 1 | -1 | 0
 }
 
@@ -171,7 +170,7 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
     const layout = this.entries.layoutOf(entry)
     const spin = numberInputSpinAt(layout, x, y)
     const wasFocused = this.focusedId === entry.spec.id
-    this.pressId = entry.spec.id
+    this.pressedId = entry.spec.id
     this.pressPart = spin === 0 ? 'text' : spin
     // Focusing selects all, which would scroll to the end; a press keeps the
     // glyphs the user is looking at so a drag starts where they pressed.
@@ -189,8 +188,8 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
   }
 
   pointerMove(x: number, y: number): boolean {
-    if (this.pressId !== null) {
-      const entry = this.entries.get(this.pressId)
+    if (this.pressedId !== null) {
+      const entry = this.entries.get(this.pressedId)
       if (entry && this.pressPart === 'text' && entry.edit) {
         const next = setCaret(entry.edit, this.dragCaretAt(entry, x), true)
         if (next.caret !== entry.edit.caret) {
@@ -207,14 +206,8 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
     const cursor = spin === 0 ? 'text' : 'pointer'
     if (id !== this.hoverId || (hit && hit.spinHover !== spin)) {
       const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) {
-        prev.hover = false
-        prev.spinHover = 0
-      }
-      if (hit) {
-        hit.hover = true
-        hit.spinHover = spin
-      }
+      if (prev) prev.spinHover = 0
+      if (hit) hit.spinHover = spin
       this.hoverId = id
       this.invalidate()
     }
@@ -223,8 +216,8 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
   }
 
   pointerUp(x: number, y: number): boolean {
-    if (this.pressId === null) return false
-    this.pressId = null
+    if (this.pressedId === null) return false
+    this.pressedId = null
     this.invalidate()
     this.pointerMove(x, y)
     return true
@@ -315,7 +308,6 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
       session: 0,
       lastInput: value,
       firstGlyph: 0,
-      hover: false,
       spinHover: 0,
     }
   }
@@ -399,10 +391,12 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
         edit: entry.edit,
         firstGlyph: entry.firstGlyph,
         valid: !entry.edit || Number.isFinite(this.typedValue(entry)),
-        hover: entry.hover,
+        hover: this.hoverId === entry.spec.id,
         spinHover: entry.spinHover,
         spinPressed:
-          this.pressId === id && this.pressPart !== 'text' ? this.pressPart : 0,
+          this.pressedId === id && this.pressPart !== 'text'
+            ? this.pressPart
+            : 0,
         enabled: entry.spec.enabled !== false,
       })
     }

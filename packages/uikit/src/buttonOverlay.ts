@@ -27,7 +27,6 @@ import { UIKitControls, type UIKitHost, type UIKitKeyEvent } from './controls'
 import type { UIKitOverlayFrame } from './hook'
 import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
-import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 /** What `attach` needs from a host: NiiVue satisfies it as-is. */
@@ -57,7 +56,6 @@ interface ButtonEntry {
   style: ButtonStyle
   /** Resting box in canvas pixels, for the scale it was laid out at. */
   layout: ButtonLayout | null
-  hover: boolean
   press: number
   pressTarget: number
   /** A programmatic click: run the press to 1, then release. */
@@ -80,7 +78,6 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
   readonly hoverCursor = 'pointer'
   private readonly now: () => number
   private lastTick = 0
-  private pressedId: string | null = null
 
   constructor(font: UIKitFont, options: UIKitButtonOverlayOptions = {}) {
     super(font, MODEL, options)
@@ -89,41 +86,24 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
 
   /** Add a button, or replace the one with the same id (keeping its press state). */
   addButton(spec: ButtonSpec): void {
-    const existing = this.entries.get(spec.id)
-    const style = resolveStyle(this.baseStyle, spec.style)
-    if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        hover: false,
-        press: 0,
-        pressTarget: 0,
-        pulse: false,
-      })
-    }
+    this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      press: 0,
+      pressTarget: 0,
+      pulse: false,
+    }))
     this.invalidate()
   }
 
   /** Replace the whole button set. */
   setButtons(specs: readonly ButtonSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addButton(spec),
-      (id) => this.removeButton(id),
-    )
+    this.replaceAll(specs, (spec) => this.addButton(spec))
   }
 
   removeButton(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.pressedId === id) this.pressedId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.invalidate()
+    this.remove(id)
   }
 
   /** Patch one button's spec (label, position, style, enabled, callback). */
@@ -207,15 +187,7 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
       }
       return true
     }
-    const hit = this.hitEntry(x, y)
-    const id = hit ? hit.spec.id : null
-    if (id !== this.hoverId) {
-      const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) prev.hover = false
-      if (hit) hit.hover = true
-      this.hoverId = id
-      this.invalidate()
-    }
+    this.setHover(this.hitEntry(x, y))
     return false
   }
 
@@ -337,7 +309,7 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
         this.font.metrics,
         this.entries.layoutOf(entry),
         {
-          hover: entry.hover,
+          hover: this.hoverId === entry.spec.id,
           press: entry.press,
           enabled: entry.spec.enabled !== false,
         },

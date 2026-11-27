@@ -85,7 +85,6 @@ interface TextAreaEntry {
   goalX: number | null
   /** The caret at a soft break shows at the end of the upper row. */
   upstream: boolean
-  hover: boolean
   wheelCarry: WheelAccumulator | null
   /** A wheel or thumb drag intentionally moved the viewport away from the caret. */
   manualScroll: boolean
@@ -213,7 +212,7 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
       this.lastDownId === id && t - this.lastDownAt <= this.doubleClickMs
     this.lastDownId = id
     this.lastDownAt = t
-    this.pressId = id
+    this.pressedId = id
     // Focusing selects all and rewinds the scroll; a press keeps the rows
     // the user is looking at so the caret lands where they pressed.
     const firstRow = entry.firstRow
@@ -238,8 +237,8 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
       if (entry) this.setScrollFromThumb(entry, y - this.scrollDrag.offsetY)
       return true
     }
-    if (this.pressId !== null) {
-      const entry = this.entries.get(this.pressId)
+    if (this.pressedId !== null) {
+      const entry = this.entries.get(this.pressedId)
       if (entry?.edit) {
         const hit = this.caretAt(entry, x, y)
         const next = setCaret(entry.edit, hit.caret, true)
@@ -263,11 +262,7 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
         : null
     if (id !== this.hoverId) {
       const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) {
-        prev.hover = false
-        prev.wheelCarry?.reset()
-      }
-      if (hit) hit.hover = true
+      prev?.wheelCarry?.reset()
       this.hoverId = id
       this.invalidate()
     }
@@ -287,8 +282,8 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
       this.pointerMove(x, y)
       return true
     }
-    if (this.pressId === null) return false
-    this.pressId = null
+    if (this.pressedId === null) return false
+    this.pressedId = null
     this.pointerMove(x, y)
     return true
   }
@@ -422,7 +417,6 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
       firstRow: 0,
       goalX: null,
       upstream: false,
-      hover: false,
       wheelCarry: null,
       manualScroll: false,
     }
@@ -580,7 +574,7 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
         firstRow: entry.firstRow,
         upstream: entry.upstream,
         revealCaret: !entry.manualScroll,
-        hover: entry.hover,
+        hover: this.hoverId === entry.spec.id,
         enabled: entry.spec.enabled !== false,
       }
       const geo = buildTextArea(spec, style, layout, this.font.metrics, visual)

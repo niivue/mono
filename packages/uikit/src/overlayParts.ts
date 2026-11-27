@@ -1,7 +1,7 @@
 // Mechanics shared by the widget overlays: the rect + line + label bundle they
 // draw through, the entry map they keep specs in, and the entry-overlay base
-// that wires the two to a widget model (with the hover and focus ids). Pointer
-// handling, keys and callbacks stay in each widget.
+// that wires the two to a widget model (add, remove, press, hover, focus).
+// Pointer handling, keys and callbacks stay in each widget.
 
 import type { UIKitInteractive, UIKitRedrawSource } from './controls'
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
@@ -179,6 +179,8 @@ export abstract class UIKitEntryOverlay<
   protected layer: UIKitRedrawSource | null = null
   protected hoverId: string | null = null
   protected focusedId: string | null = null
+  /** The entry the pointer went down on and still holds. */
+  protected pressedId: string | null = null
 
   constructor(
     protected readonly font: UIKitFont,
@@ -228,6 +230,45 @@ export abstract class UIKitEntryOverlay<
   /** Release GPU resources on both backends. */
   destroy(): void {
     this.bundle.destroy()
+  }
+
+  /**
+   * Restyle the entry with this spec's id for it (layout dropped) and return
+   * it, or add the one `create` makes and return null.
+   */
+  protected upsert(spec: S, create: (style: St) => E): E | null {
+    const style = resolveStyle(this.baseStyle, spec.style)
+    const existing = this.entries.get(spec.id)
+    if (!existing) {
+      this.entries.set(spec.id, create(style))
+      return null
+    }
+    existing.spec = spec
+    existing.style = style
+    existing.layout = null
+    return existing
+  }
+
+  /** Replace the id set: remove the ids `specs` lacks, then `add` each spec. */
+  protected replaceAll(specs: readonly S[], add: (spec: S) => void): void {
+    this.entries.replaceAll(specs, add, (id) => this.remove(id))
+  }
+
+  /** Drop an entry with its press, hover and focus. */
+  protected remove(id: string): void {
+    if (!this.entries.delete(id)) return
+    if (this.pressedId === id) this.pressedId = null
+    if (this.hoverId === id) this.hoverId = null
+    if (this.focusedId === id) this.focusedId = null
+    this.invalidate()
+  }
+
+  /** Point the hover at `hit`'s entry, redrawing when it moved. */
+  protected setHover(hit: E | null): void {
+    const id = hit ? hit.spec.id : null
+    if (id === this.hoverId) return
+    this.hoverId = id
+    this.invalidate()
   }
 
   /** Give an entry keyboard focus, or null to clear. Disabled entries refuse. */

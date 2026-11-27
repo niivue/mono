@@ -23,7 +23,6 @@ import {
   snapValue,
   stepValue,
 } from './slider'
-import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 export interface UIKitSliderOverlayOptions {
@@ -43,7 +42,6 @@ interface SliderEntry {
   style: SliderStyle
   layout: SliderLayout | null
   value: number
-  hover: boolean
 }
 
 const MODEL = {
@@ -60,7 +58,6 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
   SliderEntry
 > {
   readonly hoverCursor = 'pointer'
-  private dragId: string | null = null
   /** The value when the drag started, to decide whether release fires onChange. */
   private dragStartValue = 0
 
@@ -78,47 +75,32 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
         `UIKit: slider "${spec.id}" needs finite min and max`,
       )
     }
-    const existing = this.entries.get(spec.id)
-    const style = resolveStyle(this.baseStyle, spec.style)
     const value = snapValue(spec.value, spec.min, spec.max, spec.step)
+    const existing = this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      value,
+    }))
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
       existing.value = value
       // Disabling ends a drag as a cancel does, with its onChange, and
       // drops focus.
       if (spec.enabled === false) {
-        if (this.dragId === spec.id) this.endDrag()
+        if (this.pressedId === spec.id) this.endDrag()
         if (this.focusedId === spec.id) this.focusedId = null
       }
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        value,
-        hover: false,
-      })
     }
-    this.bundle.invalidate()
+    this.invalidate()
   }
 
   /** Replace the whole slider set. */
   setSliders(specs: readonly SliderSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addSlider(spec),
-      (id) => this.removeSlider(id),
-    )
+    this.replaceAll(specs, (spec) => this.addSlider(spec))
   }
 
   removeSlider(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.dragId === id) this.dragId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.bundle.invalidate()
+    this.remove(id)
   }
 
   /**
@@ -178,14 +160,14 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
 
   /** True while a thumb is being dragged. */
   get isDragging(): boolean {
-    return this.dragId !== null
+    return this.pressedId !== null
   }
 
   /** Jumps the thumb to the pointer and starts a drag. */
   pointerDown(x: number, y: number): boolean {
     const entry = this.hitEntry(x, y)
     if (!entry) return false
-    this.dragId = entry.spec.id
+    this.pressedId = entry.spec.id
     this.dragStartValue = entry.value
     this.focus(entry.spec.id)
     this.setFromPointer(entry, x)
@@ -194,27 +176,19 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
   }
 
   pointerMove(x: number, y: number): boolean {
-    if (this.dragId !== null) {
-      const entry = this.entries.get(this.dragId)
+    if (this.pressedId !== null) {
+      const entry = this.entries.get(this.pressedId)
       if (entry) this.setFromPointer(entry, x)
       return true
     }
-    const hit = this.hitEntry(x, y)
-    const id = hit ? hit.spec.id : null
-    if (id !== this.hoverId) {
-      const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) prev.hover = false
-      if (hit) hit.hover = true
-      this.hoverId = id
-      this.bundle.invalidate()
-    }
+    this.setHover(this.hitEntry(x, y))
     return false
   }
 
   /** Ends the drag; fires `onChange` if the value moved since the press. */
   pointerUp(x: number, y: number): boolean {
-    if (this.dragId === null) return false
-    const entry = this.entries.get(this.dragId)
+    if (this.pressedId === null) return false
+    const entry = this.entries.get(this.pressedId)
     if (entry) this.setFromPointer(entry, x)
     this.endDrag()
     this.pointerMove(x, y)
@@ -223,7 +197,7 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
 
   /** Ends the drag where it is; fires `onChange` if the value moved. */
   pointerCancel(): void {
-    if (this.dragId === null) return
+    if (this.pressedId === null) return
     this.endDrag()
   }
 
@@ -275,8 +249,8 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
   }
 
   private endDrag(): void {
-    const id = this.dragId
-    this.dragId = null
+    const id = this.pressedId
+    this.pressedId = null
     this.bundle.invalidate()
     const entry = id !== null ? this.entries.get(id) : undefined
     if (entry && entry.value !== this.dragStartValue) {
@@ -299,8 +273,8 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
       const id = entry.spec.id
       yield buildSlider(spec, style, this.entries.layoutOf(entry), {
         value: entry.value,
-        hover: entry.hover,
-        active: this.dragId === id,
+        hover: this.hoverId === id,
+        active: this.pressedId === id,
         focused: this.focusedId === id,
         enabled: entry.spec.enabled !== false,
       })

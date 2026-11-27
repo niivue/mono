@@ -8,7 +8,6 @@
 import type { UIKitKeyEvent } from './controls'
 import { UIKitEntryOverlay, type UIKitGeometry } from './overlayParts'
 import { unscaleBox } from './rect'
-import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 import {
   buildToggle,
@@ -38,7 +37,6 @@ interface ToggleEntry {
   style: ToggleStyle
   layout: ToggleLayout | null
   checked: boolean
-  hover: boolean
 }
 
 const MODEL = {
@@ -55,7 +53,6 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
   ToggleEntry
 > {
   readonly hoverCursor = 'pointer'
-  private pressedId: string | null = null
   /** While pressed: whether the pointer is currently over the pressed toggle. */
   private pressInside = false
 
@@ -68,40 +65,23 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
    * current checked state unless the new spec sets `checked`.
    */
   addToggle(spec: ToggleSpec): void {
-    const existing = this.entries.get(spec.id)
-    const style = resolveStyle(this.baseStyle, spec.style)
-    if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
-      if (spec.checked !== undefined) existing.checked = spec.checked
-    } else {
-      this.entries.set(spec.id, {
-        spec,
-        style,
-        layout: null,
-        checked: spec.checked ?? false,
-        hover: false,
-      })
-    }
-    this.bundle.invalidate()
+    const existing = this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      checked: spec.checked ?? false,
+    }))
+    if (existing && spec.checked !== undefined) existing.checked = spec.checked
+    this.invalidate()
   }
 
   /** Replace the whole toggle set. */
   setToggles(specs: readonly ToggleSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addToggle(spec),
-      (id) => this.removeToggle(id),
-    )
+    this.replaceAll(specs, (spec) => this.addToggle(spec))
   }
 
   removeToggle(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.pressedId === id) this.pressedId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.bundle.invalidate()
+    this.remove(id)
   }
 
   /** Patch one toggle's spec (label, position, style, enabled, checked, callback). */
@@ -185,15 +165,7 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
       }
       return true
     }
-    const hit = this.hitEntry(x, y)
-    const id = hit ? hit.spec.id : null
-    if (id !== this.hoverId) {
-      const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) prev.hover = false
-      if (hit) hit.hover = true
-      this.hoverId = id
-      this.bundle.invalidate()
-    }
+    this.setHover(this.hitEntry(x, y))
     return false
   }
 
@@ -242,7 +214,7 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
         this.entries.layoutOf(entry),
         {
           checked: entry.checked,
-          hover: entry.hover,
+          hover: this.hoverId === id,
           pressed: this.pressedId === id && this.pressInside,
           focused: this.focusedId === id,
           enabled: entry.spec.enabled !== false,

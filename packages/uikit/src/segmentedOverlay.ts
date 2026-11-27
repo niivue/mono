@@ -24,7 +24,6 @@ import {
   segmentIndex,
   stepSegmentValue,
 } from './segmented'
-import { resolveStyle } from './style'
 import type { UIKitFont } from './text/font'
 
 export interface UIKitSegmentedOverlayOptions {
@@ -63,7 +62,6 @@ export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
   SegmentedEntry
 > {
   readonly hoverCursor = 'pointer'
-  private pressedId: string | null = null
   /** Index of the segment the press started on. */
   private pressedIndex = -1
   /** While pressed: whether the pointer is over the pressed segment. */
@@ -78,37 +76,29 @@ export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
    * the new spec's value; a value no segment holds clears the selection.
    */
   addSegmented(spec: SegmentedSpec): void {
-    const style = resolveStyle(this.baseStyle, spec.style)
     const value =
       segmentIndex(spec.segments, spec.value) >= 0 ? spec.value : null
-    const existing = this.entries.get(spec.id)
+    const existing = this.upsert(spec, (style) => ({
+      spec,
+      style,
+      layout: null,
+      value,
+      hover: -1,
+    }))
     if (existing) {
-      existing.spec = spec
-      existing.style = style
-      existing.layout = null
       existing.value = value
       existing.hover = -1
-    } else {
-      this.entries.set(spec.id, { spec, style, layout: null, value, hover: -1 })
     }
-    this.bundle.invalidate()
+    this.invalidate()
   }
 
   /** Replace the whole control set. */
   setSegmenteds(specs: readonly SegmentedSpec[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => this.addSegmented(spec),
-      (id) => this.removeSegmented(id),
-    )
+    this.replaceAll(specs, (spec) => this.addSegmented(spec))
   }
 
   removeSegmented(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.pressedId === id) this.pressedId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.bundle.invalidate()
+    this.remove(id)
   }
 
   /** Patch one control's spec. The value is kept unless the patch sets `value`. */

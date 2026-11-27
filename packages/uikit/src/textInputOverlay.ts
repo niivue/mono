@@ -70,7 +70,6 @@ interface TextInputEntry {
   /** Bumped whenever an edit starts, so a slow paste read knows its session is over. */
   session: number
   firstGlyph: number
-  hover: boolean
 }
 
 const MODEL = {
@@ -171,7 +170,7 @@ export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
       this.lastDownId === id && t - this.lastDownAt <= this.doubleClickMs
     this.lastDownId = id
     this.lastDownAt = t
-    this.pressId = id
+    this.pressedId = id
     // Focusing selects all, which would scroll to the end; a press keeps the
     // glyphs the user is looking at so the caret lands where they pressed.
     const first = entry.firstGlyph
@@ -188,8 +187,8 @@ export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
   }
 
   pointerMove(x: number, y: number): boolean {
-    if (this.pressId !== null) {
-      const entry = this.entries.get(this.pressId)
+    if (this.pressedId !== null) {
+      const entry = this.entries.get(this.pressedId)
       if (entry?.edit) {
         const next = setCaret(entry.edit, this.dragCaretAt(entry, x), true)
         if (next.caret !== entry.edit.caret) {
@@ -200,21 +199,13 @@ export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
       }
       return true
     }
-    const hit = this.hitEntry(x, y)
-    const id = hit ? hit.spec.id : null
-    if (id !== this.hoverId) {
-      const prev = this.hoverId ? this.entries.get(this.hoverId) : null
-      if (prev) prev.hover = false
-      if (hit) hit.hover = true
-      this.hoverId = id
-      this.invalidate()
-    }
+    this.setHover(this.hitEntry(x, y))
     return false
   }
 
   pointerUp(x: number, y: number): boolean {
-    if (this.pressId === null) return false
-    this.pressId = null
+    if (this.pressedId === null) return false
+    this.pressedId = null
     this.pointerMove(x, y)
     return true
   }
@@ -284,7 +275,6 @@ export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
       edit: null,
       session: 0,
       firstGlyph: 0,
-      hover: false,
     }
   }
 
@@ -321,7 +311,7 @@ export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
         text: this.shown(entry),
         edit: entry.edit,
         firstGlyph: entry.firstGlyph,
-        hover: entry.hover,
+        hover: this.hoverId === entry.spec.id,
         enabled: entry.spec.enabled !== false,
       }
       const geo = buildTextInput(spec, style, layout, this.font.metrics, visual)

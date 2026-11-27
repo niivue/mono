@@ -44,7 +44,6 @@ interface FieldEntry<S, St, L, V> {
   edit: TextEditState | null
   /** Bumped whenever an edit starts, so a slow paste read knows its session is over. */
   session: number
-  hover: boolean
 }
 
 export interface UIKitFieldOverlayOptions<St>
@@ -60,8 +59,6 @@ export abstract class UIKitFieldOverlay<
   E extends FieldEntry<S, St, L, V>,
 > extends UIKitEntryOverlay<S, St, L, E> {
   protected clipboard: ClipboardBridge | null
-  /** The held press. */
-  protected pressId: string | null = null
 
   constructor(
     font: UIKitFont,
@@ -133,8 +130,8 @@ export abstract class UIKitFieldOverlay<
   }
 
   pointerCancel(): void {
-    if (this.pressId === null) return
-    this.pressId = null
+    if (this.pressedId === null) return
+    this.pressedId = null
     this.invalidate()
   }
 
@@ -229,29 +226,17 @@ export abstract class UIKitFieldOverlay<
    * progress, as `update` does; a different `value` replaces it as `add` does.
    */
   protected setAll(specs: readonly S[]): void {
-    this.entries.replaceAll(
-      specs,
-      (spec) => {
-        const entry = this.entries.get(spec.id)
-        if (
-          entry &&
-          (spec.value === undefined ||
-            this.normalize(spec, spec.value) ===
-              this.normalize(spec, entry.value))
-        )
-          this.respec(entry, spec)
-        else this.add(spec)
-      },
-      (id) => this.remove(id),
-    )
-  }
-
-  protected remove(id: string): void {
-    if (!this.entries.delete(id)) return
-    if (this.pressId === id) this.pressId = null
-    if (this.hoverId === id) this.hoverId = null
-    if (this.focusedId === id) this.focusedId = null
-    this.invalidate()
+    this.replaceAll(specs, (spec) => {
+      const entry = this.entries.get(spec.id)
+      if (
+        entry &&
+        (spec.value === undefined ||
+          this.normalize(spec, spec.value) ===
+            this.normalize(spec, entry.value))
+      )
+        this.respec(entry, spec)
+      else this.add(spec)
+    })
   }
 
   /** Patch one field's spec. The committed value is kept unless the patch sets `value`. */
@@ -275,7 +260,7 @@ export abstract class UIKitFieldOverlay<
     entry.layout = null
     entry.value = this.normalize(spec, entry.value)
     if (spec.enabled === false) {
-      if (this.pressId === spec.id) this.pressId = null
+      if (this.pressedId === spec.id) this.pressedId = null
       if (this.focusedId === spec.id) {
         entry.edit = null
         this.focusedId = null

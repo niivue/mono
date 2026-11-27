@@ -123,6 +123,11 @@ const parked = new Map<
   { source: string; shapes: VectorAnnotation[]; lutIndex: number }
 >()
 
+/** Drop parked shapes (mode exit: no pane of this study will return). */
+export function resetParkedContours() {
+  parked.clear()
+}
+
 /**
  * The other NiiVue panes showing a segmentation's series (MPR, a 2-up): each
  * holds a copy of its shapes, so any of them draws into it and shows it on a

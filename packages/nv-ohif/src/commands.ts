@@ -827,6 +827,11 @@ export function claimPendingJump(uid: string): boolean {
   return true
 }
 
+/** Forget rows released by unmounted panes (mode exit: OHIF drops them). */
+export function resetReleasedRows(): void {
+  releasedRows.clear()
+}
+
 /** Detach a viewport's rows from it, leaving them in OHIF. */
 export function releaseImportedRows(viewportId: string): void {
   const byView = reflectedAnnotations.get(viewportId)

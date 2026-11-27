@@ -160,3 +160,11 @@ test('calibrated rows and the flash note carry scaled values and User units', ()
   const [native] = snapshot(nv, 'HU', 'vp-rows').map((r) => r.values)
   expect([native?.length, native?.lengthUnit]).toEqual([5, undefined])
 })
+
+// A study's calibration must not carry into the next mode entry.
+test('mode exit forgets every calibration', async () => {
+  const { default: extension } = await import('./index')
+  setCalibrationScale('exit-ds', 2)
+  extension.onModeExit?.()
+  expect(calibrationScale('exit-ds')).toBe(1)
+})

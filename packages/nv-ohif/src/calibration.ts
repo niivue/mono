@@ -62,6 +62,13 @@ const liveAnnotationIds = () =>
 const isReportRow = (id: string) =>
   [...reportRows.values()].some((e) => e.rows.has(id))
 
+/** Forget every scale and report row (mode exit: a new study follows). */
+export function resetCalibration() {
+  scales.clear()
+  reportRows.clear()
+  parkedRows.clear()
+}
+
 /** Keep released rows' scale while their OHIF rows wait for a pane. */
 export function parkReportRows(annotationIds: Iterable<string>) {
   for (const id of annotationIds) if (isReportRow(id)) parkedRows.add(id)

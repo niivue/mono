@@ -1,10 +1,13 @@
 import { version } from '../package.json'
+import { resetCalibration } from './calibration'
 import {
   getNiivueCommandsModule,
   NIIVUE_CLIP_PLANES,
   NIIVUE_COLORMAPS,
   NIIVUE_SLICE_TYPES,
+  resetReleasedRows,
 } from './commands'
+import { resetParkedContours } from './contourSeg'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import { getNiivuePanelModule } from './dynamicPanel'
 import {
@@ -60,7 +63,14 @@ const niivueOhifExtension: OhifExtension = {
   getCommandsModule: (params) => getNiivueCommandsModule(params),
   getToolbarModule: (params) => getNiivueToolbarModule(params),
   getPanelModule: (params) => getNiivuePanelModule(params),
-  onModeExit: () => resetQuant(),
+  // State that lives for a study: the next mode entry starts clean. Pane
+  // state goes with each pane (unmount).
+  onModeExit: () => {
+    resetQuant()
+    resetCalibration()
+    resetParkedContours()
+    resetReleasedRows()
+  },
   // Auto-registered at default scope; modes pull the packs in by reference
   // ('niivue.toolbarButtons' / 'niivue.toolbarSections').
   getCustomizationModule: () => [

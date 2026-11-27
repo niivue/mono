@@ -580,6 +580,14 @@ describe('list_measurements and edit_measurements', () => {
     expect(() => edit_measurements({ action: 'remove', ids: ['a1'] })).toThrow(
       'There is no measurement with the id "a1".',
     )
+    // Ends in no common slice are refused, not projected (that shortens it).
+    expect(() =>
+      edit_measurements({
+        action: 'add',
+        start_mm: [0, 0, 0],
+        end_mm: [3, 4, 5],
+      }),
+    ).toThrow('must lie in one axial, coronal or sagittal slice')
     edit_measurements({ action: 'clear_angles' })
     expect(view.removeAnnotations).toHaveBeenLastCalledWith(['ang'], true)
     edit_measurements({ action: 'remove', ids: [added.id] })

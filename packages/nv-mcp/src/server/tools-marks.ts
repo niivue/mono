@@ -227,7 +227,9 @@ export const MARK_SCHEMAS = {
     start_mm: triple(
       'For add: where the measurement starts, in world units.',
     ).optional(),
-    end_mm: triple('For add: where it ends, in world units.').optional(),
+    end_mm: triple(
+      'For add: where it ends, in world units; in the same axial, coronal or sagittal slice as start_mm.',
+    ).optional(),
     slice: SLICE_ARG,
     ids: z
       .array(z.string().min(1))

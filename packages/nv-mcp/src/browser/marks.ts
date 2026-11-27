@@ -157,6 +157,8 @@ function sliceType(params: Params, key: string): number | undefined {
  * A measureLine annotation from `start` to `end` (mm) on a slice plane: the
  * one with the smallest extent unless given, through `start`. Built as NiiVue's
  * measure tool builds one (slice-2D ends, a thin-line polygon, the length).
+ * Both ends must lie in that slice: a measurement is drawn on one, and
+ * projecting an end onto it would change the distance asked for.
  */
 function measureLine(
   start: [number, number, number],
@@ -173,6 +175,11 @@ function measureLine(
   const depth =
     slice === undefined ? extent.indexOf(Math.min(...extent)) : 2 - slice
   const sliceType = [2, 1, 0][depth] ?? 0
+  const off = Math.abs(end[depth] - start[depth])
+  if (off > 1e-3)
+    throw new Error(
+      `start_mm and end_mm must lie in one axial, coronal or sagittal slice; they are ${off.toFixed(3)} mm apart across it.`,
+    )
   const [u, v] = [0, 1, 2].filter((i) => i !== depth) as [number, number]
   const a = { x: start[u], y: start[v] }
   const b = { x: end[u], y: end[v] }

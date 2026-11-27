@@ -61,6 +61,8 @@ export const NIIVUE_STANDARD_COMMANDS = [
   'lastImage',
   'setViewportColormap',
   'deleteActiveAnnotation',
+  'cancelActiveOperation',
+  'cancelMeasurement',
   'nextImage',
   'previousImage',
   'showDownloadViewportModal',
@@ -564,6 +566,18 @@ export function getStandardCommandDefinitions({
         if (nv.cancelAnnotationInProgress()) return
         const id = nv.selectedAnnotation
         if (id) nv.removeAnnotation(id, true)
+      }),
+    },
+    // Escape (OHIF's cancelActiveOperation, which calls cornerstone's
+    // cancelMeasurement action directly): drop a half-drawn shape.
+    cancelActiveOperation: {
+      commandFn: route('cancelActiveOperation', ({ nv }) => {
+        nv.cancelAnnotationInProgress()
+      }),
+    },
+    cancelMeasurement: {
+      commandFn: route('cancelMeasurement', ({ nv }) => {
+        nv.cancelAnnotationInProgress()
       }),
     },
     jumpToImage: {

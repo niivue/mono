@@ -295,6 +295,17 @@ const MESH_DRAW_TIME_OPTIONS = new Set([
   'isLegendVisible',
 ])
 
+/** The scene values broadcastTo syncs, as comparable strings. The crosshair
+ * is compared in world mm, the unit sent: an affine change moves it there. */
+function syncedState(nv: NiiVue): Record<string, string> {
+  const scene = nv.model.scene
+  return {
+    view3d: `${scene.azimuth},${scene.elevation},${scene.scaleMultiplier}`,
+    crosshair: String(Array.from(nv.model.scene2mm(scene.crosshairPos))),
+    pan: String(Array.from(scene.pan2Dxyzmm)),
+  }
+}
+
 /** Mark a mesh's vertex data as edited in place so the GPU re-uploads it. */
 function markMeshDataChanged(m: NVMeshType): void {
   m._dataVersion = (m._dataVersion ?? 0) + 1
@@ -786,6 +797,11 @@ export default class NiiVue extends EventTarget {
   private _syncTargets: NiiVue[] = []
   private _syncOpts: SyncOpts = {}
   private _syncDirty = false
+  // What _sync last sent each target: a redraw for another reason (a cine
+  // frame, a load) must not push stale values over a peer's newer move. Per
+  // target, so a receipt suppresses only the echo to its sender and a newly
+  // linked target still gets a full first sync.
+  private _syncSent = new WeakMap<NiiVue, Record<string, string>>()
   private _rafId: number | null = null
   // The transition animateTo is running, if any
   private _animation: Animation | null = null
@@ -7688,6 +7704,8 @@ export default class NiiVue extends EventTarget {
 
   /**
    * Sync the scene controls (orientation, crosshair location, etc.) from one NiiVue instance to others.
+   * A value is sent when it changes in this instance, not on every redraw, and a
+   * value received from a peer is not sent back.
    * @param targets - the other NiiVue instance(s) to broadcast to, or omit to clear sync
    * @param opts - which properties to sync (default: { '2d': true, '3d': true })
    * @example
@@ -7708,6 +7726,7 @@ export default class NiiVue extends EventTarget {
     this._syncTargets = Array.isArray(targets) ? targets : [targets]
     this._syncOpts = opts
     this._syncDirty = false
+    this._syncSent = new WeakMap()
   }
 
   private _sync(): void {
@@ -7715,11 +7734,15 @@ export default class NiiVue extends EventTarget {
     this._syncDirty = false
     const opts = this._syncOpts
     const src = this.model.scene
+    const now = syncedState(this)
     for (const target of this._syncTargets) {
       if (target === this) continue
+      const sent = this._syncSent.get(target) ?? {}
+      const moved = (k: string) => now[k] !== sent[k]
+      this._syncSent.set(target, now)
       const dst = target.model.scene
       let changed = false
-      if (opts['3d']) {
+      if (opts['3d'] && moved('view3d')) {
         if (
           dst.azimuth !== src.azimuth ||
           dst.elevation !== src.elevation ||
@@ -7736,15 +7759,16 @@ export default class NiiVue extends EventTarget {
         const frac = target.model.mm2scene(mm)
         let crosshairMoved = false
         if (
-          dst.crosshairPos[0] !== frac[0] ||
-          dst.crosshairPos[1] !== frac[1] ||
-          dst.crosshairPos[2] !== frac[2]
+          moved('crosshair') &&
+          (dst.crosshairPos[0] !== frac[0] ||
+            dst.crosshairPos[1] !== frac[1] ||
+            dst.crosshairPos[2] !== frac[2])
         ) {
           dst.crosshairPos = frac
           crosshairMoved = true
           changed = true
         }
-        if (opts['2d']) {
+        if (opts['2d'] && moved('pan')) {
           const sp = src.pan2Dxyzmm
           const dp = dst.pan2Dxyzmm
           if (
@@ -7811,6 +7835,19 @@ export default class NiiVue extends EventTarget {
         }
       }
       if (changed) {
+        // What the target received is not its own move: it must not echo it
+        // back, converted through its own grid, over the move it came from.
+        // Only the fields these options send: another pending change of the
+        // target's own (a pan, with crosshair-only sync) still goes out.
+        const got = syncedState(target)
+        const back = { ...target._syncSent.get(this) }
+        const keys = [
+          opts['3d'] && 'view3d',
+          (opts['2d'] || opts.crosshair) && 'crosshair',
+          opts['2d'] && 'pan',
+        ]
+        for (const k of keys) if (k && moved(k)) back[k] = got[k] as string
+        target._syncSent.set(this, back)
         target.drawScene(false)
         target.createOnLocationChange()
       }

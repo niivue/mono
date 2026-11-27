@@ -570,17 +570,30 @@ So the manifest mapping and data path are fully determined; implementation is me
 single-frame image can load through the existing volume path (`loadVolumes` as a
 1-slice volume); only large/tiled 2D needs the NVSlide path above. Not part of v1.
 
-## Open items / decisions still to make
+## Status and known limitations (2026-11-23)
 
-- Which OHIF version to target first (pin to a recent `3.x`; confirm the exact
-  `@ohif/core` API surface for `getViewportModule` + SOPClassHandler in that release).
-- Exact display-set criteria we claim in the SOPClassHandler (start narrow:
-  a NIfTI/volume display set; expand to DICOM SOP classes in phase 2).
-- How much of OHIF's tool/measurement model to honor vs. NiiVue's own interactions.
-- Monorepo build: OHIF uses webpack/React 18; our packages are Bun/Nx. The extension
-  is a library build (externalize react + @ohif/*), consumed by the OHIF app's build.
+The OHIF parity closeout (rig `rordenlab/ohif-niivue`, scorecard there) is
+complete on the packed build: every core and long-tail row passes or is an
+approved exception. The earlier open decisions here (OHIF version, SOP classes,
+tool model, build) are settled: see Compatibility in the README.
+
+Known limitations, kept as approved exceptions:
+
+- **LivewireContour** snaps along a different edge cost than cornerstone's: area
+  +0.24% on the rig's path, +7.1% on OHIF's Livewire spec path.
+- **ClickSegment, MarkerLabelmap, LabelmapSlicePropagation** are not implemented.
+- **Dirty-annotations prompt on leave**: dirty state is forwarded, but the tested
+  cornerstone configuration shows no prompt to compare against.
+- **Volume lighting**: standard 3D has Shade only; Ambient, Diffuse and Specular
+  drive 3D Cinematic. Diffuse shades normal-free samples only, and Specular needs
+  a colormap with a specular channel (`S`), which NiiVue's CT colormaps lack.
+- **OHIF's own specs** that read cornerstone's SVG layer (handles, label text,
+  contour paths) cannot pass on a canvas renderer; the rig maps each to an
+  equivalent executed check.
 
 ## Future possibility — export NiiVue masks as DICOM SEG
+
+**Landed:** segmentations export as DICOM SEG and RTSTRUCT through OHIF's panel (rig `contour.mjs`, `seg.mjs`). The notes below are the original design.
 
 Raised as feedback after the 2026-07-29 demo: let a NiiVue segmentation/mask
 produced in the viewport round-trip back into the clinical workflow as a **DICOM

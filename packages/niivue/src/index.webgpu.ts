@@ -439,6 +439,8 @@ export {
   resolveBudgetPlan,
   type ResolvedOptions as ResolvedBudgetOptions,
 } from './volume/budgetPlans'
+// Gzip, as saveDocument writes documents (loadDocument reads either).
+export { compress as gzip } from './codecs/NVGz'
 // The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
 export { ByteLru, type ByteLruStats } from './byteLru'
 // Decoded image, for a caller supplying its own `decodeImage`

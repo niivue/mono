@@ -130,6 +130,8 @@ export type {
   VolumeUpdatedChanges,
   VolumeUpdatedDetail,
 } from './NVEvents'
+// Gzip, as saveDocument writes documents (loadDocument reads either).
+export { compress as gzip } from './codecs/NVGz'
 // The decoded-chunk tier counters carried as `ChunkStreamDetail.decoded`
 export { ByteLru, type ByteLruStats } from './byteLru'
 // Core types used in the public API

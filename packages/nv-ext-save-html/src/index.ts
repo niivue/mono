@@ -20,7 +20,7 @@
  */
 
 import type NiiVue from '@niivue/niivue'
-import { gzipCompress } from './gzip'
+import { gzip } from '@niivue/niivue'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -43,13 +43,6 @@ export interface SaveHTMLOptions {
   /** HTML `<title>` (default: `"NiiVue Scene"`). */
   title?: string
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Compression helpers live in ./gzip so they are reachable by the Bun test
-// runner — this module imports @niivue/niivue, whose graph uses import.meta.glob.
 
 // ---------------------------------------------------------------------------
 // Encoding / escaping helpers
@@ -152,17 +145,12 @@ ${base64Document}
     URL.revokeObjectURL(blobUrl);
     const NiiVue = niivueModule.default ?? niivueModule.NiiVue;
 
-    // 2. Decode base-64, gzip-decompress, and wrap as a File
+    // 2. Decode base-64 and wrap as a File (loadDocument gunzips it)
     const base64 = document.getElementById("__nvd_data__").textContent.trim();
     const raw = atob(base64);
     const compressed = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) compressed[i] = raw.charCodeAt(i);
-    const ds = new DecompressionStream("gzip");
-    const writer = ds.writable.getWriter();
-    writer.write(compressed);
-    writer.close();
-    const bytes = new Uint8Array(await new Response(ds.readable).arrayBuffer());
-    const file = new File([bytes], "scene.nvd");
+    const file = new File([compressed], "scene.nvd");
 
     // 3. Create NiiVue, attach to canvas, and load the document
     const nv = new NiiVue();
@@ -210,7 +198,7 @@ export async function generateHTML(
   const nvdBytes = nv.serializeDocument()
 
   // Gzip-compress then base-64-encode for embedding
-  const compressed = await gzipCompress(nvdBytes)
+  const compressed = await gzip(nvdBytes)
   const base64 = uint8ToBase64(compressed)
 
   return buildHTML(niivueBundleSource, base64, canvasId, title)

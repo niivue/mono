@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@niivue/uikit - Ruler over a volume</title>
+    <title>@niivue/uikit - Ruler and painted slices over a volume</title>
     <style>
       html, body { margin: 0; height: 100%; background: #111; color: #eee;
         font: 14px/1.4 system-ui, sans-serif; }
@@ -22,6 +22,10 @@
       <header>
         <b>UIKit</b>
         <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html" aria-current="page">volume</a><a href="./subvolume.html">subvolume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a><a href="./standalone.html">standalone</a></nav>
+        <label title="What a left click or drag does: measure with the UIKit ruler, or paint with NiiVue's pen">tool <select id="tool" autocomplete="off">
+          <option value="ruler">ruler</option>
+          <option value="pen">pen</option>
+        </select></label>
         <label title="A lens following the pointer"><input id="magnify" type="checkbox" autocomplete="off" /> magnifier</label>
         <label>view <select id="viewSelect" autocomplete="off">
           <option value="AXIAL">axial</option>
@@ -36,12 +40,14 @@
         </select></label>
       </header>
       <div id="canvasHolder"><canvas id="gl"></canvas></div>
-      <footer><span id="help">Click a point, move, then click again to fix the measurement.</span><span id="status" data-state="wait">Loading volume...</span></footer>
+      <footer><span id="help">Ruler: click a point, move, then click again to fix the measurement. Pen: paint, and the slice slider marks the painted slices.</span><span id="status" data-state="wait">Loading volume...</span></footer>
     </div>
 
     <script type="module">
       import NiiVue, { SLICE_TYPE } from '@niivue/niivue'
-      import { loadDefaultFont, UIKitMagnifierOverlay, UIKitRulerOverlay } from '@niivue/uikit'
+      import { UIKitDrawingSlices } from '@niivue/niivue/uikit'
+      import { buildRect, loadDefaultFont, UIKitControls, UIKitMagnifierOverlay, UIKitRectOverlay, UIKitRulerOverlay } from '@niivue/uikit'
+      import { UIKitSliderOverlay } from '@niivue/uikit/controls'
       import { setStatus } from './statusBar.js'
       import { urlParamSelect } from './urlParamSelect.js'
 
@@ -61,13 +67,64 @@
       document.getElementById('backendSelect').value = nv.backend
       await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
       setStatus('Waiting for first click', 'wait')
-      document.getElementById('viewSelect').addEventListener('change', (ev) => {
-        nv.sliceType = SLICE_TYPE[ev.target.value]
-      })
-
       const font = await loadDefaultFont()
       const ruler = new UIKitRulerOverlay(font)
       nv.registerOverlayRenderer(ruler)
+
+      // Slice slider on a rounded panel (UIKitRectOverlay). Its marks are the
+      // slices holding paint: UIKitDrawingSlices keeps per-slice counts from
+      // NiiVue's drawingChanged, rescanning only the box each stroke touched.
+      nv.createEmptyDrawing()
+      // createEmptyDrawing arms the pen: the page opens on the ruler tool.
+      nv.drawIsEnabled = false
+      nv.drawPenValue = 1
+      const dims = nv.volumes[0].dimsRAS
+      // The RAS axis across each 2D view (multiplanar and render: axial).
+      const axisOf = () => ({ CORONAL: 1, SAGITTAL: 0 })[document.getElementById('viewSelect').value] ?? 2
+      const sliceOf = (axis) => Math.min(dims[axis + 1] - 1, Math.floor(nv.crosshairPos[axis] * dims[axis + 1]))
+      const panel = new UIKitRectOverlay()
+      const placePanel = () => {
+        const s = nv.effectiveDevicePixelRatio
+        panel.setRects([buildRect({ x: 8 * s, y: 8 * s, width: 296 * s, height: 58 * s, radius: 8 * s, fill: [0.08, 0.08, 0.12, 0.85] })])
+      }
+      placePanel()
+      const sliders = new UIKitSliderOverlay(font, { cssUnits: true })
+      const painted = new UIKitDrawingSlices(nv, () => {
+        sliders.updateSlider('slice', { marks: painted.runs(axisOf()) })
+        nv.drawScene()
+      })
+      const showSlider = () => {
+        const axis = axisOf()
+        sliders.setSliders([{
+          id: 'slice', label: `slice (${'xyz'[axis]})`, x: 20, y: 18, width: 270,
+          min: 0, max: dims[axis + 1] - 1, step: 1, value: sliceOf(axis), showValue: true,
+          marks: painted.runs(axis),
+          onInput: (v) => {
+            const pos = [...nv.crosshairPos]
+            pos[axis] = (v + 0.5) / dims[axis + 1]
+            nv.crosshairPos = pos
+          },
+        }])
+        nv.drawScene()
+      }
+      showSlider()
+      nv.registerOverlayRenderer(panel) // beneath the slider
+      const controls = new UIKitControls().add(sliders)
+      nv.registerOverlayRenderer(controls)
+      controls.attach(nv)
+      // The slider follows the crosshair (a click, the arrow keys).
+      nv.addEventListener('locationChange', () => sliders.setValue('slice', sliceOf(axisOf())))
+      nv.addEventListener('canvasResize', placePanel)
+      document.getElementById('viewSelect').addEventListener('change', (ev) => {
+        nv.sliceType = SLICE_TYPE[ev.target.value]
+        showSlider()
+      })
+      const toolSelect = document.getElementById('tool')
+      toolSelect.addEventListener('change', () => {
+        nv.drawIsEnabled = toolSelect.value === 'pen'
+        ruler.clear()
+        nv.drawScene()
+      })
 
       // Registered after the ruler, so the lens magnifies it too.
       let unmagnify = null
@@ -109,6 +166,7 @@
       }
 
       ctx.on('slicePointerMove', (e) => {
+        if (toolSelect.value !== 'ruler') return
         const p = e.detail
         if (anchor && p.mm) {
           const d = drawTo([p.canvasX, p.canvasY], p.mm)
@@ -116,6 +174,7 @@
         }
       })
       ctx.on('slicePointerUp', (e) => {
+        if (toolSelect.value !== 'ruler') return
         const p = e.detail
         if (!p.mm) return
         if (!anchor) {

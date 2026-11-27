@@ -19,7 +19,7 @@ and `urlParamSelect.js` are shared by the pages.
 | --- | --- |
 | `index.html` | Every widget on one `UIKitControls` layer over a volume: a menu bar, segmented control, select, toggles, sliders, number and text inputs, a text area, a color control, a file picker, a tool palette and a dialog. "Own panel" keeps the image out of the controls' strip with NiiVue's `layoutInset` |
 | `calipers.html` | Calipers (the ruler overlay) on an axial CT slice, in the volume's units, beside NiiVue's static scale ruler. Endpoints are world points: they follow pan and the zoom slider, belong to their slice (hidden on others), and a drag never places one |
-| `volume.html` | Volume ruler with a view selector and magnifier toggle |
+| `volume.html` | Volume ruler, a pen whose painted slices mark a slice slider (`UIKitDrawingSlices`, slider `marks`) on a `UIKitRectOverlay` panel, view selector and magnifier |
 | `slide.html` | The ruler over a Deep Zoom slide in the 3D render tile. By design it measures canvas pixels, not the scene: the zoom slider scales the scene under fixed calipers, and Retina switches device and CSS pixels; a magnifier toggle |
 | `slide-wsi.html` | Tiles: the ruler, scale bar and slide minimap on the standalone tiled viewer (DICOM whole-slide image or Deep Zoom). Zoom slider and right-drag box zoom and a magnifier toggle; a slide without pixel spacing gets a page-drawn bar in slide pixels |
 | `buttons.html` | `UIKitButtonOverlay` on its own: view buttons, a toggling label and a styled reset |

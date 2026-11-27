@@ -1,6 +1,5 @@
 import { buildLine, GlLineRenderer, type LineData } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
-import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
 import { defaultMatcap } from '@/documentMatcap'
 import { log } from '@/logger'
@@ -58,6 +57,7 @@ import {
 import type { SliceTile } from '@/view/NVSliceLayout'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import * as NVUILayout from '@/view/NVUILayout'
+import { computeBoundsPixels, hitTestTiles } from '@/view/NVViewBounds'
 import {
   drawnOpacity,
   isChannelStackActive,
@@ -1620,52 +1620,13 @@ export default class NVGlview {
   }
 
   private _computeBoundsPixels(): void {
-    const bounds = this.options.bounds
-    const cw = this.canvas.width
-    const ch = this.canvas.height
-    const vp = getCanvasViewport(this.canvas)
-    const isIdentity = vp.pan[0] === 0 && vp.pan[1] === 0 && vp.zoom === 1
-    if (
-      isIdentity &&
-      (!bounds ||
-        (bounds[0][0] === 0 &&
-          bounds[0][1] === 0 &&
-          bounds[1][0] === 1 &&
-          bounds[1][1] === 1))
-    ) {
-      this._boundsOffsetX = 0
-      this._boundsOffsetY = 0
-      this._boundsWidth = cw
-      this._boundsHeight = ch
-      this._isSubCanvasBounds = false
-      this._isBoundsOffscreen = false
-      return
-    }
-    const worldX1 = bounds ? bounds[0][0] : 0
-    const worldY1 = bounds ? bounds[0][1] : 0
-    const worldX2 = bounds ? bounds[1][0] : 1
-    const worldY2 = bounds ? bounds[1][1] : 1
-    // Apply viewport: world -> screen-normalized (zoom around centre, then translate by pan)
-    const z = vp.zoom
-    const px = vp.pan[0]
-    const py = vp.pan[1]
-    const sx1 = (worldX1 - 0.5) * z + 0.5 + px
-    const sx2 = (worldX2 - 0.5) * z + 0.5 + px
-    const sy1 = (worldY1 - 0.5) * z + 0.5 + py
-    const sy2 = (worldY2 - 0.5) * z + 0.5 + py
-    // Round pixel edges, then derive size by subtraction to prevent
-    // offset + size > canvas (which breaks copyTextureToTexture on odd dimensions)
-    const left = Math.round(sx1 * cw)
-    const right = Math.round(sx2 * cw)
-    const top = Math.round((1 - sy2) * ch)
-    const bottom = Math.round((1 - sy1) * ch)
-    this._boundsOffsetX = left
-    this._boundsOffsetY = top
-    this._boundsWidth = Math.max(1, right - left)
-    this._boundsHeight = Math.max(1, bottom - top)
-    this._isSubCanvasBounds = true
-    this._isBoundsOffscreen =
-      right <= 0 || left >= cw || bottom <= 0 || top >= ch
+    const b = computeBoundsPixels(this.canvas, this.options.bounds)
+    this._boundsOffsetX = b.x
+    this._boundsOffsetY = b.y
+    this._boundsWidth = b.width
+    this._boundsHeight = b.height
+    this._isSubCanvasBounds = b.isSub
+    this._isBoundsOffscreen = b.isOffscreen
   }
 
   getAvailableShaders(): string[] {
@@ -1765,24 +1726,7 @@ export default class NVGlview {
   }
 
   hitTest(x: number, y: number): ViewHitTest | null {
-    for (let idx = 0; idx < this.screenSlices.length; idx++) {
-      const tile = this.screenSlices[idx]
-      const ltwh = tile.leftTopWidthHeight as number[]
-      const left = ltwh[0]
-      const top = ltwh[1]
-      const width = ltwh[2]
-      const height = ltwh[3]
-      if (x >= left && x < left + width && y >= top && y < top + height) {
-        return {
-          tileIndex: idx,
-          sliceType: tile.axCorSag,
-          isRender: tile.axCorSag === NVConstants.SLICE_TYPE.RENDER,
-          normalizedX: (x - left) / width,
-          normalizedY: (y - top) / height,
-        }
-      }
-    }
-    return null
+    return hitTestTiles(this.screenSlices, x, y)
   }
 
   refreshDrawing(

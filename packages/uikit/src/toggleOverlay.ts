@@ -39,6 +39,10 @@ const MODEL = {
   scale: scaleToggle,
   layout: layoutToggle,
   contains: toggleContains,
+  unscale: (l: ToggleLayout, k: number): ToggleLayout => ({
+    ...unscaleBox(l, k),
+    box: { x: l.box.x / k, y: l.box.y / k, size: l.box.size / k },
+  }),
 }
 
 export class UIKitToggleOverlay extends UIKitEntryOverlay<
@@ -113,19 +117,6 @@ export class UIKitToggleOverlay extends UIKitEntryOverlay<
     entry.checked = !entry.checked
     this.bundle.invalidate()
     entry.spec.onChange?.(entry.checked, id)
-  }
-
-  /** A toggle's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): ToggleLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    return {
-      ...unscaleBox(l, k),
-      box: { x: l.box.x / k, y: l.box.y / k, size: l.box.size / k },
-    }
   }
 
   /** The toggle with keyboard focus, if any. */

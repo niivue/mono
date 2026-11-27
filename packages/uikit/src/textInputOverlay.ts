@@ -19,7 +19,7 @@ import {
   UIKitLineFieldOverlay,
 } from './fieldOverlay'
 import type { UIKitGeometry } from './overlayParts'
-import { type UIKitBox, unscaleBox } from './rect'
+import { unscaleBox } from './rect'
 import type { UIKitFont } from './text/font'
 import {
   editKey,
@@ -69,6 +69,12 @@ const MODEL = {
   scale: scaleTextInput,
   layout: layoutTextInput,
   contains: textInputContains,
+  unscale: (l: TextInputLayout, k: number): TextInputLayout => ({
+    ...unscaleBox(l, k),
+    field: unscaleBox(l.field, k),
+    textArea: unscaleBox(l.textArea, k),
+    baseline: l.baseline / k,
+  }),
 }
 
 export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
@@ -126,22 +132,6 @@ export class UIKitTextInputOverlay extends UIKitLineFieldOverlay<
 
   setEnabled(id: string, enabled: boolean): void {
     this.updateTextInput(id, { enabled })
-  }
-
-  /** An input's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): TextInputLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    const box = (b: UIKitBox) => unscaleBox(b, k)
-    return {
-      ...box(l),
-      field: box(l.field),
-      textArea: box(l.textArea),
-      baseline: l.baseline / k,
-    }
   }
 
   /** The input with keyboard focus (being edited), if any. */

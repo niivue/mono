@@ -35,7 +35,7 @@ import {
   stepNumberInput,
 } from './numberInput'
 import type { UIKitGeometry } from './overlayParts'
-import { type UIKitBox, unscaleBox } from './rect'
+import { unscaleBox } from './rect'
 import { WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import { editKey, pasteText, setCaret, type TextEditState } from './textEdit'
@@ -67,6 +67,14 @@ const MODEL = {
   scale: scaleNumberInput,
   layout: layoutNumberInput,
   contains: numberInputContains,
+  unscale: (l: NumberInputLayout, k: number): NumberInputLayout => ({
+    ...unscaleBox(l, k),
+    field: unscaleBox(l.field, k),
+    textArea: unscaleBox(l.textArea, k),
+    spinUp: unscaleBox(l.spinUp, k),
+    spinDown: unscaleBox(l.spinDown, k),
+    baseline: l.baseline / k,
+  }),
 }
 
 export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
@@ -127,24 +135,6 @@ export class UIKitNumberInputOverlay extends UIKitLineFieldOverlay<
 
   setEnabled(id: string, enabled: boolean): void {
     this.updateNumberInput(id, { enabled })
-  }
-
-  /** An input's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): NumberInputLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    const box = (b: UIKitBox) => unscaleBox(b, k)
-    return {
-      ...box(l),
-      field: box(l.field),
-      textArea: box(l.textArea),
-      spinUp: box(l.spinUp),
-      spinDown: box(l.spinDown),
-      baseline: l.baseline / k,
-    }
   }
 
   /** The input with keyboard focus (being edited), if any. */

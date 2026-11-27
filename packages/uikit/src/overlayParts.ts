@@ -153,6 +153,8 @@ export interface UIKitEntryModel<S, St, L> {
   scale: (spec: S, style: St, k: number) => { spec: S; style: St }
   layout: (spec: S, style: St, metrics: UIKitFontMetrics) => L
   contains: (layout: L, x: number, y: number) => boolean
+  /** A canvas-pixel layout divided back into spec units by scale `k`. */
+  unscale: (layout: L, k: number) => L
 }
 
 export interface UIKitEntryOverlayOptions<St> {
@@ -215,6 +217,15 @@ export abstract class UIKitEntryOverlay<
   /** The ids of all entries, in draw order. */
   get ids(): string[] {
     return this.entries.ids
+  }
+
+  /** An entry's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
+  getLayout(id: string): L | null {
+    const entry = this.entries.get(id)
+    if (!entry) return null
+    const l = this.entries.layoutOf(entry)
+    const k = this.entries.scale
+    return k === 1 ? l : this.model.unscale(l, k)
   }
 
   hitTest(x: number, y: number): boolean {

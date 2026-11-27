@@ -13,7 +13,7 @@ import {
   type UIKitEntryOverlayOptions,
   type UIKitGeometry,
 } from './overlayParts'
-import { type UIKitBox, unscaleBox } from './rect'
+import { unscaleBox } from './rect'
 import {
   buildSegmented,
   DEFAULT_SEGMENTED_STYLE,
@@ -48,6 +48,10 @@ const MODEL = {
   layout: layoutSegmented,
   contains: (l: SegmentedLayout, x: number, y: number) =>
     segmentAt(l, x, y) >= 0,
+  unscale: (l: SegmentedLayout, k: number): SegmentedLayout => ({
+    ...unscaleBox(l, k),
+    segments: l.segments.map((s) => ({ index: s.index, ...unscaleBox(s, k) })),
+  }),
 }
 
 export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
@@ -144,20 +148,6 @@ export class UIKitSegmentedOverlay extends UIKitEntryOverlay<
     entry.value = value
     this.bundle.invalidate()
     entry.spec.onChange?.(value, id)
-  }
-
-  /** A control's track and segments in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): SegmentedLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    const s = (r: UIKitBox) => unscaleBox(r, k)
-    return {
-      ...s(l),
-      segments: l.segments.map((seg) => ({ index: seg.index, ...s(seg) })),
-    }
   }
 
   /** The control with keyboard focus, if any. */

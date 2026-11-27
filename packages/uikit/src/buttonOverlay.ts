@@ -58,6 +58,7 @@ const MODEL = {
   scale: scaleButton,
   layout: layoutButton,
   contains: buttonContains,
+  unscale: unscaleBox,
 }
 
 export class UIKitButtonOverlay extends UIKitEntryOverlay<
@@ -110,20 +111,6 @@ export class UIKitButtonOverlay extends UIKitEntryOverlay<
 
   setEnabled(id: string, enabled: boolean): void {
     this.updateButton(id, { enabled })
-  }
-
-  /**
-   * The resting box of a button in spec units (canvas pixels, or CSS pixels
-   * with `cssUnits`), or null for an unknown id. Handy for placing the next
-   * button after an auto-sized one.
-   */
-  getLayout(id: string): ButtonLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    return unscaleBox(l, k)
   }
 
   /** True while the pointer is over an enabled button. */

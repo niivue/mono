@@ -24,7 +24,7 @@ import {
   type UIKitFieldOverlayOptions,
 } from './fieldOverlay'
 import type { UIKitGeometry } from './overlayParts'
-import { type UIKitBox, unscaleBox } from './rect'
+import { unscaleBox } from './rect'
 import { scrollWindow, WheelAccumulator } from './scroll'
 import type { UIKitFont } from './text/font'
 import {
@@ -91,6 +91,14 @@ const MODEL = {
   scale: scaleTextArea,
   layout: layoutTextArea,
   contains: textAreaContains,
+  unscale: (l: TextAreaLayout, k: number): TextAreaLayout => ({
+    ...unscaleBox(l, k),
+    field: unscaleBox(l.field, k),
+    textArea: unscaleBox(l.textArea, k),
+    labelBaseline: l.labelBaseline / k,
+    rowHeight: l.rowHeight / k,
+    rows: l.rows,
+  }),
 }
 
 export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
@@ -153,24 +161,6 @@ export class UIKitTextAreaOverlay extends UIKitFieldOverlay<
 
   setEnabled(id: string, enabled: boolean): void {
     this.updateTextArea(id, { enabled })
-  }
-
-  /** An area's boxes in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): TextAreaLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    const box = (b: UIKitBox) => unscaleBox(b, k)
-    return {
-      ...box(l),
-      field: box(l.field),
-      textArea: box(l.textArea),
-      labelBaseline: l.labelBaseline / k,
-      rowHeight: l.rowHeight / k,
-      rows: l.rows,
-    }
   }
 
   /** Index of the first row an area shows. */

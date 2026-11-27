@@ -44,6 +44,12 @@ const MODEL = {
   scale: scaleSlider,
   layout: layoutSlider,
   contains: sliderContains,
+  unscale: (l: SliderLayout, k: number): SliderLayout => ({
+    ...unscaleBox(l, k),
+    track: unscaleBox(l.track, k),
+    rail: { x0: l.rail.x0 / k, x1: l.rail.x1 / k, cy: l.rail.cy / k },
+    labelBaseline: l.labelBaseline === null ? null : l.labelBaseline / k,
+  }),
 }
 
 export class UIKitSliderOverlay extends UIKitEntryOverlay<
@@ -126,21 +132,6 @@ export class UIKitSliderOverlay extends UIKitEntryOverlay<
 
   getValue(id: string): number | undefined {
     return this.entries.get(id)?.value
-  }
-
-  /** A slider's box in spec units (canvas pixels, or CSS pixels with `cssUnits`). */
-  getLayout(id: string): SliderLayout | null {
-    const entry = this.entries.get(id)
-    if (!entry) return null
-    const l = this.entries.layoutOf(entry)
-    const k = this.entries.scale
-    if (k === 1) return l
-    return {
-      ...unscaleBox(l, k),
-      track: unscaleBox(l.track, k),
-      rail: { x0: l.rail.x0 / k, x1: l.rail.x1 / k, cy: l.rail.cy / k },
-      labelBaseline: l.labelBaseline === null ? null : l.labelBaseline / k,
-    }
   }
 
   /** The slider with keyboard focus, if any. */

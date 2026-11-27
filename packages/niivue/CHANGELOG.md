@@ -1,3 +1,13 @@
+## 1.0.0-rc.239 (2026-11-27)
+
+### Fixes
+
+- normalize Windows paths in pages-site dev middleware ([d43328b1](https://github.com/niivue/mono/commit/d43328b1))
+
+### Thank You
+
+- liusheng
+
 ## 1.0.0-rc.238 (2026-11-23)
 
 ### Features

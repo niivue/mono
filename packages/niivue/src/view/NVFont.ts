@@ -1,7 +1,9 @@
 import {
+  buildRect,
   measureWidth,
   parseFont,
   type RawFontFile,
+  type RectData,
   type UIKitFontMetrics,
 } from '@niivue/uikit'
 import * as NVLoader from '@/NVLoader'
@@ -29,34 +31,37 @@ export type BuildTextFn = (
   backColor?: number[],
 ) => GlyphBatch
 
-export const FLOATS_PER_PANEL = 12
 const BACK_PADDING = 0.3
 const BACK_RADIUS = 0.25
 
 /**
- * The backing panels of `textList` packed FLOATS_PER_PANEL floats each
- * (rect, color, radius, border), or null when no batch has a visible one.
+ * The visible backing panels of `textList` as uikit rects. A ring-only panel
+ * (`backBorder`) is a transparent fill inside a border of its colour.
  */
-export function packPanels(
-  textList: GlyphBatch[],
-): Float32Array<ArrayBuffer> | null {
-  let panelCount = 0
-  for (const item of textList) {
-    if (item.backColor && item.backColor[3] > 0) panelCount++
+export function panelRects(textList: GlyphBatch[]): RectData[] {
+  const rects: RectData[] = []
+  for (const {
+    backColor: c,
+    backRect,
+    backRadius,
+    backBorder = 0,
+  } of textList) {
+    if (!c || c[3] <= 0) continue
+    const [x, y, width, height] = backRect
+    rects.push(
+      buildRect({
+        x,
+        y,
+        width,
+        height,
+        radius: backRadius,
+        borderWidth: backBorder,
+        fill: backBorder > 0 ? [c[0], c[1], c[2], 0] : c,
+        border: c,
+      }),
+    )
   }
-  if (panelCount === 0) return null
-  const panelData = new Float32Array(panelCount * FLOATS_PER_PANEL)
-  let idx = 0
-  for (const item of textList) {
-    if (!item.backColor || item.backColor[3] <= 0) continue
-    const off = idx * FLOATS_PER_PANEL
-    panelData.set(item.backRect, off)
-    panelData.set(item.backColor, off + 4)
-    panelData[off + 8] = item.backRadius
-    panelData[off + 9] = item.backBorder ?? 0
-    idx++
-  }
-  return panelData
+  return rects
 }
 
 export function emptyBatch(): GlyphBatch {

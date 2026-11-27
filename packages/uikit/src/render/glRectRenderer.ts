@@ -1,7 +1,8 @@
-// UIKit's own WebGL2 rounded-rect renderer: the line renderer's instanced-quad
-// model with the rect record layout. Self-contained and lazily initialized from
-// the live context handed in by the overlay hook; re-initialized if the context
-// identity changes (backend switch / context loss).
+// The WebGL2 rounded-rect renderer, for uikit's widgets and NiiVue core's label
+// panels alike: the line renderer's instanced-quad model with the rect record
+// layout. Self-contained and lazily initialized from the live context;
+// re-initialized if the context identity changes (backend switch / context
+// loss).
 
 import { FLOATS_PER_RECT, type RectData } from '../rect'
 import { GL_RECT_FRAG, GL_RECT_VERT } from './shaders'
@@ -108,7 +109,13 @@ export class GlRectRenderer {
     gl.depthMask(false)
     gl.disable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    // Alpha "over" (alpha src ONE, as the WebGPU blend state).
+    gl.blendFuncSeparate(
+      gl.SRC_ALPHA,
+      gl.ONE_MINUS_SRC_ALPHA,
+      gl.ONE,
+      gl.ONE_MINUS_SRC_ALPHA,
+    )
     gl.bindVertexArray(this.vao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, rects.length)
     gl.bindVertexArray(null)

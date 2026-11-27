@@ -56,9 +56,11 @@ export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
 export { GlLineRenderer } from './render/glLineRenderer'
+export { GlRectRenderer } from './render/glRectRenderer'
 export type { UIKitAtlasSource } from './render/glTextRenderer'
 export { GlTextRenderer } from './render/glTextRenderer'
 export { WgpuLineRenderer } from './render/wgpuLineRenderer'
+export { WgpuRectRenderer } from './render/wgpuRectRenderer'
 export { WgpuTextRenderer } from './render/wgpuTextRenderer'
 export type {
   RulerGeometry,

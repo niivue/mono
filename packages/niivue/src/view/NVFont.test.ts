@@ -1,31 +1,24 @@
 import { describe, expect, test } from 'bun:test'
 import { parseFont, UBUNTU_FONT_METRICS as ubuntu } from '@niivue/uikit'
-import {
-  buildTextLayout,
-  emptyBatch,
-  FLOATS_PER_PANEL,
-  packPanels,
-} from './NVFont'
+import { buildTextLayout, emptyBatch, panelRects } from './NVFont'
 
-describe('packPanels', () => {
-  test('packs only batches with a visible backing panel', () => {
+describe('panelRects', () => {
+  test('keeps only visible panels; a ring keeps a transparent fill', () => {
     const hidden = emptyBatch()
-    const shown = {
+    const ring = {
       ...emptyBatch(),
-      backColor: [1, 0, 0, 0.5],
-      backRect: [1, 2, 3, 4],
-      backRadius: 5,
+      backColor: [1, 0, 0, 0.8],
+      backRect: [1, 2, 30, 40],
+      backRadius: 3,
       backBorder: 2,
     }
-    const panels = packPanels([hidden, shown])
-    expect(panels?.length).toBe(FLOATS_PER_PANEL)
-    expect(Array.from(panels ?? []).slice(0, 10)).toEqual([
-      1, 2, 3, 4, 1, 0, 0, 0.5, 5, 2,
+    const rects = panelRects([hidden, ring])
+    expect(rects).toHaveLength(1)
+    const d = Array.from(rects[0]?.data ?? [])
+    expect(d.slice(0, 6)).toEqual([1, 2, 30, 40, 3, 2])
+    expect(d.slice(8, 16).map((v) => +v.toFixed(3))).toEqual([
+      1, 0, 0, 0, 1, 0, 0, 0.8,
     ])
-  })
-
-  test('returns null when no batch has a panel', () => {
-    expect(packPanels([emptyBatch()])).toBeNull()
   })
 })
 

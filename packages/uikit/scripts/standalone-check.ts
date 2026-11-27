@@ -36,7 +36,8 @@ writeFileSync(
 import { UIKitButtonOverlay } from '@niivue/uikit/controls'
 const ruler = buildRuler({ a: [0, 0], b: [100, 0], length: 10, units: 'mm', sizePx: 12 })
 const draw = (f: UIKitOverlayFrame) => f.dpr
-console.log(ruler.lines.length > 0, typeof UIKitRulerOverlay, typeof UIKitButtonOverlay, typeof draw)
+// One string, so a coloured terminal (FORCE_COLOR under Nx) cannot style it.
+console.log([ruler.lines.length > 0, typeof UIKitRulerOverlay, typeof UIKitButtonOverlay, typeof draw].join(' '))
 `,
 )
 writeFileSync(

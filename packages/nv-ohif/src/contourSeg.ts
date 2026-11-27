@@ -19,7 +19,7 @@ import { historyMemo } from './history'
 import type { NiivueViewportEntry } from './niivueRegistry'
 import { getNiivueEntry, niivueEntries, ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
-import { apply, invertAffine, rasGrid, voxelMM3 } from './quantify'
+import { apply, invertAffine, rasGrid, SLICE_AXIS, voxelMM3 } from './quantify'
 import { closedPlanar, type RtRoi } from './segExport'
 import {
   addRepresentation,
@@ -1105,7 +1105,6 @@ const pointerInit = (e: PointerEvent): PointerEventInit => ({
   detail: e.detail,
 })
 
-export const SLICE_DEPTH = [2, 1, 0] // axial, coronal, sagittal: the RAS axis across
 export const IN_PLANE = [
   [0, 1],
   [0, 2],
@@ -1165,7 +1164,7 @@ function segmentVoxels(nv: NiiVue, group: string): Map<number, number> {
     if (crossing) {
       // Crossing orientations share voxels: dedupe in one Set per slice of
       // the first shape's orientation, each under V8's 2^24 cap.
-      const d = SLICE_DEPTH[first?.sliceType ?? 0] as number
+      const d = SLICE_AXIS[first?.sliceType ?? 0] as number
       const slices = new Map<number, Set<number>>()
       for (const a of shapes)
         forEachAnnotationVoxel(a, base, (v) => {
@@ -1190,7 +1189,7 @@ function segmentVoxels(nv: NiiVue, group: string): Map<number, number> {
             a.sliceType,
           )
         const key = Math.round(
-          apply(mm2vox, mm, SLICE_DEPTH[a.sliceType] as number),
+          apply(mm2vox, mm, SLICE_AXIS[a.sliceType] as number),
         )
         planes.get(key)?.push(a) ?? planes.set(key, [a])
       }
@@ -1264,7 +1263,7 @@ export function contourRois(
     contours: nv.annotations
       .filter((a) => a.group === group && a.label === s.value && a.anchorMM)
       .flatMap((a) => {
-        const d = SLICE_DEPTH[a.sliceType] as number
+        const d = SLICE_AXIS[a.sliceType] as number
         const [i0, i1] = IN_PLANE[a.sliceType] as readonly [number, number]
         const row = (k: number) => mm2vox[d * 4 + k] as number
         const at = a.anchorMM as [number, number, number]

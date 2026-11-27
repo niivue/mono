@@ -9,11 +9,16 @@ import {
   contourGroup,
   IN_PLANE,
   reshowContourSegmentation,
-  SLICE_DEPTH,
 } from './contourSeg'
 import { getNiivueEntry } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
-import { apply, invertAffine, type RasGrid, rasGrid } from './quantify'
+import {
+  apply,
+  invertAffine,
+  type RasGrid,
+  rasGrid,
+  SLICE_AXIS,
+} from './quantify'
 import {
   newellNormal,
   type RtDisplaySet,
@@ -156,7 +161,7 @@ export function rtContourShapes(
         }
         return null
       }
-      const sliceType = SLICE_DEPTH.indexOf(d)
+      const sliceType = SLICE_AXIS.indexOf(d)
       const [i0, i1] = IN_PLANE[sliceType] as readonly [number, number]
       const key = `${sliceType}:${Math.round(depth)}`
       const plane = planes.get(key) ?? {
@@ -178,7 +183,7 @@ export function rtContourShapes(
         label: value,
         group,
         sliceType,
-        slicePosition: anchor[SLICE_DEPTH[sliceType] as number] as number,
+        slicePosition: anchor[SLICE_AXIS[sliceType] as number] as number,
         anchorMM: anchor as [number, number, number],
         polygons,
         // Restyled on attach.

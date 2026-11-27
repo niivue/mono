@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import { rasToLps } from './commands'
+import { SLICE_AXIS } from './quantify'
 import { activeSegmentValue } from './segEdit'
 import { annotationFromRow } from './srImport'
 import { acquisitionSliceType } from './standardCommands'
@@ -236,7 +237,6 @@ export function largestBidirectional(
 }
 
 // World (RAS mm) axis normal to each 2D view (axial z, coronal y, sagittal x).
-const WORLD_DEPTH = [2, 1, 0] as const
 
 /**
  * OHIF's runSegmentBidirectional on a NiiVue pane: the active segment's
@@ -254,7 +254,7 @@ export function addSegmentBidirectional(nv: NiiVue): boolean {
     [d[1], d[2], d[3]] as Vec3,
     (v) => nv.vox2mm(v) ?? [0, 0, 0],
     activeSegmentValue(nv),
-    WORLD_DEPTH[sliceType] ?? 2,
+    (SLICE_AXIS[sliceType] ?? 2) as 0 | 1 | 2,
   )
   const annotation =
     ends &&

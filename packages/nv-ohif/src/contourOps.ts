@@ -11,9 +11,7 @@ import {
 import { contourGroup, contourPane } from './contourSeg'
 import { getActiveNiivueEntry, ohifServices } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
-import { invertAffine, rasGrid } from './quantify'
-
-const DEPTH_AXIS = [2, 1, 0] // axial, coronal, sagittal
+import { apply, invertAffine, rasGrid, SLICE_AXIS } from './quantify'
 
 /** A shape's voxel depth along its slice axis, unrounded; undefined without a grid. */
 export function voxelDepth(
@@ -24,14 +22,7 @@ export function voxelDepth(
   const grid = base && rasGrid(base)
   const at = a.anchorMM
   if (!grid || !at) return undefined
-  const m = invertAffine(grid.affine)
-  const d = (DEPTH_AXIS[a.sliceType] as number) * 4
-  return (
-    (m[d] as number) * at[0] +
-    (m[d + 1] as number) * at[1] +
-    (m[d + 2] as number) * at[2] +
-    (m[d + 3] as number)
-  )
+  return apply(invertAffine(grid.affine), at, SLICE_AXIS[a.sliceType] as number)
 }
 
 /** A shape's slice: its plane and voxel depth (an oblique slice's mm depth varies). */

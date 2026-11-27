@@ -1,6 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet } from './ohif-types'
-import { invertAffine } from './quantify'
+import { lpsToVoxelOf } from './quantify'
 import {
   type PanelSegment,
   panelColormap,
@@ -104,20 +104,14 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
   const cy = vox2mm([0, 1, 0])
   const cz = vox2mm([0, 0, 1])
   if (!o || !cx || !cy || !cz) return null
-  // Voxel->LPS: NiiVue's voxel->RAS with x and y flipped.
-  const flip = (v: number, i: number) => (i < 2 ? -v : v)
-  const [x, y, z] = [cx, cy, cz].map((p) =>
-    p.map((v, i) => flip(v - (o[i] ?? 0), i)),
-  )
-  const m = invertAffine(
+  return lpsToVoxelOf(
     [0, 1, 2].flatMap((r) => [
-      x?.[r] ?? 0,
-      y?.[r] ?? 0,
-      z?.[r] ?? 0,
-      flip(o[r] ?? 0, r),
+      (cx[r] as number) - (o[r] as number),
+      (cy[r] as number) - (o[r] as number),
+      (cz[r] as number) - (o[r] as number),
+      o[r] as number,
     ]),
   )
-  return m.every(Number.isFinite) ? m : null
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
 import { refreshOverlayPlanes } from './overlayPlanes'
+import { SLICE_AXIS } from './quantify'
 import {
   type FrameRef,
   frameAt,
@@ -288,7 +289,6 @@ function jumpToVoxelSlice(
 }
 
 // RAS voxel axis along each 2D plane's normal (axial z, coronal y, sagittal x).
-const NORMAL_AXIS = [2, 1, 0]
 
 /**
  * OHIF's nextImage / previousImage (up / down): step `delta` images in
@@ -326,7 +326,7 @@ export function scrollImage(
     }
   }
   const axis =
-    NORMAL_AXIS[nv.sliceType] ?? NORMAL_AXIS[acquisitionSliceType(nv) ?? -1]
+    SLICE_AXIS[nv.sliceType] ?? SLICE_AXIS[acquisitionSliceType(nv) ?? -1]
   if (axis === undefined) return false
   const step = [0, 0, 0]
   step[axis] = delta

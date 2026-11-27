@@ -29,6 +29,7 @@ import {
   boxMax,
   type CtRange,
   ijkAxes,
+  lpsToVoxelOf,
   type RasGrid,
   rasGrid,
   resampleLabel,
@@ -40,7 +41,6 @@ import {
   spacing,
   thresholdBox,
 } from './quantify'
-import { lpsToVoxel } from './rtDrawing'
 import { type ExportSegment, frameLabels } from './segExport'
 import { paletteColor } from './segPanel'
 import { OHIF_BRUSHES } from './toolBridge'
@@ -588,16 +588,7 @@ export function tmtvStats(services: Services) {
 export function tmtvExport(services: Services) {
   const pet = findPet(services)
   const m = pet && masks.get(pet.uid)
-  const a = m?.grid.affine
-  const at = (i: number) => a?.[i] as number
-  const lps2vox =
-    a &&
-    lpsToVoxel(([x, y, z]) =>
-      [0, 1, 2].map(
-        (r) =>
-          at(4 * r) * x + at(4 * r + 1) * y + at(4 * r + 2) * z + at(4 * r + 3),
-      ),
-    )
+  const lps2vox = m && lpsToVoxelOf(m.grid.affine)
   const instances = pet?.ds?.instances
   if (!m || !lps2vox || !instances) return undefined
   const segments: ExportSegment[] = [...new Set(m.label)]

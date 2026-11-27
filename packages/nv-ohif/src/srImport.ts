@@ -30,6 +30,7 @@ import {
 import { measurementStyleOf } from './contourSeg'
 import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
+import { SLICE_AXIS } from './quantify'
 import { acquisitionSliceType } from './standardCommands'
 
 export interface OhifRow {
@@ -71,7 +72,6 @@ export function reportScale(
 }
 
 // Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
-const DEPTH = [2, 1, 0]
 
 // OHIF contour rows: their points are the outline NiiVue stores.
 const CONTOUR_TOOLS: Record<string, AnnotationTool> = {
@@ -180,8 +180,8 @@ export function annotationFromRow(
     ras.every(
       (p) =>
         Math.abs(
-          (p[DEPTH[t] as number] as number) -
-            (ras[0]?.[DEPTH[t] as number] as number),
+          (p[SLICE_AXIS[t] as number] as number) -
+            (ras[0]?.[SLICE_AXIS[t] as number] as number),
         ) < 1e-3,
     )
   // A NiiVue row's own plane first, then the acquisition plane.
@@ -193,7 +193,7 @@ export function annotationFromRow(
     2,
   ].find((t) => t !== undefined && onPlane(t))
   if (sliceType === undefined) return undefined
-  const depth = ras[0]?.[DEPTH[sliceType] as number] ?? 0
+  const depth = ras[0]?.[SLICE_AXIS[sliceType] as number] ?? 0
   const pts = ras.map((p) => mmToSlice2D(p, sliceType))
   const bounds = (ps: AnnotationPoint[]) => ({
     start: {

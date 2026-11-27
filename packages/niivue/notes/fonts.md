@@ -1,13 +1,12 @@
 # Fonts
 
-NiiVue renders text with MSDF (multi-channel signed distance field) atlases. Each
-font is shipped as a `.json` metrics file + `.png` atlas pair under
-`src/assets/fonts/`, wrapped at build time by `scripts/generate-assets.js` into a
-TypeScript module that the library can import.
+NiiVue renders text with MSDF (multi-channel signed distance field) atlases: a
+`.json` metrics file + `.png` atlas pair.
 
-Only `ubuntu` (ASCII plus µ ° ± ² ³) is bundled with the library; `src/assets/fonts/index.ts`
-is the barrel consumed by `NVControlBase` as the default font and published in
-the npm tarball. Community atlases — including CJK-capable fonts like Poem —
+Only `ubuntu` (ASCII plus µ ° ± ² ³) is bundled. Its files live once, in
+`packages/uikit/src/fonts/`; uikit inlines them (`UBUNTU_FONT_METRICS`,
+`UBUNTU_FONT_ATLAS`) and core's `src/assets/fonts/ubuntu.ts` builds the default
+font from them, so a rebuilt atlas reaches both packages. Community atlases — including CJK-capable fonts like Poem —
 live at [niivue/fonts](https://github.com/niivue/fonts) and are fetched on
 demand via `setFontFromUrl` (see `examples/font.html`).
 
@@ -43,10 +42,20 @@ pulls fonts from the [niivue/fonts](https://github.com/niivue/fonts)
 community repository. This keeps your library tarball lean and lets you
 update atlases without re-publishing.
 
-**Bundling alternative:** drop the resulting `.json` + `.png` into
-`src/assets/fonts/` and rerun `scripts/generate-assets.js`. Everything in
-that directory ships in the published npm package, so reserve this path
-for fonts you genuinely want bundled as defaults.
+**Bundling alternative (an app's own font):** import the pair with your
+bundler and pass it to `setFont`; `parseFont` (from `@niivue/uikit`) reads
+the JSON:
+
+```js
+import { parseFont } from '@niivue/uikit'
+import json from './MyFont.json'
+import atlasUrl from './MyFont.png' // a URL or data: URL from your bundler
+
+await nv1.setFont({ metrics: parseFont(json), atlasUrl })
+```
+
+The library bundles only `ubuntu`, kept in `packages/uikit/src/fonts/` (see
+below).
 
 ## Extending the bundled atlas
 
@@ -54,7 +63,7 @@ The five non-ASCII glyphs were added without touching the original 95: they
 were generated alone at the atlas's em size and stacked above it, so every
 existing glyph keeps its texels and metrics (no render reference moved).
 `yOrigin: bottom` bounds of the old glyphs stay valid; the new ones sit 256
-px higher. The same files are copied to `packages/uikit/src/fonts/`.
+px higher. Write the result to `packages/uikit/src/fonts/ubuntu.{png,json}`.
 
 ```
 msdf-atlas-gen -font Ubuntu-Regular.ttf -charset extra.txt -type msdf -pxrange 2 \

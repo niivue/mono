@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import ubuntu from '../assets/fonts/Ubuntu.json'
+import { UBUNTU_FONT_METRICS as ubuntu } from '@niivue/uikit'
 import {
   buildTextLayout,
   emptyBatch,
@@ -41,21 +41,4 @@ test('an ASCII-only font draws ² as a small raised 2, not nothing', () => {
   const layout = (s: string) =>
     buildTextLayout(s, 0, 0, 10, 1, mets, [1, 1, 1, 1], 0, 0, [0, 0, 0, 0])
   expect(layout('mm²').count).toBe(3)
-})
-
-// Core and uikit each ship the bundled Ubuntu atlas (core loads it by URL,
-// uikit inlines it); a rebuild copied into one package only would split them.
-test("the bundled atlas is byte-identical to uikit's copy", async () => {
-  const pair = (name: string, uikitName: string) =>
-    Promise.all([
-      Bun.file(new URL(`../assets/fonts/${name}`, import.meta.url)).bytes(),
-      Bun.file(
-        new URL(`../../../uikit/src/fonts/${uikitName}`, import.meta.url),
-      ).bytes(),
-    ])
-  for (const [core, uikit] of [
-    await pair('Ubuntu.png', 'ubuntu.png'),
-    await pair('Ubuntu.json', 'ubuntu.json'),
-  ])
-    expect(Buffer.compare(core, uikit)).toBe(0)
 })

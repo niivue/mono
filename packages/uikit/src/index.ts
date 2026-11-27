@@ -78,5 +78,6 @@ export {
   measureWidth,
   readableAngle,
 } from './text/layout'
+export { UBUNTU_FONT_ATLAS, UBUNTU_FONT_METRICS } from './text/ubuntuFont'
 export type { UIKitTextItem } from './textOverlay'
 export { UIKitTextOverlay } from './textOverlay'

@@ -89,9 +89,11 @@ redirect demo-ext-wsi/index.html ../demo-ext-tile/
 for page in ome.zarr range vox.block.pick.zarr; do
   redirect "examples/$page.html" "../demo-ext-tile/$page.html"
 done
-for page in index buttons calipers volume subvolume slide slide-wsi standalone; do
+for page in index buttons volume subvolume slide slide-wsi standalone; do
   redirect "uikit/$page.html" "../demo-uikit/$page.html"
 done
+# The calipers page was retired: volume.html shows the same ruler.
+redirect uikit/calipers.html ../demo-uikit/volume.html
 
 # Documentation site
 mkdir -p _site/docs

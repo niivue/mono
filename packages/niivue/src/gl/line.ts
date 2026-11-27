@@ -1,4 +1,4 @@
-import { FLOATS_PER_LINE, type LineData } from '@/view/NVLine'
+import { FLOATS_PER_LINE, type LineData } from '@niivue/uikit'
 import { NVRenderer } from '@/view/NVRenderer'
 import { blendOver, deleteGLObjects } from './glUtil'
 import { lineFragShader, lineVertShader } from './lineShader'

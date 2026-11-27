@@ -1,7 +1,8 @@
+import type { LineData } from '@niivue/uikit'
 import { rulerSegments, rulerTickNumbers } from '@niivue/uikit'
 import type NVModel from '@/NVModel'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 
 export type MeasurementResult = { lines: LineData[]; labels: GlyphBatch[] }
 

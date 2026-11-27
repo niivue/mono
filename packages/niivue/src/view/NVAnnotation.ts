@@ -1,3 +1,4 @@
+import type { LineData } from '@niivue/uikit'
 import { type vec3, vec4 } from 'gl-matrix'
 import {
   isOnSlice,
@@ -23,7 +24,7 @@ import {
   explodeOffsetMMAtFrac,
 } from '@/volume/ChunkExplode'
 import { sceneUnit } from '@/volume/utils'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 import { buildRulers } from './NVMeasurement'
 import type { SliceTile } from './NVSliceLayout'
 

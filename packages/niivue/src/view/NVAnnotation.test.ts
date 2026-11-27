@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { LineData } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
 import { SLICE_TYPE } from '@/NVConstants'
 import type NVModel from '@/NVModel'
@@ -8,7 +9,6 @@ import {
   projectAnnotationScreenShapes,
 } from './NVAnnotation'
 import type { GlyphBatch } from './NVFont'
-import type { LineData } from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
 
 const square = (x: number, y: number, size: number): AnnotationPoint[] => [

@@ -1,8 +1,9 @@
+import type { LineData } from '@niivue/uikit'
 import { mmPerPixel2D, mmPerPixelRender } from '@/math/NVTransforms'
 import { SLICE_TYPE } from '@/NVConstants'
 import type { RulerUnits } from '@/NVTypes'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 import { type SliceTile, slicePanUV } from './NVSliceLayout'
 
 // slicePanUV indexes by orientation, so anything else (RENDER, or a tile from

@@ -1,5 +1,7 @@
-export type LineData = { data: Float32Array }
+import type { LineData } from '@niivue/uikit'
 
+// The line record and builder are uikit's (`buildLine`, `LineData`); this is
+// the builder signature core's overlay code takes.
 export type BuildLineFn = (
   x0: number,
   y0: number,
@@ -8,27 +10,3 @@ export type BuildLineFn = (
   thickness: number,
   color: number[],
 ) => LineData
-
-export const FLOATS_PER_LINE = 12
-
-export function buildLine(
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-  thickness = 2,
-  color: number[] = [1, 1, 0, 1],
-): LineData {
-  const data = new Float32Array([
-    startX,
-    startY,
-    endX,
-    endY,
-    thickness,
-    0,
-    0,
-    0,
-    ...color,
-  ])
-  return { data }
-}

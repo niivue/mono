@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import type { LineData } from '@niivue/uikit'
 import { vec3 } from 'gl-matrix'
 import type { Rotation2D } from '@/NVTypes'
 import type { GlyphBatch } from './NVFont'
-import type { LineData } from './NVLine'
 import { buildRuler, chooseRulerSize } from './NVRuler'
 import {
   type SliceLayoutConfig,

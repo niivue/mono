@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { LineData } from '@niivue/uikit'
 import type { GraphConfig } from '@/NVTypes'
 import type { GlyphBatch } from './NVFont'
 import {
@@ -14,7 +15,6 @@ import {
   signalXValueAtFrac,
   translateGraphLayout,
 } from './NVGraph'
-import type { LineData } from './NVLine'
 
 const CFG: GraphConfig = { normalizeValues: false, isRangeCalMinMax: false }
 

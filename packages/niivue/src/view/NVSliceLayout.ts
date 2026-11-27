@@ -1,3 +1,4 @@
+import type { LineData } from '@niivue/uikit'
 import { type mat4, vec3, vec4 } from 'gl-matrix'
 import * as NVTransforms from '@/math/NVTransforms'
 import * as NVConstants from '@/NVConstants'
@@ -9,7 +10,7 @@ import type {
   ViewHitTest,
 } from '@/NVTypes'
 import { getAxisColor } from '@/view/crosshairColor'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 import { projectMMToCanvas } from './sliceUtils'
 
 // ---------- Types ----------

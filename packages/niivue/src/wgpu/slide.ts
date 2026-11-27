@@ -1,3 +1,4 @@
+import { buildLine } from '@niivue/uikit'
 import { ubuntu } from '@/assets/fonts'
 import { colorLutWgsl, rgbWindowWgsl } from '@/slide/colorLutShader'
 import type {
@@ -28,7 +29,6 @@ import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
-import { buildLine } from '@/view/NVLine'
 import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'

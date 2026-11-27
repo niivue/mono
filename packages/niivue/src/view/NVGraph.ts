@@ -1,6 +1,7 @@
+import type { LineData } from '@niivue/uikit'
 import type { GraphConfig } from '@/NVTypes'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 import { estimateFontSize } from './NVUILayout'
 import { calculateTickSpacing, humanize } from './tickSpacing'
 

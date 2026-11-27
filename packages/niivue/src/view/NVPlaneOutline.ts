@@ -1,7 +1,8 @@
+import type { LineData } from '@niivue/uikit'
 import { SLICE_TYPE } from '@/NVConstants'
 import type { PlaneOutline } from '@/NVTypes'
 import type { Annotation3DRenderData } from './NVAnnotation'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 import type { SliceTile } from './NVSliceLayout'
 import { projectMMToCanvas } from './sliceUtils'
 

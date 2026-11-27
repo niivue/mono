@@ -1,4 +1,4 @@
-import type { LineData } from '@/view/NVLine'
+import type { LineData } from '@niivue/uikit'
 import { NVRenderer } from '@/view/NVRenderer'
 import lineShaderCode from './line.wgsl?raw'
 import {

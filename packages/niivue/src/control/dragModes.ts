@@ -9,12 +9,7 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
-import type {
-  AnnotationStats,
-  DragOverlay,
-  DragReleaseInfo,
-  VectorAnnotation,
-} from '@/NVTypes'
+import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
 import {
   angleLabel,
@@ -455,13 +450,7 @@ export function handleDragRelease(ctrl: NiiVue): void {
       }
       ctrl._angleState = 'none'
       ctrl._angleArm = null
-      commitMeasure(
-        ctrl,
-        'measureAngle',
-        [...arm.mm, placed.end],
-        arm.hit.sliceType,
-        { angle: placed.angle },
-      )
+      commitMeasure(ctrl, [...arm.mm, placed.end], arm.hit.sliceType)
       fireDragRelease(ctrl)
       clearDragState(ctrl)
       return
@@ -500,7 +489,7 @@ export function handleDragRelease(ctrl: NiiVue): void {
     const dist = span ? vec3.distance(span[0], span[1]) : 0
     // A click without a drag (or a degenerate span) measures nothing.
     if (span && dist > 0 && Number.isFinite(dist))
-      commitMeasure(ctrl, 'measureLine', span, hit.sliceType, { length: dist })
+      commitMeasure(ctrl, span, hit.sliceType)
   }
 
   fireDragRelease(ctrl)
@@ -641,39 +630,18 @@ function dragSpanMM(
  */
 function commitMeasure(
   ctrl: NiiVue,
-  type: 'measureLine' | 'measureAngle',
   mm: [number, number, number][],
   sliceType: number,
-  stats: Partial<AnnotationStats>,
 ): void {
   const cfg = ctrl.model.annotation
-  const w = cfg.style.strokeWidth
-  const [p0, p1, p2] = mm.map((p) => Annotation.mmToSlice2D(p, sliceType))
-  const anchor = mm[0]
-  if (!p0 || !p1 || !anchor) return
-  const polygons = [
-    ...Annotation.generateShape('measureLine', p0, p1, w),
-    ...(p2 ? Annotation.generateShape('measureLine', p1, p2, w) : []),
-  ]
-  if (polygons.length === 0) return
-  const ann: VectorAnnotation = Annotation.createAnnotation(
+  const ann = Annotation.measureAnnotation(
+    mm,
+    sliceType,
+    cfg.style,
     cfg.activeLabel,
     cfg.activeGroup,
-    sliceType,
-    anchor[sliceTypeDim(sliceType)],
-    polygons,
-    cfg.style,
-    [...anchor],
   )
-  ann.shape = {
-    type,
-    start: p0,
-    end: p1,
-    width: w,
-    ...(p2 ? { start2: p1, end2: p2 } : {}),
-  }
-  ann.stats = { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, ...stats }
-  ctrl._commitAnnotation(ann)
+  if (ann) ctrl._commitAnnotation(ann)
 }
 
 /**

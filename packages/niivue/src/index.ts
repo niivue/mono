@@ -12,6 +12,8 @@ export {
   makeLabelLut,
 } from './cmap/NVCmaps'
 export { polygonBoolean } from './annotation/clipper'
+// A measureLine or measureAngle from mm points, as the measuring tools build one.
+export { measureAnnotation } from './annotation/index'
 export { generateShape, isAnnotationErased } from './annotation/shapes'
 export { mmToSlice2D, slice2DToMM } from './annotation/sliceProjection'
 // Measure an annotation built outside the pointer tools (e.g. imported).

@@ -1,6 +1,7 @@
-import { ANNOTATION_DEFAULTS } from '@/NVConstants'
+import { ANNOTATION_DEFAULTS, sliceTypeDim } from '@/NVConstants'
 import type {
   AnnotationPoint,
+  AnnotationStats,
   AnnotationStyle,
   PolygonWithHoles,
   VectorAnnotation,
@@ -158,6 +159,62 @@ export function createAnnotation(
       strokeWidth: style?.strokeWidth ?? ANNOTATION_DEFAULTS.style.strokeWidth,
     },
   }
+}
+
+/**
+ * A measureLine (two mm points) or measureAngle (three: arm start, vertex, arm
+ * end) on `sliceType`'s slice through the first point, as NiiVue's measuring
+ * tools build one: slice-2D ends, thin-line polygons, and the length or angle
+ * measured from the mm points themselves (exact on a tilted slice). Null when
+ * a segment has no length.
+ */
+export function measureAnnotation(
+  mm: readonly [number, number, number][],
+  sliceType: number,
+  style: AnnotationStyle,
+  label = 1,
+  group = 'default',
+): VectorAnnotation | null {
+  const [a, b, c] = mm
+  if (!a || !b) return null
+  const [p0, p1, p2] = mm.map((p) => mmToSlice2D(p, sliceType))
+  if (!p0 || !p1) return null
+  const w = style.strokeWidth
+  const polygons = [
+    ...generateShape('measureLine', p0, p1, w),
+    ...(p2 ? generateShape('measureLine', p1, p2, w) : []),
+  ]
+  if (polygons.length === 0 || (p2 && polygons.length < 2)) return null
+  const sub = (u: readonly number[], v: readonly number[]) =>
+    [0, 1, 2].map((i) => (u[i] as number) - (v[i] as number))
+  const norm = (u: number[]) =>
+    Math.hypot(u[0] as number, u[1] as number, u[2] as number)
+  let measured: Partial<AnnotationStats>
+  if (c) {
+    const [u, v] = [sub(a, b), sub(c, b)]
+    const cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (norm(u) * norm(v))
+    measured = {
+      angle: (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI,
+    }
+  } else measured = { length: norm(sub(b, a)) }
+  const ann = createAnnotation(
+    label,
+    group,
+    sliceType,
+    a[sliceTypeDim(sliceType)],
+    polygons,
+    style,
+    [...a],
+  )
+  ann.shape = {
+    type: c ? 'measureAngle' : 'measureLine',
+    start: p0,
+    end: p1,
+    width: w,
+    ...(p2 ? { start2: p1, end2: p2 } : {}),
+  }
+  ann.stats = { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, ...measured }
+  return ann
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { generateShape, mmToSlice2D, NVSlideAnnotations } from '@niivue/niivue'
+import { measureAnnotation, NVSlideAnnotations } from '@niivue/niivue'
 
 import { baseView, hostOf } from '../testing/fake-view'
 import { markHandlers } from './marks'
@@ -554,13 +554,19 @@ describe('list_measurements and edit_measurements', () => {
       }),
       true,
     )
-    // As NiiVue's own measure tool builds it.
+    // Exactly as core's builder makes one (nv-mcp's browser side imports no
+    // NiiVue, so it keeps its own copy; this keeps the two in step).
     const made = (view.addAnnotation as ReturnType<typeof mock>).mock
       .calls[0]?.[0] as Annotation
-    const [a, b] = [mmToSlice2D([1, 2, 3], 2), mmToSlice2D([1, 5, 7], 2)]
-    expect(made.polygons).toEqual(
-      generateShape('measureLine', a, b, made.shape?.width as number),
+    const core = measureAnnotation(
+      [
+        [1, 2, 3],
+        [1, 5, 7],
+      ],
+      2,
+      made.style as never,
     )
+    expect({ ...made, id: '' }).toEqual({ ...core, id: '' } as never)
     expect(added.measurements).toEqual([
       {
         id: 'ang',

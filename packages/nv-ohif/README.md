@@ -18,14 +18,7 @@ Documentation: https://niivue.github.io/mono/docs/packages/nv-ohif/
 > **Consuming the local build (dev):** install **packed tarballs**, do not symlink.
 > Symlinking the monorepo package into an OHIF app makes its bundler follow the link
 > and bundle a duplicate of shared deps (breaks OHIF's floating-ui). Use
-> `npm pack` + `pnpm add file:<dir>` so each resolves self-contained from the app tree.
-
-## Try the proof demo
-
-`bun run dev` starts a small OHIF-shaped harness (`demo/`) that drives the real
-extension — it pulls the viewport via `getViewportModule()` and renders it with a mock
-OHIF display set pointing at a public NIfTI, so you can see NiiVue rendering a volume
-without a full OHIF app.
+> `bun pm pack` + `pnpm add file:<dir>` so each resolves self-contained from the app tree.
 
 ## Install
 

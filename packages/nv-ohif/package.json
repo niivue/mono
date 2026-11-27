@@ -32,7 +32,6 @@
     "lib"
   ],
   "scripts": {
-    "dev": "vite",
     "build:lib": "bun build ./src/index.ts --production --outdir=lib --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external @niivue/nv-ext-tile --external dcmjs",
     "build:modes": "bun build ./src/modes/viewer.js ./src/modes/tmtv.js ./src/modes/dynamic.js --production --splitting --outdir=lib/modes --target=browser --format=esm --external '@ohif/*'",
     "build:types": "tsc -p tsconfig.build.json",
@@ -58,12 +57,10 @@
     "@types/bun": "^1.4.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.0.1",
     "happy-dom": "^20.9.0",
     "react": "^19",
     "react-dom": "^19",
-    "typescript": "^5.9.3",
-    "vite": "^8.3.8"
+    "typescript": "^5.9.3"
   },
   "comment:nv-ext-drawing": "@niivue/nv-ext-drawing (slice interpolation, worker inlined) is bundled into lib, not externalized: a devDependency, so hosts install nothing extra."
 }

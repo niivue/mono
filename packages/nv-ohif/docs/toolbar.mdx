@@ -23,7 +23,7 @@ toolbarButtons: [
 toolbarSections: [
   { $reference: 'cornerstone.toolbarSections' },
   { $reference: 'niivue.toolbarSections' },
-  { primary: [/* your buttons, */ 'NiivueViews', 'NiivueClip', 'NiivueReset'] },
+  { primary: [/* your buttons, */ 'NiivueClip', 'NiivueOverlayMenu', 'NiivueCapture'] },
 ],
 ```
 
@@ -34,8 +34,6 @@ list must name every button you want in the bar, not only the new ones.
 
 Pick the ones you need. The id to put in your bar is in brackets.
 
-- **Views** (`NiivueViews`) switches between axial, coronal, sagittal,
-  multiplanar and the 3D render.
 - **Clip** (`NiivueClip`) cuts away one side of the 3D render (left, right,
   anterior, posterior, superior or inferior), or turns the cut off.
 - **Window** (`NiivueWindowLevel`) offers an automatic window, which
@@ -43,17 +41,15 @@ Pick the ones you need. The id to put in your bar is in brackets.
   presets. Presets for another modality are grayed out.
 - **Colormap** (`NiivueColormap`) colors the base image: gray, hot, bone,
   cool, warm, viridis, plasma, inferno, turbo or jet.
-- **Colorbar** (`NiivueColorbar`) shows or hides the colormap legend.
 - **Smoothing** (`NiivueInterpolation`) switches between smooth and blocky
   voxels.
-- **Ruler** (`NiivueRuler`) picks the Length tool. See
-  [Measuring](/packages/nv-ohif/measurements/).
-- **Overlay** (`NiivueOverlay`) and **Overlays** (`NiivueOverlayMenu`)
-  layer other series on top. See [Layering series](#layering-series).
+- **Overlays** (`NiivueOverlayMenu`) layers other series on top. See
+  [Layering series](#layering-series).
 - **Crosshairs** (`NiivueCrosshair`) and **Capture** (`NiivueCapture`)
   replace Cornerstone's buttons. See below.
-- **Reset View** (`NiivueReset`) puts the camera, zoom, pan, crosshair,
-  rotation and flips back.
+
+Views are in each viewport's orientation menu (upper left), the colorbar in its
+display menu, and OHIF's own Reset View resets a NiiVue viewport too.
 
 ## Crosshairs and capture
 
@@ -107,15 +103,13 @@ Each viewport keeps its own window afterwards, as in OHIF.
 A viewport shows one base series. You can draw other series from the same
 study on top of it as overlays:
 
-- **Overlay** (`NiivueOverlay`) adds the study's next series in a warm
-  colormap at half opacity. Press it again to remove every overlay.
-- **Overlays** (`NiivueOverlayMenu`) is a menu. It lists the series you can
-  add, then one row per overlay, top layer first, with visibility, colormap,
-  opacity, up and down, and remove.
+The **Overlays** menu (`NiivueOverlayMenu`) lists the series you can add, then
+one row per overlay, top layer first, with visibility, colormap, opacity, up
+and down, and remove.
 
 Only series NiiVue can open as a volume can be overlaid. A DICOM overlay is
-converted first, which can take a moment; pressing Overlay again cancels
-it. Changing the base series drops its overlays.
+converted first, which can take a moment; the menu can cancel it. Changing
+the base series drops its overlays.
 
 The same actions are commands, so your own code can run them on the active
 viewport:

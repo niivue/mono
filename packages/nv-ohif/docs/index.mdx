@@ -129,20 +129,7 @@ first, so a large one takes a moment; the viewport says what it is doing.
 
 ## Working on the extension
 
-If you are changing nv-ohif itself, the repository has a small test page
-that behaves like OHIF and drives the real viewport. From the repository
-root, build the packages it uses, then start it:
-
-```bash
-bunx nx build nv-ohif
-cd packages/nv-ohif && bun run dev
-```
-
-It opens on `http://localhost:5183/` with a NIfTI brain. Add `?dicom` to the
-URL for a DICOM series from a public server, or `?slide` for a whole-slide
-image.
-
-To try your changes in a real OHIF app, pack the packages you changed into
+To try changes to nv-ohif in a real OHIF app, pack the packages you changed into
 tarballs with `bun pm pack` and install those. Do not symlink the
 repository into the app: its bundler then picks up a second copy of shared
 packages, which breaks OHIF.

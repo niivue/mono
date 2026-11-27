@@ -66,8 +66,7 @@ Each widget is a pure geometry builder (spec in, plain line + text draw data out
 unit-testable without a GPU) paired with an overlay that owns the GPU resources
 and draws that data through the lifecycle hook. The overlays are the API. Of
 the builders, only the measuring widgets' and the primitives' (`buildRuler`,
-`buildCrosshair`, `buildRect`, `buildLine`,
-`buildTerminatedLine`) are exported; the control widgets' models are
+`buildCrosshair`, `buildRect`, `buildLine`) are exported; the control widgets' models are
 package-private (see "Conventions for contributors").
 
 | Model | Overlay | Draws |
@@ -120,12 +119,10 @@ The exported builders are usable on their own if you want the geometry but not
 UIKit's renderers:
 
 ```ts
-import { buildTerminatedLine, LineTerminator } from '@niivue/uikit'
+import { buildLine } from '@niivue/uikit'
 
-// A line with an arrowhead at the end, as plain LineData segments.
-const segments = buildTerminatedLine(0, 0, 100, 40, 2, [1, 0, 0, 1], {
-  end: LineTerminator.ARROW,
-})
+// One line record: from (0, 0) to (100, 40), 2 px wide, red.
+const line = buildLine(0, 0, 100, 40, 2, [1, 0, 0, 1])
 ```
 
 ## Buttons

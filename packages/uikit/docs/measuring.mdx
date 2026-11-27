@@ -116,27 +116,19 @@ colors. Sizes here are CSS pixels.
 [Atlases and labels](/guide/atlases/) shows how to read region names
 from an atlas.
 
-## Arrows and text of your own
+## Lines and text of your own
 
 The pieces the widgets are built from are available too. A line overlay
-draws lines, optionally ending in an arrowhead, and a text overlay draws
-text:
+draws lines, and a text overlay draws text:
 
 ```js
-import {
-  buildTerminatedLine,
-  LineTerminator,
-  UIKitLineOverlay,
-  UIKitTextOverlay,
-} from '@niivue/uikit'
+import { buildLine, UIKitLineOverlay, UIKitTextOverlay } from '@niivue/uikit'
 
-const arrow = new UIKitLineOverlay(
-  buildTerminatedLine(50, 50, 200, 120, 3, [1, 0, 0, 1], { end: LineTerminator.ARROW }),
-)
+const pointer = new UIKitLineOverlay([buildLine(50, 50, 200, 120, 3, [1, 0, 0, 1])])
 const note = new UIKitTextOverlay(font, [
   { str: 'Lesion', x: 205, y: 130, sizePx: 24, outlineWidthPx: 2 },
 ])
-nv.registerOverlayRenderer(arrow)
+nv.registerOverlayRenderer(pointer)
 nv.registerOverlayRenderer(note)
 ```
 

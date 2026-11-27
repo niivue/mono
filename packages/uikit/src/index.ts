@@ -30,13 +30,8 @@ export type {
 } from './hook'
 export type { UIKitImageSource } from './imageOverlay'
 export { UIKitImageOverlay } from './imageOverlay'
-export type { LineData, LineTerminators } from './line'
-export {
-  buildLine,
-  buildTerminatedLine,
-  FLOATS_PER_LINE,
-  LineTerminator,
-} from './line'
+export type { LineData } from './line'
+export { buildLine, FLOATS_PER_LINE } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
 export type { UIKitMagnifierOverlayOptions } from './magnifierOverlay'
 export { UIKitMagnifierOverlay } from './magnifierOverlay'

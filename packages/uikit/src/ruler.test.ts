@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { buildRuler } from './ruler'
+import { buildRuler, rulerSegments } from './ruler'
 
 describe('buildRuler', () => {
   it('returns nothing for a zero-length ruler', () => {
@@ -54,7 +54,7 @@ describe('buildRuler', () => {
   it('adds a number at every major (fifth) tick when asked', () => {
     const g = buildRuler({
       a: [0, 0],
-      b: [100, 0],
+      b: [200, 0],
       length: 12,
       showTickNumbers: true,
     })
@@ -119,11 +119,18 @@ describe('buildRuler tick thinning', () => {
 
   it('keeps majors every fifth drawn tick once the step reaches 5', () => {
     // 1000 units: 200 ticks at step 5, so 40 majors (every 25 units).
-    const g = buildRuler({ a: [0, 0], b: [1000, 0], length: 1000 })
+    const g = buildRuler({ a: [0, 0], b: [5000, 0], length: 1000 })
     const lengths = g.lines
       .slice(3)
       .map((l) => Math.abs((l.data?.[3] ?? 0) - (l.data?.[1] ?? 0)))
     expect(lengths).toHaveLength(200)
     expect(lengths.filter((l) => l === 24)).toHaveLength(40)
   })
+})
+
+// A short or zoomed-out ruler was a solid comb: one tick per unit at 2.5 px.
+it('keeps ticks at least two tick lengths apart on screen', () => {
+  // 2.5 px per unit: every 5 units (12.5 px), not every unit; after the
+  // baseline and two end caps.
+  expect(rulerSegments([0, 0], [100, 0], 40).slice(3)).toHaveLength(8)
 })

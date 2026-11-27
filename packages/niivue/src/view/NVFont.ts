@@ -1,3 +1,4 @@
+import { parseFont, type RawFontFile } from '@niivue/uikit'
 import * as NVLoader from '@/NVLoader'
 
 // --- Shared types and constants for both GL and GPU font renderers ---
@@ -218,66 +219,22 @@ export type FontMetrics = {
   mets: Record<number, { xadv: number; uv_lbwh: number[]; lbwh: number[] }>
 }
 
-type FontJson = {
-  atlas: { distanceRange: number; size: number; width: number; height: number }
-  glyphs: Array<{
-    unicode: number
-    advance: number
-    atlasBounds?: { left: number; right: number; top: number; bottom: number }
-    planeBounds?: { left: number; right: number; top: number; bottom: number }
-  }>
-}
+type FontJson = RawFontFile
 
+/**
+ * uikit's `parseFont` (the one msdf-atlas-gen parser, superscript fallback
+ * included), keyed by code point for the layout code here.
+ */
 export function parseFontMetrics(jsonMetrics: FontJson): FontMetrics {
-  const fontMets: FontMetrics = {
-    distanceRange: jsonMetrics.atlas.distanceRange,
-    size: jsonMetrics.atlas.size,
-    mets: {},
-  }
-  // Sparse: only define entries for glyphs the font actually ships, keyed by
-  // Unicode code point. Missing glyphs are skipped in buildTextLayout.
-  const scaleW = jsonMetrics.atlas.width
-  const scaleH = jsonMetrics.atlas.height
-  for (const glyph of jsonMetrics.glyphs) {
-    const id = glyph.unicode
-    const m = {
-      xadv: glyph.advance,
-      uv_lbwh: [0, 0, 0, 0],
-      lbwh: [0, 0, 0, 0],
+  const font = parseFont(jsonMetrics)
+  const mets: FontMetrics['mets'] = {}
+  for (const [char, g] of font.glyphs)
+    mets[char.codePointAt(0) ?? 0] = {
+      xadv: g.xadv,
+      uv_lbwh: [...g.uv],
+      lbwh: [...g.plane],
     }
-    if (glyph.atlasBounds && glyph.planeBounds) {
-      const al = glyph.atlasBounds.left / scaleW
-      const ab = (scaleH - glyph.atlasBounds.top) / scaleH
-      const aw = (glyph.atlasBounds.right - glyph.atlasBounds.left) / scaleW
-      const ah = (glyph.atlasBounds.top - glyph.atlasBounds.bottom) / scaleH
-      m.uv_lbwh = [al, ab, aw, ah]
-      const pl = glyph.planeBounds.left
-      const pb = glyph.planeBounds.bottom
-      const pw = glyph.planeBounds.right - glyph.planeBounds.left
-      const ph = glyph.planeBounds.top - glyph.planeBounds.bottom
-      m.lbwh = [pl, pb, pw, ph]
-    }
-    fontMets.mets[id] = m
-  }
-  // ASCII-only atlases lack the superscripts unit labels use (mm², mm³): draw
-  // a smaller, raised digit from the atlas instead of dropping the character.
-  const SUPER_SCALE = 0.6
-  const SUPER_RAISE = 0.3 // em; puts the small digit's top near cap height
-  for (const [sup, digit] of [
-    [0xb9, 0x31],
-    [0xb2, 0x32],
-    [0xb3, 0x33],
-  ]) {
-    const d = fontMets.mets[digit]
-    if (fontMets.mets[sup] || !d) continue
-    const [l, b, w, h] = d.lbwh.map((v) => v * SUPER_SCALE)
-    fontMets.mets[sup] = {
-      xadv: d.xadv * SUPER_SCALE,
-      uv_lbwh: d.uv_lbwh,
-      lbwh: [l, b + SUPER_RAISE, w, h],
-    }
-  }
-  return fontMets
+  return { distanceRange: font.distanceRange, size: font.size, mets }
 }
 
 export async function getFontMetrics(fnm: string): Promise<FontMetrics> {

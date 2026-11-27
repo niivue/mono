@@ -50,8 +50,13 @@ export { UIKitPointLabelOverlay } from './pointLabelOverlay'
 export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
-export type { RulerGeometry, RulerSpec, Vec2 } from './ruler'
-export { buildRuler } from './ruler'
+export type {
+  RulerGeometry,
+  RulerSegment,
+  RulerSpec,
+  Vec2,
+} from './ruler'
+export { buildRuler, rulerSegments, rulerTickNumbers } from './ruler'
 export { UIKitRulerOverlay } from './rulerOverlay'
 export { loadDefaultFont } from './text/defaultFont'
 export type {

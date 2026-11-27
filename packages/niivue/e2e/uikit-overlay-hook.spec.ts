@@ -147,7 +147,9 @@ test('a UIKit line overlay draws into the frame without throwing', async ({
   expect(r.red).toBeGreaterThan(0)
 })
 
-test('a UIKit rotated text overlay draws into the frame without throwing', async ({
+// A quarter turn in y-down screen space runs the text downward from its anchor;
+// a sign slip in the shader's rotation would run it up, off the top edge.
+test('a UIKit rotated text overlay draws, turned the right way', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -158,12 +160,13 @@ test('a UIKit rotated text overlay draws into the frame without throwing', async
     const font = await loadDefaultFont()
     const glyphCount = font.metrics.glyphs.size
     const overlay = new UIKitTextOverlay(font, [
-      { str: '42.0 mm', x: 60, y: 100, sizePx: 22, rotation: -0.4, color: [1, 1, 0, 1] },
+      { str: 'MMMM', x: 60, y: 30, sizePx: 22, rotation: Math.PI / 2, color: [1, 1, 0, 1] },
     ])
     let error = null
     let drew = 0
     let yellow = 0
     let glError = 0
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
     const orig = overlay.drawOverlay.bind(overlay)
     nv.registerOverlayRenderer({
       drawOverlay(frame) {
@@ -171,13 +174,18 @@ test('a UIKit rotated text overlay draws into the frame without throwing', async
           orig(frame)
           drew++
           // Read mid-frame (no preserveDrawingBuffer). The label is [1, 1, 0] on
-          // the default black bg -> count yellowish pixels.
+          // the default black bg -> bound the yellowish pixels (rows bottom-up).
           const gl = frame.handle.gl
           glError = gl.getError()
           const px = new Uint8Array(c.width * c.height * 4)
           gl.readPixels(0, 0, c.width, c.height, gl.RGBA, gl.UNSIGNED_BYTE, px)
           for (let i = 0; i < px.length; i += 4) {
-            if (px[i] > 128 && px[i + 1] > 128 && px[i + 2] < 128) yellow++
+            if (!(px[i] > 128 && px[i + 1] > 128 && px[i + 2] < 128)) continue
+            yellow++
+            const x = (i / 4) % c.width
+            const y = c.height - 1 - Math.floor(i / 4 / c.width)
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y)
           }
         } catch (e) { error = String(e && e.message || e) }
       },
@@ -185,7 +193,7 @@ test('a UIKit rotated text overlay draws into the frame without throwing', async
     nv.drawScene()
     await nextFrame()
     overlay.destroy()
-    return { drew, error, glError, glyphCount, yellow }
+    return { drew, error, glError, glyphCount, yellow, minX, maxX, minY, maxY }
   })()`)
 
   // The bundled Ubuntu atlas parsed to a non-empty glyph table.
@@ -193,8 +201,11 @@ test('a UIKit rotated text overlay draws into the frame without throwing', async
   expect(r.error).toBeNull()
   expect(r.drew).toBeGreaterThan(0)
   expect(r.glError).toBe(0)
-  // The rotated MSDF glyphs actually rasterized visible pixels.
+  // The rotated MSDF glyphs rasterized, as a column running down from y = 30.
   expect(r.yellow).toBeGreaterThan(0)
+  expect(r.maxY - r.minY).toBeGreaterThan(2 * (r.maxX - r.minX))
+  expect(r.minY).toBeGreaterThanOrEqual(28)
+  expect(r.maxY).toBeGreaterThan(80)
 })
 
 test('a UIKit ruler draws its line, ticks and label without throwing', async ({

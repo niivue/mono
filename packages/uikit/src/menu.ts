@@ -9,13 +9,14 @@
 // overlay draw hook.
 
 import {
+  BUTTON_SPEC_LENGTHS,
+  BUTTON_STYLE_LENGTHS,
   type ButtonLayout,
   type ButtonSpec,
   type ButtonStyle,
   type ButtonVisual,
   buildButton,
   DEFAULT_BUTTON_STYLE,
-  scaleButton,
 } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
@@ -26,6 +27,7 @@ import {
   revealRow,
   scrollWindow,
 } from './scroll'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -420,6 +422,28 @@ export function menuScrollStripAt(
 }
 
 /** Scale every length in a menu spec and its styles by `k`. */
+const MENU_STYLE_LENGTHS = [
+  'panelBorderWidth',
+  'panelRadius',
+  'panelPadding',
+  'itemHeight',
+  'itemPaddingX',
+  'textSizePx',
+  'markSize',
+  'markWidth',
+  'markGap',
+  'shortcutGap',
+  'separatorHeight',
+  'gapToButton',
+  'chevronSize',
+  'chevronWidth',
+  'chevronGap',
+  'minWidth',
+  'scrollStripHeight',
+  'scrollArrowSize',
+  'scrollArrowWidth',
+] as const
+
 export function scaleMenu(
   spec: MenuButtonSpec,
   buttonStyle: ButtonStyle,
@@ -427,49 +451,10 @@ export function scaleMenu(
   k: number,
 ): { spec: MenuButtonSpec; buttonStyle: ButtonStyle; style: MenuStyle } {
   if (k === 1) return { spec, buttonStyle, style }
-  const b = scaleButton(
-    {
-      id: spec.id,
-      label: spec.label,
-      x: spec.x,
-      y: spec.y,
-      width: spec.width,
-      height: spec.height,
-    },
-    buttonStyle,
-    k,
-  )
   return {
-    spec: {
-      ...spec,
-      x: b.spec.x,
-      y: b.spec.y,
-      width: b.spec.width,
-      height: b.spec.height,
-    },
-    buttonStyle: b.style,
-    style: {
-      ...style,
-      panelBorderWidth: style.panelBorderWidth * k,
-      panelRadius: style.panelRadius * k,
-      panelPadding: style.panelPadding * k,
-      itemHeight: style.itemHeight * k,
-      itemPaddingX: style.itemPaddingX * k,
-      textSizePx: style.textSizePx * k,
-      markSize: style.markSize * k,
-      markWidth: style.markWidth * k,
-      markGap: style.markGap * k,
-      shortcutGap: style.shortcutGap * k,
-      separatorHeight: style.separatorHeight * k,
-      gapToButton: style.gapToButton * k,
-      chevronSize: style.chevronSize * k,
-      chevronWidth: style.chevronWidth * k,
-      chevronGap: style.chevronGap * k,
-      minWidth: style.minWidth * k,
-      scrollStripHeight: style.scrollStripHeight * k,
-      scrollArrowSize: style.scrollArrowSize * k,
-      scrollArrowWidth: style.scrollArrowWidth * k,
-    },
+    spec: scaleKeys(spec, BUTTON_SPEC_LENGTHS, k),
+    buttonStyle: scaleKeys(buttonStyle, BUTTON_STYLE_LENGTHS, k),
+    style: scaleKeys(style, MENU_STYLE_LENGTHS, k),
   }
 }
 

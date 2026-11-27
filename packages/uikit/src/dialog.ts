@@ -7,6 +7,7 @@
 
 import type { ButtonStyle } from './button'
 import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -236,6 +237,18 @@ export function layoutDialog(
 }
 
 /** Scale every length in a spec and style by `k` (CSS pixels to canvas pixels). */
+const DIALOG_SPEC_LENGTHS = ['x', 'y', 'width', 'contentHeight'] as const
+const DIALOG_STYLE_LENGTHS = [
+  'borderWidth',
+  'radius',
+  'width',
+  'padding',
+  'gap',
+  'titleSizePx',
+  'textSizePx',
+  'buttonGap',
+] as const
+
 export function scaleDialog(
   spec: DialogSpec,
   style: DialogStyle,
@@ -243,25 +256,8 @@ export function scaleDialog(
 ): { spec: DialogSpec; style: DialogStyle } {
   if (k === 1) return { spec, style }
   return {
-    spec: {
-      ...spec,
-      x: spec.x === undefined ? undefined : spec.x * k,
-      y: spec.y === undefined ? undefined : spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-      contentHeight:
-        spec.contentHeight === undefined ? undefined : spec.contentHeight * k,
-    },
-    style: {
-      ...style,
-      borderWidth: style.borderWidth * k,
-      radius: style.radius * k,
-      width: style.width * k,
-      padding: style.padding * k,
-      gap: style.gap * k,
-      titleSizePx: style.titleSizePx * k,
-      textSizePx: style.textSizePx * k,
-      buttonGap: style.buttonGap * k,
-    },
+    spec: scaleKeys(spec, DIALOG_SPEC_LENGTHS, k),
+    style: scaleKeys(style, DIALOG_STYLE_LENGTHS, k),
   }
 }
 

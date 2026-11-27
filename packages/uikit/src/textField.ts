@@ -7,6 +7,7 @@
 import { mixColor } from './button'
 import { buildRect, type RectData, type UIKitBox } from './rect'
 import type { ScrollWindow } from './scroll'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import {
@@ -115,6 +116,19 @@ export function layoutLineField(
   }
 }
 
+const FIELD_SPEC_LENGTHS = ['x', 'y', 'width'] as const
+const FIELD_STYLE_LENGTHS = [
+  'borderWidth',
+  'radius',
+  'textSizePx',
+  'textOutlineWidth',
+  'paddingX',
+  'paddingY',
+  'labelGap',
+  'fieldWidth',
+  'caretWidth',
+] as const
+
 /** Scale a field's position and shared style lengths by `k` (CSS pixels to canvas pixels). */
 export function scaleField<S extends FieldPlacement, T extends FieldStyle>(
   spec: S,
@@ -123,24 +137,8 @@ export function scaleField<S extends FieldPlacement, T extends FieldStyle>(
 ): { spec: S; style: T } {
   if (k === 1) return { spec, style }
   return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-    },
-    style: {
-      ...style,
-      borderWidth: style.borderWidth * k,
-      radius: style.radius * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      paddingX: style.paddingX * k,
-      paddingY: style.paddingY * k,
-      labelGap: style.labelGap * k,
-      fieldWidth: style.fieldWidth * k,
-      caretWidth: style.caretWidth * k,
-    },
+    spec: scaleKeys(spec, FIELD_SPEC_LENGTHS, k),
+    style: scaleKeys(style, FIELD_STYLE_LENGTHS, k),
   }
 }
 

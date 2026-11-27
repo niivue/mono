@@ -8,6 +8,7 @@
 import { mixColor } from './button'
 import { buildLine, type LineData } from './line'
 import { buildRect, type RectData, rectContains } from './rect'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -149,6 +150,17 @@ export function layoutSegmented(
 }
 
 /** Scale every length in a spec and style by `k` (CSS pixels to canvas pixels). */
+const SEGMENTED_SPEC_LENGTHS = ['x', 'y', 'segmentWidth', 'height'] as const
+const SEGMENTED_STYLE_LENGTHS = [
+  'height',
+  'paddingX',
+  'inset',
+  'radius',
+  'trackBorderWidth',
+  'textSizePx',
+  'focusRingWidth',
+] as const
+
 export function scaleSegmented(
   spec: SegmentedSpec,
   style: SegmentedStyle,
@@ -156,24 +168,8 @@ export function scaleSegmented(
 ): { spec: SegmentedSpec; style: SegmentedStyle } {
   if (k === 1) return { spec, style }
   return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      segmentWidth:
-        spec.segmentWidth === undefined ? undefined : spec.segmentWidth * k,
-      height: spec.height === undefined ? undefined : spec.height * k,
-    },
-    style: {
-      ...style,
-      height: style.height * k,
-      paddingX: style.paddingX * k,
-      inset: style.inset * k,
-      radius: style.radius * k,
-      trackBorderWidth: style.trackBorderWidth * k,
-      textSizePx: style.textSizePx * k,
-      focusRingWidth: style.focusRingWidth * k,
-    },
+    spec: scaleKeys(spec, SEGMENTED_SPEC_LENGTHS, k),
+    style: scaleKeys(style, SEGMENTED_STYLE_LENGTHS, k),
   }
 }
 

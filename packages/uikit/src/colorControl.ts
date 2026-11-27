@@ -8,6 +8,7 @@
 
 import { buildRect, type RectData, rectContains, type UIKitBox } from './rect'
 import type { SliderStyle } from './slider'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -248,48 +249,39 @@ export function layoutColorControl(
 }
 
 /** Scale every length in a spec and style by `k` (CSS pixels to canvas pixels). */
+const COLOR_SPEC_LENGTHS = ['x', 'y', 'width'] as const
+const COLOR_SLIDER_LENGTHS = [
+  'thumbSize',
+  'trackHeight',
+  'trackRadius',
+  'thumbBorderWidth',
+] as const
+const COLOR_STYLE_LENGTHS = [
+  'textSizePx',
+  'textOutlineWidth',
+  'labelGap',
+  'previewSize',
+  'previewRadius',
+  'previewBorderWidth',
+  'gap',
+  'channelGap',
+  'swatchSize',
+  'swatchGap',
+  'swatchRadius',
+  'swatchBorderWidth',
+  'selectedRingWidth',
+  'paletteGap',
+] as const
+
 export function scaleColorControl(
   spec: ColorControlSpec,
   style: ColorControlStyle,
   k: number,
 ): { spec: ColorControlSpec; style: ColorControlStyle } {
   if (k === 1) return { spec, style }
-  const slider = { ...style.slider }
-  for (const key of [
-    'thumbSize',
-    'trackHeight',
-    'trackRadius',
-    'thumbBorderWidth',
-  ] as const) {
-    const v = slider[key]
-    if (v !== undefined) slider[key] = v * k
-  }
-  return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-    },
-    style: {
-      ...style,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      labelGap: style.labelGap * k,
-      previewSize: style.previewSize * k,
-      previewRadius: style.previewRadius * k,
-      previewBorderWidth: style.previewBorderWidth * k,
-      gap: style.gap * k,
-      channelGap: style.channelGap * k,
-      slider,
-      swatchSize: style.swatchSize * k,
-      swatchGap: style.swatchGap * k,
-      swatchRadius: style.swatchRadius * k,
-      swatchBorderWidth: style.swatchBorderWidth * k,
-      selectedRingWidth: style.selectedRingWidth * k,
-      paletteGap: style.paletteGap * k,
-    },
-  }
+  const scaled = scaleKeys(style, COLOR_STYLE_LENGTHS, k)
+  scaled.slider = scaleKeys(style.slider, COLOR_SLIDER_LENGTHS, k)
+  return { spec: scaleKeys(spec, COLOR_SPEC_LENGTHS, k), style: scaled }
 }
 
 /** The index of the swatch under canvas point (px, py), or -1. */

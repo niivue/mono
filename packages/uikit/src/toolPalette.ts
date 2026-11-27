@@ -7,6 +7,7 @@
 import { buildLine, type LineData } from './line'
 import type { UIKitGeometry } from './overlayParts'
 import { buildRect, type RectData, rectContains } from './rect'
+import { scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import { capHeight, measureWidth, type RGBA } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -164,32 +165,29 @@ export interface ToolPaletteLayout {
 }
 
 /** Scale every length in a style by `k` (CSS pixels to canvas pixels). */
+const TOOL_PALETTE_LENGTHS = [
+  'rowHeight',
+  'padding',
+  'gap',
+  'sectionGap',
+  'toolSlot',
+  'toolWidth',
+  'toolRise',
+  'selectedLift',
+  'hoverLift',
+  'swatchSize',
+  'minDot',
+  'maxDot',
+  'borderWidth',
+  'captionSizePx',
+  'textSizePx',
+] as const
+
 export function scaleToolPaletteStyle(
   style: ToolPaletteStyle,
   k: number,
 ): ToolPaletteStyle {
-  if (k === 1) return style
-  const scaled = { ...style }
-  for (const key of [
-    'rowHeight',
-    'padding',
-    'gap',
-    'sectionGap',
-    'toolSlot',
-    'toolWidth',
-    'toolRise',
-    'selectedLift',
-    'hoverLift',
-    'swatchSize',
-    'minDot',
-    'maxDot',
-    'borderWidth',
-    'captionSizePx',
-    'textSizePx',
-  ] as const) {
-    scaled[key] = style[key] * k
-  }
-  return scaled
+  return k === 1 ? style : scaleKeys(style, TOOL_PALETTE_LENGTHS, k)
 }
 
 // Shape tools are flat keys in the tray; the rest stand up out of it.

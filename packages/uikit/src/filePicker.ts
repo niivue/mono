@@ -6,12 +6,13 @@
 // host bridge (see host.ts), so nothing here touches the DOM.
 
 import {
+  BUTTON_STYLE_LENGTHS,
   type ButtonLayout,
   type ButtonStyle,
   DEFAULT_BUTTON_STYLE,
   layoutButton,
 } from './button'
-import { resolveStyle } from './style'
+import { resolveStyle, scaleKeys } from './style'
 import type { UIKitFontMetrics } from './text/font'
 import {
   autoOutlineColor,
@@ -194,37 +195,27 @@ export function layoutFilePicker(
  * come back as a full button style, so a layout of the result agrees with a
  * button overlay scaling the same picker.
  */
+const FILE_PICKER_SPEC_LENGTHS = ['x', 'y', 'width'] as const
+const FILE_PICKER_STYLE_LENGTHS = [
+  'gap',
+  'textSizePx',
+  'textOutlineWidth',
+  'readoutWidth',
+] as const
+
 export function scaleFilePicker(
   spec: FilePickerSpec,
   style: FilePickerStyle,
   k: number,
 ): { spec: FilePickerSpec; style: FilePickerStyle } {
   if (k === 1) return { spec, style }
-  const base = filePickerButtonStyle(style)
-  const button: ButtonStyle = {
-    ...base,
-    textSizePx: base.textSizePx * k,
-    paddingX: base.paddingX * k,
-    paddingY: base.paddingY * k,
-    radius: base.radius * k,
-    borderWidth: base.borderWidth * k,
-  }
-  return {
-    spec: {
-      ...spec,
-      x: spec.x * k,
-      y: spec.y * k,
-      width: spec.width === undefined ? undefined : spec.width * k,
-    },
-    style: {
-      ...style,
-      button,
-      gap: style.gap * k,
-      textSizePx: style.textSizePx * k,
-      textOutlineWidth: style.textOutlineWidth * k,
-      readoutWidth: style.readoutWidth * k,
-    },
-  }
+  const scaled = scaleKeys(style, FILE_PICKER_STYLE_LENGTHS, k)
+  scaled.button = scaleKeys(
+    filePickerButtonStyle(style),
+    BUTTON_STYLE_LENGTHS,
+    k,
+  )
+  return { spec: scaleKeys(spec, FILE_PICKER_SPEC_LENGTHS, k), style: scaled }
 }
 
 /** The readout text of a picker; its button is drawn by a button overlay. */

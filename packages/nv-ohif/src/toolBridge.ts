@@ -191,7 +191,7 @@ const OHIF_TO_ANNOTATION = new Map(
  * for tools that are not annotation-backed (handled as drag modes instead).
  * Setting `nv.annotationTool` to the result + `nv.annotationIsEnabled = true`
  * makes a left-drag on a 2D slice draw the shape; the measure* variants also
- * compute ROI stats (area/mean) and fire `annotationAdded` with them.
+ * compute ROI stats (area/mean); the draw emits `annotationChanged` 'draw'.
  */
 export function ohifToolToAnnotationTool(
   tool: string | undefined,

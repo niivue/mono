@@ -1,10 +1,10 @@
-import type {
-  NiiVue,
-  NVSlideAnnotations,
-  VectorAnnotation,
+import {
+  type NiiVue,
+  type NVSlideAnnotations,
+  slice2DToMM,
+  type VectorAnnotation,
 } from '@niivue/niivue'
 import { useEffect, useState } from 'react'
-import { toCanvas } from './annotationHit'
 import {
   areaUnit,
   calibrateStats,
@@ -34,7 +34,7 @@ function anchorOf(nv: NiiVue, a: VectorAnnotation) {
   const p = s
     ? { x: (s.start.x + s.end.x) / 2, y: (s.start.y + s.end.y) / 2 }
     : a.polygons[0]?.outer[0]
-  const c = p && toCanvas(nv, a, p)
+  const c = p && nv.mmToCanvas(slice2DToMM(p, a.slicePosition, a.sliceType))
   const dpr = nv.effectiveDevicePixelRatio
   return c ? { x: c.x / dpr, y: c.y / dpr } : undefined
 }

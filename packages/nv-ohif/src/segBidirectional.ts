@@ -236,8 +236,6 @@ export function largestBidirectional(
   }
 }
 
-// World (RAS mm) axis normal to each 2D view (axial z, coronal y, sagittal x).
-
 /**
  * OHIF's runSegmentBidirectional on a NiiVue pane: the active segment's
  * largest bidirectional on the acquisition plane, added as a Bidirectional

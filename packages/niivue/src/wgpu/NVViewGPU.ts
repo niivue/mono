@@ -1821,7 +1821,7 @@ export default class NVView {
     }
     // Layer 4: Lines (full-canvas) — used by graph
     let graphLines: ReturnType<typeof buildLine>[] = []
-    // Project vector annotations for overlays (annotationScreenShapes / isAnnotationDrawn).
+    // Project this frame's annotations: drawn below, hit-tested by pickAnnotation.
     NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     // Layer 5: Font (full-canvas)
     if (this.fontRenderer.isReady && this.fontBindGroup) {
@@ -1937,7 +1937,7 @@ export default class NVView {
         graphLines.push(...annotationResult.strokeLines)
         labels.push(...annotationResult.labels)
       }
-      // Drag overlay: selection box as a panel rectangle, text as glyph batches
+      // Drag overlay: the selection box as a panel rectangle
       const overlay = this.model._dragOverlay
       if (overlay?.rect) {
         labels.push({
@@ -1947,21 +1947,6 @@ export default class NVView {
           backRect: [...overlay.rect.ltwh],
           backRadius: 0,
         })
-      }
-      if (overlay?.text) {
-        for (const t of overlay.text) {
-          const batch = this.fontRenderer.buildText(
-            t.str,
-            t.x,
-            t.y,
-            t.scale,
-            t.color,
-            t.anchorX,
-            t.anchorY,
-            t.backColor,
-          )
-          if (batch.count > 0) labels.push(batch)
-        }
       }
       // Grow glyph storage if needed
       let neededGlyphs = 0
@@ -1988,24 +1973,8 @@ export default class NVView {
         this.maxGlyphs,
       )
     }
-    // Draw graph lines, cross-lines, drag overlay lines, and bounds border via line renderer
+    // Draw graph lines, cross-lines and the bounds border via the line renderer
     const allLines = [...graphLines, ...crossLinesList]
-    // Drag overlay lines (measurement, angle)
-    const overlayLines = this.model._dragOverlay
-    if (overlayLines?.lines) {
-      for (const line of overlayLines.lines) {
-        allLines.push(
-          buildLine(
-            line.startXY[0],
-            line.startXY[1],
-            line.endXY[0],
-            line.endXY[1],
-            line.thickness,
-            line.color,
-          ),
-        )
-      }
-    }
     allLines.push(
       ...buildPlaneOutlineLines(
         md.planeOutlines,

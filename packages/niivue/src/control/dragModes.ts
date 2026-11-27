@@ -9,19 +9,10 @@ import { log } from '@/logger'
 import * as NVTransforms from '@/math/NVTransforms'
 import { DRAG_MODE, sliceTypeDim } from '@/NVConstants'
 import type NiiVue from '@/NVControlBase'
-import type { DragOverlay, DragReleaseInfo } from '@/NVTypes'
+import type { DragReleaseInfo, VectorAnnotation } from '@/NVTypes'
 import { computeTolerance } from '@/view/NVAnnotation'
-import {
-  angleLabel,
-  formatDistance,
-  measureTextBack,
-  rulerLengthLabel,
-  rulerSegments,
-  rulerTickLabels,
-} from '@/view/NVMeasurement'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import { projectMMToCanvas, tilePlane } from '@/view/sliceUtils'
-import { sceneUnit } from '@/volume/utils'
 
 /**
  * Movement (in CSS pixels) a `crosshairPan` gesture must reach (>=) before it
@@ -253,10 +244,6 @@ export function updateDragOverlay(ctrl: NiiVue): void {
   const [sx, sy] = ctrl.dragStartXY
   const [ex, ey] = ctrl.dragEndXY
   const ui = ctrl.model.ui
-  const lineColor = ui.measureLineColor
-  const lineWidth = ui.rulerWidth
-  const textColor = ui.measureTextColor
-  const textBack = measureTextBack(textColor)
 
   if (
     mode === DRAG_MODE.contrast ||
@@ -271,107 +258,47 @@ export function updateDragOverlay(ctrl: NiiVue): void {
       rect: { ltwh: [x, y, w, h], color: ui.selectionBoxColor },
     }
   } else if (mode === DRAG_MODE.measurement) {
-    // Distance in mm sets the tick spacing, so resolve it before the geometry.
-    const startMM = screenSlicePickAt(ctrl, sx, sy)
-    const endMM = screenSlicePickAt(ctrl, ex, ey)
-    const dist =
-      startMM && endMM
-        ? vec3.distance(
-            vec3.fromValues(startMM[0], startMM[1], startMM[2]),
-            vec3.fromValues(endMM[0], endMM[1], endMM[2]),
-          )
-        : 0
-    const overlay: DragOverlay = { lines: [], text: [] }
-    // Graduated ruler: plain baseline + end caps + per-mm ticks (majors every fifth),
-    // matching the persisted measurement and the whole-slide UIKit ruler.
-    for (const [x0, y0, x1, y1] of rulerSegments(
-      sx,
-      sy,
-      ex,
-      ey,
-      dist,
-      lineWidth,
-    )) {
-      overlay.lines?.push({
-        startXY: [x0, y0],
-        endXY: [x1, y1],
-        color: lineColor,
-        thickness: lineWidth,
-      })
-    }
-    // Graduation numbers at each major tick, along the ruler edge.
-    for (const t of rulerTickLabels(sx, sy, ex, ey, dist)) {
-      overlay.text?.push({
-        str: t.str,
-        x: t.x,
-        y: t.y,
-        scale: 0.5,
-        color: textColor,
-        anchorX: 0.5,
-        anchorY: 0.5,
-      })
-    }
-    // Distance text at line midpoint
-    if (startMM && endMM) {
-      const label = formatDistance(
-        dist,
-        ui.isMeasureUnitsVisible,
-        sceneUnit(ctrl.model).label,
-      )
-      overlay.text?.push({
-        str: label,
-        ...rulerLengthLabel(sx, sy, ex, ey),
-        scale: 0.8,
-        color: textColor,
-        backColor: textBack,
-      })
-    }
-    ctrl.model._dragOverlay = overlay
+    // The live measurement is the annotation the release will commit, drawn
+    // by the annotation renderer: the same ruler, style and length label.
+    const span = dragSpanMM(ctrl)
+    const hit = ctrl.activeTileHit
+    ctrl.model._dragOverlay = null
+    setDragPreview(
+      ctrl,
+      span && hit ? measurePreview(ctrl, span, hit.sliceType) : null,
+    )
   } else if (
     mode === DRAG_MODE.angle ||
     ctrl._angleState === 'drawing_second_line'
   ) {
-    const overlay: DragOverlay = { lines: [], text: [] }
+    ctrl.model._dragOverlay = null
+    const arm = ctrl._angleArm
     if (ctrl._angleState === 'drawing_first_line') {
-      overlay.lines?.push({
-        startXY: [sx, sy],
-        endXY: [ex, ey],
-        color: lineColor,
-        thickness: lineWidth,
-      })
-    } else if (ctrl._angleState === 'drawing_second_line') {
-      const fl = angleArmOnScreen(ctrl)
-      if (!fl) {
-        ctrl.model._dragOverlay = null
+      const span = dragSpanMM(ctrl)
+      const hit = ctrl.activeTileHit
+      setDragPreview(
+        ctrl,
+        span && hit
+          ? measurePreview(ctrl, span, hit.sliceType, 'measureAngle')
+          : null,
+      )
+    } else if (ctrl._angleState === 'drawing_second_line' && arm) {
+      if (!angleArmOnScreen(ctrl)) {
+        setDragPreview(ctrl, null)
         return
       }
-      overlay.lines?.push(
-        {
-          startXY: [fl[0], fl[1]],
-          endXY: [fl[2], fl[3]],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-        {
-          startXY: [fl[2], fl[3]],
-          endXY: [ex, ey],
-          color: lineColor,
-          thickness: lineWidth,
-        },
-      )
-      // Live reading once the second arm can be placed.
+      // The live reading once the second arm can be placed.
       const placed = placeableAngle(ctrl, ex, ey)
-      if (placed) {
-        overlay.text?.push({
-          str: `${placed.angle.toFixed(1)}\u00B0`,
-          ...angleLabel(fl[0], fl[1], fl[2], fl[3], ex, ey),
-          scale: 0.8,
-          color: textColor,
-          backColor: textBack,
-        })
-      }
+      setDragPreview(
+        ctrl,
+        measurePreview(
+          ctrl,
+          placed ? [...arm.mm, placed.end] : arm.mm,
+          arm.hit.sliceType,
+          'measureAngle',
+        ),
+      )
     }
-    ctrl.model._dragOverlay = overlay
   } else {
     ctrl.model._dragOverlay = null
   }
@@ -519,6 +446,7 @@ function clearDragState(ctrl: NiiVue): void {
   ctrl._pan2DxyzmmAtDragStart = null
   ctrl._crosshairPanDidDrag = false
   ctrl.model._dragOverlay = null
+  setDragPreview(ctrl, null)
   ctrl.drawScene()
 }
 
@@ -642,6 +570,37 @@ function commitMeasure(
     cfg.activeGroup,
   )
   if (ann) ctrl._commitAnnotation(ann)
+}
+
+/** A drag measurement's live annotation, as commitMeasure will store it. */
+function measurePreview(
+  ctrl: NiiVue,
+  mm: [number, number, number][],
+  sliceType: number,
+  type?: 'measureAngle',
+): VectorAnnotation | null {
+  const cfg = ctrl.model.annotation
+  return Annotation.measureAnnotation(
+    mm,
+    sliceType,
+    cfg.style,
+    cfg.activeLabel,
+    cfg.activeGroup,
+    type,
+  )
+}
+
+/**
+ * Show `ann` as the drag modes' live measurement. They own the annotation
+ * preview only while it is the one they set (an annotation tool's stays).
+ */
+export function setDragPreview(
+  ctrl: NiiVue,
+  ann: VectorAnnotation | null,
+): void {
+  if (ann || ctrl.model._annotationPreview === ctrl._dragPreview)
+    ctrl.model._annotationPreview = ann
+  ctrl._dragPreview = ann
 }
 
 /**

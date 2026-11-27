@@ -81,10 +81,6 @@ export function applyDefaultAnnotationText(
   }
   const text = `${prefix} #${maxN + 1}`
   annotation.text = text
-  // storeAnnotation may keep a shallow clone, while annotationAdded carries the
-  // pre-merge object. Update the stored annotation too so the overlay sees it.
-  const stored = annotations.find((c) => c.id === annotation.id)
-  if (stored) stored.text = text
   return true
 }
 
@@ -978,8 +974,8 @@ export function applyOhifVisibilityToAnnotation(
   if (isVisible === !currentlyHidden) return
   // Record the hidden state FIRST, before touching the viewport. If the entry is
   // transiently unregistered (a viewport remounting), we still remember the toggle
-  // so the next render's visibleAnnotationScreenShapes filter honours it; the
-  // drawScene below is only an immediate-repaint optimization.
+  // so the pane's annotationIsHidden honours it when it returns; the drawScene
+  // below is only an immediate-repaint optimization.
   if (isVisible) {
     clearHiddenAnnotation(ref.viewportId, ref.annotationId)
   } else {
@@ -1058,7 +1054,7 @@ export function subscribeOhifLabelSync(
   return () => releaseLabelSync(svc)
 }
 
-/** Remove one reflected annotation's OHIF panel row (annotationRemoved). */
+/** Remove one reflected annotation's OHIF panel row (its annotation went). */
 /**
  * Returns true when the row is gone (removed, or there was nothing / no uid to
  * remove, or the host has no remove so recovery is impossible). Returns FALSE only
@@ -1108,8 +1104,8 @@ export function removeNiivueAnnotation(
   // removeNiivueAnnotation also runs on the sync's permanently-unsupported path,
   // which drops the OHIF row while the annotation is still alive; clearing there
   // would un-hide a shape the user hid (and leave no row to re-hide it). On a
-  // genuine delete the annotation is already spliced out (removeAnnotation emits
-  // annotationRemoved after the splice), so this correctly cleans up.
+  // genuine delete the annotation is already gone (annotationChanged fires
+  // after the model changes), so this correctly cleans up.
   const stillPresent =
     getNiivueEntry(viewportId)?.nv.annotations.some(
       (a) => a.id === annotationId,

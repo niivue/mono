@@ -856,6 +856,11 @@ export type UIConfig = {
   fontScale: number
   fontMinSize: number
   selectionBoxColor: number[]
+  /**
+   * Slide measurement rulers: line and text colour, line width, and whether
+   * their length shows its unit. Volume measurements are annotations and take
+   * the annotation style.
+   */
   measureLineColor: number[]
   measureTextColor: number[]
   rulerWidth: number
@@ -1567,22 +1572,6 @@ export type DragReleaseInfo = {
 
 export type DragOverlay = {
   rect?: { ltwh: [number, number, number, number]; color: number[] }
-  lines?: Array<{
-    startXY: [number, number]
-    endXY: [number, number]
-    color: number[]
-    thickness: number
-  }>
-  text?: Array<{
-    str: string
-    x: number
-    y: number
-    scale: number
-    color: number[]
-    anchorX: number
-    anchorY: number
-    backColor?: number[]
-  }>
 }
 
 /**

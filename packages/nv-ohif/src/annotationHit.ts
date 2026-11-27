@@ -1,18 +1,4 @@
-import {
-  type AnnotationPoint,
-  type NiiVue,
-  slice2DToMM,
-  type VectorAnnotation,
-} from '@niivue/niivue'
-
-/** Canvas px of a slice-2D point of `a`, or null off the layout. */
-export function toCanvas(
-  nv: NiiVue,
-  a: VectorAnnotation,
-  p: AnnotationPoint,
-): AnnotationPoint | null {
-  return nv.mmToCanvas(slice2DToMM(p, a.slicePosition, a.sliceType))
-}
+import type { NiiVue, VectorAnnotation } from '@niivue/niivue'
 
 /** The drawn annotation under a pointer event (core's pickAnnotation). */
 export function annotationAt(

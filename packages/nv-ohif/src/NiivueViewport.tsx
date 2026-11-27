@@ -620,11 +620,9 @@ export function NiivueViewport(props: OhifViewportProps) {
     const started = nv.attachToCanvas(canvas).then(() => {
       if (disposed) return
       addCornerstoneColormaps(nv)
-      // Edit policy, not drawing: it must hold even if the font never loads.
-      // A measurement hidden in the panel cannot be grabbed, nor a hidden or
-      // locked contour segment's shape.
-      nv.annotationIsGrabbable = (a) =>
-        isAnnotationShown(viewportId, a.id) && isContourEditable(a, viewportId)
+      // A locked contour segment's shape cannot be grabbed (core already
+      // refuses any shape annotationIsHidden hides).
+      nv.annotationIsGrabbable = (a) => isContourEditable(a, viewportId)
       nv.annotationIsCut = isContourCut
       // Panel-hidden measurements and hidden contour segments are not drawn
       // or picked.

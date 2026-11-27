@@ -180,8 +180,8 @@ export const SETTINGS: readonly Setting[] = [
   }),
   num('fontScale', 'A multiplier on the size of all text.', { min: 0 }),
   color('clipPlaneColor', 'The colour the clip plane is drawn in.'),
-  color('measureLineColor', 'The colour of measurement lines.'),
-  color('measureTextColor', 'The colour of measurement text.'),
+  color('measureLineColor', 'The colour of slide measurement lines.'),
+  color('measureTextColor', 'The colour of slide measurement text.'),
   color('selectionBoxColor', 'The colour of the drag-selection box.'),
   str('placeholderText', 'The text shown when nothing is loaded.'),
   str(
@@ -208,7 +208,9 @@ export const SETTINGS: readonly Setting[] = [
     'Canvas kept clear of the views, colorbar, legend and graph: left, top, right and bottom, in CSS pixels; for a control panel drawn in the canvas.',
     { min: 0 },
   ),
-  num('rulerWidth', 'The width of the ruler line, in pixels.', { min: 0 }),
+  num('rulerWidth', 'The width of slide measurement lines, in pixels.', {
+    min: 0,
+  }),
   setting(
     'rulerUnits',
     'choice',
@@ -231,10 +233,7 @@ export const SETTINGS: readonly Setting[] = [
     'Whether the orientation cube is drawn in the render.',
   ),
   bool('isRulerVisible', 'Whether a ruler is drawn.'),
-  bool(
-    'isMeasureUnitsVisible',
-    'Whether the ruler of a measurement being dragged shows its unit.',
-  ),
+  bool('isMeasureUnitsVisible', 'Whether a slide measurement shows its unit.'),
   bool('isLegendVisible', 'Whether a legend of label names is drawn.'),
   bool('isGraphVisible', 'Whether the signal graph is drawn.'),
   bool(

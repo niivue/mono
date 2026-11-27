@@ -337,7 +337,7 @@ are exported from the package.
 | `penValueChanged` | `{penValue}` | |
 | `drawingChanged` | `{action}` | stroke/create/close/undo |
 | `drawingEnabled` | `{isEnabled}` | |
-| `annotationAdded` / `annotationRemoved` / `annotationChanged` | — | |
+| `annotationChanged` | `{action, added, updated, removed}` | Every annotation change |
 | `colormapAdded` | `{name}` | |
 | `change` | `{property, value}` | Generic property-change firehose |
 

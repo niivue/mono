@@ -709,6 +709,8 @@ export default class NiiVue extends EventTarget {
   dragStartXY: [number, number] = [0, 0]
   dragEndXY: [number, number] = [0, 0]
   _activeDragMode: number = DRAG_MODE.none
+  /** The drag modes' live measurement while it is the annotation preview. */
+  _dragPreview: VectorAnnotation | null = null
   _angleState: 'none' | 'drawing_first_line' | 'drawing_second_line' = 'none'
   /** The open angle's first arm in mm and the tile it was drawn on. */
   _angleArm: {
@@ -7613,6 +7615,9 @@ export default class NiiVue extends EventTarget {
     if (this._activeDragMode === DRAG_MODE.angle)
       this._activeDragMode = DRAG_MODE.none
     this.model._dragOverlay = null
+    if (this.model._annotationPreview === this._dragPreview)
+      this.model._annotationPreview = null
+    this._dragPreview = null
     this.drawScene()
   }
 

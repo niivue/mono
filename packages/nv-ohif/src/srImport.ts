@@ -1,7 +1,7 @@
 // OHIF measurement rows from another source (a hydrated DICOM SR) shown as
 // NiiVue annotations on the pane displaying their series. Each becomes a NiiVue
 // annotation in the acquisition plane and its row is replaced by the NiiVue one
-// (reflected from annotationAdded), so it is edited, exported and deleted like
+// (reflected from its annotationChanged 'add'), so it is edited, exported and deleted like
 // any NiiVue measurement. NiiVue rows a pane released (unmount, series swap)
 // come back the same way under their own uid.
 // ponytail: off-axis (oblique) rows are left to cornerstone.
@@ -57,8 +57,6 @@ export function reportScale(
     ? ratio
     : undefined
 }
-
-// Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
 
 // OHIF contour rows: their points are the outline NiiVue stores.
 const CONTOUR_TOOLS: Record<string, AnnotationTool> = {

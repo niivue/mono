@@ -1736,7 +1736,12 @@ export function resetDragState(ctrl: NiiVue): void {
   ctrl._resizingAnnotation = null
   ctrl._resizeOriginalShape = null
   ctrl._resizeUndoSnapshot = null
-  ctrl.model._annotationPreview = null
+  // A half-placed drag-mode angle keeps showing its first arm.
+  if (
+    ctrl._angleState !== 'drawing_second_line' ||
+    ctrl.model._annotationPreview !== ctrl._dragPreview
+  )
+    ctrl.model._annotationPreview = null
   ctrl.model._annotationErasePreview = null
   // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
   // the drag and consumes them in the pointerup finalize; if that finalize throws
@@ -2337,6 +2342,7 @@ export function initInteraction(ctrl: NiiVue): void {
       // A half-placed angle keeps showing while its second arm is placed.
       if (ctrl._angleState !== 'drawing_second_line') {
         ctrl.model._dragOverlay = null
+        DragModes.setDragPreview(ctrl, null)
       }
       if (mode === DRAG_MODE.crosshair) {
         const mm = NVSliceLayout.screenSlicePick(

@@ -12,6 +12,7 @@ import {
   dragForSlice,
   handleDragRelease,
   isCrosshairPanDrag,
+  updateDragOverlay,
 } from './dragModes'
 import { initInteraction } from './interactions'
 
@@ -393,9 +394,12 @@ describe('a drag measurement through the real commit', () => {
     nv._activeDragMode = DRAG_MODE.measurement
     nv.dragStartXY = start as never
     nv.dragEndXY = end as never
+    updateDragOverlay(nv)
+    preview = nv.model._annotationPreview
     handleDragRelease(nv)
     return nv.annotations
   }
+  let preview: VectorAnnotation | null = null
 
   test('a 0.2 mm drag is kept, and its end drags to 0.22 mm', () => {
     let nv: NiiVue | undefined
@@ -456,5 +460,8 @@ describe('a drag measurement through the real commit', () => {
   test('a drag on a 60 degree tilted slice keeps its world length', () => {
     const [ann] = drag(Math.PI / 3, [50, 50], [50, 0])
     expect(ann?.stats?.length).toBeCloseTo(1, 6)
+    // The live measurement is the annotation the release stores: one look.
+    expect(preview?.shape).toEqual(ann?.shape)
+    expect(preview?.style).toEqual(ann?.style)
   })
 })

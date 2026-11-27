@@ -115,43 +115,6 @@ export function rulerLengthLabel(
   }
 }
 
-/**
- * Where an angle's label goes: just outside the vertex `v`, opposite the
- * bisector of arms `a` and `b`, so it never lies on either arm.
- */
-export function angleLabel(
-  ax: number,
-  ay: number,
-  vx: number,
-  vy: number,
-  bx: number,
-  by: number,
-  gap = 8,
-): { x: number; y: number; anchorX: number; anchorY: number } {
-  const la = Math.hypot(ax - vx, ay - vy) || 1
-  const lb = Math.hypot(bx - vx, by - vy) || 1
-  let dx = -((ax - vx) / la + (bx - vx) / lb)
-  let dy = -((ay - vy) / la + (by - vy) / lb)
-  let len = Math.hypot(dx, dy)
-  if (len < 1e-3) {
-    // A straight angle has no bisector: go perpendicular to the arms, up (left
-    // of a vertical one).
-    ;[dx, dy] = downPerp(ax - vx, ay - vy, la)
-    dx = -dx
-    dy = -dy
-    len = 1
-  }
-  dx /= len
-  dy /= len
-  return {
-    x: vx + dx * gap,
-    y: vy + dy * gap,
-    // The text extends away from the vertex, along the outward direction.
-    anchorX: 0.5 - 0.5 * dx,
-    anchorY: 0.5 - 0.5 * dy,
-  }
-}
-
 /** A ruler graduation number and where to draw it (canvas pixels). */
 export type RulerTickLabel = { str: string; x: number; y: number }
 

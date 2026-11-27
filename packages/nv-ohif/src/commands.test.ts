@@ -45,10 +45,8 @@ import {
 import type { OhifExtensionParams } from './ohif-types'
 
 // The shapes a pane still draws: those not hidden by their panel row.
-const visibleAnnotationScreenShapes = (
-  viewportId: string,
-  shapes: readonly { id: string }[],
-) => shapes.filter((s) => isAnnotationShown(viewportId, s.id))
+const shownShapes = (viewportId: string, shapes: readonly { id: string }[]) =>
+  shapes.filter((s) => isAnnotationShown(viewportId, s.id))
 
 // A stub with the scene properties and volume APIs the commands touch.
 function stubNiivue() {
@@ -299,22 +297,15 @@ describe('reflectNiivueAnnotation', () => {
       },
     }) as unknown as VectorAnnotation
 
-  it('defaults new annotation text to max(existing #N)+1 and mutates the stored copy', () => {
+  it('defaults new annotation text to max(existing #N)+1', () => {
     const first = { ...ellipse('first'), text: 'ROI #1' } as VectorAnnotation
-    const emittedSecond = ellipse('second')
-    const storedSecond = { ...emittedSecond }
-    expect(
-      applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
-    ).toBe(true)
-    expect(emittedSecond.text).toBe('ROI #2')
-    // The stored (post-merge) copy is updated too, so the overlay shows it.
-    expect(storedSecond.text).toBe('ROI #2')
+    const second = ellipse('second')
+    expect(applyDefaultAnnotationText(second, [first, second])).toBe(true)
+    expect(second.text).toBe('ROI #2')
 
-    emittedSecond.text = 'Custom label'
-    expect(
-      applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
-    ).toBe(false)
-    expect(emittedSecond.text).toBe('Custom label')
+    second.text = 'Custom label'
+    expect(applyDefaultAnnotationText(second, [first, second])).toBe(false)
+    expect(second.text).toBe('Custom label')
   })
 
   function setup(viewportId: string) {
@@ -1163,9 +1154,9 @@ describe('reflectNiivueAnnotation', () => {
     expect(isReleasedRow(uid)).toBe(false)
     expect(rowOf(uid).isVisible).toBe(false)
     expect(
-      visibleAnnotationScreenShapes('vp-a4', [
-        { id: 'again' },
-      ] as unknown as Parameters<typeof visibleAnnotationScreenShapes>[1]),
+      shownShapes('vp-a4', [{ id: 'again' }] as unknown as Parameters<
+        typeof shownShapes
+      >[1]),
     ).toHaveLength(0)
   })
 
@@ -1762,17 +1753,15 @@ describe('reflectNiivueAnnotation', () => {
     const release = subscribeOhifLabelSync(svc.servicesManager)
 
     const shapes = [{ id: 'vis' }, { id: 'other' }] as unknown as Parameters<
-      typeof visibleAnnotationScreenShapes
+      typeof shownShapes
     >[1]
     // Visible by default: every projected shape passes through.
-    expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
+    expect(shownShapes('vp-vis', shapes)).toHaveLength(2)
 
     // Hide it: the overlay filter drops that id and the viewport re-renders.
     callbacks.get('updated')?.({ measurement: { uid, isVisible: false } })
     expect(draws).toBe(1)
-    expect(
-      visibleAnnotationScreenShapes('vp-vis', shapes).map((s) => s.id),
-    ).toEqual(['other'])
+    expect(shownShapes('vp-vis', shapes).map((s) => s.id)).toEqual(['other'])
 
     // Idempotent: a repeat hide is a no-op (no extra redraw).
     callbacks.get('updated')?.({ measurement: { uid, isVisible: false } })
@@ -1781,7 +1770,7 @@ describe('reflectNiivueAnnotation', () => {
     // Show it again: the id passes through once more.
     callbacks.get('updated')?.({ measurement: { uid, isVisible: true } })
     expect(draws).toBe(2)
-    expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
+    expect(shownShapes('vp-vis', shapes)).toHaveLength(2)
     release?.()
   })
 
@@ -1797,12 +1786,10 @@ describe('reflectNiivueAnnotation', () => {
     unregisterNiivue('vp-vis-noentry')
     applyOhifVisibilityToAnnotation(uid, false)
     const shapes = [{ id: 'gone' }] as unknown as Parameters<
-      typeof visibleAnnotationScreenShapes
+      typeof shownShapes
     >[1]
     // The hidden state was still recorded, so the next render filters it out.
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-noentry', shapes),
-    ).toHaveLength(0)
+    expect(shownShapes('vp-vis-noentry', shapes)).toHaveLength(0)
   })
 
   it('keeps the hidden flag when the row is dropped but the annotation lives (finding 1)', () => {
@@ -1820,18 +1807,14 @@ describe('reflectNiivueAnnotation', () => {
     const uid = (svc.added[0]?.data.schema as { uid: string }).uid
     applyOhifVisibilityToAnnotation(uid, false)
     const shapes = [{ id: 'alive' }] as unknown as Parameters<
-      typeof visibleAnnotationScreenShapes
+      typeof shownShapes
     >[1]
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
-    ).toHaveLength(0)
+    expect(shownShapes('vp-vis-reconcile', shapes)).toHaveLength(0)
 
     // Reconcile drops the OHIF row while the annotation is STILL in nv.annotations
     // (permanently-unsupported edit). The hidden flag must survive.
     removeNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, 'alive')
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
-    ).toHaveLength(0)
+    expect(shownShapes('vp-vis-reconcile', shapes)).toHaveLength(0)
 
     // But once the annotation is genuinely gone, the flag is cleared.
     nv.annotations = []
@@ -1841,9 +1824,7 @@ describe('reflectNiivueAnnotation', () => {
     applyOhifVisibilityToAnnotation(uid2, false)
     nv.annotations = []
     removeNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, 'alive')
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
-    ).toHaveLength(1)
+    expect(shownShapes('vp-vis-reconcile', shapes)).toHaveLength(1)
   })
 
   it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {

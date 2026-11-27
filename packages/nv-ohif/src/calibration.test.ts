@@ -81,7 +81,7 @@ test('a report row whose reflection failed gives back the prior scale', () => {
   setCalibrationScale('failed', 4)
   adoptReportScale('failed', 'gone', 2)
   expect(calibrationScale('failed')).toBe(2)
-  // srImport removes the annotation; the pane's annotationRemoved re-syncs.
+  // srImport removes the annotation; the pane's annotationChanged re-syncs.
   syncReportRows()
   expect(calibrationScale('failed')).toBe(4)
   setCalibrationScale('failed', 1)

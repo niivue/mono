@@ -61,7 +61,7 @@ the React level.
 
 - [ ] Declarative `annotations` prop on `NvViewer`
 - [ ] Controller methods: `addAnnotation`, `removeAnnotation`
-- [ ] Events: `annotationAdded`, `annotationRemoved`
+- [ ] Events: `annotationChanged`
 
 ## 7. View State Serialization / Restore
 

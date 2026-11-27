@@ -166,7 +166,8 @@ export function createAnnotation(
  * end) on `sliceType`'s slice through the first point, as NiiVue's measuring
  * tools build one: slice-2D ends, thin-line polygons, and the length or angle
  * measured from the mm points themselves (exact on a tilted slice). Null when
- * a segment has no length.
+ * a segment has no length. `type` 'measureAngle' with two points is an angle's
+ * first arm while it is drawn: the arm alone, nothing measured yet.
  */
 export function measureAnnotation(
   mm: readonly [number, number, number][],
@@ -174,6 +175,7 @@ export function measureAnnotation(
   style: AnnotationStyle,
   label = 1,
   group = 'default',
+  type?: 'measureAngle',
 ): VectorAnnotation | null {
   const [a, b, c] = mm
   if (!a || !b) return null
@@ -189,8 +191,9 @@ export function measureAnnotation(
     [0, 1, 2].map((i) => (u[i] as number) - (v[i] as number))
   const norm = (u: number[]) =>
     Math.hypot(u[0] as number, u[1] as number, u[2] as number)
-  let measured: Partial<AnnotationStats>
-  if (c) {
+  let measured: Partial<AnnotationStats> | null
+  if (!c && type) measured = null
+  else if (c) {
     const [u, v] = [sub(a, b), sub(c, b)]
     const cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (norm(u) * norm(v))
     measured = {
@@ -207,13 +210,14 @@ export function measureAnnotation(
     [...a],
   )
   ann.shape = {
-    type: c ? 'measureAngle' : 'measureLine',
+    type: c || type ? 'measureAngle' : 'measureLine',
     start: p0,
     end: p1,
     width: w,
     ...(p2 ? { start2: p1, end2: p2 } : {}),
   }
-  ann.stats = { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, ...measured }
+  if (measured)
+    ann.stats = { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, ...measured }
   return ann
 }
 

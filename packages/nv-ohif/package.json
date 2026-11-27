@@ -44,7 +44,7 @@
     "@niivue/niivue": "workspace:^",
     "react": "^18.3.1 || ^19"
   },
-  "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency (its ruler/line/text overlays, loadDefaultFont, and the inlined MSDF font are imported at runtime, not bundled). It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release. Its only @niivue/niivue import is type-only, so no niivue runtime is duplicated.",
+  "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency: its magnifier overlays, and the slide minimap from '@niivue/uikit/niivue'. It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release. uikit's niivue peer is the same @niivue/niivue nv-ohif uses, so no niivue runtime is duplicated.",
   "dependencies": {
     "@niivue/dcm2niix": "^1.4.20261122-rc.1",
     "@niivue/nv-ext-tile": "workspace:^",

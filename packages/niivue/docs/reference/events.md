@@ -378,30 +378,29 @@ Fired when `drawPenValue` is set.
 
 ### Annotations
 
-#### `annotationAdded`
-Fired when a new vector annotation is added.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `annotation` | `VectorAnnotation` | The newly added annotation |
-
-#### `annotationRemoved`
-Fired when a vector annotation is removed.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | ID of the removed annotation |
-
 #### `annotationChanged`
-Fired on annotation editing events (draw, erase, move, resize, undo, redo, clear).
+Fired, synchronously after the model changes, on every change to the vector
+annotations.
 
-A finished `DRAG_MODE.measurement` or `DRAG_MODE.angle` drag is a draw of a `measureLine` or `measureAngle` annotation.
+| `action` | Fired by |
+|---|---|
+| `draw` | a shape the user just finished, including a `DRAG_MODE.measurement` or `DRAG_MODE.angle` drag (a `measureLine` or `measureAngle`) |
+| `add` | `addAnnotation` |
+| `replace` | `replaceAnnotations` |
+| `resize` | a handle drag |
+| `erase` | an eraser stroke |
+| `text` | `setAnnotationText` |
+| `delete` | `removeAnnotation`, `removeAnnotations` |
+| `clear` | `clearAnnotations` |
+| `undo`, `redo` | `annotationUndo`, `annotationRedo` |
+| `load` | `loadAnnotationsJSON` and `loadDocument` |
 
-A draw fires `annotationAdded` and then `annotationChanged` with the new id in `added`; annotations it merged or cut appear in `updated` or `removed`. `addAnnotation` and `removeAnnotation` fire only `annotationAdded` / `annotationRemoved`; `loadAnnotationsJSON` and `loadDocument` fire neither.
+A draw lists the new id in `added`; annotations it merged or cut appear in
+`updated` or `removed`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `action` | `'draw' \| 'erase' \| 'move' \| 'resize' \| 'undo' \| 'redo' \| 'clear'` | What happened |
+| `action` | see above | What happened |
 | `added` | `string[]` | Ids of annotations the change added |
 | `updated` | `string[]` | Ids of annotations whose geometry, stats or text changed |
 | `removed` | `string[]` | Ids of annotations the change removed |

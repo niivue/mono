@@ -129,7 +129,7 @@ function buildSelectionHandles(
   const sel = model._annotationSelection
   if (!sel) return startOffset
   const ann = model.annotations.find((a) => a.id === sel.annotationId)
-  if (!ann?.shape) return startOffset
+  if (!ann?.shape || model.annotationIsHidden?.(ann)) return startOffset
   const handleSize = 4 * dpr // canvas pixels
   let offset = startOffset
   const anchor = getAnchorMM(ann)

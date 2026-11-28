@@ -193,6 +193,36 @@ describe('annotation label anchors', () => {
     ])
     expect(texts.some((t) => t.startsWith('Area:'))).toBe(false)
   })
+
+  test('a hidden selected shape draws no handles', () => {
+    const handles = () => {
+      const lines: LineData[] = []
+      buildAnnotationRenderData(
+        model,
+        [tile],
+        (..._args) => {
+          const line = {} as LineData
+          lines.push(line)
+          return line
+        },
+        undefined,
+        1,
+      )
+      return lines.length
+    }
+    const shown = handles()
+    model._annotationSelection = {
+      annotationId: 'r',
+      controlPoints: [{ x: 2, y: 3 }],
+    } as NVModel['_annotationSelection']
+    const selected = handles()
+    model.annotationIsHidden = (a) => a.id === 'r'
+    const hidden = handles()
+    model.annotationIsHidden = null
+    model._annotationSelection = null
+    expect(selected).toBeGreaterThan(shown)
+    expect(hidden).toBe(shown)
+  })
 })
 
 describe('annotation stats labels', () => {

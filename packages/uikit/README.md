@@ -137,7 +137,8 @@ consumed before NiiVue's own handlers see it (no stray drag or crosshair move),
 and shows a pointer cursor over buttons.
 
 ```ts
-import { loadDefaultFont, UIKitButtonOverlay } from '@niivue/uikit'
+import { loadDefaultFont } from '@niivue/uikit'
+import { UIKitButtonOverlay } from '@niivue/uikit/controls'
 
 // cssUnits: lay the buttons out in CSS pixels; the overlay scales by the DPR.
 const buttons = new UIKitButtonOverlay(await loadDefaultFont(), { cssUnits: true })
@@ -211,10 +212,10 @@ opened from a page button, a menu opened with `open`, or a text field given
 keep the keys while the user is elsewhere in the page.
 
 ```ts
+import { loadDefaultFont, UIKitControls } from '@niivue/uikit'
 import {
-  loadDefaultFont, UIKitButtonOverlay, UIKitControls, UIKitMenuOverlay,
-  UIKitSliderOverlay, UIKitToggleOverlay,
-} from '@niivue/uikit'
+  UIKitButtonOverlay, UIKitMenuOverlay, UIKitSliderOverlay, UIKitToggleOverlay,
+} from '@niivue/uikit/controls'
 
 const font = await loadDefaultFont()
 const units = { cssUnits: true }
@@ -709,7 +710,7 @@ import {
   acceptExtensions,
   createBrowserDownload,
   UIKitFilePickerOverlay,
-} from '@niivue/uikit'
+} from '@niivue/uikit/controls'
 
 const pickers = new UIKitFilePickerOverlay(font, units) // pickFiles: a custom bridge
 pickers.addFilePicker({

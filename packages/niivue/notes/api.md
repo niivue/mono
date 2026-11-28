@@ -176,7 +176,7 @@ nv.volumeCinematic = { shadow: 0.8, ao: 0.6, labelMode: 'only' } // merged
 `primaryDragMode`, `secondaryDragMode`, `isSnapToVoxelCenters`, `isYoked3DTo2DZoom`, `isViewModeHotKeyEnabled`, `isLegendToggleEnabled`, `isDragDropEnabled`, `wheelZoomAnchor`, `isPanFollowingCrosshair`
 
 **Annotation** (prefix `annotation` -- delegate to `model.annotation`):
-`annotationIsEnabled`, `annotationActiveLabel`, `annotationActiveGroup`, `annotationBrushRadius`, `annotationIsErasing`, `annotationIsLivewireScissors`, `annotationIsVisibleIn3D`, `annotationStyle`, `annotationTool`
+`annotationIsEnabled`, `annotationActiveLabel`, `annotationActiveGroup`, `annotationBrushRadius`, `annotationIsErasing`, `annotationIsVisibleIn3D`, `annotationStyle`, `annotationTool`
 
 ### When to Use Methods vs Properties
 Use **property setters** for:

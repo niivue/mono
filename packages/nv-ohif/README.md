@@ -480,8 +480,7 @@ tmtv).
   as cornerstone's: in-betweens draw fainter and regenerate when a drawn one
   changes; editing one makes it drawn (undo restores it). Another
   segmentation active on the pane draws this one in its inactive style. Live
-  wire uses cornerstone's LivewireScissors cost (core
-  `annotationIsLivewireScissors`). A
+  wire uses cornerstone's LivewireScissors cost. A
   finished spline is an outline (Simplified Spline on, OHIF's default). Not
   done: Simplified Spline off.
 - **SR.** NiiVue measurement rows are mirrored as cornerstone annotations, so

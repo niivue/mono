@@ -825,6 +825,15 @@ describe('default windowing and contrast', () => {
     ])
   })
 
+  test('a half-set window drags from the range it renders with', () => {
+    // rgbBitmapWindow resolves red's unset calMax to 255, so the drag starts at [50, 255].
+    const r = windowRig([50, Number.NaN], true)
+    r.fire('pointerdown', 0, 0)
+    r.fire('pointermove', 10, 0)
+    expect(r.sets[0]?.[1]).toBeCloseTo(44.875)
+    expect(r.sets[0]?.[2]).toBeCloseTo(260.125)
+  })
+
   test('a contrast box sets the window to its resident sample range', () => {
     const r = windowRig([0, 255])
     r.ctl.windowChannel = 1

@@ -11,6 +11,7 @@ import {
   slideAnnotationSegments,
 } from './slideAnnotations'
 import { isRgbSlide } from './slideChannels'
+import { resolveWindow } from './slideFuse'
 
 /** A point in slide base-level pixels. */
 export type NVSlidePoint = { x: number; y: number }
@@ -65,17 +66,21 @@ export interface NVSlideControllerOptions {
   onChange?: () => void
 }
 
-/** Stored-unit window of `slide`'s channel `c`: its own, else the sample range. */
+/** Stored-unit window of `slide`'s channel `c` as it renders: unset bounds fall back to the sample range. */
 function channelWindow(slide: NVSlide, c: number): [number, number] {
-  const ch = slide.channels[c]
-  if (ch && Number.isFinite(ch.calMin) && Number.isFinite(ch.calMax))
-    return [ch.calMin, ch.calMax]
+  const level = slide.manifest.levels[0]
   // RGB tiles are decoded to 8 bits whatever the source's BitsStored, and
   // rgbWindow's unset window is 0..255.
-  if (isRgbSlide(slide.manifest)) return [0, 255]
-  const level = slide.manifest.levels[0]
-  if (level?.sampleType === 'i16') return [-32768, 32767]
-  return [0, 2 ** (level?.bitsStored ?? 8) - 1]
+  const range: [number, number] = isRgbSlide(slide.manifest)
+    ? [0, 255]
+    : level?.sampleType === 'i16'
+      ? [-32768, 32767]
+      : [0, 2 ** (level?.bitsStored ?? 8) - 1]
+  const { calMin, calMax } = resolveWindow(
+    slide.channels[c] ?? { calMin: Number.NaN, calMax: Number.NaN },
+    range,
+  )
+  return [calMin, calMax]
 }
 
 /**

@@ -76,3 +76,39 @@ test('the blend select follows a blend set elsewhere', () => {
   onRender()
   expect(blend?.value).toBe('additive')
 })
+
+// An RGB slide's windows are drawn now (NVSlide.rgbWindow), so the panel
+// lists red, green and blue, and the drag's default target is all three.
+test('an RGB slide shows its three windows and an "all" target', () => {
+  Object.assign(globalThis, {
+    document: { createElement: el, activeElement: null },
+    Option: class {},
+  })
+  const channel = (name: string) => ({
+    name,
+    visible: true,
+    colormap: 'gray',
+    calMin: 0,
+    calMax: 255,
+  })
+  const view = {
+    slide: {
+      manifest: { levels: [{ codec: 'raw-rgba' }] },
+      channels: ['red', 'green', 'blue', 'alpha'].map(channel),
+      channelBlend: 'additive',
+    },
+    controller: { windowChannel: -1 },
+    addRenderListener: () => () => {},
+  }
+  const container = el('div')
+  attachSlideChannelPanel(
+    view as unknown as SlideView,
+    container as unknown as HTMLElement,
+  )
+  const all = (e: El): El[] => [e, ...e.children.flatMap(all)]
+  const radios = all(container).filter((e) => e.type === 'radio')
+  expect(container.hidden).toBe(false)
+  expect(radios).toHaveLength(4) // all, red, green, blue
+  expect(radios.map((r) => r.checked)).toEqual([true, false, false, false])
+  expect(find(container, 'select')).toBeUndefined()
+})

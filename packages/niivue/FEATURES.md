@@ -187,7 +187,7 @@ The volume defaults (`volumeIsChannelStack` false, colour `ADDITIVE`) keep volum
 | `createSlideView(canvas, opts)` | Export | A standalone slide pane: renderer (WebGPU, WebGL2 fallback), frame loop, resize and pixel-ratio watch, fit, controller and overlay, `addOverlay`, `setSlide`, one `destroy`; bound per entry |
 | `linkSlideViews(views)` / `attachSlideLens(main, lens)` | Export | Viewports synced in mm (or slide fractions), echo suppressed, first view leads; the lens shows a linked view through a pointer circle |
 | `formatSlideSample(x, y, samples)` / `slideStatsSummary(slide, screen)` | Export | Readout line and HUD rows |
-| `NVSlideController` defaults | Class | Without `onWindow` / `onContrast`, a windowing drag or contrast box sets `windowChannel`'s window (`windowDragStep`); double-click zoom only while the primary mode is `pan`; pinch zoom (`isPinchZoom`); `otherButtonDragMode`, `isWheelDeltaModeScaled`, `cancelGesture()` |
+| `NVSlideController` defaults | Class | Without `onWindow` / `onContrast`, a windowing drag or contrast box sets `windowChannel`'s window (`windowDragStep`; the default -1 is red, green and blue together on an RGB slide, channel 0 otherwise); double-click zoom only while the primary mode is `pan`; pinch zoom (`isPinchZoom`); `otherButtonDragMode`, `isWheelDeltaModeScaled`, `cancelGesture()` |
 | `NVSlide.setRendererBudget(renderer, budget \| null)` | Method | A renderer's tile texture and raw pool bytes; tile capacity and its warning use the smallest registered. The slide renderers register through `SlideBudgetRegistration` and unregister slides they stop drawing |
 
 ## 8. Mesh Rendering (global)

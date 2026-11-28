@@ -10,7 +10,6 @@ const imagesBase = process.env.VITE_IMAGES_BASE ?? ghBase
 const PAGES = [
   'index',
   'buttons',
-  'calipers',
   'volume',
   'subvolume',
   'slide',

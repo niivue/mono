@@ -135,6 +135,11 @@ try {
       [a, b],
     )
   const minimap = page.getByLabel('Minimap')
+  // The channel panel (shown for an RGB slide too) sits over the canvas:
+  // hidden for these screenshots, which look at the slide and the minimap.
+  await page.evaluate(() => {
+    document.getElementById('channels').style.display = 'none'
+  })
   const withMinimap = await canvasShot()
   // The minimap would widen the non-black box below.
   await minimap.uncheck()

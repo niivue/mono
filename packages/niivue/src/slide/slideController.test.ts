@@ -708,7 +708,10 @@ describe('NVSlideController', () => {
 })
 
 describe('default windowing and contrast', () => {
-  function windowRig(window: [number, number] = [Number.NaN, Number.NaN]) {
+  function windowRig(
+    window: [number, number] = [Number.NaN, Number.NaN],
+    rgb = false,
+  ) {
     const canvas = Object.assign(new EventTarget(), {
       getBoundingClientRect: () => ({ left: 0, top: 0 }),
       setPointerCapture: () => {},
@@ -719,22 +722,30 @@ describe('default windowing and contrast', () => {
     const channels = [
       { calMin: window[0], calMax: window[1] },
       { calMin: 0, calMax: 1 },
+      ...(rgb ? [{ calMin: 0, calMax: 255 }] : []),
     ]
+    const v = (x: number, y: number) => Math.floor(x) + Math.floor(y)
     const slide = {
       viewport: { centerX: 0, centerY: 0, scale: 1 },
-      manifest: {
-        channelInfo: [{ name: 'a' }, { name: 'b' }],
-        levels: [{ codec: 'raw-gray', bitsStored: 8 }],
-      },
+      manifest: rgb
+        ? { channels: 'rgba', levels: [{ codec: 'raw-rgba', bitsStored: 12 }] }
+        : {
+            channelInfo: [{ name: 'a' }, { name: 'b' }],
+            levels: [{ codec: 'raw-gray', bitsStored: 8 }],
+          },
       channels,
       screenToSlide: (x: number, y: number) => ({ x, y }),
       setChannel: (c: number, w: { calMin: number; calMax: number }) =>
         sets.push([c, w.calMin, w.calMax]),
       // Channel 1 reads x + y, so a box's samples span its corners.
-      sampleAt: (x: number, y: number) => [
-        { stored: null },
-        { stored: Math.floor(x) + Math.floor(y) },
-      ],
+      sampleAt: (x: number, y: number) =>
+        rgb
+          ? [
+              { stored: v(x, y) },
+              { stored: 2 * v(x, y) },
+              { stored: 10 + v(x, y) },
+            ]
+          : [{ stored: null }, { stored: v(x, y) }],
     } as unknown as NVSlide
     const ctl = new NVSlideController(canvas, {
       slide: () => slide,
@@ -789,6 +800,38 @@ describe('default windowing and contrast', () => {
     r.fire('pointerdown', 0, 0)
     r.fire('pointermove', 10, 0)
     expect(r.sets[0]?.[0]).toBe(0)
+  })
+
+  // RGB slides window through NVSlide.rgbWindow: by default the drag and the
+  // box set red, green and blue together, each from its own window or range.
+  test('on an RGB slide they set red, green and blue together', () => {
+    // Red unset on a 12-bit source: RGB tiles decode to 8 bits, so 0..255.
+    const r = windowRig([Number.NaN, Number.NaN], true)
+    r.fire('pointerdown', 0, 0)
+    r.fire('pointermove', 10, 0)
+    r.fire('pointerup', 10, 0)
+    expect(r.sets.map(([c]) => c)).toEqual([0, 1, 2])
+    expect(r.sets[0]?.[1]).toBeCloseTo(-6.375)
+    expect(r.sets[0]?.[2]).toBeCloseTo(261.375)
+    r.sets.length = 0
+    r.fire('pointerdown', 0, 0, 2)
+    r.fire('pointermove', 32, 32, 2)
+    r.fire('pointerup', 32, 32, 2)
+    // Red reads x + y, green twice that, blue 10 + x + y.
+    expect(r.sets).toEqual([
+      [0, 0, 62],
+      [1, 0, 124],
+      [2, 10, 72],
+    ])
+  })
+
+  test('a half-set window drags from the range it renders with', () => {
+    // rgbBitmapWindow resolves red's unset calMax to 255, so the drag starts at [50, 255].
+    const r = windowRig([50, Number.NaN], true)
+    r.fire('pointerdown', 0, 0)
+    r.fire('pointermove', 10, 0)
+    expect(r.sets[0]?.[1]).toBeCloseTo(44.875)
+    expect(r.sets[0]?.[2]).toBeCloseTo(260.125)
   })
 
   test('a contrast box sets the window to its resident sample range', () => {

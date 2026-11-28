@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { windowSlideDrag } from './wsiSlideView'
+import { setSlideWindow, windowSlideDrag } from './wsiSlideView'
 
 describe('windowSlideDrag', () => {
   const slide = (channelInfo?: unknown, bitsStored = 8) => {
@@ -33,5 +33,19 @@ describe('windowSlideDrag', () => {
     // -1 is the controller's default windowChannel: the first channel.
     windowSlideDrag(s as never, -1, 1, 0)
     expect(s.sets.map(([c]) => c)).toEqual([0])
+  })
+  it('a preset window sets all three channels of an RGB slide', () => {
+    const s = slide()
+    setSlideWindow(s as never, 50, 150)
+    expect(s.sets).toEqual([
+      [0, 50, 150],
+      [1, 50, 150],
+      [2, 50, 150],
+    ])
+  })
+  it('a preset window sets channel 0 of a channelInfo slide', () => {
+    const s = slide([{ name: 'dapi' }])
+    setSlideWindow(s as never, 50, 150)
+    expect(s.sets).toEqual([[0, 50, 150]])
   })
 })

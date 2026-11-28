@@ -77,6 +77,16 @@ export function windowSlideDrag(
   }
 }
 
+/** A preset window: red, green and blue together on an RGB slide (no colour cast), else channel 0. */
+export function setSlideWindow(
+  slide: Pick<NVSlide, 'channels' | 'manifest' | 'setChannel'>,
+  calMin: number,
+  calMax: number,
+): void {
+  const n = isRgbSlide(slide.manifest) ? slide.channels.length : 1
+  for (let c = 0; c < n; c++) slide.setChannel(c, { calMin, calMax })
+}
+
 /**
  * Mount a standalone NVSlide deep-zoom view on a canvas: a core slide view on
  * WebGL2, redrawn on demand, refitting on resize until the user moves it. The
@@ -178,7 +188,7 @@ export async function mountWsiSlideView(
     },
     fit: view.fit,
     setWindow(calMin, calMax) {
-      slide.setChannel(0, { calMin, calMax })
+      setSlideWindow(slide, calMin, calMax)
     },
     async saveBitmap(filename = 'niivue-slide.png') {
       // toBlob reads the frame drawn in this task, on either backend.

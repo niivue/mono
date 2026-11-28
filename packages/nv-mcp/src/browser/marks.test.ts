@@ -1,9 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { NVSlideAnnotations } from '@niivue/niivue'
+import { measureAnnotation, NVSlideAnnotations } from '@niivue/niivue'
 
 import { baseView, hostOf } from '../testing/fake-view'
 import { markHandlers } from './marks'
-import type { Annotation, Measurement, View } from './view'
+import type { Annotation, View } from './view'
 
 const note = (id: string, extra: Partial<Annotation> = {}): Annotation => ({
   id,
@@ -22,19 +22,9 @@ const note = (id: string, extra: Partial<Annotation> = {}): Annotation => ({
   ...extra,
 })
 
-/** A view keeping annotations and measurements as NiiVue's model would. */
+/** A view keeping annotations as NiiVue's model would. */
 function markView(overrides: Partial<View> = {}) {
   const annotations: Annotation[] = [note('a1'), note('a2', { text: 'two' })]
-  const measurements: Measurement[] = [
-    {
-      startMM: [0, 0, 0],
-      endMM: [3, 4, 0],
-      distance: 5,
-      sliceIndex: 0,
-      sliceType: 0,
-      slicePosition: 0.5,
-    },
-  ]
   const view = baseView({
     annotations,
     selectedAnnotation: null,
@@ -71,30 +61,6 @@ function markView(overrides: Partial<View> = {}) {
       annotations.splice(0, annotations.length, ...JSON.parse(json))
     }),
     annotationsToSVG: mock(() => '<svg/>'),
-    getMeasurements: () => measurements,
-    addMeasurement: mock((start, end, options) => {
-      measurements.push({
-        startMM: start,
-        endMM: end,
-        distance: Math.hypot(
-          end[0] - start[0],
-          end[1] - start[1],
-          end[2] - start[2],
-        ),
-        sliceIndex: options?.sliceIndex ?? 0,
-        sliceType: options?.sliceType ?? 0,
-        slicePosition: options?.slicePosition ?? 0.5,
-      })
-      return measurements.length - 1
-    }),
-    removeMeasurement: mock((index: number) => {
-      measurements.splice(index, 1)
-    }),
-    clearMeasurements: mock(() => {
-      measurements.splice(0)
-    }),
-    clearAngles: mock(),
-    clearDistanceMeasurements: mock(),
     ...overrides,
   })
   return view
@@ -558,87 +524,112 @@ describe('edit_annotations', () => {
 })
 
 describe('list_measurements and edit_measurements', () => {
-  it('lists the measurements by slice name', () => {
-    const { list_measurements } = markHandlers(hostOf(markView()))
-    expect(list_measurements({})).toEqual({
-      measurements: [
-        {
-          index: 0,
-          startMM: [0, 0, 0],
-          endMM: [3, 4, 0],
-          distance: 5,
-          slice: 'axial',
-          sliceIndex: 0,
-          slicePosition: 0.5,
-        },
-      ],
-      unit: 'mm',
-    })
-    expect(() =>
-      markHandlers(hostOf(baseView())).list_measurements({}),
-    ).toThrow("This page's NiiVue keeps no measurements.")
+  /** markView plus a measured angle among the plain annotations. */
+  const measureView = () => {
+    const view = markView()
+    ;(view.annotations as Annotation[]).push(
+      note('ang', { shape: { type: 'measureAngle' }, stats: { angle: 30 } }),
+    )
+    return view
+  }
+
+  it('builds measure lines exactly as core does on every plane', () => {
+    const lines: [number[], number[], number][] = [
+      [[1, 2, 3], [4, 6, 3], 0], // axial: constant z
+      [[1, 2, 3], [4, 2, 7], 1], // coronal: constant y
+      [[1, 2, 3], [1, 5, 7], 2], // sagittal: constant x
+    ]
+    for (const [start, end, sliceType] of lines) {
+      const view = measureView()
+      markHandlers(hostOf(view)).edit_measurements({
+        action: 'add',
+        start_mm: start,
+        end_mm: end,
+      })
+      const made = (view.addAnnotation as ReturnType<typeof mock>).mock
+        .calls[0]?.[0] as Annotation
+      const core = measureAnnotation(
+        [start, end] as never,
+        sliceType,
+        made.style as never,
+      )
+      expect({ ...made, id: '' }).toEqual({ ...core, id: '' } as never)
+    }
   })
 
-  it('names the unit of a micrometre volume beside the ends and distance', () => {
-    const view = markView()
-    view.volumes = [{ name: 'heart.nii', hdr: { xyzt_units: 11 } }]
-    expect(markHandlers(hostOf(view)).list_measurements({})).toMatchObject({
-      unit: 'um',
-    })
-  })
-
-  it('adds a measurement between two points, removes one, and clears', () => {
-    const view = markView()
-    const { edit_measurements } = markHandlers(hostOf(view))
+  it('adds a measureLine annotation on the flattest plane, removes by id, and clears by kind', () => {
+    const view = measureView()
+    const { edit_measurements, list_measurements } = markHandlers(hostOf(view))
     const added = edit_measurements({
       action: 'add',
-      start_mm: [0, 0, 0],
-      end_mm: [0, 0, 10],
-      slice: 'coronal',
-      slice_index: 3,
-      slice_position: 0.4,
-    }) as Record<string, unknown>
-    expect(view.addMeasurement).toHaveBeenCalledWith([0, 0, 0], [0, 0, 10], {
-      sliceType: 1,
-      sliceIndex: 3,
-      slicePosition: 0.4,
-    })
-    expect(added).toMatchObject({
-      action: 'add',
-      index: 1,
-      measurement: { index: 1, distance: 10, slice: 'coronal' },
-    })
-    expect((added.measurements as unknown[]).length).toBe(2)
-    expect(edit_measurements({ action: 'remove', index: 0 })).toMatchObject({
-      action: 'remove',
-      index: 0,
-      measurements: [expect.objectContaining({ distance: 10 })],
-    })
-    expect(() => edit_measurements({ action: 'remove', index: 5 })).toThrow(
-      'There is no measurement 5: 1 kept, numbered from 0.',
+      start_mm: [1, 2, 3],
+      end_mm: [1, 5, 7],
+    }) as { id: string; measurements: Record<string, unknown>[] }
+    // Constant x: sagittal, through x = 1, 5 mm long in (y, z).
+    expect(view.addAnnotation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sliceType: 2,
+        slicePosition: 1,
+        shape: expect.objectContaining({
+          type: 'measureLine',
+          start: { x: 2, y: 3 },
+          end: { x: 5, y: 7 },
+        }),
+      }),
+      true,
     )
-    expect(() => edit_measurements({ action: 'remove' })).toThrow(
-      'Removing needs index, as list_measurements counts them.',
+    // Exactly as core's builder makes one (nv-mcp's browser side imports no
+    // NiiVue, so it keeps its own copy; this keeps the two in step).
+    const made = (view.addAnnotation as ReturnType<typeof mock>).mock
+      .calls[0]?.[0] as Annotation
+    const core = measureAnnotation(
+      [
+        [1, 2, 3],
+        [1, 5, 7],
+      ],
+      2,
+      made.style as never,
     )
-    edit_measurements({ action: 'clear_angles' })
-    edit_measurements({ action: 'clear_distances' })
-    expect(view.clearAngles).toHaveBeenCalledTimes(1)
-    expect(view.clearDistanceMeasurements).toHaveBeenCalledTimes(1)
-    expect(edit_measurements({ action: 'clear' })).toEqual({
-      action: 'clear',
-      measurements: [],
-      unit: 'mm',
-    })
+    expect({ ...made, id: '' }).toEqual({ ...core, id: '' } as never)
+    expect(added.measurements).toEqual([
+      {
+        id: 'ang',
+        type: 'measureAngle',
+        slice: 'axial',
+        slicePosition: 0.5,
+        angle: 30,
+      },
+      {
+        id: added.id,
+        type: 'measureLine',
+        slice: 'sagittal',
+        slicePosition: 1,
+        length: 5,
+      },
+    ])
+    expect(() => edit_measurements({ action: 'remove', ids: ['a1'] })).toThrow(
+      'There is no measurement with the id "a1".',
+    )
+    // Ends in no common slice are refused, not projected (that shortens it).
     expect(() =>
-      edit_measurements({ action: 'add', start_mm: [0, 0, 0] }),
-    ).toThrow('end_mm must be three numbers, [x, y, z] in world units.')
-    expect(() => edit_measurements({})).toThrow(
-      'edit_measurements needs an action: one of add, remove, clear, clear_angles, clear_distances.',
-    )
+      edit_measurements({
+        action: 'add',
+        start_mm: [0, 0, 0],
+        end_mm: [3, 4, 5],
+      }),
+    ).toThrow('must lie in one axial, coronal or sagittal slice')
+    edit_measurements({ action: 'clear_angles' })
+    expect(view.removeAnnotations).toHaveBeenLastCalledWith(['ang'], true)
+    edit_measurements({ action: 'remove', ids: [added.id] })
+    expect(list_measurements({})).toEqual({ measurements: [], unit: 'mm' })
+    // The plain annotations are untouched.
+    expect(view.annotations?.map((a) => a.id)).toEqual(['a1', 'a2'])
   })
 
   it('refuses a page that cannot', () => {
-    const { edit_measurements } = markHandlers(hostOf(baseView()))
+    const { edit_measurements } = markHandlers(
+      hostOf(baseView({ annotations: [] })),
+    )
     expect(() =>
       edit_measurements({
         action: 'add',
@@ -646,9 +637,6 @@ describe('list_measurements and edit_measurements', () => {
         end_mm: [1, 0, 0],
       }),
     ).toThrow("This page's NiiVue cannot add measurements.")
-    expect(() => edit_measurements({ action: 'clear_angles' })).toThrow(
-      "This page's NiiVue cannot clear angles measurements.",
-    )
   })
 })
 

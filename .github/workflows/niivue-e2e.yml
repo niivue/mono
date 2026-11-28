@@ -44,6 +44,7 @@ on:
       - 'packages/dev-images/**'
       - 'packages/nv-ext-tile/**'
       - 'apps/demo-ext-tile/**'
+      - 'apps/demo-uikit/**'
       - '.github/workflows/niivue-e2e.yml'
       - '!**/*.md'
   pull_request:
@@ -56,6 +57,7 @@ on:
       - 'packages/dev-images/**'
       - 'packages/nv-ext-tile/**'
       - 'apps/demo-ext-tile/**'
+      - 'apps/demo-uikit/**'
       - '.github/workflows/niivue-e2e.yml'
       - '!**/*.md'
 
@@ -253,9 +255,8 @@ jobs:
         working-directory: packages/niivue
         run: bunx playwright install --no-shell chromium
 
-      # e2e/uikit-overlay-hook.spec.ts imports the built bundle. Vite directly,
-      # not `nx build uikit`, which builds niivue first (~25 s) for nothing:
-      # the bundle keeps @niivue/niivue external.
+      # The uikit-* specs import uikit's built bundle (core builds uikit from
+      # source). Vite directly: uikit has no workspace dependencies.
       - name: Build uikit
         working-directory: packages/uikit
         run: bunx --bun vite build

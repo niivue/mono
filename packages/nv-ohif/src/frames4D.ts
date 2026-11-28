@@ -1,6 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { NVImage, VolumeFrameSource } from '@niivue/niivue'
-import type { OhifServicesManager } from './ohif-types'
+import type { OhifCineService, OhifServicesManager } from './ohif-types'
 
 // A dynamic series (4D PET) converts to one 4D NIfTI. Cornerstone shares one
 // dynamic volume between panes and steps its time point for all of them; here
@@ -271,16 +271,10 @@ export function onFrame(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export type Cine = { isPlaying?: boolean; frameRate?: number }
-export interface CineServiceLike {
-  getState?: () => { cines?: Record<string, Cine> } | undefined
-  setCine?: (c: { id: string } & Cine) => void
-}
-
 // One clock for every 4D pane. OHIF's cineService has no change event for
 // setCine, so the clock reads its state each animation frame: a playing pane
 // steps its series at the pane's frameRate, as cornerstone's dynamic cine.
-let cineService: CineServiceLike | undefined
+let cineService: OhifCineService | undefined
 let raf = 0
 const due = new Map<object, number>()
 const pending = new Set<object>()
@@ -333,7 +327,7 @@ export function joinFrames(
   servicesManager: OhifServicesManager | undefined,
   element: HTMLElement | null,
 ): () => void {
-  cineService = servicesManager?.services?.cineService as CineServiceLike
+  cineService = servicesManager?.services?.cineService
   panes.set(viewportId, nv)
   // Set while this pane catches up to the series frame after a load.
   let catchingUp = false

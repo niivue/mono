@@ -1,4 +1,4 @@
-import { baseModality, NIIVUE_COLORMAPS, NIIVUE_SLICE_TYPES } from './commands'
+import { baseModality, NIIVUE_COLORMAPS } from './commands'
 import { getNiivueEntry, type NiivueViewportEntry } from './niivueRegistry'
 import {
   niivueSegmentationEvaluator,
@@ -16,16 +16,11 @@ import {
 } from './overlayMenu'
 
 // Toolbar button + section ids (referenced from a mode's toolbar sections).
-export const NIIVUE_VIEWS_SECTION = 'NiivueViews'
 export const NIIVUE_CLIP_SECTION = 'NiivueClip'
 export const NIIVUE_WL_SECTION = 'NiivueWindowLevel'
 export const NIIVUE_COLORMAP_SECTION = 'NiivueColormap'
-export const NIIVUE_RESET_BUTTON = 'NiivueReset'
-export const NIIVUE_OVERLAY_BUTTON = 'NiivueOverlay'
 export const NIIVUE_OVERLAY_MENU_BUTTON = 'NiivueOverlayMenu'
-export const NIIVUE_COLORBAR_BUTTON = 'NiivueColorbar'
 export const NIIVUE_INTERPOLATION_BUTTON = 'NiivueInterpolation'
-export const NIIVUE_RULER_BUTTON = 'NiivueRuler'
 // Distinct ids (not OHIF's 'Capture'/'Crosshairs'): ToolbarService.register is
 // first-registration-wins, and the mode references cornerstone's pack before
 // this one, so a same-id override would be silently dropped. A mode places
@@ -34,15 +29,12 @@ export const NIIVUE_RULER_BUTTON = 'NiivueRuler'
 export const NIIVUE_CAPTURE_BUTTON = 'NiivueCapture'
 export const NIIVUE_CROSSHAIR_BUTTON = 'NiivueCrosshair'
 
-const SLICE_TYPE_EVALUATOR = 'evaluate.niivue.sliceType'
 const CLIP_PLANE_EVALUATOR = 'evaluate.niivue.clipPlane'
 const OVERLAY_EVALUATOR = 'evaluate.niivue.overlay'
 const WL_PRESET_EVALUATOR = 'evaluate.niivue.windowLevelPreset'
 const COLORMAP_EVALUATOR = 'evaluate.niivue.colormap'
-const COLORBAR_EVALUATOR = 'evaluate.niivue.colorbar'
 const INTERPOLATION_EVALUATOR = 'evaluate.niivue.interpolation'
 const CROSSHAIR_EVALUATOR = 'evaluate.niivue.crosshair'
-const MEASUREMENT_EVALUATOR = 'evaluate.niivue.measurement'
 const NIIVUE_EVALUATOR = 'evaluate.niivue'
 
 // Capitalized id suffix for a colormap name ('viridis' -> 'Viridis').
@@ -50,28 +42,6 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 const colormapButtonId = (name: string) => `NiivueCmap${capitalize(name)}`
-
-function sliceTypeButton(
-  id: string,
-  sliceType: string,
-  icon: string,
-  label: string,
-): OhifToolbarButton {
-  return {
-    id,
-    uiType: 'ohif.toolButton',
-    props: {
-      icon,
-      label,
-      tooltip: `${label} (NiiVue)`,
-      commands: {
-        commandName: 'niivueSetSliceType',
-        commandOptions: { sliceType },
-      },
-      evaluate: SLICE_TYPE_EVALUATOR,
-    },
-  }
-}
 
 function clipPlaneButton(
   id: string,
@@ -138,33 +108,13 @@ function colormapButton(name: string, label: string): OhifToolbarButton {
 }
 
 /**
- * Toolbar button definitions: a "Views" dropdown (axial / coronal / sagittal /
- * multiplanar / 3D render), a clip-plane dropdown, a window/level dropdown
- * (auto + OHIF's modality presets), an overlay toggle, and a reset-view button,
- * all running the commands in commands.ts. Registered with the toolbar service
+ * Toolbar button definitions: clip-plane, window/level (auto + OHIF's modality
+ * presets) and colormap dropdowns, the overlay menu, smoothing, crosshair and
+ * capture, all running the commands in commands.ts. Views are in each pane's
+ * orientation menu, reset is OHIF's resetViewport. Registered with the toolbar service
  * via the `niivue.toolbarButtons` customization (see below) or directly.
  */
 export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
-  {
-    id: NIIVUE_VIEWS_SECTION,
-    uiType: 'ohif.toolButtonList',
-    props: { buttonSection: true },
-  },
-  sliceTypeButton(
-    'NiivueMultiplanar',
-    'multiplanar',
-    'icon-mpr',
-    'Multiplanar',
-  ),
-  sliceTypeButton('NiivueAxial', 'axial', 'OrientationSwitchA', 'Axial'),
-  sliceTypeButton('NiivueCoronal', 'coronal', 'OrientationSwitchC', 'Coronal'),
-  sliceTypeButton(
-    'NiivueSagittal',
-    'sagittal',
-    'OrientationSwitchS',
-    'Sagittal',
-  ),
-  sliceTypeButton('NiivueRender', 'render', 'tool-3d-rotate', '3D Render'),
   {
     id: NIIVUE_CLIP_SECTION,
     uiType: 'ohif.toolButtonList',
@@ -232,17 +182,7 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
     props: { buttonSection: true },
   },
   ...NIIVUE_COLORMAPS.map((c) => colormapButton(c.name, c.label)),
-  {
-    id: NIIVUE_COLORBAR_BUTTON,
-    uiType: 'ohif.toolButton',
-    props: {
-      icon: 'icon-color-lut',
-      label: 'Colorbar',
-      tooltip: 'Toggle the colormap legend (NiiVue)',
-      commands: 'niivueToggleColorbar',
-      evaluate: COLORBAR_EVALUATOR,
-    },
-  },
+
   {
     id: NIIVUE_INTERPOLATION_BUTTON,
     uiType: 'ohif.toolButton',
@@ -254,30 +194,7 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
       evaluate: INTERPOLATION_EVALUATOR,
     },
   },
-  {
-    id: NIIVUE_RULER_BUTTON,
-    uiType: 'ohif.toolButton',
-    props: {
-      icon: 'tool-length',
-      label: 'Ruler',
-      tooltip:
-        'Ruler: drag to measure; length appears in Measurements (NiiVue)',
-      commands: 'niivueSetMeasurementMode',
-      evaluate: MEASUREMENT_EVALUATOR,
-    },
-  },
-  {
-    id: NIIVUE_OVERLAY_BUTTON,
-    uiType: 'ohif.toolButton',
-    props: {
-      icon: 'toggle-dicom-overlay',
-      label: 'Overlay',
-      tooltip:
-        'Toggle a colormapped overlay of the next series in this study (NiiVue)',
-      commands: 'niivueToggleOverlay',
-      evaluate: OVERLAY_EVALUATOR,
-    },
-  },
+
   {
     id: NIIVUE_OVERLAY_MENU_BUTTON,
     uiType: NIIVUE_OVERLAY_MENU_UI_TYPE,
@@ -314,29 +231,11 @@ export const NIIVUE_TOOLBAR_BUTTONS: OhifToolbarButton[] = [
       evaluate: NIIVUE_EVALUATOR,
     },
   },
-  {
-    id: NIIVUE_RESET_BUTTON,
-    uiType: 'ohif.toolButton',
-    props: {
-      icon: 'tool-reset',
-      label: 'Reset View',
-      tooltip: 'Reset View (NiiVue)',
-      commands: 'niivueResetView',
-      evaluate: NIIVUE_EVALUATOR,
-    },
-  },
 ]
 
 // Section membership for the dropdowns. A mode merges this into its toolbar
 // sections and adds the section/button ids to its primary bar.
 export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
-  [NIIVUE_VIEWS_SECTION]: [
-    'NiivueMultiplanar',
-    'NiivueAxial',
-    'NiivueCoronal',
-    'NiivueSagittal',
-    'NiivueRender',
-  ],
   [NIIVUE_CLIP_SECTION]: [
     'NiivueClipNone',
     'NiivueClipRight',
@@ -367,9 +266,8 @@ export const NIIVUE_TOOLBAR_SECTIONS: Record<string, string[]> = {
  * customizationModule). A mode composes it by reference:
  *   toolbarButtons:  [..., { $reference: 'niivue.toolbarButtons' }]
  *   toolbarSections: [..., { $reference: 'niivue.toolbarSections' },
- *                     { primary: [...ids, 'NiivueViews', 'NiivueClip',
- *                                 'NiivueOverlay', 'NiivueOverlayMenu',
- *                                 'NiivueReset'] }]
+ *                     { primary: [...ids, 'NiivueClip',
+ *                                 'NiivueOverlayMenu'] }]
  */
 export const niivueToolbarCustomization = {
   'niivue.toolbarButtons': NIIVUE_TOOLBAR_BUTTONS,
@@ -442,17 +340,7 @@ export function getNiivueToolbarModule({
       evaluate: ({ viewportId }) =>
         getNiivueEntry(viewportId) ? { disabled: false } : DISABLED,
     },
-    {
-      name: SLICE_TYPE_EVALUATOR,
-      evaluate: volumeEvaluator(({ nv }, button) => {
-        const name = buttonCommandOption(button, 'sliceType')
-        const target = name === undefined ? undefined : NIIVUE_SLICE_TYPES[name]
-        return {
-          disabled: false,
-          isActive: target !== undefined && nv.sliceType === target,
-        }
-      }),
-    },
+
     {
       name: CLIP_PLANE_EVALUATOR,
       evaluate: volumeEvaluator((entry, button) => {
@@ -503,13 +391,7 @@ export function getNiivueToolbarModule({
         }
       }),
     },
-    {
-      name: COLORBAR_EVALUATOR,
-      evaluate: volumeEvaluator(({ nv }) => ({
-        disabled: false,
-        isActive: nv.isColorbarVisible === true,
-      })),
-    },
+
     {
       name: INTERPOLATION_EVALUATOR,
       // Active = nearest-neighbor (crisp voxels); off = smooth (default).
@@ -524,17 +406,6 @@ export function getNiivueToolbarModule({
       evaluate: volumeEvaluator(({ nv }) => ({
         disabled: false,
         isActive: nv.crosshairWidth > 0,
-      })),
-    },
-    {
-      name: MEASUREMENT_EVALUATOR,
-      // Length is annotation-backed (toolBridge maps it to 'measureLine');
-      // nothing in this package ever sets DRAG_MODE.measurement.
-      evaluate: volumeEvaluator(({ nv }) => ({
-        disabled: false,
-        isActive:
-          nv.annotationIsEnabled === true &&
-          nv.annotationTool === 'measureLine',
       })),
     },
   ]

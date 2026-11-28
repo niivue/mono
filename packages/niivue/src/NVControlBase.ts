@@ -3,6 +3,7 @@ import * as Annotation from '@/annotation'
 import { annotationsToSVG } from '@/annotation/annotationSvg'
 import { annotationDelta } from '@/annotation/delta'
 import type { LivewireSlice } from '@/annotation/livewireSlice'
+import { polygonDistance } from '@/annotation/pointInRing'
 import { getAnnotationSelection } from '@/annotation/selection'
 import { AnnotationUndoStack } from '@/annotation/undoRedo'
 import { ubuntu } from '@/assets/fonts'
@@ -26,6 +27,7 @@ import { ChunkStreamEmitter } from '@/control/chunkStreamEvents'
 import { applyInstances } from '@/control/instances'
 import {
   clientToBoundsPixel,
+  commitAnnotation,
   type ExplodedBlockPick,
   pickExplodedBlock,
   removeInteractionListeners,
@@ -33,8 +35,6 @@ import {
   resetDragState,
 } from '@/control/interactions'
 import { buildLocationMessage } from '@/control/locationTracking'
-import type { AddMeasurementOptions } from '@/control/measurements'
-import * as measurementApi from '@/control/measurements'
 import type {
   ReinitializeOptions,
   ViewLifecycle,
@@ -120,6 +120,7 @@ import type {
   AnimationOptions,
   AnimationResult,
   AnimationTarget,
+  AnnotationCalibration,
   AnnotationPoint,
   AnnotationScreenShape,
   AnnotationStyle,
@@ -128,14 +129,12 @@ import type {
   CanvasViewport,
   CinematicOptions,
   ColorMap,
-  CompletedMeasurement,
   CustomLayoutTile,
   FocusBox,
   ImageFromUrlOptions,
   LodCompensationLevel,
   LodCompensationReport,
   LUT,
-  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshLayerFromUrlOptions,
   MeshUpdate,
@@ -206,10 +205,7 @@ import {
   signalXValueAtFrac,
 } from '@/view/NVGraph'
 import type { LegendLayout } from '@/view/NVLegend'
-import type {
-  UIKitOverlayFrame,
-  UIKitOverlayRenderer,
-} from '@/view/NVOverlayHook'
+import type { OverlayFrame, OverlayRenderer } from '@/view/NVOverlayHook'
 import {
   arePerfMarksEnabled,
   setNextActionTag,
@@ -357,7 +353,7 @@ type ViewBackend = {
    */
   coarseFloorDims: () => [number, number, number] | null
   cinematicRenderer: { frameMs: number | null }
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null
+  overlayDraw: ((frame: OverlayFrame) => void) | null
   onContextLost: (() => void) | null
   onChunkStream:
     | ((
@@ -513,7 +509,7 @@ export default class NiiVue extends EventTarget {
   model: NVModel
   view: ViewBackend | null = null
   /** Privileged UIKit overlay renderers, drawn at the end of every frame. */
-  private _overlayRenderers: UIKitOverlayRenderer[] = []
+  private _overlayRenderers: OverlayRenderer[] = []
   /** Busy/idle transition tracking behind `chunkStreamProgress`/`chunkStreamIdle`. */
   private _chunkStreamEmitter = new ChunkStreamEmitter()
   /** The view instance `_onChunkStream` was last wired onto. When
@@ -713,6 +709,8 @@ export default class NiiVue extends EventTarget {
   dragStartXY: [number, number] = [0, 0]
   dragEndXY: [number, number] = [0, 0]
   _activeDragMode: number = DRAG_MODE.none
+  /** The drag modes' live measurement while it is the annotation preview. */
+  _dragPreview: VectorAnnotation | null = null
   _angleState: 'none' | 'drawing_first_line' | 'drawing_second_line' = 'none'
   /** The open angle's first arm in mm and the tile it was drawn on. */
   _angleArm: {
@@ -1646,15 +1644,6 @@ export default class NiiVue extends EventTarget {
     this.drawScene()
   }
 
-  get isMeasurementDrawn(): boolean {
-    return this.model.ui.isMeasurementDrawn
-  }
-  set isMeasurementDrawn(v: boolean) {
-    this.model.ui.isMeasurementDrawn = v
-    this.emit('change', { property: 'isMeasurementDrawn', value: v })
-    this.drawScene()
-  }
-
   /**
    * When false, NiiVue's built-in 2D vector-annotation shapes are not drawn, so
    * an external overlay can render them from `annotationScreenShapes`. The brush
@@ -1666,19 +1655,6 @@ export default class NiiVue extends EventTarget {
   set isAnnotationDrawn(v: boolean) {
     this.model.ui.isAnnotationDrawn = v
     this.emit('change', { property: 'isAnnotationDrawn', value: v })
-    this.drawScene()
-  }
-
-  /**
-   * With isAnnotationDrawn false, still draw the shapes' fills, under an
-   * external overlay that draws only strokes and labels.
-   */
-  get isAnnotationFillDrawn(): boolean {
-    return this.model.ui.isAnnotationFillDrawn
-  }
-  set isAnnotationFillDrawn(v: boolean) {
-    this.model.ui.isAnnotationFillDrawn = v
-    this.emit('change', { property: 'isAnnotationFillDrawn', value: v })
     this.drawScene()
   }
 
@@ -1834,30 +1810,70 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Every visible measurement projected to the current frame's canvas pixels
-   * (all persisted measurements plus an in-progress drag). Populated during
-   * render; read it from a registered overlay renderer (see
-   * {@link registerOverlayRenderer}) to draw measurements with an external
-   * renderer — e.g. a @niivue/uikit ruler with rotated tick numbers — instead of
-   * the built-in line. Hide the built-in draw by setting `measureLineColor` /
-   * `measureTextColor` alpha to 0. Each persisted entry carries an `index`
-   * into {@link getMeasurements}; the trailing in-progress line omits it.
-   */
-  get measurementScreenLines(): readonly MeasurementScreenLine[] {
-    const active = this.model._activeMeasurementScreenLine
-    return active
-      ? [...this.model._persistedMeasurementScreenLines, active]
-      : this.model._persistedMeasurementScreenLines
-  }
-
-  /**
-   * Vector annotations projected to the current frame's canvas pixels, so an
-   * external overlay (a @niivue/uikit shape renderer through the overlay hook)
-   * can draw the shapes + stats labels itself. Recomputed every frame. Pair with
-   * `isAnnotationDrawn = false` to replace the built-in annotation rendering.
+   * Vector annotations projected to the last frame's canvas pixels (one per tile
+   * showing each), as NiiVue draws them. An overlay can draw them itself with
+   * `isAnnotationDrawn = false`.
    */
   get annotationScreenShapes(): readonly AnnotationScreenShape[] {
     return this.model._persistedAnnotationScreenShapes
+  }
+
+  /**
+   * The annotation drawn under canvas point `x, y` (device px, as
+   * clientToCanvas returns): inside its outline, or within `tolerancePx` CSS px
+   * of an edge. The nearest wins; ties go to the earlier annotation. Shapes the
+   * host hides and a shape being drawn are never picked.
+   */
+  pickAnnotation(
+    x: number,
+    y: number,
+    opts: {
+      tolerancePx?: number
+      accept?: (annotation: VectorAnnotation) => boolean
+    } = {},
+  ): { annotation: VectorAnnotation; distance: number } | null {
+    const limit = (opts.tolerancePx ?? 8) * this.effectiveDevicePixelRatio
+    const byId = new Map(this.model.annotations.map((a) => [a.id, a]))
+    let best: { annotation: VectorAnnotation; distance: number } | null = null
+    for (const shape of this.model._persistedAnnotationScreenShapes) {
+      const annotation = byId.get(shape.id)
+      if (!annotation || (opts.accept && !opts.accept(annotation))) continue
+      const distance = Math.min(
+        ...shape.polygons.map((p) => polygonDistance(x, y, p)),
+      )
+      if (distance <= limit && (!best || distance < best.distance))
+        best = { annotation, distance }
+    }
+    return best
+  }
+
+  /**
+   * True for an annotation the host hides: not drawn (2D or 3D), picked or
+   * grabbed, but still stored, exported and saved. A function, so not a saved
+   * setting.
+   */
+  get annotationIsHidden(): ((annotation: VectorAnnotation) => boolean) | null {
+    return this.model.annotationIsHidden
+  }
+  set annotationIsHidden(v:
+    | ((annotation: VectorAnnotation) => boolean)
+    | null) {
+    this.model.annotationIsHidden = v
+    this.drawScene()
+  }
+
+  /**
+   * Calibrate annotation labels (a host's user calibration): lengths times
+   * `scale` in `lengthUnit`, areas times scale² in `areaUnit`. Presentation
+   * only: annotation geometry and stats stay native. null: native units.
+   */
+  get annotationCalibration(): AnnotationCalibration | null {
+    return this.model.annotationCalibration
+  }
+  set annotationCalibration(v: AnnotationCalibration | null) {
+    this.model.annotationCalibration = v
+    this.emit('change', { property: 'annotationCalibration', value: v })
+    this.drawScene()
   }
 
   get rulerWidth(): number {
@@ -2895,25 +2911,6 @@ export default class NiiVue extends EventTarget {
     this.emit('change', { property: 'annotationAreaIsGeometric', value: v })
   }
 
-  get annotationIsLivewireScissors(): boolean {
-    return this.model.annotation.isLivewireScissors
-  }
-
-  /** See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire. */
-  set annotationIsLivewireScissors(v: boolean) {
-    this.model.annotation.isLivewireScissors = v
-    this.emit('change', { property: 'annotationIsLivewireScissors', value: v })
-  }
-
-  get annotationMergesOverlaps(): boolean {
-    return this.model.annotation.mergesOverlaps
-  }
-
-  set annotationMergesOverlaps(v: boolean) {
-    this.model.annotation.mergesOverlaps = v
-    this.emit('change', { property: 'annotationMergesOverlaps', value: v })
-  }
-
   get annotationIsErasing(): boolean {
     return this.model.annotation.isErasing
   }
@@ -2966,12 +2963,13 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * A multi-click contour, bidirectional or click-placed shape is half-drawn,
-   * or an annotation is being dragged.
+   * A multi-click contour, bidirectional, click-placed shape or drag-mode
+   * angle is half-drawn, or an annotation is being dragged.
    */
   get isAnnotationInProgress(): boolean {
     return Boolean(
-      this._annotationPolyPoints ||
+      this._angleState !== 'none' ||
+        this._annotationPolyPoints ||
         this._bidirectionalLong ||
         this._annotationClickStart ||
         this._isAnnotationDrag,
@@ -3071,9 +3069,16 @@ export default class NiiVue extends EventTarget {
     return this.model.annotations
   }
 
-  addAnnotation(annotation: VectorAnnotation): void {
+  /** Add an annotation; `isUndoable` records an annotationUndo step first. */
+  addAnnotation(annotation: VectorAnnotation, isUndoable = false): void {
+    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
     this.model.annotations.push(annotation)
-    this.emit('annotationAdded', { annotation })
+    this.emit('annotationChanged', {
+      action: 'add',
+      added: [annotation.id],
+      updated: [],
+      removed: [],
+    })
     this.drawScene()
   }
 
@@ -3086,7 +3091,7 @@ export default class NiiVue extends EventTarget {
     if (!ann) return
     ann.text = text.length > 0 ? text : undefined
     this.emit('annotationChanged', {
-      action: 'move',
+      action: 'text',
       added: [],
       updated: [id],
       removed: [],
@@ -3096,14 +3101,7 @@ export default class NiiVue extends EventTarget {
 
   /** Remove an annotation; `isUndoable` records an annotationUndo step first. */
   removeAnnotation(id: string, isUndoable = false): void {
-    const idx = this.model.annotations.findIndex((a) => a.id === id)
-    if (idx >= 0) {
-      if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
-      this.model.annotations.splice(idx, 1)
-      if (this.selectedAnnotation === id) this.model._annotationSelection = null
-      this.emit('annotationRemoved', { id })
-      this.drawScene()
-    }
+    this._replaceAnnotations([id], [], isUndoable, 'delete')
   }
 
   /**
@@ -3111,35 +3109,30 @@ export default class NiiVue extends EventTarget {
    * `isUndoable`); emits annotationChanged with action 'delete'.
    */
   removeAnnotations(ids: readonly string[], isUndoable = false): void {
-    const drop = new Set(ids)
-    const removed = this.model.annotations
-      .filter((a) => drop.has(a.id))
-      .map((a) => a.id)
-    if (removed.length === 0) return
-    if (isUndoable) this._annotationUndoStack.push(this.model.annotations)
-    this.model.annotations = this.model.annotations.filter(
-      (a) => !drop.has(a.id),
-    )
-    if (drop.has(this.selectedAnnotation ?? ''))
-      this.model._annotationSelection = null
-    this.emit('annotationChanged', {
-      action: 'delete',
-      added: [],
-      updated: [],
-      removed,
-    })
-    this.drawScene()
+    this._replaceAnnotations(ids, [], isUndoable, 'delete')
   }
 
   /**
    * Replace annotations `ids` with `added` as one change (one annotationUndo
    * step when `isUndoable`), as a host's edit of several shapes at once (a
-   * segment operation); emits annotationChanged with action 'draw'.
+   * segment operation); emits annotationChanged with action 'replace'.
    */
   replaceAnnotations(
     ids: readonly string[],
     added: readonly VectorAnnotation[],
     isUndoable = false,
+  ): void {
+    this._replaceAnnotations(ids, added, isUndoable, 'replace')
+  }
+
+  // The shared mutation: drop `ids` (survivors keep their order), append
+  // `added`, clear a dropped selection, emit once and redraw. A no-op emits
+  // nothing and records no undo step.
+  private _replaceAnnotations(
+    ids: readonly string[],
+    added: readonly VectorAnnotation[],
+    isUndoable: boolean,
+    action: 'delete' | 'replace',
   ): void {
     const drop = new Set(ids)
     const removed = this.model.annotations
@@ -3154,7 +3147,7 @@ export default class NiiVue extends EventTarget {
     if (drop.has(this.selectedAnnotation ?? ''))
       this.model._annotationSelection = null
     this.emit('annotationChanged', {
-      action: 'draw',
+      action,
       added: added.map((a) => a.id),
       updated: [],
       removed,
@@ -3218,6 +3211,14 @@ export default class NiiVue extends EventTarget {
     return this._annotationUndoStack.redoTop
   }
 
+  /**
+   * Withdraw undo step `seq` while it is still the top one (a host dropping a
+   * step it just caused), restoring the redo steps that push cleared.
+   */
+  discardAnnotationStep(seq: number): void {
+    this._annotationUndoStack.discard(seq)
+  }
+
   // The selected id may survive with a different shape: rebuild its handles.
   private _reselectAfterRestore(restored: VectorAnnotation[]): void {
     const kept = restored.find((a) => a.id === this.selectedAnnotation)
@@ -3261,11 +3262,18 @@ export default class NiiVue extends EventTarget {
   }
 
   loadAnnotationsJSON(json: string): void {
+    const removed = this.model.annotations.map((a) => a.id)
     this.model.annotations = JSON.parse(json) as VectorAnnotation[]
     // A half-drawn shape and the selection belong to the replaced set (#470).
     this._abandonForNewScene()
     this.model._annotationSelection = null
     this._annotationUndoStack.clear()
+    this.emit('annotationChanged', {
+      action: 'load',
+      added: this.model.annotations.map((a) => a.id),
+      updated: [],
+      removed,
+    })
     this.drawScene()
   }
 
@@ -7193,7 +7201,7 @@ export default class NiiVue extends EventTarget {
    * the same frame in screen space. Returns an unsubscribe function; you may also
    * call {@link unregisterOverlayRenderer}. See view/NVOverlayHook.ts.
    */
-  registerOverlayRenderer(renderer: UIKitOverlayRenderer): () => void {
+  registerOverlayRenderer(renderer: OverlayRenderer): () => void {
     if (!this._overlayRenderers.includes(renderer)) {
       this._overlayRenderers.push(renderer)
     }
@@ -7202,7 +7210,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /** Remove a previously registered overlay renderer. */
-  unregisterOverlayRenderer(renderer: UIKitOverlayRenderer): void {
+  unregisterOverlayRenderer(renderer: OverlayRenderer): void {
     const i = this._overlayRenderers.indexOf(renderer)
     if (i < 0) return
     this._overlayRenderers.splice(i, 1)
@@ -7252,7 +7260,7 @@ export default class NiiVue extends EventTarget {
   }
 
   /** Stable dispatcher fanned out to every registered overlay renderer. */
-  private _dispatchOverlay = (frame: UIKitOverlayFrame): void => {
+  private _dispatchOverlay = (frame: OverlayFrame): void => {
     for (const renderer of this._overlayRenderers) {
       renderer.drawOverlay(frame)
     }
@@ -7592,80 +7600,11 @@ export default class NiiVue extends EventTarget {
   }
 
   /**
-   * Add a distance measurement between two mm-space points, exactly as if it
-   * had been drawn interactively in `DRAG_MODE.measurement`: it renders on
-   * every 2D slice tile whose slice plane contains both endpoints, emits
-   * `measurementCompleted` (after the mutation), and redraws. `opts` may pin
-   * the slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted
-   * fields are derived from the segment geometry (see
-   * control/measurements.buildMeasurement). An explicit `sliceType` must be a
-   * 2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value
-   * (`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the
-   * orientation from geometry. Returns the new measurement's index
-   * (valid for {@link removeMeasurement} until an earlier one is removed).
-   * @example
-   * const idx = nv1.addMeasurement([-20, 10, 0], [25, 10, 0])
+   * Store a finished annotation as the annotation tools do (undo step,
+   * annotationChanged). For control/dragModes, which interactions imports.
    */
-  addMeasurement(
-    startMM: [number, number, number],
-    endMM: [number, number, number],
-    opts: AddMeasurementOptions = {},
-  ): number {
-    return measurementApi.addMeasurement(this, startMM, endMM, opts)
-  }
-
-  /**
-   * Remove a single completed distance measurement by index, emitting
-   * `measurementRemoved` before the mutation (so the listener can still reach
-   * it) and redrawing. An index that is not an integer in bounds warns and
-   * no-ops, matching {@link removeVolume}.
-   */
-  removeMeasurement(index: number): void {
-    measurementApi.removeMeasurement(this, index)
-  }
-
-  /**
-   * All completed distance measurements, in insertion order (an entry's
-   * position is the index {@link addMeasurement} returned and
-   * {@link removeMeasurement}/{@link pickMeasurement} use). Returns a snapshot:
-   * a fresh array of fresh entries, so editing it (an endpoint tuple included)
-   * cannot change what is rendered, and it does not update when measurements
-   * are later added, removed or cleared. Call it again for the current list,
-   * and use {@link addMeasurement}/{@link removeMeasurement}/
-   * {@link clearMeasurements} to change it so events fire and the scene
-   * redraws.
-   */
-  getMeasurements(): readonly CompletedMeasurement[] {
-    return measurementApi.snapshotMeasurements(this.model.completedMeasurements)
-  }
-
-  /**
-   * Find the completed distance measurement under a canvas point, e.g. to
-   * implement click-to-select or click-to-delete. Each measurement is projected
-   * with the same per-tile filtering and matrices the renderer uses to draw it,
-   * so the hit-test agrees with what is on screen. Returns the index of the
-   * closest measurement whose projected line is within `radiusPx` (default 8)
-   * canvas pixels of the point, or null if none is. Requires a rendered frame
-   * (the projection uses matrices cached during render).
-   *
-   * `canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention
-   * as {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer
-   * event's `offsetX`/`offsetY` are off by the device pixel ratio on any
-   * display above 1x. Convert with {@link clientToCanvas} first.
-   * @example
-   * canvas.addEventListener('pointerdown', (e) => {
-   *   const px = nv1.clientToCanvas(e.clientX, e.clientY)
-   *   if (!px) return
-   *   const idx = nv1.pickMeasurement(px[0], px[1])
-   *   if (idx !== null) nv1.removeMeasurement(idx)
-   * })
-   */
-  pickMeasurement(
-    canvasX: number,
-    canvasY: number,
-    radiusPx?: number,
-  ): number | null {
-    return measurementApi.pickMeasurement(this, canvasX, canvasY, radiusPx)
+  _commitAnnotation(ann: VectorAnnotation): void {
+    commitAnnotation(this, ann)
   }
 
   /** Drop a half-placed angle (its first arm and the following second arm). */
@@ -7676,27 +7615,9 @@ export default class NiiVue extends EventTarget {
     if (this._activeDragMode === DRAG_MODE.angle)
       this._activeDragMode = DRAG_MODE.none
     this.model._dragOverlay = null
-    this.drawScene()
-  }
-
-  /** Clear both completed distance measurements and completed angles. */
-  clearMeasurements(): void {
-    this._cancelAngle()
-    this.model.completedMeasurements = []
-    this.model.completedAngles = []
-    this.drawScene()
-  }
-
-  /** Clear completed angles only, leaving distance measurements in place. */
-  clearAngles(): void {
-    this._cancelAngle()
-    this.model.completedAngles = []
-    this.drawScene()
-  }
-
-  /** Clear completed distance measurements only, leaving angles in place. */
-  clearDistanceMeasurements(): void {
-    this.model.completedMeasurements = []
+    if (this.model._annotationPreview === this._dragPreview)
+      this.model._annotationPreview = null
+    this._dragPreview = null
     this.drawScene()
   }
 
@@ -8846,6 +8767,7 @@ export default class NiiVue extends EventTarget {
     // applyDocumentToModel also replaces the signal list on the model; announce
     // the removals it implies the way removeAllSignals would.
     const signalsBefore = [...this.model.signals]
+    const annotationsBefore = this.model.annotations.map((a) => a.id)
     NVDocument.applyDocumentToModel(
       this.model,
       doc,
@@ -8854,6 +8776,12 @@ export default class NiiVue extends EventTarget {
     for (let i = 0; i < signalsBefore.length; i++) {
       this.emit('signalRemoved', { signal: signalsBefore[i], index: i })
     }
+    this.emit('annotationChanged', {
+      action: 'load',
+      added: this.model.annotations.map((a) => a.id),
+      updated: [],
+      removed: annotationsBefore,
+    })
     // A document saves a known matcap by name; apply its URL.
     if (doc.volume?.matcap !== undefined) {
       this.model.volume.matcap = matcapFromName(

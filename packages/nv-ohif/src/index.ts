@@ -1,16 +1,19 @@
 import { version } from '../package.json'
+import { resetCalibration } from './calibration'
 import {
   getNiivueCommandsModule,
   NIIVUE_CLIP_PLANES,
   NIIVUE_COLORMAPS,
   NIIVUE_SLICE_TYPES,
 } from './commands'
+import { resetParkedContours } from './contourSeg'
 import { displaySetToNiivue } from './displaySetToNiivue'
 import { getNiivuePanelModule } from './dynamicPanel'
 import {
   getNiivueViewportModule,
   NIIVUE_VIEWPORT_NAME,
 } from './getNiivueViewportModule'
+import { resetReleasedRows } from './measurementReflection'
 import { NiivueViewport } from './NiivueViewport'
 import {
   NIIVUE_SUPPORTED_TOOLS,
@@ -38,17 +41,12 @@ import {
   getNiivueToolbarModule,
   NIIVUE_CAPTURE_BUTTON,
   NIIVUE_CLIP_SECTION,
-  NIIVUE_COLORBAR_BUTTON,
   NIIVUE_COLORMAP_SECTION,
   NIIVUE_CROSSHAIR_BUTTON,
   NIIVUE_INTERPOLATION_BUTTON,
-  NIIVUE_OVERLAY_BUTTON,
   NIIVUE_OVERLAY_MENU_BUTTON,
-  NIIVUE_RESET_BUTTON,
-  NIIVUE_RULER_BUTTON,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
-  NIIVUE_VIEWS_SECTION,
   NIIVUE_WL_SECTION,
   niivueToolbarCustomization,
 } from './toolbar'
@@ -65,7 +63,14 @@ const niivueOhifExtension: OhifExtension = {
   getCommandsModule: (params) => getNiivueCommandsModule(params),
   getToolbarModule: (params) => getNiivueToolbarModule(params),
   getPanelModule: (params) => getNiivuePanelModule(params),
-  onModeExit: () => resetQuant(),
+  // State that lives for a study: the next mode entry starts clean. Pane
+  // state goes with each pane (unmount).
+  onModeExit: () => {
+    resetQuant()
+    resetCalibration()
+    resetParkedContours()
+    resetReleasedRows()
+  },
   // Auto-registered at default scope; modes pull the packs in by reference
   // ('niivue.toolbarButtons' / 'niivue.toolbarSections').
   getCustomizationModule: () => [
@@ -96,15 +101,11 @@ export {
   NIIVUE_CAPTURE_BUTTON,
   NIIVUE_CLIP_PLANES,
   NIIVUE_CLIP_SECTION,
-  NIIVUE_COLORBAR_BUTTON,
   NIIVUE_COLORMAP_SECTION,
   NIIVUE_COLORMAPS,
   NIIVUE_CROSSHAIR_BUTTON,
   NIIVUE_INTERPOLATION_BUTTON,
-  NIIVUE_OVERLAY_BUTTON,
   NIIVUE_OVERLAY_MENU_BUTTON,
-  NIIVUE_RESET_BUTTON,
-  NIIVUE_RULER_BUTTON,
   NIIVUE_SLICE_TYPES,
   NIIVUE_SOP_CLASS_HANDLER_NAME,
   NIIVUE_STANDARD_COMMANDS,
@@ -113,7 +114,6 @@ export {
   NIIVUE_TOOLBAR_SECTIONS,
   NIIVUE_UNSUPPORTED_EVALUATOR,
   NIIVUE_VIEWPORT_NAME,
-  NIIVUE_VIEWS_SECTION,
   NIIVUE_WL_SECTION,
   NiivueViewport,
   niivueToolbarCustomization,

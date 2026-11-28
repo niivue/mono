@@ -1,7 +1,9 @@
 import { describe, expect, mock, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import { DRAG_MODE } from '@/NVConstants'
+import NiiVue from '@/NVControl'
 import type NiiVueGPU from '@/NVControlBase'
+import type { VectorAnnotation } from '@/NVTypes'
 import * as NVSliceLayout from '@/view/NVSliceLayout'
 import {
   crosshairPanThresholdCssPx,
@@ -10,7 +12,9 @@ import {
   dragForSlice,
   handleDragRelease,
   isCrosshairPanDrag,
+  updateDragOverlay,
 } from './dragModes'
+import { initInteraction } from './interactions'
 
 type FakeCanvas = {
   width: number
@@ -31,6 +35,7 @@ function fakeCtrl(opts: FakeCtrlOptions = {}) {
   const emit = mock((_type: string, _detail?: unknown) => {})
   const setCrosshairPos = mock((_mm: [number, number, number]) => {})
   const drawScene = mock(() => {})
+  const committed: VectorAnnotation[] = []
   const tile = {
     leftTopWidthHeight: [0, 0, 100, 100],
     mvpMatrix: mat4.create(),
@@ -52,7 +57,15 @@ function fakeCtrl(opts: FakeCtrlOptions = {}) {
       layout: { isRadiological: false },
       getVolumes: () => [],
       _dragOverlay: null,
-      _activeMeasurementScreenLine: null,
+      annotation: {
+        activeLabel: 1,
+        activeGroup: '',
+        style: {
+          fillColor: [1, 0, 0, 0.3],
+          strokeColor: [1, 0, 0, 1],
+          strokeWidth: 1,
+        },
+      },
     },
     dragStartXY: [10, 10] as [number, number],
     dragEndXY: [10, 10] as [number, number],
@@ -63,10 +76,12 @@ function fakeCtrl(opts: FakeCtrlOptions = {}) {
     emit,
     setCrosshairPos,
     drawScene,
+    _commitAnnotation: (ann: VectorAnnotation) => committed.push(ann),
   }
   return {
     ctrl: ctrl as unknown as NiiVueGPU,
     raw: ctrl,
+    committed,
     emit,
     setCrosshairPos,
     drawScene,
@@ -224,44 +239,36 @@ describe('handleDragRelease for crosshairPan', () => {
 
 describe('handleDragRelease for measurement', () => {
   const release = (endXY: [number, number]) => {
-    const { ctrl, raw, emit } = fakeCtrl({ withView: true })
-    Object.assign(raw.model, { completedMeasurements: [] })
-    Object.assign(raw.model.scene, { crosshairPos: [0.5, 0.5, 0.5] })
+    const { ctrl, raw, committed } = fakeCtrl({ withView: true })
     raw._activeDragMode = DRAG_MODE.measurement
     raw.dragEndXY = endXY
     handleDragRelease(ctrl)
-    const completed = emit.mock.calls.filter(
-      ([t]) => t === 'measurementCompleted',
-    )
-    return { raw, completed }
+    return { raw, committed }
   }
 
   test('a click without a drag records no measurement', () => {
-    const { raw, completed } = release([10, 10])
-    expect(raw.model).toHaveProperty('completedMeasurements', [])
-    expect(completed).toHaveLength(0)
+    const { raw, committed } = release([10, 10])
+    expect(committed).toHaveLength(0)
     expect(raw._activeDragMode).toBe(DRAG_MODE.none)
   })
 
-  test('a drag records one measurement of non-zero length', () => {
-    const { completed } = release([60, 10])
-    expect(completed).toHaveLength(1)
-    const m = completed[0][1] as { distance: number }
-    expect(m.distance).toBeGreaterThan(0)
+  test('a drag commits a measureLine annotation with its mm length', () => {
+    // 50 px of a 100 px tile spanning [-1, 1] mm.
+    const { committed } = release([60, 10])
+    expect(committed).toHaveLength(1)
+    expect(committed[0]?.shape?.type).toBe('measureLine')
+    expect(committed[0]?.stats?.length).toBeCloseTo(1)
   })
 })
 
 describe('handleDragRelease for angle', () => {
   const setup = () => {
-    const { ctrl, raw, emit } = fakeCtrl({ withView: true })
+    const { ctrl, raw, committed } = fakeCtrl({ withView: true })
     Object.assign(raw.model, {
-      completedAngles: [],
       ui: { measureLineColor: [1, 0, 0, 1], measureTextColor: [1, 0, 0, 1] },
     })
-    Object.assign(raw.model.scene, { crosshairPos: [0.5, 0.5, 0.5] })
     raw._activeDragMode = DRAG_MODE.angle
     raw._angleState = 'drawing_first_line'
-    const angles = () => emit.mock.calls.filter(([t]) => t === 'angleCompleted')
     /** Press at `from`, release at `to`, as the pointer handlers do. */
     const gesture = (from: [number, number], to: [number, number]) => {
       raw._activeDragMode = DRAG_MODE.angle
@@ -269,29 +276,29 @@ describe('handleDragRelease for angle', () => {
       raw.dragEndXY = to
       handleDragRelease(ctrl)
     }
-    return { raw, angles, gesture }
+    return { raw, committed, gesture }
   }
 
   test('a click without a drag starts no angle', () => {
-    const { raw, angles, gesture } = setup()
+    const { raw, committed, gesture } = setup()
     gesture([10, 10], [10, 10])
     expect(raw._angleState).toBe('none')
-    expect(angles()).toHaveLength(0)
+    expect(committed).toHaveLength(0)
   })
 
-  test('a zero-length or zero-degree second arm is ignored, then a real one places', () => {
-    const { raw, angles, gesture } = setup()
+  test('a zero-length or zero-degree second arm is ignored, then a real one commits a measureAngle', () => {
+    const { raw, committed, gesture } = setup()
     gesture([10, 50], [50, 50]) // first arm, vertex at (50, 50)
     expect(raw._angleState).toBe('drawing_second_line')
     gesture([50, 50], [50, 50]) // click on the vertex
     gesture([20, 50], [20, 50]) // click back along the first arm: 0 degrees
     expect(raw._angleState).toBe('drawing_second_line')
-    expect(angles()).toHaveLength(0)
+    expect(committed).toHaveLength(0)
     gesture([50, 20], [50, 20]) // click straight up: 90 degrees
     expect(raw._angleState).toBe('none')
-    expect(angles()).toHaveLength(1)
-    const a = angles()[0][1] as { angle: number }
-    expect(a.angle).toBeCloseTo(90)
+    expect(committed).toHaveLength(1)
+    expect(committed[0]?.shape?.type).toBe('measureAngle')
+    expect(committed[0]?.stats?.angle).toBeCloseTo(90)
   })
 })
 
@@ -344,4 +351,117 @@ test('contrast box orders the window for a negative rescale slope', () => {
   pick.mockRestore()
   // raw 5..15 -> 90..70
   expect([vol.calMin, vol.calMax]).toEqual([70, 90])
+})
+
+// Audit of the drag-mode migration: through the real commit (not a mocked
+// _commitAnnotation), a drag keeps any nonzero length and measures it on the
+// slice's own plane, tilted or not.
+describe('a drag measurement through the real commit', () => {
+  const drag = (
+    tilt: number,
+    start: number[],
+    end: number[],
+    keep?: (nv: NiiVue) => void,
+  ) => {
+    const nv = new NiiVue({ backend: 'webgl2' })
+    keep?.(nv)
+    nv.drawScene = () => {}
+    const voxelToWorld = mat4.fromXRotation(mat4.create(), tilt)
+    nv.model.volumes = [
+      {
+        dimsRAS: [3, 20, 20, 20],
+        pixDimsRAS: [1, 1, 1, 1],
+        matRAS: mat4.transpose(mat4.create(), voxelToWorld),
+      },
+    ] as never
+    nv.model.tex2mm = voxelToWorld
+    nv.model.mm2tex = mat4.invert(mat4.create(), voxelToWorld)
+    nv.view = {
+      screenSlices: [
+        {
+          leftTopWidthHeight: [0, 0, 100, 100],
+          mvpMatrix: mat4.fromXRotation(mat4.create(), -tilt),
+          planeNormal: [0, -Math.sin(tilt), Math.cos(tilt)],
+          planePoint: [0, 0, 0],
+          axCorSag: 0,
+        },
+      ],
+      legendLayout: null,
+      graphLayout: null,
+    } as never
+    nv.activeTileHit = { tileIndex: 0, isRender: false, sliceType: 0 } as never
+    nv.isDragging = true
+    nv._activeDragMode = DRAG_MODE.measurement
+    nv.dragStartXY = start as never
+    nv.dragEndXY = end as never
+    updateDragOverlay(nv)
+    preview = nv.model._annotationPreview
+    handleDragRelease(nv)
+    return nv.annotations
+  }
+  let preview: VectorAnnotation | null = null
+
+  test('a 0.2 mm drag is kept, and its end drags to 0.22 mm', () => {
+    let nv: NiiVue | undefined
+    const [ann] = drag(0, [10, 10], [20, 10], (made) => {
+      nv = made
+    })
+    expect(ann?.stats?.length).toBeCloseTo(0.2, 6)
+    if (!nv) throw new Error('no controller')
+    // The end handle drags through the same shape rule as the drag.
+    nv.canvas = {
+      width: 100,
+      height: 100,
+      style: {},
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 100,
+      }),
+      addEventListener() {},
+      removeEventListener() {},
+      setPointerCapture() {},
+      releasePointerCapture() {},
+    } as never
+    ;(nv.view as unknown as { hitTest: () => unknown }).hitTest = () => ({
+      tileIndex: 0,
+      isRender: false,
+      sliceType: 0,
+    })
+    nv.model.annotation.isHandleGrab = true
+    const g = globalThis as { window?: unknown }
+    const prior = g.window
+    g.window = {
+      devicePixelRatio: 1,
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    initInteraction(nv)
+    const at = (x: number) =>
+      ({
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        pointerId: 1,
+        detail: 1,
+        clientX: x,
+        clientY: 10,
+        shiftKey: false,
+        preventDefault() {},
+      }) as never
+    nv._eventListeners.pointerdown?.(at(20))
+    nv._eventListeners.pointermove?.(at(21))
+    nv._eventListeners.pointerup?.(at(21))
+    g.window = prior
+    expect(nv.annotations[0]?.stats?.length).toBeCloseTo(0.22, 6)
+  })
+
+  test('a drag on a 60 degree tilted slice keeps its world length', () => {
+    const [ann] = drag(Math.PI / 3, [50, 50], [50, 0])
+    expect(ann?.stats?.length).toBeCloseTo(1, 6)
+    // The live measurement is the annotation the release stores: one look.
+    expect(preview?.shape).toEqual(ann?.shape)
+    expect(preview?.style).toEqual(ann?.style)
+  })
 })

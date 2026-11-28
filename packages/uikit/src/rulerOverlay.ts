@@ -2,7 +2,7 @@
 // It composes the line and text draw paths: set a ruler spec, and each frame it
 // draws the arrowed baseline + ticks and the rotated label on the live backend.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { UIKitLineOverlay } from './lineOverlay'
 import { buildRuler, type RulerSpec } from './ruler'
 import type { UIKitFont } from './text/font'

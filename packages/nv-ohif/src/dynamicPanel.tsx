@@ -1,8 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
 import {
   anyFramesPane,
-  type Cine,
-  type CineServiceLike,
   groupPanes,
   isComputedShown,
   onFrame,
@@ -10,22 +8,13 @@ import {
   setFrame,
 } from './frames4D'
 import { ohifCommandsManager, ohifServices } from './niivueRegistry'
-import type { OhifExtensionParams } from './ohif-types'
+import type { OhifCine, OhifExtensionParams } from './ohif-types'
 import { onQuantChange } from './petQuant'
 import { RoiQuantPanel, TacPanel, TmtvPanel } from './quantPanels'
 
 // OHIF's 4D controls (cornerstone-dynamic-volume's play/pause, frame and fps
 // 1-50) for NiiVue panes: play and fps go through OHIF's cineService, frames
 // through frames4D. Acts on the active pane's 4D series, else the first shown.
-
-type Services = {
-  viewportGridService?: {
-    getActiveViewportId?: () => string | undefined
-    subscribe?: (event: string, cb: () => void) => { unsubscribe(): void }
-    EVENTS?: Record<string, string>
-  }
-  cineService?: CineServiceLike
-}
 
 const box = { display: 'flex', alignItems: 'center', gap: 6 } as const
 const button = {
@@ -67,9 +56,8 @@ export function DynamicVolumePanel({
   useEffect(() => onFrame(rerender), [])
   useEffect(() => onQuantChange(rerender), [])
   const [range, setRange] = useState<[number, number]>([1, 0])
-  const { viewportGridService: grid, cineService: cine } = (ohifServices(
-    servicesManager,
-  ) ?? {}) as Services
+  const { viewportGridService: grid, cineService: cine } =
+    ohifServices(servicesManager) ?? {}
   // The active pane picks the series. Events fire before the grid's state
   // updates (segHydration.tsx), so the reread waits a tick.
   useEffect(() => {
@@ -79,7 +67,7 @@ export function DynamicVolumePanel({
       : undefined
     return () => sub?.unsubscribe()
   }, [grid])
-  const active = grid?.getActiveViewportId?.()
+  const active = grid?.getActiveViewportId?.() ?? undefined
   const id = paneFrames(active) ? active : anyFramesPane()
   const frames = paneFrames(id)
   if (!id || !frames)
@@ -91,7 +79,7 @@ export function DynamicVolumePanel({
   const cines = cine?.getState?.()?.cines ?? {}
   const isPlaying = ids.some((i) => cines[i]?.isPlaying)
   const frameRate = cines[id]?.frameRate ?? 24
-  const setCine = (patch: Cine) => {
+  const setCine = (patch: OhifCine) => {
     for (const i of ids)
       cine?.setCine?.({ id: i, frameRate, isPlaying, ...patch })
     rerender()

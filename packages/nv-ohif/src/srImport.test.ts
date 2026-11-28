@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { generateShape, type VectorAnnotation } from '@niivue/niivue'
-import { reflectNiivueAnnotation } from './commands'
+import { reflectNiivueAnnotation } from './measurementReflection'
 import {
   registerNiivue,
   unregisterNiivue,

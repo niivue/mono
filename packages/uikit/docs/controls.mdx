@@ -15,14 +15,13 @@ When you use more than one kind, put the overlays in a control layer and
 register and attach the layer instead of each overlay:
 
 ```js
+import { loadDefaultFont, UIKitControls } from '@niivue/uikit'
 import {
-  loadDefaultFont,
   UIKitButtonOverlay,
-  UIKitControls,
   UIKitMenuOverlay,
   UIKitSliderOverlay,
   UIKitToggleOverlay,
-} from '@niivue/uikit'
+} from '@niivue/uikit/controls'
 
 const font = await loadDefaultFont()
 const units = { cssUnits: true }

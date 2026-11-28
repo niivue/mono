@@ -2,7 +2,7 @@
 // far (`captureScene`, which moves the frame onto a fresh pass) and draws it
 // enlarged in a circle. Nothing is drawn on a host without `captureScene`.
 
-import type { UIKitBackendHandle } from '@niivue/niivue'
+import type { UIKitBackendHandle } from '../hook'
 import type { MagnifierLayout } from '../magnifier'
 import { WGSL_LENS } from './shaders'
 

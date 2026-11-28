@@ -1,5 +1,3 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { expect } from '@playwright/test'
 import { webgpuUse } from './launchOptions'
 import { test } from './sharedPage'
@@ -9,13 +7,7 @@ import { test } from './sharedPage'
 // per-tile bitmaps it used to copy). A two-channel slide (red 200, green 100,
 // max) must show (200, 100, 0) in the minimap, and (200, 0, 0) once green is
 // hidden. The main view looks away from the slide, so only the minimap draws
-// it. Requires `nx build uikit` (see uikit-overlay-hook.spec.ts). WebGPU is
-// skipped without an adapter.
-
-const uikitDist = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../uikit/dist/uikit.js',
-)
+// it. WebGPU is skipped without an adapter.
 
 test.use(webgpuUse)
 
@@ -30,7 +22,7 @@ for (const backend of ['webgl2', 'webgpu'] as const)
         if (!adapter) return { skip: 'no WebGPU adapter' }
       }
       const { NVSlide, SlideRenderer, SlideRendererGPU } = await import('/src/index.ts')
-      const { UIKitSlideMinimapOverlay } = await import('/@fs${uikitDist}')
+      const { UIKitSlideMinimapOverlay } = await import('/src/uikit/entry.ts')
       const tiles = (n) => Array.from({ length: n }, (_, x) => ({ x, y: 0, width: 16, height: 16 }))
       const manifest = {
         id: 'mini', name: 'mini', width: 32, height: 16, dtype: 'uint8', channels: 'planar',

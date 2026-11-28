@@ -1,16 +1,16 @@
 import type { ImageFromUrlOptions } from '@niivue/niivue'
 import type { OhifDisplaySet } from './ohif-types'
 
-// Phase 1 (NIfTI) data bridge: turn an OHIF display set into the NiiVue volume load
-// spec, or null when it is not something we can load yet (e.g. a DICOM series — that
-// is Phase 2, building an NVImage from cornerstone's in-memory volume).
+// The volume-URL data bridge: turn an OHIF display set into a NiiVue volume load
+// spec, or null when it is not a volume URL (DICOM goes through dcm2niix,
+// dicomToNiivue.ts).
 //
 // A NIfTI/volume display set is data-source dependent, so we probe a few shapes:
 //   1. a direct `url` on the display set,
 //   2. a `url` on the first instance,
 // accepting only URLs NiiVue can load by extension (NIfTI + the other volume formats
 // NiiVue reads). DICOM (`.dcm`, DICOMweb `wado`/`dicomweb` refs, no extension) is
-// deliberately rejected here and handled in Phase 2.
+// deliberately rejected here.
 
 const NIIVUE_URL_EXTS = [
   '.nii',
@@ -38,7 +38,7 @@ function firstString(value: unknown): string | undefined {
 
 /**
  * Extract a NiiVue load spec from an OHIF display set, or null if this display set is
- * not a Phase-1 (NIfTI/volume-URL) case.
+ * not a NIfTI or volume URL.
  */
 export function displaySetToNiivue(
   displaySet: OhifDisplaySet,

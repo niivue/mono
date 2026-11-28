@@ -29,8 +29,7 @@ const gallery = defineCollection({
       const sync = async () => {
         const examples = collectGallery(repoRoot, buildGraph(repoRoot))
         // Each listed demo app's page and src/, whose script the gallery
-        // shows: under apps/, or a package's own demo pages (packages/uikit/).
-        // The examples folder is watched whole above.
+        // shows. The examples folder is watched whole above.
         for (const { source } of examples) {
           if (source.startsWith(EXAMPLES_DIR)) continue
           for (const p of [source, path.join(path.dirname(source), 'src')]) {

@@ -13,21 +13,25 @@
         "{projectRoot}/vite.config.js",
         "{projectRoot}/src/**/*",
         "{projectRoot}/public/**/*",
-        "{projectRoot}/scripts/**/*"
+        "{projectRoot}/scripts/**/*",
+        "bundledDeps"
       ],
       "outputs": ["{projectRoot}/dist"]
     },
     "dev": {
       "command": "bun run codegen:assets && bun run gen-fixtures && bunx --bun vite --open /examples/index.html",
-      "options": { "cwd": "{projectRoot}" }
+      "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit && bunx tsc -p examples/tsconfig.json",
       "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
       "inputs": [
         "typescript",
         "{projectRoot}/examples/**/*.js",
-        "{projectRoot}/examples/tsconfig.json"
+        "{projectRoot}/examples/tsconfig.json",
+        "bundledDeps"
       ]
     },
     "lint": {
@@ -41,7 +45,8 @@
     "test": {
       "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
-      "inputs": ["typescript"],
+      "dependsOn": ["^build"],
+      "inputs": ["typescript", "bundledDeps"],
       "outputs": ["{projectRoot}/coverage"]
     },
     "smoke": {
@@ -65,13 +70,15 @@
     "e2e": {
       "command": "bun run test:e2e",
       "options": { "cwd": "{projectRoot}" },
+      "dependsOn": ["^build"],
       "inputs": [
         "{projectRoot}/e2e/**/*",
         "{projectRoot}/playwright.config.ts",
         "{projectRoot}/src/**/*",
         "{projectRoot}/examples/**/*",
         "{projectRoot}/scripts/**/*",
-        "typescript"
+        "typescript",
+        "bundledDeps"
       ]
     }
   }

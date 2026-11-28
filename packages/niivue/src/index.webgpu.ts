@@ -12,6 +12,8 @@ export {
   makeLabelLut,
 } from './cmap/NVCmaps'
 export { polygonBoolean } from './annotation/clipper'
+// A measureLine or measureAngle from mm points, as the measuring tools build one.
+export { measureAnnotation } from './annotation/index'
 export { generateShape, isAnnotationErased } from './annotation/shapes'
 export { mmToSlice2D, slice2DToMM } from './annotation/sliceProjection'
 export {
@@ -22,8 +24,6 @@ export {
 // Opt-in: not in the static graph so apps that don't need the UX don't pay for it.
 // Import directly: `import { NVCanvasViewportController } from '@niivue/niivue/viewport'`
 export type { NVCanvasViewportControllerOptions } from './control/NVCanvasViewportController'
-// Programmatic measurement API (NiiVue.addMeasurement options)
-export type { AddMeasurementOptions } from './control/measurements'
 // Options accepted by reinitializeView (backend switch, anti-alias, DPR)
 export type { ReinitializeOptions } from './control/viewLifecycle'
 // loadDocument's resolveUrl: what a document URL refers to, and the hook
@@ -118,8 +118,6 @@ export type {
   CanvasViewport,
   CinematicOptions,
   ColorMap,
-  CompletedAngle,
-  CompletedMeasurement,
   CustomLayoutTile,
   DragReleaseInfo,
   FocusBox,
@@ -128,7 +126,6 @@ export type {
   LodCompensationLevel,
   LodCompensationReport,
   LUT,
-  MeasurementScreenLine,
   MeshAnimationTarget,
   MeshFromUrlOptions,
   MeshKind,
@@ -343,12 +340,12 @@ export {
   fetchAllenAtlasInfo,
   loadAllenAtlasVolumes,
 } from './volume/allenAtlasLoader'
-// UIKit overlay lifecycle hook — the seam @niivue/uikit widgets draw into
+// Overlay lifecycle hook (registerOverlayRenderer), the seam @niivue/uikit draws into
 export type {
-  UIKitBackendHandle,
-  UIKitOverlayBounds,
-  UIKitOverlayFrame,
-  UIKitOverlayRenderer,
+  OverlayBackendHandle,
+  OverlayBounds,
+  OverlayFrame,
+  OverlayRenderer,
 } from './view/NVOverlayHook'
 // Font atlas metrics: the shape of NVFontData.metrics
 export type { FontMetrics } from './view/NVFont'

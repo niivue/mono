@@ -10,10 +10,8 @@ import {
 } from '@niivue/niivue'
 import { contourGroup, contourPane } from './contourSeg'
 import { getActiveNiivueEntry, ohifServices } from './niivueRegistry'
-import type { OhifExtensionParams } from './ohif-types'
-import { invertAffine, rasGrid } from './quantify'
-
-const DEPTH_AXIS = [2, 1, 0] // axial, coronal, sagittal
+import type { OhifExtensionParams, OhifSegmentationService } from './ohif-types'
+import { apply, invertAffine, rasGrid, SLICE_AXIS } from './quantify'
 
 /** A shape's voxel depth along its slice axis, unrounded; undefined without a grid. */
 export function voxelDepth(
@@ -24,14 +22,7 @@ export function voxelDepth(
   const grid = base && rasGrid(base)
   const at = a.anchorMM
   if (!grid || !at) return undefined
-  const m = invertAffine(grid.affine)
-  const d = (DEPTH_AXIS[a.sliceType] as number) * 4
-  return (
-    (m[d] as number) * at[0] +
-    (m[d + 1] as number) * at[1] +
-    (m[d + 2] as number) * at[2] +
-    (m[d + 3] as number)
-  )
+  return apply(invertAffine(grid.affine), at, SLICE_AXIS[a.sliceType] as number)
 }
 
 /** A shape's slice: its plane and voxel depth (an oblique slice's mm depth varies). */
@@ -332,14 +323,6 @@ export function decimateRing(
 
 type Options = Record<string, unknown>
 type SegmentInfo = { segmentationId: string; segmentIndex: number }
-type Service = {
-  getActiveSegmentation(
-    viewportId: string,
-  ): { segmentationId: string } | undefined
-  getActiveSegment(viewportId: string): { segmentIndex: number } | undefined
-  getNextAvailableSegmentIndex(segmentationId: string): number
-  addSegment(segmentationId: string, config: { segmentIndex: number }): void
-}
 // cornerstone's contourSegmentation.LogicalOperation
 const LOGICAL: Record<number, LogicalOperation> = {
   0: 'union',
@@ -355,8 +338,7 @@ export function contourOpCommands(
   servicesManager: OhifExtensionParams['servicesManager'],
   back: (name: string, opts: Options) => unknown,
 ) {
-  const service = () =>
-    ohifServices(servicesManager)?.segmentationService as Service | undefined
+  const service = () => ohifServices(servicesManager)?.segmentationService
   // The active viewport's active NiiVue contour segment, if any.
   const active = () => {
     const entry = getActiveNiivueEntry(servicesManager)
@@ -365,8 +347,8 @@ export function contourOpCommands(
       entry && svc?.getActiveSegmentation(entry.viewportId)?.segmentationId
     const pane = contourPane(id)
     const index = entry && svc?.getActiveSegment(entry.viewportId)?.segmentIndex
-    return pane && id && index !== undefined
-      ? { nv: pane.nv, id, index, svc: svc as Service, pane }
+    return svc && pane && id && index !== undefined
+      ? { nv: pane.nv, id, index, svc, pane }
       : undefined
   }
   const onActive =
@@ -386,7 +368,7 @@ export function contourOpCommands(
   // ops would look for a cornerstone viewport.
   const orBack = (name: string, opts: Options) =>
     getActiveNiivueEntry(servicesManager) ? undefined : back(name, opts)
-  const newSegment = (svc: Service, id: string) => {
+  const newSegment = (svc: OhifSegmentationService, id: string) => {
     const segmentIndex = svc.getNextAvailableSegmentIndex(id)
     svc.addSegment(id, { segmentIndex })
     return segmentIndex

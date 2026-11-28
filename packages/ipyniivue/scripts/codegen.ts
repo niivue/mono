@@ -48,6 +48,10 @@ const NON_SERIALIZABLE_METHODS = new Map<string, string>([
     'cannot preempt: the widget command queue runs it after the load_drawing it would cancel',
   ],
   [
+    'setFont',
+    'argument is not JSON-serializable (NVFontData.metrics holds a Map of glyphs); use set_font_from_url',
+  ],
+  [
     'attachToCanvas',
     'arguments are not JSON-serializable (DOM handle or JS object)',
   ],

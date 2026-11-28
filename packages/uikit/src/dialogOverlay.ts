@@ -24,7 +24,6 @@
 // control layer's `destroy` tears a form down in one call. `removeChild`
 // first to keep a child alive.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import {
   DEFAULT_BUTTON_STYLE,
   layoutButton,
@@ -49,6 +48,7 @@ import {
   resolveDialogStyle,
   scaleDialog,
 } from './dialog'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { type UIKitBox, unscaleBox } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 import type { UIKitFont } from './text/font'

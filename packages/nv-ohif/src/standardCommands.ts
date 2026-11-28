@@ -4,10 +4,10 @@ import {
   applyWindowLevelPreset,
   invertBase,
   NIIVUE_SLICE_TYPES,
-  rasToLps,
   resetView,
   setViewportColormap,
 } from './commands'
+import { rasToLps } from './measurementReflection'
 import {
   getActiveNiivueEntry,
   type NiivueViewportEntry,
@@ -18,6 +18,7 @@ import {
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
 import { refreshOverlayPlanes } from './overlayPlanes'
+import { SLICE_AXIS } from './quantify'
 import {
   type FrameRef,
   frameAt,
@@ -94,19 +95,11 @@ function layerOptions(
   uid: string,
 ): Record<string, unknown> {
   const services = ohifServices(servicesManager)
-  const ds = (
-    services?.displaySetService as
-      | { getDisplaySetByUID?(uid: string): { Modality?: string } | undefined }
-      | undefined
-  )?.getDisplaySetByUID?.(uid)
+  const ds = services?.displaySetService?.getDisplaySetByUID?.(uid)
   if (!ds || ds.Modality === 'SEG') return {}
-  const maps = (
-    services?.customizationService as
-      | { getCustomization?(name: string): unknown }
-      | undefined
-  )?.getCustomization?.('cornerstone.modalityOverlayDefaultColorMaps') as
-    | { defaultSettings?: Record<string, { colormap?: string }> }
-    | undefined
+  const maps = services?.customizationService?.getCustomization?.(
+    'cornerstone.modalityOverlayDefaultColorMaps',
+  ) as { defaultSettings?: Record<string, { colormap?: string }> } | undefined
   const name = maps?.defaultSettings?.[ds.Modality ?? '']?.colormap ?? 'hsv'
   return { colormap: { name, opacity: 0.9 } }
 }
@@ -288,7 +281,6 @@ function jumpToVoxelSlice(
 }
 
 // RAS voxel axis along each 2D plane's normal (axial z, coronal y, sagittal x).
-const NORMAL_AXIS = [2, 1, 0]
 
 /**
  * OHIF's nextImage / previousImage (up / down): step `delta` images in
@@ -326,7 +318,7 @@ export function scrollImage(
     }
   }
   const axis =
-    NORMAL_AXIS[nv.sliceType] ?? NORMAL_AXIS[acquisitionSliceType(nv) ?? -1]
+    SLICE_AXIS[nv.sliceType] ?? SLICE_AXIS[acquisitionSliceType(nv) ?? -1]
   if (axis === undefined) return false
   const step = [0, 0, 0]
   step[axis] = delta
@@ -458,18 +450,7 @@ export function getStandardCommandDefinitions({
     // hung after its own (the data overlay menu's Add: a SEG or RTSTRUCT layer).
     addDisplaySetAsLayer: {
       commandFn: (opts: StandardOptions = {}) => {
-        const grid = ohifServices(servicesManager)?.viewportGridService as
-          | {
-              getActiveViewportId(): string
-              getDisplaySetsUIDsForViewport(id: string): string[]
-              getState?(): {
-                viewports?: Map<
-                  string,
-                  { displaySetOptions?: Record<string, unknown>[] }
-                >
-              }
-            }
-          | undefined
+        const grid = ohifServices(servicesManager)?.viewportGridService
         const viewportId = opts.viewportId ?? grid?.getActiveViewportId()
         const uid = opts.displaySetInstanceUID
         const commands = ohifCommandsManager(commandsManager)
@@ -479,7 +460,7 @@ export function getStandardCommandDefinitions({
           !getActiveNiivueEntry(servicesManager, viewportId)
         )
           return commands?.runCommand?.('addDisplaySetAsLayer', opts, 'DEFAULT')
-        const uids = grid.getDisplaySetsUIDsForViewport(viewportId) ?? []
+        const uids = grid.getDisplaySetsUIDsForViewport?.(viewportId) ?? []
         if (typeof uid !== 'string' || uids.includes(uid)) return
         // Without the grid's state, leave the layers' options to OHIF.
         const state = grid.getState?.()

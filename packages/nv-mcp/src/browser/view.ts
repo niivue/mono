@@ -309,23 +309,6 @@ export interface GraphRange {
   isWindowed: boolean
 }
 
-/** A completed distance measurement: NiiVue's `CompletedMeasurement`. */
-export interface Measurement {
-  startMM: [number, number, number]
-  endMM: [number, number, number]
-  distance: number
-  sliceIndex: number
-  sliceType: number
-  slicePosition: number
-}
-
-/** What `View.addMeasurement` takes beside the two ends. */
-export interface MeasurementOptions {
-  sliceIndex?: number
-  sliceType?: number
-  slicePosition?: number
-}
-
 /** A box NiiVue outlines on the render: corners in mm, colour 0 to 1, edges in pixels. */
 export interface FocusBox {
   min: [number, number, number]
@@ -803,7 +786,7 @@ export interface View {
   // Vector annotations.
   annotations?: ReadonlyArray<Annotation>
   selectedAnnotation?: string | null
-  addAnnotation?(annotation: Annotation): unknown
+  addAnnotation?(annotation: Annotation, isUndoable?: boolean): unknown
   removeAnnotation?(id: string, isUndoable?: boolean): unknown
   removeAnnotations?(ids: readonly string[], isUndoable?: boolean): unknown
   replaceAnnotations?(
@@ -826,18 +809,6 @@ export interface View {
   focusBox?: FocusBox | null
   lodBoxes?: FocusBox[] | null
   planeOutlines?: PlaneOutline[]
-
-  // Measurements.
-  getMeasurements?(): readonly Measurement[]
-  addMeasurement?(
-    start: [number, number, number],
-    end: [number, number, number],
-    options?: MeasurementOptions,
-  ): number
-  removeMeasurement?(index: number): unknown
-  clearMeasurements?(): unknown
-  clearAngles?(): unknown
-  clearDistanceMeasurements?(): unknown
 
   // Documents and saving, each a download the browser makes.
   saveDocument?(filename?: string, options?: DocumentOptions): unknown

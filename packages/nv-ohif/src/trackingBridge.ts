@@ -12,14 +12,6 @@ const NO_TRACKING = createContext<unknown>(null)
 
 type Send = (event: string, payload: Record<string, unknown>) => void
 
-interface MeasurementServiceLike {
-  EVENTS: Record<string, string>
-  subscribe: (
-    event: string,
-    cb: (e: { measurement: Record<string, unknown> }) => void,
-  ) => { unsubscribe: () => void }
-}
-
 /**
  * Forward one added measurement on a series the pane shows (`shownSeries`) to
  * the tracker, from the active pane only.
@@ -69,12 +61,8 @@ export function useMeasurementTracking(
 
   useEffect(() => {
     const services = ohifServices(servicesManager)
-    const ms = services?.measurementService as
-      | MeasurementServiceLike
-      | undefined
-    const grid = services?.viewportGridService as
-      | { getState: () => { activeViewportId?: string } }
-      | undefined
+    const ms = services?.measurementService
+    const grid = services?.viewportGridService
     if (!ms || !sendRef.current) return
     const onAdded = ({
       measurement,
@@ -83,7 +71,7 @@ export function useMeasurementTracking(
     }) =>
       forwardMeasurement(
         sendRef.current,
-        grid?.getState().activeViewportId,
+        grid?.getState?.().activeViewportId,
         viewportId,
         (getNiivueEntry(viewportId)?.displaySets ?? []).map(
           (ds) => ds.SeriesInstanceUID,

@@ -6,7 +6,8 @@
 // as one step that joins that group, so a single undo restores them all.
 import type { NiiVue } from '@niivue/niivue'
 import { useEffect } from 'react'
-import { removeAnnotationsForRows } from './commands'
+import { removeAnnotationsForRows } from './measurementReflection'
+import { cornerstoneLibraries } from './niivueRegistry'
 import type { OhifExtensionManager, OhifServicesManager } from './ohif-types'
 
 type Memo = {
@@ -28,21 +29,14 @@ type HistoryMemo = {
   redoAvailable?: number
 }
 
-const CORNERSTONE_COMMON = '@ohif/extension-cornerstone.utilityModule.common'
-
 export function historyMemo(
   extensionManager: OhifExtensionManager | undefined,
 ): HistoryMemo | undefined {
-  const entry = extensionManager?.getModuleEntry(CORNERSTONE_COMMON) as
-    | { exports?: { getCornerstoneLibraries?: () => unknown } }
-    | undefined
-  const libs = entry?.exports?.getCornerstoneLibraries?.() as
-    | {
-        cornerstone?: {
-          utilities?: { HistoryMemo?: { DefaultHistoryMemo?: HistoryMemo } }
-        }
-      }
-    | undefined
+  const libs = cornerstoneLibraries<{
+    cornerstone?: {
+      utilities?: { HistoryMemo?: { DefaultHistoryMemo?: HistoryMemo } }
+    }
+  }>(extensionManager)
   return libs?.cornerstone?.utilities?.HistoryMemo?.DefaultHistoryMemo
 }
 
@@ -111,12 +105,12 @@ export function mirrorAnnotationHistory(
  * Redo the step cleared comes back. The handler has already removed the add.
  */
 export function withdrawLastStep(
-  nv: Pick<NiiVue, 'annotationUndoTop' | '_annotationUndoStack'>,
+  nv: Pick<NiiVue, 'annotationUndoTop' | 'discardAnnotationStep'>,
   extensionManager: OhifExtensionManager | undefined,
 ): void {
   const seq = nv.annotationUndoTop
   if (seq === undefined) return
-  nv._annotationUndoStack.discard(seq)
+  nv.discardAnnotationStep(seq)
   const memo = historyMemo(extensionManager)
   const { ring, position, size } = memo ?? {}
   if (!memo || !ring || position === undefined || !size) return
@@ -139,22 +133,12 @@ export function useAnnotationHistory(
   )
 }
 
-type Row = { uid: string; source?: { name?: string } }
-type MeasurementService = {
-  getMeasurements: () => Row[]
-  getMeasurement: (uid: string) => Row | undefined
-  clearMeasurements: (...args: unknown[]) => unknown
-  __nvClear?: true
-}
-
 /** Make OHIF's clearMeasurements remove its NiiVue rows' annotations (once). */
 export function installClearHistory(
   servicesManager: OhifServicesManager | undefined,
   extensionManager: OhifExtensionManager | undefined,
 ): void {
-  const ms = servicesManager?.services?.measurementService as
-    | MeasurementService
-    | undefined
+  const ms = servicesManager?.services?.measurementService
   if (!ms?.clearMeasurements || ms.__nvClear) return
   ms.__nvClear = true
   const clear = ms.clearMeasurements.bind(ms)

@@ -16,7 +16,7 @@ const {
   jumpToNiivueMeasurement,
   reflectNiivueAnnotation,
   reflectedRowUid,
-} = await import('./commands')
+} = await import('./measurementReflection')
 const { DRAG_MODE, generateShape } = await import('@niivue/niivue')
 const {
   registerNiivue,

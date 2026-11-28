@@ -2,7 +2,7 @@ import { expect, spyOn, test } from 'bun:test'
 import { mat4 } from 'gl-matrix'
 import * as Annotation from '@/annotation'
 import { generateShape } from '@/annotation/index'
-import { buildLivewireCost } from '@/annotation/livewire'
+import { buildScissorsCost } from '@/annotation/livewire'
 import NiiVue from '@/NVControl'
 import * as Layout from '@/view/NVSliceLayout'
 import { initInteraction } from './interactions'
@@ -29,7 +29,7 @@ function controller(tool: string, tilt = false) {
   } as never
   nv.model.annotation.isEnabled = true
   nv.model.annotation.tool = tool as never
-  nv.model.annotation.mergesOverlaps = false
+  nv.model.annotation.mergedGroups = []
   nv.model.annotation.isClickToPlace = true
   nv.model.volumes = [
     { dimsRAS: [3, 100, 100, 100], pixDimsRAS: [1, 1, 1, 1] },
@@ -334,7 +334,7 @@ test('a close click in a bounded viewer commits a spline', () => {
     nv.model.annotation.isEnabled = true
     nv.model.annotation.tool = 'spline'
     nv.model.annotation.isClickToPlace = true
-    nv.model.annotation.mergesOverlaps = false
+    nv.model.annotation.mergedGroups = []
     nv.model.volumes = [
       { dimsRAS: [3, 100, 100, 100], pixDimsRAS: [1, 1, 1, 1] },
     ] as never
@@ -463,7 +463,7 @@ test('live wire needs three clicks to close', () =>
     const id = mat4.create()
     const slice = spyOn(Annotation, 'extractLivewireSlice').mockReturnValue({
       image: new Float32Array(w * w),
-      cost: buildLivewireCost(new Float32Array(w * w), w, w),
+      scissors: buildScissorsCost(new Float32Array(w * w), w, w, 0, 1),
       width: w,
       height: w,
       ax0: 0,
@@ -714,7 +714,7 @@ test('a hidden shape stays put when its selected handle is dragged', () =>
 test('overlapping shapes on one oblique slice merge', () =>
   withStubs(() => {
     const nv = controller('rectangle', true)
-    nv.model.annotation.mergesOverlaps = true
+    nv.model.annotation.mergedGroups = null
     const onSlice = (x: number, y: number) => [x, y, Math.sqrt(3) * y]
     press(nv, onSlice(0, 0))
     press(nv, onSlice(10, 10))
@@ -728,7 +728,7 @@ test('overlapping shapes on one oblique slice merge', () =>
 test('a stroke swallowed by a locked shape records no undo step', () =>
   withStubs(() => {
     const nv = controller('rectangle')
-    nv.model.annotation.mergesOverlaps = true
+    nv.model.annotation.mergedGroups = null
     press(nv, [0, 0, 0])
     press(nv, [20, 20, 0])
     nv.model.annotation.tool = 'measureLine'

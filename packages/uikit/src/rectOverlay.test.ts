@@ -8,7 +8,7 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
-import type { UIKitOverlayFrame } from '@niivue/niivue'
+import type { UIKitOverlayFrame } from './hook'
 import { buildRect } from './rect'
 import { UIKitRectOverlay } from './rectOverlay'
 import { GlRectRenderer } from './render/glRectRenderer'

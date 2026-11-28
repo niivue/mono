@@ -31,11 +31,8 @@ def _make_args(*values: Any) -> list[Any]:
 # layout ticks like `canvasResize`) are filtered out so subscribing to
 # them raises instead of silently never firing.
 NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
-    "angleCompleted",
-    "annotationAdded",
     "annotationChanged",
     "annotationHistoryPush",
-    "annotationRemoved",
     "azimuthElevationChange",
     "change",
     "chunkStreamIdle",
@@ -50,8 +47,6 @@ NIIVUE_EVENT_NAMES: frozenset[str] = frozenset({
     "frameChange",
     "graphRangeChange",
     "locationChange",
-    "measurementCompleted",
-    "measurementRemoved",
     "meshLoaded",
     "meshRemoved",
     "meshUpdated",
@@ -123,12 +118,9 @@ affect whether annotations *render* — they always do."""
     annotation_is_erasing = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_is_handle_grab = traitlets.Bool(None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.isHandleGrab}."""
-    annotation_is_livewire_scissors = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    """See {@link AnnotationConfig.isLivewireScissors}. Applies from the next live wire."""
     annotation_is_visible_in_3d = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_merged_groups = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True)
     """See {@link AnnotationConfig.mergedGroups}."""
-    annotation_merges_overlaps = traitlets.Bool(None, allow_none=True).tag(sync=True)
     annotation_tool = traitlets.Enum(["freehand", "ellipse", "rectangle", "line", "arrow", "measureEllipse", "measureRect", "measureLine", "circle", "measureCircle", "spline", "measureSpline", "livewire", "measureLivewire", "bidirectional", "measureBidirectional", "measurePoint", "measureAngle", "measureCobbAngle"], None, allow_none=True).tag(sync=True)
     azimuth = traitlets.Float(None, allow_none=True).tag(sync=True)
     background_color = traitlets.List(trait=traitlets.Float(None, allow_none=True), default_value=None, minlen=4, maxlen=4, allow_none=True).tag(sync=True)
@@ -180,7 +172,6 @@ a 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm)."""
     hero_slice_type = traitlets.Float(None, allow_none=True).tag(sync=True)
     is_3d_crosshair_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_annotation_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    is_annotation_fill_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_clip_plane_cutaway = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_colorbar_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_cross_lines_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -192,7 +183,6 @@ a 3D ball across slices (`PEN_SHAPE.SPHERE`, round in mm)."""
     is_graph_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_toggle_enabled = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_legend_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
-    is_measurement_drawn = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_measure_units_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_mosaic_centered = traitlets.Bool(None, allow_none=True).tag(sync=True)
     is_orientation_text_visible = traitlets.Bool(None, allow_none=True).tag(sync=True)
@@ -292,8 +282,8 @@ pixels times this are canvas pixels."""
     is_animating = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True while an animateTo transition is running."""
     is_annotation_in_progress = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
-    """A multi-click contour, bidirectional or click-placed shape is half-drawn,
-or an annotation is being dragged."""
+    """A multi-click contour, bidirectional, click-placed shape or drag-mode
+angle is half-drawn, or an annotation is being dragged."""
     is_anti_alias = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     is_destroyed = traitlets.Bool(None, allow_none=True).tag(sync=True, o2py_readonly=True)
     """True once {@link destroy} has run. Lets external holders (e.g. an
@@ -317,8 +307,15 @@ and its volumes alive."""
     volume_write_extensions = traitlets.List(trait=traitlets.Unicode(None, allow_none=True), default_value=None, allow_none=True).tag(sync=True, o2py_readonly=True)
 
     # Command methods
-    def add_annotation(self, annotation: Any) -> None:
-        self.send({"cmd": "addAnnotation", "args": _make_args(annotation)})
+    def add_annotation(self, annotation: Any, is_undoable: Any = _UNSET) -> None:
+        """Add an annotation; `isUndoable` records an annotationUndo step first.
+
+        Parameters
+        ----------
+        annotation : VectorAnnotation
+        is_undoable : boolean
+        """
+        self.send({"cmd": "addAnnotation", "args": _make_args(annotation, is_undoable)})
 
     async def add_colormap(self, name: Any, cmap: Any) -> Any:
         """Register a colormap by name so it becomes available to `setVolume({ colormap: name })`, `nv1.colormaps`, colorbars, mesh layers, and so on.
@@ -375,30 +372,6 @@ and its volumes alive."""
 
     def add_image(self, path_or_file: Any, options: Any = _UNSET) -> None:
         self.send({"cmd": "addImage", "args": _make_args(path_or_file, options)})
-
-    async def add_measurement(self, start_mm: Any, end_mm: Any, opts: Any = _UNSET) -> Any:
-        """Add a distance measurement between two mm-space points, exactly as if it had been drawn interactively in `DRAG_MODE.measurement`: it renders on every 2D slice tile whose slice plane contains both endpoints, emits `measurementCompleted` (after the mutation), and redraws.
-
-        `opts` may pin
-        the slice metadata (`sliceIndex`/`sliceType`/`slicePosition`); omitted
-        fields are derived from the segment geometry (see
-        control/measurements.buildMeasurement). An explicit `sliceType` must be a
-        2D orientation (`SLICE_TYPE.AXIAL`/`CORONAL`/`SAGITTAL`); a non-2D value
-        (`MULTIPLANAR`/`RENDER`/`NONE`) warns and is ignored, deriving the
-        orientation from geometry. Returns the new measurement's index
-        (valid for {@link removeMeasurement} until an earlier one is removed).
-
-        Parameters
-        ----------
-        start_mm : [number, number, number]
-        end_mm : [number, number, number]
-        opts : Partial<Pick<CompletedMeasurement, \"sliceIndex\" | \"sliceType\" | \"slicePosition\">>
-
-        Returns
-        -------
-        number
-        """
-        return await self._request("addMeasurement", _make_args(start_mm, end_mm, opts))
 
     def add_mesh(self, mesh: Any) -> None:
         self.send({"cmd": "addMesh", "args": _make_args(mesh)})
@@ -675,11 +648,6 @@ and its volumes alive."""
         """
         return await self._request("chunkTimingStats", [])
 
-    def clear_angles(self) -> None:
-        """Clear completed angles only, leaving distance measurements in place.
-        """
-        self.send({"cmd": "clearAngles", "args": []})
-
     def clear_annotation_history(self) -> None:
         """Forget the annotation undo/redo steps: after a load whose shapes earlier steps lack (undoing one would drop them), as loadAnnotationsJSON does.
         """
@@ -699,16 +667,6 @@ and its volumes alive."""
         """Clear any custom layout and revert to built-in layout modes.
         """
         self.send({"cmd": "clearCustomLayout", "args": []})
-
-    def clear_distance_measurements(self) -> None:
-        """Clear completed distance measurements only, leaving angles in place.
-        """
-        self.send({"cmd": "clearDistanceMeasurements", "args": []})
-
-    def clear_measurements(self) -> None:
-        """Clear both completed distance measurements and completed angles.
-        """
-        self.send({"cmd": "clearMeasurements", "args": []})
 
     def clear_slide_drawing(self) -> None:
         """Clear all slide annotation pixels.
@@ -801,6 +759,15 @@ and its volumes alive."""
 
     def destroy(self) -> None:
         self.send({"cmd": "destroy", "args": []})
+
+    def discard_annotation_step(self, seq: Any) -> None:
+        """Withdraw undo step `seq` while it is still the top one (a host dropping a step it just caused), restoring the redo steps that push cleared.
+
+        Parameters
+        ----------
+        seq : number
+        """
+        self.send({"cmd": "discardAnnotationStep", "args": _make_args(seq)})
 
     def draw_add_undo_bitmap(self) -> None:
         """Push the current drawing bitmap onto the undo stack, so the next `drawUndo()` restores it.
@@ -966,23 +933,6 @@ and its volumes alive."""
         GraphRangeChangeDetail | null
         """
         return await self._request("getGraphRange", [])
-
-    async def get_measurements(self) -> Any:
-        """All completed distance measurements, in insertion order (an entry's position is the index {@link addMeasurement} returned and {@link removeMeasurement}/{@link pickMeasurement} use).
-
-        Returns a snapshot:
-        a fresh array of fresh entries, so editing it (an endpoint tuple included)
-        cannot change what is rendered, and it does not update when measurements
-        are later added, removed or cleared. Call it again for the current list,
-        and use {@link addMeasurement}/{@link removeMeasurement}/
-        {@link clearMeasurements} to change it so events fire and the scene
-        redraws.
-
-        Returns
-        -------
-        readonly CompletedMeasurement[]
-        """
-        return await self._request("getMeasurements", [])
 
     async def get_mesh_shader(self, mesh_index: Any) -> Any:
         return await self._request("getMeshShader", _make_args(mesh_index))
@@ -1415,6 +1365,24 @@ and its volumes alive."""
         """
         self.send({"cmd": "moveVolumeUp", "args": _make_args(volume_index)})
 
+    async def pick_annotation(self, x: Any, y: Any, opts: Any = _UNSET) -> Any:
+        """The annotation drawn under canvas point `x, y` (device px, as clientToCanvas returns): inside its outline, or within `tolerancePx` CSS px of an edge.
+
+        The nearest wins; ties go to the earlier annotation. Shapes the
+        host hides and a shape being drawn are never picked.
+
+        Parameters
+        ----------
+        x : number
+        y : number
+        opts : { tolerancePx?: number | undefined; accept?: ((annotation: VectorAnnotation) => boolean) | undefined; }
+
+        Returns
+        -------
+        { annotation: VectorAnnotation; distance: number; } | null
+        """
+        return await self._request("pickAnnotation", _make_args(x, y, opts))
+
     async def pick_at(self, x: Any, y: Any, options: Any = _UNSET) -> Any:
         """Depth-pick the canvas pixel `[x, y]` (device pixels, as a double-click does): the world point of the first drawn volume voxel or mesh under it.
 
@@ -1453,34 +1421,6 @@ and its volumes alive."""
         ExplodedBlockPick | null
         """
         return await self._request("pickExplodedBlock", _make_args(client_x, client_y))
-
-    async def pick_measurement(self, canvas_x: Any, canvas_y: Any, radius_px: Any = _UNSET) -> Any:
-        """Find the completed distance measurement under a canvas point, e.g.
-
-        to
-        implement click-to-select or click-to-delete. Each measurement is projected
-        with the same per-tile filtering and matrices the renderer uses to draw it,
-        so the hit-test agrees with what is on screen. Returns the index of the
-        closest measurement whose projected line is within `radiusPx` (default 8)
-        canvas pixels of the point, or null if none is. Requires a rendered frame
-        (the projection uses matrices cached during render).
-
-        `canvasX`/`canvasY` are canvas BACKING-STORE pixels, the same convention
-        as {@link hitTest} and {@link canvasToMM}, not CSS pixels: a pointer
-        event's `offsetX`/`offsetY` are off by the device pixel ratio on any
-        display above 1x. Convert with {@link clientToCanvas} first.
-
-        Parameters
-        ----------
-        canvas_x : number
-        canvas_y : number
-        radius_px : number | undefined
-
-        Returns
-        -------
-        number | null
-        """
-        return await self._request("pickMeasurement", _make_args(canvas_x, canvas_y, radius_px))
 
     async def pick_ray(self, x: Any, y: Any) -> Any:
         """The world ray (mm) under canvas pixel `[x, y]` (device pixels, as {@link pickAt}) on the 3D render tile: `origin` on the near plane, unit `dir` into the scene.
@@ -1583,18 +1523,6 @@ and its volumes alive."""
         """
         self.send({"cmd": "removeAnnotations", "args": _make_args(ids, is_undoable)})
 
-    def remove_measurement(self, index: Any) -> None:
-        """Remove a single completed distance measurement by index, emitting `measurementRemoved` before the mutation (so the listener can still reach it) and redrawing.
-
-        An index that is not an integer in bounds warns and
-        no-ops, matching {@link removeVolume}.
-
-        Parameters
-        ----------
-        index : number
-        """
-        self.send({"cmd": "removeMeasurement", "args": _make_args(index)})
-
     def remove_mesh(self, mesh_index: Any) -> None:
         self.send({"cmd": "removeMesh", "args": _make_args(mesh_index)})
 
@@ -1622,7 +1550,7 @@ and its volumes alive."""
         self.send({"cmd": "removeVolume", "args": _make_args(volume_index)})
 
     def replace_annotations(self, ids: Any, added: Any, is_undoable: Any = _UNSET) -> None:
-        """Replace annotations `ids` with `added` as one change (one annotationUndo step when `isUndoable`), as a host's edit of several shapes at once (a segment operation); emits annotationChanged with action 'draw'.
+        """Replace annotations `ids` with `added` as one change (one annotationUndo step when `isUndoable`), as a host's edit of several shapes at once (a segment operation); emits annotationChanged with action 'replace'.
 
         Parameters
         ----------
@@ -1840,23 +1768,6 @@ and its volumes alive."""
 
     def set_drag_mode(self, mode: Any) -> None:
         self.send({"cmd": "setDragMode", "args": _make_args(mode)})
-
-    async def set_font(self, font: Any) -> Any:
-        """Swap the active font atlas.
-
-        The font is infrastructure-level configuration
-        (GPU-owned atlas texture + metrics map), so switching requires a full view
-        rebuild — use this method instead of mutating `opts.font` directly.
-
-        Parameters
-        ----------
-        font : NVFontData
-
-        Returns
-        -------
-        Promise<boolean>
-        """
-        return await self._request("setFont", _make_args(font))
 
     async def set_font_from_url(self, urls: Any) -> Any:
         """Fetch an MSDF font atlas (PNG + JSON metrics pair) from URLs and swap it in as the active font.

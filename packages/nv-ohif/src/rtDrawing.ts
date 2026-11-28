@@ -1,6 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import type { OhifDisplaySet } from './ohif-types'
-import { invertAffine } from './quantify'
+import { lpsToVoxelOf } from './quantify'
 import {
   type PanelSegment,
   panelColormap,
@@ -80,6 +80,32 @@ export function styleDrawing(
   return { restore, restyle }
 }
 
+/**
+ * styleDrawing as a segmentation shows: `segments` coloured as the panel
+ * lists them (when there are any), at the SEG fill and rim opacities.
+ */
+export function styleSegments(
+  nv: Parameters<typeof styleDrawing>[0] & Pick<NiiVue, 'addColormap'>,
+  colormapName: string,
+  segments: readonly PanelSegment[],
+): ReturnType<typeof styleDrawing> {
+  return styleDrawing(nv, () => {
+    if (segments.length)
+      nv.drawColormap = nv.addColormap(
+        colormapName,
+        panelColormap(
+          segments.map((s) => ({
+            ...s,
+            color: [...s.rgb, 255],
+            visible: true,
+          })),
+        ),
+      )
+    nv.drawOpacity = SEG_FILL_OPACITY
+    nv.drawRimOpacity = SEG_RIM_OPACITY
+  })
+}
+
 /** Write the drawing's style as its owner, so a later restore still undoes it. */
 export type Restyle = (write: () => void) => void
 
@@ -104,20 +130,14 @@ export function lpsToVoxel(vox2mm: Vox2mm): number[] | null {
   const cy = vox2mm([0, 1, 0])
   const cz = vox2mm([0, 0, 1])
   if (!o || !cx || !cy || !cz) return null
-  // Voxel->LPS: NiiVue's voxel->RAS with x and y flipped.
-  const flip = (v: number, i: number) => (i < 2 ? -v : v)
-  const [x, y, z] = [cx, cy, cz].map((p) =>
-    p.map((v, i) => flip(v - (o[i] ?? 0), i)),
-  )
-  const m = invertAffine(
+  return lpsToVoxelOf(
     [0, 1, 2].flatMap((r) => [
-      x?.[r] ?? 0,
-      y?.[r] ?? 0,
-      z?.[r] ?? 0,
-      flip(o[r] ?? 0, r),
+      (cx[r] as number) - (o[r] as number),
+      (cy[r] as number) - (o[r] as number),
+      (cz[r] as number) - (o[r] as number),
+      o[r] as number,
     ]),
   )
-  return m.every(Number.isFinite) ? m : null
 }
 
 /**
@@ -709,20 +729,11 @@ export function startRtDrawing(
     // createEmptyDrawing arms the pen; the pane's tools keep the left button.
     nv.drawIsEnabled = false
     const showOnly = draw(bitmap)
-    const style = styleDrawing(nv, () => {
-      nv.drawColormap = nv.addColormap(
-        `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
-        panelColormap(
-          segments.map((s) => ({
-            ...s,
-            color: [...s.rgb, 255],
-            visible: true,
-          })),
-        ),
-      )
-      nv.drawOpacity = SEG_FILL_OPACITY
-      nv.drawRimOpacity = SEG_RIM_OPACITY
-    })
+    const style = styleSegments(
+      nv,
+      `rt-${rt.displaySetInstanceUID ?? rt.SeriesInstanceUID ?? ''}`,
+      segments,
+    )
     restoreStyle = style.restore
     nv.refreshDrawing()
     stopShown = options.onShown?.(

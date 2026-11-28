@@ -28,11 +28,14 @@ const demo: Demo = async (canvas, { ui, asset }) => {
   nv.addEventListener('dragRelease', (e) => {
     show(`dragRelease: ${e.detail.mmLength.toFixed(1)} mm`)
   })
-  nv.addEventListener('measurementCompleted', (e) => {
-    show(`measurementCompleted: ${e.detail.distance.toFixed(1)} mm`)
-  })
-  nv.addEventListener('angleCompleted', (e) => {
-    show(`angleCompleted: ${e.detail.angle.toFixed(1)} degrees`)
+  // A finished measurement or angle is a measure annotation.
+  nv.addEventListener('annotationChanged', (e) => {
+    const id = e.detail.added[0]
+    const stats = nv.annotations.find((a) => a.id === id)?.stats
+    if (stats?.length !== undefined)
+      show(`measureLine: ${stats.length.toFixed(1)} mm`)
+    else if (stats?.angle !== undefined)
+      show(`measureAngle: ${stats.angle.toFixed(1)} degrees`)
   })
   return nv
 }

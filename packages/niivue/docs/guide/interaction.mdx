@@ -43,9 +43,9 @@ nv.primaryDragMode = DRAG_MODE.measurement
 ```
 
 `setDragMode('pan')` also accepts a mode by name, but it sets the
-**secondary** mode only. `clearMeasurements()` removes finished measurements
-and angles (`clearDistanceMeasurements()` and `clearAngles()` remove one
-kind).
+**secondary** mode only. A finished measurement or angle is a `measureLine`
+or `measureAngle` annotation: undo, save and remove it like any annotation
+(`removeAnnotations` with the ids from `annotations`).
 
 Drag modes apply to 2D slices. In the 3D render, a left drag rotates the
 view, a right drag turns the active clip plane, and a double-click moves the
@@ -97,8 +97,8 @@ The events you will use most:
   per-volume `values`, and a ready-made `string`.
 - `dragRelease`: a drag ended on a slice, with its start and end points and
   `mmLength`.
-- `measurementCompleted` and `angleCompleted`: a measurement finished, with
-  its `distance` or `angle`.
+- `annotationChanged`: a measurement or angle finished (action `draw`; its
+  `stats.length` or `stats.angle`), or another annotation change.
 - `pointerUp`: any button release, with canvas `x`, `y` and `button`.
 - `sliceTypeChange`, `azimuthElevationChange`, `clipPlaneChange` and
   `frameChange`: the view or 4D frame changed.

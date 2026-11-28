@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import ubuntu from '../assets/fonts/Ubuntu.json'
+import { parseFont, UBUNTU_FONT_METRICS as ubuntu } from '@niivue/uikit'
 import {
   buildTextLayout,
   emptyBatch,
   FLOATS_PER_PANEL,
   packPanels,
-  parseFontMetrics,
 } from './NVFont'
 
 describe('packPanels', () => {
@@ -30,13 +29,10 @@ describe('packPanels', () => {
   })
 })
 
-test('an ASCII-only font draws ² as a small raised 2, not nothing', () => {
-  const mets = parseFontMetrics(ubuntu)
-  const two = mets.mets[0x32]
-  const sup = mets.mets[0xb2]
-  expect(sup?.uv_lbwh).toEqual(two?.uv_lbwh)
-  expect(sup?.xadv).toBeCloseTo((two?.xadv ?? 0) * 0.6)
-  expect(sup?.lbwh[1]).toBeGreaterThan(two?.lbwh[1] ?? 0)
+// uikit tests the fallback glyph; this checks core's layout draws it.
+test('an ASCII-only font lays out ² (the fallback glyph), not nothing', () => {
+  const ascii = ubuntu.glyphs.filter((g) => g.unicode < 127)
+  const mets = parseFont({ ...ubuntu, glyphs: ascii })
   const layout = (s: string) =>
     buildTextLayout(s, 0, 0, 10, 1, mets, [1, 1, 1, 1], 0, 0, [0, 0, 0, 0])
   expect(layout('mm²').count).toBe(3)

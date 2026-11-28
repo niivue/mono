@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Standalone (no NiiVue)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      #canvasHolder { flex: 1; position: relative; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+    </style>
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit</b>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./subvolume.html">subvolume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a><a href="./standalone.html" aria-current="page">standalone</a></nav>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
+      </header>
+      <div id="canvasHolder"><canvas id="gl"></canvas></div>
+      <footer><span id="help">No NiiVue: a bare canvas, the app's own triangle shader, and UIKit controls and a ruler drawn over it by UIKitCanvasHost.</span><span id="status" data-state="wait">Loading...</span></footer>
+    </div>
+
+    <script type="module">
+      import { loadDefaultFont, UIKitCanvasHost, UIKitControls, UIKitRulerOverlay } from '@niivue/uikit'
+      import { UIKitButtonOverlay, UIKitColorControlOverlay, UIKitSliderOverlay, UIKitToggleOverlay } from '@niivue/uikit/controls'
+      import { setStatus } from './statusBar.js'
+      import { createTriangle } from './triangle.js'
+      import { urlParamSelect } from './urlParamSelect.js'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+      const canvas = document.getElementById('gl')
+
+      const DEFAULTS = { angle: 0, size: 0.6, color: [1, 0.45, 0.1, 1] }
+      const state = { ...DEFAULTS, color: [...DEFAULTS.color] }
+      const PANEL = 260 // CSS px kept clear of the triangle on the left
+
+      const font = await loadDefaultFont()
+      const ruler = new UIKitRulerOverlay(font)
+      const triangle = createTriangle()
+      // The app draws first; the overlays (controls, ruler) follow in the same frame.
+      const draw = (frame) => {
+        const { width, height } = frame.bounds
+        const left = PANEL * frame.dpr
+        const cx = (left + width) / 2
+        const cy = height / 2
+        const radius = (state.size * Math.min(width - left, height)) / 2
+        triangle.draw(frame, { cx, cy, radius, angle: (state.angle * Math.PI) / 180, color: state.color })
+        // The ruler spans the triangle's side, below it, in CSS px.
+        const side = radius * Math.sqrt(3)
+        const y = cy + radius + 24 * frame.dpr
+        ruler.setRuler({
+          a: [cx - side / 2, y], b: [cx + side / 2, y], length: side / frame.dpr,
+          units: 'px', decimals: 0, sizePx: 14 * frame.dpr, showTicks: false,
+        })
+      }
+      // WebGPU unavailable: fall back to WebGL2, as NiiVue does.
+      const host = await UIKitCanvasHost.create(canvas, { backend, draw }).catch((e) => {
+        if (backend === 'webgl2') throw e
+        return UIKitCanvasHost.create(canvas, { backend: 'webgl2', draw })
+      })
+      document.getElementById('backendSelect').value = host.backend
+
+      const units = { cssUnits: true }
+      const sliders = new UIKitSliderOverlay(font, units)
+      const colors = new UIKitColorControlOverlay(font, units)
+      const toggles = new UIKitToggleOverlay(font, units)
+      const buttons = new UIKitButtonOverlay(font, units)
+      const controls = new UIKitControls().add(sliders).add(colors).add(toggles).add(buttons)
+      // Same calls as on a NiiVue instance.
+      host.registerOverlayRenderer(controls)
+      host.registerOverlayRenderer(ruler)
+      const detach = controls.attach(host)
+
+      sliders.addSlider({
+        id: 'angle', label: 'Rotation', x: 12, y: 12, width: 220,
+        min: 0, max: 360, step: 1, value: state.angle, showValue: true,
+        format: (v) => `${v} deg`,
+        onInput: (v) => { state.angle = v; host.drawScene() },
+      })
+      sliders.addSlider({
+        id: 'size', label: 'Size', x: 12, y: 58, width: 220,
+        min: 0.1, max: 1, step: 0.01, value: state.size, showValue: true,
+        onInput: (v) => { state.size = v; host.drawScene() },
+      })
+      colors.addColorControl({
+        id: 'color', label: 'Colour', x: 12, y: 104, width: 220, value: state.color,
+        palette: [
+          { name: 'Orange', color: [1, 0.45, 0.1, 1] },
+          { name: 'Green', color: [0.2, 0.85, 0.3, 1] },
+          { name: 'Blue', color: [0.3, 0.5, 1, 1] },
+        ],
+        onInput: (c) => { state.color = [...c]; host.drawScene() },
+      })
+      let spinning = 0
+      const spin = () => {
+        state.angle = (state.angle + 1) % 360
+        sliders.setValue('angle', state.angle)
+        host.drawScene()
+        spinning = requestAnimationFrame(spin)
+      }
+      toggles.addToggle({
+        id: 'spin', label: 'Spin', x: 12, y: 254,
+        onChange: (on) => {
+          if (on) spin()
+          else cancelAnimationFrame(spinning)
+          setStatus(`spin ${on ? 'on' : 'off'}`)
+        },
+      })
+      buttons.addButton({
+        id: 'reset', label: 'Reset', x: 120, y: 250,
+        onClick: () => {
+          Object.assign(state, DEFAULTS, { color: [...DEFAULTS.color] })
+          sliders.setValue('angle', state.angle)
+          sliders.setValue('size', state.size)
+          colors.setValue('color', state.color)
+          host.drawScene()
+          setStatus('reset')
+        },
+      })
+
+      setStatus(`Ready (${host.backend})`, 'ok')
+      addEventListener('beforeunload', () => { detach(); host.destroy() })
+    </script>
+  </body>
+</html>

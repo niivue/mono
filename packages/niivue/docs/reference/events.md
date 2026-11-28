@@ -62,7 +62,7 @@ collection (`nv.volumes` / `nv.meshes`) at the moment the event fires**:
   `meshUpdated`, `volumeOrderChanged`).
 - **Removal** also fires *after* the model changes — the item is gone from the
   collection, and the event `detail` carries it together with its former index
-  (`volumeRemoved`, `meshRemoved`, `signalRemoved`, `measurementRemoved`, and the
+  (`volumeRemoved`, `meshRemoved`, `signalRemoved`, and the
   bulk forms, which emit once per item in reverse index order).
 
 **Consumer corollary:** a listener may re-read the collection synchronously
@@ -122,41 +122,6 @@ Fired when any drag interaction completes on a 2D slice.
 | `voxEnd` | `[number, number, number]` | End position (voxel, rounded) |
 | `mmStart` | `[number, number, number]` | Start position in mm |
 | `mmEnd` | `[number, number, number]` | End position in mm |
-
-#### `measurementCompleted`
-Fired when a distance measurement line is completed — by an interactive drag in
-`DRAG_MODE.measurement` or by a programmatic `addMeasurement` call. Fired after
-the measurement is appended, so it is already in `getMeasurements()`. A click (zero length) adds nothing.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `startMM` | `[number, number, number]` | Start point in mm |
-| `endMM` | `[number, number, number]` | End point in mm |
-| `distance` | `number` | Distance in mm |
-| `sliceIndex` | `number` | Slice tile index |
-| `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
-
-#### `measurementRemoved`
-Fired by `removeMeasurement` after the measurement is removed; `detail`
-carries the removed measurement and its former index.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `measurement` | `CompletedMeasurement` | The measurement being removed |
-| `index` | `number` | Its index in the measurement list |
-
-#### `angleCompleted`
-Fired when an angle measurement (two lines) is completed.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `firstLine` | `{ startMM, endMM }` | First line endpoints in mm |
-| `secondLine` | `{ startMM, endMM }` | Second line endpoints in mm |
-| `angle` | `number` | Angle in degrees |
-| `sliceIndex` | `number` | Slice tile index |
-| `sliceType` | `number` | Slice orientation |
-| `slicePosition` | `number` | Slice position as a scene fraction (recorded from `scene.crosshairPos`), not mm |
 
 #### `pointerUp`
 Fired on every pointer release over the canvas.
@@ -413,28 +378,29 @@ Fired when `drawPenValue` is set.
 
 ### Annotations
 
-#### `annotationAdded`
-Fired when a new vector annotation is added.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `annotation` | `VectorAnnotation` | The newly added annotation |
-
-#### `annotationRemoved`
-Fired when a vector annotation is removed.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | ID of the removed annotation |
-
 #### `annotationChanged`
-Fired on annotation editing events (draw, erase, move, resize, undo, redo, clear).
+Fired, synchronously after the model changes, on every change to the vector
+annotations.
 
-A draw fires `annotationAdded` and then `annotationChanged` with the new id in `added`; annotations it merged or cut appear in `updated` or `removed`. `addAnnotation` and `removeAnnotation` fire only `annotationAdded` / `annotationRemoved`; `loadAnnotationsJSON` and `loadDocument` fire neither.
+| `action` | Fired by |
+|---|---|
+| `draw` | a shape the user just finished, including a `DRAG_MODE.measurement` or `DRAG_MODE.angle` drag (a `measureLine` or `measureAngle`) |
+| `add` | `addAnnotation` |
+| `replace` | `replaceAnnotations` |
+| `resize` | a handle drag |
+| `erase` | an eraser stroke |
+| `text` | `setAnnotationText` |
+| `delete` | `removeAnnotation`, `removeAnnotations` |
+| `clear` | `clearAnnotations` |
+| `undo`, `redo` | `annotationUndo`, `annotationRedo` |
+| `load` | `loadAnnotationsJSON` and `loadDocument` |
+
+A draw lists the new id in `added`; annotations it merged or cut appear in
+`updated` or `removed`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `action` | `'draw' \| 'erase' \| 'move' \| 'resize' \| 'undo' \| 'redo' \| 'clear'` | What happened |
+| `action` | see above | What happened |
 | `added` | `string[]` | Ids of annotations the change added |
 | `updated` | `string[]` | Ids of annotations whose geometry, stats or text changed |
 | `removed` | `string[]` | Ids of annotations the change removed |

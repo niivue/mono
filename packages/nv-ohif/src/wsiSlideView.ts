@@ -1,6 +1,6 @@
 import type { NVSlide, NVSlideAnnotations } from '@niivue/niivue'
 import { createSlideView, DRAG_MODE, isRgbSlide } from '@niivue/niivue'
-import { attachSlideMinimap } from '@niivue/uikit'
+import { attachSlideMinimap } from '@niivue/niivue/uikit'
 import { OHIF_TO_SLIDE_TOOL } from './toolBridge'
 
 export interface WsiSlideViewOptions {

@@ -24,8 +24,6 @@ import type {
   Annotation,
   FocusBox,
   Handlers,
-  Measurement,
-  MeasurementOptions,
   NiiVueHost,
   PlaneOutline,
   SlideAnnotation,
@@ -140,6 +138,9 @@ const MEASUREMENT_ACTIONS = [
   'clear_distances',
 ] as const
 
+/** The annotation shapes a measurement or angle (drag mode or tool) makes. */
+export const MEASURE_TYPES = ['measureLine', 'measureAngle']
+
 /** A slice type by name, when given. */
 function sliceType(params: Params, key: string): number | undefined {
   const name = text(params, key)?.toLowerCase()
@@ -152,16 +153,76 @@ function sliceType(params: Params, key: string): number | undefined {
   return SLICE_TYPES[name as keyof typeof SLICE_TYPES]
 }
 
-/** A measurement as the tools report it. */
-function describeMeasurement(m: Measurement, index: number) {
+/**
+ * A measureLine annotation from `start` to `end` (mm) on a slice plane: the
+ * one with the smallest extent unless given, through `start`. Built as NiiVue's
+ * measure tool builds one (slice-2D ends, a thin-line polygon, the length).
+ * Both ends must lie in that slice: a measurement is drawn on one, and
+ * projecting an end onto it would change the distance asked for.
+ */
+function measureLine(
+  start: [number, number, number],
+  end: [number, number, number],
+  slice: number | undefined,
+  style: Record<string, unknown>,
+): Annotation {
+  if (slice !== undefined && slice > 2)
+    throw new Error(
+      'A measurement lies in an axial, coronal or sagittal slice.',
+    )
+  const extent = [0, 1, 2].map((i) => Math.abs(end[i] - start[i]))
+  // Axial drops z, coronal y, sagittal x.
+  const depth =
+    slice === undefined ? extent.indexOf(Math.min(...extent)) : 2 - slice
+  const sliceType = [2, 1, 0][depth] ?? 0
+  const off = Math.abs(end[depth] - start[depth])
+  if (off > 1e-3)
+    throw new Error(
+      `start_mm and end_mm must lie in one axial, coronal or sagittal slice; they are ${off.toFixed(3)} mm apart across it.`,
+    )
+  const [u, v] = [0, 1, 2].filter((i) => i !== depth) as [number, number]
+  const a = { x: start[u], y: start[v] }
+  const b = { x: end[u], y: end[v] }
+  const length = Math.hypot(b.x - a.x, b.y - a.y)
+  if (!(length > 0))
+    throw new Error('start_mm and end_mm must differ on the slice plane.')
+  const width = typeof style.strokeWidth === 'number' ? style.strokeWidth : 1
+  const px = (-(b.y - a.y) / length) * (width / 2)
+  const py = ((b.x - a.x) / length) * (width / 2)
   return {
-    index,
-    startMM: m.startMM,
-    endMM: m.endMM,
-    distance: m.distance,
-    slice: nameFor(SLICE_TYPES, m.sliceType),
-    sliceIndex: m.sliceIndex,
-    slicePosition: m.slicePosition,
+    id: crypto.randomUUID(),
+    label: 1,
+    group: 'default',
+    sliceType,
+    slicePosition: start[depth],
+    anchorMM: [...start],
+    polygons: [
+      {
+        outer: [
+          { x: a.x + px, y: a.y + py },
+          { x: b.x + px, y: b.y + py },
+          { x: b.x - px, y: b.y - py },
+          { x: a.x - px, y: a.y - py },
+        ],
+        holes: [],
+      },
+    ],
+    style,
+    shape: { type: 'measureLine', start: a, end: b, width },
+    stats: { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, length },
+  }
+}
+
+/** A measure annotation as the measurement tools report it. */
+function describeMeasurement(a: Annotation) {
+  return {
+    id: a.id,
+    type: a.shape?.type,
+    slice: nameFor(SLICE_TYPES, a.sliceType),
+    slicePosition: a.slicePosition,
+    ...(a.stats?.length === undefined ? {} : { length: a.stats.length }),
+    ...(a.stats?.angle === undefined ? {} : { angle: a.stats.angle }),
+    ...(a.text ? { text: a.text } : {}),
   }
 }
 
@@ -189,11 +250,8 @@ export function markHandlers(host: NiiVueHost): Handlers {
       throw new Error("This page's NiiVue has no annotations.")
     return view.annotations
   }
-  const measurements = () => {
-    if (!view.getMeasurements)
-      throw new Error("This page's NiiVue keeps no measurements.")
-    return view.getMeasurements()
-  }
+  const measurements = (types = MEASURE_TYPES) =>
+    annotations().filter((a) => types.includes(String(a.shape?.type)))
   const requireVolume = () => {
     if (!view.volumes[0])
       throw new Error('No volume is loaded yet. Call load_volume first.')
@@ -560,62 +618,49 @@ export function markHandlers(host: NiiVueHost): Handlers {
         throw new Error(
           `edit_measurements needs an action: one of ${MEASUREMENT_ACTIONS.join(', ')}.`,
         )
-      const missing = () =>
-        new Error(
-          `This page's NiiVue cannot ${action.replace('_', ' ')} measurements.`,
+      let id: string | undefined
+      if (action === 'add') {
+        if (!view.addAnnotation)
+          throw new Error("This page's NiiVue cannot add measurements.")
+        const added = measureLine(
+          point(params, 'start_mm'),
+          point(params, 'end_mm'),
+          sliceType(params, 'slice'),
+          styleFrom(view.annotationStyle),
         )
-      let index: number | undefined
-      switch (action) {
-        case 'add': {
-          if (!view.addMeasurement) throw missing()
-          const start = point(params, 'start_mm')
-          const end = point(params, 'end_mm')
-          const options: MeasurementOptions = {}
-          const slice = sliceType(params, 'slice')
-          if (slice !== undefined) options.sliceType = slice
-          const sliceIndex = integer(params, 'slice_index')
-          if (sliceIndex !== undefined) options.sliceIndex = sliceIndex
-          const position = number(params, 'slice_position')
-          if (position !== undefined) options.slicePosition = position
-          index = view.addMeasurement(start, end, options)
-          break
-        }
-        case 'remove': {
-          if (!view.removeMeasurement) throw missing()
-          index = integer(params, 'index')
-          if (index === undefined)
+        view.addAnnotation(added, true)
+        id = added.id
+      } else {
+        if (!view.removeAnnotations)
+          throw new Error("This page's NiiVue cannot remove measurements.")
+        let ids: string[]
+        if (action === 'remove') {
+          ids = strings(params, 'ids') ?? []
+          if (ids.length === 0)
             throw new Error(
-              'Removing needs index, as list_measurements counts them.',
+              'Removing needs ids, as list_measurements gives them.',
             )
-          if (!measurements()[index])
-            throw new Error(
-              `There is no measurement ${index}: ${measurements().length} kept, numbered from 0.`,
-            )
-          view.removeMeasurement(index)
-          break
+          const unknown = ids.find(
+            (i) => !measurements().some((a) => a.id === i),
+          )
+          if (unknown !== undefined)
+            throw new Error(`There is no measurement with the id "${unknown}".`)
+        } else {
+          const types =
+            action === 'clear_angles'
+              ? ['measureAngle']
+              : action === 'clear_distances'
+                ? ['measureLine']
+                : MEASURE_TYPES
+          ids = measurements(types).map((a) => a.id)
         }
-        case 'clear':
-          if (!view.clearMeasurements) throw missing()
-          view.clearMeasurements()
-          break
-        case 'clear_angles':
-          if (!view.clearAngles) throw missing()
-          view.clearAngles()
-          break
-        case 'clear_distances':
-          if (!view.clearDistanceMeasurements) throw missing()
-          view.clearDistanceMeasurements()
-          break
+        view.removeAnnotations(ids, true)
       }
       view.drawScene()
-      const kept = view.getMeasurements ? view.getMeasurements() : []
       return {
         action,
-        ...(index === undefined ? {} : { index }),
-        ...(action === 'add' && index !== undefined && kept[index]
-          ? { measurement: describeMeasurement(kept[index], index) }
-          : {}),
-        measurements: kept.map(describeMeasurement),
+        ...(id ? { id } : {}),
+        measurements: measurements().map(describeMeasurement),
         unit: worldUnit(view),
       }
     },

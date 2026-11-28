@@ -1,5 +1,6 @@
 import type NiiVue from '@niivue/niivue'
 import {
+  type AnnotationChangedDetail,
   type AnnotationTool,
   computeAnnotationStats,
   DRAG_MODE,
@@ -190,7 +191,7 @@ const OHIF_TO_ANNOTATION = new Map(
  * for tools that are not annotation-backed (handled as drag modes instead).
  * Setting `nv.annotationTool` to the result + `nv.annotationIsEnabled = true`
  * makes a left-drag on a 2D slice draw the shape; the measure* variants also
- * compute ROI stats (area/mean) and fire `annotationAdded` with them.
+ * compute ROI stats (area/mean); the draw emits `annotationChanged` 'draw'.
  */
 export function ohifToolToAnnotationTool(
   tool: string | undefined,
@@ -236,4 +237,54 @@ export function measureFreehand(nv: NiiVue, a: VectorAnnotation): void {
       vol,
       nv.annotationAreaIsGeometric,
     ) ?? undefined
+}
+
+/**
+ * Call `fn` with each annotation the user just drew (core's 'draw' action, not
+ * a host's addAnnotation), as stored: a merge may have changed its polygons.
+ * Returns the unsubscribe.
+ */
+export function onAnnotationsDrawn(
+  nv: NiiVue,
+  fn: (annotation: VectorAnnotation) => void,
+): () => void {
+  const listener = (e: Event) => {
+    const { action, added } = (e as CustomEvent<AnnotationChangedDetail>).detail
+    if (action !== 'draw') return
+    for (const id of added) {
+      const a = nv.annotations.find((x) => x.id === id)
+      if (a) fn(a)
+    }
+  }
+  nv.addEventListener('annotationChanged', listener)
+  return () => nv.removeEventListener('annotationChanged', listener)
+}
+
+/**
+ * An OHIF row's points for a rectangle or ellipse spanning corners `a` and
+ * `b`: a rectangle's four corners; an ellipse's two axes as consecutive pairs,
+ * vertical then horizontal (cornerstone's EllipticalROI reads point pairs as
+ * axes, so interleaved points would make the box diagonals its axes).
+ */
+export function boxRowPoints(
+  kind: 'rectangle' | 'ellipse',
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { x: number; y: number }[] {
+  const [x0, x1] = [Math.min(a.x, b.x), Math.max(a.x, b.x)]
+  const [y0, y1] = [Math.min(a.y, b.y), Math.max(a.y, b.y)]
+  const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2]
+  return kind === 'rectangle'
+    ? [
+        { x: x0, y: y0 },
+        { x: x1, y: y0 },
+        { x: x1, y: y1 },
+        { x: x0, y: y1 },
+      ]
+    : [
+        { x: cx, y: y0 },
+        { x: cx, y: y1 },
+        { x: x0, y: cy },
+        { x: x1, y: cy },
+      ]
 }

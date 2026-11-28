@@ -60,6 +60,17 @@ try {
   )
   const tgzPath = packOutput.trim().split(/\r?\n/).pop()
   if (!tgzPath) fail('bun pm pack produced no output')
+  // niivue depends on uikit: pack this checkout's, so the registry's is not
+  // installed in its place.
+  log('packing @niivue/uikit')
+  const uikitTgz = execSync(
+    `bun pm pack --quiet --destination ${JSON.stringify(tmp)}`,
+    { cwd: resolve(NIIVUE_ROOT, '../uikit'), encoding: 'utf8' },
+  )
+    .trim()
+    .split(/\r?\n/)
+    .pop()
+  if (!uikitTgz) fail('bun pm pack (uikit) produced no output')
 
   // 2. Scaffold a minimal Vite consumer. Copy the tarball into the consumer
   // directory so we can reference it with a relative `file:` specifier;
@@ -68,6 +79,7 @@ try {
   mkdirSync(consumer)
   const localTgz = `niivue.tgz`
   copyFileSync(tgzPath, join(consumer, localTgz))
+  copyFileSync(uikitTgz, join(consumer, 'uikit.tgz'))
 
   writeFileSync(
     join(consumer, 'package.json'),
@@ -78,7 +90,9 @@ try {
         type: 'module',
         dependencies: {
           '@niivue/niivue': `file:./${localTgz}`,
+          '@niivue/uikit': 'file:./uikit.tgz',
         },
+        overrides: { '@niivue/uikit': 'file:./uikit.tgz' },
         devDependencies: {
           vite: '^7.0.0',
         },

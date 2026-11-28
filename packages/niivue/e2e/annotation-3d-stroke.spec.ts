@@ -49,7 +49,9 @@ test('pointercancel commits an in-progress 3D vector stroke', async ({
   const r = await page.evaluate(`(async () => {
     ${setup}
     let added = 0
-    nv.addEventListener('annotationAdded', () => { added++ })
+    nv.addEventListener('annotationChanged', (e) => {
+      if (e.detail.action === 'draw') added++
+    })
 
     // A square in the z = 0 plane: two large extents, so it has area.
     beginStroke([[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0]])

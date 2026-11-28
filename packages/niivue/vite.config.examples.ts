@@ -40,9 +40,20 @@ export default defineConfig({
   base: ghBase || '/',
   plugins: [devImagesPlugin(), ghPagesRewritePlugin()],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    alias: [
+      {
+        find: '@',
+        replacement: fileURLToPath(new URL('./src', import.meta.url)),
+      },
+      // Core imports uikit; build it from source, as the dev server does, so
+      // no prior uikit build is needed.
+      {
+        find: /^@niivue\/uikit$/,
+        replacement: fileURLToPath(
+          new URL('../uikit/src/index.ts', import.meta.url),
+        ),
+      },
+    ],
   },
   // One input per examples/*.html, so this is a code-splitting build. Rollup
   // (Vite 7) rejected the default worker.format 'iife' there; Rolldown accepts

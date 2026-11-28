@@ -13,7 +13,6 @@ import {
   withNiivueSupport,
 } from './niivueSupport'
 import type { OhifToolbarButton } from './ohif-types'
-import { ohifToolToAnnotationTool } from './toolBridge'
 import {
   getNiivueToolbarModule,
   NIIVUE_CLIP_SECTION,
@@ -21,7 +20,6 @@ import {
   NIIVUE_OVERLAY_MENU_BUTTON,
   NIIVUE_TOOLBAR_BUTTONS,
   NIIVUE_TOOLBAR_SECTIONS,
-  NIIVUE_VIEWS_SECTION,
   NIIVUE_WL_SECTION,
   niivueToolbarCustomization,
 } from './toolbar'
@@ -39,7 +37,6 @@ describe('toolbar definitions', () => {
   it('every section member is a defined button', () => {
     const ids = new Set(NIIVUE_TOOLBAR_BUTTONS.map((b) => b.id))
     for (const section of [
-      NIIVUE_VIEWS_SECTION,
       NIIVUE_CLIP_SECTION,
       NIIVUE_WL_SECTION,
       NIIVUE_COLORMAP_SECTION,
@@ -84,15 +81,12 @@ describe('toolbar definitions', () => {
 
 describe('toolbar evaluators', () => {
   const volumeEvaluators = [
-    'evaluate.niivue.sliceType',
     'evaluate.niivue.clipPlane',
     'evaluate.niivue.overlay',
     'evaluate.niivue.windowLevelPreset',
     'evaluate.niivue.colormap',
-    'evaluate.niivue.colorbar',
     'evaluate.niivue.interpolation',
     'evaluate.niivue.crosshair',
-    'evaluate.niivue.measurement',
   ]
 
   it('volume evaluators: missing viewport, no volume, ordinary volume', () => {
@@ -134,42 +128,6 @@ describe('toolbar evaluators', () => {
       disabled: true,
       disabledText: 'Applies to PT series',
     })
-  })
-
-  it('mark the button matching the current slice type active', () => {
-    const nv = { sliceType: SLICE_TYPE.RENDER as number, volumes: [{}] }
-    registerNiivue('vp-1', nv as unknown as NiiVue)
-    const evaluate = evaluator('evaluate.niivue.sliceType')
-    const renderButton = NIIVUE_TOOLBAR_BUTTONS.find(
-      (b) => b.id === 'NiivueRender',
-    )
-    const axialButton = NIIVUE_TOOLBAR_BUTTONS.find(
-      (b) => b.id === 'NiivueAxial',
-    )
-    expect(
-      evaluate({ viewportId: 'vp-1', button: renderButton })?.isActive,
-    ).toBe(true)
-    expect(
-      evaluate({ viewportId: 'vp-1', button: axialButton })?.isActive,
-    ).toBe(false)
-  })
-
-  it('mark the ruler active only while the Length annotation tool is on', () => {
-    // Activate the tool the way the integration does: OHIF's 'Length' maps to
-    // the 'measureLine' annotation tool (toolBridge), not a drag mode.
-    const nv = {
-      annotationIsEnabled: true,
-      annotationTool: ohifToolToAnnotationTool('Length'),
-      volumes: [{}],
-    }
-    registerNiivue('vp-1', nv as unknown as NiiVue)
-    const evaluate = evaluator('evaluate.niivue.measurement')
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(true)
-    nv.annotationTool = ohifToolToAnnotationTool('EllipticalROI')
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
-    nv.annotationTool = ohifToolToAnnotationTool('Length')
-    nv.annotationIsEnabled = false
-    expect(evaluate({ viewportId: 'vp-1' })?.isActive).toBe(false)
   })
 
   it('mark the clip preset matching the entry state active (never "none")', () => {
@@ -230,13 +188,9 @@ describe('toolbar evaluators', () => {
 
   it('disables volume-only controls for an NVSlide viewport', () => {
     registerNiivue('vp-1', { volumes: [] } as unknown as NiiVue)
-    const views = evaluator('evaluate.niivue.sliceType')({
-      viewportId: 'vp-1',
-    })
     const colormap = evaluator('evaluate.niivue.colormap')({
       viewportId: 'vp-1',
     })
-    expect(views?.disabled).toBe(true)
     expect(colormap?.disabled).toBe(true)
     expect(evaluator('evaluate.niivue')({ viewportId: 'vp-1' })?.disabled).toBe(
       false,

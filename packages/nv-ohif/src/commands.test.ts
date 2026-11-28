@@ -3,17 +3,8 @@ import type { default as NiiVue, VectorAnnotation } from '@niivue/niivue'
 import { DRAG_MODE, generateShape, SLICE_TYPE } from '@niivue/niivue'
 import { setCalibrationScale } from './calibration'
 import {
-  adoptedRowUids,
-  applyDefaultAnnotationText,
-  applyNiivueAnnotationDelta,
-  applyOhifLabelToAnnotation,
-  applyOhifVisibilityToAnnotation,
-  claimPendingJump,
-  clearNiivueAnnotations,
   flashStatus,
   getNiivueCommandsModule,
-  isReleasedRow,
-  jumpToNiivueMeasurement,
   NIIVUE_CLIP_PLANES,
   NIIVUE_SLICE_TYPES,
   OVERLAY_COLORMAP,
@@ -21,24 +12,41 @@ import {
   overlayCandidates,
   overlayOrder,
   readBaseWindowLevel,
+  resetView,
+  resolveWindowLevel,
+} from './commands'
+import * as dicomToNiivue from './dicomToNiivue'
+import {
+  adoptedRowUids,
+  applyDefaultAnnotationText,
+  applyNiivueAnnotationDelta,
+  applyOhifLabelToAnnotation,
+  applyOhifVisibilityToAnnotation,
+  claimPendingJump,
+  clearNiivueAnnotations,
+  isAnnotationShown,
+  isReleasedRow,
+  jumpToNiivueMeasurement,
   reconcileNiivueAnnotations,
   reflectedRowUid,
   reflectNiivueAnnotation,
   removeNiivueAnnotation,
-  resolveWindowLevel,
   roundNumber,
   subscribeOhifLabelSync,
-  visibleAnnotationScreenShapes,
-} from './commands'
-import * as dicomToNiivue from './dicomToNiivue'
+} from './measurementReflection'
 import {
   getActiveNiivueEntry,
   getNiivueEntryForViewport,
+  type NiivueViewportEntry,
   registerNiivue,
   unregisterNiivue,
   updateNiivueViewport,
 } from './niivueRegistry'
 import type { OhifExtensionParams } from './ohif-types'
+
+// The shapes a pane still draws: those not hidden by their panel row.
+const shownShapes = (viewportId: string, shapes: readonly { id: string }[]) =>
+  shapes.filter((s) => isAnnotationShown(viewportId, s.id))
 
 // A stub with the scene properties and volume APIs the commands touch.
 function stubNiivue() {
@@ -187,9 +195,7 @@ describe('niivueRegistry', () => {
       servicesManager: services('cs-1'),
     })
     actions.niivueSetSliceType({ sliceType: 'render' })
-    actions.niivueResetView()
     expect(nv.sliceType).toBe(SLICE_TYPE.MULTIPLANAR)
-    expect(nv.azimuth).toBe(42)
   })
 })
 
@@ -207,38 +213,6 @@ it('a rebuilt commands module mirrors measurements once', () => {
   getNiivueCommandsModule({ servicesManager })
   getNiivueCommandsModule({ servicesManager })
   expect(live.size).toBe(1)
-})
-
-describe('niivueSetMeasurementMode', () => {
-  it("activates OHIF's Length tool so the tool bridge drives measurement mode", () => {
-    const nv = stubNiivue()
-    register('vp-1', nv)
-    const ran: Array<{ name: string; opts?: Record<string, unknown> }> = []
-    const commandsManager = {
-      runCommand: (name: string, opts?: Record<string, unknown>) => {
-        ran.push({ name, opts })
-      },
-    }
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-      commandsManager,
-    })
-    actions.niivueSetMeasurementMode()
-    expect(ran).toEqual([
-      { name: 'setToolActiveToolbar', opts: { toolName: 'Length' } },
-    ])
-  })
-
-  it('falls back to the measureLine annotation when no commandsManager exists', () => {
-    const nv = stubNiivue()
-    register('vp-1', nv)
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-    })
-    actions.niivueSetMeasurementMode()
-    expect(nv.annotationTool).toBe('measureLine')
-    expect(nv.annotationIsEnabled).toBe(true)
-  })
 })
 
 // Stub MeasurementService + displaySetService that record what reflection adds.
@@ -323,22 +297,15 @@ describe('reflectNiivueAnnotation', () => {
       },
     }) as unknown as VectorAnnotation
 
-  it('defaults new annotation text to max(existing #N)+1 and mutates the stored copy', () => {
+  it('defaults new annotation text to max(existing #N)+1', () => {
     const first = { ...ellipse('first'), text: 'ROI #1' } as VectorAnnotation
-    const emittedSecond = ellipse('second')
-    const storedSecond = { ...emittedSecond }
-    expect(
-      applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
-    ).toBe(true)
-    expect(emittedSecond.text).toBe('ROI #2')
-    // The stored (post-merge) copy is updated too, so the overlay shows it.
-    expect(storedSecond.text).toBe('ROI #2')
+    const second = ellipse('second')
+    expect(applyDefaultAnnotationText(second, [first, second])).toBe(true)
+    expect(second.text).toBe('ROI #2')
 
-    emittedSecond.text = 'Custom label'
-    expect(
-      applyDefaultAnnotationText(emittedSecond, [first, storedSecond]),
-    ).toBe(false)
-    expect(emittedSecond.text).toBe('Custom label')
+    second.text = 'Custom label'
+    expect(applyDefaultAnnotationText(second, [first, second])).toBe(false)
+    expect(second.text).toBe('Custom label')
   })
 
   function setup(viewportId: string) {
@@ -1122,7 +1089,7 @@ describe('reflectNiivueAnnotation', () => {
       const t = throwingAdd('vp-cap-clear')
       t.nv.annotations = [ellipse('cl')]
       for (let i = 0; i < 3; i++) t.reconcile()
-      clearNiivueAnnotations('vp-cap-clear', t.svc.servicesManager)
+      clearNiivueAnnotations('vp-cap-clear')
       t.reconcile()
       expect(t.state.attempts).toBe(4)
       t.warn.mockRestore()
@@ -1176,7 +1143,7 @@ describe('reflectNiivueAnnotation', () => {
     // Hidden in the panel before the release.
     rowOf(uid).isVisible = false
     applyOhifVisibilityToAnnotation(uid, false)
-    clearNiivueAnnotations('vp-a4', svc.servicesManager)
+    clearNiivueAnnotations('vp-a4')
     expect(svc.removed).toHaveLength(0)
     expect(isReleasedRow(uid)).toBe(true)
     expect(reflectedRowUid('own')).toBeUndefined()
@@ -1187,9 +1154,9 @@ describe('reflectNiivueAnnotation', () => {
     expect(isReleasedRow(uid)).toBe(false)
     expect(rowOf(uid).isVisible).toBe(false)
     expect(
-      visibleAnnotationScreenShapes('vp-a4', [
-        { id: 'again' },
-      ] as unknown as Parameters<typeof visibleAnnotationScreenShapes>[1]),
+      shownShapes('vp-a4', [{ id: 'again' }] as unknown as Parameters<
+        typeof shownShapes
+      >[1]),
     ).toHaveLength(0)
   })
 
@@ -1473,7 +1440,7 @@ describe('reflectNiivueAnnotation', () => {
       ellipse('r'),
     )
     const releasedUid = reflectedRowUid('r') as string
-    clearNiivueAnnotations('vp-guard-released', svc.servicesManager)
+    clearNiivueAnnotations('vp-guard-released')
     actions.jumpToMeasurementViewport({ measurement: { uid: releasedUid } })
     actions.jumpToMeasurementViewport({ measurement: { uid } })
     expect(claimPendingJump(releasedUid)).toBe(false)
@@ -1786,17 +1753,15 @@ describe('reflectNiivueAnnotation', () => {
     const release = subscribeOhifLabelSync(svc.servicesManager)
 
     const shapes = [{ id: 'vis' }, { id: 'other' }] as unknown as Parameters<
-      typeof visibleAnnotationScreenShapes
+      typeof shownShapes
     >[1]
     // Visible by default: every projected shape passes through.
-    expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
+    expect(shownShapes('vp-vis', shapes)).toHaveLength(2)
 
     // Hide it: the overlay filter drops that id and the viewport re-renders.
     callbacks.get('updated')?.({ measurement: { uid, isVisible: false } })
     expect(draws).toBe(1)
-    expect(
-      visibleAnnotationScreenShapes('vp-vis', shapes).map((s) => s.id),
-    ).toEqual(['other'])
+    expect(shownShapes('vp-vis', shapes).map((s) => s.id)).toEqual(['other'])
 
     // Idempotent: a repeat hide is a no-op (no extra redraw).
     callbacks.get('updated')?.({ measurement: { uid, isVisible: false } })
@@ -1805,7 +1770,7 @@ describe('reflectNiivueAnnotation', () => {
     // Show it again: the id passes through once more.
     callbacks.get('updated')?.({ measurement: { uid, isVisible: true } })
     expect(draws).toBe(2)
-    expect(visibleAnnotationScreenShapes('vp-vis', shapes)).toHaveLength(2)
+    expect(shownShapes('vp-vis', shapes)).toHaveLength(2)
     release?.()
   })
 
@@ -1821,12 +1786,10 @@ describe('reflectNiivueAnnotation', () => {
     unregisterNiivue('vp-vis-noentry')
     applyOhifVisibilityToAnnotation(uid, false)
     const shapes = [{ id: 'gone' }] as unknown as Parameters<
-      typeof visibleAnnotationScreenShapes
+      typeof shownShapes
     >[1]
     // The hidden state was still recorded, so the next render filters it out.
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-noentry', shapes),
-    ).toHaveLength(0)
+    expect(shownShapes('vp-vis-noentry', shapes)).toHaveLength(0)
   })
 
   it('keeps the hidden flag when the row is dropped but the annotation lives (finding 1)', () => {
@@ -1844,18 +1807,14 @@ describe('reflectNiivueAnnotation', () => {
     const uid = (svc.added[0]?.data.schema as { uid: string }).uid
     applyOhifVisibilityToAnnotation(uid, false)
     const shapes = [{ id: 'alive' }] as unknown as Parameters<
-      typeof visibleAnnotationScreenShapes
+      typeof shownShapes
     >[1]
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
-    ).toHaveLength(0)
+    expect(shownShapes('vp-vis-reconcile', shapes)).toHaveLength(0)
 
     // Reconcile drops the OHIF row while the annotation is STILL in nv.annotations
     // (permanently-unsupported edit). The hidden flag must survive.
     removeNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, 'alive')
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
-    ).toHaveLength(0)
+    expect(shownShapes('vp-vis-reconcile', shapes)).toHaveLength(0)
 
     // But once the annotation is genuinely gone, the flag is cleared.
     nv.annotations = []
@@ -1865,9 +1824,7 @@ describe('reflectNiivueAnnotation', () => {
     applyOhifVisibilityToAnnotation(uid2, false)
     nv.annotations = []
     removeNiivueAnnotation('vp-vis-reconcile', svc.servicesManager, 'alive')
-    expect(
-      visibleAnnotationScreenShapes('vp-vis-reconcile', shapes),
-    ).toHaveLength(1)
+    expect(shownShapes('vp-vis-reconcile', shapes)).toHaveLength(1)
   })
 
   it('does not infinitely recurse when an update echoes MEASUREMENT_UPDATED (R2-0)', () => {
@@ -2111,14 +2068,11 @@ describe('niivueSetSliceType', () => {
   })
 })
 
-describe('niivueResetView', () => {
+describe('resetView', () => {
   it('restores camera, zoom, pan, and crosshair defaults', () => {
     const nv = stubNiivue()
     register('vp-1', nv)
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-    })
-    actions.niivueResetView()
+    resetView(getNiivueEntryForViewport('vp-1') as NiivueViewportEntry)
     expect(nv.azimuth).toBe(110)
     expect(nv.elevation).toBe(10)
     expect(nv.scaleMultiplier).toBe(1)
@@ -2137,10 +2091,7 @@ describe('niivueResetView', () => {
     })
     nv.volumes.push({ dimsRAS: [3, ...shape] })
     register('vp-1', nv)
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-    })
-    actions.niivueResetView()
+    resetView(getNiivueEntryForViewport('vp-1') as NiivueViewportEntry)
     const vox = nv.crosshairPos.map((f, i) => f * (shape[i] ?? 1) - 0.5)
     expect(vox).toEqual([2, 3, 87])
   })
@@ -2165,10 +2116,7 @@ describe('niivueResetView', () => {
         dispose() {},
       },
     })
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-    })
-    actions.niivueResetView()
+    resetView(getNiivueEntryForViewport('vp-1') as NiivueViewportEntry)
     expect(resets).toBe(1)
     expect(nv.azimuth).toBe(42)
   })
@@ -2491,20 +2439,6 @@ describe('niivueSetColormap', () => {
   })
 })
 
-describe('niivueToggleColorbar', () => {
-  it('flips the colorbar visibility on the active viewport', () => {
-    const nv = { ...stubNiivue(), isColorbarVisible: false }
-    register('vp-1', nv)
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-    })
-    actions.niivueToggleColorbar()
-    expect(nv.isColorbarVisible).toBe(true)
-    actions.niivueToggleColorbar()
-    expect(nv.isColorbarVisible).toBe(false)
-  })
-})
-
 describe('niivueToggleInterpolation', () => {
   it('flips nearest-neighbor interpolation on the active viewport', () => {
     const nv = { ...stubNiivue(), volumeIsNearestInterpolation: false }
@@ -2562,7 +2496,7 @@ describe('niivueAutoWindowLevel', () => {
   })
 })
 
-describe('niivueToggleOverlay', () => {
+describe('niivueAddOverlay with no series chosen', () => {
   it('loads the next series as a colormapped overlay (direct URL path)', async () => {
     const nv = stubNiivue()
     nv.volumes.push({ name: 'base' })
@@ -2579,7 +2513,7 @@ describe('niivueToggleOverlay', () => {
       },
     ])
     const { actions } = getNiivueCommandsModule({ servicesManager: sm })
-    await actions.niivueToggleOverlay()
+    await actions.niivueAddOverlay()
 
     expect(nv.added).toHaveLength(1)
     expect(nv.added[0]?.colormap).toBe(OVERLAY_COLORMAP)
@@ -2587,23 +2521,6 @@ describe('niivueToggleOverlay', () => {
     expect([
       ...(getNiivueEntryForViewport('vp-1')?.overlays.keys() ?? []),
     ]).toEqual(['ds-2'])
-  })
-
-  it('removes loaded overlays on the second toggle', async () => {
-    const nv = stubNiivue()
-    const hdr = {}
-    nv.volumes.push({ name: 'base' }, { name: 'overlay', hdr })
-    register('vp-1', nv)
-    const entry = getNiivueEntryForViewport('vp-1')
-    if (!entry) throw new Error('entry missing')
-    entry.overlays.set('ds-2', hdr as never)
-
-    const { actions } = getNiivueCommandsModule({
-      servicesManager: services('vp-1'),
-    })
-    await actions.niivueToggleOverlay()
-    expect(nv.volumes).toHaveLength(1)
-    expect(entry.overlays.size).toBe(0)
   })
 
   it('reports a failed load as an error status (#130)', async () => {
@@ -2624,7 +2541,7 @@ describe('niivueToggleOverlay', () => {
     ])
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
     const { actions } = getNiivueCommandsModule({ servicesManager: sm })
-    await actions.niivueToggleOverlay()
+    await actions.niivueAddOverlay()
     errorSpy.mockRestore()
     expect(statuses).toEqual([['Overlay load failed: boom', 'error']])
   })
@@ -2664,7 +2581,7 @@ describe('niivueToggleOverlay', () => {
         },
       ])
       const { actions } = getNiivueCommandsModule({ servicesManager: sm })
-      const loading = actions.niivueToggleOverlay()
+      const loading = actions.niivueAddOverlay()
       const entry = getNiivueEntryForViewport('vp-1')
       const signal = entry?.overlayAbort?.signal
       if (!entry || !signal) throw new Error('no overlay load in flight')
@@ -2674,7 +2591,7 @@ describe('niivueToggleOverlay', () => {
     it('on a second toggle, without an error status', async () => {
       const { actions, entry, signal, loading, nv, statuses } =
         await startOverlay()
-      await actions.niivueToggleOverlay()
+      await actions.niivueAddOverlay()
       await loading
       expect(signal.aborted).toBe(true)
       expect(entry.overlayLoading).toBe(false)
@@ -2699,7 +2616,7 @@ describe('niivueToggleOverlay', () => {
         const { actions, loading, nv, statuses } = await startOverlay()
         resolve({ image: new File([], 'o.nii') })
         // Runs before the overlay load resumes from the resolved conversion.
-        await actions.niivueToggleOverlay()
+        await actions.niivueAddOverlay()
         await loading
         expect(nv.added).toHaveLength(0)
         expect(statuses.at(-1)).toEqual([null, undefined])
@@ -2722,8 +2639,8 @@ describe('niivueToggleOverlay', () => {
       })
       try {
         const { actions, entry, loading, nv, statuses } = await startOverlay()
-        await actions.niivueToggleOverlay() // cancel
-        const second = actions.niivueToggleOverlay()
+        await actions.niivueAddOverlay() // cancel
+        const second = actions.niivueAddOverlay()
         const owner = entry.overlayAbort
         expect(entry.overlayLoading).toBe(true)
         // The cancelled conversion resolves late; it must not touch load 2.
@@ -2773,8 +2690,8 @@ describe('niivueToggleOverlay', () => {
         }
         resolvers[0]?.({ image: new File([], 'old.nii') })
         await hasLanded
-        await actions.niivueToggleOverlay() // cancel
-        const second = actions.niivueToggleOverlay()
+        await actions.niivueAddOverlay() // cancel
+        const second = actions.niivueAddOverlay()
         resolvers[1]?.({ image: new File([], 'new.nii') })
         await second
         // Load 1's volume is still between the base and load 2's.
@@ -2807,8 +2724,8 @@ describe('niivueToggleOverlay', () => {
       })
       try {
         const { actions, statuses } = await startOverlay()
-        await actions.niivueToggleOverlay() // cancel
-        void actions.niivueToggleOverlay()
+        await actions.niivueAddOverlay() // cancel
+        void actions.niivueAddOverlay()
         const current = statuses.at(-1)
         progress[0]?.('converting', 0, 1)
         expect(statuses.at(-1)).toEqual(current)
@@ -2842,7 +2759,7 @@ describe('niivueToggleOverlay', () => {
       { displaySetInstanceUID: 'ds-2', url: 'https://x/perf.nii.gz' },
     ])
     const { actions } = getNiivueCommandsModule({ servicesManager: sm })
-    await actions.niivueToggleOverlay()
+    await actions.niivueAddOverlay()
     expect(nv.added).toHaveLength(0)
   })
 })

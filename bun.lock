@@ -110,6 +110,17 @@
         "vite": "^8.3.8",
       },
     },
+    "apps/demo-uikit": {
+      "name": "demo-uikit",
+      "dependencies": {
+        "@niivue/dev-images": "workspace:*",
+        "@niivue/niivue": "workspace:*",
+        "@niivue/uikit": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^8.3.8",
+      },
+    },
     "apps/docs": {
       "name": "@niivue/docs-site",
       "dependencies": {
@@ -197,6 +208,7 @@
       "name": "@niivue/niivue",
       "version": "1.0.0-rc.240",
       "dependencies": {
+        "@niivue/uikit": "workspace:^",
         "cbor-x": "^1.6.0",
         "clipper2-ts": "^2.0.1-13",
         "earcut": "^3.0.2",
@@ -340,12 +352,10 @@
         "@types/bun": "^1.4.0",
         "@types/react": "^19",
         "@types/react-dom": "^19",
-        "@vitejs/plugin-react": "^6.0.1",
         "happy-dom": "^20.9.0",
         "react": "^19",
         "react-dom": "^19",
         "typescript": "^5.9.3",
-        "vite": "^8.3.8",
       },
       "peerDependencies": {
         "@niivue/niivue": "workspace:^",
@@ -397,8 +407,6 @@
       "name": "@niivue/uikit",
       "version": "1.0.0-rc.243",
       "devDependencies": {
-        "@niivue/dev-images": "workspace:*",
-        "@niivue/niivue": "workspace:*",
         "@types/bun": "^1.4.0",
         "@webgpu/types": "^0.1.69",
         "typescript": "^5.9.3",
@@ -406,7 +414,7 @@
         "vite-plugin-dts": "^4.5.4",
       },
       "peerDependencies": {
-        "@niivue/niivue": ">=1.0.0-rc.87 <2",
+        "@webgpu/types": ">=0.1.69",
       },
     },
   },
@@ -1416,6 +1424,8 @@
     "demo-mcp": ["demo-mcp@workspace:apps/demo-mcp"],
 
     "demo-nv-web-component": ["demo-nv-web-component@workspace:apps/demo-nv-web-component"],
+
+    "demo-uikit": ["demo-uikit@workspace:apps/demo-uikit"],
 
     "depd": ["depd@2.0.0", "", {}, "sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw=="],
 

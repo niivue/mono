@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Sub-volume selector</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      #panes { flex: 1; display: flex; }
+      .pane { flex: 1; position: relative; }
+      .pane + .pane { border-left: 1px solid #333; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+    </style>
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit</b>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./subvolume.html" aria-current="page">subvolume</a><a href="./slide.html">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a><a href="./standalone.html">standalone</a></nav>
+        <label>view <select id="viewSelect" autocomplete="off">
+          <option value="MULTIPLANAR">multiplanar</option>
+          <option value="AXIAL">axial</option>
+          <option value="RENDER">render</option>
+        </select></label>
+        <label title="Split the volume into bricks">bricks <select id="gridSelect" autocomplete="off">
+          <option value="0">one texture</option>
+          <option value="2">2x2x2</option>
+          <option value="4">4x4x4</option>
+        </select></label>
+        <label><input id="explode" type="checkbox" autocomplete="off" /> explode</label>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
+      </header>
+      <div id="panes">
+        <div class="pane"><canvas id="parent"></canvas></div>
+        <div class="pane"><canvas id="copy"></canvas></div>
+      </div>
+      <footer><span id="help">Right-click two corners (on a slice or the 3D render); the steps are in the right pane.</span><span id="status" data-state="wait">Loading volume...</span></footer>
+    </div>
+
+    <script type="module">
+      import NiiVue, { chunkVolumeGrid, SLICE_TYPE } from '@niivue/niivue'
+      import { UIKitSubvolumeSelector } from '@niivue/niivue/uikit'
+      import { loadDefaultFont, UIKitTextOverlay } from '@niivue/uikit'
+      import { createBrowserDownload, UIKitButtonOverlay } from '@niivue/uikit/controls'
+      import { setStatus } from './statusBar.js'
+      import { urlParamSelect } from './urlParamSelect.js'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+
+      const opts = { backend, backgroundColor: [0.05, 0.05, 0.08, 1], isColorbarVisible: false }
+      const nv = new NiiVue({ ...opts, sliceType: SLICE_TYPE.MULTIPLANAR })
+      // The copy shows only the 3D render of the selected box.
+      const copy = new NiiVue({ ...opts, sliceType: SLICE_TYPE.RENDER })
+      await nv.attachToCanvas(document.getElementById('parent'))
+      await copy.attachToCanvas(document.getElementById('copy'))
+      document.getElementById('backendSelect').value = nv.backend
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
+      setStatus('Right-click the first corner', 'wait')
+
+      const view = document.getElementById('viewSelect')
+      view.addEventListener('change', () => {
+        nv.sliceType = SLICE_TYPE[view.value]
+      })
+
+      // mni152 fits one texture, so force bricks to show the multi-brick path.
+      const grid = document.getElementById('gridSelect')
+      const explode = document.getElementById('explode')
+      const applyBricks = async () => {
+        const vol = nv.volumes[0]
+        const n = Number(grid.value)
+        const d = vol.dimsRAS
+        vol.chunkPlan = n ? chunkVolumeGrid([d[1], d[2], d[3]], [n, n, n], 4096, [3, 3, 3]) : undefined
+        vol.chunkExplode = n && explode.checked ? { enabled: true, scale: [1.4, 1.4, 1.4] } : { enabled: false }
+        // The old box no longer matches what is drawn.
+        selector.reset()
+        seq++
+        dropSaved()
+        await nv.updateGLVolume()
+      }
+      grid.addEventListener('change', applyBricks)
+      explode.addEventListener('change', applyBricks)
+
+      let seq = 0
+      // What Save downloads: the latest box, whatever the pane shows.
+      let saved = null
+      // Assigned once the font loads; a brick-grid change before then has no Save to grey.
+      let buttons
+      // A new or reset box replaces the saved one.
+      const dropSaved = () => {
+        saved = null
+        buttons?.updateButton('save', { enabled: false })
+      }
+      // Copy-pane loads run in pick order, so a slow earlier load cannot replace a later box.
+      let loading = Promise.resolve()
+      const download = createBrowserDownload()
+      const selector = new UIKitSubvolumeSelector({
+        onCorner: (mm) => {
+          seq++
+          dropSaved()
+          setStatus(`First corner at (${mm.map((v) => v.toFixed(1)).join(', ')}) mm: right-click the second`, 'wait')
+        },
+        onSelect: async (sel) => {
+          const at = ++seq
+          const [x, y, z] = sel.voxelDims
+          dropSaved()
+          if (!sel.subVolume) {
+            setStatus(`${x}x${y}x${z} voxels, but this volume has no CPU copy to extract`, 'error')
+            return
+          }
+          // A fresh File each pick: the copy is ephemeral, rebuilt on the next box.
+          const { nifti, calMin, calMax } = sel.subVolume
+          const loaded = loading.then(() =>
+            at === seq && copy.loadVolumes([{ url: new File([nifti], 'subvolume.nii'), colormap: 'gray', calMin, calMax }]),
+          )
+          loading = loaded.catch(() => {})
+          try {
+            await loaded
+          } catch (err) {
+            if (at === seq) setStatus(`Copy failed: ${err.message}`, 'error')
+            return
+          }
+          if (at !== seq) return
+          saved = { nifti, name: `subvolume_${sel.voxelOrigin.join('-')}_${x}x${y}x${z}.nii` }
+          buttons.updateButton('clear', { enabled: true })
+          buttons.updateButton('save', { enabled: true })
+          setStatus(`${x}x${y}x${z} voxels from [${sel.voxelOrigin.join(', ')}]${z === 1 || y === 1 || x === 1 ? ': right-click another slice view to set the depth' : ''}`, 'ok')
+        },
+      })
+
+      const font = await loadDefaultFont()
+      // How-to text on the copy pane while it is empty, laid out per frame size.
+      const steps = [
+        ['Select a sub-volume', 1],
+        ['1. Right-click the first corner, on a slice or the 3D render.', 0.8],
+        ['2. Move the pointer: the box follows it.', 0.8],
+        ['3. Right-click the second corner: the box is copied here.', 0.8],
+        ['4. Corners on one slice? Right-click another slice view for depth.', 0.8],
+        ['In 3D, a corner over empty space takes the first corner\'s depth.', 0.75],
+        ['Right-click the same view or 3D for a new box; Clear empties this pane, Save downloads it.', 0.75],
+        ['Shift+right-click still opens the context menu.', 0.75],
+      ]
+      const text = new UIKitTextOverlay(font)
+      let laidOut = ''
+      copy.placeholderText = ''
+      copy.registerOverlayRenderer({
+        drawOverlay(frame) {
+          if (copy.volumes.length) return
+          const { x, y, width, height } = frame.bounds
+          const key = `${width}x${height}x${frame.dpr}`
+          if (key !== laidOut) {
+            laidOut = key
+            const size = Math.min(28 * frame.dpr, width / 26)
+            let top = y + height / 2 - (steps.length / 2) * size * 1.6
+            text.setItems(steps.map(([str, k]) => {
+              top += size * 1.6
+              return { str, x: x + width / 2, y: top, sizePx: size * k, align: 0.5, color: [0.85, 0.85, 0.9, k === 1 ? 1 : 0.85] }
+            }))
+          }
+          text.drawOverlay(frame)
+        },
+      })
+
+      // A Clear button on the copy: forget the box and empty the pane.
+      buttons = new UIKitButtonOverlay(font, { cssUnits: true })
+      copy.registerOverlayRenderer(buttons)
+      buttons.attach(copy)
+      buttons.addButton({
+        id: 'clear', label: 'Clear', x: 12, y: 12, enabled: false,
+        onClick: async () => {
+          seq++ // drop a copy still loading
+          selector.reset()
+          buttons.updateButton('clear', { enabled: false })
+          dropSaved()
+          // After any load already running, so its box cannot reappear.
+          loading = loading.then(() => copy.removeAllVolumes()).catch(() => {})
+          await loading
+          setStatus('Right-click the first corner', 'wait')
+        },
+      })
+      // Save downloads the box as NIfTI, its header placing it where the box was.
+      buttons.addButton({
+        id: 'save', label: 'Save', x: 12 + buttons.getLayout('clear').width + 8, y: 12, enabled: false,
+        onClick: () => download(new Blob([saved.nifti]), saved.name),
+      })
+      // Picks start once the buttons exist: onSelect enables Clear and Save.
+      selector.attach(nv)
+      nv.registerOverlayRenderer(selector)
+    </script>
+  </body>
+</html>

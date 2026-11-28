@@ -1,5 +1,5 @@
+import { pointToSegmentDistance } from '@/annotation/pointInRing'
 import { crosshairPanThresholdCssPx } from '@/control/dragModes'
-import { pointToSegmentDistance } from '@/control/measurements'
 import { DRAG_MODE } from '@/NVConstants'
 import type { NVSlide, NVSlideScreen, NVSlideWindow } from './NVSlide'
 import {

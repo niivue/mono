@@ -4,17 +4,13 @@
 // the JSON are inlined. The PNG is decoded in memory, not fetched: a fetch of a
 // data: URL is governed by CSP connect-src, which hosts such as OHIF restrict.
 
-import ubuntuJson from '../fonts/ubuntu.json'
-import ubuntuPng from '../fonts/ubuntu.png?inline'
-import {
-  dataUrlBytes,
-  parseFont,
-  type RawFontFile,
-  type UIKitFont,
-} from './font'
+import { dataUrlBytes, parseFont, type UIKitFont } from './font'
+import { UBUNTU_FONT_ATLAS, UBUNTU_FONT_METRICS } from './ubuntuFont'
 
 /** Decode the bundled Ubuntu atlas and parse its metrics. */
 export async function loadDefaultFont(): Promise<UIKitFont> {
-  const image = await createImageBitmap(new Blob([dataUrlBytes(ubuntuPng)]))
-  return { metrics: parseFont(ubuntuJson as unknown as RawFontFile), image }
+  const image = await createImageBitmap(
+    new Blob([dataUrlBytes(UBUNTU_FONT_ATLAS)]),
+  )
+  return { metrics: parseFont(UBUNTU_FONT_METRICS), image }
 }

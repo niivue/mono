@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "allowJs": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["statusBar.js", "triangle.js", "urlParamSelect.js"],
+  "exclude": ["dist", "node_modules"]
+}

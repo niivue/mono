@@ -8,7 +8,6 @@
 // Home and End jump to the ends, and Enter, Space or Alt+ArrowDown open the
 // list on the current option.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import type { ButtonLayout, ButtonStyle } from './button'
 import { resolveButtonStyle } from './button'
 import type {
@@ -16,6 +15,7 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import {
   DEFAULT_MENU_BUTTON_STYLE,
   DEFAULT_MENU_STYLE,

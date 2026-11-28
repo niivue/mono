@@ -1,3 +1,4 @@
+import { buildLine, WgpuLineRenderer } from '@niivue/uikit'
 import { ubuntu } from '@/assets/fonts'
 import { colorLutWgsl, rgbWindowWgsl } from '@/slide/colorLutShader'
 import type {
@@ -14,7 +15,6 @@ import {
 import {
   buildSlideOverlay,
   SLIDE_OVERLAY_MAX_GLYPHS,
-  SLIDE_OVERLAY_MAX_LINES,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import {
@@ -28,11 +28,9 @@ import {
   DEFAULT_TILE_TEXTURE_BYTES,
   TileTextureCache,
 } from '@/slide/tileTextureCache'
-import { buildLine } from '@/view/NVLine'
-import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
+import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { ColorLutTexturesGPU, colorLutLayout } from './colorLut'
 import { FontRenderer } from './font'
-import { LineRenderer } from './line'
 import { alphaPipelineDesc, linearSampler } from './pipeline'
 import { SceneCapture } from './sceneCapture'
 import { TileFuserGPU } from './tileFuse'
@@ -190,17 +188,15 @@ export class SlideRendererGPU {
    * has no depth attachment, so the frame's handle omits depthFormat; it reports
    * the pass's sampleCount (4 with `antialias`, else 1). See view/NVOverlayHook.ts.
    */
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  overlayDraw: ((frame: OverlayFrame) => void) | null = null
   /**
    * Rulers and selection drawn over the tiles with NiiVue's own line and font
    * renderers, before `overlayDraw` (see `slideOverlayContent`).
    */
   overlay: SlideOverlayContent | null = null
-  private readonly _lines = new LineRenderer()
+  private readonly _lines = new WgpuLineRenderer()
   private readonly _font = new FontRenderer()
-  private _lineStorage: GPUBuffer | null = null
   private _glyphStorage: GPUBuffer | null = null
-  private _lineBindGroup: GPUBindGroup | null = null
   private _fontBindGroup: GPUBindGroup | null = null
 
   private constructor(
@@ -373,18 +369,12 @@ export class SlideRendererGPU {
   // The slide pass has no depth attachment; overlays match its sample count.
   private async _initOverlay(): Promise<void> {
     const device = this._device
-    await this._lines.init(device, this._format, this._sampleCount, null)
     await this._font.init(device, this._format, this._sampleCount, ubuntu, null)
-    this._lineStorage = device.createBuffer({
-      // 48 B a line and 64 B a glyph, as NVViewGPU's.
-      size: SLIDE_OVERLAY_MAX_LINES * 48,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
     this._glyphStorage = device.createBuffer({
+      // 64 B a glyph, as NVViewGPU's.
       size: SLIDE_OVERLAY_MAX_GLYPHS * 64,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
-    this._lineBindGroup = this._lines.createBindGroup(device, this._lineStorage)
     this._fontBindGroup = this._font.createBindGroup(
       device,
       this._glyphStorage,
@@ -398,9 +388,8 @@ export class SlideRendererGPU {
     height: number,
     dpr: number,
   ): void {
-    if (!this.overlay || !this._lineStorage || !this._glyphStorage) return
+    if (!this.overlay || !this._glyphStorage) return
     const device = this._device
-    this._lines.resize(device, width, height)
     this._font.resize(device, width, height, dpr)
     const { lines, labels } = buildSlideOverlay(
       this.overlay,
@@ -408,13 +397,16 @@ export class SlideRendererGPU {
       buildLine,
       this._font.fontPx * 0.5,
     )
+    // The slide pass has no depth attachment.
     this._lines.draw(
       device,
       pass,
-      this._lineBindGroup,
-      this._lineStorage,
+      this._format,
+      this._sampleCount,
+      undefined,
       lines,
-      SLIDE_OVERLAY_MAX_LINES,
+      width,
+      height,
     )
     this._font.draw(
       device,
@@ -640,7 +632,6 @@ export class SlideRendererGPU {
     this._luts.clear()
     this._lines.destroy()
     this._font.destroy()
-    this._lineStorage?.destroy()
     this._glyphStorage?.destroy()
     this._uniformBuffer?.destroy()
     this._uniformBuffer = null

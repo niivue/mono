@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import type { UIKitOverlayFrame } from '@niivue/niivue'
 import {
   UIKitControls,
   type UIKitInteractive,
@@ -8,6 +7,7 @@ import {
 } from './controls'
 import { DEFAULT_DIALOG_STYLE, type DialogBoxes } from './dialog'
 import { UIKitDialogOverlay } from './dialogOverlay'
+import type { UIKitOverlayFrame } from './hook'
 import { UIKitSelectOverlay } from './selectOverlay'
 import type { UIKitFont, UIKitFontMetrics } from './text/font'
 import { UIKitTextAreaOverlay } from './textAreaOverlay'

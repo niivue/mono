@@ -5,6 +5,7 @@ import {
   shouldAppendMultiClickPoint,
   shouldStartFreshMultiClickContour,
 } from '@/annotation/multiClick'
+import { pointToSegmentDistance } from '@/annotation/pointInRing'
 import type { ShapeBoundsUpdate } from '@/annotation/selection'
 import {
   emitOrientationChange,
@@ -13,7 +14,6 @@ import {
 } from '@/control/cameraEvents'
 import { computeBoundsPixelRect } from '@/control/canvasRegistry'
 import * as DragModes from '@/control/dragModes'
-import { pointToSegmentDistance } from '@/control/measurements'
 import {
   clampScale3D,
   type Pinch,
@@ -197,6 +197,7 @@ function isOnTile(
 // annotationIsGrabbable: a shape the host hides takes no press (grab, handle
 // or select).
 function isGrabbable(ctrl: NiiVue, ann: VectorAnnotation): boolean {
+  if (ctrl.annotationIsHidden?.(ann)) return false
   return ctrl.annotationIsGrabbable?.(ann) ?? true
 }
 
@@ -495,21 +496,18 @@ function seedLivewire(ctrl: NiiVue, pt: AnnotationPoint): boolean {
       vol,
       ctrl._annotationPolySliceType,
       ctrl._annotationPolySlicePosition,
-      ctrl.model.annotation.isLivewireScissors,
     )
   }
   const slice = ctrl._livewireSlice
   if (!slice) return false
   const g = Annotation.slice2DToGrid(slice, pt)
-  ctrl._livewireField = slice.scissors
-    ? Annotation.livewireFieldScissors(
-        slice.scissors,
-        slice.width,
-        slice.height,
-        g.x,
-        g.y,
-      )
-    : Annotation.livewireField(slice.cost, slice.width, slice.height, g.x, g.y)
+  ctrl._livewireField = Annotation.livewireFieldScissors(
+    slice.scissors,
+    slice.width,
+    slice.height,
+    g.x,
+    g.y,
+  )
   ctrl._livewireSeed = g
   return true
 }
@@ -657,7 +655,7 @@ function commitMultiClickContour(ctrl: NiiVue): boolean {
   )
   const bounds = pointsBounds(pts)
   newAnn.shape = { type: cfg.tool, start: bounds.start, end: bounds.end }
-  commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+  commitAnnotation(ctrl, newAnn)
   return true
 }
 
@@ -754,13 +752,9 @@ function bidirectionalPreview(ctrl: NiiVue, cursor: AnnotationPoint): void {
 }
 
 // Store a finished annotation and announce it.
-function commitAnnotation(
-  ctrl: NiiVue,
-  ann: VectorAnnotation,
-  mergesOverlaps: boolean,
-): void {
+export function commitAnnotation(ctrl: NiiVue, ann: VectorAnnotation): void {
   const before = ctrl.model.annotations
-  const after = Annotation.storeAnnotation(before, ann, mergesOverlaps, {
+  const after = Annotation.storeAnnotation(before, ann, {
     mergedGroups: ctrl.model.annotation.mergedGroups,
     isEditable: (a) => isGrabbable(ctrl, a),
     isCut: ctrl.annotationIsCut ?? undefined,
@@ -793,7 +787,6 @@ function commitAnnotation(
       if (stored.id === ann.id) ann.stats = stored.stats
     }
   }
-  ctrl.emit('annotationAdded', { annotation: ann })
   ctrl.emit('annotationChanged', {
     action: 'draw',
     ...annotationDelta(before, ctrl.model.annotations),
@@ -804,7 +797,7 @@ function commitAnnotation(
 function commitBidirectional(ctrl: NiiVue, long: Axis, short: Axis): void {
   const ann = bidirectionalAnnotation(ctrl, long, short)
   if (!ann) return
-  commitAnnotation(ctrl, ann, ctrl.model.annotation.mergesOverlaps)
+  commitAnnotation(ctrl, ann)
 }
 
 function clientToCanvasPixel(
@@ -1743,7 +1736,12 @@ export function resetDragState(ctrl: NiiVue): void {
   ctrl._resizingAnnotation = null
   ctrl._resizeOriginalShape = null
   ctrl._resizeUndoSnapshot = null
-  ctrl.model._annotationPreview = null
+  // A half-placed drag-mode angle keeps showing its first arm.
+  if (
+    ctrl._angleState !== 'drawing_second_line' ||
+    ctrl.model._annotationPreview !== ctrl._dragPreview
+  )
+    ctrl.model._annotationPreview = null
   ctrl.model._annotationErasePreview = null
   // Raster (draw) stroke state. The 2D pen accumulates `_drawPenFillPts` during
   // the drag and consumes them in the pointerup finalize; if that finalize throws
@@ -1831,7 +1829,7 @@ function finish3DAnnotationStroke(ctrl: NiiVue): void {
     cfg.style,
     anchorMM,
   )
-  commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+  commitAnnotation(ctrl, newAnn)
   ctrl.drawScene()
 }
 
@@ -2238,7 +2236,7 @@ export function initInteraction(ctrl: NiiVue): void {
           }
           if (poly.length === ANGLE_CLICKS[tool]) {
             const ann = angleAnnotation(ctrl, poly)
-            if (ann) commitAnnotation(ctrl, ann, cfg.mergesOverlaps)
+            if (ann) commitAnnotation(ctrl, ann)
             ctrl._abandonAnnotationInProgress()
             ctrl.drawScene()
             return
@@ -2344,6 +2342,7 @@ export function initInteraction(ctrl: NiiVue): void {
       // A half-placed angle keeps showing while its second arm is placed.
       if (ctrl._angleState !== 'drawing_second_line') {
         ctrl.model._dragOverlay = null
+        DragModes.setDragPreview(ctrl, null)
       }
       if (mode === DRAG_MODE.crosshair) {
         const mm = NVSliceLayout.screenSlicePick(
@@ -2553,7 +2552,7 @@ export function initInteraction(ctrl: NiiVue): void {
                   shapeData.width = cfg.style.strokeWidth
                 }
                 newAnn.shape = shapeData
-                commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+                commitAnnotation(ctrl, newAnn)
               }
             }
           }
@@ -2629,7 +2628,7 @@ export function initInteraction(ctrl: NiiVue): void {
                 cfg.style,
                 ctrl._annotationAnchorMM,
               )
-              commitAnnotation(ctrl, newAnn, cfg.mergesOverlaps)
+              commitAnnotation(ctrl, newAnn)
             }
           }
           ctrl.drawScene()

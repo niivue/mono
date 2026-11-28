@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { ohifServices } from './niivueRegistry'
-import type { OhifServicesManager } from './ohif-types'
+import type {
+  OhifServicesManager,
+  OhifUiDialogService,
+  OhifUiViewportDialogService,
+  OhifViewportDialog,
+} from './ohif-types'
 
 // OHIF's viewport prompts (measurement tracking, SR/SEG hydration) are shown
 // with uiViewportDialogService, but drawn by cornerstone's viewport component
@@ -9,22 +14,12 @@ import type { OhifServicesManager } from './ohif-types'
 // draws OHIF's own notification component (customization
 // 'ui.notificationComponent') on a NiiVue pane, as cornerstone does.
 
-type DialogState = { viewportId?: string } & Record<string, unknown>
-type DialogService = {
-  show: (p: DialogState) => void
-  hide: () => void
-  __nvMirror?: Set<(s: DialogState | null) => void>
-}
-// OHIF's modal dialogs (uiDialogService), e.g. the arrow text input. Some
-// close through the provider itself, so only isEmpty is reliable.
-type ModalService = { isEmpty?: () => boolean }
-
 function mirror(
-  service: DialogService,
-  modal: ModalService | undefined,
-): Set<(s: DialogState | null) => void> {
+  service: OhifUiViewportDialogService,
+  modal: OhifUiDialogService | undefined,
+): Set<(s: OhifViewportDialog | null) => void> {
   if (service.__nvMirror) return service.__nvMirror
-  const listeners = new Set<(s: DialogState | null) => void>()
+  const listeners = new Set<(s: OhifViewportDialog | null) => void>()
   const show = service.show.bind(service)
   const hide = service.hide.bind(service)
   // Deliver after the gesture's click, in order: a prompt mounted before that
@@ -51,7 +46,7 @@ function mirror(
   const release = () => setTimeout(flush, 0)
   window.addEventListener('pointerup', release, true)
   window.addEventListener('pointercancel', release, true)
-  const notify = (s: DialogState | null) => {
+  const notify = (s: OhifViewportDialog | null) => {
     const deliver = () => {
       for (const l of listeners) l(s)
     }
@@ -79,10 +74,10 @@ export function ViewportNotification({
   viewportId: string
   servicesManager: OhifServicesManager | undefined
 }) {
-  const [state, setState] = useState<DialogState | null>(null)
+  const [state, setState] = useState<OhifViewportDialog | null>(null)
   const services = ohifServices(servicesManager)
-  const dialog = services?.uiViewportDialogService as DialogService | undefined
-  const modal = services?.uiDialogService as ModalService | undefined
+  const dialog = services?.uiViewportDialogService
+  const modal = services?.uiDialogService
   useEffect(() => {
     if (!dialog) return
     const listeners = mirror(dialog, modal)
@@ -91,13 +86,9 @@ export function ViewportNotification({
       listeners.delete(setState)
     }
   }, [dialog, modal])
-  const Notification = (
-    services?.customizationService as
-      | { getCustomization?: (id: string) => unknown }
-      | undefined
-  )?.getCustomization?.('ui.notificationComponent') as
-    | React.ComponentType<Record<string, unknown>>
-    | undefined
+  const Notification = services?.customizationService?.getCustomization?.(
+    'ui.notificationComponent',
+  ) as React.ComponentType<Record<string, unknown>> | undefined
   if (!Notification || state?.viewportId !== viewportId) return null
   // cornerstone offsets it 24px for the viewport action corners.
   return (

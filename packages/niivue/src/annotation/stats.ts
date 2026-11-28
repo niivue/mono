@@ -110,6 +110,32 @@ function tiltAreaScale(
 }
 
 /**
+ * Length in mm of slice-2D segment a-b on its slice's voxel plane: on a tilted
+ * volume the plane's depth changes along the segment, as slice2DToMMOnPlane
+ * places it, so the slice-2D distance alone is short.
+ */
+export function planeLength(
+  matRAS: ArrayLike<number>,
+  sliceType: number,
+  a: AnnotationPoint,
+  b: AnnotationPoint,
+): number {
+  const [ax0, ax1] = IN_PLANE_AXES[sliceType] as [number, number]
+  const col = (k: number) => [matRAS[k], matRAS[4 + k], matRAS[8 + k]] as const
+  const [a0, a1, a2] = col(ax0)
+  const [b0, b1, b2] = col(ax1)
+  const n = [a1 * b2 - a2 * b1, a2 * b0 - a0 * b2, a0 * b1 - a1 * b0]
+  const nd = n[sliceTypeDim(sliceType)] as number
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const dz =
+    Math.abs(nd) > 1e-12
+      ? -((n[ax0] as number) * dx + (n[ax1] as number) * dy) / nd
+      : 0
+  return Math.hypot(dx, dy, dz)
+}
+
+/**
  * Sets row `i1`'s voxels inside `ring` to `value`, by pointInRing's rule: x is
  * inside when an odd number of crossings lie strictly right of it, i.e. x in
  * [c0, c1), [c2, c3) ...
@@ -375,18 +401,22 @@ export function computeAnnotationStats(
   if (!shape) return null
   if (!volume.dimsRAS || !volume.pixDimsRAS) return null
 
-  if (shape.type === 'measureLine') {
-    const dx = shape.end.x - shape.start.x
-    const dy = shape.end.y - shape.start.y
+  if (shape.type === 'measureLine')
     return {
       area: 0,
       min: 0,
       mean: 0,
       max: 0,
       stdDev: 0,
-      length: Math.sqrt(dx * dx + dy * dy),
+      length: volume.matRAS
+        ? planeLength(
+            volume.matRAS,
+            annotation.sliceType,
+            shape.start,
+            shape.end,
+          )
+        : Math.hypot(shape.end.x - shape.start.x, shape.end.y - shape.start.y),
     }
-  }
 
   if (shape.type === 'measureAngle' || shape.type === 'measureCobbAngle')
     // Drawing records the angle on its (maybe oblique) plane, which this

@@ -2,7 +2,9 @@ import type NiiVue from '@niivue/niivue'
 import type { DragReleaseInfo } from '@niivue/niivue'
 import { DRAG_MODE, PEN_SHAPE, SLICE_TYPE } from '@niivue/niivue'
 import { historyMemo } from './history'
+import { cornerstoneLibraries } from './niivueRegistry'
 import type { OhifExtensionManager } from './ohif-types'
+import { apply, SLICE_AXIS } from './quantify'
 import { lpsToVoxel } from './rtDrawing'
 
 // OHIF's labelmap tools on a NiiVue pane drive NiiVue's drawing pen (value =
@@ -48,9 +50,6 @@ const DEFAULT_RANGE: [number, number] = [50, 600]
 // OHIF's threshold.dynamicRadius (voxels) for the dynamic brushes.
 const DYNAMIC_RADIUS = 3
 
-// RAS voxel axis normal to each 2D view (axial z, coronal y, sagittal x).
-const FIXED_AXIS = [2, 1, 0]
-
 /** Row-major 3x4 RAS mm -> RAS voxel of the pane's base (inverse vox2mm). */
 function rasToVoxel(nv: NiiVue): number[] | null {
   const m = lpsToVoxel((v) => nv.vox2mm(v))
@@ -77,15 +76,11 @@ function rasVoxelOfMM(
 ): [number, number, number] | undefined {
   const m = rasToVoxel(nv)
   if (!m) return undefined
-  const [x = 0, y = 0, z = 0] = Array.from(mm)
-  return [0, 1, 2].map((r) =>
-    Math.round(
-      (m[r * 4] as number) * x +
-        (m[r * 4 + 1] as number) * y +
-        (m[r * 4 + 2] as number) * z +
-        (m[r * 4 + 3] as number),
-    ),
-  ) as [number, number, number]
+  return [0, 1, 2].map((r) => Math.round(apply(m, mm, r))) as [
+    number,
+    number,
+    number,
+  ]
 }
 
 /** The drawing's value under a client point (0 off the drawing). */
@@ -112,7 +107,7 @@ function drawingValueOfVoxel(
   const [, nx = 0, ny = 0, nz = 0] = dims
   const [x, y, z] = v
   if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return 0
-  return Number(img?.[x + nx * (y + ny * z)] ?? 0)
+  return Number(img[x + nx * (y + ny * z)])
 }
 
 /**
@@ -201,12 +196,8 @@ export function onToolModeChanged(
     target?.removeEventListener('CORNERSTONE_TOOLS_TOOL_MODE_CHANGED', fn)
 }
 
-function cstLibs(em: OhifExtensionManager | undefined): CstLibs | undefined {
-  const entry = em?.getModuleEntry(
-    '@ohif/extension-cornerstone.utilityModule.common',
-  ) as { exports?: { getCornerstoneLibraries?: () => unknown } } | undefined
-  return entry?.exports?.getCornerstoneLibraries?.() as CstLibs | undefined
-}
+const cstLibs = (em: OhifExtensionManager | undefined) =>
+  cornerstoneLibraries<CstLibs>(em)
 
 interface Session {
   /** Its segmentation's id. */
@@ -410,7 +401,7 @@ function commit(
           intensity,
           [dims[1], dims[2], dims[3]] as [number, number, number],
           session.centers,
-          FIXED_AXIS[nv.sliceType] ?? 2,
+          SLICE_AXIS[nv.sliceType] ?? 2,
         )
       : undefined
   session.centers = []

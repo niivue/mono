@@ -7,8 +7,8 @@
 // the frame it is handed, so a host that resizes its canvas does not have to
 // re-set the crosshair to keep the arms reaching the new edges.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import { buildCrosshair, type CrosshairSpec } from './crosshair'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { UIKitLineOverlay } from './lineOverlay'
 import type { UIKitFont } from './text/font'
 import { UIKitTextOverlay } from './textOverlay'

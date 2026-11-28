@@ -268,7 +268,7 @@ async function check(backend) {
     fail(`plane requests ${JSON.stringify(calls)}`)
   await zSlider.focus()
   const label = await page.locator('#planes output').first().textContent()
-  if (label !== '2/3 (1.5 um)') fail(`plane label ${label}`)
+  if (label !== '2/3 (1.5 µm)') fail(`plane label ${label}`)
   await page.evaluate(() => {
     window.planeFail = true
   })

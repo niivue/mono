@@ -1,8 +1,9 @@
+import type { LineData } from '@niivue/uikit'
 import { mmPerPixel2D, mmPerPixelRender } from '@/math/NVTransforms'
 import { SLICE_TYPE } from '@/NVConstants'
 import type { RulerUnits } from '@/NVTypes'
 import type { BuildTextFn, GlyphBatch } from './NVFont'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
 import { type SliceTile, slicePanUV } from './NVSliceLayout'
 
 // slicePanUV indexes by orientation, so anything else (RENDER, or a tile from
@@ -72,7 +73,8 @@ export function chooseRulerSize(
   const perUnit = units === 'auto' ? undefined : UNIT_MM[units]
   if (perUnit) {
     const value = largestNice(maxMM / perUnit)
-    return { lengthMM: value * perUnit, label: `${value} ${units}` }
+    const label = units === 'um' ? 'µm' : units
+    return { lengthMM: value * perUnit, label: `${value} ${label}` }
   }
   // Metres and kilometres for geographic fields (Sentinel-2: 10 m/px).
   for (const [mmPer, unit] of [
@@ -109,7 +111,7 @@ export function chooseRulerSize(
       const um = v * scale
       const mm = um / 1000 // um -> mm
       if (mm <= maxMM) {
-        return { lengthMM: mm, label: `${um} um` }
+        return { lengthMM: mm, label: `${um} µm` }
       }
     }
   }

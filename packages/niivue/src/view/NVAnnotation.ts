@@ -1,3 +1,4 @@
+import type { LineData } from '@niivue/uikit'
 import { type vec3, vec4 } from 'gl-matrix'
 import {
   isOnSlice,
@@ -9,6 +10,7 @@ import { slicePlaneEquation } from '@/math/NVTransforms'
 import { SLICE_TYPE, sliceTypeDim } from '@/NVConstants'
 import type NVModel from '@/NVModel'
 import type {
+  AnnotationCalibration,
   AnnotationPoint,
   AnnotationScreenShape,
   AnnotationStats,
@@ -22,7 +24,8 @@ import {
   explodeOffsetMMAtFrac,
 } from '@/volume/ChunkExplode'
 import { sceneUnit } from '@/volume/utils'
-import type { BuildLineFn, LineData } from './NVLine'
+import type { BuildLineFn } from './NVLine'
+import { buildRulers } from './NVMeasurement'
 import type { SliceTile } from './NVSliceLayout'
 
 export type AnnotationRenderData = {
@@ -126,7 +129,7 @@ function buildSelectionHandles(
   const sel = model._annotationSelection
   if (!sel) return startOffset
   const ann = model.annotations.find((a) => a.id === sel.annotationId)
-  if (!ann?.shape) return startOffset
+  if (!ann?.shape || model.annotationIsHidden?.(ann)) return startOffset
   const handleSize = 4 * dpr // canvas pixels
   let offset = startOffset
   const anchor = getAnchorMM(ann)
@@ -173,9 +176,15 @@ function buildSelectionHandles(
   return offset
 }
 
+// The shapes on screen: the store (or an eraser's preview of it) plus a shape
+// being drawn, minus those the host hides (annotationIsHidden).
 function resolveAnnotations(model: NVModel) {
   const base = model._annotationErasePreview ?? model.annotations
-  return model._annotationPreview ? [...base, model._annotationPreview] : base
+  const all = model._annotationPreview
+    ? [...base, model._annotationPreview]
+    : base
+  const isHidden = model.annotationIsHidden
+  return isHidden ? all.filter((a) => !isHidden(a)) : all
 }
 
 export type Annotation3DRenderData = {
@@ -284,7 +293,11 @@ export function buildAnnotation3DRenderData(
   }
 }
 
-function formatAnnotationStats(stats: AnnotationStats, unit: string): string[] {
+function formatAnnotationStats(
+  stats: AnnotationStats,
+  unit: string,
+  cal: AnnotationCalibration | null,
+): string[] {
   // Integers exact (uint16 65535 must not read 65540); else 4 significant
   // digits so an SUV of 0.04 does not read 0.0.
   if (stats.value !== undefined) {
@@ -292,21 +305,61 @@ function formatAnnotationStats(stats: AnnotationStats, unit: string): string[] {
     return [Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(4)))]
   }
   if (stats.angle !== undefined) return [`${stats.angle.toFixed(1)}°`]
+  const s = cal?.scale ?? 1
+  const lu = cal?.lengthUnit ?? unit
   if (stats.length !== undefined) {
+    const len = (stats.length * s).toFixed(1)
     // Bidirectional carries both axes: long (length) + short (shortLength).
     if (stats.shortLength !== undefined) {
       return [
-        `L: ${stats.length.toFixed(1)} ${unit}`,
-        `W: ${stats.shortLength.toFixed(1)} ${unit}`,
+        `L: ${len} ${lu}`,
+        `W: ${(stats.shortLength * s).toFixed(1)} ${lu}`,
       ]
     }
-    return [`${stats.length.toFixed(1)} ${unit}`]
+    return [`${len} ${lu}`]
   }
   return [
-    `Area: ${stats.area.toFixed(1)} ${unit}²`,
+    `Area: ${(stats.area * s * s).toFixed(1)} ${cal?.areaUnit ?? `${unit}²`}`,
     `Min: ${stats.min.toFixed(1)}  Max: ${stats.max.toFixed(1)}`,
     `Mean: ${stats.mean.toFixed(1)}  SD: ${stats.stdDev.toFixed(1)}`,
   ]
+}
+
+/** The two strokes of an arrow head at `end`, `size` px long. */
+function arrowHead(
+  start: AnnotationPoint,
+  end: AnnotationPoint,
+  size: number,
+  line: (p: AnnotationPoint, q: AnnotationPoint) => void,
+): void {
+  const len = Math.hypot(end.x - start.x, end.y - start.y)
+  if (len === 0) return
+  const ux = (start.x - end.x) / len
+  const uy = (start.y - end.y) / len
+  const c = Math.cos(Math.PI / 7)
+  const s = Math.sin(Math.PI / 7)
+  for (const sign of [1, -1])
+    line(end, {
+      x: end.x + size * (ux * c - sign * uy * s),
+      y: end.y + size * (uy * c + sign * ux * s),
+    })
+}
+
+/** Centre of the bottom edge of the polygons' bounding box, `gap` px below. */
+function belowBox(
+  polygons: readonly { outer: readonly AnnotationPoint[] }[],
+  gap: number,
+): AnnotationPoint {
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const { outer } of polygons)
+    for (const p of outer) {
+      minX = Math.min(minX, p.x)
+      maxX = Math.max(maxX, p.x)
+      maxY = Math.max(maxY, p.y)
+    }
+  return { x: (minX + maxX) / 2, y: maxY + gap }
 }
 
 export function buildAnnotationRenderData(
@@ -315,6 +368,7 @@ export function buildAnnotationRenderData(
   buildLine: BuildLineFn,
   buildText: BuildTextFn | undefined,
   dpr: number,
+  numberPx = 12,
 ): AnnotationRenderData | null {
   const tolerance = computeTolerance(model)
   const allFillVerts: number[] = []
@@ -323,49 +377,98 @@ export function buildAnnotationRenderData(
   const labels: GlyphBatch[] = []
   let vertexOffset = 0
 
-  // When isAnnotationDrawn is false, an external overlay renders the shapes from
-  // annotationScreenShapes; skip the built-in stroke/labels (and fill, unless
-  // isAnnotationFillDrawn) but still draw the brush cursor + selection handles below.
-  const { isAnnotationDrawn: isDrawn, isAnnotationFillDrawn } = model.ui
-  const shapes =
-    isDrawn || isAnnotationFillDrawn
-      ? projectAnnotations(model, screenSlices, annotationLabelLines)
-      : []
-  for (const { polygons, style, label } of shapes) {
+  // projectAnnotationScreenShapes ran earlier this frame. With isAnnotationDrawn
+  // off a host draws the shapes; the brush cursor and handles below still show.
+  const shapes = model.ui.isAnnotationDrawn
+    ? model._persistedAnnotationScreenShapes
+    : []
+  for (const shape of shapes) {
+    const { polygons, style, label } = shape
     const [fr, fg, fb, fa] = style.fillColor
-    for (const { outer, holes } of polygons) {
-      const { vertices, indices } = triangulatePolygon(outer, holes)
-      const nVerts = vertices.length / 2
-      for (let i = 0; i < nVerts; i++) {
-        allFillVerts.push(vertices[i * 2], vertices[i * 2 + 1], fr, fg, fb, fa)
-      }
-      for (let i = 0; i < indices.length; i++) {
-        allFillIndices.push(indices[i] + vertexOffset)
-      }
-      vertexOffset += nVerts
-      if (!isDrawn) continue
-      for (const ring of [outer, ...holes]) {
-        for (let i = 0; i < ring.length; i++) {
-          const p = ring[i] as AnnotationPoint
-          const q = ring[(i + 1) % ring.length] as AnnotationPoint
-          strokeLines.push(
-            buildLine(p.x, p.y, q.x, q.y, style.strokeWidth, style.strokeColor),
+    const width = Math.max(1, style.strokeWidth * dpr)
+    const stroke = style.strokeColor
+    const line = (p: AnnotationPoint, q: AnnotationPoint) =>
+      strokeLines.push(buildLine(p.x, p.y, q.x, q.y, width, stroke))
+    // An open shape's polygon is its thin hit-test rectangle: drawn as centre
+    // lines below, never filled (zoomed in, a fill shows as a wide band).
+    if (shape.isClosed)
+      for (const { outer, holes } of polygons) {
+        const { vertices, indices } = triangulatePolygon(outer, holes)
+        const nVerts = vertices.length / 2
+        for (let i = 0; i < nVerts; i++) {
+          allFillVerts.push(
+            vertices[i * 2],
+            vertices[i * 2 + 1],
+            fr,
+            fg,
+            fb,
+            fa,
           )
         }
+        for (let i = 0; i < indices.length; i++) {
+          allFillIndices.push(indices[i] + vertexOffset)
+        }
+        vertexOffset += nVerts
+        for (const ring of [outer, ...holes])
+          for (let i = 0; i < ring.length; i++)
+            line(
+              ring[i] as AnnotationPoint,
+              ring[(i + 1) % ring.length] as AnnotationPoint,
+            )
       }
+    const { start, end } = shape
+    if (!shape.isClosed && start && end) {
+      if (
+        shape.tool === 'measureLine' &&
+        shape.length !== undefined &&
+        buildText
+      ) {
+        // A measured line is a graduated ruler in the shape's own colour; its
+        // label (projectAnnotations) then carries only the free text.
+        const [sr, sg, sb] = stroke
+        const ruler = buildRulers(
+          [
+            {
+              sx: start.x,
+              sy: start.y,
+              ex: end.x,
+              ey: end.y,
+              distance: shape.length,
+            },
+          ],
+          {
+            measureLineColor: stroke,
+            measureTextColor: [sr, sg, sb, 1],
+            rulerWidth: width,
+            isMeasureUnitsVisible: true,
+          },
+          buildText,
+          buildLine,
+          numberPx,
+          shape.unit,
+        )
+        strokeLines.push(...ruler.lines)
+        labels.push(...ruler.labels)
+      } else {
+        line(start, end)
+        if (shape.tool === 'arrow') arrowHead(start, end, 12 * dpr, line)
+      }
+      if (shape.start2 && shape.end2) line(shape.start2, shape.end2)
     }
-    if (isDrawn && buildText && label) {
-      const [sr, sg, sb] = style.strokeColor
-      const left = label.align === 'left'
+    if (buildText && label) {
+      const [sr, sg, sb] = stroke
+      const at = shape.isClosed ? belowBox(polygons, 4 * dpr) : label
+      const left = !shape.isClosed && label.align === 'left'
       labels.push(
         buildText(
           label.lines.join('\n'),
-          label.x,
-          label.y,
+          at.x,
+          at.y,
           0.7,
           [sr, sg, sb, 1],
           left ? 0 : 0.5,
-          left ? 0.5 : 1,
+          // A closed shape's label hangs below its box.
+          shape.isClosed ? 0 : left ? 0.5 : 1,
           [0, 0, 0, 0.6],
         ),
       )
@@ -414,40 +517,39 @@ const OPEN_ANNOTATION_TOOLS: ReadonlySet<AnnotationTool> = new Set([
   'measureCobbAngle',
 ])
 
-/** Free text above the stats lines: the built-in label of every tool. */
-function annotationLabelLines(ann: VectorAnnotation, unit: string): string[] {
-  return [
-    ...(ann.text ? [ann.text] : []),
-    ...(ann.stats ? formatAnnotationStats(ann.stats, unit) : []),
-  ]
-}
-
 /**
- * The overlay label: a single measured line (measureLine) renders downstream as
- * a graduated ruler from shape.length, which draws its own mm label, so its
- * label carries ONLY the user's free text, avoiding a duplicate reading.
+ * Free text above the stats lines. A measured line (measureLine) is drawn as a
+ * graduated ruler that prints its own length, so its label is the text alone.
  */
-function overlayLabelLines(ann: VectorAnnotation, unit: string): string[] {
+function annotationLabelLines(
+  ann: VectorAnnotation,
+  unit: string,
+  cal: AnnotationCalibration | null,
+): string[] {
+  const text = ann.text ? [ann.text] : []
   if (ann.shape?.type === 'measureLine' && ann.stats?.length !== undefined)
-    return ann.text ? [ann.text] : []
-  return annotationLabelLines(ann, unit)
+    return text
+  return [
+    ...text,
+    ...(ann.stats ? formatAnnotationStats(ann.stats, unit, cal) : []),
+  ]
 }
 
 /**
  * Every visible annotation projected to canvas pixels, one shape per tile that
  * shows it (a mosaic or hero layout can show it in several, #116). The single
  * source of screen geometry and label anchors for both the built-in draw and
- * annotationScreenShapes; `labelLines` picks the label text (no label if empty).
+ * annotationScreenShapes.
  */
 function projectAnnotations(
   model: NVModel,
   screenSlices: readonly SliceTile[],
-  labelLines: (ann: VectorAnnotation, unit: string) => string[],
 ): AnnotationScreenShape[] {
   const shapes: AnnotationScreenShape[] = []
   const annotations = resolveAnnotations(model)
   if (annotations.length === 0) return shapes
   const unit = sceneUnit(model).label
+  const cal = model.annotationCalibration
   const tolerance = computeTolerance(model)
   const anchors = annotations.map(getAnchorMM)
   for (const [tileIndex, tile] of screenSlices.entries()) {
@@ -493,10 +595,10 @@ function projectAnnotations(
       const isMeasureLine =
         ann.shape?.type === 'measureLine' && ann.stats?.length !== undefined
       if (isMeasureLine) {
-        shape.length = ann.stats?.length
-        shape.unit = unit
+        shape.length = (ann.stats?.length ?? 0) * (cal?.scale ?? 1)
+        shape.unit = cal?.lengthUnit ?? unit
       }
-      const lines = labelLines(ann, unit)
+      const lines = annotationLabelLines(ann, unit, cal)
       if (ann.shape && shape.start && shape.end && lines.length > 0) {
         if (isMeasureLine) {
           const mid = project(
@@ -539,28 +641,17 @@ function projectAnnotations(
 }
 
 /**
- * Store {@link projectAnnotations} in `model._persistedAnnotationScreenShapes`,
- * exposed via NVControlBase.annotationScreenShapes for an external overlay.
- *
- * Only runs when the built-in draw is OFF (`ui.isAnnotationDrawn === false`),
- * i.e. an overlay has taken over; the built-in draw projects for itself, so
- * projecting here too would be wasted per-frame work with no consumer. When the
- * built-in draw is on the persisted shapes are emptied (once) so a stray read
- * never sees stale geometry.
+ * Project the annotations for this frame into
+ * `model._persistedAnnotationScreenShapes`: what the built-in draw renders,
+ * what pickAnnotation hit-tests, and NVControlBase.annotationScreenShapes.
  */
 export function projectAnnotationScreenShapes(
   model: NVModel,
   screenSlices: SliceTile[],
 ): void {
-  if (model.ui.isAnnotationDrawn) {
-    if (model._persistedAnnotationScreenShapes.length > 0)
-      model._persistedAnnotationScreenShapes = []
-    return
-  }
-  // An annotation without polygons has nothing for an overlay to draw.
+  // An annotation without polygons has nothing to draw or pick.
   model._persistedAnnotationScreenShapes = projectAnnotations(
     model,
     screenSlices,
-    overlayLabelLines,
   ).filter((s) => s.polygons.length > 0)
 }

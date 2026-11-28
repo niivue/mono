@@ -12,7 +12,6 @@
 // overlay is a `UIKitInteractive`, so it can share a `UIKitControls` layer with
 // toggles, sliders and menus; `attach` is a one-widget layer for convenience.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import {
   advancePress,
   type ButtonLayout,
@@ -32,6 +31,7 @@ import {
   type UIKitKeyEvent,
   type UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import {
   UIKitDrawBundle,
   UIKitEntryMap,

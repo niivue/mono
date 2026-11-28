@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import type { LineData } from '@niivue/uikit'
 import { vec3 } from 'gl-matrix'
 import type { Rotation2D } from '@/NVTypes'
 import type { GlyphBatch } from './NVFont'
-import type { LineData } from './NVLine'
 import { buildRuler, chooseRulerSize } from './NVRuler'
 import {
   type SliceLayoutConfig,
@@ -60,11 +60,11 @@ function measure(
     [0, 0, 0, zoom],
     mmPerUnit,
   )
-  const m = /^(\d+) (cm|mm|um)$/.exec(label)
+  const m = /^(\d+) (cm|mm|µm)$/.exec(label)
   if (!m) throw new Error(`no ruler drawn (label: "${label}")`)
   const barPx =
     Math.max(...lines.map((l) => l[1])) - Math.min(...lines.map((l) => l[0]))
-  const labelMM = Number(m[1]) * (m[2] === 'cm' ? 10 : m[2] === 'um' ? 1e-3 : 1)
+  const labelMM = Number(m[1]) * (m[2] === 'cm' ? 10 : m[2] === 'µm' ? 1e-3 : 1)
   return { pxPerMM: barPx / labelMM, barPx, label }
 }
 
@@ -109,7 +109,7 @@ describe('buildRuler', () => {
     const r = measure(0, false, 1, {
       extentsMax: vec3.fromValues(0.4, 0.4, 0.4),
     })
-    expect(r.label).toBe('200 um')
+    expect(r.label).toBe('200 µm')
     // The bar must still be as long as its label claims: fit scale is
     // min(2000 / 0.4, 400 / 0.4) px per mm.
     expect(r.pxPerMM).toBeCloseTo(400 / 0.4, 3)
@@ -122,7 +122,7 @@ describe('buildRuler', () => {
     const r = measure(0, false, 1, {
       extentsMax: vec3.fromValues(0.3, 0.3, 0.3),
     })
-    expect(r.label).toBe('100 um')
+    expect(r.label).toBe('100 µm')
     expect(r.pxPerMM).toBeCloseTo(400 / 0.3, 3)
   })
 
@@ -137,7 +137,7 @@ describe('buildRuler', () => {
     const um = measure(0, false, 1, {
       extentsMax: vec3.fromValues(1.5, 1.5, 1.5), // maxMM = 0.975
     })
-    expect(um.label).toBe('500 um')
+    expect(um.label).toBe('500 µm')
   })
 
   test('barLengthMatchesItsLabelInEveryOrientation', () => {
@@ -374,7 +374,7 @@ describe('ruler on mosaic render and global3d tiles', () => {
       screen,
     } as unknown as SliceTile
     // 0.65 * 180 mm = 117 mm = 117000 um: 100000 um, 200 px.
-    expect(draw([tile], 'um')).toEqual({ label: '100000 um', barPx: 200 })
+    expect(draw([tile], 'um')).toEqual({ label: '100000 µm', barPx: 200 })
   })
 })
 
@@ -393,7 +393,7 @@ describe('chooseRulerSize units', () => {
     expect(chooseRulerSize(100, 'cm')).toEqual({ lengthMM: 50, label: '5 cm' })
     expect(chooseRulerSize(0.4, 'um')).toEqual({
       lengthMM: 0.2,
-      label: '200 um',
+      label: '200 µm',
     })
     expect(chooseRulerSize(0.4, 'mm')).toEqual({
       lengthMM: 0.2,

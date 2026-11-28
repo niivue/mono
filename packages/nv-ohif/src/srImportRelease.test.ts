@@ -9,7 +9,7 @@ const {
   clearNiivueAnnotations,
   isReleasedRow,
   removeAnnotationsForRows,
-} = await import('./commands')
+} = await import('./measurementReflection')
 const { adoptReportScale, calibrationScale, syncReportRows } = await import(
   './calibration'
 )
@@ -101,7 +101,7 @@ test('MPR: closing the axial pane hands its row to the coronal pane on the serie
     expect(reflectNiivueAnnotation('A', sm, line as never)).toBe(true)
     importRows(coronal as never, 'series', sm)
     // Pane A unmounts, in NiivueViewport's cleanup order.
-    clearNiivueAnnotations('A', sm)
+    clearNiivueAnnotations('A')
     unregisterNiivue('A')
     const uid = [...rows.keys()][0] as string
     expect(isReleasedRow(uid)).toBe(true)
@@ -189,7 +189,7 @@ test('a released row adopted by one pane is not adopted again by its broadcast',
     expect(reflectNiivueAnnotation('X', sm, line as never)).toBe(true)
     importRows(c1 as never, 's2', sm)
     importRows(c2 as never, 's2', sm)
-    clearNiivueAnnotations('X', sm)
+    clearNiivueAnnotations('X')
     unregisterNiivue('X')
     expect(c1.added.length + c2.added.length).toBe(1)
   } finally {
@@ -242,7 +242,7 @@ test('a report row keeps its scale across panes until OHIF removes it', () => {
   }
   // NiivueViewport's cleanup order.
   const unmount = (id: string) => {
-    clearNiivueAnnotations(id, sm)
+    clearNiivueAnnotations(id)
     unregisterNiivue(id)
     syncReportRows()
   }

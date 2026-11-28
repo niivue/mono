@@ -1,7 +1,7 @@
 // OHIF measurement rows from another source (a hydrated DICOM SR) shown as
 // NiiVue annotations on the pane displaying their series. Each becomes a NiiVue
 // annotation in the acquisition plane and its row is replaced by the NiiVue one
-// (reflected from annotationAdded), so it is edited, exported and deleted like
+// (reflected from its annotationChanged 'add'), so it is edited, exported and deleted like
 // any NiiVue measurement. NiiVue rows a pane released (unmount, series swap)
 // come back the same way under their own uid.
 // ponytail: off-axis (oblique) rows are left to cornerstone.
@@ -15,8 +15,8 @@ import {
   type VectorAnnotation,
 } from '@niivue/niivue'
 import { useEffect } from 'react'
-import { programmaticAnnotations } from './arrowText'
 import { adoptReportScale, moveReportRow } from './calibration'
+import { measurementStyleOf } from './contourSeg'
 import {
   adoptedRowUids,
   claimPendingJump,
@@ -26,23 +26,11 @@ import {
   rasToLps,
   reflectedRowUid,
   releasedAnnotationId,
-} from './commands'
-import { measurementStyleOf } from './contourSeg'
+} from './measurementReflection'
 import { type NiivueViewportEntry, niivueEntries } from './niivueRegistry'
-import type { OhifServicesManager } from './ohif-types'
+import type { OhifMeasurement, OhifServicesManager } from './ohif-types'
+import { SLICE_AXIS } from './quantify'
 import { acquisitionSliceType } from './standardCommands'
-
-export interface OhifRow {
-  uid: string
-  toolName?: string
-  label?: string
-  points?: number[][]
-  referenceSeriesUID?: string
-  source?: { name?: string }
-  metadata?: { sliceType?: number }
-  /** Stats as stored: per image for cornerstone rows (an SR's NUM values). */
-  data?: Record<string, unknown>
-}
 
 /**
  * A report row's calibration (C35): its stored length (a hydrated SR's NUM,
@@ -50,7 +38,7 @@ export interface OhifRow {
  * over native area (cornerstone's and NiiVue's geometric areas agree exactly).
  */
 export function reportScale(
-  row: OhifRow,
+  row: OhifMeasurement,
   stats: { length?: number; area: number } | undefined,
 ): number | undefined {
   const d = row.data ?? {}
@@ -70,9 +58,6 @@ export function reportScale(
     : undefined
 }
 
-// Depth axis (RAS index) per slice type: axial z, coronal y, sagittal x.
-const DEPTH = [2, 1, 0]
-
 // OHIF contour rows: their points are the outline NiiVue stores.
 const CONTOUR_TOOLS: Record<string, AnnotationTool> = {
   PlanarFreehandROI: 'freehand',
@@ -88,7 +73,7 @@ const near = (a: number | undefined, b: number | undefined) =>
 // lengths from the world points.
 function twoLineFromRow(
   nv: Pick<NiiVue, 'annotationStyle'>,
-  row: OhifRow,
+  row: OhifMeasurement,
   ras: [number, number, number][],
   pts: AnnotationPoint[],
   sliceType: number,
@@ -168,7 +153,7 @@ function twoLineFromRow(
  */
 export function annotationFromRow(
   nv: Pick<NiiVue, 'volumes' | 'annotationStyle' | 'annotationAreaIsGeometric'>,
-  row: OhifRow,
+  row: OhifMeasurement,
 ): VectorAnnotation | undefined {
   const vol = nv.volumes[0]
   if (!vol || !row.points?.length) return undefined
@@ -180,8 +165,8 @@ export function annotationFromRow(
     ras.every(
       (p) =>
         Math.abs(
-          (p[DEPTH[t] as number] as number) -
-            (ras[0]?.[DEPTH[t] as number] as number),
+          (p[SLICE_AXIS[t] as number] as number) -
+            (ras[0]?.[SLICE_AXIS[t] as number] as number),
         ) < 1e-3,
     )
   // A NiiVue row's own plane first, then the acquisition plane.
@@ -193,7 +178,7 @@ export function annotationFromRow(
     2,
   ].find((t) => t !== undefined && onPlane(t))
   if (sliceType === undefined) return undefined
-  const depth = ras[0]?.[DEPTH[sliceType] as number] ?? 0
+  const depth = ras[0]?.[SLICE_AXIS[sliceType] as number] ?? 0
   const pts = ras.map((p) => mmToSlice2D(p, sliceType))
   const bounds = (ps: AnnotationPoint[]) => ({
     start: {
@@ -293,17 +278,6 @@ export function annotationFromRow(
   return annotation
 }
 
-type RowService = {
-  EVENTS?: Record<string, string>
-  getMeasurements?: () => OhifRow[]
-  getMeasurement?: (uid: string) => OhifRow | undefined
-  remove?: (uid: string) => void
-  subscribe?: (
-    event: string,
-    cb: (e: { measurement?: OhifRow }) => void,
-  ) => { unsubscribe: () => void }
-}
-
 // Released rows mid-adoption: adding one broadcasts it synchronously, and it
 // stays released until that add returns.
 const adopting = new Set<string>()
@@ -315,12 +289,10 @@ export function useOhifRowImport(
   servicesManager: OhifServicesManager | undefined,
 ): void {
   useEffect(() => {
-    const ms = servicesManager?.services?.measurementService as
-      | RowService
-      | undefined
+    const ms = servicesManager?.services?.measurementService
     if (!nv || !seriesUid || !ms?.remove) return
     const take = (
-      row: OhifRow | undefined,
+      row: OhifMeasurement | undefined,
       releasing?: NiivueViewportEntry['nv'],
     ) => {
       if (!row) return
@@ -350,7 +322,6 @@ export function useOhifRowImport(
       // Replace the source row only once the NiiVue one exists: a failed
       // reflection keeps the original measurement. A released row is
       // reflected under its own uid, so jumps and tracking keep pointing at it.
-      // Marked only for the synchronous add, so no id outlives it.
       // A NiiVue row's scale is already its display set's.
       const scale =
         row.source?.name === 'NiiVue'
@@ -358,7 +329,6 @@ export function useOhifRowImport(
           : reportScale(row, annotation.stats)
       const ds = own.displaySets[0]?.displaySetInstanceUID
       if (scale && ds) adoptReportScale(ds, annotation.id, scale)
-      programmaticAnnotations.add(annotation.id)
       const releasedFrom = released ? releasedAnnotationId(row.uid) : undefined
       if (released) {
         adoptedRowUids.set(annotation.id, row.uid)
@@ -367,7 +337,6 @@ export function useOhifRowImport(
       try {
         nv.addAnnotation(annotation)
       } finally {
-        programmaticAnnotations.delete(annotation.id)
         adoptedRowUids.delete(annotation.id)
         adopting.delete(row.uid)
       }
@@ -391,7 +360,11 @@ export function useOhifRowImport(
       ms.EVENTS?.MEASUREMENT_ADDED,
       ms.EVENTS?.RAW_MEASUREMENT_ADDED,
     ].map((event) =>
-      event ? ms.subscribe?.(event, (e) => take(e.measurement)) : undefined,
+      event
+        ? ms.subscribe?.(event, (e: { measurement?: OhifMeasurement }) =>
+            take(e.measurement),
+          )
+        : undefined,
     )
     return () => {
       unsubscribeReleased()

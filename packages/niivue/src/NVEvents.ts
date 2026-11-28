@@ -2,15 +2,12 @@ import type { ByteLruStats } from '@/byteLru'
 import type {
   AffineMatrix,
   BackendType,
-  CompletedAngle,
-  CompletedMeasurement,
   DragReleaseInfo,
   MeshUpdate,
   NiiVueLocation,
   NVImage,
   NVMesh,
   NVSignal,
-  VectorAnnotation,
   VolumeUpdate,
 } from '@/NVTypes'
 import type { FrameReport } from '@/view/NVPerfMarks'
@@ -24,10 +21,6 @@ export type VolumeLoadedDetail = { volume: NVImage }
 export type MeshLoadedDetail = { mesh: NVMesh }
 export type VolumeRemovedDetail = { volume: NVImage; index: number }
 export type MeshRemovedDetail = { mesh: NVMesh; index: number }
-export type MeasurementRemovedDetail = {
-  measurement: CompletedMeasurement
-  index: number
-}
 export type SignalLoadedDetail = { signal: NVSignal }
 export type SignalRemovedDetail = { signal: NVSignal; index: number }
 export type SignalLocationDetail = {
@@ -107,18 +100,25 @@ export type ViewAttachedDetail = {
   backend: BackendType
 }
 export type CanvasResizeDetail = { width: number; height: number }
-export type AnnotationAddedDetail = { annotation: VectorAnnotation }
-export type AnnotationRemovedDetail = { id: string }
 export type AnnotationChangedDetail = {
+  /**
+   * What changed the annotations: `draw` a shape the user just finished, `add`
+   * addAnnotation, `replace` replaceAnnotations, `resize` a handle drag, `erase`
+   * an eraser stroke, `text` setAnnotationText, `delete` removeAnnotation(s),
+   * `clear`, `undo`, `redo`, `load` loadAnnotationsJSON or a document.
+   */
   action:
     | 'draw'
-    | 'erase'
-    | 'move'
+    | 'add'
+    | 'replace'
     | 'resize'
+    | 'erase'
+    | 'text'
+    | 'delete'
+    | 'clear'
     | 'undo'
     | 'redo'
-    | 'clear'
-    | 'delete'
+    | 'load'
   /** Ids of annotations this change added, so a listener need not diff. */
   added: string[]
   /** Ids of annotations whose geometry, stats or text changed. */
@@ -196,9 +196,6 @@ export interface NVEventMap {
   frameChange: FrameChangeDetail
   dragRelease: DragReleaseInfo
   pointerUp: PointerUpDetail
-  measurementCompleted: CompletedMeasurement
-  measurementRemoved: MeasurementRemovedDetail
-  angleCompleted: CompletedAngle
 
   // Loading
   volumeLoaded: VolumeLoadedDetail
@@ -232,8 +229,6 @@ export interface NVEventMap {
   clickToSegment: ClickToSegmentDetail
 
   // Annotations
-  annotationAdded: AnnotationAddedDetail
-  annotationRemoved: AnnotationRemovedDetail
   annotationChanged: AnnotationChangedDetail
   /** An annotation undo step was recorded; `seq` names it (annotationUndoTop). */
   annotationHistoryPush: { seq: number }

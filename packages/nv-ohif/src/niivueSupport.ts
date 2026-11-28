@@ -87,16 +87,6 @@ const HOST_AGNOSTIC_COMMANDS = [
 
 const NIIVUE_SEGMENTATION_EVALUATOR = 'evaluate.niivue.segmentation'
 
-type SegmentationServiceLike = {
-  getSegmentationRepresentations?: (viewportId: string) => unknown[]
-  getActiveSegmentation?: (
-    viewportId: string,
-  ) => { segments?: Record<string, unknown> } | undefined
-}
-type ToolbarServiceLike = {
-  _evaluateFunction?: Record<string, (args: Record<string, unknown>) => unknown>
-}
-
 /**
  * OHIF's `evaluate.cornerstone.segmentation` for NiiVue panes (which belong to
  * no cornerstone tool group): enabled once the pane lists a segmentation with
@@ -112,14 +102,10 @@ export function niivueSegmentationEvaluator(
       const services = ohifServices(servicesManager)
       const entry = getNiivueEntry(args.viewportId)
       if (!entry)
-        return (
-          services?.toolbarService as ToolbarServiceLike | undefined
-        )?._evaluateFunction?.['evaluate.cornerstone.segmentation']?.(args) as
-          | OhifToolbarEvaluation
-          | undefined
-      const seg = services?.segmentationService as
-        | SegmentationServiceLike
-        | undefined
+        return services?.toolbarService?._evaluateFunction?.[
+          'evaluate.cornerstone.segmentation'
+        ]?.(args) as OhifToolbarEvaluation | undefined
+      const seg = services?.segmentationService
       const viewportId = args.viewportId as string
       if (!seg?.getSegmentationRepresentations?.(viewportId)?.length)
         return { disabled: true, disabledText: 'No segmentations available' }
@@ -131,11 +117,7 @@ export function niivueSegmentationEvaluator(
         }
       const toolNames = args.toolNames as string[] | undefined
       if (!toolNames) return { disabled: false }
-      const tools = services?.toolGroupService as
-        | {
-            getActivePrimaryMouseButtonTool?: (id: string) => string | undefined
-          }
-        | undefined
+      const tools = services?.toolGroupService
       const tool = tools?.getActivePrimaryMouseButtonTool?.(
         entry.toolGroupId ?? 'default',
       )
@@ -253,13 +235,7 @@ export function niivueSupportEvaluator(
         }
       }
       if (toolName === undefined) return undefined
-      const tools = ohifServices(servicesManager)?.toolGroupService as
-        | {
-            getActivePrimaryMouseButtonTool?: (
-              toolGroupId: string,
-            ) => string | undefined
-          }
-        | undefined
+      const tools = ohifServices(servicesManager)?.toolGroupService
       return {
         disabled: false,
         isActive:

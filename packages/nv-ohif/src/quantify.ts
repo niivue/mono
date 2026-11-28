@@ -100,12 +100,22 @@ export function sampled(
   }
 }
 
+/** The RAS axis across each 2D slice type: axial z, coronal y, sagittal x. */
+export const SLICE_AXIS: readonly number[] = [2, 1, 0]
+
 /** Row `r` of a 3x4 row-major affine applied to `p`. */
 export const apply = (m: number[], p: ArrayLike<number>, r: number) =>
   (m[r * 4] as number) * (p[0] as number) +
   (m[r * 4 + 1] as number) * (p[1] as number) +
   (m[r * 4 + 2] as number) * (p[2] as number) +
   (m[r * 4 + 3] as number)
+
+/** Row-major 3x4 LPS mm -> voxel of a row-major 3x4 voxel -> RAS affine; null if singular. */
+export function lpsToVoxelOf(affine: number[]): number[] | null {
+  // LPS in: RAS x and y negated, so the inverse's x and y columns flip.
+  const m = invertAffine(affine).map((v, i) => (i % 4 < 2 ? -v : v))
+  return m.every(Number.isFinite) ? m : null
+}
 
 /** Inverse of a row-major 3x4 affine. */
 export function invertAffine(m: number[]): number[] {

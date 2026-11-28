@@ -292,8 +292,11 @@ for (const [volume, oblique] of [
       await drawn()
       // Overlapping shapes merge, so count additions rather than annotations.
       const added = []
-      nv.addEventListener('annotationAdded', (e) =>
-        added.push(e.detail.annotation.shape?.type ?? 'freehand'))
+      nv.addEventListener('annotationChanged', (e) => {
+        if (e.detail.action !== 'draw') return
+        for (const id of e.detail.added)
+          added.push(nv.annotations.find((a) => a.id === id)?.shape?.type ?? 'freehand')
+      })
       const [ax, ay] = tileCentre((t) => !t.isRender && t.sliceType === SLICE_TYPE.AXIAL)
       drag([ax - 20, ay], [ax + 20, ay])
       drag([ax, ay - 10], [ax, ay + 10])
@@ -355,6 +358,42 @@ test('Escape mid-drag cancels a bidirectional short axis (#471)', async ({
   })
 })
 
+test('a measurement drag is an undoable measureLine annotation', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  const r = await page.evaluate(`(async () => {
+    ${setup('AXIAL', 'bidirectional')}
+    nv.annotationIsEnabled = false
+    nv.primaryDragMode = 2 // DRAG_MODE.measurement
+    await drawn()
+    const actions = []
+    let mmLength = 0
+    nv.addEventListener('annotationChanged', (e) => actions.push(e.detail.action))
+    nv.addEventListener('dragRelease', (e) => (mmLength = e.detail.mmLength))
+    drag([150, 200], [250, 200])
+    await drawn()
+    const a = nv.annotations[0]
+    const out = {
+      type: a?.shape?.type,
+      length: a?.stats?.length,
+      mmLength,
+      actions,
+      drawn: nv.annotationScreenShapes.length,
+    }
+    nv.annotationUndo()
+    return { ...out, afterUndo: nv.annotations.length }
+  })()`)
+  expect(r.mmLength).toBeGreaterThan(0)
+  expect(r.length).toBeCloseTo(r.mmLength, 3)
+  expect(r).toMatchObject({
+    type: 'measureLine',
+    actions: ['draw', 'undo'],
+    drawn: 1,
+    afterUndo: 0,
+  })
+})
+
 test('Escape mid-drag cancels a half-placed angle', async ({ page }) => {
   test.setTimeout(90_000)
   const r = await page.evaluate(`(async () => {
@@ -372,7 +411,7 @@ test('Escape mid-drag cancels a half-placed angle', async ({ page }) => {
     const turned = nv.azimuth !== view[0] || nv.elevation !== view[1]
     const dragging = nv.isDragging
     ev('pointerup', 290, 160, 0)
-    return { open, state: nv._angleState, angles: nv.model.completedAngles.length, dragging, turned }
+    return { open, state: nv._angleState, angles: nv.annotations.filter((a) => a.shape?.type === 'measureAngle').length, dragging, turned }
   })()`)
   expect(r).toEqual({
     open: 'drawing_second_line',
@@ -383,7 +422,7 @@ test('Escape mid-drag cancels a half-placed angle', async ({ page }) => {
   })
 })
 
-test('an angle on a sheared slice is measured in mm; clearAngles drops an open one', async ({
+test('an angle on a sheared slice is measured in mm; cancelAnnotationInProgress drops an open one', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -395,20 +434,14 @@ test('an angle on a sheared slice is measured in mm; clearAngles drops an open o
     // Arms at +-45 degrees on screen: 90 on screen, not on the tilted slice.
     drag([140, 140], [200, 200])
     click([260, 140])
-    const a = nv.model.completedAngles[0]
-    const sub = (p, q) => p.map((x, i) => x - q[i])
-    const u = sub(a.firstLine.startMM, a.firstLine.endMM)
-    const w = sub(a.secondLine.endMM, a.secondLine.startMM)
-    const dot = u.reduce((s, x, i) => s + x * w[i], 0)
-    const mmAngle = (Math.acos(dot / Math.hypot(...u) / Math.hypot(...w)) * 180) / Math.PI
+    const angle = nv.annotations[0]?.stats?.angle
     drag([140, 300], [200, 330])
-    nv.clearAngles()
+    const cancelled = nv.cancelAnnotationInProgress()
     click([260, 300])
-    return { angle: a.angle, mmAngle, after: nv.model.completedAngles.length, state: nv._angleState }
+    return { angle, cancelled, after: nv.annotations.length, state: nv._angleState }
   })()`)
-  expect(r.angle).toBeCloseTo(r.mmAngle, 3)
   expect(Math.abs(r.angle - 90)).toBeGreaterThan(1)
-  expect([r.after, r.state]).toEqual([0, 'none'])
+  expect([r.cancelled, r.after, r.state]).toEqual([true, 1, 'none'])
 })
 
 test('an angle drag on another tile starts a new angle there', async ({
@@ -460,7 +493,7 @@ test('scrolling to another slice between the arms drops the angle', async ({
     await drawn()
     ev('pointermove', 260, 100, -1, PointerEvent, 0)
     click([260, 100])
-    return { scrolled: nv.crosshairPos[2] !== z, state: nv._angleState, angles: nv.model.completedAngles.length }
+    return { scrolled: nv.crosshairPos[2] !== z, state: nv._angleState, angles: nv.annotations.filter((a) => a.shape?.type === 'measureAngle').length }
   })()`)
   expect(r).toEqual({ scrolled: true, state: 'none', angles: 0 })
 })
@@ -480,11 +513,13 @@ test('zoom between the arms moves the first arm with the image', async ({
       c.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: r.left + 200, clientY: r.top + 200, bubbles: true, cancelable: true }))
     await drawn()
     ev('pointermove', 250, 120, -1, PointerEvent, 0)
-    const arm = nv.model._dragOverlay.lines[0]
+    await drawn()
+    // The open angle is the annotation preview, projected like any annotation.
+    const arm = nv.annotationScreenShapes.find((s) => s.tool === 'measureAngle')
     // Perpendicular to the drawn (moved) arm at its vertex.
-    const [vx, vy] = arm.endXY
+    const { x: vx, y: vy } = arm.end
     click([vx, vy - 80])
-    return { start: arm.startXY, angle: nv.model.completedAngles[0]?.angle }
+    return { start: [arm.start.x, arm.start.y], angle: nv.annotations[0]?.stats?.angle }
   })()`)
   expect(r.start[0]).not.toBeCloseTo(160, 0)
   expect(r.angle).toBeCloseTo(90, 0)

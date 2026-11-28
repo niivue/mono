@@ -15,17 +15,17 @@ import {
   NVSlide,
   slideStatsSummary,
 } from '@niivue/niivue'
-import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
-import { openSlide, type SlideCandidate } from '@niivue/nv-ext-tile/open'
-import { registerDcm2niixTiffDecoders } from '@niivue/nv-ext-tile/tiff'
-// Optional: drop these calls and the @niivue/uikit dependency to lose the
-// minimap, the HUD and the channel panel.
+// Optional: drop these calls to lose the minimap, the HUD and the channel
+// panel (they are NiiVue's uikit widgets).
 import {
   attachSlideChannelPanel,
   attachSlideHud,
   attachSlideMinimap,
   attachSlidePlaneControl,
-} from '@niivue/uikit'
+} from '@niivue/niivue/uikit'
+import { registerDcm2niixDecoders } from '@niivue/nv-ext-tile/dicom'
+import { openSlide, type SlideCandidate } from '@niivue/nv-ext-tile/open'
+import { registerDcm2niixTiffDecoders } from '@niivue/nv-ext-tile/tiff'
 import { droppedFiles } from './drop'
 
 const filesInput = document.getElementById('files') as HTMLInputElement

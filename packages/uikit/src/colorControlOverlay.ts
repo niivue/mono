@@ -5,7 +5,6 @@
 // focused one changes a channel; pressing a swatch sets the whole color.
 // `onInput` fires on every change and `onChange` once per committed one.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import {
   buildColorControl,
   COLOR_CHANNELS,
@@ -27,6 +26,7 @@ import type {
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { UIKitEntryMap } from './overlayParts'
 import { UIKitRectOverlay } from './rectOverlay'
 import { UIKitSliderOverlay } from './sliderOverlay'

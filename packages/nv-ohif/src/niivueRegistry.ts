@@ -1,5 +1,10 @@
 import type { default as NiiVue, NVImage } from '@niivue/niivue'
-import type { OhifDisplaySet, OhifServicesManager } from './ohif-types'
+import type {
+  OhifDisplaySet,
+  OhifExtensionManager,
+  OhifServices,
+  OhifServicesManager,
+} from './ohif-types'
 import type { SliceFrames } from './sliceFrames'
 import type { WsiSlideView } from './wsiSlideView'
 
@@ -120,14 +125,10 @@ export function getNiivueEntry(
 // the demo harness).
 export function ohifServices(
   servicesManager: OhifServicesManager | undefined,
-): Record<string, unknown> | undefined {
+): OhifServices | undefined {
   if (servicesManager?.services) return servicesManager.services
-  const g = globalThis as unknown as { services?: Record<string, unknown> }
+  const g = globalThis as unknown as { services?: OhifServices }
   return g.services
-}
-
-interface ViewportGridServiceLike {
-  getActiveViewportId?: () => string | null | undefined
 }
 
 /**
@@ -151,9 +152,7 @@ export function getActiveNiivueEntry(
   servicesManager: OhifServicesManager | undefined,
   viewportId?: string,
 ): NiivueViewportEntry | undefined {
-  const grid = ohifServices(servicesManager)?.viewportGridService as
-    | ViewportGridServiceLike
-    | undefined
+  const grid = ohifServices(servicesManager)?.viewportGridService
   return getNiivueEntryForViewport(viewportId ?? grid?.getActiveViewportId?.())
 }
 
@@ -175,12 +174,8 @@ export function refreshToolbar(
   viewportId: string,
 ): void {
   const services = ohifServices(servicesManager)
-  const svc = services?.toolbarService as
-    | { refreshToolbarState?: (props: Record<string, unknown>) => void }
-    | undefined
-  const grid = services?.viewportGridService as
-    | ViewportGridServiceLike
-    | undefined
+  const svc = services?.toolbarService
+  const grid = services?.viewportGridService
   svc?.refreshToolbarState?.({
     viewportId: grid?.getActiveViewportId?.() ?? viewportId,
   })
@@ -209,9 +204,17 @@ export function ohifCommandsManager(
 export function authHeaders(
   servicesManager: OhifServicesManager | undefined,
 ): Record<string, string> {
-  const svc = ohifServices(servicesManager)?.userAuthenticationService as
-    | { getAuthorizationHeader?: () => { Authorization?: string } | undefined }
-    | undefined
+  const svc = ohifServices(servicesManager)?.userAuthenticationService
   const header = svc?.getAuthorizationHeader?.()
   return header?.Authorization ? { Authorization: header.Authorization } : {}
+}
+
+/** cornerstone's libraries, from OHIF's cornerstone extension (absent without it). */
+export function cornerstoneLibraries<T>(
+  extensionManager: OhifExtensionManager | undefined,
+): T | undefined {
+  const entry = extensionManager?.getModuleEntry(
+    '@ohif/extension-cornerstone.utilityModule.common',
+  ) as { exports?: { getCornerstoneLibraries?: () => unknown } } | undefined
+  return entry?.exports?.getCornerstoneLibraries?.() as T | undefined
 }

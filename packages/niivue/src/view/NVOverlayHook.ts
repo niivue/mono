@@ -1,9 +1,9 @@
-// UIKit overlay lifecycle hook. NiiVue draws its scene, then — after its own
+// Overlay lifecycle hook. NiiVue draws its scene, then — after its own
 // font/line/annotation overlays and before the frame is presented — gives a
 // registered overlay renderer one privileged chance to draw into the SAME frame,
-// in screen space, on whichever backend is live. This is the seam the separate
-// @niivue/uikit package plugs its widgets (rulers, and later buttons/sliders/
-// panels) into. See notes/ruler-port.md for the design.
+// in screen space, on whichever backend is live. @niivue/uikit's widgets draw
+// through it (with structurally identical types of their own), as can any host
+// overlay. See notes/ruler-port.md for the design.
 //
 // The types here are pure (no runtime), so both the WebGL2 and WebGPU views can
 // import them without pulling in backend code. GPUDevice / GPURenderPassEncoder
@@ -16,7 +16,7 @@
  * bounds rect). A WebGPU overlay appends draws to the frame's single open render
  * pass — it must NOT call `pass.end()` (NiiVue owns that) and must draw before it.
  */
-export type UIKitBackendHandle =
+export type OverlayBackendHandle =
   | { readonly backend: 'webgl2'; readonly gl: WebGL2RenderingContext }
   | {
       readonly backend: 'webgpu'
@@ -43,7 +43,7 @@ export type UIKitBackendHandle =
     }
 
 /** The drawable rectangle for this frame, in device pixels. */
-export interface UIKitOverlayBounds {
+export interface OverlayBounds {
   /** Bounds origin x within the canvas backing store (0 for a full-canvas view). */
   readonly x: number
   /** Bounds origin y within the canvas backing store (0 for a full-canvas view). */
@@ -55,9 +55,9 @@ export interface UIKitOverlayBounds {
 }
 
 /** Everything an overlay renderer needs to draw one frame. */
-export interface UIKitOverlayFrame {
-  readonly handle: UIKitBackendHandle
-  readonly bounds: UIKitOverlayBounds
+export interface OverlayFrame {
+  readonly handle: OverlayBackendHandle
+  readonly bounds: OverlayBounds
   /** Effective device pixel ratio in force for this view. */
   readonly dpr: number
   /**
@@ -70,7 +70,7 @@ export interface UIKitOverlayFrame {
 }
 
 /** A privileged overlay renderer registered on a NiiVue controller. */
-export interface UIKitOverlayRenderer {
+export interface OverlayRenderer {
   /** Draw this frame's overlay. Called at the end of every frame, per backend. */
-  drawOverlay(frame: UIKitOverlayFrame): void
+  drawOverlay(frame: OverlayFrame): void
 }

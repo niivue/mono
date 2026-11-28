@@ -18,20 +18,22 @@
  * reported with the box it was drawn in, in canvas pixels.
  */
 
-import type { UIKitOverlayRenderer } from '@niivue/niivue'
+import type { OverlayRenderer } from '@niivue/niivue'
+import {
+  measureWidth,
+  type RGBA,
+  UIKitControls,
+  type UIKitFont,
+  type UIKitHost,
+} from '@niivue/uikit'
 import {
   type ColorSwatch,
   DEFAULT_SEGMENTED_STYLE,
   type FilePickerBridge,
-  measureWidth,
-  type RGBA,
   UIKitButtonOverlay,
   UIKitColorControlOverlay,
-  UIKitControls,
   UIKitDialogOverlay,
   UIKitFilePickerOverlay,
-  type UIKitFont,
-  type UIKitHost,
   UIKitMenuOverlay,
   UIKitNumberInputOverlay,
   UIKitSegmentedOverlay,
@@ -40,7 +42,7 @@ import {
   UIKitTextAreaOverlay,
   UIKitTextInputOverlay,
   UIKitToggleOverlay,
-} from '@niivue/uikit'
+} from '@niivue/uikit/controls'
 import {
   type ControlEvent,
   type ControlListener,
@@ -57,7 +59,7 @@ import type {
 
 /** What the surface needs of NiiVue: a NiiVue instance is one as it is. */
 export interface UIKitSurfaceHost extends UIKitHost {
-  registerOverlayRenderer(renderer: UIKitOverlayRenderer): () => void
+  registerOverlayRenderer(renderer: OverlayRenderer): () => void
 }
 
 export interface UIKitSurfaceOptions {
@@ -129,7 +131,7 @@ export function uikitControls(
     .add(dialogs)
 
   // The bound values are read before each frame, then the widgets drawn.
-  const renderer: UIKitOverlayRenderer = {
+  const renderer: OverlayRenderer = {
     drawOverlay(frame) {
       memory.frame()
       layer.drawOverlay(frame)

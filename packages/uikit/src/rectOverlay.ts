@@ -2,7 +2,7 @@
 // whichever backend is live: the filled-shape counterpart of UIKitLineOverlay,
 // and the surface the button widget (and later panels) build on.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { RectData } from './rect'
 import { GlRectRenderer } from './render/glRectRenderer'
 import { WgpuRectRenderer } from './render/wgpuRectRenderer'

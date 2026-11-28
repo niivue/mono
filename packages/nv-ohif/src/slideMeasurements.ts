@@ -4,17 +4,14 @@ import type {
   SlideAnnotation,
   SlideAnnotationTool,
 } from '@niivue/niivue'
-import {
-  type MeasurementServiceLike,
-  niivueMeasurementSource,
-  roundNumber,
-} from './commands'
 import { rowReport } from './csvReport'
+import { niivueMeasurementSource, roundNumber } from './measurementReflection'
 import { ohifServices } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
 import { type CommandsLike, routeSlideSR, type SlideRow } from './slideSR'
 import {
   ANNOTATION_TO_OHIF,
+  boxRowPoints,
   OHIF_TO_SLIDE_TOOL,
   SLIDE_UID_PREFIX,
 } from './toolBridge'
@@ -38,26 +35,9 @@ function slideRowPoints({
   let out = points
   // ArrowAnnotate rows lead with the tip, as cornerstone's (and volume rows).
   if (tool === 'arrow') out = [b, a]
-  else if (tool === 'rectangle' || tool === 'ellipse') {
-    const [x0, x1] = [Math.min(a.x, b.x), Math.max(a.x, b.x)]
-    const [y0, y1] = [Math.min(a.y, b.y), Math.max(a.y, b.y)]
-    const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2]
-    out =
-      tool === 'rectangle'
-        ? [
-            { x: x0, y: y0 },
-            { x: x1, y: y0 },
-            { x: x1, y: y1 },
-            { x: x0, y: y1 },
-          ]
-        : // Axis pairs, as the volume bridge's EllipticalROI: vertical, horizontal.
-          [
-            { x: cx, y: y0 },
-            { x: cx, y: y1 },
-            { x: x0, y: cy },
-            { x: x1, y: cy },
-          ]
-  } else if (tool === 'circle') {
+  else if (tool === 'rectangle' || tool === 'ellipse')
+    out = boxRowPoints(tool, a, b)
+  else if (tool === 'circle') {
     out = [a, { x: a.x + Math.hypot(b.x - a.x, b.y - a.y), y: a.y }]
   }
   return out.map((p) => [p.x, p.y, 0])
@@ -127,9 +107,7 @@ export function bindSlideMeasurements(
 ): () => void {
   const annotations = view.annotations
   const services = ohifServices(servicesManager)
-  const displaySets = services?.displaySetService as
-    | { getDisplaySetByUID?: (uid: string) => OhifDisplaySet | undefined }
-    | undefined
+  const displaySets = services?.displaySetService
   // A row's base level: its series' largest total pixel matrix.
   const smOf = (row: SlideRow) =>
     displaySets
@@ -140,13 +118,7 @@ export function bindSlideMeasurements(
           : a,
       )
   routeSlideSR(commandsManager, smOf)
-  const ms = services?.measurementService as
-    | (MeasurementServiceLike & {
-        remove(uid: string): void
-        getMeasurement(uid: string): unknown
-        EVENTS?: { MEASUREMENTS_CLEARED?: string }
-      })
-    | undefined
+  const ms = services?.measurementService
   if (!annotations || !ms?.addRawMeasurement) return () => {}
   const source = niivueMeasurementSource(ms)
   const tools = new Map<string, string>()

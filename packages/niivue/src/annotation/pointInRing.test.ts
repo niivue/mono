@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AnnotationPoint } from '@/NVTypes'
-import { pointInRing } from './pointInRing'
+import { pointInRing, polygonDistance } from './pointInRing'
 
 const square: AnnotationPoint[] = [
   { x: 0, y: 0 },
@@ -67,4 +67,17 @@ describe('pointInRing', () => {
   test('emptyRing_returnsFalse', () => {
     expect(pointInRing({ x: 5, y: 5 }, [])).toBe(false)
   })
+})
+
+test('polygonDistance is 0 inside, edge distance outside and in a hole', () => {
+  const ring = (a: number, b: number) => [
+    { x: a, y: a },
+    { x: b, y: a },
+    { x: b, y: b },
+    { x: a, y: b },
+  ]
+  const donut = { outer: ring(0, 10), holes: [ring(4, 6)] }
+  expect(polygonDistance(2, 2, donut)).toBe(0)
+  expect(polygonDistance(5, 5, donut)).toBe(1)
+  expect(polygonDistance(13, 5, donut)).toBe(3)
 })

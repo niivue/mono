@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type NiiVue from '@niivue/niivue'
 import { generateShape, type VectorAnnotation } from '@niivue/niivue'
-import { probeIndex, reflectNiivueAnnotation } from './commands'
+import { probeIndex, reflectNiivueAnnotation } from './measurementReflection'
 import {
   registerNiivue,
   unregisterNiivue,

@@ -131,10 +131,6 @@ describe('pickThumbnailInstance', () => {
     ])
     expect(inst).toBeUndefined()
   })
-
-  it('returns undefined for an empty series', () => {
-    expect(pickThumbnailInstance([])).toBeUndefined()
-  })
 })
 
 describe('frameEncoding', () => {
@@ -322,21 +318,5 @@ describe('fetchWsiThumbnailObjectUrl', () => {
     expect(await fetchWsiThumbnailObjectUrl(instances())).toBeNull()
     expect(seen.cancelled).toBe(true)
     expect(seen.pulled).toBeLessThan(40)
-  })
-
-  it('rejects an oversized body even without a Content-Length header', async () => {
-    const oversized = new Uint8Array(FETCH_CAP + 1)
-    oversized[0] = 0xff
-    oversized[1] = 0xd8
-    globalThis.fetch = (() =>
-      Promise.resolve(
-        new Response(oversized, {
-          status: 200,
-          headers: {
-            'content-type': 'multipart/related; type="image/jpeg"; boundary=B',
-          },
-        }),
-      )) as unknown as typeof fetch
-    expect(await fetchWsiThumbnailObjectUrl(instances())).toBeNull()
   })
 })

@@ -3,9 +3,9 @@ import { displaySetToNiivue } from './displaySetToNiivue'
 import type { OhifDisplaySet } from './ohif-types'
 
 // How NiivueViewport should load a given display set. The viewport is a router:
-//   - 'nifti'        a NIfTI/volume URL  -> nv.loadVolumes([{ url }])           (Phase 1)
-//   - 'dicom-volume' a volumetric DICOM series (CT/MR/...) -> dcm2niix -> NIfTI (Phase 2)
-//   - 'wsi'          whole-slide / large tiled 2D (SM) -> NVSlide              (Phase 2b)
+//   - 'nifti'        a NIfTI/volume URL  -> nv.loadVolumes([{ url }])
+//   - 'dicom-volume' a volumetric DICOM series (CT/MR/...) -> dcm2niix -> NIfTI
+//   - 'wsi'          whole-slide / large tiled 2D (SM) -> NVSlide
 //   - 'unsupported'  nothing we can render yet
 export type NiivueLoadKind = 'nifti' | 'dicom-volume' | 'wsi' | 'unsupported'
 

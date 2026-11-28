@@ -3,7 +3,7 @@
 // in) and drawn as a textured triangle run. This is the transformed-text base the
 // ruler widget's label builds on.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import { GlTextRenderer } from './render/glTextRenderer'
 import { type TextRun, WgpuTextRenderer } from './render/wgpuTextRenderer'
 import {

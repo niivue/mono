@@ -30,8 +30,13 @@ carved out of core. Rationale:
   overlays onto UIKit and remove the duplicated line/text from core** - a deliberate,
   reversible cutover, not a big-bang refactor.
 
-End state: UIKit is niivue's overlay-rendering layer; core delegates to it. Interim:
-the two coexist. The duplication is the cost we pay for that safety and independence.
+End state (1.0): core draws its own annotations, measurements, scale bar and
+labels with its own renderers. uikit is an opt-in toolkit (overlays, in-canvas
+controls) with no niivue dependency; core depends on uikit and takes its pure
+geometry and parsing from it (`rulerSegments`, `rulerTickNumbers`, `parseFont`),
+and NiiVue's uikit widgets live in core (`@niivue/niivue/uikit`). The line and
+text renderers stay separate (two designs). The rest of this note is the
+original design, kept for history.
 
 ## Two responsibilities, two homes
 
@@ -53,8 +58,8 @@ signal. Small, and it does not touch existing rendering.
 
 ### `@niivue/uikit` - the widget toolkit + its own rendering (separate package)
 
-A new workspace package depending on `@niivue/niivue` (pattern: `nv-react` /
-`nv-web-component`). It contains:
+A new workspace package (it no longer depends on `@niivue/niivue`; see End
+state). It contains:
 
 - **Its own line + text renderers**, duplicated from core and extended - both **WebGL2
   and WebGPU** (shader pair + a TS class each, mirrored), with **terminators** on the

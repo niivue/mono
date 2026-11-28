@@ -6,18 +6,16 @@ import * as NVMesh from '@/mesh/NVMesh'
 import * as NVConstants from '@/NVConstants'
 import { COLORMAP_TYPE } from '@/NVConstants'
 import type {
+  AnnotationCalibration,
   AnnotationConfig,
   AnnotationScreenShape,
   ColorbarInfo,
-  CompletedAngle,
-  CompletedMeasurement,
   DragOverlay,
   DrawConfig,
   FocusBox,
   ImageFromUrlOptions,
   InteractionConfig,
   LayoutConfig,
-  MeasurementScreenLine,
   MeshFromUrlOptions,
   MeshRenderConfig,
   NiiVueOptions,
@@ -170,20 +168,16 @@ export default class NVModel {
   _annotationSelection:
     | import('@/annotation/selection').AnnotationSelection
     | null = null
-  completedMeasurements: CompletedMeasurement[] = []
   planeOutlines: PlaneOutline[] = []
-  completedAngles: CompletedAngle[] = []
-  // Measurements projected to the current frame's canvas pixels, for an external
-  // overlay renderer (see NVControlBase.measurementScreenLines). Persisted lines
-  // are refilled each frame by the view; the active line tracks an in-progress
-  // measurement drag and is cleared on release.
-  _persistedMeasurementScreenLines: MeasurementScreenLine[] = []
-  _activeMeasurementScreenLine: MeasurementScreenLine | null = null
 
-  // Vector annotations projected to canvas pixels for the current frame, exposed
-  // via NVControlBase.annotationScreenShapes so an external overlay can draw the
-  // shapes. Refilled each frame by the view (projectAnnotationScreenShapes).
+  // Vector annotations projected to canvas pixels for the current frame: drawn,
+  // hit-tested (pickAnnotation) and exposed as annotationScreenShapes. Refilled
+  // each frame by the view (projectAnnotationScreenShapes).
   _persistedAnnotationScreenShapes: AnnotationScreenShape[] = []
+  // Host presentation hooks (NVControlBase.annotationIsHidden and
+  // annotationCalibration): runtime state, never saved in a document.
+  annotationIsHidden: ((annotation: VectorAnnotation) => boolean) | null = null
+  annotationCalibration: AnnotationCalibration | null = null
 
   constructor(options: NiiVueOptions = {}) {
     // Scene — flat options mapped to scene group
@@ -529,9 +523,6 @@ export default class NVModel {
       ...(options.annotationBrushRadius !== undefined && {
         brushRadius: options.annotationBrushRadius,
       }),
-      ...(options.annotationMergesOverlaps !== undefined && {
-        mergesOverlaps: options.annotationMergesOverlaps,
-      }),
       ...(options.annotationIsClickToPlace !== undefined && {
         isClickToPlace: options.annotationIsClickToPlace,
       }),
@@ -546,9 +537,6 @@ export default class NVModel {
       }),
       ...(options.annotationAreaIsGeometric !== undefined && {
         isAreaGeometric: options.annotationAreaIsGeometric,
-      }),
-      ...(options.annotationIsLivewireScissors !== undefined && {
-        isLivewireScissors: options.annotationIsLivewireScissors,
       }),
       ...(options.annotationIsErasing !== undefined && {
         isErasing: options.annotationIsErasing,

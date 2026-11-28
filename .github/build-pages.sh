@@ -23,6 +23,7 @@ APPS=(
   demo-ext-image-processing
   demo-ext-save-html
   demo-ext-tile
+  demo-uikit
   demo-nv-web-component
   dandi-demo
 )
@@ -41,12 +42,6 @@ for app in "${APPS[@]}"; do
     VITE_OMEZARR_ASSET_BASE="https://ome-zarr-scivis.s3.amazonaws.com/v0.5/96x2/" \
     bunx nx build "$app"
 done
-
-# UIKit's demo pages (packages/uikit/*.html), published like an app.
-echo "==> Building uikit demo"
-(cd packages/uikit \
-  && VITE_BASE="${BASE_PATH}uikit/" VITE_IMAGES_BASE="$BASE_PATH" \
-    bunx --bun vite build --mode demo)
 
 # 3. Build the docs site.
 # Its demos fetch volumes and embed example pages from this same deployment.
@@ -85,9 +80,6 @@ for app in "${APPS[@]}"; do
   cp -r "apps/$app/dist/"* "_site/$app/"
 done
 
-mkdir -p _site/uikit
-cp -r packages/uikit/dist-demo/* _site/uikit/
-
 # Moved pages: keep old links working (query and hash kept).
 redirect() {
   mkdir -p "$(dirname "_site/$1")"
@@ -96,6 +88,9 @@ redirect() {
 redirect demo-ext-wsi/index.html ../demo-ext-tile/
 for page in ome.zarr range vox.block.pick.zarr; do
   redirect "examples/$page.html" "../demo-ext-tile/$page.html"
+done
+for page in index buttons calipers volume subvolume slide slide-wsi standalone; do
+  redirect "uikit/$page.html" "../demo-uikit/$page.html"
 done
 
 # Documentation site

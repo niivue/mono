@@ -127,6 +127,40 @@ scene.setLayout('1x2') // two viewers side by side
 await scene.loadVolume(0, { url: '/volumes/mni152.nii.gz' })
 ```
 
+### UIKit widgets
+
+`@niivue/niivue/uikit` holds NiiVue widgets built on
+[`@niivue/uikit`](../uikit/README.md) (a dependency; core draws nothing with it
+unless you import this subpath). Like `/scene`, it is side-effect free and not
+part of the root entry.
+
+- For a `createSlideView`, five attach helpers, each returning its detach
+  function: `attachSlideMinimap(view, options)` (the minimap on its own control
+  layer, following the view's slide), `attachSlideMagnifier(view, options)` (a
+  lens over the drawn frame, not a finer level), `attachSlideHud(view, element,
+  rows?)` (pre-formatted rows, default `slideStatsSummary`),
+  `attachSlideChannelPanel(view, container)` (visibility, exact colour, window
+  in data units, windowing target and blend per channel; no window for label
+  channels) and `attachSlidePlaneControl(view, container)` (z/t sliders over
+  the slide's `planes` and async `setPlaneIndex`, hidden for a fixed source).
+  The panels are DOM form controls, not canvas widgets: canvas widgets take
+  focus only by pointer, and these must work from the keyboard.
+- `UIKitSlideMinimapOverlay`: an NVSlide minimap, the coarsest level as a
+  corner thumbnail with the viewport boxed; press or drag to recenter.
+- `UIKitDrawingSlices`: per-slice painted counts from `drawingChanged`
+  (rescanning only the event's `box`), as slider `marks`:
+
+  ```js
+  import { UIKitDrawingSlices } from '@niivue/niivue/uikit'
+
+  const slices = new UIKitDrawingSlices(nv, () =>
+    sliders.updateSlider('axial', { marks: slices.runs(2) }),
+  )
+  ```
+- `UIKitSubvolumeSelector`: drag a box on the slices to extract a subvolume.
+
+Demos: `apps/demo-uikit`.
+
 ### Without a bundler (standalone ES modules)
 
 The entry points above import `cbor-x`, `gl-matrix` and `nifti-reader-js` by

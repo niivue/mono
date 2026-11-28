@@ -7,12 +7,12 @@
 // `UIKitControls` layer with the other widgets, or feed `pointerDown/Move/Up`
 // and `keyDown` yourself from any host.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
 import type {
   UIKitInteractive,
   UIKitKeyEvent,
   UIKitRedrawSource,
 } from './controls'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import {
   UIKitDrawBundle,
   UIKitEntryMap,

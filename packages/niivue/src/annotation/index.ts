@@ -1,6 +1,7 @@
-import { ANNOTATION_DEFAULTS } from '@/NVConstants'
+import { ANNOTATION_DEFAULTS, sliceTypeDim } from '@/NVConstants'
 import type {
   AnnotationPoint,
+  AnnotationStats,
   AnnotationStyle,
   PolygonWithHoles,
   VectorAnnotation,
@@ -12,11 +13,7 @@ import {
   clipperInflatePath,
   clipperSubtractBrush,
 } from './clipper'
-import {
-  livewireBacktrack,
-  livewireField,
-  livewireFieldScissors,
-} from './livewire'
+import { livewireBacktrack, livewireFieldScissors } from './livewire'
 import {
   extractLivewireSlice,
   gridToSlice2D,
@@ -64,7 +61,6 @@ export {
   isOnSlice,
   isTwoLineShape,
   livewireBacktrack,
-  livewireField,
   livewireFieldScissors,
   mmToSlice2D,
   resizePolygons,
@@ -163,6 +159,66 @@ export function createAnnotation(
       strokeWidth: style?.strokeWidth ?? ANNOTATION_DEFAULTS.style.strokeWidth,
     },
   }
+}
+
+/**
+ * A measureLine (two mm points) or measureAngle (three: arm start, vertex, arm
+ * end) on `sliceType`'s slice through the first point, as NiiVue's measuring
+ * tools build one: slice-2D ends, thin-line polygons, and the length or angle
+ * measured from the mm points themselves (exact on a tilted slice). Null when
+ * a segment has no length. `type` 'measureAngle' with two points is an angle's
+ * first arm while it is drawn: the arm alone, nothing measured yet.
+ */
+export function measureAnnotation(
+  mm: readonly [number, number, number][],
+  sliceType: number,
+  style: AnnotationStyle,
+  label = 1,
+  group = 'default',
+  type?: 'measureAngle',
+): VectorAnnotation | null {
+  const [a, b, c] = mm
+  if (!a || !b) return null
+  const [p0, p1, p2] = mm.map((p) => mmToSlice2D(p, sliceType))
+  if (!p0 || !p1) return null
+  const w = style.strokeWidth
+  const polygons = [
+    ...generateShape('measureLine', p0, p1, w),
+    ...(p2 ? generateShape('measureLine', p1, p2, w) : []),
+  ]
+  if (polygons.length === 0 || (p2 && polygons.length < 2)) return null
+  const sub = (u: readonly number[], v: readonly number[]) =>
+    [0, 1, 2].map((i) => (u[i] as number) - (v[i] as number))
+  const norm = (u: number[]) =>
+    Math.hypot(u[0] as number, u[1] as number, u[2] as number)
+  let measured: Partial<AnnotationStats> | null
+  if (!c && type) measured = null
+  else if (c) {
+    const [u, v] = [sub(a, b), sub(c, b)]
+    const cos = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (norm(u) * norm(v))
+    measured = {
+      angle: (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI,
+    }
+  } else measured = { length: norm(sub(b, a)) }
+  const ann = createAnnotation(
+    label,
+    group,
+    sliceType,
+    a[sliceTypeDim(sliceType)],
+    polygons,
+    style,
+    [...a],
+  )
+  ann.shape = {
+    type: c || type ? 'measureAngle' : 'measureLine',
+    start: p0,
+    end: p1,
+    width: w,
+    ...(p2 ? { start2: p1, end2: p2 } : {}),
+  }
+  if (measured)
+    ann.stats = { area: 0, min: 0, mean: 0, max: 0, stdDev: 0, ...measured }
+  return ann
 }
 
 /**
@@ -280,15 +336,14 @@ function mergeAnnotations(
 
 /**
  * Store a completed vector annotation using the configured overlap policy.
- * Measurement hosts disable merging so every measurement retains its own id,
- * geometry, and statistics even when contours overlap.
+ * Measurement hosts list only their segment groups in `mergedGroups` (or none)
+ * so every measurement keeps its own id, geometry and statistics.
  */
 export function storeAnnotation(
   existing: VectorAnnotation[],
   newAnnotation: VectorAnnotation,
-  mergesOverlaps: boolean,
   policy: {
-    /** Groups whose shapes merge (null: every group). */
+    /** Groups whose shapes merge (null: every group; []: none). */
     mergedGroups?: readonly string[] | null
     /** False for a shape no merge or cut may change (a locked segment). */
     isEditable?: (a: VectorAnnotation) => boolean
@@ -309,7 +364,6 @@ export function storeAnnotation(
   const isMark = (a: VectorAnnotation) =>
     UNMERGED_SHAPES.has(a.shape?.type ?? '')
   if (
-    !mergesOverlaps ||
     isMark(newAnnotation) ||
     (mergedGroups && !mergedGroups.includes(newAnnotation.group))
   )

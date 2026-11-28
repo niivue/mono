@@ -11,13 +11,6 @@ import { invertAffine } from './quantify'
 
 const WHEEL = 524288 // cornerstone MouseBindings.Wheel
 
-type ToolGroup = {
-  toolOptions?: Record<
-    string,
-    { mode?: string; bindings?: { mouseButton?: number }[] }
-  >
-  getToolConfiguration?: (tool: string, key?: string) => unknown
-}
 type Volume = {
   img?: ArrayLike<number> | null
   hdr?: {
@@ -103,18 +96,7 @@ export function useMipTools(
 ): void {
   useEffect(() => {
     if (!nv || !container) return
-    const svc = (
-      servicesManager as
-        | {
-            services?: {
-              toolGroupService?: {
-                getToolGroup?: (id: string) => ToolGroup | undefined
-                getActivePrimaryMouseButtonTool?: (id: string) => string
-              }
-            }
-          }
-        | undefined
-    )?.services?.toolGroupService
+    const svc = servicesManager?.services?.toolGroupService
     const isRender = () => nv.sliceType === SLICE_TYPE.RENDER
     const onWheel = (e: WheelEvent) => {
       const group = svc?.getToolGroup?.(toolGroupId)

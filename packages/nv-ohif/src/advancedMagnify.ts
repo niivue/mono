@@ -1,7 +1,7 @@
-import type { NiiVue, NVImage, UIKitOverlayFrame } from '@niivue/niivue'
+import type { NiiVue, NVImage, OverlayFrame } from '@niivue/niivue'
 import { projectMMToCanvas } from '@niivue/niivue'
 import { UIKitMagnifierOverlay } from '@niivue/uikit'
-import { apply, invertAffine, rasGrid } from './quantify'
+import { apply, invertAffine, rasGrid, SLICE_AXIS } from './quantify'
 
 // Cornerstone AdvancedMagnifyTool defaults (radius in canvas CSS px).
 const RADIUS_CSS = 125
@@ -13,7 +13,6 @@ const PROXIMITY = { mouse: 6, touch: 36 }
 const PRESS_MS = 700
 const SLOP_CSS = 10
 // RAS axis across axial, coronal, sagittal slices.
-const DEPTH = [2, 1, 0]
 
 type Vec3 = [number, number, number]
 type Host = Pick<
@@ -67,7 +66,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
   let canvas: HTMLCanvasElement | null = null
 
   const renderer = {
-    drawOverlay(frame: UIKitOverlayFrame) {
+    drawOverlay(frame: OverlayFrame) {
       const vol = nv.volumes[0]
       // A series swap in this pane drops the old series' glasses.
       for (const g of glasses.filter((g) => g.volume !== vol)) drop(g)
@@ -77,7 +76,7 @@ export function createAdvancedMagnifyBinding(nv: Host) {
       const tiles = nv.getScreenTiles()
       for (const g of glasses) {
         g.at = null
-        const axis = DEPTH[g.sliceType] as number
+        const axis = SLICE_AXIS[g.sliceType] as number
         const slice = Math.round(apply(mm2vox, g.center, axis))
         tiles.some((t, tile) => {
           const { mvpMatrix: m, planePoint: q, leftTopWidthHeight: ltwh } = t

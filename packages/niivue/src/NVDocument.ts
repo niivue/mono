@@ -981,14 +981,18 @@ export function applySettingsToModel(
     ),
   )
   // annotation config resolves like the other groups (doc wins; omitted ->
-  // default or current per `fill`).
+  // default or current per `fill`). Documents from before 1.0 said "no
+  // merging" with mergesOverlaps: false, which outranked any group list.
+  const saved = doc.annotationConfig as
+    | (Partial<AnnotationConfig> & { mergesOverlaps?: boolean })
+    | undefined
   Object.assign(
     model.annotation,
     fillGroup(
       'annotation',
       model.annotation,
       NVConstants.ANNOTATION_DEFAULTS,
-      doc.annotationConfig,
+      saved?.mergesOverlaps === false ? { ...saved, mergedGroups: [] } : saved,
       fill,
     ),
   )

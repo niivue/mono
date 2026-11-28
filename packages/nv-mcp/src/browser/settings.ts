@@ -158,12 +158,6 @@ const FEATURES: Record<string, ReadonlyArray<keyof View>> = {
     'annotationStyle',
   ],
   boxes: ['focusBox', 'lodBoxes'],
-  measurements: [
-    'getMeasurements',
-    'addMeasurement',
-    'removeMeasurement',
-    'clearMeasurements',
-  ],
   documents: [
     'saveDocument',
     'loadDocument',

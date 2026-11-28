@@ -1,16 +1,14 @@
 import { expect, test } from 'bun:test'
-import type { AnnotationScreenShape, NiiVue } from '@niivue/niivue'
+import type { NiiVue } from '@niivue/niivue'
 import {
   adoptReportScale,
-  calibrateShapes,
   calibrateStats,
   calibrationScale,
   setCalibrationScale,
   syncReportRows,
 } from './calibration'
-import { measurementNote } from './commands'
-import { contourGroup } from './contourSeg'
 import { snapshot } from './measurementData'
+import { measurementNote } from './measurementReflection'
 import {
   registerNiivue,
   unregisterNiivue,
@@ -34,58 +32,6 @@ test('a calibration doubles lengths, quadruples area, keeps the rest', () => {
   expect(calibrationScale('a')).toBe(1)
 })
 
-test('overlay labels and rulers take the scale; free text and contours do not', () => {
-  const nv = {
-    // The shape being dragged is core's preview, not yet an annotation.
-    model: {
-      _annotationPreview: {
-        id: 'drag',
-        group: '',
-        stats: { area: 0, length: 3, shortLength: 1 },
-      },
-    },
-    annotations: [
-      {
-        id: 'bi',
-        group: '',
-        text: 'L: lesion',
-        stats: { area: 0, length: 4, shortLength: 2 },
-      },
-      { id: 'roi', group: '', stats: { area: 3, mean: 7 } },
-      { id: 'ruler', group: '', stats: { area: 0, length: 5 } },
-      { id: 'seg', group: contourGroup('1'), stats: { area: 3 } },
-    ],
-  } as unknown as NiiVue
-  const shape = (id: string, lines: string[], length?: number) =>
-    ({
-      id,
-      label: { lines, x: 0, y: 0, align: 'left' },
-      length,
-    }) as unknown as AnnotationScreenShape
-  const [bi, roi, ruler, seg, drawing, drag] = calibrateShapes(nv, 2, [
-    shape('bi', ['L: lesion', 'L: 4.0 mm', 'W: 2.0 mm']),
-    shape('roi', ['Area: 3.0 mm²', 'Mean: 7.0  SD: 0.0']),
-    shape('ruler', [], 5),
-    shape('seg', ['Area: 3.0 mm²']),
-    shape('drawing', [], 5),
-    shape('drag', ['L: 3.0 mm', 'W: 1.0 mm']),
-  ])
-  expect(bi?.label?.lines).toEqual([
-    'L: lesion',
-    'L: 8.0 mm User',
-    'W: 4.0 mm User',
-  ])
-  expect(roi?.label?.lines).toEqual([
-    'Area: 12.0 mm² User',
-    'Mean: 7.0  SD: 0.0',
-  ])
-  expect([ruler?.length, ruler?.unit]).toEqual([10, 'mm User'])
-  expect(seg?.label?.lines).toEqual(['Area: 3.0 mm²'])
-  expect(drawing?.length).toBe(10)
-  expect(drag?.label?.lines).toEqual(['L: 6.0 mm User', 'W: 2.0 mm User'])
-})
-
-// A pane holding report rows: adoptReportScale checks only rows a pane holds.
 const reportPane = (viewportId: string) => {
   const annotations: { id: string }[] = []
   registerNiivue(viewportId, { annotations } as unknown as NiiVue)
@@ -135,7 +81,7 @@ test('a report row whose reflection failed gives back the prior scale', () => {
   setCalibrationScale('failed', 4)
   adoptReportScale('failed', 'gone', 2)
   expect(calibrationScale('failed')).toBe(2)
-  // srImport removes the annotation; the pane's annotationRemoved re-syncs.
+  // srImport removes the annotation; the pane's annotationChanged re-syncs.
   syncReportRows()
   expect(calibrationScale('failed')).toBe(4)
   setCalibrationScale('failed', 1)
@@ -213,4 +159,12 @@ test('calibrated rows and the flash note carry scaled values and User units', ()
   }
   const [native] = snapshot(nv, 'HU', 'vp-rows').map((r) => r.values)
   expect([native?.length, native?.lengthUnit]).toEqual([5, undefined])
+})
+
+// A study's calibration must not carry into the next mode entry.
+test('mode exit forgets every calibration', async () => {
+  const { default: extension } = await import('./index')
+  setCalibrationScale('exit-ds', 2)
+  extension.onModeExit?.()
+  expect(calibrationScale('exit-ds')).toBe(1)
 })

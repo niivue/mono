@@ -222,22 +222,20 @@ export const MARK_SCHEMAS = {
     action: z
       .enum(['add', 'remove', 'clear', 'clear_angles', 'clear_distances'])
       .describe(
-        'add a distance between two points, remove one by index, or clear all, the angles or the distances.',
+        'add a distance between two points, remove some by id, or clear all, the angles or the distances.',
       ),
     start_mm: triple(
       'For add: where the measurement starts, in world units.',
     ).optional(),
-    end_mm: triple('For add: where it ends, in world units.').optional(),
+    end_mm: triple(
+      'For add: where it ends, in world units; in the same axial, coronal or sagittal slice as start_mm.',
+    ).optional(),
     slice: SLICE_ARG,
-    slice_index: z.number().int().min(0).optional(),
-    slice_position: z.number().optional(),
-    index: z
-      .number()
-      .int()
-      .min(0)
+    ids: z
+      .array(z.string().min(1))
       .optional()
       .describe(
-        'For remove: the measurement, as list_measurements counts them.',
+        'For remove: the measurements, as list_measurements gives ids.',
       ),
   },
   set_boxes: {
@@ -327,7 +325,7 @@ export function registerMarkTools(
   registerSimple(server, context, 'list_measurements', {
     title: 'List the measurements',
     description:
-      'Lists the distance measurements drawn on the slices: each with its ends in world units, its length, and its slice.',
+      'Lists the measurements and angles on the slices (measureLine and measureAngle annotations): each with its id, slice, and length or angle.',
     inputSchema: MARK_SCHEMAS.list_measurements,
     readOnly: true,
   })
@@ -335,8 +333,8 @@ export function registerMarkTools(
   registerSimple(server, context, 'edit_measurements', {
     title: 'Edit the measurements',
     description:
-      'Adds a distance measurement between two points in world units, removes one by index, or ' +
-      'clears them: all, the angles, or the distances. Reports the measurements afterwards.',
+      'Adds a distance measurement (a measureLine annotation) between two points in world units, removes some by id, or ' +
+      'clears them: all, the angles, or the distances. Each is one undo step. Reports the measurements afterwards.',
     inputSchema: MARK_SCHEMAS.edit_measurements,
   })
 

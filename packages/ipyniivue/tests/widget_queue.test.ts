@@ -180,6 +180,6 @@ test('an event syncs read-only properties before it reaches Python', async () =>
   undoTop = undefined
   const { events } = await mounted()
   undoTop = 3
-  listeners.annotationAdded?.({ detail: { id: 'a' } })
-  expect(events).toContainEqual(['annotationAdded', 3])
+  listeners.annotationChanged?.({ detail: { action: 'add', added: ['a'] } })
+  expect(events).toContainEqual(['annotationChanged', 3])
 })

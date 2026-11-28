@@ -234,7 +234,6 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 | `annotationActiveLabel`, `annotationActiveGroup` | Prop | No | |
 | `annotationBrushRadius` | Prop | No | |
 | `annotationIsErasing` | Prop | No | |
-| `annotationIsLivewireScissors` | Prop | No | Live wire uses cornerstone's LivewireScissors cost |
 | `annotationIsVisibleIn3D` | Prop | No | |
 | `annotationIsGrabbable`, `annotationIsCut` | Prop | No | Host predicates (functions, default `null`): which shapes can be grabbed, erased, merged or cut; which shapes of another label a new shape cuts (false: they overlap). Not saved or serialized |
 | `annotationStyle` | Prop | No | `AnnotationStyle` |
@@ -249,10 +248,8 @@ from the volume pen above: `slideDrawAt`, `slideDrawEnd`, `slideDrawUndo`,
 
 | Feature | Kind | Notes |
 |---|---|---|
-| `clearMeasurements()` | Method | |
-| `measurementCompleted` / `angleCompleted` events | Event | See §15 |
-| `measureLineColor`, `measureTextColor`, `isMeasureUnitsVisible` | Prop | Styling |
-| Drag modes `measurement` (2) and `angle` (7) | Enum | Set via `primaryDragMode`/`secondaryDragMode` |
+| `measureLineColor`, `measureTextColor`, `isMeasureUnitsVisible` | Prop | Style the live drag preview; a finished measurement takes the annotation style |
+| Drag modes `measurement` (2) and `angle` (7) | Enum | Set via `primaryDragMode`/`secondaryDragMode`; a finished drag adds a `measureLine` / `measureAngle` annotation |
 
 ## 12. Interaction
 
@@ -327,8 +324,6 @@ are exported from the package.
 | `frameChange` | `{volume, frame}` | 4D frame changed |
 | `dragRelease` | `DragReleaseInfo` | End of measurement/pan drag |
 | `pointerUp` | `{x, y, button}` | |
-| `measurementCompleted` | `CompletedMeasurement` | |
-| `angleCompleted` | `CompletedAngle` | |
 | `volumeLoaded` / `meshLoaded` | `{volume}` / `{mesh}` | |
 | `volumeRemoved` / `meshRemoved` | `{volume, index}` / `{mesh, index}` | |
 | `volumeUpdated` / `meshUpdated` | `{index, …, changes}` | After `setVolume` / `setMesh` |
@@ -342,7 +337,7 @@ are exported from the package.
 | `penValueChanged` | `{penValue}` | |
 | `drawingChanged` | `{action}` | stroke/create/close/undo |
 | `drawingEnabled` | `{isEnabled}` | |
-| `annotationAdded` / `annotationRemoved` / `annotationChanged` | — | |
+| `annotationChanged` | `{action, added, updated, removed}` | Every annotation change |
 | `colormapAdded` | `{name}` | |
 | `change` | `{property, value}` | Generic property-change firehose |
 

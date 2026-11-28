@@ -1,10 +1,10 @@
-import type {
-  NiiVue,
-  NVSlideAnnotations,
-  VectorAnnotation,
+import {
+  type NiiVue,
+  type NVSlideAnnotations,
+  slice2DToMM,
+  type VectorAnnotation,
 } from '@niivue/niivue'
 import { useEffect, useState } from 'react'
-import { toCanvas } from './annotationHit'
 import {
   areaUnit,
   calibrateStats,
@@ -12,8 +12,8 @@ import {
   lengthUnit,
   paneScale,
 } from './calibration'
-import { probeIndex } from './commands'
 import { isContourAnnotation } from './contourSeg'
+import { probeIndex } from './measurementReflection'
 import { slideRowTool, slideRowValues } from './slideMeasurements'
 import { ANNOTATION_TO_OHIF } from './toolBridge'
 
@@ -34,7 +34,7 @@ function anchorOf(nv: NiiVue, a: VectorAnnotation) {
   const p = s
     ? { x: (s.start.x + s.end.x) / 2, y: (s.start.y + s.end.y) / 2 }
     : a.polygons[0]?.outer[0]
-  const c = p && toCanvas(nv, a, p)
+  const c = p && nv.mmToCanvas(slice2DToMM(p, a.slicePosition, a.sliceType))
   const dpr = nv.effectiveDevicePixelRatio
   return c ? { x: c.x / dpr, y: c.y / dpr } : undefined
 }
@@ -119,8 +119,7 @@ export function MeasurementData({
     if (!nv) return
     const update = () => setRows(snapshot(nv, unit, viewportId))
     update()
-    const events = ['annotationAdded', 'annotationRemoved', 'annotationChanged']
-    for (const e of events) nv.addEventListener(e, update)
+    nv.addEventListener('annotationChanged', update)
     calibrationEvents.addEventListener('change', update)
     // Anchors are canvas px: a resized pane (a panel opening) moves them.
     // NiiVue relays out on its next render, so read them two frames later.
@@ -131,7 +130,7 @@ export function MeasurementData({
       : undefined
     if (nv.canvas) ro?.observe(nv.canvas)
     return () => {
-      for (const e of events) nv.removeEventListener(e, update)
+      nv.removeEventListener('annotationChanged', update)
       calibrationEvents.removeEventListener('change', update)
       ro?.disconnect()
     }

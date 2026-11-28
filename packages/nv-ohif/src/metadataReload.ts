@@ -3,13 +3,6 @@ import { ohifServices } from './niivueRegistry'
 import type { OhifServicesManager } from './ohif-types'
 
 type Invalidated = { displaySetInstanceUID?: string; invalidateData?: boolean }
-interface DisplaySetEvents {
-  EVENTS?: { DISPLAY_SET_SERIES_METADATA_INVALIDATED?: string }
-  subscribe?: (
-    event: string,
-    cb: (e: Invalidated) => void,
-  ) => { unsubscribe: () => void }
-}
 
 /**
  * Bumps when OHIF invalidates the metadata of a display set in `uidsKey`
@@ -23,13 +16,11 @@ export function useMetadataRevision(
 ): number {
   const [revision, setRevision] = useState(0)
   useEffect(() => {
-    const svc = ohifServices(servicesManager)?.displaySetService as
-      | DisplaySetEvents
-      | undefined
+    const svc = ohifServices(servicesManager)?.displaySetService
     const event = svc?.EVENTS?.DISPLAY_SET_SERIES_METADATA_INVALIDATED
     if (!event || !svc?.subscribe) return
     const uids = uidsKey.split('|')
-    const { unsubscribe } = svc.subscribe(event, (e) => {
+    const { unsubscribe } = svc.subscribe(event, (e: Invalidated) => {
       if (
         e.invalidateData !== false &&
         uids.includes(String(e.displaySetInstanceUID))

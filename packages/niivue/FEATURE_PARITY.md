@@ -249,9 +249,9 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Distance measurement | ✅ | `NVMeasurement` view component |
-| `clearMeasurements()` | ✅ | |
-| Angle measurements | ✅ | `DRAG_MODE.angle`; completed angles stored on model |
-| `clearAngles()` | ✅ | `clearAngles()` and `clearDistanceMeasurements()` clear one kind each; `clearMeasurements()` still clears both |
+| `clearMeasurements()` | ✅ | Measurements are `measureLine` annotations: `removeAnnotations` the ones to drop |
+| Angle measurements | ✅ | `DRAG_MODE.angle` adds a `measureAngle` annotation |
+| `clearAngles()` | ✅ | `removeAnnotations` the `measureAngle` annotations |
 | `getDescriptives()` — ROI statistics | ✅ | `getDescriptives({ volumeIndex, masks, isDrawingMask, drawPenValues })`; a mask is a volume index (non-zero voxels) or `{ index, values }` (only those calibrated label values, e.g. one atlas region); calibrated values, non-finite voxels excluded; masks and the drawing may be on another voxel grid (looked up at each target voxel, nearest neighbour); `null` on an empty label list |
 
 ## 18. Registration / Affine Transforms
@@ -297,7 +297,7 @@ Tracking which features from the old `niivue` package exist in the new rewrite.
 | `locationChange` / `intensityChange` | ✅ | `locationChange`; window changes emit `volumeUpdated` with `calMin`/`calMax`, from `setVolume`, the windowing drag and the contrast box (`NvSceneController` also emits `intensityChanged`) |
 | `dragRelease` | ✅ | |
 | `clickToSegment` event | ✅ | Fires after a magic-wand fill with the seed voxel, pen value, voxel count, `mm3`/`mL`, and whether the grow hit the voxel cap or was confined to one slice |
-| `measurementCompleted` / `angleCompleted` | ✅ | |
+| `measurementCompleted` / `angleCompleted` | ✅ | `annotationChanged` (action `draw`) with the new `measureLine` / `measureAngle` |
 | `documentLoaded` | ✅ | |
 | `volumeOrderChanged` | ✅ | |
 | `customMeshShaderAdded` / `meshShaderChanged` | Not planned | No custom mesh shaders in 1.0 |

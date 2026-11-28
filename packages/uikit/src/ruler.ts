@@ -3,9 +3,9 @@
 // that stays upright (readability guard). `buildRuler` is pure — it turns a ruler
 // spec into plain line + text draw data — so the geometry is unit-testable and the
 // overlay (rulerOverlay.ts) just draws it. Ported from the old niivue/niivue uikit
-// `drawRuler`.
+// `drawRuler`. NiiVue core draws its rulers from the same `rulerSegments` and
+// `rulerTickNumbers`, with its own label placement.
 
-import { decimation } from './crosshair'
 import { buildLine, type LineData } from './line'
 import { readableAngle } from './text/layout'
 import type { UIKitTextItem } from './textOverlay'
@@ -55,6 +55,100 @@ export interface RulerGeometry {
 
 const YELLOW: RGBA = [1, 1, 0, 1]
 
+/** A ruler line segment in canvas pixels: [x0, y0, x1, y1]. */
+export type RulerSegment = readonly [number, number, number, number]
+
+// Cap the tick count so an enormous measurement can't emit thousands of lines.
+const MAX_RULER_TICKS = 200
+
+/**
+ * Units per tick, in 1/2/5 steps (an arbitrary step, 7 say, would number ticks
+ * 35, 70, ...): at most MAX_RULER_TICKS ticks, and ticks at least two tick
+ * lengths apart on screen, so a short or zoomed-out ruler is not a solid comb.
+ */
+function tickStep(
+  marks: number,
+  pxPerUnit: number,
+  tickLength: number,
+): number {
+  const raw = Math.max(marks / MAX_RULER_TICKS, (2 * tickLength) / pxPerUnit)
+  if (raw <= 1) return 1
+  const decade = 10 ** Math.floor(Math.log10(raw))
+  for (const m of [1, 2, 5]) {
+    if (m * decade >= raw) return m * decade
+  }
+  return 10 * decade
+}
+
+/**
+ * A graduated ruler's lines between two canvas points: the baseline, then long
+ * perpendicular end caps at both ends, then ticks every `tickStep` units
+ * (majors, twice as long, every fifth drawn tick). `length` is the physical
+ * length the ticks divide; <= 0 gives the baseline and caps only, a
+ * zero-length ruler nothing.
+ */
+export function rulerSegments(
+  a: Vec2,
+  b: Vec2,
+  length: number,
+  tickLength = 6,
+): RulerSegment[] {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const len = Math.hypot(dx, dy)
+  if (len === 0) return []
+  // Unit perpendicular in screen space; end caps and ticks straddle the line.
+  const px = -dy / len
+  const py = dx / len
+  const capLen = tickLength * 3
+  const segs: RulerSegment[] = [[a[0], a[1], b[0], b[1]]]
+  for (const [cx, cy] of [a, b])
+    segs.push([
+      cx - px * capLen,
+      cy - py * capLen,
+      cx + px * capLen,
+      cy + py * capLen,
+    ])
+  if (length <= 0) return segs
+  const marks = Math.floor(length)
+  const step = tickStep(marks, len / length, tickLength)
+  for (let i = step; i <= marks; i += step) {
+    const t = i / length
+    const cx = a[0] + t * dx
+    const cy = a[1] + t * dy
+    const half = (i / step) % 5 === 0 ? tickLength * 2 : tickLength
+    segs.push([cx - px * half, cy - py * half, cx + px * half, cy + py * half])
+  }
+  return segs
+}
+
+/**
+ * The major ticks of `rulerSegments` that get a number: each `value` and its
+ * fraction `t` of the way along. A number is kept only when it clears the
+ * previous one by a gap sized from `numberPx` (its drawn height) and the digit
+ * count, so a long ruler numbers every few majors instead of a smear.
+ */
+export function rulerTickNumbers(
+  lenPx: number,
+  length: number,
+  tickLength: number,
+  numberPx: number,
+): { value: number; t: number }[] {
+  if (lenPx === 0 || length <= 0) return []
+  const marks = Math.floor(length)
+  const step = tickStep(marks, lenPx / length, tickLength)
+  const minGapPx = numberPx * (`${marks}`.length * 0.7 + 0.6)
+  let lastPx = Number.NEGATIVE_INFINITY
+  const out: { value: number; t: number }[] = []
+  for (let i = 5 * step; i <= marks; i += 5 * step) {
+    const t = i / length
+    if (t * lenPx - lastPx < minGapPx) continue
+    lastPx = t * lenPx
+    out.push({ value: i, t })
+  }
+  return out
+}
+
 /**
  * Build the line + text draw data for a ruler. Pure geometry; font-independent
  * (glyph widths are resolved when the text is laid out at draw time).
@@ -84,83 +178,39 @@ export function buildRuler(spec: RulerSpec): RulerGeometry {
   const text: UIKitTextItem[] = []
   if (len === 0) return { lines, text }
 
-  const ux = dx / len
-  const uy = dy / len
-  // Unit perpendicular (screen space). Ticks straddle the line along this.
-  const px = -uy
-  const py = ux
   const rawAngle = Math.atan2(dy, dx)
   const { angle, flipped } = readableAngle(rawAngle)
   // The layout lifts along (sin a, -cos a); flipping the angle flips that side, so
   // negate the lift to keep the label on the same side of the line.
   const liftSign = flipped ? -1 : 1
 
-  // Measurement baseline. The perpendicular end caps (below) mark the extent, so
-  // the baseline is a plain line with no arrowheads.
-  lines.push(buildLine(a[0], a[1], b[0], b[1], thickness, lineColor))
+  // Baseline and end caps at `thickness`, ticks at 1 px.
+  const segs = rulerSegments(a, b, showTicks ? length : 0, tickLength)
+  segs.forEach(([x0, y0, x1, y1], k) => {
+    if (!showEndCaps && (k === 1 || k === 2)) return
+    lines.push(buildLine(x0, y0, x1, y1, k < 3 ? thickness : 1, lineColor))
+  })
 
-  // Long perpendicular end caps crossing the exact start and end points, so the
-  // measurement's extent is unambiguous (longer than a major tick).
-  if (showEndCaps) {
-    const capLen = tickLength * 3
-    for (const p of [a, b]) {
-      lines.push(
-        buildLine(
-          p[0] - px * capLen,
-          p[1] - py * capLen,
-          p[0] + px * capLen,
-          p[1] + py * capLen,
-          thickness,
-          lineColor,
-        ),
-      )
-    }
-  }
-
-  // Tick marks every unit, longer (and optionally numbered) every fifth.
-  if (showTicks && length > 0) {
-    const marks = Math.floor(length)
-    const step = decimation(marks)
-    // Minimum along-ruler gap between graduation numbers so they never collide;
-    // a long ruler thus labels only every few majors (e.g. 20/40/60) instead of
-    // running every fifth value into an unreadable smear.
-    const numberScale = 0.5
-    const maxDigits = `${marks}`.length
-    const minLabelGapPx = sizePx * numberScale * (maxDigits * 0.7 + 0.6)
-    let lastLabelAlongPx = Number.NEGATIVE_INFINITY
-    for (let i = step; i <= marks; i += step) {
-      const t = i / length
-      const cx = a[0] + t * dx
-      const cy = a[1] + t * dy
-      const major = (i / step) % 5 === 0 // every fifth drawn tick
-      const half = major ? tickLength * 2 : tickLength
-      lines.push(
-        buildLine(
-          cx - px * half,
-          cy - py * half,
-          cx + px * half,
-          cy + py * half,
-          1,
-          lineColor,
-        ),
-      )
-      if (major && showTickNumbers) {
-        const alongPx = t * len
-        if (alongPx - lastLabelAlongPx >= minLabelGapPx) {
-          lastLabelAlongPx = alongPx
-          text.push({
-            str: `${i}`,
-            x: cx,
-            y: cy,
-            sizePx: sizePx * numberScale,
-            rotation: angle,
-            align: 0.5,
-            liftPx: liftSign * (half + sizePx * 0.4),
-            color: textColor,
-            outlineWidthPx: textOutlineWidthPx,
-          })
-        }
-      }
+  // Graduation numbers just past each numbered major tick.
+  const numberScale = 0.5
+  if (showTicks && showTickNumbers) {
+    for (const { value, t } of rulerTickNumbers(
+      len,
+      length,
+      tickLength,
+      sizePx * numberScale,
+    )) {
+      text.push({
+        str: `${value}`,
+        x: a[0] + t * dx,
+        y: a[1] + t * dy,
+        sizePx: sizePx * numberScale,
+        rotation: angle,
+        align: 0.5,
+        liftPx: liftSign * (tickLength * 2 + sizePx * 0.4),
+        color: textColor,
+        outlineWidthPx: textOutlineWidthPx,
+      })
     }
   }
 

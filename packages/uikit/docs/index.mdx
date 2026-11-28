@@ -60,7 +60,8 @@ alongside it.
 
 ```js
 import NiiVue from '@niivue/niivue'
-import { loadDefaultFont, UIKitButtonOverlay } from '@niivue/uikit'
+import { loadDefaultFont } from '@niivue/uikit'
+import { UIKitButtonOverlay } from '@niivue/uikit/controls'
 
 const nv = new NiiVue()
 await nv.attachToCanvas(document.getElementById('gl1'))
@@ -190,5 +191,6 @@ The defaults are exported too, such as `DEFAULT_BUTTON_STYLE` and
 
 The source is in the
 [uikit folder](https://github.com/niivue/mono/tree/main/packages/uikit) of
-the NiiVue repository. In a checkout, `bunx nx dev uikit` serves the
-package's demo pages, including one with every control on a single canvas.
+the NiiVue repository. In a checkout, `bunx nx dev demo-uikit` serves the
+demo pages (`apps/demo-uikit`), including one with every control on a single
+canvas.

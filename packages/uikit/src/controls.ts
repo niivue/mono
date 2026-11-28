@@ -28,7 +28,7 @@
 // starts a NiiVue drag or moves the crosshair. Registered as the overlay
 // renderer, it draws its widgets in order and their popups on top of everything.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 
 /** CSS px per wheel delta unit: lines (Firefox, some mice) are 16 px, pages `pageCss`. */
 export function wheelPxPerUnit(e: WheelEvent, pageCss: number): number {

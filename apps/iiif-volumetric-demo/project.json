@@ -41,7 +41,7 @@
         "cwd": "{projectRoot}"
       },
       "dependsOn": ["^build"],
-      "inputs": ["typescript"]
+      "inputs": ["typescript", "bundledDeps"]
     },
     "lint": {
       "command": "bunx biome check {projectRoot}",

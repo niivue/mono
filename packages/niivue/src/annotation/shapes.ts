@@ -64,15 +64,21 @@ function perp(dx: number, dy: number, len: number): [number, number] {
   return [(-dy / d) * len, (dx / d) * len]
 }
 
+/**
+ * A line as a thin rectangle `width` wide. Shorter than `minLength` (a click
+ * with the line tool, by default) it is nothing; a measured line passes 0, as
+ * any nonzero distance it measures is kept.
+ */
 function generateLine(
   start: AnnotationPoint,
   end: AnnotationPoint,
   width: number,
+  minLength = 0.25,
 ): PolygonWithHoles[] {
   const dx = end.x - start.x
   const dy = end.y - start.y
   const len = Math.sqrt(dx * dx + dy * dy)
-  if (len < 0.25) return []
+  if (len === 0 || len < minLength) return []
   const hw = width / 2
   const [px, py] = perp(dx, dy, hw)
   const outer: AnnotationPoint[] = [
@@ -245,8 +251,10 @@ export function generateShape(
     case 'measureRect':
       return generateRectangle(start, end)
     case 'line':
-    case 'measureLine':
       return generateLine(start, end, strokeWidth)
+    case 'measureLine':
+      // Any nonzero length a measurement measures is kept, drawn or edited.
+      return generateLine(start, end, strokeWidth, 0)
     case 'arrow':
       return generateArrow(start, end, strokeWidth)
     case 'circle':

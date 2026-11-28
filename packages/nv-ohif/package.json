@@ -32,7 +32,6 @@
     "lib"
   ],
   "scripts": {
-    "dev": "vite",
     "build:lib": "bun build ./src/index.ts --production --outdir=lib --target=browser --format=esm --external react --external react-dom --external @niivue/niivue --external @niivue/uikit --external @niivue/dcm2niix --external @niivue/nv-ext-tile --external dcmjs",
     "build:modes": "bun build ./src/modes/viewer.js ./src/modes/tmtv.js ./src/modes/dynamic.js --production --splitting --outdir=lib/modes --target=browser --format=esm --external '@ohif/*'",
     "build:types": "tsc -p tsconfig.build.json",
@@ -45,7 +44,7 @@
     "@niivue/niivue": "workspace:^",
     "react": "^18.3.1 || ^19"
   },
-  "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency (its ruler/line/text overlays, loadDefaultFont, and the inlined MSDF font are imported at runtime, not bundled). It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release. Its only @niivue/niivue import is type-only, so no niivue runtime is duplicated.",
+  "comment:uikit-dep": "@niivue/uikit is externalized in build:lib and is a runtime dependency: its magnifier overlays (the slide minimap comes from '@niivue/niivue/uikit', built on it). It is published from this monorepo in the same Nx release group, so `npm install @niivue/nv-ohif` resolves it. The workspace range is rewritten to the published version on pack/release; @niivue/niivue depends on the same uikit, so one copy is installed.",
   "dependencies": {
     "@niivue/dcm2niix": "^1.4.20261122-rc.1",
     "@niivue/nv-ext-tile": "workspace:^",
@@ -58,12 +57,10 @@
     "@types/bun": "^1.4.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.0.1",
     "happy-dom": "^20.9.0",
     "react": "^19",
     "react-dom": "^19",
-    "typescript": "^5.9.3",
-    "vite": "^8.3.8"
+    "typescript": "^5.9.3"
   },
   "comment:nv-ext-drawing": "@niivue/nv-ext-drawing (slice interpolation, worker inlined) is bundled into lib, not externalized: a devDependency, so hosts install nothing extra."
 }

@@ -3,9 +3,9 @@
 // resolved target, and continue in a single-sample pass without depth. Views
 // that never see a capture pay nothing.
 
-import type { UIKitBackendHandle } from '../view/NVOverlayHook'
+import type { OverlayBackendHandle } from '../view/NVOverlayHook'
 
-type WebGPUHandle = Extract<UIKitBackendHandle, { backend: 'webgpu' }>
+type WebGPUHandle = Extract<OverlayBackendHandle, { backend: 'webgpu' }>
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
 export class SceneCapture {

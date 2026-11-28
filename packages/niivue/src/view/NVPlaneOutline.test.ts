@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { buildLine } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
 import { SLICE_TYPE } from '@/NVConstants'
-import { buildLine } from './NVLine'
 import {
   buildPlaneOutline3DRenderData,
   buildPlaneOutlineLines,

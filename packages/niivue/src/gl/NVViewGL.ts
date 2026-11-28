@@ -1,3 +1,4 @@
+import { buildLine, GlLineRenderer } from '@niivue/uikit'
 import { mat4 } from 'gl-matrix'
 import { getCanvasViewport } from '@/control/canvasRegistry'
 import { effectiveDevicePixelRatio } from '@/devicePixelRatio'
@@ -44,10 +45,8 @@ import { hiddenArmAlpha } from '@/view/NVCrosshair'
 import { HEADER_BACK_COLOR, resolveHeaderLabel } from '@/view/NVFont'
 import * as NVGraph from '@/view/NVGraph'
 import * as NVLegend from '@/view/NVLegend'
-import { buildLine } from '@/view/NVLine'
-import * as NVMeasurement from '@/view/NVMeasurement'
 import { isMeshDrawn } from '@/view/NVMeshVisibility'
-import type { UIKitOverlayFrame } from '@/view/NVOverlayHook'
+import type { OverlayFrame } from '@/view/NVOverlayHook'
 import { markCpuStart, markEnd, markSubmitStart } from '@/view/NVPerfMarks'
 import {
   buildPlaneOutline3DRenderData,
@@ -87,7 +86,6 @@ import { ColorbarRenderer } from './colorbar'
 import { CrosshairRenderer } from './crosshair'
 import { FontRenderer } from './font'
 import { blendOver } from './glUtil'
-import { LineRenderer } from './line'
 import * as mesh from './mesh'
 import { PolygonRenderer } from './polygon'
 import { Polygon3DRenderer } from './polygon3d'
@@ -129,11 +127,10 @@ export default class NVGlview {
   legendLayout: import('@/view/NVLegend').LegendLayout | null
   graphLayout: NVGraph.GraphLayout | null
   isBusy: boolean
-  maxLines: number
   maxGlyphs: number
   meshPipelines: Record<string, boolean>
   volumeRenderer: VolumeRenderer
-  lineRenderer: LineRenderer
+  lineRenderer: GlLineRenderer
   boxLineRenderer: BoxLineRenderer
   polygonRenderer: PolygonRenderer
   polygon3DRenderer: Polygon3DRenderer
@@ -170,7 +167,7 @@ export default class NVGlview {
    * (after core's own line/text overlays, before present) so a privileged renderer
    * can draw into the same frame in screen space. See view/NVOverlayHook.ts.
    */
-  overlayDraw: ((frame: UIKitOverlayFrame) => void) | null = null
+  overlayDraw: ((frame: OverlayFrame) => void) | null = null
 
   /**
    * GPU-context-recovery hook, wired by the controller. Fires when this view has
@@ -240,7 +237,6 @@ export default class NVGlview {
     this.graphLayout = null
     // State
     this.isBusy = false
-    this.maxLines = 1024
     this.maxGlyphs = 2048 // Increased for legends with many entries
     // Expose mesh shader types (matches WebGPU meshPipelines keys)
     this.meshPipelines = {
@@ -258,7 +254,7 @@ export default class NVGlview {
     }
     // Render layer instances
     this.volumeRenderer = new VolumeRenderer(defaultMatcap(options.matcaps))
-    this.lineRenderer = new LineRenderer()
+    this.lineRenderer = new GlLineRenderer()
     this.boxLineRenderer = new BoxLineRenderer()
     this.polygonRenderer = new PolygonRenderer()
     this.polygon3DRenderer = new Polygon3DRenderer()
@@ -342,7 +338,6 @@ export default class NVGlview {
     log.info(
       `WebGL2 ${renderer} :: ${vendor} - maxTexture 2D:${this.max2D} 3D:${this.max3D} antiAlias:${this.isAntiAlias}`,
     )
-    this.lineRenderer.init(gl)
     this.boxLineRenderer.init(gl)
     this.polygonRenderer.init(gl)
     this.polygon3DRenderer.init(gl)
@@ -1487,12 +1482,7 @@ export default class NVGlview {
       'WebGL2',
       log.level === 'debug',
     )
-    // Refresh the exposed measurement screen projection every frame, even before
-    // the font renderer is ready, so an external overlay (UIKit ruler) keeps
-    // tracking pan/zoom/slice. buildPersistedMeasurements (below, font-gated)
-    // reads what this populates.
-    NVMeasurement.projectMeasurementScreenLines(this.model, screenSlices)
-    // Same for vector annotations (see annotationScreenShapes / isAnnotationDrawn).
+    // Project this frame's annotations: drawn below, hit-tested by pickAnnotation.
     NVAnnotation.projectAnnotationScreenShapes(this.model, screenSlices)
     if (this.fontRenderer.isReady) {
       if (headerStr !== '') {
@@ -1583,19 +1573,6 @@ export default class NVGlview {
           graphLines.push(...rulerResult.lines)
         }
       }
-      // Persisted measurements and angles
-      const persistedResult = NVMeasurement.buildPersistedMeasurements(
-        this.model,
-        screenSlices,
-        (s, x, y, sc, c, ax, ay, bc) =>
-          this.fontRenderer.buildText(s, x, y, sc, c, ax, ay, bc),
-        buildLine,
-        this.fontRenderer.fontPx * 0.5,
-      )
-      if (persistedResult) {
-        labels.push(...persistedResult.labels)
-        graphLines.push(...persistedResult.lines)
-      }
       // Vector annotations
       const annotationResult = NVAnnotation.buildAnnotationRenderData(
         this.model,
@@ -1603,13 +1580,14 @@ export default class NVGlview {
         buildLine,
         this.fontRenderer.buildText.bind(this.fontRenderer),
         this._dpr,
+        this.fontRenderer.fontPx * 0.5,
       )
       if (annotationResult) {
         this.polygonRenderer.draw(gl, annotationResult)
         graphLines.push(...annotationResult.strokeLines)
         labels.push(...annotationResult.labels)
       }
-      // Drag overlay: selection box as a panel rectangle, text as glyph batches
+      // Drag overlay: the selection box as a panel rectangle
       const overlay = this.model._dragOverlay
       if (overlay?.rect) {
         labels.push({
@@ -1620,45 +1598,14 @@ export default class NVGlview {
           backRadius: 0,
         })
       }
-      if (overlay?.text) {
-        for (const t of overlay.text) {
-          const batch = this.fontRenderer.buildText(
-            t.str,
-            t.x,
-            t.y,
-            t.scale,
-            t.color,
-            t.anchorX,
-            t.anchorY,
-            t.backColor,
-          )
-          if (batch.count > 0) labels.push(batch)
-        }
-      }
       // Grow glyph capacity if needed
       let neededGlyphs = 0
       for (const item of labels) neededGlyphs += item.count
       if (neededGlyphs > this.maxGlyphs) this.maxGlyphs = neededGlyphs
       this.fontRenderer.draw(gl, null, null, null, labels, this.maxGlyphs)
     }
-    // Draw graph lines, cross-lines, drag overlay lines, and bounds border via line renderer
+    // Draw graph lines, cross-lines and the bounds border via the line renderer
     const allLines = [...graphLines, ...crossLinesList]
-    // Drag overlay lines (measurement, angle)
-    const overlayGL = this.model._dragOverlay
-    if (overlayGL?.lines) {
-      for (const line of overlayGL.lines) {
-        allLines.push(
-          buildLine(
-            line.startXY[0],
-            line.startXY[1],
-            line.endXY[0],
-            line.endXY[1],
-            line.thickness,
-            line.color,
-          ),
-        )
-      }
-    }
     allLines.push(
       ...buildPlaneOutlineLines(
         md.planeOutlines,
@@ -1681,10 +1628,7 @@ export default class NVGlview {
         buildLine(canvasWidth, 0, canvasWidth, canvasHeight, bt, bc),
       ) // right
     }
-    if (allLines.length > 0 && this.lineRenderer.isReady) {
-      if (allLines.length > this.maxLines) this.maxLines = allLines.length
-      this.lineRenderer.draw(gl, null, null, null, allLines, this.maxLines)
-    }
+    this.lineRenderer.draw(gl, allLines, bw, bh)
     if (boxEdges) {
       this.boxLineRenderer.draw(gl, boxEdges, boxTiles, [bx, glBoundsY, bw, bh])
       gl.viewport(bx, glBoundsY, bw, bh)
@@ -1829,7 +1773,6 @@ export default class NVGlview {
     this._computeBoundsPixels()
     const bw = this._boundsWidth
     const bh = this._boundsHeight
-    this.lineRenderer.resize(this.gl, bw, bh)
     this.polygonRenderer.resize(this.gl, bw, bh)
     this.fontRenderer.resize(
       this.gl,

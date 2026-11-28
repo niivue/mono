@@ -15,7 +15,7 @@ import {
   ohifServices,
 } from './niivueRegistry'
 import type { OhifDisplaySet, OhifExtensionParams } from './ohif-types'
-import { refreshBrushSizes, tmtvExport } from './petQuant'
+import { download, refreshBrushSizes, tmtvExport } from './petQuant'
 import { rasGrid } from './quantify'
 import { lpsToVoxel } from './rtDrawing'
 import { addSegmentBidirectional } from './segBidirectional'
@@ -60,13 +60,7 @@ function createSegmentation(
   const { nv, viewportId } = entry
   created.get(viewportId)?.()
   nv.createEmptyDrawing()
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | {
-        getSegmentations?: () => unknown[]
-        setActiveSegmentation(viewportId: string, id: string): void
-        setActiveSegment(id: string, index: number): void
-      }
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   const segmentationId = crypto.randomUUID()
   const seg: OhifDisplaySet = {
     displaySetInstanceUID: segmentationId,
@@ -228,9 +222,7 @@ function segmentationLabel(
   servicesManager: OhifExtensionParams['servicesManager'],
   pane: NiivueSegmentationPane,
 ): string {
-  const service = ohifServices(servicesManager)?.segmentationService as
-    | { getSegmentation?: (id: string) => { label?: string } | undefined }
-    | undefined
+  const service = ohifServices(servicesManager)?.segmentationService
   return (
     service?.getSegmentation?.(pane.segmentationId)?.label ??
     pane.seg.SeriesDescription ??
@@ -238,17 +230,10 @@ function segmentationLabel(
   )
 }
 
-function download(text: string, filename: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-const isNiivueSegmentation = (id: unknown) =>
-  !!niivueSegmentationPane(id as string) || !!contourPane(id as string)
+/** The NiiVue pane holding a labelmap or contour segmentation, if any. */
+const segPane = (id: unknown) =>
+  niivueSegmentationPane(id as string) ?? contourPane(id as string)
+const isNiivueSegmentation = (id: unknown) => !!segPane(id)
 
 /** Command definitions for the NIIVUE context (see the file comment). */
 export function getSegCommandDefinitions(params: OhifExtensionParams) {
@@ -259,9 +244,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
   // Writes the dataset: to the active data source when it stores DICOM, else a download.
   // No pane: the TMTV PT label, named as cornerstone's save dialog defaults.
   const save = async (opts: Options, onlyDownload: boolean, tmtv = false) => {
-    const pane =
-      niivueSegmentationPane(opts.segmentationId) ??
-      contourPane(opts.segmentationId)
+    const pane = segPane(opts.segmentationId)
     if (!pane && !tmtv) return undefined
     const modality = opts.modality === 'RTSTRUCT' ? 'RTSTRUCT' : 'SEG'
     const label = pane
@@ -327,11 +310,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
       commandFn: (opts: Options = {}) => {
         const entry = getActiveNiivueEntry(servicesManager, opts.viewportId)
         if (!entry) return back('setInterpolationToolConfiguration', opts)
-        const tools = ohifServices(servicesManager)?.toolGroupService as
-          | {
-              getActivePrimaryMouseButtonTool?(id?: string): string | undefined
-            }
-          | undefined
+        const tools = ohifServices(servicesManager)?.toolGroupService
         const active = tools?.getActivePrimaryMouseButtonTool?.(
           entry.toolGroupId,
         )
@@ -364,9 +343,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     ),
     deleteSegment: {
       commandFn: (opts: Options = {}) => {
-        const pane =
-          niivueSegmentationPane(opts.segmentationId) ??
-          contourPane(opts.segmentationId)
+        const pane = segPane(opts.segmentationId)
         return pane
           ? pane.deleteSegment(Number(opts.segmentIndex))
           : back('deleteSegment', opts)
@@ -379,9 +356,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
           opts.viewportId,
         )?.nv
         if (!nv) return back('runSegmentBidirectional', opts)
-        const notify = ohifServices(servicesManager)?.uiNotificationService as
-          | { show?: (n: object) => void }
-          | undefined
+        const notify = ohifServices(servicesManager)?.uiNotificationService
         if (!addSegmentBidirectional(nv))
           notify?.show?.({
             title: 'Segment Bidirectional',
@@ -423,9 +398,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     // panel's Save stores a segmentation, with createReportAsync's toast.
     niivueStoreTMTVSegmentation: {
       commandFn: async (opts: Options = {}) => {
-        const ui = ohifServices(servicesManager)?.uiNotificationService as
-          | { show?: (o: Record<string, string>) => void }
-          | undefined
+        const ui = ohifServices(servicesManager)?.uiNotificationService
         try {
           const dataset = await save(opts, false, true)
           ui?.show?.({
@@ -465,9 +438,7 @@ export function getSegCommandDefinitions(params: OhifExtensionParams) {
     },
     downloadCSVSegmentationReport: {
       commandFn: (opts: Options = {}) => {
-        const pane =
-          niivueSegmentationPane(opts.segmentationId) ??
-          contourPane(opts.segmentationId)
+        const pane = segPane(opts.segmentationId)
         if (!pane) return back('downloadCSVSegmentationReport', opts)
         const label = segmentationLabel(servicesManager, pane)
         const base = getNiivueEntry(pane.viewportId)?.displaySets[0] ?? {}

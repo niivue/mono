@@ -826,25 +826,12 @@ export type UIConfig = {
   isLegendVisible: boolean
   isMeasureUnitsVisible: boolean
   /**
-   * Draw the built-in measurement overlay (ruler line, ticks, distance label).
-   * Set false to let an external overlay renderer draw measurements instead (it
-   * still reads `measurementScreenLines`); the built-in geometry is computed but
-   * not drawn, so no line, label, or label background chip appears. Angles are
-   * unaffected. Default true.
-   */
-  isMeasurementDrawn: boolean
-  /**
    * When false, NiiVue's built-in 2D vector-annotation shapes (ellipse/rect/
    * circle/line/arrow fill + stroke + stats labels) are NOT drawn, so an external
    * overlay can render them from `annotationScreenShapes` instead. The brush
    * cursor and selection handles are unaffected. Default true.
    */
   isAnnotationDrawn: boolean
-  /**
-   * With isAnnotationDrawn false, still draw the shapes' fills, under the
-   * external overlay (for one that draws only strokes and labels). Default false.
-   */
-  isAnnotationFillDrawn: boolean
   isThumbnailVisible: boolean
   thumbnailUrl: string
   placeholderText: string
@@ -869,6 +856,11 @@ export type UIConfig = {
   fontScale: number
   fontMinSize: number
   selectionBoxColor: number[]
+  /**
+   * Slide measurement rulers: line and text colour, line width, and whether
+   * their length shows its unit. Volume measurements are annotations and take
+   * the annotation style.
+   */
   measureLineColor: number[]
   measureTextColor: number[]
   rulerWidth: number
@@ -1548,12 +1540,6 @@ export type NiiVueOptions = {
   annotationActiveLabel?: number
   annotationActiveGroup?: string
   annotationBrushRadius?: number
-  /**
-   * Union same-label vector annotations and cut different-label annotations when
-   * they overlap. Disable for measurement integrations where every annotation
-   * must retain an independent identity.
-   */
-  annotationMergesOverlaps?: boolean
   /** See AnnotationConfig.isClickToPlace. Default false. */
   annotationIsClickToPlace?: boolean
   /** See AnnotationConfig.isDrawnFromCenter. Default false. */
@@ -1564,8 +1550,6 @@ export type NiiVueOptions = {
   annotationMergedGroups?: string[] | null
   /** See AnnotationConfig.isAreaGeometric. Default false. */
   annotationAreaIsGeometric?: boolean
-  /** See AnnotationConfig.isLivewireScissors. Default false. */
-  annotationIsLivewireScissors?: boolean
   annotationIsErasing?: boolean
   annotationIsVisibleIn3D?: boolean
   annotationStyle?: AnnotationStyle
@@ -1588,22 +1572,6 @@ export type DragReleaseInfo = {
 
 export type DragOverlay = {
   rect?: { ltwh: [number, number, number, number]; color: number[] }
-  lines?: Array<{
-    startXY: [number, number]
-    endXY: [number, number]
-    color: number[]
-    thickness: number
-  }>
-  text?: Array<{
-    str: string
-    x: number
-    y: number
-    scale: number
-    color: number[]
-    anchorX: number
-    anchorY: number
-    backColor?: number[]
-  }>
 }
 
 /**
@@ -1623,39 +1591,6 @@ export type PlaneOutline = {
 }
 
 /**
- * A completed distance measurement. Endpoints and `distance` are scene units:
- * micrometers on a micrometer volume (`xyzt_units` MICRON), else mm.
- */
-export type CompletedMeasurement = {
-  startMM: [number, number, number]
-  endMM: [number, number, number]
-  distance: number
-  sliceIndex: number
-  sliceType: number
-  slicePosition: number
-}
-
-/**
- * A measurement projected to the current frame's canvas pixels, exposed so an
- * external overlay (e.g. a @niivue/uikit ruler drawn through the overlay hook)
- * can render the measurement in screen space with its own renderer. Recomputed
- * every frame; `distance` is in millimetres. See NVControlBase.measurementScreenLines.
- */
-export type MeasurementScreenLine = {
-  sx: number
-  sy: number
-  ex: number
-  ey: number
-  distance: number
-  /**
-   * Index of the source measurement in `completedMeasurements`, present for
-   * persisted lines. Absent on the transient active (in-progress drag) line,
-   * which has no persisted index yet.
-   */
-  index?: number
-}
-
-/**
  * Transient world-space axis-aligned bounding box drawn as 12 edges on the 3D
  * render tile(s) — e.g. to outline a focused subvolume. `min`/`max` are in the
  * same world-mm space as the scene extents, and both are corner positions the
@@ -1667,21 +1602,6 @@ export type FocusBox = {
   max: [number, number, number]
   color: number[]
   thickness: number
-}
-
-export type CompletedAngle = {
-  firstLine: {
-    startMM: [number, number, number]
-    endMM: [number, number, number]
-  }
-  secondLine: {
-    startMM: [number, number, number]
-    endMM: [number, number, number]
-  }
-  angle: number
-  sliceIndex: number
-  sliceType: number
-  slicePosition: number
 }
 
 // ============================================================
@@ -2177,6 +2097,16 @@ export type VectorAnnotation = {
 }
 
 /**
+ * A host's calibration of annotation labels (NVControlBase.annotationCalibration):
+ * label lengths times `scale` in `lengthUnit`, areas times scale² in `areaUnit`.
+ */
+export type AnnotationCalibration = {
+  scale: number
+  lengthUnit: string
+  areaUnit: string
+}
+
+/**
  * A vector annotation projected to the current frame's canvas pixels, exposed so
  * an external overlay (a @niivue/uikit shape renderer drawn through the overlay
  * hook) can draw the shape + its stats label in screen space with its own
@@ -2231,7 +2161,6 @@ export type AnnotationConfig = {
   activeLabel: number
   activeGroup: string
   brushRadius: number
-  mergesOverlaps: boolean
   /**
    * Two-point shapes (line, measure, arrow, rect, ellipse, circle, bidirectional
    * axes) may also be placed click-move-click, as cornerstone's tools are: a
@@ -2257,9 +2186,11 @@ export type AnnotationConfig = {
    */
   isHandleGrab: boolean
   /**
-   * With mergesOverlaps, the groups whose shapes merge and cut (null: every
-   * group). Merging and cutting stay within the new shape's group either way,
-   * so a host can merge its segment groups and leave its measurements alone.
+   * The groups whose overlapping shapes merge (same label) and cut (other
+   * labels): null, every group; [], none, so every annotation keeps its own
+   * identity (a measurement host). Merging and cutting stay within the new
+   * shape's group either way, so a host can merge its segment groups and leave
+   * its measurements alone.
    */
   mergedGroups: string[] | null
   /**
@@ -2269,12 +2200,6 @@ export type AnnotationConfig = {
    * whole voxels. Mean/min/max/SD always use those voxels.
    */
   isAreaGeometric: boolean
-  /**
-   * The live wire uses cornerstone's LivewireScissors cost (edge strength,
-   * Laplacian zero crossings and gradient direction, on the slice through the
-   * display window). Default false: the Sobel gradient magnitude alone.
-   */
-  isLivewireScissors: boolean
   isErasing: boolean
   isVisibleIn3D: boolean
   tool: AnnotationTool

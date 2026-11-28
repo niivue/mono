@@ -4,7 +4,7 @@
 // `explodedMM` when the volume is exploded). The projection runs every frame,
 // so the labels follow a rotating or panning render with no host bookkeeping.
 
-import type { UIKitOverlayFrame, UIKitOverlayRenderer } from '@niivue/niivue'
+import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { LineData } from './line'
 import { UIKitLineOverlay } from './lineOverlay'
 import { buildPointLabel, type PointLabelSpec } from './pointLabel'

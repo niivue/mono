@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@niivue/uikit - Ruler over a slide</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee;
+        font: 14px/1.4 system-ui, sans-serif; }
+      #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333;
+        display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+      header b { color: #ffd500; }
+      #canvasHolder { flex: 1; position: relative; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      a { color: #ffd500; }
+    </style>
+    <link rel="stylesheet" href="./demo.css" />
+  </head>
+  <body>
+    <div id="wrap">
+      <header>
+        <b>UIKit</b>
+        <nav><a href="./index.html">controls</a><a href="./calipers.html">calipers</a><a href="./volume.html">volume</a><a href="./subvolume.html">subvolume</a><a href="./slide.html" aria-current="page">slide (3D)</a><a href="./slide-wsi.html">tiles</a><a href="./buttons.html">buttons</a><a href="./standalone.html">standalone</a></nav>
+        <label title="3D render zoom: the calipers stay put, they measure the canvas, not the scene">zoom <input id="zoom" type="range" min="0.5" max="2" step="0.05" value="1" style="vertical-align:middle" /></label>
+        <label title="Native device pixels (off: one canvas pixel per CSS pixel)"><input id="retina" type="checkbox" checked autocomplete="off" /> Retina</label>
+        <label title="A lens following the pointer"><input id="magnify" type="checkbox" autocomplete="off" /> magnifier</label>
+        <label class="backend">backend <select id="backendSelect">
+          <option value="webgl2">webgl2</option>
+          <option value="webgpu">webgpu</option>
+        </select></label>
+      </header>
+      <div id="canvasHolder"><canvas id="gl"></canvas></div>
+      <footer><span id="help">A whole-slide image on a plane in the volume. Click two points to measure in canvas pixels.</span><span id="status" data-state="wait">Loading slide...</span></footer>
+    </div>
+
+    <script type="module">
+      import NiiVue, {
+        axialPlaneTransform,
+        DziSource,
+        NVSlide,
+        SHOW_RENDER,
+        SLICE_TYPE,
+      } from '@niivue/niivue'
+      import { loadDefaultFont, UIKitMagnifierOverlay, UIKitRulerOverlay } from '@niivue/uikit'
+      import { setStatus } from './statusBar.js'
+      import { urlParamSelect } from './urlParamSelect.js'
+
+      // A CORS-enabled OpenSeadragon example whole-slide (Deep Zoom / DZI).
+      const DZI =
+        'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi'
+
+      const params = new URLSearchParams(location.search)
+      const backend = params.get('backend') === 'webgpu' ? 'webgpu' : 'webgl2'
+      // Wired before anything loads, so the menu works even if loading fails.
+      urlParamSelect(document.getElementById('backendSelect'), 'backend', backend)
+      const canvas = document.getElementById('gl')
+
+      const nv = new NiiVue({
+        backend,
+        backgroundColor: [0.03, 0.06, 0.05, 1],
+        sliceType: SLICE_TYPE.RENDER,
+        showRender: SHOW_RENDER.ALWAYS,
+        isColorbarVisible: false,
+      })
+      await nv.attachToCanvas(canvas)
+      document.getElementById('backendSelect').value = nv.backend
+      // A base volume gives the slide a world (mm) box to sit in; the clip cutaway
+      // reveals the slide on the mid-axial cut face.
+      await nv.loadVolumes([{ url: '/volumes/mni152.nii.gz', colormap: 'gray' }])
+
+      const slide = NVSlide.fromSource(await DziSource.fromUrl(DZI), {
+        maxCacheBytes: 96 * 1024 * 1024,
+      })
+      const mn = nv.model.extentsMin
+      const mx = nv.model.extentsMax
+      const ext = {
+        xmin: mn[0], xmax: mx[0], ymin: mn[1], ymax: mx[1],
+        z: (mn[2] + mx[2]) / 2,
+      }
+      nv.setSlidePlane(slide, {
+        pixelToWorld: axialPlaneTransform(
+          slide.manifest.width,
+          slide.manifest.height,
+          ext,
+        ),
+      })
+      nv.clipPlaneColor = [0, 0, 0, 0]
+      nv.isClipPlaneCutaway = true
+      nv.setClipPlane([0, 0, -90])
+      nv.azimuth = 120
+      nv.elevation = 35
+      setStatus('Waiting for first click', 'wait')
+
+      const font = await loadDefaultFont()
+      const ruler = new UIKitRulerOverlay(font)
+      nv.registerOverlayRenderer(ruler)
+
+      // Registered after the ruler, so the lens magnifies it too.
+      let unmagnify = null
+      document.getElementById('magnify').addEventListener('change', (ev) => {
+        if (ev.target.checked) {
+          // A press exits the lens: untick the toggle, which tears it down.
+          const lens = new UIKitMagnifierOverlay({
+            zoom: 3,
+            onExit: () => ev.target.click(),
+          })
+          const unregister = nv.registerOverlayRenderer(lens)
+          const detach = lens.attach(nv)
+          unmagnify = () => { detach(); unregister(); lens.destroy() }
+        } else {
+          unmagnify?.()
+          unmagnify = null
+        }
+        nv.drawScene()
+      })
+
+      // The slide is drawn in the 3D render tile, which has no 2D-slice mm
+      // pick, so this ruler measures canvas (backing-store) pixels: device
+      // pixels with Retina on, CSS pixels with it off. Single clicks place the
+      // endpoints (a click is not a drag, so it does not orbit the camera).
+      const COLOR = [1, 0.85, 0, 1]
+      const toDevice = (ev) => {
+        const rect = canvas.getBoundingClientRect()
+        return [
+          (ev.clientX - rect.left) * (canvas.width / rect.width),
+          (ev.clientY - rect.top) * (canvas.height / rect.height),
+        ]
+      }
+      let anchor = null
+      document.getElementById('zoom').addEventListener('input', (ev) => {
+        nv.scaleMultiplier = Number(ev.target.value)
+      })
+      // A new pixel ratio rescales the canvas, so endpoints placed in the old
+      // canvas pixels no longer line up: start over.
+      document.getElementById('retina').addEventListener('change', (ev) => {
+        nv.devicePixelRatio = ev.target.checked ? -1 : 1
+        anchor = null
+        ruler.clear()
+        setStatus('Waiting for first click', 'wait')
+      })
+      // Distinguish a measurement click from an orbit drag: only a pointer that
+      // barely moved between down and up places a ruler point.
+      let downAt = null
+      canvas.addEventListener('pointerdown', (ev) => {
+        downAt = [ev.clientX, ev.clientY]
+      })
+      canvas.addEventListener('pointerup', (ev) => {
+        if (!downAt) return
+        const moved = Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1])
+        downAt = null
+        if (moved > 5) return // a drag orbited the camera; not a click
+        const p = toDevice(ev)
+        if (!anchor) {
+          anchor = p
+          ruler.clear()
+          nv.drawScene()
+          setStatus('Waiting for second click', 'wait')
+          return
+        }
+        const px = Math.hypot(p[0] - anchor[0], p[1] - anchor[1])
+        ruler.setRuler({
+          a: anchor, b: p, length: px, units: 'px', sizePx: 22,
+          showTicks: false, lineColor: COLOR, textColor: COLOR,
+        })
+        nv.drawScene()
+        setStatus(`${Math.round(px)} px`, 'ok')
+        anchor = null
+      })
+    </script>
+  </body>
+</html>

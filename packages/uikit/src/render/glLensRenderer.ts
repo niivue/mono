@@ -10,7 +10,7 @@
 
 import type { UIKitOverlayBounds } from '../hook'
 import type { MagnifierLayout } from '../magnifier'
-import { compile } from './glImageRenderer'
+import { linkProgram } from './glUtil'
 import { GL_IMAGE_VERT, GL_LENS_FRAG } from './shaders'
 
 interface SceneCopy {
@@ -37,20 +37,7 @@ export class GlLensRenderer {
   private ensure(gl: WebGL2RenderingContext): void {
     if (this.gl === gl && this.program) return
     if (this.gl && this.gl !== gl) this.destroy()
-    const vert = compile(gl, gl.VERTEX_SHADER, GL_IMAGE_VERT)
-    const frag = compile(gl, gl.FRAGMENT_SHADER, GL_LENS_FRAG)
-    const program = gl.createProgram()
-    if (!program) throw new Error('UIKit: failed to create lens program')
-    gl.attachShader(program, vert)
-    gl.attachShader(program, frag)
-    gl.linkProgram(program)
-    gl.deleteShader(vert)
-    gl.deleteShader(frag)
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program)
-      gl.deleteProgram(program)
-      throw new Error(`UIKit: lens program link failed: ${info}`)
-    }
+    const program = linkProgram(gl, GL_IMAGE_VERT, GL_LENS_FRAG, 'lens')
     this.gl = gl
     this.program = program
     this.vao = gl.createVertexArray()

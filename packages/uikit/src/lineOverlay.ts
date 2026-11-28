@@ -5,8 +5,8 @@
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { LineData } from './line'
-import { GlLineRenderer } from './render/glLineRenderer'
-import { WgpuLineRenderer } from './render/wgpuLineRenderer'
+import { GlLineRenderer } from './render/glInstanced'
+import { WgpuLineRenderer } from './render/wgpuInstanced'
 
 export class UIKitLineOverlay implements UIKitOverlayRenderer {
   private lines: LineData[]

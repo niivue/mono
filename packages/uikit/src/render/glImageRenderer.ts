@@ -3,26 +3,10 @@
 // is re-uploaded only when the caller bumps `version` (or hands a new source).
 
 import type { UIKitBox } from '../rect'
+import { linkProgram } from './glUtil'
 import { GL_IMAGE_FRAG, GL_IMAGE_VERT } from './shaders'
 
 export type UIKitImageSource = ImageBitmap | OffscreenCanvas | HTMLCanvasElement
-
-export function compile(
-  gl: WebGL2RenderingContext,
-  type: number,
-  src: string,
-): WebGLShader {
-  const shader = gl.createShader(type)
-  if (!shader) throw new Error('UIKit: failed to create image shader')
-  gl.shaderSource(shader, src)
-  gl.compileShader(shader)
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const info = gl.getShaderInfoLog(shader)
-    gl.deleteShader(shader)
-    throw new Error(`UIKit: image shader compile failed: ${info}`)
-  }
-  return shader
-}
 
 export class GlImageRenderer {
   private gl: WebGL2RenderingContext | null = null
@@ -39,20 +23,7 @@ export class GlImageRenderer {
   private ensure(gl: WebGL2RenderingContext): void {
     if (this.gl === gl && this.program) return
     if (this.gl && this.gl !== gl) this.destroy()
-    const vert = compile(gl, gl.VERTEX_SHADER, GL_IMAGE_VERT)
-    const frag = compile(gl, gl.FRAGMENT_SHADER, GL_IMAGE_FRAG)
-    const program = gl.createProgram()
-    if (!program) throw new Error('UIKit: failed to create image program')
-    gl.attachShader(program, vert)
-    gl.attachShader(program, frag)
-    gl.linkProgram(program)
-    gl.deleteShader(vert)
-    gl.deleteShader(frag)
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program)
-      gl.deleteProgram(program)
-      throw new Error(`UIKit: image program link failed: ${info}`)
-    }
+    const program = linkProgram(gl, GL_IMAGE_VERT, GL_IMAGE_FRAG, 'image')
     this.gl = gl
     this.program = program
     this.vao = gl.createVertexArray()

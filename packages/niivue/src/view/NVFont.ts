@@ -1,7 +1,12 @@
 import {
+  buildRect,
+  FLOATS_PER_GLYPH,
+  layoutText,
   measureWidth,
   parseFont,
   type RawFontFile,
+  type RectData,
+  type RGBA,
   type UIKitFontMetrics,
 } from '@niivue/uikit'
 import * as NVLoader from '@/NVLoader'
@@ -29,34 +34,37 @@ export type BuildTextFn = (
   backColor?: number[],
 ) => GlyphBatch
 
-export const FLOATS_PER_PANEL = 12
 const BACK_PADDING = 0.3
 const BACK_RADIUS = 0.25
 
 /**
- * The backing panels of `textList` packed FLOATS_PER_PANEL floats each
- * (rect, color, radius, border), or null when no batch has a visible one.
+ * The visible backing panels of `textList` as uikit rects. A ring-only panel
+ * (`backBorder`) is a transparent fill inside a border of its colour.
  */
-export function packPanels(
-  textList: GlyphBatch[],
-): Float32Array<ArrayBuffer> | null {
-  let panelCount = 0
-  for (const item of textList) {
-    if (item.backColor && item.backColor[3] > 0) panelCount++
+export function panelRects(textList: GlyphBatch[]): RectData[] {
+  const rects: RectData[] = []
+  for (const {
+    backColor: c,
+    backRect,
+    backRadius,
+    backBorder = 0,
+  } of textList) {
+    if (!c || c[3] <= 0) continue
+    const [x, y, width, height] = backRect
+    rects.push(
+      buildRect({
+        x,
+        y,
+        width,
+        height,
+        radius: backRadius,
+        borderWidth: backBorder,
+        fill: backBorder > 0 ? [c[0], c[1], c[2], 0] : c,
+        border: c,
+      }),
+    )
   }
-  if (panelCount === 0) return null
-  const panelData = new Float32Array(panelCount * FLOATS_PER_PANEL)
-  let idx = 0
-  for (const item of textList) {
-    if (!item.backColor || item.backColor[3] <= 0) continue
-    const off = idx * FLOATS_PER_PANEL
-    panelData.set(item.backRect, off)
-    panelData.set(item.backColor, off + 4)
-    panelData[off + 8] = item.backRadius
-    panelData[off + 9] = item.backBorder ?? 0
-    idx++
-  }
-  return panelData
+  return rects
 }
 
 export function emptyBatch(): GlyphBatch {
@@ -133,54 +141,53 @@ export function buildTextLayout(
   backColor: number[],
 ): GlyphBatch {
   const fontSize = fontPx * scale
-  const atlasRange = fontMets.distanceRange
   const lineHeight = fontSize * 1.2
   const lines = str.split('\n')
-  // By code point (handles surrogate pairs), as the font's glyphs are keyed.
-  const lineChars = lines.map((line) => [...line])
-  let totalGlyphs = 0
   let maxWidth = 0
-  for (let li = 0; li < lines.length; li++) {
-    totalGlyphs += lineChars[li].length
-    maxWidth = Math.max(maxWidth, measureWidth(fontMets, lines[li], fontSize))
-  }
-  if (totalGlyphs === 0) return emptyBatch()
-  const totalHeight = lines.length * lineHeight
+  for (const line of lines)
+    maxWidth = Math.max(maxWidth, measureWidth(fontMets, line, fontSize))
   const blockX = x - maxWidth * anchorX
-  const blockTopY = y - totalHeight * anchorY
-  const glyphs = new Float32Array(totalGlyphs * 16)
-  let glyphIdx = 0
+  const blockTopY = y - lines.length * lineHeight * anchorY
+  const rgba: RGBA = [
+    color[0] ?? 1,
+    color[1] ?? 1,
+    color[2] ?? 1,
+    color[3] ?? 1,
+  ]
+  // Each line is uikit's layout at its baseline; the block anchors them.
+  const runs = lines.map(
+    (line, li) =>
+      layoutText(fontMets, line, {
+        x: blockX,
+        y: blockTopY + fontSize + li * lineHeight,
+        sizePx: fontSize,
+        color: rgba,
+      }).glyphs,
+  )
+  let glyphs = runs[0] ?? new Float32Array(0)
+  if (runs.length > 1) {
+    glyphs = new Float32Array(runs.reduce((n, r) => n + r.length, 0))
+    let at = 0
+    for (const r of runs) {
+      glyphs.set(r, at)
+      at += r.length
+    }
+  }
+  const glyphIdx = glyphs.length / FLOATS_PER_GLYPH
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
     maxY = -Infinity
-  for (let li = 0; li < lines.length; li++) {
-    const baselineY = blockTopY + fontSize + li * lineHeight
-    let currX = blockX
-    for (const ch of lineChars[li]) {
-      const m = fontMets.glyphs.get(ch)
-      if (!m) continue
-      const offset = glyphIdx * 16
-      const [pl, pb, pw, ph] = m.plane
-      const gx = currX + fontSize * pl
-      const gy = baselineY - fontSize * (pb + ph)
-      const gw = fontSize * pw
-      const gh = fontSize * ph
-      glyphs.set([gx, gy, gw, gh], offset)
-      glyphs.set(m.uv, offset + 4)
-      glyphs.set(color, offset + 8)
-      glyphs[offset + 12] = atlasRange
-      if (gx < minX) minX = gx
-      if (gy < minY) minY = gy
-      if (gx + gw > maxX) maxX = gx + gw
-      if (gy + gh > maxY) maxY = gy + gh
-      currX += fontSize * m.xadv
-      glyphIdx++
-    }
+  for (let o = 0; o < glyphs.length; o += FLOATS_PER_GLYPH) {
+    const gx = glyphs[o]
+    const gy = glyphs[o + 1]
+    if (gx < minX) minX = gx
+    if (gy < minY) minY = gy
+    if (gx + glyphs[o + 2] > maxX) maxX = gx + glyphs[o + 2]
+    if (gy + glyphs[o + 3] > maxY) maxY = gy + glyphs[o + 3]
   }
-  // If every code point in the string was missing from the font atlas, the
-  // min/max accumulators are still ±Infinity — bail out before they poison
-  // backRect. Matches the totalGlyphs === 0 fast path above.
+  // No drawable glyph (empty, or every code point missing from the atlas):
+  // the min/max accumulators are still ±Infinity, so bail before backRect.
   if (glyphIdx === 0) return emptyBatch()
   const pad = fontSize * BACK_PADDING
   const radius = fontSize * BACK_RADIUS
@@ -190,11 +197,8 @@ export function buildTextLayout(
     maxX - minX + 2 * pad,
     maxY - minY + 2 * pad,
   ]
-  // Trim to the glyphs that were actually written — skipped code points
-  // leave holes in the allocated buffer that downstream consumers (which
-  // size their target from `count`) must not copy past.
   return {
-    data: glyphs.subarray(0, glyphIdx * 16),
+    data: glyphs,
     count: glyphIdx,
     backColor,
     backRect,

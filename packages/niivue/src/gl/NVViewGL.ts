@@ -127,7 +127,6 @@ export default class NVGlview {
   legendLayout: import('@/view/NVLegend').LegendLayout | null
   graphLayout: NVGraph.GraphLayout | null
   isBusy: boolean
-  maxGlyphs: number
   meshPipelines: Record<string, boolean>
   volumeRenderer: VolumeRenderer
   lineRenderer: GlLineRenderer
@@ -237,7 +236,6 @@ export default class NVGlview {
     this.graphLayout = null
     // State
     this.isBusy = false
-    this.maxGlyphs = 2048 // Increased for legends with many entries
     // Expose mesh shader types (matches WebGPU meshPipelines keys)
     this.meshPipelines = {
       phong: true,
@@ -1598,11 +1596,7 @@ export default class NVGlview {
           backRadius: 0,
         })
       }
-      // Grow glyph capacity if needed
-      let neededGlyphs = 0
-      for (const item of labels) neededGlyphs += item.count
-      if (neededGlyphs > this.maxGlyphs) this.maxGlyphs = neededGlyphs
-      this.fontRenderer.draw(gl, null, null, null, labels, this.maxGlyphs)
+      this.fontRenderer.draw(gl, labels)
     }
     // Draw graph lines, cross-lines and the bounds border via the line renderer
     const allLines = [...graphLines, ...crossLinesList]

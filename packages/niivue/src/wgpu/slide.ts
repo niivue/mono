@@ -14,7 +14,6 @@ import {
 } from '@/slide/slideFuse'
 import {
   buildSlideOverlay,
-  SLIDE_OVERLAY_MAX_GLYPHS,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import {
@@ -196,8 +195,6 @@ export class SlideRendererGPU {
   overlay: SlideOverlayContent | null = null
   private readonly _lines = new WgpuLineRenderer()
   private readonly _font = new FontRenderer()
-  private _glyphStorage: GPUBuffer | null = null
-  private _fontBindGroup: GPUBindGroup | null = null
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -370,16 +367,6 @@ export class SlideRendererGPU {
   private async _initOverlay(): Promise<void> {
     const device = this._device
     await this._font.init(device, this._format, this._sampleCount, ubuntu, null)
-    this._glyphStorage = device.createBuffer({
-      // 64 B a glyph, as NVViewGPU's.
-      size: SLIDE_OVERLAY_MAX_GLYPHS * 64,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
-    this._fontBindGroup = this._font.createBindGroup(
-      device,
-      this._glyphStorage,
-      this._sampler,
-    )
   }
 
   private _drawOverlay(
@@ -388,7 +375,7 @@ export class SlideRendererGPU {
     height: number,
     dpr: number,
   ): void {
-    if (!this.overlay || !this._glyphStorage) return
+    if (!this.overlay || !this._font.isReady) return
     const device = this._device
     this._font.resize(device, width, height, dpr)
     const { lines, labels } = buildSlideOverlay(
@@ -408,14 +395,7 @@ export class SlideRendererGPU {
       width,
       height,
     )
-    this._font.draw(
-      device,
-      pass,
-      this._fontBindGroup,
-      this._glyphStorage,
-      labels,
-      SLIDE_OVERLAY_MAX_GLYPHS,
-    )
+    this._font.draw(device, pass, labels)
   }
 
   /**
@@ -632,7 +612,6 @@ export class SlideRendererGPU {
     this._luts.clear()
     this._lines.destroy()
     this._font.destroy()
-    this._glyphStorage?.destroy()
     this._uniformBuffer?.destroy()
     this._uniformBuffer = null
     if (this._placeholderTexture) {

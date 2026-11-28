@@ -6,6 +6,7 @@
 import type { UIKitBox } from '../rect'
 import type { UIKitImageSource } from './glImageRenderer'
 import { WGSL_IMAGE } from './shaders'
+import { overlayPipeline } from './wgpuUtil'
 
 export class WgpuImageRenderer {
   private device: GPUDevice | null = null
@@ -50,42 +51,14 @@ export class WgpuImageRenderer {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     })
-    const module = device.createShaderModule({ code: WGSL_IMAGE })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
-      multisample: { count: sampleCount },
-      vertex: { module, entryPoint: 'vertex_main' },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: colorFormat,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      // Only declare depth-stencil when the target pass has a depth attachment
-      // (the main NiiVue view does; the slide viewer does not).
-      ...(depthFormat
-        ? {
-            depthStencil: {
-              depthWriteEnabled: false,
-              depthCompare: 'always' as const,
-              format: depthFormat,
-            },
-          }
-        : {}),
-      primitive: { topology: 'triangle-strip' },
-    })
+    this.pipeline = overlayPipeline(
+      device,
+      device.createShaderModule({ code: WGSL_IMAGE }),
+      this.bindLayout,
+      colorFormat,
+      sampleCount,
+      depthFormat,
+    )
     this.bindGroup = null
   }
 

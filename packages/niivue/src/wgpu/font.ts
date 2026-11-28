@@ -1,44 +1,27 @@
+import { WgpuRectRenderer, WgpuTextRenderer } from '@niivue/uikit'
 import { log } from '@/logger'
+import { loadImageElement } from '@/NVLoader'
 import type { NVFontData } from '@/NVTypes'
-import { FLOATS_PER_PANEL, type GlyphBatch, packPanels } from '@/view/NVFont'
+import { type GlyphBatch, panelRects } from '@/view/NVFont'
 import { NVFontRenderer } from '@/view/NVFontRenderer'
-import fontShaderCode from './font.wgsl?raw'
-import panelShaderCode from './panel.wgsl?raw'
-import {
-  alphaPipelineDesc,
-  overlayDepth,
-  uniformBuffer,
-  uniformStorageEntries,
-} from './pipeline'
-import * as wgpu from './wgpu'
 
+/** Core's labels on WebGPU: panels and glyphs through uikit's renderers. */
 export class FontRenderer extends NVFontRenderer {
-  pipeline: GPURenderPipeline | null
-  bindLayout: GPUBindGroupLayout | null
-  fontTexture: GPUTexture | null
-  paramsBuffer: GPUBuffer | null
-  panelPipeline: GPURenderPipeline | null
-  panelBindLayout: GPUBindGroupLayout | null
-  panelBuffer: GPUBuffer | null
-  panelBindGroup: GPUBindGroup | null
-  maxPanels: number
-
-  constructor() {
-    super()
-    this.pipeline = null
-    this.bindLayout = null
-    this.fontTexture = null
-    this.paramsBuffer = null
-    this.panelPipeline = null
-    this.panelBindLayout = null
-    this.panelBuffer = null
-    this.panelBindGroup = null
-    this.maxPanels = 0
-  }
+  private readonly _panels = new WgpuRectRenderer()
+  private readonly _glyphs = new WgpuTextRenderer()
+  private _atlas: ImageBitmap | null = null
+  // Bumped by every init and destroy, so an atlas that loads after either is
+  // dropped instead of reviving a disposed renderer.
+  private _initToken = 0
+  private _format: GPUTextureFormat = 'bgra8unorm'
+  private _msaaCount = 1
+  private _depthFormat: GPUTextureFormat | undefined
+  private _width = 1
+  private _height = 1
 
   /** `depthFormat` null: for a pass with no depth attachment (the slide pane). */
   async init(
-    device: GPUDevice,
+    _device: GPUDevice,
     format: GPUTextureFormat,
     msaaCount: number,
     fontData?: NVFontData,
@@ -46,49 +29,20 @@ export class FontRenderer extends NVFontRenderer {
   ): Promise<void> {
     if (this.isReady) return
     if (!fontData) return
+    const token = ++this._initToken
     try {
-      // 1. Load Assets — use pre-parsed metrics and atlas URL from fontData
+      const atlas = await createImageBitmap(
+        await loadImageElement(fontData.atlasUrl),
+      )
+      if (token !== this._initToken) {
+        atlas.close()
+        return
+      }
+      this._atlas = atlas
       this.fontMets = fontData.metrics
-      this.fontTexture = await wgpu.bitmap2texture(device, fontData.atlasUrl)
-      // 2. Define Bind Group Layout
-      this.bindLayout = device.createBindGroupLayout({
-        entries: [
-          ...uniformStorageEntries(
-            GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          ),
-          { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-          { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        ],
-      })
-      // 3. Create Render Pipeline
-      const depthStencil = depthFormat ? overlayDepth(depthFormat) : undefined
-      this.pipeline = device.createRenderPipeline(
-        alphaPipelineDesc(device, {
-          module: device.createShaderModule({ code: fontShaderCode }),
-          bindGroupLayouts: [this.bindLayout],
-          format,
-          msaaCount,
-          depthStencil,
-        }),
-      )
-      // Space for uniforms (canvasSize)
-      this.paramsBuffer = uniformBuffer(device, 32)
-      // 4. Panel pipeline for label backing rects
-      this.panelBindLayout = device.createBindGroupLayout({
-        entries: uniformStorageEntries(
-          GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        ),
-      })
-      this.panelPipeline = device.createRenderPipeline(
-        alphaPipelineDesc(device, {
-          module: device.createShaderModule({ code: panelShaderCode }),
-          bindGroupLayouts: [this.panelBindLayout],
-          format,
-          msaaCount,
-          depthStencil,
-        }),
-      )
-      this._growPanelBuffer(device, 128)
+      this._format = format
+      this._msaaCount = msaaCount
+      this._depthFormat = depthFormat ?? undefined
       this.isReady = true
     } catch (err) {
       log.error('Failed to initialize font system:', err)
@@ -96,123 +50,43 @@ export class FontRenderer extends NVFontRenderer {
     }
   }
 
-  createBindGroup(
-    device: GPUDevice,
-    glyphStorageBuffer: GPUBuffer,
-    sampler: GPUSampler,
-  ): GPUBindGroup | null {
-    if (
-      !this.isReady ||
-      !this.bindLayout ||
-      !this.paramsBuffer ||
-      !this.fontTexture
-    )
-      return null
-    return device.createBindGroup({
-      layout: this.bindLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.paramsBuffer } },
-        { binding: 1, resource: { buffer: glyphStorageBuffer } },
-        { binding: 2, resource: this.fontTexture.createView() },
-        { binding: 3, resource: sampler },
-      ],
-    })
-  }
-
-  _growPanelBuffer(device: GPUDevice, needed: number): void {
-    if (needed <= this.maxPanels) return
-    this.maxPanels = needed
-    if (this.panelBuffer) this.panelBuffer.destroy()
-    this.panelBuffer = device.createBuffer({
-      size: this.maxPanels * FLOATS_PER_PANEL * 4,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
-    if (this.panelBindLayout && this.paramsBuffer) {
-      this.panelBindGroup = device.createBindGroup({
-        layout: this.panelBindLayout,
-        entries: [
-          { binding: 0, resource: { buffer: this.paramsBuffer } },
-          { binding: 1, resource: { buffer: this.panelBuffer } },
-        ],
-      })
-    }
-  }
-
   resize(
-    device: GPUDevice,
+    _device: GPUDevice,
     width: number,
     height: number,
     dpi: number = 1,
     fontSizeScaling: number = 0.4,
     fontMinPx: number = 13,
   ): void {
-    if (!this.isReady || !this.paramsBuffer) return
-    device.queue.writeBuffer(
-      this.paramsBuffer,
-      0,
-      new Float32Array([width, height]),
-    )
+    if (!this.isReady) return
+    this._width = width
+    this._height = height
     this.resizeFont(width, height, dpi, fontSizeScaling, fontMinPx)
   }
 
   draw(
     device: GPUDevice,
     pass: GPURenderPassEncoder,
-    bindGroup: GPUBindGroup | null,
-    glyphStorageBuffer: GPUBuffer,
     textList: GlyphBatch[],
-    maxGlyphs: number,
   ): void {
-    if (!this.isReady || textList.length === 0) return
-    // Panel pass: draw backing rectangles first
-    if (this.panelPipeline && this.panelBuffer) {
-      const panelData = packPanels(textList)
-      if (panelData) {
-        const panelCount = panelData.length / FLOATS_PER_PANEL
-        this._growPanelBuffer(device, panelCount)
-        device.queue.writeBuffer(this.panelBuffer, 0, panelData)
-        pass.setPipeline(this.panelPipeline)
-        pass.setBindGroup(0, this.panelBindGroup as GPUBindGroup)
-        pass.draw(4, panelCount)
-      }
-    }
-    // Glyph pass
-    if (!bindGroup || !this.pipeline) return
-    // Count total glyphs needed
-    let totalChars = 0
-    for (const item of textList) totalChars += item.count
-    if (totalChars > maxGlyphs) totalChars = maxGlyphs
-    const combinedData = new Float32Array(totalChars * 16)
-    totalChars = 0
-    for (const item of textList) {
-      if (totalChars + item.count > maxGlyphs) break
-      combinedData.set(item.data, totalChars * 16)
-      totalChars += item.count
-    }
-    device.queue.writeBuffer(glyphStorageBuffer, 0, combinedData)
-    pass.setPipeline(this.pipeline)
-    pass.setBindGroup(0, bindGroup)
-    pass.draw(4, totalChars)
+    if (!this.isReady || !this._atlas || textList.length === 0) return
+    const f = this._format
+    const n = this._msaaCount
+    const d = this._depthFormat
+    const w = this._width
+    const h = this._height
+    // Backing panels first, then every label's glyphs in one instanced draw.
+    this._panels.draw(device, pass, f, n, d, panelRects(textList), w, h)
+    const { glyphs, count } = this.packGlyphs(textList)
+    this._glyphs.draw(device, pass, f, n, d, this._atlas, glyphs, count, w, h)
   }
 
   destroy(): void {
-    if (this.fontTexture) {
-      this.fontTexture.destroy()
-      this.fontTexture = null
-    }
-    if (this.paramsBuffer) {
-      this.paramsBuffer.destroy()
-      this.paramsBuffer = null
-    }
-    if (this.panelBuffer) {
-      this.panelBuffer.destroy()
-      this.panelBuffer = null
-    }
-    this.pipeline = null
-    this.bindLayout = null
-    this.panelPipeline = null
-    this.panelBindLayout = null
-    this.panelBindGroup = null
+    this._initToken++
+    this._panels.destroy()
+    this._glyphs.destroy()
+    this._atlas?.close()
+    this._atlas = null
     this.fontMets = null
     this.isReady = false
   }

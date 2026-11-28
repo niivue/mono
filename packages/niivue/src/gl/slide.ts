@@ -13,7 +13,6 @@ import {
 } from '@/slide/slideFuse'
 import {
   buildSlideOverlay,
-  SLIDE_OVERLAY_MAX_GLYPHS,
   type SlideOverlayContent,
 } from '@/slide/slideOverlay'
 import {
@@ -398,9 +397,9 @@ export class SlideRenderer {
       this._font.fontPx * 0.5,
     )
     this._lines.draw(gl, lines, width, height)
-    this._font.draw(gl, null, null, null, labels, SLIDE_OVERLAY_MAX_GLYPHS)
-    // The line and font passes re-enable depth and culling; the overlay hook
-    // expects both off.
+    this._font.draw(gl, labels)
+    // The line and font passes re-enable depth (and may leave culling on); the
+    // overlay hook expects both off.
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
   }

@@ -30,7 +30,7 @@
 import { mat4 } from 'gl-matrix'
 import { Animation, planAnimation } from '../src/control/animate.ts'
 import { decodeRLE, encodeRLE } from '../src/drawing/rle.ts'
-import NiiVue from '../src/index.ts'
+import NiiVue, { measureAnnotation } from '../src/index.ts'
 import {
   calculateMvpMatrix,
   calculateMvpMatrix2D,
@@ -845,6 +845,36 @@ async function rendererScenarios(nv, frames) {
     await ensureAssets(nv, { volumes: VOL_MNI, meshes: MESH_TRACT })
     nv.sliceType = 4
   })
+
+  // Labels: 50 measurement rulers (tick numbers, backed length labels) and
+  // the colorbar on one axial slice, so text layout and drawing dominate.
+  await run('Text: 50 rulers + colorbar', async () => {
+    await ensureAssets(nv, { volumes: VOL_MNI })
+    nv.sliceType = 0
+    nv.mosaicString = ''
+    nv.isColorbarVisible = true
+    nv.setCrosshairPos([0, 0, 0])
+    /** @type {import('../src/index.ts').AnnotationStyle} */
+    const style = {
+      strokeColor: [1, 1, 0, 1],
+      fillColor: [1, 1, 0, 0],
+      strokeWidth: 1,
+    }
+    for (let i = 0; i < 50; i++) {
+      const y = -90 + i * 3.6
+      const a = measureAnnotation(
+        [
+          [-60 + (i % 5) * 4, y, 0],
+          [40 + (i % 7) * 3, y + 2, 0],
+        ],
+        0,
+        style,
+      )
+      if (a) nv.addAnnotation(a, false)
+    }
+  })
+  nv.clearAnnotations()
+  nv.isColorbarVisible = false
 
   // Animations: each frame swaps in new data through the live-update fast
   // paths, then draws. Two prebuilt states alternate, so the timing is

@@ -1,3 +1,4 @@
+import { FLOATS_PER_GLYPH } from '@niivue/uikit'
 import {
   buildTextLayout,
   calculateFontSizePx,
@@ -15,6 +16,7 @@ import { NVRenderer } from './NVRenderer'
 export abstract class NVFontRenderer extends NVRenderer {
   protected fontMets: FontMetrics | null = null
   private _fontPx = 16
+  private _glyphScratch = new Float32Array(0)
 
   /** Current rasterized font size in device pixels (post-resize). */
   get fontPx(): number {
@@ -66,5 +68,22 @@ export abstract class NVFontRenderer extends NVRenderer {
       anchorY,
       backColor,
     )
+  }
+
+  /** Every label's glyph records in one reused buffer, and their count. */
+  protected packGlyphs(textList: GlyphBatch[]): {
+    glyphs: Float32Array
+    count: number
+  } {
+    let count = 0
+    for (const item of textList) count += item.count
+    if (this._glyphScratch.length < count * FLOATS_PER_GLYPH)
+      this._glyphScratch = new Float32Array(count * FLOATS_PER_GLYPH)
+    let at = 0
+    for (const item of textList) {
+      this._glyphScratch.set(item.data, at)
+      at += item.count * FLOATS_PER_GLYPH
+    }
+    return { glyphs: this._glyphScratch, count }
   }
 }

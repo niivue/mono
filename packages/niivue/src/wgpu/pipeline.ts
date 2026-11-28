@@ -63,20 +63,6 @@ export function texturedLayout(
   })
 }
 
-/** Bindings: 0 uniform, 1 vertex read-only storage. */
-export function uniformStorageEntries(
-  uniformVisibility: GPUShaderStageFlags,
-): GPUBindGroupLayoutEntry[] {
-  return [
-    uniformEntry(uniformVisibility),
-    {
-      binding: 1,
-      visibility: GPUShaderStage.VERTEX,
-      buffer: { type: 'read-only-storage' },
-    },
-  ]
-}
-
 /**
  * Alpha-blended pipeline with `vertex_main` / `fragment_main` entry points.
  * Returns the descriptor so callers can derive depth variants from it.

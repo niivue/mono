@@ -30,13 +30,8 @@ export type {
 } from './hook'
 export type { UIKitImageSource } from './imageOverlay'
 export { UIKitImageOverlay } from './imageOverlay'
-export type { LineData, LineTerminators } from './line'
-export {
-  buildLine,
-  buildTerminatedLine,
-  FLOATS_PER_LINE,
-  LineTerminator,
-} from './line'
+export type { LineData } from './line'
+export { buildLine, FLOATS_PER_LINE } from './line'
 export { UIKitLineOverlay } from './lineOverlay'
 export type { UIKitMagnifierOverlayOptions } from './magnifierOverlay'
 export { UIKitMagnifierOverlay } from './magnifierOverlay'
@@ -55,8 +50,11 @@ export { UIKitPointLabelOverlay } from './pointLabelOverlay'
 export type { RectData, RectSpec, UIKitBox } from './rect'
 export { buildRect, rectContains } from './rect'
 export { UIKitRectOverlay } from './rectOverlay'
-export { GlLineRenderer } from './render/glLineRenderer'
-export { WgpuLineRenderer } from './render/wgpuLineRenderer'
+export { GlLineRenderer, GlRectRenderer } from './render/glInstanced'
+export type { UIKitAtlasSource } from './render/glTextRenderer'
+export { GlTextRenderer } from './render/glTextRenderer'
+export { WgpuLineRenderer, WgpuRectRenderer } from './render/wgpuInstanced'
+export { WgpuTextRenderer } from './render/wgpuTextRenderer'
 export type {
   RulerGeometry,
   RulerSegment,
@@ -72,10 +70,11 @@ export type {
   UIKitFontMetrics,
   UIKitGlyph,
 } from './text/font'
-export { parseFont, screenPxRange } from './text/font'
+export { parseFont } from './text/font'
 export type { RGBA, TextLayoutOptions } from './text/layout'
 export {
   autoOutlineColor,
+  FLOATS_PER_GLYPH,
   layoutText,
   measureWidth,
   readableAngle,

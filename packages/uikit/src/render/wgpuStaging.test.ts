@@ -1,13 +1,11 @@
-// Staging-buffer packing of the WebGPU line/text renderers, checked against a
+// Staging-buffer packing of the WebGPU instanced (line, rect) and text renderers, checked against a
 // fake device that records every writeBuffer and draw (no GPU needed).
 
 import { beforeAll, describe, expect, it } from 'bun:test'
 import { FLOATS_PER_LINE, type LineData } from '../line'
-import { FLOATS_PER_RECT, type RectData } from '../rect'
-import { FLOATS_PER_VERTEX } from '../text/layout'
-import { WgpuLineRenderer } from './wgpuLineRenderer'
-import { WgpuRectRenderer } from './wgpuRectRenderer'
-import { type TextRun, WgpuTextRenderer } from './wgpuTextRenderer'
+import { FLOATS_PER_GLYPH } from '../text/layout'
+import { WgpuLineRenderer } from './wgpuInstanced'
+import { WgpuTextRenderer } from './wgpuTextRenderer'
 
 type Write = {
   buffer: object
@@ -156,163 +154,51 @@ describe('WgpuLineRenderer staging', () => {
   })
 })
 
-const rect = (v: number): RectData => ({
-  data: new Float32Array(FLOATS_PER_RECT).fill(v),
-})
-
-describe('WgpuRectRenderer staging', () => {
-  const draw = (
-    r: WgpuRectRenderer,
-    gpu: ReturnType<typeof fakeGpu>,
-    rects: RectData[],
-  ) => r.draw(gpu.device, gpu.pass, 'bgra8unorm', 1, undefined, rects, 640, 480)
-
-  it('uploads exactly the active range across grow, shrink and holes', () => {
-    const gpu = fakeGpu()
-    const r = new WgpuRectRenderer()
-    draw(r, gpu, [rect(1), rect(2), rect(3)])
-    const staging = gpu.writes[1].src
-    expect(gpu.writes[0].data.slice(0, 2)).toEqual([640, 480])
-    expect(gpu.writes[1].data).toHaveLength(3 * FLOATS_PER_RECT)
-    expect(gpu.calls.at(-1)?.args).toEqual([4, 3])
-
-    gpu.reset()
-    draw(r, gpu, [rect(7)])
-    expect(gpu.writes[1].data).toEqual(Array(FLOATS_PER_RECT).fill(7))
-    expect(gpu.writes[1].src).toBe(staging)
-    expect(gpu.calls.at(-1)?.args).toEqual([4, 1])
-
-    // A hole after a larger frame is zeroed, not left holding the old rect.
-    gpu.reset()
-    const holed = [rect(5), rect(6)]
-    delete holed[1]
-    draw(r, gpu, holed)
-    expect(gpu.writes[1].data.slice(FLOATS_PER_RECT)).toEqual(
-      Array(FLOATS_PER_RECT).fill(0),
-    )
-
-    gpu.reset()
-    draw(r, gpu, [])
-    expect(gpu.writes).toHaveLength(0)
-    expect(gpu.calls).toHaveLength(0)
-  })
-
-  it('grows past the initial storage capacity', () => {
-    const gpu = fakeGpu()
-    const r = new WgpuRectRenderer()
-    draw(
-      r,
-      gpu,
-      Array.from({ length: 100 }, (_, i) => rect(i)),
-    )
-    expect(gpu.writes[1].data).toHaveLength(100 * FLOATS_PER_RECT)
-    expect(gpu.writes[1].data.at(-1)).toBe(99)
-    expect(gpu.buffers.at(-1)?.size).toBeGreaterThanOrEqual(
-      100 * FLOATS_PER_RECT * 4,
-    )
-  })
-
-  it('zeroes the tail of a short record instead of keeping the prior frame', () => {
-    const gpu = fakeGpu()
-    const r = new WgpuRectRenderer()
-    draw(r, gpu, [rect(1)])
-    gpu.reset()
-    draw(r, gpu, [{ data: new Float32Array(FLOATS_PER_RECT - 1).fill(2) }])
-    expect(gpu.writes[1].data).toEqual([
-      ...Array(FLOATS_PER_RECT - 1).fill(2),
-      0,
-    ])
-  })
-})
-
-const run = (v: number, verts: number, screenPxRange = v): TextRun => ({
-  vertices: new Float32Array(verts * FLOATS_PER_VERTEX).fill(v),
-  count: verts,
-  screenPxRange,
-})
-
 describe('WgpuTextRenderer staging', () => {
-  const image = { width: 4, height: 4 } as ImageBitmap
-  const drawAll = (
+  const atlas = { width: 4, height: 4 } as ImageBitmap
+  const draw = (
     r: WgpuTextRenderer,
     gpu: ReturnType<typeof fakeGpu>,
-    runs: TextRun[],
+    glyphs: Float32Array,
+    count: number,
+    image = atlas,
   ) =>
-    r.drawAll(
+    r.draw(
       gpu.device,
       gpu.pass,
       'bgra8unorm',
       1,
       undefined,
       image,
-      runs,
+      glyphs,
+      count,
       640,
       480,
     )
 
-  const uniformWrite = (gpu: ReturnType<typeof fakeGpu>) => {
-    const u = gpu.buffers.find((b) => b.usage & GPUBufferUsage.UNIFORM)
-    return gpu.writes.filter((w) => w.buffer === u)
-  }
-
-  it('packs one aligned uniform slot per drawn run, in order', () => {
+  // The buffer grows and is reused: a later, smaller draw must upload only its
+  // own records, not stale ones past them.
+  it('uploads only the drawn records, in one instanced draw', () => {
     const gpu = fakeGpu()
     const r = new WgpuTextRenderer()
-    drawAll(r, gpu, [run(1, 3), run(9, 0), run(2, 6)])
-    const [u] = uniformWrite(gpu)
-    // Two drawn runs -> exactly two 256-byte slots uploaded.
-    expect(u.data).toHaveLength(2 * 64)
-    expect(u.data.slice(0, 4)).toEqual([640, 480, 1, 0])
-    expect(u.data.slice(64, 68)).toEqual([640, 480, 2, 0])
-    const vb = 3 * FLOATS_PER_VERTEX * 4
-    expect(gpu.calls.map((c) => [c.op, c.args])).toEqual([
-      ['bind', [0, {}, [0]]],
-      ['vb', [0, expect.anything(), 0, vb]],
-      ['draw', [3]],
-      ['bind', [0, {}, [256]]],
-      ['vb', [0, expect.anything(), vb, 2 * vb]],
-      ['draw', [6]],
-    ])
+    draw(r, gpu, new Float32Array(300 * FLOATS_PER_GLYPH).fill(1), 300)
+    gpu.reset()
+    draw(r, gpu, new Float32Array(300 * FLOATS_PER_GLYPH).fill(2), 2)
+    const glyphWrite = gpu.writes.find((w) => w.data.length > 4)
+    expect(glyphWrite?.data).toHaveLength(2 * FLOATS_PER_GLYPH)
+    expect(gpu.calls.filter((c) => c.op === 'draw').map((c) => c.args)).toEqual(
+      [[4, 2]],
+    )
   })
 
-  it('reuses staging across grow, shrink and changed content', () => {
+  it('re-uploads the atlas only when its source changes', () => {
     const gpu = fakeGpu()
     const r = new WgpuTextRenderer()
-    drawAll(r, gpu, [run(1, 3), run(2, 3), run(3, 3)])
-    const first = uniformWrite(gpu)[0]
-    expect(first.data).toHaveLength(3 * 64)
-
-    gpu.reset()
-    drawAll(r, gpu, [run(4, 3)])
-    const [u] = uniformWrite(gpu)
-    expect(u.data).toHaveLength(64)
-    expect(u.data.slice(0, 4)).toEqual([640, 480, 4, 0])
-    expect(u.src).toBe(first.src)
-    expect(gpu.calls.filter((c) => c.op === 'draw')).toHaveLength(1)
-
-    gpu.reset()
-    drawAll(r, gpu, [run(5, 0)])
-    expect(gpu.writes).toHaveLength(0)
-    expect(gpu.calls).toHaveLength(0)
-  })
-
-  it('re-uploads the atlas only when the font image changes', () => {
-    const gpu = fakeGpu()
-    const r = new WgpuTextRenderer()
-    drawAll(r, gpu, [run(1, 3)])
-    drawAll(r, gpu, [run(1, 3)])
+    const one = new Float32Array(FLOATS_PER_GLYPH)
+    draw(r, gpu, one, 1)
+    draw(r, gpu, one, 1)
     expect(gpu.textures()).toBe(1)
-    r.drawAll(
-      gpu.device,
-      gpu.pass,
-      'bgra8unorm',
-      1,
-      undefined,
-      { width: 8, height: 8 } as ImageBitmap,
-      [run(1, 3)],
-      640,
-      480,
-    )
+    draw(r, gpu, one, 1, { width: 8, height: 8 } as ImageBitmap)
     expect(gpu.textures()).toBe(2)
   })
 })

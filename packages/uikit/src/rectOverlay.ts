@@ -4,8 +4,8 @@
 
 import type { UIKitOverlayFrame, UIKitOverlayRenderer } from './hook'
 import type { RectData } from './rect'
-import { GlRectRenderer } from './render/glRectRenderer'
-import { WgpuRectRenderer } from './render/wgpuRectRenderer'
+import { GlRectRenderer } from './render/glInstanced'
+import { WgpuRectRenderer } from './render/wgpuInstanced'
 
 export class UIKitRectOverlay implements UIKitOverlayRenderer {
   private rects: RectData[]

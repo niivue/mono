@@ -53,10 +53,12 @@ ordinary app forms are better as DOM controls, as the slide panels are.
 UIKit is a **separate module with privileged access to NiiVue's rendering
 lifecycle**. NiiVue core exposes a small hook (an overlay draw phase + a backend
 handle + a settled signal); UIKit registers into it, or into the same hook on a
-bare canvas (`UIKitCanvasHost`), with **its own** line/text renderers on both backends. Core draws its own
-annotations, measurements, scale bar and labels; UIKit is an opt-in toolkit
-for richer overlays and in-canvas controls, not core's renderer. The two share
-the overlay hook's shape and the bundled font atlas, not code.
+bare canvas (`UIKitCanvasHost`). Its line, rect and text renderers (both
+backends) and its font, ruler geometry and text layout are also what NiiVue
+core draws with: core depends on uikit, uikit does not depend on core. Core
+decides what to draw (annotations, measurements, scale bar, labels); uikit is
+how it is drawn, and an opt-in toolkit for richer overlays and in-canvas
+controls.
 
 ## Widgets
 
@@ -64,8 +66,7 @@ Each widget is a pure geometry builder (spec in, plain line + text draw data out
 unit-testable without a GPU) paired with an overlay that owns the GPU resources
 and draws that data through the lifecycle hook. The overlays are the API. Of
 the builders, only the measuring widgets' and the primitives' (`buildRuler`,
-`buildCrosshair`, `buildRect`, `buildLine`,
-`buildTerminatedLine`) are exported; the control widgets' models are
+`buildCrosshair`, `buildRect`, `buildLine`) are exported; the control widgets' models are
 package-private (see "Conventions for contributors").
 
 | Model | Overlay | Draws |
@@ -118,12 +119,10 @@ The exported builders are usable on their own if you want the geometry but not
 UIKit's renderers:
 
 ```ts
-import { buildTerminatedLine, LineTerminator } from '@niivue/uikit'
+import { buildLine } from '@niivue/uikit'
 
-// A line with an arrowhead at the end, as plain LineData segments.
-const segments = buildTerminatedLine(0, 0, 100, 40, 2, [1, 0, 0, 1], {
-  end: LineTerminator.ARROW,
-})
+// One line record: from (0, 0) to (100, 40), 2 px wide, red.
+const line = buildLine(0, 0, 100, 40, 2, [1, 0, 0, 1])
 ```
 
 ## Buttons

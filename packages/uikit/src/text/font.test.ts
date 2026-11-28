@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import ubuntu from '../fonts/ubuntu.json'
-import { dataUrlBytes, parseFont, screenPxRange } from './font'
+import { dataUrlBytes, parseFont } from './font'
 
 const RAW = {
   atlas: { width: 100, height: 200, distanceRange: 2, size: 50 },
@@ -46,16 +46,6 @@ describe('parseFont', () => {
     expect(g.plane[2]).toBeCloseTo(0.5)
     expect(g.plane[3]).toBeCloseTo(0.8)
     expect(g.xadv).toBeCloseTo(0.6)
-  })
-})
-
-describe('screenPxRange', () => {
-  it('scales distance range by size ratio, floored at 1', () => {
-    const f = parseFont(RAW)
-    // (100 / 50) * 2 = 4
-    expect(screenPxRange(f, 100)).toBeCloseTo(4)
-    // Tiny text floors at 1
-    expect(screenPxRange(f, 1)).toBe(1)
   })
 })
 

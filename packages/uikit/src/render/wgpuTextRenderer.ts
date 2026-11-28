@@ -1,41 +1,30 @@
-// UIKit's own WebGPU MSDF text renderer. Mirrors the WebGL2 one: draws
-// pre-transformed screen-pixel triangle vertices with the atlas bound, appending
-// to the open render pass. Pipeline built to match the pass's attachment formats;
-// atlas uploaded once via copyExternalImageToTexture.
+// The WebGPU MSDF text renderer, for uikit's overlays and NiiVue core's labels
+// alike: one instanced quad per glyph record (text/layout.ts FLOATS_PER_GLYPH),
+// read from a storage buffer that grows as needed, appended to the open render
+// pass. The pipeline matches the pass's attachment formats; the atlas is
+// re-uploaded when its source changes. One draw per renderer per pass: a second
+// draw would overwrite the first's glyphs before the pass runs.
 
-import { FLOATS_PER_VERTEX } from '../text/layout'
+import { FLOATS_PER_GLYPH } from '../text/layout'
+import type { UIKitAtlasSource } from './glTextRenderer'
 import { WGSL_TEXT } from './shaders'
+import { overlayPipeline } from './wgpuUtil'
 
-const BYTES_PER_VERTEX = FLOATS_PER_VERTEX * 4
-// Dynamic uniform-buffer offsets must be a multiple of
-// minUniformBufferOffsetAlignment; 256 is its maximum guaranteed value, so one
-// 256-byte slot per text run is always valid.
-const UNIFORM_STRIDE = 256
-
-/** One already-laid-out glyph run to draw: its vertices, vertex count and AA range. */
-export type TextRun = {
-  vertices: Float32Array
-  count: number
-  screenPxRange: number
-}
+const BYTES_PER_GLYPH = FLOATS_PER_GLYPH * 4
 
 export class WgpuTextRenderer {
   private device: GPUDevice | null = null
   private pipeline: GPURenderPipeline | null = null
   private bindLayout: GPUBindGroupLayout | null = null
-  private uniformBuffer: GPUBuffer | null = null
-  private vertexBuffer: GPUBuffer | null = null
+  private paramsBuffer: GPUBuffer | null = null
+  private glyphBuffer: GPUBuffer | null = null
   private sampler: GPUSampler | null = null
   private texture: GPUTexture | null = null
-  private textureImage: ImageBitmap | null = null
+  private atlas: UIKitAtlasSource | null = null
   private bindGroup: GPUBindGroup | null = null
-  private capacityBytes = 0
-  private uniformCapacity = 0
+  private capacity = 0
   private key = ''
-  // CPU staging reused across frames (grown on demand) so a static label layer
-  // drawing every frame does not allocate per frame.
-  private uniforms = new Float32Array(0)
-  private readonly vertexOffsets: number[] = []
+  private readonly params = new Float32Array(4)
 
   private ensurePipeline(
     device: GPUDevice,
@@ -52,78 +41,39 @@ export class WgpuTextRenderer {
       magFilter: 'linear',
       minFilter: 'linear',
     })
+    this.paramsBuffer ??= device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    })
+    const stages = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT
     this.bindLayout = device.createBindGroupLayout({
       entries: [
+        { binding: 0, visibility: stages, buffer: { type: 'uniform' } },
         {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          // One uniform slot per text run, addressed by a dynamic offset, so
-          // multiple runs drawn into the same deferred pass each read their own
-          // (width, height, screenPxRange) instead of collapsing to the last.
-          buffer: { type: 'uniform', hasDynamicOffset: true },
+          binding: 1,
+          visibility: stages,
+          buffer: { type: 'read-only-storage' },
         },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     })
-    const module = device.createShaderModule({ code: WGSL_TEXT })
-    this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({
-        bindGroupLayouts: [this.bindLayout],
-      }),
-      multisample: { count: sampleCount },
-      vertex: {
-        module,
-        entryPoint: 'vertex_main',
-        buffers: [
-          {
-            arrayStride: BYTES_PER_VERTEX,
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x2' },
-              { shaderLocation: 1, offset: 8, format: 'float32x2' },
-              { shaderLocation: 2, offset: 16, format: 'float32x4' },
-            ],
-          },
-        ],
-      },
-      fragment: {
-        module,
-        entryPoint: 'fragment_main',
-        targets: [
-          {
-            format: colorFormat,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-              },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
-            },
-          },
-        ],
-      },
-      // Only declare depth-stencil when the target pass has a depth attachment
-      // (the main NiiVue view does; the slide viewer does not).
-      ...(depthFormat
-        ? {
-            depthStencil: {
-              depthWriteEnabled: false,
-              depthCompare: 'always' as const,
-              format: depthFormat,
-            },
-          }
-        : {}),
-      primitive: { topology: 'triangle-list' },
-    })
-    // Bind group depends on the texture; force a rebuild.
+    this.pipeline = overlayPipeline(
+      device,
+      device.createShaderModule({ code: WGSL_TEXT }),
+      this.bindLayout,
+      colorFormat,
+      sampleCount,
+      depthFormat,
+    )
     this.bindGroup = null
   }
 
-  private ensureTexture(device: GPUDevice, image: ImageBitmap): void {
-    if (this.texture && this.textureImage === image) return
+  private ensureTexture(device: GPUDevice, atlas: UIKitAtlasSource): void {
+    if (this.texture && this.atlas === atlas) return
     this.texture?.destroy()
     this.texture = device.createTexture({
-      size: [image.width, image.height],
+      size: [atlas.width, atlas.height],
       format: 'rgba8unorm',
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
@@ -131,156 +81,91 @@ export class WgpuTextRenderer {
         GPUTextureUsage.RENDER_ATTACHMENT,
     })
     device.queue.copyExternalImageToTexture(
-      { source: image },
+      { source: atlas },
       { texture: this.texture },
-      [image.width, image.height],
+      [atlas.width, atlas.height],
     )
-    this.textureImage = image
-    this.bindGroup = null // texture changed -> rebuild bind group
+    this.atlas = atlas
+    this.bindGroup = null
   }
 
-  private ensureUniformBuffer(device: GPUDevice, bytes: number): void {
-    if (this.uniformBuffer && this.uniformCapacity >= bytes) return
-    this.uniformCapacity = Math.max(
-      bytes,
-      this.uniformCapacity * 2,
-      UNIFORM_STRIDE,
-    )
-    this.uniformBuffer?.destroy()
-    this.uniformBuffer = device.createBuffer({
-      size: this.uniformCapacity,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  private ensureCapacity(device: GPUDevice, count: number): void {
+    if (this.glyphBuffer && this.capacity >= count) return
+    this.capacity = Math.max(count, this.capacity * 2, 256)
+    this.glyphBuffer?.destroy()
+    this.glyphBuffer = device.createBuffer({
+      size: this.capacity * BYTES_PER_GLYPH,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     })
-    this.bindGroup = null // uniform buffer changed -> rebuild bind group
-  }
-
-  private ensureVertexBuffer(device: GPUDevice, bytes: number): void {
-    if (this.vertexBuffer && this.capacityBytes >= bytes) return
-    this.capacityBytes = Math.max(bytes, this.capacityBytes * 2, 4096)
-    this.vertexBuffer?.destroy()
-    this.vertexBuffer = device.createBuffer({
-      size: this.capacityBytes,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    })
-  }
-
-  private ensureBindGroup(device: GPUDevice): void {
-    if (this.bindGroup) return
-    if (
-      !this.bindLayout ||
-      !this.uniformBuffer ||
-      !this.texture ||
-      !this.sampler
-    )
-      return
-    this.bindGroup = device.createBindGroup({
-      layout: this.bindLayout,
-      entries: [
-        // One 16-byte uniform slot, selected per draw via a dynamic offset.
-        { binding: 0, resource: { buffer: this.uniformBuffer, size: 16 } },
-        { binding: 1, resource: this.texture.createView() },
-        { binding: 2, resource: this.sampler },
-      ],
-    })
+    this.bindGroup = null
   }
 
   /**
-   * Draw all already-laid-out glyph runs into the open pass. Every run's
-   * vertices are packed into one vertex buffer and its (width, height,
-   * screenPxRange) uniform into its own 256-byte slot, so each draw reads its
-   * own data — writing every run into a single shared buffer would collapse to
-   * the last run before the deferred pass executes.
+   * Append `count` glyph records from `glyphs` (screen pixels) to the open
+   * pass over a `width` x `height` bounds rect, in one instanced draw.
    */
-  drawAll(
+  draw(
     device: GPUDevice,
     pass: GPURenderPassEncoder,
     colorFormat: GPUTextureFormat,
     sampleCount: number,
     depthFormat: GPUTextureFormat | undefined,
-    image: ImageBitmap,
-    runs: readonly TextRun[],
+    atlas: UIKitAtlasSource,
+    glyphs: Float32Array,
+    count: number,
     width: number,
     height: number,
   ): void {
-    let drawn = 0
-    let totalBytes = 0
-    for (const r of runs) {
-      if (r.count === 0) continue
-      drawn++
-      totalBytes += r.vertices.byteLength
-    }
-    if (drawn === 0) return
+    if (count === 0) return
     this.ensurePipeline(device, colorFormat, sampleCount, depthFormat)
-    this.ensureUniformBuffer(device, drawn * UNIFORM_STRIDE)
-    this.ensureTexture(device, image)
-    this.ensureVertexBuffer(device, totalBytes)
-    this.ensureBindGroup(device)
-    if (
-      !this.pipeline ||
-      !this.bindGroup ||
-      !this.vertexBuffer ||
-      !this.uniformBuffer
-    )
+    this.ensureTexture(device, atlas)
+    this.ensureCapacity(device, count)
+    const bindLayout = this.bindLayout
+    const paramsBuffer = this.paramsBuffer
+    const glyphBuffer = this.glyphBuffer
+    const texture = this.texture
+    const sampler = this.sampler
+    if (!bindLayout || !paramsBuffer || !glyphBuffer || !texture || !sampler)
       return
-
-    // Pack uniforms (one 256-byte slot each) and vertices (contiguous).
-    const slotFloats = UNIFORM_STRIDE / 4
-    const need = drawn * slotFloats
-    if (this.uniforms.length < need) {
-      this.uniforms = new Float32Array(Math.max(need, this.uniforms.length * 2))
-    }
-    const uniforms = this.uniforms
-    const offsets = this.vertexOffsets
-    offsets.length = 0
-    let vByte = 0
-    for (const r of runs) {
-      if (r.count === 0) continue
-      const base = offsets.length * slotFloats
-      uniforms[base] = width
-      uniforms[base + 1] = height
-      uniforms[base + 2] = r.screenPxRange
-      uniforms[base + 3] = 0
-      offsets.push(vByte)
-      device.queue.writeBuffer(
-        this.vertexBuffer,
-        vByte,
-        r.vertices as Float32Array<ArrayBuffer>,
-      )
-      vByte += r.vertices.byteLength
-    }
-    device.queue.writeBuffer(this.uniformBuffer, 0, uniforms, 0, need)
-
+    this.bindGroup ??= device.createBindGroup({
+      layout: bindLayout,
+      entries: [
+        { binding: 0, resource: { buffer: paramsBuffer } },
+        { binding: 1, resource: { buffer: glyphBuffer } },
+        { binding: 2, resource: texture.createView() },
+        { binding: 3, resource: sampler },
+      ],
+    })
+    this.params[0] = width
+    this.params[1] = height
+    device.queue.writeBuffer(paramsBuffer, 0, this.params)
+    device.queue.writeBuffer(
+      glyphBuffer,
+      0,
+      glyphs as Float32Array<ArrayBuffer>,
+      0,
+      count * FLOATS_PER_GLYPH,
+    )
+    if (!this.pipeline) return
     pass.setPipeline(this.pipeline)
-    let slot = 0
-    for (const r of runs) {
-      if (r.count === 0) continue
-      pass.setBindGroup(0, this.bindGroup, [slot * UNIFORM_STRIDE])
-      pass.setVertexBuffer(
-        0,
-        this.vertexBuffer,
-        offsets[slot],
-        r.vertices.byteLength,
-      )
-      pass.draw(r.count)
-      slot++
-    }
+    pass.setBindGroup(0, this.bindGroup)
+    pass.draw(4, count)
   }
 
   destroy(): void {
-    this.uniformBuffer?.destroy()
-    this.vertexBuffer?.destroy()
+    this.paramsBuffer?.destroy()
+    this.glyphBuffer?.destroy()
     this.texture?.destroy()
     this.device = null
     this.pipeline = null
     this.bindLayout = null
-    this.uniformBuffer = null
-    this.vertexBuffer = null
+    this.paramsBuffer = null
+    this.glyphBuffer = null
     this.sampler = null
     this.texture = null
-    this.textureImage = null
+    this.atlas = null
     this.bindGroup = null
-    this.capacityBytes = 0
-    this.uniformCapacity = 0
+    this.capacity = 0
     this.key = ''
   }
 }

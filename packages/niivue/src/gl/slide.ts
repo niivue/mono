@@ -398,8 +398,8 @@ export class SlideRenderer {
     )
     this._lines.draw(gl, lines, width, height)
     this._font.draw(gl, labels)
-    // The line and font passes re-enable depth and culling; the overlay hook
-    // expects both off.
+    // The line and font passes re-enable depth (and may leave culling on); the
+    // overlay hook expects both off.
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.CULL_FACE)
   }

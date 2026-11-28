@@ -94,6 +94,7 @@ for page in index buttons volume subvolume slide slide-wsi standalone; do
 done
 # The calipers page was retired: volume.html shows the same ruler.
 redirect uikit/calipers.html ../demo-uikit/volume.html
+redirect demo-uikit/calipers.html volume.html
 
 # Documentation site
 mkdir -p _site/docs

@@ -17,7 +17,8 @@
     "test": {
       "command": "bun test",
       "options": { "cwd": "{projectRoot}" },
-      "inputs": ["typescript"]
+      "dependsOn": ["^build"],
+      "inputs": ["typescript", "bundledDeps"]
     },
     "typecheck": {
       "command": "bunx tsc --noEmit",

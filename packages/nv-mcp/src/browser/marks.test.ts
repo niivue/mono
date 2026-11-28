@@ -533,6 +533,30 @@ describe('list_measurements and edit_measurements', () => {
     return view
   }
 
+  it('builds measure lines exactly as core does on every plane', () => {
+    const lines: [number[], number[], number][] = [
+      [[1, 2, 3], [4, 6, 3], 0], // axial: constant z
+      [[1, 2, 3], [4, 2, 7], 1], // coronal: constant y
+      [[1, 2, 3], [1, 5, 7], 2], // sagittal: constant x
+    ]
+    for (const [start, end, sliceType] of lines) {
+      const view = measureView()
+      markHandlers(hostOf(view)).edit_measurements({
+        action: 'add',
+        start_mm: start,
+        end_mm: end,
+      })
+      const made = (view.addAnnotation as ReturnType<typeof mock>).mock
+        .calls[0]?.[0] as Annotation
+      const core = measureAnnotation(
+        [start, end] as never,
+        sliceType,
+        made.style as never,
+      )
+      expect({ ...made, id: '' }).toEqual({ ...core, id: '' } as never)
+    }
+  })
+
   it('adds a measureLine annotation on the flattest plane, removes by id, and clears by kind', () => {
     const view = measureView()
     const { edit_measurements, list_measurements } = markHandlers(hostOf(view))
